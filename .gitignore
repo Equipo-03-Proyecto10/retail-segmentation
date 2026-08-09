@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.json.key
+service-account*.json
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Android
+*.apk
+*.aab
+local.properties
+.gradle/
+mobile/build/
+mobile/app/build/
+
+# .NET
+bin/
+obj/
+
+# Data (never commit datasets)
+data/
+*.csv
+*.parquet
+!docs/**/*.csv
+
+# IDE and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Agent local context
+CLAUDE.local.md

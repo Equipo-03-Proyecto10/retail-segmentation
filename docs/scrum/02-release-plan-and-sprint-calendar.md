@@ -83,7 +83,7 @@ The single most important output is the **frozen bi-temporal segment schema** (E
 | GitHub organization, monorepo, branch protection, Projects board, issue labels | Marcelo |
 | `docker-compose.yml` with PostgreSQL, MongoDB, Redis, web service | Max |
 | Flask skeleton: app factory, blueprints, per-environment config, Alembic initialized | Raquel |
-| **Frozen ERD including the traceability model: `rfm_run`, `customer_rfm_snapshot`, `segmentation_model_run`, `segment`, `segment_label` and the bi-temporal `customer_segment_assignment`** | Estefanía + Marcelo |
+| **Frozen ERD including the traceability model: `rfm_run`, `customer_rfm_snapshot`, `segmentation_model_run`, `segment`, `segment_label` and the bi-temporal `customer_segment_assignment`** | Estefanía (Marcelo reviews) |
 | ADR-001 Authentication and Token Lifecycle | Marcelo |
 | ADR-002 Data Ownership Map | Estefanía |
 | ADR-003 API Standards including the `Accept`-header XML contract | Max |

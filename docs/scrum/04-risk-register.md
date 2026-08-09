@@ -17,22 +17,22 @@ Probability down the side, impact across. Cells with several entries are where t
 | P ↓ / I → | 1 | 2 | 3 | 4 | 5 |
 |---|---|---|---|---|---|
 | **5** | | | | | |
-| **4** | | | R-02 R-05 R-11 R-14 | R-03 | |
-| **3** | | R-13 | R-16 | R-06 R-07 R-09 R-18 | R-01 R-04 R-10 R-17 |
+| **4** | | | R-02 R-05 R-11 R-14 | R-03 | R-01 |
+| **3** | | R-13 | R-16 | R-06 R-07 R-09 R-18 | R-04 R-10 R-17 |
 | **2** | | | | R-08 R-12 R-15 | |
 | **1** | | | | | |
 
 Bands: exposure ≥ 12 requires an owned mitigation with a due date, 8–11 is monitored at each retrospective, ≤ 6 is accepted.
 
-Two clusters matter. The four risks at probability 4, impact 3 are all the same underlying problem — the team commits more than it can deliver, whether the cause is an absent Product Owner, seven specified profiles, competing coursework, or optimistic estimation. They are tracked separately because they need separate mitigations, but if commitment discipline holds, all four drop at once. The **four** at probability 3, impact 5 are the demonstration risks: no frozen schema, no realistic data, no rehearsal, and now non-deterministic labelling. Each one alone is enough to fail the milestone demo.
+Two clusters matter. The four risks at probability 4, impact 3 are all the same underlying problem — the team commits more than it can deliver, whether the cause is an absent Product Owner, seven specified profiles, competing coursework, or optimistic estimation. They are tracked separately because they need separate mitigations, but if commitment discipline holds, all four drop at once. Three risks at probability 3, impact 5 threaten the demonstration through unrealistic data, no rehearsal, or non-deterministic labelling. R-01 is more exposed: without an implemented CI control, its probability is 4 and its exposure is 20.
 
-R-17 joins that cluster rather than sitting apart from it, and it belongs there for the same reason as the other three: it does not degrade the demonstration, it destroys it. A migration report that cannot distinguish customer behaviour from label reassignment is not a weaker version of the demonstration — it is the demonstration producing a confident number that means nothing.
+R-17 joins that cluster rather than sitting apart from it, and it belongs there for the same reason as the other two: it does not degrade the demonstration, it destroys it. A migration report that cannot distinguish customer behaviour from label reassignment is not a weaker version of the demonstration — it is the demonstration producing a confident number that means nothing.
 
 ## Active risks
 
 | ID | Risk | P | I | Exp | Owner |
 |---|---|---|---|---|---|
-| R-01 | Bi-temporal segment model not frozen before Sprint 1 development starts | 3 | 5 | 15 | Estefanía |
+| R-01 | Bi-temporal segment model not frozen before Sprint 1 development starts | 4 | 5 | 20 | Estefanía |
 | R-02 | Product Owner unavailable for scope decisions | 4 | 3 | 12 | Marcelo |
 | R-03 | Marcelo holds three roles and becomes the bottleneck | 4 | 4 | 16 | Marcelo |
 | R-04 | Seed dataset unrealistic; migrations not demonstrable | 3 | 5 | 15 | Estefanía |
@@ -55,12 +55,12 @@ R-17 joins that cluster rather than sitting apart from it, and it belongs there 
 
 ## Detail and mitigation
 
-### R-01 — Segment model not frozen before development (Exposure 15)
+### R-01 — Segment model not frozen before development (Exposure 20)
 Sprint 1 stories that read or write segment data cannot be estimated until the assignment model is decided, and code written against a mutable `customer.segment_id` must be rewritten once traceability is introduced.
 
 **Mitigation.** S0-04a is timeboxed to two days and blocks all Sprint 1 work. The `EXCLUDE USING gist` constraint on `customer_segment_assignment`, scoped to authoritative non-superseded rows, makes the incorrect pattern fail at the database level rather than pass silently, so a misunderstanding surfaces in minutes rather than in Sprint 2. It replaces the partial unique index originally specified and is strictly stronger: the index caught only a second *open* assignment, whereas the constraint also rejects two **closed intervals that overlap** — the more likely bug, and the one that produces history which looks plausible while being wrong (D-03).
 
-**What changed about how this risk is monitored.** The 16 checks in `infra/sql/schema/verify_m1_schema.sql` are executable, and CHECKS 2, 3, 5, 6 and 7 test exactly the failure modes this risk describes. Verifying the model no longer depends on someone reading a document carefully; it depends on a script exiting green. **This moves R-01 from monitored-by-review to monitored-by-CI**, which is the only reason its probability is defensible at 3 rather than higher.
+**How this risk is monitored.** The 16 checks in `infra/sql/schema/verify_m1_schema.sql` are executable, and CHECKS 2, 3, 5, 6 and 7 test exactly the failure modes this risk describes. Sprint 0 has no CI job that runs this script after `alembic upgrade head`, so R-01 remains **monitored-by-review**: the script must run locally and its complete output must be attached to the S0-04a issue. Without an automated control, probability is 4 rather than 3, producing exposure 20 and requiring escalation to the Product Owner.
 
 **Trigger.** Not frozen by end of Tuesday 2026-08-11 → escalate at the Wednesday refinement and freeze the transactional subset separately. S0-04a exists as a separate story so this trigger is testable against something specific rather than against a five-part story that is partially done.
 
@@ -213,5 +213,6 @@ None yet.
 
 | Date | Reviewed at | Changes |
 |---|---|---|
+| 2026-08-09 | Sprint 0 planning correction | R-01 returned to monitored-by-review because no CI job executes `verify_m1_schema.sql`. Probability increased from 3 to 4, exposure increased from 15 to 20, the matrix was updated, and Product Owner escalation is required. |
 | 2026-08-08 | Initial | Register created with 16 risks |
 | 2026-08-08 | S0-04 data model review | R-01 mitigation updated to the exclusion constraint and reclassified from monitored-by-review to monitored-by-CI. R-04 mitigation now requires the injected ground truth to be expressed in segment labels. R-17 and R-18 added. Exposure matrix updated; the probability 3, impact 5 cluster grows from three risks to four. Register now holds 18 risks. |

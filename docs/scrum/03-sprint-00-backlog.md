@@ -2,9 +2,9 @@
 
 **Sprint:** 0
 **Dates:** Mon 2026-08-10 → Fri 2026-08-14 (5 working days)
-**Capacity:** 19 SP · **Committed:** 16 SP · **Commitment ratio:** 84%
+**Capacity:** 19 SP · **Committed:** 22 SP · **Commitment ratio:** 116%
 **Scrum Master:** Marcelo · **Proxy PO:** Raquel
-**Version:** 1.1
+**Version:** 1.2
 
 ---
 
@@ -46,8 +46,8 @@ Day by day:
 |---|---|
 | Mon | S0-01 repository and board, then S0-02 container stack; S0-04a ERD begins; S0-05 ADR-001 begins in parallel |
 | Tue | S0-04a ERD frozen; ADR-002 and ADR-003 start |
-| Wed | S0-04b MongoDB and Redis design; S0-08 seed dataset; S0-09 baseline diagrams |
-| Thu | S0-10 standards; S0-11 requirements skeleton |
+| Wed | S0-04b MongoDB and Redis design; S0-08 seed dataset |
+| Thu | S0-10 standards; Sprint 1 handoff preparation for S0-09 and S0-11 |
 | Fri | Integration verification, Review, Retrospective |
 
 **S0-04a blocks everything downstream.** It is the highest-priority item in the sprint and it is not permitted to slip past Tuesday. S0-04b blocks nothing inside Sprint 0 and is due Wednesday.
@@ -67,8 +67,8 @@ Day by day:
 - Protect `main`: no direct pushes, pull request required, one approval minimum
 - Create `develop` as the default integration branch
 - Configure GitHub Projects board: Backlog, Ready, In Progress, In Review, Done
-- Create issue labels: `type:feature|bug|chore|docs|spike`, `component:web|services|mobile|desktop|ml|infra|docs`, `sprint:0|1|2`, `priority:P0|P1|P2|P3`
-- Add issue templates for user story and defect
+- Create issue labels: `type:feature|bug|chore|docs|spike`, `component:web|services|mobile|desktop|ml|infra|docs`, `priority:P0|P1|P2|P3`; sprint membership is tracked with the Projects `Sprint` field, not duplicate labels
+- Add `.github/ISSUE_TEMPLATE/` templates for user stories and defects
 - Commit the root `README.md` and `CONTRIBUTING.md`
 
 **Directory structure**
@@ -95,7 +95,7 @@ A monorepo is chosen over separate repositories per component. The requirement t
 **Acceptance criteria**
 - Given a team member with a fresh clone, when they attempt to push directly to `main`, then the push is rejected
 - Given a new issue, when it is created, then a template is offered and the label set is available
-- Given the board, when a pull request is opened referencing an issue, then the issue is visible in In Review
+- Given an issue on the board, when its `Status` field is set to `In Review`, then the card is visible in the `In Review` board column
 
 ---
 
@@ -165,7 +165,7 @@ Rejected for M1: React (Jinja2 is required and sufficient), Celery (a manually t
 ---
 
 ### S0-04a — Frozen data model including bi-temporal segment traceability
-**Owner:** Estefanía (lead) + Marcelo (review) · **Points:** 3 · **Type:** docs + feature · **Due:** Tue 2026-08-11 EOD · **Blocks:** S0-06, S0-08, and all Sprint 1 stories
+**Owner:** Estefanía · **Reviewer:** Marcelo · **Points:** 3 · **Type:** docs + feature · **Due:** Tue 2026-08-11 EOD · **Blocks:** S0-06, S0-08, and all Sprint 1 stories
 
 > As a team, we need the PostgreSQL schema frozen and the segment assignment model bi-temporal so that segments can be updated without losing historical traceability, which is the central requirement of the problem statement.
 
@@ -306,7 +306,7 @@ The specification permits microservices to share authorized databases. That perm
 ---
 
 ### S0-07 — ADR-003 API Standards and Content Negotiation
-**Owner:** Marcelo · **Points:** 2 · **Type:** docs
+**Owner:** Max · **Points:** 2 · **Type:** docs
 
 > As a team, we need REST conventions, error format and content negotiation fixed now so that the microservices module can be built in M2 without redesign, and so that XML support is not retrofitted.
 
@@ -356,7 +356,7 @@ Nobody usually assigns this, and its absence is what kills the demonstration. RF
 ---
 
 ### S0-09 — Baseline architecture diagrams
-**Owner:** Marcelo · **Points:** 2 · **Type:** docs · **Depends on:** S0-04a, S0-05
+**Owner:** Marcelo · **Sprint:** 1 · **Points:** 2 · **Type:** docs · **Depends on:** S0-04a, S0-05
 
 > As a team, we need the context, container, authentication and data storage diagrams so that component responsibilities are agreed before Sprint 1 development begins.
 
@@ -376,7 +376,7 @@ Four of the nine required diagrams are produced now. Component and sequence diag
 ---
 
 ### S0-10 — Engineering standards and Definition of Done
-**Owner:** Marcelo · **Points:** 1 · **Type:** docs
+**Owner:** Raquel · **Points:** 1 · **Type:** docs
 
 > As a team, we need coding standards, naming conventions and an enforced Definition of Done so that four people produce one coherent codebase.
 
@@ -384,7 +384,7 @@ Four of the nine required diagrams are produced now. Component and sequence diag
 - Python style: PEP 8, `black`, `ruff`, line length, docstring convention
 - Naming conventions: database (snake_case, singular table names), Python, Jinja2 templates, CSS, JavaScript, branches, commits
 - Conventional Commits specification with examples
-- Pull request checklist derived from the Definition of Done
+- Add `.github/pull_request_template.md` with a checklist derived from all eleven story-level Definition of Done items
 - `CONTRIBUTING.md` covering local setup, branch flow, and review expectations
 - Publish the Definition of Done and Definition of Ready in the repository
 
@@ -395,7 +395,7 @@ Four of the nine required diagrams are produced now. Component and sequence diag
 ---
 
 ### S0-11 — Requirements and analysis skeleton
-**Owner:** Raquel · **Points:** 1 · **Type:** docs
+**Owner:** Raquel · **Sprint:** 1 · **Points:** 1 · **Type:** docs
 
 > As a Proxy Product Owner, I need the requirements documents created with their structure and Sprint 1 content in place so that the analysis deliverable is written incrementally rather than the weekend before delivery.
 
@@ -414,48 +414,37 @@ The commit history of these documents is itself evidence that the process was fo
 
 ---
 
-## Sprint 0 summary
+## Sprint 0 summary after rebalancing
 
 | Story | Owner | SP | Type |
 |---|---|---|---|
 | S0-01 Repository, organization and board | Marcelo | 2 | chore |
 | S0-02 Local container stack | Max | 3 | chore |
 | S0-03 Flask application skeleton | Raquel | 3 | chore |
-| S0-04a Frozen data model, bi-temporal traceability | Estefanía + Marcelo | 3 | docs + feature |
+| S0-04a Frozen data model, bi-temporal traceability | Estefanía (Marcelo reviews) | 3 | docs + feature |
 | S0-04b MongoDB and Redis design | Estefanía | 2 | docs |
 | S0-05 ADR-001 Authentication | Marcelo | 2 | docs |
 | S0-06 ADR-002 Data Ownership | Estefanía | 1 | docs |
-| S0-07 ADR-003 API Standards | Marcelo | 2 | docs |
+| S0-07 ADR-003 API Standards | Max | 2 | docs |
 | S0-08 Seed dataset | Estefanía | 3 | feature |
-| S0-09 Baseline diagrams | Marcelo | 2 | docs |
-| S0-10 Engineering standards | Marcelo | 1 | docs |
-| S0-11 Requirements skeleton | Raquel | 1 | docs |
-| **Total** | | **25** | |
+| S0-10 Engineering standards | Raquel | 1 | docs |
+| **Total** | | **22** | |
 
-The S0-04 split into S0-04a (3 SP) and S0-04b (2 SP) leaves the total unchanged at 25 SP. No other estimate has been revised.
-
-The committed total is 25 SP against a stated commitment of 16 SP. This is a deliberate overload of the sprint board, and it must be resolved at Sprint 0 Planning rather than by pretending the numbers add up. Two options, to be decided by the team on Monday:
-
-1. **Move S0-09, S0-10 and S0-11 into Sprint 1** (9 SP), bringing Sprint 0 to 16 SP. Sprint 1's committed total then rises to 41 SP against a 38 SP capacity, which requires cutting a Sprint 1 story.
-2. **Accept a higher Sprint 0 load** on the grounds that documentation stories carry less execution risk than feature stories, and reduce the Sprint 1 commitment accordingly.
-
-Recommendation: option 1, moving S0-09 (diagrams) and S0-11 (requirements skeleton) to Sprint 1, and keeping S0-10 (standards) in Sprint 0 because standards published after development starts are not followed. That brings Sprint 0 to 22 SP — still above the 19 SP capacity line. The honest conclusion is that **Sprint 0 needs six days rather than five, or one document deliverable must move.** This is exactly the kind of discrepancy that is cheaper to confront at planning than to discover on Friday.
+The team adopted the rebalanced assignment as the authoritative planning baseline: S0-07 belongs to Max, S0-10 belongs to Raquel, and Estefanía owns S0-04a while Marcelo reviews it. S0-09 and S0-11 move to Sprint 1; S0-10 remains in Sprint 0 because standards published after development starts are not followed. The resulting Sprint 0 commitment is 22 SP against the 19 SP capacity line. The capacity gap remains explicit and must be handled as spillover rather than hidden by contradictory ownership or sprint metadata.
 
 ---
 
-## Per-person load (assuming option 1)
+## Per-person load after rebalancing
 
 | Person | Stories | SP | Effective hours available | SP capacity at 2.5 h/SP |
 |---|---|---|---|---|
-| Marcelo | S0-01 (2), S0-05 (2), S0-07 (2), S0-10 (1), ½ S0-04a+b (2.5) | 9.5 | 12 | 4.8 |
-| Estefanía | S0-06 (1), S0-08 (3), ½ S0-04a+b (2.5) | 6.5 | 12 | 4.8 |
-| Raquel | S0-03 (3) | 3 | 12 | 4.8 |
-| Max | S0-02 (3) | 3 | 12 | 4.8 |
+| Marcelo | S0-01 (2), S0-05 (2) | 4 | 12 | 4.8 |
+| Estefanía | S0-04a (3), S0-04b (2), S0-06 (1), S0-08 (3) | 9 | 12 | 4.8 |
+| Raquel | S0-03 (3), S0-10 (1) | 4 | 12 | 4.8 |
+| Max | S0-02 (3), S0-07 (2) | 5 | 12 | 4.8 |
 | **Total** | | **22** | | |
 
-> **Arithmetic correction.** Marcelo's row previously read 10.5 SP, which the listed stories do not sum to: 2 + 2 + 2 + 1 + 2.5 = 9.5. The figure 10.5 is what the row sums to if S0-09 (2 SP) is substituted for S0-10 (1 SP), so one of the two cells was wrong and it is not possible to tell which from the document alone. **The story list is treated as correct here because the surrounding text keeps S0-10 in Sprint 0 and moves S0-09 out.** If the intent was the reverse, the correct figure is 10.5 and the story list needs fixing instead. Resolve at planning. The correction lowers Marcelo's load; it does not change the conclusion below, and the sprint total of 22 SP is unaffected either way.
-
-Marcelo is loaded at nearly double his capacity. This is the single-point-of-failure risk (R-03) appearing in the very first sprint. Required rebalancing before commitment:
+The pre-rebalancing plan loaded Marcelo at nearly double his capacity. The following decisions mitigate that single-point-of-failure risk (R-03) and are final for issue creation:
 
 - **S0-07 (ADR-003 API Standards) moves to Max.** He owns infrastructure and will implement rate limiting and health endpoints in M2, so he is the correct owner of the contract that specifies them.
 - **S0-10 (Engineering standards) moves to Raquel.** She writes the most application code and will be the primary consumer of the conventions.
@@ -468,8 +457,6 @@ Marcelo is loaded at nearly double his capacity. This is the single-point-of-fai
 | Raquel | S0-03 (3), S0-10 (1) | 4 | 4.8 | 0.83 |
 | Max | S0-02 (3), S0-07 (2) | 5 | 4.8 | 1.04 |
 | **Total** | | **22 + ?** | 19 | **≥ 1.16** |
-
-> **Second arithmetic correction.** This paragraph previously read "Rebalanced: Marcelo 5, Estefanía 9, Raquel 4, Max 5", which sums to 23 against a sprint total of 22. With S0-04 moved wholly to Estefanía, Marcelo holds S0-01 and S0-05 only, which is 4 SP.
 
 **New work nobody estimated: the deterministic labelling rule.** D-04 requires that the mapping from K-means cluster index to `segment_label.code` be a deterministic rule over centroid position, recorded in `segmentation_model_run.labelling_strategy`. This is not a line in the DDL — it is an algorithm that has to be designed, implemented and tested, and until it exists the migration report reports label-assignment noise as customer behaviour. It falls to Estefanía, on top of a load already at 9 SP against a 4.8 SP capacity.
 
@@ -498,7 +485,7 @@ Beyond the standard story-level Definition of Done:
 - `alembic upgrade head` succeeds against an empty database
 - ADR-001, ADR-002 and ADR-003 are committed and marked Accepted
 - The ERD is committed and its DDL matches the applied migration
-- `infra/sql/schema/verify_m1_schema.sql` runs green in CI against a database built by `alembic upgrade head`
+- `infra/sql/schema/verify_m1_schema.sql` runs green locally against a database built by `alembic upgrade head`, and the complete command output is attached to the S0-04a issue
 - The board shows at least ten closed issues with commit references
 
 ---
@@ -507,4 +494,5 @@ Beyond the standard story-level Definition of Done:
 
 | Version | Date | Author | Change |
 |---|---|---|---|
+| 1.2 | 2026-08-09 | Marcelo | Adopted the post-rebalancing ownership as authoritative, moved S0-09 and S0-11 to Sprint 1, removed duplicate sprint labels, assigned the PR template to S0-10, and replaced the unsupported CI gate with local schema verification evidence on S0-04a. |
 | 1.1 | 2026-08-08 | Marcelo | Corrected against `docs/data/postgresql-model.md` §8. Traceability table shape, exclusion constraint replacing the partial unique index, eight new tasks traceable to D-04 / D-06 / D-07 / D-08 / D-10 / D-11 / D-12 / D-14, executable acceptance criteria referencing the 16 checks in `verify_m1_schema.sql`, S0-04 split into S0-04a and S0-04b at unchanged total, S0-05 dependency on S0-04 removed, load tables recalculated and two pre-existing arithmetic errors corrected, labelling rule recorded as unestimated new work. |

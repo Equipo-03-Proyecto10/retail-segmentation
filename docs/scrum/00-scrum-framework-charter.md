@@ -211,7 +211,7 @@ Sprint 2 is committed lower than Sprint 1 because documentation consolidation an
 |---|---|---|
 | Source control | GitHub, organization-owned monorepo | Organization ownership so the repository does not depend on one personal account |
 | Task board | GitHub Projects (Board view) | Columns: Backlog, Ready, In Progress, In Review, Done |
-| Issue tracking | GitHub Issues | Labels: `type:*`, `component:*`, `sprint:*`, `priority:*` |
+| Issue tracking | GitHub Issues | Labels: `type:*`, `component:*`, `priority:*`; sprint membership lives in the Projects `Sprint` field |
 | Documentation | Markdown in `docs/`, versioned in Git | The commit history proves documents were written incrementally |
 | Architecture decisions | ADRs in `docs/adr/` | Numbered, immutable once accepted |
 | Communication | Team channel (WhatsApp / Slack) | Async check-ins and blockers |

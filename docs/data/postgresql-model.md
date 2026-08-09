@@ -5,6 +5,7 @@
 **Authors:** Estefanía (lead), Marcelo (review)
 **Version:** 0.9 — PROPOSED, freeze at Sprint 0 Planning 2026-08-10
 **Physical model:** `infra/sql/schema/001_m1_initial_schema.sql` (authoritative)
+**Generated ERD:** `docs/architecture/postgresql-physical-model.md`
 **Verification:** `infra/sql/schema/verify_m1_schema.sql`
 
 ---

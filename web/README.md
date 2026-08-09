@@ -85,7 +85,24 @@ All 16 checks must behave as their `expected:` lines state. Checks 2, 3, 9, 10,
 11, 12, 13, 14 and 15 pass by **raising an error** — an `ERROR` line there is the
 success condition and a silent success is the failure.
 
-This is the check the Definition of Done requires in CI. There is no CI yet.
+This is the check the Definition of Done requires in CI. The schema ERD
+workflow provisions PostgreSQL and verifies the migrated schema on every
+relevant pull request.
+
+## Generating the physical ERD
+
+The committed Mermaid document is reflected from a database migrated to
+Alembic `head`; it is not maintained by hand. With `DATABASE_MIGRATION_URL`
+pointing to that database, run from the repository root:
+
+```bash
+python web/scripts/generate_postgresql_erd.py
+```
+
+CI runs the same command with `--check`. It fails when a migration changes a
+table, column, PostgreSQL type, nullability, key, foreign key, critical
+constraint, partial index, or trigger without regenerating
+`docs/architecture/postgresql-physical-model.md`.
 
 ## For whoever picks up S0-03
 

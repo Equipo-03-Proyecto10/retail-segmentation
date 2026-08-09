@@ -2,7 +2,7 @@
 
 **Project:** Dynamic Segmentation and Retail Personalization Platform
 **Owner:** Marcelo (Scrum Master)
-**Version:** 1.0
+**Version:** 1.1
 **Date:** 2026-08-08
 **Review cadence:** Every retrospective
 
@@ -18,13 +18,15 @@ Probability down the side, impact across. Cells with several entries are where t
 |---|---|---|---|---|---|
 | **5** | | | | | |
 | **4** | | | R-02 R-05 R-11 R-14 | R-03 | |
-| **3** | | R-13 | R-16 | R-06 R-07 R-09 | R-01 R-04 R-10 |
+| **3** | | R-13 | R-16 | R-06 R-07 R-09 R-18 | R-01 R-04 R-10 R-17 |
 | **2** | | | | R-08 R-12 R-15 | |
 | **1** | | | | | |
 
 Bands: exposure ≥ 12 requires an owned mitigation with a due date, 8–11 is monitored at each retrospective, ≤ 6 is accepted.
 
-Two clusters matter. The four risks at probability 4, impact 3 are all the same underlying problem — the team commits more than it can deliver, whether the cause is an absent Product Owner, seven specified profiles, competing coursework, or optimistic estimation. They are tracked separately because they need separate mitigations, but if commitment discipline holds, all four drop at once. The three at probability 3, impact 5 are the demonstration risks: no frozen schema, no realistic data, no rehearsal. Each one alone is enough to fail the milestone demo.
+Two clusters matter. The four risks at probability 4, impact 3 are all the same underlying problem — the team commits more than it can deliver, whether the cause is an absent Product Owner, seven specified profiles, competing coursework, or optimistic estimation. They are tracked separately because they need separate mitigations, but if commitment discipline holds, all four drop at once. The **four** at probability 3, impact 5 are the demonstration risks: no frozen schema, no realistic data, no rehearsal, and now non-deterministic labelling. Each one alone is enough to fail the milestone demo.
+
+R-17 joins that cluster rather than sitting apart from it, and it belongs there for the same reason as the other three: it does not degrade the demonstration, it destroys it. A migration report that cannot distinguish customer behaviour from label reassignment is not a weaker version of the demonstration — it is the demonstration producing a confident number that means nothing.
 
 ## Active risks
 
@@ -46,6 +48,8 @@ Two clusters matter. The four risks at probability 4, impact 3 are all the same 
 | R-14 | Estimation optimism; systematic over-commitment | 4 | 3 | 12 | Whole team |
 | R-15 | Premature adoption of Kubernetes consumes a week with no milestone benefit | 2 | 4 | 8 | Max |
 | R-16 | M2 and M3 deadlines unknown; sequencing assumptions may be wrong | 3 | 3 | 9 | Marcelo |
+| R-17 | Non-deterministic segment labelling reports noise as migration | 3 | 5 | 15 | Estefanía |
+| R-18 | Application connects as schema owner, making the append-only audit trail decorative | 3 | 4 | 12 | Max |
 
 ---
 
@@ -54,9 +58,11 @@ Two clusters matter. The four risks at probability 4, impact 3 are all the same 
 ### R-01 — Segment model not frozen before development (Exposure 15)
 Sprint 1 stories that read or write segment data cannot be estimated until the assignment model is decided, and code written against a mutable `customer.segment_id` must be rewritten once traceability is introduced.
 
-**Mitigation.** S0-04 is timeboxed to two days and blocks all Sprint 1 work. The partial unique index on `customer_segment_assignment` where `valid_to IS NULL` makes the incorrect pattern fail at the database level rather than pass silently, so a misunderstanding surfaces in minutes rather than in Sprint 2.
+**Mitigation.** S0-04a is timeboxed to two days and blocks all Sprint 1 work. The `EXCLUDE USING gist` constraint on `customer_segment_assignment`, scoped to authoritative non-superseded rows, makes the incorrect pattern fail at the database level rather than pass silently, so a misunderstanding surfaces in minutes rather than in Sprint 2. It replaces the partial unique index originally specified and is strictly stronger: the index caught only a second *open* assignment, whereas the constraint also rejects two **closed intervals that overlap** — the more likely bug, and the one that produces history which looks plausible while being wrong (D-03).
 
-**Trigger.** Not frozen by end of Tuesday 2026-08-11 → escalate at the Wednesday refinement and freeze the transactional subset separately.
+**What changed about how this risk is monitored.** The 16 checks in `infra/sql/schema/verify_m1_schema.sql` are executable, and CHECKS 2, 3, 5, 6 and 7 test exactly the failure modes this risk describes. Verifying the model no longer depends on someone reading a document carefully; it depends on a script exiting green. **This moves R-01 from monitored-by-review to monitored-by-CI**, which is the only reason its probability is defensible at 3 rather than higher.
+
+**Trigger.** Not frozen by end of Tuesday 2026-08-11 → escalate at the Wednesday refinement and freeze the transactional subset separately. S0-04a exists as a separate story so this trigger is testable against something specific rather than against a five-part story that is partially done.
 
 ---
 
@@ -82,6 +88,8 @@ Marcelo holds full-stack development, DevOps, and Scrum Master. The Sprint 0 loa
 RFM over a small hand-entered dataset produces degenerate quintiles, and with no purchase history there is nothing for a migration report to detect. The Sprint 2 demonstration — the part that distinguishes this project from a CRUD application — becomes impossible.
 
 **Mitigation.** Start from a public retail dataset with genuine purchase behaviour rather than fully synthetic generation. Layer store, channel and controlled migrations on top. Record the injected migration ground truth so detection is validated against known answers rather than judged by eye.
+
+**The ground truth must be expressed in segment labels, not cluster indices.** Cluster indices are arbitrary and unstable between runs (D-04), so a ground truth recorded as "customer 417 moves from cluster 2 to cluster 5" cannot be compared against detection output at all — the detector emits label codes, and the two runs' cluster numbering has no relationship to each other. Record the expected movement as `champions → at_risk`, and the comparison becomes a join. This depends on A-06 in `assumption-register.md`, which fixes the label set, being answered before S0-08 generates the data.
 
 **Trigger.** Fewer than 2,000 customers or fewer than 18 months of history after loading → raise immediately; this is a Sprint 2 blocker discovered in Sprint 0.
 
@@ -171,6 +179,30 @@ The M1 architectural contracts are sized on the assumption that M2 begins immedi
 
 ---
 
+### R-17 — Non-deterministic segment labelling reports noise as migration (Exposure 15)
+K-means cluster indices are arbitrary and unstable between runs: the cluster numbered 2 in July and the cluster numbered 2 in January have no relationship to each other. If the mapping from cluster to segment label is decided by a human looking at centroids after each run, then two runs over a customer whose behaviour did not change can still produce two different labels — and the migration report presents that as a behaviour change.
+
+This is the failure that survives every other control. The schema is correct, the constraint holds, the pipeline runs, the report renders, and the number is wrong. It is also the failure that is hardest to notice from the inside, because a migration report with plausible-looking movement is exactly what the demonstration is supposed to produce.
+
+**Mitigation.** Labelling is a **rule over centroid position**, recorded in `segmentation_model_run.labelling_strategy` and reapplied identically on every run. It is never assigned by hand between runs. The rule is part of the run's reproducibility set alongside `random_seed`, `code_version` and `scaler_state`: a run whose labelling cannot be reproduced cannot be defended at review.
+
+**Trigger.** Two runs over the same feature set produce different label assignments for a customer whose features did not change.
+
+**Note on ownership.** This is Estefanía's, and it is work that no story currently points at — the labelling rule is recorded in `03-sprint-00-backlog.md` as unestimated new work on a person already at 1.88× individual capacity. The risk is live because the mitigation is unfunded, not because the mitigation is unclear.
+
+---
+
+### R-18 — Application connects as schema owner, making the append-only audit trail decorative (Exposure 12)
+`audit_log` is append-only, enforced by a statement trigger *and* by `REVOKE`. A `REVOKE` has no effect against the role that owns the schema, and PostgreSQL superusers and table owners bypass row-level controls by design. If the application connects with the same credentials that ran the migration, the second layer of enforcement does nothing, and the audit trail is protected only by a trigger that the owning role can drop.
+
+The audit trail is a graded deliverable and the Auditor profile is the one that demonstrates the traceability requirement. An audit trail that the application can rewrite is not an audit trail.
+
+**Mitigation.** Two database roles and two DSNs: `DATABASE_URL` for the restricted runtime role, `DATABASE_MIGRATION_URL` for the schema owner. Plus **a test asserting that the runtime role cannot `UPDATE` `audit_log`** — the assertion is what makes this a control rather than an intention, because the two-role setup is easy to configure and easy to silently undo when someone debugs a permissions error at 2am by widening a grant.
+
+**Trigger.** `.env.example` contains one DSN at the end of Sprint 0.
+
+---
+
 ## Closed risks
 
 None yet.
@@ -182,3 +214,4 @@ None yet.
 | Date | Reviewed at | Changes |
 |---|---|---|
 | 2026-08-08 | Initial | Register created with 16 risks |
+| 2026-08-08 | S0-04 data model review | R-01 mitigation updated to the exclusion constraint and reclassified from monitored-by-review to monitored-by-CI. R-04 mitigation now requires the injected ground truth to be expressed in segment labels. R-17 and R-18 added. Exposure matrix updated; the probability 3, impact 5 cluster grows from three risks to four. Register now holds 18 risks. |

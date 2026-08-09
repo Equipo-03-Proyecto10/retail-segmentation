@@ -261,7 +261,9 @@ Spillover is normal and should be visible. Carrying a story into the next sprint
 5. Planning Poker on unestimated stories (20 min).
 6. Commit. Stop at the capacity line, not at the end of the wish list (15 min).
 7. Task breakdown and assignment (15 min).
-8. Record the Sprint Goal and the committed set in `docs/scrum/sprints/sprint-NN.md` (5 min).
+8. Record the Sprint Goal and the committed set in `docs/scrum/sprints/sprint-NN.md`, copied from [`templates/sprint-record.md`](templates/sprint-record.md) (5 min).
+
+The template carries the per-person load check from step 3 and the Planning Poker outcomes from step 5, because both are decisions taken in the room that are otherwise lost. It also keeps a record of what was committed on the day, which stops being recoverable from the sprint backlog document once that document is revised mid-sprint.
 
 ## Appendix B — Sprint Review agenda
 
@@ -275,7 +277,9 @@ Demonstrations run against the containerized stack. A demo that only runs on one
 
 ## Appendix C — Retrospective template
 
-The template lives at `docs/scrum/templates/retrospective.md`. Copy it to `docs/scrum/retrospectives/sprint-NN.md` at the start of each retrospective and fill it in during the meeting, not afterwards.
+The template lives at [`templates/retrospective.md`](templates/retrospective.md). Copy it to `docs/scrum/retrospectives/sprint-NN.md` at the start of each retrospective and fill it in during the meeting, not afterwards.
+
+It carries both formats from §4.2 — delete the one not in use — and puts the §11 metrics above the discussion, so the conversation argues with numbers rather than with impressions.
 
 ## Appendix D — Assumption Register template
 

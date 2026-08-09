@@ -21,7 +21,7 @@ All code, comments, commits, and documentation are written in English.
 
 Monorepo. Four deployable components share one PostgreSQL / MongoDB / Redis
 backing layer, with each table owned by exactly one writer (see
-`docs/adr/ADR-002-data-ownership.md`).
+`docs/adr/0002-data-ownership-map.md`).
 
 | Directory | Component | Milestone |
 |---|---|---|

@@ -16,7 +16,7 @@ written is.
 setting `valid_to` and inserts a new row in `customer_segment_assignment`. A
 partial unique index enforces one open assignment per customer. Losing this
 breaks the project's central requirement. Read
-`docs/adr/ADR-002-data-ownership.md` and the ERD before touching segment data.
+`docs/adr/0002-data-ownership-map.md` and the ERD before touching segment data.
 
 **Schema changes ship as Alembic migrations.** Never edit a table by hand or
 write raw DDL outside a migration. `alembic upgrade head` must succeed against
@@ -25,7 +25,7 @@ an empty database.
 **State-changing operations write an audit log record** with actor, action,
 entity, timestamp, and correlation id.
 
-**One writer per table.** Check `docs/adr/ADR-002-data-ownership.md` before
+**One writer per table.** Check `docs/adr/0002-data-ownership-map.md` before
 writing to any store from a new component. Cross-component writes are
 prohibited; the owner exposes an endpoint instead.
 

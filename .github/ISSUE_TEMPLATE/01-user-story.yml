@@ -1,0 +1,108 @@
+name: User story
+description: A unit of work that delivers value to a role. Must reach Definition of Ready before it enters a sprint.
+title: "<verb> <what> for <role>"
+labels: ["type:feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The fields below are the Definition of Ready (§5 of the Scrum Framework
+        Charter). A story that cannot fill them in is not ready to be committed,
+        and filling them in badly to get past this form only moves the argument
+        to Sprint Planning.
+
+        If a Product Owner decision is missing, do not stop: record the working
+        assumption in [`docs/scrum/assumption-register.md`](https://github.com/Equipo-03-Proyecto10/retail-segmentation/blob/develop/docs/scrum/assumption-register.md)
+        and reference it below.
+
+  - type: textarea
+    id: story
+    attributes:
+      label: Story
+      description: The role has to be one of the seven specified profiles, or the development team.
+      value: |
+        As a
+        I want
+        so that
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: >
+        Given / When / Then, each one independently testable. "Works correctly"
+        is not a criterion. If a criterion can be checked by a script or a SQL
+        query rather than by reading, write it that way.
+      value: |
+        - Given ..., when ..., then ...
+        - Given ..., when ..., then ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: data-model
+    attributes:
+      label: Data model impact
+      description: >
+        Which PostgreSQL tables, MongoDB collections or Redis key patterns are
+        read and which are written. One writer per table — check
+        `docs/adr/0002-data-ownership-map.md` before writing to a store from a
+        new component.
+      value: |
+        Reads:
+        Writes:
+        Schema change: no
+    validations:
+      required: true
+
+  - type: dropdown
+    id: schema-change
+    attributes:
+      label: Does this story change the database schema?
+      description: >
+        If yes, it ships an Alembic migration **and** an updated
+        `infra/sql/schema/verify_m1_schema.sql` that passes. Both are Definition
+        of Done items, not optional extras.
+      options:
+        - "No"
+        - "Yes — migration and verify_m1_schema.sql update required"
+    validations:
+      required: true
+
+  - type: input
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: >
+        Issue numbers or story ids. A blocking dependency must already be
+        complete or scheduled earlier in the same sprint.
+      placeholder: "blocked by #12, or: none"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: estimate
+    attributes:
+      label: Estimate
+      description: >
+        Modified Fibonacci, set by the team in Planning Poker. Nobody estimates
+        alone. 13 means the story is too large and is split before it is
+        committed.
+      options: ["not yet estimated", "1", "2", "3", "5", "8", "13 — must be split"]
+    validations:
+      required: true
+
+  - type: input
+    id: assumption
+    attributes:
+      label: Open Product Owner decision
+      description: The assumption register id, if this story rests on an unanswered question.
+      placeholder: "A-06, or: none"
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Design constraints, rejected alternatives, links to the ADR or model decision this follows.

@@ -1,0 +1,28 @@
+# Blank issues stay enabled deliberately.
+#
+# The two forms cover the two things the course grades: user stories and the
+# defect log. They do not cover a spike, a chore, or "the professor said
+# something in class that contradicts the backlog" — and forcing those through a
+# user story form produces fake stories, which is worse than an unstructured
+# issue. The board is graded evidence; padding it with malformed stories to
+# satisfy a template damages exactly what the template is meant to protect.
+blank_issues_enabled: true
+
+contact_links:
+  - name: Architectural decision
+    url: https://github.com/Equipo-03-Proyecto10/retail-segmentation/tree/develop/docs/adr
+    about: >-
+      A decision other components inherit belongs in an ADR, not an issue.
+      Copy template.md, number it, open a pull request. ADRs are immutable once
+      Accepted — supersede, never edit.
+  - name: Unanswered Product Owner question
+    url: https://github.com/Equipo-03-Proyecto10/retail-segmentation/blob/develop/docs/scrum/assumption-register.md
+    about: >-
+      Record it as a numbered assumption with the decision taken anyway and the
+      cost of being wrong. Work does not stop waiting for an answer; silence for
+      five working days is treated as confirmation.
+  - name: Risk
+    url: https://github.com/Equipo-03-Proyecto10/retail-segmentation/blob/develop/docs/scrum/04-risk-register.md
+    about: >-
+      Something that has not happened yet but would hurt if it did belongs in
+      the risk register with a probability, an impact and an owned mitigation.

@@ -2,7 +2,7 @@
 
 **Project:** Dynamic Segmentation and Retail Personalization Platform
 **Backlog owner:** Raquel (Proxy Product Owner)
-**Version:** 1.0
+**Version:** 1.1
 **Date:** 2026-08-08
 
 This backlog is deliberately coarse beyond Milestone 1. Epics targeted at M2 and M3 are recorded so the semester plan is visible, but they are not decomposed into stories. Writing detailed acceptance criteria in August for work that starts in October is waterfall planning wearing a Scrum label, and the estimates would be wrong.
@@ -109,6 +109,7 @@ Auditor is included in M1 because it is nearly free — a read-only view over th
 - Menu rendering driven by the permission set, not hard-coded per role
 - User administration: create, edit, deactivate, assign roles
 - Permission matrix document covering all seven profiles
+- **Store-scoped authorization for Store Manager**: `user_role.scope_store_id` with `role.scope_kind ∈ {global, store}`, enforced by a trigger. Store Manager sees segments and promotions for the assigned store only. A pure role-to-permission model has nowhere to put "which store", and retrofitting row-level scope in M3 touches every authorization decision, every query, and the permission decorator (D-10)
 
 ---
 
@@ -119,9 +120,10 @@ The course requires at least two functional catalogs. This epic delivers four, b
 
 **Scope**
 - Product catalog with category assignment
+- **`product.attributes` (JSONB, GIN-indexed)**: a typed attribute bag — material, size, colour, seasonality, dietary flags — defined in `docs/data/product-attribute-schema.md`. It exists in M1 because content-based recommendation (E-22) has no feature space if a product carries nothing but a category, and adding attributes once 100,000 transaction lines exist is a backfill exercise against data whose provenance has been lost (D-13)
 - Category catalog (hierarchical, single level in M1)
 - Store catalog with region attribute
-- Customer registry with consent flags
+- Customer registry with versioned consent records, not boolean consent flags (see E-10 and E-34)
 - Search, pagination, soft delete, and audit trail on all four
 
 ---
@@ -135,6 +137,8 @@ RFM analysis over 20 hand-entered rows produces meaningless quintiles and no obs
 - CSV upload through the web interface, stored in Cloud Storage
 - Row-level validation with a rejection report
 - Ingestion into `sales_transaction` and `sales_transaction_line`
+- **Returns as first-class rows**: `sales_transaction.transaction_type ∈ {sale, return}` with a sign constraint and an optional `original_transaction_id`. Public retail transaction datasets commonly encode credit notes as negative-quantity documents; treating them as sales inflates Monetary and makes reduced spending unmeasurable because refunds are invisible. A return is permitted without an original, because historical imports routinely contain credit notes whose original falls outside the window (D-07)
+- **Ingestion idempotency on the natural key** `UNIQUE (source_system, external_transaction_id)`. Without it, S0-08's acceptance criterion — `make seed` twice, row counts unchanged — is unachievable except by truncating first, which is not idempotency. It also gives the CSV upload path a defined behaviour on re-upload: `rows_duplicate` in the rejection report rather than silent double counting (D-08)
 - Ingestion telemetry, parse errors, and per-file summaries written to MongoDB as variable-shape documents
 - Seed loader for the base dataset (see `docs/data/seed-strategy.md`)
 - Synthetic store, channel, and migration overlay applied to the base dataset
@@ -152,7 +156,9 @@ RFM analysis over 20 hand-entered rows produces meaningless quintiles and no obs
 - Immutable RFM snapshot per computation run
 - Deterministic recomputation: the same input window and parameters produce the same output
 
-**Design constraint:** RFM snapshots are never overwritten. Each run writes a new snapshot linked to a `segmentation_model_run`. Migration detection depends on this.
+**Design constraint:** RFM snapshots are never overwritten. Each run writes a new snapshot linked to an `rfm_run` — **not to a `segmentation_model_run`** (D-05). Migration detection depends on this.
+
+**The consequence of that ownership.** One feature set, many clusterings. Because the snapshot belongs to the RFM run rather than the clustering run, comparing k=4 against k=6 uses *identical* features, which is the only way to compare k values fairly — otherwise each candidate recomputes its own snapshots and the comparison is confounded by two variables instead of one. It also means M2's drift detection (E-20) and incremental segmentation (E-18) can consume features without triggering a fake segmentation run to produce them.
 
 ---
 
@@ -163,10 +169,10 @@ M1 delivers batch K-means only. Incremental K-means (E-18) and online clustering
 
 **Scope**
 - Feature assembly from RFM snapshot plus category-mix features
-- Feature scaling, persisted with the run so it can be reapplied
+- Feature scaling, with the fitted **`scaler_state` persisted on the run** as JSONB so it can be reapplied. A scaler that is not persisted means no future customer can ever be scored against this model, and M2's incremental segmentation has no warm start
 - K-means with configurable `k`
 - Cluster quality metrics recorded per run (silhouette, inertia)
-- Human-readable segment labelling
+- **Deterministic labelling strategy**: the mapping from cluster index to `segment_label.code` is a rule over centroid position, recorded in `segmentation_model_run.labelling_strategy`. K-means cluster indices are arbitrary and unstable between runs, so labels assigned by hand after each run make migration detection report label-assignment noise as customer behaviour (D-04)
 - Full run parameters, seed, and metrics stored in `segmentation_model_run`
 
 ---
@@ -181,21 +187,31 @@ This epic addresses the central requirement of the problem statement: segments m
 **Core tables**
 | Table | Purpose |
 |---|---|
-| `segmentation_model_run` | One row per algorithm execution: version, parameters, `k`, seed, quality metrics, triggering user, timestamp |
-| `segment` | Segment definitions belonging to a specific run, not global |
-| `customer_rfm_snapshot` | Raw R, F, M values and scores per customer per run |
-| `customer_segment_assignment` | `customer_id`, `segment_id`, `model_run_id`, `valid_from`, `valid_to` (nullable), `rfm_snapshot_id` |
+| `rfm_run` | Owns the analysis window and the feature computation. Parent of the clustering run, not a child of it (D-05) |
+| `customer_rfm_snapshot` | R, F, M values and scores plus 13 behavioural feature columns, per customer per **RFM** run |
+| `segmentation_model_run` | One row per clustering execution over an existing `rfm_run`: version, parameters, `k`, seed, scaler state, labelling strategy, quality metrics, purpose, triggering user, timestamps |
+| `segment` | Segment definitions belonging to a specific run, not global. Carries `label_code` |
+| `segment_label` | Stable segment identity across runs, keyed by code, with a `value_rank` that orders labels by business value (D-04) |
+| `customer_segment_assignment` | `customer_id`, `segment_id`, `model_run_id`, `rfm_snapshot_id`, `is_authoritative`, `valid_from`, `valid_to`, `recorded_at`, `superseded_at` |
 
 **Consequences**
 - Migration detection becomes a query comparing two consecutive assignments for a customer, not a separate subsystem
-- An auditor can reconstruct any customer's segment as of any past date
-- Model comparison (E-27) becomes possible because two runs can coexist over the same population
+- An auditor can reconstruct any customer's segment as of any past date, on either time axis: what was true then, or what the platform believed then
+- Model comparison (E-27) becomes possible because two runs can coexist over the same population, with non-production assignments written as `is_authoritative = false`
+
+> **The D-04 warning, stated explicitly because it is the expensive mistake.**
+> **Migration is a change of `segment_label.code`. It is not a change of `segment_id`.**
+> Segments are scoped to a run, so every run creates new `segment` rows and
+> `segment_id` differs for every customer on every run. A migration report built
+> on `segment_id` reports **100% of customers as migrated, every time**, and it
+> does so without erroring — it just produces a confidently wrong number. This is
+> verified by CHECK 7 in `infra/sql/schema/verify_m1_schema.sql`.
 
 **Scope for M1**
 - Bi-temporal schema, frozen in Sprint 0
 - Assignment closure and insertion logic
-- Migration query and a migration report view
-- Point-in-time segment lookup for the Auditor profile
+- Migration query and a migration report view, comparing `label_code` and classifying direction by `segment_label.value_rank`
+- Point-in-time segment lookup for the Auditor profile, on both time axes
 
 ---
 
@@ -228,6 +244,7 @@ This epic addresses the central requirement of the problem statement: segments m
 **Scope**
 - Public landing page, product catalog browsing, general promotions
 - Loyalty program enrollment form with explicit consent capture
+- **Consent is versioned per purpose per notice version**, not a boolean. `consent_purpose` × `privacy_notice_version` × `consent_record`, with an exclusion constraint preventing overlapping intervals per customer per purpose; withdrawal closes the interval and opens a denial. A `customer.consent_flag` cannot answer the question LFPDPPP actually asks: which purpose was consented, under which notice version, when, through which channel, and whether it was in force at the moment of the run that profiled the customer (D-11)
 - Responsive layout
 
 ---
@@ -284,7 +301,7 @@ Recorded for planning visibility. Not decomposed. Estimates are intentionally ab
 | E-21 | Recommendation Engine — Collaborative Filtering | Requires transaction volume and the microservices platform |
 | E-22 | Recommendation Engine — Content-Based | Requires a populated product attribute model |
 | E-23 | Inventory Availability Linkage | Requires the inventory model and the microservices platform |
-| E-24 | Campaign Management | Requires segments to be stable and queryable by version |
+| E-24 | Campaign Management | Requires segments to be stable and queryable by version. **Campaigns target `segment_label.code`, never `segment.id`.** A campaign that references `segment.id` targets a segment that ceases to exist at the next run — a two-line mistake in M2 that invalidates every experiment built on top of it (E-25, E-26). This is the trap the extension contract in §9 of `docs/data/postgresql-model.md` exists to prevent |
 | E-25 | A/B Experimentation and Control Groups | Requires campaigns |
 | E-26 | Conversion, Uplift and Statistical Testing | Requires experiments to have run long enough to produce data |
 | E-27 | Model Comparison | Enabled by the run-scoped segment model built in M1 |
@@ -294,7 +311,7 @@ Recorded for planning visibility. Not decomposed. Estimates are intentionally ab
 | E-31 | Desktop Analyst Application | Consumes XML from the microservices module only |
 | E-32 | Observability, Logging and Load Testing | Locust load testing requires deployed services |
 | E-33 | GKE Cluster Migration | Optional. Justified only if the incremental and drift services demonstrably need independent autoscaling. Not justified by the phrase "online clustering", which describes an algorithm, not an orchestrator. |
-| E-34 | Data Privacy and Consent Management | Consent capture begins in M1 (E-10); preference and privacy control surfaces are M2/M3 |
+| E-34 | Data Privacy and Consent Management | Consent capture begins in M1 (E-10); preference and privacy control surfaces are M2/M3. Consent is recorded **per purpose per privacy notice version**, with a valid-time interval per record, so the platform can answer whether a given purpose was in force at the moment of a given segmentation run (D-11) |
 
 ---
 
@@ -303,3 +320,4 @@ Recorded for planning visibility. Not decomposed. Estimates are intentionally ab
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 1.0 | 2026-08-08 | Raquel | Initial epic backlog |
+| 1.1 | 2026-08-08 | Raquel | Corrected against `docs/data/postgresql-model.md` §3. E-07 core tables and the D-04 warning that migration is a label change and not a `segment_id` change; E-05 snapshot belongs to `rfm_run`; E-06 deterministic labelling and persisted `scaler_state`; E-02 store-scoped authorization; E-03 `product.attributes`; E-04 returns and ingestion idempotency; E-24 targets `segment_label.code`; E-10 and E-34 versioned consent. |

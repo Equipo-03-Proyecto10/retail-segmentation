@@ -344,7 +344,7 @@ Index support: `ix_customer_segment_assignment_customer_valid (customer_id, vali
 
 ## 7. Verification performed
 
-The schema was applied to PostgreSQL 16.14 and 16 acceptance checks executed. `verify_m1_schema.sql` reproduces this and must be run in CI on every migration.
+The schema was applied to PostgreSQL 16.14 and 16 acceptance checks executed. During Sprint 0, `verify_m1_schema.sql` reproduces this locally after `alembic upgrade head`, and its complete output is attached to the S0-04a issue. CI automation is deferred to Sprint 1.
 
 | # | Check | Result |
 |---|---|---|
@@ -443,7 +443,7 @@ Recommended split at planning:
 
 | Story | Content | Owner | SP | Due |
 |---|---|---|---|---|
-| S0-04a | This document reviewed and frozen; Alembic revision applied; `verify_m1_schema.sql` green in CI | Estefanía, Marcelo review | 3 | Tue 2026-08-11 EOD |
+| S0-04a | This document reviewed and frozen; Alembic revision applied; `verify_m1_schema.sql` green locally with complete output attached to the issue | Estefanía, Marcelo review | 3 | Tue 2026-08-11 EOD |
 | S0-04b | MongoDB collection design + Redis key namespace design | Estefanía | 2 | Wed 2026-08-12 |
 
 That makes R-01's trigger — *not frozen by end of Tuesday* — testable against something specific rather than against a five-part story that is partially done.

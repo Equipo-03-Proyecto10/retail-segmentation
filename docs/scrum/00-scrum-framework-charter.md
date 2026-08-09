@@ -4,7 +4,7 @@
 **Course:** Integración de Aplicaciones Computacionales
 **Team:** Team 03
 **Document owner:** Marcelo (Scrum Master)
-**Version:** 1.0
+**Version:** 1.1
 **Date:** 2026-08-08
 **Status:** Active
 
@@ -122,13 +122,14 @@ A story is Done only when all of the following hold. This list is enforced by th
 1. Every acceptance criterion is verified by a team member other than the author.
 2. Code merged into `develop` through a pull request with at least one approval. Feature branch deleted.
 3. Any database schema change ships as an Alembic migration. `alembic upgrade head` succeeds against an empty database.
-4. The feature runs from a clean clone with no manual steps beyond `docker compose up`, migration, and seed.
-5. Every state-changing operation writes an audit log record identifying the actor, the action, the target entity, and the timestamp.
-6. Unit tests exist for business logic. The `pytest` suite passes.
-7. Errors and significant events are logged through `structlog` with a request or correlation identifier.
-8. No secrets in source. New configuration variables are documented in `.env.example`.
-9. User-facing screens verified at 375 px and 1440 px viewport widths.
-10. The issue is closed with attached evidence: a screenshot, test output, or short screen recording.
+4. A story that changes the database schema ships an updated `infra/sql/schema/verify_m1_schema.sql` that passes. A schema change with no corresponding check is a change nobody can verify.
+5. The feature runs from a clean clone with no manual steps beyond `docker compose up`, migration, and seed.
+6. Every state-changing operation writes an audit log record identifying the actor, the action, the target entity, and the timestamp.
+7. Unit tests exist for business logic. The `pytest` suite passes.
+8. Errors and significant events are logged through `structlog` with a request or correlation identifier.
+9. No secrets in source. New configuration variables are documented in `.env.example`.
+10. User-facing screens verified at 375 px and 1440 px viewport widths.
+11. The issue is closed with attached evidence: a screenshot, test output, or short screen recording.
 
 ### 6.1 Definition of Done — sprint level
 
@@ -278,6 +279,8 @@ The template lives at `docs/scrum/templates/retrospective.md`. Copy it to `docs/
 
 Used when a PO decision is unavailable. Work proceeds on the recorded assumption.
 
+**The register itself lives at [`docs/scrum/assumption-register.md`](assumption-register.md).** It holds A-01 below plus the open assumptions carried from §10 of `docs/data/postgresql-model.md`. This appendix defines the row shape; the register is the record.
+
 ```markdown
 | ID | Date | Question | Working assumption | Impact if wrong | Status | Resolved |
 |----|------|----------|--------------------|-----------------|--------|----------|
@@ -291,3 +294,4 @@ Used when a PO decision is unavailable. Work proceeds on the recorded assumption
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 1.0 | 2026-08-08 | Marcelo | Initial charter |
+| 1.1 | 2026-08-08 | Marcelo | Definition of Done gains one item: a story that changes the database schema ships an updated `verify_m1_schema.sql` that passes. Appendix D points at the now-existing `docs/scrum/assumption-register.md`. The capacity model is unchanged — the S0-04 split into S0-04a and S0-04b does not change the total. |

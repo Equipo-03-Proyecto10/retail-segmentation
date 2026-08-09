@@ -7,6 +7,7 @@ on:
       - "docs/architecture/postgresql-physical-model.md"
       - "infra/sql/schema/**"
       - "web/migrations/**"
+      - "web/requirements-dev.txt"
       - "web/scripts/generate_postgresql_erd.py"
       - "web/tests/test_generate_postgresql_erd.py"
   push:
@@ -41,6 +42,18 @@ jobs:
       - run: alembic upgrade head
         working-directory: web
       - run: python web/scripts/generate_postgresql_erd.py --check
+
+      # S0-04a's acceptance is executable: sixteen checks, nine of which pass by
+      # raising an error. This step asserts on their output, so a migration that
+      # weakens the exclusion constraint, drops the append-only trigger, or
+      # redeclares the constraint INITIALLY DEFERRED fails the build instead of
+      # passing review unnoticed (R-01).
+      #
+      # It runs after the ERD check because the SQL inserts fixture rows. Any
+      # later step that needs a clean database has to migrate its own.
+      - name: Verify the M1 schema acceptance checks
+        run: infra/sql/schema/assert_m1_verification.sh
+
       - run: pytest
       - run: black --check .
       - run: ruff check .

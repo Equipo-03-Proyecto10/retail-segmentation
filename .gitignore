@@ -39,6 +39,8 @@ data/
 *.csv
 *.parquet
 !docs/**/*.csv
+# docs/data/ is documentation (data model, seed strategy), not a dataset directory
+!docs/data/
 
 # IDE and OS
 .idea/

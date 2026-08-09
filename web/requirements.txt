@@ -1,0 +1,11 @@
+# Web system runtime dependencies.
+#
+# Currently only what the migration tooling needs. S0-03 adds Flask, SQLAlchemy
+# models, structlog, argon2-cffi, the Mongo and Redis clients, and pins the rest.
+# Keep this file installable on python:3.12-slim without a compiler: that is the
+# base image S0-02 selected, and Alpine was rejected precisely because the
+# scientific wheels are unavailable for musl.
+
+alembic==1.14.0
+SQLAlchemy==2.0.36
+psycopg[binary]==3.2.3

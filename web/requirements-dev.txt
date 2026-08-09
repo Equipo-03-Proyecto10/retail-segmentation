@@ -1,0 +1,13 @@
+# Development and tooling dependencies. Not installed in the runtime image.
+#
+# black and ruff are required: AGENTS.md makes `black --check .` and
+# `ruff check .` a precondition for reporting a task complete, and alembic.ini
+# runs both as post-write hooks so a generated revision is formatted before it
+# is ever committed. Without them here, `alembic revision` fails on the hook.
+#
+# S0-03 adds pytest and the test fixtures.
+
+-r requirements.txt
+
+black==24.10.0
+ruff==0.8.4

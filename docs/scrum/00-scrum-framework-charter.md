@@ -4,8 +4,8 @@
 **Course:** Integración de Aplicaciones Computacionales
 **Team:** Team 03
 **Document owner:** Marcelo (Scrum Master)
-**Version:** 1.1
-**Date:** 2026-08-08
+**Version:** 1.2
+**Date:** 2026-08-09
 **Status:** Active
 
 All project artifacts — code, comments, commit messages, issues, documentation — are written in English. Spoken meetings are held in Spanish.
@@ -173,13 +173,15 @@ The 0.80 focus factor absorbs ceremony time, context switching, and the fact tha
 
 | Sprint | Weeks | Effective hours | Capacity (SP) | Committed (SP) | Commitment ratio |
 |---|---|---|---|---|---|
-| Sprint 0 | 1 | 48 | 19 | 16 | 84% |
+| Sprint 0 | 1 | 48 | 19 | 22 | **116%** |
 | Sprint 1 | 2 | 96 | 38 | 32 | 84% |
 | Sprint 2 | 1 | 48 | 19 | 15 | 79% |
 | Hardening | 0.6 | ~20 | — | 0 | Defect repair only |
-| **Total** | | **~212** | **76** | **63** | |
+| **Total** | | **~212** | **76** | **69** | |
 
 Sprint 2 is committed lower than Sprint 1 because documentation consolidation and demo preparation consume unpointed capacity in the final week.
+
+**Sprint 0 is the one sprint committed above its capacity line, and the number is left visible on purpose.** This table carried 16 SP until the Sprint 0 backlog reached v1.2, which split S0-04 into S0-04a and S0-04b, moved S0-09 and S0-11 to Sprint 1, and recalculated the load per person. The result is 22 SP against 19, and `03-sprint-00-backlog.md` is the authoritative figure whenever the two disagree. Its own conclusion is that no arrangement of the stories closes the gap, so the gap is carried as expected spillover and reported at Review rather than absorbed by quietly restating the commitment. The final number is confirmed at Sprint 0 Planning on 2026-08-10, where the unestimated labelling rule also gets a point value; if it lands above zero the ratio rises again.
 
 **Total effective capacity for Milestone 1 is approximately 212 person-hours.** This budget covers a working web system, fourteen documentation deliverables, local container infrastructure, and a rehearsed demonstration. It is not generous. Scope is cut when the budget is exceeded; the deadline does not move.
 
@@ -295,3 +297,4 @@ Used when a PO decision is unavailable. Work proceeds on the recorded assumption
 |---|---|---|---|
 | 1.0 | 2026-08-08 | Marcelo | Initial charter |
 | 1.1 | 2026-08-08 | Marcelo | Definition of Done gains one item: a story that changes the database schema ships an updated `verify_m1_schema.sql` that passes. Appendix D points at the now-existing `docs/scrum/assumption-register.md`. The capacity model is unchanged — the S0-04 split into S0-04a and S0-04b does not change the total. |
+| 1.2 | 2026-08-09 | Marcelo | §8 Sprint 0 commitment corrected from 16 SP to 22 SP against a 19 SP capacity, ratio 84% → 116%, milestone total 63 → 69. The figure had not been updated when `03-sprint-00-backlog.md` reached v1.2, leaving the charter, the release plan and the backlog stating two different commitments for the same sprint. The v1.1 note above is accurate about the S0-04 split and was not what caused the drift; moving S0-09 and S0-11 to Sprint 1 and rebalancing ownership did. |

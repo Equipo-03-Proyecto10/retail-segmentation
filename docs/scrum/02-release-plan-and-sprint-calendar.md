@@ -1,8 +1,8 @@
 # Release Plan and Sprint Calendar
 
 **Project:** Dynamic Segmentation and Retail Personalization Platform
-**Version:** 1.1
-**Date:** 2026-08-08
+**Version:** 1.2
+**Date:** 2026-08-09
 **Owner:** Marcelo (Scrum Master), Raquel (Proxy PO)
 
 This document satisfies the Milestone 1 deliverable "Plan de trabajo del semestre".
@@ -31,7 +31,7 @@ gantt
     dateFormat YYYY-MM-DD
     axisFormat %b %d
     section Sprints
-    Sprint 0 foundation 16 SP    :s0, 2026-08-10, 5d
+    Sprint 0 foundation 22 SP    :s0, 2026-08-10, 5d
     Sprint 1 build 32 SP         :active, s1, 2026-08-17, 12d
     Sprint 2 pipeline 15 SP      :s2, 2026-08-31, 5d
     section Freeze
@@ -41,7 +41,7 @@ gantt
 
 | Sprint | Start | End | Working days | Committed SP | Sprint Goal |
 |---|---|---|---|---|---|
-| Sprint 0 | Mon 2026-08-10 | Fri 2026-08-14 | 5 | 16 | One command brings up the full local stack against a frozen database schema, and every architectural contract the other three components depend on is written down and agreed. |
+| Sprint 0 | Mon 2026-08-10 | Fri 2026-08-14 | 5 | 22 | One command brings up the full local stack against a frozen database schema, and every architectural contract the other three components depend on is written down and agreed. |
 | Sprint 1 | Mon 2026-08-17 | Fri 2026-08-28 | 10 | 32 | An authenticated analyst can log in, administer users and master data, and see it persisted in PostgreSQL with a complete audit trail, running entirely in containers. |
 | Sprint 2 | Mon 2026-08-31 | Fri 2026-09-04 | 5 | 15 | An analyst can execute a full segmentation run end to end and inspect the resulting segments, RFM distribution and customer migrations in the dashboard, with the run recorded for audit. |
 | Hardening | Sat 2026-09-05 | Mon 2026-09-07 | 3 | 0 | The demonstration runs from a clean clone without intervention, and every M1 document is committed. |
@@ -72,7 +72,7 @@ Written async check-ins occur every weekday and are not listed.
 
 ## 3. Sprint goals in detail
 
-### Sprint 0 — Foundation and contracts (Aug 10–14, 16 SP)
+### Sprint 0 — Foundation and contracts (Aug 10–14, 22 SP against 19 SP of capacity)
 
 Sprint 0 is deliberately serialized. Four people cannot work in parallel on a codebase that does not yet exist: without a frozen schema, a fixed authentication contract, and agreed repository conventions, the result is four branches carrying four interpretations of the data model and a second week spent resolving merge conflicts.
 
@@ -131,21 +131,25 @@ Mapping course-required deliverables to the sprint that produces them and the ow
 
 | # | Required deliverable | Sprint | Owner | Location |
 |---|---|---|---|---|
-| 1 | Problem analysis document | S0–S1 | Estefanía | `docs/analysis/problem-analysis.md` |
+| 1 | Problem analysis document | S0–S1 | Raquel creates the skeleton (S0-11); Estefanía writes the content | `docs/analysis/problem-analysis.md` |
 | 2 | Functional and non-functional requirements | S1 | Raquel | `docs/requirements/` |
 | 3 | User stories | S0–S2 | Raquel | GitHub Issues + `docs/requirements/user-stories.md` |
-| 4 | Business rules | S1 | Estefanía | `docs/requirements/business-rules.md` |
+| 4 | Business rules | S1 | Raquel creates the skeleton (S0-11); Estefanía writes the content | `docs/requirements/business-rules.md` |
 | 5 | Profile and permission matrix | S1 | Marcelo | `docs/security/permission-matrix.md` |
 | 6 | Architecture diagrams | S0–S2 | Marcelo | `docs/architecture/` |
 | 7 | PostgreSQL model (conceptual, logical, physical) | S0 | Estefanía | `docs/data/postgresql-model.md`, `infra/sql/schema/001_m1_initial_schema.sql`, `infra/sql/schema/verify_m1_schema.sql` |
 | 8 | MongoDB design | S0 | Estefanía | `docs/data/mongodb-design.md` |
-| 9 | Redis design | S0 | Marcelo | `docs/data/redis-design.md` |
+| 9 | Redis design | S0 | Estefanía | `docs/data/redis-design.md` |
 | 10 | Interface prototypes | S1 | Raquel | `docs/ux/` |
 | 11 | Minimum viable web system | S1–S2 | Raquel, Marcelo | `web/` |
 | 12 | Local containers | S0 | Max | `infra/docker-compose.yml` |
 | 13 | Organized repository | S0 | Marcelo | repository root |
 | 14 | Semester work plan | S0 | Marcelo | this document |
 | 15 | Technical demonstration | Hardening | Whole team | `docs/demo/demo-script.md` |
+
+**The Owner column names the person accountable for the deliverable, which is not always the person who creates the file.** Deliverables 1 and 4 are the case where the two differ: S0-11 has Raquel create both documents with their section structure and identifier scheme, and Estefanía writes the content in Sprint 1. Both names appear because a single name in this column has twice been read as "and nobody else touches it". Where one name appears, one person does the whole deliverable.
+
+Deliverable 9 previously named Marcelo, which contradicted S0-04b — one story, owned by Estefanía, covering the MongoDB collection design and the Redis key namespace design together. Splitting the two halves of one story across two people was an error in this table, not a plan.
 
 Nine architecture diagrams are required: context, container, component, deployment, network, sequence, inter-application communication, authentication, and data storage. They are split across sprints rather than produced in a single block, because the deployment and network diagrams cannot be accurate until the infrastructure exists.
 
@@ -210,4 +214,5 @@ Coarse sequencing only. Detailed planning occurs at the corresponding milestone 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 1.0 | 2026-08-08 | Marcelo | Initial release plan |
+| 1.2 | 2026-08-09 | Marcelo | Sprint 0 commitment corrected from 16 SP to 22 SP in the Gantt, the §2 sprint table and the §3 heading, matching `03-sprint-00-backlog.md` v1.2 and `00-scrum-framework-charter.md` §8. Deliverable 9 (Redis design) moved from Marcelo to Estefanía, who owns S0-04b — the story that produces it. Deliverables 1 and 4 now state the skeleton/content split between Raquel and Estefanía instead of naming one owner for a file two people work on. |
 | 1.1 | 2026-08-08 | Marcelo | Corrected against `docs/data/postgresql-model.md` §3. Sprint 0 deliverable owners aligned with the rebalancing in `03-sprint-00-backlog.md` (ADR-003 to Max, coding standards to Raquel) — a pre-existing inconsistency between the two documents. Frozen ERD line names the traceability model. Sprint 2 critical acceptance test restated on both time axes and on label-based migration. Deliverable row 7 lists the SQL and verification script paths. Demo step 9 marked label-based. §7 M2 outlook binds campaign targeting to segment labels. |

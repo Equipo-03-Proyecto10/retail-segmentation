@@ -32,3 +32,16 @@ Numbered, immutable once accepted. Supersede rather than edit.
 | Permission matrix | [`security/`](security/) |
 | Interface prototypes | [`ux/`](ux/) |
 | Demo script | [`demo/`](demo/) |
+
+## Data model (S0-04)
+
+| Artifact | Location |
+|---|---|
+| PostgreSQL data model — design document | [`data/postgresql-model.md`](data/postgresql-model.md) |
+| PostgreSQL physical model — generated Mermaid | [`architecture/postgresql-physical-model.md`](architecture/postgresql-physical-model.md) |
+| Physical model — authoritative DDL | [`../infra/sql/schema/001_m1_initial_schema.sql`](../infra/sql/schema/001_m1_initial_schema.sql) |
+| Schema verification script | [`../infra/sql/schema/verify_m1_schema.sql`](../infra/sql/schema/verify_m1_schema.sql) |
+
+The Mermaid physical model is the reviewable schema artifact: CI reflects a
+database migrated to Alembic `head` and fails if the committed model differs.
+The executable DDL remains the source of truth for columns and relationships.

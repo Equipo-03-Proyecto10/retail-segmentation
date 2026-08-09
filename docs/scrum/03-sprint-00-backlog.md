@@ -4,6 +4,7 @@
 **Dates:** Mon 2026-08-10 → Fri 2026-08-14 (5 working days)
 **Capacity:** 19 SP · **Committed:** 16 SP · **Commitment ratio:** 84%
 **Scrum Master:** Marcelo · **Proxy PO:** Raquel
+**Version:** 1.1
 
 ---
 
@@ -22,17 +23,20 @@ Execution order:
 ```mermaid
 flowchart TD
     A[S0-01 Repo and board] --> B[S0-02 Container stack]
-    A --> C[S0-04 Frozen ERD<br/>blocks everything]
+    A --> C[S0-04a Frozen ERD<br/>blocks everything]
+    A --> H[S0-05 ADR-001<br/>needs only user_account and role]
     B --> D[S0-03 Flask skeleton]
-    C --> E[S0-05 ADR-001<br/>S0-06 ADR-002]
+    C --> E[S0-06 ADR-002]
+    C --> I[S0-04b Mongo + Redis design]
     E --> F[S0-08 Seed dataset]
     D --> G[Sprint 1 unblocked]
     F --> G
+    H --> G
     classDef crit fill:#FAEEDA,stroke:#BA7517,color:#412402
     classDef norm fill:#EEEDFE,stroke:#7F77DD,color:#26215C
     classDef out fill:#E1F5EE,stroke:#1D9E75,color:#04342C
     class C,E,F crit
-    class B,D norm
+    class B,D,H,I norm
     class G out
 ```
 
@@ -40,13 +44,13 @@ Day by day:
 
 | Day | Work |
 |---|---|
-| Mon | S0-01 repository and board, then S0-02 container stack; S0-04 ERD begins |
-| Tue | S0-04 ERD frozen; ADR-001, ADR-002, ADR-003 start |
-| Wed | S0-08 seed dataset; S0-09 baseline diagrams |
+| Mon | S0-01 repository and board, then S0-02 container stack; S0-04a ERD begins; S0-05 ADR-001 begins in parallel |
+| Tue | S0-04a ERD frozen; ADR-002 and ADR-003 start |
+| Wed | S0-04b MongoDB and Redis design; S0-08 seed dataset; S0-09 baseline diagrams |
 | Thu | S0-10 standards; S0-11 requirements skeleton |
 | Fri | Integration verification, Review, Retrospective |
 
-**S0-04 blocks everything downstream.** It is the highest-priority item in the sprint and it is not permitted to slip past Tuesday.
+**S0-04a blocks everything downstream.** It is the highest-priority item in the sprint and it is not permitted to slip past Tuesday. S0-04b blocks nothing inside Sprint 0 and is due Wednesday.
 
 ---
 
@@ -107,6 +111,10 @@ A monorepo is chosen over separate repositories per component. The requirement t
 - `web/Dockerfile` on `python:3.12-slim`, non-root user, layer-cached dependency install
 - `.env.example` listing every required variable with safe defaults
 - `Makefile` targets: `up`, `down`, `migrate`, `seed`, `test`, `logs`, `reset`
+- Verify that the `btree_gist` and `pg_trgm` extensions are available in the PostgreSQL image; the first migration creates both and the schema does not apply without them (`docs/data/postgresql-model.md` §2)
+- `.env.example` carries **two** connection strings, not one: `DATABASE_URL` for the restricted runtime role and `DATABASE_MIGRATION_URL` for the schema owner (D-14)
+
+**Why two DSNs.** `audit_log` is append-only, enforced by a statement trigger *and* by grants. A `REVOKE` has no effect on the role that owns the schema, so if the application connects as the owner the append-only guarantee is decoration. This is a hard dependency of S0-04a on this story and it has to be settled while the compose file is being written, not at Wednesday's refinement.
 
 **Base image decision.** Alpine is rejected. scikit-learn and pandas do not publish musl wheels, so an Alpine base forces source compilation and multi-minute rebuilds. `python:3.12-slim` is the correct default for this stack.
 
@@ -128,6 +136,8 @@ A monorepo is chosen over separate repositories per component. The requirement t
 - Configuration classes: development, testing, production, read from environment
 - Blueprint registration: `public`, `auth`, `admin`, `catalog`, `analytics`, `audit`, `api`
 - SQLAlchemy initialization; Alembic initialized with one empty baseline revision
+- Alembic configured in `env.py` with the naming convention from `docs/data/postgresql-model.md` §2, so autogenerate does not emit anonymous constraints that cannot be dropped in a later migration
+- The application connects as the restricted runtime role (`DATABASE_URL`), never as the schema owner; migrations use `DATABASE_MIGRATION_URL` (D-14)
 - MongoDB and Redis client initialization with connection pooling
 - `structlog` configured for JSON output with a request-scoped correlation identifier
 - Base Jinja2 layout, static asset structure, error handlers for 400, 401, 403, 404, 500
@@ -154,8 +164,8 @@ Rejected for M1: React (Jinja2 is required and sufficient), Celery (a manually t
 
 ---
 
-### S0-04 — Frozen data model including bi-temporal segment traceability
-**Owner:** Estefanía (lead) + Marcelo · **Points:** 5 · **Type:** docs + feature · **Blocks:** S0-05, S0-06, S0-08, and all Sprint 1 stories
+### S0-04a — Frozen data model including bi-temporal segment traceability
+**Owner:** Estefanía (lead) + Marcelo (review) · **Points:** 3 · **Type:** docs + feature · **Due:** Tue 2026-08-11 EOD · **Blocks:** S0-06, S0-08, and all Sprint 1 stories
 
 > As a team, we need the PostgreSQL schema frozen and the segment assignment model bi-temporal so that segments can be updated without losing historical traceability, which is the central requirement of the problem statement.
 
@@ -163,45 +173,93 @@ This is the highest-value story in the sprint. The problem statement's core requ
 
 **The rule:** there is no mutable `customer.segment_id`. Segment assignment is never updated in place. Each run closes the prior assignment and inserts a new one.
 
+The design is recorded in `docs/data/postgresql-model.md` (v0.9, PROPOSED, freezes at Sprint 0 Planning 2026-08-10), with the physical model in `infra/sql/schema/001_m1_initial_schema.sql`. The decision identifiers below (D-01 … D-15) refer to §3 of that document. Every entry in the table below is a change from this backlog's first version; §8 of the model document lists them side by side.
+
 **Core traceability tables**
 
 | Table | Key columns | Purpose |
 |---|---|---|
-| `segmentation_model_run` | `id`, `algorithm`, `algorithm_version`, `parameters` (JSONB), `k`, `random_seed`, `silhouette`, `inertia`, `analysis_window_start`, `analysis_window_end`, `triggered_by_user_id`, `started_at`, `completed_at`, `status` | One row per algorithm execution |
-| `segment` | `id`, `model_run_id`, `label`, `centroid` (JSONB), `member_count`, `description` | Segment definitions scoped to a run, not global |
-| `customer_rfm_snapshot` | `id`, `customer_id`, `model_run_id`, `recency_days`, `frequency`, `monetary`, `r_score`, `f_score`, `m_score`, `computed_at` | Immutable RFM values per run |
-| `customer_segment_assignment` | `id`, `customer_id`, `segment_id`, `model_run_id`, `rfm_snapshot_id`, `valid_from`, `valid_to` (nullable), `distance_to_centroid` | Bi-temporal assignment history |
+| `rfm_run` | `id`, `analysis_window_start`, `analysis_window_end`, `reference_date`, `quintile_strategy`, `customer_scope`, `include_returns`, `code_version`, `correlation_id`, `status`, `completed_at` | **Parent of the clustering run.** Owns the analysis window and the feature computation (D-05) |
+| `customer_rfm_snapshot` | `id`, `rfm_run_id`, `customer_id`, `recency_days`, `frequency`, `monetary`, `r_score`, `f_score`, `m_score`, `rfm_cell`, plus 13 behavioural feature columns | Immutable feature values per customer per **RFM** run, not per segmentation run (D-05, D-06) |
+| `segmentation_model_run` | `id`, `rfm_run_id`, `algorithm`, `algorithm_version`, `library_version`, `code_version`, `k`, `random_seed`, `feature_set_version`, `scaler_kind`, `scaler_state`, `labelling_strategy`, `purpose`, `silhouette`, `inertia`, `status`, `completed_at`, `promoted_at` | One row per clustering execution over an existing `rfm_run` (D-05) |
+| `segment` | `id`, `model_run_id`, `cluster_index`, `label_code` → `segment_label`, `centroid_scaled`, `member_count`, `revenue_share` | Segment definitions scoped to a run, not global. `label_code` is what makes them comparable (D-04) |
+| `segment_label` | `code` (PK), `name`, `description`, `value_rank`, `display_order` | **Stable segment identity across runs.** Six seeded labels. `value_rank` makes migration direction a query rather than application logic (D-04) |
+| `customer_segment_assignment` | `id`, `customer_id`, `segment_id`, `model_run_id`, `rfm_snapshot_id`, `is_authoritative`, `valid_from`, `valid_to`, `recorded_at`, `superseded_at`, `closed_by_run_id`, `distance_to_centroid` | Bi-temporal assignment history: `valid_from`/`valid_to` is **valid time**, `recorded_at`/`superseded_at` is **decision time** (D-01, D-02) |
 
 **Consequences that make later epics cheap**
-- Migration detection is a query over two consecutive assignments for a customer, not a separate subsystem
-- Point-in-time lookup: the segment of customer X on date D is the assignment where `valid_from <= D` and (`valid_to > D` or `valid_to IS NULL`)
-- Model comparison becomes possible because two runs coexist over the same population
+- Migration detection is a query over two consecutive assignments for a customer, compared on `segment_label.code` — never on `segment_id`, which differs for every customer on every run because segments are run-scoped (D-04)
+- Point-in-time lookup: the segment of customer X on date D is the assignment where `valid_from <= D` and (`valid_to > D` or `valid_to IS NULL`), optionally constrained on the decision axis to ask what the platform believed at time T
+- Model comparison becomes possible because two runs coexist over the same population: non-production runs write assignments with `is_authoritative = false`, so uniqueness applies only to authoritative rows (D-02)
+- One feature set, many clusterings: comparing k=4 against k=6 uses identical features because both point at the same `rfm_run` (D-05)
 
 **Tasks**
 - Conceptual model: entities and relationships
 - Logical model: full attribute set, keys, constraints
 - Physical model: DDL as the first substantive Alembic migration
-- Transactional tables: `customer`, `product`, `category`, `store`, `sales_transaction`, `sales_transaction_line`, `inventory_availability`
+- Transactional tables: `customer`, `product`, `category`, `store`, `sales_channel`, `sales_transaction`, `sales_transaction_line`, `inventory_availability`
 - Security tables: `user_account`, `role`, `permission`, `role_permission`, `user_role`
 - Audit table: `audit_log`, append-only
-- Partial unique index enforcing one open assignment per customer: unique on `customer_id` where `valid_to IS NULL`
+- **Exclusion constraint** enforcing non-overlapping authoritative assignment intervals per customer, replacing the partial unique index (D-03):
+  ```sql
+  EXCLUDE USING gist (customer_id WITH =, tstzrange(valid_from, valid_to) WITH &&)
+    WHERE (is_authoritative AND superseded_at IS NULL)
+    DEFERRABLE INITIALLY IMMEDIATE
+  ```
+  It is `DEFERRABLE INITIALLY IMMEDIATE` because both properties are needed and only this mode gives both: overlaps fail at statement time with statement context, *and* the pipeline may opt into `SET CONSTRAINTS ... DEFERRED` inside the run transaction so it can insert the new assignment before closing the old one. `NOT DEFERRABLE` forbids the second; `INITIALLY DEFERRED` surfaces the error at `COMMIT` with no statement context and loses fail-fast behaviour for everyone else (D-03)
+- Deterministic cluster-to-label mapping rule: a rule over centroid position, recorded in `segmentation_model_run.labelling_strategy`. K-means cluster indices are arbitrary and unstable between runs, so a human naming clusters by hand after each run makes migration detection report label-assignment noise as customer behaviour (D-04)
+- The 13 behavioural feature columns on `customer_rfm_snapshot`: `top_category_id`, `top_category_share`, `distinct_category_count`, `dominant_channel_code`, `digital_share`, `dominant_store_id`, `distinct_store_count`, `avg_order_value`, `avg_interpurchase_days`, `promo_response_rate`, `return_count`, `return_amount`, `tenure_days`. R, F and M cover two of the six behaviour changes the problem statement names; these cover the rest, and they are also the category-mix features E-06 needs (D-06)
+- `sales_transaction.transaction_type ∈ {sale, return}` with a sign constraint and an optional `original_transaction_id`. Returns are first-class negative rows: public retail datasets encode credit notes as negative-quantity documents, and treating them as sales inflates Monetary. A return is permitted without an original, because historical imports contain credit notes whose original falls outside the window (D-07)
+- Natural key on `sales_transaction`: `UNIQUE (source_system, external_transaction_id)`. Without it S0-08's "`make seed` twice, row counts unchanged" is unachievable, and the CSV upload path has no defined behaviour on re-upload (D-08)
+- `user_role.scope_store_id` with `role.scope_kind ∈ {global, store}` and a trigger enforcing consistency. Store Manager sees one store; retrofitting row-level scope in M3 touches every authorization decision (D-10)
+- Versioned consent: `consent_purpose` × `privacy_notice_version` × `consent_record`, with an exclusion constraint preventing overlapping intervals per customer per purpose. A boolean cannot answer which purpose was consented, under which notice version, and whether it was in force at the moment of the run that profiled the customer (D-11)
+- `sales_transaction_line.category_id` copied from the product at ingestion. `product.category_id` is mutable master data; if category-mix features read it live, re-categorizing one product silently rewrites the feature history of every past run (D-12)
+- Two database roles and two DSNs: `audit_log` append-only is enforced by a statement trigger **and** by grants, and a `REVOKE` has no effect on the role that owns the schema. Hard dependency on S0-02 and S0-03 (D-14)
 - Indexes for the migration query and the point-in-time query
-- MongoDB collection design: `ingestion_run`, `ingestion_error`, `model_run_telemetry`, `recommendation_event`
-- Redis key namespace design: sessions, revocation denylist, query cache, rate-limit counters, distributed locks, with TTLs per namespace
 
 **Acceptance criteria**
-- Given the migration, when `alembic upgrade head` runs against an empty database, then all tables, constraints and indexes are created
-- Given a customer with an open assignment, when a second open assignment is inserted, then the partial unique index rejects it
-- Given two completed runs, when the point-in-time query is executed for a date between them, then it returns exactly one segment per customer
+
+Acceptance is executable, not judged by reading. `infra/sql/schema/verify_m1_schema.sql` contains 16 numbered checks; the criteria below reference them by number. Checks 2, 3, 9, 10, 11, 12, 13, 14 and 15 pass by *raising* an error — an `ERROR` line there is the success condition, and a silent success is the failure.
+
+- Given an empty database, when `alembic upgrade head` runs, then the DDL applies with zero errors, producing 27 tables, 3 views and 75 indexes
+- Given the migrated database, when `verify_m1_schema.sql` runs, then **all 16 checks behave as their `expected:` lines state**
+- Given a customer with an open authoritative assignment, when a second open one is inserted, then it is rejected **at statement time** — CHECK 2. If it reports `INSERT 0 1` the constraint was declared `INITIALLY DEFERRED` and fail-fast has been lost
+- Given a customer with an existing assignment, when an **overlapping closed** interval is inserted, then it is rejected — CHECK 3. The originally specified partial unique index permitted this
+- Given a production run, when a candidate run writes assignments over the same population, then both coexist — CHECK 4. The original index made this impossible
+- Given the run transaction, when it opts into `SET CONSTRAINTS ... DEFERRED`, then insert-then-close ordering commits without error — CHECK 5
+- Given two completed runs, when the point-in-time query runs for a date between them, then it returns exactly one segment per customer at both dates — CHECK 6
+- Given two runs over the same population, when the migration report runs, then it counts **label** changes and not `segment_id` changes — CHECK 7
+- Given two consecutive snapshots, when the behaviour delta view runs, then it identifies category shift and channel switch — CHECK 8
+- Given an `audit_log` row, when `UPDATE` or `DELETE` is attempted, then both are rejected — CHECK 9
+- Given a return with a positive amount, an in-store transaction with no store, a re-ingested source transaction, an overlapping consent interval, a store-scoped role with no store, and a global role carrying a store, then each is rejected — CHECKS 10, 11, 12, 13, 14, 15
+- Given a transaction line, when `net_amount` is read, then it is computed rather than trusted from input — CHECK 16
 - Given the ERD document, when reviewed, then every table has a stated purpose and every foreign key a stated cardinality
+
+---
+
+### S0-04b — MongoDB collection design and Redis key namespace design
+**Owner:** Estefanía · **Points:** 2 · **Type:** docs · **Due:** Wed 2026-08-12 · **Depends on:** S0-04a
+
+> As a team, we need the document and cache stores designed with the same rigour as the relational one, so that the three-store boundary is defensible rather than decorative.
+
+Split out of S0-04 so that R-01's trigger — *not frozen by end of Tuesday* — is testable against something specific rather than against a five-part story that is partially done. The relational freeze blocks the sprint; these two designs block nothing inside Sprint 0.
+
+**Tasks**
+- MongoDB collection design: `ingestion_run`, `ingestion_error`, `model_run_telemetry`, `recommendation_event`
+- Redis key namespace design: sessions, revocation denylist, query cache, rate-limit counters, distributed locks, with TTLs per namespace
+- State the crossing point explicitly: `ingestion_run.telemetry_ref` holds a MongoDB `ObjectId` as a plain string, and **no referential integrity is claimed across stores**. PostgreSQL keeps the counts that must join; MongoDB keeps the detail whose shape varies (`docs/data/postgresql-model.md` §5.4)
+
+**Acceptance criteria**
+- Given the MongoDB design, when reviewed, then every collection has a stated purpose, a document shape, and a justification for why it is not a relational table
 - Given the Redis design, when reviewed, then every key pattern has a documented TTL and eviction expectation
 
 ---
 
 ### S0-05 — ADR-001 Authentication and Token Lifecycle
-**Owner:** Marcelo · **Points:** 2 · **Type:** docs · **Depends on:** S0-04 · **Blocks:** all authentication work in every component
+**Owner:** Marcelo · **Points:** 2 · **Type:** docs · **Blocks:** all authentication work in every component
 
 > As a team, we need the authentication scheme fixed in one document so that the web, mobile and desktop clients do not each invent their own and so that a single revocation mechanism serves all three.
+
+**This story no longer depends on S0-04.** The dependency was removed deliberately, not by accident: authentication design needs only the shape of `user_account` and `role`, and both are settled in `docs/data/postgresql-model.md` (D-09, D-10). Marcelo can start ADR-001 on Monday morning in parallel with the schema freeze rather than waiting for Tuesday, which removes half a day from the critical path in a sprint the team's own numbers say is over capacity (§8 of the model document).
 
 The specification requires JWT, but the web system is server-rendered. Left unresolved, teams build Flask session cookies for the web and JWT for the API clients, duplicating authentication and producing two revocation paths that disagree.
 
@@ -230,7 +288,7 @@ The specification requires JWT, but the web system is server-rendered. Left unre
 ---
 
 ### S0-06 — ADR-002 Data Ownership Map
-**Owner:** Estefanía · **Points:** 1 · **Type:** docs · **Depends on:** S0-04
+**Owner:** Estefanía · **Points:** 1 · **Type:** docs · **Depends on:** S0-04a
 
 > As a team, we need each table, collection and key namespace assigned to exactly one writing component so that shared databases do not become accidental coupling between the web system and the microservices module.
 
@@ -272,7 +330,7 @@ The desktop application consumes XML exclusively; the mobile application consume
 ---
 
 ### S0-08 — Seed dataset with realistic transaction history
-**Owner:** Estefanía · **Points:** 3 · **Type:** feature · **Depends on:** S0-04
+**Owner:** Estefanía · **Points:** 3 · **Type:** feature · **Depends on:** S0-04a
 
 > As a team, we need a realistic multi-month transaction history so that RFM quintiles are meaningful and segment migrations are observable in the demonstration.
 
@@ -298,7 +356,7 @@ Nobody usually assigns this, and its absence is what kills the demonstration. RF
 ---
 
 ### S0-09 — Baseline architecture diagrams
-**Owner:** Marcelo · **Points:** 2 · **Type:** docs · **Depends on:** S0-04, S0-05
+**Owner:** Marcelo · **Points:** 2 · **Type:** docs · **Depends on:** S0-04a, S0-05
 
 > As a team, we need the context, container, authentication and data storage diagrams so that component responsibilities are agreed before Sprint 1 development begins.
 
@@ -363,7 +421,8 @@ The commit history of these documents is itself evidence that the process was fo
 | S0-01 Repository, organization and board | Marcelo | 2 | chore |
 | S0-02 Local container stack | Max | 3 | chore |
 | S0-03 Flask application skeleton | Raquel | 3 | chore |
-| S0-04 Frozen data model, bi-temporal traceability | Estefanía + Marcelo | 5 | docs + feature |
+| S0-04a Frozen data model, bi-temporal traceability | Estefanía + Marcelo | 3 | docs + feature |
+| S0-04b MongoDB and Redis design | Estefanía | 2 | docs |
 | S0-05 ADR-001 Authentication | Marcelo | 2 | docs |
 | S0-06 ADR-002 Data Ownership | Estefanía | 1 | docs |
 | S0-07 ADR-003 API Standards | Marcelo | 2 | docs |
@@ -372,6 +431,8 @@ The commit history of these documents is itself evidence that the process was fo
 | S0-10 Engineering standards | Marcelo | 1 | docs |
 | S0-11 Requirements skeleton | Raquel | 1 | docs |
 | **Total** | | **25** | |
+
+The S0-04 split into S0-04a (3 SP) and S0-04b (2 SP) leaves the total unchanged at 25 SP. No other estimate has been revised.
 
 The committed total is 25 SP against a stated commitment of 16 SP. This is a deliberate overload of the sprint board, and it must be resolved at Sprint 0 Planning rather than by pretending the numbers add up. Two options, to be decided by the team on Monday:
 
@@ -386,18 +447,35 @@ Recommendation: option 1, moving S0-09 (diagrams) and S0-11 (requirements skelet
 
 | Person | Stories | SP | Effective hours available | SP capacity at 2.5 h/SP |
 |---|---|---|---|---|
-| Marcelo | S0-01, S0-05, S0-07, S0-10, ½ S0-04 | 10.5 | 12 | 4.8 |
-| Estefanía | S0-06, S0-08, ½ S0-04 | 6.5 | 12 | 4.8 |
-| Raquel | S0-03 | 3 | 12 | 4.8 |
-| Max | S0-02 | 3 | 12 | 4.8 |
+| Marcelo | S0-01 (2), S0-05 (2), S0-07 (2), S0-10 (1), ½ S0-04a+b (2.5) | 9.5 | 12 | 4.8 |
+| Estefanía | S0-06 (1), S0-08 (3), ½ S0-04a+b (2.5) | 6.5 | 12 | 4.8 |
+| Raquel | S0-03 (3) | 3 | 12 | 4.8 |
+| Max | S0-02 (3) | 3 | 12 | 4.8 |
+| **Total** | | **22** | | |
 
-Marcelo is loaded at more than double his capacity. This is the single-point-of-failure risk (R-03) appearing in the very first sprint. Required rebalancing before commitment:
+> **Arithmetic correction.** Marcelo's row previously read 10.5 SP, which the listed stories do not sum to: 2 + 2 + 2 + 1 + 2.5 = 9.5. The figure 10.5 is what the row sums to if S0-09 (2 SP) is substituted for S0-10 (1 SP), so one of the two cells was wrong and it is not possible to tell which from the document alone. **The story list is treated as correct here because the surrounding text keeps S0-10 in Sprint 0 and moves S0-09 out.** If the intent was the reverse, the correct figure is 10.5 and the story list needs fixing instead. Resolve at planning. The correction lowers Marcelo's load; it does not change the conclusion below, and the sprint total of 22 SP is unaffected either way.
+
+Marcelo is loaded at nearly double his capacity. This is the single-point-of-failure risk (R-03) appearing in the very first sprint. Required rebalancing before commitment:
 
 - **S0-07 (ADR-003 API Standards) moves to Max.** He owns infrastructure and will implement rate limiting and health endpoints in M2, so he is the correct owner of the contract that specifies them.
 - **S0-10 (Engineering standards) moves to Raquel.** She writes the most application code and will be the primary consumer of the conventions.
-- **S0-04 leads with Estefanía**, with Marcelo reviewing rather than co-authoring.
+- **S0-04a and S0-04b lead with Estefanía**, with Marcelo reviewing rather than co-authoring.
 
-Rebalanced: Marcelo 5, Estefanía 9, Raquel 4, Max 5. Estefanía remains over capacity because S0-04 and S0-08 are both hers and both are on the critical path. Mitigation: S0-08 (seed dataset) may extend into Monday of Sprint 1 without blocking anyone, since nothing in Sprint 1 week 1 depends on seeded data.
+| Person | Stories after rebalancing | SP | SP capacity | Ratio |
+|---|---|---|---|---|
+| Marcelo | S0-01 (2), S0-05 (2) | 4 | 4.8 | 0.83 |
+| Estefanía | S0-04a (3), S0-04b (2), S0-06 (1), S0-08 (3) **+ the labelling rule, unestimated** | 9 + ? | 4.8 | **≥ 1.88** |
+| Raquel | S0-03 (3), S0-10 (1) | 4 | 4.8 | 0.83 |
+| Max | S0-02 (3), S0-07 (2) | 5 | 4.8 | 1.04 |
+| **Total** | | **22 + ?** | 19 | **≥ 1.16** |
+
+> **Second arithmetic correction.** This paragraph previously read "Rebalanced: Marcelo 5, Estefanía 9, Raquel 4, Max 5", which sums to 23 against a sprint total of 22. With S0-04 moved wholly to Estefanía, Marcelo holds S0-01 and S0-05 only, which is 4 SP.
+
+**New work nobody estimated: the deterministic labelling rule.** D-04 requires that the mapping from K-means cluster index to `segment_label.code` be a deterministic rule over centroid position, recorded in `segmentation_model_run.labelling_strategy`. This is not a line in the DDL — it is an algorithm that has to be designed, implemented and tested, and until it exists the migration report reports label-assignment noise as customer behaviour. It falls to Estefanía, on top of a load already at 9 SP against a 4.8 SP capacity.
+
+**It is deliberately left unestimated here.** Nobody estimates alone (§9 of the charter), so the number belongs to Planning Poker on Monday and not to this document. What can be stated without estimating it: **Estefanía is at 1.88× her individual capacity before this work is counted at all**, and every additional point makes that worse.
+
+Estefanía remains over capacity because S0-04a, S0-04b and S0-08 are all hers and all are on the critical path. The existing mitigation — S0-08 (seed dataset) may extend into Monday of Sprint 1 without blocking anyone, since nothing in Sprint 1 week 1 depends on seeded data — moves 3 SP out of the week and still leaves her at 6 SP plus the labelling rule against 4.8. **The sprint does not close on these numbers, and no arrangement of them makes it close.** That is the conclusion to bring to planning, not a problem to solve inside this document.
 
 ---
 
@@ -405,8 +483,8 @@ Rebalanced: Marcelo 5, Estefanía 9, Raquel 4, Max 5. Estefanía remains over ca
 
 | Risk | Mitigation |
 |---|---|
-| S0-04 slips past Tuesday and blocks the whole sprint | Timeboxed to two days. If incomplete Tuesday evening, the transactional tables are frozen and the traceability tables are finalized Wednesday morning; nothing else may start until both are done. |
-| The bi-temporal model is agreed but misunderstood, and Sprint 1 code writes mutable assignments | The partial unique index makes the incorrect pattern fail at the database level rather than silently succeed. |
+| S0-04a slips past Tuesday and blocks the whole sprint | Timeboxed to two days. If incomplete Tuesday evening, the transactional tables are frozen and the traceability tables are finalized Wednesday morning; nothing else may start until both are done. |
+| The bi-temporal model is agreed but misunderstood, and Sprint 1 code writes mutable assignments | The `EXCLUDE USING gist` constraint on `customer_segment_assignment` makes the incorrect pattern fail at the database level rather than silently succeed. It is strictly stronger than the partial unique index it replaced: that index caught only two *open* assignments, whereas the exclusion constraint also rejects two **closed intervals that overlap** — the more likely bug, and the one that produces history which looks plausible while being wrong (D-03). |
 | Nobody has used Alembic before | Timeboxed spike inside S0-03. If not working by Tuesday, raise as a blocker; it is not optional. |
 | GCP billing or quota problems surface late | Max verifies project billing, enabled APIs and quota on Day 1, even though deployment is Sprint 2. |
 
@@ -420,4 +498,13 @@ Beyond the standard story-level Definition of Done:
 - `alembic upgrade head` succeeds against an empty database
 - ADR-001, ADR-002 and ADR-003 are committed and marked Accepted
 - The ERD is committed and its DDL matches the applied migration
+- `infra/sql/schema/verify_m1_schema.sql` runs green in CI against a database built by `alembic upgrade head`
 - The board shows at least ten closed issues with commit references
+
+---
+
+## Revision history
+
+| Version | Date | Author | Change |
+|---|---|---|---|
+| 1.1 | 2026-08-08 | Marcelo | Corrected against `docs/data/postgresql-model.md` §8. Traceability table shape, exclusion constraint replacing the partial unique index, eight new tasks traceable to D-04 / D-06 / D-07 / D-08 / D-10 / D-11 / D-12 / D-14, executable acceptance criteria referencing the 16 checks in `verify_m1_schema.sql`, S0-04 split into S0-04a and S0-04b at unchanged total, S0-05 dependency on S0-04 removed, load tables recalculated and two pre-existing arithmetic errors corrected, labelling rule recorded as unestimated new work. |

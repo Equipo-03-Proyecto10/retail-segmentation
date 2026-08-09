@@ -13,10 +13,15 @@ written is.
 
 **Segment assignments are never updated in place.** There is no mutable
 `customer.segment_id`. A new segmentation run closes the previous assignment by
-setting `valid_to` and inserts a new row in `customer_segment_assignment`. A
-partial unique index enforces one open assignment per customer. Losing this
-breaks the project's central requirement. Read
-`docs/adr/0002-data-ownership-map.md` and the ERD before touching segment data.
+setting `valid_to` and inserts a new row in `customer_segment_assignment`. An
+`EXCLUDE USING gist` constraint enforces non-overlapping authoritative intervals
+per customer — it rejects a second open assignment *and* two closed intervals
+that overlap. Losing this breaks the project's central requirement. Read
+`docs/data/postgresql-model.md` §3 and the ERD before touching segment data.
+
+**Segment migration is a change of `segment_label.code`, never of `segment_id`.**
+Segments are scoped to a run, so `segment_id` differs for every customer on every
+run. Comparing it reports 100% migration every time, silently.
 
 **Schema changes ship as Alembic migrations.** Never edit a table by hand or
 write raw DDL outside a migration. `alembic upgrade head` must succeed against

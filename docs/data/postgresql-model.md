@@ -344,7 +344,7 @@ Index support: `ix_customer_segment_assignment_customer_valid (customer_id, vali
 
 ## 7. Verification performed
 
-The schema was applied to PostgreSQL 16.14 and 16 acceptance checks executed. During Sprint 0, `verify_m1_schema.sql` reproduces this locally after `alembic upgrade head`, and its complete output is attached to the S0-04a issue. CI automation is deferred to Sprint 1.
+The schema was applied to PostgreSQL 16.14 and 16 acceptance checks executed. `verify_m1_schema.sql` reproduces this locally after `alembic upgrade head`, and its complete output is attached to the S0-04a issue. It also runs in CI: the `Schema ERD` workflow applies the migration against an empty PostgreSQL 16 and then runs `infra/sql/schema/assert_m1_verification.sh`, which fails the build if any check stops behaving as its `expected:` line states. CI was deferred to Sprint 1 when this section was written and landed early instead (#32).
 
 | # | Check | Result |
 |---|---|---|

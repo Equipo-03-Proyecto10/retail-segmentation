@@ -4,7 +4,7 @@
 **Course:** Integración de Aplicaciones Computacionales
 **Team:** Team 03
 **Document owner:** Marcelo (Scrum Master)
-**Version:** 1.2
+**Version:** 1.3
 **Date:** 2026-08-09
 **Status:** Active
 
@@ -302,3 +302,4 @@ Used when a PO decision is unavailable. Work proceeds on the recorded assumption
 | 1.0 | 2026-08-08 | Marcelo | Initial charter |
 | 1.1 | 2026-08-08 | Marcelo | Definition of Done gains one item: a story that changes the database schema ships an updated `verify_m1_schema.sql` that passes. Appendix D points at the now-existing `docs/scrum/assumption-register.md`. The capacity model is unchanged — the S0-04 split into S0-04a and S0-04b does not change the total. |
 | 1.2 | 2026-08-09 | Marcelo | §8 Sprint 0 commitment corrected from 16 SP to 22 SP against a 19 SP capacity, ratio 84% → 116%, milestone total 63 → 69. The figure had not been updated when `03-sprint-00-backlog.md` reached v1.2, leaving the charter, the release plan and the backlog stating two different commitments for the same sprint. The v1.1 note above is accurate about the S0-04 split and was not what caused the drift; moving S0-09 and S0-11 to Sprint 1 and rebalancing ownership did. |
+| 1.3 | 2026-08-09 | Marcelo | Appendix A step 8 and Appendix C now link to `templates/sprint-record.md` and `templates/retrospective.md`, which exist as of #36. Both appendices had referenced artifacts that were never created — the retrospective one due Friday, the sprint record one on Monday. No process rule changed; the templates encode what §4.2, §9, §10.1, §11 and Appendix A already require. This row is late: #36 landed the appendix text without recording it here, which is the same drift §8 was corrected for one revision earlier. |

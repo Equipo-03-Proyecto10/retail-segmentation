@@ -4,7 +4,7 @@
 **Planning held:** 2026-08-10 · **Present:** *to be recorded at Planning*
 **Capacity:** 19 SP · **Committed:** 22 SP · **Commitment ratio:** 116%
 
-> **Pre-filled on 2026-08-09, the day before Planning.** Sections 1, 2 and 5 are
+> **Pre-filled on the morning of 2026-08-10, hours before Planning.** Sections 1, 2 and 5 are
 > transcribed from `../03-sprint-00-backlog.md` v1.2 and are not new decisions.
 > Sections 3, 4 and 7 are filled in during the ceremony. Anything already
 > settled is marked; anything awaiting the room says so.
@@ -110,7 +110,7 @@ before the meeting.
 
 | Risk or dependency | Reference | Owner | Trigger to watch |
 |---|---|---|---|
-| **Estefanía has not accepted the organization invitation** | #30 | Marcelo | Invitation sent 2026-08-09. She owns 6 of the 18 remaining points and three of them are on the critical path. If unaccepted by Monday midday, reassign S0-06 and re-plan S0-04b |
+| **Estefanía has not accepted the organization invitation** | #30 | Marcelo | Invitation sent 2026-08-09 14:16, still pending on the morning of Planning. She owns 6 of the 18 remaining points. **Decide the contingency at this Planning, not later in the week** — see §7.3 |
 | Segment model regression after the freeze | R-01, exp. 15 | Estefanía | Now enforced by CI on every schema change (#32); a failing `Schema ERD` job is the trigger |
 | Marcelo is the bottleneck | R-03, exp. 16 | Marcelo | Assigned points exceed individual capacity → reassign before committing. Already live: two of Estefanía's stories were completed by Marcelo before the sprint opened |
 | Seed dataset unrealistic | R-04, exp. 15 | Estefanía | Fewer than 2,000 customers or fewer than 18 months after loading → raise immediately |
@@ -152,7 +152,7 @@ one person outside the ceremony.
 
 1. **Price the labelling rule** (§3). Every other number in §2.2 is provisional until this has a value.
 2. **Raise `develop` to one required approval?** Now viable — three members, two owners. Recommended for after Planning rather than during it, so today's setup work is not blocked mid-flight.
-3. **Contingency for Estefanía's 6 points** if the invitation is still unaccepted Monday midday. S0-06 is 1 SP and depends only on a frozen schema; S0-04b is 2 SP and blocks nothing inside the sprint. S0-08 is the one that must not be reassigned casually — it is 3 SP of the demonstration.
+3. **Contingency for Estefanía's 6 points.** The invitation is still unaccepted as Planning opens, so this is a decision for today rather than a watch item. S0-06 is 1 SP and depends only on a frozen schema; S0-04b is 2 SP and blocks nothing inside the sprint. S0-08 is the one that must not be reassigned casually — it is 3 SP of the demonstration, and the person who owns the data model is the right person to build the data. Starting artifacts for all three exist (#38), so whoever picks one up is not starting from a blank file.
 4. **Confirm the 22 SP commitment or descope to it.** The charter now records 116% honestly. Descoping is a legitimate answer; restating the number is not.
 
 ---

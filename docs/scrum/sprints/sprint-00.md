@@ -57,6 +57,8 @@ The charter requires this check at Planning: anyone above their individual
 capacity triggers reassignment **before** commitment, not during the sprint
 (R-03 trigger). Individual capacity is 4.8 SP at the bootstrap anchor.
 
+As planned, before the decisions in §7 were taken:
+
 | Person | Stories | SP committed | SP remaining | Capacity | Ratio on remaining |
 |---|---|---|---|---|---|
 | Marcelo | S0-01 (2), S0-05 (2) | 4 | 4 | 4.8 | 0.83 |
@@ -65,22 +67,39 @@ capacity triggers reassignment **before** commitment, not during the sprint
 | Max | S0-02 (3), S0-07 (2) | 5 | 5 | 4.8 | **1.04** |
 | **Total** | | **22** | **18** | **19** | 0.95 |
 
-**Anyone above 1.0?** Estefanía and Max, and the aggregate only closes because
-S0-04a is already done. Two things make the real position worse than 1.25:
+After §7.1 moved the labelling rule to Sprint 1 and §7.3 reassigned S0-06:
 
-1. **The labelling rule is still unestimated.** D-04 requires the mapping from
-   K-means cluster index to `segment_label.code` to be a deterministic rule over
-   centroid position. It is an algorithm to design, implement and test, not a
-   line of DDL, and until it exists the migration report reports label noise as
-   behaviour change (R-17). It falls to Estefanía, on top of 6 SP. **This is the
-   first thing Planning Poker should price** — section 3 below.
-2. **Estefanía has not accepted the organization invitation.** See section 5.
+| Person | Stories remaining | SP remaining | Capacity | Ratio |
+|---|---|---|---|---|
+| Marcelo | S0-01 (2), S0-05 (2) | 4 | 4.8 | 0.83 |
+| Estefanía | S0-04b (2), S0-08 (3) | 5 | 4.8 | **1.04** |
+| Raquel | S0-03 (3), S0-06 (1) | 4 | 4.8 | 0.83 |
+| Max | S0-02 (3), S0-07 (2) | 5 | 4.8 | **1.04** |
+| **Total** | | **18** | **19** | 0.95 |
 
-Backlog v1.2's conclusion stands: *"The sprint does not close on these numbers,
-and no arrangement of them makes it close."* The existing mitigation — S0-08 may
-extend into Monday of Sprint 1 without blocking anyone, since nothing in Sprint 1
-week 1 depends on seeded data — moves 3 SP out of the week and is the lever to
-pull first if the sprint is behind on Wednesday.
+**Anyone above 1.0?** Estefanía and Max, both at 1.04 — one story-point of
+overshoot each, which is inside the noise of a bootstrap anchor nobody has
+calibrated yet. That is a different situation from the 1.25-and-rising the
+sprint would have carried otherwise, and it is the position the sprint commits
+at.
+
+Two facts behind the change, both recorded in §7:
+
+1. **The labelling rule left Sprint 0 rather than being priced into it.** It is
+   pipeline implementation first needed in Sprint 2, and adding it here would
+   have put 3 more points on the one person already over capacity. Issue #40,
+   Sprint 1.
+2. **S0-06 moved to Raquel**, not to Marcelo. Loading the declared single point
+   of failure with a third story belonging to an absent teammate is R-03
+   happening, not R-03 mitigated.
+
+Backlog v1.2's conclusion — *"the sprint does not close on these numbers, and no
+arrangement of them makes it close"* — was written against the 22-point set with
+the labelling rule inside it. It closes now at 0.95 aggregate, because 4 points
+were finished before the sprint opened and 3 moved to Sprint 1. **The commitment
+was not reduced by restating it.** The existing S0-08 mitigation — it may extend
+into Monday of Sprint 1 without blocking anyone — remains the first lever to pull
+if the sprint is behind on Wednesday.
 
 ---
 
@@ -92,8 +111,25 @@ before the meeting.
 
 | Story or work item | Estimate | Note |
 |---|---|---|
-| Deterministic cluster-to-label mapping rule (D-04, R-17) | *TBD* | Carried into the sprint unestimated by backlog v1.2. Owner is Estefanía by default; reassignment is on the table given the load above |
-| | | |
+| Deterministic cluster-to-label mapping rule (D-04, R-17) | **3 SP, proposed** | Issue #40. Not a team estimate — see the caveat below. Moved to Sprint 1 by §7.1 |
+
+**The estimate is one voice, and the charter says that is not enough.** §9:
+*"Nobody estimates alone, and nobody revises another person's estimate downward
+without discussion."* R-14 — estimation optimism — is live at exposure 12. The
+3 is published with its full reasoning on #40 specifically so it can be argued
+with; confirm or replace it at Planning Poker rather than adopting it because it
+is written down.
+
+The reasoning in short: no schema change (`labelling_strategy` already exists),
+no component crossing, a pure function whose real deliverable is its determinism
+tests — the charter's definition of a 3. It becomes a **5** in one circumstance
+only: if the `k ≠ 6` policy has to be designed inside the story. A-06 fixes six
+labels and allows `k` from 2 to 20, and nothing yet says what happens at `k = 4`
+or `k = 9`.
+
+**Recommendation: fold the `k ≠ 6` rule into A-06's resolution.** A-06 already
+has to be answered this week because it blocks the seed ground truth in #26.
+Answering it once settles two stories and holds this one at 3.
 
 ---
 
@@ -147,13 +183,51 @@ A-06 is the one to resolve this week.
 
 ## 7. Decisions for the room
 
-Not backlog items. Each needs an answer on Monday and none should be taken by
-one person outside the ceremony.
+Decisions 1 and 3 were taken on 2026-08-10 rather than left open, because the
+sprint had already started and both were blocking assignment. Both are recorded
+here and on their issues, and **both are reversible at Planning** — that is the
+point of writing down the reasoning rather than only the outcome.
 
-1. **Price the labelling rule** (§3). Every other number in §2.2 is provisional until this has a value.
-2. **Raise `develop` to one required approval?** Now viable — three members, two owners. Recommended for after Planning rather than during it, so today's setup work is not blocked mid-flight.
-3. **Contingency for Estefanía's 6 points.** The invitation is still unaccepted as Planning opens, so this is a decision for today rather than a watch item. S0-06 is 1 SP and depends only on a frozen schema; S0-04b is 2 SP and blocks nothing inside the sprint. S0-08 is the one that must not be reassigned casually — it is 3 SP of the demonstration, and the person who owns the data model is the right person to build the data. Starting artifacts for all three exist (#38), so whoever picks one up is not starting from a blank file.
-4. **Confirm the 22 SP commitment or descope to it.** The charter now records 116% honestly. Descoping is a legitimate answer; restating the number is not.
+### 7.1 Labelling rule — priced at 3 SP and moved to Sprint 1 · taken
+
+Issue **#40**, which this work had never had. Proposed at 3 SP with the full
+argument on the issue; see §3 for why one person's estimate is not a team
+estimate and what would make it a 5.
+
+Moved to **Sprint 1**. Sprint 0's goal is the stack standing and the contracts
+written; this is pipeline implementation first needed when the pipeline runs in
+Sprint 2. Adding 3 points to a sprint at 116%, on the person already over
+capacity, would be R-14 and R-03 in one move. Deferring costs nothing provided
+the seed ground truth in #26 stays expressed in label codes rather than cluster
+indices — a constraint already written into `../../data/seed-strategy.md`.
+
+### 7.2 Raise `develop` to one required approval — still for the room
+
+Unchanged and deliberately not taken unilaterally. Now viable: three members,
+two owners. Recommended for **after** Planning, so the setup work still landing
+today is not blocked mid-flight. See §5, *Process debt carried in*.
+
+### 7.3 Contingency for Estefanía's points · taken
+
+| Story | SP | Decision |
+|---|---|---|
+| S0-06 ADR-002 | 1 | **Reassigned to Raquel, Marcelo reviews.** Depends only on a frozen schema, which is done and CI-enforced. `AGENTS.md` already enforces a hard rule pointing at this document, and S0-02 and S0-03 both start writing to stores this week, so a stub is actively in the way |
+| S0-04b Mongo + Redis | 2 | **Held for Estefanía until Wednesday 09:00.** Blocks nothing in Sprint 0 — the reason it was split out. Half of it is coupled to ADR-001, so starting early risks a second definition of the revocation path (R-06). If still absent Wednesday: Redis half to Marcelo *if ADR-001 is complete*, MongoDB half to Max |
+| S0-08 Seed dataset | 3 | **Stays hers.** 3 points of the demonstration, and its sanctioned mitigation — slipping to Monday of Sprint 1 — is a better lever than reassignment |
+
+**Why Raquel took S0-06 and not Marcelo.** Marcelo is the declared single point
+of failure (R-03, exposure 16) and already completed two of Estefanía's stories
+before the sprint opened. A third would be the risk materialising, not the risk
+managed. Raquel had the most headroom at 0.62, and her own S0-03 is dependency-
+blocked behind S0-02 early in the week, so the slack is real rather than
+notional. The move puts her at 0.83 and leaves Marcelo unchanged.
+
+### 7.4 Confirm the 22 SP commitment or descope to it — for the room
+
+The charter records 116% honestly. After §7.1 the sprint carries 18 remaining
+points against 19 of capacity — 0.95 — without the commitment having been
+restated downward. Descoping further is still a legitimate answer; restating the
+number is not.
 
 ---
 

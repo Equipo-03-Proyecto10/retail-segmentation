@@ -146,7 +146,7 @@ Answering it once settles two stories and holds this one at 3.
 
 | Risk or dependency | Reference | Owner | Trigger to watch |
 |---|---|---|---|
-| **Estefanía has not accepted the organization invitation** | #30 | Marcelo | Invitation sent 2026-08-09 14:16, still pending on the morning of Planning. She owns 6 of the 18 remaining points. **Decide the contingency at this Planning, not later in the week** — see §7.3 |
+| ~~Estefanía has not accepted the organization invitation~~ **Resolved 2026-08-10** | #30 closed | Marcelo | All four members are in, three as owners. #22, #26 and #40 assigned. The §7.3 contingency stood for part of one day; what survives it is the S0-06 ownership question, now open rather than decided |
 | Segment model regression after the freeze | R-01, exp. 15 | Estefanía | Now enforced by CI on every schema change (#32); a failing `Schema ERD` job is the trigger |
 | Marcelo is the bottleneck | R-03, exp. 16 | Marcelo | Assigned points exceed individual capacity → reassign before committing. Already live: two of Estefanía's stories were completed by Marcelo before the sprint opened |
 | Seed dataset unrealistic | R-04, exp. 15 | Estefanía | Fewer than 2,000 customers or fewer than 18 months after loading → raise immediately |
@@ -154,11 +154,18 @@ Answering it once settles two stories and holds this one at 3.
 | Estimation optimism | R-14, exp. 12 | Whole team | Commitment ratio is 116% before the labelling rule is priced |
 | S0-02 blocks S0-03 blocks Sprint 1 | backlog §"Why this sprint is serialized" | Max, Raquel | S0-02 not healthy by Tuesday → S0-03 cannot start and Sprint 1 slips |
 
-**Process debt carried in.** No pull request in this repository has been
-reviewed. DoD items 1 and 2 have never been met, because until 2026-08-09 there
-were two people in the organization. `develop` still requires zero approvals.
-Raising it to one is now possible and is a Planning decision, not a unilateral
-one — see section 7.
+**Process debt carried in, and the gate that now stops it growing.** Eleven pull
+requests have been merged in this repository and **not one has been reviewed**.
+Definition of Done items 1 and 2 have never been met, because for most of that
+history there were two people in the organization and one of them was doing the
+work. `CONTRIBUTING.md` has promised "one approval minimum" since day one and
+nothing enforced it: `develop` required **zero** approving reviews.
+
+As of 2026-08-10 it requires **one**, with `enforce_admins` on so the rule binds
+owners too (§7.2). The eleven merges already in history cannot be un-merged, and
+they should be named at Friday's retrospective rather than quietly left behind —
+they are the reason the team's first velocity figure rests on work no second
+person checked.
 
 ---
 
@@ -201,13 +208,43 @@ capacity, would be R-14 and R-03 in one move. Deferring costs nothing provided
 the seed ground truth in #26 stays expressed in label codes rather than cluster
 indices — a constraint already written into `../../data/seed-strategy.md`.
 
-### 7.2 Raise `develop` to one required approval — still for the room
+### 7.2 Raise `develop` to one required approval · taken 2026-08-10
 
-Unchanged and deliberately not taken unilaterally. Now viable: three members,
-two owners. Recommended for **after** Planning, so the setup work still landing
-today is not blocked mid-flight. See §5, *Process debt carried in*.
+Held back while the organization was short-handed, because with two members and
+`enforce_admins` on it would have blocked the only person able to merge. That
+constraint ended when the fourth member joined, and the setting was raised the
+same day.
 
-### 7.3 Contingency for Estefanía's points · taken
+`develop` now requires **one approving review**, dismisses stale reviews on new
+commits, requires conversation resolution, keeps linear history, and binds
+administrators. This is what `CONTRIBUTING.md` has promised since day one and
+what Definition of Done item 2 already required; the only change is that
+something now checks it.
+
+**Consequence to expect, and to accept.** Nobody merges their own work
+unreviewed from here, including the Scrum Master. That is the point. If a pull
+request sits unreviewed for more than 24 hours on a weekday it goes to the
+Weekly Sync as a blocker (§9), rather than the rule being switched off.
+
+### 7.3 Contingency for Estefanía's points · taken, then superseded the same day
+
+**Estefanía joined the organization on 2026-08-10 and the condition this
+contingency was written for no longer holds.** #22, #26 and #40 are assigned to
+her. S0-04b's Wednesday fallback never triggers. What follows is kept as the
+record of what was decided and why, because the sprint record is evidence of how
+the team handled a blocker, not only of the state it ended in.
+
+**One thing did not unwind: S0-06.** It is currently Raquel's and Raquel may
+already have started. Returning it is not automatic and is not one person's call:
+
+- *Leave it with Raquel* — reassigning a 1-point story twice in a day is churn for its own sake, and it is already in her name on the board.
+- *Return it to Estefanía* — it is hers by the plan, and she owns the data model that ADR-002 maps.
+
+Either way Marcelo reviews. **Open for Planning**; the load table in §2.2 assumes
+Raquel keeps it, and moving it back returns her to 0.62 and puts Estefanía at
+1.25.
+
+The decision as originally taken:
 
 | Story | SP | Decision |
 |---|---|---|

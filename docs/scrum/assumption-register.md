@@ -33,7 +33,7 @@ resolves, record the date and the outcome in `Resolved` — do not delete the ro
 | A-03 | 2026-08-08 | Is single currency acceptable? | Yes, MXN; `currency_code` present but never varied | Low | Open | — |
 | A-04 | 2026-08-08 | Must the desktop application write, or only read? | Read and export only in M3 | Medium — write paths need scoped authorization per D-10 | Open | — |
 | A-05 | 2026-08-08 | Is a corrected segmentation run in scope, or is a bad run simply discarded? | Correction is supported by the decision axis but has no UI in M1 | Low — schema already permits it | Open | — |
-| A-06 | 2026-08-08 | How many segment labels, and are they fixed by the business or derived from k? | Six fixed labels, `k` between 2 and 20, labels assigned by deterministic centroid rank | Medium — changes `segment_label` seed data and the labelling rule | Open | — |
+| A-06 | 2026-08-08 | How many segment labels, and are they fixed by the business or derived from k? | Six fixed labels, `k` between 2 and 20, labels assigned by deterministic centroid rank. **The `k ≠ 6` half now has a worked policy — see the note below and #40** | Medium — changes `segment_label` seed data and the labelling rule | Open | — |
 | A-07 | 2026-08-08 | Is customer-level PII required at all, or can the seed be fully pseudonymous? | Pseudonymous; no real personal data ever loaded (R-12) | Low | Open | — |
 | A-08 | 2026-08-08 | Retention period for `audit_log` and RFM snapshots? | Indefinite for M1; policy documented in the privacy section | Low | Open | — |
 
@@ -54,6 +54,39 @@ S0-08 generates the injected migration ground truth, because that ground truth
 has to be expressed in segment labels rather than cluster indices (see R-04 and
 D-04). A-06 resolving late does not block the freeze; it blocks validating
 migration detection against known answers.
+
+**A-06's `k ≠ 6` half, worked 2026-08-11 and tabled for Wednesday's
+refinement.** `sprints/sprint-00.md` §3 recommended folding the `k ≠ 6` rule
+into A-06's resolution so that one answer settles two stories. That is done and
+the full argument is on **#40**; it stays `Open` here because confirming an
+assumption is the Product Owner's call under the confirmation rule above, not
+one team member's.
+
+Most of it turned out to be discovery rather than decision — the frozen schema
+had already answered it and nobody had read it back:
+
+| Sub-question | Answer already in the frozen schema |
+|---|---|
+| May two clusters in one run share a label? | **No.** `ux_segment_run_label` is `UNIQUE (model_run_id, label_code) WHERE label_code IS NOT NULL` |
+| May a cluster carry no label at all? | **Yes.** `segment.label_code` is nullable |
+| Is `k` unbounded? | **No.** `ck_segmentation_model_run_k CHECK (k BETWEEN 2 AND 20)` |
+
+What was genuinely undecided was only which labels are used below six, and
+whether a production run may exceed six at all. The proposal: one integer
+formula covering `k` = 2…6 that anchors `lost` and `champions` at the endpoints
+and falls out as an exact bijection at `k` = 6, and `k` > 6 restricted to
+`candidate` and `experiment` runs. The reason for that restriction is
+`v_segment_migration`, which degrades asymmetrically against null labels — its
+`WHERE from_label_code IS NOT NULL` drops customers moving *out* of an
+unlabelled cluster from the report entirely, while customers moving *into* one
+surface as `direction = 'unclassified'`. A production run at `k` = 9 would
+undercount migrations in one direction and mislabel them in the other, silently.
+That is R-17 arriving through a side door.
+
+Enforcing the restriction in the database (`CHECK (purpose <> 'production' OR k
+<= 6)`) is a schema change against a frozen schema, so it is a new Alembic
+revision in Sprint 1 alongside #40 — not an edit, and not something to do this
+week.
 
 ---
 

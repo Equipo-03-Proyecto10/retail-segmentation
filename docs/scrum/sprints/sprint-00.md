@@ -240,9 +240,46 @@ already have started. Returning it is not automatic and is not one person's call
 - *Leave it with Raquel* — reassigning a 1-point story twice in a day is churn for its own sake, and it is already in her name on the board.
 - *Return it to Estefanía* — it is hers by the plan, and she owns the data model that ADR-002 maps.
 
-Either way Marcelo reviews. **Open for Planning**; the load table in §2.2 assumes
-Raquel keeps it, and moving it back returns her to 0.62 and puts Estefanía at
-1.25.
+Either way Marcelo reviews. The load table in §2.2 assumes Raquel keeps it, and
+moving it back returns her to 0.62 and puts Estefanía at 1.25.
+
+#### Resolved 2026-08-11 · S0-06 stays with Raquel, and Estefanía reviews it
+
+Left open for a day and closed on day 2 rather than carried to Friday, because
+S0-02 and S0-03 begin writing to stores this week against a hard rule in
+`AGENTS.md` that points at this document.
+
+**The contingency's reason expired; its effect is worth keeping.** The
+invitation is no longer pending, so the premise of §7.3 is gone. What is not
+gone is the arithmetic it produced: §2.2 closes at 0.95 aggregate with nobody
+above 1.04. Moving S0-06 back puts Estefanía at **1.25** — the exact number this
+contingency was written to prevent — and drops Raquel to 0.62. The reassignment
+is worth keeping on the strength of the load table alone, independently of why
+it was first made.
+
+**Estefanía's two remaining stories are both on the critical path.** S0-04b is
+due Wednesday and S0-08 is three points of the demonstration carrying the only
+sanctioned spillover in the sprint. Adding a fourth story to that, on day 2 of
+5, is R-03 and R-14 in one move.
+
+**The one real argument for moving it back is answered by the review seat, not
+the author seat.** ADR-002 maps a data model Estefanía designed, and that
+context should not be absent from the document. Making her the **reviewer**
+transfers the context without transferring the load — one point of author effort
+stays with the person who has headroom, and the person who has the answers still
+has to agree with the result before it merges.
+
+**Estefanía replaces Marcelo as reviewer.** Marcelo is the declared single point
+of failure (R-03, exposure 16) and has authored or reviewed every merged change
+in this repository to date. §7.2 went live today; the first thing worth pointing
+it at is a pull request that neither involves him nor waits on him.
+
+| | Author | Reviewer | Load after |
+|---|---|---|---|
+| **S0-06 ADR-002** | Raquel | Estefanía | Raquel 0.83 · Estefanía 1.04 |
+
+Recorded on #24. Reversible, like everything else in this section — if the room
+disagrees at Wednesday's refinement, §2.2 needs its second column back.
 
 The decision as originally taken:
 

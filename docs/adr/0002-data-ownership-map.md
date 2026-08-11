@@ -2,7 +2,8 @@
 
 **Status:** Proposed
 **Date:** —
-**Owner:** Estefanía
+**Owner:** Raquel *(reassigned 2026-08-10, confirmed 2026-08-11 — `../scrum/sprints/sprint-00.md` §7.3)*
+**Reviewer:** Estefanía
 **Story:** S0-06
 **Supersedes:** —
 **Superseded by:** —

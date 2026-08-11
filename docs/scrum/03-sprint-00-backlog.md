@@ -288,7 +288,13 @@ The specification requires JWT, but the web system is server-rendered. Left unre
 ---
 
 ### S0-06 — ADR-002 Data Ownership Map
-**Owner:** Estefanía · **Points:** 1 · **Type:** docs · **Depends on:** S0-04a
+**Owner:** Raquel · **Reviewer:** Estefanía · **Points:** 1 · **Type:** docs · **Depends on:** S0-04a
+
+> Reassigned from Estefanía on 2026-08-10 as a contingency and confirmed on
+> 2026-08-11 on the load argument rather than the contingency. Reasoning in
+> `sprints/sprint-00.md` §7.3. The per-person tables further down this document
+> are the **planning baseline** and are deliberately not rewritten; §2.2 of the
+> sprint record carries the current numbers.
 
 > As a team, we need each table, collection and key namespace assigned to exactly one writing component so that shared databases do not become accidental coupling between the web system and the microservices module.
 
@@ -424,7 +430,7 @@ The commit history of these documents is itself evidence that the process was fo
 | S0-04a Frozen data model, bi-temporal traceability | Estefanía (Marcelo reviews) | 3 | docs + feature |
 | S0-04b MongoDB and Redis design | Estefanía | 2 | docs |
 | S0-05 ADR-001 Authentication | Marcelo | 2 | docs |
-| S0-06 ADR-002 Data Ownership | Estefanía | 1 | docs |
+| S0-06 ADR-002 Data Ownership | Raquel (Estefanía reviews) | 1 | docs |
 | S0-07 ADR-003 API Standards | Max | 2 | docs |
 | S0-08 Seed dataset | Estefanía | 3 | feature |
 | S0-10 Engineering standards | Raquel | 1 | docs |
@@ -494,5 +500,6 @@ Beyond the standard story-level Definition of Done:
 
 | Version | Date | Author | Change |
 |---|---|---|---|
+| 1.3 | 2026-08-11 | Marcelo | S0-06 ownership confirmed as Raquel's with Estefanía reviewing, in the story header and the summary table only. The per-person load tables are left as the planning baseline; `sprints/sprint-00.md` §2.2 and §7.3 carry the in-sprint position. |
 | 1.2 | 2026-08-09 | Marcelo | Adopted the post-rebalancing ownership as authoritative, moved S0-09 and S0-11 to Sprint 1, removed duplicate sprint labels, assigned the PR template to S0-10, and replaced the unsupported CI gate with local schema verification evidence on S0-04a. |
 | 1.1 | 2026-08-08 | Marcelo | Corrected against `docs/data/postgresql-model.md` §8. Traceability table shape, exclusion constraint replacing the partial unique index, eight new tasks traceable to D-04 / D-06 / D-07 / D-08 / D-10 / D-11 / D-12 / D-14, executable acceptance criteria referencing the 16 checks in `verify_m1_schema.sql`, S0-04 split into S0-04a and S0-04b at unchanged total, S0-05 dependency on S0-04 removed, load tables recalculated and two pre-existing arithmetic errors corrected, labelling rule recorded as unestimated new work. |

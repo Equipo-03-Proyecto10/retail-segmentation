@@ -28,6 +28,7 @@ flowchart TD
     B --> D[S0-03 Flask skeleton]
     C --> E[S0-06 ADR-002]
     C --> I[S0-04b Mongo + Redis design]
+    H -.->|auth namespaces only| I
     E --> F[S0-08 Seed dataset]
     D --> G[Sprint 1 unblocked]
     F --> G
@@ -46,11 +47,27 @@ Day by day:
 |---|---|
 | Mon | S0-01 repository and board, then S0-02 container stack; S0-04a ERD begins; S0-05 ADR-001 begins in parallel |
 | Tue | S0-04a ERD frozen; ADR-002 and ADR-003 start |
-| Wed | S0-04b MongoDB and Redis design; S0-08 seed dataset |
+| Wed | **S0-05's authentication namespaces settled by 09:00**; S0-04b MongoDB and Redis design; S0-08 seed dataset |
 | Thu | S0-10 standards; Sprint 1 handoff preparation for S0-09 and S0-11 |
 | Fri | Integration verification, Review, Retrospective |
 
 **S0-04a blocks everything downstream.** It is the highest-priority item in the sprint and it is not permitted to slip past Tuesday. S0-04b blocks nothing inside Sprint 0 and is due Wednesday.
+
+**S0-05 partially gates S0-04b, and this edge was missing until 2026-08-11.** The
+graph above showed S0-05 as an independent parallel track. It is not:
+`docs/data/redis-design.md` records that `session:{user_id}:{jti}`,
+`denylist:{jti}` and `refresh:{jti}` belong to ADR-001, that **ADR-001 wins** if
+the two documents disagree on a pattern or a TTL, and that the Redis-unavailable
+behaviour must be *"consistent with ADR-001"*. S0-04b is due Wednesday and cannot
+write those rows against a stub without producing the second definition of the
+revocation path that R-06 describes.
+
+**The gate is a subset of S0-05, not all of it.** What S0-04b needs is three key
+patterns, their TTLs, and the single fail-closed-or-fail-open decision. Claim
+structure, CSRF, rotation and key-rotation policy gate nothing here. So S0-05's
+authentication-namespace decisions are due **Wed 2026-08-12 09:00**, ahead of
+S0-04b, while the rest of ADR-001 continues on its own schedule — and S0-04b's
+MongoDB half is not gated at all and can proceed in parallel.
 
 ---
 
@@ -237,7 +254,7 @@ Acceptance is executable, not judged by reading. `infra/sql/schema/verify_m1_sch
 ---
 
 ### S0-04b — MongoDB collection design and Redis key namespace design
-**Owner:** Estefanía · **Points:** 2 · **Type:** docs · **Due:** Wed 2026-08-12 · **Depends on:** S0-04a
+**Owner:** Estefanía · **Points:** 2 · **Type:** docs · **Due:** Wed 2026-08-12 · **Depends on:** S0-04a; **and on S0-05 for the three authentication namespaces only**
 
 > As a team, we need the document and cache stores designed with the same rigour as the relational one, so that the three-store boundary is defensible rather than decorative.
 
@@ -255,11 +272,17 @@ Split out of S0-04 so that R-01's trigger — *not frozen by end of Tuesday* —
 ---
 
 ### S0-05 — ADR-001 Authentication and Token Lifecycle
-**Owner:** Marcelo · **Points:** 2 · **Type:** docs · **Blocks:** all authentication work in every component
+**Owner:** Marcelo · **Points:** 2 · **Type:** docs · **Due:** authentication namespaces by Wed 2026-08-12 09:00, remainder Thu · **Blocks:** all authentication work in every component, **and the Redis half of S0-04b**
 
 > As a team, we need the authentication scheme fixed in one document so that the web, mobile and desktop clients do not each invent their own and so that a single revocation mechanism serves all three.
 
 **This story no longer depends on S0-04.** The dependency was removed deliberately, not by accident: authentication design needs only the shape of `user_account` and `role`, and both are settled in `docs/data/postgresql-model.md` (D-09, D-10). Marcelo can start ADR-001 on Monday morning in parallel with the schema freeze rather than waiting for Tuesday, which removes half a day from the critical path in a sprint the team's own numbers say is over capacity (§8 of the model document).
+
+**It does, however, gate part of S0-04b — see the note under the execution
+graph.** Removing the upstream dependency put this story earlier; it did not
+make it a leaf. The three authentication key patterns, their TTLs and the
+Redis-unavailable decision are needed by Wednesday 09:00 for `redis-design.md`
+to reference them instead of inventing a second set.
 
 The specification requires JWT, but the web system is server-rendered. Left unresolved, teams build Flask session cookies for the web and JWT for the API clients, duplicating authentication and producing two revocation paths that disagree.
 
@@ -500,6 +523,6 @@ Beyond the standard story-level Definition of Done:
 
 | Version | Date | Author | Change |
 |---|---|---|---|
-| 1.3 | 2026-08-11 | Marcelo | S0-06 ownership confirmed as Raquel's with Estefanía reviewing, in the story header and the summary table only. The per-person load tables are left as the planning baseline; `sprints/sprint-00.md` §2.2 and §7.3 carry the in-sprint position. |
+| 1.3 | 2026-08-11 | Marcelo | S0-06 ownership confirmed as Raquel's with Estefanía reviewing, in the story header and the summary table only — the per-person load tables are left as the planning baseline, and `sprints/sprint-00.md` §2.2 and §7.3 carry the in-sprint position. Added the missing S0-05 → S0-04b edge to the execution graph, scoped to the three authentication namespaces, with a Wednesday 09:00 gate on S0-05 and the day-by-day table corrected to match. |
 | 1.2 | 2026-08-09 | Marcelo | Adopted the post-rebalancing ownership as authoritative, moved S0-09 and S0-11 to Sprint 1, removed duplicate sprint labels, assigned the PR template to S0-10, and replaced the unsupported CI gate with local schema verification evidence on S0-04a. |
 | 1.1 | 2026-08-08 | Marcelo | Corrected against `docs/data/postgresql-model.md` §8. Traceability table shape, exclusion constraint replacing the partial unique index, eight new tasks traceable to D-04 / D-06 / D-07 / D-08 / D-10 / D-11 / D-12 / D-14, executable acceptance criteria referencing the 16 checks in `verify_m1_schema.sql`, S0-04 split into S0-04a and S0-04b at unchanged total, S0-05 dependency on S0-04 removed, load tables recalculated and two pre-existing arithmetic errors corrected, labelling rule recorded as unestimated new work. |

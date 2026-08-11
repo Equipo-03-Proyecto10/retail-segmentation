@@ -153,6 +153,7 @@ Answering it once settles two stories and holds this one at 3.
 | Non-deterministic labelling | R-17, exp. 15 | Estefanía | The unestimated rule above. Unresolved by Friday → Sprint 2 blocker discovered in Sprint 0 |
 | Estimation optimism | R-14, exp. 12 | Whole team | Commitment ratio is 116% before the labelling rule is priced |
 | S0-02 blocks S0-03 blocks Sprint 1 | backlog §"Why this sprint is serialized" | Max, Raquel | S0-02 not healthy by Tuesday → S0-03 cannot start and Sprint 1 slips |
+| **S0-05 gates the Redis half of S0-04b** — edge missing from the plan until 2026-08-11 | R-06; `../../data/redis-design.md`, *"The dependency to watch"* | Marcelo | Authentication key patterns, TTLs and the Redis-unavailable decision not settled by **Wed 09:00** → S0-04b either slips or invents a second revocation path. The MongoDB half is not gated |
 
 **Process debt carried in, and the gate that now stops it growing.** Eleven pull
 requests have been merged in this repository and **not one has been reviewed**.

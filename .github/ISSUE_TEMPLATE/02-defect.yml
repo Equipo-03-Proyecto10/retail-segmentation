@@ -1,18 +1,14 @@
 name: Defect
-description: Something that was accepted as Done and does not behave as its acceptance criteria state.
+description: Something accepted as Done that does not behave as its acceptance criteria state.
 title: "<what breaks> when <under what conditions>"
 labels: ["type:bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        "Registro de incidencias" is a graded deliverable. A defect record that
-        cannot be reproduced from what is written here is worth very little, so
-        the reproduction and the environment matter more than the prose.
-
-        Every request carries a correlation id through `structlog` and into
-        `audit_log`. If you have one, it is the fastest route from a symptom to
-        the sequence of operations that produced it — include it.
+        The defect log is a graded deliverable. A record that cannot be
+        reproduced from what is written here is worth very little, so the
+        reproduction and the environment matter more than the prose.
 
   - type: textarea
     id: observed
@@ -27,9 +23,8 @@ body:
     attributes:
       label: What should have happened
       description: >
-        Where possible, quote the acceptance criterion or the design decision
-        this contradicts — for example "D-04: migration compares
-        segment_label.code". A defect is a gap against a stated expectation.
+        Quote the acceptance criterion or the rule this contradicts. A defect is
+        a gap against a stated expectation.
     validations:
       required: true
 
@@ -37,27 +32,20 @@ body:
     id: reproduction
     attributes:
       label: Reproduction
-      description: Numbered steps from a clean stack. State the seed data used.
+      description: Numbered steps from a clean database.
       value: |
-        1. `make up && make migrate && make seed`
+        1. Run the three scripts in `sql/` against an empty database
         2.
         3.
     validations:
       required: true
-
-  - type: input
-    id: correlation
-    attributes:
-      label: Correlation id
-      description: From the log line or the audit_log row.
-      placeholder: "3f2c1b8e-... , or: not available"
 
   - type: dropdown
     id: severity
     attributes:
       label: Severity
       options:
-        - "Blocks the demonstration"
+        - "Blocks the delivery"
         - "Breaks a Definition of Done item"
         - "Wrong result, workaround exists"
         - "Cosmetic"
@@ -69,13 +57,12 @@ body:
     attributes:
       label: Where it surfaces
       options:
-        - web
-        - services
-        - mobile
-        - desktop
-        - ml
-        - infra
-        - docs
+        - infrastructure
+        - database
+        - application
+        - security and roles
+        - deployment
+        - documentation
     validations:
       required: true
 
@@ -85,19 +72,17 @@ body:
       label: Environment
       value: |
         Branch / commit:
-        Containers: docker compose up
+        Local or deployed instance:
         Browser and viewport (if user-facing):
     validations:
       required: true
 
   - type: textarea
-    id: data-integrity
+    id: data
     attributes:
       label: Does this defect affect stored data?
       description: >
-        Answer explicitly if it touches `customer_segment_assignment`,
-        `segmentation_model_run`, `rfm_run` or `audit_log`. A defect that wrote
-        wrong history is a different repair from one that displayed it wrongly,
-        and assignments are never corrected in place — a correction closes the
-        decision axis and inserts a new row.
+        Answer explicitly if it wrote wrong rows, bypassed a constraint, or
+        created a second administrator. A defect that corrupted data is a
+        different repair from one that displayed it wrongly.
       placeholder: "No stored data affected."

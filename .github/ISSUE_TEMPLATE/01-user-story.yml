@@ -6,20 +6,14 @@ body:
   - type: markdown
     attributes:
       value: |
-        The fields below are the Definition of Ready (§5 of the Scrum Framework
-        Charter). A story that cannot fill them in is not ready to be committed,
-        and filling them in badly to get past this form only moves the argument
-        to Sprint Planning.
-
-        If a Product Owner decision is missing, do not stop: record the working
-        assumption in [`docs/scrum/assumption-register.md`](https://github.com/Equipo-03-Proyecto10/retail-segmentation/blob/develop/docs/scrum/assumption-register.md)
-        and reference it below.
+        These fields are the Definition of Ready (`docs/process.md` §5). A story
+        that cannot fill them in is not ready to be committed — and filling them
+        in badly only moves the argument to Sprint Planning.
 
   - type: textarea
     id: story
     attributes:
       label: Story
-      description: The role has to be one of the seven specified profiles, or the development team.
       value: |
         As a
         I want
@@ -32,12 +26,28 @@ body:
     attributes:
       label: Acceptance criteria
       description: >
-        Given / When / Then, each one independently testable. "Works correctly"
-        is not a criterion. If a criterion can be checked by a script or a SQL
-        query rather than by reading, write it that way.
+        Given / When / Then, each independently testable. "Works correctly" is
+        not a criterion. If a criterion can be checked by a script or a query
+        rather than by reading, write it that way.
       value: |
         - Given ..., when ..., then ...
         - Given ..., when ..., then ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Scope phase
+      description: From `docs/scope.md` §4.
+      options:
+        - "0 — Preparation"
+        - "1 — GCP infrastructure"
+        - "2 — Database"
+        - "3 — Application"
+        - "4 — Security and roles"
+        - "5 — Testing and quality"
+        - "6 — Deployment and publication"
     validations:
       required: true
 
@@ -46,10 +56,9 @@ body:
     attributes:
       label: Data model impact
       description: >
-        Which PostgreSQL tables, MongoDB collections or Redis key patterns are
-        read and which are written. One writer per table — check
-        `docs/adr/0002-data-ownership-map.md` before writing to a store from a
-        new component.
+        Which tables are read and which are written. A schema change ships in
+        `sql/01_schema.sql` with its seed rows, and the three scripts must still
+        run clean in order from an empty database.
       value: |
         Reads:
         Writes:
@@ -57,27 +66,11 @@ body:
     validations:
       required: true
 
-  - type: dropdown
-    id: schema-change
-    attributes:
-      label: Does this story change the database schema?
-      description: >
-        If yes, it ships an Alembic migration **and** an updated
-        `infra/sql/schema/verify_m1_schema.sql` that passes. Both are Definition
-        of Done items, not optional extras.
-      options:
-        - "No"
-        - "Yes — migration and verify_m1_schema.sql update required"
-    validations:
-      required: true
-
   - type: input
     id: dependencies
     attributes:
       label: Dependencies
-      description: >
-        Issue numbers or story ids. A blocking dependency must already be
-        complete or scheduled earlier in the same sprint.
+      description: Issue numbers or story ids. A blocker must already be done or scheduled earlier in the same sprint.
       placeholder: "blocked by #12, or: none"
     validations:
       required: true
@@ -87,22 +80,14 @@ body:
     attributes:
       label: Estimate
       description: >
-        Modified Fibonacci, set by the team in Planning Poker. Nobody estimates
-        alone. 13 means the story is too large and is split before it is
-        committed.
+        Set by the team in Planning Poker. Nobody estimates alone. 13 means the
+        story is too large and is split before it is committed.
       options: ["not yet estimated", "1", "2", "3", "5", "8", "13 — must be split"]
     validations:
       required: true
-
-  - type: input
-    id: assumption
-    attributes:
-      label: Open Product Owner decision
-      description: The assumption register id, if this story rests on an unanswered question.
-      placeholder: "A-06, or: none"
 
   - type: textarea
     id: notes
     attributes:
       label: Notes
-      description: Design constraints, rejected alternatives, links to the ADR or model decision this follows.
+      description: Constraints, rejected alternatives, or the ADR this follows.

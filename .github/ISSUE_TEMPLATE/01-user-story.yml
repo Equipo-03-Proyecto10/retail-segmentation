@@ -2,13 +2,15 @@ name: User story
 description: A unit of work that delivers value to a role. Must reach Definition of Ready before it enters a sprint.
 title: "<verb> <what> for <role>"
 labels: ["type:feature"]
+assignees: []
 body:
   - type: markdown
     attributes:
       value: |
         These fields are the Definition of Ready (`docs/process.md` §5). A story
         that cannot fill them in is not ready to be committed — and filling them
-        in badly only moves the argument to Sprint Planning.
+        in badly only moves the argument to Sprint Planning. New stories remain
+        unassigned until a team member pulls them from Ready.
 
   - type: textarea
     id: story
@@ -70,7 +72,10 @@ body:
     id: dependencies
     attributes:
       label: Dependencies
-      description: Issue numbers or story ids. A blocker must already be done or scheduled earlier in the same sprint.
+      description: >
+        Issue numbers or story ids. A blocker must already be done or scheduled
+        earlier in the same sprint. After creating the issue, add every blocker
+        in Relationships as "Blocked by" so GitHub displays its blocked state.
       placeholder: "blocked by #12, or: none"
     validations:
       required: true

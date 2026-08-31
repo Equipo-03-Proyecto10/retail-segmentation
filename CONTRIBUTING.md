@@ -22,6 +22,24 @@ git checkout -b feature/42-add-password-reset
 Integrate into `develop` at least once per working day. A branch that has not
 merged in three days is raised at the Weekly Sync.
 
+## Taking work
+
+Work is pulled by the person who will do it. To take an issue:
+
+1. On the Project board, choose an unassigned issue in the current sprint whose
+   status is Ready and which has no Blocked indicator.
+2. Open Relationships and confirm that every `Blocked by` issue is closed.
+3. Assign yourself and move the issue to In Progress before creating a branch.
+4. Create the branch from the current `develop` using the issue number.
+
+Self-assignment does not change the issue's priority or sprint. Do not exceed
+the two-story work-in-progress limit. Authentication, the 4NF model, and
+deployment require pair programming, so both participants are assigned.
+
+If you stop or hand work over, leave a comment with the current state and any
+blocker. Reassign it only after the next person agrees; otherwise unassign
+yourself and return it to Ready.
+
 ## Pull requests
 
 - One approval minimum, reviewed within one working day.

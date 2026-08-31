@@ -1,11 +1,11 @@
-# Web system runtime dependencies.
+# Application runtime dependencies.
 #
-# Currently only what the migration tooling needs. S0-03 adds Flask, SQLAlchemy
-# models, structlog, argon2-cffi, the Mongo and Redis clients, and pins the rest.
-# Keep this file installable on python:3.12-slim without a compiler: that is the
-# base image S0-02 selected, and Alpine was rejected precisely because the
-# scientific wheels are unavailable for musl.
+# psycopg is used directly rather than through an ORM: the exercise grades a
+# normalized schema and parameterized SQL, and an ORM hides both. Versions are
+# confirmed when F3-01 builds the application skeleton.
 
-alembic==1.14.0
-SQLAlchemy==2.0.36
+Flask==3.1.0
 psycopg[binary]==3.2.3
+python-dotenv==1.0.1
+argon2-cffi==23.1.0
+gunicorn==23.0.0

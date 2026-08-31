@@ -1,6 +1,12 @@
 @AGENTS.md
 @~/.claude/rs-local.md
 
+> The `AGENTS.md` imported above governs **this repository only**. The Obsidian
+> vault referenced by `rs-local.md` has its own `AGENTS.md` and `CLAUDE.md` at
+> its root — different files, identical names — and they carry rules this one
+> does not, including a git pull/push workflow. Read them before touching the
+> vault.
+
 ## Claude Code specifics
 
 - Use plan mode for anything touching the schema, the authorization middleware,

@@ -10,8 +10,8 @@ jobs:
     name: Format, lint and tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -51,7 +51,7 @@ jobs:
       PGUSER: postgres
       PGPASSWORD: postgres
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Definition of Done item 3: the three scripts run clean, in order,
       # against an empty database. This is what stops a schema edit from being

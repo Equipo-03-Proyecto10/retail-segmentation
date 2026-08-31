@@ -41,7 +41,7 @@ and the Proxy PO exists to fill that gap. Open questions are recorded in
 
 | Ceremony | When | Output |
 |---|---|---|
-| Sprint Planning | First day of the sprint | Sprint Goal, committed backlog, task assignment |
+| Sprint Planning | First day of the sprint | Sprint Goal, committed backlog, work made available for self-assignment |
 | Weekly Sync | Once per week | Blockers raised, board reconciled |
 | Async check-in | Every working day, written | Yesterday / today / blockers, in the team channel |
 | Backlog Refinement | Mid-sprint | Next sprint's candidates brought to Definition of Ready |
@@ -73,10 +73,12 @@ A story may not enter a sprint until:
 
 1. Written as `As a <role>, I want <capability>, so that <benefit>`.
 2. Acceptance criteria in Given / When / Then form, each independently testable.
-3. Dependencies identified, and any blocker already done or scheduled earlier.
+3. Dependencies identified, mirrored as native GitHub issue relationships, and
+   any blocker already done or scheduled earlier.
 4. Data model impact known: which tables are read and which are written.
 5. Estimated by the team.
-6. Owner assigned.
+6. Assignment state explicit: unassigned and available for the team to pull, or
+   assigned to a member who has agreed to take it.
 7. Fits in one sprint. A story too large to fit is split before it is committed.
 
 ## 6. Definition of Done
@@ -117,6 +119,22 @@ the commitment is calibrated from measured velocity afterwards.
 ## 8. Working agreements
 
 - **Work in progress.** Maximum 2 stories in progress per person. Finish before starting.
+- **Pulling work.** Work is self-assigned, not handed out. Any Development Team
+  member may claim an unassigned issue when it belongs to the current sprint,
+  its board status is Ready, and every `Blocked by` issue is closed. Assign
+  yourself and move it to In Progress before creating the branch.
+- **Dependencies.** Every `Depends on` entry in an issue must also be recorded
+  under GitHub's native Relationships as `Blocked by`. An open blocker keeps the
+  issue out of Ready and In Progress. The body explains the dependency; the
+  native relationship provides the visible Blocked indicator in Issues and
+  Projects.
+- **Assignment boundaries.** Self-assignment does not change sprint membership
+  or priority, and nobody assigns work to another member without that member's
+  agreement. Pair-required work carries both participants as assignees.
+- **Hand-offs.** A member who stops working on an issue comments with the current
+  state and blockers, then either reassigns it with the receiving member's
+  agreement or removes themselves and returns it to Ready. An In Progress issue
+  always has an active assignee.
 - **Pull requests.** Reviewed within one working day. A PR over 400 changed lines should have been split.
 - **Branching.** `main` is protected. `develop` is the integration branch and also requires review. Feature branches are `feature/<issue>-kebab-slug`, also `fix/`, `chore/`, `docs/`.
 - **Commits.** Conventional Commits: `type(scope): subject (#issue)`.
@@ -131,13 +149,14 @@ the commitment is calibrated from measured velocity afterwards.
 |---|---|
 | Source control | GitHub, organization-owned monorepo |
 | Board | GitHub Projects — Backlog, Ready, In Progress, In Review, Done |
-| Issues | GitHub Issues, labelled `type:*`, `area:*`, `priority:*` |
+| Issues | GitHub Issues, with native dependency relationships and labels `type:*`, `area:*`, `priority:*` |
 | CI | GitHub Actions |
 | Documentation | Markdown in `docs/`, versioned in Git |
 | Decisions | ADRs in `docs/adr/` |
 | Communication | Team channel |
 
-The board is graded evidence. Two rules protect it: an issue moves to In
-Progress only when someone is actually working on it, and nothing is closed
-retroactively in bulk. Visible spillover is stronger evidence of a working
-process than a suspiciously clean burndown.
+The board is graded evidence. Three rules protect it: Ready means every native
+blocker is closed; an issue moves to In Progress only when an assignee is
+actually working on it; and nothing is closed retroactively in bulk. Visible
+spillover is stronger evidence of a working process than a suspiciously clean
+burndown.

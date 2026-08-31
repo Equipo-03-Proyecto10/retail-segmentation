@@ -1,0 +1,10 @@
+# Development and tooling dependencies. Not installed on the instance.
+#
+# black and ruff are required: AGENTS.md makes `black --check .` and
+# `ruff check .` a precondition for reporting a task complete, and CI runs both.
+
+-r requirements.txt
+
+black==24.10.0
+pytest==8.3.4
+ruff==0.8.4

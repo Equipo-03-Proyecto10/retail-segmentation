@@ -4,36 +4,49 @@
 
 ```bash
 cp .env.example .env
-make up && make migrate && make seed
+python -m venv .venv && source .venv/bin/activate
+pip install -r web/requirements-dev.txt
 ```
 
 Using an AI coding agent: `touch ~/.claude/rs-local.md`
 
 ## Branch flow
 
-`main` (protected, tagged releases) ← `develop` (integration) ← `feature/<issue>-slug`
+`main` (protected, tagged) ← `develop` (integration, reviewed) ← `feature/<issue>-slug`
 
 ```bash
 git checkout develop && git pull
-git checkout -b feature/42-add-refresh-token-rotation
+git checkout -b feature/42-add-password-reset
 ```
+
+Integrate into `develop` at least once per working day. A branch that has not
+merged in three days is raised at the Weekly Sync.
 
 ## Pull requests
 
-- One approval minimum. Reviewed within 24 hours on weekdays.
+- One approval minimum, reviewed within one working day.
 - Over 400 changed lines means it should have been split.
 - Fill the Definition of Done checklist in the description.
-- Reference the issue: `feat(auth): add refresh token rotation (#42)`
+- Reference the issue: `feat(auth): add password reset (#42)`
 
-## Rules that will get a PR rejected
+## What will get a PR rejected
 
-- Schema change without an Alembic migration
-- `UPDATE` on `customer_segment_assignment` instead of close-and-insert
-- State-changing operation with no audit log record
-- Secrets or dataset files committed
-- Documentation deliverable missing for a story that requires one
+- Schema change that is not in `sql/01_schema.sql`, or that breaks a clean run
+  of the three scripts in order against an empty database
+- A new table without its 30 seed rows
+- SQL built by string interpolation instead of parameters
+- A second administrator made possible, in the application or in the schema
+- Secrets, datasets or uploaded files committed
+- Anything written in Spanish
+- A documentation deliverable missing for a story that requires one
 
-## Escalation
+## Pair programming
 
-Blocked more than 4 hours: post in the team channel. Do not wait for the
-Monday sync.
+Required for authentication, the 4NF model, and the deployment. Optional
+elsewhere. These are the three places where a solo mistake stays invisible until
+it is expensive.
+
+## Blocked
+
+Blocked for more than half a working day: post in the team channel. Do not wait
+for the Weekly Sync.

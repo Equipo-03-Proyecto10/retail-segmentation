@@ -1,53 +1,71 @@
-# Retail Segmentation and Personalization Platform
+# Retail Segmentation Platform
 
-Dynamic customer segmentation platform that recomputes RFM-based segments as
-purchase behaviour changes, without losing historical traceability of past
-assignments.
+Monolithic web application for retail customer segmentation management.
+Server-rendered Flask over PostgreSQL, deployed on a single GCP Compute Engine
+instance.
 
 Course project — Integración de Aplicaciones Computacionales, Team 03.
-All code, comments, commits, and documentation are written in English.
+Everything written is in English.
+
+> **Company name and design system are not decided yet.** They are tracked as
+> Q-3 and Q-4 in [`docs/scope.md`](docs/scope.md) §8.
 
 ## Team
 
-| Person | Role | Primary area |
-|---|---|---|
-| Dr. Raúl Morales Saucedo | Product Owner | Requirements, acceptance |
-| Raquel | Proxy PO, Developer | Flask web system, Jinja2, Highcharts |
-| Estefanía | ML / Data | RFM, clustering, drift, data modeling |
-| Max | Dev / DevOps | Containers, GCP, databases |
-| Marcelo | Scrum Master, Full stack | Auth, DevOps, integration |
+| Person | Role |
+|---|---|
+| Dr. Raúl Morales Saucedo | Product Owner |
+| Raquel | Proxy PO, Developer |
+| Estefanía | Data modeling |
+| Max | Infrastructure, deployment |
+| Marcelo | Scrum Master, Full stack |
 
-## Architecture
+## Scope
 
-Monorepo. Four deployable components share one PostgreSQL / MongoDB / Redis
-backing layer, with each table owned by exactly one writer (see
-`docs/adr/ADR-002-data-ownership.md`).
+One deployable application. No external APIs, no microservices, no JSON or XML
+between internal components, one database engine, one administrator user. The
+full boundary is in [`docs/scope.md`](docs/scope.md).
 
-| Directory | Component | Milestone |
-|---|---|---|
-| `web/` | Flask + Jinja2 enterprise web system | M1 |
-| `services/` | Flask REST microservices, JSON and XML | M2 |
-| `mobile/` | Android consumer client, JSON only | M3 |
-| `desktop/` | Analyst client, XML only | M3 |
-| `ml/` | RFM, clustering, drift detection, seeding | M1–M3 |
-| `infra/` | Containers, GCP deployment | M1–M3 |
+The RFM, clustering and segment-migration analytics are deferred to a later
+delivery — see [`docs/roadmap.md`](docs/roadmap.md).
 
-`services/_shared/` holds the JWT validation, correlation IDs, error envelope,
-content negotiation, and health endpoints that all thirteen microservices
-reuse. Never copy that code into an individual service.
+## Stack
 
-## Quickstart
+Python 3.12 · Flask + Jinja2 · PostgreSQL · Gunicorn under systemd · NGINX or
+Apache as reverse proxy · CentOS 10 Stream on GCP Compute Engine.
 
-Requires Docker, Docker Compose, and Python 3.12.
+Flask rather than the Node.js the exercise statement illustrates:
+[ADR-0001](docs/adr/0001-flask-monolith-on-a-single-vm.md).
+
+## Structure
+
+| Directory | Contents |
+|---|---|
+| `docs/` | Documentation, decisions, evidence |
+| `sql/` | `00_create_database.sql`, `01_schema.sql`, `02_seed_30_per_table.sql` |
+| `web/` | The application, organized by layers |
+
+## Running it locally
+
+Requires Python 3.12 and a local PostgreSQL.
 
 ```bash
-cp .env.example .env
-make up        # PostgreSQL, MongoDB, Redis, web
-make migrate   # alembic upgrade head
-make seed      # load transaction history
+cp .env.example .env          # adjust the connection string
+
+psql -U postgres -f sql/00_create_database.sql
+psql -U postgres -d retail -f sql/01_schema.sql
+psql -U postgres -d retail -f sql/02_seed_30_per_table.sql
+
+python -m venv .venv && source .venv/bin/activate
+pip install -r web/requirements.txt
+flask --app web.app run
 ```
 
-The web system is then at http://localhost:5000
+The application is then at http://localhost:5000
+
+> The application is being built. `sql/` and `web/` are produced by the Phase 2
+> and Phase 3 stories in [`docs/backlog.md`](docs/backlog.md); until those land,
+> the commands above describe the target rather than the current state.
 
 Using an AI coding agent? Also run `touch ~/.claude/rs-local.md` so the
 personal-context import resolves.
@@ -56,14 +74,7 @@ personal-context import resolves.
 
 Start at [`docs/README.md`](docs/README.md).
 
-| Topic | Location |
-|---|---|
-| Scrum process, sprints, risks | [`docs/scrum/`](docs/scrum/) |
-| Architecture decisions | [`docs/adr/`](docs/adr/) |
-| Database designs | [`docs/data/`](docs/data/) |
-| Requirements and user stories | [`docs/requirements/`](docs/requirements/) |
-
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md). `main` is protected; work happens on
-feature branches merged into `develop`.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). `main` is protected and `develop`
+requires a reviewed pull request.

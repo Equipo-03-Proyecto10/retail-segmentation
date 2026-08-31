@@ -1,34 +1,21 @@
-# Documentation Index
-
-## Process
+# Documentation
 
 | Document | Purpose |
 |---|---|
-| [Scrum Framework Charter](scrum/00-scrum-framework-charter.md) | Roles, cadence, ceremonies, Definition of Done, capacity model |
-| [Product Backlog — Epics](scrum/01-product-backlog-epics.md) | 34 epics across all four components |
-| [Release Plan and Sprint Calendar](scrum/02-release-plan-and-sprint-calendar.md) | Semester work plan, sprint goals, deliverable coverage |
-| [Sprint 0 Backlog](scrum/03-sprint-00-backlog.md) | Foundation stories with acceptance criteria |
-| [Risk Register](scrum/04-risk-register.md) | Exposure matrix and mitigations |
+| [Scope](scope.md) | What the delivery includes, the constraints, the phases, the deliverables |
+| [Process](process.md) | How the team works: Scrum planning, XP engineering practices, Definition of Done |
+| [Backlog](backlog.md) | Ordered work, grouped by scope phase |
+| [Roadmap](roadmap.md) | What is deferred to later deliveries, and how it re-enters |
+| [Decisions](adr/) | Architecture Decision Records |
+| [Issue history](issue-history.md) | What the deleted `#1`–`#40` references in older commits pointed at |
 
-## Architecture decisions
+Documents that do not exist yet are produced by the story that needs them:
 
-Numbered, immutable once accepted. Supersede rather than edit.
-
-| ADR | Subject |
+| Deliverable | Produced by |
 |---|---|
-| ADR-001 | Authentication and token lifecycle |
-| ADR-002 | Data ownership map |
-| ADR-003 | API standards and content negotiation |
-| ADR-004 | Deferring Kubernetes |
+| `requirements.md` | F2-01 |
+| `data-model.md` | F2-03 |
+| `evidence/` | F2-07, F5-01, F5-02, F6-05 |
 
-## Design
-
-| Area | Location |
-|---|---|
-| Problem analysis | [`analysis/`](analysis/) |
-| Requirements, stories, business rules | [`requirements/`](requirements/) |
-| Diagrams | [`architecture/`](architecture/) |
-| PostgreSQL, MongoDB, Redis | [`data/`](data/) |
-| Permission matrix | [`security/`](security/) |
-| Interface prototypes | [`ux/`](ux/) |
-| Demo script | [`demo/`](demo/) |
+Everything is written in English — code, comments, commits, issues,
+documentation. Spoken meetings are in Spanish.

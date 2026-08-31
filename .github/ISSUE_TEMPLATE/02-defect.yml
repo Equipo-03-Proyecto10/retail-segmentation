@@ -1,0 +1,88 @@
+name: Defect
+description: Something accepted as Done that does not behave as its acceptance criteria state.
+title: "<what breaks> when <under what conditions>"
+labels: ["type:bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The defect log is a graded deliverable. A record that cannot be
+        reproduced from what is written here is worth very little, so the
+        reproduction and the environment matter more than the prose.
+
+  - type: textarea
+    id: observed
+    attributes:
+      label: What happened
+      description: The observed behaviour, including the exact error text or the wrong value.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should have happened
+      description: >
+        Quote the acceptance criterion or the rule this contradicts. A defect is
+        a gap against a stated expectation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Numbered steps from a clean database.
+      value: |
+        1. Run the three scripts in `sql/` against an empty database
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - "Blocks the delivery"
+        - "Breaks a Definition of Done item"
+        - "Wrong result, workaround exists"
+        - "Cosmetic"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where it surfaces
+      options:
+        - infrastructure
+        - database
+        - application
+        - security and roles
+        - deployment
+        - documentation
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      value: |
+        Branch / commit:
+        Local or deployed instance:
+        Browser and viewport (if user-facing):
+    validations:
+      required: true
+
+  - type: textarea
+    id: data
+    attributes:
+      label: Does this defect affect stored data?
+      description: >
+        Answer explicitly if it wrote wrong rows, bypassed a constraint, or
+        created a second administrator. A defect that corrupted data is a
+        different repair from one that displayed it wrongly.
+      placeholder: "No stored data affected."

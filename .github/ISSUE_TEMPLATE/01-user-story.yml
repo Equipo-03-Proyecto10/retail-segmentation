@@ -1,0 +1,93 @@
+name: User story
+description: A unit of work that delivers value to a role. Must reach Definition of Ready before it enters a sprint.
+title: "<verb> <what> for <role>"
+labels: ["type:feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        These fields are the Definition of Ready (`docs/process.md` §5). A story
+        that cannot fill them in is not ready to be committed — and filling them
+        in badly only moves the argument to Sprint Planning.
+
+  - type: textarea
+    id: story
+    attributes:
+      label: Story
+      value: |
+        As a
+        I want
+        so that
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: >
+        Given / When / Then, each independently testable. "Works correctly" is
+        not a criterion. If a criterion can be checked by a script or a query
+        rather than by reading, write it that way.
+      value: |
+        - Given ..., when ..., then ...
+        - Given ..., when ..., then ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Scope phase
+      description: From `docs/scope.md` §4.
+      options:
+        - "0 — Preparation"
+        - "1 — GCP infrastructure"
+        - "2 — Database"
+        - "3 — Application"
+        - "4 — Security and roles"
+        - "5 — Testing and quality"
+        - "6 — Deployment and publication"
+    validations:
+      required: true
+
+  - type: textarea
+    id: data-model
+    attributes:
+      label: Data model impact
+      description: >
+        Which tables are read and which are written. A schema change ships in
+        `sql/01_schema.sql` with its seed rows, and the three scripts must still
+        run clean in order from an empty database.
+      value: |
+        Reads:
+        Writes:
+        Schema change: no
+    validations:
+      required: true
+
+  - type: input
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Issue numbers or story ids. A blocker must already be done or scheduled earlier in the same sprint.
+      placeholder: "blocked by #12, or: none"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: estimate
+    attributes:
+      label: Estimate
+      description: >
+        Set by the team in Planning Poker. Nobody estimates alone. 13 means the
+        story is too large and is split before it is committed.
+      options: ["not yet estimated", "1", "2", "3", "5", "8", "13 — must be split"]
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Constraints, rejected alternatives, or the ADR this follows.

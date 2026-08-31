@@ -7,6 +7,7 @@
 | [Backlog](backlog.md) | Ordered work, grouped by scope phase |
 | [Roadmap](roadmap.md) | What is deferred to later deliveries, and how it re-enters |
 | [Decisions](adr/) | Architecture Decision Records |
+| [Issue history](issue-history.md) | What the deleted `#1`–`#40` references in older commits pointed at |
 
 Documents that do not exist yet are produced by the story that needs them:
 

@@ -63,6 +63,10 @@ flowchart TD
     F2-07 --> F6-04
     F5-02 --> F6-04
     F6-04 --> F6-05
+    F6-02 --> F6-06
+
+    F2-06 --> F3-09
+    F3-01 --> F3-09
 ```
 
 ---
@@ -124,6 +128,7 @@ application layer that was built on top of it.
 | F3-06 | User management: create, edit, deactivate | P0 | F3-04 |
 | F3-07 | Image handling: upload JPG/PNG/WebP, store under `uploads/`, keep the path in the database | P0 | F3-04, F2-05 |
 | F3-08 | Apply the chosen design system across the interface | P1 | F0-02b, F3-04 |
+| F3-09 | One-command environment bootstrap: create the database, apply the schema, load seed data and start the application | P1 | F2-06, F3-01 |
 
 **F3-02 depends on the schema, not the infrastructure role.** Connecting
 through environment variables needs a database to connect to (`F2-05`), not
@@ -173,6 +178,15 @@ system pass would hold up testing for a story that doesn't affect behavior.
 | F6-03 | SSL certificate with forced HTTPS | P2 | F6-01 |
 | F6-04 | Publish the documentation and evidence page on the assigned host | P0 | F0-04, F2-07, F5-02 |
 | F6-05 | Final verification: links, images, downloads, checked in a private window | P0 | F6-04 |
+| F6-06 | Continuous deployment: automatically update the assigned host on every merge to `main` | P1 | F6-02 |
+
+**F6-06 targets one environment, not two.** There is a single GCP instance
+(`docs/scope.md` C-5) and a single assigned host; `develop` stays an
+integration branch gated by CI, but nothing deploys from it. The pipeline
+triggers only on merge to `main`, after review, and needs `F6-02` — a
+`systemd`-managed `gunicorn` process already has to exist for the pipeline to
+restart it. The single-environment decision is recorded as an ADR as part of
+this story, not assumed silently.
 
 **F6-04 needs the evidence it publishes to exist.** As written, its only
 blocker was `F0-04` (the host assignment), which made it look startable in

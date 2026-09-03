@@ -119,5 +119,8 @@ them; when one is answered, it moves out of this section.
 |---|---|---|
 | Q-1 | The statement says the work is individual, but this is a registered team project. Does the team deliver once, or does each member deliver their own instance? | The team delivers once, on one shared instance |
 | Q-2 | Which host URL is assigned, given Q-1? | `https://ubiquitous.udem.edu/~iac-<matricula>` of one designated member |
-| Q-3 | Company name and brand identity | Pending — decided by the team |
-| Q-4 | Design system for the interface | Pending — decided by the team |
+
+Q-3 (company name and brand identity) and Q-4 (design system for the
+interface) are resolved: the product is **MOSAIQ**, with the design system
+recorded in [ADR-0002](adr/0002-mosaiq-identity-and-design-system.md) and
+committed under [`docs/design-system/`](design-system/).

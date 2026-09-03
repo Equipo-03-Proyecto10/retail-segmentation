@@ -1,0 +1,563 @@
+/* MOSAIQ — resolved token reference. Generated; not loaded by any page.
+   Valid CSS: light lives under :root, dark under [data-mq-theme="dark"], density
+   under its three classes — so nothing here declares the same token twice in the
+   same scope. Every value is a literal: no calc(), no color-mix(), no var().
+   Contrast ratios (WCAG 2.1) on neutrals are against that scope's canvas —
+   #FAFAF9 under :root, #0B0B0A under the dark block. */
+
+:root{
+
+/* ---------------- TIER 1 · PRIMITIVES ---------------- */
+/* Theme-invariant: primitives are declared once and never overridden. */
+
+/* Neutral ramp — ratios vs light canvas #FAFAF9.
+   Under the dark block these same primitives read against #0B0B0A instead:
+   950 1.07:1 · 900 1.25:1 · 800 1.67:1 · 700 2.39:1 · 600 3.68:1 · 500 5.82:1
+   400 9.35:1 · 300 13.37:1 · 200 15.89:1 · 100 17.88:1 · 050 18.85:1 · white 19.69:1 */
+--mq-neutral-050: #FAFAF9;   /* 1.00:1 */
+--mq-neutral-100: #F4F4F2;   /* 1.05:1 */
+--mq-neutral-200: #E7E7E4;   /* 1.19:1 */
+--mq-neutral-300: #D5D5D1;   /* 1.41:1 */
+--mq-neutral-400: #B3B3AE;   /* 2.02:1 */
+--mq-neutral-500: #8C8C86;   /* 3.24:1 */
+--mq-neutral-600: #6B6B65;   /* 5.13:1 */
+--mq-neutral-700: #4F4F4A;   /* 7.89:1 */
+--mq-neutral-800: #383834;   /* 11.27:1 */
+--mq-neutral-900: #232320;   /* 15.09:1 */
+--mq-neutral-950: #141412;   /* 17.66:1 */
+--mq-white: #FFFFFF;         /* 1.04:1 */
+--mq-black: #000000;         /* 20.11:1 */
+
+/* Accent — papaya. Ratio vs white, marking where white text is legal: 700+ only. */
+--mq-orange-100: #FFE8D1;    /* 1.26:1 */
+--mq-orange-300: #FFB566;    /* 1.75:1 */
+--mq-orange-500: #FF6B00;    /* 2.85:1 — never carries white text */
+--mq-orange-600: #D45400;    /* 4.14:1 — focus ring only */
+--mq-orange-700: #A33F00;    /* 6.42:1 */
+--mq-orange-800: #7A2F00;    /* 9.40:1 */
+--mq-orange-900: #5C2300;    /* 12.39:1 */
+
+/* State hues */
+--mq-green-600: #1F7A4C;
+--mq-green-100: #E3F2E9;
+--mq-amber-600: #B26A00;
+--mq-amber-100: #FBEEDA;
+--mq-red-600: #C0342B;
+--mq-red-100: #FAE4E2;
+--mq-blue-600: #1F5FA8;
+--mq-blue-100: #E2EBF6;
+
+/* Service health hues */
+--mq-health-teal: #0E7C86;
+--mq-health-teal-100: #DCEEF0;
+--mq-health-ochre: #8A6D1F;
+--mq-health-ochre-100: #F2EEDC;
+--mq-health-maroon: #8E2233;
+--mq-health-maroon-100: #F4E2E5;
+--mq-health-slate: #5C6670;
+--mq-health-slate-100: #E9EBED;
+
+/* Categorical — Paul Tol "muted", verbatim, minus wine. Re-stated in the dark block. */
+--mq-cat-01: #332288;   /* indigo */
+--mq-cat-02: #CC6677;   /* rose */
+--mq-cat-03: #44AA99;   /* teal */
+--mq-cat-04: #117733;   /* green */
+--mq-cat-05: #AA4499;   /* purple */
+--mq-cat-06: #DDCC77;   /* sand */
+--mq-cat-07: #88CCEE;   /* cyan */
+--mq-cat-08: #999933;   /* olive */
+--mq-cat-bad: #DDDDDD;  /* pale grey — missing or excluded, never a series */
+
+/* Sequential — re-stated in the dark block */
+--mq-seq-1: #FFF1E3;
+--mq-seq-2: #FDD9B0;
+--mq-seq-3: #F9B978;
+--mq-seq-4: #EE9440;
+--mq-seq-5: #CE6E14;
+--mq-seq-6: #9A4C06;
+
+/* Diverging — re-stated in the dark block */
+--mq-div-1: #1B4F86;
+--mq-div-2: #2E76B4;
+--mq-div-3: #7FAFD6;
+--mq-div-4: #C6DCEC;
+--mq-div-5: #F2F1EE;
+--mq-div-6: #FBD9B4;
+--mq-div-7: #F2A65A;
+--mq-div-8: #D2731C;
+--mq-div-9: #8E4708;
+
+/* Type — two families */
+--mq-font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+--mq-font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+--mq-font-display: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+--mq-size-12: 12px;
+--mq-size-13: 13px;
+--mq-size-14: 14px;
+--mq-size-16: 16px;
+--mq-size-20: 20px;
+--mq-size-24: 24px;
+--mq-size-32: 32px;
+--mq-lh-12: 16px;
+--mq-lh-13: 18px;
+--mq-lh-14: 20px;
+--mq-lh-16: 24px;
+--mq-lh-20: 28px;
+--mq-lh-24: 32px;
+--mq-lh-32: 40px;
+--mq-weight-regular: 400;
+--mq-weight-medium: 500;
+--mq-weight-semibold: 600;
+--mq-weight-bold: 700;
+
+/* Spacing */
+--mq-space-0: 0;
+--mq-space-05: 2px;
+--mq-space-1: 4px;
+--mq-space-2: 8px;
+--mq-space-3: 12px;
+--mq-space-4: 16px;
+--mq-space-5: 20px;
+--mq-space-6: 24px;
+--mq-space-8: 32px;
+--mq-space-10: 40px;
+--mq-space-12: 48px;
+--mq-space-16: 64px;
+
+/* Radius */
+--mq-radius-0: 0;
+--mq-radius-1: 2px;
+--mq-radius-2: 4px;
+--mq-radius-3: 6px;
+
+/* Elevation — theme-invariant */
+--mq-elevation-popover: 0 2px 6px rgba(20,20,18,.12);
+--mq-elevation-modal: 0 8px 24px rgba(20,20,18,.20);
+
+/* Motion */
+--mq-duration-fast: 90ms;
+--mq-duration-base: 140ms;
+--mq-easing: cubic-bezier(.2,0,.38,1);
+
+/* ---------------- TIER 2 · SEMANTIC (light) ---------------- */
+
+--mq-bg-canvas: #FAFAF9;              /* 1.00:1 */
+--mq-bg-surface: #FFFFFF;             /* 1.04:1 */
+--mq-bg-raised: #FFFFFF;              /* 1.04:1 */
+--mq-bg-sunken: #F4F4F2;              /* 1.05:1 */
+--mq-bg-hover: #F4F4F2;               /* 1.05:1 */
+--mq-bg-active: #E7E7E4;              /* 1.19:1 */
+--mq-bg-selected: #FFE8D1;
+--mq-bg-nav: #232320;                 /* 15.09:1 */
+--mq-nav-text: #D5D5D1;               /* 1.41:1 */
+--mq-nav-text-strong: #FFFFFF;        /* 1.04:1 */
+--mq-nav-text-muted: #8C8C86;         /* 3.24:1 */
+--mq-nav-text-disabled: #6B6B65;      /* 5.13:1 */
+--mq-nav-hover-bg: rgba(255,255,255,.06);
+--mq-nav-active-bg: rgba(255,107,0,.12);
+--mq-nav-border: #4F4F4A;             /* 7.89:1 */
+--mq-bg-disabled: #F4F4F2;            /* 1.05:1 */
+--mq-border-subtle: #E7E7E4;          /* 1.19:1 */
+--mq-border-default: #D5D5D1;         /* 1.41:1 */
+--mq-border-strong: #B3B3AE;          /* 2.02:1 */
+--mq-border-inverse: #4F4F4A;         /* 7.89:1 */
+--mq-text-primary: #232320;           /* 15.09:1 */
+--mq-text-secondary: #6B6B65;         /* 5.13:1 */
+--mq-text-disabled: #8C8C86;          /* 3.24:1 */
+--mq-text-inverse: #FAFAF9;           /* 1.00:1 */
+--mq-text-inverse-secondary: #B3B3AE; /* 2.02:1 */
+--mq-text-link: #A33F00;              /* 6.42:1 on canvas */
+--mq-text-link-hover: #7A2F00;        /* 9.40:1 on canvas */
+--mq-accent: #A33F00;                 /* 6.42:1 with accent-on */
+--mq-accent-hover: #7A2F00;           /* 9.40:1 with accent-on */
+--mq-accent-active: #5C2300;          /* 12.39:1 with accent-on */
+--mq-accent-on: #FFFFFF;              /* accent / hover / active ONLY */
+--mq-accent-bold: #FF6B00;            /* 2.85:1 with white — takes bold-on */
+--mq-accent-bold-on: #000000;         /* 7.36:1 on accent-bold */
+--mq-accent-subtle: #FFE8D1;
+--mq-accent-subtle-on: #5C2300;       /* 10.45:1 on accent-subtle */
+--mq-success: #1F7A4C;
+--mq-success-subtle: #E3F2E9;
+--mq-warning: #B26A00;
+--mq-warning-subtle: #FBEEDA;
+--mq-danger: #C0342B;
+--mq-danger-subtle: #FAE4E2;
+--mq-info: #1F5FA8;
+--mq-info-subtle: #E2EBF6;
+--mq-health-healthy: #0E7C86;
+--mq-health-healthy-subtle: #DCEEF0;
+--mq-health-degraded: #8A6D1F;
+--mq-health-degraded-subtle: #F2EEDC;
+--mq-health-down: #8E2233;
+--mq-health-down-subtle: #F4E2E5;
+--mq-health-unknown: #5C6670;
+--mq-health-unknown-subtle: #E9EBED;
+--mq-focus-ring: #D45400;
+--mq-focus-ring-width: 2px;
+--mq-focus-ring-offset: 1px;
+--mq-scrim: rgba(20,20,18,.44);
+--mq-chart-gridline: #E7E7E4;         /* 1.19:1 */
+--mq-chart-axis-line: #D5D5D1;        /* 1.41:1 */
+--mq-chart-axis-label: #6B6B65;       /* 5.13:1 */
+--mq-chart-tooltip-bg: #FFFFFF;       /* 1.04:1 */
+--mq-chart-tooltip-border: #B3B3AE;   /* 2.02:1 */
+--mq-chart-plot-bg: transparent;
+
+/* ---------------- TIER 3 · COMPONENT, colour-valued (light) ---------------- */
+/* These alias tier 2, so they resolve differently per theme and are re-stated
+   in the dark block. Everything in the next section is theme-invariant. */
+
+--mq-table-border: 1px solid #E7E7E4;
+--mq-table-header-bg: #F4F4F2;
+--mq-table-row-hover-bg: #F4F4F2;
+--mq-table-row-selected-bg: #FFE8D1;
+--mq-table-row-selected-marker: #A33F00;
+--mq-table-sticky-shadow: 1px 0 0 #E7E7E4;
+--mq-input-border: 1px solid #D5D5D1;
+--mq-input-border-hover: 1px solid #B3B3AE;
+--mq-input-border-error: 1px solid #C0342B;
+--mq-input-bg: #FFFFFF;
+--mq-input-bg-disabled: #F4F4F2;
+--mq-input-placeholder: #8C8C86;
+--mq-card-bg: #FFFFFF;
+--mq-card-border: 1px solid #E7E7E4;
+--mq-panel-bg: #FFFFFF;
+--mq-panel-border: 1px solid #E7E7E4;
+--mq-divider-color: #E7E7E4;
+--mq-nav-toggle-color: #D5D5D1;
+--mq-topbar-border: 1px solid #E7E7E4;
+--mq-menu-border: 1px solid #D5D5D1;
+--mq-menu-shadow: 0 2px 6px rgba(20,20,18,.12);
+--mq-modal-shadow: 0 8px 24px rgba(20,20,18,.20);
+--mq-modal-scrim: rgba(20,20,18,.44);
+--mq-popover-shadow: 0 2px 6px rgba(20,20,18,.12);
+--mq-toast-shadow: 0 2px 6px rgba(20,20,18,.12);
+--mq-tooltip-bg: #232320;
+--mq-tooltip-color: #FFFFFF;
+--mq-skeleton-bg: #E7E7E4;
+--mq-skeleton-highlight: #F4F4F2;
+--mq-progress-track: #E7E7E4;
+--mq-progress-fill: #A33F00;
+--mq-scrollbar-thumb: #B3B3AE;
+--mq-scrollbar-track: #F4F4F2;
+--mq-focus-outline: 2px solid #D45400;
+
+/* ---------------- TIER 3 · COMPONENT, theme-invariant ---------------- */
+
+--mq-table-header-font-size: 12px;
+--mq-table-header-weight: 600;
+--mq-table-header-tracking: .04em;
+--mq-table-sort-icon-size: 10px;
+--mq-input-radius: 4px;
+--mq-input-padding-x: 8px;
+--mq-input-icon-size: 14px;
+--mq-label-font-size: 12px;
+--mq-label-weight: 500;
+--mq-help-font-size: 12px;
+--mq-error-font-size: 12px;
+--mq-textarea-min-height: 72px;
+--mq-textarea-padding-y: 6px;
+--mq-select-chevron-size: 12px;
+--mq-select-padding-right: 24px;
+--mq-check-size: 14px;
+--mq-check-radius: 2px;
+--mq-radio-size: 14px;
+--mq-toggle-width: 28px;
+--mq-toggle-height: 16px;
+--mq-toggle-knob: 12px;
+--mq-button-radius: 4px;
+--mq-button-font-weight: 500;
+--mq-button-gap: 8px;
+--mq-button-icon-size: 14px;
+--mq-button-border-width: 1px;
+--mq-card-radius: 4px;
+--mq-panel-radius: 4px;
+--mq-panel-title-size: 14px;
+--mq-panel-title-weight: 600;
+--mq-divider-width: 1px;
+--mq-badge-radius: 2px;
+--mq-badge-font-size: 12px;
+--mq-badge-padding-x: 4px;
+--mq-pill-radius: 4px;
+--mq-pill-font-size: 12px;
+--mq-pill-padding-x: 8px;
+--mq-chip-radius: 4px;
+--mq-chip-remove-size: 12px;
+--mq-segment-swatch-size: 8px;
+--mq-avatar-size: 24px;
+--mq-avatar-radius: 4px;
+--mq-kbd-height: 18px;
+--mq-kbd-font-size: 11px;
+--mq-kbd-radius: 2px;
+--mq-nav-width: 232px;
+--mq-nav-width-collapsed: 48px;
+--mq-nav-section-label-size: 12px;
+--mq-nav-item-radius: 4px;
+--mq-nav-icon-size: 16px;
+--mq-nav-padding-x: 8px;
+--mq-toolbar-gap: 8px;
+--mq-tab-padding-x: 12px;
+--mq-tab-indicator-height: 2px;
+--mq-tab-font-size: 13px;
+--mq-breadcrumb-font-size: 12px;
+--mq-breadcrumb-gap: 6px;
+--mq-tree-indent: 16px;
+--mq-menu-min-width: 180px;
+--mq-menu-padding: 4px;
+--mq-menu-radius: 4px;
+--mq-modal-width: 560px;
+--mq-modal-radius: 6px;
+--mq-modal-padding: 24px;
+--mq-modal-header-height: 52px;
+--mq-drawer-width: 480px;
+--mq-popover-radius: 4px;
+--mq-popover-max-width: 280px;
+--mq-popover-padding: 12px;
+--mq-toast-width: 360px;
+--mq-toast-radius: 4px;
+--mq-tooltip-font-size: 12px;
+--mq-tooltip-radius: 2px;
+--mq-tooltip-padding: 4px 8px;
+--mq-tooltip-max-width: 240px;
+--mq-skeleton-radius: 2px;
+--mq-progress-height: 4px;
+--mq-progress-radius: 2px;
+--mq-state-padding: 32px;
+--mq-state-mark-size: 12px;
+--mq-pagination-page-size: 26px;
+--mq-metric-value-size: 24px;
+--mq-metric-label-size: 12px;
+--mq-metric-delta-size: 12px;
+--mq-chart-height-sm: 180px;
+--mq-chart-height-md: 260px;
+--mq-chart-height-lg: 360px;
+--mq-chart-legend-size: 12px;
+--mq-chart-series-width: 2px;
+--mq-chart-marker-radius: 3px;
+--mq-scrollbar-size: 10px;
+}
+
+[data-mq-theme="dark"]{
+
+/* ---------------- TIER 2 · SEMANTIC (dark) ---------------- */
+/* Ratios vs dark canvas #0B0B0A. */
+
+--mq-bg-canvas: #0B0B0A;              /* 1.00:1 */
+--mq-bg-surface: #141412;             /* 1.07:1 */
+--mq-bg-raised: #232320;              /* 1.25:1 */
+--mq-bg-sunken: #0B0B0A;              /* 1.00:1 */
+--mq-bg-hover: #383834;               /* 1.67:1 */
+--mq-bg-active: #4F4F4A;              /* 2.39:1 */
+--mq-bg-selected: #3A1D00;
+--mq-bg-nav: #0B0B0A;                 /* 1.00:1 */
+--mq-nav-text: #B3B3AE;               /* 9.35:1 */
+--mq-nav-text-strong: #F4F4F2;        /* 17.88:1 */
+--mq-nav-text-muted: #6B6B65;         /* 3.68:1 */
+--mq-nav-text-disabled: #4F4F4A;      /* 2.39:1 */
+--mq-nav-hover-bg: rgba(255,255,255,.05);
+--mq-nav-active-bg: rgba(255,107,0,.16);
+--mq-nav-border: #383834;             /* 1.67:1 */
+--mq-bg-disabled: #232320;            /* 1.25:1 */
+--mq-border-subtle: #383834;          /* 1.67:1 */
+--mq-border-default: #4F4F4A;         /* 2.39:1 */
+--mq-border-strong: #6B6B65;          /* 3.68:1 */
+--mq-border-inverse: #383834;         /* 1.67:1 */
+--mq-text-primary: #F4F4F2;           /* 17.88:1 */
+--mq-text-secondary: #B3B3AE;         /* 9.35:1 */
+--mq-text-disabled: #6B6B65;          /* 3.68:1 */
+--mq-text-inverse: #141412;           /* 1.07:1 */
+--mq-text-inverse-secondary: #4F4F4A; /* 2.39:1 */
+--mq-text-link: #FFB566;
+--mq-text-link-hover: #FFE8D1;
+--mq-accent: #FF6B00;                 /* 7.36:1 with accent-on */
+--mq-accent-hover: #FFB566;           /* 12.68:1 with accent-on */
+--mq-accent-active: #FFE8D1;          /* 16.60:1 with accent-on */
+--mq-accent-on: #000000;
+--mq-accent-bold: #FF6B00;
+--mq-accent-bold-on: #000000;         /* 7.36:1 on accent-bold */
+--mq-accent-subtle: #3A1D00;
+--mq-accent-subtle-on: #FFB566;       /* 8.89:1 on accent-subtle */
+--mq-success: #4FBF85;
+--mq-success-subtle: #12301F;
+--mq-warning: #E0A44A;
+--mq-warning-subtle: #33260C;
+--mq-danger: #E8736A;
+--mq-danger-subtle: #361715;
+--mq-info: #6BA6E8;
+--mq-info-subtle: #122436;
+--mq-health-healthy: #3FB6BF;
+--mq-health-healthy-subtle: #0D2A2C;
+--mq-health-degraded: #C7A24A;
+--mq-health-degraded-subtle: #2E2711;
+--mq-health-down: #D9636F;
+--mq-health-down-subtle: #33141A;
+--mq-health-unknown: #8E979F;
+--mq-health-unknown-subtle: #1D2124;
+--mq-focus-ring: #FF6B00;
+--mq-scrim: rgba(0,0,0,.68);
+
+/* Categorical — Paul Tol "light", hue-paired slot for slot to the muted set */
+--mq-cat-01: #77AADD;   /* light blue */
+--mq-cat-02: #EE8866;   /* orange */
+--mq-cat-03: #44BB99;   /* mint */
+--mq-cat-04: #BBCC33;   /* pear */
+--mq-cat-05: #FFAABB;   /* pink */
+--mq-cat-06: #EEDD88;   /* light yellow */
+--mq-cat-07: #99DDFF;   /* light cyan */
+--mq-cat-08: #AAAA00;   /* olive */
+--mq-cat-bad: #555555;  /* Tol dark-scheme grey — 2.43:1, recedes */
+
+--mq-seq-1: #3A2410;
+--mq-seq-2: #6B3D10;
+--mq-seq-3: #99570F;
+--mq-seq-4: #C4741A;
+--mq-seq-5: #E89A42;
+--mq-seq-6: #FFC584;
+--mq-div-1: #6BA6E8;
+--mq-div-2: #4A82C4;
+--mq-div-3: #31577F;
+--mq-div-4: #22364A;
+--mq-div-5: #2A2926;
+--mq-div-6: #4A3418;
+--mq-div-7: #8A5417;
+--mq-div-8: #C4741A;
+--mq-div-9: #F2A65A;
+--mq-chart-gridline: #383834;         /* 1.67:1 */
+--mq-chart-axis-line: #4F4F4A;        /* 2.39:1 */
+--mq-chart-axis-label: #B3B3AE;       /* 9.35:1 */
+--mq-chart-tooltip-bg: #232320;       /* 1.25:1 */
+--mq-chart-tooltip-border: #6B6B65;   /* 3.68:1 */
+
+/* ---------------- TIER 3 · COMPONENT, colour-valued (dark) ---------------- */
+/* The real tier 3 declares these once as var() aliases and needs no dark block;
+   they appear here only because this file resolves everything to literals. */
+
+--mq-table-border: 1px solid #383834;
+--mq-table-header-bg: #0B0B0A;
+--mq-table-row-hover-bg: #383834;
+--mq-table-row-selected-bg: #3A1D00;
+--mq-table-row-selected-marker: #FF6B00;
+--mq-table-sticky-shadow: 1px 0 0 #383834;
+--mq-input-border: 1px solid #4F4F4A;
+--mq-input-border-hover: 1px solid #6B6B65;
+--mq-input-border-error: 1px solid #E8736A;
+--mq-input-bg: #141412;
+--mq-input-bg-disabled: #232320;
+--mq-input-placeholder: #6B6B65;
+--mq-card-bg: #141412;
+--mq-card-border: 1px solid #383834;
+--mq-panel-bg: #141412;
+--mq-panel-border: 1px solid #383834;
+--mq-divider-color: #383834;
+--mq-nav-toggle-color: #B3B3AE;
+--mq-topbar-border: 1px solid #383834;
+--mq-menu-border: 1px solid #4F4F4A;
+--mq-modal-scrim: rgba(0,0,0,.68);
+--mq-tooltip-bg: #F4F4F2;
+--mq-tooltip-color: #141412;
+--mq-skeleton-bg: #4F4F4A;
+--mq-skeleton-highlight: #383834;
+--mq-progress-track: #4F4F4A;
+--mq-progress-fill: #FF6B00;
+--mq-scrollbar-thumb: #6B6B65;
+--mq-scrollbar-track: #0B0B0A;
+--mq-focus-outline: 2px solid #FF6B00;
+}
+
+/* ---------------- TIER 3 · DENSITY ----------------
+   Theme-invariant geometry. :root carries the comfortable values, so the
+   comfortable class exists only so a subtree can opt back in. */
+
+:root,
+.mq-density-comfortable{
+--mq-table-row-height: 40px;
+--mq-table-header-height: 36px;
+--mq-table-font-size: 13px;
+--mq-table-cell-padding-x: 12px;
+--mq-table-cell-padding-y: 8px;
+--mq-input-height: 32px;
+--mq-input-height-sm: 26px;
+--mq-input-font-size: 13px;
+--mq-button-height-md: 32px;
+--mq-button-height-sm: 26px;
+--mq-button-font-size: 13px;
+--mq-button-padding-x: 12px;
+--mq-card-padding: 16px;
+--mq-panel-padding: 16px;
+--mq-panel-header-height: 44px;
+--mq-nav-item-height: 30px;
+--mq-menu-item-height: 30px;
+--mq-tabs-height: 38px;
+--mq-pagination-height: 40px;
+--mq-tree-row-height: 28px;
+--mq-toolbar-height: 44px;
+--mq-topbar-height: 48px;
+--mq-badge-height: 18px;
+--mq-pill-height: 20px;
+--mq-chip-height: 22px;
+--mq-stack-gap: 12px;
+--mq-field-gap: 8px;
+--mq-row-gap: 12px;
+}
+
+.mq-density-compact{
+--mq-table-row-height: 32px;
+--mq-table-header-height: 32px;
+--mq-table-font-size: 13px;
+--mq-table-cell-padding-x: 8px;
+--mq-table-cell-padding-y: 4px;
+--mq-input-height: 28px;
+--mq-input-height-sm: 24px;
+--mq-input-font-size: 13px;
+--mq-button-height-md: 28px;
+--mq-button-height-sm: 24px;
+--mq-button-font-size: 13px;
+--mq-button-padding-x: 12px;
+--mq-card-padding: 12px;
+--mq-panel-padding: 12px;
+--mq-panel-header-height: 40px;
+--mq-nav-item-height: 28px;
+--mq-menu-item-height: 28px;
+--mq-tabs-height: 34px;
+--mq-pagination-height: 36px;
+--mq-tree-row-height: 26px;
+--mq-toolbar-height: 40px;
+--mq-topbar-height: 44px;
+--mq-badge-height: 18px;
+--mq-pill-height: 20px;
+--mq-chip-height: 20px;
+--mq-stack-gap: 8px;
+--mq-field-gap: 6px;
+--mq-row-gap: 8px;
+}
+
+.mq-density-dense{
+--mq-table-row-height: 28px;
+--mq-table-header-height: 26px;
+--mq-table-font-size: 12px;
+--mq-table-cell-padding-x: 8px;
+--mq-table-cell-padding-y: 2px;
+--mq-input-height: 24px;
+--mq-input-height-sm: 20px;
+--mq-input-font-size: 12px;
+--mq-button-height-md: 24px;
+--mq-button-height-sm: 20px;
+--mq-button-font-size: 12px;
+--mq-button-padding-x: 8px;
+--mq-card-padding: 8px;
+--mq-panel-padding: 8px;
+--mq-panel-header-height: 34px;
+--mq-nav-item-height: 24px;
+--mq-menu-item-height: 24px;
+--mq-tabs-height: 30px;
+--mq-pagination-height: 32px;
+--mq-tree-row-height: 22px;
+--mq-toolbar-height: 34px;
+--mq-topbar-height: 40px;
+--mq-badge-height: 16px;
+--mq-pill-height: 18px;
+--mq-chip-height: 18px;
+--mq-stack-gap: 4px;
+--mq-field-gap: 4px;
+--mq-row-gap: 4px;
+}

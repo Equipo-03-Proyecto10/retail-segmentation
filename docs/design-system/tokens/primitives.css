@@ -1,0 +1,41 @@
+/* TIER 1 — primitives. Raw values. Never referenced by a component. */
+:root{
+/* Neutral ramp — 11 steps, very slightly warm so it sits with papaya orange */
+--mq-neutral-050:#FAFAF9;--mq-neutral-100:#F4F4F2;--mq-neutral-200:#E7E7E4;--mq-neutral-300:#D5D5D1;--mq-neutral-400:#B3B3AE;--mq-neutral-500:#8C8C86;--mq-neutral-600:#6B6B65;--mq-neutral-700:#4F4F4A;--mq-neutral-800:#383834;--mq-neutral-900:#232320;--mq-neutral-950:#141412;
+--mq-white:#FFFFFF;--mq-black:#000000;
+/* Accent hue — papaya orange, 7 steps. 500 is the brand fill; 700/800/900 are the
+   only steps that carry white text at 4.5:1 or better. */
+--mq-orange-100:#FFE8D1;--mq-orange-300:#FFB566;--mq-orange-500:#FF6B00;--mq-orange-600:#D45400;--mq-orange-700:#A33F00;--mq-orange-800:#7A2F00;--mq-orange-900:#5C2300;
+/* Semantic primitives */
+--mq-green-600:#1F7A4C;--mq-green-100:#E3F2E9;--mq-amber-600:#B26A00;--mq-amber-100:#FBEEDA;--mq-red-600:#C0342B;--mq-red-100:#FAE4E2;--mq-blue-600:#1F5FA8;--mq-blue-100:#E2EBF6;
+/* Service health primitives — a separate hue family from the semantic states */
+--mq-health-teal:#0E7C86;--mq-health-teal-100:#DCEEF0;--mq-health-ochre:#8A6D1F;--mq-health-ochre-100:#F2EEDC;--mq-health-maroon:#8E2233;--mq-health-maroon-100:#F4E2E5;--mq-health-slate:#5C6670;--mq-health-slate-100:#E9EBED;
+/* Categorical data palette — Paul Tol "muted" qualitative scheme, verbatim, in Tol's
+   own recommended order minus wine (its nearest neighbour to rose and purple).
+   8 series colours plus the scheme's pale grey for missing or excluded data.
+   Eight is the ceiling: no published colour-vision-safe qualitative scheme supplies
+   more, and beyond 8 series the encoding has to change, not the palette. */
+--mq-cat-01:#332288;--mq-cat-02:#CC6677;--mq-cat-03:#44AA99;--mq-cat-04:#117733;--mq-cat-05:#AA4499;--mq-cat-06:#DDCC77;--mq-cat-07:#88CCEE;--mq-cat-08:#999933;--mq-cat-bad:#DDDDDD;
+/* Sequential data palette — 6 steps, monotonic lightness */
+--mq-seq-1:#FFF1E3;--mq-seq-2:#FDD9B0;--mq-seq-3:#F9B978;--mq-seq-4:#EE9440;--mq-seq-5:#CE6E14;--mq-seq-6:#9A4C06;
+/* Diverging data palette — 9 steps, neutral midpoint, blue/orange */
+--mq-div-1:#1B4F86;--mq-div-2:#2E76B4;--mq-div-3:#7FAFD6;--mq-div-4:#C6DCEC;--mq-div-5:#F2F1EE;--mq-div-6:#FBD9B4;--mq-div-7:#F2A65A;--mq-div-8:#D2731C;--mq-div-9:#8E4708;
+/* Type — two families. --mq-font-display is the same sans, reserved as the hook for
+   the marketing display treatment (600 weight, tight tracking). */
+--mq-font-sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+--mq-font-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
+--mq-font-display:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+--mq-size-12:12px;--mq-size-13:13px;--mq-size-14:14px;--mq-size-16:16px;--mq-size-20:20px;--mq-size-24:24px;--mq-size-32:32px;
+--mq-lh-12:16px;--mq-lh-13:18px;--mq-lh-14:20px;--mq-lh-16:24px;--mq-lh-20:28px;--mq-lh-24:32px;--mq-lh-32:40px;
+--mq-weight-regular:400;--mq-weight-medium:500;--mq-weight-semibold:600;--mq-weight-bold:700;
+/* Spacing — 4px base */
+--mq-space-0:0;--mq-space-05:2px;--mq-space-1:4px;--mq-space-2:8px;--mq-space-3:12px;--mq-space-4:16px;--mq-space-5:20px;--mq-space-6:24px;--mq-space-8:32px;--mq-space-10:40px;--mq-space-12:48px;--mq-space-16:64px;
+/* Radius — 4px default, 6px ceiling */
+--mq-radius-0:0;--mq-radius-1:2px;--mq-radius-2:4px;--mq-radius-3:6px;
+/* Elevation — exactly two levels */
+--mq-elevation-popover:0 2px 6px rgba(20,20,18,.12);--mq-elevation-modal:0 8px 24px rgba(20,20,18,.20);
+/* Motion */
+--mq-duration-fast:90ms; /* @kind other */
+--mq-duration-base:140ms; /* @kind other */
+--mq-easing:cubic-bezier(.2,0,.38,1); /* @kind other */
+}

@@ -7,6 +7,7 @@
 | [Backlog](backlog.md) | Ordered work, grouped by scope phase |
 | [Roadmap](roadmap.md) | What is deferred to later deliveries, and how it re-enters |
 | [Infrastructure](infra.md) | Provisioned GCP resources: instance name, zone, specs |
+| [Design system](design-system/) | MOSAIQ's tokens, components, and the two reference sheets to build screens from |
 | [Decisions](adr/) | Architecture Decision Records |
 | [Issue history](issue-history.md) | What the deleted `#1`–`#40` references in older commits pointed at |
 

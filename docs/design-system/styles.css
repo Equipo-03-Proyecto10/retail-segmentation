@@ -1,0 +1,7 @@
+/* MOSAIQ design system — global entry point. Consumers link this one file. */
+@import url("tokens/fonts.css");
+@import url("tokens/primitives.css");
+@import url("tokens/semantic.css");
+@import url("tokens/component.css");
+@import url("base.css");
+@import url("components.css");

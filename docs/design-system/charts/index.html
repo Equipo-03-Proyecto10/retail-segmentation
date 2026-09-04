@@ -1,0 +1,86 @@
+<!-- @dsCard group="Charts" viewport="1400x760" name="Highcharts theme — worked examples" subtitle="Stacked area, RFM heatmap, migration sankey, uplift with CI" -->
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>MOSAIQ Highcharts theme</title>
+<link rel="stylesheet" href="../styles.css">
+<style>
+body{margin:0;padding:16px;background:var(--mq-bg-canvas);color:var(--mq-text-primary);font-family:var(--mq-font-sans);font-size:13px}
+.g{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.chart{height:280px}
+.chart--narrow{width:320px;height:220px;border:1px dashed var(--mq-border-default);border-radius:4px}
+.mq-panel__body{padding:8px}
+.narrow-row{display:flex;gap:16px;align-items:flex-start;margin-top:16px}
+</style>
+<script src="https://unpkg.com/highcharts@11.4.8/highcharts.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/highcharts@11.4.8/highcharts-more.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/highcharts@11.4.8/modules/heatmap.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/highcharts@11.4.8/modules/sankey.js" crossorigin="anonymous"></script>
+<script src="mosaiq-highcharts-theme.js"></script>
+</head><body class="mq-app">
+<div class="g">
+  <section class="mq-panel"><header class="mq-panel__header"><h2 class="mq-panel__title">Segment size over time</h2><span class="mq-caption mq-mono">stacked area · categorical</span></header><div class="mq-panel__body"><div id="c-size" class="chart"></div></div></section>
+  <section class="mq-panel"><header class="mq-panel__header"><h2 class="mq-panel__title">RFM score distribution</h2><span class="mq-caption mq-mono">heatmap · sequential</span></header><div class="mq-panel__body"><div id="c-rfm" class="chart"></div></div></section>
+  <section class="mq-panel"><header class="mq-panel__header"><h2 class="mq-panel__title">Segment migration · run 0x4F2A18 → 0x4F2A19</h2><span class="mq-caption mq-mono">sankey · categorical</span></header><div class="mq-panel__body"><div id="c-mig" class="chart"></div></div></section>
+  <section class="mq-panel"><header class="mq-panel__header"><h2 class="mq-panel__title">Experiment uplift with 95% CI</h2><span class="mq-caption mq-mono">column + errorbar · diverging</span></header><div class="mq-panel__body"><div id="c-uplift" class="chart"></div></div></section>
+</div>
+<div class="narrow-row">
+  <div><div class="mq-label">320px · segment size</div><div id="c-size-sm" class="chart chart--narrow"></div></div>
+  <div><div class="mq-label">320px · uplift</div><div id="c-uplift-sm" class="chart chart--narrow"></div></div>
+  <p class="mq-caption" style="max-width:46ch">At 480px and below the responsive rule drops axis titles, thins x labels to every second tick, shrinks legend items to 11px and disables data labels. Nothing else changes: the same theme object serves 320px and 1400px.</p>
+</div>
+<script>
+if (!window.Highcharts) { document.querySelectorAll(".chart").forEach(function(el){ el.innerHTML = '<div class="mq-state mq-state--error"><span class="mq-state__mark">Offline</span><span class="mq-state__text">Highcharts could not be loaded from the CDN.</span></div>'; }); }
+else {
+MOSAIQCharts.apply();
+var cat = MOSAIQCharts.categorical();
+var months = ["Mar","Apr","May","Jun","Jul","Aug"];
+var segs = [["S-01 Champions",[41,43,44,46,47,48]],["S-02 Loyal",[38,38,37,36,36,35]],["S-03 Potential",[22,23,25,26,28,29]],["S-04 At risk",[19,20,21,22,21,20]],["S-07 New",[12,14,15,17,18,21]],["S-09 Dormant",[9,9,10,10,11,11]]];
+
+var sizeOptions = {
+  chart:{type:"area"},
+  xAxis:{categories:months,tickLength:0},
+  yAxis:{title:{text:"Customers (thousands)"},stackLabels:{enabled:false}},
+  plotOptions:{area:{stacking:"normal"}},
+  tooltip:{shared:true},
+  series:segs.map(function(s,i){return {name:s[0],data:s[1],color:cat[i]}})
+};
+Highcharts.chart("c-size", sizeOptions);
+Highcharts.chart("c-size-sm", Highcharts.merge(sizeOptions,{legend:{enabled:false}}));
+
+var rfmData=[];
+for(var r=1;r<=5;r++){for(var f=1;f<=5;f++){rfmData.push([f-1,r-1,Math.round(2+ (r*f)/2 + (r===5&&f===5?8:0))]);}}
+Highcharts.chart("c-rfm",{
+  chart:{type:"heatmap",spacing:[8,8,4,4]},
+  xAxis:{categories:["F1","F2","F3","F4","F5"],title:{text:"Frequency quintile"},gridLineWidth:0,tickLength:0},
+  yAxis:{categories:["R1","R2","R3","R4","R5"],title:{text:"Recency quintile"},gridLineWidth:0,reversed:true},
+  colorAxis:{stops:MOSAIQCharts.sequentialStops(),min:0,max:20},
+  legend:{align:"right",layout:"vertical",verticalAlign:"middle",symbolHeight:160,margin:8},
+  series:[{name:"Customers (thousands)",data:rfmData,dataLabels:{enabled:true,format:"{point.value}"}}]
+});
+
+Highcharts.chart("c-mig",{
+  chart:{type:"sankey"},
+  tooltip:{pointFormat:"{point.fromNode.name} \u2192 {point.toNode.name}: <b>{point.weight}</b> customers"},
+  series:[{
+    keys:["from","to","weight"],
+    nodes:[{id:"S-01 Champions",color:cat[0]},{id:"S-02 Loyal",color:cat[1]},{id:"S-04 At risk",color:cat[3]},{id:"S-09 Dormant",color:cat[5]},{id:"S-01 Champions ",color:cat[0]},{id:"S-02 Loyal ",color:cat[1]},{id:"S-04 At risk ",color:cat[3]},{id:"S-09 Dormant ",color:cat[5]}],
+    data:[["S-01 Champions","S-01 Champions ",3810],["S-01 Champions","S-02 Loyal ",420],["S-02 Loyal","S-02 Loyal ",2960],["S-02 Loyal","S-01 Champions ",510],["S-02 Loyal","S-04 At risk ",380],["S-04 At risk","S-04 At risk ",1440],["S-04 At risk","S-09 Dormant ",610],["S-04 At risk","S-02 Loyal ",240],["S-09 Dormant","S-09 Dormant ",980],["S-09 Dormant","S-04 At risk ",190]]
+  }]
+});
+
+var div = MOSAIQCharts.diverging();
+var uplift=[{name:"Homepage rail",y:-1.8},{name:"Email cadence",y:-0.4},{name:"Bundle price",y:0.0},{name:"Cross-sell slot",y:1.9},{name:"Loyalty nudge",y:4.2},{name:"Reactivation offer",y:6.1}];
+function upColor(v){var i=Math.max(0,Math.min(8,Math.round(4+v/1.6)));return div[i];}
+var upliftOptions={
+  chart:{type:"column"},
+  xAxis:{categories:uplift.map(function(u){return u.name}),tickLength:0},
+  yAxis:{title:{text:"Uplift (pp)"},plotLines:[{value:0,width:1,color:getComputedStyle(document.documentElement).getPropertyValue("--mq-neutral-400").trim(),zIndex:3}]},
+  legend:{enabled:false},
+  series:[
+    {name:"Uplift",data:uplift.map(function(u){return {y:u.y,color:upColor(u.y)}}),dataLabels:{enabled:true,format:"{y:.1f}"}},
+    {name:"95% CI",type:"errorbar",data:uplift.map(function(u){return [u.y-1.3,u.y+1.3]}),tooltip:{pointFormat:"95% CI: {point.low:.1f} to {point.high:.1f} pp<br>"}}
+  ]
+};
+Highcharts.chart("c-uplift", upliftOptions);
+Highcharts.chart("c-uplift-sm", upliftOptions);
+}
+</script>
+</body></html>

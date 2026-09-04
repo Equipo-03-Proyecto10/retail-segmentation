@@ -1,0 +1,4 @@
+/* No font binaries were supplied with the source material. These are Google Fonts
+   substitutions, flagged in readme.md: IBM Plex Sans (UI and marketing display) and
+   IBM Plex Mono (labels, code, tabular overrides). Two families, no display serif. */
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap");

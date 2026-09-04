@@ -86,9 +86,9 @@ gated on different open questions (`docs/scope.md` §8, Q-3 and Q-4), and only
 one of them feeds the data model chain. `F2-01` needs the business domain
 identity (Q-3) to model against; it does not need the design system (Q-4),
 which only `F3-08` consumes. Bundling both under one story meant `F2-01`
-carried a blocker it had no reason to carry. Q-3 is resolved: the company name
-is MOSAIQ. Q-4 remains open — a working design system decision is still
-pending.
+carried a blocker it had no reason to carry. Both are now resolved: the
+company name is MOSAIQ, and the design system is recorded in
+[ADR-0002](adr/0002-mosaiq-identity-and-design-system.md).
 
 ## Phase 1 — GCP infrastructure
 

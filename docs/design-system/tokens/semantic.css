@@ -1,0 +1,121 @@
+/* TIER 2 — semantic. The only tier the dark theme overrides. */
+:root{
+--mq-bg-canvas:var(--mq-neutral-050);
+--mq-bg-surface:var(--mq-white);
+--mq-bg-raised:var(--mq-white);
+--mq-bg-sunken:var(--mq-neutral-100);
+--mq-bg-hover:var(--mq-neutral-100);
+--mq-bg-active:var(--mq-neutral-200);
+--mq-bg-selected:var(--mq-orange-100);
+--mq-bg-nav:var(--mq-neutral-900);
+--mq-nav-text:var(--mq-neutral-300);
+--mq-nav-text-strong:var(--mq-white);
+--mq-nav-text-muted:var(--mq-neutral-500);
+--mq-nav-text-disabled:var(--mq-neutral-600);
+--mq-nav-hover-bg:rgba(255,255,255,.06);
+--mq-nav-active-bg:rgba(255,107,0,.12);
+--mq-nav-border:var(--mq-neutral-700);
+--mq-bg-disabled:var(--mq-neutral-100);
+--mq-border-subtle:var(--mq-neutral-200);
+--mq-border-default:var(--mq-neutral-300);
+--mq-border-strong:var(--mq-neutral-400);
+--mq-border-inverse:var(--mq-neutral-700);
+--mq-text-primary:var(--mq-neutral-900);
+--mq-text-secondary:var(--mq-neutral-600);
+--mq-text-disabled:var(--mq-neutral-500);
+--mq-text-inverse:var(--mq-neutral-050);
+--mq-text-inverse-secondary:var(--mq-neutral-400);
+--mq-text-link:var(--mq-orange-700);
+--mq-text-link-hover:var(--mq-orange-800);
+/* Accent. Two fills, two foregrounds — they are not interchangeable.
+   --mq-accent is the interactive fill and is the ONLY one that takes
+   --mq-accent-on (white). --mq-accent-bold is the brand papaya, too light for
+   white text, so it takes --mq-accent-bold-on (black). Ratios:
+   accent/on 6.4:1 · accent-hover/on 9.4:1 · accent-active/on 12.4:1
+   accent-bold/bold-on 7.4:1 · accent-subtle/subtle-on 10.5:1 */
+--mq-accent:var(--mq-orange-700);
+--mq-accent-hover:var(--mq-orange-800);
+--mq-accent-active:var(--mq-orange-900);
+--mq-accent-on:var(--mq-white);
+--mq-accent-bold:var(--mq-orange-500);
+--mq-accent-bold-on:var(--mq-black);
+--mq-accent-subtle:var(--mq-orange-100);
+--mq-accent-subtle-on:var(--mq-orange-900);
+--mq-success:var(--mq-green-600);--mq-success-subtle:var(--mq-green-100);
+--mq-warning:var(--mq-amber-600);--mq-warning-subtle:var(--mq-amber-100);
+--mq-danger:var(--mq-red-600);--mq-danger-subtle:var(--mq-red-100);
+--mq-info:var(--mq-blue-600);--mq-info-subtle:var(--mq-blue-100);
+/* Service health — deliberately not aliased to the semantic states */
+--mq-health-healthy:var(--mq-health-teal);--mq-health-healthy-subtle:var(--mq-health-teal-100);
+--mq-health-degraded:var(--mq-health-ochre);--mq-health-degraded-subtle:var(--mq-health-ochre-100);
+--mq-health-down:var(--mq-health-maroon);--mq-health-down-subtle:var(--mq-health-maroon-100);
+--mq-health-unknown:var(--mq-health-slate);--mq-health-unknown-subtle:var(--mq-health-slate-100);
+/* Focus */
+--mq-focus-ring:var(--mq-orange-600);--mq-focus-ring-width:2px;--mq-focus-ring-offset:1px;
+/* Scrim behind the two elevated surfaces */
+--mq-scrim:rgba(20,20,18,.44);
+/* Chart chrome */
+--mq-chart-gridline:var(--mq-neutral-200);--mq-chart-axis-line:var(--mq-neutral-300);--mq-chart-axis-label:var(--mq-neutral-600);--mq-chart-tooltip-bg:var(--mq-white);--mq-chart-tooltip-border:var(--mq-neutral-400);--mq-chart-plot-bg:transparent;
+}
+/* DARK THEME — one block, semantic tier only. Black + papaya. */
+[data-mq-theme="dark"]{
+--mq-bg-canvas:#0B0B0A;
+--mq-bg-surface:var(--mq-neutral-950);
+--mq-bg-raised:var(--mq-neutral-900);
+--mq-bg-sunken:#0B0B0A;
+--mq-bg-hover:var(--mq-neutral-800);
+--mq-bg-active:var(--mq-neutral-700);
+--mq-bg-selected:#3A1D00;
+--mq-bg-nav:#0B0B0A;
+--mq-nav-text:var(--mq-neutral-400);
+--mq-nav-text-strong:var(--mq-neutral-100);
+--mq-nav-text-muted:var(--mq-neutral-600);
+--mq-nav-text-disabled:var(--mq-neutral-700);
+--mq-nav-hover-bg:rgba(255,255,255,.05);
+--mq-nav-active-bg:rgba(255,107,0,.16);
+--mq-nav-border:var(--mq-neutral-800);
+--mq-bg-disabled:var(--mq-neutral-900);
+--mq-border-subtle:var(--mq-neutral-800);
+--mq-border-default:var(--mq-neutral-700);
+--mq-border-strong:var(--mq-neutral-600);
+--mq-border-inverse:var(--mq-neutral-800);
+--mq-text-primary:var(--mq-neutral-100);
+--mq-text-secondary:var(--mq-neutral-400);
+--mq-text-disabled:var(--mq-neutral-600);
+--mq-text-inverse:var(--mq-neutral-950);
+--mq-text-inverse-secondary:var(--mq-neutral-700);
+--mq-text-link:var(--mq-orange-300);
+--mq-text-link-hover:var(--mq-orange-100);
+/* Dark inverts the accent ladder: the fill gets lighter on hover, and both fills
+   are light enough that black is the only legal foreground.
+   accent/on 7.4:1 · accent-hover/on 12.7:1 · accent-subtle/subtle-on 8.9:1 */
+--mq-accent:var(--mq-orange-500);
+--mq-accent-hover:var(--mq-orange-300);
+--mq-accent-active:var(--mq-orange-100);
+--mq-accent-on:var(--mq-black);
+--mq-accent-bold:var(--mq-orange-500);
+--mq-accent-bold-on:var(--mq-black);
+--mq-accent-subtle:#3A1D00;
+--mq-accent-subtle-on:var(--mq-orange-300);
+--mq-success:#4FBF85;--mq-success-subtle:#12301F;
+--mq-warning:#E0A44A;--mq-warning-subtle:#33260C;
+--mq-danger:#E8736A;--mq-danger-subtle:#361715;
+--mq-info:#6BA6E8;--mq-info-subtle:#122436;
+--mq-health-healthy:#3FB6BF;--mq-health-healthy-subtle:#0D2A2C;
+--mq-health-degraded:#C7A24A;--mq-health-degraded-subtle:#2E2711;
+--mq-health-down:#D9636F;--mq-health-down-subtle:#33141A;
+--mq-health-unknown:#8E979F;--mq-health-unknown-subtle:#1D2124;
+--mq-focus-ring:var(--mq-orange-500);
+--mq-scrim:rgba(0,0,0,.68);
+/* Data palettes are re-stated here, and ONLY here.
+   Categorical switches from Paul Tol's "muted" scheme to Tol's "light" scheme —
+   the published counterpart built for pale fills, so the dark values are real
+   scheme entries rather than lightened guesses. Slots are hue-paired across the
+   two themes (01 blue, 02 warm red, 03 teal, 04 green, 05 magenta, 06 yellow,
+   07 cyan, 08 olive), so a series keeps its identity through a theme switch.
+   cat-bad drops to Tol's dark-scheme grey so excluded data still recedes. */
+--mq-cat-01:#77AADD;--mq-cat-02:#EE8866;--mq-cat-03:#44BB99;--mq-cat-04:#BBCC33;--mq-cat-05:#FFAABB;--mq-cat-06:#EEDD88;--mq-cat-07:#99DDFF;--mq-cat-08:#AAAA00;--mq-cat-bad:#555555;
+--mq-seq-1:#3A2410;--mq-seq-2:#6B3D10;--mq-seq-3:#99570F;--mq-seq-4:#C4741A;--mq-seq-5:#E89A42;--mq-seq-6:#FFC584;
+--mq-div-1:#6BA6E8;--mq-div-2:#4A82C4;--mq-div-3:#31577F;--mq-div-4:#22364A;--mq-div-5:#2A2926;--mq-div-6:#4A3418;--mq-div-7:#8A5417;--mq-div-8:#C4741A;--mq-div-9:#F2A65A;
+--mq-chart-gridline:var(--mq-neutral-800);--mq-chart-axis-line:var(--mq-neutral-700);--mq-chart-axis-label:var(--mq-neutral-400);--mq-chart-tooltip-bg:var(--mq-neutral-900);--mq-chart-tooltip-border:var(--mq-neutral-600);
+}

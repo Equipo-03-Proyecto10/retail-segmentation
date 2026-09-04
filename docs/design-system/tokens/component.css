@@ -1,0 +1,89 @@
+/* TIER 3 — component tokens. Components reference this tier, or tier 2.
+   Sizes, spacing, radii, borders and aliases only: colour always comes from tier 2,
+   so tier 3 needs no dark-theme block. Every token in the DENSITY section is
+   restated by all three density classes; everything above it is density-invariant. */
+:root{
+/* Table */
+--mq-table-border:1px solid var(--mq-border-subtle);--mq-table-header-bg:var(--mq-bg-sunken);--mq-table-header-font-size:var(--mq-size-12);--mq-table-header-weight:var(--mq-weight-semibold);--mq-table-header-tracking:.04em;--mq-table-row-hover-bg:var(--mq-bg-hover);--mq-table-row-selected-bg:var(--mq-bg-selected);--mq-table-row-selected-marker:var(--mq-accent);--mq-table-sticky-shadow:1px 0 0 var(--mq-border-subtle);--mq-table-sort-icon-size:10px;
+/* Fields — shared */
+--mq-input-border:1px solid var(--mq-border-default);--mq-input-border-hover:1px solid var(--mq-border-strong);--mq-input-border-error:1px solid var(--mq-danger);--mq-input-bg:var(--mq-bg-surface);--mq-input-bg-disabled:var(--mq-bg-disabled);--mq-input-radius:var(--mq-radius-2);--mq-input-padding-x:var(--mq-space-2);--mq-input-placeholder:var(--mq-text-disabled);--mq-input-icon-size:14px;
+--mq-label-font-size:var(--mq-size-12);--mq-label-weight:var(--mq-weight-medium);--mq-help-font-size:var(--mq-size-12);--mq-error-font-size:var(--mq-size-12);
+--mq-textarea-min-height:72px;--mq-textarea-padding-y:6px;
+--mq-select-chevron-size:12px;--mq-select-padding-right:var(--mq-space-6);
+--mq-check-size:14px;--mq-check-radius:var(--mq-radius-1);--mq-radio-size:14px;--mq-toggle-width:28px;--mq-toggle-height:16px;--mq-toggle-knob:12px;
+/* Buttons */
+--mq-button-radius:var(--mq-radius-2);--mq-button-font-weight:var(--mq-weight-medium);--mq-button-gap:var(--mq-space-2);--mq-button-icon-size:14px;--mq-button-border-width:1px;
+/* Surfaces */
+--mq-card-bg:var(--mq-bg-surface);--mq-card-border:1px solid var(--mq-border-subtle);--mq-card-radius:var(--mq-radius-2);
+--mq-panel-bg:var(--mq-bg-surface);--mq-panel-border:1px solid var(--mq-border-subtle);--mq-panel-radius:var(--mq-radius-2);--mq-panel-title-size:var(--mq-size-14);--mq-panel-title-weight:var(--mq-weight-semibold);
+--mq-divider-color:var(--mq-border-subtle);--mq-divider-width:1px;
+/* Markers */
+--mq-badge-radius:var(--mq-radius-1);--mq-badge-font-size:var(--mq-size-12);--mq-badge-padding-x:var(--mq-space-1);
+--mq-pill-radius:var(--mq-radius-2);--mq-pill-font-size:var(--mq-size-12);--mq-pill-padding-x:var(--mq-space-2);
+--mq-chip-radius:var(--mq-radius-2);--mq-chip-remove-size:12px;
+--mq-segment-swatch-size:8px;
+--mq-avatar-size:24px;--mq-avatar-radius:var(--mq-radius-2);
+--mq-kbd-height:18px;--mq-kbd-font-size:11px;--mq-kbd-radius:var(--mq-radius-1);
+/* Navigation */
+--mq-nav-toggle-color:var(--mq-nav-text);--mq-nav-width:232px;--mq-nav-width-collapsed:48px;--mq-nav-section-label-size:var(--mq-size-12);--mq-nav-item-radius:var(--mq-radius-2);--mq-nav-icon-size:16px;--mq-nav-padding-x:var(--mq-space-2);
+--mq-topbar-border:1px solid var(--mq-border-subtle);--mq-toolbar-gap:var(--mq-space-2);
+--mq-tab-padding-x:var(--mq-space-3);--mq-tab-indicator-height:2px;--mq-tab-font-size:var(--mq-size-13);
+--mq-breadcrumb-font-size:var(--mq-size-12);--mq-breadcrumb-gap:6px;
+--mq-tree-indent:16px;
+/* Overlays */
+--mq-menu-min-width:180px;--mq-menu-padding:var(--mq-space-1);--mq-menu-radius:var(--mq-radius-2);--mq-menu-border:1px solid var(--mq-border-default);--mq-menu-shadow:var(--mq-elevation-popover);
+--mq-modal-width:560px;--mq-modal-radius:var(--mq-radius-3);--mq-modal-shadow:var(--mq-elevation-modal);--mq-modal-scrim:var(--mq-scrim);--mq-modal-padding:var(--mq-space-6);--mq-modal-header-height:52px;
+--mq-drawer-width:480px;
+--mq-popover-radius:var(--mq-radius-2);--mq-popover-shadow:var(--mq-elevation-popover);--mq-popover-max-width:280px;--mq-popover-padding:var(--mq-space-3);
+--mq-toast-width:360px;--mq-toast-radius:var(--mq-radius-2);--mq-toast-shadow:var(--mq-elevation-popover);
+--mq-tooltip-bg:var(--mq-text-primary);--mq-tooltip-color:var(--mq-bg-surface);--mq-tooltip-font-size:var(--mq-size-12);--mq-tooltip-radius:var(--mq-radius-1);--mq-tooltip-padding:var(--mq-space-1) var(--mq-space-2);--mq-tooltip-max-width:240px;
+/* Feedback */
+--mq-skeleton-bg:var(--mq-bg-active);--mq-skeleton-highlight:var(--mq-bg-hover);--mq-skeleton-radius:var(--mq-radius-1);
+--mq-progress-height:4px;--mq-progress-radius:var(--mq-radius-1);--mq-progress-track:var(--mq-bg-active);--mq-progress-fill:var(--mq-accent);
+--mq-state-padding:var(--mq-space-8);--mq-state-mark-size:var(--mq-size-12);
+--mq-pagination-page-size:26px;
+/* Data display */
+--mq-metric-value-size:var(--mq-size-24);--mq-metric-label-size:var(--mq-size-12);--mq-metric-delta-size:var(--mq-size-12);
+--mq-chart-height-sm:180px;--mq-chart-height-md:260px;--mq-chart-height-lg:360px;--mq-chart-legend-size:var(--mq-size-12);--mq-chart-series-width:2px;--mq-chart-marker-radius:3px;
+/* Utility */
+--mq-focus-outline:var(--mq-focus-ring-width) solid var(--mq-focus-ring);--mq-scrollbar-size:10px;--mq-scrollbar-thumb:var(--mq-border-strong);--mq-scrollbar-track:var(--mq-bg-sunken);
+}
+/* ---------- DENSITY — three modes ----------
+   Put .mq-density-compact / -dense / -comfortable on any ancestor; it retargets the
+   whole control geometry below, not just the table. Type size holds at 13px in
+   comfortable and compact and drops to 12px only in dense, so switching density
+   changes rhythm without reflowing copy.
+   comfortable — review, audit, presentation. 32px controls, 40px rows.
+   compact     — the product default. 28px controls, 32px rows.
+   dense       — 800-row reconciliation views. 24px controls, 28px rows. Below the
+                 44px touch minimum: pointer input only, never ship it on mobile. */
+:root,.mq-density-comfortable{
+--mq-table-row-height:40px;--mq-table-header-height:36px;--mq-table-font-size:var(--mq-size-13);--mq-table-cell-padding-x:var(--mq-space-3);--mq-table-cell-padding-y:var(--mq-space-2);
+--mq-input-height:32px;--mq-input-height-sm:26px;--mq-input-font-size:var(--mq-size-13);
+--mq-button-height-md:32px;--mq-button-height-sm:26px;--mq-button-font-size:var(--mq-size-13);--mq-button-padding-x:var(--mq-space-3);
+--mq-card-padding:var(--mq-space-4);--mq-panel-padding:var(--mq-space-4);--mq-panel-header-height:44px;
+--mq-nav-item-height:30px;--mq-menu-item-height:30px;--mq-tabs-height:38px;--mq-pagination-height:40px;--mq-tree-row-height:28px;
+--mq-toolbar-height:44px;--mq-topbar-height:48px;
+--mq-badge-height:18px;--mq-pill-height:20px;--mq-chip-height:22px;
+--mq-stack-gap:var(--mq-space-3);--mq-field-gap:var(--mq-space-2);--mq-row-gap:var(--mq-space-3);
+}
+.mq-density-compact{
+--mq-table-row-height:32px;--mq-table-header-height:32px;--mq-table-font-size:var(--mq-size-13);--mq-table-cell-padding-x:var(--mq-space-2);--mq-table-cell-padding-y:var(--mq-space-1);
+--mq-input-height:28px;--mq-input-height-sm:24px;--mq-input-font-size:var(--mq-size-13);
+--mq-button-height-md:28px;--mq-button-height-sm:24px;--mq-button-font-size:var(--mq-size-13);--mq-button-padding-x:var(--mq-space-3);
+--mq-card-padding:var(--mq-space-3);--mq-panel-padding:var(--mq-space-3);--mq-panel-header-height:40px;
+--mq-nav-item-height:28px;--mq-menu-item-height:28px;--mq-tabs-height:34px;--mq-pagination-height:36px;--mq-tree-row-height:26px;
+--mq-toolbar-height:40px;--mq-topbar-height:44px;
+--mq-badge-height:18px;--mq-pill-height:20px;--mq-chip-height:20px;
+--mq-stack-gap:var(--mq-space-2);--mq-field-gap:6px;--mq-row-gap:var(--mq-space-2);
+}
+.mq-density-dense{
+--mq-table-row-height:28px;--mq-table-header-height:26px;--mq-table-font-size:var(--mq-size-12);--mq-table-cell-padding-x:var(--mq-space-2);--mq-table-cell-padding-y:var(--mq-space-05);
+--mq-input-height:24px;--mq-input-height-sm:20px;--mq-input-font-size:var(--mq-size-12);
+--mq-button-height-md:24px;--mq-button-height-sm:20px;--mq-button-font-size:var(--mq-size-12);--mq-button-padding-x:var(--mq-space-2);
+--mq-card-padding:var(--mq-space-2);--mq-panel-padding:var(--mq-space-2);--mq-panel-header-height:34px;
+--mq-nav-item-height:24px;--mq-menu-item-height:24px;--mq-tabs-height:30px;--mq-pagination-height:32px;--mq-tree-row-height:22px;
+--mq-toolbar-height:34px;--mq-topbar-height:40px;
+--mq-badge-height:16px;--mq-pill-height:18px;--mq-chip-height:18px;
+--mq-stack-gap:var(--mq-space-1);--mq-field-gap:var(--mq-space-1);--mq-row-gap:var(--mq-space-1);
+}

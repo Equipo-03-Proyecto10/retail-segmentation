@@ -6,7 +6,7 @@
 | [Process](process.md) | How the team works: Scrum planning, XP engineering practices, Definition of Done |
 | [Backlog](backlog.md) | Ordered work, grouped by scope phase |
 | [Roadmap](roadmap.md) | What is deferred to later deliveries, and how it re-enters |
-| [Infrastructure](infra.md) | Provisioned GCP resources: instance name, zone, specs |
+| [Infrastructure](infra.md) | Provisioned GCP resources, firewall policy, and SSH access |
 | [Decisions](adr/) | Architecture Decision Records |
 | [Issue history](issue-history.md) | What the deleted `#1`–`#40` references in older commits pointed at |
 

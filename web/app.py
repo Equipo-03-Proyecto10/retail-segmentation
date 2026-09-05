@@ -9,6 +9,8 @@ from __future__ import annotations
 from flask import Flask
 
 from web.config import Config, load_dotenv_file
+from web.errors import register_error_handlers
+from web.log import configure_logging
 from web.routes import register_blueprints
 from web.services.status import APPLICATION_NAME
 
@@ -26,6 +28,11 @@ def create_app(config: Config | None = None) -> Flask:
     app = Flask(__name__)
     app.config["SECRET_KEY"] = config.secret_key
     app.config["APP_CONFIG"] = config
+    # Debug mode is left off deliberately: it would replace the controlled
+    # error pages (web/errors.py) with Werkzeug's interactive traceback.
+
+    configure_logging(app)
+    register_error_handlers(app)
 
     @app.context_processor
     def application_identity() -> dict[str, str]:

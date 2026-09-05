@@ -9,7 +9,9 @@ from web.config import Config
 
 @pytest.fixture
 def client() -> FlaskClient:
-    app = create_app(Config(secret_key="test", environment="testing", port=5000))
+    app = create_app(
+        Config(secret_key="test", environment="testing", port=5000, log_level="INFO")
+    )
     return app.test_client()
 
 

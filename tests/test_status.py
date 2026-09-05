@@ -10,7 +10,12 @@ from web.services.status import (
 
 def test_reports_the_product_identity_and_the_configured_environment() -> None:
     status = application_status(
-        Config(secret_key="unused-here", environment="production", port=5000)
+        Config(
+            secret_key="unused-here",
+            environment="production",
+            port=5000,
+            log_level="INFO",
+        )
     )
 
     assert status.name == APPLICATION_NAME

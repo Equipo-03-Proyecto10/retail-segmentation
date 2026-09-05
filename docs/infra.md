@@ -60,3 +60,33 @@ gcloud compute ssh mosaiq-deployment-vm \
 
 The expected hostname is `mosaiq-deployment-vm`. Every member completed the
 personal verification for `F1-02` on 2026-09-03.
+
+## PostgreSQL
+
+Installed from the official PGDG repository, not the CentOS default packages
+(`postgresql1*` from AppStream) and not a managed service (Cloud SQL,
+AlloyDB) — see constraint C-6 in [`scope.md`](scope.md).
+
+| Field | Value |
+|---|---|
+| Repository | `pgdg-redhat-repo` (`https://download.postgresql.org/pub/repos/yum/reporpms/EL-10-x86_64/`) |
+| Package | `postgresql18-server` |
+| Version | PostgreSQL 18.6 |
+| Data directory | `/var/lib/pgsql/18/data/` |
+| Service | `postgresql-18.service`, `enabled` (starts on boot), running under `systemd` as the `postgres` OS user |
+| Listener | `127.0.0.1:5432` and `[::1]:5432` only — no external interface bound |
+
+Verified for `F1-03` on 2026-09-05:
+
+```
+$ psql --version
+psql (PostgreSQL) 18.6
+
+$ systemctl is-enabled postgresql-18
+enabled
+```
+
+Remote access for the application role, `postgresql.conf` / `pg_hba.conf`
+configuration, and the least-privilege application role are `F1-04` and
+`F1-05` — out of scope here. The server currently accepts connections only
+from `localhost`.

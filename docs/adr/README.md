@@ -31,6 +31,8 @@ constraint other work must respect needs an ADR, or a reference to one.
 | ADR | Title | Status |
 |---|---|---|
 | [0001](0001-flask-monolith-on-a-single-vm.md) | Flask monolith on a single Compute Engine instance | Accepted |
+| [0002](0002-mosaiq-identity-and-design-system.md) | MOSAIQ identity and a token-based design system | Accepted |
+| [0003](0003-layered-architecture-with-an-explicit-service-layer.md) | Layered architecture with an explicit service layer, rather than classic MVC | Proposed |
 
 ## Writing one
 

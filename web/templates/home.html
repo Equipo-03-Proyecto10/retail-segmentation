@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <h1>{{ status.name }}</h1>
+  <p class="lede">{{ status.tagline }}</p>
+
+  <p>
+    The application is running. The modules it will serve — authentication, the
+    administrator catalog CRUD, the user views — arrive with the remaining
+    Phase 3 stories in <code>docs/backlog.md</code>.
+  </p>
+
+  <dl class="facts">
+    <dt>Environment</dt>
+    <dd>{{ status.environment }}</dd>
+  </dl>
+{% endblock %}

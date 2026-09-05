@@ -1,0 +1,23 @@
+# Tooling configuration. The application is not packaged: it runs from the
+# repository — `flask --app web.app run` locally, and gunicorn on the instance
+# once F6-02 lands. There is no [project] table for that reason.
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+# Beyond ruff's defaults: import order (I), common bug patterns (B), and
+# outdated idioms (UP). CI runs `ruff check .` with exactly this configuration.
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+# `web` is imported as a package from the repository root, which is not on
+# sys.path when there is nothing installed. This is what lets CI run a bare
+# `pytest` from the repository root.
+pythonpath = ["."]
+testpaths = ["tests"]

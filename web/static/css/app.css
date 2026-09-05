@@ -1,0 +1,81 @@
+/*
+ * Placeholder chrome for the skeleton.
+ *
+ * The MOSAIQ design system lives in docs/design-system/ and is applied across
+ * the interface by F3-08. Nothing here anticipates it: these are element
+ * defaults that keep the first page readable at 375 px and at 1440 px, and
+ * they are meant to be replaced rather than extended.
+ */
+
+body {
+  margin: 0;
+  background: #ffffff;
+  color: #1b1b1f;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.55;
+}
+
+.masthead,
+.page,
+.colophon {
+  box-sizing: border-box;
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 1rem 1.25rem;
+}
+
+.masthead {
+  border-bottom: 1px solid #d9d9de;
+}
+
+.masthead__brand {
+  color: inherit;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.page {
+  padding-top: 2.5rem;
+  padding-bottom: 3rem;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(1.75rem, 1.2rem + 2vw, 2.5rem);
+}
+
+.lede {
+  margin: 0.25rem 0 1.5rem;
+  color: #55555f;
+}
+
+code {
+  font-family: ui-monospace, "SFMono-Regular", "Consolas", monospace;
+  font-size: 0.9375em;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1.5rem;
+  margin: 2rem 0 0;
+  padding-top: 1.5rem;
+  border-top: 1px solid #d9d9de;
+}
+
+.facts dt {
+  color: #55555f;
+}
+
+.facts dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.colophon {
+  border-top: 1px solid #d9d9de;
+  color: #55555f;
+  font-size: 0.875rem;
+}

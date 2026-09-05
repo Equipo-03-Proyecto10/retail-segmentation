@@ -63,9 +63,13 @@ flask --app web.app run
 
 The application is then at http://localhost:5000
 
-> The application is being built. `sql/` and `web/` are produced by the Phase 2
-> and Phase 3 stories in [`docs/backlog.md`](docs/backlog.md); until those land,
-> the commands above describe the target rather than the current state.
+> `sql/` is produced by the Phase 2 stories in
+> [`docs/backlog.md`](docs/backlog.md). Until those land, skip the three `psql`
+> commands: the application serves its landing page without a database, because
+> the connection itself is F3-02.
+
+Run the checks the pipeline runs with `pytest`, `black --check .` and
+`ruff check .`, after `pip install -r web/requirements-dev.txt`.
 
 Using an AI coding agent? Also run `touch ~/.claude/rs-local.md` so the
 personal-context import resolves.

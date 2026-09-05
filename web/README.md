@@ -23,6 +23,18 @@ A layer calls the one below it and never the reverse. A route reads the request,
 calls a service and renders a template; a service holds the logic and never
 touches a request; every SQL statement in the application lives in `db/`.
 
+### The same structure in MVC vocabulary
+
+| MVC | Here |
+|---|---|
+| Controller | `routes/` — reads the request, calls a service, renders a template |
+| View | `templates/` — a pure function of the values the route passes it |
+| Model | `services/` for the business rules, `db/` for data access |
+
+What MVC calls the model is deliberately split in two. Why, and why the
+directories are not named `controllers/`, `models/` and `views/`:
+[ADR-0003](../docs/adr/0003-layered-architecture-with-an-explicit-service-layer.md).
+
 Two directories from the intended layout are absent because nothing has a file
 to put in them yet: `middleware/` arrives with the authorization middleware
 (F4-01), and `uploads/` with image handling (F3-07, gitignored).

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% set entry = detail.entry %}
+
+{% block title %}Audit entry {{ entry.audit_id }} · {{ application_name }}{% endblock %}
+
+{% block content %}
+  <h1>{{ entry.entity }} <code>{{ entry.entity_pk }}</code></h1>
+  <p class="lede">{{ entry.action }} · {{ entry.executed_at.strftime("%Y-%m-%d %H:%M:%S") }}</p>
+
+  <dl class="facts">
+    <dt>By</dt>
+    <dd>
+      {% if entry.actor_name %}
+        {{ entry.actor_name }}
+      {% else %}
+        <span class="unattributed">unattributed</span>
+      {% endif %}
+    </dd>
+    <dt>Fields changed</dt>
+    <dd>{{ detail.changed_fields }} of {{ detail.fields | length }}</dd>
+  </dl>
+
+  <div class="table-scroll">
+    <table class="listing listing--diff">
+      <thead>
+        <tr>
+          <th scope="col">Field</th>
+          <th scope="col">Before</th>
+          <th scope="col">After</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for field in detail.fields %}
+          <tr class="{{ 'diff--changed' if field.changed else 'diff--same' }}">
+            <th scope="row">{{ field.name }}</th>
+            <td>{{ field.before if field.before is not none else "—" }}</td>
+            <td>{{ field.after if field.after is not none else "—" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p><a href="{{ url_for('audit.index') }}">Back to the log</a></p>
+{% endblock %}

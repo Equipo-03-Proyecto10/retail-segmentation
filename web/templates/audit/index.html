@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block title %}Audit log · {{ application_name }}{% endblock %}
+
+{% block content %}
+  <h1>Audit log</h1>
+  <p class="lede">
+    Every change to a catalog or a business rule, newest first. The log is
+    append-only: nothing here edits or removes an entry.
+  </p>
+
+  <form class="filters" method="get" action="{{ url_for('audit.index') }}">
+    <div class="filters__field">
+      <label for="entity">Entity</label>
+      <select id="entity" name="entity">
+        <option value="">All</option>
+        {% for option in page.entities %}
+          <option value="{{ option }}" {{ 'selected' if option == entity }}>
+            {{ option }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="filters__field">
+      <label for="from">From</label>
+      <input type="date" id="from" name="from" value="{{ date_from }}">
+    </div>
+
+    <div class="filters__field">
+      <label for="to">To</label>
+      <input type="date" id="to" name="to" value="{{ date_to }}">
+    </div>
+
+    <button type="submit">Filter</button>
+    <a class="filters__reset" href="{{ url_for('audit.index') }}">Clear</a>
+  </form>
+
+  {% if page.entries %}
+    <div class="table-scroll">
+      <table class="listing">
+        <thead>
+          <tr>
+            <th scope="col">When</th>
+            <th scope="col">Entity</th>
+            <th scope="col">Key</th>
+            <th scope="col">Action</th>
+            <th scope="col">By</th>
+            <th scope="col"><span class="visually-hidden">Entry</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for entry in page.entries %}
+            <tr>
+              <td>{{ entry.executed_at.strftime("%Y-%m-%d %H:%M") }}</td>
+              <td>{{ entry.entity }}</td>
+              <td><code>{{ entry.entity_pk }}</code></td>
+              <td>{{ entry.action }}</td>
+              {# NULL is the honest answer for everything the seed and any
+                 maintenance script did, and is shown as such. #}
+              <td>
+                {% if entry.actor_name %}
+                  {{ entry.actor_name }}
+                {% else %}
+                  <span class="unattributed">unattributed</span>
+                {% endif %}
+              </td>
+              <td>
+                <a href="{{ url_for('audit.detail', audit_id=entry.audit_id) }}">
+                  Open
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <nav class="pager" aria-label="Pages">
+      {% if page.has_previous %}
+        <a href="{{ url_for('audit.index', entity=entity, from=date_from, to=date_to, page=page.page - 1) }}">
+          Previous
+        </a>
+      {% endif %}
+      <span>Page {{ page.page }} of {{ page.page_count }} · {{ page.total }} entries</span>
+      {% if page.has_next %}
+        <a href="{{ url_for('audit.index', entity=entity, from=date_from, to=date_to, page=page.page + 1) }}">
+          Next
+        </a>
+      {% endif %}
+    </nav>
+  {% else %}
+    <p>No entries match those filters.</p>
+  {% endif %}
+{% endblock %}

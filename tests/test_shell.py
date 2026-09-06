@@ -14,14 +14,14 @@ from unittest.mock import MagicMock, Mock
 from uuid import UUID
 
 import pytest
-from flask import Flask, render_template_string
+from flask import Flask
 from flask.testing import FlaskClient
 
 from web.app import create_app
 from web.config import Config
 from web.db.audit import AuditEntry
 from web.db.users import AppUser
-from web.middleware.authz import requires
+from web.services.audit import Page
 
 _USER_ID = UUID("11111111-1111-1111-1111-000000000001")
 
@@ -198,20 +198,20 @@ def test_a_session_whose_account_is_gone_is_signed_out(
         assert "user_id" not in flask_session
 
 
-def test_the_shell_marks_the_section_the_visitor_is_in(app: Flask) -> None:
-    @requires("audit.read")
-    def audit_index() -> str:
-        # Rendered through the shell, which is the thing being asserted.
-        return render_template_string(
-            '{% extends "base.html" %}{% block content %}audit{% endblock %}'
-        )
-
-    app.add_url_rule("/audit", endpoint="audit.index", view_func=audit_index)
-
+def test_the_shell_marks_the_section_the_visitor_is_in(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The audit log is a real section now; what it lists is F3-11's business."""
+    monkeypatch.setattr(
+        "web.routes.audit.read_page",
+        lambda _connection, **_filters: Page(
+            entries=(), entities=(), total=0, page=1, page_count=1
+        ),
+    )
     client = app.test_client()
     _sign_in(client)
 
-    on_audit = client.get("/audit").get_data(as_text=True)
+    on_audit = client.get("/audit/").get_data(as_text=True)
     on_home = client.get("/").get_data(as_text=True)
 
     assert _current_entry(on_audit) == "Audit log"

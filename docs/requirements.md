@@ -114,7 +114,7 @@ is a gap, and the point of the table is that the gap is visible.
 | Ejecución de un proceso principal | RF-12 | F3-10 | #102 | Open, just written |
 | Almacenamiento en PostgreSQL | RNF-08, RNF-09, RNF-10 | F2-04, F2-05, F2-06 | #57, #58, #59 | In review (#98) |
 | Consulta de información | RF-10, RF-11, RF-13 | F3-05 | #65 | Open, not started |
-| Registro de auditoría | RF-14, RNF-17 | F3-11 | #103 | Open, just written |
+| Registro de auditoría | RF-14, RNF-17 | F3-11 | #103 | Built — the log is readable from the application |
 | Ejecución mediante contenedores | RNF-13, RNF-14 | F3-09 | #89 | Open, rewritten |
 
 **Everything except the database is unbuilt, and all of it is behind F3-02

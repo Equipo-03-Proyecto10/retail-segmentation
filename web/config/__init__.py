@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 
@@ -20,18 +20,20 @@ DEFAULT_PORT = 5000
 DEFAULT_LOG_LEVEL = "INFO"
 
 
-def load_dotenv_file() -> None:
+class ConfigurationError(RuntimeError):
+    """The process environment cannot produce a valid application config."""
+
+
+def load_dotenv_file(
+    dotenv_path: str | os.PathLike[str] | None = None,
+) -> None:
     """Load `.env` for local development, without overriding real variables."""
-    load_dotenv(override=False)
+    load_dotenv(dotenv_path=dotenv_path, override=False)
 
 
 @dataclass(frozen=True)
 class Config:
     """Everything the application reads from its environment.
-
-    `DATABASE_URL` is deliberately absent. The connection is F3-02; a field
-    added before there is code behind it would leave a reader unsure whether
-    the application already talks to PostgreSQL. It does not yet.
 
     `log_level` names the threshold for the application logger. It is a field
     rather than a hard-coded `INFO` so the instance can raise it to `WARNING`
@@ -42,6 +44,7 @@ class Config:
     environment: str
     port: int
     log_level: str
+    database_url: str = field(repr=False)
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> Config:
@@ -51,9 +54,18 @@ class Config:
         that a developer's local `.env` cannot change what they assert.
         """
         env = os.environ if environ is None else environ
+        database_url = env.get("DATABASE_URL")
+        if database_url is None or not database_url.strip():
+            raise ConfigurationError(
+                "Missing required environment variable DATABASE_URL. "
+                "Set it in the process environment or a local .env file; "
+                "see .env.example."
+            )
+
         return cls(
             secret_key=env.get("FLASK_SECRET_KEY", DEFAULT_SECRET_KEY),
             environment=env.get("FLASK_ENV", DEFAULT_ENVIRONMENT),
             port=int(env.get("PORT", str(DEFAULT_PORT))),
             log_level=env.get("LOG_LEVEL", DEFAULT_LOG_LEVEL),
+            database_url=database_url,
         )

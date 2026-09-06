@@ -9,17 +9,23 @@ from __future__ import annotations
 from flask import Flask
 
 from web.config import Config, load_dotenv_file
+from web.db import DatabaseConnector
+from web.db import init_app as init_database
 from web.errors import register_error_handlers
 from web.log import configure_logging
 from web.routes import register_blueprints
 from web.services.status import APPLICATION_NAME
 
 
-def create_app(config: Config | None = None) -> Flask:
+def create_app(
+    config: Config | None = None,
+    *,
+    database_connector: DatabaseConnector | None = None,
+) -> Flask:
     """Build the application.
 
-    Passing a `Config` bypasses the environment entirely, which is how the
-    tests run on a machine that has no `.env`.
+    Passing a `Config` bypasses the environment. A connector can also be
+    injected so unit tests do not need a running PostgreSQL server.
     """
     if config is None:
         load_dotenv_file()
@@ -33,6 +39,7 @@ def create_app(config: Config | None = None) -> Flask:
 
     configure_logging(app)
     register_error_handlers(app)
+    init_database(app, database_connector)
 
     @app.context_processor
     def application_identity() -> dict[str, str]:

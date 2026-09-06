@@ -10,7 +10,15 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from flask import Blueprint, current_app, redirect, render_template, request, url_for
+from flask import (
+    Blueprint,
+    current_app,
+    redirect,
+    render_template,
+    request,
+    send_from_directory,
+    url_for,
+)
 from psycopg.errors import UniqueViolation
 
 from web.db import get_connection
@@ -1007,9 +1015,6 @@ def activate_user_view(user_id):
         return render_template("errors/error.html", code=404, name="Not Found"), 404
 
     return redirect(url_for("admin.list_users_view"))
-
-
-from flask import send_from_directory
 
 
 @bp.get("/products/image/<path:filename>")

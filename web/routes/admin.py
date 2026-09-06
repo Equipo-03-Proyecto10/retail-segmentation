@@ -9,9 +9,12 @@ added here without a declaration is refused rather than exposed.
 from __future__ import annotations
 
 from decimal import Decimal
+from psycopg.errors import UniqueViolation
+
 
 from flask import Blueprint, redirect, render_template, request, url_for
 
+from web.db.users import list_role_options, list_users
 from web.db import get_connection
 from web.db.categories import (
     create_category,
@@ -43,7 +46,7 @@ from web.db.stores import (
     list_stores,
     update_store,
 )
-from web.middleware.authz import CATALOG_READ, CATALOG_WRITE, requires
+from web.middleware.authz import CATALOG_READ, CATALOG_WRITE, USER_READ, USER_WRITE, requires
 from web.services.catalog import (
     parse_pagination,
     validate_category,
@@ -51,6 +54,14 @@ from web.services.catalog import (
     validate_product,
     validate_role,
     validate_store,
+)
+
+from web.services.users import (
+    SingleAdministratorError,
+    UnknownRoleError,
+    UnknownUserError,
+    create_user,
+    set_active,
 )
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -804,3 +815,110 @@ def delete_role_view(role_id: int):
         )
 
     return redirect(url_for("admin.list_roles_view"))
+
+# ---------- users ----------
+
+
+@bp.get("/users")
+@requires(USER_READ)
+def list_users_view():
+    connection = get_connection()
+    page = parse_pagination(request.args.get("page"))
+    search = request.args.get("q", "").strip() or None
+
+    users, total = list_users(connection, search=search, page=page, per_page=_PER_PAGE)
+    total_pages = max(1, (total + _PER_PAGE - 1) // _PER_PAGE)
+
+    return render_template(
+        "admin/users.html", users=users, page=page, total_pages=total_pages, search=search or ""
+    )
+
+
+@bp.route("/users/new", methods=["GET", "POST"])
+@requires(USER_WRITE)
+def create_user_view():
+    connection = get_connection()
+    roles = list_role_options(connection)
+
+    if request.method == "GET":
+        return render_template("admin/user_form.html", user=None, errors={}, roles=roles)
+
+    name = request.form.get("name", "").strip()
+    email = request.form.get("email", "").strip()
+    password = request.form.get("password", "")
+    role_code = request.form.get("role_code", "")
+
+    errors = {}
+    if not name:
+        errors["name"] = "Name is required."
+    if not email or "@" not in email:
+        errors["email"] = "A valid email is required."
+    if not password or len(password) < 8:
+        errors["password"] = "Password must be at least 8 characters."
+    if not role_code:
+        errors["role_code"] = "Role is required."
+
+    if errors:
+        return render_template(
+            "admin/user_form.html",
+            user={"name": name, "email": email, "role_code": role_code},
+            errors=errors,
+            roles=roles,
+        ), 400
+
+    try:
+        create_user(connection, name=name, email=email, password=password, role_code=role_code)
+        connection.commit()
+    except (SingleAdministratorError, UnknownRoleError) as error:
+        return render_template(
+            "admin/user_form.html",
+            user={"name": name, "email": email, "role_code": role_code},
+            errors={"role_code": str(error)},
+            roles=roles,
+        ), 409
+    except UniqueViolation:
+        connection.rollback()
+        return render_template(
+            "admin/user_form.html",
+            user={"name": name, "email": email, "role_code": role_code},
+            errors={"email": "A user with that email already exists."},
+            roles=roles,
+        ), 409
+
+    return redirect(url_for("admin.list_users_view"))
+
+
+@bp.post("/users/<uuid:user_id>/deactivate")
+@requires(USER_WRITE)
+def deactivate_user_view(user_id):
+    connection = get_connection()
+    try:
+        set_active(connection, user_id, is_active=False)
+        connection.commit()
+    except (SingleAdministratorError, UnknownUserError) as error:
+        page = parse_pagination(request.args.get("page"))
+        users, total = list_users(connection, search=None, page=page, per_page=_PER_PAGE)
+        total_pages = max(1, (total + _PER_PAGE - 1) // _PER_PAGE)
+        return render_template(
+            "admin/users.html",
+            users=users,
+            page=page,
+            total_pages=total_pages,
+            search="",
+            action_error=str(error),
+        ), 409
+
+    return redirect(url_for("admin.list_users_view"))
+
+
+@bp.post("/users/<uuid:user_id>/activate")
+@requires(USER_WRITE)
+def activate_user_view(user_id):
+    connection = get_connection()
+    try:
+        set_active(connection, user_id, is_active=True)
+        connection.commit()
+    except UnknownUserError:
+        return render_template("errors/error.html", code=404, name="Not Found"), 404
+
+    return redirect(url_for("admin.list_users_view"))

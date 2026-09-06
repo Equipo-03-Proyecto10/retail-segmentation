@@ -207,3 +207,77 @@ def count_active_demonstration_accounts(connection: Connection) -> int:
             (f"%{DEMONSTRATION_EMAIL_DOMAIN}",),
         )
         return int(cursor.fetchone()[0])
+
+def list_users(
+    connection: Connection, *, search: str | None, page: int, per_page: int
+) -> tuple[list[AppUser], int]:
+    """Return a page of users, optionally filtered by name or email, and the
+    total row count for building pagination controls.
+
+    Ordered by email so the listing is stable across pages regardless of when
+    each account was created.
+    """
+    offset = (page - 1) * per_page
+    columns = (
+        "u.user_id, u.role_id, r.code, r.description, u.name, u.email, "
+        "u.password_hash, u.is_active"
+    )
+
+    with connection.cursor() as cursor:
+        if search:
+            pattern = f"%{search}%"
+            cursor.execute(
+                f"""
+                SELECT {columns}
+                FROM app_user AS u
+                JOIN role AS r ON r.role_id = u.role_id
+                WHERE u.name ILIKE %s OR u.email ILIKE %s
+                ORDER BY u.email
+                LIMIT %s OFFSET %s
+                """,
+                (pattern, pattern, per_page, offset),
+            )
+        else:
+            cursor.execute(
+                f"""
+                SELECT {columns}
+                FROM app_user AS u
+                JOIN role AS r ON r.role_id = u.role_id
+                ORDER BY u.email
+                LIMIT %s OFFSET %s
+                """,
+                (per_page, offset),
+            )
+        rows = cursor.fetchall()
+
+        if search:
+            pattern = f"%{search}%"
+            cursor.execute(
+                "SELECT count(*) FROM app_user WHERE name ILIKE %s OR email ILIKE %s",
+                (pattern, pattern),
+            )
+        else:
+            cursor.execute("SELECT count(*) FROM app_user")
+        total = cursor.fetchone()[0]
+
+    users = [
+        AppUser(
+            user_id=row[0],
+            role_id=row[1],
+            role_code=row[2],
+            role_description=row[3],
+            name=row[4],
+            email=row[5],
+            password_hash=row[6],
+            is_active=row[7],
+        )
+        for row in rows
+    ]
+    return users, total
+
+
+def list_role_options(connection: Connection) -> list[tuple[str, str]]:
+    """Return (code, description) for every role, for the role dropdown."""
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT code, description FROM role ORDER BY code")
+        return [(row[0], row[1]) for row in cursor.fetchall()]

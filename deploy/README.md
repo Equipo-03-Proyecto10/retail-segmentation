@@ -7,9 +7,10 @@ what is applied there:
 
 | File | Goes to |
 |---|---|
-| `nginx/mosaiq.conf` | `/etc/nginx/conf.d/mosaiq.conf` |
+| `nginx/mosaiq.conf` | `/etc/nginx/conf.d/mosaiq.conf` (`:80` redirect + `:443` proxy) |
 | `nginx/mosaiq.compose.conf` | not deployed — local verification only, see `../compose.proxy.yaml` |
 | `systemd/mosaiq.service` | `/etc/systemd/system/mosaiq.service` |
+| the TLS certificate | `/etc/nginx/tls/mosaiq.{crt,key}` — issued on the instance (F6-03), not in the repo |
 
 ### Deployment layout
 
@@ -155,6 +156,82 @@ curl -sI http://<external-ip>/                     # -> HTTP/1.1 200
 
 Record in `docs/infra.md` under "Application service": `systemctl is-enabled
 mosaiq`, the unit path, and the two checks above.
+
+---
+
+## F6-03 — SSL certificate with forced HTTPS
+
+Extends `deploy/nginx/mosaiq.conf` (already in the repo): the `:80` server now
+only redirects, and a `:443` server terminates TLS. **`nginx -t` fails until a
+certificate exists** — issue it before reloading.
+
+**Open question Q-2 (`docs/scope.md` §8): which host is published?** The
+certificate step depends on the answer:
+
+- **the instance has a DNS name pointing at it** → Path A (Let's Encrypt), and
+  the AC "certificate valid for the published host" is genuinely met;
+- **only an IP / a `~user` path on a host the team does not control** → Path B
+  (self-signed) is a demo stopgap; the browser warns and the AC is not fully
+  met until Q-2 is resolved.
+
+### 0. GCP firewall — allow HTTPS
+
+The instance firewall currently permits only `tcp:22` and `tcp:80`
+(`docs/infra.md`). Add `443` (run from a workstation with `gcloud`):
+
+```sh
+gcloud compute firewall-rules create mosaiq-allow-https \
+  --project=iac-dev-01 --network=default --direction=INGRESS --action=ALLOW \
+  --rules=tcp:443 --source-ranges=0.0.0.0/0 --target-tags=mosaiq-server \
+  --priority=900
+```
+
+Also open it in firewalld if active:
+`sudo firewall-cmd --permanent --add-service=https && sudo firewall-cmd --reload`.
+
+### 1a. Path A — Let's Encrypt (real hostname)
+
+```sh
+sudo dnf install -y certbot
+sudo mkdir -p /var/lib/nginx/acme /etc/nginx/tls
+sudo certbot certonly --webroot -w /var/lib/nginx/acme -d <hostname>
+sudo ln -sf /etc/letsencrypt/live/<hostname>/fullchain.pem /etc/nginx/tls/mosaiq.crt
+sudo ln -sf /etc/letsencrypt/live/<hostname>/privkey.pem   /etc/nginx/tls/mosaiq.key
+```
+
+Set `server_name <hostname>;` in both server blocks of `mosaiq.conf` instead of
+`_`. certbot installs a renewal timer — check `systemctl list-timers | grep certbot`.
+
+### 1b. Path B — self-signed (demo fallback)
+
+```sh
+sudo mkdir -p /etc/nginx/tls
+sudo openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+  -keyout /etc/nginx/tls/mosaiq.key -out /etc/nginx/tls/mosaiq.crt \
+  -subj "/CN=<instance hostname or IP>"
+```
+
+### 2. Reload and flip the cookie
+
+```sh
+sudo restorecon -Rv /etc/nginx/tls        # SELinux labels on the new files
+sudo nginx -t && sudo systemctl reload nginx
+sudo sed -i 's/^SESSION_COOKIE_SECURE=.*/SESSION_COOKIE_SECURE=true/' /etc/mosaiq/mosaiq.env
+sudo systemctl restart mosaiq
+```
+
+### Acceptance criteria (attach the output to #79)
+
+```sh
+curl -sI  http://<host>/       # -> 301, Location: https://<host>/
+curl -sI  https://<host>/      # -> HTTP/2 200
+curl -svo /dev/null https://<host>/ 2>&1 | grep -E 'subject:|issuer:|expire'
+```
+
+### After it is applied
+
+Update the `TLS` row in `docs/infra.md` "Reverse proxy": certificate source
+(Let's Encrypt / self-signed), `server_name`, and the redirect check.
 
 ---
 

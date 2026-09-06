@@ -100,15 +100,16 @@ story `F6-01` (#77). Config and runbook: [`deploy/`](../deploy/README.md).
 |---|---|
 | Package | `nginx` (CentOS Stream 10 AppStream) |
 | Config | `/etc/nginx/conf.d/mosaiq.conf`, from `deploy/nginx/mosaiq.conf` |
-| Listener | `:80` `default_server`, `server_name _` |
+| Listener | `:80` redirects to HTTPS; `:443 ssl http2` `default_server`, `server_name _` |
 | Upstream | `127.0.0.1:8000` (gunicorn — `F6-02`, #78) |
 | SELinux | `httpd_can_network_connect` set to `1` |
-| TLS | none yet — HTTP→HTTPS and the certificate are `F6-03` (#79) |
+| TLS | `/etc/nginx/tls/mosaiq.{crt,key}` — Let's Encrypt where the host has a real name, self-signed otherwise (`F6-03`, #79). Depends on Q-2 (`scope.md` §8). Needs GCP rule `mosaiq-allow-https` for `tcp:443`. |
+| HSTS | `max-age=31536000` on HTTPS responses |
 
-**Applied on the instance: pending the `F6-01`/`F6-02` pairing session.** The
-config and its local proof (`compose.proxy.yaml`) have merged; the `dnf install`
-+ `systemctl` steps and the two acceptance checks against the running instance
-happen in that session, and their output replaces this line.
+**Applied on the instance: pending the `F6-01`/`F6-02`/`F6-03` pairing session.**
+The config and its local proof (`compose.proxy.yaml`) have merged; the
+`dnf install` + `systemctl` + `certbot` steps and the acceptance checks against
+the running instance happen in that session, and their output replaces this line.
 
 ## Application service
 

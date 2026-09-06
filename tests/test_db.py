@@ -16,6 +16,7 @@ def _config() -> Config:
         environment="testing",
         port=5000,
         log_level="INFO",
+        session_cookie_secure=False,
         database_url="configured-by-test",
     )
 

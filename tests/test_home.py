@@ -17,6 +17,7 @@ def client() -> FlaskClient:
             environment="testing",
             port=5000,
             log_level="INFO",
+            session_cookie_secure=False,
             database_url="unused-by-test",
         ),
         database_connector=Mock(return_value=Mock()),

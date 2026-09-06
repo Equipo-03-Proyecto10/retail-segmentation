@@ -15,6 +15,7 @@ def test_reports_the_product_identity_and_the_configured_environment() -> None:
             environment="production",
             port=5000,
             log_level="INFO",
+            session_cookie_secure=False,
             database_url="unused-by-test",
         )
     )

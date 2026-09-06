@@ -18,10 +18,20 @@ DEFAULT_SECRET_KEY = "dev-only-not-a-secret"
 DEFAULT_ENVIRONMENT = "development"
 DEFAULT_PORT = 5000
 DEFAULT_LOG_LEVEL = "INFO"
+DEFAULT_SESSION_COOKIE_SECURE = False
+
+_TRUE_VALUES = {"1", "true", "yes", "on"}
 
 
 class ConfigurationError(RuntimeError):
     """The process environment cannot produce a valid application config."""
+
+
+def _bool_env(value: str | None, *, default: bool = False) -> bool:
+    """Read a boolean from an environment string, tolerantly."""
+    if value is None or not value.strip():
+        return default
+    return value.strip().lower() in _TRUE_VALUES
 
 
 def load_dotenv_file(
@@ -38,12 +48,17 @@ class Config:
     `log_level` names the threshold for the application logger. It is a field
     rather than a hard-coded `INFO` so the instance can raise it to `WARNING`
     without a code change once F6-02 puts the app under systemd.
+
+    `session_cookie_secure` is likewise a field: TLS is terminated by NGINX in
+    front of the app (F6-01/F6-03), so the process itself sees plain HTTP and
+    cannot infer whether the `Secure` flag should be set — the deployment says.
     """
 
-    secret_key: str
+    secret_key: str = field(repr=False)
     environment: str
     port: int
     log_level: str
+    session_cookie_secure: bool
     database_url: str = field(repr=False)
 
     @classmethod
@@ -62,10 +77,24 @@ class Config:
                 "see .env.example."
             )
 
+        secret_key = env.get("FLASK_SECRET_KEY", DEFAULT_SECRET_KEY)
+        environment = env.get("FLASK_ENV", DEFAULT_ENVIRONMENT)
+        if environment != DEFAULT_ENVIRONMENT and secret_key == DEFAULT_SECRET_KEY:
+            raise ConfigurationError(
+                "FLASK_SECRET_KEY is still the development default while "
+                f"FLASK_ENV is {environment!r}. Generate one with "
+                'python -c "import secrets; print(secrets.token_hex(32))" '
+                "and set it in the environment; see .env.example."
+            )
+
         return cls(
-            secret_key=env.get("FLASK_SECRET_KEY", DEFAULT_SECRET_KEY),
-            environment=env.get("FLASK_ENV", DEFAULT_ENVIRONMENT),
+            secret_key=secret_key,
+            environment=environment,
             port=int(env.get("PORT", str(DEFAULT_PORT))),
             log_level=env.get("LOG_LEVEL", DEFAULT_LOG_LEVEL),
+            session_cookie_secure=_bool_env(
+                env.get("SESSION_COOKIE_SECURE"),
+                default=DEFAULT_SESSION_COOKIE_SECURE,
+            ),
             database_url=database_url,
         )

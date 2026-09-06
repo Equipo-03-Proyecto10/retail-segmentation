@@ -22,6 +22,7 @@ class AppUser:
     user_id: UUID
     role_id: int
     role_code: str
+    role_description: str | None
     name: str
     email: str
     password_hash: str
@@ -38,8 +39,8 @@ def get_user_by_email(connection: Connection, email: str) -> AppUser | None:
     with connection.cursor() as cursor:
         cursor.execute(
             """
-            SELECT u.user_id, u.role_id, r.code, u.name, u.email,
-                   u.password_hash, u.is_active
+            SELECT u.user_id, u.role_id, r.code, r.description, u.name,
+                   u.email, u.password_hash, u.is_active
             FROM app_user AS u
             JOIN role AS r ON r.role_id = u.role_id
             WHERE u.email = %s
@@ -55,10 +56,11 @@ def get_user_by_email(connection: Connection, email: str) -> AppUser | None:
         user_id=row[0],
         role_id=row[1],
         role_code=row[2],
-        name=row[3],
-        email=row[4],
-        password_hash=row[5],
-        is_active=row[6],
+        role_description=row[3],
+        name=row[4],
+        email=row[5],
+        password_hash=row[6],
+        is_active=row[7],
     )
 
 
@@ -67,8 +69,8 @@ def get_user_by_id(connection: Connection, user_id: UUID | str) -> AppUser | Non
     with connection.cursor() as cursor:
         cursor.execute(
             """
-            SELECT u.user_id, u.role_id, r.code, u.name, u.email,
-                   u.password_hash, u.is_active
+            SELECT u.user_id, u.role_id, r.code, r.description, u.name,
+                   u.email, u.password_hash, u.is_active
             FROM app_user AS u
             JOIN role AS r ON r.role_id = u.role_id
             WHERE u.user_id = %s
@@ -84,10 +86,11 @@ def get_user_by_id(connection: Connection, user_id: UUID | str) -> AppUser | Non
         user_id=row[0],
         role_id=row[1],
         role_code=row[2],
-        name=row[3],
-        email=row[4],
-        password_hash=row[5],
-        is_active=row[6],
+        role_description=row[3],
+        name=row[4],
+        email=row[5],
+        password_hash=row[6],
+        is_active=row[7],
     )
 
 

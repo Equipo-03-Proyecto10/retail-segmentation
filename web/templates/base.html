@@ -23,7 +23,11 @@
       #}
       <nav class="masthead__nav" aria-label="Sections">
         {% for entry in menu %}
-          <a class="masthead__link" href="{{ url_for(entry.endpoint) }}">
+          <a
+            class="masthead__link{% if entry.is_current %} masthead__link--current{% endif %}"
+            href="{{ url_for(entry.endpoint) }}"
+            {% if entry.is_current %}aria-current="page"{% endif %}
+          >
             {{ entry.label }}
           </a>
         {% endfor %}

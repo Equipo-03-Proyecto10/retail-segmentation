@@ -58,6 +58,12 @@ body {
   text-decoration: underline;
 }
 
+.masthead__link--current {
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.35em;
+}
+
 .masthead__user {
   color: #55555f;
 }
@@ -122,4 +128,59 @@ code {
   border-top: 1px solid #d9d9de;
   color: #55555f;
   font-size: 0.875rem;
+}
+
+/* ---------- the shell's figures and listings (F3-12) ---------- */
+
+.figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.figure {
+  padding: 0.75rem 1rem;
+  border: 1px solid #d9d9de;
+  border-radius: 0.25rem;
+}
+
+.figure__value {
+  display: block;
+  font-size: 1.75rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.figure__label {
+  color: #55555f;
+  font-size: 0.875rem;
+}
+
+/* Wide content scrolls inside its own box; the page itself never scrolls
+   sideways at 375 px. */
+.table-scroll {
+  overflow-x: auto;
+}
+
+.listing {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+.listing th,
+.listing td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #e6e6ea;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.listing th {
+  color: #55555f;
+  font-weight: 600;
 }

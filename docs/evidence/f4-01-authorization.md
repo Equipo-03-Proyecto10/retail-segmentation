@@ -115,6 +115,26 @@ $ pytest -q
 `@public` nor `@requires(...)`. It is the executable form of the acceptance
 criterion, and the reason the matrix cannot quietly stop being enforced.
 
+## The audit trail knows who acted
+
+`fn_audit()` reads `mosaiq.user_id` off the connection, and only the
+application knows who is signed in. Every connection this application opens is
+told, so a change made through a page is attributable; a connection opened
+outside a request — a maintenance script, the startup probe — names nobody, and
+the trigger's `NULLIF` writes a NULL actor rather than a fiction.
+
+Checked against the seeded database by renaming a store inside a request and
+rolling back:
+
+```
+anonymous       -> (None, 'store', 'UPDATE')
+signed in ADMIN -> (UUID('11111111-1111-1111-1111-000000000001'), 'store', 'UPDATE')
+```
+
+Without this, every write the later stories make would have been logged as
+unattributed, and RF-14 — "who made it and what it replaced" — could not be
+satisfied by any of them.
+
 ## The same menu at 375 px and 1440 px
 
 Definition of Done item 10, captured headlessly with Chromium against the

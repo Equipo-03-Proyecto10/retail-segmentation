@@ -34,12 +34,16 @@ from flask import (
     Flask,
     abort,
     current_app,
+    has_request_context,
     redirect,
     request,
     session,
     url_for,
 )
 from werkzeug.wrappers import Response
+
+from web.db import set_connection_initializer
+from web.db.audit import set_audit_actor
 
 # ---------- the permission vocabulary ----------
 
@@ -291,6 +295,19 @@ def menu() -> list[MenuEntry]:
 # ---------- the gate ----------
 
 
+def _acting_user_id() -> str | None:
+    """Who the audit triggers should credit, or None when nobody is acting.
+
+    A connection is not always opened by a request: a maintenance script and
+    the application's own startup probe run inside an application context with
+    no session at all, and there the actor is genuinely unknown rather than
+    anonymous-but-present.
+    """
+    if not has_request_context():
+        return None
+    return session.get("user_id")
+
+
 def _refuse(reason: str, endpoint: str) -> None:
     """Log one line naming who was refused, where, and why, then abort."""
     current_app.logger.warning(
@@ -353,6 +370,14 @@ def authorize() -> Response | None:
 def install(app: Flask) -> None:
     """Attach the gate and the template values the menu is built from."""
     app.before_request(authorize)
+
+    # The audit triggers in sql/01_schema.sql read `mosaiq.user_id` off the
+    # connection, and only this layer knows who is signed in. Without this the
+    # log would record every change the application makes as unattributed,
+    # which is the one thing an audit trail may not do (RF-14).
+    set_connection_initializer(
+        app, lambda connection: set_audit_actor(connection, _acting_user_id())
+    )
 
     @app.context_processor
     def authorization_context() -> dict[str, Any]:

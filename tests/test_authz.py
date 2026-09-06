@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import re
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -19,6 +19,7 @@ from flask.testing import FlaskClient
 
 from web.app import create_app
 from web.config import Config
+from web.db import get_connection
 from web.middleware.authz import (
     ALL_PERMISSIONS,
     NAVIGATION,
@@ -238,6 +239,55 @@ def test_a_session_carrying_an_unknown_role_holds_nothing() -> None:
     _sign_in(client, "SUPERUSER")
 
     assert client.get("/catalogs").status_code == 403
+
+
+# ---------- who the audit triggers are told about ----------
+
+
+def _actor_named_on_the_connection(signed_in_as: str | None) -> tuple[str, tuple]:
+    """Open a connection inside a request and report what the actor was set to."""
+    connection = MagicMock()
+    connection.closed = False
+    app = create_app(
+        Config(
+            secret_key="test",
+            environment="testing",
+            port=5000,
+            log_level="INFO",
+            session_cookie_secure=False,
+            database_url="unused-by-test",
+        ),
+        database_connector=Mock(side_effect=[MagicMock(), connection]),
+    )
+
+    @app.get("/touches-the-database")
+    @public
+    def touches_the_database() -> str:
+        get_connection()
+        return "ok"
+
+    client = app.test_client()
+    if signed_in_as is not None:
+        _sign_in(client, "ADMIN", user_id=signed_in_as)
+    client.get("/touches-the-database")
+
+    cursor = connection.cursor.return_value.__enter__.return_value
+    return cursor.execute.call_args.args
+
+
+def test_the_signed_in_user_is_named_on_the_connection() -> None:
+    """RF-14: a change the application makes is attributable to whoever made it."""
+    statement, parameters = _actor_named_on_the_connection("u-42")
+
+    assert "set_config" in statement
+    assert parameters == ("mosaiq.user_id", "u-42")
+
+
+def test_an_anonymous_request_leaves_the_actor_unattributed() -> None:
+    """Better a NULL actor than a fiction: the audit column is nullable for this."""
+    _statement, parameters = _actor_named_on_the_connection(None)
+
+    assert parameters == ("mosaiq.user_id", "")
 
 
 # ---------- the matrix itself ----------

@@ -8,6 +8,7 @@ from flask.testing import FlaskClient
 
 from web.app import create_app
 from web.config import Config
+from web.middleware import public
 
 
 def _client(*, session_cookie_secure: bool) -> FlaskClient:
@@ -23,7 +24,10 @@ def _client(*, session_cookie_secure: bool) -> FlaskClient:
         database_connector=Mock(return_value=Mock()),
     )
 
+    # Declared public because the authorization gate refuses anything
+    # undeclared (#69); this test is about the cookie, not about access.
     @app.get("/opens-a-session")
+    @public
     def opens_a_session() -> str:
         session["seen"] = True
         return "ok"

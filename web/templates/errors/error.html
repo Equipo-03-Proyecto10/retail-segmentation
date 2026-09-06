@@ -8,6 +8,12 @@
 
   {% if code == 404 %}
     <p>That page does not exist. It may have moved, or the link was mistyped.</p>
+  {% elif code == 403 %}
+    <p>
+      This page is not part of what your role may reach. Nothing went wrong;
+      the request was refused deliberately. If you believe you should have
+      access, ask the administrator to review your role.
+    </p>
   {% else %}
     <p>
       The application could not complete that request. The problem has been

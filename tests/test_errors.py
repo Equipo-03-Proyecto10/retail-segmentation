@@ -10,6 +10,7 @@ from flask.testing import FlaskClient
 
 from web.app import create_app
 from web.config import Config
+from web.middleware import public
 
 _REFERENCE = re.compile(r"[0-9a-f]{8}")
 
@@ -30,7 +31,10 @@ def _app() -> Flask:
     # a real request against the deployed app would see.
     app.config["PROPAGATE_EXCEPTIONS"] = False
 
+    # The authorization gate refuses anything undeclared (#69), including a
+    # route a test adds. This one is about error handling, not access.
     @app.get("/boom")
+    @public
     def boom() -> str:
         raise RuntimeError("deliberate failure raised by the test")
 

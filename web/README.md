@@ -12,6 +12,7 @@ Organized by layers, which is a graded requirement:
 web/
   app.py          application factory and entry point
   config/         configuration read from environment variables
+  middleware/     cross-cutting request handling: authorization
   routes/         blueprints, one per module
   services/       business logic, with no knowledge of HTTP
   db/             connection handling and parameterized queries
@@ -21,7 +22,9 @@ web/
 
 A layer calls the one below it and never the reverse. A route reads the request,
 calls a service and renders a template; a service holds the logic and never
-touches a request; every SQL statement in the application lives in `db/`.
+touches a request; every SQL statement in the application lives in `db/`. A
+middleware sits in front of all of them: it decides whether a request reaches a
+route at all, and holds no business logic and no SQL of its own.
 
 ### The same structure in MVC vocabulary
 
@@ -35,9 +38,9 @@ What MVC calls the model is deliberately split in two. Why, and why the
 directories are not named `controllers/`, `models/` and `views/`:
 [ADR-0003](../docs/adr/0003-layered-architecture-with-an-explicit-service-layer.md).
 
-Two directories from the intended layout are absent because nothing has a file
-to put in them yet: `middleware/` arrives with the authorization middleware
-(F4-01), and `uploads/` with image handling (F3-07, gitignored).
+One directory from the intended layout is still absent because nothing has a
+file to put in it yet: `uploads/`, which arrives with image handling (F3-07,
+gitignored).
 
 ## Running it
 
@@ -55,6 +58,11 @@ repository root.
 
 - Every SQL statement is parameterized. No string interpolation, anywhere.
 - Schema changes belong in `../sql/01_schema.sql`, never in application code.
+- Every route declares what reaching it requires — `@public` or
+  `@requires(...)` from `web.middleware`. A route that declares nothing is
+  refused, and `tests/test_authz.py` fails the build rather than letting it
+  ship. The permission matrix is `docs/requirements.md` §3, transcribed in
+  `middleware/authz.py`.
 - The single-administrator rule is enforced here *and* by a partial unique index
   in the schema. Both halves, or neither counts.
 - Configuration comes from environment variables. No secrets in source.

@@ -75,8 +75,12 @@ class Config:
     port: int
     log_level: str
     session_cookie_secure: bool
-    trusted_proxy_hops: int
     database_url: str = field(repr=False)
+    # Last, and defaulted: `0` is the safe value the docstring above describes,
+    # and it keeps every existing construction site valid. A caller that does
+    # not know about reverse proxies gets the un-proxied behaviour rather than
+    # a TypeError.
+    trusted_proxy_hops: int = DEFAULT_TRUSTED_PROXY_HOPS
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> Config:

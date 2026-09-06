@@ -8,6 +8,7 @@ from flask.testing import FlaskClient
 
 from web.app import create_app
 from web.config import Config
+from web.middleware import public
 
 _FORWARDED = {"X-Forwarded-For": "9.9.9.9", "X-Forwarded-Proto": "https"}
 
@@ -27,6 +28,7 @@ def _client(*, trusted_proxy_hops: int) -> FlaskClient:
     )
 
     @app.get("/whereami")
+    @public
     def whereami() -> str:
         return f"{request.remote_addr} {request.scheme}"
 

@@ -157,3 +157,15 @@ def delete_product(connection: Connection, product_id: int) -> bool:
     except ForeignKeyViolation:
         connection.rollback()
         return False
+
+
+def update_product_image(
+    connection: Connection, product_id: int, image_path: str | None
+) -> None:
+    """Set or clear a product's image_path. Never touches the file on disk —
+    that is web.services.uploads' job, not this module's."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE product SET image_path = %s WHERE product_id = %s",
+            (image_path, product_id),
+        )

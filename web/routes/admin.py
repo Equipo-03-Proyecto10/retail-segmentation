@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from flask import Blueprint, redirect, render_template, request, url_for
+from flask import Blueprint, current_app, redirect, render_template, request, url_for
 from psycopg.errors import UniqueViolation
 
 from web.db import get_connection
@@ -35,6 +35,7 @@ from web.db.products import (
     get_product,
     list_products,
     update_product,
+    update_product_image,
 )
 from web.db.roles import create_role, delete_role, get_role, list_roles, update_role
 from web.db.stores import (
@@ -60,6 +61,7 @@ from web.services.catalog import (
     validate_role,
     validate_store,
 )
+from web.services.uploads import UploadRejected, delete_product_image, save_product_image
 from web.services.users import (
     SingleAdministratorError,
     UnknownRoleError,
@@ -534,6 +536,7 @@ def create_product_view():
     name = request.form.get("name", "").strip()
     category_id_raw = request.form.get("category_id", "")
     list_price_raw = request.form.get("list_price", "").strip()
+    image_file = request.files.get("image")
 
     errors = validate_product(
         sku=sku, name=name, category_id=category_id_raw, list_price=list_price_raw
@@ -583,6 +586,24 @@ def create_product_view():
             409,
         )
 
+    # Image upload is optional on creation; a product can exist without one.
+    if image_file and image_file.filename:
+        try:
+            saved = save_product_image(image_file, current_app.config["APP_CONFIG"])
+            update_product_image(connection, int(product_id), saved.relative_path)
+            connection.commit()
+        except UploadRejected as error:
+            connection.commit()  # the product row itself is already saved
+            return (
+                render_template(
+                    "admin/product_form.html",
+                    product=get_product(connection, int(product_id)),
+                    errors={"image": str(error)},
+                    all_categories=all_categories,
+                ),
+                400,
+            )
+
     return redirect(url_for("admin.list_products_view"))
 
 
@@ -609,6 +630,7 @@ def edit_product_view(product_id: int):
     category_id_raw = request.form.get("category_id", "")
     list_price_raw = request.form.get("list_price", "").strip()
     is_active = request.form.get("is_active") == "on"
+    image_file = request.files.get("image")
 
     errors = validate_product(
         sku=sku, name=name, category_id=category_id_raw, list_price=list_price_raw
@@ -630,6 +652,31 @@ def edit_product_view(product_id: int):
             ),
             400,
         )
+
+    # Validate the image before writing anything, so a rejected file never
+    # leaves the product's other fields half-updated.
+    if image_file and image_file.filename:
+        config = current_app.config["APP_CONFIG"]
+        try:
+            saved = save_product_image(image_file, config)
+        except UploadRejected as error:
+            return (
+                render_template(
+                    "admin/product_form.html",
+                    product={
+                        "product_id": product_id,
+                        "sku": sku,
+                        "name": name,
+                        "category_id": category_id_raw,
+                        "list_price": list_price_raw,
+                        "is_active": is_active,
+                        "image_path": product.image_path,
+                    },
+                    errors={"image": str(error)},
+                    all_categories=all_categories,
+                ),
+                400,
+            )
 
     error = update_product(
         connection,
@@ -657,6 +704,13 @@ def edit_product_view(product_id: int):
             ),
             409,
         )
+
+    if image_file and image_file.filename:
+        old_path = product.image_path
+        update_product_image(connection, product_id, saved.relative_path)
+        connection.commit()
+        if old_path:
+            delete_product_image(old_path, config)
 
     return redirect(url_for("admin.list_products_view"))
 
@@ -949,3 +1003,12 @@ def activate_user_view(user_id):
         return render_template("errors/error.html", code=404, name="Not Found"), 404
 
     return redirect(url_for("admin.list_users_view"))
+
+
+from flask import send_from_directory
+
+@bp.get("/products/image/<path:filename>")
+@requires(CATALOG_READ)
+def product_image(filename):
+    config = current_app.config["APP_CONFIG"]
+    return send_from_directory(config.upload_dir, filename)

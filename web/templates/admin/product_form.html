@@ -4,7 +4,7 @@
 <main class="admin-page">
   <h1>{{ "Edit product" if product and product.product_id else "New product" }}</h1>
 
-  <form method="post">
+  <form method="post" enctype="multipart/form-data">
     {% if not product or not product.product_id %}
     <label for="product_id">Product ID</label>
     <input type="number" id="product_id" name="product_id" value="{{ product.product_id if product else '' }}" required>
@@ -40,6 +40,13 @@
       Active
     </label>
     {% endif %}
+
+    <label for="image">Product image (JPEG, PNG or WebP, max 5MB)</label>
+<input type="file" id="image" name="image" accept="image/jpeg,image/png,image/webp">
+{% if errors.image %}<p class="error">{{ errors.image }}</p>{% endif %}
+{% if product and product.image_path %}
+<img src="{{ url_for('admin.product_image', filename=product.image_path) }}" style="max-width:150px">
+{% endif %}
 
     <button type="submit">Save</button>
     <a href="{{ url_for('admin.list_products_view') }}">Cancel</a>

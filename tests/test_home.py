@@ -1,5 +1,7 @@
 """The application starts and serves a page."""
 
+from unittest.mock import Mock
+
 import pytest
 from flask.testing import FlaskClient
 
@@ -10,7 +12,14 @@ from web.config import Config
 @pytest.fixture
 def client() -> FlaskClient:
     app = create_app(
-        Config(secret_key="test", environment="testing", port=5000, log_level="INFO")
+        Config(
+            secret_key="test",
+            environment="testing",
+            port=5000,
+            log_level="INFO",
+            database_url="unused-by-test",
+        ),
+        database_connector=Mock(return_value=Mock()),
     )
     return app.test_client()
 

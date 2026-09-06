@@ -2,6 +2,7 @@
 
 import logging
 import re
+from unittest.mock import Mock
 
 import pytest
 from flask import Flask
@@ -15,7 +16,14 @@ _REFERENCE = re.compile(r"[0-9a-f]{8}")
 
 def _app() -> Flask:
     app = create_app(
-        Config(secret_key="test", environment="testing", port=5000, log_level="INFO")
+        Config(
+            secret_key="test",
+            environment="testing",
+            port=5000,
+            log_level="INFO",
+            database_url="unused-by-test",
+        ),
+        database_connector=Mock(return_value=Mock()),
     )
     # Return the 500 response to the client instead of re-raising, which is what
     # a real request against the deployed app would see.

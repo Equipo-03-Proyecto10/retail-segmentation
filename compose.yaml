@@ -1,0 +1,69 @@
+# MOSAIQ — the whole stack in one command:
+#
+#   docker compose up
+#
+# This is the local development path and the one the delivery's "ejecución
+# mediante contenedores" item is demonstrated with. It is NOT how the
+# application is deployed: the GCP instance runs gunicorn under systemd, which
+# stays the default there. Both are recorded in
+# docs/adr/0006-run-under-both-systemd-and-docker-compose.md.
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      # Superuser for the container only. The application never connects as
+      # this role — it uses retail_app, which 00_create_database.sql creates
+      # with least privilege.
+      POSTGRES_PASSWORD: postgres
+      APP_DB_PASSWORD: retail_app
+    volumes:
+      # The three ordered scripts, read-only. They are the same files CI runs
+      # and the same ones the README documents; nothing here edits them.
+      - ./sql:/opt/sql:ro
+      - ./docker/initdb.sh:/docker-entrypoint-initdb.d/initdb.sh:ro
+      - mosaiq-pgdata:/var/lib/postgresql/data
+    ports:
+      # Loopback only. Publishing 5432 on all interfaces would put a seeded
+      # database with a known password on the network.
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      # pg_isready answers as soon as the server accepts connections, which is
+      # before the init scripts have finished. Checking for a seeded row
+      # instead means web starts against a database that is actually ready.
+      test: ["CMD-SHELL", "psql -U postgres -d retail -tAc 'SELECT 1 FROM app_user LIMIT 1' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 10s
+    restart: unless-stopped
+
+  web:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      # Everything else — FLASK_SECRET_KEY, UPLOAD_DIR, the image limits.
+      - .env
+    environment:
+      # Overrides whatever .env says, because inside the network the database
+      # is `db`, not localhost. The image itself carries no connection string.
+      DATABASE_URL: postgresql://retail_app:retail_app@db:5432/retail
+      FLASK_ENV: development
+    volumes:
+      # Uploaded files outlive the container. A named volume, not a bind mount:
+      # web/uploads/ is gitignored, so on a clean clone it does not exist, and
+      # Docker would create it owned by root, leaving the container's
+      # unprivileged user unable to write to its own upload directory.
+      - mosaiq-uploads:/app/web/uploads
+    ports:
+      # 127.0.0.1:8000 — the same address the systemd unit binds, so NGINX
+      # needs no change when this is switched in on the instance to
+      # demonstrate container execution.
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
+
+volumes:
+  mosaiq-pgdata:
+  mosaiq-uploads:

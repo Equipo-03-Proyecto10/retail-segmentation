@@ -90,9 +90,12 @@ flowchart TD
     F6-02 --> F6-07
     F3-09 --> F6-07
 
+    F3-09 --> F6-08
+    F3-10 --> F6-08
+    F3-11 --> F6-08
     F3-12 --> F6-08
-    F6-04 --> F6-08
-    F6-07 --> F6-08
+    F4-01 --> F6-08
+    F6-02 --> F6-08
 ```
 
 ---
@@ -250,7 +253,7 @@ system pass would hold up testing for a story that doesn't affect behavior.
 | F6-05 | Final verification: links, images, downloads, checked in a private window | P0 | F6-04 |
 | F6-06 | Continuous deployment: automatically update the assigned host on every merge to `main` | P1 | F6-02 |
 | F6-07 | Capture proof of deployment as evidence | P0 | F6-01, F6-02, F3-09 |
-| F6-08 | Rehearse the technical demonstration end to end on the instance | P0 | F3-12, F6-04, F6-07 |
+| F6-08 | Rehearse the technical demonstration end to end on the instance | P0 | F3-09, F3-10, F3-11, F3-12, F4-01, F6-02 |
 
 **F6-06 targets one environment, not two.** There is a single GCP instance
 (`docs/scope.md` C-5), and it is the assigned host; `develop` stays an
@@ -271,6 +274,13 @@ screenshots of the key functionality (deliverable 10) and proof of deployment
 demonstration. `F5-01` captured test output rather than screenshots, `F6-02`
 made the service survive a reboot without recording that it does, and nothing
 rehearsed the demonstration. `F5-04`, `F6-07` and `F6-08` are those three.
+
+**F6-08 does not wait for the documentation page.** It was listed as blocked
+by `F6-04`, which put the one deliverable that cannot be corrected after
+submission five levels deep on the critical path, behind
+`F4-01 -> F4-02 -> F5-02 -> F6-04 -> F6-08`. Rehearsing the demonstration needs
+the application deployed and supervised on the instance — `F6-02` — not a
+published docs page. The blockers here now match the ones recorded on #110.
 
 **F6-08 is the one that cannot be fixed afterwards.** Eight demonstration items,
 each owned by a different story, and nothing until now checked that they work in

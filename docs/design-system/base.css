@@ -1,0 +1,18 @@
+/* Base — element defaults only. No component styling here. */
+*,*::before,*::after{box-sizing:border-box}
+body.mq-app{margin:0;background:var(--mq-bg-canvas);color:var(--mq-text-primary);font-family:var(--mq-font-sans);font-size:var(--mq-size-13);line-height:var(--mq-lh-13);-webkit-font-smoothing:antialiased}
+.mq-app a{color:var(--mq-text-link);text-decoration:none;border-bottom:1px solid transparent}
+.mq-app a:hover{color:var(--mq-text-link-hover);border-bottom-color:currentColor}
+.mq-app :focus-visible{outline:var(--mq-focus-ring-width) solid var(--mq-focus-ring);outline-offset:var(--mq-focus-ring-offset)}
+.mq-num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+.mq-mono{font-family:var(--mq-font-mono);font-variant-numeric:tabular-nums}
+/* Type scale utilities */
+.mq-display{font-size:var(--mq-size-32);line-height:var(--mq-lh-32);font-weight:var(--mq-weight-semibold);letter-spacing:-.01em}
+.mq-title-1{font-size:var(--mq-size-24);line-height:var(--mq-lh-24);font-weight:var(--mq-weight-semibold);letter-spacing:-.005em}
+.mq-title-2{font-size:var(--mq-size-20);line-height:var(--mq-lh-20);font-weight:var(--mq-weight-semibold)}
+.mq-title-3{font-size:var(--mq-size-16);line-height:var(--mq-lh-16);font-weight:var(--mq-weight-semibold)}
+.mq-body{font-size:var(--mq-size-14);line-height:var(--mq-lh-14);font-weight:var(--mq-weight-regular)}
+.mq-body-sm{font-size:var(--mq-size-13);line-height:var(--mq-lh-13);font-weight:var(--mq-weight-regular)}
+.mq-caption{font-size:var(--mq-size-12);line-height:var(--mq-lh-12);font-weight:var(--mq-weight-regular);color:var(--mq-text-secondary)}
+.mq-label{font-family:var(--mq-font-mono);font-size:var(--mq-size-12);line-height:var(--mq-lh-12);font-weight:var(--mq-weight-medium);letter-spacing:.08em;text-transform:uppercase;color:var(--mq-text-secondary)}
+.mq-visually-hidden{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}

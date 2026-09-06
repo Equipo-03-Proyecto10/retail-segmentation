@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}{{ code }} · {{ application_name }}{% endblock %}
+
+{% block content %}
+  <h1>{{ code }}</h1>
+  <p class="lede">{{ name }}</p>
+
+  {% if code == 404 %}
+    <p>That page does not exist. It may have moved, or the link was mistyped.</p>
+  {% else %}
+    <p>
+      The application could not complete that request. The problem has been
+      recorded; nothing you did caused it.
+    </p>
+  {% endif %}
+
+  <p><a href="{{ url_for('home.index') }}">Back to the start</a></p>
+
+  {% if reference %}
+    <dl class="facts">
+      <dt>Reference</dt>
+      <dd><code>{{ reference }}</code></dd>
+    </dl>
+  {% endif %}
+{% endblock %}

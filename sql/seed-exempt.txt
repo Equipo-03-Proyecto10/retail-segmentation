@@ -1,0 +1,17 @@
+# Tables whose real domain is smaller than the 30-row seed minimum, one table
+# name per line. CI matches these lines exactly, so a reason goes on its own
+# comment line above the name it explains.
+#
+# Padding a catalog with filler rows to reach 30 is the alternative, and it
+# makes the seed misrepresent the business: a reader cannot tell which roles
+# the system actually has. The exemption is recorded here instead, where a
+# reviewer sees it.
+
+# Seven roles, from the permission matrix in docs/data-model.md. An eighth
+# would be a business decision, not seed data. Exactly one user holds ADMIN —
+# AGENTS.md, enforced in the schema by F4-02.
+role
+
+# Five sales channels: mobile app, web, physical store, marketplace and call
+# centre. A sixth is a business decision, not seed data.
+channel

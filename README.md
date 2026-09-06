@@ -7,8 +7,8 @@ instance.
 Course project — Integración de Aplicaciones Computacionales, Team 03.
 Everything written is in English.
 
-> **Company name and design system are not decided yet.** They are tracked as
-> Q-3 and Q-4 in [`docs/scope.md`](docs/scope.md) §8.
+> The product is **MOSAIQ**, with the design system recorded in
+> [ADR-0002](docs/adr/0002-mosaiq-identity-and-design-system.md).
 
 ## Team
 
@@ -45,7 +45,35 @@ Flask rather than the Node.js the exercise statement illustrates:
 | `sql/` | `00_create_database.sql`, `01_schema.sql`, `02_seed_30_per_table.sql` |
 | `web/` | The application, organized by layers |
 
-## Running it locally
+## Running it
+
+Two ways, and the application behaves identically under both — it reads the same
+configuration from the environment either way. Containers for local work,
+gunicorn under systemd on the instance, which is the default there:
+[ADR-0006](docs/adr/0006-run-under-both-systemd-and-docker-compose.md).
+
+### With containers
+
+Requires Docker with the Compose plugin. Nothing else — no Python, no local
+PostgreSQL.
+
+```bash
+cp .env.example .env
+docker compose up
+```
+
+That creates the database, applies the schema, loads the seed data and starts
+the application, in that order. It is then at http://localhost:8000
+
+```bash
+docker compose down       # stop, keeping the data
+docker compose down -v    # stop and discard the database volume
+```
+
+The database is published on `127.0.0.1:5432`, so `psql -h localhost -U postgres
+-d retail` reaches it from the host.
+
+### Without containers
 
 Requires Python 3.12 and a local PostgreSQL.
 
@@ -63,9 +91,21 @@ flask --app web.app run
 
 The application is then at http://localhost:5000
 
-> The application is being built. `sql/` and `web/` are produced by the Phase 2
-> and Phase 3 stories in [`docs/backlog.md`](docs/backlog.md); until those land,
-> the commands above describe the target rather than the current state.
+The three scripts must run in that order against an empty database — that is
+Definition of Done item 3, and CI checks it on every pull request.
+
+### Signing in
+
+The seed creates thirty accounts, all with the password `Password123!`, hashed
+with argon2id. `admin@mosaiq-demo.com` is the administrator, and there is
+exactly one. The rest are `user2@…` through `user30@…`, spread across the other
+six roles.
+
+Demonstration data only. Nothing here is a secret and nothing here belongs on
+the instance.
+
+Run the checks the pipeline runs with `pytest`, `black --check .` and
+`ruff check .`, after `pip install -r web/requirements-dev.txt`.
 
 Using an AI coding agent? Also run `touch ~/.claude/rs-local.md` so the
 personal-context import resolves.

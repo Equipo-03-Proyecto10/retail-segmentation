@@ -73,6 +73,9 @@ Phases are an ordering of the work, not a schedule. Sprint boundaries are set in
 | # | Deliverable | Location |
 |---|---|---|
 | 1 | Functional and non-functional requirements | `docs/requirements.md` |
+| 1a | User stories | `docs/user-stories.md` |
+| 1b | Business rules | `docs/business-rules.md` |
+| 1c | Profile and permission matrix | `docs/requirements.md` §3 |
 | 2 | ER model in 4NF and data dictionary | `docs/data-model.md` |
 | 3 | Justification of design decisions | `docs/adr/` |
 | 4 | `00_create_database.sql` | `sql/` |
@@ -119,9 +122,15 @@ them; when one is answered, it moves out of this section.
 |---|---|---|
 | Q-1 | The statement says the work is individual, but this is a registered team project. Does the team deliver once, or does each member deliver their own instance? | The team delivers once, on one shared instance |
 | Q-2 | Which host URL is assigned, given Q-1? | `https://ubiquitous.udem.edu/~iac-<matricula>` of one designated member |
-| Q-5 | The first-partial delivery document lists "Diseño de MongoDB", "Diseño de Redis" and "Contenedores locales" among its deliverables, and its demonstration list ends with "ejecución mediante contenedores". This document and [ADR-0001](adr/0001-flask-monolith-on-a-single-vm.md) retired all three. Which is binding? | The scope recorded here is binding. The two datastore designs are committed as designs only ([ADR-0005](adr/0005-document-mongodb-and-redis-designs-without-implementing-them.md)); container execution has no answer and cannot be demonstrated as things stand |
+| Q-5 | The first-partial delivery document lists "Diseño de MongoDB" and "Diseño de Redis" among its deliverables. This document and [ADR-0001](adr/0001-flask-monolith-on-a-single-vm.md) retired both, and the delivery has one database engine. Which is binding? | The scope recorded here is binding. Both designs are committed as designs only, with nothing installed — [ADR-0005](adr/0005-document-mongodb-and-redis-designs-without-implementing-them.md) |
 
 Q-3 (company name and brand identity) and Q-4 (design system for the
 interface) are resolved: the product is **MOSAIQ**, with the design system
 recorded in [ADR-0002](adr/0002-mosaiq-identity-and-design-system.md) and
 committed under [`docs/design-system/`](design-system/).
+
+The delivery document's third retired item — container execution — is also
+resolved, and did not need the Product Owner. The application runs under both
+systemd and Docker Compose, systemd remaining the default on the instance:
+[ADR-0006](adr/0006-run-under-both-systemd-and-docker-compose.md), built by
+F3-09 (#89).

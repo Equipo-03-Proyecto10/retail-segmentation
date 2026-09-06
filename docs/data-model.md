@@ -54,17 +54,13 @@ Stories: F2-01 (conceptual model), F2-02 (normalization), F2-03 (logical model).
 
 ### Permission matrix
 
-| Role | Catalogs | Users | Segments and rules | Campaigns | Reports | Audit log |
-|---|---|---|---|---|---|---|
-| `ADMIN` | full | full | full | full | read | read |
-| `ANALYST` | read | — | read | read | read | — |
-| `STORE_MANAGER` | read | — | — | — | read (own store) | — |
-| `MARKETING` | read | — | read | full | read | — |
-| `INVENTORY_PLANNER` | read, `inventory` write | — | — | — | read | — |
-| `AUDITOR` | read | read | read | read | read | read |
-| `CUSTOMER` | — | own profile | — | — | — | — |
+The seven roles and what each may reach are specified in
+[`requirements.md`](requirements.md) §3. It is not repeated here: two copies of a
+matrix drift, and the one that governs the authorization middleware is the one
+next to the requirements it serves.
 
-Enforced by the authorization middleware in F4-01 (#69), not by this table.
+`role` holds those seven rows. Which user holds which is data, not schema — with
+the single exception of the administrator, of whom there is exactly one.
 
 ### Dependencies
 

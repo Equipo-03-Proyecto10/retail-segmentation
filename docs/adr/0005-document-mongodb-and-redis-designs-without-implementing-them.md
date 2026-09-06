@@ -63,12 +63,13 @@ nothing about the deployment, the CI pipeline or the Definition of Done moves.
 components that do not exist, which is exactly the kind of thing a reader
 mistakes for a component. Every one of them opens with a status line saying so,
 and they are quarantined in one directory with its own warning, but the risk
-does not go to zero. The delivery document also still asks for container
-execution, and this record does not answer that — nothing here makes the
-demonstration's "ejecución mediante contenedores" item possible.
+does not go to zero.
 
 **What must now be true elsewhere.** Q-5 in [`scope.md`](../scope.md) §8 stays
-open until the Product Owner rules. If the ruling is that the delivery document
+open until the Product Owner rules on the MongoDB and Redis half. Its third
+component — container execution — is no longer open:
+[ADR-0006](0006-run-under-both-systemd-and-docker-compose.md) answers it, and
+this record does not. If the ruling is that the delivery document
 is binding, this record is superseded and ADR-0001 goes with it. No requirements
 file, dependency or environment variable may reference MongoDB or Redis while
 this record stands.

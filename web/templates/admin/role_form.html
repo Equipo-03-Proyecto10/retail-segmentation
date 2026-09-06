@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block content %}
+<main class="admin-page">
+  <h1>{{ "Edit role" if role and role.role_id else "New role" }}</h1>
+
+  <form method="post">
+    {% if not role or not role.role_id %}
+    <label for="role_id">Role ID</label>
+    <input type="number" id="role_id" name="role_id" value="{{ role.role_id if role else '' }}" required>
+    {% if errors.role_id %}<p class="error">{{ errors.role_id }}</p>{% endif %}
+    {% endif %}
+
+    <label for="code">Code</label>
+    <input type="text" id="code" name="code" value="{{ role.code if role else '' }}" required>
+    {% if errors.code %}<p class="error">{{ errors.code }}</p>{% endif %}
+
+    <label for="description">Description</label>
+    <input type="text" id="description" name="description" value="{{ role.description if role else '' }}">
+    {% if errors.description %}<p class="error">{{ errors.description }}</p>{% endif %}
+
+    <button type="submit">Save</button>
+    <a href="{{ url_for('admin.list_roles_view') }}">Cancel</a>
+  </form>
+</main>
+{% endblock %}

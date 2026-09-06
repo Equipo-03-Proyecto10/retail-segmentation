@@ -367,29 +367,36 @@ def test_the_menu_is_driven_by_permissions_rather_than_by_role() -> None:
     def catalog_index() -> str:  # pragma: no cover - not exercised here
         return ""
 
-    @requires("audit.read")
-    def audit_index() -> str:  # pragma: no cover - not exercised here
+    @requires("user.read")
+    def users_index() -> str:  # pragma: no cover - not exercised here
         return ""
 
     app.add_url_rule("/catalog", endpoint="catalog.index", view_func=catalog_index)
-    app.add_url_rule("/audit", endpoint="audit.index", view_func=audit_index)
+    app.add_url_rule("/users", endpoint="users.index", view_func=users_index)
 
     administrator = app.test_client()
     _sign_in(administrator, "ADMIN")
     analyst = app.test_client()
     _sign_in(analyst, "ANALYST")
 
-    assert _menu_labels(administrator) == ["Home", "Catalogs", "Audit log"]
+    # Audit log is in both signed-in menus because F3-11 (#103) registered it;
+    # Users is in the administrator's alone, which is the point.
+    assert _menu_labels(administrator) == ["Home", "Catalogs", "Users", "Audit log"]
     assert _menu_labels(analyst) == ["Home", "Catalogs"]
     assert _menu_labels(app.test_client()) == ["Home"]
 
 
 def test_the_menu_skips_an_entry_whose_story_has_not_landed() -> None:
-    """Every entry but Home names an endpoint no blueprint registers yet."""
+    """Catalogs, Users, Segments, Campaigns and Segment run are still unbuilt.
+
+    The list grows as their blueprints land; what must stay true is that an
+    entry naming an endpoint nothing registers is skipped rather than rendered
+    as a link that 404s.
+    """
     client = _app().test_client()
     _sign_in(client, "ADMIN")
 
-    assert _menu_labels(client) == ["Home"]
+    assert _menu_labels(client) == ["Home", "Audit log"]
 
 
 def test_the_signed_in_name_and_sign_out_replace_the_sign_in_link() -> None:

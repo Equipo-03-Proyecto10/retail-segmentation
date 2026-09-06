@@ -7,6 +7,8 @@
 | [Backlog](backlog.md) | Ordered work, grouped by scope phase |
 | [Roadmap](roadmap.md) | What is deferred to later deliveries, and how it re-enters |
 | [Infrastructure](infra.md) | Provisioned GCP resources, firewall policy, and SSH access |
+| [Data model](data-model.md) | The PostgreSQL model: conceptual, 4NF normalization with its justification, ER diagram, data dictionary |
+| [Datastore designs](datastores/) | MongoDB and Redis designs for later deliveries. Nothing in there is implemented |
 | [Design system](design-system/) | MOSAIQ's tokens, components, and the two reference sheets to build screens from |
 | [Decisions](adr/) | Architecture Decision Records |
 | [Issue history](issue-history.md) | What the deleted `#1`–`#40` references in older commits pointed at |
@@ -16,7 +18,6 @@ Documents that do not exist yet are produced by the story that needs them:
 | Deliverable | Produced by |
 |---|---|
 | `requirements.md` | F2-01 |
-| `data-model.md` | F2-03 |
 | `evidence/` | F2-07, F5-01, F5-02, F6-05 |
 
 Everything is written in English — code, comments, commits, issues,

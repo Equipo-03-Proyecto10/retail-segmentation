@@ -109,3 +109,21 @@ story `F6-01` (#77). Config and runbook: [`deploy/`](../deploy/README.md).
 config and its local proof (`compose.proxy.yaml`) have merged; the `dnf install`
 + `systemctl` steps and the two acceptance checks against the running instance
 happen in that session, and their output replaces this line.
+
+## Application service
+
+gunicorn under `systemd` — story `F6-02` (#78), [ADR-0006](adr/0006-run-under-both-systemd-and-docker-compose.md).
+Unit and runbook: [`deploy/`](../deploy/README.md).
+
+| Field | Value |
+|---|---|
+| Unit | `/etc/systemd/system/mosaiq.service`, from `deploy/systemd/mosaiq.service` |
+| Type | `notify`, `Restart=on-failure`, `WantedBy=multi-user.target` |
+| Runs as | user `mosaiq` (unprivileged), `WorkingDirectory=/opt/mosaiq/current` |
+| Binds | `127.0.0.1:8000` — reachable only through NGINX |
+| Environment | `/etc/mosaiq/mosaiq.env` (`FLASK_ENV=production`, real secret, `TRUSTED_PROXY_HOPS=1`) |
+| Logs | `journald` (`journalctl -u mosaiq`) |
+
+**Applied on the instance: pending the `F6-01`/`F6-02` pairing session.** The
+unit and its layout have merged; installing it, the kill-and-restart check and
+the reboot check happen in that session and their output replaces this line.

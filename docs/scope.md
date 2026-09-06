@@ -119,6 +119,7 @@ them; when one is answered, it moves out of this section.
 |---|---|---|
 | Q-1 | The statement says the work is individual, but this is a registered team project. Does the team deliver once, or does each member deliver their own instance? | The team delivers once, on one shared instance |
 | Q-2 | Which host URL is assigned, given Q-1? | `https://ubiquitous.udem.edu/~iac-<matricula>` of one designated member |
+| Q-5 | The first-partial delivery document lists "Diseño de MongoDB", "Diseño de Redis" and "Contenedores locales" among its deliverables, and its demonstration list ends with "ejecución mediante contenedores". This document and [ADR-0001](adr/0001-flask-monolith-on-a-single-vm.md) retired all three. Which is binding? | The scope recorded here is binding. The two datastore designs are committed as designs only ([ADR-0005](adr/0005-document-mongodb-and-redis-designs-without-implementing-them.md)); container execution has no answer and cannot be demonstrated as things stand |
 
 Q-3 (company name and brand identity) and Q-4 (design system for the
 interface) are resolved: the product is **MOSAIQ**, with the design system

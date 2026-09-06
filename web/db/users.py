@@ -208,6 +208,7 @@ def count_active_demonstration_accounts(connection: Connection) -> int:
         )
         return int(cursor.fetchone()[0])
 
+
 def list_users(
     connection: Connection, *, search: str | None, page: int, per_page: int
 ) -> tuple[list[AppUser], int]:

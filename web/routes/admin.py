@@ -9,12 +9,10 @@ added here without a declaration is refused rather than exposed.
 from __future__ import annotations
 
 from decimal import Decimal
-from psycopg.errors import UniqueViolation
-
 
 from flask import Blueprint, redirect, render_template, request, url_for
+from psycopg.errors import UniqueViolation
 
-from web.db.users import list_role_options, list_users
 from web.db import get_connection
 from web.db.categories import (
     create_category,
@@ -46,6 +44,7 @@ from web.db.stores import (
     list_stores,
     update_store,
 )
+from web.db.users import list_role_options, list_users
 from web.middleware.authz import (
     CATALOG_READ,
     CATALOG_WRITE,
@@ -61,7 +60,6 @@ from web.services.catalog import (
     validate_role,
     validate_store,
 )
-
 from web.services.users import (
     SingleAdministratorError,
     UnknownRoleError,

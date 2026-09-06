@@ -61,7 +61,11 @@ from web.services.catalog import (
     validate_role,
     validate_store,
 )
-from web.services.uploads import UploadRejected, delete_product_image, save_product_image
+from web.services.uploads import (
+    UploadRejected,
+    delete_product_image,
+    save_product_image,
+)
 from web.services.users import (
     SingleAdministratorError,
     UnknownRoleError,
@@ -1006,6 +1010,7 @@ def activate_user_view(user_id):
 
 
 from flask import send_from_directory
+
 
 @bp.get("/products/image/<path:filename>")
 @requires(CATALOG_READ)

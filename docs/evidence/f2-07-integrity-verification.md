@@ -32,6 +32,11 @@ ordered scripts each exited 0.
 Every table carries at least 30 rows except `role` (7) and `channel` (5), both
 listed in [`sql/seed-exempt.txt`](../../sql/seed-exempt.txt) with their reason.
 
+The counts above are this run. `sql/verify_integrity.sql` has since grown three
+cases — `P5`, `N17` and `N18`, for the single-administrator index that did not
+exist when F2-07 ran — and they are evidenced with their own run in
+[`f4-02-single-administrator.md`](f4-02-single-administrator.md).
+
 ## Cases
 
 | # | Case | Constraint that refused it |

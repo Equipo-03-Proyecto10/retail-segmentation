@@ -109,7 +109,7 @@ is a gap, and the point of the table is that the gap is visible.
 | Demonstration item | Requirements | Story | Issue | State |
 |---|---|---|---|---|
 | Inicio de sesión | RF-01, RF-02 | F3-03 | #63 | Open, not started |
-| Acceso diferenciado por perfil | RF-03, RF-04, RF-05 | F4-01, F4-02 | #69, #70 | RF-03 and RF-04 built (#69); RF-05 open (#70) |
+| Acceso diferenciado por perfil | RF-03, RF-04, RF-05 | F4-01, F4-02 | #69, #70 | Built — the middleware (#69) and the single administrator (#70) |
 | Operación de catálogos | RF-06, RF-07, RF-08, RF-09 | F3-04, F3-06, F3-07 | #64, #66, #67 | Open, not started |
 | Ejecución de un proceso principal | RF-12 | F3-10 | #102 | Open, just written |
 | Almacenamiento en PostgreSQL | RNF-08, RNF-09, RNF-10 | F2-04, F2-05, F2-06 | #57, #58, #59 | In review (#98) |

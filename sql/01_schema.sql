@@ -79,12 +79,28 @@ CREATE TABLE app_user (
     CHECK (email ~ '@')
 );
 
--- The partial unique index that enforces the single-administrator rule in the
--- schema is F4-02 (#70), which adds it together with the application-side
--- check. AGENTS.md is explicit that one half alone does not count: the
--- application check alone is bypassed by a direct INSERT, and the index alone
--- surfaces as an unexplained database error. 02_seed_30_per_table.sql already
--- seeds exactly one administrator, so the index applies cleanly when it lands.
+-- The schema half of the single-administrator rule (RN-01, F4-02). Every row
+-- the predicate admits holds the same role_id, so uniqueness over that column
+-- admits exactly one of them.
+--
+-- The literal 1 is a coupling, not a magic number: an index predicate must be
+-- immutable, so it cannot look ADMIN up by its code in `role`, and this index
+-- therefore depends on 02_seed_30_per_table.sql giving ADMIN role_id 1.
+-- tests/test_single_administrator.py asserts the seed and this predicate still
+-- agree, so renumbering the roles fails the build instead of quietly leaving
+-- the rule unenforced.
+--
+-- It constrains how many rows hold role_id = 1, not what else those rows say:
+-- renaming the administrator, rotating their password (F4-06, #107) and
+-- deactivating them are all still possible. Refusing to leave the system with
+-- *zero* administrators is the other direction of RN-01, which no unique index
+-- can express; web/services/users.py holds that half.
+--
+-- AGENTS.md is explicit that one half alone does not count: the application
+-- check alone is bypassed by a direct INSERT, and the index alone surfaces as
+-- an unexplained database error.
+CREATE UNIQUE INDEX ux_app_user_single_administrator
+    ON app_user (role_id) WHERE role_id = 1;
 
 CREATE TABLE customer (
     customer_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),

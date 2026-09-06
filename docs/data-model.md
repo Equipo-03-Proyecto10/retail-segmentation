@@ -60,7 +60,23 @@ matrix drift, and the one that governs the authorization middleware is the one
 next to the requirements it serves.
 
 `role` holds those seven rows. Which user holds which is data, not schema — with
-the single exception of the administrator, of whom there is exactly one.
+the single exception of the administrator, of whom there is exactly one:
+
+```sql
+CREATE UNIQUE INDEX ux_app_user_single_administrator
+    ON app_user (role_id) WHERE role_id = 1;
+```
+
+Every row the predicate admits holds the same `role_id`, so uniqueness over that
+column admits exactly one of them. The literal `1` is a coupling worth stating:
+an index predicate must be immutable, so it cannot join `role` to find `ADMIN`
+by its code, and the schema therefore depends on the seed giving `ADMIN`
+`role_id` 1. `tests/test_single_administrator.py` asserts the two still agree,
+so renumbering the roles fails the build rather than quietly disarming the rule.
+
+The rule's other direction — never *zero* administrators — is not here, because
+no unique index can require a row to exist. It lives in `web/services/users.py`,
+and [`business-rules.md`](business-rules.md) RN-01 explains the split.
 
 ### Dependencies
 

@@ -1,7 +1,6 @@
 """Data access for product — full CRUD.
 
-image_path is read-only here: uploading and replacing the file is F3-07
-(#67), a separate story. This CRUD never writes to that column.
+Product fields and an optional image path are committed together.
 """
 
 from __future__ import annotations
@@ -30,14 +29,15 @@ def list_products(
     """Return a page of products, optionally filtered by SKU or name, and
     the total row count for building pagination controls."""
     offset = (page - 1) * per_page
-    columns = "product_id, sku, name, category_id, list_price, image_path, is_active"
 
     with connection.cursor() as cursor:
         if search:
             pattern = f"%{search}%"
             cursor.execute(
-                f"""
-                SELECT {columns} FROM product
+                """
+                SELECT product_id, sku, name, category_id, list_price,
+                       image_path, is_active
+                FROM product
                 WHERE sku ILIKE %s OR name ILIKE %s
                 ORDER BY product_id
                 LIMIT %s OFFSET %s
@@ -46,7 +46,11 @@ def list_products(
             )
         else:
             cursor.execute(
-                f"SELECT {columns} FROM product ORDER BY product_id LIMIT %s OFFSET %s",
+                """
+                SELECT product_id, sku, name, category_id, list_price,
+                       image_path, is_active
+                FROM product ORDER BY product_id LIMIT %s OFFSET %s
+                """,
                 (per_page, offset),
             )
         rows = cursor.fetchall()
@@ -88,6 +92,7 @@ def create_product(
     name: str,
     category_id: int,
     list_price: Decimal,
+    image_path: str | None = None,
 ) -> str | None:
     """Insert a new product. Returns None on success, or an error message on
     a duplicate id/sku or an invalid category_id."""
@@ -95,10 +100,11 @@ def create_product(
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO product (product_id, sku, name, category_id, list_price)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO product
+                    (product_id, sku, name, category_id, list_price, image_path)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 """,
-                (product_id, sku, name, category_id, list_price),
+                (product_id, sku, name, category_id, list_price, image_path),
             )
         connection.commit()
         return None
@@ -119,6 +125,7 @@ def update_product(
     category_id: int,
     list_price: Decimal,
     is_active: bool,
+    image_path: str | None = None,
 ) -> str | None:
     """Update a product's editable fields. Returns None on success, or an
     error message on a duplicate SKU or an invalid category_id."""
@@ -131,10 +138,11 @@ def update_product(
                     name = %s,
                     category_id = %s,
                     list_price = %s,
-                    is_active = %s
+                    is_active = %s,
+                    image_path = COALESCE(%s, image_path)
                 WHERE product_id = %s
                 """,
-                (sku, name, category_id, list_price, is_active, product_id),
+                (sku, name, category_id, list_price, is_active, image_path, product_id),
             )
         connection.commit()
         return None
@@ -157,15 +165,3 @@ def delete_product(connection: Connection, product_id: int) -> bool:
     except ForeignKeyViolation:
         connection.rollback()
         return False
-
-
-def update_product_image(
-    connection: Connection, product_id: int, image_path: str | None
-) -> None:
-    """Set or clear a product's image_path. Never touches the file on disk —
-    that is web.services.uploads' job, not this module's."""
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "UPDATE product SET image_path = %s WHERE product_id = %s",
-            (image_path, product_id),
-        )

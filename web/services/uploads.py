@@ -10,9 +10,9 @@ from __future__ import annotations
 import os
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 
 from werkzeug.datastructures import FileStorage
-from werkzeug.utils import secure_filename
 
 from web.config import Config
 
@@ -42,7 +42,10 @@ class SavedUpload:
 def _validate(file: FileStorage, config: Config) -> str:
     """Return the extension to save with, or raise UploadRejected."""
     content_type = (file.mimetype or "").lower()
-    if content_type not in config.allowed_image_types:
+    if (
+        content_type not in config.allowed_image_types
+        or content_type not in _EXTENSION_BY_TYPE
+    ):
         raise UploadRejected(
             f"'{content_type or 'unknown'}' is not an accepted image type. "
             f"Allowed types: {', '.join(sorted(config.allowed_image_types))}."
@@ -54,6 +57,9 @@ def _validate(file: FileStorage, config: Config) -> str:
     file.stream.seek(0, os.SEEK_END)
     size = file.stream.tell()
     file.stream.seek(0)
+
+    if size == 0:
+        raise UploadRejected("The image file is empty.")
 
     if size > config.max_upload_bytes:
         limit_mb = config.max_upload_bytes / (1024 * 1024)
@@ -69,18 +75,11 @@ def save_product_image(file: FileStorage, config: Config) -> SavedUpload:
     """Validate and store an uploaded product image.
 
     Raises UploadRejected on a disallowed type or an oversized file. The
-    original filename is never trusted for anything but its extension hint —
-    secure_filename is applied, and the actual name written to disk is a
-    fresh UUID either way, so no two uploads can collide.
+    original filename is ignored; a generated name prevents collisions.
     """
     extension = _validate(file, config)
-
     os.makedirs(config.upload_dir, exist_ok=True)
 
-    # secure_filename strips path separators and odd characters from
-    # whatever the browser sent — defence in depth, since the stored name
-    # below never uses this value directly.
-    secure_filename(file.filename or "upload")
     stored_name = f"{uuid.uuid4().hex}{extension}"
     absolute_path = os.path.join(config.upload_dir, stored_name)
 
@@ -97,6 +96,8 @@ def delete_product_image(relative_path: str, config: Config) -> None:
     """
     if not relative_path:
         return
-    absolute_path = os.path.join(config.upload_dir, relative_path)
-    if os.path.exists(absolute_path):
-        os.remove(absolute_path)
+    root = Path(config.upload_dir).resolve()
+    target = (root / relative_path).resolve()
+    if target.parent != root:
+        return
+    target.unlink(missing_ok=True)

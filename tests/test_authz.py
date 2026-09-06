@@ -364,27 +364,12 @@ def _menu_labels(client: FlaskClient) -> list[str]:
 def test_the_menu_is_driven_by_permissions_rather_than_by_role() -> None:
     app = _app()
 
-    # Stand in for the blueprints later stories register. The menu entries
-    # exist already; what makes them appear is the endpoint being registered
-    # and the visitor holding the permission.
-    @requires("catalog.read")
-    def catalog_index() -> str:  # pragma: no cover - not exercised here
-        return ""
-
-    @requires("user.read")
-    def users_index() -> str:  # pragma: no cover - not exercised here
-        return ""
-
-    app.add_url_rule("/catalog", endpoint="catalog.index", view_func=catalog_index)
-    app.add_url_rule("/users", endpoint="users.index", view_func=users_index)
-
     administrator = app.test_client()
     _sign_in(administrator, "ADMIN")
     analyst = app.test_client()
     _sign_in(analyst, "ANALYST")
 
-    # Audit log is in both signed-in menus because F3-11 (#103) registered it;
-    # Users is in the administrator's alone, which is the point.
+    # The real registered destinations follow each visitor's permissions.
     assert _menu_labels(administrator) == [
         "Home",
         "Catalogs",
@@ -397,7 +382,7 @@ def test_the_menu_is_driven_by_permissions_rather_than_by_role() -> None:
 
 
 def test_the_menu_skips_an_entry_whose_story_has_not_landed() -> None:
-    """Catalogs, Users, Segments and Campaigns are still unbuilt.
+    """Segments and Campaigns are still unbuilt.
 
     The list grows as their blueprints land; what must stay true is that an
     entry naming an endpoint nothing registers is skipped rather than rendered
@@ -406,7 +391,13 @@ def test_the_menu_skips_an_entry_whose_story_has_not_landed() -> None:
     client = _app().test_client()
     _sign_in(client, "ADMIN")
 
-    assert _menu_labels(client) == ["Home", "Segment run", "Audit log"]
+    assert _menu_labels(client) == [
+        "Home",
+        "Catalogs",
+        "Users",
+        "Segment run",
+        "Audit log",
+    ]
 
 
 def test_the_signed_in_name_and_sign_out_replace_the_sign_in_link() -> None:
@@ -468,3 +459,29 @@ def test_public_and_requires_stamp_a_declaration() -> None:
     assert closed_requirement is not None
     assert closed_requirement.anonymous_allowed is False
     assert closed_requirement.permissions == frozenset({"catalog.read"})
+
+
+@pytest.mark.parametrize("role", ["ADMIN", "ANALYST", "AUDITOR"])
+def test_catalog_menu_reaches_all_five_real_listings(role: str) -> None:
+    app = _app()
+    client = app.test_client()
+    _sign_in(client, role)
+    response = client.get("/admin/catalogs")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    for catalog in ("stores", "categories", "channels", "products", "roles"):
+        assert f'href="/admin/{catalog}"' in body
+    assert re.search(r'aria-current="page"\s*>\s*Catalogs', body)
+    assert not re.search(r'aria-current="page"\s*>\s*Users', body)
+
+
+def test_users_section_does_not_mark_catalogs_current() -> None:
+    app = _app()
+    client = app.test_client()
+    _sign_in(client, "ADMIN")
+    # The user creation form reads role options but does not mutate data.
+    response = client.get("/admin/users/new")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert re.search(r'aria-current="page"\s*>\s*Users', body)
+    assert not re.search(r'aria-current="page"\s*>\s*Catalogs', body)

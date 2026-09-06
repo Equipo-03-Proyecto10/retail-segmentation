@@ -127,7 +127,7 @@ story `F6-01` (#77). Config and runbook: [`deploy/`](../deploy/README.md).
 | Upstream | `127.0.0.1:8000` (gunicorn — `F6-02`, #78) |
 | SELinux | `httpd_can_network_connect` set to `1` |
 | TLS | `/etc/nginx/tls/mosaiq.{crt,key}` — Let's Encrypt where the host has a real name, self-signed otherwise (`F6-03`, #79). The instance has no DNS name, so Path B applies (`scope.md` §8). Needs GCP rule `mosaiq-allow-https` for `tcp:443`. |
-| HSTS | `max-age=31536000` on HTTPS responses |
+| HSTS | `max-age=300` on HTTPS responses — staged low while the certificate is self-signed (#79). Raise to `31536000` once a real certificate has renewed once. |
 
 Applied on `mosaiq-deployment-vm` on 2026-09-06. `nginx/1.26.3`,
 `systemctl is-enabled nginx` → `enabled`. The stock `server {}` block in

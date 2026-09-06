@@ -33,6 +33,8 @@ constraint other work must respect needs an ADR, or a reference to one.
 | [0001](0001-flask-monolith-on-a-single-vm.md) | Flask monolith on a single Compute Engine instance | Accepted |
 | [0002](0002-mosaiq-identity-and-design-system.md) | MOSAIQ identity and a token-based design system | Accepted |
 | [0003](0003-layered-architecture-with-an-explicit-service-layer.md) | Layered architecture with an explicit service layer, rather than classic MVC | Proposed |
+| [0004](0004-model-ahead-of-the-deferred-segmentation-modules.md) | The PostgreSQL model carries the deferred segmentation tables now | Proposed |
+| [0005](0005-document-mongodb-and-redis-designs-without-implementing-them.md) | MongoDB and Redis are documented as designs and not implemented | Proposed |
 
 ## Writing one
 

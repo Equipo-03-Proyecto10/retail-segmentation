@@ -50,6 +50,7 @@ def _user(user_id: UUID, role_code: str) -> AppUser:
         user_id=user_id,
         role_id=_ROLE_IDS[role_code],
         role_code=role_code,
+        role_description=role_code.replace("_", " ").title(),
         name=f"{role_code.title()} user",
         email=f"{role_code.lower()}@mosaiq-demo.com",
         password_hash="argon2id-hash",
@@ -120,10 +121,12 @@ class _Cursor:
 
 
 def _as_row(user: AppUser) -> tuple:
+    """The column order `get_user_by_id` selects."""
     return (
         user.user_id,
         user.role_id,
         user.role_code,
+        user.role_description,
         user.name,
         user.email,
         user.password_hash,

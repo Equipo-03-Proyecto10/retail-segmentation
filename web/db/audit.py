@@ -1,4 +1,4 @@
-"""Telling PostgreSQL who is acting, so the audit triggers can record it.
+"""The audit log: telling PostgreSQL who is acting, and reading back what it recorded.
 
 `fn_audit()` in sql/01_schema.sql reads `mosaiq.user_id` from the connection
 and writes it as `audit_log.user_id`. Nothing else fills that column: the
@@ -12,6 +12,8 @@ seed or a maintenance script, and the reason the column is nullable.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from psycopg import Connection
@@ -31,3 +33,49 @@ def set_audit_actor(connection: Connection[Any], user_id: str | None) -> None:
             "SELECT set_config(%s, %s, false)",
             (AUDIT_ACTOR_SETTING, user_id or ""),
         )
+
+
+@dataclass(frozen=True)
+class AuditEntry:
+    """One row of the append-only log, with the actor's name resolved.
+
+    `actor_name` is None when `audit_log.user_id` is NULL, which is the honest
+    state for everything the seed and any maintenance script did. The view
+    renders that as unattributed rather than inventing an actor.
+    """
+
+    audit_id: int
+    entity: str
+    entity_pk: str
+    action: str
+    actor_name: str | None
+    executed_at: datetime
+
+
+def recent_entries(connection: Connection[Any], limit: int) -> list[AuditEntry]:
+    """The newest entries, most recent first."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT a.audit_id, a.entity, a.entity_pk, a.action,
+                   u.name, a.executed_at
+            FROM audit_log AS a
+            LEFT JOIN app_user AS u ON u.user_id = a.user_id
+            ORDER BY a.audit_id DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+        rows = cursor.fetchall()
+
+    return [
+        AuditEntry(
+            audit_id=row[0],
+            entity=row[1],
+            entity_pk=row[2],
+            action=row[3],
+            actor_name=row[4],
+            executed_at=row[5],
+        )
+        for row in rows
+    ]

@@ -262,6 +262,15 @@ class MenuEntry:
     permission: str | None
 
 
+@dataclass(frozen=True)
+class MenuItem:
+    """A navigation entry as one visitor sees it, on one page."""
+
+    label: str
+    endpoint: str
+    is_current: bool
+
+
 # One entry per section of the matrix in docs/requirements.md §3, named for the
 # endpoint the story that builds it registers. An entry whose blueprint has not
 # landed yet is skipped, so this list is a plan the menu grows into rather than
@@ -280,12 +289,22 @@ NAVIGATION: tuple[MenuEntry, ...] = (
 )
 
 
-def menu() -> list[MenuEntry]:
-    """The entries this visitor may reach, in declaration order."""
+def menu() -> list[MenuItem]:
+    """The entries this visitor may reach, in declaration order.
+
+    The current section is marked by blueprint rather than by endpoint, so a
+    detail page inside a section still marks the section it belongs to.
+    """
     granted = current_permissions()
     registered = current_app.view_functions
+    section = request.blueprint if has_request_context() else None
+
     return [
-        entry
+        MenuItem(
+            label=entry.label,
+            endpoint=entry.endpoint,
+            is_current=entry.endpoint.split(".")[0] == section,
+        )
         for entry in NAVIGATION
         if entry.endpoint in registered
         and (entry.permission is None or entry.permission in granted)

@@ -1,0 +1,21 @@
+.git/
+.github/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Never goes into an image: the real environment file, uploads, datasets.
+.env
+.env.*
+!.env.example
+web/uploads/
+data/
+*.csv
+
+docs/
+tests/
+*.md

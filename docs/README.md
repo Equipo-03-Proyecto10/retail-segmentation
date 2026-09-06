@@ -7,6 +7,9 @@
 | [Backlog](backlog.md) | Ordered work, grouped by scope phase |
 | [Roadmap](roadmap.md) | What is deferred to later deliveries, and how it re-enters |
 | [Infrastructure](infra.md) | Provisioned GCP resources, firewall policy, and SSH access |
+| [Requirements](requirements.md) | Functional and non-functional requirements, the permission matrix, and traceability to the demonstration |
+| [User stories](user-stories.md) | What each role needs from the application, with acceptance criteria |
+| [Business rules](business-rules.md) | The invariants, and where each one is actually enforced |
 | [Data model](data-model.md) | The PostgreSQL model: conceptual, 4NF normalization with its justification, ER diagram, data dictionary |
 | [Datastore designs](datastores/) | MongoDB and Redis designs for later deliveries. Nothing in there is implemented |
 | [Design system](design-system/) | MOSAIQ's tokens, components, and the two reference sheets to build screens from |
@@ -17,7 +20,6 @@ Documents that do not exist yet are produced by the story that needs them:
 
 | Deliverable | Produced by |
 |---|---|
-| `requirements.md` | F2-01 |
 | `evidence/` | F2-07, F5-01, F5-02, F6-05 |
 
 Everything is written in English — code, comments, commits, issues,

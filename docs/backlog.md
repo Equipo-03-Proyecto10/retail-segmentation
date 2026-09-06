@@ -25,6 +25,7 @@ flowchart TD
     F0-02b["F0-02b"]
     F0-03
     F0-04
+    F0-05
 
     F0-03 --> F1-01 --> F1-02 --> F1-03 --> F1-04 --> F1-05
 
@@ -67,6 +68,15 @@ flowchart TD
 
     F2-06 --> F3-09
     F3-01 --> F3-09
+
+    F2-03 --> F0-05
+
+    F3-02 --> F3-10
+    F3-03 --> F3-10
+    F4-01 --> F3-10
+
+    F3-02 --> F3-11
+    F4-01 --> F3-11
 ```
 
 ---
@@ -80,6 +90,7 @@ flowchart TD
 | F0-02b | Decide the design system for the interface | P0 | — |
 | F0-03 | Every member has a GCP account, the SDK CLI, an editor and Git working | P0 | — |
 | F0-04 | Confirm the host assignment and whether the team delivers once (Q-1, Q-2) | P0 | — |
+| F0-05 | Functional and non-functional requirements, user stories, business rules and the permission matrix | P0 | F2-03 |
 
 **F0-02 is split.** Company name and design system are independent decisions
 gated on different open questions (`docs/scope.md` §8, Q-3 and Q-4), and only
@@ -89,6 +100,12 @@ which only `F3-08` consumes. Bundling both under one story meant `F2-01`
 carried a blocker it had no reason to carry. Both are now resolved: the
 company name is MOSAIQ, and the design system is recorded in
 [ADR-0002](adr/0002-mosaiq-identity-and-design-system.md).
+
+**F0-05 was written after the model, not before it.** Requirements belong in
+Phase 0 and the story sits there, but it depends on `F2-03`: the model was built
+first and the requirements were written against it. That inversion is a fact
+about how the project ran, not a plan, and the dependency edge records it rather
+than pretending the order was the tidy one.
 
 ## Phase 1 — GCP infrastructure
 
@@ -128,7 +145,27 @@ application layer that was built on top of it.
 | F3-06 | User management: create, edit, deactivate | P0 | F3-04 |
 | F3-07 | Image handling: upload JPG/PNG/WebP, store under `uploads/`, keep the path in the database | P0 | F3-04, F2-05 |
 | F3-08 | Apply the chosen design system across the interface | P1 | F0-02b, F3-04 |
-| F3-09 | One-command environment bootstrap: create the database, apply the schema, load seed data and start the application | P1 | F2-06, F3-01 |
+| F3-09 | One command brings the whole stack up through Docker Compose | P1 | F2-06, F3-01 |
+| F3-10 | Segment assignment process: score RFM over recorded sales, match the rules, write the assignment | P0 | F3-02, F3-03, F4-01 |
+| F3-11 | Audit log view for the administrator and the auditor | P0 | F3-02, F4-01 |
+
+**F3-10 and F3-11 exist because the demonstration needs them.** The
+first-partial demonstration list asks for "ejecución de un proceso principal"
+and "registro de auditoría", and neither had a story. `F3-10` is a deliberately
+narrow slice of the RFM work `roadmap.md` defers — quintile scoring and a match
+against the `segment_rule` bands already in the schema, and nothing else. It
+inherits [ADR-0004](adr/0004-model-ahead-of-the-deferred-segmentation-modules.md),
+including the warning that `customer.current_segment_id` is a column the
+segment-history module will have to migrate. `F3-11` reads the `audit_log` the
+triggers have been filling since `F2-05`; nothing in the application looks at it
+today.
+
+**F3-09 is Docker Compose, not a shell script.** It was written as a script that
+ran the three SQL files and started Flask.
+[ADR-0006](adr/0006-run-under-both-systemd-and-docker-compose.md) decides the
+application runs under both systemd and Compose, so the one command is
+`docker compose up`. This does not change the deployment: systemd stays the
+default on the instance and `F6-01` and `F6-02` are untouched.
 
 **F3-02 depends on the schema, not the infrastructure role.** Connecting
 through environment variables needs a database to connect to (`F2-05`), not

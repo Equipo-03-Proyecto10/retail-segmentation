@@ -110,6 +110,22 @@ Run the checks the pipeline runs with `pytest`, `black --check .` and
 Using an AI coding agent? Also run `touch ~/.claude/rs-local.md` so the
 personal-context import resolves.
 
+### On the instance
+
+The seed's thirty accounts all share the password above, which is fine locally
+and is a hole on a published host. Before an instance is reachable from
+outside, one command gives it a real administrator and closes the seeded
+logins:
+
+```bash
+flask --app web.app provision-administrator \
+    --name "Real Person" --email person@udem.edu --deactivate-demo-accounts
+flask --app web.app account-report   # "Demonstration accounts that can still sign in: 0"
+```
+
+The procedure, and what it does about the single-administrator rule, is in
+[`docs/runbook-instance-accounts.md`](docs/runbook-instance-accounts.md).
+
 ## Documentation
 
 Start at [`docs/README.md`](docs/README.md).

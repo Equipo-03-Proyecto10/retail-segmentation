@@ -42,6 +42,12 @@ SECOND_ADMINISTRATOR = (
     "Move the current administrator to another role first, or choose a "
     "different role for this user."
 )
+# What a successor is created as for the moment before the role moves onto it,
+# and what the outgoing administrator is left holding afterwards. ANALYST reads
+# and writes nothing outside reports, so an account parked here briefly can do
+# no harm if the transfer fails and the transaction rolls back anyway.
+PLACEHOLDER_ROLE_CODE = "ANALYST"
+
 LAST_ADMINISTRATOR = (
     "This is the only administrator, and the system may not be left without "
     "one. Appoint another administrator first."
@@ -165,6 +171,74 @@ def set_active(connection: Connection, user_id: UUID | str, is_active: bool) -> 
         _refuse_leaving_nobody(connection)
 
     update_active(connection, user.user_id, is_active)
+
+
+def install_administrator(
+    connection: Connection,
+    *,
+    name: str,
+    email: str,
+    password: str,
+) -> UUID:
+    """Make a new account the one administrator, whoever holds the role now.
+
+    The procedure F4-06 (#107) runs on the instance, where the administrator
+    must be somebody whose password was never in this repository. Both cases
+    the deployed system can be in are handled here rather than in the command
+    that calls it:
+
+    * **The seat is empty** — the account is created as the administrator.
+    * **Somebody holds it** — the account is created in a placeholder role and
+      `transfer_administrator` immediately moves the role onto it. The
+      placeholder exists because RN-01 leaves no other legal order: creating a
+      second administrator is refused, and demoting the incumbent first is
+      refused too. The incumbent inherits the placeholder role, which is what
+      the caller then deactivates.
+
+    One transaction, and the caller commits it: at no point does the system
+    hold two administrators, and if anything fails it holds the one it started
+    with.
+    """
+    if count_administrators(connection) == 0:
+        return create_user(
+            connection,
+            name=name,
+            email=email,
+            password=password,
+            role_code=ADMINISTRATOR_ROLE_CODE,
+        )
+
+    incumbent = _sole_administrator(connection)
+    successor = create_user(
+        connection,
+        name=name,
+        email=email,
+        password=password,
+        role_code=PLACEHOLDER_ROLE_CODE,
+    )
+    transfer_administrator(
+        connection, from_user_id=incumbent.user_id, to_user_id=successor
+    )
+    return successor
+
+
+def _sole_administrator(connection: Connection) -> AppUser:
+    """The account currently holding the role. There is exactly one."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT u.user_id
+            FROM app_user AS u
+            JOIN role AS r ON r.role_id = u.role_id
+            WHERE r.code = %s
+            """,
+            (ADMINISTRATOR_ROLE_CODE,),
+        )
+        row = cursor.fetchone()
+
+    if row is None:  # pragma: no cover - the caller checked the count first
+        raise SingleAdministratorError("There is no administrator to replace.")
+    return _user(connection, row[0])
 
 
 def transfer_administrator(

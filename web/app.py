@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from flask import Flask
 
+from web.cli import register_commands
 from web.config import Config, load_dotenv_file
 from web.db import DatabaseConnector
 from web.db import init_app as init_database
@@ -54,6 +55,7 @@ def create_app(
         return {"application_name": APPLICATION_NAME}
 
     register_blueprints(app)
+    register_commands(app)
     return app
 
 

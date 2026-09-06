@@ -116,3 +116,14 @@ is a gap, and the point of the table is that the gap is visible.
 **Everything except the database is unbuilt, and all of it is behind F3-02
 (#62)** — the database connection. That story is closed on the board with only a
 Node.js file behind it, and nothing else can start until it is real.
+
+Four stories carry no demonstration item of their own but every item passes
+through them:
+
+| Story | Issue | Why it is here |
+|---|---|---|
+| F3-12 | #106 | The shell a signed-in user lands on. Every item above is reached through its navigation, and nothing else builds it |
+| F4-06 | #107 | The deployed instance must not be reachable with the password this repository publishes for the seeded administrator |
+| F5-04 | #108 | Deliverable 10 — screenshots. F5-01 captures test output, which is not the same thing |
+| F6-07 | #109 | Deliverable 13 — proof of deployment. F6-02 makes it survive a reboot; nothing recorded that it does |
+| F6-08 | #110 | The demonstration itself, rehearsed in sequence on the instance. It is the one deliverable that cannot be corrected after submission |

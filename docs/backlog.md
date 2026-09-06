@@ -77,6 +77,22 @@ flowchart TD
 
     F3-02 --> F3-11
     F4-01 --> F3-11
+
+    F3-03 --> F3-12
+    F4-01 --> F3-12
+
+    F4-02 --> F4-06
+
+    F3-04 --> F5-04
+    F3-10 --> F5-04
+    F3-11 --> F5-04
+
+    F6-02 --> F6-07
+    F3-09 --> F6-07
+
+    F3-12 --> F6-08
+    F6-04 --> F6-08
+    F6-07 --> F6-08
 ```
 
 ---
@@ -148,6 +164,7 @@ application layer that was built on top of it.
 | F3-09 | One command brings the whole stack up through Docker Compose | P1 | F2-06, F3-01 |
 | F3-10 | Segment assignment process: score RFM over recorded sales, match the rules, write the assignment | P0 | F3-02, F3-03, F4-01 |
 | F3-11 | Audit log view for the administrator and the auditor | P0 | F3-02, F4-01 |
+| F3-12 | Authenticated application shell and navigation | P0 | F3-03, F4-01 |
 
 **F3-10 and F3-11 exist because the demonstration needs them.** The
 first-partial demonstration list asks for "ejecución de un proceso principal"
@@ -159,6 +176,12 @@ including the warning that `customer.current_segment_id` is a column the
 segment-history module will have to migrate. `F3-11` reads the `audit_log` the
 triggers have been filling since `F2-05`; nothing in the application looks at it
 today.
+
+**F3-12 is the shell every other Phase 3 story hangs off.** `F3-03` establishes
+a session, `F3-04` and `F3-05` build modules, and `F3-08` styles whatever
+exists — none of them builds the page a signed-in user lands on or the
+navigation between modules. Without it the application is a set of URLs someone
+has to already know, and every demonstration item is reached through it.
 
 **F3-09 is Docker Compose, not a shell script.** It was written as a script that
 ran the three SQL files and started Flask.
@@ -187,6 +210,15 @@ persisted.
 | F4-03 | Input validation and sanitization; every SQL statement parameterized | P0 | F3-04 |
 | F4-04 | Secure sessions; no secrets in source, all configuration in `.env` | P0 | F3-02 |
 | F4-05 | Controlled error handling and basic application logging | P1 | F3-01 |
+| F4-06 | Create the real administrator on the instance without a published password | P0 | F3-03, F4-02 |
+
+**F4-06 closes the gap the seed leaves open.** `sql/02_seed_30_per_table.sql`
+creates thirty demonstration accounts, the administrator among them, all with a
+password published in this repository. That is right for local work and for the
+demonstration, and it is a hole on a public host. `F4-02` makes it harder rather
+than easier: with the partial unique index in place, a real administrator cannot
+simply be added alongside the seeded one. Someone has to decide whether the
+instance carries the demonstration accounts at all.
 
 **F4-02 needs both halves.** The application check alone is bypassed by a direct
 `INSERT`; the index alone produces an unexplained database error in the user
@@ -199,6 +231,7 @@ interface. Neither is sufficient by itself.
 | F5-01 | Functional tests over registration, login, each CRUD module and image upload | P0 | F3-04, F3-05, F3-07 |
 | F5-02 | Negative tests: unauthorized access, invalid data, controlled errors | P0 | F4-01, F4-02, F4-03 |
 | F5-03 | Code review pass over consistency, error handling and logging | P1 | F5-01 |
+| F5-04 | Screenshots of the key functionality as evidence | P0 | F3-04, F3-10, F3-11 |
 
 **"Phase 3" and "Phase 4" are not issues.** They cannot be expressed as a
 GitHub relationship, so `F5-01` and `F5-02` are enumerated against the actual
@@ -216,6 +249,8 @@ system pass would hold up testing for a story that doesn't affect behavior.
 | F6-04 | Publish the documentation and evidence page on the assigned host | P0 | F0-04, F2-07, F5-02 |
 | F6-05 | Final verification: links, images, downloads, checked in a private window | P0 | F6-04 |
 | F6-06 | Continuous deployment: automatically update the assigned host on every merge to `main` | P1 | F6-02 |
+| F6-07 | Capture proof of deployment as evidence | P0 | F6-01, F6-02, F3-09 |
+| F6-08 | Rehearse the technical demonstration end to end on the instance | P0 | F3-12, F6-04, F6-07 |
 
 **F6-06 targets one environment, not two.** There is a single GCP instance
 (`docs/scope.md` C-5) and a single assigned host; `develop` stays an
@@ -229,6 +264,17 @@ this story, not assumed silently.
 blocker was `F0-04` (the host assignment), which made it look startable in
 week one — but the page carries integrity evidence (`F2-07`) and negative-test
 results (`F5-02`), neither of which exists that early.
+
+**Three deliverables had no story at all.** `docs/scope.md` §5 asks for
+screenshots of the key functionality (deliverable 10) and proof of deployment
+(deliverable 13), and the first-partial document asks for a technical
+demonstration. `F5-01` captured test output rather than screenshots, `F6-02`
+made the service survive a reboot without recording that it does, and nothing
+rehearsed the demonstration. `F5-04`, `F6-07` and `F6-08` are those three.
+
+**F6-08 is the one that cannot be fixed afterwards.** Eight demonstration items,
+each owned by a different story, and nothing until now checked that they work in
+sequence, on the instance, against one set of data.
 
 **Deploy early.** F6-01 and F6-02 depend on almost nothing and are scheduled as
 soon as the application serves a single page. A first deployment attempted near

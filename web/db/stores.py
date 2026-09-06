@@ -74,7 +74,11 @@ def get_store(connection: Connection, store_id: int) -> Store | None:
     """Return one store by id, or None if it does not exist."""
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT store_id, name, city, state, is_active FROM store WHERE store_id = %s",
+            """
+            SELECT store_id, name, city, state, is_active
+            FROM store
+            WHERE store_id = %s
+            """,
             (store_id,),
         )
         row = cursor.fetchone()

@@ -81,7 +81,11 @@ def get_category(connection: Connection, category_id: int) -> Category | None:
     """Return one category by id, or None if it does not exist."""
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT category_id, name, parent_category_id FROM category WHERE category_id = %s",
+            """
+            SELECT category_id, name, parent_category_id
+            FROM category
+            WHERE category_id = %s
+            """,
             (category_id,),
         )
         row = cursor.fetchone()
@@ -101,7 +105,10 @@ def create_category(
     try:
         with connection.cursor() as cursor:
             cursor.execute(
-                "INSERT INTO category (category_id, name, parent_category_id) VALUES (%s, %s, %s)",
+                """
+                INSERT INTO category (category_id, name, parent_category_id)
+                VALUES (%s, %s, %s)
+                """,
                 (category_id, name, parent_category_id),
             )
         connection.commit()
@@ -121,7 +128,11 @@ def update_category(
     """Update an existing category's editable fields."""
     with connection.cursor() as cursor:
         cursor.execute(
-            "UPDATE category SET name = %s, parent_category_id = %s WHERE category_id = %s",
+            """
+            UPDATE category
+            SET name = %s, parent_category_id = %s
+            WHERE category_id = %s
+            """,
             (name, parent_category_id, category_id),
         )
     connection.commit()
@@ -132,7 +143,9 @@ def delete_category(connection: Connection, category_id: int) -> bool:
     products or by a child category (RN-06, RN-07)."""
     try:
         with connection.cursor() as cursor:
-            cursor.execute("DELETE FROM category WHERE category_id = %s", (category_id,))
+            cursor.execute(
+                "DELETE FROM category WHERE category_id = %s", (category_id,)
+            )
         connection.commit()
         return True
     except ForeignKeyViolation:

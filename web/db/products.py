@@ -127,7 +127,11 @@ def update_product(
             cursor.execute(
                 """
                 UPDATE product
-                SET sku = %s, name = %s, category_id = %s, list_price = %s, is_active = %s
+                SET sku = %s,
+                    name = %s,
+                    category_id = %s,
+                    list_price = %s,
+                    is_active = %s
                 WHERE product_id = %s
                 """,
                 (sku, name, category_id, list_price, is_active, product_id),

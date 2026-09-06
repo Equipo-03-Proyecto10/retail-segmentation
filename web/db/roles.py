@@ -26,12 +26,23 @@ def list_roles(
         if search:
             pattern = f"%{search}%"
             cursor.execute(
-                "SELECT role_id, code, description FROM role WHERE code ILIKE %s ORDER BY role_id LIMIT %s OFFSET %s",
+                """
+                SELECT role_id, code, description
+                FROM role
+                WHERE code ILIKE %s
+                ORDER BY role_id
+                LIMIT %s OFFSET %s
+                """,
                 (pattern, per_page, offset),
             )
         else:
             cursor.execute(
-                "SELECT role_id, code, description FROM role ORDER BY role_id LIMIT %s OFFSET %s",
+                """
+                SELECT role_id, code, description
+                FROM role
+                ORDER BY role_id
+                LIMIT %s OFFSET %s
+                """,
                 (per_page, offset),
             )
         rows = cursor.fetchall()

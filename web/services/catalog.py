@@ -64,7 +64,9 @@ def validate_channel(*, name: str) -> dict[str, str]:
     return errors
 
 
-def validate_product(*, sku: str, name: str, category_id: str, list_price: str) -> dict[str, str]:
+def validate_product(
+    *, sku: str, name: str, category_id: str, list_price: str
+) -> dict[str, str]:
     """Validate product fields. category_id is checked only for shape here —
     whether it actually exists is a database concern (ForeignKeyViolation)."""
     errors: dict[str, str] = {}

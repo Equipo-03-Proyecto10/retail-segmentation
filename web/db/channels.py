@@ -25,19 +25,32 @@ def list_channels(
         if search:
             pattern = f"%{search}%"
             cursor.execute(
-                "SELECT channel_id, name FROM channel WHERE name ILIKE %s ORDER BY channel_id LIMIT %s OFFSET %s",
+                """
+                SELECT channel_id, name
+                FROM channel
+                WHERE name ILIKE %s
+                ORDER BY channel_id
+                LIMIT %s OFFSET %s
+                """,
                 (pattern, per_page, offset),
             )
         else:
             cursor.execute(
-                "SELECT channel_id, name FROM channel ORDER BY channel_id LIMIT %s OFFSET %s",
+                """
+                SELECT channel_id, name
+                FROM channel
+                ORDER BY channel_id
+                LIMIT %s OFFSET %s
+                """,
                 (per_page, offset),
             )
         rows = cursor.fetchall()
 
         if search:
             pattern = f"%{search}%"
-            cursor.execute("SELECT count(*) FROM channel WHERE name ILIKE %s", (pattern,))
+            cursor.execute(
+                "SELECT count(*) FROM channel WHERE name ILIKE %s", (pattern,)
+            )
         else:
             cursor.execute("SELECT count(*) FROM channel")
         total = cursor.fetchone()[0]

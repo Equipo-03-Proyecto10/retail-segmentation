@@ -165,14 +165,13 @@ Extends `deploy/nginx/mosaiq.conf` (already in the repo): the `:80` server now
 only redirects, and a `:443` server terminates TLS. **`nginx -t` fails until a
 certificate exists** — issue it before reloading.
 
-**Open question Q-2 (`docs/scope.md` §8): which host is published?** The
-certificate step depends on the answer:
+**The published host is this instance** (`docs/scope.md` §8, Q-2). Which
+certificate path applies depends on whether it has a DNS name:
 
-- **the instance has a DNS name pointing at it** → Path A (Let's Encrypt), and
-  the AC "certificate valid for the published host" is genuinely met;
-- **only an IP / a `~user` path on a host the team does not control** → Path B
-  (self-signed) is a demo stopgap; the browser warns and the AC is not fully
-  met until Q-2 is resolved.
+- **a DNS name points at the instance** → Path A (Let's Encrypt), and the AC
+  "certificate valid for the published host" is genuinely met;
+- **only the bare IP** → Path B (self-signed) is a demo stopgap; the browser
+  warns and the AC is not fully met until a hostname exists.
 
 ### 0. GCP firewall — allow HTTPS
 

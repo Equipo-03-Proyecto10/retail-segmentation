@@ -253,7 +253,7 @@ system pass would hold up testing for a story that doesn't affect behavior.
 | F6-08 | Rehearse the technical demonstration end to end on the instance | P0 | F3-12, F6-04, F6-07 |
 
 **F6-06 targets one environment, not two.** There is a single GCP instance
-(`docs/scope.md` C-5) and a single assigned host; `develop` stays an
+(`docs/scope.md` C-5), and it is the assigned host; `develop` stays an
 integration branch gated by CI, but nothing deploys from it. The pipeline
 triggers only on merge to `main`, after review, and needs `F6-02` — a
 `systemd`-managed `gunicorn` process already has to exist for the pipeline to

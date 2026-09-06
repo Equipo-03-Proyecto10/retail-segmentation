@@ -14,6 +14,7 @@ from web.db import init_app as init_database
 from web.errors import register_error_handlers
 from web.log import configure_logging
 from web.routes import register_blueprints
+from web.security import configure_session
 from web.services.status import APPLICATION_NAME
 
 
@@ -38,6 +39,7 @@ def create_app(
     # error pages (web/errors.py) with Werkzeug's interactive traceback.
 
     configure_logging(app)
+    configure_session(app)
     register_error_handlers(app)
     init_database(app, database_connector)
 

@@ -31,7 +31,9 @@ def hash_password(plain_password: str) -> str:
 
 
 def authenticate(
-    connection: Connection, email: str, plain_password: str
+    connection: Connection,
+    email: str,
+    plain_password: str,
 ) -> LoginResult:
     """Verify credentials without revealing which field was wrong.
 

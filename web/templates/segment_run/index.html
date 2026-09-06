@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}Segment run · {{ application_name }}{% endblock %}
+
+{% block content %}
+  <h1>Segment run</h1>
+  <p class="lede">
+    Score every customer's recency, frequency and spend over a window of
+    recorded sales, match the result against the segment rules, and write the
+    segment each customer belongs in.
+  </p>
+
+  <p>
+    Scores are quintiles across the customer base, 5 being the most recent, the
+    most frequent and the highest spend. A customer with no sales in the window
+    is left unassigned rather than keeping a stale segment, and a customer whose
+    scores match no rule is left unassigned and counted below.
+  </p>
+
+  {% if error %}
+    <p class="error" role="alert">{{ error }}</p>
+  {% endif %}
+
+  <form class="filters" method="post" action="{{ url_for('segment_run.execute') }}">
+    <div class="filters__field">
+      <label for="window">Window, in days</label>
+      <input type="number" id="window" name="window" value="{{ window }}"
+             min="1" max="3650" required>
+    </div>
+    <button type="submit">Run the recalculation</button>
+  </form>
+
+  {% if result %}
+    <h2>Result</h2>
+    <ul class="figures">
+      <li class="figure">
+        <span class="figure__value">{{ result.processed }}</span>
+        <span class="figure__label">Customers processed</span>
+      </li>
+      <li class="figure">
+        <span class="figure__value">{{ result.assigned }}</span>
+        <span class="figure__label">Segments assigned</span>
+      </li>
+      <li class="figure">
+        <span class="figure__value">{{ result.unmatched }}</span>
+        <span class="figure__label">Matched no rule</span>
+      </li>
+      <li class="figure">
+        <span class="figure__value">{{ "%.2f"|format(result.seconds) }}s</span>
+        <span class="figure__label">Time taken</span>
+      </li>
+    </ul>
+
+    <dl class="facts">
+      <dt>Window</dt>
+      <dd>{{ result.window_days }} days ending today</dd>
+      <dt>Segments changed</dt>
+      <dd>{{ result.reassigned }}</dd>
+      <dt>Segments cleared</dt>
+      <dd>{{ result.cleared }} — customers with no sales in the window</dd>
+    </dl>
+
+    {% if result.changed_nothing %}
+      <p>
+        Nothing changed, so nothing was written and the audit log has no new
+        entries. Running again over the same sales always gives this result.
+      </p>
+    {% else %}
+      <p>
+        {{ result.reassigned + result.cleared }} customers changed segment, and
+        the audit log holds one entry for each of them.
+        <a href="{{ url_for('audit.index', entity='customer') }}">Read them</a>.
+      </p>
+    {% endif %}
+  {% endif %}
+{% endblock %}

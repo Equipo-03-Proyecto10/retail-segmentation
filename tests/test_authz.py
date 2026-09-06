@@ -44,7 +44,7 @@ def _app() -> Flask:
             session_cookie_secure=False,
             database_url="unused-by-test",
         ),
-        database_connector=Mock(return_value=Mock()),
+        database_connector=Mock(return_value=MagicMock()),
     )
     app.config["PROPAGATE_EXCEPTIONS"] = False
     return app
@@ -352,7 +352,11 @@ def test_requires_rejects_a_permission_that_does_not_exist() -> None:
 
 
 def _menu_labels(client: FlaskClient) -> list[str]:
-    body = client.get("/").get_data(as_text=True)
+    response = client.get("/")
+    # Guard: the shell renders on the error page too, so without this a broken
+    # landing page would still yield a menu and the assertion would pass.
+    assert response.status_code == 200, "the landing page did not render"
+    body = response.get_data(as_text=True)
     nav = body[body.index('class="masthead__nav"') : body.index("</nav>")]
     return [label.strip() for label in re.findall(r">\s*([^<>]+?)\s*</a>", nav)]
 
@@ -381,13 +385,19 @@ def test_the_menu_is_driven_by_permissions_rather_than_by_role() -> None:
 
     # Audit log is in both signed-in menus because F3-11 (#103) registered it;
     # Users is in the administrator's alone, which is the point.
-    assert _menu_labels(administrator) == ["Home", "Catalogs", "Users", "Audit log"]
+    assert _menu_labels(administrator) == [
+        "Home",
+        "Catalogs",
+        "Users",
+        "Segment run",
+        "Audit log",
+    ]
     assert _menu_labels(analyst) == ["Home", "Catalogs"]
     assert _menu_labels(app.test_client()) == ["Home"]
 
 
 def test_the_menu_skips_an_entry_whose_story_has_not_landed() -> None:
-    """Catalogs, Users, Segments, Campaigns and Segment run are still unbuilt.
+    """Catalogs, Users, Segments and Campaigns are still unbuilt.
 
     The list grows as their blueprints land; what must stay true is that an
     entry naming an endpoint nothing registers is skipped rather than rendered
@@ -396,7 +406,7 @@ def test_the_menu_skips_an_entry_whose_story_has_not_landed() -> None:
     client = _app().test_client()
     _sign_in(client, "ADMIN")
 
-    assert _menu_labels(client) == ["Home", "Audit log"]
+    assert _menu_labels(client) == ["Home", "Segment run", "Audit log"]
 
 
 def test_the_signed_in_name_and_sign_out_replace_the_sign_in_link() -> None:

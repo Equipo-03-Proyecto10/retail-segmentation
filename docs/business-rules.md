@@ -149,7 +149,10 @@ real constraint. See
 The recalculation clears the segment rather than leaving a stale one. An empty
 segment is information; a wrong one is not.
 
-**Enforced:** application, F3-10 (#102). Not yet built. · `RF-12`
+**Enforced:** application, F3-10 (#102) — the recalculation clears
+`current_segment_id` for every customer with no sales in the window, in the same
+statement that assigns the others. **Verified** —
+[`evidence/f3-10-segment-run.md`](evidence/f3-10-segment-run.md). · `RF-12`
 
 ## Audit
 
@@ -181,11 +184,10 @@ able to archive. Reviewed. · `RF-14`
 
 ## Where the gaps are
 
-Four rules have no enforcement yet, and all four are application-side:
-
-| Rule | Waiting on |
-|---|---|
-| RN-21 customers with no recent sales are unassigned | F3-10 (#102) |
+Every rule in this document is now enforced somewhere. The four that were open
+were all application-side, and all four are closed: RN-01 by F4-02 (#70), RN-03
+by F3-03 (#63), RN-05 by F4-01 (#69) and RN-21 by F3-10 (#102). A rule added
+from here starts in this section until the story that enforces it lands.
 
 RN-01 was the one to watch — a hard rule in `AGENTS.md` and a success criterion
 in [`scope.md`](scope.md) §7 that held only because the seed happened to contain

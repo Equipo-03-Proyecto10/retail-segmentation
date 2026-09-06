@@ -31,8 +31,9 @@ delivery — see [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Stack
 
-Python 3.12 · Flask + Jinja2 · PostgreSQL · Gunicorn under systemd · NGINX or
-Apache as reverse proxy · CentOS 10 Stream on GCP Compute Engine.
+Python 3.12 · Flask + Jinja2 · PostgreSQL · Gunicorn under systemd · NGINX as
+reverse proxy ([ADR-0009](docs/adr/0009-nginx-as-the-reverse-proxy.md)) ·
+CentOS 10 Stream on GCP Compute Engine.
 
 Flask rather than the Node.js the exercise statement illustrates:
 [ADR-0001](docs/adr/0001-flask-monolith-on-a-single-vm.md).
@@ -72,6 +73,16 @@ docker compose down -v    # stop and discard the database volume
 
 The database is published on `127.0.0.1:5432`, so `psql -h localhost -U postgres
 -d retail` reaches it from the host.
+
+To exercise the NGINX reverse proxy locally, as it sits on the instance
+([ADR-0009](docs/adr/0009-nginx-as-the-reverse-proxy.md)):
+
+```bash
+docker compose -f compose.yaml -f compose.proxy.yaml up
+```
+
+The application is then behind NGINX at http://localhost:8080. Plain
+`docker compose up` is unchanged.
 
 ### Without containers
 
@@ -128,7 +139,8 @@ The procedure, and what it does about the single-administrator rule, is in
 
 ## Documentation
 
-Start at [`docs/README.md`](docs/README.md).
+Start at [`docs/README.md`](docs/README.md). Deploying on the instance:
+[`deploy/README.md`](deploy/README.md).
 
 ## Contributing
 

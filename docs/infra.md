@@ -90,3 +90,22 @@ Remote access for the application role, `postgresql.conf` / `pg_hba.conf`
 configuration, and the least-privilege application role are `F1-04` and
 `F1-05` — out of scope here. The server currently accepts connections only
 from `localhost`.
+
+## Reverse proxy
+
+NGINX in front of the application — decision [ADR-0009](adr/0009-nginx-as-the-reverse-proxy.md),
+story `F6-01` (#77). Config and runbook: [`deploy/`](../deploy/README.md).
+
+| Field | Value |
+|---|---|
+| Package | `nginx` (CentOS Stream 10 AppStream) |
+| Config | `/etc/nginx/conf.d/mosaiq.conf`, from `deploy/nginx/mosaiq.conf` |
+| Listener | `:80` `default_server`, `server_name _` |
+| Upstream | `127.0.0.1:8000` (gunicorn — `F6-02`, #78) |
+| SELinux | `httpd_can_network_connect` set to `1` |
+| TLS | none yet — HTTP→HTTPS and the certificate are `F6-03` (#79) |
+
+**Applied on the instance: pending the `F6-01`/`F6-02` pairing session.** The
+config and its local proof (`compose.proxy.yaml`) have merged; the `dnf install`
++ `systemctl` steps and the two acceptance checks against the running instance
+happen in that session, and their output replaces this line.

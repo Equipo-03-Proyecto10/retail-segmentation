@@ -38,6 +38,7 @@ constraint other work must respect needs an ADR, or a reference to one.
 | [0006](0006-run-under-both-systemd-and-docker-compose.md) | The application runs under both systemd and Docker Compose, with systemd the default on the instance | Proposed |
 | [0007](0007-permissions-in-code-with-a-default-deny-middleware.md) | Permissions are declared in code and enforced by a default-deny middleware | Proposed |
 | [0008](0008-the-instance-keeps-the-demonstration-accounts-deactivated.md) | The instance keeps the demonstration accounts, deactivated | Proposed |
+| [0009](0009-nginx-as-the-reverse-proxy.md) | NGINX is the reverse proxy in front of the application | Proposed |
 
 ## Writing one
 

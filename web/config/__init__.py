@@ -19,6 +19,7 @@ DEFAULT_ENVIRONMENT = "development"
 DEFAULT_PORT = 5000
 DEFAULT_LOG_LEVEL = "INFO"
 DEFAULT_SESSION_COOKIE_SECURE = False
+DEFAULT_TRUSTED_PROXY_HOPS = 0
 
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 
@@ -32,6 +33,16 @@ def _bool_env(value: str | None, *, default: bool = False) -> bool:
     if value is None or not value.strip():
         return default
     return value.strip().lower() in _TRUE_VALUES
+
+
+def _proxy_hops_env(value: str | None) -> int:
+    """Read a non-negative proxy-hop count; anything unparseable means zero."""
+    if value is None or not value.strip():
+        return DEFAULT_TRUSTED_PROXY_HOPS
+    try:
+        return max(0, int(value.strip()))
+    except ValueError:
+        return DEFAULT_TRUSTED_PROXY_HOPS
 
 
 def load_dotenv_file(
@@ -52,6 +63,11 @@ class Config:
     `session_cookie_secure` is likewise a field: TLS is terminated by NGINX in
     front of the app (F6-01/F6-03), so the process itself sees plain HTTP and
     cannot infer whether the `Secure` flag should be set — the deployment says.
+
+    `trusted_proxy_hops` is the number of reverse proxies in front of the app
+    whose `X-Forwarded-*` headers may be believed. `0` when the app is reached
+    directly; `1` behind the single NGINX (F6-01). Trusting those headers with
+    nothing in front lets a client spoof its own address, so the default is `0`.
     """
 
     secret_key: str = field(repr=False)
@@ -60,6 +76,11 @@ class Config:
     log_level: str
     session_cookie_secure: bool
     database_url: str = field(repr=False)
+    # Last, and defaulted: `0` is the safe value the docstring above describes,
+    # and it keeps every existing construction site valid. A caller that does
+    # not know about reverse proxies gets the un-proxied behaviour rather than
+    # a TypeError.
+    trusted_proxy_hops: int = DEFAULT_TRUSTED_PROXY_HOPS
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> Config:
@@ -96,5 +117,6 @@ class Config:
                 env.get("SESSION_COOKIE_SECURE"),
                 default=DEFAULT_SESSION_COOKIE_SECURE,
             ),
+            trusted_proxy_hops=_proxy_hops_env(env.get("TRUSTED_PROXY_HOPS")),
             database_url=database_url,
         )

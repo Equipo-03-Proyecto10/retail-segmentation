@@ -30,7 +30,9 @@ def hash_password(plain_password: str) -> str:
     return _hasher.hash(plain_password)
 
 
-def authenticate(connection: Connection, email: str, plain_password: str) -> LoginResult:
+def authenticate(
+    connection: Connection, email: str, plain_password: str
+) -> LoginResult:
     """Verify credentials without revealing which field was wrong.
 
     Returns a LoginResult with success=False for: unknown email, wrong

@@ -161,3 +161,49 @@ def update_active(connection: Connection, user_id: UUID | str, is_active: bool) 
             "UPDATE app_user SET is_active = %s WHERE user_id = %s",
             (is_active, str(user_id)),
         )
+
+
+DEMONSTRATION_EMAIL_DOMAIN = "@mosaiq-demo.com"
+
+
+def deactivate_demonstration_accounts(connection: Connection) -> list[str]:
+    """Deactivate every seeded demonstration account, and say which.
+
+    Deactivation, not deletion: RN-04 keeps a user who has history so the
+    history keeps its actor, and `audit_log.user_id` points at these rows.
+    `authenticate` refuses an inactive account, so the published password stops
+    opening anything while the log stays readable.
+
+    The administrator is never touched — F4-06 moves the role to a real account
+    before this runs, and refusing here as well means the procedure cannot
+    leave the instance with nobody able to sign in.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            UPDATE app_user AS u
+               SET is_active = FALSE
+              FROM role AS r
+             WHERE r.role_id = u.role_id
+               AND u.is_active
+               AND r.code <> %s
+               AND u.email LIKE %s
+            RETURNING u.email
+            """,
+            (ADMINISTRATOR_ROLE_CODE, f"%{DEMONSTRATION_EMAIL_DOMAIN}"),
+        )
+        return sorted(row[0] for row in cursor.fetchall())
+
+
+def count_active_demonstration_accounts(connection: Connection) -> int:
+    """How many seeded accounts can still be signed in to."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT count(*)
+            FROM app_user
+            WHERE is_active AND email LIKE %s
+            """,
+            (f"%{DEMONSTRATION_EMAIL_DOMAIN}",),
+        )
+        return int(cursor.fetchone()[0])

@@ -9,6 +9,7 @@ from flask import Flask
 from web.routes.audit import bp as audit_bp
 from web.routes.auth import bp as auth_bp
 from web.routes.home import home_bp
+from web.routes.segment_run import bp as segment_run_bp
 
 
 def register_blueprints(app: Flask) -> None:
@@ -16,3 +17,4 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(home_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(audit_bp)
+    app.register_blueprint(segment_run_bp)

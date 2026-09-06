@@ -113,10 +113,13 @@ Nothing in the application can write to the log. Both routes are `GET`, a
 shell's sign-out, and `web/services/audit.py` has no function that writes —
 RNF-17 is kept by giving the application no way to try.
 
-## Not evidenced here
+## At 375 px and at 1440 px
 
-Screenshots at 375 px and 1440 px. The page reuses the `.table-scroll` and
-`.listing` patterns verified at both widths in
-[`f3-12-application-shell.md`](f3-12-application-shell.md), but the filter bar
-is new and has not been looked at; a reviewer opens `/audit/` at both widths
-before approving.
+| | |
+|---|---|
+| The list, 1440 px | [`f3-11-audit-list-1440.png`](f3-11-audit-list-1440.png) |
+| The list, 375 px | [`f3-11-audit-list-375.png`](f3-11-audit-list-375.png) |
+| One entry, 1440 px | [`f3-11-audit-detail-1440.png`](f3-11-audit-detail-1440.png) |
+
+At 375 px the filter bar wraps into a column of labelled fields and the table
+scrolls inside its own box; the page itself never scrolls sideways.

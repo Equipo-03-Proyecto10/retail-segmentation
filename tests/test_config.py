@@ -8,6 +8,7 @@ from web.config import (
     DEFAULT_PORT,
     DEFAULT_SECRET_KEY,
     DEFAULT_SESSION_COOKIE_SECURE,
+    DEFAULT_TRUSTED_PROXY_HOPS,
     Config,
     ConfigurationError,
 )
@@ -21,6 +22,7 @@ def test_reads_every_value_from_the_environment() -> None:
             "PORT": "8080",
             "LOG_LEVEL": "WARNING",
             "SESSION_COOKIE_SECURE": "true",
+            "TRUSTED_PROXY_HOPS": "2",
             "DATABASE_URL": "configured-by-the-environment",
         }
     )
@@ -30,6 +32,7 @@ def test_reads_every_value_from_the_environment() -> None:
     assert config.port == 8080
     assert config.log_level == "WARNING"
     assert config.session_cookie_secure is True
+    assert config.trusted_proxy_hops == 2
     assert config.database_url == "configured-by-the-environment"
 
 
@@ -41,6 +44,7 @@ def test_falls_back_to_documented_defaults_for_optional_values() -> None:
     assert config.port == DEFAULT_PORT
     assert config.log_level == DEFAULT_LOG_LEVEL
     assert config.session_cookie_secure is DEFAULT_SESSION_COOKIE_SECURE
+    assert config.trusted_proxy_hops == DEFAULT_TRUSTED_PROXY_HOPS
 
 
 @pytest.mark.parametrize("database_url", [None, "", "   "])
@@ -91,3 +95,13 @@ def test_the_default_secret_is_allowed_in_development() -> None:
     config = Config.from_env({"DATABASE_URL": "x"})
 
     assert config.secret_key == DEFAULT_SECRET_KEY
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("0", 0), ("1", 1), ("3", 3), ("", 0), ("-2", 0), ("nonsense", 0)],
+)
+def test_trusted_proxy_hops_is_non_negative(value: str, expected: int) -> None:
+    config = Config.from_env({"DATABASE_URL": "x", "TRUSTED_PROXY_HOPS": value})
+
+    assert config.trusted_proxy_hops == expected

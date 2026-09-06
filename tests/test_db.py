@@ -17,6 +17,7 @@ def _config() -> Config:
         port=5000,
         log_level="INFO",
         session_cookie_secure=False,
+        trusted_proxy_hops=0,
         database_url="configured-by-test",
     )
 

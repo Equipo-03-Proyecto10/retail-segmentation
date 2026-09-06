@@ -1,8 +1,9 @@
 """Administrator routes: catalog CRUD.
 
-Full role-based authorization is F4-01 (#69) and not built yet. Until then,
-these routes are reachable by anyone signed in — this is a known gap, not a
-silent one.
+Authorization comes from the F4-01 (#69) middleware: listings demand
+`catalog.read`, which six roles hold, and every mutation demands
+`catalog.write`, which only ADMIN holds. The gate is default-deny, so a view
+added here without a declaration is refused rather than exposed.
 """
 
 from __future__ import annotations
@@ -42,6 +43,7 @@ from web.db.stores import (
     list_stores,
     update_store,
 )
+from web.middleware.authz import CATALOG_READ, CATALOG_WRITE, requires
 from web.services.catalog import (
     parse_pagination,
     validate_category,
@@ -60,6 +62,7 @@ _PER_PAGE = 20
 
 
 @bp.get("/stores")
+@requires(CATALOG_READ)
 def list_stores_view():
     connection = get_connection()
     page = parse_pagination(request.args.get("page"))
@@ -80,6 +83,7 @@ def list_stores_view():
 
 
 @bp.route("/stores/new", methods=["GET", "POST"])
+@requires(CATALOG_WRITE)
 def create_store_view():
     if request.method == "GET":
         return render_template("admin/store_form.html", store=None, errors={})
@@ -114,6 +118,7 @@ def create_store_view():
 
 
 @bp.route("/stores/<int:store_id>/edit", methods=["GET", "POST"])
+@requires(CATALOG_WRITE)
 def edit_store_view(store_id: int):
     connection = get_connection()
     store = get_store(connection, store_id)
@@ -152,6 +157,7 @@ def edit_store_view(store_id: int):
 
 
 @bp.post("/stores/<int:store_id>/delete")
+@requires(CATALOG_WRITE)
 def delete_store_view(store_id: int):
     connection = get_connection()
     deleted = delete_store(connection, store_id)
@@ -183,6 +189,7 @@ def delete_store_view(store_id: int):
 
 
 @bp.get("/categories")
+@requires(CATALOG_READ)
 def list_categories_view():
     connection = get_connection()
     page = parse_pagination(request.args.get("page"))
@@ -203,6 +210,7 @@ def list_categories_view():
 
 
 @bp.route("/categories/new", methods=["GET", "POST"])
+@requires(CATALOG_WRITE)
 def create_category_view():
     connection = get_connection()
     all_categories = list_all_categories(connection)
@@ -264,6 +272,7 @@ def create_category_view():
 
 
 @bp.route("/categories/<int:category_id>/edit", methods=["GET", "POST"])
+@requires(CATALOG_WRITE)
 def edit_category_view(category_id: int):
     connection = get_connection()
     category = get_category(connection, category_id)
@@ -309,6 +318,7 @@ def edit_category_view(category_id: int):
 
 
 @bp.post("/categories/<int:category_id>/delete")
+@requires(CATALOG_WRITE)
 def delete_category_view(category_id: int):
     connection = get_connection()
     deleted = delete_category(connection, category_id)
@@ -341,6 +351,7 @@ def delete_category_view(category_id: int):
 
 
 @bp.get("/channels")
+@requires(CATALOG_READ)
 def list_channels_view():
     connection = get_connection()
     page = parse_pagination(request.args.get("page"))
@@ -361,6 +372,7 @@ def list_channels_view():
 
 
 @bp.route("/channels/new", methods=["GET", "POST"])
+@requires(CATALOG_WRITE)
 def create_channel_view():
     if request.method == "GET":
         return render_template("admin/channel_form.html", channel=None, errors={})
@@ -398,6 +410,7 @@ def create_channel_view():
 
 
 @bp.route("/channels/<int:channel_id>/edit", methods=["GET", "POST"])
+@requires(CATALOG_WRITE)
 def edit_channel_view(channel_id: int):
     connection = get_connection()
     channel = get_channel(connection, channel_id)
@@ -435,6 +448,7 @@ def edit_channel_view(channel_id: int):
 
 
 @bp.post("/channels/<int:channel_id>/delete")
+@requires(CATALOG_WRITE)
 def delete_channel_view(channel_id: int):
     connection = get_connection()
     deleted = delete_channel(connection, channel_id)
@@ -466,6 +480,7 @@ def delete_channel_view(channel_id: int):
 
 
 @bp.get("/products")
+@requires(CATALOG_READ)
 def list_products_view():
     connection = get_connection()
     page = parse_pagination(request.args.get("page"))
@@ -486,6 +501,7 @@ def list_products_view():
 
 
 @bp.route("/products/new", methods=["GET", "POST"])
+@requires(CATALOG_WRITE)
 def create_product_view():
     connection = get_connection()
     all_categories = list_all_categories(connection)
@@ -556,6 +572,7 @@ def create_product_view():
 
 
 @bp.route("/products/<int:product_id>/edit", methods=["GET", "POST"])
+@requires(CATALOG_WRITE)
 def edit_product_view(product_id: int):
     connection = get_connection()
     product = get_product(connection, product_id)
@@ -630,6 +647,7 @@ def edit_product_view(product_id: int):
 
 
 @bp.post("/products/<int:product_id>/delete")
+@requires(CATALOG_WRITE)
 def delete_product_view(product_id: int):
     connection = get_connection()
     deleted = delete_product(connection, product_id)
@@ -661,6 +679,7 @@ def delete_product_view(product_id: int):
 
 
 @bp.get("/roles")
+@requires(CATALOG_READ)
 def list_roles_view():
     connection = get_connection()
     page = parse_pagination(request.args.get("page"))
@@ -679,6 +698,7 @@ def list_roles_view():
 
 
 @bp.route("/roles/new", methods=["GET", "POST"])
+@requires(CATALOG_WRITE)
 def create_role_view():
     if request.method == "GET":
         return render_template("admin/role_form.html", role=None, errors={})
@@ -719,6 +739,7 @@ def create_role_view():
 
 
 @bp.route("/roles/<int:role_id>/edit", methods=["GET", "POST"])
+@requires(CATALOG_WRITE)
 def edit_role_view(role_id: int):
     connection = get_connection()
     role = get_role(connection, role_id)
@@ -757,6 +778,7 @@ def edit_role_view(role_id: int):
 
 
 @bp.post("/roles/<int:role_id>/delete")
+@requires(CATALOG_WRITE)
 def delete_role_view(role_id: int):
     connection = get_connection()
     deleted = delete_role(connection, role_id)

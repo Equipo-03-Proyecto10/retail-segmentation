@@ -126,7 +126,7 @@ story `F6-01` (#77). Config and runbook: [`deploy/`](../deploy/README.md).
 | Listener | `:80` redirects to HTTPS; `:443 ssl http2` `default_server`, `server_name _` |
 | Upstream | `127.0.0.1:8000` (gunicorn — `F6-02`, #78) |
 | SELinux | `httpd_can_network_connect` set to `1` |
-| TLS | `/etc/nginx/tls/mosaiq.{crt,key}` — Let's Encrypt where the host has a real name, self-signed otherwise (`F6-03`, #79). Depends on Q-2 (`scope.md` §8). Needs GCP rule `mosaiq-allow-https` for `tcp:443`. |
+| TLS | `/etc/nginx/tls/mosaiq.{crt,key}` — Let's Encrypt where the host has a real name, self-signed otherwise (`F6-03`, #79). The instance has no DNS name, so Path B applies (`scope.md` §8). Needs GCP rule `mosaiq-allow-https` for `tcp:443`. |
 | HSTS | `max-age=31536000` on HTTPS responses |
 
 Applied on `mosaiq-deployment-vm` on 2026-09-06. `nginx/1.26.3`,
@@ -146,9 +146,10 @@ curl -m6 http://34.51.123.31:8000/     -> timed out       (gunicorn is loopback-
 `subjectAltName=IP:34.51.123.31`, valid to 2027-09-06. This is Path B in
 [`deploy/README.md`](../deploy/README.md): the instance has no DNS name, and
 Let's Encrypt does not issue for a bare IP. A browser therefore warns.
-**Q-2 (`scope.md` §8) is still what stands between this and a certificate that
-is valid for the published host** — when the assigned hostname is confirmed and
-points here, re-issue with certbot and set `server_name`.
+**Q-2 is resolved (`scope.md` §8): the published host is this instance.** What
+stands between it and a valid certificate is no longer a question but a missing
+DNS name — Let's Encrypt does not issue for a bare IP. Point a hostname at
+`34.51.123.31`, then re-issue with certbot and set `server_name`.
 
 ## Application service
 

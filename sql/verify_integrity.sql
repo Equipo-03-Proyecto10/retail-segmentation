@@ -57,6 +57,16 @@ SELECT 'P4 lines after: ' || count(*)::text FROM transaction_line WHERE transact
 ROLLBACK;
 
 \echo ''
+\echo ''
+\echo '-- P5: the administrator row still takes ordinary updates'
+-- The single-administrator index constrains how many rows hold role_id = 1,
+-- not what else those rows say. If this case ever fails, the rule has stopped
+-- allowing the rotation F4-06 (#107) performs on the instance.
+BEGIN;
+UPDATE app_user SET name = 'Rotated administrator' WHERE role_id = 1;
+SELECT 'P5 renamed: ' || name FROM app_user WHERE role_id = 1;
+ROLLBACK;
+
 \echo '=============================================='
 \echo 'NEGATIVE CASES — every one of these must be refused'
 \echo '=============================================='
@@ -170,6 +180,25 @@ ROLLBACK;
 \echo '-- N15: duplicate composite key                 [expect: 23505 unique_violation]'
 BEGIN;
 INSERT INTO inventory (store_id, product_id, quantity_on_hand) VALUES (1, 1, 5);
+ROLLBACK;
+
+\echo ''
+\echo '-- N17: a second administrator, inserted directly [expect: 23505 unique_violation]'
+-- The half of RN-01 that the application cannot enforce. web/services/users.py
+-- refuses this too, and AGENTS.md is explicit that one half alone does not
+-- count: this case is what proves the schema refuses it with the application
+-- out of the picture entirely.
+BEGIN;
+INSERT INTO app_user (role_id, name, email, password_hash)
+VALUES (1, 'Second administrator', 'second-admin@mosaiq-demo.com', 'not-a-hash');
+ROLLBACK;
+
+\echo ''
+\echo '-- N18: promoting a second user to administrator [expect: 23505 unique_violation]'
+-- The same rule from the other direction: the seat is taken, and an UPDATE
+-- takes it no more easily than an INSERT.
+BEGIN;
+UPDATE app_user SET role_id = 1 WHERE email = 'user2@mosaiq-demo.com';
 ROLLBACK;
 
 \echo ''

@@ -86,10 +86,33 @@ $ systemctl is-enabled postgresql-18
 enabled
 ```
 
-Remote access for the application role, `postgresql.conf` / `pg_hba.conf`
-configuration, and the least-privilege application role are `F1-04` and
-`F1-05` — out of scope here. The server currently accepts connections only
-from `localhost`.
+### Database, schema and the application role
+
+Provisioned on 2026-09-06, when `F6-02` needed a database to start against.
+`postgresql18-contrib` had to be installed first — `sql/00_create_database.sql`
+creates the `pg_trgm` extension and the base install does not ship it.
+
+The three committed scripts ran in order against the empty server, unmodified:
+
+```
+psql -v app_password=… -f sql/00_create_database.sql
+psql -d retail -f sql/01_schema.sql
+psql -d retail -f sql/02_seed_30_per_table.sql
+```
+
+| Field | Value |
+|---|---|
+| Database | `retail`, `UTF8`, `template0` |
+| Extensions | `pg_trgm` |
+| Application role | `retail_app`, `LOGIN`, password generated on the instance |
+| Its privileges | `SELECT, INSERT, UPDATE, DELETE` only — verified against `information_schema.table_privileges`. No `CREATE`, no `ALTER`, no ownership |
+| Seed | 19 tables loaded; `transaction_line` 600, `transaction` 300, `inventory` 150 rows |
+
+The listener is unchanged: `127.0.0.1:5432` and `[::1]:5432` only. The
+application runs on the same host, so it reaches PostgreSQL over loopback and
+nothing needs to be exposed — which is what `F1-04` asks for on this topology.
+The credential lives only in `/etc/mosaiq/mosaiq.env` (`0640 root:mosaiq`); it
+is not in the repository and not in any shell history.
 
 ## Reverse proxy
 
@@ -106,10 +129,26 @@ story `F6-01` (#77). Config and runbook: [`deploy/`](../deploy/README.md).
 | TLS | `/etc/nginx/tls/mosaiq.{crt,key}` — Let's Encrypt where the host has a real name, self-signed otherwise (`F6-03`, #79). Depends on Q-2 (`scope.md` §8). Needs GCP rule `mosaiq-allow-https` for `tcp:443`. |
 | HSTS | `max-age=31536000` on HTTPS responses |
 
-**Applied on the instance: pending the `F6-01`/`F6-02`/`F6-03` pairing session.**
-The config and its local proof (`compose.proxy.yaml`) have merged; the
-`dnf install` + `systemctl` + `certbot` steps and the acceptance checks against
-the running instance happen in that session, and their output replaces this line.
+Applied on `mosaiq-deployment-vm` on 2026-09-06. `nginx/1.26.3`,
+`systemctl is-enabled nginx` → `enabled`. The stock `server {}` block in
+`/etc/nginx/nginx.conf` is commented out so ours is the only `default_server`;
+the untouched original is kept at `/etc/nginx/nginx.conf.orig`.
+
+`F6-01` acceptance checks:
+
+```
+curl -sI http://34.51.123.31/          -> HTTP/1.1 301, Location: https://…
+curl -skI https://34.51.123.31/        -> HTTP/2 200      (MOSAIQ landing page)
+curl -m6 http://34.51.123.31:8000/     -> timed out       (gunicorn is loopback-only)
+```
+
+`F6-03` — the certificate is **self-signed**, `CN=34.51.123.31` with
+`subjectAltName=IP:34.51.123.31`, valid to 2027-09-06. This is Path B in
+[`deploy/README.md`](../deploy/README.md): the instance has no DNS name, and
+Let's Encrypt does not issue for a bare IP. A browser therefore warns.
+**Q-2 (`scope.md` §8) is still what stands between this and a certificate that
+is valid for the published host** — when the assigned hostname is confirmed and
+points here, re-issue with certbot and set `server_name`.
 
 ## Application service
 
@@ -125,6 +164,19 @@ Unit and runbook: [`deploy/`](../deploy/README.md).
 | Environment | `/etc/mosaiq/mosaiq.env` (`FLASK_ENV=production`, real secret, `TRUSTED_PROXY_HOPS=1`) |
 | Logs | `journald` (`journalctl -u mosaiq`) |
 
-**Applied on the instance: pending the `F6-01`/`F6-02` pairing session.** The
-unit and its layout have merged; installing it, the kill-and-restart check and
-the reboot check happen in that session and their output replaces this line.
+Applied on `mosaiq-deployment-vm` on 2026-09-06. `gunicorn 23.0.0` under
+`/opt/mosaiq/venv`, `systemctl is-enabled mosaiq` → `enabled`.
+
+`F6-02` acceptance checks:
+
+```
+systemctl show -p MainPID --value mosaiq   -> 104831
+sudo kill -9 104831 ; sleep 8
+systemctl is-active mosaiq                 -> active     (new MainPID 105042)
+curl -skI https://localhost/               -> HTTP/2 200
+
+# after a full reboot, with nobody logged in (`who` -> 0):
+systemctl is-active mosaiq                 -> active
+systemctl is-active nginx                  -> active
+curl -skI https://34.51.123.31/            -> HTTP/2 200
+```

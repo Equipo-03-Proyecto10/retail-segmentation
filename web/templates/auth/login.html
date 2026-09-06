@@ -9,6 +9,12 @@
   {% endif %}
 
   <form method="post" action="{{ url_for('auth.login') }}">
+    {% if next %}
+      {# Carries the page the visitor was refused back through the sign-in,
+         so they land where they were going (RF-03, HU-03). #}
+      <input type="hidden" name="next" value="{{ next }}">
+    {% endif %}
+
     <label for="email">Email</label>
     <input type="email" id="email" name="email" required autofocus>
 

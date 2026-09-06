@@ -13,6 +13,7 @@ from web.db import DatabaseConnector
 from web.db import init_app as init_database
 from web.errors import register_error_handlers
 from web.log import configure_logging
+from web.middleware import register_middleware
 from web.routes import register_blueprints
 from web.security import configure_session
 from web.services.status import APPLICATION_NAME
@@ -41,6 +42,10 @@ def create_app(
     configure_logging(app)
     configure_session(app)
     register_error_handlers(app)
+    # After the error handlers: their `before_request` assigns the request id,
+    # so a refusal logged by the authorization gate quotes the same reference
+    # the visitor sees on the 403 page.
+    register_middleware(app)
     init_database(app, database_connector)
 
     @app.context_processor

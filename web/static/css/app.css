@@ -25,7 +25,51 @@ body {
 }
 
 .masthead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
   border-bottom: 1px solid #d9d9de;
+}
+
+/* The menu wraps onto its own line at 375 px and sits beside the brand at
+   1440 px, without a media query: the session block is pushed to the end and
+   everything between it and the brand flows. */
+.masthead__nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+}
+
+.masthead__session {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
+.masthead__link {
+  color: #1b1b1f;
+  text-decoration: none;
+}
+
+.masthead__link:hover,
+.masthead__link:focus-visible {
+  text-decoration: underline;
+}
+
+.masthead__user {
+  color: #55555f;
+}
+
+.masthead__signout {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #1b1b1f;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
 }
 
 .masthead__brand {

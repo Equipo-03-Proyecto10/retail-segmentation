@@ -341,15 +341,15 @@ says Compose is "what the demonstration's container item is shown with,
 **including on the instance when it is switched in for that purpose**". That
 sentence no longer describes the plan.
 
-ADR-0006 is Accepted and immutable, so the change belongs in a superseding ADR
-rather than an edit to it. Until that exists, two things are unresolved and are
-named here rather than assumed:
+ADR-0006 is Accepted and immutable, so the change belongs in a superseding
+record rather than an edit to it.
+[ADR-0015](../adr/0015-containers-are-a-development-path-only.md) is that
+record, and it decides both of the things this document could not: the
+demonstration item *"ejecución mediante contenedores"*
+([`../requirements.md`](../requirements.md) §4, RNF-13/RNF-14) is satisfied on a
+developer machine, and AC 4's evidence is captured there rather than on the
+instance.
 
-1. Whether the demonstration item *"ejecución mediante contenedores"*
-   ([`../requirements.md`](../requirements.md) §4, RNF-13/RNF-14) is satisfied
-   by showing Compose on a developer machine. It is a graded item, and where it
-   is shown is not this document's call.
-2. Whether #109's AC 4 is dropped, or reworded to a local capture.
-
-Neither is a documentation decision. Both should be settled before the
-demonstration.
+ADR-0015 is Proposed. Until it is accepted, AC 4 stays open here, and the
+capture it asks for has not been made — running Compose locally and recording
+the result is the remaining work on deliverable 13.

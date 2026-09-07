@@ -51,7 +51,7 @@ here is a gap, not an omission from this index.
 | Document | What it records |
 |---|---|
 | [F6-06](f6-06-continuous-deployment.md) | The deploy pipeline, the rollback test, and the four failures before it |
-| [F6-05](f6-05-final-verification.md) | **Deliverable 14, and a gap in it.** The published site checked with no session, and the documentation that is not reaching it |
+| [F6-05](f6-05-final-verification.md) | **Deliverable 14.** The published site checked with no session; two faults that kept the documentation off it, both fixed and re-verified |
 | [F6-07](f6-07-proof-of-deployment.md) | **Deliverable 13.** The unit active and enabled, restarting after a kill, answering through the reverse proxy, and the same application under Compose |
 
 All five acceptance criteria on #109 are recorded. Four were captured against

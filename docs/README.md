@@ -23,7 +23,7 @@ Documents that do not exist yet are produced by the story that needs them:
 
 | Deliverable | Produced by |
 |---|---|
-| Final verification of the published delivery | F6-05 (#81) — [partly recorded](evidence/f6-05-final-verification.md); the published `docs/` copy is a stale snapshot |
+| Final verification of the published delivery | F6-05 (#81) — [recorded](evidence/f6-05-final-verification.md); AC 3 needs a signed-in session |
 
 Everything is written in English — code, comments, commits, issues,
 documentation. Spoken meetings are in Spanish.

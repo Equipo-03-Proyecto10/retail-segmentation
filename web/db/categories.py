@@ -10,7 +10,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from psycopg import Connection
-from psycopg.errors import ForeignKeyViolation, UniqueViolation
 
 
 @dataclass(frozen=True)
@@ -99,23 +98,16 @@ def create_category(
     category_id: int,
     name: str,
     parent_category_id: int | None,
-) -> str | None:
-    """Insert a new category. Returns None on success, or an error message
-    naming the conflict on a duplicate id/name."""
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                INSERT INTO category (category_id, name, parent_category_id)
-                VALUES (%s, %s, %s)
-                """,
-                (category_id, name, parent_category_id),
-            )
-        connection.commit()
-        return None
-    except UniqueViolation:
-        connection.rollback()
-        return "A category with that ID or name already exists."
+) -> None:
+    """Create one category; the service owns the transaction."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO category (category_id, name, parent_category_id)
+            VALUES (%s, %s, %s)
+            """,
+            (category_id, name, parent_category_id),
+        )
 
 
 def update_category(
@@ -125,7 +117,7 @@ def update_category(
     name: str,
     parent_category_id: int | None,
 ) -> None:
-    """Update an existing category's editable fields."""
+    """Update one category; the service owns the transaction."""
     with connection.cursor() as cursor:
         cursor.execute(
             """
@@ -135,19 +127,9 @@ def update_category(
             """,
             (name, parent_category_id, category_id),
         )
-    connection.commit()
 
 
-def delete_category(connection: Connection, category_id: int) -> bool:
-    """Delete a category. Returns True on success, False if referenced by
-    products or by a child category (RN-06, RN-07)."""
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "DELETE FROM category WHERE category_id = %s", (category_id,)
-            )
-        connection.commit()
-        return True
-    except ForeignKeyViolation:
-        connection.rollback()
-        return False
+def delete_category(connection: Connection, category_id: int) -> None:
+    """Delete one category; the service owns the transaction."""
+    with connection.cursor() as cursor:
+        cursor.execute("DELETE FROM category WHERE category_id = %s", (category_id,))

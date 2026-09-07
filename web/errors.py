@@ -42,6 +42,13 @@ def register_error_handlers(app: Flask) -> None:
     @app.errorhandler(HTTPException)
     def handle_http_exception(error: HTTPException):
         """Render a known HTTP status (404, 403, 405, …) as a MOSAIQ page."""
+        app.logger.info(
+            "http_refused status=%s reference=%s method=%s path=%r",
+            error.code,
+            _reference(),
+            request.method,
+            request.path,
+        )
         return (
             render_template(
                 _ERROR_TEMPLATE,

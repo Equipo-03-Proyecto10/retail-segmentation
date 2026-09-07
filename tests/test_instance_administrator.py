@@ -125,7 +125,7 @@ def test_an_address_that_already_exists_is_refused(
     monkeypatch.setenv(PASSWORD_VARIABLE, _GOOD_PASSWORD)
     monkeypatch.setattr("web.cli.get_user_by_email", lambda _c, _e: object())
     installed = MagicMock()
-    monkeypatch.setattr("web.cli.install_administrator", installed)
+    monkeypatch.setattr("web.cli.provision_account", installed)
 
     result = CliRunner().invoke(
         app.cli,

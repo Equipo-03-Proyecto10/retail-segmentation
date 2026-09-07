@@ -28,14 +28,22 @@ from web.db import get_connection
 from web.db.users import (
     count_active_demonstration_accounts,
     count_administrators,
-    deactivate_demonstration_accounts,
     get_user_by_email,
+    list_accounts_with_roles,
 )
-from web.services.auth import hash_password
-from web.services.users import SingleAdministratorError, install_administrator
+from web.services.users import (
+    MINIMUM_PASSWORD_LENGTH,
+    DuplicateEmailError,
+    SingleAdministratorError,
+)
+from web.services.users import (
+    provision_administrator as provision_account,
+)
+from web.services.users import (
+    rotate_password as rotate_account_password,
+)
 
 PASSWORD_VARIABLE = "MOSAIQ_ADMIN_PASSWORD"
-MINIMUM_PASSWORD_LENGTH = 12
 
 # The password this repository publishes. Refused by name: the whole point of
 # the procedure is that the deployed system stops being reachable with it.
@@ -100,16 +108,15 @@ def provision_administrator(
 
     before = count_administrators(connection)
     try:
-        install_administrator(connection, name=name, email=email, password=password)
-    except SingleAdministratorError as refusal:
-        connection.rollback()
+        deactivated = provision_account(
+            connection,
+            name=name,
+            email=email,
+            password=password,
+            deactivate_demo_accounts=deactivate_demo_accounts,
+        )
+    except (SingleAdministratorError, DuplicateEmailError) as refusal:
         raise click.ClickException(str(refusal)) from refusal
-
-    deactivated: list[str] = []
-    if deactivate_demo_accounts:
-        deactivated = deactivate_demonstration_accounts(connection)
-
-    connection.commit()
 
     click.echo(f"{email} is now the administrator (there were {before} before).")
     if deactivated:
@@ -137,12 +144,7 @@ def rotate_password(email: str) -> None:
     if get_user_by_email(connection, email) is None:
         raise click.ClickException(f"No account exists for {email}.")
 
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "UPDATE app_user SET password_hash = %s WHERE email = %s",
-            (hash_password(password), email),
-        )
-    connection.commit()
+    rotate_account_password(connection, email, password)
     click.echo(f"The password for {email} has been changed.")
 
 
@@ -151,16 +153,7 @@ def rotate_password(email: str) -> None:
 def account_report() -> None:
     """Say who can sign in to this instance, and with what."""
     connection = get_connection()
-    with connection.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT r.code, u.email, u.is_active
-            FROM app_user AS u
-            JOIN role AS r ON r.role_id = u.role_id
-            ORDER BY r.role_id, u.email
-            """
-        )
-        rows = cursor.fetchall()
+    rows = list_accounts_with_roles(connection)
 
     active = [row for row in rows if row[2]]
     click.echo(f"{len(rows)} accounts, {len(active)} of them active.")

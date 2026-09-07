@@ -16,7 +16,7 @@ PostgreSQL listener, HBA policy, SSH access and application-role verification:
 | `postgresql/mosaiq.conf` | `/var/lib/pgsql/18/data/conf.d/mosaiq.conf` (loopback listener, SCRAM) |
 | `systemd/mosaiq.service` | `/etc/systemd/system/mosaiq.service` |
 | `deploy.sh` | copied to `/tmp/mosaiq-deploy.sh` by the deploy workflow on each run, not installed |
-| the TLS certificate | `/etc/nginx/tls/mosaiq.{crt,key}` — a Cloudflare Origin CA pair on the instance (F6-03 Path C, [ADR-0012](../docs/adr/0012-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md)), not in the repo |
+| the TLS certificate | `/etc/nginx/tls/mosaiq.{crt,key}` — a Cloudflare Origin CA pair on the instance (F6-03 Path C, [ADR-0013](../docs/adr/0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md)), not in the repo |
 
 ### Deployment layout
 
@@ -182,7 +182,7 @@ the AC "certificate valid for the published host" is now genuinely met.
 
 Three certificate paths, in order of preference:
 
-- **Path C — Cloudflare proxied + Origin Certificate** (in use, [ADR-0012](../docs/adr/0012-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md)).
+- **Path C — Cloudflare proxied + Origin Certificate** (in use, [ADR-0013](../docs/adr/0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md)).
   Browsers see Cloudflare's managed, auto-renewing edge certificate; the origin
   carries a 15-year Cloudflare Origin CA pair. Hides the origin IP, adds CDN/DDoS.
 - **Path A — Let's Encrypt** on the origin (DNS-only). A publicly trusted cert on

@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from psycopg import Connection
-from psycopg.errors import ForeignKeyViolation, UniqueViolation
 
 
 @dataclass(frozen=True)
@@ -97,27 +96,17 @@ def create_product(
     category_id: int,
     list_price: Decimal,
     image_path: str | None = None,
-) -> str | None:
-    """Insert a new product. Returns None on success, or an error message on
-    a duplicate id/sku or an invalid category_id."""
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                INSERT INTO product
-                    (product_id, sku, name, category_id, list_price, image_path)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                """,
-                (product_id, sku, name, category_id, list_price, image_path),
-            )
-        connection.commit()
-        return None
-    except UniqueViolation:
-        connection.rollback()
-        return "A product with that ID or SKU already exists."
-    except ForeignKeyViolation:
-        connection.rollback()
-        return "That category does not exist."
+) -> None:
+    """Create one product; the service owns the transaction."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO product
+                (product_id, sku, name, category_id, list_price, image_path)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (product_id, sku, name, category_id, list_price, image_path),
+        )
 
 
 def update_product(
@@ -130,42 +119,25 @@ def update_product(
     list_price: Decimal,
     is_active: bool,
     image_path: str | None = None,
-) -> str | None:
-    """Update a product's editable fields. Returns None on success, or an
-    error message on a duplicate SKU or an invalid category_id."""
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                UPDATE product
-                SET sku = %s,
-                    name = %s,
-                    category_id = %s,
-                    list_price = %s,
-                    is_active = %s,
-                    image_path = COALESCE(%s, image_path)
-                WHERE product_id = %s
-                """,
-                (sku, name, category_id, list_price, is_active, image_path, product_id),
-            )
-        connection.commit()
-        return None
-    except UniqueViolation:
-        connection.rollback()
-        return "A product with that SKU already exists."
-    except ForeignKeyViolation:
-        connection.rollback()
-        return "That category does not exist."
+) -> None:
+    """Update one product; the service owns the transaction."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            UPDATE product
+            SET sku = %s,
+                name = %s,
+                category_id = %s,
+                list_price = %s,
+                is_active = %s,
+                image_path = COALESCE(%s, image_path)
+            WHERE product_id = %s
+            """,
+            (sku, name, category_id, list_price, is_active, image_path, product_id),
+        )
 
 
-def delete_product(connection: Connection, product_id: int) -> bool:
-    """Delete a product. Returns True on success, False if referenced by
-    other rows (transaction_line, inventory)."""
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute("DELETE FROM product WHERE product_id = %s", (product_id,))
-        connection.commit()
-        return True
-    except ForeignKeyViolation:
-        connection.rollback()
-        return False
+def delete_product(connection: Connection, product_id: int) -> None:
+    """Delete one product; the service owns the transaction."""
+    with connection.cursor() as cursor:
+        cursor.execute("DELETE FROM product WHERE product_id = %s", (product_id,))

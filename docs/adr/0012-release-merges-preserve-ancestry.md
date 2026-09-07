@@ -1,6 +1,6 @@
 # ADR-0012 — `develop` and `main` are joined only by merge commits, never by squash or rebase
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #150
 **Supersedes:** —

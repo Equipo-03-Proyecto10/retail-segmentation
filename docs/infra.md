@@ -37,7 +37,7 @@ and HTTPS without changing the other instance's policy.
 
 `mosaiq-allow-https` was added for `F6-03`; `tcp:443` reachability from outside
 the project is confirmed by an external probe (2026-09-07). Hardening step,
-deferred: with the delivery served through Cloudflare ([ADR-0012](adr/0012-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md)),
+deferred: with the delivery served through Cloudflare ([ADR-0013](adr/0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md)),
 `mosaiq-allow-https` can be narrowed to Cloudflare's published ranges and
 `mosaiq-allow-http` removed, so the origin is reachable only through the edge.
 That needs `roles/compute.securityAdmin`, which the OS-Login accounts do not
@@ -159,7 +159,7 @@ story `F6-01` (#77). Config and runbook: [`deploy/`](../deploy/README.md).
 | Upstream | `127.0.0.1:8000` (gunicorn — `F6-02`, #78) |
 | Real client IP | Cloudflare edge ranges trusted (`cloudflare-real-ip.conf`), `real_ip_header CF-Connecting-IP` — the access log and the `X-Forwarded-For` handed to gunicorn carry the visitor, not an edge IP |
 | SELinux | `httpd_can_network_connect` set to `1` |
-| TLS | `/etc/nginx/tls/mosaiq.{crt,key}` — a **Cloudflare Origin CA** pair on the instance, browsers see Cloudflare's managed edge certificate ([ADR-0012](adr/0012-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md), Path C, `F6-03` #79). Paths A (Let's Encrypt) and B (self-signed) documented as fallbacks. |
+| TLS | `/etc/nginx/tls/mosaiq.{crt,key}` — a **Cloudflare Origin CA** pair on the instance, browsers see Cloudflare's managed edge certificate ([ADR-0013](adr/0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md), Path C, `F6-03` #79). Paths A (Let's Encrypt) and B (self-signed) documented as fallbacks. |
 | HSTS | `max-age=2592000` (30 days) on HTTPS responses. Raise to `31536000` once Cloudflare's edge certificate has auto-renewed once. No `includeSubDomains`. |
 
 Applied on `mosaiq-deployment-vm` on 2026-09-06. `nginx/1.26.3`,
@@ -181,7 +181,7 @@ The instance itself still has no DNS name, but the delivery is published under
 one. `mosaiq.maxthecoder.online` is an `A` record for `34.51.123.31` in the
 Cloudflare zone `maxthecoder.online` — a domain a team member (Max) owns — with
 Cloudflare **proxying enabled**. The decision, alternatives and bus-factor are
-in [ADR-0012](adr/0012-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md).
+in [ADR-0013](adr/0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md).
 
 | Field | Value |
 |---|---|

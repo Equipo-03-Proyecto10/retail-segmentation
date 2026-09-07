@@ -1,6 +1,6 @@
 # ADR-0007 — Permissions are declared in code and enforced by a default-deny middleware
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #69 (F4-01)
 **Supersedes:** —

@@ -13,7 +13,7 @@ seed or a maintenance script, and the reason the column is nullable.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Any
 
 from psycopg import Connection
@@ -100,35 +100,6 @@ class AuditEntryDetail:
     data_after: dict[str, Any] | None
 
 
-def _filters(
-    entity: str | None,
-    date_from: date | None,
-    date_to: date | None,
-) -> tuple[str, list[Any]]:
-    """Build the WHERE clause and its parameters.
-
-    The fragments are written here; only values ever become parameters. No
-    caller-supplied text reaches the statement.
-    """
-    conditions: list[str] = []
-    parameters: list[Any] = []
-
-    if entity:
-        conditions.append("a.entity = %s")
-        parameters.append(entity)
-    if date_from is not None:
-        conditions.append("a.executed_at >= %s")
-        parameters.append(date_from)
-    if date_to is not None:
-        # Inclusive of the whole closing day: the column is a timestamp and the
-        # filter is a date, so `<= date` would drop everything after midnight.
-        conditions.append("a.executed_at < %s")
-        parameters.append(date_to + timedelta(days=1))
-
-    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-    return where, parameters
-
-
 def count_entries(
     connection: Connection[Any],
     *,
@@ -137,9 +108,17 @@ def count_entries(
     date_to: date | None = None,
 ) -> int:
     """How many entries match the filters, for the pagination footer."""
-    where, parameters = _filters(entity, date_from, date_to)
+    parameters = {"entity": entity or None, "date_from": date_from, "date_to": date_to}
     with connection.cursor() as cursor:
-        cursor.execute(f"SELECT count(*) FROM audit_log AS a {where}", parameters)
+        cursor.execute(
+            """SELECT count(*) FROM audit_log AS a
+            WHERE (%(entity)s::text IS NULL OR a.entity = %(entity)s)
+              AND (%(date_from)s::date IS NULL OR a.executed_at >= %(date_from)s)
+              AND (%(date_to)s::date IS NULL
+                   OR a.executed_at < %(date_to)s::date + INTERVAL '1 day')
+            """,
+            parameters,
+        )
         return int(cursor.fetchone()[0])
 
 
@@ -153,19 +132,22 @@ def search_entries(
     offset: int,
 ) -> list[AuditEntry]:
     """One page of entries, newest first."""
-    where, parameters = _filters(entity, date_from, date_to)
+    parameters = {"entity": entity or None, "date_from": date_from, "date_to": date_to}
     with connection.cursor() as cursor:
         cursor.execute(
-            f"""
+            """
             SELECT a.audit_id, a.entity, a.entity_pk, a.action,
                    u.name, a.executed_at
             FROM audit_log AS a
             LEFT JOIN app_user AS u ON u.user_id = a.user_id
-            {where}
+            WHERE (%(entity)s::text IS NULL OR a.entity = %(entity)s)
+              AND (%(date_from)s::date IS NULL OR a.executed_at >= %(date_from)s)
+              AND (%(date_to)s::date IS NULL
+                   OR a.executed_at < %(date_to)s::date + INTERVAL '1 day')
             ORDER BY a.audit_id DESC
-            LIMIT %s OFFSET %s
+            LIMIT %(limit)s OFFSET %(offset)s
             """,
-            [*parameters, limit, offset],
+            parameters | {"limit": limit, "offset": offset},
         )
         rows = cursor.fetchall()
 

@@ -1,6 +1,7 @@
 """The landing page: a public front door, and the shell's home once signed in."""
 
 from flask import Blueprint, current_app, redirect, render_template, session, url_for
+from flask.typing import ResponseReturnValue
 
 from web.config import Config
 from web.db import get_connection
@@ -9,10 +10,10 @@ from web.middleware.authz import current_permissions, is_signed_in
 from web.services.dashboard import dashboard_for
 from web.services.status import application_status
 
-home_bp = Blueprint("home", __name__)
+bp = Blueprint("home", __name__)
 
 
-@home_bp.get("/")
+@bp.get("/")
 @public
 def index() -> str:
     """Render the landing page, or the shell's home for a signed-in visitor.
@@ -38,8 +39,8 @@ def index() -> str:
     return render_template("dashboard.html", dashboard=dashboard)
 
 
-@home_bp.get("/favicon.ico")
+@bp.get("/favicon.ico")
 @public
-def favicon():
+def favicon() -> ResponseReturnValue:
     """Handle browsers that request the conventional icon URL."""
     return redirect(url_for("static", filename="favicon.svg"), code=301)

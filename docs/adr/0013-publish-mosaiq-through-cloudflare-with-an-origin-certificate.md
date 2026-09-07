@@ -1,6 +1,6 @@
-# ADR-0012 — MOSAIQ is published at `mosaiq.maxthecoder.online` through Cloudflare, with a Cloudflare Origin Certificate on the instance
+# ADR-0013 — MOSAIQ is published at `mosaiq.maxthecoder.online` through Cloudflare, with a Cloudflare Origin Certificate on the instance
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Max
 **Issue:** #79 (F6-03)
 **Supersedes:** —

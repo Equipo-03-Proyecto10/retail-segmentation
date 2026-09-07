@@ -39,7 +39,7 @@
               </td>
               <td>{{ customer.email or "—" }}</td>
               <td>{{ customer.phone or "—" }}</td>
-              <td>{{ customer.current_segment_id if customer.current_segment_id is not none else "Unassigned" }}</td>
+              <td>{{ customer.segment_name or "Unassigned" }}</td>
             </tr>
           {% endfor %}
         </tbody>
@@ -56,6 +56,6 @@
       {% endif %}
     </nav>
   {% else %}
-    <p>No customers match that search.</p>
+    <p>{{ "No customers match that search." if search else "No customers are available." }}</p>
   {% endif %}
 {% endblock %}

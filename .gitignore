@@ -32,3 +32,4 @@ Thumbs.db
 # Agent local context
 CLAUDE.local.md
 cookies.txt
+.playwright-mcp/

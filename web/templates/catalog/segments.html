@@ -55,6 +55,6 @@
       {% endif %}
     </nav>
   {% else %}
-    <p>No segments match that search.</p>
+    <p>{{ "No segments match that search." if search else "No segments are available." }}</p>
   {% endif %}
 {% endblock %}

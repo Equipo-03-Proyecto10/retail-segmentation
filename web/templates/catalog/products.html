@@ -41,7 +41,7 @@
                   {{ product.name }}
                 </a>
               </td>
-              <td>{{ product.category_id }}</td>
+              <td>{{ product.category_name }}</td>
               <td>{{ product.list_price }}</td>
               <td>{{ "Yes" if product.is_active else "No" }}</td>
             </tr>
@@ -60,6 +60,6 @@
       {% endif %}
     </nav>
   {% else %}
-    <p>No products match that search.</p>
+    <p>{{ "No products match that search." if search else "No products are available." }}</p>
   {% endif %}
 {% endblock %}

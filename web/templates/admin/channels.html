@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 
+{% block title %}Channels · {{ application_name }}{% endblock %}
+
 {% block content %}
-<main class="admin-page">
+<div class="admin-page">
   <h1>Channels</h1>
 
   <form method="get" action="{{ url_for('admin.list_channels_view') }}">
@@ -13,27 +15,33 @@
     <p class="error" role="alert">{{ delete_error }}</p>
   {% endif %}
 
+  {% if can('catalog.write') %}
   <a href="{{ url_for('admin.create_channel_view') }}">New channel</a>
+  {% endif %}
 
-  <table>
+  <div class="table-scroll">
+  <table class="listing">
     <thead>
-      <tr><th>ID</th><th>Name</th><th></th></tr>
+      <tr><th>ID</th><th>Name</th>{% if can('catalog.write') %}<th>Actions</th>{% endif %}</tr>
     </thead>
     <tbody>
       {% for channel in channels %}
       <tr>
         <td>{{ channel.channel_id }}</td>
         <td>{{ channel.name }}</td>
+        {% if can('catalog.write') %}
         <td>
           <a href="{{ url_for('admin.edit_channel_view', channel_id=channel.channel_id) }}">Edit</a>
-          <form method="post" action="{{ url_for('admin.delete_channel_view', channel_id=channel.channel_id) }}" style="display:inline">
+          <form method="post" action="{{ url_for('admin.delete_channel_view', channel_id=channel.channel_id) }}" class="inline-form">
             <button type="submit">Delete</button>
           </form>
         </td>
+        {% endif %}
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
 
   <nav class="pagination">
     {% if page > 1 %}
@@ -44,5 +52,5 @@
       <a href="{{ url_for('admin.list_channels_view', page=page+1, q=search) }}">Next</a>
     {% endif %}
   </nav>
-</main>
+</div>
 {% endblock %}

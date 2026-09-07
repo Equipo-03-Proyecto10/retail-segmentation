@@ -101,7 +101,8 @@ def test_a_store_with_nothing_referencing_it_is_deleted(
 ) -> None:
     delete = Mock(return_value=True)
     monkeypatch.setattr(admin, "delete_store", delete)
-    response = client.post("/admin/stores/1/delete")
+    monkeypatch.setattr(admin, "get_store", Mock(return_value=Mock(image_path=None)))
+    response = client.post("/admin/stores/1/delete", data={"confirm": "yes"})
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/admin/stores")
     delete.assert_called_once_with(ANY, 1)
@@ -157,7 +158,8 @@ def test_a_category_with_nothing_referencing_it_is_deleted(
 ) -> None:
     delete = Mock(return_value=True)
     monkeypatch.setattr(admin, "delete_category", delete)
-    response = client.post("/admin/categories/1/delete")
+    monkeypatch.setattr(admin, "get_category", Mock(return_value=Mock(image_path=None)))
+    response = client.post("/admin/categories/1/delete", data={"confirm": "yes"})
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/admin/categories")
     delete.assert_called_once_with(ANY, 1)
@@ -202,7 +204,8 @@ def test_a_channel_with_nothing_referencing_it_is_deleted(
 ) -> None:
     delete = Mock(return_value=True)
     monkeypatch.setattr(admin, "delete_channel", delete)
-    response = client.post("/admin/channels/1/delete")
+    monkeypatch.setattr(admin, "get_channel", Mock(return_value=Mock(image_path=None)))
+    response = client.post("/admin/channels/1/delete", data={"confirm": "yes"})
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/admin/channels")
     delete.assert_called_once_with(ANY, 1)
@@ -245,7 +248,8 @@ def test_a_product_with_nothing_referencing_it_is_deleted(
 ) -> None:
     delete = Mock(return_value=True)
     monkeypatch.setattr(admin, "delete_product", delete)
-    response = client.post("/admin/products/1/delete")
+    monkeypatch.setattr(admin, "get_product", Mock(return_value=Mock(image_path=None)))
+    response = client.post("/admin/products/1/delete", data={"confirm": "yes"})
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/admin/products")
     delete.assert_called_once_with(ANY, 1)
@@ -295,7 +299,87 @@ def test_a_role_with_nothing_referencing_it_is_deleted(
 ) -> None:
     delete = Mock(return_value=True)
     monkeypatch.setattr(admin, "delete_role", delete)
-    response = client.post("/admin/roles/1/delete")
+    monkeypatch.setattr(admin, "get_role", Mock(return_value=Mock(image_path=None)))
+    response = client.post("/admin/roles/1/delete", data={"confirm": "yes"})
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/admin/roles")
     delete.assert_called_once_with(ANY, 1)
+
+
+@pytest.mark.parametrize(
+    "entity,plural",
+    [
+        ("store", "stores"),
+        ("category", "categories"),
+        ("channel", "channels"),
+        ("product", "products"),
+        ("role", "roles"),
+    ],
+)
+def test_delete_requires_confirmation(client, monkeypatch, entity, plural):
+    delete = Mock(return_value=True)
+    monkeypatch.setattr(admin, f"delete_{entity}", delete)
+    monkeypatch.setattr(
+        admin, f"get_{entity}", Mock(return_value=Mock(image_path=None))
+    )
+    response = client.post(f"/admin/{plural}/1/delete")
+    assert response.status_code == 200
+    assert b"Confirm deletion" in response.data
+    delete.assert_not_called()
+
+
+@pytest.mark.parametrize("deleted", [True, False])
+def test_product_image_is_removed_only_after_successful_delete(
+    client, config, monkeypatch, deleted
+):
+    from pathlib import Path
+
+    image_path = Path(config.upload_dir) / "product.png"
+    image_path.write_bytes(b"existing image")
+    monkeypatch.setattr(
+        admin, "get_product", Mock(return_value=Mock(image_path=image_path.name))
+    )
+    monkeypatch.setattr(admin, "list_products", Mock(return_value=([], 0)))
+
+    def delete(connection, product_id):
+        assert image_path.exists(), "keep the file until deletion succeeds"
+        return deleted
+
+    monkeypatch.setattr(admin, "delete_product", delete)
+    response = client.post("/admin/products/1/delete", data={"confirm": "yes"})
+    assert response.status_code == (302 if deleted else 409)
+    assert image_path.exists() is not deleted
+
+
+@pytest.mark.parametrize(
+    "entity,plural",
+    [
+        ("store", "stores"),
+        ("category", "categories"),
+        ("channel", "channels"),
+        ("product", "products"),
+        ("role", "roles"),
+    ],
+)
+@pytest.mark.parametrize(
+    "role",
+    ["ADMIN", "ANALYST", "AUDITOR", "MARKETING", "STORE_MANAGER", "INVENTORY_PLANNER"],
+)
+def test_catalog_controls_follow_write_permission(
+    client, monkeypatch, entity, plural, role
+):
+    from types import SimpleNamespace
+
+    record = SimpleNamespace(**{f"{entity}_id": 1}, name="Record", code="SUPPORT")
+    monkeypatch.setattr(admin, f"list_{plural}", Mock(return_value=([record], 1)))
+    with client.session_transaction() as session:
+        session["role_code"] = role
+    response = client.get(f"/admin/{plural}")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    for path in [
+        f"/admin/{plural}/new",
+        f"/admin/{plural}/1/edit",
+        f"/admin/{plural}/1/delete",
+    ]:
+        assert (path in body) == (role == "ADMIN")

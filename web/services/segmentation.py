@@ -56,7 +56,7 @@ class RunResult:
 
 def parse_window(raw: str | None) -> int:
     """Read a window from form input, refusing what is not a usable one."""
-    if raw is None or not str(raw).strip():
+    if raw is None:
         return DEFAULT_WINDOW_DAYS
     try:
         days = int(str(raw).strip())

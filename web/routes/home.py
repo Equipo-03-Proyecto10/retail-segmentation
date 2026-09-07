@@ -1,6 +1,6 @@
 """The landing page: a public front door, and the shell's home once signed in."""
 
-from flask import Blueprint, current_app, render_template, session
+from flask import Blueprint, current_app, redirect, render_template, session, url_for
 
 from web.config import Config
 from web.db import get_connection
@@ -36,3 +36,10 @@ def index() -> str:
         return render_template("home.html", status=application_status(config))
 
     return render_template("dashboard.html", dashboard=dashboard)
+
+
+@home_bp.get("/favicon.ico")
+@public
+def favicon():
+    """Handle browsers that request the conventional icon URL."""
+    return redirect(url_for("static", filename="favicon.svg"), code=301)

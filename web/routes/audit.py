@@ -13,24 +13,19 @@ from flask import Blueprint, abort, render_template, request
 
 from web.db import get_connection
 from web.middleware.authz import AUDIT_READ, requires
-from web.services.audit import read_entry, read_page
+from web.services.audit import Page, read_entry, read_page
 
 bp = Blueprint("audit", __name__, url_prefix="/audit")
 
 
 def _a_date(raw: str | None) -> date | None:
-    """Read a date from the query string, ignoring anything that is not one.
-
-    An unparseable filter is dropped rather than refused: the value came from a
-    query string a person may have edited, and showing the unfiltered log is a
-    better answer than an error page about date formats.
-    """
+    """Read an optional date, refusing invalid filters instead of dropping them."""
     if not raw:
         return None
     try:
         return date.fromisoformat(raw)
     except ValueError:
-        return None
+        raise ValueError("Enter valid dates in YYYY-MM-DD format.") from None
 
 
 def _a_page(raw: str | None) -> int:
@@ -42,11 +37,26 @@ def _a_page(raw: str | None) -> int:
 
 @bp.get("/")
 @requires(AUDIT_READ)
-def index() -> str:
+def index() -> str | tuple[str, int]:
     """List entries, newest first, filtered and paged."""
     entity = request.args.get("entity") or None
-    date_from = _a_date(request.args.get("from"))
-    date_to = _a_date(request.args.get("to"))
+    try:
+        date_from = _a_date(request.args.get("from"))
+        date_to = _a_date(request.args.get("to"))
+        if date_from and date_to and date_from > date_to:
+            raise ValueError("The From date must be on or before the To date.")
+    except ValueError as error:
+        return (
+            render_template(
+                "audit/index.html",
+                page=Page((), (entity,) if entity else (), 0, 1, 1),
+                entity=entity,
+                date_from=request.args.get("from", ""),
+                date_to=request.args.get("to", ""),
+                error=str(error),
+            ),
+            400,
+        )
 
     page = read_page(
         get_connection(),

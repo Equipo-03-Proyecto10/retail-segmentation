@@ -1,6 +1,6 @@
 # ADR-0010 — The consultation module is a separate read-only blueprint, gated by two existing permissions
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #65 (F3-05)
 **Supersedes:** —

@@ -5,7 +5,16 @@ Follows the Blueprint pattern established in web/routes/home.py.
 
 from __future__ import annotations
 
-from flask import Blueprint, redirect, render_template, request, session, url_for
+from flask import (
+    Blueprint,
+    current_app,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
+from flask.typing import ResponseReturnValue
 
 from web.db import get_connection
 from web.middleware import public, requires
@@ -19,7 +28,7 @@ _GENERIC_ERROR = "Invalid email or password."
 
 @bp.route("/login", methods=["GET", "POST"])
 @public
-def login():
+def login() -> ResponseReturnValue:
     # Where the visitor was going before the gate stopped them (RF-03). It
     # arrives in the query string on the redirect and travels back through the
     # form; `safe_next` refuses anything that is not a path on this site.
@@ -33,6 +42,9 @@ def login():
 
     connection = get_connection()
     result = authenticate(connection, email, password)
+    current_app.logger.info(
+        "login_%s email=%r", "succeeded" if result.success else "refused", email[:254]
+    )
 
     if not result.success:
         return (
@@ -51,6 +63,7 @@ def login():
 
 @bp.route("/logout", methods=["POST"])
 @requires()
-def logout():
+def logout() -> ResponseReturnValue:
+    current_app.logger.info("logout_succeeded")
     session.clear()
     return redirect(url_for("home.index"))

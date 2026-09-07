@@ -25,14 +25,18 @@ from uuid import UUID
 from psycopg import Connection
 from psycopg.errors import UniqueViolation
 
+from web.db.transactions import atomic
 from web.db.users import (
     ADMINISTRATOR_ROLE_CODE,
     AppUser,
     count_administrators,
+    deactivate_demonstration_accounts,
     get_role_id_by_code,
+    get_sole_administrator,
     get_user_by_id,
     insert_user,
     update_active,
+    update_password_hash,
     update_role,
 )
 from web.services.auth import hash_password
@@ -56,6 +60,10 @@ LAST_ADMINISTRATOR = (
 
 class SingleAdministratorError(Exception):
     """A write refused because it would leave two administrators, or none."""
+
+
+class DuplicateEmailError(Exception):
+    """The email is already registered."""
 
 
 class UnknownRoleError(Exception):
@@ -108,9 +116,10 @@ def _translate_unique_violation(error: UniqueViolation) -> Exception:
     constraint = getattr(getattr(error, "diag", None), "constraint_name", None)
     if constraint == "ux_app_user_single_administrator":
         return SingleAdministratorError(SECOND_ADMINISTRATOR)
-    return error
+    return DuplicateEmailError("A user with that email already exists.")
 
 
+@atomic
 def create_user(
     connection: Connection,
     *,
@@ -137,6 +146,7 @@ def create_user(
         raise _translate_unique_violation(error) from error
 
 
+@atomic
 def change_role(connection: Connection, user_id: UUID | str, role_code: str) -> None:
     """Move a user to another role, in either direction of RN-01."""
     user = _user(connection, user_id)
@@ -159,6 +169,7 @@ def change_role(connection: Connection, user_id: UUID | str, role_code: str) -> 
         raise _translate_unique_violation(error) from error
 
 
+@atomic
 def set_active(connection: Connection, user_id: UUID | str, is_active: bool) -> None:
     """Activate or deactivate a user, never the sole administrator.
 
@@ -173,6 +184,7 @@ def set_active(connection: Connection, user_id: UUID | str, is_active: bool) -> 
     update_active(connection, user.user_id, is_active)
 
 
+@atomic
 def install_administrator(
     connection: Connection,
     *,
@@ -195,7 +207,7 @@ def install_administrator(
       refused too. The incumbent inherits the placeholder role, which is what
       the caller then deactivates.
 
-    One transaction, and the caller commits it: at no point does the system
+    One service-owned transaction: at no point does the system
     hold two administrators, and if anything fails it holds the one it started
     with.
     """
@@ -224,23 +236,13 @@ def install_administrator(
 
 def _sole_administrator(connection: Connection) -> AppUser:
     """The account currently holding the role. There is exactly one."""
-    with connection.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT u.user_id
-            FROM app_user AS u
-            JOIN role AS r ON r.role_id = u.role_id
-            WHERE r.code = %s
-            """,
-            (ADMINISTRATOR_ROLE_CODE,),
-        )
-        row = cursor.fetchone()
-
-    if row is None:  # pragma: no cover - the caller checked the count first
+    user = get_sole_administrator(connection)
+    if user is None:
         raise SingleAdministratorError("There is no administrator to replace.")
-    return _user(connection, row[0])
+    return user
 
 
+@atomic
 def transfer_administrator(
     connection: Connection,
     *,
@@ -258,8 +260,7 @@ def transfer_administrator(
 
     So the swap is one operation. It demotes and then promotes, in that order,
     so the partial unique index is never asked to hold two administrators at
-    once; the caller's transaction is what makes the pair atomic, and a caller
-    that does not commit leaves the seat exactly where it was.
+    once; the service transaction commits both changes or rolls back both.
     """
     incumbent = _user(connection, from_user_id)
     successor = _user(connection, to_user_id)
@@ -278,3 +279,58 @@ def transfer_administrator(
         update_role(connection, successor.user_id, administrator)
     except UniqueViolation as error:
         raise _translate_unique_violation(error) from error
+
+
+MINIMUM_PASSWORD_LENGTH = 12
+
+
+def validate_user(
+    *, name: str, email: str, password: str, role_code: str
+) -> dict[str, str]:
+    """Validate a user form without an HTTP request or database."""
+    errors: dict[str, str] = {}
+    if not name.strip():
+        errors["name"] = "Name is required."
+    elif len(name) > 120:
+        errors["name"] = "Name must be 120 characters or fewer."
+    local, separator, domain = email.partition("@")
+    if (
+        len(email) > 160
+        or not local
+        or not separator
+        or not domain
+        or "@" in domain
+        or any(character.isspace() for character in email)
+    ):
+        errors["email"] = "A valid email is required."
+    if len(password) < MINIMUM_PASSWORD_LENGTH:
+        errors["password"] = (
+            f"Password must be at least {MINIMUM_PASSWORD_LENGTH} characters."
+        )
+    if not role_code:
+        errors["role_code"] = "Role is required."
+    return errors
+
+
+@atomic
+def provision_administrator(
+    connection: Connection,
+    *,
+    name: str,
+    email: str,
+    password: str,
+    deactivate_demo_accounts: bool,
+) -> list[str]:
+    """Install an administrator and optionally close demo access atomically."""
+    install_administrator(connection, name=name, email=email, password=password)
+    return (
+        deactivate_demonstration_accounts(connection)
+        if deactivate_demo_accounts
+        else []
+    )
+
+
+@atomic
+def rotate_password(connection: Connection, email: str, password: str) -> None:
+    """Replace an existing account's password as one committed operation."""
+    update_password_hash(connection, email, hash_password(password))

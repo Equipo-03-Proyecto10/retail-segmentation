@@ -26,6 +26,7 @@
       </option>
       {% endfor %}
     </select>
+    {% if errors.parent_category_id %}<p class="error">{{ errors.parent_category_id }}</p>{% endif %}
 
     <button type="submit">Save</button>
     <a href="{{ url_for('admin.list_categories_view') }}">Cancel</a>

@@ -18,21 +18,102 @@ Created for `F1-01`.
 
 ## Network access
 
-The instance has the `mosaiq-server` network tag. Its ingress policy uses
-higher-priority exceptions for the two required public ports followed by an
-explicit deny rule:
+The instance has the `mosaiq-server` network tag. Its ingress policy is two
+higher-priority exceptions followed by an explicit deny rule:
 
 | Rule | Priority | Source | Action |
 |---|---:|---|---|
 | `mosaiq-allow-ssh` | 900 | `0.0.0.0/0` | Allow `tcp:22` |
-| `mosaiq-allow-http` | 900 | `0.0.0.0/0` | Allow `tcp:80` |
+| `mosaiq-allow-https` | 900 | Cloudflare's published ranges | Allow `tcp:443` |
 | `mosaiq-deny-other-ingress` | 1000 | `0.0.0.0/0` | Deny all other ingress |
 
 The project default network is shared with the terminated `webdev-centos`
-instance, so its pre-existing default rules were not changed. For
-`mosaiq-deployment-vm`, the rules above take precedence over those default
-rules, which have priority 65534. This limits effective ingress to SSH and
-HTTP without changing the other instance's policy.
+instance, so its pre-existing default rules were not changed. None of them
+reaches this instance: `default-allow-http` and `default-allow-https` sit at
+priority 1000 but target the `http-server` and `https-server` tags, which
+`mosaiq-deployment-vm` does not carry — it has only `mosaiq-server` — and the
+remaining default rules are priority 65534, below `mosaiq-deny-other-ingress`.
+Effective ingress is SSH, and HTTPS from a Cloudflare edge.
+
+### Only the Cloudflare edge reaches the origin (F6-03 hardening, #167)
+
+`mosaiq-allow-https` was added for F6-03 as `0.0.0.0/0`. On 2026-09-07 it was
+narrowed to Cloudflare's published ranges and `mosaiq-allow-http` was deleted.
+
+The delivery is served proxied through Cloudflare
+([ADR-0013](adr/0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md)),
+the edge does "Always Use HTTPS", and the origin presents a Cloudflare Origin CA
+pair that only the edge trusts. Nothing needs to reach the box except an edge on
+`:443`. Until this was applied, `https://34.51.123.31/` with the published
+hostname as SNI answered `HTTP/2 200` from `nginx/1.26.3` — the edge's filtering,
+WAF and real-client-IP were all optional for an attacker who knew the address.
+
+Applied with `cloudcompute97@gmail.com`, which holds
+`roles/compute.securityAdmin`; the OS-Login `*.udem.edu` accounts carry only
+`compute.osAdminLogin` and cannot change firewall rules:
+
+```sh
+CF4=$(curl -s https://www.cloudflare.com/ips-v4 | paste -sd,)
+
+gcloud compute firewall-rules update mosaiq-allow-https \
+  --project=iac-dev-01 --source-ranges="$CF4"
+gcloud compute firewall-rules delete mosaiq-allow-http --project=iac-dev-01
+```
+
+GCP refuses a rule that mixes address families ("Mixture of IPv4 and IPv6 in
+the same rule is not allowed"), and the instance is `IPV4_ONLY` — no
+`ipv6AccessConfigs`, so a Cloudflare edge can only ever reach the origin over
+IPv4. Only the v4 list goes in. If the instance ever gains an IPv6 address, the
+v6 ranges need a second rule of their own.
+
+Verified the same day from a host that is not a Cloudflare edge:
+
+| Check | Result |
+|---|---|
+| `curl --resolve mosaiq.maxthecoder.online:443:34.51.123.31 -ksI https://mosaiq.maxthecoder.online/ --max-time 10` | exit `28`, timed out — it answered `HTTP/2 200` from `nginx/1.26.3` before |
+| the same request through the hostname | `HTTP/2 200`, `server: cloudflare` |
+| `curl -H 'Host: mosaiq.maxthecoder.online' http://34.51.123.31/` | exit `28`, timed out |
+| `http://mosaiq.maxthecoder.online/` | `301` to HTTPS, from the edge |
+| `gcloud compute firewall-rules list --filter="name~mosaiq"` | `mosaiq-allow-ssh`, `mosaiq-allow-https`, `mosaiq-deny-other-ingress` — no `mosaiq-allow-http` |
+
+`mosaiq-allow-ssh` is untouched, so OS Login and the F6-06 deploy workflow —
+which reaches the instance over `tcp:22`, not through the proxy — are unaffected.
+
+### firewalld is not a second layer
+
+firewalld runs on the instance, but `eth0` sits in the `trusted` zone — the
+default zone here — and that zone's target is `ACCEPT`. It admits every packet
+arriving on the interface whatever its service list says, so that list is
+decorative. `public`, which carries a filtering target and the usual
+`cockpit dhcpv6-client ssh` set, has no interface bound to it.
+
+The `http` service was removed from the trusted zone on 2026-09-07 alongside the
+rules above, so the listing matches intent. It closed nothing — the port was
+never gated there:
+
+| Check | Result |
+|---|---|
+| `firewall-cmd --get-active-zones` | `trusted (default)`, interfaces: `eth0` |
+| `firewall-cmd --info-zone=trusted` | `target: ACCEPT`; services `http https` → `https` |
+| `firewall-cmd --info-zone=public` | no interfaces bound |
+
+**Ingress is therefore controlled in exactly one place: the GCP firewall rules
+above.** That is a single layer, not defence in depth. Binding `eth0` to a
+filtering zone would add one, and needs care in the right order — `public`
+allows `ssh` but not `https`, so a careless switch takes the delivery offline or
+locks the box out of SSH. Not attempted here; recorded so nobody assumes a
+second layer that is not there.
+
+**When Cloudflare's ranges change, two places need the new list**: this rule and
+[`deploy/nginx/cloudflare-real-ip.conf`](../deploy/nginx/cloudflare-real-ip.conf),
+the NGINX `real_ip` trust list — the regeneration one-liner is in that file's
+header. A stale rule here does not degrade gracefully: an edge in a new range
+cannot reach the origin at all.
+
+To restore direct access, recreate the deleted rule as it was — `tcp:80` from
+`0.0.0.0/0`, target tag `mosaiq-server`, priority 900, network `default`,
+described "F1-02: Allow HTTP access to the MOSAIQ deployment VM" — and set
+`mosaiq-allow-https --source-ranges=0.0.0.0/0`.
 
 ## SSH access
 
@@ -145,12 +226,13 @@ story `F6-01` (#77). Config and runbook: [`deploy/`](../deploy/README.md).
 | Field | Value |
 |---|---|
 | Package | `nginx` (CentOS Stream 10 AppStream) |
-| Config | `/etc/nginx/conf.d/mosaiq.conf`, from `deploy/nginx/mosaiq.conf` |
-| Listener | `:80` redirects to HTTPS; `:443 ssl http2` `default_server`, `server_name _` |
+| Config | `/etc/nginx/conf.d/mosaiq.conf` + `/etc/nginx/conf.d/cloudflare-real-ip.conf`, from `deploy/nginx/` (deploy both — `mosaiq.conf` includes the other) |
+| Listener | `:80` redirects to HTTPS; `:443 ssl http2` `default_server`, `server_name mosaiq.maxthecoder.online` |
 | Upstream | `127.0.0.1:8000` (gunicorn — `F6-02`, #78) |
+| Real client IP | Cloudflare edge ranges trusted (`cloudflare-real-ip.conf`), `real_ip_header CF-Connecting-IP` — the access log and the `X-Forwarded-For` handed to gunicorn carry the visitor, not an edge IP |
 | SELinux | `httpd_can_network_connect` set to `1` |
-| TLS | `/etc/nginx/tls/mosaiq.{crt,key}` — Let's Encrypt where the host has a real name, self-signed otherwise (`F6-03`, #79). The instance has no DNS name, so Path B applies (`scope.md` §8). Needs GCP rule `mosaiq-allow-https` for `tcp:443`. |
-| HSTS | `max-age=300` on HTTPS responses — staged low while the certificate is self-signed (#79). Raise to `31536000` once a real certificate has renewed once. |
+| TLS | `/etc/nginx/tls/mosaiq.{crt,key}` — a **Cloudflare Origin CA** pair on the instance, browsers see Cloudflare's managed edge certificate ([ADR-0013](adr/0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md), Path C, `F6-03` #79). Paths A (Let's Encrypt) and B (self-signed) documented as fallbacks. |
+| HSTS | `max-age=2592000` (30 days) on HTTPS responses. Raise to `31536000` once Cloudflare's edge certificate has auto-renewed once. No `includeSubDomains`. |
 
 Applied on `mosaiq-deployment-vm` on 2026-09-06. `nginx/1.26.3`,
 `systemctl is-enabled nginx` → `enabled`. The stock `server {}` block in
@@ -165,14 +247,49 @@ curl -skI https://34.51.123.31/        -> HTTP/2 200      (MOSAIQ landing page)
 curl -m6 http://34.51.123.31:8000/     -> timed out       (gunicorn is loopback-only)
 ```
 
-`F6-03` — the certificate is **self-signed**, `CN=34.51.123.31` with
-`subjectAltName=IP:34.51.123.31`, valid to 2027-09-06. This is Path B in
-[`deploy/README.md`](../deploy/README.md): the instance has no DNS name, and
-Let's Encrypt does not issue for a bare IP. A browser therefore warns.
-**Q-2 is resolved (`scope.md` §8): the published host is this instance.** What
-stands between it and a valid certificate is no longer a question but a missing
-DNS name — Let's Encrypt does not issue for a bare IP. Point a hostname at
-`34.51.123.31`, then re-issue with certbot and set `server_name`.
+### DNS and the published certificate
+
+The instance itself still has no DNS name, but the delivery is published under
+one. `mosaiq.maxthecoder.online` is an `A` record for `34.51.123.31` in the
+Cloudflare zone `maxthecoder.online` — a domain a team member (Max) owns — with
+Cloudflare **proxying enabled**. The decision, alternatives and bus-factor are
+in [ADR-0013](adr/0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md).
+
+| Field | Value |
+|---|---|
+| Hostname | `mosaiq.maxthecoder.online` |
+| Cloudflare zone | `maxthecoder.online` (Max's account) |
+| Record | `A` → `34.51.123.31`, proxied (orange cloud) |
+| Edge TLS | Cloudflare Universal SSL (managed, auto-renewing) — what browsers see |
+| Cloudflare SSL mode | Full (strict) |
+| Origin cert | Cloudflare Origin CA, RSA 2048, 15-year, at `/etc/nginx/tls/mosaiq.{crt,key}` |
+
+`34.51.123.31` is a **reserved static** external address (`mosaiq-ip`, type
+`EXTERNAL`, region `northamerica-south1`, `IN_USE`), so a stop/start does not
+rotate it.
+
+Applied on `mosaiq-deployment-vm` on 2026-09-07:
+
+- `/etc/nginx/tls/mosaiq.{crt,key}` — the Cloudflare Origin CA pair
+  (`CN=CloudFlare Origin Certificate`, valid to 2041-09-03). The prior
+  self-signed pair is kept as `*.selfsigned-20260907T064344Z`.
+- `/etc/nginx/conf.d/mosaiq.conf` + `cloudflare-real-ip.conf` from the repo
+  (`server_name mosaiq.maxthecoder.online`, `real_ip_header CF-Connecting-IP`,
+  HSTS `max-age=2592000`). `nginx -t` clean, reloaded.
+- App env already set for TLS: `SESSION_COOKIE_SECURE=true`,
+  `TRUSTED_PROXY_HOPS=1`.
+
+Cloudflare edge settings: SSL/TLS mode **Full (strict)**, **Always Use HTTPS**
+on, Universal SSL active for the hostname.
+
+Verified from outside GCP: `https://mosaiq.maxthecoder.online/` → `HTTP/2 200`
+(TLS 1.3) with a valid edge certificate (`CN=maxthecoder.online`, Google Trust
+Services, via Cloudflare Universal SSL); `http://` → `301`; the origin presents
+`CN=CloudFlare Origin Certificate` past the edge; the NGINX access log shows the
+real client IP, not a Cloudflare edge address.
+
+**Optional, deferred:** firewall hardening to Cloudflare ranges —
+[#167](https://github.com/Equipo-03-Proyecto10/retail-segmentation/issues/167).
 
 ## Application service
 

@@ -3,16 +3,14 @@
 Stock is quantity on hand per store and product. The consultation module reads
 it; it is never written here.
 
-The filtered queries follow the same rule as web/db/audit.py: the WHERE
-fragments are literals written in this file, and only values ever become
-parameters — no caller-supplied text reaches the statement.
+The filtered queries use fixed SQL with nullable bound parameters, following
+the same rule as web/db/audit.py: no text is interpolated into a statement.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
 
 from psycopg import Connection
 
@@ -36,22 +34,6 @@ class StockRow:
         return self.quantity_on_hand < LOW_STOCK_THRESHOLD
 
 
-def _filters(store_id: int | None, search: str | None) -> tuple[str, list[Any]]:
-    """Build the WHERE clause shared by the page and count queries."""
-    conditions: list[str] = []
-    parameters: list[Any] = []
-
-    if store_id is not None:
-        conditions.append("i.store_id = %s")
-        parameters.append(store_id)
-    if search:
-        conditions.append("(p.sku ILIKE %s OR p.name ILIKE %s)")
-        parameters.extend([f"%{search}%", f"%{search}%"])
-
-    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-    return where, parameters
-
-
 def list_stock(
     connection: Connection,
     *,
@@ -63,31 +45,35 @@ def list_stock(
     """Return a page of stock rows joined to their store and product, and the
     total. Optionally narrowed to one store and/or a product SKU/name match."""
     offset = (page - 1) * per_page
-    where, parameters = _filters(store_id, search)
+    parameters = {"store_id": store_id, "search": f"%{search}%" if search else None}
 
     with connection.cursor() as cursor:
         cursor.execute(
-            f"""
+            """
             SELECT i.store_id, s.name, i.product_id, p.sku, p.name,
                    i.quantity_on_hand, i.updated_at
             FROM inventory AS i
             JOIN store AS s ON s.store_id = i.store_id
             JOIN product AS p ON p.product_id = i.product_id
-            {where}
+            WHERE (%(store_id)s::int IS NULL OR i.store_id = %(store_id)s)
+              AND (%(search)s::text IS NULL
+                   OR p.sku ILIKE %(search)s OR p.name ILIKE %(search)s)
             ORDER BY i.store_id, i.product_id
-            LIMIT %s OFFSET %s
+            LIMIT %(limit)s OFFSET %(offset)s
             """,
-            [*parameters, per_page, offset],
+            parameters | {"limit": per_page, "offset": offset},
         )
         rows = cursor.fetchall()
 
         cursor.execute(
-            f"""
+            """
             SELECT count(*)
             FROM inventory AS i
             JOIN store AS s ON s.store_id = i.store_id
             JOIN product AS p ON p.product_id = i.product_id
-            {where}
+            WHERE (%(store_id)s::int IS NULL OR i.store_id = %(store_id)s)
+              AND (%(search)s::text IS NULL
+                   OR p.sku ILIKE %(search)s OR p.name ILIKE %(search)s)
             """,
             parameters,
         )

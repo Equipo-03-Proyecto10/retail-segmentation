@@ -19,13 +19,14 @@
 | [Decisions](adr/) | Architecture Decision Records |
 | [Negative-test evidence](evidence/f5-02-negative-tests.md) | Reproducible access refusals, invalid submissions and controlled failures (#75) |
 | [Key-functionality screenshots](evidence/f5-04-key-functionality.md) | A captioned screenshot for every item on the demonstration list (#108) |
+| [Code review evidence](evidence/f5-03-code-review.md) | The whole-codebase review pass, and the nine issues it opened (#76) |
 | [Issue history](issue-history.md) | What the deleted `#1`–`#40` references in older commits pointed at |
 
 Documents that do not exist yet are produced by the story that needs them:
 
 | Deliverable | Produced by |
 |---|---|
-| `evidence/` | F2-07, F5-01, F5-02, F5-04, F6-05 |
+| `evidence/` | F2-07, F5-01, F5-02, F5-03, F5-04, F6-05 |
 
 Everything is written in English — code, comments, commits, issues,
 documentation. Spoken meetings are in Spanish.

@@ -268,7 +268,7 @@ def test_the_window_is_a_parameter_and_never_interpolated() -> None:
     recalculate_segments(connection, 90)
 
     statement, parameters = cursor.execute.call_args.args
-    assert parameters == (90,)
+    assert parameters == (90, 5, 5, 5, 5, 5, 5)
     assert "90" not in statement
 
 

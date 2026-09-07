@@ -21,6 +21,7 @@ from flask.testing import FlaskClient
 from web.app import create_app
 from web.config import Config
 from web.routes import admin
+from web.services.catalog import CatalogConflict
 
 
 @pytest.fixture
@@ -343,7 +344,11 @@ def test_product_image_is_removed_only_after_successful_delete(
 
     def delete(connection, product_id):
         assert image_path.exists(), "keep the file until deletion succeeds"
-        return deleted
+        if not deleted:
+            raise CatalogConflict(
+                "", "Cannot delete: other records still reference it."
+            )
+        return None
 
     monkeypatch.setattr(admin, "delete_product", delete)
     response = client.post("/admin/products/1/delete", data={"confirm": "yes"})

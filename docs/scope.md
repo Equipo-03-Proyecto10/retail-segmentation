@@ -134,12 +134,16 @@ working assumption both questions carried, is not part of the delivery: a
 per-user directory on a shared host cannot run `systemd`, `gunicorn` or
 PostgreSQL, so publishing there would have contradicted C-5 and C-6.
 
-This settles *which* machine, and one consequence outlives the question. The
-instance has no DNS name, and Let's Encrypt does not issue for a bare IP, so
-F6-03 (#79) stays on Path B — a self-signed certificate that makes browsers
-warn ([`deploy/README.md`](../deploy/README.md)). Reaching a valid certificate
-needs a hostname pointing at the instance, which is a deployment task and no
-longer a question for the Product Owner.
+This settles *which* machine, and one consequence outlived the question for a
+while: the instance has no DNS name, and Let's Encrypt does not issue for a bare
+IP, so F6-03 (#79) sat on Path B — a self-signed certificate that makes browsers
+warn. That is now resolved as the deployment task it always was. The delivery is
+published at **`mosaiq.maxthecoder.online`**, a subdomain of a domain a team
+member owns, proxied through Cloudflare; browsers get a valid certificate and
+F6-03's acceptance criterion is genuinely met. The decision, and the cost of
+depending on one member's domain, are in
+[ADR-0013](adr/0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md)
+and [`deploy/README.md`](../deploy/README.md).
 
 Q-3 (company name and brand identity) and Q-4 (design system for the
 interface) are resolved: the product is **MOSAIQ**, with the design system

@@ -1,6 +1,6 @@
 # ADR-0008 — The instance keeps the demonstration accounts, deactivated
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #107 (F4-06)
 **Supersedes:** —

@@ -26,6 +26,8 @@ DEFAULT_TRUSTED_PROXY_HOPS = 0
 # agree are safe to call an image.
 DEFAULT_UPLOAD_DIR = "web/uploads"
 DEFAULT_MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+# Multipart headers and the remaining catalog fields, in addition to one image.
+FORM_OVERHEAD_BYTES = 64 * 1024
 DEFAULT_ALLOWED_IMAGE_TYPES = "image/jpeg,image/png,image/webp"
 
 _TRUE_VALUES = {"1", "true", "yes", "on"}
@@ -68,6 +70,11 @@ def _set_env(value: str | None, *, default: str) -> frozenset[str]:
     """Read a comma-separated list from an environment string into a set."""
     raw = value if value and value.strip() else default
     return frozenset(item.strip() for item in raw.split(",") if item.strip())
+
+
+def _port_env(value: str | None) -> int:
+    port = _int_env(value, default=DEFAULT_PORT)
+    return port if port <= 65535 else DEFAULT_PORT
 
 
 def load_dotenv_file(
@@ -145,7 +152,7 @@ class Config:
         return cls(
             secret_key=secret_key,
             environment=environment,
-            port=int(env.get("PORT", str(DEFAULT_PORT))),
+            port=_port_env(env.get("PORT")),
             log_level=env.get("LOG_LEVEL", DEFAULT_LOG_LEVEL),
             session_cookie_secure=_bool_env(
                 env.get("SESSION_COOKIE_SECURE"),

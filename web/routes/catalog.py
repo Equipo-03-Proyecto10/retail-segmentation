@@ -12,6 +12,8 @@ Gating (ADR-0010):
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from flask import Blueprint, Response, abort, render_template, request
 
 from web.db import get_connection
@@ -31,6 +33,7 @@ from web.db.stores import list_all_stores
 from web.middleware.authz import CATALOG_READ, SEGMENT_READ, requires
 from web.routes.pagination import redirect_last_page
 from web.services.catalog import parse_pagination
+from web.services.pagination import page_count
 
 bp = Blueprint("catalog", __name__, url_prefix="/catalog")
 
@@ -42,10 +45,6 @@ def _page_args() -> tuple[int, str | None, str]:
     page = parse_pagination(request.args.get("page"))
     search = request.args.get("q", "").strip() or None
     return page, search, search or ""
-
-
-def _total_pages(total: int) -> int:
-    return max(1, (total + _PER_PAGE - 1) // _PER_PAGE)
 
 
 @bp.get("/")
@@ -65,13 +64,13 @@ def products() -> str | Response:
     rows, total = list_products(
         get_connection(), search=search, page=page, per_page=_PER_PAGE
     )
-    if response := redirect_last_page(page, _total_pages(total)):
+    if response := redirect_last_page(page, page_count(total, _PER_PAGE)):
         return response
     return render_template(
         "catalog/products.html",
         products=rows,
         page=page,
-        total_pages=_total_pages(total),
+        total_pages=page_count(total, _PER_PAGE),
         total=total,
         search=search_value,
     )
@@ -101,13 +100,13 @@ def customers() -> str | Response:
     rows, total = list_customers(
         get_connection(), search=search, page=page, per_page=_PER_PAGE
     )
-    if response := redirect_last_page(page, _total_pages(total)):
+    if response := redirect_last_page(page, page_count(total, _PER_PAGE)):
         return response
     return render_template(
         "catalog/customers.html",
         customers=rows,
         page=page,
-        total_pages=_total_pages(total),
+        total_pages=page_count(total, _PER_PAGE),
         total=total,
         search=search_value,
     )
@@ -115,7 +114,7 @@ def customers() -> str | Response:
 
 @bp.get("/customers/<uuid:customer_id>")
 @requires(SEGMENT_READ)
-def customer_detail(customer_id) -> str:
+def customer_detail(customer_id: UUID) -> str:
     connection = get_connection()
     customer = get_customer(connection, customer_id)
     if customer is None:
@@ -156,7 +155,7 @@ def stock() -> str | Response:
         page=page,
         per_page=_PER_PAGE,
     )
-    if response := redirect_last_page(page, _total_pages(total)):
+    if response := redirect_last_page(page, page_count(total, _PER_PAGE)):
         return response
     return render_template(
         "catalog/stock.html",
@@ -165,7 +164,7 @@ def stock() -> str | Response:
         store_id=store_id,
         low_stock_threshold=LOW_STOCK_THRESHOLD,
         page=page,
-        total_pages=_total_pages(total),
+        total_pages=page_count(total, _PER_PAGE),
         total=total,
         search=search_value,
     )
@@ -181,13 +180,13 @@ def segments() -> str | Response:
     rows, total = list_segments(
         get_connection(), search=search, page=page, per_page=_PER_PAGE
     )
-    if response := redirect_last_page(page, _total_pages(total)):
+    if response := redirect_last_page(page, page_count(total, _PER_PAGE)):
         return response
     return render_template(
         "catalog/segments.html",
         segments=rows,
         page=page,
-        total_pages=_total_pages(total),
+        total_pages=page_count(total, _PER_PAGE),
         total=total,
         search=search_value,
     )
@@ -205,7 +204,7 @@ def segment_detail(segment_id: int) -> str | Response:
     members, total = list_customers_in_segment(
         connection, segment_id, page=page, per_page=_PER_PAGE
     )
-    if response := redirect_last_page(page, _total_pages(total)):
+    if response := redirect_last_page(page, page_count(total, _PER_PAGE)):
         return response
     return render_template(
         "catalog/segment_detail.html",
@@ -213,6 +212,6 @@ def segment_detail(segment_id: int) -> str | Response:
         rule=get_segment_rule(connection, segment.rule_id),
         members=members,
         page=page,
-        total_pages=_total_pages(total),
+        total_pages=page_count(total, _PER_PAGE),
         total=total,
     )

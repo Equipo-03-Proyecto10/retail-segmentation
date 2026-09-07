@@ -185,13 +185,16 @@ Demonstration accounts that can still sign in: 30
 ```
 
 **After.** The documented command was run on the instance, the password typed
-at its prompt and never passed as an argument:
+at its prompt and never passed as an argument. It was run twice: first onto
+`cloudcompute97@gmail.com`, then again onto the address the team settled on.
+The first account was deactivated through the application's own user management
+(F3-06), which is the only path that closes an account.
 
 ```
 $ flask --app web.app account-report
 
-32 accounts, 1 of them active.
-  ADMIN              cloudcompute97@gmail.com
+33 accounts, 1 of them active.
+  ADMIN              mosaiq-devs-supera@udem.edu
 Demonstration accounts that can still sign in: 0
 ```
 
@@ -205,17 +208,66 @@ This closes finding 01 of [`instance-findings-fixes.md`](instance-findings-fixes
 which recorded the published demonstration credentials as pending operator
 input.
 
-**One account is unaccounted for.** The total is 32 where 31 is expected — the
-thirty seeded rows plus the new administrator. `account-report` counts every
-row but prints only the active ones, so the extra is inactive and cannot sign
-in. It is most likely the administrator provisioned by #107 in `8bab1bf`,
-already inactive before this run. Worth confirming before the demonstration,
-but not a way in: an inactive account is refused at authentication.
+**The address is deliberately not the operator's.** `mosaiq-devs-supera@udem.edu`
+is a team address; the instance's SSH access is held by a personal Google
+account. Keeping them separate means compromising one does not reach the other.
+An earlier run of this procedure had used the SSH account itself, and was
+replaced for that reason.
 
-The administrator's address is `cloudcompute97@gmail.com`, which is also the
-account that holds SSH access to the instance. Compromising one reaches the
-other. The team chose it knowingly; it is recorded here because a reviewer
-reading only this file would not otherwise see the coupling.
+**The account total exceeds the seeded thirty by three**, one per account this
+procedure created plus one from #107 in `8bab1bf`. Only one is active.
+`account-report` counts every row but prints only the active ones, and
+`authenticate` refuses an inactive account, so the others are rows rather than
+ways in. `provision-administrator` never deletes: RN-01 forbids two
+administrators and forbids none, so a transfer moves the role and leaves the
+outgoing account holding the placeholder.
+
+## The segment assignments, restored
+
+The 2026-09-07 03:28:53 UTC segment run rewrote `current_segment_id` on all
+thirty customers, seventeen of them to `NULL`.
+[`instance-findings-fixes.md`](instance-findings-fixes.md) left the choice open:
+keep the computed assignments, or restore the audited previous values. The team
+chose to restore, and it was done on 2026-09-07 at 19:01:55 UTC.
+
+Every customer is back at the value `audit_log.data_before` recorded for that
+run:
+
+```
+$ psql -X -d retail
+
+ customers | with_segment
+-----------+--------------
+        30 |           30
+
+ still_differing_from_audited_previous
+---------------------------------------
+                                     0
+```
+
+**The restore is itself audited.** It went through the same triggers as any
+other write, so `audit_log` now holds two change events on `customer` rather
+than one:
+
+```
+       change_at        | rows
+------------------------+------
+ 2026-09-07 03:28:53+00 |   30   ← the segment run
+ 2026-09-07 19:01:55+00 |   30   ← the restore
+```
+
+Nothing was reverted in place and no history was rewritten, which is the
+property `audit_log` exists to provide. `user_id` is `NULL` on the restore's
+rows: `fn_audit` records a maintenance script's actor as genuinely unknown
+rather than attributing it to a person who did not perform it.
+
+This is also the clearest available argument for the segment-history module
+that [`../roadmap.md`](../roadmap.md) defers. Restoring was possible only
+because the audit trail kept the previous values; a second run before the
+restore would have overwritten them, and `customer.current_segment_id` would
+have lost the history for good. [ADR-0004](../adr/0004-model-ahead-of-the-deferred-segmentation-modules.md)
+ships that column as a known wrong shape on purpose, and this is what the
+consequence looks like in practice.
 
 ## Response headers, and the narrow CSP exception
 

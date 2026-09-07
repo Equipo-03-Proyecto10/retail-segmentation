@@ -123,10 +123,15 @@ gh api repos/Equipo-03-Proyecto10/retail-segmentation/branches/main/protection \
         if .required_pull_request_reviews.required_approving_review_count >= 1
         then "ok" else "FAIL" end'
 
-# The branches share a recent ancestor: main is contained in develop, or the
-# only commits on main that develop lacks are the current release.
+# No flattened copy on main: every commit main has that develop lacks is
+# itself a merge. A single-parent commit here is either a squashed release or
+# a hotfix that never came back -- both are how the branches drift apart.
 git fetch origin --quiet
-git merge-base --is-ancestor origin/main origin/develop && echo ok
+test -z "$(git rev-list --no-merges origin/develop..origin/main)" && echo ok
+
+# The merge base tracks the last release rather than standing still. Compare
+# it across two releases: if it has not moved, ancestry is being discarded.
+git log -1 --format='%h %ad' --date=short $(git merge-base origin/main origin/develop)
 
 # The release itself merges clean — no conflict, without resolving anything.
 git merge-tree --write-tree origin/main origin/develop >/dev/null && echo ok

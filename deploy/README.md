@@ -384,3 +384,46 @@ If `8080` is taken, set `MOSAIQ_PROXY_PORT` (e.g. `MOSAIQ_PROXY_PORT=8088
 docker compose -f compose.yaml -f compose.proxy.yaml up`).
 
 Plain `docker compose up` is unchanged — the app stays on `http://localhost:8000`.
+
+---
+
+## F6-04 — publish documentation and evidence (#80)
+
+The `location /docs/` block in `deploy/nginx/mosaiq.conf` serves a copy of
+this repository's `docs/` folder — including every screenshot and evidence
+file under `docs/evidence/` — as static files on the same host, so the
+delivery can be evaluated from one place.
+
+### Publish or refresh the copy
+
+Run after any change to `docs/`, from a checkout of this repo:
+
+```sh
+gcloud compute scp --recurse docs mosaiq-deployment-vm:/tmp/mosaiq-docs \
+  --project=iac-dev-01 --zone=northamerica-south1-a
+gcloud compute ssh mosaiq-deployment-vm --project=iac-dev-01 \
+  --zone=northamerica-south1-a --command="\
+    sudo rm -rf /opt/mosaiq/docs && \
+    sudo mv /tmp/mosaiq-docs /opt/mosaiq/docs && \
+    sudo chown -R mosaiq:mosaiq /opt/mosaiq/docs"
+```
+
+Then reload the already-updated NGINX config (see F6-01 step 3, then
+`sudo nginx -t && sudo systemctl reload nginx`).
+
+### Acceptance criteria (attach the output to #80)
+
+```sh
+curl -skI https://<host>/docs/                       # -> HTTP/2 200
+curl -skI https://<host>/docs/evidence/               # -> HTTP/2 200
+curl -sk https://<host>/docs/requirements.md | head -3 # readable text, not 404
+```
+
+Every link on the generated index page should resolve — `autoindex on`
+lists the folder itself, so this is really testing that the copy is
+complete and the permissions above were applied.
+
+### After it is applied
+
+Record in `docs/infra.md` under a new "Documentation" row: the URL,
+the date published, and the three checks above.

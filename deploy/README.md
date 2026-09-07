@@ -489,6 +489,29 @@ this repository's `docs/` folder — including every screenshot and evidence
 file under `docs/evidence/` — as static files on the same host, so the
 delivery can be evaluated from one place.
 
+Markdown is served as `text/plain; charset=utf-8` so a documentation link opens
+in the browser. NGINX's `mime.types` has no `.md` entry, so without this every
+one of them fell to `application/octet-stream` and downloaded a file the reader
+already had. It is `default_type` rather than a `types { … }` block on purpose:
+`types` inside a `location` **replaces** the inherited map, which would turn the
+stylesheets and the fifty screenshots under the same path into downloads.
+
+### Rendering
+
+Not done, and worth a decision. Served as `text/plain`, a document is readable
+but inert: the cross-references that make `docs/README.md` and
+`docs/evidence/README.md` useful — the phase grouping, the deliverable each
+evidence file satisfies — are text rather than links, and a reader navigates by
+editing the URL or by `autoindex`.
+
+Rendering to HTML at publish time would fix that, and would cost a Markdown
+processor on the instance or in the deploy, plus a decision about styling. The
+design system is already committed under `docs/design-system/` and is the
+obvious thing to render into.
+
+Nobody has asked for it and it changes the published artifact, so it is recorded
+here rather than done.
+
 ### Publish or refresh the copy
 
 Run after any change to `docs/`, from a checkout of this repo:

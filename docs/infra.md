@@ -227,7 +227,15 @@ are not reproducible from this repository, which is why they are recorded here:
 | Impersonation | `roles/iam.workloadIdentityUser` for `attribute.ref/refs/heads/main` only |
 | Instance-level roles | `roles/compute.osAdminLogin`, `roles/compute.viewer` — bound on `mosaiq-deployment-vm`, not on the project |
 | Project-level role | custom `mosaiqDeployProjectRead`, holding one permission (`compute.projects.get`) |
+| Service-account role | `roles/iam.serviceAccountUser` on `23051370455-compute@developer.gserviceaccount.com`, the service account the instance itself runs as |
 | Repository secrets used | none |
+
+`gcloud compute ssh` refuses with `PERMISSION_DENIED: User does not have
+iam.serviceAccounts.actAs permission on the instance's service account` unless
+that last role is granted. Reaching an instance means acting as the identity it
+runs as, so the caller needs `actAs` on it — a separate grant from the login
+roles, and easy to miss because the error names a permission nobody asked for.
+It is bound on that one service account, not on the project.
 
 Two layers restrict the deploy to `main`: the workflow trigger, and the IAM
 binding above. A `workflow_dispatch` from another branch fails at the

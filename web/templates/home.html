@@ -1,18 +1,40 @@
 {% extends "base.html" %}
 
+{% block title %}{{ status.name }} · Retail segmentation{% endblock %}
+
 {% block content %}
-  <h1>{{ status.name }}</h1>
-  <p class="lede">{{ status.tagline }}</p>
+  <section class="mq-landing">
+    <div>
+      <p class="mq-label mq-landing__eyebrow">Retail intelligence · Team 03</p>
+      <h1 class="mq-landing__title">Every customer is one tile.</h1>
+      <p class="mq-landing__lede">
+        {{ status.name }} gives retail teams one precise view of products,
+        customers, stock and current segment assignments.
+      </p>
+      <a class="mq-btn mq-btn--primary" href="{{ url_for('auth.login') }}">Sign in to MOSAIQ</a>
+    </div>
 
-  <p>
-    Sign in to browse products, customers, stock and segments. Administrators
-    can maintain catalogs and user accounts, and authorized users can review
-    the audit log.
-  </p>
-  <p><a href="{{ url_for('auth.login') }}">Sign in to MOSAIQ</a></p>
-
-  <dl class="facts">
-    <dt>Environment</dt>
-    <dd>{{ status.environment }}</dd>
-  </dl>
+    <aside class="mq-panel" aria-label="Application status">
+      <header class="mq-panel__header">
+        <h2 class="mq-panel__title">{{ status.tagline }}</h2>
+        <span class="mq-pill mq-pill--success"><span class="mq-pill__dot"></span>Available</span>
+      </header>
+      <div class="mq-panel__body">
+        <dl class="mq-status-list">
+          <div class="mq-status-list__row">
+            <dt class="mq-caption">Environment</dt>
+            <dd class="mq-mono">{{ status.environment }}</dd>
+          </div>
+          <div class="mq-status-list__row">
+            <dt class="mq-caption">Interface</dt>
+            <dd>Server-rendered HTML</dd>
+          </div>
+          <div class="mq-status-list__row">
+            <dt class="mq-caption">Access</dt>
+            <dd>Role-based</dd>
+          </div>
+        </dl>
+      </div>
+    </aside>
+  </section>
 {% endblock %}

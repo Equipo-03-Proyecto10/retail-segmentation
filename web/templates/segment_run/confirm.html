@@ -1,13 +1,25 @@
 {% extends "base.html" %}
+
 {% block title %}Confirm recalculation · {{ application_name }}{% endblock %}
+{% block topbar_title %}Confirm recalculation{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Analysis / Segment run / Confirm{% endblock %}
+
 {% block content %}
-  <h1>Confirm recalculation</h1>
-  <p>This will recalculate segment assignments for every customer using the last
-     <strong>{{ window }} days</strong> of sales. Existing assignments may be replaced
-     or cleared. The audit log will record each change.</p>
-  <form method="post" action="{{ url_for('segment_run.execute') }}">
-    <input type="hidden" name="window" value="{{ window }}">
-    <button type="submit" name="confirm" value="yes">Confirm recalculation</button>
-    <a href="{{ url_for('segment_run.index') }}">Cancel</a>
-  </form>
+  <section class="mq-panel mq-form-panel">
+    <header class="mq-panel__header"><h1 class="mq-panel__title">Confirm recalculation</h1></header>
+    <div class="mq-panel__body mq-stack">
+      <div class="mq-alert mq-alert--warning" role="alert">
+        <span class="mq-alert__icon" aria-hidden="true">!</span>
+        <div class="mq-stack">
+          <span class="mq-alert__title">Current assignments may change</span>
+          <span class="mq-alert__text">This recalculates every customer using the last <strong>{{ window }} days</strong> of sales. Existing assignments may be replaced or cleared, and the audit log records each change.</span>
+        </div>
+      </div>
+      <form class="mq-form__actions" method="post" action="{{ url_for('segment_run.execute') }}">
+        <input type="hidden" name="window" value="{{ window }}">
+        <button class="mq-btn mq-btn--primary" type="submit" name="confirm" value="yes">Confirm recalculation</button>
+        <a class="mq-btn mq-btn--secondary" href="{{ url_for('segment_run.index') }}">Cancel</a>
+      </form>
+    </div>
+  </section>
 {% endblock %}

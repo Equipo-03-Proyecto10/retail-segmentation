@@ -1,72 +1,61 @@
 {% extends "base.html" %}
 
 {% block title %}Stock · {{ application_name }}{% endblock %}
+{% block topbar_title %}Stock{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Catalogs / Stock{% endblock %}
 
 {% block content %}
-  <h1>Stock</h1>
-  <p class="lede">
-    Quantity on hand per store and product. Rows below
-    {{ low_stock_threshold }} units are flagged as low.
-  </p>
+  {% from "macros/ui.html" import empty_state, page_header, pagination, status_pill %}
+  {{ page_header("Stock", "Quantity on hand per store and product. Rows below {} units are flagged as low.".format(low_stock_threshold), "Inventory consultation") }}
 
-  <form class="filters" method="get" action="{{ url_for('catalog.stock') }}">
-    <div class="filters__field">
-      <label for="store">Store</label>
-      <select id="store" name="store">
-        <option value="">All stores</option>
-        {% for store in stores %}
-          <option value="{{ store.store_id }}"
-                  {{ 'selected' if store_id == store.store_id }}>
-            {{ store.name }}
-          </option>
-        {% endfor %}
-      </select>
+  <form class="mq-filterbar" method="get" action="{{ url_for('catalog.stock') }}">
+    <div class="mq-filterbar__row">
+      <div class="mq-filterbar__group">
+        <label class="mq-field__label" for="store">Store</label>
+        <select class="mq-select" id="store" name="store">
+          <option value="">All stores</option>
+          {% for store in stores %}<option value="{{ store.store_id }}" {{ 'selected' if store_id == store.store_id }}>{{ store.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="mq-filterbar__group mq-filterbar__group--search">
+        <label class="mq-field__label" for="q">Product</label>
+        <input class="mq-input" type="search" id="q" name="q" value="{{ search }}" placeholder="SKU or name">
+      </div>
+      <div class="mq-filterbar__actions">
+        <a class="mq-btn mq-btn--tertiary mq-btn--sm" href="{{ url_for('catalog.stock') }}">Clear</a>
+        <button class="mq-btn mq-btn--primary mq-btn--sm" type="submit">Filter</button>
+      </div>
     </div>
-    <div class="filters__field">
-      <label for="q">Product</label>
-      <input type="text" id="q" name="q" value="{{ search }}"
-             placeholder="SKU or name">
-    </div>
-    <button type="submit">Filter</button>
-    <a class="filters__reset" href="{{ url_for('catalog.stock') }}">Clear</a>
   </form>
 
   {% if rows %}
-    <div class="table-scroll">
-      <table class="listing">
-        <thead>
-          <tr>
-            <th scope="col">Store</th>
-            <th scope="col">SKU</th>
-            <th scope="col">Product</th>
-            <th scope="col">On hand</th>
-            <th scope="col">Updated</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in rows %}
-            <tr class="{{ 'low-stock' if row.is_low }}">
-              <td>{{ row.store_name }}</td>
-              <td><code>{{ row.sku }}</code></td>
-              <td>{{ row.product_name }}</td>
-              <td>{{ row.quantity_on_hand }}{% if row.is_low %} <span class="low-stock__tag">low</span>{% endif %}</td>
-              <td>{{ row.updated_at.strftime("%Y-%m-%d %H:%M") }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-
-    <nav class="pager" aria-label="Pages">
-      {% if page > 1 %}
-        <a href="{{ url_for('catalog.stock', page=page - 1, q=search, store=store_id) }}">Previous</a>
-      {% endif %}
-      <span>Page {{ page }} of {{ total_pages }} · {{ total }} rows</span>
-      {% if page < total_pages %}
-        <a href="{{ url_for('catalog.stock', page=page + 1, q=search, store=store_id) }}">Next</a>
-      {% endif %}
-    </nav>
+    <section class="mq-panel mq-panel--table mq-density-compact">
+      <div class="mq-table__toolbar"><span class="mq-table__count">{{ total }} stock rows</span><span class="mq-pill mq-pill--warning"><span class="mq-pill__dot"></span>Below {{ low_stock_threshold }} is low</span></div>
+      <div class="mq-table-wrap">
+        <table class="mq-table">
+          <thead><tr><th class="mq-table__cell--sticky" scope="col">Store</th><th scope="col">SKU</th><th scope="col">Product</th><th class="mq-table__cell--num" scope="col">On hand</th><th scope="col">Updated</th></tr></thead>
+          <tbody>
+            {% for row in rows %}
+              <tr class="{{ 'mq-table__row--warning' if row.is_low }}">
+                <td class="mq-table__cell--sticky">{{ row.store_name }}</td>
+                <td class="mq-mono">{{ row.sku }}</td>
+                <td>{{ row.product_name }}</td>
+                <td class="mq-table__cell--num">{{ row.quantity_on_hand }} {% if row.is_low %}{{ status_pill("Low", "warning") }}{% endif %}</td>
+                <td class="mq-mono">{{ row.updated_at.strftime("%Y-%m-%d %H:%M") }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {{ pagination(
+        page,
+        total_pages,
+        "Page {} of {} · {} rows".format(page, total_pages, total),
+        url_for('catalog.stock', page=page - 1, q=search, store=store_id) if page > 1 else none,
+        url_for('catalog.stock', page=page + 1, q=search, store=store_id) if page < total_pages else none
+      ) }}
+    </section>
   {% else %}
-    <p>No stock matches those filters.</p>
+    {{ empty_state("No stock matches those filters.", "Change the store or product filter to see inventory rows.") }}
   {% endif %}
 {% endblock %}

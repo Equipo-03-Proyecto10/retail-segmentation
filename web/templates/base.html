@@ -1,60 +1,127 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}{{ application_name }}{% endblock %}</title>
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/app.css') }}"
-    />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
   </head>
-  <body>
-    <header class="masthead">
-      <a class="masthead__brand" href="{{ url_for('home.index') }}">
-        {{ application_name }}
-      </a>
+  <body class="mq-app mq-density-compact">
+    {% if signed_in %}
+      <div class="mq-shell">
+        <nav class="mq-nav" id="primary-navigation" aria-label="Main navigation">
+          <div class="mq-nav__brand">
+            <a class="mq-nav__brand-link" href="{{ url_for('home.index') }}">
+              <span class="mq-nav__brand-mark" aria-hidden="true"></span>
+              <span class="mq-nav__wordmark">{{ application_name }}</span>
+            </a>
+            <button
+              class="mq-nav__toggle mq-icon-btn"
+              type="button"
+              aria-label="Collapse navigation"
+              aria-controls="primary-navigation"
+              aria-expanded="true"
+              data-mq-nav-toggle
+            >«</button>
+          </div>
 
-      {#
-        The menu is built from what the visitor may do, never from what they
-        are: `menu` is the permission-filtered navigation from
-        web/middleware/authz.py. Adding a role changes the matrix and the menu
-        follows; no template here names a role.
-      #}
-      <nav class="masthead__nav" aria-label="Sections">
-        {% for entry in menu %}
-          <a
-            class="masthead__link{% if entry.is_current %} masthead__link--current{% endif %}"
-            href="{{ url_for(entry.endpoint) }}"
-            {% if entry.is_current %}aria-current="page"{% endif %}
-          >
-            {{ entry.label }}
-          </a>
-        {% endfor %}
-      </nav>
+          <div class="mq-nav__sections">
+            {% for section_name in ("Workspace", "Analysis", "Governance") %}
+              {% set section_items = menu | selectattr("section", "equalto", section_name) | list %}
+              {% if section_items %}
+                <div class="mq-nav__section">
+                  <div class="mq-nav__section-label">{{ section_name }}</div>
+                  {% for entry in section_items %}
+                    <a
+                      class="mq-nav__item{% if entry.is_current %} mq-nav__item--active{% endif %}"
+                      href="{{ url_for(entry.endpoint) }}"
+                      {% if entry.is_current %}aria-current="page"{% endif %}
+                    >
+                      <span class="mq-nav__icon" aria-hidden="true">{{ entry.glyph }}</span>
+                      <span class="mq-nav__label">{{ entry.label }}</span>
+                    </a>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            {% endfor %}
+          </div>
 
-      <div class="masthead__session">
-        {% if signed_in %}
-          <span class="masthead__user">{{ current_user_name }}</span>
-          <form method="post" action="{{ url_for('auth.logout') }}">
-            <button class="masthead__signout" type="submit">Sign out</button>
-          </form>
-        {% else %}
-          <a class="masthead__link" href="{{ url_for('auth.login') }}">Sign in</a>
-        {% endif %}
+          <div class="mq-nav__footer">
+            <div class="mq-nav__identity">
+              <span class="mq-nav__user">{{ current_user_name }}</span>
+              <span class="mq-caption mq-mono">{{ current_user_role }}</span>
+            </div>
+            <form method="post" action="{{ url_for('auth.logout') }}">
+              <button class="mq-btn mq-btn--tertiary mq-btn--sm mq-nav__signout" type="submit">
+                <span aria-hidden="true">↪</span>
+                <span class="mq-nav__signout-label">Sign out</span>
+              </button>
+            </form>
+          </div>
+        </nav>
+
+        <div class="mq-main">
+          <header class="mq-topbar">
+            <span class="mq-topbar__title">{% block topbar_title %}Workspace{% endblock %}</span>
+            <span class="mq-topbar__crumbs">{% block breadcrumbs %}{{ application_name }} / Workspace{% endblock %}</span>
+            <div class="mq-topbar__actions">
+              {% block topbar_actions %}{% endblock %}
+              <div class="mq-themeswitch" role="group" aria-label="Interface theme">
+                <button class="mq-themeswitch__btn" type="button" data-mq-theme-value="light">Light</button>
+                <button class="mq-themeswitch__btn" type="button" data-mq-theme-value="dark">Dark</button>
+              </div>
+            </div>
+          </header>
+
+          <main class="mq-content" id="main-content">
+            {% for category, message in get_flashed_messages(with_categories=true) %}
+              {% set tone = category if category in ("success", "warning", "danger", "info") else "info" %}
+              <div class="mq-alert mq-alert--{{ tone }}" role="status">
+                <span class="mq-alert__icon" aria-hidden="true">{{ "×" if tone == "danger" else "i" }}</span>
+                <div class="mq-stack">
+                  <span class="mq-alert__title">{{ message }}</span>
+                </div>
+              </div>
+            {% endfor %}
+            {% block content %}{% endblock %}
+          </main>
+        </div>
       </div>
-    </header>
-
-    <main class="page">
-      {% for message in get_flashed_messages() %}
-        <p class="notice" role="status">{{ message }}</p>
-      {% endfor %}
-      {% block content %}{% endblock %}
-    </main>
-
-    <footer class="colophon">
-      <p>{{ application_name }} · Team 03</p>
-    </footer>
+    {% else %}
+      <div class="mq-public-shell">
+        <header class="mq-public-header">
+          <a class="mq-public-header__brand" href="{{ url_for('home.index') }}">
+            <span class="mq-public-header__mark" aria-hidden="true">
+              <span></span><span></span><span></span><span></span>
+            </span>
+            {{ application_name }}
+          </a>
+          <nav class="mq-public-nav" aria-label="Main navigation">
+            <a href="{{ url_for('home.index') }}">Home</a>
+            <a class="mq-btn mq-btn--primary mq-btn--sm" href="{{ url_for('auth.login') }}">Sign in</a>
+            <div class="mq-themeswitch" role="group" aria-label="Interface theme">
+              <button class="mq-themeswitch__btn" type="button" data-mq-theme-value="light">Light</button>
+              <button class="mq-themeswitch__btn" type="button" data-mq-theme-value="dark">Dark</button>
+            </div>
+          </nav>
+        </header>
+        <main class="mq-public-content" id="main-content">
+          {% for category, message in get_flashed_messages(with_categories=true) %}
+            {% set tone = category if category in ("success", "warning", "danger", "info") else "info" %}
+            <div class="mq-alert mq-alert--{{ tone }}" role="status">
+              <span class="mq-alert__icon" aria-hidden="true">i</span>
+              <span class="mq-alert__title">{{ message }}</span>
+            </div>
+          {% endfor %}
+          {{ self.content() }}
+        </main>
+        <footer class="mq-public-footer">
+          <span>{{ application_name }} · Team 03</span>
+          <span>Retail segmentation platform</span>
+        </footer>
+      </div>
+    {% endif %}
   </body>
 </html>

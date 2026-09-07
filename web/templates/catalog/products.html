@@ -1,65 +1,58 @@
 {% extends "base.html" %}
 
 {% block title %}Products · {{ application_name }}{% endblock %}
+{% block topbar_title %}Products{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Catalogs / Products{% endblock %}
 
 {% block content %}
-  <h1>Products</h1>
-  <p class="lede">Search the catalog by SKU or name, then open a product.</p>
+  {% from "macros/ui.html" import empty_state, page_header, pagination, status_pill %}
+  {{ page_header("Products", "Search the catalog by SKU or name, then open a product.", "Catalog consultation") }}
 
-  <form class="filters" method="get" action="{{ url_for('catalog.products') }}">
-    <div class="filters__field">
-      <label for="q">Search</label>
-      <input type="text" id="q" name="q" value="{{ search }}"
-             placeholder="SKU or name">
+  <form class="mq-filterbar" method="get" action="{{ url_for('catalog.products') }}">
+    <div class="mq-filterbar__row">
+      <div class="mq-filterbar__group mq-filterbar__group--search">
+        <label class="mq-field__label" for="q">Search</label>
+        <input class="mq-input" type="search" id="q" name="q" value="{{ search }}" placeholder="SKU or name">
+      </div>
+      <div class="mq-filterbar__actions">
+        {% if search %}<a class="mq-btn mq-btn--tertiary mq-btn--sm" href="{{ url_for('catalog.products') }}">Clear</a>{% endif %}
+        <button class="mq-btn mq-btn--primary mq-btn--sm" type="submit">Search</button>
+      </div>
     </div>
-    <button type="submit">Search</button>
-    {% if search %}
-      <a class="filters__reset" href="{{ url_for('catalog.products') }}">Clear</a>
-    {% endif %}
   </form>
 
   {% if products %}
-    <div class="table-scroll">
-      <table class="listing">
-        <thead>
-          <tr>
-            <th scope="col">ID</th>
-            <th scope="col">SKU</th>
-            <th scope="col">Name</th>
-            <th scope="col">Category</th>
-            <th scope="col">Price</th>
-            <th scope="col">Active</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for product in products %}
-            <tr>
-              <td>{{ product.product_id }}</td>
-              <td><code>{{ product.sku }}</code></td>
-              <td>
-                <a href="{{ url_for('catalog.product_detail', product_id=product.product_id) }}">
-                  {{ product.name }}
-                </a>
-              </td>
-              <td>{{ product.category_name }}</td>
-              <td>{{ product.list_price }}</td>
-              <td>{{ "Yes" if product.is_active else "No" }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-
-    <nav class="pager" aria-label="Pages">
-      {% if page > 1 %}
-        <a href="{{ url_for('catalog.products', page=page - 1, q=search) }}">Previous</a>
-      {% endif %}
-      <span>Page {{ page }} of {{ total_pages }} · {{ total }} products</span>
-      {% if page < total_pages %}
-        <a href="{{ url_for('catalog.products', page=page + 1, q=search) }}">Next</a>
-      {% endif %}
-    </nav>
+    <section class="mq-panel mq-panel--table mq-density-compact">
+      <div class="mq-table__toolbar"><span class="mq-table__count">{{ total }} products</span><span class="mq-caption">Read only</span></div>
+      <div class="mq-table-wrap">
+        <table class="mq-table">
+          <thead><tr><th scope="col">ID</th><th scope="col">SKU</th><th scope="col">Name</th><th scope="col">Category</th><th class="mq-table__cell--num" scope="col">Price MXN</th><th scope="col">Status</th></tr></thead>
+          <tbody>
+            {% for product in products %}
+              <tr>
+                <td class="mq-mono">{{ product.product_id }}</td>
+                <td class="mq-mono">{{ product.sku }}</td>
+                <td><a class="mq-table__link" href="{{ url_for('catalog.product_detail', product_id=product.product_id) }}">{{ product.name }}</a></td>
+                <td>{{ product.category_name }}</td>
+                <td class="mq-table__cell--num">{{ product.list_price }}</td>
+                <td>{{ status_pill("Active" if product.is_active else "Inactive", "success" if product.is_active else "neutral") }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {{ pagination(
+        page,
+        total_pages,
+        "Page {} of {} · {} products".format(page, total_pages, total),
+        url_for('catalog.products', page=page - 1, q=search) if page > 1 else none,
+        url_for('catalog.products', page=page + 1, q=search) if page < total_pages else none
+      ) }}
+    </section>
   {% else %}
-    <p>{{ "No products match that search." if search else "No products are available." }}</p>
+    {{ empty_state(
+      "No products match that search." if search else "No products are available.",
+      "Change or clear the search to see the catalog." if search else "Products will appear here after an administrator creates them."
+    ) }}
   {% endif %}
 {% endblock %}

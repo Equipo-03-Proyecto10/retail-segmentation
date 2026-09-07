@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page_title }} · {{ application_name }}{% endblock %}
+{% block topbar_title %}{{ page_title }}{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / {{ page_title }}{% endblock %}
+
+{% block content %}
+  {% from "macros/ui.html" import page_header %}
+  {{ page_header(page_title, description, "Planned module") }}
+
+  <section class="mq-panel mq-empty-panel">
+    <div class="mq-state">
+      <span class="mq-state__mark">Still building</span>
+      <span class="mq-state__title">This destination is available, but its workflow is not implemented yet</span>
+      <span class="mq-state__text">{{ scope_note }}</span>
+      <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('home.index') }}">Return home</a>
+    </div>
+  </section>
+{% endblock %}

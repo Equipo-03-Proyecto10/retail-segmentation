@@ -1,38 +1,18 @@
 {% extends "base.html" %}
 
 {% block title %}New user · {{ application_name }}{% endblock %}
+{% block topbar_title %}New user{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Users / New user{% endblock %}
 
 {% block content %}
-<div class="admin-page">
-  <h1>New user</h1>
-
-  <form method="post">
-    <label for="name">Name</label>
-    <input type="text" id="name" name="name" value="{{ user.name if user else '' }}" required>
-    {% if errors.name %}<p class="error">{{ errors.name }}</p>{% endif %}
-
-    <label for="email">Email</label>
-    <input type="email" id="email" name="email" value="{{ user.email if user else '' }}" required>
-    {% if errors.email %}<p class="error">{{ errors.email }}</p>{% endif %}
-
-    <label for="password">Password</label>
-    <input type="password" id="password" name="password" minlength="{{ minimum_password_length }}" required>
-    <p class="hint">At least {{ minimum_password_length }} characters.</p>
-    {% if errors.password %}<p class="error">{{ errors.password }}</p>{% endif %}
-
-    <label for="role_code">Role</label>
-    <select id="role_code" name="role_code" required>
-      <option value="">— Select —</option>
-      {% for code, description in roles %}
-      <option value="{{ code }}" {% if user and user.role_code == code %}selected{% endif %}>
-        {{ code }}{% if description %} — {{ description }}{% endif %}
-      </option>
-      {% endfor %}
-    </select>
-    {% if errors.role_code %}<p class="error">{{ errors.role_code }}</p>{% endif %}
-
-    <button type="submit">Save</button>
-    <a href="{{ url_for('admin.list_users_view') }}">Cancel</a>
-  </form>
-</div>
+  {% from "macros/ui.html" import page_header %}
+  {{ page_header("New user", "Create an account and assign one reviewed role.", "Administration") }}
+  <section class="mq-panel mq-form-panel"><header class="mq-panel__header"><h2 class="mq-panel__title">Account details</h2><span class="mq-caption">Exactly one administrator</span></header><div class="mq-panel__body">
+    <form class="mq-form" method="post"><div class="mq-form__grid">
+      <div class="mq-field"><label class="mq-field__label mq-field__label--required" for="name">Name</label><input class="mq-input{% if errors.name %} mq-input--error{% endif %}" type="text" id="name" name="name" value="{{ user.name if user else '' }}" required autocomplete="name">{% if errors.name %}<span class="mq-field__error">{{ errors.name }}</span>{% endif %}</div>
+      <div class="mq-field"><label class="mq-field__label mq-field__label--required" for="email">Email</label><input class="mq-input{% if errors.email %} mq-input--error{% endif %}" type="email" id="email" name="email" value="{{ user.email if user else '' }}" required autocomplete="email">{% if errors.email %}<span class="mq-field__error">{{ errors.email }}</span>{% endif %}</div>
+      <div class="mq-field"><label class="mq-field__label mq-field__label--required" for="password">Password</label><input class="mq-input{% if errors.password %} mq-input--error{% endif %}" type="password" id="password" name="password" minlength="{{ minimum_password_length }}" required autocomplete="new-password"><span class="mq-field__hint">At least {{ minimum_password_length }} characters.</span>{% if errors.password %}<span class="mq-field__error">{{ errors.password }}</span>{% endif %}</div>
+      <div class="mq-field"><label class="mq-field__label mq-field__label--required" for="role_code">Role</label><select class="mq-select{% if errors.role_code %} mq-select--error{% endif %}" id="role_code" name="role_code" required><option value="">Select a role</option>{% for code, description in roles %}<option value="{{ code }}" {% if user and user.role_code == code %}selected{% endif %}>{{ code }}{% if description %} — {{ description }}{% endif %}</option>{% endfor %}</select>{% if errors.role_code %}<span class="mq-field__error">{{ errors.role_code }}</span>{% endif %}</div>
+    </div><div class="mq-form__actions"><button class="mq-btn mq-btn--primary" type="submit">Save</button><a class="mq-btn mq-btn--secondary" href="{{ url_for('admin.list_users_view') }}">Cancel</a></div></form>
+  </div></section>
 {% endblock %}

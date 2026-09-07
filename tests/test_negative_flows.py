@@ -36,6 +36,8 @@ READ_ROUTES = [
     "/catalog/stock",
     "/catalog/segments",
     "/catalog/segments/1",
+    "/campaigns/",
+    "/reports/",
 ]
 ADMIN_ROUTES = [
     (method, f"/admin/{catalog}/{suffix}")
@@ -386,7 +388,7 @@ def test_duplicate_catalog_creation_preserves_a_usable_new_form(
     sign_in(client)
     response = client.post(f"/admin/{catalog}/new", data=data)
     assert_page(response, 409, "already exists")
-    assert f"<h1>New {singular}</h1>".encode() in response.data
+    assert f"New {singular}</h1>".encode() in response.data
     assert f'name="{singular}_id"'.encode() in response.data
     connection.rollback.assert_called_once()
     connection.commit.assert_not_called()

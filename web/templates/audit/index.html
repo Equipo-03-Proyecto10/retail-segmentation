@@ -1,96 +1,41 @@
 {% extends "base.html" %}
 
 {% block title %}Audit log · {{ application_name }}{% endblock %}
+{% block topbar_title %}Audit log{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Governance / Audit log{% endblock %}
 
 {% block content %}
-  <h1>Audit log</h1>
-  <p class="lede">
-    Every change to a catalog or a business rule, newest first. The log is
-    append-only: nothing here edits or removes an entry.
-  </p>
+  {% from "macros/ui.html" import alert, empty_state, page_header, pagination, status_pill %}
+  {{ page_header("Audit log", "Every catalog and business-rule change, newest first. Entries are append-only.", "Governance") }}
 
-  {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
-  <form class="filters" method="get" action="{{ url_for('audit.index') }}">
-    <div class="filters__field">
-      <label for="entity">Entity</label>
-      <select id="entity" name="entity">
-        <option value="">All</option>
-        {% for option in page.entities %}
-          <option value="{{ option }}" {{ 'selected' if option == entity }}>
-            {{ option }}
-          </option>
-        {% endfor %}
-      </select>
+  {% if error %}{{ alert(error) }}{% endif %}
+  <form class="mq-filterbar" method="get" action="{{ url_for('audit.index') }}">
+    <div class="mq-filterbar__row">
+      <div class="mq-filterbar__group"><label class="mq-field__label" for="entity">Entity</label><select class="mq-select" id="entity" name="entity"><option value="">All entities</option>{% for option in page.entities %}<option value="{{ option }}" {{ 'selected' if option == entity }}>{{ option }}</option>{% endfor %}</select></div>
+      <div class="mq-bitemporal">
+        <div class="mq-bitemporal__axis"><label class="mq-bitemporal__axis-label" for="from">Recorded from</label><input class="mq-input" type="date" id="from" name="from" value="{{ date_from }}"></div>
+        <span class="mq-bitemporal__rule" aria-hidden="true"></span>
+        <div class="mq-bitemporal__axis"><label class="mq-bitemporal__axis-label" for="to">Recorded to</label><input class="mq-input" type="date" id="to" name="to" value="{{ date_to }}"></div>
+      </div>
+      <div class="mq-filterbar__actions"><a class="mq-btn mq-btn--tertiary mq-btn--sm" href="{{ url_for('audit.index') }}">Clear</a><button class="mq-btn mq-btn--primary mq-btn--sm" type="submit">Filter</button></div>
     </div>
-
-    <div class="filters__field">
-      <label for="from">From</label>
-      <input type="date" id="from" name="from" value="{{ date_from }}">
-    </div>
-
-    <div class="filters__field">
-      <label for="to">To</label>
-      <input type="date" id="to" name="to" value="{{ date_to }}">
-    </div>
-
-    <button type="submit">Filter</button>
-    <a class="filters__reset" href="{{ url_for('audit.index') }}">Clear</a>
   </form>
 
   {% if page.entries %}
-    <div class="table-scroll">
-      <table class="listing">
-        <thead>
-          <tr>
-            <th scope="col">When</th>
-            <th scope="col">Entity</th>
-            <th scope="col">Key</th>
-            <th scope="col">Action</th>
-            <th scope="col">By</th>
-            <th scope="col"><span class="visually-hidden">Entry</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for entry in page.entries %}
-            <tr>
-              <td>{{ entry.executed_at.strftime("%Y-%m-%d %H:%M") }}</td>
-              <td>{{ entry.entity }}</td>
-              <td><code>{{ entry.entity_pk }}</code></td>
-              <td>{{ entry.action }}</td>
-              {# NULL is the honest answer for everything the seed and any
-                 maintenance script did, and is shown as such. #}
-              <td>
-                {% if entry.actor_name %}
-                  {{ entry.actor_name }}
-                {% else %}
-                  <span class="unattributed">unattributed</span>
-                {% endif %}
-              </td>
-              <td>
-                <a href="{{ url_for('audit.detail', audit_id=entry.audit_id) }}">
-                  Open
-                </a>
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-
-    <nav class="pager" aria-label="Pages">
-      {% if page.has_previous %}
-        <a href="{{ url_for('audit.index', entity=entity, from=date_from, to=date_to, page=page.page - 1) }}">
-          Previous
-        </a>
-      {% endif %}
-      <span>Page {{ page.page }} of {{ page.page_count }} · {{ page.total }} entries</span>
-      {% if page.has_next %}
-        <a href="{{ url_for('audit.index', entity=entity, from=date_from, to=date_to, page=page.page + 1) }}">
-          Next
-        </a>
-      {% endif %}
-    </nav>
+    <section class="mq-panel mq-panel--table mq-density-compact">
+      <div class="mq-table__toolbar"><span class="mq-table__count">{{ page.total }} entries</span><span class="mq-pill mq-pill--neutral"><span class="mq-pill__dot"></span>Append-only</span></div>
+      <div class="mq-table-wrap"><table class="mq-table"><thead><tr><th class="mq-table__cell--sticky" scope="col">When</th><th scope="col">Entity</th><th scope="col">Key</th><th scope="col">Action</th><th scope="col">By</th><th scope="col"><span class="mq-visually-hidden">Entry</span></th></tr></thead><tbody>
+        {% for entry in page.entries %}<tr><td class="mq-table__cell--sticky mq-mono">{{ entry.executed_at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ entry.entity }}</td><td class="mq-mono">{{ entry.entity_pk }}</td><td>{{ status_pill(entry.action, "info") }}</td><td>{% if entry.actor_name %}{{ entry.actor_name }}{% else %}<span class="mq-unattributed">unattributed</span>{% endif %}</td><td><a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('audit.detail', audit_id=entry.audit_id) }}">Open</a></td></tr>{% endfor %}
+      </tbody></table></div>
+      {{ pagination(
+        page.page,
+        page.page_count,
+        "Page {} of {} · {} entries".format(page.page, page.page_count, page.total),
+        url_for('audit.index', entity=entity, from=date_from, to=date_to, page=page.page - 1) if page.has_previous else none,
+        url_for('audit.index', entity=entity, from=date_from, to=date_to, page=page.page + 1) if page.has_next else none
+      ) }}
+    </section>
   {% elif not error %}
-    <p>No entries match those filters.</p>
+    {{ empty_state("No entries match those filters", "Widen the recorded-time range, choose another entity or clear the filters.") }}
   {% endif %}
 {% endblock %}

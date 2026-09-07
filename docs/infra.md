@@ -225,10 +225,17 @@ are not reproducible from this repository, which is why they are recorded here:
 | Attribute mapping | `google.subject=assertion.sub`, `attribute.repository=assertion.repository`, `attribute.ref=assertion.ref` |
 | Provider condition | `assertion.repository == 'Equipo-03-Proyecto10/retail-segmentation'` |
 | Impersonation | `roles/iam.workloadIdentityUser` for `attribute.ref/refs/heads/main` only |
-| Instance-level roles | `roles/compute.osAdminLogin`, `roles/compute.viewer` — bound on `mosaiq-deployment-vm`, not on the project |
-| Project-level role | custom `mosaiqDeployProjectRead`, holding one permission (`compute.projects.get`) |
+| Instance-level role | `roles/compute.viewer`, bound on `mosaiq-deployment-vm` rather than the project |
+| Project-level roles | `roles/compute.osAdminLogin`, and custom `mosaiqDeployProjectRead` holding one permission (`compute.projects.get`) |
 | Service-account role | `roles/iam.serviceAccountUser` on `23051370455-compute@developer.gserviceaccount.com`, the service account the instance itself runs as |
 | Repository secrets used | none |
+
+The OS Login role is granted on the project, not the instance, and that is
+deliberate rather than sloppy. Bound only on the instance, OS Login created the
+service account's login profile but served no keys for it: the POSIX user
+resolved through NSS while `google_authorized_keys` returned nothing, which
+reaches the runner as an unexplained `Permission denied (publickey)`. The
+project holds one VM, so the practical scope is the same.
 
 `gcloud compute ssh` refuses with `PERMISSION_DENIED: User does not have
 iam.serviceAccounts.actAs permission on the instance's service account` unless

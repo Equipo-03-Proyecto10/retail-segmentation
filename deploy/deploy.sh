@@ -27,6 +27,16 @@ SERVICE=mosaiq
 HEALTH_URL=${HEALTH_URL:-https://127.0.0.1/}
 HEALTH_ATTEMPTS=${HEALTH_ATTEMPTS:-10}
 
+# This script does NOT install the NGINX config — that stays a manual step
+# (deploy/README.md, F6-01 step 3). Nothing used to report when the two fell out
+# of step, so a merged change to HSTS, the CSP, the real-IP trust list or
+# server_name could sit in the repository while the instance served the previous
+# file, with nothing visibly broken. It is reported here on every run. #169.
+NGINX_CONF_DIR=${NGINX_CONF_DIR:-/etc/nginx/conf.d}
+# Only the files that reach the instance: mosaiq.compose.conf is for local
+# verification against compose and is never installed.
+NGINX_CONFS=(mosaiq.conf cloudflare-real-ip.conf)
+
 target=${1:-}
 dry_run=${2:-}
 if [[ -z $target ]]; then
@@ -54,6 +64,60 @@ health_check() {
     return 1
 }
 
+# Report where the live proxy config differs from the commit being served, and
+# change nothing. Always returns 0: a proxy file this script is not allowed to
+# touch is not a reason to roll back an application deploy that is healthy.
+nginx_drift_check() {
+    local name repo live
+    local -a drifted=()
+
+    if [[ ! -d $NGINX_CONF_DIR ]]; then
+        echo "no $NGINX_CONF_DIR on this host — skipping the drift check"
+        return 0
+    fi
+
+    for name in "${NGINX_CONFS[@]}"; do
+        repo="$REPO_DIR/deploy/nginx/$name"
+        live="$NGINX_CONF_DIR/$name"
+        # A file the target commit does not carry yet is not drift.
+        [[ -f $repo ]] || continue
+        if [[ ! -f $live ]] || ! cmp -s "$repo" "$live"; then
+            drifted+=("$name")
+        fi
+    done
+
+    if [[ ${#drifted[@]} -eq 0 ]]; then
+        echo "matches the deployed commit"
+        return 0
+    fi
+
+    local rule="====================================================================="
+    printf '\n'
+    printf '!!! %s\n' "$rule" \
+        "NGINX CONFIG DRIFT — the live proxy does not match this commit" "$rule"
+
+    for name in "${drifted[@]}"; do
+        repo="$REPO_DIR/deploy/nginx/$name"
+        live="$NGINX_CONF_DIR/$name"
+        if [[ ! -f $live ]]; then
+            printf '!!! %s: in the repository, not installed\n' "$name"
+            continue
+        fi
+        printf '!!! %s: the installed copy differs — installed vs repository:\n' "$name"
+        diff -u "$live" "$repo" | head -40 | sed 's/^/!!!   /' || true
+    done
+
+    printf '!!!\n'
+    printf '!!! %s\n' "Nothing above was changed. To apply it on the instance:"
+    for name in "${drifted[@]}"; do
+        printf '!!!   sudo cp %s %s\n' "$REPO_DIR/deploy/nginx/$name" "$NGINX_CONF_DIR/$name"
+    done
+    printf '!!!   %s\n' "sudo nginx -t && sudo systemctl reload nginx"
+    printf '!!! %s\n' "Keeping this manual is deliberate — deploy/README.md, F6-06." "$rule"
+    printf '\n'
+    return 0
+}
+
 say "Deploy requested: $target"
 as_app git -C "$REPO_DIR" fetch --quiet --prune origin
 
@@ -71,12 +135,16 @@ if [[ $dry_run == --dry-run ]]; then
     as_app git -C "$REPO_DIR" --no-pager log --oneline "${previous}..${target}" 2>/dev/null \
         | head -20 || true
     health_check
+    say "NGINX config"
+    nginx_drift_check
     exit 0
 fi
 
 if [[ $previous == "$(as_app git -C "$REPO_DIR" rev-parse "$target")" ]]; then
     say "Already serving that commit — verifying health and stopping"
     health_check
+    say "NGINX config"
+    nginx_drift_check
     exit 0
 fi
 
@@ -115,3 +183,6 @@ health_check
 trap - ERR
 say "Deployed $(as_app git -C "$REPO_DIR" rev-parse --short HEAD)"
 systemctl --no-pager --lines=0 status "$SERVICE" | head -3
+
+say "NGINX config"
+nginx_drift_check

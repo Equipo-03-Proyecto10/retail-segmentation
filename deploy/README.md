@@ -310,10 +310,43 @@ token per run and GCP exchanges it for temporary credentials — then copies
 4. Health-check `https://127.0.0.1/` through NGINX, up to ten times.
 5. **On any failure in 3–4**, check the previous commit back out, reinstall its
    requirements, restart, and health-check again.
+6. Compare the installed `/etc/nginx/conf.d/{mosaiq,cloudflare-real-ip}.conf`
+   against the commit now serving and print any difference. It reports; it
+   never copies. Same on `--dry-run`, and when the target is already serving.
 
 It never runs SQL. The three scripts in `sql/` build a database from empty and
 are not migrations, so a release needing a schema change needs a person —
 ADR-0011 records this as a deliberate gap.
+
+### The NGINX config is applied by hand, on purpose
+
+The deploy does not install `deploy/nginx/*.conf`. It runs under `sudo` and
+could, but two things argue against it:
+
+- The health check cannot tell a good proxy config from a bad one. It asks
+  `https://127.0.0.1/` with `-k`, and our `:443` block is `default_server`, so a
+  wrong `server_name`, a missing `real_ip` include or a downgraded HSTS all
+  still answer `200`. An automatic copy would hand the rollback trap a failure
+  mode it is blind to, and would reconfigure TLS and edge trust as a side effect
+  of shipping application code.
+- Config is sometimes applied to the instance *ahead* of the repository, which
+  is how F6-03 Path C was brought up (#168). A copy on every deploy would
+  silently revert that.
+
+So the copy stays a deliberate step, and the deploy's job is to say when it is
+overdue — the gap #169 reported. **After merging anything that touches
+`deploy/nginx/*.conf`**, on the instance:
+
+```sh
+sudo cp /opt/mosaiq/current/deploy/nginx/mosaiq.conf             /etc/nginx/conf.d/mosaiq.conf
+sudo cp /opt/mosaiq/current/deploy/nginx/cloudflare-real-ip.conf /etc/nginx/conf.d/cloudflare-real-ip.conf
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+A run that finds them in step prints `matches the deployed commit`. One that
+does not prints a `!!!` banner with the diff and the exact `cp` commands, and
+still exits `0` — the application deploy is sound either way. To see the state
+without deploying anything, run the script with `--dry-run` as below.
 
 ### Running it by hand
 

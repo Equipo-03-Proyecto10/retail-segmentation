@@ -1,0 +1,80 @@
+# Continuous deployment to the assigned host. F6-06 (#90), ADR-0010.
+#
+# One environment: this workflow is the only thing that deploys, main is the
+# only branch it deploys from, and develop never deploys. Authentication is
+# Workload Identity Federation — GitHub mints a short-lived OIDC token per run
+# and GCP exchanges it for temporary credentials, so no long-lived key is
+# stored anywhere in this repository or its settings.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  # Lets a person re-run a deploy, or check the chain without changing what is
+  # serving. Impersonation is restricted to refs/heads/main in GCP, so a
+  # dispatch from another branch fails at the authentication step by design.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Report what would change without touching the instance"
+        type: boolean
+        default: true
+
+# id-token is what lets the runner request the OIDC token; contents stays read.
+permissions:
+  contents: read
+  id-token: write
+
+# One deploy at a time. Queued rather than cancelled: cancelling mid-deploy is
+# how a half-applied checkout gets left on the instance.
+concurrency:
+  group: deploy-instance
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT: iac-dev-01
+  GCP_ZONE: northamerica-south1-a
+  INSTANCE: mosaiq-deployment-vm
+
+jobs:
+  deploy:
+    name: Deploy to the instance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/23051370455/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: mosaiq-deploy@iac-dev-01.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      # The script is copied out of this checkout and run from /tmp rather than
+      # from /opt/mosaiq/current: it rewrites that checkout, and bash reads a
+      # script incrementally.
+      - name: Copy the deploy script to the instance
+        run: |
+          gcloud compute scp deploy/deploy.sh \
+            "$INSTANCE:/tmp/mosaiq-deploy.sh" \
+            --project="$GCP_PROJECT" --zone="$GCP_ZONE" --quiet
+
+      - name: Deploy
+        env:
+          # Through the environment, not string-interpolated into the command.
+          TARGET_SHA: ${{ github.sha }}
+          DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: |
+          gcloud compute ssh "$INSTANCE" \
+            --project="$GCP_PROJECT" --zone="$GCP_ZONE" --quiet \
+            --command="sudo bash /tmp/mosaiq-deploy.sh '$TARGET_SHA' $DRY_RUN"
+
+      - name: Report what is now serving
+        if: always()
+        run: |
+          gcloud compute ssh "$INSTANCE" \
+            --project="$GCP_PROJECT" --zone="$GCP_ZONE" --quiet \
+            --command="sudo -u mosaiq git -C /opt/mosaiq/current rev-parse HEAD; \
+                       systemctl is-active mosaiq; \
+                       curl -sk -o /dev/null -w 'https %{http_code}\n' https://127.0.0.1/"

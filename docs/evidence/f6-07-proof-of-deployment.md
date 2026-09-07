@@ -5,9 +5,11 @@ the published host `mosaiq.maxthecoder.online`, which
 [ADR-0013](../adr/0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md)
 records as the delivery's URL.
 
-**This document is partial.** One of the five acceptance criteria on #109 is
-not captured here: container execution, which is a swap rather than an addition
-and still has a question to settle first. They are named at the bottom
+All five acceptance criteria on #109 are recorded here. Four were captured
+against the instance and the published host; container execution was captured
+on a developer machine, which
+[ADR-0015](../adr/0015-containers-are-a-development-path-only.md) settles as the
+right place for it. They are named at the bottom
 with the commands that produce them, so whoever has the shell can paste the
 output without re-deriving what to run. Deliverable 13 is not complete until
 they are.
@@ -299,28 +301,88 @@ $ curl -sS -o /dev/null -w "%{http_code} %{content_type}\n" https://mosaiq.maxth
 200 text/html
 ```
 
-## Not evidenced here
+## AC 4 — Docker Compose serves the same application
 
-One acceptance criterion on #109 is left. It has not been run, and no output
-for it is claimed.
+Captured on 2026-09-07 on a developer machine, which is where
+[ADR-0015](../adr/0015-containers-are-a-development-path-only.md) puts it. The
+instance is untouched: it ran gunicorn under systemd throughout.
 
-| AC | What it needs | Command |
-|---|---|---|
-| 4 — container execution | `docker compose` serving the same application, per [ADR-0006](../adr/0006-run-under-both-systemd-and-docker-compose.md) | Not a single command — see the two port clashes below |
+```
+$ sudo docker compose up -d --build
 
-AC 4 replaces the serving process on the one environment the delivery is graded
-on, so it is a deliberate act on a quiet moment, not something to run
-mid-review.
+[+] Building 3.6s (13/13) FINISHED
+ => [5/6] COPY web/ web/
+ => => naming to docker.io/library/retail-segmentation-web:latest
+[+] up 6/6
+ ✔ Image retail-segmentation-web              Built
+ ✔ Container retail-segmentation-db-1         Healthy
+ ✔ Container retail-segmentation-web-1        Started
+```
 
-### AC 4 — containers are a development convenience, not a deploy path
+The `db` service is `Healthy` rather than merely started: its healthcheck reads
+a seeded row rather than calling `pg_isready`, so `web` starts against a
+database the three ordered scripts have finished loading.
+
+The application answers, and refuses the same things it refuses in production:
+
+```
+$ curl -sS -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/login
+200
+
+$ for p in /admin/users/new /segment-run/ /audit/ /catalog/; do
+>   curl -sS -o /dev/null -w "%{http_code} -> %{redirect_url}\n" "http://127.0.0.1:8000$p"
+> done
+
+302 -> http://127.0.0.1:8000/login?next=/admin/users/new
+302 -> http://127.0.0.1:8000/segment-run/
+302 -> http://127.0.0.1:8000/audit/
+302 -> http://127.0.0.1:8000/catalog/
+```
+
+Same route table, same default-deny middleware, same redirect carrying `next`.
+That is what "the same application" means here: not a similar image, the same
+code reaching the same decisions.
+
+### `docker compose up` alone is not enough, and the README said it was
+
+This took three attempts, and the first two are worth recording because a
+developer following the documented command hits exactly them.
+
+`compose.yaml` describes itself as "the whole stack in one command:
+`docker compose up`". That command **does not rebuild the image**. On a machine
+that has built it before, Compose reuses the cached image and reports success:
+
+```
+✔ Container retail-segmentation-web-1  Running        ← first attempt
+✔ Container retail-segmentation-web-1  Started        ← second, after down -v
+```
+
+Neither run printed a `Building` step, and both served a months-old image whose
+landing page reads "the modules it will serve — authentication, the
+administrator catalog CRUD, the user views — arrive with the remaining Phase 3
+stories". `/login` returned 404. Nothing errored. The stack was up, healthy, and
+wrong.
+
+Recreating the containers and even deleting the volumes does not help, because
+the staleness is in the image rather than the container. Only `--build` reaches
+it — the run above shows `COPY web/ web/` executing uncached while the pip layer
+stayed cached, which is the source actually entering the image.
+
+This is the failure ADR-0006 predicted in the abstract — "the container path
+will be the better-tested one locally and the worse-tested one on the instance"
+— arriving in a form it did not predict: badly tested locally too, and silent
+about it. The documented command now carries `--build`.
+
+## Why AC 4 was captured locally
 
 The team's position, recorded on 2026-09-07: Docker Compose exists so a
 developer can bring the application up in one command. **Containers have no
 role in the deployment.** The instance runs gunicorn under systemd, that is
 what serves the delivery, and nothing is planned to change it.
 
-This settles the two bindings that made running Compose on the instance
-awkward, by removing the reason to do it at all:
+Two bindings in `compose.yaml` make that concrete. Both were read from the
+configuration rather than tried, because trying them is the thing this record
+declines to do:
 
 - **Port 8000.** The `web` service publishes `127.0.0.1:8000:8000`, the address
   the systemd unit's gunicorn already binds. Running both means stopping the
@@ -332,24 +394,28 @@ awkward, by removing the reason to do it at all:
   health condition, and a container's `127.0.0.1` is its own loopback.
 
 Both are only a problem on the instance. Locally, where Compose is the point,
-they are correct as written.
+they are correct as written — and the capture above shows them working.
 
-**This changes an acceptance criterion, and that needs recording elsewhere.**
-AC 4 on #109 asks for `docker compose` serving the same application, citing
-[ADR-0006](../adr/0006-run-under-both-systemd-and-docker-compose.md) — which
-says Compose is "what the demonstration's container item is shown with,
-**including on the instance when it is switched in for that purpose**". That
-sentence no longer describes the plan.
-
-ADR-0006 is Accepted and immutable, so the change belongs in a superseding
-record rather than an edit to it.
-[ADR-0015](../adr/0015-containers-are-a-development-path-only.md) is that
-record, and it decides both of the things this document could not: the
-demonstration item *"ejecución mediante contenedores"*
+This is a departure from [ADR-0006](../adr/0006-run-under-both-systemd-and-docker-compose.md),
+which said Compose is what the container item is shown with "including on the
+instance when it is switched in for that purpose". ADR-0006 is immutable, so the
+change is recorded in
+[ADR-0015](../adr/0015-containers-are-a-development-path-only.md), which
+supersedes it and settles that the demonstration item
 ([`../requirements.md`](../requirements.md) §4, RNF-13/RNF-14) is satisfied on a
-developer machine, and AC 4's evidence is captured there rather than on the
-instance.
+developer machine.
 
-ADR-0015 is Proposed. Until it is accepted, AC 4 stays open here, and the
-capture it asks for has not been made — running Compose locally and recording
-the result is the remaining work on deliverable 13.
+**ADR-0015 is Proposed.** The evidence above stands on its own — it is a real
+capture of a real run — but the reasoning that puts it on a laptop rather than
+on the instance is a decision awaiting acceptance, not a settled one. A reviewer
+who disagrees with ADR-0015 should read AC 4 as answered in the wrong place
+rather than as answered.
+
+## Not evidenced here
+
+- **The image running on the instance's OS.** The capture above is from a
+  developer machine. Nothing checks that the same image runs on CentOS 10
+  Stream, and under ADR-0015 nothing will. `web/requirements.txt` is the only
+  thing holding the two execution paths together.
+- **Zero-downtime deployment.** Not claimed, and not a property this
+  architecture has. AC 2 above shows the interruption directly.

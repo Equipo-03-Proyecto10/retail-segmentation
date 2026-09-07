@@ -51,14 +51,14 @@ here is a gap, not an omission from this index.
 | Document | What it records |
 |---|---|
 | [F6-06](f6-06-continuous-deployment.md) | The deploy pipeline, the rollback test, and the four failures before it |
-| [F6-07](f6-07-proof-of-deployment.md) | **Deliverable 13, partial.** The unit active and enabled, restarting after a kill, and answering through the reverse proxy |
+| [F6-07](f6-07-proof-of-deployment.md) | **Deliverable 13.** The unit active and enabled, restarting after a kill, answering through the reverse proxy, and the same application under Compose |
 
-**Deliverable 13 is not complete.** Four of the five acceptance criteria on #109
-are recorded. The one left is container execution, and it is now a scope
-question rather than a technical one: the team's position is that Compose is a
-developer convenience with no role in the deployment, which contradicts a
-sentence in ADR-0006 and leaves the graded demonstration item open. The F6-07
-document sets out both.
+All five acceptance criteria on #109 are recorded. Four were captured against
+the instance and the published host; container execution was captured on a
+developer machine, which
+[ADR-0015](../adr/0015-containers-are-a-development-path-only.md) settles as the
+right place for it. ADR-0015 is Proposed, so that last placement is a decision
+awaiting acceptance rather than a settled one.
 
 ## Review passes
 

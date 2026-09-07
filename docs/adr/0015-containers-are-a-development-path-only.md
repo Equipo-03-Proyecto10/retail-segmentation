@@ -107,6 +107,6 @@ Locally, the container path must still work, which is what makes this a dual
 path rather than a retirement:
 
 ```bash
-docker compose up -d && curl -sf -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/login
+docker compose up -d --build && curl -sf -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/login
 docker compose down
 ```

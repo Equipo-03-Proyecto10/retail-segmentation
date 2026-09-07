@@ -60,11 +60,18 @@ PostgreSQL.
 
 ```bash
 cp .env.example .env
-docker compose up
+docker compose up --build
 ```
 
 That creates the database, applies the schema, loads the seed data and starts
 the application, in that order. It is then at http://localhost:8000
+
+**`--build` is not optional after the first time.** Plain `docker compose up`
+reuses the image already on the machine, so on a second run it starts a
+container built from whatever the source looked like when you last built it.
+It reports success and serves stale code; `docker compose down -v` does not
+help, because the staleness is in the image rather than the container or the
+volumes.
 
 ```bash
 docker compose down       # stop, keeping the data

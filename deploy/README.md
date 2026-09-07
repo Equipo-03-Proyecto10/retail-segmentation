@@ -294,8 +294,9 @@ repository:
 | Pool / provider | `github-actions` / `github`, issuer `https://token.actions.githubusercontent.com` |
 | Provider condition | `assertion.repository == 'Equipo-03-Proyecto10/retail-segmentation'` |
 | May impersonate | only `attribute.ref/refs/heads/main` |
-| Instance roles | `roles/compute.osAdminLogin`, `roles/compute.viewer` — on the one instance, not the project |
-| Project role | custom `mosaiqDeployProjectRead`, a single permission (`compute.projects.get`) |
+| Instance role | `roles/compute.viewer` — on the one instance, not the project |
+| Project roles | `roles/compute.osAdminLogin` (instance-scoped binding creates the login profile but serves no keys), and custom `mosaiqDeployProjectRead` holding only `compute.projects.get` |
+| Service-account role | `roles/iam.serviceAccountUser` on the instance's own service account (`23051370455-compute@developer.gserviceaccount.com`) — SSH means acting as it, and gcloud refuses without this |
 
 A `workflow_dispatch` from any branch other than `main` fails at the
 authentication step. That is the IAM restriction doing its job, not a bug.

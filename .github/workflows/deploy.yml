@@ -51,6 +51,22 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
+      # gcloud generates a key and imports it into the OS Login profile on its
+      # own, but silently: when the import does not take, the run fails two
+      # steps later with an unexplained "Permission denied (publickey)" and
+      # nothing says why. Doing it here makes a missing permission fail with a
+      # name, on the step that caused it.
+      - name: Register an SSH key with OS Login
+        run: |
+          ssh-keygen -t ed25519 -f ~/.ssh/google_compute_engine -N '' -q
+          gcloud compute os-login ssh-keys add \
+            --key-file ~/.ssh/google_compute_engine.pub --ttl 30m
+          echo "--- login profile this run will use ---"
+          gcloud compute os-login describe-profile \
+            --format='value(posixAccounts[].username)'
+          gcloud compute os-login ssh-keys list --format='value(key.expirationTimeUsec)' \
+            | wc -l | xargs echo "registered keys:"
+
       # The script is copied out of this checkout and run from /tmp rather than
       # from /opt/mosaiq/current: it rewrites that checkout, and bash reads a
       # script incrementally.

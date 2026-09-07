@@ -150,9 +150,36 @@ output for them is claimed.
 | AC | What it needs | Command |
 |---|---|---|
 | 2 — it restarts on its own | The unit killed, and the state before and after | `systemctl show mosaiq -p MainPID`, then `sudo kill -9 <pid>`, then the same `show` and `systemctl status` again |
-| 4 — container execution | `docker compose` serving the same application, per [ADR-0006](../adr/0006-run-under-both-systemd-and-docker-compose.md) | `docker compose -f compose.yaml up -d`, a request against it, then `docker compose down` |
+| 4 — container execution | `docker compose` serving the same application, per [ADR-0006](../adr/0006-run-under-both-systemd-and-docker-compose.md) | Not a single command — see the two port clashes below |
 
 AC 2 interrupts the published URL for as long as the restart takes, and AC 4
-starts a second copy of the application. Both change the state of the one
+replaces the serving process entirely. Both change the state of the one
 environment the delivery is graded on, so they are a deliberate act on a quiet
 moment, not something to run mid-review.
+
+### AC 4 is a swap, not an addition
+
+[ADR-0006](../adr/0006-run-under-both-systemd-and-docker-compose.md) states it
+directly: the two paths "are alternatives and are never up at once". Two
+bindings in `compose.yaml` make that concrete on this instance, and both were
+read from the configuration rather than tried:
+
+- **Port 8000.** The `web` service publishes `127.0.0.1:8000:8000`, which is the
+  address the systemd unit's gunicorn already binds. That collision is
+  deliberate — NGINX needs no change when the mode is switched — but it means
+  `mosaiq.service` has to be stopped first, or the container cannot bind.
+- **Port 5432.** The `db` service publishes `127.0.0.1:5432:5432`, and the
+  instance's own PostgreSQL already listens exactly there
+  ([`../infra.md`](../infra.md)). Starting `db` on the instance clashes with it
+  and would stand up a second, separately-seeded database.
+
+The second one is the open question, not a step: ADR-0006 says the same image
+"talks to the `db` service locally and to the instance's own PostgreSQL there",
+so on the instance the container should use the host's database rather than its
+own. `compose.yaml` has `web` depending on `db` with a health condition, and a
+container's `127.0.0.1` is its own loopback rather than the host's, so reaching
+the instance's PostgreSQL from inside the container needs a `DATABASE_URL` and a
+network mode that this file does not currently provide.
+
+Deciding that is the work AC 4 still needs. Whoever picks it up should settle it
+before the demonstration rather than during it.

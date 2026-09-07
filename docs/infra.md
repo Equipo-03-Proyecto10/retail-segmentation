@@ -78,9 +78,31 @@ Verified the same day from a host that is not a Cloudflare edge:
 
 `mosaiq-allow-ssh` is untouched, so OS Login and the F6-06 deploy workflow —
 which reaches the instance over `tcp:22`, not through the proxy — are unaffected.
-If firewalld on the host still has the `http` service open it is now unreachable
-from outside either way; removing it is tidy-up, not a fix:
-`sudo firewall-cmd --permanent --remove-service=http && sudo firewall-cmd --reload`.
+
+### firewalld is not a second layer
+
+firewalld runs on the instance, but `eth0` sits in the `trusted` zone — the
+default zone here — and that zone's target is `ACCEPT`. It admits every packet
+arriving on the interface whatever its service list says, so that list is
+decorative. `public`, which carries a filtering target and the usual
+`cockpit dhcpv6-client ssh` set, has no interface bound to it.
+
+The `http` service was removed from the trusted zone on 2026-09-07 alongside the
+rules above, so the listing matches intent. It closed nothing — the port was
+never gated there:
+
+| Check | Result |
+|---|---|
+| `firewall-cmd --get-active-zones` | `trusted (default)`, interfaces: `eth0` |
+| `firewall-cmd --info-zone=trusted` | `target: ACCEPT`; services `http https` → `https` |
+| `firewall-cmd --info-zone=public` | no interfaces bound |
+
+**Ingress is therefore controlled in exactly one place: the GCP firewall rules
+above.** That is a single layer, not defence in depth. Binding `eth0` to a
+filtering zone would add one, and needs care in the right order — `public`
+allows `ssh` but not `https`, so a careless switch takes the delivery offline or
+locks the box out of SSH. Not attempted here; recorded so nobody assumes a
+second layer that is not there.
 
 **When Cloudflare's ranges change, two places need the new list**: this rule and
 [`deploy/nginx/cloudflare-real-ip.conf`](../deploy/nginx/cloudflare-real-ip.conf),

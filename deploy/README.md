@@ -64,13 +64,12 @@ gcloud compute ssh mosaiq-deployment-vm --zone=northamerica-south1-a
    sudo setsebool -P httpd_can_network_connect 1
    ```
 
-5. **Open HTTP in firewalld** if it is running (the GCP firewall already allows
-   `:80`, this is the host firewall):
-   ```sh
-   sudo firewall-cmd --state >/dev/null 2>&1 \
-     && sudo firewall-cmd --permanent --add-service=http \
-     && sudo firewall-cmd --reload
-   ```
+5. **firewalld — nothing to do, and nothing it would do.** `eth0` is in the
+   `trusted` zone, whose target is `ACCEPT`: it admits everything on the
+   interface whatever its service list says. Adding or removing a service there
+   changes only the listing. Ingress is decided by the GCP firewall alone
+   (`docs/infra.md`, "firewalld is not a second layer"). Public `:80` was
+   dropped in #167, so do **not** re-add the `http` service here.
 
 6. **Test and start.**
    ```sh
@@ -251,6 +250,13 @@ sudo ln -sf /etc/letsencrypt/live/mosaiq.maxthecoder.online/privkey.pem   /etc/n
 certbot installs a renewal timer — check `systemctl list-timers | grep certbot`.
 The Cloudflare record must be **DNS-only** for the HTTP-01 challenge to reach the
 origin.
+
+**Path A no longer works as written.** #167 deleted `mosaiq-allow-http` and
+pinned `:443` to Cloudflare's ranges, so the HTTP-01 challenge cannot reach
+`:80` and Let's Encrypt cannot reach the origin at all. Falling back to Path A
+means first recreating the `:80` rule (its exact spec is in `docs/infra.md`) and
+widening or removing the `:443` pin — and renewal keeps needing them, every 60
+days, not just the first issuance. Path C needs neither.
 
 ### 1b. Path B — self-signed (demo fallback)
 

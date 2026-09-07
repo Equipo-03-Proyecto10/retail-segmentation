@@ -1,6 +1,6 @@
 # ADR-0006 — The application runs under both systemd and Docker Compose, with systemd the default on the instance
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #89 (F3-09)
 **Supersedes:** —

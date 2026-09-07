@@ -41,6 +41,7 @@ constraint other work must respect needs an ADR, or a reference to one.
 | [0009](0009-nginx-as-the-reverse-proxy.md) | NGINX is the reverse proxy in front of the application | Proposed |
 | [0010](0010-the-consultation-module-is-a-separate-read-only-blueprint.md) | The consultation module is a separate read-only blueprint, gated by two existing permissions | Proposed |
 | [0011](0011-one-environment-deployed-from-main.md) | The instance is one environment, deployed automatically only from `main` | Proposed |
+| [0012](0012-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md) | MOSAIQ is published at `mosaiq.maxthecoder.online` through Cloudflare, with an origin certificate | Proposed |
 | [0012](0012-release-merges-preserve-ancestry.md) | `develop` and `main` are joined only by merge commits, never by squash or rebase | Proposed |
 
 ## Writing one

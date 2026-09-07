@@ -37,9 +37,9 @@ their implementations already passed the team's merge process. Their decision
 text is unchanged. [Review evidence](../evidence/review-findings-resolution.md)
 records the execution checks for ADR-0006 and the acceptance basis for the set.
 PR #168 introduced a second ADR numbered 0012 while this repair was in
-progress. Its still-proposed Cloudflare record is numbered 0013 here, with
-references corrected and acceptance reconciled against that merged PR. The
-original release-merge ADR keeps number 0012.
+progress. Its Cloudflare record is numbered 0013 here, with references
+corrected and acceptance reconciled against that merged PR. The original
+release-merge ADR keeps number 0012.
 ADR-0014 is new and awaits acceptance with this PR.
 
 ## Index
@@ -51,7 +51,7 @@ ADR-0014 is new and awaits acceptance with this PR.
 | [0003](0003-layered-architecture-with-an-explicit-service-layer.md) | Layered architecture with an explicit service layer, rather than classic MVC | Accepted |
 | [0004](0004-model-ahead-of-the-deferred-segmentation-modules.md) | The PostgreSQL model carries the deferred segmentation tables now | Accepted |
 | [0005](0005-document-mongodb-and-redis-designs-without-implementing-them.md) | MongoDB and Redis are documented as designs and not implemented | Accepted |
-| [0006](0006-run-under-both-systemd-and-docker-compose.md) | The application runs under both systemd and Docker Compose, with systemd the default on the instance | Accepted |
+| [0006](0006-run-under-both-systemd-and-docker-compose.md) | The application runs under both systemd and Docker Compose, with systemd the default on the instance | Superseded by [0015](0015-containers-are-a-development-path-only.md) |
 | [0007](0007-permissions-in-code-with-a-default-deny-middleware.md) | Permissions are declared in code and enforced by a default-deny middleware | Accepted |
 | [0008](0008-the-instance-keeps-the-demonstration-accounts-deactivated.md) | The instance keeps the demonstration accounts, deactivated | Accepted |
 | [0009](0009-nginx-as-the-reverse-proxy.md) | NGINX is the reverse proxy in front of the application | Accepted |
@@ -60,6 +60,7 @@ ADR-0014 is new and awaits acceptance with this PR.
 | [0012](0012-release-merges-preserve-ancestry.md) | `develop` and `main` are joined only by merge commits, never by squash or rebase | Accepted |
 | [0013](0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md) | MOSAIQ is published through Cloudflare with an origin certificate | Accepted |
 | [0014](0014-service-owned-transactions-and-typed-write-failures.md) | Services own transactions and translate typed write failures | Proposed |
+| [0015](0015-containers-are-a-development-path-only.md) | Docker Compose is a development path only, and is never run on the instance | Proposed |
 
 ## Writing one
 

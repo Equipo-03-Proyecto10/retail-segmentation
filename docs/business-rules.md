@@ -60,7 +60,9 @@ to an unattributed entry rather than destroying the entry. · `RF-09`
 ### RN-05 — Only the administrator runs the segment recalculation
 It rewrites a column on every customer, so it is not an analyst's button.
 
-**Enforced:** authorization middleware, F4-01 (#69). Not yet built. · `RF-12`
+**Enforced:** the authorization middleware, F4-01 (#69) — `SEGMENT_RUN_EXECUTE`
+is held by `ADMIN` alone, and `web/routes/segment_run.py` declares it on both
+the form and the execution route. · `RF-12`
 
 ## Referential integrity
 

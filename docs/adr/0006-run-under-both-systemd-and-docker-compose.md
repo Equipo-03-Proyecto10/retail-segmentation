@@ -1,10 +1,10 @@
 # ADR-0006 — The application runs under both systemd and Docker Compose, with systemd the default on the instance
 
-**Status:** Accepted
+**Status:** Superseded by ADR-0015
 **Owner:** Marcelo
 **Issue:** #89 (F3-09)
 **Supersedes:** —
-**Superseded by:** —
+**Superseded by:** [ADR-0015](0015-containers-are-a-development-path-only.md)
 
 ---
 

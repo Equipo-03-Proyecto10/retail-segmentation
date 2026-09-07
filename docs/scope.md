@@ -100,10 +100,11 @@ first file in them. Empty directories are not committed.
 
 - External APIs (REST, GraphQL, SOAP)
 - JSON or XML exchange between internal components
-- Microservices
+- Microservices — deferred to the second delivery, see [`roadmap.md`](roadmap.md)
 - Managed cloud database services
 - RFM, clustering, segment migration, dashboards — deferred, see [`roadmap.md`](roadmap.md)
-- Mobile and desktop clients
+- Mobile and desktop clients — the desktop client is deferred, see
+  [`roadmap.md`](roadmap.md); the mobile client is not scheduled
 - Kubernetes
 
 ## 7. Success criteria

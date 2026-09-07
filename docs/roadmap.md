@@ -36,6 +36,40 @@ A module that needs new tables amends the 4NF model and `sql/01_schema.sql`
 first. Schema work stays in Phase 2 even when it is triggered by a Phase 3
 story, so the model keeps a single home.
 
+## Architecture returning in the second delivery
+
+The sections above defer *modules of this monolith*. These two are different:
+each one adds a deployable unit, so neither is a module and neither re-enters
+through the short cycle.
+
+| What | When | What is known |
+|---|---|---|
+| Microservices | Second delivery | Planned. The shape is not decided yet |
+| Desktop client | After the microservices, probably the same delivery | Planned, and sequenced behind them |
+
+**This reverses part of [ADR-0001](adr/0001-flask-monolith-on-a-single-vm.md).**
+That record retired the four-component architecture "rather than deferred", and
+rejected keeping it "marked as deferred" on the grounds that documentation of a
+system nobody is building gets read as the current design. It also states that
+deferred work re-enters "as modules of this monolith rather than as services".
+The plan recorded here contradicts all three points.
+
+ADR-0001 is Accepted and therefore immutable, so the reversal needs a
+superseding ADR rather than an edit. It is not written yet, because there is not
+enough detail to decide anything: what the services are, where the boundaries
+fall, what replaces the in-process call, and what the desktop client talks to
+are all open. **The superseding ADR is owed before any of this is built**, which
+`AGENTS.md` already requires independently — a second deployable unit is a scope
+change and needs an ADR.
+
+Until then this section is a schedule, not a design. Nothing here is built
+early, and the constraints of the first delivery — C-1, C-2, C-3 and C-7 — hold
+in full for everything in this repository today.
+
+The previous four-component design is not a starting point to copy, but it
+answered some of these questions once and is worth reading first. It is in
+the history at `c4a2b63` — see the last section of this file.
+
 ## Two decisions worth carrying forward
 
 These came out of the earlier design work. They are cheap to honour when the

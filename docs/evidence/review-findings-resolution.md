@@ -18,7 +18,7 @@ Verified on 2026-09-07. This follows the
 | #165 | Previously implemented ADRs record acceptance; acceptance ownership and immutability are explicit | Status-only edits to historical decisions, systemd observation and Compose CI smoke test |
 
 No schema, seed, dataset or uploaded file is changed. The new transaction
-decision is submitted in ADR-0013 for reviewer acceptance with the PR. Read-only
+decision is submitted in ADR-0014 for reviewer acceptance with the PR. Read-only
 queries continue to use the existing data-access functions; write operations
 always go through services. Pagination arithmetic lives below routes so the
 audit service does not import an HTTP module.

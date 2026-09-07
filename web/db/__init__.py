@@ -8,7 +8,7 @@ DDL is not here either: the schema is `sql/01_schema.sql` and nothing else
 creates or alters a table.
 
 Write functions leave transaction ownership to services. Only the lifecycle
-helper in `transactions.py` commits or rolls back (ADR-0013).
+helper in `transactions.py` commits or rolls back (ADR-0014).
 """
 
 from __future__ import annotations

@@ -11,11 +11,12 @@ PostgreSQL listener, HBA policy, SSH access and application-role verification:
 | File | Goes to |
 |---|---|
 | `nginx/mosaiq.conf` | `/etc/nginx/conf.d/mosaiq.conf` (`:80` redirect + `:443` proxy) |
+| `nginx/cloudflare-real-ip.conf` | `/etc/nginx/conf.d/cloudflare-real-ip.conf` — `mosaiq.conf` includes it; copy both together or `nginx -t` fails |
 | `nginx/mosaiq.compose.conf` | not deployed — local verification only, see `../compose.proxy.yaml` |
 | `postgresql/mosaiq.conf` | `/var/lib/pgsql/18/data/conf.d/mosaiq.conf` (loopback listener, SCRAM) |
 | `systemd/mosaiq.service` | `/etc/systemd/system/mosaiq.service` |
 | `deploy.sh` | copied to `/tmp/mosaiq-deploy.sh` by the deploy workflow on each run, not installed |
-| the TLS certificate | `/etc/nginx/tls/mosaiq.{crt,key}` — issued on the instance (F6-03), not in the repo |
+| the TLS certificate | `/etc/nginx/tls/mosaiq.{crt,key}` — a Cloudflare Origin CA pair on the instance (F6-03 Path C, [ADR-0013](../docs/adr/0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md)), not in the repo |
 
 ### Deployment layout
 
@@ -49,9 +50,12 @@ gcloud compute ssh mosaiq-deployment-vm --zone=northamerica-south1-a
    `server { listen 80 default_server; ... }` block in the `http {}` section.
    The `conf.d/*.conf` include stays.
 
-3. **Install the site config** from a checkout of this repo on the instance:
+3. **Install the site config** from a checkout of this repo on the instance.
+   `mosaiq.conf` includes `cloudflare-real-ip.conf`, so copy both — `nginx -t`
+   fails on a missing include:
    ```sh
-   sudo cp deploy/nginx/mosaiq.conf /etc/nginx/conf.d/mosaiq.conf
+   sudo cp deploy/nginx/mosaiq.conf            /etc/nginx/conf.d/mosaiq.conf
+   sudo cp deploy/nginx/cloudflare-real-ip.conf /etc/nginx/conf.d/cloudflare-real-ip.conf
    ```
 
 4. **Allow NGINX to reach the upstream** (SELinux is enforcing on CentOS; without
@@ -166,45 +170,81 @@ mosaiq`, the unit path, and the two checks above.
 
 ## F6-03 — SSL certificate with forced HTTPS
 
-Extends `deploy/nginx/mosaiq.conf` (already in the repo): the `:80` server now
-only redirects, and a `:443` server terminates TLS. **`nginx -t` fails until a
-certificate exists** — issue it before reloading.
+Extends `deploy/nginx/mosaiq.conf` (already in the repo): the `:80` server only
+redirects, and a `:443` server terminates TLS. **`nginx -t` fails until a
+certificate exists at `/etc/nginx/tls/mosaiq.{crt,key}`** — put one there before
+reloading.
 
-**The published host is this instance** (`docs/scope.md` §8, Q-2). Which
-certificate path applies depends on whether it has a DNS name:
+**The instance itself still has no DNS name**, but the delivery is published
+under one: `mosaiq.maxthecoder.online`, a subdomain of a domain a team member
+owns, on Cloudflare. That resolves the Q-2 consequence in `docs/scope.md` §8 —
+the AC "certificate valid for the published host" is now genuinely met.
 
-- **a DNS name points at the instance** → Path A (Let's Encrypt), and the AC
-  "certificate valid for the published host" is genuinely met;
-- **only the bare IP** → Path B (self-signed) is a demo stopgap; the browser
-  warns and the AC is not fully met until a hostname exists.
+Three certificate paths, in order of preference:
 
-### 0. GCP firewall — allow HTTPS
+- **Path C — Cloudflare proxied + Origin Certificate** (in use, [ADR-0013](../docs/adr/0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md)).
+  Browsers see Cloudflare's managed, auto-renewing edge certificate; the origin
+  carries a 15-year Cloudflare Origin CA pair. Hides the origin IP, adds CDN/DDoS.
+- **Path A — Let's Encrypt** on the origin (DNS-only). A publicly trusted cert on
+  the box itself; renewal and the origin IP are yours to carry.
+- **Path B — self-signed.** Demo stopgap only; the browser warns.
 
-The instance firewall currently permits only `tcp:22` and `tcp:80`
-(`docs/infra.md`). Add `443` (run from a workstation with `gcloud`):
+### 0. Firewall
+
+`tcp:443` is already open on the GCP firewall (`mosaiq-allow-https`) and in
+firewalld — nothing to add for Path A/B/C to work. **Optional hardening for
+Path C** (needs `roles/compute.securityAdmin`): pin `:443` to Cloudflare's
+ranges and drop public `:80`, so the origin is reachable only through the edge.
 
 ```sh
-gcloud compute firewall-rules create mosaiq-allow-https \
-  --project=iac-dev-01 --network=default --direction=INGRESS --action=ALLOW \
-  --rules=tcp:443 --source-ranges=0.0.0.0/0 --target-tags=mosaiq-server \
-  --priority=900
+CF4=$(curl -s https://www.cloudflare.com/ips-v4 | paste -sd,)
+CF6=$(curl -s https://www.cloudflare.com/ips-v6 | paste -sd,)
+gcloud compute firewall-rules update mosaiq-allow-https \
+  --project=iac-dev-01 --source-ranges="$CF4,$CF6"
+gcloud compute firewall-rules delete mosaiq-allow-http --project=iac-dev-01
 ```
 
-Also open it in firewalld if active:
-`sudo firewall-cmd --permanent --add-service=https && sudo firewall-cmd --reload`.
+### 1c. Path C — Cloudflare proxied with an Origin Certificate
 
-### 1a. Path A — Let's Encrypt (real hostname)
+**In the Cloudflare dashboard** (zone `maxthecoder.online`):
+
+1. **DNS → Records**: `A` record, name `mosaiq`, value `34.51.123.31` (the
+   reserved static address `mosaiq-ip`), **Proxied** (orange cloud).
+2. **SSL/TLS → Origin Server → Create Certificate**: let Cloudflare generate the
+   key, hostname `mosaiq.maxthecoder.online`, RSA 2048, 15 years. Keep both PEM
+   blocks — the private key is shown once.
+3. **SSL/TLS → Overview → Full (strict)**. If other origins in the zone lack a
+   valid cert, scope it instead with a Configuration Rule on
+   `Hostname eq mosaiq.maxthecoder.online`.
+4. **SSL/TLS → Edge Certificates**: *Always Use HTTPS* on, *Minimum TLS* 1.2,
+   confirm *Universal SSL* is Active for the hostname (up to ~15 min).
+
+**On the instance:**
+
+```sh
+sudo install -d -m 750 /etc/nginx/tls
+sudo cp /etc/nginx/tls/mosaiq.crt /etc/nginx/tls/mosaiq.crt.bak 2>/dev/null || true
+sudo cp /etc/nginx/tls/mosaiq.key /etc/nginx/tls/mosaiq.key.bak 2>/dev/null || true
+sudo tee /etc/nginx/tls/mosaiq.crt >/dev/null   # paste the Origin Certificate, Ctrl-D
+sudo tee /etc/nginx/tls/mosaiq.key >/dev/null   # paste the Private Key, Ctrl-D
+sudo chmod 600 /etc/nginx/tls/mosaiq.key && sudo chmod 644 /etc/nginx/tls/mosaiq.crt
+```
+
+certbot is **not** installed or needed on this path.
+
+### 1a. Path A — Let's Encrypt (DNS-only hostname)
 
 ```sh
 sudo dnf install -y certbot
 sudo mkdir -p /var/lib/nginx/acme /etc/nginx/tls
-sudo certbot certonly --webroot -w /var/lib/nginx/acme -d <hostname>
-sudo ln -sf /etc/letsencrypt/live/<hostname>/fullchain.pem /etc/nginx/tls/mosaiq.crt
-sudo ln -sf /etc/letsencrypt/live/<hostname>/privkey.pem   /etc/nginx/tls/mosaiq.key
+sudo certbot certonly --webroot -w /var/lib/nginx/acme -d mosaiq.maxthecoder.online
+sudo ln -sf /etc/letsencrypt/live/mosaiq.maxthecoder.online/fullchain.pem /etc/nginx/tls/mosaiq.crt
+sudo ln -sf /etc/letsencrypt/live/mosaiq.maxthecoder.online/privkey.pem   /etc/nginx/tls/mosaiq.key
 ```
 
-Set `server_name <hostname>;` in both server blocks of `mosaiq.conf` instead of
-`_`. certbot installs a renewal timer — check `systemctl list-timers | grep certbot`.
+certbot installs a renewal timer — check `systemctl list-timers | grep certbot`.
+The Cloudflare record must be **DNS-only** for the HTTP-01 challenge to reach the
+origin.
 
 ### 1b. Path B — self-signed (demo fallback)
 
@@ -212,30 +252,40 @@ Set `server_name <hostname>;` in both server blocks of `mosaiq.conf` instead of
 sudo mkdir -p /etc/nginx/tls
 sudo openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
   -keyout /etc/nginx/tls/mosaiq.key -out /etc/nginx/tls/mosaiq.crt \
-  -subj "/CN=<instance hostname or IP>"
+  -subj "/CN=mosaiq.maxthecoder.online"
 ```
 
-### 2. Reload and flip the cookie
+### 2. Install the config and reload
+
+`deploy/nginx/mosaiq.conf` already carries `server_name mosaiq.maxthecoder.online`,
+the Cloudflare `real_ip` include and the staged HSTS.
 
 ```sh
-sudo restorecon -Rv /etc/nginx/tls        # SELinux labels on the new files
+sudo cp /opt/mosaiq/current/deploy/nginx/mosaiq.conf            /etc/nginx/conf.d/mosaiq.conf
+sudo cp /opt/mosaiq/current/deploy/nginx/cloudflare-real-ip.conf /etc/nginx/conf.d/cloudflare-real-ip.conf
+sudo restorecon -Rv /etc/nginx/tls
 sudo nginx -t && sudo systemctl reload nginx
-sudo sed -i 's/^SESSION_COOKIE_SECURE=.*/SESSION_COOKIE_SECURE=true/' /etc/mosaiq/mosaiq.env
-sudo systemctl restart mosaiq
 ```
+
+`SESSION_COOKIE_SECURE=true` is already set in `/etc/mosaiq/mosaiq.env`; if a
+fresh instance shows it `false`, flip it and `sudo systemctl restart mosaiq`.
 
 ### Acceptance criteria (attach the output to #79)
 
 ```sh
-curl -sI  http://<host>/       # -> 301, Location: https://<host>/
-curl -sI  https://<host>/      # -> HTTP/2 200
-curl -svo /dev/null https://<host>/ 2>&1 | grep -E 'subject:|issuer:|expire'
+curl -sI  http://mosaiq.maxthecoder.online/     # -> 301 -> https  (Cloudflare edge on Path C)
+curl -sI  https://mosaiq.maxthecoder.online/    # -> HTTP/2 200
+curl -svo /dev/null https://mosaiq.maxthecoder.online/ 2>&1 | grep -E 'subject:|issuer:|expire'
+# Path C, with the firewall hardened: a direct hit on the origin IP times out
+curl --resolve mosaiq.maxthecoder.online:443:34.51.123.31 \
+     -sI https://mosaiq.maxthecoder.online/ --max-time 6
 ```
 
 ### After it is applied
 
-Update the `TLS` row in `docs/infra.md` "Reverse proxy": certificate source
-(Let's Encrypt / self-signed), `server_name`, and the redirect check.
+Update the `TLS` and `HSTS` rows and the `DNS` subsection in `docs/infra.md`
+"Reverse proxy": certificate path, `server_name`, the edge/mode on Path C, and
+the redirect check.
 
 ---
 

@@ -32,11 +32,15 @@ proposes acceptance in a PR; the approving team reviewer confirms it before
 merge. A proposal may accompany its implementation for review, but must be
 accepted before that implementation is merged.
 
-The #165 reconciliation records ADR-0003 through ADR-0012 as Accepted because
+The #165 reconciliation records ADR-0003 through ADR-0013 as Accepted because
 their implementations already passed the team's merge process. Their decision
 text is unchanged. [Review evidence](../evidence/review-findings-resolution.md)
 records the execution checks for ADR-0006 and the acceptance basis for the set.
-ADR-0013 is new and awaits acceptance with this PR.
+PR #168 introduced a second ADR numbered 0012 while this repair was in
+progress. Its still-proposed Cloudflare record is numbered 0013 here, with
+references corrected and acceptance reconciled against that merged PR. The
+original release-merge ADR keeps number 0012.
+ADR-0014 is new and awaits acceptance with this PR.
 
 ## Index
 
@@ -54,8 +58,8 @@ ADR-0013 is new and awaits acceptance with this PR.
 | [0010](0010-the-consultation-module-is-a-separate-read-only-blueprint.md) | The consultation module is a separate read-only blueprint, gated by two existing permissions | Accepted |
 | [0011](0011-one-environment-deployed-from-main.md) | The instance is one environment, deployed automatically only from `main` | Accepted |
 | [0012](0012-release-merges-preserve-ancestry.md) | `develop` and `main` are joined only by merge commits, never by squash or rebase | Accepted |
-
-| [0013](0013-service-owned-transactions-and-typed-write-failures.md) | Services own transactions and translate typed write failures | Proposed |
+| [0013](0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md) | MOSAIQ is published through Cloudflare with an origin certificate | Accepted |
+| [0014](0014-service-owned-transactions-and-typed-write-failures.md) | Services own transactions and translate typed write failures | Proposed |
 
 ## Writing one
 

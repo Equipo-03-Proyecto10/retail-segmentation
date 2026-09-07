@@ -46,7 +46,7 @@ Writes go through services, which own a complete transaction. Data-access
 functions return data or raise psycopg exceptions; services translate expected
 refusals into typed field errors. `db/transactions.py` is the only commit and
 rollback implementation, including nested administrator operations. See
-[ADR-0013](../docs/adr/0013-service-owned-transactions-and-typed-write-failures.md).
+[ADR-0014](../docs/adr/0014-service-owned-transactions-and-typed-write-failures.md).
 Pagination arithmetic lives in `services/pagination.py` so the audit service
 never needs to import the HTTP layer. Entity forms remain explicit because
 products, category parents and users have different validation and file rules.

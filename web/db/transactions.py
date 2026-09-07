@@ -1,4 +1,4 @@
-"""Transaction lifecycle for service units of work (ADR-0013)."""
+"""Transaction lifecycle for service units of work (ADR-0014)."""
 
 import logging
 from collections.abc import Callable

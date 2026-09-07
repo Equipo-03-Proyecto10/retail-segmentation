@@ -50,8 +50,10 @@ and `NRestarts=0` is the baseline it moves from.
 **Gunicorn binds `127.0.0.1:8000` — loopback only.** The application has no
 listener on a public interface, so it cannot be reached except through NGINX.
 This is the other half of AC 3: the reverse proxy is not merely the front door,
-it is the only door. It also matches the firewall policy in
-[`../infra.md`](../infra.md), which allows only 22, 80 and 443 inbound.
+it is the only door. The firewall in [`../infra.md`](../infra.md) narrows it
+further — since 2026-09-07 the only inbound rules are `tcp:22` and `tcp:443`
+from Cloudflare's published ranges, `mosaiq-allow-http` having been deleted, so
+the origin is not reachable on port 80 at all.
 
 The output carries no password, key or token (AC 5): the process line shows the
 bind address and worker count, and the configuration the application reads lives
@@ -134,6 +136,11 @@ $ curl -sS -I http://mosaiq.maxthecoder.online/
 HTTP/1.1 301 Moved Permanently
 Location: https://mosaiq.maxthecoder.online/
 ```
+
+That redirect is issued by Cloudflare's edge, not by the instance: the origin
+no longer accepts port 80 at all. A visitor who types the bare hostname still
+arrives over HTTPS, which is what the criterion asks; the instance simply never
+sees the plaintext request.
 
 ### The application is the one in this repository
 

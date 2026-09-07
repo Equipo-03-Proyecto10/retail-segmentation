@@ -496,6 +496,61 @@ already had. It is `default_type` rather than a `types { … }` block on purpose
 `types` inside a `location` **replaces** the inherited map, which would turn the
 stylesheets and the fifty screenshots under the same path into downloads.
 
+### Publishing is part of the deploy
+
+`deploy.sh` publishes `docs/` from the commit it deploys, on every run. Nothing
+has to be remembered, and the published copy cannot drift from the deployed
+commit. The step reports the file count it wrote:
+
+```
+=== Documentation
+published 118 files to /opt/mosaiq/docs
+```
+
+It never rolls back. A documentation copy is not a reason to take a healthy
+application off the instance, so a failure is printed loudly and the deploy
+still succeeds — read the step's output rather than only the exit status.
+
+**This used to be a manual `scp` that nobody ran.** The published copy sat on an
+ADR-0006-era snapshot for weeks: 8 of 16 ADRs, 1 of 17 evidence documents and
+none of the 50 screenshots, while every merge to `main` went green. Deliverables
+10, 13 and 14 all live in that tree.
+[`docs/evidence/f6-05-final-verification.md`](../docs/evidence/f6-05-final-verification.md)
+records how it was found and what it hid.
+
+### Publishing it by hand
+
+Only needed out of band — to serve a tree that is not the deployed commit, or
+when the instance is being recovered:
+
+```sh
+gcloud compute scp --recurse docs mosaiq-deployment-vm:/tmp/mosaiq-docs \
+  --project=iac-dev-01 --zone=northamerica-south1-a
+gcloud compute ssh mosaiq-deployment-vm --project=iac-dev-01 \
+  --zone=northamerica-south1-a --command="\
+    sudo rm -rf /opt/mosaiq/docs && \
+    sudo mv /tmp/mosaiq-docs /opt/mosaiq/docs && \
+    sudo chown -R mosaiq:mosaiq /opt/mosaiq/docs && \
+    sudo restorecon -Rv /opt/mosaiq/docs"
+```
+
+**The `restorecon` is not optional.** SELinux is `Enforcing`, `mv` preserves the
+context a file had in `/tmp`, and `httpd_t` cannot read `user_tmp_t`. Without it
+every file is present and answers `403`. The `semanage fcontext` rule for
+`/opt/mosaiq/docs(/.*)?` is already in policy; `restorecon` is what applies it.
+
+Verify against the origin rather than the edge — Cloudflare will serve a cached
+copy of the previous tree and make a spot check look like success:
+
+```sh
+curl -sS -o /dev/null -D - "https://mosaiq.maxthecoder.online/docs/README.md?cb=$RANDOM" \
+  | grep -iE '^HTTP|cf-cache-status'
+```
+
+The NGINX config does not change when the copy is refreshed. It only needs
+installing the first time (F6-01 step 3, then
+`sudo nginx -t && sudo systemctl reload nginx`).
+
 ### Rendering
 
 Not done, and worth a decision. Served as `text/plain`, a document is readable
@@ -511,23 +566,6 @@ obvious thing to render into.
 
 Nobody has asked for it and it changes the published artifact, so it is recorded
 here rather than done.
-
-### Publish or refresh the copy
-
-Run after any change to `docs/`, from a checkout of this repo:
-
-```sh
-gcloud compute scp --recurse docs mosaiq-deployment-vm:/tmp/mosaiq-docs \
-  --project=iac-dev-01 --zone=northamerica-south1-a
-gcloud compute ssh mosaiq-deployment-vm --project=iac-dev-01 \
-  --zone=northamerica-south1-a --command="\
-    sudo rm -rf /opt/mosaiq/docs && \
-    sudo mv /tmp/mosaiq-docs /opt/mosaiq/docs && \
-    sudo chown -R mosaiq:mosaiq /opt/mosaiq/docs"
-```
-
-Then reload the already-updated NGINX config (see F6-01 step 3, then
-`sudo nginx -t && sudo systemctl reload nginx`).
 
 ### Acceptance criteria (attach the output to #80)
 

@@ -17,8 +17,7 @@ from werkzeug.datastructures import FileStorage
 from web.config import Config
 
 # Maps an accepted MIME type to the extension the stored file gets, so the
-# extension on disk always matches what the browser actually sent — never
-# trusted from the client's original filename alone.
+# extension on disk matches the declared type and the checked file signature.
 _EXTENSION_BY_TYPE = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
@@ -67,6 +66,16 @@ def _validate(file: FileStorage, config: Config) -> str:
             f"File is too large ({size / (1024 * 1024):.1f} MB). "
             f"The limit is {limit_mb:.0f} MB."
         )
+
+    header = file.stream.read(12)
+    file.stream.seek(0)
+    signatures = {
+        "image/jpeg": header.startswith(b"\xff\xd8\xff"),
+        "image/png": header.startswith(b"\x89PNG\r\n\x1a\n"),
+        "image/webp": header.startswith(b"RIFF") and header[8:12] == b"WEBP",
+    }
+    if not signatures[content_type]:
+        raise UploadRejected("The file content does not match the selected image type.")
 
     return _EXTENSION_BY_TYPE[content_type]
 

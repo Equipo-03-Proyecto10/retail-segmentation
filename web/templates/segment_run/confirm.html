@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Confirm recalculation · {{ application_name }}{% endblock %}
+{% block content %}
+  <h1>Confirm recalculation</h1>
+  <p>This will recalculate segment assignments for every customer using the last
+     <strong>{{ window }} days</strong> of sales. Existing assignments may be replaced
+     or cleared. The audit log will record each change.</p>
+  <form method="post" action="{{ url_for('segment_run.execute') }}">
+    <input type="hidden" name="window" value="{{ window }}">
+    <button type="submit" name="confirm" value="yes">Confirm recalculation</button>
+    <a href="{{ url_for('segment_run.index') }}">Cancel</a>
+  </form>
+{% endblock %}

@@ -27,6 +27,7 @@ class Customer:
     registration_channel_id: int
     current_segment_id: int | None
     registered_on: date
+    segment_name: str | None = None
 
 
 def list_customers(
@@ -41,11 +42,13 @@ def list_customers(
             pattern = f"%{search}%"
             cursor.execute(
                 """
-                SELECT customer_id, user_id, name, email, phone,
-                       registration_channel_id, current_segment_id, registered_on
-                FROM customer
-                WHERE name ILIKE %s OR email ILIKE %s
-                ORDER BY name
+                SELECT c.customer_id, c.user_id, c.name, c.email, c.phone,
+                       c.registration_channel_id, c.current_segment_id, c.registered_on,
+                       s.name
+                FROM customer AS c
+                LEFT JOIN segment AS s ON s.segment_id = c.current_segment_id
+                WHERE c.name ILIKE %s OR c.email ILIKE %s
+                ORDER BY c.name, c.customer_id
                 LIMIT %s OFFSET %s
                 """,
                 (pattern, pattern, per_page, offset),
@@ -53,10 +56,12 @@ def list_customers(
         else:
             cursor.execute(
                 """
-                SELECT customer_id, user_id, name, email, phone,
-                       registration_channel_id, current_segment_id, registered_on
-                FROM customer
-                ORDER BY name
+                SELECT c.customer_id, c.user_id, c.name, c.email, c.phone,
+                       c.registration_channel_id, c.current_segment_id, c.registered_on,
+                       s.name
+                FROM customer AS c
+                LEFT JOIN segment AS s ON s.segment_id = c.current_segment_id
+                ORDER BY c.name, c.customer_id
                 LIMIT %s OFFSET %s
                 """,
                 (per_page, offset),

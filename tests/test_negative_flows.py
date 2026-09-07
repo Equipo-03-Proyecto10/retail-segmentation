@@ -299,6 +299,7 @@ def test_search_payload_remains_a_parameter(app, connection, catalog):
     [
         (b"script", "text/html", "not an accepted image type"),
         (b"", "image/png", "image file is empty"),
+        (b"plain text", "image/png", "does not match"),
         (b"x" * 11, "image/png", "File is too large"),
     ],
 )
@@ -357,3 +358,35 @@ def test_database_outage_is_controlled_and_traceable(app, caplog):
     assert reference and reference[1].decode() in caplog.text
     assert "POST /login" in caplog.text
     assert b"private database detail" not in response.data
+
+
+@pytest.mark.parametrize(
+    "catalog,singular,data",
+    [
+        (
+            "stores",
+            "store",
+            dict(store_id="1", name="Store", city="City", state="State"),
+        ),
+        ("categories", "category", dict(category_id="1", name="Category")),
+        ("channels", "channel", dict(channel_id="1", name="Channel")),
+        ("products", "product", PRODUCT),
+        ("roles", "role", dict(role_id="1", code="SUPPORT", description="Support")),
+    ],
+)
+def test_duplicate_catalog_creation_preserves_a_usable_new_form(
+    app, connection, catalog, singular, data
+):
+    def execute(statement, parameters=None):
+        if statement.lstrip().startswith("INSERT"):
+            raise UniqueViolation("private database detail")
+
+    connection.cursor.return_value.__enter__.return_value.execute.side_effect = execute
+    client = app.test_client()
+    sign_in(client)
+    response = client.post(f"/admin/{catalog}/new", data=data)
+    assert_page(response, 409, "already exists")
+    assert f"<h1>New {singular}</h1>".encode() in response.data
+    assert f'name="{singular}_id"'.encode() in response.data
+    connection.rollback.assert_called_once()
+    connection.commit.assert_not_called()

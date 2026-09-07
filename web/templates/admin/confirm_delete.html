@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Confirm deletion · {{ application_name }}{% endblock %}
+{% block content %}
+  <h1>Confirm deletion</h1>
+  <p>Delete {{ entity }} <strong>{{ record.code if entity == 'role' else record.name }}</strong>?
+     This cannot be undone.</p>
+  <form method="post">
+    <button type="submit" name="confirm" value="yes">Confirm deletion</button>
+    <a href="{{ url_for(list_endpoint) }}">Cancel</a>
+  </form>
+{% endblock %}

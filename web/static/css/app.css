@@ -312,3 +312,42 @@ code {
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
+
+
+/* Administrator forms share the consultation screens' spacing and sizing. */
+.admin-page > form {
+  display: grid;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+
+.admin-page input,
+.admin-page select {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0.35rem 0.5rem;
+  font: inherit;
+}
+
+.admin-page button {
+  width: fit-content;
+}
+
+.inline-form {
+  display: inline;
+}
+
+.error {
+  color: #a12020;
+}
+
+.notice {
+  padding: 0.75rem;
+  border: 1px solid #267044;
+  background: #f0f9f2;
+}
+
+.page {
+  overflow-wrap: anywhere;
+}

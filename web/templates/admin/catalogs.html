@@ -2,7 +2,7 @@
 {% block title %}Catalogs · {{ application_name }}{% endblock %}
 {% block content %}
 <h1>Catalogs</h1>
-<p>Browse and maintain the master data.</p>
+<p>Browse{% if can('catalog.write') %} and maintain{% endif %} the master data.</p>
 <ul>
   <li><a href="{{ url_for('admin.list_stores_view') }}">Stores</a></li>
   <li><a href="{{ url_for('admin.list_categories_view') }}">Categories</a></li>

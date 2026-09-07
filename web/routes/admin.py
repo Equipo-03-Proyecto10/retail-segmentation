@@ -13,7 +13,9 @@ from pathlib import Path
 
 from flask import (
     Blueprint,
+    abort,
     current_app,
+    flash,
     redirect,
     render_template,
     request,
@@ -61,6 +63,7 @@ from web.middleware.authz import (
     USER_WRITE,
     requires,
 )
+from web.routes.pagination import redirect_last_page
 from web.services.catalog import (
     parse_pagination,
     validate_category,
@@ -108,6 +111,8 @@ def list_stores_view():
     )
     total_pages = max(1, (total + _PER_PAGE - 1) // _PER_PAGE)
 
+    if response := redirect_last_page(page, total_pages):
+        return response
     return render_template(
         "admin/stores.html",
         stores=stores,
@@ -148,7 +153,17 @@ def create_store_view():
             400,
         )
 
-    create_store(connection, store_id=int(store_id), name=name, city=city, state=state)
+    error = create_store(
+        connection, store_id=int(store_id), name=name, city=city, state=state
+    )
+    if error:
+        return (
+            render_template(
+                "admin/store_form.html", store=request.form, errors={"store_id": error}
+            ),
+            409,
+        )
+    flash("Store created.", "success")
     return redirect(url_for("admin.list_stores_view"))
 
 
@@ -185,9 +200,19 @@ def edit_store_view(store_id: int):
             400,
         )
 
-    update_store(
+    error = update_store(
         connection, store_id, name=name, city=city, state=state, is_active=is_active
     )
+    if error:
+        return (
+            render_template(
+                "admin/store_form.html",
+                store=dict(request.form, store_id=store_id, is_active=is_active),
+                errors={"name": error},
+            ),
+            409,
+        )
+    flash("Store updated.", "success")
     return redirect(url_for("admin.list_stores_view"))
 
 
@@ -195,6 +220,16 @@ def edit_store_view(store_id: int):
 @requires(CATALOG_WRITE)
 def delete_store_view(store_id: int):
     connection = get_connection()
+    record = get_store(connection, store_id)
+    if record is None:
+        abort(404)
+    if request.form.get("confirm") != "yes":
+        return render_template(
+            "admin/confirm_delete.html",
+            entity="store",
+            record=record,
+            list_endpoint="admin.list_stores_view",
+        )
     deleted = delete_store(connection, store_id)
 
     if not deleted:
@@ -217,6 +252,7 @@ def delete_store_view(store_id: int):
             409,
         )
 
+    flash("Store deleted.", "success")
     return redirect(url_for("admin.list_stores_view"))
 
 
@@ -235,6 +271,8 @@ def list_categories_view():
     )
     total_pages = max(1, (total + _PER_PAGE - 1) // _PER_PAGE)
 
+    if response := redirect_last_page(page, total_pages):
+        return response
     return render_template(
         "admin/categories.html",
         categories=categories,
@@ -303,6 +341,7 @@ def create_category_view():
             409,
         )
 
+    flash("Category created.", "success")
     return redirect(url_for("admin.list_categories_view"))
 
 
@@ -349,6 +388,7 @@ def edit_category_view(category_id: int):
     update_category(
         connection, category_id, name=name, parent_category_id=parent_category_id
     )
+    flash("Category updated.", "success")
     return redirect(url_for("admin.list_categories_view"))
 
 
@@ -356,6 +396,16 @@ def edit_category_view(category_id: int):
 @requires(CATALOG_WRITE)
 def delete_category_view(category_id: int):
     connection = get_connection()
+    record = get_category(connection, category_id)
+    if record is None:
+        abort(404)
+    if request.form.get("confirm") != "yes":
+        return render_template(
+            "admin/confirm_delete.html",
+            entity="category",
+            record=record,
+            list_endpoint="admin.list_categories_view",
+        )
     deleted = delete_category(connection, category_id)
 
     if not deleted:
@@ -379,6 +429,7 @@ def delete_category_view(category_id: int):
             409,
         )
 
+    flash("Category deleted.", "success")
     return redirect(url_for("admin.list_categories_view"))
 
 
@@ -397,6 +448,8 @@ def list_channels_view():
     )
     total_pages = max(1, (total + _PER_PAGE - 1) // _PER_PAGE)
 
+    if response := redirect_last_page(page, total_pages):
+        return response
     return render_template(
         "admin/channels.html",
         channels=channels,
@@ -441,6 +494,7 @@ def create_channel_view():
             409,
         )
 
+    flash("Channel created.", "success")
     return redirect(url_for("admin.list_channels_view"))
 
 
@@ -479,6 +533,7 @@ def edit_channel_view(channel_id: int):
             409,
         )
 
+    flash("Channel updated.", "success")
     return redirect(url_for("admin.list_channels_view"))
 
 
@@ -486,6 +541,16 @@ def edit_channel_view(channel_id: int):
 @requires(CATALOG_WRITE)
 def delete_channel_view(channel_id: int):
     connection = get_connection()
+    record = get_channel(connection, channel_id)
+    if record is None:
+        abort(404)
+    if request.form.get("confirm") != "yes":
+        return render_template(
+            "admin/confirm_delete.html",
+            entity="channel",
+            record=record,
+            list_endpoint="admin.list_channels_view",
+        )
     deleted = delete_channel(connection, channel_id)
 
     if not deleted:
@@ -508,6 +573,7 @@ def delete_channel_view(channel_id: int):
             409,
         )
 
+    flash("Channel deleted.", "success")
     return redirect(url_for("admin.list_channels_view"))
 
 
@@ -526,6 +592,8 @@ def list_products_view():
     )
     total_pages = max(1, (total + _PER_PAGE - 1) // _PER_PAGE)
 
+    if response := redirect_last_page(page, total_pages):
+        return response
     return render_template(
         "admin/products.html",
         products=products,
@@ -623,6 +691,7 @@ def create_product_view():
             409,
         )
 
+    flash("Product created.", "success")
     return redirect(url_for("admin.list_products_view"))
 
 
@@ -732,6 +801,7 @@ def edit_product_view(product_id: int):
         if old_path:
             delete_product_image(old_path, config)
 
+    flash("Product updated.", "success")
     return redirect(url_for("admin.list_products_view"))
 
 
@@ -739,6 +809,16 @@ def edit_product_view(product_id: int):
 @requires(CATALOG_WRITE)
 def delete_product_view(product_id: int):
     connection = get_connection()
+    record = get_product(connection, product_id)
+    if record is None:
+        abort(404)
+    if request.form.get("confirm") != "yes":
+        return render_template(
+            "admin/confirm_delete.html",
+            entity="product",
+            record=record,
+            list_endpoint="admin.list_products_view",
+        )
     deleted = delete_product(connection, product_id)
 
     if not deleted:
@@ -761,6 +841,9 @@ def delete_product_view(product_id: int):
             409,
         )
 
+    if record.image_path:
+        delete_product_image(record.image_path, current_app.config["APP_CONFIG"])
+    flash("Product deleted.", "success")
     return redirect(url_for("admin.list_products_view"))
 
 
@@ -777,6 +860,8 @@ def list_roles_view():
     roles, total = list_roles(connection, search=search, page=page, per_page=_PER_PAGE)
     total_pages = max(1, (total + _PER_PAGE - 1) // _PER_PAGE)
 
+    if response := redirect_last_page(page, total_pages):
+        return response
     return render_template(
         "admin/roles.html",
         roles=roles,
@@ -824,6 +909,7 @@ def create_role_view():
             409,
         )
 
+    flash("Role created.", "success")
     return redirect(url_for("admin.list_roles_view"))
 
 
@@ -863,6 +949,7 @@ def edit_role_view(role_id: int):
             409,
         )
 
+    flash("Role updated.", "success")
     return redirect(url_for("admin.list_roles_view"))
 
 
@@ -870,6 +957,16 @@ def edit_role_view(role_id: int):
 @requires(CATALOG_WRITE)
 def delete_role_view(role_id: int):
     connection = get_connection()
+    record = get_role(connection, role_id)
+    if record is None:
+        abort(404)
+    if request.form.get("confirm") != "yes":
+        return render_template(
+            "admin/confirm_delete.html",
+            entity="role",
+            record=record,
+            list_endpoint="admin.list_roles_view",
+        )
     deleted = delete_role(connection, role_id)
 
     if not deleted:
@@ -892,6 +989,7 @@ def delete_role_view(role_id: int):
             409,
         )
 
+    flash("Role deleted.", "success")
     return redirect(url_for("admin.list_roles_view"))
 
 
@@ -908,6 +1006,8 @@ def list_users_view():
     users, total = list_users(connection, search=search, page=page, per_page=_PER_PAGE)
     total_pages = max(1, (total + _PER_PAGE - 1) // _PER_PAGE)
 
+    if response := redirect_last_page(page, total_pages):
+        return response
     return render_template(
         "admin/users.html",
         users=users,
@@ -981,6 +1081,7 @@ def create_user_view():
             409,
         )
 
+    flash("User created.", "success")
     return redirect(url_for("admin.list_users_view"))
 
 
@@ -1009,6 +1110,7 @@ def deactivate_user_view(user_id):
             409,
         )
 
+    flash("User deactivated.", "success")
     return redirect(url_for("admin.list_users_view"))
 
 
@@ -1022,6 +1124,7 @@ def activate_user_view(user_id):
     except UnknownUserError:
         return render_template("errors/error.html", code=404, name="Not Found"), 404
 
+    flash("User activated.", "success")
     return redirect(url_for("admin.list_users_view"))
 
 
@@ -1029,4 +1132,6 @@ def activate_user_view(user_id):
 @requires(CATALOG_READ)
 def product_image(filename):
     config = current_app.config["APP_CONFIG"]
-    return send_from_directory(Path(config.upload_dir).resolve(), filename)
+    response = send_from_directory(Path(config.upload_dir).resolve(), filename)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response

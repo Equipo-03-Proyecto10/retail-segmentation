@@ -1,11 +1,13 @@
 {% extends "base.html" %}
 
+{% block title %}{{ "Edit store" if request.endpoint == "admin.edit_store_view" else "New store" }} · {{ application_name }}{% endblock %}
+
 {% block content %}
-<main class="admin-page">
-  <h1>{{ "Edit store" if store and store.store_id else "New store" }}</h1>
+<div class="admin-page">
+  <h1>{{ "Edit store" if request.endpoint == "admin.edit_store_view" else "New store" }}</h1>
 
   <form method="post">
-    {% if not store or not store.store_id %}
+    {% if request.endpoint == "admin.create_store_view" %}
     <label for="store_id">Store ID</label>
     <input type="number" id="store_id" name="store_id" value="{{ store.store_id if store else '' }}" required>
     {% if errors.store_id %}<p class="error">{{ errors.store_id }}</p>{% endif %}
@@ -23,7 +25,7 @@
     <input type="text" id="state" name="state" value="{{ store.state if store else '' }}" required>
     {% if errors.state %}<p class="error">{{ errors.state }}</p>{% endif %}
 
-    {% if store and store.store_id %}
+    {% if request.endpoint == "admin.edit_store_view" %}
     <label for="is_active">
       <input type="checkbox" id="is_active" name="is_active" {% if store.is_active %}checked{% endif %}>
       Active
@@ -33,5 +35,5 @@
     <button type="submit">Save</button>
     <a href="{{ url_for('admin.list_stores_view') }}">Cancel</a>
   </form>
-</main>
+</div>
 {% endblock %}

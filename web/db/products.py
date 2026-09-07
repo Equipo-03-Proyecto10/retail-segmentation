@@ -21,6 +21,7 @@ class Product:
     list_price: Decimal
     image_path: str | None
     is_active: bool
+    category_name: str = ""
 
 
 def list_products(
@@ -35,11 +36,12 @@ def list_products(
             pattern = f"%{search}%"
             cursor.execute(
                 """
-                SELECT product_id, sku, name, category_id, list_price,
-                       image_path, is_active
-                FROM product
-                WHERE sku ILIKE %s OR name ILIKE %s
-                ORDER BY product_id
+                SELECT p.product_id, p.sku, p.name, p.category_id, p.list_price,
+                       p.image_path, p.is_active, c.name
+                FROM product AS p
+                JOIN category AS c ON c.category_id = p.category_id
+                WHERE p.sku ILIKE %s OR p.name ILIKE %s
+                ORDER BY p.product_id
                 LIMIT %s OFFSET %s
                 """,
                 (pattern, pattern, per_page, offset),
@@ -47,9 +49,11 @@ def list_products(
         else:
             cursor.execute(
                 """
-                SELECT product_id, sku, name, category_id, list_price,
-                       image_path, is_active
-                FROM product ORDER BY product_id LIMIT %s OFFSET %s
+                SELECT p.product_id, p.sku, p.name, p.category_id, p.list_price,
+                       p.image_path, p.is_active, c.name
+                FROM product AS p
+                JOIN category AS c ON c.category_id = p.category_id
+                ORDER BY p.product_id LIMIT %s OFFSET %s
                 """,
                 (per_page, offset),
             )

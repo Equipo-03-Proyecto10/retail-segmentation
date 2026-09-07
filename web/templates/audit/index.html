@@ -9,6 +9,7 @@
     append-only: nothing here edits or removes an entry.
   </p>
 
+  {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
   <form class="filters" method="get" action="{{ url_for('audit.index') }}">
     <div class="filters__field">
       <label for="entity">Entity</label>
@@ -89,7 +90,7 @@
         </a>
       {% endif %}
     </nav>
-  {% else %}
+  {% elif not error %}
     <p>No entries match those filters.</p>
   {% endif %}
 {% endblock %}

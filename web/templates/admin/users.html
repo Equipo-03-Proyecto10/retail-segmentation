@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 
+{% block title %}Users · {{ application_name }}{% endblock %}
+
 {% block content %}
-<main class="admin-page">
+<div class="admin-page">
   <h1>Users</h1>
 
   <form method="get" action="{{ url_for('admin.list_users_view') }}">
@@ -15,7 +17,8 @@
 
   <a href="{{ url_for('admin.create_user_view') }}">New user</a>
 
-  <table>
+  <div class="table-scroll">
+  <table class="listing">
     <thead>
       <tr><th>Name</th><th>Email</th><th>Role</th><th>Active</th><th></th></tr>
     </thead>
@@ -28,11 +31,11 @@
         <td>{{ "Yes" if user.is_active else "No" }}</td>
         <td>
           {% if user.is_active %}
-          <form method="post" action="{{ url_for('admin.deactivate_user_view', user_id=user.user_id) }}" style="display:inline">
+          <form method="post" action="{{ url_for('admin.deactivate_user_view', user_id=user.user_id) }}" class="inline-form">
             <button type="submit">Deactivate</button>
           </form>
           {% else %}
-          <form method="post" action="{{ url_for('admin.activate_user_view', user_id=user.user_id) }}" style="display:inline">
+          <form method="post" action="{{ url_for('admin.activate_user_view', user_id=user.user_id) }}" class="inline-form">
             <button type="submit">Activate</button>
           </form>
           {% endif %}
@@ -41,6 +44,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 
   <nav class="pagination">
     {% if page > 1 %}
@@ -51,5 +55,5 @@
       <a href="{{ url_for('admin.list_users_view', page=page+1, q=search) }}">Next</a>
     {% endif %}
   </nav>
-</main>
+</div>
 {% endblock %}

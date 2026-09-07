@@ -5,10 +5,11 @@
   <p class="lede">{{ status.tagline }}</p>
 
   <p>
-    The application is running. The modules it will serve — authentication, the
-    administrator catalog CRUD, the user views — arrive with the remaining
-    Phase 3 stories in <code>docs/backlog.md</code>.
+    Sign in to browse products, customers, stock and segments. Administrators
+    can maintain catalogs and user accounts, and authorized users can review
+    the audit log.
   </p>
+  <p><a href="{{ url_for('auth.login') }}">Sign in to MOSAIQ</a></p>
 
   <dl class="facts">
     <dt>Environment</dt>

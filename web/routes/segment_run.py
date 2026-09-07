@@ -33,7 +33,7 @@ def index() -> str:
 def execute() -> tuple[str, int] | str:
     """Run the recalculation and report what it did."""
     try:
-        window = parse_window(request.form.get("window"))
+        window = parse_window(request.form.get("window", ""))
     except InvalidWindow as refusal:
         return (
             render_template(
@@ -43,6 +43,9 @@ def execute() -> tuple[str, int] | str:
             ),
             400,
         )
+
+    if request.form.get("confirm") != "yes":
+        return render_template("segment_run/confirm.html", window=window)
 
     result = run(get_connection(), window)
 

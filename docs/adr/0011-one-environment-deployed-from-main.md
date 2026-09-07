@@ -1,6 +1,6 @@
 # ADR-0011 — The instance is one environment, deployed automatically only from `main`
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #90 (F6-06)
 **Supersedes:** —

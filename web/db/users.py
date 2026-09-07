@@ -219,17 +219,14 @@ def list_users(
     each account was created.
     """
     offset = (page - 1) * per_page
-    columns = (
-        "u.user_id, u.role_id, r.code, r.description, u.name, u.email, "
-        "u.password_hash, u.is_active"
-    )
 
     with connection.cursor() as cursor:
         if search:
             pattern = f"%{search}%"
             cursor.execute(
-                f"""
-                SELECT {columns}
+                """
+                SELECT u.user_id, u.role_id, r.code, r.description, u.name,
+                       u.email, u.password_hash, u.is_active
                 FROM app_user AS u
                 JOIN role AS r ON r.role_id = u.role_id
                 WHERE u.name ILIKE %s OR u.email ILIKE %s
@@ -240,8 +237,9 @@ def list_users(
             )
         else:
             cursor.execute(
-                f"""
-                SELECT {columns}
+                """
+                SELECT u.user_id, u.role_id, r.code, r.description, u.name,
+                       u.email, u.password_hash, u.is_active
                 FROM app_user AS u
                 JOIN role AS r ON r.role_id = u.role_id
                 ORDER BY u.email
@@ -282,3 +280,43 @@ def list_role_options(connection: Connection) -> list[tuple[str, str]]:
     with connection.cursor() as cursor:
         cursor.execute("SELECT code, description FROM role ORDER BY code")
         return [(row[0], row[1]) for row in cursor.fetchall()]
+
+
+def get_sole_administrator(connection: Connection) -> AppUser | None:
+    """Return the account holding the administrator seat, if any."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT u.user_id FROM app_user AS u
+            JOIN role AS r ON r.role_id = u.role_id
+            WHERE r.code = %s
+            """,
+            (ADMINISTRATOR_ROLE_CODE,),
+        )
+        row = cursor.fetchone()
+    return get_user_by_id(connection, row[0]) if row else None
+
+
+def update_password_hash(
+    connection: Connection, email: str, password_hash: str
+) -> None:
+    """Replace the hash for an existing account."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE app_user SET password_hash = %s WHERE email = %s",
+            (password_hash, email),
+        )
+
+
+def list_accounts_with_roles(connection: Connection) -> list[tuple[str, str, bool]]:
+    """Return the account report without password hashes."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT r.code, u.email, u.is_active
+            FROM app_user AS u
+            JOIN role AS r ON r.role_id = u.role_id
+            ORDER BY r.role_id, u.email
+            """
+        )
+        return list(cursor.fetchall())

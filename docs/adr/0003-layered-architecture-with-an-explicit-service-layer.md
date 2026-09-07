@@ -1,6 +1,6 @@
 # ADR-0003 — The application is layered with an explicit service layer, rather than classic MVC
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #61 (F3-01)
 **Supersedes:** —

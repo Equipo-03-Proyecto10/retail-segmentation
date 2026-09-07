@@ -1,6 +1,6 @@
 # ADR-0009 — NGINX is the reverse proxy in front of the application
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Max
 **Issue:** #77 (F6-01)
 **Supersedes:** —

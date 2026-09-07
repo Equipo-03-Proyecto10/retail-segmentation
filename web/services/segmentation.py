@@ -15,6 +15,7 @@ not.
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -22,6 +23,7 @@ from typing import Any
 from psycopg import Connection
 
 from web.db.segments import recalculate_segments
+from web.db.transactions import atomic
 
 # The seed covers 180 days of sales, so the default window sees all of it.
 # Per-run rather than per-deployment: the operator chooses the window on the
@@ -73,7 +75,8 @@ def parse_window(raw: str | None) -> int:
     return days
 
 
-def run(connection: Connection[Any], window_days: int) -> RunResult:
+@atomic
+def _run(connection: Connection[Any], window_days: int) -> RunResult:
     """Recalculate every customer's segment over the window, and commit.
 
     Committed here rather than left to the route because the audit entries the
@@ -82,7 +85,6 @@ def run(connection: Connection[Any], window_days: int) -> RunResult:
     """
     started = time.perf_counter()
     counts = recalculate_segments(connection, window_days)
-    connection.commit()
     elapsed = time.perf_counter() - started
 
     return RunResult(
@@ -94,3 +96,22 @@ def run(connection: Connection[Any], window_days: int) -> RunResult:
         cleared=counts.cleared,
         seconds=elapsed,
     )
+
+
+def run(connection: Connection[Any], window_days: int) -> RunResult:
+    """Record the start and the committed outcome of a recalculation."""
+    logger = logging.getLogger(__name__)
+    logger.info("segment_run_started window_days=%s", window_days)
+    result = _run(connection, window_days)
+    logger.info(
+        "segment_run_succeeded window_days=%s processed=%s assigned=%s "
+        "unmatched=%s reassigned=%s cleared=%s seconds=%.3f",
+        result.window_days,
+        result.processed,
+        result.assigned,
+        result.unmatched,
+        result.reassigned,
+        result.cleared,
+        result.seconds,
+    )
+    return result

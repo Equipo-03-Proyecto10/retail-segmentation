@@ -8,8 +8,8 @@ added here without a declaration is refused rather than exposed.
 
 from __future__ import annotations
 
-from decimal import Decimal
 from pathlib import Path
+from uuid import UUID
 
 from flask import (
     Blueprint,
@@ -22,38 +22,26 @@ from flask import (
     send_from_directory,
     url_for,
 )
-from psycopg.errors import UniqueViolation
+from flask.typing import ResponseReturnValue
 
 from web.db import get_connection
 from web.db.categories import (
-    create_category,
-    delete_category,
     get_category,
     list_all_categories,
     list_categories,
-    update_category,
 )
 from web.db.channels import (
-    create_channel,
-    delete_channel,
     get_channel,
     list_channels,
-    update_channel,
 )
 from web.db.products import (
-    create_product,
-    delete_product,
     get_product,
     list_products,
-    update_product,
 )
-from web.db.roles import create_role, delete_role, get_role, list_roles, update_role
+from web.db.roles import get_role, list_roles
 from web.db.stores import (
-    create_store,
-    delete_store,
     get_store,
     list_stores,
-    update_store,
 )
 from web.db.users import list_role_options, list_users
 from web.middleware.authz import (
@@ -65,24 +53,47 @@ from web.middleware.authz import (
 )
 from web.routes.pagination import redirect_last_page
 from web.services.catalog import (
+    INT_MAX,
+    CatalogConflict,
+    create_category,
+    create_channel,
+    create_product,
+    create_role,
+    create_store,
+    delete_category,
+    delete_channel,
+    delete_product,
+    delete_role,
+    delete_store,
+    parse_category_parent,
+    parse_identifier,
     parse_pagination,
+    update_category,
+    update_channel,
+    update_product,
+    update_role,
+    update_store,
     validate_category,
     validate_channel,
     validate_product,
     validate_role,
     validate_store,
 )
+from web.services.pagination import page_count
 from web.services.uploads import (
     UploadRejected,
     delete_product_image,
     save_product_image,
 )
 from web.services.users import (
+    MINIMUM_PASSWORD_LENGTH,
+    DuplicateEmailError,
     SingleAdministratorError,
     UnknownRoleError,
     UnknownUserError,
     create_user,
     set_active,
+    validate_user,
 )
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -92,7 +103,7 @@ _PER_PAGE = 20
 
 @bp.get("/catalogs")
 @requires(CATALOG_READ)
-def catalog_index():
+def catalog_index() -> ResponseReturnValue:
     return render_template("admin/catalogs.html")
 
 
@@ -101,7 +112,7 @@ def catalog_index():
 
 @bp.get("/stores")
 @requires(CATALOG_READ)
-def list_stores_view():
+def list_stores_view() -> ResponseReturnValue:
     connection = get_connection()
     page = parse_pagination(request.args.get("page"))
     search = request.args.get("q", "").strip() or None
@@ -109,7 +120,7 @@ def list_stores_view():
     stores, total = list_stores(
         connection, search=search, page=page, per_page=_PER_PAGE
     )
-    total_pages = max(1, (total + _PER_PAGE - 1) // _PER_PAGE)
+    total_pages = page_count(total, _PER_PAGE)
 
     if response := redirect_last_page(page, total_pages):
         return response
@@ -124,7 +135,7 @@ def list_stores_view():
 
 @bp.route("/stores/new", methods=["GET", "POST"])
 @requires(CATALOG_WRITE)
-def create_store_view():
+def create_store_view() -> ResponseReturnValue:
     if request.method == "GET":
         return render_template("admin/store_form.html", store=None, errors={})
 
@@ -135,8 +146,10 @@ def create_store_view():
     state = request.form.get("state", "").strip()
 
     errors = validate_store(name=name, city=city, state=state)
-    if not store_id.isdigit():
-        errors["store_id"] = "Store ID must be a whole number."
+    store_key, key_errors = parse_identifier(
+        store_id, field="store_id", label="Store ID"
+    )
+    errors.update(key_errors)
 
     if errors:
         return (
@@ -153,13 +166,14 @@ def create_store_view():
             400,
         )
 
-    error = create_store(
-        connection, store_id=int(store_id), name=name, city=city, state=state
-    )
-    if error:
+    try:
+        create_store(connection, store_id=store_key, name=name, city=city, state=state)
+    except CatalogConflict as error:
         return (
             render_template(
-                "admin/store_form.html", store=request.form, errors={"store_id": error}
+                "admin/store_form.html",
+                store=request.form,
+                errors={error.field: str(error)},
             ),
             409,
         )
@@ -169,11 +183,11 @@ def create_store_view():
 
 @bp.route("/stores/<int:store_id>/edit", methods=["GET", "POST"])
 @requires(CATALOG_WRITE)
-def edit_store_view(store_id: int):
+def edit_store_view(store_id: int) -> ResponseReturnValue:
     connection = get_connection()
     store = get_store(connection, store_id)
     if store is None:
-        return render_template("errors/error.html", code=404, name="Not Found"), 404
+        abort(404)
 
     if request.method == "GET":
         return render_template("admin/store_form.html", store=store, errors={})
@@ -200,15 +214,16 @@ def edit_store_view(store_id: int):
             400,
         )
 
-    error = update_store(
-        connection, store_id, name=name, city=city, state=state, is_active=is_active
-    )
-    if error:
+    try:
+        update_store(
+            connection, store_id, name=name, city=city, state=state, is_active=is_active
+        )
+    except CatalogConflict as error:
         return (
             render_template(
                 "admin/store_form.html",
                 store=dict(request.form, store_id=store_id, is_active=is_active),
-                errors={"name": error},
+                errors={error.field: str(error)},
             ),
             409,
         )
@@ -218,7 +233,7 @@ def edit_store_view(store_id: int):
 
 @bp.post("/stores/<int:store_id>/delete")
 @requires(CATALOG_WRITE)
-def delete_store_view(store_id: int):
+def delete_store_view(store_id: int) -> ResponseReturnValue:
     connection = get_connection()
     record = get_store(connection, store_id)
     if record is None:
@@ -230,14 +245,15 @@ def delete_store_view(store_id: int):
             record=record,
             list_endpoint="admin.list_stores_view",
         )
-    deleted = delete_store(connection, store_id)
+    try:
+        delete_store(connection, store_id)
 
-    if not deleted:
+    except CatalogConflict as error:
         page = parse_pagination(request.args.get("page"))
         stores, total = list_stores(
             connection, search=None, page=page, per_page=_PER_PAGE
         )
-        total_pages = max(1, (total + _PER_PAGE - 1) // _PER_PAGE)
+        total_pages = page_count(total, _PER_PAGE)
         return (
             render_template(
                 "admin/stores.html",
@@ -245,9 +261,7 @@ def delete_store_view(store_id: int):
                 page=page,
                 total_pages=total_pages,
                 search="",
-                delete_error=(
-                    "Cannot delete this store: other records still reference it."
-                ),
+                delete_error=str(error),
             ),
             409,
         )
@@ -261,7 +275,7 @@ def delete_store_view(store_id: int):
 
 @bp.get("/categories")
 @requires(CATALOG_READ)
-def list_categories_view():
+def list_categories_view() -> ResponseReturnValue:
     connection = get_connection()
     page = parse_pagination(request.args.get("page"))
     search = request.args.get("q", "").strip() or None
@@ -269,7 +283,7 @@ def list_categories_view():
     categories, total = list_categories(
         connection, search=search, page=page, per_page=_PER_PAGE
     )
-    total_pages = max(1, (total + _PER_PAGE - 1) // _PER_PAGE)
+    total_pages = page_count(total, _PER_PAGE)
 
     if response := redirect_last_page(page, total_pages):
         return response
@@ -284,7 +298,7 @@ def list_categories_view():
 
 @bp.route("/categories/new", methods=["GET", "POST"])
 @requires(CATALOG_WRITE)
-def create_category_view():
+def create_category_view() -> ResponseReturnValue:
     connection = get_connection()
     all_categories = list_all_categories(connection)
 
@@ -299,11 +313,12 @@ def create_category_view():
     category_id = request.form.get("category_id", "")
     name = request.form.get("name", "").strip()
     parent_raw = request.form.get("parent_category_id", "")
-    parent_category_id = int(parent_raw) if parent_raw else None
-
-    errors = validate_category(name=name)
-    if not category_id.isdigit():
-        errors["category_id"] = "Category ID must be a whole number."
+    parent_category_id, errors = parse_category_parent(parent_raw)
+    errors.update(validate_category(name=name))
+    category_key, key_errors = parse_identifier(
+        category_id, field="category_id", label="Category ID"
+    )
+    errors.update(key_errors)
 
     if errors:
         return (
@@ -320,13 +335,14 @@ def create_category_view():
             400,
         )
 
-    error = create_category(
-        connection,
-        category_id=int(category_id),
-        name=name,
-        parent_category_id=parent_category_id,
-    )
-    if error:
+    try:
+        create_category(
+            connection,
+            category_id=category_key,
+            name=name,
+            parent_category_id=parent_category_id,
+        )
+    except CatalogConflict as error:
         return (
             render_template(
                 "admin/category_form.html",
@@ -335,7 +351,7 @@ def create_category_view():
                     "name": name,
                     "parent_category_id": parent_category_id,
                 },
-                errors={"category_id": error},
+                errors={error.field: str(error)},
                 all_categories=all_categories,
             ),
             409,
@@ -347,11 +363,11 @@ def create_category_view():
 
 @bp.route("/categories/<int:category_id>/edit", methods=["GET", "POST"])
 @requires(CATALOG_WRITE)
-def edit_category_view(category_id: int):
+def edit_category_view(category_id: int) -> ResponseReturnValue:
     connection = get_connection()
     category = get_category(connection, category_id)
     if category is None:
-        return render_template("errors/error.html", code=404, name="Not Found"), 404
+        abort(404)
 
     all_categories = [
         c for c in list_all_categories(connection) if c.category_id != category_id
@@ -367,9 +383,8 @@ def edit_category_view(category_id: int):
 
     name = request.form.get("name", "").strip()
     parent_raw = request.form.get("parent_category_id", "")
-    parent_category_id = int(parent_raw) if parent_raw else None
-
-    errors = validate_category(name=name)
+    parent_category_id, errors = parse_category_parent(parent_raw)
+    errors.update(validate_category(name=name))
     if errors:
         return (
             render_template(
@@ -385,16 +400,31 @@ def edit_category_view(category_id: int):
             400,
         )
 
-    update_category(
-        connection, category_id, name=name, parent_category_id=parent_category_id
-    )
+    try:
+        update_category(
+            connection, category_id, name=name, parent_category_id=parent_category_id
+        )
+    except CatalogConflict as error:
+        return (
+            render_template(
+                "admin/category_form.html",
+                category=dict(
+                    request.form,
+                    category_id=category_id,
+                    parent_category_id=parent_category_id,
+                ),
+                errors={error.field: str(error)},
+                all_categories=all_categories,
+            ),
+            409,
+        )
     flash("Category updated.", "success")
     return redirect(url_for("admin.list_categories_view"))
 
 
 @bp.post("/categories/<int:category_id>/delete")
 @requires(CATALOG_WRITE)
-def delete_category_view(category_id: int):
+def delete_category_view(category_id: int) -> ResponseReturnValue:
     connection = get_connection()
     record = get_category(connection, category_id)
     if record is None:
@@ -406,14 +436,15 @@ def delete_category_view(category_id: int):
             record=record,
             list_endpoint="admin.list_categories_view",
         )
-    deleted = delete_category(connection, category_id)
+    try:
+        delete_category(connection, category_id)
 
-    if not deleted:
+    except CatalogConflict as error:
         page = parse_pagination(request.args.get("page"))
         categories, total = list_categories(
             connection, search=None, page=page, per_page=_PER_PAGE
         )
-        total_pages = max(1, (total + _PER_PAGE - 1) // _PER_PAGE)
+        total_pages = page_count(total, _PER_PAGE)
         return (
             render_template(
                 "admin/categories.html",
@@ -421,10 +452,7 @@ def delete_category_view(category_id: int):
                 page=page,
                 total_pages=total_pages,
                 search="",
-                delete_error=(
-                    "Cannot delete this category: "
-                    "products or subcategories still reference it."
-                ),
+                delete_error=str(error),
             ),
             409,
         )
@@ -438,7 +466,7 @@ def delete_category_view(category_id: int):
 
 @bp.get("/channels")
 @requires(CATALOG_READ)
-def list_channels_view():
+def list_channels_view() -> ResponseReturnValue:
     connection = get_connection()
     page = parse_pagination(request.args.get("page"))
     search = request.args.get("q", "").strip() or None
@@ -446,7 +474,7 @@ def list_channels_view():
     channels, total = list_channels(
         connection, search=search, page=page, per_page=_PER_PAGE
     )
-    total_pages = max(1, (total + _PER_PAGE - 1) // _PER_PAGE)
+    total_pages = page_count(total, _PER_PAGE)
 
     if response := redirect_last_page(page, total_pages):
         return response
@@ -461,7 +489,7 @@ def list_channels_view():
 
 @bp.route("/channels/new", methods=["GET", "POST"])
 @requires(CATALOG_WRITE)
-def create_channel_view():
+def create_channel_view() -> ResponseReturnValue:
     if request.method == "GET":
         return render_template("admin/channel_form.html", channel=None, errors={})
 
@@ -470,8 +498,10 @@ def create_channel_view():
     name = request.form.get("name", "").strip()
 
     errors = validate_channel(name=name)
-    if not channel_id.isdigit():
-        errors["channel_id"] = "Channel ID must be a whole number."
+    channel_key, key_errors = parse_identifier(
+        channel_id, field="channel_id", label="Channel ID"
+    )
+    errors.update(key_errors)
 
     if errors:
         return (
@@ -483,13 +513,14 @@ def create_channel_view():
             400,
         )
 
-    error = create_channel(connection, channel_id=int(channel_id), name=name)
-    if error:
+    try:
+        create_channel(connection, channel_id=channel_key, name=name)
+    except CatalogConflict as error:
         return (
             render_template(
                 "admin/channel_form.html",
                 channel={"channel_id": channel_id, "name": name},
-                errors={"channel_id": error},
+                errors={error.field: str(error)},
             ),
             409,
         )
@@ -500,11 +531,11 @@ def create_channel_view():
 
 @bp.route("/channels/<int:channel_id>/edit", methods=["GET", "POST"])
 @requires(CATALOG_WRITE)
-def edit_channel_view(channel_id: int):
+def edit_channel_view(channel_id: int) -> ResponseReturnValue:
     connection = get_connection()
     channel = get_channel(connection, channel_id)
     if channel is None:
-        return render_template("errors/error.html", code=404, name="Not Found"), 404
+        abort(404)
 
     if request.method == "GET":
         return render_template("admin/channel_form.html", channel=channel, errors={})
@@ -522,13 +553,14 @@ def edit_channel_view(channel_id: int):
             400,
         )
 
-    error = update_channel(connection, channel_id, name=name)
-    if error:
+    try:
+        update_channel(connection, channel_id, name=name)
+    except CatalogConflict as error:
         return (
             render_template(
                 "admin/channel_form.html",
                 channel={"channel_id": channel_id, "name": name},
-                errors={"name": error},
+                errors={error.field: str(error)},
             ),
             409,
         )
@@ -539,7 +571,7 @@ def edit_channel_view(channel_id: int):
 
 @bp.post("/channels/<int:channel_id>/delete")
 @requires(CATALOG_WRITE)
-def delete_channel_view(channel_id: int):
+def delete_channel_view(channel_id: int) -> ResponseReturnValue:
     connection = get_connection()
     record = get_channel(connection, channel_id)
     if record is None:
@@ -551,14 +583,15 @@ def delete_channel_view(channel_id: int):
             record=record,
             list_endpoint="admin.list_channels_view",
         )
-    deleted = delete_channel(connection, channel_id)
+    try:
+        delete_channel(connection, channel_id)
 
-    if not deleted:
+    except CatalogConflict as error:
         page = parse_pagination(request.args.get("page"))
         channels, total = list_channels(
             connection, search=None, page=page, per_page=_PER_PAGE
         )
-        total_pages = max(1, (total + _PER_PAGE - 1) // _PER_PAGE)
+        total_pages = page_count(total, _PER_PAGE)
         return (
             render_template(
                 "admin/channels.html",
@@ -566,9 +599,7 @@ def delete_channel_view(channel_id: int):
                 page=page,
                 total_pages=total_pages,
                 search="",
-                delete_error=(
-                    "Cannot delete this channel: other records still reference it."
-                ),
+                delete_error=str(error),
             ),
             409,
         )
@@ -582,7 +613,7 @@ def delete_channel_view(channel_id: int):
 
 @bp.get("/products")
 @requires(CATALOG_READ)
-def list_products_view():
+def list_products_view() -> ResponseReturnValue:
     connection = get_connection()
     page = parse_pagination(request.args.get("page"))
     search = request.args.get("q", "").strip() or None
@@ -590,7 +621,7 @@ def list_products_view():
     products, total = list_products(
         connection, search=search, page=page, per_page=_PER_PAGE
     )
-    total_pages = max(1, (total + _PER_PAGE - 1) // _PER_PAGE)
+    total_pages = page_count(total, _PER_PAGE)
 
     if response := redirect_last_page(page, total_pages):
         return response
@@ -605,7 +636,7 @@ def list_products_view():
 
 @bp.route("/products/new", methods=["GET", "POST"])
 @requires(CATALOG_WRITE)
-def create_product_view():
+def create_product_view() -> ResponseReturnValue:
     connection = get_connection()
     all_categories = list_all_categories(connection)
 
@@ -624,11 +655,14 @@ def create_product_view():
     list_price_raw = request.form.get("list_price", "").strip()
     image_file = request.files.get("image")
 
-    errors = validate_product(
+    validation = validate_product(
         sku=sku, name=name, category_id=category_id_raw, list_price=list_price_raw
     )
-    if not product_id.isdigit():
-        errors["product_id"] = "Product ID must be a whole number."
+    errors = validation.errors
+    product_key, key_errors = parse_identifier(
+        product_id, field="product_id", label="Product ID", maximum=INT_MAX
+    )
+    errors.update(key_errors)
 
     if errors:
         return (
@@ -663,16 +697,17 @@ def create_product_view():
                 400,
             )
 
-    error = create_product(
-        connection,
-        product_id=int(product_id),
-        sku=sku,
-        name=name,
-        category_id=int(category_id_raw),
-        list_price=Decimal(list_price_raw),
-        image_path=saved.relative_path if saved else None,
-    )
-    if error:
+    try:
+        create_product(
+            connection,
+            product_id=product_key,
+            sku=sku,
+            name=name,
+            category_id=int(category_id_raw),
+            list_price=validation.price,
+            image_path=saved.relative_path if saved else None,
+        )
+    except CatalogConflict as error:
         if saved:
             delete_product_image(saved.relative_path, config)
         return (
@@ -685,7 +720,7 @@ def create_product_view():
                     "category_id": category_id_raw,
                     "list_price": list_price_raw,
                 },
-                errors={"sku": error},
+                errors={error.field: str(error)},
                 all_categories=all_categories,
             ),
             409,
@@ -697,11 +732,11 @@ def create_product_view():
 
 @bp.route("/products/<int:product_id>/edit", methods=["GET", "POST"])
 @requires(CATALOG_WRITE)
-def edit_product_view(product_id: int):
+def edit_product_view(product_id: int) -> ResponseReturnValue:
     connection = get_connection()
     product = get_product(connection, product_id)
     if product is None:
-        return render_template("errors/error.html", code=404, name="Not Found"), 404
+        abort(404)
 
     all_categories = list_all_categories(connection)
 
@@ -720,9 +755,10 @@ def edit_product_view(product_id: int):
     is_active = request.form.get("is_active") == "on"
     image_file = request.files.get("image")
 
-    errors = validate_product(
+    validation = validate_product(
         sku=sku, name=name, category_id=category_id_raw, list_price=list_price_raw
     )
+    errors = validation.errors
     if errors:
         return (
             render_template(
@@ -766,17 +802,20 @@ def edit_product_view(product_id: int):
                 400,
             )
 
-    error = update_product(
-        connection,
-        product_id,
-        sku=sku,
-        name=name,
-        category_id=int(category_id_raw),
-        list_price=Decimal(list_price_raw),
-        is_active=is_active,
-        image_path=saved.relative_path if image_file and image_file.filename else None,
-    )
-    if error:
+    try:
+        update_product(
+            connection,
+            product_id,
+            sku=sku,
+            name=name,
+            category_id=int(category_id_raw),
+            list_price=validation.price,
+            is_active=is_active,
+            image_path=(
+                saved.relative_path if image_file and image_file.filename else None
+            ),
+        )
+    except CatalogConflict as error:
         if image_file and image_file.filename:
             delete_product_image(saved.relative_path, config)
         return (
@@ -790,7 +829,7 @@ def edit_product_view(product_id: int):
                     "list_price": list_price_raw,
                     "is_active": is_active,
                 },
-                errors={"sku": error},
+                errors={error.field: str(error)},
                 all_categories=all_categories,
             ),
             409,
@@ -807,7 +846,7 @@ def edit_product_view(product_id: int):
 
 @bp.post("/products/<int:product_id>/delete")
 @requires(CATALOG_WRITE)
-def delete_product_view(product_id: int):
+def delete_product_view(product_id: int) -> ResponseReturnValue:
     connection = get_connection()
     record = get_product(connection, product_id)
     if record is None:
@@ -819,14 +858,15 @@ def delete_product_view(product_id: int):
             record=record,
             list_endpoint="admin.list_products_view",
         )
-    deleted = delete_product(connection, product_id)
+    try:
+        delete_product(connection, product_id)
 
-    if not deleted:
+    except CatalogConflict as error:
         page = parse_pagination(request.args.get("page"))
         products, total = list_products(
             connection, search=None, page=page, per_page=_PER_PAGE
         )
-        total_pages = max(1, (total + _PER_PAGE - 1) // _PER_PAGE)
+        total_pages = page_count(total, _PER_PAGE)
         return (
             render_template(
                 "admin/products.html",
@@ -834,9 +874,7 @@ def delete_product_view(product_id: int):
                 page=page,
                 total_pages=total_pages,
                 search="",
-                delete_error=(
-                    "Cannot delete this product: other records still reference it."
-                ),
+                delete_error=str(error),
             ),
             409,
         )
@@ -852,19 +890,20 @@ def delete_product_view(product_id: int):
 
 @bp.get("/roles")
 @requires(CATALOG_READ)
-def list_roles_view():
+def list_roles_view() -> ResponseReturnValue:
     connection = get_connection()
     page = parse_pagination(request.args.get("page"))
     search = request.args.get("q", "").strip() or None
 
     roles, total = list_roles(connection, search=search, page=page, per_page=_PER_PAGE)
-    total_pages = max(1, (total + _PER_PAGE - 1) // _PER_PAGE)
+    total_pages = page_count(total, _PER_PAGE)
 
     if response := redirect_last_page(page, total_pages):
         return response
     return render_template(
         "admin/roles.html",
         roles=roles,
+        minimum_password_length=MINIMUM_PASSWORD_LENGTH,
         page=page,
         total_pages=total_pages,
         search=search or "",
@@ -873,7 +912,7 @@ def list_roles_view():
 
 @bp.route("/roles/new", methods=["GET", "POST"])
 @requires(CATALOG_WRITE)
-def create_role_view():
+def create_role_view() -> ResponseReturnValue:
     if request.method == "GET":
         return render_template("admin/role_form.html", role=None, errors={})
 
@@ -883,8 +922,8 @@ def create_role_view():
     description = request.form.get("description", "").strip() or None
 
     errors = validate_role(code=code, description=description or "")
-    if not role_id.isdigit():
-        errors["role_id"] = "Role ID must be a whole number."
+    role_key, key_errors = parse_identifier(role_id, field="role_id", label="Role ID")
+    errors.update(key_errors)
 
     if errors:
         return (
@@ -896,15 +935,14 @@ def create_role_view():
             400,
         )
 
-    error = create_role(
-        connection, role_id=int(role_id), code=code, description=description
-    )
-    if error:
+    try:
+        create_role(connection, role_id=role_key, code=code, description=description)
+    except CatalogConflict as error:
         return (
             render_template(
                 "admin/role_form.html",
                 role={"role_id": role_id, "code": code, "description": description},
-                errors={"code": error},
+                errors={error.field: str(error)},
             ),
             409,
         )
@@ -915,11 +953,11 @@ def create_role_view():
 
 @bp.route("/roles/<int:role_id>/edit", methods=["GET", "POST"])
 @requires(CATALOG_WRITE)
-def edit_role_view(role_id: int):
+def edit_role_view(role_id: int) -> ResponseReturnValue:
     connection = get_connection()
     role = get_role(connection, role_id)
     if role is None:
-        return render_template("errors/error.html", code=404, name="Not Found"), 404
+        abort(404)
 
     if request.method == "GET":
         return render_template("admin/role_form.html", role=role, errors={})
@@ -938,13 +976,14 @@ def edit_role_view(role_id: int):
             400,
         )
 
-    error = update_role(connection, role_id, code=code, description=description)
-    if error:
+    try:
+        update_role(connection, role_id, code=code, description=description)
+    except CatalogConflict as error:
         return (
             render_template(
                 "admin/role_form.html",
                 role={"role_id": role_id, "code": code, "description": description},
-                errors={"code": error},
+                errors={error.field: str(error)},
             ),
             409,
         )
@@ -955,7 +994,7 @@ def edit_role_view(role_id: int):
 
 @bp.post("/roles/<int:role_id>/delete")
 @requires(CATALOG_WRITE)
-def delete_role_view(role_id: int):
+def delete_role_view(role_id: int) -> ResponseReturnValue:
     connection = get_connection()
     record = get_role(connection, role_id)
     if record is None:
@@ -967,24 +1006,24 @@ def delete_role_view(role_id: int):
             record=record,
             list_endpoint="admin.list_roles_view",
         )
-    deleted = delete_role(connection, role_id)
+    try:
+        delete_role(connection, role_id)
 
-    if not deleted:
+    except CatalogConflict as error:
         page = parse_pagination(request.args.get("page"))
         roles, total = list_roles(
             connection, search=None, page=page, per_page=_PER_PAGE
         )
-        total_pages = max(1, (total + _PER_PAGE - 1) // _PER_PAGE)
+        total_pages = page_count(total, _PER_PAGE)
         return (
             render_template(
                 "admin/roles.html",
                 roles=roles,
+                minimum_password_length=MINIMUM_PASSWORD_LENGTH,
                 page=page,
                 total_pages=total_pages,
                 search="",
-                delete_error=(
-                    "Cannot delete this role: other records still reference it."
-                ),
+                delete_error=str(error),
             ),
             409,
         )
@@ -998,13 +1037,13 @@ def delete_role_view(role_id: int):
 
 @bp.get("/users")
 @requires(USER_READ)
-def list_users_view():
+def list_users_view() -> ResponseReturnValue:
     connection = get_connection()
     page = parse_pagination(request.args.get("page"))
     search = request.args.get("q", "").strip() or None
 
     users, total = list_users(connection, search=search, page=page, per_page=_PER_PAGE)
-    total_pages = max(1, (total + _PER_PAGE - 1) // _PER_PAGE)
+    total_pages = page_count(total, _PER_PAGE)
 
     if response := redirect_last_page(page, total_pages):
         return response
@@ -1019,13 +1058,17 @@ def list_users_view():
 
 @bp.route("/users/new", methods=["GET", "POST"])
 @requires(USER_WRITE)
-def create_user_view():
+def create_user_view() -> ResponseReturnValue:
     connection = get_connection()
     roles = list_role_options(connection)
 
     if request.method == "GET":
         return render_template(
-            "admin/user_form.html", user=None, errors={}, roles=roles
+            "admin/user_form.html",
+            user=None,
+            errors={},
+            roles=roles,
+            minimum_password_length=MINIMUM_PASSWORD_LENGTH,
         )
 
     name = request.form.get("name", "").strip()
@@ -1033,15 +1076,9 @@ def create_user_view():
     password = request.form.get("password", "")
     role_code = request.form.get("role_code", "")
 
-    errors = {}
-    if not name:
-        errors["name"] = "Name is required."
-    if not email or "@" not in email:
-        errors["email"] = "A valid email is required."
-    if not password or len(password) < 8:
-        errors["password"] = "Password must be at least 8 characters."
-    if not role_code:
-        errors["role_code"] = "Role is required."
+    errors = validate_user(
+        name=name, email=email, password=password, role_code=role_code
+    )
 
     if errors:
         return (
@@ -1050,6 +1087,7 @@ def create_user_view():
                 user={"name": name, "email": email, "role_code": role_code},
                 errors=errors,
                 roles=roles,
+                minimum_password_length=MINIMUM_PASSWORD_LENGTH,
             ),
             400,
         )
@@ -1058,7 +1096,6 @@ def create_user_view():
         create_user(
             connection, name=name, email=email, password=password, role_code=role_code
         )
-        connection.commit()
     except (SingleAdministratorError, UnknownRoleError) as error:
         return (
             render_template(
@@ -1066,17 +1103,18 @@ def create_user_view():
                 user={"name": name, "email": email, "role_code": role_code},
                 errors={"role_code": str(error)},
                 roles=roles,
+                minimum_password_length=MINIMUM_PASSWORD_LENGTH,
             ),
             409,
         )
-    except UniqueViolation:
-        connection.rollback()
+    except DuplicateEmailError as error:
         return (
             render_template(
                 "admin/user_form.html",
                 user={"name": name, "email": email, "role_code": role_code},
-                errors={"email": "A user with that email already exists."},
+                errors={"email": str(error)},
                 roles=roles,
+                minimum_password_length=MINIMUM_PASSWORD_LENGTH,
             ),
             409,
         )
@@ -1087,17 +1125,16 @@ def create_user_view():
 
 @bp.post("/users/<uuid:user_id>/deactivate")
 @requires(USER_WRITE)
-def deactivate_user_view(user_id):
+def deactivate_user_view(user_id: UUID) -> ResponseReturnValue:
     connection = get_connection()
     try:
         set_active(connection, user_id, is_active=False)
-        connection.commit()
     except (SingleAdministratorError, UnknownUserError) as error:
         page = parse_pagination(request.args.get("page"))
         users, total = list_users(
             connection, search=None, page=page, per_page=_PER_PAGE
         )
-        total_pages = max(1, (total + _PER_PAGE - 1) // _PER_PAGE)
+        total_pages = page_count(total, _PER_PAGE)
         return (
             render_template(
                 "admin/users.html",
@@ -1116,13 +1153,12 @@ def deactivate_user_view(user_id):
 
 @bp.post("/users/<uuid:user_id>/activate")
 @requires(USER_WRITE)
-def activate_user_view(user_id):
+def activate_user_view(user_id: UUID) -> ResponseReturnValue:
     connection = get_connection()
     try:
         set_active(connection, user_id, is_active=True)
-        connection.commit()
     except UnknownUserError:
-        return render_template("errors/error.html", code=404, name="Not Found"), 404
+        abort(404)
 
     flash("User activated.", "success")
     return redirect(url_for("admin.list_users_view"))
@@ -1130,7 +1166,7 @@ def activate_user_view(user_id):
 
 @bp.get("/products/image/<path:filename>")
 @requires(CATALOG_READ)
-def product_image(filename):
+def product_image(filename: str) -> ResponseReturnValue:
     config = current_app.config["APP_CONFIG"]
     response = send_from_directory(Path(config.upload_dir).resolve(), filename)
     response.headers["X-Content-Type-Options"] = "nosniff"

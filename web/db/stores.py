@@ -9,7 +9,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from psycopg import Connection
-from psycopg.errors import ForeignKeyViolation, UniqueViolation
 
 
 @dataclass(frozen=True)
@@ -104,20 +103,14 @@ def get_store(connection: Connection, store_id: int) -> Store | None:
 
 def create_store(
     connection: Connection, *, store_id: int, name: str, city: str, state: str
-) -> str | None:
-    """Insert a store, explaining duplicate IDs without exposing a DB error."""
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "INSERT INTO store (store_id, name, city, state) "
-                "VALUES (%s, %s, %s, %s)",
-                (store_id, name, city, state),
-            )
-        connection.commit()
-        return None
-    except UniqueViolation:
-        connection.rollback()
-        return "A store with that ID already exists."
+) -> None:
+    """Create one store; the service owns the transaction."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO store (store_id, name, city, state) "
+            "VALUES (%s, %s, %s, %s)",
+            (store_id, name, city, state),
+        )
 
 
 def update_store(
@@ -128,33 +121,20 @@ def update_store(
     city: str,
     state: str,
     is_active: bool,
-) -> str | None:
-    """Update an existing store's editable fields."""
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                UPDATE store
-                SET name = %s, city = %s, state = %s, is_active = %s
-                WHERE store_id = %s
-                """,
-                (name, city, state, is_active, store_id),
-            )
-        connection.commit()
-        return None
-    except UniqueViolation:
-        connection.rollback()
-        return "A store with those details already exists."
+) -> None:
+    """Update one store; the service owns the transaction."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            UPDATE store
+            SET name = %s, city = %s, state = %s, is_active = %s
+            WHERE store_id = %s
+            """,
+            (name, city, state, is_active, store_id),
+        )
 
 
-def delete_store(connection: Connection, store_id: int) -> bool:
-    """Delete a store. Returns True on success, False if referenced by
-    other rows (inventory or transaction) and therefore refused."""
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute("DELETE FROM store WHERE store_id = %s", (store_id,))
-        connection.commit()
-        return True
-    except ForeignKeyViolation:
-        connection.rollback()
-        return False
+def delete_store(connection: Connection, store_id: int) -> None:
+    """Delete one store; the service owns the transaction."""
+    with connection.cursor() as cursor:
+        cursor.execute("DELETE FROM store WHERE store_id = %s", (store_id,))

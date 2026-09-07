@@ -142,7 +142,7 @@ published at **`mosaiq.maxthecoder.online`**, a subdomain of a domain a team
 member owns, proxied through Cloudflare; browsers get a valid certificate and
 F6-03's acceptance criterion is genuinely met. The decision, and the cost of
 depending on one member's domain, are in
-[ADR-0012](adr/0012-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md)
+[ADR-0013](adr/0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md)
 and [`deploy/README.md`](../deploy/README.md).
 
 Q-3 (company name and brand identity) and Q-4 (design system for the

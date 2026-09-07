@@ -7,6 +7,7 @@ handed back — the database stores that path, never the bytes (RF-08).
 
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from dataclasses import dataclass
@@ -86,7 +87,11 @@ def save_product_image(file: FileStorage, config: Config) -> SavedUpload:
     Raises UploadRejected on a disallowed type or an oversized file. The
     original filename is ignored; a generated name prevents collisions.
     """
-    extension = _validate(file, config)
+    try:
+        extension = _validate(file, config)
+    except UploadRejected as error:
+        logging.getLogger(__name__).info("upload_refused reason=%r", str(error))
+        raise
     os.makedirs(config.upload_dir, exist_ok=True)
 
     stored_name = f"{uuid.uuid4().hex}{extension}"

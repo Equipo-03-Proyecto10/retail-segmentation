@@ -1,6 +1,6 @@
 # ADR-0004 — The PostgreSQL model carries the deferred segmentation tables now
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #58 (F2-05)
 **Supersedes:** —

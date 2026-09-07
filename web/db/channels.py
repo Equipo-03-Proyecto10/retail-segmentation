@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from psycopg import Connection
-from psycopg.errors import ForeignKeyViolation, UniqueViolation
 
 
 @dataclass(frozen=True)
@@ -70,45 +69,24 @@ def get_channel(connection: Connection, channel_id: int) -> Channel | None:
     return Channel(*row) if row else None
 
 
-def create_channel(connection: Connection, *, channel_id: int, name: str) -> str | None:
-    """Insert a new channel. Returns None on success, or an error message on
-    a duplicate id/name."""
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "INSERT INTO channel (channel_id, name) VALUES (%s, %s)",
-                (channel_id, name),
-            )
-        connection.commit()
-        return None
-    except UniqueViolation:
-        connection.rollback()
-        return "A channel with that ID or name already exists."
+def create_channel(connection: Connection, *, channel_id: int, name: str) -> None:
+    """Create one channel; the service owns the transaction."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO channel (channel_id, name) VALUES (%s, %s)",
+            (channel_id, name),
+        )
 
 
-def update_channel(connection: Connection, channel_id: int, *, name: str) -> str | None:
-    """Update a channel's name. Returns None on success, or an error message
-    on a duplicate name."""
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "UPDATE channel SET name = %s WHERE channel_id = %s", (name, channel_id)
-            )
-        connection.commit()
-        return None
-    except UniqueViolation:
-        connection.rollback()
-        return "A channel with that name already exists."
+def update_channel(connection: Connection, channel_id: int, *, name: str) -> None:
+    """Update one channel; the service owns the transaction."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE channel SET name = %s WHERE channel_id = %s", (name, channel_id)
+        )
 
 
-def delete_channel(connection: Connection, channel_id: int) -> bool:
-    """Delete a channel. Returns True on success, False if referenced by
-    other rows (customer, transaction, etc.)."""
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute("DELETE FROM channel WHERE channel_id = %s", (channel_id,))
-        connection.commit()
-        return True
-    except ForeignKeyViolation:
-        connection.rollback()
-        return False
+def delete_channel(connection: Connection, channel_id: int) -> None:
+    """Delete one channel; the service owns the transaction."""
+    with connection.cursor() as cursor:
+        cursor.execute("DELETE FROM channel WHERE channel_id = %s", (channel_id,))

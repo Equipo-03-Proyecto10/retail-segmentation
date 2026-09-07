@@ -9,6 +9,29 @@ permissions:
   contents: read
 
 jobs:
+  compose:
+    name: Compose application and proxy smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Boot from documented safe defaults
+        run: |
+          cp .env.example .env
+          docker compose -f compose.yaml -f compose.proxy.yaml up --build --wait --wait-timeout 180
+      - name: Application serves HTML directly and through NGINX
+        run: |
+          curl --fail --retry 12 --retry-connrefused --retry-delay 2 http://127.0.0.1:8000/login -o /tmp/direct.html
+          curl --fail --retry 12 --retry-connrefused --retry-delay 2 http://127.0.0.1:8080/login -o /tmp/proxy.html
+          grep -q MOSAIQ /tmp/direct.html
+          grep -q MOSAIQ /tmp/proxy.html
+          docker compose exec -T web flask --app web.app account-report
+      - name: Capture execution evidence
+        if: always()
+        run: docker compose -f compose.yaml -f compose.proxy.yaml logs --no-color
+      - name: Stop the isolated stack
+        if: always()
+        run: docker compose -f compose.yaml -f compose.proxy.yaml down --volumes
+
   quality:
     name: Format, lint and tests
     runs-on: ubuntu-latest

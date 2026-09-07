@@ -26,6 +26,7 @@ from web.db.audit import (
     get_entry,
     search_entries,
 )
+from web.services.pagination import page_count as total_pages
 
 PAGE_SIZE = 25
 
@@ -89,7 +90,7 @@ def read_page(
     total = count_entries(
         connection, entity=entity, date_from=date_from, date_to=date_to
     )
-    page_count = max(1, -(-total // PAGE_SIZE))  # ceiling division
+    page_count = total_pages(total, PAGE_SIZE)
     page = min(max(page, 1), page_count)
 
     entries = search_entries(

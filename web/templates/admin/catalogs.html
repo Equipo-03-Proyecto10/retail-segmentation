@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Catalogs · {{ application_name }}{% endblock %}
+{% block content %}
+<h1>Catalogs</h1>
+<p>Browse and maintain the master data.</p>
+<ul>
+  <li><a href="{{ url_for('admin.list_stores_view') }}">Stores</a></li>
+  <li><a href="{{ url_for('admin.list_categories_view') }}">Categories</a></li>
+  <li><a href="{{ url_for('admin.list_channels_view') }}">Channels</a></li>
+  <li><a href="{{ url_for('admin.list_products_view') }}">Products</a></li>
+  <li><a href="{{ url_for('admin.list_roles_view') }}">Roles</a></li>
+</ul>
+{% endblock %}

@@ -21,6 +21,13 @@ DEFAULT_LOG_LEVEL = "INFO"
 DEFAULT_SESSION_COOKIE_SECURE = False
 DEFAULT_TRUSTED_PROXY_HOPS = 0
 
+# Uploaded images (F3-07, #67). Matches the defaults documented in
+# .env.example: 5 MB, and only the three types a browser and Pillow both
+# agree are safe to call an image.
+DEFAULT_UPLOAD_DIR = "web/uploads"
+DEFAULT_MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+DEFAULT_ALLOWED_IMAGE_TYPES = "image/jpeg,image/png,image/webp"
+
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 
 
@@ -43,6 +50,24 @@ def _proxy_hops_env(value: str | None) -> int:
         return max(0, int(value.strip()))
     except ValueError:
         return DEFAULT_TRUSTED_PROXY_HOPS
+
+
+def _int_env(value: str | None, *, default: int) -> int:
+    """Read a positive integer from an environment string; fall back on
+    anything unparseable or non-positive."""
+    if value is None or not value.strip():
+        return default
+    try:
+        parsed = int(value.strip())
+    except ValueError:
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _set_env(value: str | None, *, default: str) -> frozenset[str]:
+    """Read a comma-separated list from an environment string into a set."""
+    raw = value if value and value.strip() else default
+    return frozenset(item.strip() for item in raw.split(",") if item.strip())
 
 
 def load_dotenv_file(
@@ -68,6 +93,10 @@ class Config:
     whose `X-Forwarded-*` headers may be believed. `0` when the app is reached
     directly; `1` behind the single NGINX (F6-01). Trusting those headers with
     nothing in front lets a client spoof its own address, so the default is `0`.
+
+    `upload_dir`, `max_upload_bytes` and `allowed_image_types` govern F3-07:
+    where an uploaded product image is written, the largest file accepted, and
+    the MIME types treated as images at all.
     """
 
     secret_key: str = field(repr=False)
@@ -81,6 +110,11 @@ class Config:
     # not know about reverse proxies gets the un-proxied behaviour rather than
     # a TypeError.
     trusted_proxy_hops: int = DEFAULT_TRUSTED_PROXY_HOPS
+    upload_dir: str = DEFAULT_UPLOAD_DIR
+    max_upload_bytes: int = DEFAULT_MAX_UPLOAD_BYTES
+    allowed_image_types: frozenset[str] = field(
+        default_factory=lambda: _set_env(None, default=DEFAULT_ALLOWED_IMAGE_TYPES)
+    )
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> Config:
@@ -119,4 +153,11 @@ class Config:
             ),
             trusted_proxy_hops=_proxy_hops_env(env.get("TRUSTED_PROXY_HOPS")),
             database_url=database_url,
+            upload_dir=env.get("UPLOAD_DIR", DEFAULT_UPLOAD_DIR),
+            max_upload_bytes=_int_env(
+                env.get("MAX_UPLOAD_BYTES"), default=DEFAULT_MAX_UPLOAD_BYTES
+            ),
+            allowed_image_types=_set_env(
+                env.get("ALLOWED_IMAGE_TYPES"), default=DEFAULT_ALLOWED_IMAGE_TYPES
+            ),
         )

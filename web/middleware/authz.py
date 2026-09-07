@@ -279,8 +279,8 @@ class MenuItem:
 # F3-12 (#106); what lives here is the permission filtering it inherits.
 NAVIGATION: tuple[MenuEntry, ...] = (
     MenuEntry("Home", "home.index", None),
-    MenuEntry("Catalogs", "catalog.index", CATALOG_READ),
-    MenuEntry("Users", "users.index", USER_READ),
+    MenuEntry("Catalogs", "admin.catalog_index", CATALOG_READ),
+    MenuEntry("Users", "admin.list_users_view", USER_READ),
     MenuEntry("Segments", "segments.index", SEGMENT_READ),
     MenuEntry("Campaigns", "campaigns.index", CAMPAIGN_READ),
     MenuEntry("Segment run", "segment_run.index", SEGMENT_RUN_EXECUTE),
@@ -292,8 +292,8 @@ NAVIGATION: tuple[MenuEntry, ...] = (
 def menu() -> list[MenuItem]:
     """The entries this visitor may reach, in declaration order.
 
-    The current section is marked by blueprint rather than by endpoint, so a
-    detail page inside a section still marks the section it belongs to.
+    Detail pages keep their section active. Catalogs and users share the
+    admin blueprint, so their URL sections are distinguished explicitly.
     """
     granted = current_permissions()
     registered = current_app.view_functions
@@ -303,7 +303,16 @@ def menu() -> list[MenuItem]:
         MenuItem(
             label=entry.label,
             endpoint=entry.endpoint,
-            is_current=entry.endpoint.split(".")[0] == section,
+            is_current=(
+                entry.endpoint
+                == (
+                    "admin.list_users_view"
+                    if request.path.startswith("/admin/users")
+                    else "admin.catalog_index"
+                )
+                if section == "admin"
+                else entry.endpoint.split(".")[0] == section
+            ),
         )
         for entry in NAVIGATION
         if entry.endpoint in registered

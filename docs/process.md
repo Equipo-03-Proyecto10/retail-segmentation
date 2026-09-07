@@ -102,7 +102,7 @@ applicable item returns to the backlog and does not count toward velocity.
 ### Sprint level
 
 1. Sprint Goal met, or the gap recorded in the Review notes.
-2. `develop` merged to `main` and tagged.
+2. `develop` merged to `main` with a merge commit (ADR-0012) and tagged.
 3. Documentation deliverables assigned to the sprint are committed.
 4. Retrospective actions recorded with owners.
 5. The deployed instance reflects the sprint's work.
@@ -137,6 +137,12 @@ the commitment is calibrated from measured velocity afterwards.
   always has an active assignee.
 - **Pull requests.** Reviewed within one working day. A PR over 400 changed lines should have been split.
 - **Branching.** `main` is protected. `develop` is the integration branch and also requires review. Feature branches are `feature/<issue>-kebab-slug`, also `fix/`, `chore/`, `docs/`.
+- **Merging.** *Create a merge commit* is the only method the repository
+  offers, and that is deliberate: squash and rebase copy commits rather than
+  link them, and a release merged that way leaves `main` holding `develop`'s
+  content without its history — which is what made every release since #86
+  open with a conflict in every file. ADR-0012 has the detail. Tidy a messy
+  branch with `git rebase -i` locally, before review.
 - **Commits.** Conventional Commits: `type(scope): subject (#issue)`.
 - **Broken `develop`.** Anyone may declare it broken. Repairing it takes priority over all new work, for everyone.
 - **Blocked work.** Blocked for more than half a working day means post in the channel. Do not sit on it until the Weekly Sync.

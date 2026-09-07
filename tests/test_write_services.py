@@ -115,3 +115,13 @@ def test_layer_boundaries_keep_sql_and_transactions_out_of_entry_points():
                 assert path == Path("web/db/transactions.py"), path
             if node.func.attr in {"execute", "executemany"} and node.args:
                 assert not isinstance(node.args[0], ast.JoinedStr | ast.BinOp), path
+
+
+@pytest.mark.parametrize(
+    "email", ["", "@example.com", "user@", "a@b@c", "a b@example.com", "!" * 100_000]
+)
+def test_invalid_email_is_refused_without_a_backtracking_pattern(email):
+    errors = users.validate_user(
+        name="User", email=email, password="TestPassword!123", role_code="ANALYST"
+    )
+    assert "email" in errors

@@ -78,7 +78,7 @@ def create_app(
         "upload_dir=%r max_upload_bytes=%s max_request_bytes=%s",
         config.environment,
         config.log_level,
-        config.trusted_proxy_hops,
+        int(config.trusted_proxy_hops),
         config.upload_dir,
         config.max_upload_bytes,
         app.config["MAX_CONTENT_LENGTH"],

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}Catalogs · {{ application_name }}{% endblock %}
+
+{% block content %}
+  <h1>Catalogs</h1>
+  <p class="lede">
+    Browse the catalog, customers, stock and segments. Read only — searching and
+    opening a record, not changing it.
+  </p>
+
+  <ul class="figures">
+    <li class="figure">
+      <a class="figure__label" href="{{ url_for('catalog.products') }}">Products</a>
+    </li>
+    <li class="figure">
+      <a class="figure__label" href="{{ url_for('catalog.stock') }}">Stock</a>
+    </li>
+    {% if can('segment.read') %}
+      <li class="figure">
+        <a class="figure__label" href="{{ url_for('catalog.customers') }}">Customers</a>
+      </li>
+      <li class="figure">
+        <a class="figure__label" href="{{ url_for('catalog.segments') }}">Segments</a>
+      </li>
+    {% endif %}
+  </ul>
+
+  {% if can('catalog.write') %}
+    <p>
+      <a href="{{ url_for('admin.catalog_index') }}">Manage catalogs</a> —
+      create, edit and delete master data.
+    </p>
+  {% endif %}
+{% endblock %}

@@ -25,7 +25,57 @@ body {
 }
 
 .masthead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
   border-bottom: 1px solid #d9d9de;
+}
+
+/* The menu wraps onto its own line at 375 px and sits beside the brand at
+   1440 px, without a media query: the session block is pushed to the end and
+   everything between it and the brand flows. */
+.masthead__nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+}
+
+.masthead__session {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
+.masthead__link {
+  color: #1b1b1f;
+  text-decoration: none;
+}
+
+.masthead__link:hover,
+.masthead__link:focus-visible {
+  text-decoration: underline;
+}
+
+.masthead__link--current {
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.35em;
+}
+
+.masthead__user {
+  color: #55555f;
+}
+
+.masthead__signout {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #1b1b1f;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
 }
 
 .masthead__brand {
@@ -78,4 +128,187 @@ code {
   border-top: 1px solid #d9d9de;
   color: #55555f;
   font-size: 0.875rem;
+}
+
+/* ---------- the shell's figures and listings (F3-12) ---------- */
+
+.figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.figure {
+  padding: 0.75rem 1rem;
+  border: 1px solid #d9d9de;
+  border-radius: 0.25rem;
+}
+
+.figure__value {
+  display: block;
+  font-size: 1.75rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.figure__label {
+  color: #55555f;
+  font-size: 0.875rem;
+}
+
+/* Wide content scrolls inside its own box; the page itself never scrolls
+   sideways at 375 px. */
+.table-scroll {
+  overflow-x: auto;
+}
+
+.listing {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+.listing th,
+.listing td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #e6e6ea;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.listing th {
+  color: #55555f;
+  font-weight: 600;
+}
+
+/* ---------- the audit log (F3-11) ---------- */
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.75rem;
+  margin: 1.5rem 0;
+}
+
+.filters__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.filters label {
+  color: #55555f;
+  font-size: 0.875rem;
+}
+
+.filters select,
+.filters input {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #d9d9de;
+  border-radius: 0.25rem;
+  font: inherit;
+}
+
+.filters button {
+  padding: 0.4rem 0.9rem;
+  border: 1px solid #1b1b1f;
+  border-radius: 0.25rem;
+  background: #1b1b1f;
+  color: #ffffff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.filters__reset {
+  color: #55555f;
+}
+
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  margin: 1rem 0 2rem;
+  color: #55555f;
+  font-size: 0.9375rem;
+}
+
+.unattributed {
+  color: #55555f;
+  font-style: italic;
+}
+
+/* A changed field has to be distinguishable from an unchanged one without
+   relying on colour alone: the row is tinted and its name is emphasised. */
+.listing--diff th[scope="row"] {
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.diff--changed {
+  background: #fff8e1;
+}
+
+.diff--changed th[scope="row"] {
+  font-weight: 700;
+}
+
+.diff--changed th[scope="row"]::after {
+  content: " changed";
+  color: #7a5c00;
+  font-size: 0.75rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.listing--diff td {
+  white-space: normal;
+  word-break: break-word;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---------- the consultation module (F3-05) ---------- */
+
+/* A missing image is stated, not shown as a broken picture (HU-08). */
+.placeholder {
+  display: inline-block;
+  padding: 1.5rem 2rem;
+  border: 1px dashed #d9d9de;
+  border-radius: 0.25rem;
+  color: #55555f;
+}
+
+.detail-image {
+  max-width: 12rem;
+  height: auto;
+  border: 1px solid #d9d9de;
+  border-radius: 0.25rem;
+}
+
+/* Low stock is tinted and carries a text tag, so it does not rely on colour
+   alone to stand out (HU-11, RNF-11). */
+.low-stock {
+  background: #fff8e1;
+}
+
+.low-stock__tag {
+  color: #7a5c00;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }

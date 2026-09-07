@@ -1,0 +1,53 @@
+# MOSAIQ web application — gunicorn under systemd. F6-02 (issue #78).
+#
+# Install to /etc/systemd/system/mosaiq.service on mosaiq-deployment-vm; the
+# steps are in deploy/README.md. NGINX (F6-01, deploy/nginx/mosaiq.conf)
+# proxies :80 to the 127.0.0.1:8000 this unit binds.
+#
+# The gunicorn invocation mirrors the Dockerfile CMD on purpose (ADR-0006 —
+# the two execution paths must not drift). Keep them in step.
+
+[Unit]
+Description=MOSAIQ web application (gunicorn)
+Documentation=https://github.com/Equipo-03-Proyecto10/retail-segmentation/blob/develop/deploy/README.md
+After=network-online.target postgresql-18.service
+Wants=network-online.target postgresql-18.service
+
+[Service]
+Type=notify
+User=mosaiq
+Group=mosaiq
+
+# Deployment layout (created by the runbook):
+#   /opt/mosaiq/current  checkout of the repository
+#   /opt/mosaiq/venv     virtualenv with web/requirements.txt installed
+#   /etc/mosaiq/mosaiq.env   DATABASE_URL, FLASK_SECRET_KEY, FLASK_ENV=production,
+#                            SESSION_COOKIE_SECURE=true, TRUSTED_PROXY_HOPS=1, …
+WorkingDirectory=/opt/mosaiq/current
+EnvironmentFile=/etc/mosaiq/mosaiq.env
+ExecStart=/opt/mosaiq/venv/bin/gunicorn \
+    --bind 127.0.0.1:8000 \
+    --workers 2 \
+    --access-logfile - \
+    --error-logfile - \
+    "web.app:create_app()"
+
+# AC1: a killed worker or master comes back on its own.
+Restart=on-failure
+RestartSec=3
+
+# journald captures stdout/stderr — this is why web/log.py logs there (F4-05).
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mosaiq
+
+# Least privilege: the app reads its config and writes uploads, nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/mosaiq/current/web/uploads
+
+[Install]
+# AC2: enabled means it starts on boot with no one logged in.
+WantedBy=multi-user.target

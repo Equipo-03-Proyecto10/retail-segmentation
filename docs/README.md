@@ -7,6 +7,8 @@
 | [Backlog](backlog.md) | Ordered work, grouped by scope phase |
 | [Roadmap](roadmap.md) | What is deferred to later deliveries, and how it re-enters |
 | [Infrastructure](infra.md) | Provisioned GCP resources, firewall policy, and SSH access |
+| [PostgreSQL access](../deploy/postgresql/README.md) | Loopback and SSH access, HBA rejection checks, and application-role verification |
+| [F1-04 / F1-05 evidence](evidence/f1-04-f1-05-postgresql-access.md) | Live database access and least-privilege acceptance results |
 | [Requirements](requirements.md) | Functional and non-functional requirements, the permission matrix, and traceability to the demonstration |
 | [User stories](user-stories.md) | What each role needs from the application, with acceptance criteria |
 | [Business rules](business-rules.md) | The invariants, and where each one is actually enforced |
@@ -14,13 +16,15 @@
 | [Datastore designs](datastores/) | MongoDB and Redis designs for later deliveries. Nothing in there is implemented |
 | [Design system](design-system/) | MOSAIQ's tokens, components, and the two reference sheets to build screens from |
 | [Decisions](adr/) | Architecture Decision Records |
+| [Negative-test evidence](evidence/f5-02-negative-tests.md) | Reproducible access refusals, invalid submissions and controlled failures (#75) |
+| [Key-functionality screenshots](evidence/f5-04-key-functionality.md) | A captioned screenshot for every item on the demonstration list (#108) |
 | [Issue history](issue-history.md) | What the deleted `#1`–`#40` references in older commits pointed at |
 
 Documents that do not exist yet are produced by the story that needs them:
 
 | Deliverable | Produced by |
 |---|---|
-| `evidence/` | F2-07, F5-01, F5-02, F6-05 |
+| `evidence/` | F2-07, F5-01, F5-02, F5-04, F6-05 |
 
 Everything is written in English — code, comments, commits, issues,
 documentation. Spoken meetings are in Spanish.

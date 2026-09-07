@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}Segments · {{ application_name }}{% endblock %}
+
+{% block content %}
+  <h1>Segments</h1>
+  <p class="lede">Search by name, then open a segment to see who is in it.</p>
+
+  <form class="filters" method="get" action="{{ url_for('catalog.segments') }}">
+    <div class="filters__field">
+      <label for="q">Search</label>
+      <input type="text" id="q" name="q" value="{{ search }}" placeholder="name">
+    </div>
+    <button type="submit">Search</button>
+    {% if search %}
+      <a class="filters__reset" href="{{ url_for('catalog.segments') }}">Clear</a>
+    {% endif %}
+  </form>
+
+  {% if segments %}
+    <div class="table-scroll">
+      <table class="listing">
+        <thead>
+          <tr>
+            <th scope="col">ID</th>
+            <th scope="col">Name</th>
+            <th scope="col">Valid from</th>
+            <th scope="col">Valid to</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for segment in segments %}
+            <tr>
+              <td>{{ segment.segment_id }}</td>
+              <td>
+                <a href="{{ url_for('catalog.segment_detail', segment_id=segment.segment_id) }}">
+                  {{ segment.name }}
+                </a>
+              </td>
+              <td>{{ segment.valid_from.strftime("%Y-%m-%d") }}</td>
+              <td>{{ segment.valid_to.strftime("%Y-%m-%d") if segment.valid_to else "—" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <nav class="pager" aria-label="Pages">
+      {% if page > 1 %}
+        <a href="{{ url_for('catalog.segments', page=page - 1, q=search) }}">Previous</a>
+      {% endif %}
+      <span>Page {{ page }} of {{ total_pages }} · {{ total }} segments</span>
+      {% if page < total_pages %}
+        <a href="{{ url_for('catalog.segments', page=page + 1, q=search) }}">Next</a>
+      {% endif %}
+    </nav>
+  {% else %}
+    <p>No segments match that search.</p>
+  {% endif %}
+{% endblock %}

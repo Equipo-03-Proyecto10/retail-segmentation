@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}{{ customer.name }} · {{ application_name }}{% endblock %}
+
+{% block content %}
+  <h1>{{ customer.name }}</h1>
+  <p class="lede">Registered {{ customer.registered_on.strftime("%Y-%m-%d") }}</p>
+
+  <dl class="facts">
+    <dt>Email</dt>
+    <dd>{{ customer.email or "—" }}</dd>
+    <dt>Phone</dt>
+    <dd>{{ customer.phone or "—" }}</dd>
+    <dt>Registration channel</dt>
+    <dd>{{ registration_channel.name if registration_channel else customer.registration_channel_id }}</dd>
+    <dt>Current segment</dt>
+    <dd>
+      {% if segment %}
+        <a href="{{ url_for('catalog.segment_detail', segment_id=segment.segment_id) }}">
+          {{ segment.name }}
+        </a>
+      {% else %}
+        Unassigned
+      {% endif %}
+    </dd>
+    <dt>Categories of interest</dt>
+    <dd>
+      {% if interests %}
+        {{ interests | map(attribute='name') | join(', ') }}
+      {% else %}
+        None recorded
+      {% endif %}
+    </dd>
+    <dt>Preferred channels</dt>
+    <dd>
+      {% if preferred_channels %}
+        {{ preferred_channels | map(attribute='name') | join(', ') }}
+      {% else %}
+        None recorded
+      {% endif %}
+    </dd>
+  </dl>
+
+  <p><a href="{{ url_for('catalog.customers') }}">Back to customers</a></p>
+{% endblock %}

@@ -93,9 +93,23 @@ Three things this matrix is deliberately strict about:
 - **`CUSTOMER` reaches their own row and nothing else.** It is the role a loyalty
   customer signs in with, not a staff role.
 
-Enforced by the authorization middleware at the route level — F4-01 (#69). The
-matrix is a specification; until that story lands, it is a promise and not a
-control.
+Enforced by the authorization middleware at the route level — F4-01 (#69),
+which transcribes this table into `web/middleware/authz.py` and refuses any
+route that declares nothing. Where a cell says `own` or `own store`, the gate
+decides that the page may be reached at all; narrowing the query to the
+caller's own rows belongs to the story that writes the query, F3-05 (#65) and
+F3-11 (#103). Why the matrix is code rather than two more tables:
+[ADR-0007](adr/0007-permissions-in-code-with-a-default-deny-middleware.md).
+
+**Customers and stock are not columns above.** The consultation module (F3-05,
+#65) gives every `catalog` reader a read-only view of stock per store and
+product, and every `segment` reader a read-only view of the customer directory
+and segment membership — customer data is the substrate of segmentation, so it
+follows `segment.read` rather than `catalog.read`. This keeps `STORE_MANAGER`
+and `INVENTORY_PLANNER` out of the customer directory.
+[ADR-0010](adr/0010-the-consultation-module-is-a-separate-read-only-blueprint.md)
+records why, and why `STORE_MANAGER`'s "own store" scoping is a query filter
+rather than row-level security (`app_user` has no store).
 
 ## 4. Traceability
 
@@ -105,12 +119,12 @@ is a gap, and the point of the table is that the gap is visible.
 | Demonstration item | Requirements | Story | Issue | State |
 |---|---|---|---|---|
 | Inicio de sesión | RF-01, RF-02 | F3-03 | #63 | Open, not started |
-| Acceso diferenciado por perfil | RF-03, RF-04, RF-05 | F4-01, F4-02 | #69, #70 | Open, not started |
+| Acceso diferenciado por perfil | RF-03, RF-04, RF-05 | F4-01, F4-02 | #69, #70 | Built — the middleware (#69) and the single administrator (#70) |
 | Operación de catálogos | RF-06, RF-07, RF-08, RF-09 | F3-04, F3-06, F3-07 | #64, #66, #67 | Open, not started |
-| Ejecución de un proceso principal | RF-12 | F3-10 | #102 | Open, just written |
+| Ejecución de un proceso principal | RF-12 | F3-10 | #102 | Built — quintile R/F/M over a configurable window |
 | Almacenamiento en PostgreSQL | RNF-08, RNF-09, RNF-10 | F2-04, F2-05, F2-06 | #57, #58, #59 | In review (#98) |
-| Consulta de información | RF-10, RF-11, RF-13 | F3-05 | #65 | Open, not started |
-| Registro de auditoría | RF-14, RNF-17 | F3-11 | #103 | Open, just written |
+| Consulta de información | RF-10, RF-11, RF-13 | F3-05 | #65 | Built — the `/catalog` consultation module: products, customers, stock and segment membership, read-only |
+| Registro de auditoría | RF-14, RNF-17 | F3-11 | #103 | Built — the log is readable from the application |
 | Ejecución mediante contenedores | RNF-13, RNF-14 | F3-09 | #89 | Open, rewritten |
 
 **Everything except the database is unbuilt, and all of it is behind F3-02
@@ -124,6 +138,6 @@ through them:
 |---|---|---|
 | F3-12 | #106 | The shell a signed-in user lands on. Every item above is reached through its navigation, and nothing else builds it |
 | F4-06 | #107 | The deployed instance must not be reachable with the password this repository publishes for the seeded administrator |
-| F5-04 | #108 | Deliverable 10 — screenshots. F5-01 captures test output, which is not the same thing |
+| F5-04 | #108 | Deliverable 10 — screenshots. F5-01 captures test output, which is not the same thing. Done: [`evidence/f5-04-key-functionality.md`](evidence/f5-04-key-functionality.md) |
 | F6-07 | #109 | Deliverable 13 — proof of deployment. F6-02 makes it survive a reboot; nothing recorded that it does |
 | F6-08 | #110 | The demonstration itself, rehearsed in sequence on the instance. It is the one deliverable that cannot be corrected after submission |

@@ -22,11 +22,19 @@ Creating a second administrator, or promoting a second user to the role, is
 refused. So is demoting or deactivating the only one: the system is never left
 without an administrator.
 
-**Enforced:** application *and* a partial unique index on `app_user(role_id)
-WHERE role_id = 1`. **Neither exists yet** — both halves are F4-02 (#70), and
-`AGENTS.md` is explicit that one half alone does not count. The seed already
-holds exactly one administrator, so the index applies to existing data when it
-lands. · `RF-05`
+**Enforced:** `web/services/users.py` *and* the partial unique index
+`ux_app_user_single_administrator` on `app_user(role_id) WHERE role_id = 1`.
+**Verified** — cases N17, N18 and P5, and each half run with the other removed:
+[`evidence/f4-02-single-administrator.md`](evidence/f4-02-single-administrator.md).
+
+The two directions are not enforced the same way, and the difference matters.
+*Never two* is refused twice, which is what `AGENTS.md` requires. *Never zero*
+is refused only by the application: no unique index can require a row to exist,
+and a trigger that refused every write leaving the table without an
+administrator would also refuse the rotation F4-06 (#107) performs on the
+instance. `transfer_administrator` is the single operation that moves the role
+between two users, because promoting the successor and demoting the incumbent
+are each refused on their own. · `RF-05`
 
 ### RN-02 — A user's email is unique and is an email address
 No two accounts share an address, and an address without `@` is refused.
@@ -141,7 +149,10 @@ real constraint. See
 The recalculation clears the segment rather than leaving a stale one. An empty
 segment is information; a wrong one is not.
 
-**Enforced:** application, F3-10 (#102). Not yet built. · `RF-12`
+**Enforced:** application, F3-10 (#102) — the recalculation clears
+`current_segment_id` for every customer with no sales in the window, in the same
+statement that assigns the others. **Verified** —
+[`evidence/f3-10-segment-run.md`](evidence/f3-10-segment-run.md). · `RF-12`
 
 ## Audit
 
@@ -173,15 +184,13 @@ able to archive. Reviewed. · `RF-14`
 
 ## Where the gaps are
 
-Four rules have no enforcement yet, and all four are application-side:
+Every rule in this document is now enforced somewhere. The four that were open
+were all application-side, and all four are closed: RN-01 by F4-02 (#70), RN-03
+by F3-03 (#63), RN-05 by F4-01 (#69) and RN-21 by F3-10 (#102). A rule added
+from here starts in this section until the story that enforces it lands.
 
-| Rule | Waiting on |
-|---|---|
-| RN-01 exactly one administrator | F4-02 (#70) — **both** halves, and the schema half does not exist either |
-| RN-03 password hashing | F3-03 (#63) |
-| RN-05 only the administrator recalculates | F4-01 (#69) |
-| RN-21 customers with no recent sales are unassigned | F3-10 (#102) |
-
-RN-01 is the one to watch. It is a hard rule in `AGENTS.md`, it is a success
-criterion in [`scope.md`](scope.md) §7, and today it holds only because the seed
-happens to contain one administrator.
+RN-01 was the one to watch — a hard rule in `AGENTS.md` and a success criterion
+in [`scope.md`](scope.md) §7 that held only because the seed happened to contain
+one administrator. Both halves landed with F4-02 (#70). RN-03 landed with F3-03
+(#63) and RN-05 with F4-01 (#69), whose authorization middleware refuses the
+recalculation to everyone but the administrator.

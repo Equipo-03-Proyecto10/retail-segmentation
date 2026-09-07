@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Home · {{ application_name }}{% endblock %}
+
+{% block content %}
+  <h1>{{ dashboard.user.name }}</h1>
+  <p class="lede">
+    {{ dashboard.user.role_description or dashboard.user.role_code }}
+  </p>
+
+  {% if dashboard.figures %}
+    <ul class="figures">
+      {% for figure in dashboard.figures %}
+        <li class="figure">
+          <span class="figure__value">{{ figure.value }}</span>
+          <span class="figure__label">{{ figure.label }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  {% if dashboard.recent_audit %}
+    <h2>Recent changes</h2>
+    <div class="table-scroll">
+      <table class="listing">
+        <thead>
+          <tr>
+            <th scope="col">When</th>
+            <th scope="col">Entity</th>
+            <th scope="col">Action</th>
+            <th scope="col">By</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for entry in dashboard.recent_audit %}
+            <tr>
+              <td>{{ entry.executed_at.strftime("%Y-%m-%d %H:%M") }}</td>
+              <td>{{ entry.entity }} <code>{{ entry.entity_pk }}</code></td>
+              <td>{{ entry.action }}</td>
+              {# NULL means the actor is genuinely unknown — a seed or a
+                 maintenance script — and is shown as such, never invented. #}
+              <td>{{ entry.actor_name or "unattributed" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+
+  {% if not dashboard.figures and not dashboard.recent_audit %}
+    <p>
+      Your role does not open any of the figures this page reports. Use the
+      navigation above to reach the sections you do have.
+    </p>
+  {% endif %}
+{% endblock %}

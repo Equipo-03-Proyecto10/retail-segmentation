@@ -29,10 +29,18 @@ jobs:
       - name: Tests
         run: |
           if [ -n "$(find . -name 'test_*.py' -not -path './.venv/*' -print -quit)" ]; then
-            pytest
+            pytest --junitxml=test-results/pytest.xml
           else
             echo "No tests yet — nothing to run."
           fi
+
+      - name: Capture per-case test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-results
+          path: test-results/pytest.xml
+          if-no-files-found: ignore
 
   database:
     name: SQL scripts run clean from empty
@@ -68,6 +76,14 @@ jobs:
           psql -v ON_ERROR_STOP=1 -f sql/00_create_database.sql
           psql -v ON_ERROR_STOP=1 -d retail -f sql/01_schema.sql
           psql -v ON_ERROR_STOP=1 -d retail -f sql/02_seed_30_per_table.sql
+
+      - name: Application role can write data but cannot drop a table
+        env:
+          PGUSER: retail_app
+          PGPASSWORD: retail_app
+        run: |
+          sed -n '/^-- BEGIN APPLICATION ROLE VERIFICATION/,$p' sql/01_schema.sql |
+            psql -X -v ON_ERROR_STOP=1 -v verify_app_role=1 -d retail
 
       # Every table carries at least 30 seed rows, counted exactly — the
       # estimate in pg_stat_user_tables is still zero straight after a load.

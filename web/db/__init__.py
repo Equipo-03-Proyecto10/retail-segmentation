@@ -20,9 +20,11 @@ from psycopg import Connection
 from web.config import Config
 
 DatabaseConnector = Callable[[str], Connection[Any]]
+ConnectionInitializer = Callable[[Connection[Any]], None]
 
 _CONNECTION_KEY = "database_connection"
 _CONNECTOR_KEY = "database_connector"
+_INITIALIZER_KEY = "database_connection_initializer"
 
 
 def connect(database_url: str) -> Connection[Any]:
@@ -45,6 +47,16 @@ def init_app(app: Flask, connector: DatabaseConnector | None = None) -> None:
     app.teardown_appcontext(close_connection)
 
 
+def set_connection_initializer(app: Flask, initializer: ConnectionInitializer) -> None:
+    """Run `initializer` on every connection this application opens.
+
+    The seam exists for one thing: the audit triggers need to be told who is
+    acting, and only the layers above know. Registering a callback keeps that
+    knowledge out of here — this package holds SQL, not sessions.
+    """
+    app.extensions[_INITIALIZER_KEY] = initializer
+
+
 def get_connection() -> Connection[Any]:
     """Return one connection per Flask application context."""
     connection = g.get(_CONNECTION_KEY)
@@ -53,6 +65,10 @@ def get_connection() -> Connection[Any]:
         connector = cast(DatabaseConnector, current_app.extensions[_CONNECTOR_KEY])
         connection = connector(config.database_url)
         setattr(g, _CONNECTION_KEY, connection)
+
+        initializer = current_app.extensions.get(_INITIALIZER_KEY)
+        if initializer is not None:
+            initializer(connection)
 
     return cast(Connection[Any], connection)
 

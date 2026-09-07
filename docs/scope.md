@@ -35,6 +35,9 @@ the same application; see [`roadmap.md`](roadmap.md).
 C-2 is satisfied by server-side rendering: the browser receives HTML, not a
 JSON payload consumed by a client-side framework.
 
+C-5 and C-8 name the same machine: the assigned host **is** the team's GCP
+instance, not a separate publishing target. See §8, Q-2.
+
 ## 3. Stack
 
 | Layer | Technology |
@@ -120,9 +123,23 @@ them; when one is answered, it moves out of this section.
 
 | ID | Question | Working assumption |
 |---|---|---|
-| Q-1 | The statement says the work is individual, but this is a registered team project. Does the team deliver once, or does each member deliver their own instance? | The team delivers once, on one shared instance |
-| Q-2 | Which host URL is assigned, given Q-1? | `https://ubiquitous.udem.edu/~iac-<matricula>` of one designated member |
 | Q-5 | The first-partial delivery document lists "Diseño de MongoDB" and "Diseño de Redis" among its deliverables. This document and [ADR-0001](adr/0001-flask-monolith-on-a-single-vm.md) retired both, and the delivery has one database engine. Which is binding? | The scope recorded here is binding. Both designs are committed as designs only, with nothing installed — [ADR-0005](adr/0005-document-mongodb-and-redis-designs-without-implementing-them.md) |
+
+Q-1 (how many times the team delivers) and Q-2 (which host is assigned) are
+resolved, and they resolve together: **the team delivers once, and the assigned
+host is the team's own GCP instance** — the Compute Engine VM in project
+`iac-dev-01`, reached at `34.51.123.31` (`docs/infra.md`). C-5 and C-8 therefore
+name the same machine. `https://ubiquitous.udem.edu/~iac-<matricula>`, the
+working assumption both questions carried, is not part of the delivery: a
+per-user directory on a shared host cannot run `systemd`, `gunicorn` or
+PostgreSQL, so publishing there would have contradicted C-5 and C-6.
+
+This settles *which* machine, and one consequence outlives the question. The
+instance has no DNS name, and Let's Encrypt does not issue for a bare IP, so
+F6-03 (#79) stays on Path B — a self-signed certificate that makes browsers
+warn ([`deploy/README.md`](../deploy/README.md)). Reaching a valid certificate
+needs a hostname pointing at the instance, which is a deployment task and no
+longer a question for the Product Owner.
 
 Q-3 (company name and brand identity) and Q-4 (design system for the
 interface) are resolved: the product is **MOSAIQ**, with the design system

@@ -14,6 +14,7 @@
 | [Datastore designs](datastores/) | MongoDB and Redis designs for later deliveries. Nothing in there is implemented |
 | [Design system](design-system/) | MOSAIQ's tokens, components, and the two reference sheets to build screens from |
 | [Decisions](adr/) | Architecture Decision Records |
+| [Negative-test evidence](evidence/f5-02-negative-tests.md) | Reproducible access refusals, invalid submissions and controlled failures (#75) |
 | [Issue history](issue-history.md) | What the deleted `#1`–`#40` references in older commits pointed at |
 
 Documents that do not exist yet are produced by the story that needs them:

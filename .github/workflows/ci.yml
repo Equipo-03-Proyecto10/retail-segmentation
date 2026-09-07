@@ -29,10 +29,18 @@ jobs:
       - name: Tests
         run: |
           if [ -n "$(find . -name 'test_*.py' -not -path './.venv/*' -print -quit)" ]; then
-            pytest
+            pytest --junitxml=test-results/pytest.xml
           else
             echo "No tests yet — nothing to run."
           fi
+
+      - name: Capture per-case test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-results
+          path: test-results/pytest.xml
+          if-no-files-found: ignore
 
   database:
     name: SQL scripts run clean from empty

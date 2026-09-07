@@ -1,6 +1,6 @@
 # ADR-0014 — Services own transactions and translate typed write failures
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #163, #164
 **Extends:** ADR-0003
@@ -49,5 +49,6 @@ Explicit entity forms remain: extracting an all-purpose CRUD framework would
 hide their different uploads, parent categories, and role rules. Shared concerns
 are validation, transaction handling, failure translation, and pagination.
 
-This proposal is submitted for acceptance with the implementing PR. It extends
-the existing layer decision without rewriting the accepted decision's text.
+This record extends the existing layer decision without rewriting the accepted
+decision's text. Its implementation was merged in PR #171 while it was still
+`Proposed`; the team accepted it on 2026-09-07.

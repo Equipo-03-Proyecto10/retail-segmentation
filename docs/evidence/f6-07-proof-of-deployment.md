@@ -405,11 +405,13 @@ supersedes it and settles that the demonstration item
 ([`../requirements.md`](../requirements.md) §4, RNF-13/RNF-14) is satisfied on a
 developer machine.
 
-**ADR-0015 is Proposed.** The evidence above stands on its own — it is a real
-capture of a real run — but the reasoning that puts it on a laptop rather than
-on the instance is a decision awaiting acceptance, not a settled one. A reviewer
-who disagrees with ADR-0015 should read AC 4 as answered in the wrong place
-rather than as answered.
+ADR-0015 was accepted by the team on 2026-09-07, so the placement of this
+capture is settled rather than proposed. It is worth keeping visible that the
+two are separable: the evidence above is a real capture of a real run and would
+stand whatever the team had decided, while the reasoning that puts it on a
+laptop rather than on the instance is the decision ADR-0015 carries. Revisiting
+that record does not invalidate this capture; it changes where a further one is
+owed.
 
 ## Not evidenced here
 

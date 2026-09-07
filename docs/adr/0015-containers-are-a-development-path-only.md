@@ -1,6 +1,6 @@
 # ADR-0015 — Docker Compose is a development path only, and is never run on the instance
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #109 (F6-07), #89 (F3-09)
 **Supersedes:** [ADR-0006](0006-run-under-both-systemd-and-docker-compose.md)

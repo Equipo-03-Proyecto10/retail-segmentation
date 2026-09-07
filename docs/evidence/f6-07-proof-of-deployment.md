@@ -253,29 +253,44 @@ AC 4 replaces the serving process on the one environment the delivery is graded
 on, so it is a deliberate act on a quiet moment, not something to run
 mid-review.
 
-### AC 4 is a swap, not an addition
+### AC 4 — containers are a development convenience, not a deploy path
 
-[ADR-0006](../adr/0006-run-under-both-systemd-and-docker-compose.md) states it
-directly: the two paths "are alternatives and are never up at once". Two
-bindings in `compose.yaml` make that concrete on this instance, and both were
-read from the configuration rather than tried:
+The team's position, recorded on 2026-09-07: Docker Compose exists so a
+developer can bring the application up in one command. **Containers have no
+role in the deployment.** The instance runs gunicorn under systemd, that is
+what serves the delivery, and nothing is planned to change it.
 
-- **Port 8000.** The `web` service publishes `127.0.0.1:8000:8000`, which is the
-  address the systemd unit's gunicorn already binds. That collision is
-  deliberate — NGINX needs no change when the mode is switched — but it means
-  `mosaiq.service` has to be stopped first, or the container cannot bind.
+This settles the two bindings that made running Compose on the instance
+awkward, by removing the reason to do it at all:
+
+- **Port 8000.** The `web` service publishes `127.0.0.1:8000:8000`, the address
+  the systemd unit's gunicorn already binds. Running both means stopping the
+  one that serves the delivery.
 - **Port 5432.** The `db` service publishes `127.0.0.1:5432:5432`, and the
   instance's own PostgreSQL already listens exactly there
-  ([`../infra.md`](../infra.md)). Starting `db` on the instance clashes with it
-  and would stand up a second, separately-seeded database.
+  ([`../infra.md`](../infra.md)). Nothing in `compose.yaml` lets the `web`
+  container reach the host's database instead: `web` depends on `db` with a
+  health condition, and a container's `127.0.0.1` is its own loopback.
 
-The second one is the open question, not a step: ADR-0006 says the same image
-"talks to the `db` service locally and to the instance's own PostgreSQL there",
-so on the instance the container should use the host's database rather than its
-own. `compose.yaml` has `web` depending on `db` with a health condition, and a
-container's `127.0.0.1` is its own loopback rather than the host's, so reaching
-the instance's PostgreSQL from inside the container needs a `DATABASE_URL` and a
-network mode that this file does not currently provide.
+Both are only a problem on the instance. Locally, where Compose is the point,
+they are correct as written.
 
-Deciding that is the work AC 4 still needs. Whoever picks it up should settle it
-before the demonstration rather than during it.
+**This changes an acceptance criterion, and that needs recording elsewhere.**
+AC 4 on #109 asks for `docker compose` serving the same application, citing
+[ADR-0006](../adr/0006-run-under-both-systemd-and-docker-compose.md) — which
+says Compose is "what the demonstration's container item is shown with,
+**including on the instance when it is switched in for that purpose**". That
+sentence no longer describes the plan.
+
+ADR-0006 is Accepted and immutable, so the change belongs in a superseding ADR
+rather than an edit to it. Until that exists, two things are unresolved and are
+named here rather than assumed:
+
+1. Whether the demonstration item *"ejecución mediante contenedores"*
+   ([`../requirements.md`](../requirements.md) §4, RNF-13/RNF-14) is satisfied
+   by showing Compose on a developer machine. It is a graded item, and where it
+   is shown is not this document's call.
+2. Whether #109's AC 4 is dropped, or reworded to a local capture.
+
+Neither is a documentation decision. Both should be settled before the
+demonstration.

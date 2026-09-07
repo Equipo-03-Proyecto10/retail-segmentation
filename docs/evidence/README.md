@@ -54,10 +54,11 @@ here is a gap, not an omission from this index.
 | [F6-07](f6-07-proof-of-deployment.md) | **Deliverable 13, partial.** The unit active and enabled, restarting after a kill, and answering through the reverse proxy |
 
 **Deliverable 13 is not complete.** Four of the five acceptance criteria on #109
-are recorded. The one left is container execution, which ADR-0006 makes a swap
-rather than an addition, and which still needs a decision about how the
-container reaches the instance's PostgreSQL. The document sets out the two port
-clashes behind that.
+are recorded. The one left is container execution, and it is now a scope
+question rather than a technical one: the team's position is that Compose is a
+developer convenience with no role in the deployment, which contradicts a
+sentence in ADR-0006 and leaves the graded demonstration item open. The F6-07
+document sets out both.
 
 ## Review passes
 

@@ -138,5 +138,5 @@ through them:
 | F3-12 | #106 | The shell a signed-in user lands on. Every item above is reached through its navigation, and nothing else builds it |
 | F4-06 | #107 | The deployed instance must not be reachable with the password this repository publishes for the seeded administrator |
 | F5-04 | #108 | Deliverable 10 — screenshots. F5-01 captures test output, which is not the same thing. Done: [`evidence/f5-04-key-functionality.md`](evidence/f5-04-key-functionality.md) |
-| F6-07 | #109 | Deliverable 13 — proof of deployment. [`evidence/f6-07-proof-of-deployment.md`](evidence/f6-07-proof-of-deployment.md) records four of the five acceptance criteria; container execution is the one left, and needs a decision before it can be run |
+| F6-07 | #109 | Deliverable 13 — proof of deployment. [`evidence/f6-07-proof-of-deployment.md`](evidence/f6-07-proof-of-deployment.md) records four of the five acceptance criteria; container execution is the one left, and is now a scope question — see the F6-07 document |
 | F6-08 | #110 | The demonstration itself, rehearsed in sequence on the instance. It is the one deliverable that cannot be corrected after submission |

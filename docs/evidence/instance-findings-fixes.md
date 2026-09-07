@@ -37,6 +37,17 @@ on the instance, in a private directory outside the upload root. The original
 served path was confirmed absent; the file remains recoverable until the
 instance clears its temporary files.
 
+**Since this was written.** The three items this pass left open are resolved,
+and the record of each is in
+[`f6-07-proof-of-deployment.md`](f6-07-proof-of-deployment.md) rather than
+edited into the table above. Finding 01 — the administrator was provisioned on
+the instance and the thirty demonstration accounts deactivated, on 2026-09-07.
+Finding 13 — the response headers were confirmed live on the published host,
+with HSTS matching the repository's value. And the segment assignments were
+restored to their audited previous values at 19:01:55 UTC that day, the restore
+itself audited. The orphaned image in `/tmp` is not among them and may well be
+gone; nothing references it.
+
 ## Verification
 
 Baseline: `517 passed`, Black and Ruff passed. New regression tests first

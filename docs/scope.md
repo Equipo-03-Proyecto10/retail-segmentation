@@ -99,11 +99,13 @@ first file in them. Empty directories are not committed.
 ## 6. Out of scope
 
 - External APIs (REST, GraphQL, SOAP)
-- JSON or XML exchange between internal components
-- Microservices
+- JSON or XML exchange between internal components — required by the second
+  delivery, which specifies both
+- Microservices — required by the second delivery, see [`roadmap.md`](roadmap.md)
 - Managed cloud database services
 - RFM, clustering, segment migration, dashboards — deferred, see [`roadmap.md`](roadmap.md)
-- Mobile and desktop clients
+- Mobile and desktop clients — both required by the second delivery, see
+  [`roadmap.md`](roadmap.md)
 - Kubernetes
 
 ## 7. Success criteria

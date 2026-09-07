@@ -30,7 +30,10 @@ run is a broken change, not a migration problem.
 down.** The justification is a graded deliverable, not a comment.
 
 **Seed data keeps at least 30 rows per table.** A new table ships with its seed
-rows in the same pull request.
+rows in the same pull request. A table whose real domain is smaller — `role`
+has seven, `channel` five — is exempted by naming it in `sql/seed-exempt.txt`
+with the reason. CI reads that file (RNF-09). Padding a catalog with filler to
+reach the minimum is the thing the exemption exists to prevent.
 
 **There is exactly one administrator.** Enforced twice: refused by the
 application, and refused by a partial unique index in the schema. The

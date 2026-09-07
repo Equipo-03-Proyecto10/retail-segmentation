@@ -1,6 +1,10 @@
 # MOSAIQ — the whole stack in one command:
 #
-#   docker compose up
+#   docker compose up --build
+#
+# --build matters on every run but the first: without it Compose reuses the
+# image already on the machine and silently serves whatever the source looked
+# like when it was last built.
 #
 # This is the local development path and the one the delivery's "ejecución
 # mediante contenedores" item is demonstrated with. It is NOT how the

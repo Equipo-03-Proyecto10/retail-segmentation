@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block content %}
+<main class="admin-page">
+  <h1>Users</h1>
+
+  <form method="get" action="{{ url_for('admin.list_users_view') }}">
+    <input type="text" name="q" value="{{ search }}" placeholder="Search by name or email">
+    <button type="submit">Search</button>
+  </form>
+
+  {% if action_error %}
+    <p class="error" role="alert">{{ action_error }}</p>
+  {% endif %}
+
+  <a href="{{ url_for('admin.create_user_view') }}">New user</a>
+
+  <table>
+    <thead>
+      <tr><th>Name</th><th>Email</th><th>Role</th><th>Active</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for user in users %}
+      <tr>
+        <td>{{ user.name }}</td>
+        <td>{{ user.email }}</td>
+        <td>{{ user.role_code }}</td>
+        <td>{{ "Yes" if user.is_active else "No" }}</td>
+        <td>
+          {% if user.is_active %}
+          <form method="post" action="{{ url_for('admin.deactivate_user_view', user_id=user.user_id) }}" style="display:inline">
+            <button type="submit">Deactivate</button>
+          </form>
+          {% else %}
+          <form method="post" action="{{ url_for('admin.activate_user_view', user_id=user.user_id) }}" style="display:inline">
+            <button type="submit">Activate</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <nav class="pagination">
+    {% if page > 1 %}
+      <a href="{{ url_for('admin.list_users_view', page=page-1, q=search) }}">Previous</a>
+    {% endif %}
+    <span>Page {{ page }} of {{ total_pages }}</span>
+    {% if page < total_pages %}
+      <a href="{{ url_for('admin.list_users_view', page=page+1, q=search) }}">Next</a>
+    {% endif %}
+  </nav>
+</main>
+{% endblock %}

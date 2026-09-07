@@ -4,6 +4,7 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+test-results/
 .ruff_cache/
 *.egg-info/
 
@@ -30,3 +31,4 @@ Thumbs.db
 
 # Agent local context
 CLAUDE.local.md
+cookies.txt

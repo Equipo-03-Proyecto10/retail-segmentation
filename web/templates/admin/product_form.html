@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block content %}
+<main class="admin-page">
+  <h1>{{ "Edit product" if request.endpoint == "admin.edit_product_view" else "New product" }}</h1>
+
+  <form method="post" enctype="multipart/form-data">
+    {% if request.endpoint == "admin.create_product_view" %}
+    <label for="product_id">Product ID</label>
+    <input type="number" id="product_id" name="product_id" value="{{ product.product_id if product else '' }}" required>
+    {% if errors.product_id %}<p class="error">{{ errors.product_id }}</p>{% endif %}
+    {% endif %}
+
+    <label for="sku">SKU</label>
+    <input type="text" id="sku" name="sku" value="{{ product.sku if product else '' }}" required>
+    {% if errors.sku %}<p class="error">{{ errors.sku }}</p>{% endif %}
+
+    <label for="name">Name</label>
+    <input type="text" id="name" name="name" value="{{ product.name if product else '' }}" required>
+    {% if errors.name %}<p class="error">{{ errors.name }}</p>{% endif %}
+
+    <label for="category_id">Category</label>
+    <select id="category_id" name="category_id" required>
+      <option value="">— Select —</option>
+      {% for c in all_categories %}
+      <option value="{{ c.category_id }}" {% if product and product.category_id|string == c.category_id|string %}selected{% endif %}>
+        {{ c.name }}
+      </option>
+      {% endfor %}
+    </select>
+    {% if errors.category_id %}<p class="error">{{ errors.category_id }}</p>{% endif %}
+
+    <label for="list_price">List price</label>
+    <input type="text" id="list_price" name="list_price" value="{{ product.list_price if product else '' }}" required>
+    {% if errors.list_price %}<p class="error">{{ errors.list_price }}</p>{% endif %}
+
+    {% if request.endpoint == "admin.edit_product_view" %}
+    <label for="is_active">
+      <input type="checkbox" id="is_active" name="is_active" {% if product.is_active %}checked{% endif %}>
+      Active
+    </label>
+    {% endif %}
+
+    <label for="image">Product image (JPEG, PNG or WebP, max 5MB)</label>
+<input type="file" id="image" name="image" accept="image/jpeg,image/png,image/webp">
+{% if errors.image %}<p class="error">{{ errors.image }}</p>{% endif %}
+{% if product and product.image_path %}
+<img alt="Product image" src="{{ url_for('admin.product_image', filename=product.image_path) }}" style="max-width:150px">
+{% endif %}
+
+    <button type="submit">Save</button>
+    <a href="{{ url_for('admin.list_products_view') }}">Cancel</a>
+  </form>
+</main>
+{% endblock %}

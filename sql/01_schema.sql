@@ -79,12 +79,28 @@ CREATE TABLE app_user (
     CHECK (email ~ '@')
 );
 
--- The partial unique index that enforces the single-administrator rule in the
--- schema is F4-02 (#70), which adds it together with the application-side
--- check. AGENTS.md is explicit that one half alone does not count: the
--- application check alone is bypassed by a direct INSERT, and the index alone
--- surfaces as an unexplained database error. 02_seed_30_per_table.sql already
--- seeds exactly one administrator, so the index applies cleanly when it lands.
+-- The schema half of the single-administrator rule (RN-01, F4-02). Every row
+-- the predicate admits holds the same role_id, so uniqueness over that column
+-- admits exactly one of them.
+--
+-- The literal 1 is a coupling, not a magic number: an index predicate must be
+-- immutable, so it cannot look ADMIN up by its code in `role`, and this index
+-- therefore depends on 02_seed_30_per_table.sql giving ADMIN role_id 1.
+-- tests/test_single_administrator.py asserts the seed and this predicate still
+-- agree, so renumbering the roles fails the build instead of quietly leaving
+-- the rule unenforced.
+--
+-- It constrains how many rows hold role_id = 1, not what else those rows say:
+-- renaming the administrator, rotating their password (F4-06, #107) and
+-- deactivating them are all still possible. Refusing to leave the system with
+-- *zero* administrators is the other direction of RN-01, which no unique index
+-- can express; web/services/users.py holds that half.
+--
+-- AGENTS.md is explicit that one half alone does not count: the application
+-- check alone is bypassed by a direct INSERT, and the index alone surfaces as
+-- an unexplained database error.
+CREATE UNIQUE INDEX ux_app_user_single_administrator
+    ON app_user (role_id) WHERE role_id = 1;
 
 CREATE TABLE customer (
     customer_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -293,3 +309,85 @@ FOR EACH ROW EXECUTE FUNCTION fn_audit('customer_id');
 CREATE TRIGGER trg_audit_app_user
 AFTER INSERT OR UPDATE OR DELETE ON app_user
 FOR EACH ROW EXECUTE FUNCTION fn_audit('user_id');
+
+-- BEGIN APPLICATION ROLE VERIFICATION
+-- F1-05 (#53). Opt-in acceptance checks, kept here because even a rejected
+-- DROP belongs in the only file allowed to contain table DDL. Normal schema
+-- creation skips this section. To verify an existing database, extract only
+-- this section and connect as retail_app; see deploy/postgresql/README.md.
+-- All rows and any unexpectedly successful DROP roll back. Audit sequence
+-- values consumed by the probes are not reclaimed by PostgreSQL.
+\if :{?verify_app_role}
+BEGIN;
+SET LOCAL lock_timeout = '2s';
+SET LOCAL statement_timeout = '10s';
+DO $verify$
+DECLARE
+    audit_before bigint;
+BEGIN
+    IF current_user <> 'retail_app' OR session_user <> 'retail_app' THEN
+        RAISE EXCEPTION 'Connect directly as retail_app to verify its privileges';
+    END IF;
+
+    IF EXISTS (
+        SELECT FROM pg_roles
+        WHERE rolname = current_user
+          AND (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls)
+    ) OR EXISTS (
+        SELECT FROM pg_roles
+        WHERE rolname <> current_user AND pg_has_role(oid, 'MEMBER')
+    ) THEN
+        RAISE EXCEPTION 'Application role has administrative privileges or membership';
+    END IF;
+
+    IF has_database_privilege(current_database(), 'CREATE')
+       OR has_schema_privilege('public', 'CREATE')
+       OR EXISTS (
+           SELECT FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+           WHERE n.nspname = 'public' AND pg_has_role(c.relowner, 'USAGE')
+       ) THEN
+        RAISE EXCEPTION 'Application role can create or owns persistent schema objects';
+    END IF;
+
+    IF EXISTS (
+        SELECT FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND c.relkind = 'r'
+          AND (NOT has_table_privilege(c.oid, 'SELECT')
+               OR NOT has_table_privilege(c.oid, 'INSERT')
+               OR NOT has_table_privilege(c.oid, 'UPDATE')
+               OR NOT has_table_privilege(c.oid, 'DELETE')
+               OR has_table_privilege(c.oid, 'TRUNCATE'))
+    ) THEN
+        RAISE EXCEPTION 'Application table privileges differ from the DML-only policy';
+    END IF;
+    RAISE NOTICE 'PASS: restricted role, no ownership or CREATE, DML on all tables';
+
+    BEGIN
+        DROP TABLE public.inventory;
+        RAISE EXCEPTION 'FAIL: retail_app was allowed to DROP inventory';
+    EXCEPTION WHEN insufficient_privilege THEN
+        RAISE NOTICE 'PASS: DROP TABLE inventory refused (SQLSTATE 42501)';
+    END;
+
+    SELECT COALESCE(max(audit_id), 0) INTO audit_before FROM public.audit_log;
+    INSERT INTO public.category (category_id, name)
+    VALUES (32767, 'Application role verification');
+    UPDATE public.category SET name = 'Updated role verification' WHERE category_id = 32767;
+    IF (SELECT name FROM public.category WHERE category_id = 32767)
+       IS DISTINCT FROM 'Updated role verification' THEN
+        RAISE EXCEPTION 'Application role could not read its write';
+    END IF;
+    DELETE FROM public.category WHERE category_id = 32767;
+    IF EXISTS (SELECT FROM public.category WHERE category_id = 32767) THEN
+        RAISE EXCEPTION 'Application role could not delete its row';
+    END IF;
+    IF (SELECT count(DISTINCT action) FROM public.audit_log
+        WHERE audit_id > audit_before AND entity = 'category' AND entity_pk = '32767'
+          AND action IN ('INSERT', 'UPDATE', 'DELETE')) <> 3 THEN
+        RAISE EXCEPTION 'Audited writes did not record all three actions';
+    END IF;
+    RAISE NOTICE 'PASS: SELECT, INSERT, UPDATE, DELETE and audit sequence access';
+END;
+$verify$;
+ROLLBACK;
+\endif

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block content %}
+<main class="admin-page">
+  <h1>Categories</h1>
+
+  <form method="get" action="{{ url_for('admin.list_categories_view') }}">
+    <input type="text" name="q" value="{{ search }}" placeholder="Search by name">
+    <button type="submit">Search</button>
+  </form>
+
+  {% if delete_error %}
+    <p class="error" role="alert">{{ delete_error }}</p>
+  {% endif %}
+
+  <a href="{{ url_for('admin.create_category_view') }}">New category</a>
+
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Name</th><th>Parent</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for category in categories %}
+      <tr>
+        <td>{{ category.category_id }}</td>
+        <td>{{ category.name }}</td>
+        <td>{{ category.parent_category_id or "—" }}</td>
+        <td>
+          <a href="{{ url_for('admin.edit_category_view', category_id=category.category_id) }}">Edit</a>
+          <form method="post" action="{{ url_for('admin.delete_category_view', category_id=category.category_id) }}" style="display:inline">
+            <button type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <nav class="pagination">
+    {% if page > 1 %}
+      <a href="{{ url_for('admin.list_categories_view', page=page-1, q=search) }}">Previous</a>
+    {% endif %}
+    <span>Page {{ page }} of {{ total_pages }}</span>
+    {% if page < total_pages %}
+      <a href="{{ url_for('admin.list_categories_view', page=page+1, q=search) }}">Next</a>
+    {% endif %}
+  </nav>
+</main>
+{% endblock %}

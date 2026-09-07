@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block content %}
+<main class="admin-page">
+  <h1>Channels</h1>
+
+  <form method="get" action="{{ url_for('admin.list_channels_view') }}">
+    <input type="text" name="q" value="{{ search }}" placeholder="Search by name">
+    <button type="submit">Search</button>
+  </form>
+
+  {% if delete_error %}
+    <p class="error" role="alert">{{ delete_error }}</p>
+  {% endif %}
+
+  <a href="{{ url_for('admin.create_channel_view') }}">New channel</a>
+
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Name</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for channel in channels %}
+      <tr>
+        <td>{{ channel.channel_id }}</td>
+        <td>{{ channel.name }}</td>
+        <td>
+          <a href="{{ url_for('admin.edit_channel_view', channel_id=channel.channel_id) }}">Edit</a>
+          <form method="post" action="{{ url_for('admin.delete_channel_view', channel_id=channel.channel_id) }}" style="display:inline">
+            <button type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <nav class="pagination">
+    {% if page > 1 %}
+      <a href="{{ url_for('admin.list_channels_view', page=page-1, q=search) }}">Previous</a>
+    {% endif %}
+    <span>Page {{ page }} of {{ total_pages }}</span>
+    {% if page < total_pages %}
+      <a href="{{ url_for('admin.list_channels_view', page=page+1, q=search) }}">Next</a>
+    {% endif %}
+  </nav>
+</main>
+{% endblock %}

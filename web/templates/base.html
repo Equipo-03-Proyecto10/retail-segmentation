@@ -14,6 +14,35 @@
       <a class="masthead__brand" href="{{ url_for('home.index') }}">
         {{ application_name }}
       </a>
+
+      {#
+        The menu is built from what the visitor may do, never from what they
+        are: `menu` is the permission-filtered navigation from
+        web/middleware/authz.py. Adding a role changes the matrix and the menu
+        follows; no template here names a role.
+      #}
+      <nav class="masthead__nav" aria-label="Sections">
+        {% for entry in menu %}
+          <a
+            class="masthead__link{% if entry.is_current %} masthead__link--current{% endif %}"
+            href="{{ url_for(entry.endpoint) }}"
+            {% if entry.is_current %}aria-current="page"{% endif %}
+          >
+            {{ entry.label }}
+          </a>
+        {% endfor %}
+      </nav>
+
+      <div class="masthead__session">
+        {% if signed_in %}
+          <span class="masthead__user">{{ current_user_name }}</span>
+          <form method="post" action="{{ url_for('auth.logout') }}">
+            <button class="masthead__signout" type="submit">Sign out</button>
+          </form>
+        {% else %}
+          <a class="masthead__link" href="{{ url_for('auth.login') }}">Sign in</a>
+        {% endif %}
+      </div>
     </header>
 
     <main class="page">{% block content %}{% endblock %}</main>

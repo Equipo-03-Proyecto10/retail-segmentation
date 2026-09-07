@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block content %}
+<main class="admin-page">
+  <h1>Stores</h1>
+
+  <form method="get" action="{{ url_for('admin.list_stores_view') }}">
+    <input type="text" name="q" value="{{ search }}" placeholder="Search by name, city or state">
+    <button type="submit">Search</button>
+  </form>
+
+  {% if delete_error %}
+    <p class="error" role="alert">{{ delete_error }}</p>
+  {% endif %}
+
+  <a href="{{ url_for('admin.create_store_view') }}">New store</a>
+
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Name</th>
+        <th>City</th>
+        <th>State</th>
+        <th>Active</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for store in stores %}
+      <tr>
+        <td>{{ store.store_id }}</td>
+        <td>{{ store.name }}</td>
+        <td>{{ store.city }}</td>
+        <td>{{ store.state }}</td>
+        <td>{{ "Yes" if store.is_active else "No" }}</td>
+        <td>
+          <a href="{{ url_for('admin.edit_store_view', store_id=store.store_id) }}">Edit</a>
+          <form method="post" action="{{ url_for('admin.delete_store_view', store_id=store.store_id) }}" style="display:inline">
+            <button type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <nav class="pagination">
+    {% if page > 1 %}
+      <a href="{{ url_for('admin.list_stores_view', page=page-1, q=search) }}">Previous</a>
+    {% endif %}
+    <span>Page {{ page }} of {{ total_pages }}</span>
+    {% if page < total_pages %}
+      <a href="{{ url_for('admin.list_stores_view', page=page+1, q=search) }}">Next</a>
+    {% endif %}
+  </nav>
+</main>
+{% endblock %}

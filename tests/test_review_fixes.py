@@ -220,3 +220,50 @@ def test_request_limit_is_checked_without_reading_the_body(app):
         },
     )
     assert response.status_code == 413
+
+
+# A key the column cannot hold reaches SQL as NumericValueOutOfRange, which is
+# not a constraint refusal: every catalog form must mark the field instead.
+@pytest.mark.parametrize(
+    "path,field,data",
+    [
+        ("stores/new", "store_id", dict(name="S", city="C", state="ST")),
+        ("categories/new", "category_id", dict(name="C", parent_category_id="")),
+        ("channels/new", "channel_id", dict(name="C")),
+        ("roles/new", "role_id", dict(code="CODE", description="D")),
+        (
+            "products/new",
+            "product_id",
+            dict(sku="SKU", name="P", category_id="1", list_price="1.00"),
+        ),
+    ],
+)
+@pytest.mark.parametrize("key", ["-1", "1.5", "99999999999", "x", ""])
+def test_unusable_surrogate_key_is_a_field_error(
+    client, connection, path, field, data, key
+):
+    response = client.post(f"/admin/{path}", data={**data, field: key})
+    assert response.status_code == 400
+    assert b"must be a whole number between 0 and" in response.data
+    connection.commit.assert_not_called()
+
+
+@pytest.mark.parametrize("path", ["new", "1/edit"])
+@pytest.mark.parametrize("category", ["32768", "99999999999"])
+def test_out_of_range_product_category_is_a_field_error(
+    client, connection, monkeypatch, path, category
+):
+    monkeypatch.setattr(admin, "get_product", Mock(return_value=Mock()))
+    response = client.post(
+        f"/admin/products/{path}",
+        data=dict(
+            product_id="99",
+            sku="SKU",
+            name="P",
+            category_id=category,
+            list_price="1.00",
+        ),
+    )
+    assert response.status_code == 400
+    assert b"Category must be a whole number between 0 and 32767." in response.data
+    connection.commit.assert_not_called()

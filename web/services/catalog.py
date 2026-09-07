@@ -25,21 +25,38 @@ class ProductValidation:
     price: Decimal | None
 
 
+# The surrogate keys the catalog forms accept. A value the column cannot hold
+# is a field error, not a database failure: PostgreSQL answers an out-of-range
+# key with NumericValueOutOfRange, which is not a constraint refusal and would
+# otherwise reach the generic error handler as a 500.
+SMALLINT_MAX = 32767
+INT_MAX = 2147483647
+
+
+def _parse_bounded(raw: str, *, maximum: int) -> int | None:
+    """Return the key when it fits the column, and None when it does not."""
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    return value if 0 <= value <= maximum else None
+
+
+def parse_identifier(
+    raw: str, *, field: str, label: str, maximum: int = SMALLINT_MAX
+) -> tuple[int | None, dict[str, str]]:
+    """Read a required key without letting an unusable value reach SQL."""
+    value = _parse_bounded(raw, maximum=maximum)
+    if value is None:
+        return None, {field: f"{label} must be a whole number between 0 and {maximum}."}
+    return value, {}
+
+
 def parse_category_parent(raw: str) -> tuple[int | None, dict[str, str]]:
     """Read the optional parent without letting malformed input reach SQL."""
     if not raw:
         return None, {}
-    try:
-        value = int(raw)
-    except ValueError:
-        value = -1
-    if not 0 <= value <= 32767:
-        return None, {
-            "parent_category_id": (
-                "Parent category must be a whole number " "between 0 and 32767."
-            )
-        }
-    return value, {}
+    return parse_identifier(raw, field="parent_category_id", label="Parent category")
 
 
 def validate_store(*, name: str, city: str, state: str) -> dict[str, str]:
@@ -117,6 +134,10 @@ def validate_product(
 
     if not category_id or not category_id.isdigit():
         errors["category_id"] = "Category is required."
+    elif _parse_bounded(category_id, maximum=SMALLINT_MAX) is None:
+        errors["category_id"] = (
+            f"Category must be a whole number between 0 and {SMALLINT_MAX}."
+        )
 
     price = None
     if not list_price:

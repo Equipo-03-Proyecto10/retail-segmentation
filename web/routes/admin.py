@@ -53,6 +53,7 @@ from web.middleware.authz import (
 )
 from web.routes.pagination import redirect_last_page
 from web.services.catalog import (
+    INT_MAX,
     CatalogConflict,
     create_category,
     create_channel,
@@ -65,6 +66,7 @@ from web.services.catalog import (
     delete_role,
     delete_store,
     parse_category_parent,
+    parse_identifier,
     parse_pagination,
     update_category,
     update_channel,
@@ -144,8 +146,10 @@ def create_store_view() -> ResponseReturnValue:
     state = request.form.get("state", "").strip()
 
     errors = validate_store(name=name, city=city, state=state)
-    if not store_id.isdigit():
-        errors["store_id"] = "Store ID must be a whole number."
+    store_key, key_errors = parse_identifier(
+        store_id, field="store_id", label="Store ID"
+    )
+    errors.update(key_errors)
 
     if errors:
         return (
@@ -163,9 +167,7 @@ def create_store_view() -> ResponseReturnValue:
         )
 
     try:
-        create_store(
-            connection, store_id=int(store_id), name=name, city=city, state=state
-        )
+        create_store(connection, store_id=store_key, name=name, city=city, state=state)
     except CatalogConflict as error:
         return (
             render_template(
@@ -313,8 +315,10 @@ def create_category_view() -> ResponseReturnValue:
     parent_raw = request.form.get("parent_category_id", "")
     parent_category_id, errors = parse_category_parent(parent_raw)
     errors.update(validate_category(name=name))
-    if not category_id.isdigit():
-        errors["category_id"] = "Category ID must be a whole number."
+    category_key, key_errors = parse_identifier(
+        category_id, field="category_id", label="Category ID"
+    )
+    errors.update(key_errors)
 
     if errors:
         return (
@@ -334,7 +338,7 @@ def create_category_view() -> ResponseReturnValue:
     try:
         create_category(
             connection,
-            category_id=int(category_id),
+            category_id=category_key,
             name=name,
             parent_category_id=parent_category_id,
         )
@@ -494,8 +498,10 @@ def create_channel_view() -> ResponseReturnValue:
     name = request.form.get("name", "").strip()
 
     errors = validate_channel(name=name)
-    if not channel_id.isdigit():
-        errors["channel_id"] = "Channel ID must be a whole number."
+    channel_key, key_errors = parse_identifier(
+        channel_id, field="channel_id", label="Channel ID"
+    )
+    errors.update(key_errors)
 
     if errors:
         return (
@@ -508,7 +514,7 @@ def create_channel_view() -> ResponseReturnValue:
         )
 
     try:
-        create_channel(connection, channel_id=int(channel_id), name=name)
+        create_channel(connection, channel_id=channel_key, name=name)
     except CatalogConflict as error:
         return (
             render_template(
@@ -653,8 +659,10 @@ def create_product_view() -> ResponseReturnValue:
         sku=sku, name=name, category_id=category_id_raw, list_price=list_price_raw
     )
     errors = validation.errors
-    if not product_id.isdigit():
-        errors["product_id"] = "Product ID must be a whole number."
+    product_key, key_errors = parse_identifier(
+        product_id, field="product_id", label="Product ID", maximum=INT_MAX
+    )
+    errors.update(key_errors)
 
     if errors:
         return (
@@ -692,7 +700,7 @@ def create_product_view() -> ResponseReturnValue:
     try:
         create_product(
             connection,
-            product_id=int(product_id),
+            product_id=product_key,
             sku=sku,
             name=name,
             category_id=int(category_id_raw),
@@ -914,8 +922,8 @@ def create_role_view() -> ResponseReturnValue:
     description = request.form.get("description", "").strip() or None
 
     errors = validate_role(code=code, description=description or "")
-    if not role_id.isdigit():
-        errors["role_id"] = "Role ID must be a whole number."
+    role_key, key_errors = parse_identifier(role_id, field="role_id", label="Role ID")
+    errors.update(key_errors)
 
     if errors:
         return (
@@ -928,9 +936,7 @@ def create_role_view() -> ResponseReturnValue:
         )
 
     try:
-        create_role(
-            connection, role_id=int(role_id), code=code, description=description
-        )
+        create_role(connection, role_id=role_key, code=code, description=description)
     except CatalogConflict as error:
         return (
             render_template(

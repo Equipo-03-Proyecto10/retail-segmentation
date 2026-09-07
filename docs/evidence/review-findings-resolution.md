@@ -7,7 +7,7 @@ Verified on 2026-09-07. This follows the
 
 | Issue | Result | Verification |
 |---|---|---|
-| #157 | Malformed or out-of-range category parents return 400; duplicate names and missing parents return 409 with field errors and rollback | Create/edit regressions, live PostgreSQL unique/FK refusals, screenshots |
+| #157 | Every catalog form marks the field: malformed or out-of-range parents and surrogate keys return 400, duplicate names and missing parents return 409, both with rollback | Create/edit regressions, live PostgreSQL unique/FK refusals and out-of-range keys, screenshots |
 | #158 | Startup, authentication, uploads, writes, HTTP refusals and segment runs produce contextual application logs | `tests/test_event_logging.py`, the [logging convention](../logging.md) and local Gunicorn stderr |
 | #159 | Invalid Argon2 hashes and verification errors return the generic 401; missing/inactive accounts perform dummy verification | Real malformed hash and mocked verification failures; no authenticated session |
 | #160 | All six administrator failures use the common 404 handler and reference | Five missing edits and missing user activation, screenshots |
@@ -23,13 +23,38 @@ queries continue to use the existing data-access functions; write operations
 always go through services. Pagination arithmetic lives below routes so the
 audit service does not import an HTTP module.
 
+## Surrogate keys the column cannot hold
+
+An id outside its column reaches PostgreSQL as `NumericValueOutOfRange`. That is
+not a constraint refusal, so it was not translated and became a 500 — the defect
+#157 reports, on six inputs the first pass left unbounded. Against the disposable
+database, every catalog form now answers with a marked field:
+
+| Form field | Column | Before | After |
+|---|---|---|---|
+| Category ID | SMALLINT | 500 | 400 |
+| Parent category | SMALLINT | 400 | 400 |
+| Store ID | SMALLINT | 500 | 400 |
+| Channel ID | SMALLINT | 500 | 400 |
+| Role ID | SMALLINT | 500 | 400 |
+| Product category | SMALLINT | 500 | 400 |
+| Product ID | INT | 500 | 400 |
+
+One parser in the service layer carries the bound, and each form parses its key
+once; the routes no longer call `int()` on unvalidated input. A non-numeric
+category still reports as an unselected dropdown, which the existing negative
+tests pin. Calling a write service directly with an unusable key still raises —
+that is a caller error, and ADR-0014 sends unexpected failures to the shared
+handler.
+
 ## Local verification
 
 Python 3.12 with the exact dependencies in `web/requirements-dev.txt`.
-The final local run passed **645 tests**; `black --check .` and
-`ruff check .` both passed. [CI run 34136899955](https://github.com/Equipo-03-Proyecto10/retail-segmentation/actions/runs/34136899955)
-passed all three jobs before the final six email-validation regressions were added: format/lint/tests, SQL scripts with seed counts
-and restricted-role checks, and Compose/NGINX startup. Business-logic tests cover nested commits, rollback after
+The final local run passed **674 tests**; `black --check .` and
+`ruff check .` both passed. CI passed all three jobs on the branch:
+format/lint/tests, SQL scripts with seed counts and restricted-role checks, and
+Compose/NGINX startup. The run for the head commit is linked from the pull
+request. Business-logic tests cover nested commits, rollback after
 partial work and commit failure, the administrator rule, typed refusals, and
 configuration/logging behavior.
 

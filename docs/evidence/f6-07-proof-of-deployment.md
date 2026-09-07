@@ -156,6 +156,60 @@ $ for p in /admin/stores/new /admin/users/new /segment-run/ /audit/ /catalog/; d
 
 `/login` and `/` both return 200. A path that matches no route returns 404.
 
+## The administrator on the instance (F4-06, #107)
+
+[`f4-06-real-administrator.md`](f4-06-real-administrator.md) verified the
+procedure against a scratch database built from the three ordered scripts, and
+recorded the run on the actual instance as owed to this document. It was
+performed on 2026-09-07.
+
+**Before.** The published password still opened the deployed instance. The
+report listed the seeded accounts as active, each flagged with what it takes:
+
+```
+$ flask --app web.app account-report
+
+  …
+  MARKETING          user10@mosaiq-demo.com ← published password
+  INVENTORY_PLANNER  user11@mosaiq-demo.com ← published password
+  AUDITOR            user12@mosaiq-demo.com ← published password
+  CUSTOMER           user13@mosaiq-demo.com ← published password
+Demonstration accounts that can still sign in: 30
+```
+
+**After.** The documented command was run on the instance, the password typed
+at its prompt and never passed as an argument:
+
+```
+$ flask --app web.app account-report
+
+32 accounts, 1 of them active.
+  ADMIN              cloudcompute97@gmail.com
+Demonstration accounts that can still sign in: 0
+```
+
+Thirty demonstration accounts are deactivated rather than deleted, because
+`audit_log.user_id` references them and deleting would turn the entries they
+produced into unattributed ones ([ADR-0008](../adr/0008-the-instance-keeps-the-demonstration-accounts-deactivated.md)).
+`authenticate` refuses an inactive account, so the published password now opens
+nothing.
+
+This closes finding 01 of [`instance-findings-fixes.md`](instance-findings-fixes.md),
+which recorded the published demonstration credentials as pending operator
+input.
+
+**One account is unaccounted for.** The total is 32 where 31 is expected — the
+thirty seeded rows plus the new administrator. `account-report` counts every
+row but prints only the active ones, so the extra is inactive and cannot sign
+in. It is most likely the administrator provisioned by #107 in `8bab1bf`,
+already inactive before this run. Worth confirming before the demonstration,
+but not a way in: an inactive account is refused at authentication.
+
+The administrator's address is `cloudcompute97@gmail.com`, which is also the
+account that holds SSH access to the instance. Compromising one reaches the
+other. The team chose it knowingly; it is recorded here because a reviewer
+reading only this file would not otherwise see the coupling.
+
 ## Response headers, and the narrow CSP exception
 
 This also closes finding 13 of

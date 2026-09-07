@@ -126,9 +126,12 @@ it is asked for twice and never echoed; and `web/cli.py` opens no file, which a
 test asserts. `.env.example` documents the variable with no value, because a
 password with a safe default is not one.
 
-## Not evidenced here
+## The run on the instance
 
-The run on the actual GCP instance. This is the procedure, verified against a
-database built exactly the way the instance's is; performing it there and
-capturing the result is part of F6-07 (#109), which records the deployed
-state.
+Done on 2026-09-07 and recorded in
+[`f6-07-proof-of-deployment.md`](f6-07-proof-of-deployment.md): thirty
+demonstration accounts deactivated, one administrator active, and
+`Demonstration accounts that can still sign in: 0`.
+
+What is written above remains the procedure, verified against a database built
+exactly the way the instance's is. The instance run followed it unchanged.

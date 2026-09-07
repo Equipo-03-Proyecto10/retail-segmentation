@@ -196,10 +196,25 @@ in [ADR-0012](adr/0012-publish-mosaiq-through-cloudflare-with-an-origin-certific
 `EXTERNAL`, region `northamerica-south1`, `IN_USE`), so a stop/start does not
 rotate it.
 
-Until the origin certificate is installed, the box still presents the earlier
-self-signed pair (`CN=34.51.123.31`, `subjectAltName=IP:34.51.123.31`, valid to
-2027-09-06 — Path B). The application env is already set for TLS:
-`SESSION_COOKIE_SECURE=true`, `TRUSTED_PROXY_HOPS=1`.
+Applied on `mosaiq-deployment-vm` on 2026-09-07:
+
+- `/etc/nginx/tls/mosaiq.{crt,key}` — the Cloudflare Origin CA pair
+  (`CN=CloudFlare Origin Certificate`, valid to 2041-09-03). The prior
+  self-signed pair is kept as `*.selfsigned-20260907T064344Z`.
+- `/etc/nginx/conf.d/mosaiq.conf` + `cloudflare-real-ip.conf` from the repo
+  (`server_name mosaiq.maxthecoder.online`, `real_ip_header CF-Connecting-IP`,
+  HSTS `max-age=2592000`). `nginx -t` clean, reloaded.
+- App env already set for TLS: `SESSION_COOKIE_SECURE=true`,
+  `TRUSTED_PROXY_HOPS=1`.
+
+Verified: `https://mosaiq.maxthecoder.online/` → `HTTP/2 200` with a valid edge
+certificate (`CN=maxthecoder.online`, Google Trust Services, via Cloudflare
+Universal SSL); `http://` → `301`; the NGINX access log shows the real client
+IP, not a Cloudflare edge address.
+
+**Still to do:** flip the Cloudflare SSL mode to **Full (strict)** now that the
+origin certificate is valid (it was **Full** while the origin was self-signed);
+optional firewall hardening is [#167](https://github.com/Equipo-03-Proyecto10/retail-segmentation/issues/167).
 
 ## Application service
 

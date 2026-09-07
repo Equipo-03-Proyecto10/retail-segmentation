@@ -1,8 +1,9 @@
 # ADR-0001 — Flask monolith on a single Compute Engine instance
 
-**Status:** Accepted
+**Status:** Superseded by ADR-0016
 **Owner:** Marcelo
 **Supersedes:** the four-component architecture and ADRs 0001–0004 of the previous scope
+**Superseded by:** [ADR-0016](0016-the-second-delivery-reinstates-the-distributed-architecture.md)
 
 ---
 

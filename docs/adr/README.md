@@ -40,7 +40,12 @@ PR #168 introduced a second ADR numbered 0012 while this repair was in
 progress. Its Cloudflare record is numbered 0013 here, with references
 corrected and acceptance reconciled against that merged PR. The original
 release-merge ADR keeps number 0012.
-ADR-0014 is new and awaits acceptance with this PR.
+ADR-0014 and ADR-0015 were both merged while still `Proposed`, which is the
+thing the rule above exists to prevent: their implementations landed before the
+records were binding. The team accepted both at its meeting on 2026-09-07, and
+this transition records that rather than backdating it. ADR-0015 supersedes
+ADR-0006, so ADR-0006's retirement takes effect from the same point — until
+this transition it was marked superseded by a record that was not yet binding.
 
 ## Index
 
@@ -59,8 +64,8 @@ ADR-0014 is new and awaits acceptance with this PR.
 | [0011](0011-one-environment-deployed-from-main.md) | The instance is one environment, deployed automatically only from `main` | Accepted |
 | [0012](0012-release-merges-preserve-ancestry.md) | `develop` and `main` are joined only by merge commits, never by squash or rebase | Accepted |
 | [0013](0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md) | MOSAIQ is published through Cloudflare with an origin certificate | Accepted |
-| [0014](0014-service-owned-transactions-and-typed-write-failures.md) | Services own transactions and translate typed write failures | Proposed |
-| [0015](0015-containers-are-a-development-path-only.md) | Docker Compose is a development path only, and is never run on the instance | Proposed |
+| [0014](0014-service-owned-transactions-and-typed-write-failures.md) | Services own transactions and translate typed write failures | Accepted |
+| [0015](0015-containers-are-a-development-path-only.md) | Docker Compose is a development path only, and is never run on the instance | Accepted |
 
 ## Writing one
 

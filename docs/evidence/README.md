@@ -57,8 +57,7 @@ All five acceptance criteria on #109 are recorded. Four were captured against
 the instance and the published host; container execution was captured on a
 developer machine, which
 [ADR-0015](../adr/0015-containers-are-a-development-path-only.md) settles as the
-right place for it. ADR-0015 is Proposed, so that last placement is a decision
-awaiting acceptance rather than a settled one.
+right place for it, and which the team accepted on 2026-09-07.
 
 ## Review passes
 

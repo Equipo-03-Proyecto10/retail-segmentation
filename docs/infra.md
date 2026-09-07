@@ -204,3 +204,47 @@ systemctl is-active mosaiq                 -> active
 systemctl is-active nginx                  -> active
 curl -skI https://34.51.123.31/            -> HTTP/2 200
 ```
+
+## Continuous deployment
+
+Story `F6-06` (#90), decision [ADR-0011](adr/0011-one-environment-deployed-from-main.md).
+The instance is a single production environment: `.github/workflows/deploy.yml`
+is the only thing that deploys to it, a push to `main` is the only trigger, and
+`develop` never deploys. Runbook: [`deploy/README.md`](../deploy/README.md).
+
+Authentication is Workload Identity Federation, so **no long-lived credential
+exists** — GitHub mints an OIDC token per run and GCP exchanges it for
+short-lived credentials. Created once in project `iac-dev-01`; these resources
+are not reproducible from this repository, which is why they are recorded here:
+
+| Field | Value |
+|---|---|
+| Service account | `mosaiq-deploy@iac-dev-01.iam.gserviceaccount.com` |
+| Workload identity pool | `github-actions` (global) |
+| Provider | `github`, issuer `https://token.actions.githubusercontent.com` |
+| Attribute mapping | `google.subject=assertion.sub`, `attribute.repository=assertion.repository`, `attribute.ref=assertion.ref` |
+| Provider condition | `assertion.repository == 'Equipo-03-Proyecto10/retail-segmentation'` |
+| Impersonation | `roles/iam.workloadIdentityUser` for `attribute.ref/refs/heads/main` only |
+| Instance-level roles | `roles/compute.osAdminLogin`, `roles/compute.viewer` — bound on `mosaiq-deployment-vm`, not on the project |
+| Project-level role | custom `mosaiqDeployProjectRead`, holding one permission (`compute.projects.get`) |
+| Repository secrets used | none |
+
+Two layers restrict the deploy to `main`: the workflow trigger, and the IAM
+binding above. A `workflow_dispatch` from another branch fails at the
+authentication step by design.
+
+The instance also has OS Login enabled (`enable-oslogin=TRUE`), so SSH keys
+placed in metadata are ignored and access is governed by IAM — which is what
+makes the service account's instance-scoped `osAdminLogin` sufficient and a
+stored private key unnecessary.
+
+### Deployment behaviour
+
+`deploy/deploy.sh` checks out the merged commit SHA (not a branch tip, so a
+re-run is deterministic), installs `web/requirements.txt`, restarts `mosaiq`,
+and health-checks `https://127.0.0.1/` through NGINX. Any failure restores the
+previously serving commit and restarts again. The guarantee is that a broken
+deploy is not left serving — not that the switch is seamless; there is one
+instance and one gunicorn, so a restart is visible.
+
+A deploy never runs SQL. Schema changes remain a manual, deliberate step.

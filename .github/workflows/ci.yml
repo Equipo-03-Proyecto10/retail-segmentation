@@ -77,6 +77,14 @@ jobs:
           psql -v ON_ERROR_STOP=1 -d retail -f sql/01_schema.sql
           psql -v ON_ERROR_STOP=1 -d retail -f sql/02_seed_30_per_table.sql
 
+      - name: Application role can write data but cannot drop a table
+        env:
+          PGUSER: retail_app
+          PGPASSWORD: retail_app
+        run: |
+          sed -n '/^-- BEGIN APPLICATION ROLE VERIFICATION/,$p' sql/01_schema.sql |
+            psql -X -v ON_ERROR_STOP=1 -v verify_app_role=1 -d retail
+
       # Every table carries at least 30 seed rows, counted exactly — the
       # estimate in pg_stat_user_tables is still zero straight after a load.
       #

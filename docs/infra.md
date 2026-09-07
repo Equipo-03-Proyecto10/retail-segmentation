@@ -108,11 +108,34 @@ psql -d retail -f sql/02_seed_30_per_table.sql
 | Its privileges | `SELECT, INSERT, UPDATE, DELETE` only — verified against `information_schema.table_privileges`. No `CREATE`, no `ALTER`, no ownership |
 | Seed | 19 tables loaded; `transaction_line` 600, `transaction` 300, `inventory` 150 rows |
 
-The listener is unchanged: `127.0.0.1:5432` and `[::1]:5432` only. The
-application runs on the same host, so it reaches PostgreSQL over loopback and
-nothing needs to be exposed — which is what `F1-04` asks for on this topology.
+### Access policy and the application role
+
+Stories `F1-04` (#52) and `F1-05` (#53), applied on 2026-09-07. The listener is
+unchanged — `127.0.0.1:5432` and `[::1]:5432` only — but it is no longer an
+inherited default. The packaged `postgresql.conf` shipped these settings
+commented out; they are now stated in a version-controlled drop-in, so reading
+the configuration shows a decision and a package upgrade cannot move the
+listener without the change appearing in this repository.
+
+| Field | Value |
+|---|---|
+| Drop-in | `/var/lib/pgsql/18/data/conf.d/mosaiq.conf`, from `deploy/postgresql/mosaiq.conf` (`0600 postgres:postgres`) |
+| Settings | `listen_addresses = 'localhost'`, `port = 5432`, `password_encryption = 'scram-sha-256'` |
+| Include | one `include_dir = 'conf.d'` line appended to `postgresql.conf`; the original is kept as `postgresql.conf.bak-20260907T002635Z` |
+| `pg_hba.conf` | 6 rules — `local … peer`, plus `127.0.0.1/32` and `::1/128` on `scram-sha-256`, for `all` and for `replication`. No parse errors and no non-loopback TCP rule |
+| Remote access | SSH port-forwarding to that same loopback listener. No database port is open in GCP or firewalld |
+
+The drop-in states values that were already in effect, so the reload left
+nothing pending and no restart was taken. `listen_addresses` and `port` are
+postmaster-context settings, so they keep reporting `default` as their source
+until the server next restarts; `password_encryption` switched to
+`configuration file` immediately.
+
 The credential lives only in `/etc/mosaiq/mosaiq.env` (`0640 root:mosaiq`); it
 is not in the repository and not in any shell history.
+
+Runbook: [`deploy/postgresql/README.md`](../deploy/postgresql/README.md).
+Acceptance evidence: [`f1-04-f1-05-postgresql-access.md`](evidence/f1-04-f1-05-postgresql-access.md).
 
 ## Reverse proxy
 

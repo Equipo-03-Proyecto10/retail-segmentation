@@ -5,10 +5,14 @@ as **gunicorn under systemd behind NGINX** — [ADR-0006](../docs/adr/0006-run-u
 [ADR-0009](../docs/adr/0009-nginx-as-the-reverse-proxy.md). This directory holds
 what is applied there:
 
+PostgreSQL listener, HBA policy, SSH access and application-role verification:
+[`postgresql/README.md`](postgresql/README.md) (F1-04 / F1-05).
+
 | File | Goes to |
 |---|---|
 | `nginx/mosaiq.conf` | `/etc/nginx/conf.d/mosaiq.conf` (`:80` redirect + `:443` proxy) |
 | `nginx/mosaiq.compose.conf` | not deployed — local verification only, see `../compose.proxy.yaml` |
+| `postgresql/mosaiq.conf` | `/var/lib/pgsql/18/data/conf.d/mosaiq.conf` (loopback listener, SCRAM) |
 | `systemd/mosaiq.service` | `/etc/systemd/system/mosaiq.service` |
 | the TLS certificate | `/etc/nginx/tls/mosaiq.{crt,key}` — issued on the instance (F6-03), not in the repo |
 

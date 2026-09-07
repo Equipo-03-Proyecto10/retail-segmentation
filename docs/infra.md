@@ -207,14 +207,17 @@ Applied on `mosaiq-deployment-vm` on 2026-09-07:
 - App env already set for TLS: `SESSION_COOKIE_SECURE=true`,
   `TRUSTED_PROXY_HOPS=1`.
 
-Verified: `https://mosaiq.maxthecoder.online/` → `HTTP/2 200` with a valid edge
-certificate (`CN=maxthecoder.online`, Google Trust Services, via Cloudflare
-Universal SSL); `http://` → `301`; the NGINX access log shows the real client
-IP, not a Cloudflare edge address.
+Cloudflare edge settings: SSL/TLS mode **Full (strict)**, **Always Use HTTPS**
+on, Universal SSL active for the hostname.
 
-**Still to do:** flip the Cloudflare SSL mode to **Full (strict)** now that the
-origin certificate is valid (it was **Full** while the origin was self-signed);
-optional firewall hardening is [#167](https://github.com/Equipo-03-Proyecto10/retail-segmentation/issues/167).
+Verified from outside GCP: `https://mosaiq.maxthecoder.online/` → `HTTP/2 200`
+(TLS 1.3) with a valid edge certificate (`CN=maxthecoder.online`, Google Trust
+Services, via Cloudflare Universal SSL); `http://` → `301`; the origin presents
+`CN=CloudFlare Origin Certificate` past the edge; the NGINX access log shows the
+real client IP, not a Cloudflare edge address.
+
+**Optional, deferred:** firewall hardening to Cloudflare ranges —
+[#167](https://github.com/Equipo-03-Proyecto10/retail-segmentation/issues/167).
 
 ## Application service
 

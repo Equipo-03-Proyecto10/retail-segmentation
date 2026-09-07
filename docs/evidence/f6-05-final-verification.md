@@ -197,7 +197,10 @@ artifact complete in the repository and absent from where it is graded.
 ## Independent re-check (Raquel de la Garza, 2026-09-07)
 
 Re-verified from a separate machine, no cookies:
+
+```
 $ curl -sI https://mosaiq.maxthecoder.online/
 HTTP/2 200
+```
 
 Confirms AC 1 still holds at the time of this delivery.

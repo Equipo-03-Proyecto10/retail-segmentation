@@ -301,6 +301,70 @@ repository:
 A `workflow_dispatch` from any branch other than `main` fails at the
 authentication step. That is the IAM restriction doing its job, not a bug.
 
+### Verifying the pipeline
+
+F6-06's acceptance was captured in
+[the evidence](../docs/evidence/f6-06-continuous-deployment.md); run
+[34076420600](https://github.com/Equipo-03-Proyecto10/retail-segmentation/actions/runs/34076420600)
+is the deploy that closed it. What follows is how to re-verify it — after a
+change to `deploy.sh`, or to the identity in GCP.
+
+**What is serving right now:**
+
+```sh
+gcloud compute ssh mosaiq-deployment-vm --project=iac-dev-01 \
+  --zone=northamerica-south1-a --command="\
+    sudo -u mosaiq git -C /opt/mosaiq/current rev-parse HEAD; \
+    systemctl is-active mosaiq; \
+    curl -sk -o /dev/null -w 'https %{http_code}\n' https://127.0.0.1/"
+```
+
+That commit must equal the tip of `main`. If it does not, either a deploy failed
+or somebody moved the instance by hand — both worth knowing about.
+
+**Check any SHA before you use it.** A terminal that does not handle bracketed
+paste inserts its markers literally, and a stray `~` on the end of a SHA is
+valid git syntax for *the parent of* that commit. The deploy then quietly
+targets a different commit and reports success — this happened, and cost a
+rollback test that proved nothing. Resolve first and compare:
+
+```sh
+gcloud compute ssh mosaiq-deployment-vm --project=iac-dev-01 --zone=northamerica-south1-a --command='sudo -u mosaiq git -C /opt/mosaiq/current rev-parse <sha>'
+```
+
+It must print back what you gave it. The script also prints `deploying:` with
+the SHA it resolved — read that line before trusting a result.
+
+**Re-testing the rollback.** It needs a genuinely broken release, not a disabled
+health check: the rollback runs the same check, so forcing a failure would make
+the recovery look like it failed too. Build a probe on a throwaway branch —
+raise in the landing view, so gunicorn starts cleanly and the site then answers
+500, the failure `systemctl is-active` cannot see:
+
+```sh
+git checkout -b test/deploy-rollback-probe origin/develop
+# in web/routes/home.py, first line of index():
+#     raise RuntimeError("deliberate failure: deploy rollback probe")
+git commit -am "test: deliberately broken landing page, rollback probe" && git push -u origin HEAD
+```
+
+Then deploy that SHA, expecting it to be refused and reverted:
+
+```sh
+gcloud compute scp deploy/deploy.sh mosaiq-deployment-vm:/tmp/probe-deploy.sh --project=iac-dev-01 --zone=northamerica-south1-a
+gcloud compute ssh mosaiq-deployment-vm --project=iac-dev-01 --zone=northamerica-south1-a --command="sudo HEALTH_ATTEMPTS=4 bash /tmp/probe-deploy.sh <probe-sha>"
+```
+
+Expect `unhealthy after 4 attempts: HTTP 500`, then `FAILED — rolling back`,
+then `rolled back; the previous version is serving again`, exit 70. Delete the
+branch and `/tmp/probe-deploy.sh` afterwards, and use a filename nobody else
+owns — `/tmp` is sticky, and a leftover file owned by another user blocks the
+next upload with a bare "Permission denied".
+
+If it instead prints `ROLLBACK ALSO FAILED`, the instance needs a person: deploy
+the last good SHA by hand and raise it, because that is a defect in the pipeline
+rather than something to improvise around.
+
 ### After it is applied
 
 Record in `docs/infra.md` under "Continuous deployment": the workflow run that

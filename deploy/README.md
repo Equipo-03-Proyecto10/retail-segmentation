@@ -64,13 +64,12 @@ gcloud compute ssh mosaiq-deployment-vm --zone=northamerica-south1-a
    sudo setsebool -P httpd_can_network_connect 1
    ```
 
-5. **Open HTTP in firewalld** if it is running (the GCP firewall already allows
-   `:80`, this is the host firewall):
-   ```sh
-   sudo firewall-cmd --state >/dev/null 2>&1 \
-     && sudo firewall-cmd --permanent --add-service=http \
-     && sudo firewall-cmd --reload
-   ```
+5. **firewalld — nothing to do, and nothing it would do.** `eth0` is in the
+   `trusted` zone, whose target is `ACCEPT`: it admits everything on the
+   interface whatever its service list says. Adding or removing a service there
+   changes only the listing. Ingress is decided by the GCP firewall alone
+   (`docs/infra.md`, "firewalld is not a second layer"). Public `:80` was
+   dropped in #167, so do **not** re-add the `http` service here.
 
 6. **Test and start.**
    ```sh
@@ -98,8 +97,8 @@ curl -m5 http://<external-ip>:8000/         # from your laptop   -> timeout / re
 --zone=northamerica-south1-a --format='value(networkInterfaces[0].accessConfigs[0].natIP)'`.
 
 The second check passes because the GCP firewall denies everything except
-`tcp:22` and `tcp:80` (`docs/infra.md`) and gunicorn binds loopback only —
-NGINX is the only thing that can reach `:8000`.
+`tcp:22` and `tcp:443` from a Cloudflare edge (`docs/infra.md`, #167) and
+gunicorn binds loopback only — NGINX is the only thing that can reach `:8000`.
 
 ### After it is applied
 
@@ -191,18 +190,24 @@ Three certificate paths, in order of preference:
 
 ### 0. Firewall
 
-`tcp:443` is already open on the GCP firewall (`mosaiq-allow-https`) and in
-firewalld — nothing to add for Path A/B/C to work. **Optional hardening for
-Path C** (needs `roles/compute.securityAdmin`): pin `:443` to Cloudflare's
-ranges and drop public `:80`, so the origin is reachable only through the edge.
+`tcp:443` is open on the GCP firewall (`mosaiq-allow-https`) and in firewalld —
+nothing to add for Path A/B/C to work. **For Path C it is pinned to Cloudflare's
+ranges and public `:80` is gone** (#167, applied 2026-09-07), so the origin is
+reachable only through the edge. Redoing it, or repointing it at a new range
+list, needs `roles/compute.securityAdmin`:
 
 ```sh
 CF4=$(curl -s https://www.cloudflare.com/ips-v4 | paste -sd,)
-CF6=$(curl -s https://www.cloudflare.com/ips-v6 | paste -sd,)
 gcloud compute firewall-rules update mosaiq-allow-https \
-  --project=iac-dev-01 --source-ranges="$CF4,$CF6"
+  --project=iac-dev-01 --source-ranges="$CF4"
 gcloud compute firewall-rules delete mosaiq-allow-http --project=iac-dev-01
 ```
+
+GCP refuses a rule that mixes address families ("Mixture of IPv4 and IPv6 in
+the same rule is not allowed"), and the instance is `IPV4_ONLY` — no
+`ipv6AccessConfigs`, so a Cloudflare edge can only ever reach the origin over
+IPv4. Only the v4 list goes in. If the instance ever gains an IPv6 address, the
+v6 ranges need a second rule of their own.
 
 ### 1c. Path C — Cloudflare proxied with an Origin Certificate
 
@@ -245,6 +250,13 @@ sudo ln -sf /etc/letsencrypt/live/mosaiq.maxthecoder.online/privkey.pem   /etc/n
 certbot installs a renewal timer — check `systemctl list-timers | grep certbot`.
 The Cloudflare record must be **DNS-only** for the HTTP-01 challenge to reach the
 origin.
+
+**Path A no longer works as written.** #167 deleted `mosaiq-allow-http` and
+pinned `:443` to Cloudflare's ranges, so the HTTP-01 challenge cannot reach
+`:80` and Let's Encrypt cannot reach the origin at all. Falling back to Path A
+means first recreating the `:80` rule (its exact spec is in `docs/infra.md`) and
+widening or removing the `:443` pin — and renewal keeps needing them, every 60
+days, not just the first issuance. Path C needs neither.
 
 ### 1b. Path B — self-signed (demo fallback)
 

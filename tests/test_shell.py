@@ -220,13 +220,13 @@ def test_the_shell_marks_the_section_the_visitor_is_in(
 
 def _current_entry(body: str) -> str | None:
     marked = re.search(
-        r"masthead__link--current[^>]*>\s*([^<]+?)\s*</a>", body, re.DOTALL
+        r'mq-nav__item--active[\s\S]*?mq-nav__label">([^<]+)</span>', body
     )
     return None if marked is None else marked.group(1)
 
 
 def test_every_page_carries_the_same_shell(app: Flask) -> None:
-    """Including the error pages: one masthead, one way to sign out."""
+    """Including the error pages: one app shell, one way to sign out."""
     client = app.test_client()
     _sign_in(client)
 
@@ -234,5 +234,5 @@ def test_every_page_carries_the_same_shell(app: Flask) -> None:
         response = client.get(path)
         body = response.get_data(as_text=True)
         assert response.status_code == expected
-        assert 'class="masthead"' in body
+        assert 'class="mq-shell"' in body
         assert "Sign out" in body

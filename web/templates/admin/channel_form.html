@@ -1,24 +1,17 @@
 {% extends "base.html" %}
+{% set form_title = "Edit channel" if request.endpoint == "admin.edit_channel_view" else "New channel" %}
 
-{% block title %}{{ "Edit channel" if request.endpoint == "admin.edit_channel_view" else "New channel" }} · {{ application_name }}{% endblock %}
+{% block title %}{{ form_title }} · {{ application_name }}{% endblock %}
+{% block topbar_title %}{{ form_title }}{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Catalogs / Channels / {{ form_title }}{% endblock %}
 
 {% block content %}
-<div class="admin-page">
-  <h1>{{ "Edit channel" if request.endpoint == "admin.edit_channel_view" else "New channel" }}</h1>
-
-  <form method="post">
-    {% if request.endpoint == "admin.create_channel_view" %}
-    <label for="channel_id">Channel ID</label>
-    <input type="number" id="channel_id" name="channel_id" value="{{ channel.channel_id if channel else '' }}" required>
-    {% if errors.channel_id %}<p class="error">{{ errors.channel_id }}</p>{% endif %}
-    {% endif %}
-
-    <label for="name">Name</label>
-    <input type="text" id="name" name="name" value="{{ channel.name if channel else '' }}" required>
-    {% if errors.name %}<p class="error">{{ errors.name }}</p>{% endif %}
-
-    <button type="submit">Save</button>
-    <a href="{{ url_for('admin.list_channels_view') }}">Cancel</a>
-  </form>
-</div>
+  {% from "macros/ui.html" import page_header %}
+  {{ page_header(form_title, "Channel identifiers are fixed after creation.", "Master data") }}
+  <section class="mq-panel mq-form-panel"><header class="mq-panel__header"><h2 class="mq-panel__title">Channel details</h2></header><div class="mq-panel__body">
+    <form class="mq-form" method="post"><div class="mq-form__grid">
+      {% if request.endpoint == "admin.create_channel_view" %}<div class="mq-field"><label class="mq-field__label mq-field__label--required" for="channel_id">Channel ID</label><input class="mq-input mq-input--num{% if errors.channel_id %} mq-input--error{% endif %}" type="number" id="channel_id" name="channel_id" value="{{ channel.channel_id if channel else '' }}" required>{% if errors.channel_id %}<span class="mq-field__error">{{ errors.channel_id }}</span>{% endif %}</div>{% endif %}
+      <div class="mq-field"><label class="mq-field__label mq-field__label--required" for="name">Name</label><input class="mq-input{% if errors.name %} mq-input--error{% endif %}" type="text" id="name" name="name" value="{{ channel.name if channel else '' }}" required>{% if errors.name %}<span class="mq-field__error">{{ errors.name }}</span>{% endif %}</div>
+    </div><div class="mq-form__actions"><button class="mq-btn mq-btn--primary" type="submit">Save</button><a class="mq-btn mq-btn--secondary" href="{{ url_for('admin.list_channels_view') }}">Cancel</a></div></form>
+  </div></section>
 {% endblock %}

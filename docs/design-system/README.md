@@ -34,17 +34,18 @@ Open either guidelines page directly in a browser (`docs/design-system/guideline
 
 The generated package also included 26 React component wrappers
 (`components/*.jsx`), two React UI kits (`ui_kits/mosaiq-app`,
-`ui_kits/mosaiq-site`), and a marketing/landing-page surface
-(`marketing.css`, brand mosaics). None of that is committed:
+`ui_kits/mosaiq-site`), and a marketing treatment for the existing public
+landing page:
 
 - **React is off-scope.** The repository is one server-rendered Flask +
   Jinja2 application (`AGENTS.md`, C-2/C-3); the JSX files existed only as
   Claude Design's own preview tooling and produce the same markup as
   `components.css` — nothing is lost by working from
   `guidelines/component-sheet.html` instead.
-- **No marketing site is in this delivery's scope** (`docs/scope.md` §1). If
-  one is added later, `marketing.css` and the mosaic imagery can be pulled
-  back from the original export.
+- **There is no separate marketing site.** The existing public Flask landing
+  page uses the export's `marketing.css` and three supplied mosaics from
+  `web/static/`. It remains one server-rendered route in the monolith and does
+  not add a deployable unit or a business workflow.
 
 ## Known gaps (open with the team)
 

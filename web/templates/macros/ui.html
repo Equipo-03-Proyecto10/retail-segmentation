@@ -1,0 +1,56 @@
+{% macro page_header(title, description=None, eyebrow=None) -%}
+  <header class="mq-page-header">
+    <div class="mq-page-header__copy">
+      {% if eyebrow %}<span class="mq-label">{{ eyebrow }}</span>{% endif %}
+      <h1 class="mq-page-header__title">{{ title }}</h1>
+      {% if description %}<p class="mq-page-header__description">{{ description }}</p>{% endif %}
+    </div>
+    {% if caller is defined %}
+      <div class="mq-page-header__actions">{{ caller() }}</div>
+    {% endif %}
+  </header>
+{%- endmacro %}
+
+{% macro alert(message, tone="danger", title=None) -%}
+  <div class="mq-alert mq-alert--{{ tone }}" role="alert">
+    <span class="mq-alert__icon" aria-hidden="true">{{ "×" if tone == "danger" else "i" }}</span>
+    <div class="mq-stack">
+      {% if title %}<span class="mq-alert__title">{{ title }}</span>{% endif %}
+      <span class="mq-alert__text">{{ message }}</span>
+    </div>
+  </div>
+{%- endmacro %}
+
+{% macro empty_state(title, message, mark="Empty") -%}
+  <section class="mq-panel mq-empty-panel">
+    <div class="mq-state">
+      <span class="mq-state__mark">{{ mark }}</span>
+      <span class="mq-state__title">{{ title }}</span>
+      <span class="mq-state__text">{{ message }}</span>
+    </div>
+  </section>
+{%- endmacro %}
+
+{% macro pagination(page, total_pages, summary, previous_url=None, next_url=None) -%}
+  <nav class="mq-pagination" aria-label="Pagination">
+    <span class="mq-pagination__summary mq-num">{{ summary }}</span>
+    <div class="mq-pagination__pages">
+      {% if previous_url %}
+        <a class="mq-pagination__page" href="{{ previous_url }}" aria-label="Previous page">‹</a>
+      {% else %}
+        <span class="mq-pagination__page" aria-disabled="true" aria-label="Previous page">‹</span>
+      {% endif %}
+      <span class="mq-pagination__page" aria-current="page">{{ page }}</span>
+      <span class="mq-caption">of {{ total_pages }}</span>
+      {% if next_url %}
+        <a class="mq-pagination__page" href="{{ next_url }}" aria-label="Next page">›</a>
+      {% else %}
+        <span class="mq-pagination__page" aria-disabled="true" aria-label="Next page">›</span>
+      {% endif %}
+    </div>
+  </nav>
+{%- endmacro %}
+
+{% macro status_pill(label, tone="neutral") -%}
+  <span class="mq-pill mq-pill--{{ tone }}"><span class="mq-pill__dot"></span>{{ label }}</span>
+{%- endmacro %}

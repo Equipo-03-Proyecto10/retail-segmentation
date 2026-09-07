@@ -1,32 +1,33 @@
 {% extends "base.html" %}
 
 {% block title %}{{ code }} · {{ application_name }}{% endblock %}
+{% block topbar_title %}Request status{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / {{ code }}{% endblock %}
 
 {% block content %}
-  <h1>{{ code }}</h1>
-  <p class="lede">{{ name }}</p>
-
-  {% if code == 404 %}
-    <p>That page does not exist. It may have moved, or the link was mistyped.</p>
-  {% elif code == 403 %}
-    <p>
-      This page is not part of what your role may reach. Nothing went wrong;
-      the request was refused deliberately. If you believe you should have
-      access, ask the administrator to review your role.
-    </p>
-  {% else %}
-    <p>
-      The application could not complete that request. The problem has been
-      recorded; nothing you did caused it.
-    </p>
-  {% endif %}
-
-  <p><a href="{{ url_for('home.index') }}">Back to the start</a></p>
-
-  {% if reference %}
-    <dl class="facts">
-      <dt>Reference</dt>
-      <dd><code>{{ reference }}</code></dd>
-    </dl>
-  {% endif %}
+  <section class="mq-panel mq-empty-panel">
+    <div class="mq-state{% if code >= 500 %} mq-state--error{% endif %}">
+      <span class="mq-state__mark">{{ code }}</span>
+      <h1 class="mq-state__title">{{ name }}</h1>
+      {% if code == 404 %}
+        <p class="mq-state__text">That page does not exist. It may have moved, or the link was mistyped.</p>
+      {% elif code == 403 %}
+        <p class="mq-state__text">
+          This page is not part of what your role may reach. If you believe you
+          should have access, ask the administrator to review your role.
+        </p>
+      {% else %}
+        <p class="mq-state__text">
+          The application could not complete that request. The problem has been
+          recorded; nothing you did caused it.
+        </p>
+      {% endif %}
+      <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('home.index') }}">Back to the start</a>
+      {% if reference %}
+        <div class="mq-error-reference mq-caption">
+          Reference <code>{{ reference }}</code>
+        </div>
+      {% endif %}
+    </div>
+  </section>
 {% endblock %}

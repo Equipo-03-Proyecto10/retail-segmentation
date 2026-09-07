@@ -148,14 +148,14 @@
 --mq-bg-hover: #F4F4F2;               /* 1.05:1 */
 --mq-bg-active: #E7E7E4;              /* 1.19:1 */
 --mq-bg-selected: #FFE8D1;
---mq-bg-nav: #232320;                 /* 15.09:1 */
---mq-nav-text: #D5D5D1;               /* 1.41:1 */
---mq-nav-text-strong: #FFFFFF;        /* 1.04:1 */
---mq-nav-text-muted: #8C8C86;         /* 3.24:1 */
---mq-nav-text-disabled: #6B6B65;      /* 5.13:1 */
---mq-nav-hover-bg: rgba(255,255,255,.06);
---mq-nav-active-bg: rgba(255,107,0,.12);
---mq-nav-border: #4F4F4A;             /* 7.89:1 */
+--mq-bg-nav: #FFFFFF;                 /* 1.04:1 */
+--mq-nav-text: #4F4F4A;               /* 8.24:1 on nav */
+--mq-nav-text-strong: #232320;        /* 15.76:1 on nav */
+--mq-nav-text-muted: #6B6B65;         /* 5.36:1 on nav */
+--mq-nav-text-disabled: #8C8C86;      /* 3.38:1 on nav */
+--mq-nav-hover-bg: #F4F4F2;
+--mq-nav-active-bg: #FFE8D1;
+--mq-nav-border: #E7E7E4;             /* 1.24:1 on nav */
 --mq-bg-disabled: #F4F4F2;            /* 1.05:1 */
 --mq-border-subtle: #E7E7E4;          /* 1.19:1 */
 --mq-border-default: #D5D5D1;         /* 1.41:1 */
@@ -168,10 +168,10 @@
 --mq-text-inverse-secondary: #B3B3AE; /* 2.02:1 */
 --mq-text-link: #A33F00;              /* 6.42:1 on canvas */
 --mq-text-link-hover: #7A2F00;        /* 9.40:1 on canvas */
---mq-accent: #A33F00;                 /* 6.42:1 with accent-on */
---mq-accent-hover: #7A2F00;           /* 9.40:1 with accent-on */
---mq-accent-active: #5C2300;          /* 12.39:1 with accent-on */
---mq-accent-on: #FFFFFF;              /* accent / hover / active ONLY */
+--mq-accent: #D45400;                 /* 5.07:1 with accent-on */
+--mq-accent-hover: #FF6B00;           /* 7.36:1 with accent-on */
+--mq-accent-active: #FFB566;          /* 12.68:1 with accent-on */
+--mq-accent-on: #000000;
 --mq-accent-bold: #FF6B00;            /* 2.85:1 with white — takes bold-on */
 --mq-accent-bold-on: #000000;         /* 7.36:1 on accent-bold */
 --mq-accent-subtle: #FFE8D1;

@@ -1,27 +1,38 @@
 {% extends "base.html" %}
 
+{% block title %}Sign in · {{ application_name }}{% endblock %}
+
 {% block content %}
-<main class="auth-page">
-  <h1>Sign in</h1>
+  {% from "macros/ui.html" import alert %}
+  <section class="mq-panel mq-auth-card">
+    <div class="mq-panel__body">
+      <header class="mq-auth-card__header">
+        <span class="mq-label">Secure workspace</span>
+        <h1 class="mq-title-1">Sign in</h1>
+        <p class="mq-caption">Use the account and role assigned by the administrator.</p>
+      </header>
 
-  {% if error %}
-    <p class="error" role="alert">{{ error }}</p>
-  {% endif %}
+      {% if error %}
+        {{ alert(error) }}
+      {% endif %}
 
-  <form method="post" action="{{ url_for('auth.login') }}">
-    {% if next %}
-      {# Carries the page the visitor was refused back through the sign-in,
-         so they land where they were going (RF-03, HU-03). #}
-      <input type="hidden" name="next" value="{{ next }}">
-    {% endif %}
+      <form class="mq-form" method="post" action="{{ url_for('auth.login') }}">
+        {% if next %}
+          <input type="hidden" name="next" value="{{ next }}">
+        {% endif %}
 
-    <label for="email">Email</label>
-    <input type="email" id="email" name="email" required autofocus>
+        <div class="mq-field">
+          <label class="mq-field__label mq-field__label--required" for="email">Email</label>
+          <input class="mq-input" type="email" id="email" name="email" autocomplete="email" required autofocus>
+        </div>
 
-    <label for="password">Password</label>
-    <input type="password" id="password" name="password" required>
+        <div class="mq-field">
+          <label class="mq-field__label mq-field__label--required" for="password">Password</label>
+          <input class="mq-input" type="password" id="password" name="password" autocomplete="current-password" required>
+        </div>
 
-    <button type="submit">Sign in</button>
-  </form>
-</main>
+        <button class="mq-btn mq-btn--primary" type="submit">Sign in</button>
+      </form>
+    </div>
+  </section>
 {% endblock %}

@@ -1,56 +1,61 @@
 {% extends "base.html" %}
 
 {% block title %}Home · {{ application_name }}{% endblock %}
+{% block topbar_title %}Home{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Home{% endblock %}
 
 {% block content %}
-  <h1>{{ dashboard.user.name }}</h1>
-  <p class="lede">
-    {{ dashboard.user.role_description or dashboard.user.role_code }}
-  </p>
+  {% from "macros/ui.html" import empty_state, page_header %}
+  {{ page_header(dashboard.user.name, dashboard.user.role_description or dashboard.user.role_code, "Workspace overview") }}
 
   {% if dashboard.figures %}
-    <ul class="figures">
+    <div class="mq-grid mq-grid--4">
       {% for figure in dashboard.figures %}
-        <li class="figure">
-          <span class="figure__value">{{ figure.value }}</span>
-          <span class="figure__label">{{ figure.label }}</span>
-        </li>
+        <article class="mq-metric">
+          <span class="mq-metric__label">{{ figure.label }}</span>
+          <span class="mq-metric__value">{{ "{:,}".format(figure.value) }}</span>
+          <div class="mq-metric__footer"><span>Current records in scope</span></div>
+        </article>
       {% endfor %}
-    </ul>
-  {% endif %}
-
-  {% if dashboard.recent_audit %}
-    <h2>Recent changes</h2>
-    <div class="table-scroll">
-      <table class="listing">
-        <thead>
-          <tr>
-            <th scope="col">When</th>
-            <th scope="col">Entity</th>
-            <th scope="col">Action</th>
-            <th scope="col">By</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for entry in dashboard.recent_audit %}
-            <tr>
-              <td>{{ entry.executed_at.strftime("%Y-%m-%d %H:%M") }}</td>
-              <td>{{ entry.entity }} <code>{{ entry.entity_pk }}</code></td>
-              <td>{{ entry.action }}</td>
-              {# NULL means the actor is genuinely unknown — a seed or a
-                 maintenance script — and is shown as such, never invented. #}
-              <td>{{ entry.actor_name or "unattributed" }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
     </div>
   {% endif %}
 
+  {% if dashboard.recent_audit %}
+    <section class="mq-panel mq-panel--table mq-density-compact">
+      <header class="mq-panel__header">
+        <h2 class="mq-panel__title">Recent changes</h2>
+        <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('audit.index') }}">Open audit log</a>
+      </header>
+      <div class="mq-table-wrap">
+        <table class="mq-table">
+          <thead>
+            <tr>
+              <th scope="col">When</th>
+              <th scope="col">Entity</th>
+              <th scope="col">Action</th>
+              <th scope="col">By</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for entry in dashboard.recent_audit %}
+              <tr>
+                <td class="mq-mono">{{ entry.executed_at.strftime("%Y-%m-%d %H:%M") }}</td>
+                <td>{{ entry.entity }} <code>{{ entry.entity_pk }}</code></td>
+                <td>{{ entry.action }}</td>
+                <td>{{ entry.actor_name or "unattributed" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {% endif %}
+
   {% if not dashboard.figures and not dashboard.recent_audit %}
-    <p>
-      Your role does not open any of the figures this page reports. Use the
-      navigation above to reach the sections you do have.
-    </p>
+    {{ empty_state(
+      "No overview metrics are available for this role",
+      "Use the navigation to open the sections assigned to your account.",
+      "No metrics"
+    ) }}
   {% endif %}
 {% endblock %}

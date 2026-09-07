@@ -260,6 +260,8 @@ class MenuEntry:
     label: str
     endpoint: str
     permission: str | None
+    section: str
+    glyph: str
 
 
 @dataclass(frozen=True)
@@ -269,27 +271,32 @@ class MenuItem:
     label: str
     endpoint: str
     is_current: bool
+    section: str
+    glyph: str
 
 
-# One entry per section of the matrix in docs/requirements.md §3, named for the
-# endpoint the story that builds it registers. An entry whose blueprint has not
-# landed yet is skipped, so this list is a plan the menu grows into rather than
-# a set of broken links: F3-04 (#64) lights up Catalogs, F3-06 (#66) Users,
-# F3-10 (#102) the segment run, F3-11 (#103) the audit log. The shell itself is
-# F3-12 (#106); what lives here is the permission filtering it inherits.
+# One entry per section of the matrix in docs/requirements.md §3. Destinations
+# without a current-delivery workflow still register a permission-gated status
+# page, so the design-system navigation never contains a broken destination.
 #
 # "Catalogs" points at the read-only consultation hub (F3-05, #65). The
 # administrator reaches the CRUD hub from a link on that page and edits from
 # the detail views, both gated on catalog.write.
 NAVIGATION: tuple[MenuEntry, ...] = (
-    MenuEntry("Home", "home.index", None),
-    MenuEntry("Catalogs", "catalog.index", CATALOG_READ),
-    MenuEntry("Users", "admin.list_users_view", USER_READ),
-    MenuEntry("Segments", "segments.index", SEGMENT_READ),
-    MenuEntry("Campaigns", "campaigns.index", CAMPAIGN_READ),
-    MenuEntry("Segment run", "segment_run.index", SEGMENT_RUN_EXECUTE),
-    MenuEntry("Reports", "reports.index", REPORT_READ),
-    MenuEntry("Audit log", "audit.index", AUDIT_READ),
+    MenuEntry("Home", "home.index", None, "Workspace", "◇"),
+    MenuEntry("Catalogs", "catalog.index", CATALOG_READ, "Workspace", "▦"),
+    MenuEntry("Users", "admin.list_users_view", USER_READ, "Workspace", "○"),
+    MenuEntry("Segments", "catalog.segments", SEGMENT_READ, "Analysis", "▪"),
+    MenuEntry("Campaigns", "campaigns.index", CAMPAIGN_READ, "Analysis", "≡"),
+    MenuEntry(
+        "Segment run",
+        "segment_run.index",
+        SEGMENT_RUN_EXECUTE,
+        "Analysis",
+        "↻",
+    ),
+    MenuEntry("Reports", "reports.index", REPORT_READ, "Analysis", "∷"),
+    MenuEntry("Audit log", "audit.index", AUDIT_READ, "Governance", "⊞"),
 )
 
 
@@ -304,22 +311,28 @@ def menu() -> list[MenuItem]:
     """
     granted = current_permissions()
     registered = current_app.view_functions
-    section = request.blueprint if has_request_context() else None
+    endpoint = request.endpoint if has_request_context() else None
+
+    if endpoint and endpoint.startswith("admin."):
+        active_endpoint = (
+            "admin.list_users_view"
+            if request.path.startswith("/admin/users")
+            else "catalog.index"
+        )
+    elif endpoint in {"catalog.segments", "catalog.segment_detail"}:
+        active_endpoint = "catalog.segments"
+    elif endpoint and endpoint.startswith("catalog."):
+        active_endpoint = "catalog.index"
+    else:
+        active_endpoint = endpoint
 
     return [
         MenuItem(
             label=entry.label,
             endpoint=entry.endpoint,
-            is_current=(
-                entry.endpoint
-                == (
-                    "admin.list_users_view"
-                    if request.path.startswith("/admin/users")
-                    else "catalog.index"
-                )
-                if section == "admin"
-                else entry.endpoint.split(".")[0] == section
-            ),
+            is_current=entry.endpoint == active_endpoint,
+            section=entry.section,
+            glyph=entry.glyph,
         )
         for entry in NAVIGATION
         if entry.endpoint in registered
@@ -422,4 +435,5 @@ def install(app: Flask) -> None:
             "can": can,
             "signed_in": is_signed_in(),
             "current_user_name": session.get("name"),
+            "current_user_role": current_role_code(),
         }

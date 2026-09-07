@@ -1,45 +1,37 @@
 {% extends "base.html" %}
 
 {% block title %}{{ customer.name }} · {{ application_name }}{% endblock %}
+{% block topbar_title %}Customer detail{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Catalogs / Customers / {{ customer.name }}{% endblock %}
 
 {% block content %}
-  <h1>{{ customer.name }}</h1>
-  <p class="lede">Registered {{ customer.registered_on.strftime("%Y-%m-%d") }}</p>
+  {% from "macros/ui.html" import page_header, status_pill %}
+  {% call page_header(customer.name, "Registered on {}".format(customer.registered_on.strftime("%Y-%m-%d")), "Customer") %}
+    <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('catalog.customers') }}">Back to customers</a>
+  {% endcall %}
 
-  <dl class="facts">
-    <dt>Email</dt>
-    <dd>{{ customer.email or "—" }}</dd>
-    <dt>Phone</dt>
-    <dd>{{ customer.phone or "—" }}</dd>
-    <dt>Registration channel</dt>
-    <dd>{{ registration_channel.name if registration_channel else customer.registration_channel_id }}</dd>
-    <dt>Current segment</dt>
-    <dd>
-      {% if segment %}
-        <a href="{{ url_for('catalog.segment_detail', segment_id=segment.segment_id) }}">
-          {{ segment.name }}
-        </a>
-      {% else %}
-        Unassigned
-      {% endif %}
-    </dd>
-    <dt>Categories of interest</dt>
-    <dd>
-      {% if interests %}
-        {{ interests | map(attribute='name') | join(', ') }}
-      {% else %}
-        None recorded
-      {% endif %}
-    </dd>
-    <dt>Preferred channels</dt>
-    <dd>
-      {% if preferred_channels %}
-        {{ preferred_channels | map(attribute='name') | join(', ') }}
-      {% else %}
-        None recorded
-      {% endif %}
-    </dd>
-  </dl>
-
-  <p><a href="{{ url_for('catalog.customers') }}">Back to customers</a></p>
+  <div class="mq-grid mq-grid--2">
+    <section class="mq-panel">
+      <header class="mq-panel__header"><h2 class="mq-panel__title">Contact and registration</h2></header>
+      <div class="mq-panel__body">
+        <dl class="mq-description-list">
+          <dt>Customer ID</dt><dd class="mq-mono">{{ customer.customer_id }}</dd>
+          <dt>Email</dt><dd>{{ customer.email or "—" }}</dd>
+          <dt>Phone</dt><dd class="mq-mono">{{ customer.phone or "—" }}</dd>
+          <dt>Registration channel</dt><dd>{{ registration_channel.name if registration_channel else customer.registration_channel_id }}</dd>
+        </dl>
+      </div>
+    </section>
+    <section class="mq-panel">
+      <header class="mq-panel__header"><h2 class="mq-panel__title">Preferences and segment</h2></header>
+      <div class="mq-panel__body">
+        <dl class="mq-description-list">
+          <dt>Current segment</dt>
+          <dd>{% if segment %}<a href="{{ url_for('catalog.segment_detail', segment_id=segment.segment_id) }}">{{ status_pill(segment.name, "info") }}</a>{% else %}{{ status_pill("Unassigned") }}{% endif %}</dd>
+          <dt>Categories of interest</dt><dd>{{ interests | map(attribute='name') | join(', ') if interests else "None recorded" }}</dd>
+          <dt>Preferred channels</dt><dd>{{ preferred_channels | map(attribute='name') | join(', ') if preferred_channels else "None recorded" }}</dd>
+        </dl>
+      </div>
+    </section>
+  </div>
 {% endblock %}

@@ -1,67 +1,48 @@
 {% extends "base.html" %}
 
 {% block title %}{{ segment.name }} · {{ application_name }}{% endblock %}
+{% block topbar_title %}Segment detail{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Analysis / Segments / {{ segment.name }}{% endblock %}
 
 {% block content %}
-  <h1>{{ segment.name }}</h1>
-  <p class="lede">{{ segment.description or "No description" }}</p>
+  {% from "macros/ui.html" import empty_state, page_header, pagination %}
+  {% call page_header(segment.name, segment.description or "No description", "Segment") %}
+    <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('catalog.segments') }}">Back to segments</a>
+  {% endcall %}
 
-  <dl class="facts">
-    <dt>Segment ID</dt>
-    <dd>{{ segment.segment_id }}</dd>
-    <dt>Valid from</dt>
-    <dd>{{ segment.valid_from.strftime("%Y-%m-%d") }}</dd>
-    <dt>Valid to</dt>
-    <dd>{{ segment.valid_to.strftime("%Y-%m-%d") if segment.valid_to else "—" }}</dd>
-    {% if rule %}
-      <dt>Rule</dt>
-      <dd><code>{{ rule.rule_code }}</code></dd>
-      <dt>Recency band</dt>
-      <dd>{{ rule.r_min }}–{{ rule.r_max }}</dd>
-      <dt>Frequency band</dt>
-      <dd>{{ rule.f_min }}–{{ rule.f_max }}</dd>
-      <dt>Monetary band</dt>
-      <dd>{{ rule.m_min }}–{{ rule.m_max }}</dd>
-    {% endif %}
-  </dl>
-
-  <h2>Customers in this segment</h2>
-  {% if members %}
-    <div class="table-scroll">
-      <table class="listing">
-        <thead>
-          <tr>
-            <th scope="col">Name</th>
-            <th scope="col">Email</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for customer in members %}
-            <tr>
-              <td>
-                <a href="{{ url_for('catalog.customer_detail', customer_id=customer.customer_id) }}">
-                  {{ customer.name }}
-                </a>
-              </td>
-              <td>{{ customer.email or "—" }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+  <section class="mq-panel">
+    <header class="mq-panel__header"><h2 class="mq-panel__title">Definition</h2><span class="mq-caption mq-mono">segment {{ segment.segment_id }}</span></header>
+    <div class="mq-panel__body">
+      <dl class="mq-description-list">
+        <dt>Valid time</dt><dd class="mq-mono">{{ segment.valid_from.strftime("%Y-%m-%d") }} → {{ segment.valid_to.strftime("%Y-%m-%d") if segment.valid_to else "open" }}</dd>
+        {% if rule %}
+          <dt>Rule</dt><dd><code>{{ rule.rule_code }}</code></dd>
+          <dt>Recency band</dt><dd class="mq-num">{{ rule.r_min }}–{{ rule.r_max }}</dd>
+          <dt>Frequency band</dt><dd class="mq-num">{{ rule.f_min }}–{{ rule.f_max }}</dd>
+          <dt>Monetary band</dt><dd class="mq-num">{{ rule.m_min }}–{{ rule.m_max }}</dd>
+        {% endif %}
+      </dl>
     </div>
+  </section>
 
-    <nav class="pager" aria-label="Pages">
-      {% if page > 1 %}
-        <a href="{{ url_for('catalog.segment_detail', segment_id=segment.segment_id, page=page - 1) }}">Previous</a>
-      {% endif %}
-      <span>Page {{ page }} of {{ total_pages }} · {{ total }} customers</span>
-      {% if page < total_pages %}
-        <a href="{{ url_for('catalog.segment_detail', segment_id=segment.segment_id, page=page + 1) }}">Next</a>
-      {% endif %}
-    </nav>
+  {% if members %}
+    <section class="mq-panel mq-panel--table mq-density-compact">
+      <div class="mq-table__toolbar"><span class="mq-table__count">{{ total }} customers in this segment</span><span class="mq-caption">Current assignments</span></div>
+      <div class="mq-table-wrap">
+        <table class="mq-table">
+          <thead><tr><th class="mq-table__cell--sticky" scope="col">Name</th><th scope="col">Email</th></tr></thead>
+          <tbody>{% for customer in members %}<tr><td class="mq-table__cell--sticky"><a class="mq-table__link" href="{{ url_for('catalog.customer_detail', customer_id=customer.customer_id) }}">{{ customer.name }}</a></td><td>{{ customer.email or "—" }}</td></tr>{% endfor %}</tbody>
+        </table>
+      </div>
+      {{ pagination(
+        page,
+        total_pages,
+        "Page {} of {} · {} customers".format(page, total_pages, total),
+        url_for('catalog.segment_detail', segment_id=segment.segment_id, page=page - 1) if page > 1 else none,
+        url_for('catalog.segment_detail', segment_id=segment.segment_id, page=page + 1) if page < total_pages else none
+      ) }}
+    </section>
   {% else %}
-    <p>No customers are currently in this segment.</p>
+    {{ empty_state("No customers are currently in this segment.", "Run the current assignment process or inspect another segment.") }}
   {% endif %}
-
-  <p><a href="{{ url_for('catalog.segments') }}">Back to segments</a></p>
 {% endblock %}

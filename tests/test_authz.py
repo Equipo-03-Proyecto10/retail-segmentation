@@ -357,8 +357,10 @@ def _menu_labels(client: FlaskClient) -> list[str]:
     # landing page would still yield a menu and the assertion would pass.
     assert response.status_code == 200, "the landing page did not render"
     body = response.get_data(as_text=True)
-    nav = body[body.index('class="masthead__nav"') : body.index("</nav>")]
-    return [label.strip() for label in re.findall(r">\s*([^<>]+?)\s*</a>", nav)]
+    if 'id="primary-navigation"' not in body:
+        return ["Home"] if 'class="mq-public-nav"' in body else []
+    nav = body[body.index('id="primary-navigation"') : body.index("</nav>")]
+    return re.findall(r'mq-nav__label">([^<]+)</span>', nav)
 
 
 def test_the_menu_is_driven_by_permissions_rather_than_by_role() -> None:
@@ -374,30 +376,31 @@ def test_the_menu_is_driven_by_permissions_rather_than_by_role() -> None:
         "Home",
         "Catalogs",
         "Users",
+        "Segments",
+        "Campaigns",
         "Segment run",
+        "Reports",
         "Audit log",
     ]
-    assert _menu_labels(analyst) == ["Home", "Catalogs"]
+    assert _menu_labels(analyst) == [
+        "Home",
+        "Catalogs",
+        "Segments",
+        "Campaigns",
+        "Reports",
+    ]
     assert _menu_labels(app.test_client()) == ["Home"]
 
 
-def test_the_menu_skips_an_entry_whose_story_has_not_landed() -> None:
-    """Segments and Campaigns are still unbuilt.
-
-    The list grows as their blueprints land; what must stay true is that an
-    entry naming an endpoint nothing registers is skipped rather than rendered
-    as a link that 404s.
-    """
+def test_planned_menu_entries_reach_a_status_page() -> None:
+    """Visible destinations without a workflow explain their delivery status."""
     client = _app().test_client()
     _sign_in(client, "ADMIN")
 
-    assert _menu_labels(client) == [
-        "Home",
-        "Catalogs",
-        "Users",
-        "Segment run",
-        "Audit log",
-    ]
+    for path in ("/campaigns/", "/reports/"):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert "Still building" in response.get_data(as_text=True)
 
 
 def test_the_signed_in_name_and_sign_out_replace_the_sign_in_link() -> None:
@@ -471,8 +474,14 @@ def test_catalog_menu_reaches_all_five_real_listings(role: str) -> None:
     body = response.get_data(as_text=True)
     for catalog in ("stores", "categories", "channels", "products", "roles"):
         assert f'href="/admin/{catalog}"' in body
-    assert re.search(r'aria-current="page"\s*>\s*Catalogs', body)
-    assert not re.search(r'aria-current="page"\s*>\s*Users', body)
+    assert re.search(
+        r'mq-nav__item--active(?:(?!</a>)[\s\S])*mq-nav__label">Catalogs</span>',
+        body,
+    )
+    assert not re.search(
+        r'mq-nav__item--active(?:(?!</a>)[\s\S])*mq-nav__label">Users</span>',
+        body,
+    )
 
 
 def test_users_section_does_not_mark_catalogs_current() -> None:
@@ -483,5 +492,11 @@ def test_users_section_does_not_mark_catalogs_current() -> None:
     response = client.get("/admin/users/new")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert re.search(r'aria-current="page"\s*>\s*Users', body)
-    assert not re.search(r'aria-current="page"\s*>\s*Catalogs', body)
+    assert re.search(
+        r'mq-nav__item--active(?:(?!</a>)[\s\S])*mq-nav__label">Users</span>',
+        body,
+    )
+    assert not re.search(
+        r'mq-nav__item--active(?:(?!</a>)[\s\S])*mq-nav__label">Catalogs</span>',
+        body,
+    )

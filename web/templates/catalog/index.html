@@ -1,35 +1,39 @@
 {% extends "base.html" %}
 
 {% block title %}Catalogs · {{ application_name }}{% endblock %}
+{% block topbar_title %}Catalogs{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Catalogs{% endblock %}
 
 {% block content %}
-  <h1>Catalogs</h1>
-  <p class="lede">
-    Browse the catalog, customers, stock and segments. Read only — searching and
-    opening a record, not changing it.
-  </p>
-
-  <ul class="figures">
-    <li class="figure">
-      <a class="figure__label" href="{{ url_for('catalog.products') }}">Products</a>
-    </li>
-    <li class="figure">
-      <a class="figure__label" href="{{ url_for('catalog.stock') }}">Stock</a>
-    </li>
-    {% if can('segment.read') %}
-      <li class="figure">
-        <a class="figure__label" href="{{ url_for('catalog.customers') }}">Customers</a>
-      </li>
-      <li class="figure">
-        <a class="figure__label" href="{{ url_for('catalog.segments') }}">Segments</a>
-      </li>
+  {% from "macros/ui.html" import page_header %}
+  {% call page_header(
+    "Catalogs",
+    "Browse products, customers, stock and current segment assignments.",
+    "Consultation"
+  ) %}
+    {% if can('catalog.write') %}
+      <a class="mq-btn mq-btn--primary mq-btn--sm" href="{{ url_for('admin.catalog_index') }}">Manage catalogs</a>
     {% endif %}
-  </ul>
+  {% endcall %}
 
-  {% if can('catalog.write') %}
-    <p>
-      <a href="{{ url_for('admin.catalog_index') }}">Manage catalogs</a> —
-      create, edit and delete master data.
-    </p>
-  {% endif %}
+  <div class="mq-catalog-grid">
+    <a class="mq-catalog-card" href="{{ url_for('catalog.products') }}">
+      <span class="mq-catalog-card__icon" aria-hidden="true">▦</span>
+      <span><span class="mq-catalog-card__title">Products</span><span class="mq-catalog-card__text">Search by SKU or name and open product details.</span></span>
+    </a>
+    <a class="mq-catalog-card" href="{{ url_for('catalog.stock') }}">
+      <span class="mq-catalog-card__icon" aria-hidden="true">▤</span>
+      <span><span class="mq-catalog-card__title">Stock</span><span class="mq-catalog-card__text">Review quantity on hand by store and product.</span></span>
+    </a>
+    {% if can('segment.read') %}
+      <a class="mq-catalog-card" href="{{ url_for('catalog.customers') }}">
+        <span class="mq-catalog-card__icon" aria-hidden="true">○</span>
+        <span><span class="mq-catalog-card__title">Customers</span><span class="mq-catalog-card__text">Find customer contact and segment information.</span></span>
+      </a>
+      <a class="mq-catalog-card" href="{{ url_for('catalog.segments') }}">
+        <span class="mq-catalog-card__icon" aria-hidden="true">▪</span>
+        <span><span class="mq-catalog-card__title">Segments</span><span class="mq-catalog-card__text">Inspect current rules and assigned customers.</span></span>
+      </a>
+    {% endif %}
+  </div>
 {% endblock %}

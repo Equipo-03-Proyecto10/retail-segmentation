@@ -9,6 +9,7 @@
 | [Infrastructure](infra.md) | Provisioned GCP resources, firewall policy, and SSH access |
 | [PostgreSQL access](../deploy/postgresql/README.md) | Loopback and SSH access, HBA rejection checks, and application-role verification |
 | [F1-04 / F1-05 evidence](evidence/f1-04-f1-05-postgresql-access.md) | Live database access and least-privilege acceptance results |
+| [F6-06 evidence](evidence/f6-06-continuous-deployment.md) | Deploy pipeline: the run that deployed, the rollback test, and the four failures before it |
 | [Requirements](requirements.md) | Functional and non-functional requirements, the permission matrix, and traceability to the demonstration |
 | [User stories](user-stories.md) | What each role needs from the application, with acceptance criteria |
 | [Business rules](business-rules.md) | The invariants, and where each one is actually enforced |

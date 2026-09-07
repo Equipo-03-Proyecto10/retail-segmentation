@@ -1,10 +1,10 @@
 # ADR-0005 — MongoDB and Redis are documented as designs and not implemented
 
-**Status:** Accepted
+**Status:** Superseded by ADR-0016
 **Owner:** Marcelo
 **Issue:** #56 (F2-03)
 **Supersedes:** —
-**Superseded by:** —
+**Superseded by:** [ADR-0016](0016-the-second-delivery-reinstates-the-distributed-architecture.md)
 
 ---
 

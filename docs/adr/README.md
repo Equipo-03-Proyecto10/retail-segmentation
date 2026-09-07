@@ -51,11 +51,11 @@ this transition it was marked superseded by a record that was not yet binding.
 
 | ADR | Title | Status |
 |---|---|---|
-| [0001](0001-flask-monolith-on-a-single-vm.md) | Flask monolith on a single Compute Engine instance | Accepted |
+| [0001](0001-flask-monolith-on-a-single-vm.md) | Flask monolith on a single Compute Engine instance | Superseded by [0016](0016-the-second-delivery-reinstates-the-distributed-architecture.md) |
 | [0002](0002-mosaiq-identity-and-design-system.md) | MOSAIQ identity and a token-based design system | Accepted |
 | [0003](0003-layered-architecture-with-an-explicit-service-layer.md) | Layered architecture with an explicit service layer, rather than classic MVC | Accepted |
 | [0004](0004-model-ahead-of-the-deferred-segmentation-modules.md) | The PostgreSQL model carries the deferred segmentation tables now | Accepted |
-| [0005](0005-document-mongodb-and-redis-designs-without-implementing-them.md) | MongoDB and Redis are documented as designs and not implemented | Accepted |
+| [0005](0005-document-mongodb-and-redis-designs-without-implementing-them.md) | MongoDB and Redis are documented as designs and not implemented | Superseded by [0016](0016-the-second-delivery-reinstates-the-distributed-architecture.md) |
 | [0006](0006-run-under-both-systemd-and-docker-compose.md) | The application runs under both systemd and Docker Compose, with systemd the default on the instance | Superseded by [0015](0015-containers-are-a-development-path-only.md) |
 | [0007](0007-permissions-in-code-with-a-default-deny-middleware.md) | Permissions are declared in code and enforced by a default-deny middleware | Accepted |
 | [0008](0008-the-instance-keeps-the-demonstration-accounts-deactivated.md) | The instance keeps the demonstration accounts, deactivated | Accepted |
@@ -66,6 +66,7 @@ this transition it was marked superseded by a record that was not yet binding.
 | [0013](0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md) | MOSAIQ is published through Cloudflare with an origin certificate | Accepted |
 | [0014](0014-service-owned-transactions-and-typed-write-failures.md) | Services own transactions and translate typed write failures | Accepted |
 | [0015](0015-containers-are-a-development-path-only.md) | Docker Compose is a development path only, and is never run on the instance | Accepted |
+| [0016](0016-the-second-delivery-reinstates-the-distributed-architecture.md) | The second delivery reinstates the distributed architecture | Proposed |
 
 ## Writing one
 

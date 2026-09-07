@@ -37,9 +37,9 @@ their implementations already passed the team's merge process. Their decision
 text is unchanged. [Review evidence](../evidence/review-findings-resolution.md)
 records the execution checks for ADR-0006 and the acceptance basis for the set.
 PR #168 introduced a second ADR numbered 0012 while this repair was in
-progress. Its still-proposed Cloudflare record is numbered 0013 here, with
-references corrected and acceptance reconciled against that merged PR. The
-original release-merge ADR keeps number 0012.
+progress. Its Cloudflare record is numbered 0013 here, with references
+corrected and acceptance reconciled against that merged PR. The original
+release-merge ADR keeps number 0012.
 ADR-0014 is new and awaits acceptance with this PR.
 
 ## Index

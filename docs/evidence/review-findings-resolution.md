@@ -26,8 +26,10 @@ audit service does not import an HTTP module.
 ## Local verification
 
 Python 3.12 with the exact dependencies in `web/requirements-dev.txt`.
-The full `pytest`, `black --check .` and `ruff check .` results are recorded in
-the PR and its CI run. Business-logic tests cover nested commits, rollback after
+The final local run passed **639 tests**; `black --check .` and
+`ruff check .` both passed. [CI run 34136899955](https://github.com/Equipo-03-Proyecto10/retail-segmentation/actions/runs/34136899955)
+also passed all three jobs: format/lint/tests, SQL scripts with seed counts
+and restricted-role checks, and Compose/NGINX startup. Business-logic tests cover nested commits, rollback after
 partial work and commit failure, the administrator rule, typed refusals, and
 configuration/logging behavior.
 

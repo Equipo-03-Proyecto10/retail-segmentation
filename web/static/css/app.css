@@ -280,3 +280,35 @@ code {
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* ---------- the consultation module (F3-05) ---------- */
+
+/* A missing image is stated, not shown as a broken picture (HU-08). */
+.placeholder {
+  display: inline-block;
+  padding: 1.5rem 2rem;
+  border: 1px dashed #d9d9de;
+  border-radius: 0.25rem;
+  color: #55555f;
+}
+
+.detail-image {
+  max-width: 12rem;
+  height: auto;
+  border: 1px solid #d9d9de;
+  border-radius: 0.25rem;
+}
+
+/* Low stock is tinted and carries a text tag, so it does not rely on colour
+   alone to stand out (HU-11, RNF-11). */
+.low-stock {
+  background: #fff8e1;
+}
+
+.low-stock__tag {
+  color: #7a5c00;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}

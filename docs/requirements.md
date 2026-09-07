@@ -101,6 +101,16 @@ caller's own rows belongs to the story that writes the query, F3-05 (#65) and
 F3-11 (#103). Why the matrix is code rather than two more tables:
 [ADR-0007](adr/0007-permissions-in-code-with-a-default-deny-middleware.md).
 
+**Customers and stock are not columns above.** The consultation module (F3-05,
+#65) gives every `catalog` reader a read-only view of stock per store and
+product, and every `segment` reader a read-only view of the customer directory
+and segment membership — customer data is the substrate of segmentation, so it
+follows `segment.read` rather than `catalog.read`. This keeps `STORE_MANAGER`
+and `INVENTORY_PLANNER` out of the customer directory.
+[ADR-0010](adr/0010-the-consultation-module-is-a-separate-read-only-blueprint.md)
+records why, and why `STORE_MANAGER`'s "own store" scoping is a query filter
+rather than row-level security (`app_user` has no store).
+
 ## 4. Traceability
 
 Demonstration item → requirement → story → issue. A row with nothing behind it
@@ -113,7 +123,7 @@ is a gap, and the point of the table is that the gap is visible.
 | Operación de catálogos | RF-06, RF-07, RF-08, RF-09 | F3-04, F3-06, F3-07 | #64, #66, #67 | Open, not started |
 | Ejecución de un proceso principal | RF-12 | F3-10 | #102 | Built — quintile R/F/M over a configurable window |
 | Almacenamiento en PostgreSQL | RNF-08, RNF-09, RNF-10 | F2-04, F2-05, F2-06 | #57, #58, #59 | In review (#98) |
-| Consulta de información | RF-10, RF-11, RF-13 | F3-05 | #65 | Open, not started |
+| Consulta de información | RF-10, RF-11, RF-13 | F3-05 | #65 | Built — the `/catalog` consultation module: products, customers, stock and segment membership, read-only |
 | Registro de auditoría | RF-14, RNF-17 | F3-11 | #103 | Built — the log is readable from the application |
 | Ejecución mediante contenedores | RNF-13, RNF-14 | F3-09 | #89 | Open, rewritten |
 

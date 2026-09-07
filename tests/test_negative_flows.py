@@ -28,6 +28,14 @@ READ_ROUTES = [
     "/admin/products/image/missing.png",
     "/audit/",
     "/audit/1",
+    "/catalog/",
+    "/catalog/products",
+    "/catalog/products/1",
+    "/catalog/customers",
+    f"/catalog/customers/{USER_ID}",
+    "/catalog/stock",
+    "/catalog/segments",
+    "/catalog/segments/1",
 ]
 ADMIN_ROUTES = [
     (method, f"/admin/{catalog}/{suffix}")

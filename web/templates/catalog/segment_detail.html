@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}{{ segment.name }} · {{ application_name }}{% endblock %}
+
+{% block content %}
+  <h1>{{ segment.name }}</h1>
+  <p class="lede">{{ segment.description or "No description" }}</p>
+
+  <dl class="facts">
+    <dt>Segment ID</dt>
+    <dd>{{ segment.segment_id }}</dd>
+    <dt>Valid from</dt>
+    <dd>{{ segment.valid_from.strftime("%Y-%m-%d") }}</dd>
+    <dt>Valid to</dt>
+    <dd>{{ segment.valid_to.strftime("%Y-%m-%d") if segment.valid_to else "—" }}</dd>
+    {% if rule %}
+      <dt>Rule</dt>
+      <dd><code>{{ rule.rule_code }}</code></dd>
+      <dt>Recency band</dt>
+      <dd>{{ rule.r_min }}–{{ rule.r_max }}</dd>
+      <dt>Frequency band</dt>
+      <dd>{{ rule.f_min }}–{{ rule.f_max }}</dd>
+      <dt>Monetary band</dt>
+      <dd>{{ rule.m_min }}–{{ rule.m_max }}</dd>
+    {% endif %}
+  </dl>
+
+  <h2>Customers in this segment</h2>
+  {% if members %}
+    <div class="table-scroll">
+      <table class="listing">
+        <thead>
+          <tr>
+            <th scope="col">Name</th>
+            <th scope="col">Email</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for customer in members %}
+            <tr>
+              <td>
+                <a href="{{ url_for('catalog.customer_detail', customer_id=customer.customer_id) }}">
+                  {{ customer.name }}
+                </a>
+              </td>
+              <td>{{ customer.email or "—" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <nav class="pager" aria-label="Pages">
+      {% if page > 1 %}
+        <a href="{{ url_for('catalog.segment_detail', segment_id=segment.segment_id, page=page - 1) }}">Previous</a>
+      {% endif %}
+      <span>Page {{ page }} of {{ total_pages }} · {{ total }} customers</span>
+      {% if page < total_pages %}
+        <a href="{{ url_for('catalog.segment_detail', segment_id=segment.segment_id, page=page + 1) }}">Next</a>
+      {% endif %}
+    </nav>
+  {% else %}
+    <p>No customers are currently in this segment.</p>
+  {% endif %}
+
+  <p><a href="{{ url_for('catalog.segments') }}">Back to segments</a></p>
+{% endblock %}

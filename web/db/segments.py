@@ -22,6 +22,7 @@ Nothing is written for a customer whose segment does not change:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 
 from psycopg import Connection
@@ -119,3 +120,103 @@ def recalculate_segments(
         reassigned=row[3],
         cleared=row[4],
     )
+
+
+# ---------- reading segments and their rules (F3-05 / RF-13) ----------
+
+
+@dataclass(frozen=True)
+class Segment:
+    segment_id: int
+    name: str
+    description: str | None
+    rule_id: int
+    valid_from: date
+    valid_to: date | None
+
+
+@dataclass(frozen=True)
+class SegmentRule:
+    rule_id: int
+    rule_code: str
+    r_min: int
+    r_max: int
+    f_min: int
+    f_max: int
+    m_min: int
+    m_max: int
+
+
+def list_segments(
+    connection: Connection[Any], *, search: str | None, page: int, per_page: int
+) -> tuple[list[Segment], int]:
+    """Return a page of segments, optionally filtered by name, and the total."""
+    offset = (page - 1) * per_page
+
+    with connection.cursor() as cursor:
+        if search:
+            pattern = f"%{search}%"
+            cursor.execute(
+                """
+                SELECT segment_id, name, description, rule_id, valid_from, valid_to
+                FROM segment
+                WHERE name ILIKE %s
+                ORDER BY segment_id
+                LIMIT %s OFFSET %s
+                """,
+                (pattern, per_page, offset),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT segment_id, name, description, rule_id, valid_from, valid_to
+                FROM segment
+                ORDER BY segment_id
+                LIMIT %s OFFSET %s
+                """,
+                (per_page, offset),
+            )
+        rows = cursor.fetchall()
+
+        if search:
+            pattern = f"%{search}%"
+            cursor.execute(
+                "SELECT count(*) FROM segment WHERE name ILIKE %s", (pattern,)
+            )
+        else:
+            cursor.execute("SELECT count(*) FROM segment")
+        total = cursor.fetchone()[0]
+
+    return [Segment(*row) for row in rows], total
+
+
+def get_segment(connection: Connection[Any], segment_id: int) -> Segment | None:
+    """Return one segment by id, or None if it does not exist."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT segment_id, name, description, rule_id, valid_from, valid_to
+            FROM segment
+            WHERE segment_id = %s
+            """,
+            (segment_id,),
+        )
+        row = cursor.fetchone()
+
+    return Segment(*row) if row else None
+
+
+def get_segment_rule(connection: Connection[Any], rule_id: int) -> SegmentRule | None:
+    """Return the RFM bands a segment is defined by, or None."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT rule_id, rule_code, r_min, r_max, f_min, f_max, m_min, m_max
+            FROM segment_rule
+            WHERE rule_id = %s
+            """,
+            (rule_id,),
+        )
+        row = cursor.fetchone()
+
+    return SegmentRule(*row) if row else None

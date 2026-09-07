@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}{{ product.name }} · {{ application_name }}{% endblock %}
+
+{% block content %}
+  <h1>{{ product.name }}</h1>
+  <p class="lede"><code>{{ product.sku }}</code></p>
+
+  {% if product.image_path %}
+    <img class="detail-image" alt="{{ product.name }}"
+         src="{{ url_for('admin.product_image', filename=product.image_path) }}">
+  {% else %}
+    <p class="placeholder">No image</p>
+  {% endif %}
+
+  <dl class="facts">
+    <dt>Product ID</dt>
+    <dd>{{ product.product_id }}</dd>
+    <dt>Category</dt>
+    <dd>{{ category.name if category else product.category_id }}</dd>
+    <dt>List price</dt>
+    <dd>{{ product.list_price }}</dd>
+    <dt>Active</dt>
+    <dd>{{ "Yes" if product.is_active else "No" }}</dd>
+  </dl>
+
+  <p>
+    <a href="{{ url_for('catalog.products') }}">Back to products</a>
+    {% if can('catalog.write') %}
+      · <a href="{{ url_for('admin.edit_product_view', product_id=product.product_id) }}">Edit</a>
+    {% endif %}
+  </p>
+{% endblock %}

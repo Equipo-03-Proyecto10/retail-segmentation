@@ -5,8 +5,9 @@ the published host `mosaiq.maxthecoder.online`, which
 [ADR-0013](../adr/0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md)
 records as the delivery's URL.
 
-**This document is partial.** Two of the five acceptance criteria on #109 are
-not captured here, because each one changes the state of the instance. They are named at the bottom
+**This document is partial.** One of the five acceptance criteria on #109 is
+not captured here: container execution, which is a swap rather than an addition
+and still has a question to settle first. They are named at the bottom
 with the commands that produce them, so whoever has the shell can paste the
 output without re-deriving what to run. Deliverable 13 is not complete until
 they are.
@@ -55,6 +56,50 @@ it is the only door. It also matches the firewall policy in
 The output carries no password, key or token (AC 5): the process line shows the
 bind address and worker count, and the configuration the application reads lives
 in an environment file the unit loads, not in the command line.
+
+## AC 2 — it restarts on its own
+
+The unit is killed with `SIGKILL`, which systemd treats as a failure and
+`Restart=on-failure` answers. Nothing starts it by hand afterwards.
+
+```
+$ systemctl show mosaiq -p MainPID -p NRestarts
+MainPID=64097
+NRestarts=0
+
+$ sudo kill -9 $(systemctl show mosaiq -p MainPID --value)
+
+$ sleep 3; systemctl show mosaiq -p MainPID -p NRestarts; systemctl is-active mosaiq
+MainPID=0
+NRestarts=0
+activating
+```
+
+Three seconds after the kill the process is genuinely gone — `MainPID=0` — and
+the unit reads `activating`. That snapshot is the gap worth showing: the
+application is not running, and no operator is involved in what happens next.
+
+```
+$ systemctl show mosaiq -p MainPID -p NRestarts -p ExecMainStartTimestamp
+MainPID=65845
+NRestarts=1
+ExecMainStartTimestamp=Mon 2026-09-07 16:37:18 UTC
+
+$ systemctl is-active mosaiq
+active
+```
+
+The PID changed from `64097` to `65845`, `NRestarts` moved from `0` to `1`, and
+the unit is active again. Read from outside at the same time, the published
+host was serving normally:
+
+```
+$ curl -sS -o /dev/null -w "%{http_code} %{time_total}s\n" https://mosaiq.maxthecoder.online/
+200 0.271094s
+```
+
+The interruption is real but short, and it ends without anyone acting. This is
+the crash half of F6-02 (#78) demonstrated rather than asserted.
 
 ## AC 3 — the application answers through the reverse proxy, on the host
 
@@ -143,19 +188,16 @@ $ curl -sS -o /dev/null -w "%{http_code} %{content_type}\n" https://mosaiq.maxth
 
 ## Not evidenced here
 
-These two acceptance criteria on #109 need a shell on
-`mosaiq-deployment-vm` (`northamerica-south1-a`). Neither has been run, and no
-output for them is claimed.
+One acceptance criterion on #109 is left. It has not been run, and no output
+for it is claimed.
 
 | AC | What it needs | Command |
 |---|---|---|
-| 2 — it restarts on its own | The unit killed, and the state before and after | `systemctl show mosaiq -p MainPID`, then `sudo kill -9 <pid>`, then the same `show` and `systemctl status` again |
 | 4 — container execution | `docker compose` serving the same application, per [ADR-0006](../adr/0006-run-under-both-systemd-and-docker-compose.md) | Not a single command — see the two port clashes below |
 
-AC 2 interrupts the published URL for as long as the restart takes, and AC 4
-replaces the serving process entirely. Both change the state of the one
-environment the delivery is graded on, so they are a deliberate act on a quiet
-moment, not something to run mid-review.
+AC 4 replaces the serving process on the one environment the delivery is graded
+on, so it is a deliberate act on a quiet moment, not something to run
+mid-review.
 
 ### AC 4 is a swap, not an addition
 

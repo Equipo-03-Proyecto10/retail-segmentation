@@ -51,13 +51,13 @@ here is a gap, not an omission from this index.
 | Document | What it records |
 |---|---|
 | [F6-06](f6-06-continuous-deployment.md) | The deploy pipeline, the rollback test, and the four failures before it |
-| [F6-07](f6-07-proof-of-deployment.md) | **Deliverable 13, partial.** The application answering through the reverse proxy on the published host |
+| [F6-07](f6-07-proof-of-deployment.md) | **Deliverable 13, partial.** The unit active and enabled, restarting after a kill, and answering through the reverse proxy |
 
-**Deliverable 13 is not complete.** The F6-07 document covers the unit's state
-and everything observable from outside the instance. Two acceptance criteria on
-#109 remain, both because they change the instance: the unit restarting after a
-kill, and `docker compose` serving the same application. The document names the
-commands that produce them.
+**Deliverable 13 is not complete.** Four of the five acceptance criteria on #109
+are recorded. The one left is container execution, which ADR-0006 makes a swap
+rather than an addition, and which still needs a decision about how the
+container reaches the instance's PostgreSQL. The document sets out the two port
+clashes behind that.
 
 ## Review passes
 

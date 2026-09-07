@@ -7,6 +7,8 @@
 | [Backlog](backlog.md) | Ordered work, grouped by scope phase |
 | [Roadmap](roadmap.md) | What is deferred to later deliveries, and how it re-enters |
 | [Infrastructure](infra.md) | Provisioned GCP resources, firewall policy, and SSH access |
+| [PostgreSQL access](../deploy/postgresql/README.md) | Loopback and SSH access, HBA rejection checks, and application-role verification |
+| [F1-04 / F1-05 evidence](evidence/f1-04-f1-05-postgresql-access.md) | Live database access and least-privilege acceptance results |
 | [Requirements](requirements.md) | Functional and non-functional requirements, the permission matrix, and traceability to the demonstration |
 | [User stories](user-stories.md) | What each role needs from the application, with acceptance criteria |
 | [Business rules](business-rules.md) | The invariants, and where each one is actually enforced |

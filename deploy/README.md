@@ -14,6 +14,7 @@ PostgreSQL listener, HBA policy, SSH access and application-role verification:
 | `nginx/mosaiq.compose.conf` | not deployed — local verification only, see `../compose.proxy.yaml` |
 | `postgresql/mosaiq.conf` | `/var/lib/pgsql/18/data/conf.d/mosaiq.conf` (loopback listener, SCRAM) |
 | `systemd/mosaiq.service` | `/etc/systemd/system/mosaiq.service` |
+| `deploy.sh` | copied to `/tmp/mosaiq-deploy.sh` by the deploy workflow on each run, not installed |
 | the TLS certificate | `/etc/nginx/tls/mosaiq.{crt,key}` — issued on the instance (F6-03), not in the repo |
 
 ### Deployment layout
@@ -235,6 +236,74 @@ curl -svo /dev/null https://<host>/ 2>&1 | grep -E 'subject:|issuer:|expire'
 
 Update the `TLS` row in `docs/infra.md` "Reverse proxy": certificate source
 (Let's Encrypt / self-signed), `server_name`, and the redirect check.
+
+---
+
+## F6-06 — continuous deployment on merge to `main`
+
+Decision: [ADR-0011](../docs/adr/0011-one-environment-deployed-from-main.md).
+The instance is one production environment, `main` is the only branch that
+deploys to it, and `develop` never does.
+
+`.github/workflows/deploy.yml` runs on every push to `main`. It authenticates
+to GCP with Workload Identity Federation — GitHub mints a short-lived OIDC
+token per run and GCP exchanges it for temporary credentials — then copies
+`deploy/deploy.sh` to the instance and runs it against the merged commit SHA.
+**No key or secret is stored in this repository or its settings.**
+
+### What the deploy does
+
+1. `git fetch`, and refuse a commit that is not in the repository.
+2. Record the commit currently serving.
+3. Check out the target commit, install `web/requirements.txt` into the venv,
+   restart `mosaiq`.
+4. Health-check `https://127.0.0.1/` through NGINX, up to ten times.
+5. **On any failure in 3–4**, check the previous commit back out, reinstall its
+   requirements, restart, and health-check again.
+
+It never runs SQL. The three scripts in `sql/` build a database from empty and
+are not migrations, so a release needing a schema change needs a person —
+ADR-0011 records this as a deliberate gap.
+
+### Running it by hand
+
+The script is not installed on the instance; the workflow copies it per run.
+Run it from outside the checkout, because it rewrites that checkout and bash
+reads a script incrementally:
+
+```sh
+gcloud compute scp deploy/deploy.sh mosaiq-deployment-vm:/tmp/mosaiq-deploy.sh \
+  --project=iac-dev-01 --zone=northamerica-south1-a
+gcloud compute ssh mosaiq-deployment-vm --project=iac-dev-01 \
+  --zone=northamerica-south1-a \
+  --command="sudo bash /tmp/mosaiq-deploy.sh <commit-sha> --dry-run"
+```
+
+Drop `--dry-run` to deploy. To roll back deliberately, pass the SHA you want
+back; the script treats it like any other target.
+
+### The GCP identity this needs
+
+Created once, in project `iac-dev-01`, and recorded in
+[`docs/infra.md`](../docs/infra.md) because it cannot be reproduced from this
+repository:
+
+| Resource | Value |
+|---|---|
+| Service account | `mosaiq-deploy@iac-dev-01.iam.gserviceaccount.com` |
+| Pool / provider | `github-actions` / `github`, issuer `https://token.actions.githubusercontent.com` |
+| Provider condition | `assertion.repository == 'Equipo-03-Proyecto10/retail-segmentation'` |
+| May impersonate | only `attribute.ref/refs/heads/main` |
+| Instance roles | `roles/compute.osAdminLogin`, `roles/compute.viewer` — on the one instance, not the project |
+| Project role | custom `mosaiqDeployProjectRead`, a single permission (`compute.projects.get`) |
+
+A `workflow_dispatch` from any branch other than `main` fails at the
+authentication step. That is the IAM restriction doing its job, not a bug.
+
+### After it is applied
+
+Record in `docs/infra.md` under "Continuous deployment": the workflow run that
+deployed, the commit now serving, and the rollback evidence attached to #90.
 
 ---
 

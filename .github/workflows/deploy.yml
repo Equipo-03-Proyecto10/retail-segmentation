@@ -1,4 +1,4 @@
-# Continuous deployment to the assigned host. F6-06 (#90), ADR-0010.
+# Continuous deployment to the assigned host. F6-06 (#90), ADR-0011.
 #
 # One environment: this workflow is the only thing that deploys, main is the
 # only branch it deploys from, and develop never deploys. Authentication is

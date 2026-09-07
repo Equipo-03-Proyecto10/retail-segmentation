@@ -83,7 +83,7 @@ fi
 # From here on, any failure puts the previous commit back. The instance runs one
 # copy of the application, so this is a restart-and-verify deploy rather than a
 # blue/green one: the guarantee is that a broken deploy is not LEFT serving, not
-# that the switch is seamless. ADR-0010 says so plainly.
+# that the switch is seamless. ADR-0011 says so plainly.
 rollback() {
     trap - ERR
     say "FAILED — rolling back to $previous"

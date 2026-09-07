@@ -40,6 +40,7 @@ constraint other work must respect needs an ADR, or a reference to one.
 | [0008](0008-the-instance-keeps-the-demonstration-accounts-deactivated.md) | The instance keeps the demonstration accounts, deactivated | Proposed |
 | [0009](0009-nginx-as-the-reverse-proxy.md) | NGINX is the reverse proxy in front of the application | Proposed |
 | [0010](0010-the-consultation-module-is-a-separate-read-only-blueprint.md) | The consultation module is a separate read-only blueprint, gated by two existing permissions | Proposed |
+| [0011](0011-one-environment-deployed-from-main.md) | The instance is one environment, deployed automatically only from `main` | Proposed |
 
 ## Writing one
 

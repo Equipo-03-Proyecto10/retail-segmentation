@@ -10,7 +10,7 @@ from flask import Flask
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from web.cli import register_commands
-from web.config import Config, load_dotenv_file
+from web.config import FORM_OVERHEAD_BYTES, Config, load_dotenv_file
 from web.db import DatabaseConnector
 from web.db import init_app as init_database
 from web.errors import register_error_handlers
@@ -52,6 +52,7 @@ def create_app(
     app = Flask(__name__)
     app.config["SECRET_KEY"] = config.secret_key
     app.config["APP_CONFIG"] = config
+    app.config["MAX_CONTENT_LENGTH"] = config.max_upload_bytes + FORM_OVERHEAD_BYTES
     # Debug mode is left off deliberately: it would replace the controlled
     # error pages (web/errors.py) with Werkzeug's interactive traceback.
 
@@ -72,6 +73,16 @@ def create_app(
 
     register_blueprints(app)
     register_commands(app)
+    app.logger.info(
+        "application_started environment=%r log_level=%r proxy_hops=%s "
+        "upload_dir=%r max_upload_bytes=%s max_request_bytes=%s",
+        config.environment,
+        config.log_level,
+        config.trusted_proxy_hops,
+        config.upload_dir,
+        config.max_upload_bytes,
+        app.config["MAX_CONTENT_LENGTH"],
+    )
     return app
 
 

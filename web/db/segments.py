@@ -31,7 +31,7 @@ from psycopg import Connection
 # highest spend — which is the orientation segment_rule's bands are written in.
 _QUINTILES = 5
 
-_RECALCULATE = f"""
+_RECALCULATE = """
 WITH window_sales AS (
     SELECT customer_id,
            max(occurred_at) AS last_purchase,
@@ -43,11 +43,11 @@ WITH window_sales AS (
 ),
 scored AS (
     SELECT customer_id,
-           {_QUINTILES} + 1 - ntile({_QUINTILES})
+           %s + 1 - ntile(%s)
                OVER (ORDER BY last_purchase DESC, customer_id) AS r,
-           {_QUINTILES} + 1 - ntile({_QUINTILES})
+           %s + 1 - ntile(%s)
                OVER (ORDER BY frequency DESC, customer_id)     AS f,
-           {_QUINTILES} + 1 - ntile({_QUINTILES})
+           %s + 1 - ntile(%s)
                OVER (ORDER BY monetary DESC, customer_id)      AS m
     FROM window_sales
 ),
@@ -110,7 +110,7 @@ def recalculate_segments(
     part way leaves the assignment exactly as it was.
     """
     with connection.cursor() as cursor:
-        cursor.execute(_RECALCULATE, (window_days,))
+        cursor.execute(_RECALCULATE, (window_days,) + (_QUINTILES,) * 6)
         row = cursor.fetchone()
 
     return RecalculationCounts(

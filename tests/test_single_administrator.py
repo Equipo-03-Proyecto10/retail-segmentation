@@ -22,6 +22,7 @@ from web.db.users import ADMINISTRATOR_ROLE_CODE, AppUser
 from web.services.users import (
     LAST_ADMINISTRATOR,
     SECOND_ADMINISTRATOR,
+    DuplicateEmailError,
     SingleAdministratorError,
     UnknownRoleError,
     UnknownUserError,
@@ -80,6 +81,14 @@ class _Connection:
         self.administrators = administrators
         self.raises = raises
         self.writes: list[tuple[str, tuple]] = []
+        self.commits = 0
+        self.rollbacks = 0
+
+    def commit(self):
+        self.commits += 1
+
+    def rollback(self):
+        self.rollbacks += 1
 
     def cursor(self):
         return _Cursor(self)
@@ -216,7 +225,7 @@ def test_another_unique_violation_is_not_disguised_as_the_admin_rule() -> None:
         administrators=0, raises=_IndexViolation("app_user_email_key")
     )
 
-    with pytest.raises(UniqueViolation):
+    with pytest.raises(DuplicateEmailError):
         create_user(
             connection,
             name="Taken",

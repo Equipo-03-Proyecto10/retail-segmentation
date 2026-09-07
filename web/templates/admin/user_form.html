@@ -16,7 +16,8 @@
     {% if errors.email %}<p class="error">{{ errors.email }}</p>{% endif %}
 
     <label for="password">Password</label>
-    <input type="password" id="password" name="password" required>
+    <input type="password" id="password" name="password" minlength="{{ minimum_password_length }}" required>
+    <p class="hint">At least {{ minimum_password_length }} characters.</p>
     {% if errors.password %}<p class="error">{{ errors.password }}</p>{% endif %}
 
     <label for="role_code">Role</label>

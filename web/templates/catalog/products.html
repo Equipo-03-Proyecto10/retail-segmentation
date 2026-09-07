@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}Products · {{ application_name }}{% endblock %}
+
+{% block content %}
+  <h1>Products</h1>
+  <p class="lede">Search the catalog by SKU or name, then open a product.</p>
+
+  <form class="filters" method="get" action="{{ url_for('catalog.products') }}">
+    <div class="filters__field">
+      <label for="q">Search</label>
+      <input type="text" id="q" name="q" value="{{ search }}"
+             placeholder="SKU or name">
+    </div>
+    <button type="submit">Search</button>
+    {% if search %}
+      <a class="filters__reset" href="{{ url_for('catalog.products') }}">Clear</a>
+    {% endif %}
+  </form>
+
+  {% if products %}
+    <div class="table-scroll">
+      <table class="listing">
+        <thead>
+          <tr>
+            <th scope="col">ID</th>
+            <th scope="col">SKU</th>
+            <th scope="col">Name</th>
+            <th scope="col">Category</th>
+            <th scope="col">Price</th>
+            <th scope="col">Active</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for product in products %}
+            <tr>
+              <td>{{ product.product_id }}</td>
+              <td><code>{{ product.sku }}</code></td>
+              <td>
+                <a href="{{ url_for('catalog.product_detail', product_id=product.product_id) }}">
+                  {{ product.name }}
+                </a>
+              </td>
+              <td>{{ product.category_id }}</td>
+              <td>{{ product.list_price }}</td>
+              <td>{{ "Yes" if product.is_active else "No" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <nav class="pager" aria-label="Pages">
+      {% if page > 1 %}
+        <a href="{{ url_for('catalog.products', page=page - 1, q=search) }}">Previous</a>
+      {% endif %}
+      <span>Page {{ page }} of {{ total_pages }} · {{ total }} products</span>
+      {% if page < total_pages %}
+        <a href="{{ url_for('catalog.products', page=page + 1, q=search) }}">Next</a>
+      {% endif %}
+    </nav>
+  {% else %}
+    <p>No products match that search.</p>
+  {% endif %}
+{% endblock %}

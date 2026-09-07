@@ -277,9 +277,13 @@ class MenuItem:
 # a set of broken links: F3-04 (#64) lights up Catalogs, F3-06 (#66) Users,
 # F3-10 (#102) the segment run, F3-11 (#103) the audit log. The shell itself is
 # F3-12 (#106); what lives here is the permission filtering it inherits.
+#
+# "Catalogs" points at the read-only consultation hub (F3-05, #65). The
+# administrator reaches the CRUD hub from a link on that page and edits from
+# the detail views, both gated on catalog.write.
 NAVIGATION: tuple[MenuEntry, ...] = (
     MenuEntry("Home", "home.index", None),
-    MenuEntry("Catalogs", "admin.catalog_index", CATALOG_READ),
+    MenuEntry("Catalogs", "catalog.index", CATALOG_READ),
     MenuEntry("Users", "admin.list_users_view", USER_READ),
     MenuEntry("Segments", "segments.index", SEGMENT_READ),
     MenuEntry("Campaigns", "campaigns.index", CAMPAIGN_READ),
@@ -292,8 +296,11 @@ NAVIGATION: tuple[MenuEntry, ...] = (
 def menu() -> list[MenuItem]:
     """The entries this visitor may reach, in declaration order.
 
-    Detail pages keep their section active. Catalogs and users share the
-    admin blueprint, so their URL sections are distinguished explicitly.
+    Detail pages keep their section active. The admin blueprint serves both
+    user management and the catalog CRUD screens, so its URL sections are
+    distinguished explicitly: an /admin/users* path lights "Users", every other
+    /admin* path lights "Catalogs" (whose entry now points at the consultation
+    hub, catalog.index).
     """
     granted = current_permissions()
     registered = current_app.view_functions
@@ -308,7 +315,7 @@ def menu() -> list[MenuItem]:
                 == (
                     "admin.list_users_view"
                     if request.path.startswith("/admin/users")
-                    else "admin.catalog_index"
+                    else "catalog.index"
                 )
                 if section == "admin"
                 else entry.endpoint.split(".")[0] == section

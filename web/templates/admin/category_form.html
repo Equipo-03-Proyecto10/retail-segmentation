@@ -1,11 +1,13 @@
 {% extends "base.html" %}
 
+{% block title %}{{ "Edit category" if request.endpoint == "admin.edit_category_view" else "New category" }} · {{ application_name }}{% endblock %}
+
 {% block content %}
-<main class="admin-page">
-  <h1>{{ "Edit category" if category and category.category_id else "New category" }}</h1>
+<div class="admin-page">
+  <h1>{{ "Edit category" if request.endpoint == "admin.edit_category_view" else "New category" }}</h1>
 
   <form method="post">
-    {% if not category or not category.category_id %}
+    {% if request.endpoint == "admin.create_category_view" %}
     <label for="category_id">Category ID</label>
     <input type="number" id="category_id" name="category_id" value="{{ category.category_id if category else '' }}" required>
     {% if errors.category_id %}<p class="error">{{ errors.category_id }}</p>{% endif %}
@@ -28,5 +30,5 @@
     <button type="submit">Save</button>
     <a href="{{ url_for('admin.list_categories_view') }}">Cancel</a>
   </form>
-</main>
+</div>
 {% endblock %}

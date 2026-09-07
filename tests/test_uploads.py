@@ -30,12 +30,19 @@ def config(tmp_path):
     )
 
 
-@pytest.mark.parametrize("mime", ["image/jpeg", "image/png", "image/webp"])
-def test_upload_round_trip(config, mime):
+@pytest.mark.parametrize(
+    "mime,content",
+    [
+        ("image/jpeg", b"\xff\xd8\xffimage bytes"),
+        ("image/png", b"\x89PNG\r\n\x1a\nimage bytes"),
+        ("image/webp", b"RIFF\x04\x00\x00\x00WEBPimage bytes"),
+    ],
+)
+def test_upload_round_trip(config, mime, content):
     saved = save_product_image(
-        FileStorage(BytesIO(b"image bytes"), filename="../a", content_type=mime), config
+        FileStorage(BytesIO(content), filename="../a", content_type=mime), config
     )
-    assert Path(saved.absolute_path).read_bytes() == b"image bytes"
+    assert Path(saved.absolute_path).read_bytes() == content
     assert "/" not in saved.relative_path
     delete_product_image(saved.relative_path, config)
     assert not Path(saved.absolute_path).exists()
@@ -43,7 +50,13 @@ def test_upload_round_trip(config, mime):
 
 @pytest.mark.parametrize(
     "content,mime",
-    [(b"", "image/png"), (b"pdf", "application/pdf"), (b"x" * 11, "image/png")],
+    [
+        (b"", "image/png"),
+        (b"pdf", "application/pdf"),
+        (b"x" * 11, "image/png"),
+        (b"text", "image/png"),
+        (b"\xff\xd8\xff", "image/png"),
+    ],
 )
 def test_rejection_writes_no_file(config, content, mime):
     with pytest.raises(UploadRejected):
@@ -69,7 +82,11 @@ def test_image_route_uses_same_relative_directory_as_storage(
     monkeypatch.chdir(tmp_path)
     config = replace(config, upload_dir="uploads")
     saved = save_product_image(
-        FileStorage(BytesIO(b"image"), filename="a.png", content_type="image/png"),
+        FileStorage(
+            BytesIO(b"\x89PNG\r\n\x1a\nimage"),
+            filename="a.png",
+            content_type="image/png",
+        ),
         config,
     )
     client = create_app(
@@ -79,7 +96,7 @@ def test_image_route_uses_same_relative_directory_as_storage(
         session.update(user_id="u-1", role_code="ADMIN", name="Admin")
     response = client.get(f"/admin/products/image/{saved.relative_path}")
     assert response.status_code == 200
-    assert response.data == b"image"
+    assert response.data == b"\x89PNG\r\n\x1a\nimage"
 
 
 def test_rejected_creation_does_not_insert_product(config, monkeypatch):

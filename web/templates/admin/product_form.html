@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 
+{% block title %}{{ "Edit product" if request.endpoint == "admin.edit_product_view" else "New product" }} · {{ application_name }}{% endblock %}
+
 {% block content %}
-<main class="admin-page">
+<div class="admin-page">
   <h1>{{ "Edit product" if request.endpoint == "admin.edit_product_view" else "New product" }}</h1>
 
   <form method="post" enctype="multipart/form-data">
@@ -45,11 +47,11 @@
 <input type="file" id="image" name="image" accept="image/jpeg,image/png,image/webp">
 {% if errors.image %}<p class="error">{{ errors.image }}</p>{% endif %}
 {% if product and product.image_path %}
-<img alt="Product image" src="{{ url_for('admin.product_image', filename=product.image_path) }}" style="max-width:150px">
+<img alt="Product image" src="{{ url_for('admin.product_image', filename=product.image_path) }}" class="detail-image">
 {% endif %}
 
     <button type="submit">Save</button>
     <a href="{{ url_for('admin.list_products_view') }}">Cancel</a>
   </form>
-</main>
+</div>
 {% endblock %}

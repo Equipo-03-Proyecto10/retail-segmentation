@@ -12,7 +12,7 @@ Gating (ADR-0010):
 
 from __future__ import annotations
 
-from flask import Blueprint, abort, render_template, request
+from flask import Blueprint, Response, abort, render_template, request
 
 from web.db import get_connection
 from web.db.categories import get_category
@@ -29,6 +29,7 @@ from web.db.products import get_product, list_products
 from web.db.segments import get_segment, get_segment_rule, list_segments
 from web.db.stores import list_all_stores
 from web.middleware.authz import CATALOG_READ, SEGMENT_READ, requires
+from web.routes.pagination import redirect_last_page
 from web.services.catalog import parse_pagination
 
 bp = Blueprint("catalog", __name__, url_prefix="/catalog")
@@ -59,11 +60,13 @@ def index() -> str:
 
 @bp.get("/products")
 @requires(CATALOG_READ)
-def products() -> str:
+def products() -> str | Response:
     page, search, search_value = _page_args()
     rows, total = list_products(
         get_connection(), search=search, page=page, per_page=_PER_PAGE
     )
+    if response := redirect_last_page(page, _total_pages(total)):
+        return response
     return render_template(
         "catalog/products.html",
         products=rows,
@@ -93,11 +96,13 @@ def product_detail(product_id: int) -> str:
 
 @bp.get("/customers")
 @requires(SEGMENT_READ)
-def customers() -> str:
+def customers() -> str | Response:
     page, search, search_value = _page_args()
     rows, total = list_customers(
         get_connection(), search=search, page=page, per_page=_PER_PAGE
     )
+    if response := redirect_last_page(page, _total_pages(total)):
+        return response
     return render_template(
         "catalog/customers.html",
         customers=rows,
@@ -137,7 +142,7 @@ def customer_detail(customer_id) -> str:
 
 @bp.get("/stock")
 @requires(CATALOG_READ)
-def stock() -> str:
+def stock() -> str | Response:
     connection = get_connection()
     page, search, search_value = _page_args()
 
@@ -151,6 +156,8 @@ def stock() -> str:
         page=page,
         per_page=_PER_PAGE,
     )
+    if response := redirect_last_page(page, _total_pages(total)):
+        return response
     return render_template(
         "catalog/stock.html",
         rows=rows,
@@ -169,11 +176,13 @@ def stock() -> str:
 
 @bp.get("/segments")
 @requires(SEGMENT_READ)
-def segments() -> str:
+def segments() -> str | Response:
     page, search, search_value = _page_args()
     rows, total = list_segments(
         get_connection(), search=search, page=page, per_page=_PER_PAGE
     )
+    if response := redirect_last_page(page, _total_pages(total)):
+        return response
     return render_template(
         "catalog/segments.html",
         segments=rows,
@@ -186,7 +195,7 @@ def segments() -> str:
 
 @bp.get("/segments/<int:segment_id>")
 @requires(SEGMENT_READ)
-def segment_detail(segment_id: int) -> str:
+def segment_detail(segment_id: int) -> str | Response:
     connection = get_connection()
     segment = get_segment(connection, segment_id)
     if segment is None:
@@ -196,6 +205,8 @@ def segment_detail(segment_id: int) -> str:
     members, total = list_customers_in_segment(
         connection, segment_id, page=page, per_page=_PER_PAGE
     )
+    if response := redirect_last_page(page, _total_pages(total)):
+        return response
     return render_template(
         "catalog/segment_detail.html",
         segment=segment,

@@ -83,7 +83,12 @@ def test_the_administrator_may_run_it(
     _sign_in(client, "ADMIN")
 
     assert client.get("/segment-run/").status_code == 200
-    assert client.post("/segment-run/", data={"window": "180"}).status_code == 200
+    assert (
+        client.post(
+            "/segment-run/", data={"window": "180", "confirm": "yes"}
+        ).status_code
+        == 200
+    )
 
 
 @pytest.mark.parametrize(
@@ -103,7 +108,12 @@ def test_nobody_else_may_run_it(app: Flask, role_code: str) -> None:
     _sign_in(client, role_code)
 
     assert client.get("/segment-run/").status_code == 403
-    assert client.post("/segment-run/", data={"window": "180"}).status_code == 403
+    assert (
+        client.post(
+            "/segment-run/", data={"window": "180", "confirm": "yes"}
+        ).status_code
+        == 403
+    )
 
 
 def test_an_auditor_may_read_the_result_but_not_cause_one(app: Flask) -> None:
@@ -111,7 +121,12 @@ def test_an_auditor_may_read_the_result_but_not_cause_one(app: Flask) -> None:
     client = app.test_client()
     _sign_in(client, "AUDITOR")
 
-    assert client.post("/segment-run/", data={"window": "180"}).status_code == 403
+    assert (
+        client.post(
+            "/segment-run/", data={"window": "180", "confirm": "yes"}
+        ).status_code
+        == 403
+    )
     assert client.get("/audit/?entity=customer").status_code == 200
 
 
@@ -129,10 +144,8 @@ def test_an_anonymous_post_is_refused_rather_than_redirected(app: Flask) -> None
 # ---------- the window ----------
 
 
-def test_an_empty_window_is_the_default() -> None:
+def test_an_omitted_service_window_is_the_default() -> None:
     assert parse_window(None) == DEFAULT_WINDOW_DAYS
-    assert parse_window("") == DEFAULT_WINDOW_DAYS
-    assert parse_window("   ") == DEFAULT_WINDOW_DAYS
 
 
 def test_a_window_is_read_as_a_number_of_days() -> None:
@@ -141,7 +154,7 @@ def test_a_window_is_read_as_a_number_of_days() -> None:
 
 
 @pytest.mark.parametrize(
-    "raw", ["0", "-30", "not-a-number", "180.5", str(MAX_WINDOW_DAYS + 1)]
+    "raw", ["", "   ", "0", "-30", "not-a-number", "180.5", str(MAX_WINDOW_DAYS + 1)]
 )
 def test_a_window_that_is_not_usable_is_refused(raw: str) -> None:
     with pytest.raises(InvalidWindow):
@@ -171,7 +184,7 @@ def test_the_window_reaches_the_service(
     client = app.test_client()
     _sign_in(client, "ADMIN")
 
-    client.post("/segment-run/", data={"window": "45"})
+    client.post("/segment-run/", data={"window": "45", "confirm": "yes"})
 
     assert seen["window"] == 45
 
@@ -189,7 +202,9 @@ def test_the_result_page_reports_what_the_run_did(
     client = app.test_client()
     _sign_in(client, "ADMIN")
 
-    body = client.post("/segment-run/", data={"window": "180"}).get_data(as_text=True)
+    body = client.post(
+        "/segment-run/", data={"window": "180", "confirm": "yes"}
+    ).get_data(as_text=True)
 
     assert "Customers processed" in body and "30" in body
     assert "Segments assigned" in body and "18" in body
@@ -209,7 +224,9 @@ def test_a_run_that_changed_nothing_says_so(
     _sign_in(client, "ADMIN")
 
     body = _flattened(
-        client.post("/segment-run/", data={"window": "180"}).get_data(as_text=True)
+        client.post("/segment-run/", data={"window": "180", "confirm": "yes"}).get_data(
+            as_text=True
+        )
     )
 
     assert "Nothing changed" in body
@@ -282,3 +299,27 @@ def test_the_counts_come_back_in_the_order_the_statement_selects_them() -> None:
     assert counts == RecalculationCounts(
         processed=30, assigned=18, unmatched=12, reassigned=7, cleared=3
     )
+
+
+@pytest.mark.parametrize("data", [{}, {"window": ""}, {"window": "   "}])
+def test_blank_submissions_never_recalculate(app, monkeypatch, data):
+    recalculate = Mock()
+    monkeypatch.setattr("web.routes.segment_run.run", recalculate)
+    client = app.test_client()
+    _sign_in(client, "ADMIN")
+    assert client.post("/segment-run/", data=data).status_code == 400
+    recalculate.assert_not_called()
+
+
+def test_segment_run_requires_a_second_post(app, monkeypatch):
+    recalculate = Mock(return_value=_result(window_days=45))
+    monkeypatch.setattr("web.routes.segment_run.run", recalculate)
+    client = app.test_client()
+    _sign_in(client, "ADMIN")
+    response = client.post("/segment-run/", data={"window": "45"})
+    assert response.status_code == 200
+    assert b"Confirm recalculation" in response.data
+    recalculate.assert_not_called()
+    response = client.post("/segment-run/", data={"window": "45", "confirm": "yes"})
+    assert response.status_code == 200
+    assert recalculate.call_args.args[1] == 45

@@ -183,9 +183,7 @@ def test_the_filters_reach_the_service(
     assert seen["page"] == 3
 
 
-@pytest.mark.parametrize(
-    "query", ["from=not-a-date", "to=2026-13-45", "page=abc", "page=-4"]
-)
+@pytest.mark.parametrize("query", ["page=abc", "page=-4"])
 def test_an_unreadable_filter_is_dropped_rather_than_refused(
     app: Flask, monkeypatch: pytest.MonkeyPatch, query: str
 ) -> None:
@@ -355,3 +353,20 @@ def test_an_entry_that_does_not_exist_is_a_404(
     _sign_in(client, "ADMIN")
 
     assert client.get("/audit/999999").status_code == 404
+
+
+@pytest.mark.parametrize(
+    "query", ["from=not-a-date", "to=2026-13-45", "from=2026-09-06&to=2026-01-01"]
+)
+def test_invalid_audit_dates_explain_the_refusal_without_reading_entries(
+    app, monkeypatch, query
+):
+    read = Mock()
+    monkeypatch.setattr("web.routes.audit.read_page", read)
+    client = app.test_client()
+    _sign_in(client, "AUDITOR")
+    response = client.get(f"/audit/?{query}")
+    assert response.status_code == 400
+    assert b'role="alert"' in response.data
+    assert b"Clear" in response.data
+    read.assert_not_called()

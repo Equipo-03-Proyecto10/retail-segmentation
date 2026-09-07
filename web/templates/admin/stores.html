@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 
+{% block title %}Stores · {{ application_name }}{% endblock %}
+
 {% block content %}
-<main class="admin-page">
+<div class="admin-page">
   <h1>Stores</h1>
 
   <form method="get" action="{{ url_for('admin.list_stores_view') }}">
@@ -13,9 +15,12 @@
     <p class="error" role="alert">{{ delete_error }}</p>
   {% endif %}
 
+  {% if can('catalog.write') %}
   <a href="{{ url_for('admin.create_store_view') }}">New store</a>
+  {% endif %}
 
-  <table>
+  <div class="table-scroll">
+  <table class="listing">
     <thead>
       <tr>
         <th>ID</th>
@@ -23,7 +28,7 @@
         <th>City</th>
         <th>State</th>
         <th>Active</th>
-        <th></th>
+        {% if can('catalog.write') %}<th>Actions</th>{% endif %}
       </tr>
     </thead>
     <tbody>
@@ -34,16 +39,19 @@
         <td>{{ store.city }}</td>
         <td>{{ store.state }}</td>
         <td>{{ "Yes" if store.is_active else "No" }}</td>
+        {% if can('catalog.write') %}
         <td>
           <a href="{{ url_for('admin.edit_store_view', store_id=store.store_id) }}">Edit</a>
-          <form method="post" action="{{ url_for('admin.delete_store_view', store_id=store.store_id) }}" style="display:inline">
+          <form method="post" action="{{ url_for('admin.delete_store_view', store_id=store.store_id) }}" class="inline-form">
             <button type="submit">Delete</button>
           </form>
         </td>
+        {% endif %}
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
 
   <nav class="pagination">
     {% if page > 1 %}
@@ -54,5 +62,5 @@
       <a href="{{ url_for('admin.list_stores_view', page=page+1, q=search) }}">Next</a>
     {% endif %}
   </nav>
-</main>
+</div>
 {% endblock %}

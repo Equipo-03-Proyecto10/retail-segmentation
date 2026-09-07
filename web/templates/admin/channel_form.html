@@ -1,11 +1,13 @@
 {% extends "base.html" %}
 
+{% block title %}{{ "Edit channel" if request.endpoint == "admin.edit_channel_view" else "New channel" }} · {{ application_name }}{% endblock %}
+
 {% block content %}
-<main class="admin-page">
-  <h1>{{ "Edit channel" if channel and channel.channel_id else "New channel" }}</h1>
+<div class="admin-page">
+  <h1>{{ "Edit channel" if request.endpoint == "admin.edit_channel_view" else "New channel" }}</h1>
 
   <form method="post">
-    {% if not channel or not channel.channel_id %}
+    {% if request.endpoint == "admin.create_channel_view" %}
     <label for="channel_id">Channel ID</label>
     <input type="number" id="channel_id" name="channel_id" value="{{ channel.channel_id if channel else '' }}" required>
     {% if errors.channel_id %}<p class="error">{{ errors.channel_id }}</p>{% endif %}
@@ -18,5 +20,5 @@
     <button type="submit">Save</button>
     <a href="{{ url_for('admin.list_channels_view') }}">Cancel</a>
   </form>
-</main>
+</div>
 {% endblock %}

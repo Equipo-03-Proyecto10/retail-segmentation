@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 
+{% block title %}New user · {{ application_name }}{% endblock %}
+
 {% block content %}
-<main class="admin-page">
+<div class="admin-page">
   <h1>New user</h1>
 
   <form method="post">
@@ -31,5 +33,5 @@
     <button type="submit">Save</button>
     <a href="{{ url_for('admin.list_users_view') }}">Cancel</a>
   </form>
-</main>
+</div>
 {% endblock %}

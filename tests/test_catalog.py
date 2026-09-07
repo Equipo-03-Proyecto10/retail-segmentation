@@ -477,3 +477,27 @@ def test_the_catalogs_menu_entry_points_at_the_consultation_hub(app: Flask) -> N
     nav = body[body.index('class="masthead__nav"') : body.index("</nav>")]
     assert 'href="/catalog/"' in nav
     assert 'aria-current="page"' in nav
+
+
+@pytest.mark.parametrize(
+    "resource,query",
+    [
+        ("products", "q=milk"),
+        ("customers", "q=Alice"),
+        ("stock", "store=2&q=milk"),
+        ("segments", "q=loyal"),
+    ],
+)
+def test_out_of_range_pages_return_to_last_page_with_filters(
+    app, monkeypatch, resource, query
+):
+    from urllib.parse import parse_qs, urlsplit
+
+    monkeypatch.setattr(f"web.routes.catalog.list_{resource}", lambda *a, **k: ([], 30))
+    client = app.test_client()
+    _sign_in(client, "ADMIN")
+    response = client.get(f"/catalog/{resource}?{query}&page=999")
+    assert response.status_code == 302
+    target = urlsplit(response.location)
+    assert target.path == f"/catalog/{resource}"
+    assert parse_qs(target.query) == parse_qs(query) | {"page": ["2"]}

@@ -1,11 +1,13 @@
 {% extends "base.html" %}
 
+{% block title %}{{ "Edit role" if request.endpoint == "admin.edit_role_view" else "New role" }} · {{ application_name }}{% endblock %}
+
 {% block content %}
-<main class="admin-page">
-  <h1>{{ "Edit role" if role and role.role_id else "New role" }}</h1>
+<div class="admin-page">
+  <h1>{{ "Edit role" if request.endpoint == "admin.edit_role_view" else "New role" }}</h1>
 
   <form method="post">
-    {% if not role or not role.role_id %}
+    {% if request.endpoint == "admin.create_role_view" %}
     <label for="role_id">Role ID</label>
     <input type="number" id="role_id" name="role_id" value="{{ role.role_id if role else '' }}" required>
     {% if errors.role_id %}<p class="error">{{ errors.role_id }}</p>{% endif %}
@@ -22,5 +24,5 @@
     <button type="submit">Save</button>
     <a href="{{ url_for('admin.list_roles_view') }}">Cancel</a>
   </form>
-</main>
+</div>
 {% endblock %}

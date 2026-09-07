@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from psycopg import Connection
-from psycopg.errors import ForeignKeyViolation
+from psycopg.errors import ForeignKeyViolation, UniqueViolation
 
 
 @dataclass(frozen=True)
@@ -104,15 +104,20 @@ def get_store(connection: Connection, store_id: int) -> Store | None:
 
 def create_store(
     connection: Connection, *, store_id: int, name: str, city: str, state: str
-) -> None:
-    """Insert a new store. Raises psycopg.errors.UniqueViolation on a
-    duplicate store_id."""
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "INSERT INTO store (store_id, name, city, state) VALUES (%s, %s, %s, %s)",
-            (store_id, name, city, state),
-        )
-    connection.commit()
+) -> str | None:
+    """Insert a store, explaining duplicate IDs without exposing a DB error."""
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO store (store_id, name, city, state) "
+                "VALUES (%s, %s, %s, %s)",
+                (store_id, name, city, state),
+            )
+        connection.commit()
+        return None
+    except UniqueViolation:
+        connection.rollback()
+        return "A store with that ID already exists."
 
 
 def update_store(
@@ -123,18 +128,23 @@ def update_store(
     city: str,
     state: str,
     is_active: bool,
-) -> None:
+) -> str | None:
     """Update an existing store's editable fields."""
-    with connection.cursor() as cursor:
-        cursor.execute(
-            """
-            UPDATE store
-            SET name = %s, city = %s, state = %s, is_active = %s
-            WHERE store_id = %s
-            """,
-            (name, city, state, is_active, store_id),
-        )
-    connection.commit()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE store
+                SET name = %s, city = %s, state = %s, is_active = %s
+                WHERE store_id = %s
+                """,
+                (name, city, state, is_active, store_id),
+            )
+        connection.commit()
+        return None
+    except UniqueViolation:
+        connection.rollback()
+        return "A store with those details already exists."
 
 
 def delete_store(connection: Connection, store_id: int) -> bool:

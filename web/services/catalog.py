@@ -49,7 +49,7 @@ def parse_pagination(page_param: str | None, per_page_default: int = 20) -> int:
     except ValueError:
         return 1
 
-    return page if page >= 1 else 1
+    return page if 1 <= page <= 2_147_483_647 else 1
 
 
 def validate_channel(*, name: str) -> dict[str, str]:

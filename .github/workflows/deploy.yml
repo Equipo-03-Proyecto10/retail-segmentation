@@ -35,6 +35,7 @@ env:
   GCP_PROJECT: iac-dev-01
   GCP_ZONE: northamerica-south1-a
   INSTANCE: mosaiq-deployment-vm
+  DEPLOY_SCRIPT: /tmp/mosaiq-deploy-${{ github.run_id }}-${{ github.run_attempt }}.sh
 
 jobs:
   deploy:
@@ -70,10 +71,14 @@ jobs:
       # The script is copied out of this checkout and run from /tmp rather than
       # from /opt/mosaiq/current: it rewrites that checkout, and bash reads a
       # script incrementally.
+      # A fixed name in /tmp cannot be overwritten by a different user: /tmp is
+      # sticky, so a leftover file owned by whoever last ran the script by hand
+      # makes the upload fail with a bare "Permission denied". One path per run
+      # attempt, removed afterwards.
       - name: Copy the deploy script to the instance
         run: |
           gcloud compute scp deploy/deploy.sh \
-            "$INSTANCE:/tmp/mosaiq-deploy.sh" \
+            "$INSTANCE:$DEPLOY_SCRIPT" \
             --project="$GCP_PROJECT" --zone="$GCP_ZONE" --quiet
 
       - name: Deploy
@@ -84,7 +89,7 @@ jobs:
         run: |
           gcloud compute ssh "$INSTANCE" \
             --project="$GCP_PROJECT" --zone="$GCP_ZONE" --quiet \
-            --command="sudo bash /tmp/mosaiq-deploy.sh '$TARGET_SHA' $DRY_RUN"
+            --command="sudo bash '$DEPLOY_SCRIPT' '$TARGET_SHA' $DRY_RUN"
 
       - name: Report what is now serving
         if: always()
@@ -94,3 +99,10 @@ jobs:
             --command="sudo -u mosaiq git -C /opt/mosaiq/current rev-parse HEAD; \
                        systemctl is-active mosaiq; \
                        curl -sk -o /dev/null -w 'https %{http_code}\n' https://127.0.0.1/"
+
+      - name: Remove the uploaded script
+        if: always()
+        run: |
+          gcloud compute ssh "$INSTANCE" \
+            --project="$GCP_PROJECT" --zone="$GCP_ZONE" --quiet \
+            --command="rm -f '$DEPLOY_SCRIPT'" || true

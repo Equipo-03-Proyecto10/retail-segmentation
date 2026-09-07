@@ -263,3 +263,10 @@ deploy is not left serving — not that the switch is seamless; there is one
 instance and one gunicorn, so a restart is visible.
 
 A deploy never runs SQL. Schema changes remain a manual, deliberate step.
+
+First deploy: run
+[34076420600](https://github.com/Equipo-03-Proyecto10/retail-segmentation/actions/runs/34076420600)
+on 2026-09-07, which moved the instance from `71428a3` — a `develop` commit a
+manual run had parked it on — to `e4da24d`, the merge commit on `main`.
+Acceptance evidence, including the four failures it took to get the deploy
+identity right: [`f6-06-continuous-deployment.md`](evidence/f6-06-continuous-deployment.md).

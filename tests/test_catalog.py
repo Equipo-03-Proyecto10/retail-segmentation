@@ -355,8 +355,8 @@ def test_stock_flags_a_row_below_the_threshold(
 
     body = client.get("/catalog/stock").get_data(as_text=True)
 
-    assert 'class="low-stock"' in body
-    assert body.count("low-stock") >= 1
+    assert 'class="mq-table__row--warning"' in body
+    assert body.count("mq-table__row--warning") >= 1
 
 
 def test_stock_store_filter_reaches_the_query(
@@ -474,7 +474,7 @@ def test_the_catalogs_menu_entry_points_at_the_consultation_hub(app: Flask) -> N
     _sign_in(client, "ANALYST")
     body = client.get("/catalog/products").get_data(as_text=True)
 
-    nav = body[body.index('class="masthead__nav"') : body.index("</nav>")]
+    nav = body[body.index('id="primary-navigation"') : body.index("</nav>")]
     assert 'href="/catalog/"' in nav
     assert 'aria-current="page"' in nav
 

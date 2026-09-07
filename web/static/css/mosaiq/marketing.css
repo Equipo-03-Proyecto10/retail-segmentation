@@ -1,0 +1,88 @@
+/* MOSAIQ marketing surface — the non-functional side of the product.
+   Greek-mosaic voice: tessellated tile patterns, classical display serif,
+   monospace eyebrows. Papaya orange on black (dark) or on white (light).
+   None of this is allowed inside the analytical application chrome. */
+body:has(>.mq-site),body:has(>div>.mq-site){margin:0}
+.mq-site{--mq-site-ink:var(--mq-neutral-950);--mq-site-paper:var(--mq-white);--mq-site-paper-2:#F7F5F1;--mq-site-rule:var(--mq-neutral-300);--mq-site-accent:var(--mq-orange-500);--mq-site-accent-ink:var(--mq-orange-700);--mq-site-tile:rgba(20,20,18,.10);background:var(--mq-site-paper);color:var(--mq-site-ink);font-family:var(--mq-font-sans);margin:0}
+[data-mq-site="obsidian"]{--mq-site-ink:#F5F2EC;--mq-site-paper:#000000;--mq-site-paper-2:#0D0C0B;--mq-site-rule:#2A2724;--mq-site-accent:var(--mq-orange-500);--mq-site-accent-ink:var(--mq-orange-300);--mq-site-tile:rgba(255,107,0,.22)}
+:where(.mq-site) a{color:var(--mq-site-accent-ink);text-decoration:none}
+:where(.mq-site) a:hover{color:var(--mq-site-accent)}
+.mq-site :focus-visible{outline:2px solid var(--mq-site-accent);outline-offset:2px}
+.mq-site__eyebrow{font-family:var(--mq-font-mono);font-size:var(--mq-size-12);letter-spacing:.22em;text-transform:uppercase;color:var(--mq-site-accent-ink)}
+.mq-site__display{font-family:var(--mq-font-display);font-weight:600;letter-spacing:-.035em;line-height:.9;margin:0;text-wrap:balance}
+.mq-site__display--xl{font-size:clamp(48px,7.2vw,112px)}
+.mq-site__display--lg{font-size:clamp(32px,4vw,56px)}
+.mq-site__lede{font-size:var(--mq-size-16);line-height:26px;max-width:52ch;color:var(--mq-site-ink);opacity:.82}
+
+/* Mosaic tessellation — square tesserae with grout lines, the MOSAIQ motif */
+.mq-tesserae{background-color:var(--mq-site-paper-2);background-image:linear-gradient(var(--mq-site-tile) 1px,transparent 1px),linear-gradient(90deg,var(--mq-site-tile) 1px,transparent 1px);background-size:14px 14px;background-position:-1px -1px}
+.mq-tesserae--lg{background-size:28px 28px}
+/* Greek key / meander band */
+.mq-meander{height:14px;background-color:transparent;background-image:repeating-linear-gradient(90deg,var(--mq-site-accent) 0 4px,transparent 4px 10px),linear-gradient(var(--mq-site-accent),var(--mq-site-accent));background-size:100% 6px,100% 2px;background-position:0 0,0 12px;background-repeat:repeat-x}
+.mq-site__rule{height:1px;background:var(--mq-site-rule);border:0;margin:0}
+
+.mq-site__nav{display:flex;align-items:center;gap:var(--mq-space-6);padding:var(--mq-space-4) var(--mq-space-8);border-bottom:1px solid var(--mq-site-rule);position:sticky;top:0;background:var(--mq-site-paper);z-index:10}
+.mq-site__wordmark{font-family:var(--mq-font-sans);font-weight:var(--mq-weight-bold);font-size:var(--mq-size-16);letter-spacing:.28em}
+.mq-site__navlinks{display:flex;gap:var(--mq-space-6);margin-left:auto;font-family:var(--mq-font-mono);font-size:var(--mq-size-12);letter-spacing:.14em;text-transform:uppercase}
+.mq-site__navlinks a{color:var(--mq-site-ink);opacity:.7}
+.mq-site__navlinks a:hover{opacity:1;color:var(--mq-site-accent)}
+
+.mq-site__hero{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:var(--mq-space-12);align-items:center;padding:var(--mq-space-16) var(--mq-space-8)}
+.mq-site__hero-copy{display:flex;flex-direction:column;gap:var(--mq-space-5)}
+.mq-site__hero-art{aspect-ratio:1;border:1px solid var(--mq-site-rule);position:relative;overflow:hidden}
+.mq-site__img{display:block;width:100%;height:100%;object-fit:cover}
+/* Full-bleed mosaic band. The stone is the imagery; no gradient, no tint. */
+.mq-site__band{position:relative;height:420px;overflow:hidden;border-top:1px solid var(--mq-site-rule);border-bottom:1px solid var(--mq-site-rule)}
+.mq-site__band .mq-site__img{object-position:center 38%}
+.mq-site__band-caption{position:absolute;left:var(--mq-space-8);bottom:var(--mq-space-6);background:var(--mq-site-paper);border:1px solid var(--mq-site-rule);padding:var(--mq-space-3) var(--mq-space-4);max-width:46ch;display:flex;flex-direction:column;gap:var(--mq-space-1)}
+.mq-site__band-caption p{margin:0;font-size:var(--mq-size-13);line-height:20px;opacity:.8}
+.mq-site__figure{margin:0;display:flex;flex-direction:column;gap:var(--mq-space-2);border:1px solid var(--mq-site-rule);background:var(--mq-site-paper-2)}
+.mq-site__figure figcaption{font-family:var(--mq-font-mono);font-size:var(--mq-size-12);letter-spacing:.08em;text-transform:uppercase;color:var(--mq-site-ink);opacity:.55;padding:0 var(--mq-space-3) var(--mq-space-3)}
+.mq-site__split{display:grid;grid-template-columns:minmax(0,360px) minmax(0,1fr);gap:var(--mq-space-8);align-items:start}
+.mq-mosaic{display:grid;grid-template-columns:repeat(20,1fr);grid-template-rows:repeat(20,1fr);gap:1px;width:100%;height:100%;background:var(--mq-site-paper-2)}
+.mq-mosaic__tile{background:transparent}
+.mq-mosaic__tile--a{background:var(--mq-orange-500)}
+.mq-mosaic__tile--b{background:var(--mq-orange-700)}
+.mq-mosaic__tile--c{background:var(--mq-site-tile)}
+[data-mq-site="obsidian"] .mq-mosaic__tile--b{background:#7A3000}
+.mq-site__cta-row{display:flex;gap:var(--mq-space-3);align-items:center;flex-wrap:wrap}
+.mq-site__btn{display:inline-flex;align-items:center;gap:var(--mq-space-2);height:44px;padding:0 var(--mq-space-5);border-radius:var(--mq-radius-2);font-family:var(--mq-font-mono);font-size:var(--mq-size-13);letter-spacing:.12em;text-transform:uppercase;border:1px solid var(--mq-site-accent);background:var(--mq-site-accent);color:#000;cursor:pointer}
+.mq-site__btn:hover{background:var(--mq-orange-300);border-color:var(--mq-orange-300);color:#000}
+.mq-site__btn--ghost{background:transparent;color:var(--mq-site-ink);border-color:var(--mq-site-rule)}
+.mq-site__btn--ghost:hover{background:transparent;border-color:var(--mq-site-accent);color:var(--mq-site-accent)}
+
+.mq-site__section{padding:var(--mq-space-16) var(--mq-space-8);border-top:1px solid var(--mq-site-rule)}
+.mq-site__section-head{display:flex;flex-direction:column;gap:var(--mq-space-3);max-width:64ch;margin-bottom:var(--mq-space-10)}
+.mq-site__cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--mq-site-rule);border:1px solid var(--mq-site-rule)}
+.mq-site__col{background:var(--mq-site-paper);padding:var(--mq-space-6);display:flex;flex-direction:column;gap:var(--mq-space-3)}
+.mq-site__col-index{font-family:var(--mq-font-mono);font-size:var(--mq-size-12);color:var(--mq-site-accent-ink);letter-spacing:.12em}
+.mq-site__col-title{font-family:var(--mq-font-display);font-size:var(--mq-size-24);line-height:1.1;margin:0;font-weight:600;letter-spacing:-.02em}
+.mq-site__col-text{font-size:var(--mq-size-14);line-height:22px;opacity:.78;margin:0}
+.mq-site__steps{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:1px;background:var(--mq-site-rule);border:1px solid var(--mq-site-rule)}
+.mq-site__step{background:var(--mq-site-paper);padding:var(--mq-space-5);display:flex;flex-direction:column;gap:var(--mq-space-3)}
+.mq-site__step-n{font-family:var(--mq-font-mono);font-size:var(--mq-size-12);letter-spacing:.14em;color:var(--mq-site-accent);border-bottom:1px solid var(--mq-site-accent);padding-bottom:var(--mq-space-2);align-self:flex-start}
+.mq-site__step-body{display:flex;flex-direction:column;gap:var(--mq-space-2)}
+.mq-site__step .mq-site__col-title{font-size:var(--mq-size-20)}
+.mq-site__stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--mq-space-8)}
+.mq-site__stat{display:flex;flex-direction:column;gap:var(--mq-space-1);border-top:2px solid var(--mq-site-accent);padding-top:var(--mq-space-3)}
+.mq-site__stat-value{font-family:var(--mq-font-display);font-weight:600;letter-spacing:-.02em;font-size:var(--mq-size-32);font-variant-numeric:tabular-nums;line-height:1}
+.mq-site__stat-label{font-family:var(--mq-font-mono);font-size:var(--mq-size-12);letter-spacing:.1em;text-transform:uppercase;opacity:.6}
+.mq-site__footer{padding:var(--mq-space-10) var(--mq-space-8);border-top:1px solid var(--mq-site-rule);display:flex;gap:var(--mq-space-8);flex-wrap:wrap;font-size:var(--mq-size-12)}
+.mq-site__footer-col{display:flex;flex-direction:column;gap:var(--mq-space-2)}
+.mq-site__footer-title{font-family:var(--mq-font-mono);letter-spacing:.12em;text-transform:uppercase;opacity:.5}
+.mq-site__themeswitch{display:inline-flex;border:1px solid var(--mq-site-rule);border-radius:var(--mq-radius-2);overflow:hidden}
+.mq-site__themeswitch button{font-family:var(--mq-font-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:0 var(--mq-space-2);height:26px;background:transparent;color:var(--mq-site-ink);border:0;cursor:pointer}
+.mq-site__themeswitch button[aria-pressed="true"]{background:var(--mq-site-accent);color:#000}
+@media(max-width:1100px){
+.mq-site__steps{grid-template-columns:repeat(2,minmax(0,1fr))}
+.mq-site__split{grid-template-columns:1fr}
+.mq-site__band{height:280px}
+}
+@media(max-width:900px){
+.mq-site__hero{grid-template-columns:1fr;padding:var(--mq-space-8) var(--mq-space-4)}
+.mq-site__cols,.mq-site__stats,.mq-site__steps{grid-template-columns:1fr}
+.mq-site__section{padding:var(--mq-space-10) var(--mq-space-4)}
+.mq-site__nav{padding:var(--mq-space-3) var(--mq-space-4);gap:var(--mq-space-3)}
+.mq-site__navlinks{gap:var(--mq-space-3)}
+.mq-site__band-caption{left:var(--mq-space-4);right:var(--mq-space-4);bottom:var(--mq-space-4);max-width:none}
+}

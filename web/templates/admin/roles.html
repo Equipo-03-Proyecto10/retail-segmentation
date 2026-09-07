@@ -1,57 +1,17 @@
 {% extends "base.html" %}
 
 {% block title %}Roles · {{ application_name }}{% endblock %}
+{% block topbar_title %}Roles{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Catalogs / Manage / Roles{% endblock %}
 
 {% block content %}
-<div class="admin-page">
-  <h1>Roles</h1>
-
-  <form method="get" action="{{ url_for('admin.list_roles_view') }}">
-    <input type="text" name="q" value="{{ search }}" placeholder="Search by code">
-    <button type="submit">Search</button>
-  </form>
-
-  {% if delete_error %}
-    <p class="error" role="alert">{{ delete_error }}</p>
-  {% endif %}
-
-  {% if can('catalog.write') %}
-  <a href="{{ url_for('admin.create_role_view') }}">New role</a>
-  {% endif %}
-
-  <div class="table-scroll">
-  <table class="listing">
-    <thead>
-      <tr><th>ID</th><th>Code</th><th>Description</th>{% if can('catalog.write') %}<th>Actions</th>{% endif %}</tr>
-    </thead>
-    <tbody>
-      {% for role in roles %}
-      <tr>
-        <td>{{ role.role_id }}</td>
-        <td>{{ role.code }}</td>
-        <td>{{ role.description or "—" }}</td>
-        {% if can('catalog.write') %}
-        <td>
-          <a href="{{ url_for('admin.edit_role_view', role_id=role.role_id) }}">Edit</a>
-          <form method="post" action="{{ url_for('admin.delete_role_view', role_id=role.role_id) }}" class="inline-form">
-            <button type="submit">Delete</button>
-          </form>
-        </td>
-        {% endif %}
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  </div>
-
-  <nav class="pagination">
-    {% if page > 1 %}
-      <a href="{{ url_for('admin.list_roles_view', page=page-1, q=search) }}">Previous</a>
-    {% endif %}
-    <span>Page {{ page }} of {{ total_pages }}</span>
-    {% if page < total_pages %}
-      <a href="{{ url_for('admin.list_roles_view', page=page+1, q=search) }}">Next</a>
-    {% endif %}
-  </nav>
-</div>
+  {% from "macros/ui.html" import alert, empty_state, page_header, pagination %}
+  {% call page_header("Roles", "Maintain the role records referenced by account profiles.", "Master data") %}{% if can('catalog.write') %}<a class="mq-btn mq-btn--primary mq-btn--sm" href="{{ url_for('admin.create_role_view') }}">New role</a>{% endif %}{% endcall %}
+  <form class="mq-filterbar" method="get" action="{{ url_for('admin.list_roles_view') }}"><div class="mq-filterbar__row"><div class="mq-filterbar__group mq-filterbar__group--search"><label class="mq-field__label" for="q">Search</label><input class="mq-input" type="search" id="q" name="q" value="{{ search }}" placeholder="Role code"></div><div class="mq-filterbar__actions">{% if search %}<a class="mq-btn mq-btn--tertiary mq-btn--sm" href="{{ url_for('admin.list_roles_view') }}">Clear</a>{% endif %}<button class="mq-btn mq-btn--primary mq-btn--sm" type="submit">Search</button></div></div></form>
+  {% if delete_error %}{{ alert(delete_error) }}{% endif %}
+  {% if roles %}
+    <section class="mq-panel mq-panel--table mq-density-compact"><div class="mq-table__toolbar"><span class="mq-table__count">Role catalog</span><a class="mq-btn mq-btn--tertiary mq-btn--sm" href="{{ url_for('admin.catalog_index') }}">All catalogs</a></div><div class="mq-table-wrap"><table class="mq-table"><thead><tr><th scope="col">ID</th><th class="mq-table__cell--sticky" scope="col">Code</th><th scope="col">Description</th>{% if can('catalog.write') %}<th scope="col">Actions</th>{% endif %}</tr></thead><tbody>
+      {% for role in roles %}<tr><td class="mq-mono">{{ role.role_id }}</td><td class="mq-table__cell--sticky mq-mono">{{ role.code }}</td><td>{{ role.description or "—" }}</td>{% if can('catalog.write') %}<td><div class="mq-table__actions"><a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('admin.edit_role_view', role_id=role.role_id) }}">Edit</a><form class="mq-inline-form" method="post" action="{{ url_for('admin.delete_role_view', role_id=role.role_id) }}"><button class="mq-btn mq-btn--destructive mq-btn--sm" type="submit">Delete</button></form></div></td>{% endif %}</tr>{% endfor %}
+    </tbody></table></div>{{ pagination(page, total_pages, "Page {} of {}".format(page, total_pages), url_for('admin.list_roles_view', page=page - 1, q=search) if page > 1 else none, url_for('admin.list_roles_view', page=page + 1, q=search) if page < total_pages else none) }}</section>
+  {% else %}{{ empty_state("No roles match that search" if search else "No roles are available", "Change or clear the search." if search else "Create a role to begin this catalog.") }}{% endif %}
 {% endblock %}

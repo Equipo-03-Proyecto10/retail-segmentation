@@ -1,59 +1,17 @@
 {% extends "base.html" %}
 
 {% block title %}Users · {{ application_name }}{% endblock %}
+{% block topbar_title %}Users{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Workspace / Users{% endblock %}
 
 {% block content %}
-<div class="admin-page">
-  <h1>Users</h1>
-
-  <form method="get" action="{{ url_for('admin.list_users_view') }}">
-    <input type="text" name="q" value="{{ search }}" placeholder="Search by name or email">
-    <button type="submit">Search</button>
-  </form>
-
-  {% if action_error %}
-    <p class="error" role="alert">{{ action_error }}</p>
-  {% endif %}
-
-  <a href="{{ url_for('admin.create_user_view') }}">New user</a>
-
-  <div class="table-scroll">
-  <table class="listing">
-    <thead>
-      <tr><th>Name</th><th>Email</th><th>Role</th><th>Active</th><th></th></tr>
-    </thead>
-    <tbody>
-      {% for user in users %}
-      <tr>
-        <td>{{ user.name }}</td>
-        <td>{{ user.email }}</td>
-        <td>{{ user.role_code }}</td>
-        <td>{{ "Yes" if user.is_active else "No" }}</td>
-        <td>
-          {% if user.is_active %}
-          <form method="post" action="{{ url_for('admin.deactivate_user_view', user_id=user.user_id) }}" class="inline-form">
-            <button type="submit">Deactivate</button>
-          </form>
-          {% else %}
-          <form method="post" action="{{ url_for('admin.activate_user_view', user_id=user.user_id) }}" class="inline-form">
-            <button type="submit">Activate</button>
-          </form>
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  </div>
-
-  <nav class="pagination">
-    {% if page > 1 %}
-      <a href="{{ url_for('admin.list_users_view', page=page-1, q=search) }}">Previous</a>
-    {% endif %}
-    <span>Page {{ page }} of {{ total_pages }}</span>
-    {% if page < total_pages %}
-      <a href="{{ url_for('admin.list_users_view', page=page+1, q=search) }}">Next</a>
-    {% endif %}
-  </nav>
-</div>
+  {% from "macros/ui.html" import alert, empty_state, page_header, pagination, status_pill %}
+  {% call page_header("Users", "Review account roles and control whether each account may sign in.", "Administration") %}{% if can('user.write') %}<a class="mq-btn mq-btn--primary mq-btn--sm" href="{{ url_for('admin.create_user_view') }}">New user</a>{% endif %}{% endcall %}
+  <form class="mq-filterbar" method="get" action="{{ url_for('admin.list_users_view') }}"><div class="mq-filterbar__row"><div class="mq-filterbar__group mq-filterbar__group--search"><label class="mq-field__label" for="q">Search</label><input class="mq-input" type="search" id="q" name="q" value="{{ search }}" placeholder="Name or email"></div><div class="mq-filterbar__actions">{% if search %}<a class="mq-btn mq-btn--tertiary mq-btn--sm" href="{{ url_for('admin.list_users_view') }}">Clear</a>{% endif %}<button class="mq-btn mq-btn--primary mq-btn--sm" type="submit">Search</button></div></div></form>
+  {% if action_error %}{{ alert(action_error) }}{% endif %}
+  {% if users %}
+    <section class="mq-panel mq-panel--table mq-density-compact"><div class="mq-table__toolbar"><span class="mq-table__count">User accounts</span><span class="mq-caption">Exactly one administrator</span></div><div class="mq-table-wrap"><table class="mq-table"><thead><tr><th class="mq-table__cell--sticky" scope="col">Name</th><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Status</th>{% if can('user.write') %}<th scope="col">Actions</th>{% endif %}</tr></thead><tbody>
+      {% for user in users %}<tr><td class="mq-table__cell--sticky">{{ user.name }}</td><td>{{ user.email }}</td><td><span class="mq-pill mq-pill--info">{{ user.role_code }}</span></td><td>{{ status_pill("Active" if user.is_active else "Inactive", "success" if user.is_active else "neutral") }}</td>{% if can('user.write') %}<td><div class="mq-table__actions">{% if user.is_active %}<form class="mq-inline-form" method="post" action="{{ url_for('admin.deactivate_user_view', user_id=user.user_id) }}"><button class="mq-btn mq-btn--destructive mq-btn--sm" type="submit">Deactivate</button></form>{% else %}<form class="mq-inline-form" method="post" action="{{ url_for('admin.activate_user_view', user_id=user.user_id) }}"><button class="mq-btn mq-btn--secondary mq-btn--sm" type="submit">Activate</button></form>{% endif %}</div></td>{% endif %}</tr>{% endfor %}
+    </tbody></table></div>{{ pagination(page, total_pages, "Page {} of {}".format(page, total_pages), url_for('admin.list_users_view', page=page - 1, q=search) if page > 1 else none, url_for('admin.list_users_view', page=page + 1, q=search) if page < total_pages else none) }}</section>
+  {% else %}{{ empty_state("No users match that search" if search else "No users are available", "Change or clear the search." if search else "Create a user to begin account administration.") }}{% endif %}
 {% endblock %}

@@ -1,76 +1,66 @@
 {% extends "base.html" %}
 
 {% block title %}Segment run · {{ application_name }}{% endblock %}
+{% block topbar_title %}Segment run{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Analysis / Segment run{% endblock %}
 
 {% block content %}
-  <h1>Segment run</h1>
-  <p class="lede">
-    Score every customer's recency, frequency and spend over a window of
-    recorded sales, match the result against the segment rules, and write the
-    segment each customer belongs in.
-  </p>
+  {% from "macros/ui.html" import alert, page_header %}
+  {{ page_header(
+    "Segment run",
+    "Score customer recency, frequency and spend over a recorded-sales window, then match each result against the current segment rules.",
+    "Main process"
+  ) }}
 
-  <p>
-    Scores are quintiles across the customer base, 5 being the most recent, the
-    most frequent and the highest spend. A customer with no sales in the window
-    is left unassigned rather than keeping a stale segment, and a customer whose
-    scores match no rule is left unassigned and counted below.
-  </p>
-
-  {% if error %}
-    <p class="error" role="alert">{{ error }}</p>
-  {% endif %}
-
-  <form class="filters" method="post" action="{{ url_for('segment_run.execute') }}">
-    <div class="filters__field">
-      <label for="window">Window, in days</label>
-      <input type="number" id="window" name="window" value="{{ window }}"
-             min="1" max="3650" required>
+  <div class="mq-alert mq-alert--info" role="status">
+    <span class="mq-alert__icon" aria-hidden="true">i</span>
+    <div class="mq-stack">
+      <span class="mq-alert__title">This is the current delivery's narrow recalculation process</span>
+      <span class="mq-alert__text">Scores use quintiles from 1 to 5. Customers with no sales in the window or no matching rule are left unassigned.</span>
     </div>
-    <button type="submit">Review recalculation</button>
-  </form>
+  </div>
+
+  {% if error %}{{ alert(error) }}{% endif %}
+
+  <section class="mq-panel mq-form-panel">
+    <header class="mq-panel__header"><h2 class="mq-panel__title">Run settings</h2></header>
+    <div class="mq-panel__body">
+      <form class="mq-form" method="post" action="{{ url_for('segment_run.execute') }}">
+        <div class="mq-field">
+          <label class="mq-field__label mq-field__label--required" for="window">Window, in days</label>
+          <input class="mq-input mq-input--num" type="number" id="window" name="window" value="{{ window }}" min="1" max="3650" required>
+          <span class="mq-field__hint">Enter a whole number between 1 and 3650 days.</span>
+        </div>
+        <div class="mq-form__actions">
+          <button class="mq-btn mq-btn--primary" type="submit">Review recalculation</button>
+        </div>
+      </form>
+    </div>
+  </section>
 
   {% if result %}
-    <h2>Result</h2>
-    <ul class="figures">
-      <li class="figure">
-        <span class="figure__value">{{ result.processed }}</span>
-        <span class="figure__label">Customers processed</span>
-      </li>
-      <li class="figure">
-        <span class="figure__value">{{ result.assigned }}</span>
-        <span class="figure__label">Segments assigned</span>
-      </li>
-      <li class="figure">
-        <span class="figure__value">{{ result.unmatched }}</span>
-        <span class="figure__label">Matched no rule</span>
-      </li>
-      <li class="figure">
-        <span class="figure__value">{{ "%.2f"|format(result.seconds) }}s</span>
-        <span class="figure__label">Time taken</span>
-      </li>
-    </ul>
+    <div class="mq-grid mq-grid--4">
+      <article class="mq-metric"><span class="mq-metric__label">Customers processed</span><span class="mq-metric__value">{{ "{:,}".format(result.processed) }}</span><div class="mq-metric__footer"><span>{{ result.window_days }}-day window</span></div></article>
+      <article class="mq-metric"><span class="mq-metric__label">Segments assigned</span><span class="mq-metric__value">{{ "{:,}".format(result.assigned) }}</span><div class="mq-metric__footer"><span>Current assignment</span></div></article>
+      <article class="mq-metric"><span class="mq-metric__label">Matched no rule</span><span class="mq-metric__value">{{ "{:,}".format(result.unmatched) }}</span><div class="mq-metric__footer"><span>Left unassigned</span></div></article>
+      <article class="mq-metric"><span class="mq-metric__label">Time taken</span><span class="mq-metric__value">{{ "%.2f"|format(result.seconds) }}s</span><div class="mq-metric__footer"><span>Completed</span></div></article>
+    </div>
 
-    <dl class="facts">
-      <dt>Window</dt>
-      <dd>{{ result.window_days }} days ending today</dd>
-      <dt>Segments changed</dt>
-      <dd>{{ result.reassigned }}</dd>
-      <dt>Segments cleared</dt>
-      <dd>{{ result.cleared }} — customers with no sales in the window</dd>
-    </dl>
+    <section class="mq-panel">
+      <header class="mq-panel__header"><h2 class="mq-panel__title">Result details</h2></header>
+      <div class="mq-panel__body">
+        <dl class="mq-description-list">
+          <dt>Window</dt><dd>{{ result.window_days }} days ending today</dd>
+          <dt>Segments changed</dt><dd>{{ result.reassigned }}</dd>
+          <dt>Segments cleared</dt><dd>{{ result.cleared }} — customers with no sales in the window</dd>
+        </dl>
+      </div>
+    </section>
 
     {% if result.changed_nothing %}
-      <p>
-        Nothing changed, so nothing was written and the audit log has no new
-        entries. Running again over the same sales always gives this result.
-      </p>
+      <div class="mq-alert mq-alert--info" role="status"><span class="mq-alert__icon">i</span><div class="mq-stack"><span class="mq-alert__title">Nothing changed</span><span class="mq-alert__text">Nothing was written and the audit log has no new entries.</span></div></div>
     {% else %}
-      <p>
-        {{ result.reassigned + result.cleared }} customers changed segment, and
-        the audit log holds one entry for each of them.
-        <a href="{{ url_for('audit.index', entity='customer') }}">Read them</a>.
-      </p>
+      <div class="mq-alert mq-alert--success" role="status"><span class="mq-alert__icon">i</span><div class="mq-stack"><span class="mq-alert__title">Assignments updated</span><span class="mq-alert__text">{{ result.reassigned + result.cleared }} customers changed segment. <a href="{{ url_for('audit.index', entity='customer') }}">Read the audit entries.</a></span></div></div>
     {% endif %}
   {% endif %}
 {% endblock %}

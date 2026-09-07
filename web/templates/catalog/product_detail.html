@@ -1,33 +1,34 @@
 {% extends "base.html" %}
 
 {% block title %}{{ product.name }} · {{ application_name }}{% endblock %}
+{% block topbar_title %}Product detail{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Catalogs / Products / {{ product.sku }}{% endblock %}
 
 {% block content %}
-  <h1>{{ product.name }}</h1>
-  <p class="lede"><code>{{ product.sku }}</code></p>
+  {% from "macros/ui.html" import page_header, status_pill %}
+  {% call page_header(product.name, product.sku, "Product") %}
+    {% if can('catalog.write') %}<a class="mq-btn mq-btn--primary mq-btn--sm" href="{{ url_for('admin.edit_product_view', product_id=product.product_id) }}">Edit product</a>{% endif %}
+    <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('catalog.products') }}">Back to products</a>
+  {% endcall %}
 
-  {% if product.image_path %}
-    <img class="detail-image" alt="{{ product.name }}"
-         src="{{ url_for('admin.product_image', filename=product.image_path) }}">
-  {% else %}
-    <p class="placeholder">No image</p>
-  {% endif %}
-
-  <dl class="facts">
-    <dt>Product ID</dt>
-    <dd>{{ product.product_id }}</dd>
-    <dt>Category</dt>
-    <dd>{{ category.name if category else product.category_id }}</dd>
-    <dt>List price</dt>
-    <dd>{{ product.list_price }}</dd>
-    <dt>Active</dt>
-    <dd>{{ "Yes" if product.is_active else "No" }}</dd>
-  </dl>
-
-  <p>
-    <a href="{{ url_for('catalog.products') }}">Back to products</a>
-    {% if can('catalog.write') %}
-      · <a href="{{ url_for('admin.edit_product_view', product_id=product.product_id) }}">Edit</a>
-    {% endif %}
-  </p>
+  <div class="mq-detail">
+    <section class="mq-panel">
+      <header class="mq-panel__header"><h2 class="mq-panel__title">Product information</h2>{{ status_pill("Active" if product.is_active else "Inactive", "success" if product.is_active else "neutral") }}</header>
+      <div class="mq-panel__body">
+        <dl class="mq-description-list">
+          <dt>Product ID</dt><dd class="mq-mono">{{ product.product_id }}</dd>
+          <dt>SKU</dt><dd class="mq-mono">{{ product.sku }}</dd>
+          <dt>Category</dt><dd>{{ category.name if category else product.category_id }}</dd>
+          <dt>List price</dt><dd class="mq-num">{{ product.list_price }} MXN</dd>
+        </dl>
+      </div>
+    </section>
+    <div class="mq-detail__media">
+      {% if product.image_path %}
+        <img class="mq-detail__image" alt="{{ product.name }}" src="{{ url_for('admin.product_image', filename=product.image_path) }}">
+      {% else %}
+        <div class="mq-detail__placeholder"><span class="mq-detail__placeholder-mark" aria-hidden="true">□</span><span>No image</span></div>
+      {% endif %}
+    </div>
+  </div>
 {% endblock %}

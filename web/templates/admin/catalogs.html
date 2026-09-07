@@ -1,13 +1,22 @@
 {% extends "base.html" %}
-{% block title %}Catalogs · {{ application_name }}{% endblock %}
+
+{% block title %}Manage catalogs · {{ application_name }}{% endblock %}
+{% block topbar_title %}Manage catalogs{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Catalogs / Manage{% endblock %}
+
 {% block content %}
-<h1>Catalogs</h1>
-<p>Browse{% if can('catalog.write') %} and maintain{% endif %} the master data.</p>
-<ul>
-  <li><a href="{{ url_for('admin.list_stores_view') }}">Stores</a></li>
-  <li><a href="{{ url_for('admin.list_categories_view') }}">Categories</a></li>
-  <li><a href="{{ url_for('admin.list_channels_view') }}">Channels</a></li>
-  <li><a href="{{ url_for('admin.list_products_view') }}">Products</a></li>
-  <li><a href="{{ url_for('admin.list_roles_view') }}">Roles</a></li>
-</ul>
+  {% from "macros/ui.html" import page_header %}
+  {{ page_header(
+    "Manage catalogs",
+    "Browse{} the master data used across the application.".format(" and maintain" if can('catalog.write') else ""),
+    "Administration"
+  ) }}
+
+  <div class="mq-catalog-grid">
+    <a class="mq-catalog-card" href="{{ url_for('admin.list_stores_view') }}"><span class="mq-catalog-card__icon" aria-hidden="true">□</span><span><span class="mq-catalog-card__title">Stores</span><span class="mq-catalog-card__text">Locations, cities, states and availability.</span></span></a>
+    <a class="mq-catalog-card" href="{{ url_for('admin.list_categories_view') }}"><span class="mq-catalog-card__icon" aria-hidden="true">∷</span><span><span class="mq-catalog-card__title">Categories</span><span class="mq-catalog-card__text">Product hierarchy and parent categories.</span></span></a>
+    <a class="mq-catalog-card" href="{{ url_for('admin.list_channels_view') }}"><span class="mq-catalog-card__icon" aria-hidden="true">↔</span><span><span class="mq-catalog-card__title">Channels</span><span class="mq-catalog-card__text">Customer registration and contact channels.</span></span></a>
+    <a class="mq-catalog-card" href="{{ url_for('admin.list_products_view') }}"><span class="mq-catalog-card__icon" aria-hidden="true">▦</span><span><span class="mq-catalog-card__title">Products</span><span class="mq-catalog-card__text">SKUs, prices, categories and images.</span></span></a>
+    <a class="mq-catalog-card" href="{{ url_for('admin.list_roles_view') }}"><span class="mq-catalog-card__icon" aria-hidden="true">○</span><span><span class="mq-catalog-card__title">Roles</span><span class="mq-catalog-card__text">Account profiles referenced by the permission matrix.</span></span></a>
+  </div>
 {% endblock %}

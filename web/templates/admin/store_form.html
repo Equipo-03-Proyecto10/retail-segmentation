@@ -1,39 +1,20 @@
 {% extends "base.html" %}
+{% set form_title = "Edit store" if request.endpoint == "admin.edit_store_view" else "New store" %}
 
-{% block title %}{{ "Edit store" if request.endpoint == "admin.edit_store_view" else "New store" }} · {{ application_name }}{% endblock %}
+{% block title %}{{ form_title }} · {{ application_name }}{% endblock %}
+{% block topbar_title %}{{ form_title }}{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Catalogs / Stores / {{ form_title }}{% endblock %}
 
 {% block content %}
-<div class="admin-page">
-  <h1>{{ "Edit store" if request.endpoint == "admin.edit_store_view" else "New store" }}</h1>
-
-  <form method="post">
-    {% if request.endpoint == "admin.create_store_view" %}
-    <label for="store_id">Store ID</label>
-    <input type="number" id="store_id" name="store_id" value="{{ store.store_id if store else '' }}" required>
-    {% if errors.store_id %}<p class="error">{{ errors.store_id }}</p>{% endif %}
-    {% endif %}
-
-    <label for="name">Name</label>
-    <input type="text" id="name" name="name" value="{{ store.name if store else '' }}" required>
-    {% if errors.name %}<p class="error">{{ errors.name }}</p>{% endif %}
-
-    <label for="city">City</label>
-    <input type="text" id="city" name="city" value="{{ store.city if store else '' }}" required>
-    {% if errors.city %}<p class="error">{{ errors.city }}</p>{% endif %}
-
-    <label for="state">State</label>
-    <input type="text" id="state" name="state" value="{{ store.state if store else '' }}" required>
-    {% if errors.state %}<p class="error">{{ errors.state }}</p>{% endif %}
-
-    {% if request.endpoint == "admin.edit_store_view" %}
-    <label for="is_active">
-      <input type="checkbox" id="is_active" name="is_active" {% if store.is_active %}checked{% endif %}>
-      Active
-    </label>
-    {% endif %}
-
-    <button type="submit">Save</button>
-    <a href="{{ url_for('admin.list_stores_view') }}">Cancel</a>
-  </form>
-</div>
+  {% from "macros/ui.html" import page_header %}
+  {{ page_header(form_title, "Store identifiers are fixed after creation.", "Master data") }}
+  <section class="mq-panel mq-form-panel"><header class="mq-panel__header"><h2 class="mq-panel__title">Store details</h2></header><div class="mq-panel__body">
+    <form class="mq-form" method="post"><div class="mq-form__grid">
+      {% if request.endpoint == "admin.create_store_view" %}<div class="mq-field"><label class="mq-field__label mq-field__label--required" for="store_id">Store ID</label><input class="mq-input mq-input--num{% if errors.store_id %} mq-input--error{% endif %}" type="number" id="store_id" name="store_id" value="{{ store.store_id if store else '' }}" required>{% if errors.store_id %}<span class="mq-field__error">{{ errors.store_id }}</span>{% endif %}</div>{% endif %}
+      <div class="mq-field"><label class="mq-field__label mq-field__label--required" for="name">Name</label><input class="mq-input{% if errors.name %} mq-input--error{% endif %}" type="text" id="name" name="name" value="{{ store.name if store else '' }}" required>{% if errors.name %}<span class="mq-field__error">{{ errors.name }}</span>{% endif %}</div>
+      <div class="mq-field"><label class="mq-field__label mq-field__label--required" for="city">City</label><input class="mq-input{% if errors.city %} mq-input--error{% endif %}" type="text" id="city" name="city" value="{{ store.city if store else '' }}" required>{% if errors.city %}<span class="mq-field__error">{{ errors.city }}</span>{% endif %}</div>
+      <div class="mq-field"><label class="mq-field__label mq-field__label--required" for="state">State</label><input class="mq-input{% if errors.state %} mq-input--error{% endif %}" type="text" id="state" name="state" value="{{ store.state if store else '' }}" required>{% if errors.state %}<span class="mq-field__error">{{ errors.state }}</span>{% endif %}</div>
+      {% if request.endpoint == "admin.edit_store_view" %}<label class="mq-check mq-form__span-2" for="is_active"><input type="checkbox" id="is_active" name="is_active" {% if store.is_active %}checked{% endif %}><span class="mq-check__box"></span>Active</label>{% endif %}
+    </div><div class="mq-form__actions"><button class="mq-btn mq-btn--primary" type="submit">Save</button><a class="mq-btn mq-btn--secondary" href="{{ url_for('admin.list_stores_view') }}">Cancel</a></div></form>
+  </div></section>
 {% endblock %}

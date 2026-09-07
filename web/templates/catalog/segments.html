@@ -1,60 +1,57 @@
 {% extends "base.html" %}
 
 {% block title %}Segments · {{ application_name }}{% endblock %}
+{% block topbar_title %}Segments{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Analysis / Segments{% endblock %}
 
 {% block content %}
-  <h1>Segments</h1>
-  <p class="lede">Search by name, then open a segment to see who is in it.</p>
+  {% from "macros/ui.html" import empty_state, page_header, pagination %}
+  {{ page_header("Segments", "Search by name, then open a segment to inspect its rule and current customers.", "Current assignments") }}
 
-  <form class="filters" method="get" action="{{ url_for('catalog.segments') }}">
-    <div class="filters__field">
-      <label for="q">Search</label>
-      <input type="text" id="q" name="q" value="{{ search }}" placeholder="name">
+  <form class="mq-filterbar" method="get" action="{{ url_for('catalog.segments') }}">
+    <div class="mq-filterbar__row">
+      <div class="mq-filterbar__group mq-filterbar__group--search">
+        <label class="mq-field__label" for="q">Search</label>
+        <input class="mq-input" type="search" id="q" name="q" value="{{ search }}" placeholder="Segment name">
+      </div>
+      <div class="mq-filterbar__actions">
+        {% if search %}<a class="mq-btn mq-btn--tertiary mq-btn--sm" href="{{ url_for('catalog.segments') }}">Clear</a>{% endif %}
+        <button class="mq-btn mq-btn--primary mq-btn--sm" type="submit">Search</button>
+      </div>
     </div>
-    <button type="submit">Search</button>
-    {% if search %}
-      <a class="filters__reset" href="{{ url_for('catalog.segments') }}">Clear</a>
-    {% endif %}
   </form>
 
   {% if segments %}
-    <div class="table-scroll">
-      <table class="listing">
-        <thead>
-          <tr>
-            <th scope="col">ID</th>
-            <th scope="col">Name</th>
-            <th scope="col">Valid from</th>
-            <th scope="col">Valid to</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for segment in segments %}
-            <tr>
-              <td>{{ segment.segment_id }}</td>
-              <td>
-                <a href="{{ url_for('catalog.segment_detail', segment_id=segment.segment_id) }}">
-                  {{ segment.name }}
-                </a>
-              </td>
-              <td>{{ segment.valid_from.strftime("%Y-%m-%d") }}</td>
-              <td>{{ segment.valid_to.strftime("%Y-%m-%d") if segment.valid_to else "—" }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-
-    <nav class="pager" aria-label="Pages">
-      {% if page > 1 %}
-        <a href="{{ url_for('catalog.segments', page=page - 1, q=search) }}">Previous</a>
-      {% endif %}
-      <span>Page {{ page }} of {{ total_pages }} · {{ total }} segments</span>
-      {% if page < total_pages %}
-        <a href="{{ url_for('catalog.segments', page=page + 1, q=search) }}">Next</a>
-      {% endif %}
-    </nav>
+    <section class="mq-panel mq-panel--table mq-density-compact">
+      <div class="mq-table__toolbar"><span class="mq-table__count">{{ total }} segments</span><span class="mq-caption">Current rule catalog</span></div>
+      <div class="mq-table-wrap">
+        <table class="mq-table">
+          <thead><tr><th scope="col">ID</th><th class="mq-table__cell--sticky" scope="col">Name</th><th scope="col">Valid from</th><th scope="col">Valid to</th></tr></thead>
+          <tbody>
+            {% for segment in segments %}
+              {% set color_slot = ((segment.segment_id - 1) % 8) + 1 %}
+              <tr>
+                <td class="mq-mono">{{ segment.segment_id }}</td>
+                <td class="mq-table__cell--sticky"><a class="mq-table__link" href="{{ url_for('catalog.segment_detail', segment_id=segment.segment_id) }}"><span class="mq-segment mq-segment--c{{ '%02d'|format(color_slot) }}"><span class="mq-segment__swatch"></span>{{ segment.name }}</span></a></td>
+                <td class="mq-mono">{{ segment.valid_from.strftime("%Y-%m-%d") }}</td>
+                <td class="mq-mono">{{ segment.valid_to.strftime("%Y-%m-%d") if segment.valid_to else "Open" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {{ pagination(
+        page,
+        total_pages,
+        "Page {} of {} · {} segments".format(page, total_pages, total),
+        url_for('catalog.segments', page=page - 1, q=search) if page > 1 else none,
+        url_for('catalog.segments', page=page + 1, q=search) if page < total_pages else none
+      ) }}
+    </section>
   {% else %}
-    <p>{{ "No segments match that search." if search else "No segments are available." }}</p>
+    {{ empty_state(
+      "No segments match that search" if search else "No segments are available",
+      "Change or clear the search to see the segment catalog." if search else "Segments will appear here after their rules are configured."
+    ) }}
   {% endif %}
 {% endblock %}

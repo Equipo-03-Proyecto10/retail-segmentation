@@ -1,46 +1,23 @@
 {% extends "base.html" %}
-
 {% set entry = detail.entry %}
 
 {% block title %}Audit entry {{ entry.audit_id }} · {{ application_name }}{% endblock %}
+{% block topbar_title %}Audit entry{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Governance / Audit log / {{ entry.audit_id }}{% endblock %}
 
 {% block content %}
-  <h1>{{ entry.entity }} <code>{{ entry.entity_pk }}</code></h1>
-  <p class="lede">{{ entry.action }} · {{ entry.executed_at.strftime("%Y-%m-%d %H:%M:%S") }}</p>
+  {% from "macros/ui.html" import page_header, status_pill %}
+  {% call page_header(entry.entity ~ " " ~ entry.entity_pk, entry.action ~ " · recorded at " ~ entry.executed_at.strftime("%Y-%m-%d %H:%M:%S"), "Audit entry " ~ entry.audit_id) %}<a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('audit.index') }}">Back to the log</a>{% endcall %}
 
-  <dl class="facts">
-    <dt>By</dt>
-    <dd>
-      {% if entry.actor_name %}
-        {{ entry.actor_name }}
-      {% else %}
-        <span class="unattributed">unattributed</span>
-      {% endif %}
-    </dd>
-    <dt>Fields changed</dt>
-    <dd>{{ detail.changed_fields }} of {{ detail.fields | length }}</dd>
-  </dl>
+  <section class="mq-panel">
+    <header class="mq-panel__header"><h2 class="mq-panel__title">Entry metadata</h2>{{ status_pill(entry.action, "info") }}</header>
+    <div class="mq-panel__body"><dl class="mq-description-list"><dt>Entity key</dt><dd class="mq-mono">{{ entry.entity_pk }}</dd><dt>Recorded at</dt><dd class="mq-mono">{{ entry.executed_at.strftime("%Y-%m-%d %H:%M:%S") }}</dd><dt>By</dt><dd>{% if entry.actor_name %}{{ entry.actor_name }}{% else %}<span class="mq-unattributed">unattributed</span>{% endif %}</dd><dt>Fields changed</dt><dd class="mq-num">{{ detail.changed_fields }} of {{ detail.fields | length }}</dd></dl></div>
+  </section>
 
-  <div class="table-scroll">
-    <table class="listing listing--diff">
-      <thead>
-        <tr>
-          <th scope="col">Field</th>
-          <th scope="col">Before</th>
-          <th scope="col">After</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for field in detail.fields %}
-          <tr class="{{ 'diff--changed' if field.changed else 'diff--same' }}">
-            <th scope="row">{{ field.name }}</th>
-            <td>{{ field.before if field.before is not none else "—" }}</td>
-            <td>{{ field.after if field.after is not none else "—" }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-
-  <p><a href="{{ url_for('audit.index') }}">Back to the log</a></p>
+  <section class="mq-panel mq-panel--table mq-density-compact">
+    <div class="mq-table__toolbar"><span class="mq-table__count">Before and after</span><span class="mq-caption">Changed fields carry a marker and tinted row</span></div>
+    <div class="mq-table-wrap"><table class="mq-table"><thead><tr><th class="mq-table__cell--sticky" scope="col">Field</th><th scope="col">Before</th><th scope="col">After</th></tr></thead><tbody>
+      {% for field in detail.fields %}<tr class="{{ 'mq-diff--changed' if field.changed }}"><th class="mq-table__cell--sticky" scope="row">{{ field.name }}{% if field.changed %} <span class="mq-label">Changed</span>{% endif %}</th><td>{{ field.before if field.before is not none else "—" }}</td><td>{{ field.after if field.after is not none else "—" }}</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
 {% endblock %}

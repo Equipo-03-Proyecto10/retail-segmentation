@@ -1,61 +1,56 @@
 {% extends "base.html" %}
 
 {% block title %}Customers · {{ application_name }}{% endblock %}
+{% block topbar_title %}Customers{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Catalogs / Customers{% endblock %}
 
 {% block content %}
-  <h1>Customers</h1>
-  <p class="lede">Search by name or email, then open a customer.</p>
+  {% from "macros/ui.html" import empty_state, page_header, pagination, status_pill %}
+  {{ page_header("Customers", "Search by name or email, then open a customer.", "Segment consultation") }}
 
-  <form class="filters" method="get" action="{{ url_for('catalog.customers') }}">
-    <div class="filters__field">
-      <label for="q">Search</label>
-      <input type="text" id="q" name="q" value="{{ search }}"
-             placeholder="name or email">
+  <form class="mq-filterbar" method="get" action="{{ url_for('catalog.customers') }}">
+    <div class="mq-filterbar__row">
+      <div class="mq-filterbar__group mq-filterbar__group--search">
+        <label class="mq-field__label" for="q">Search</label>
+        <input class="mq-input" type="search" id="q" name="q" value="{{ search }}" placeholder="Name or email">
+      </div>
+      <div class="mq-filterbar__actions">
+        {% if search %}<a class="mq-btn mq-btn--tertiary mq-btn--sm" href="{{ url_for('catalog.customers') }}">Clear</a>{% endif %}
+        <button class="mq-btn mq-btn--primary mq-btn--sm" type="submit">Search</button>
+      </div>
     </div>
-    <button type="submit">Search</button>
-    {% if search %}
-      <a class="filters__reset" href="{{ url_for('catalog.customers') }}">Clear</a>
-    {% endif %}
   </form>
 
   {% if customers %}
-    <div class="table-scroll">
-      <table class="listing">
-        <thead>
-          <tr>
-            <th scope="col">Name</th>
-            <th scope="col">Email</th>
-            <th scope="col">Phone</th>
-            <th scope="col">Segment</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for customer in customers %}
-            <tr>
-              <td>
-                <a href="{{ url_for('catalog.customer_detail', customer_id=customer.customer_id) }}">
-                  {{ customer.name }}
-                </a>
-              </td>
-              <td>{{ customer.email or "—" }}</td>
-              <td>{{ customer.phone or "—" }}</td>
-              <td>{{ customer.segment_name or "Unassigned" }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-
-    <nav class="pager" aria-label="Pages">
-      {% if page > 1 %}
-        <a href="{{ url_for('catalog.customers', page=page - 1, q=search) }}">Previous</a>
-      {% endif %}
-      <span>Page {{ page }} of {{ total_pages }} · {{ total }} customers</span>
-      {% if page < total_pages %}
-        <a href="{{ url_for('catalog.customers', page=page + 1, q=search) }}">Next</a>
-      {% endif %}
-    </nav>
+    <section class="mq-panel mq-panel--table mq-density-compact">
+      <div class="mq-table__toolbar"><span class="mq-table__count">{{ total }} customers</span><span class="mq-caption">Current segment assignment</span></div>
+      <div class="mq-table-wrap">
+        <table class="mq-table">
+          <thead><tr><th class="mq-table__cell--sticky" scope="col">Name</th><th scope="col">Email</th><th scope="col">Phone</th><th scope="col">Segment</th></tr></thead>
+          <tbody>
+            {% for customer in customers %}
+              <tr>
+                <td class="mq-table__cell--sticky"><a class="mq-table__link" href="{{ url_for('catalog.customer_detail', customer_id=customer.customer_id) }}">{{ customer.name }}</a></td>
+                <td>{{ customer.email or "—" }}</td>
+                <td class="mq-mono">{{ customer.phone or "—" }}</td>
+                <td>{{ status_pill(customer.segment_name or "Unassigned", "info" if customer.segment_name else "neutral") }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {{ pagination(
+        page,
+        total_pages,
+        "Page {} of {} · {} customers".format(page, total_pages, total),
+        url_for('catalog.customers', page=page - 1, q=search) if page > 1 else none,
+        url_for('catalog.customers', page=page + 1, q=search) if page < total_pages else none
+      ) }}
+    </section>
   {% else %}
-    <p>{{ "No customers match that search." if search else "No customers are available." }}</p>
+    {{ empty_state(
+      "No customers match that search." if search else "No customers are available.",
+      "Change or clear the search to see the customer directory." if search else "Customers will appear here when records are available."
+    ) }}
   {% endif %}
 {% endblock %}

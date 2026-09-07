@@ -40,12 +40,17 @@ PR #168 introduced a second ADR numbered 0012 while this repair was in
 progress. Its Cloudflare record is numbered 0013 here, with references
 corrected and acceptance reconciled against that merged PR. The original
 release-merge ADR keeps number 0012.
-ADR-0014 and ADR-0015 were both merged while still `Proposed`, which is the
-thing the rule above exists to prevent: their implementations landed before the
-records were binding. The team accepted both at its meeting on 2026-09-07, and
-this transition records that rather than backdating it. ADR-0015 supersedes
-ADR-0006, so ADR-0006's retirement takes effect from the same point — until
-this transition it was marked superseded by a record that was not yet binding.
+ADR-0014, ADR-0015 and ADR-0016 were each merged while still `Proposed`, which
+is the thing the rule above exists to prevent. For 0014 and 0015 an
+implementation landed before the record was binding; for 0016 no implementation
+exists yet, but the roadmap and `scope.md` edits that describe the second
+delivery merged with it, and those rest on it. The team accepted all three, and
+each transition records that rather than backdating it.
+
+Two retirements take effect from their successor's acceptance rather than from
+the merge that wrote them down: ADR-0006 by ADR-0015, and ADR-0001 and ADR-0005
+by ADR-0016. Until each transition they were marked superseded by a record that
+was not yet binding, which the status vocabulary does not really allow.
 
 ## Index
 
@@ -66,7 +71,7 @@ this transition it was marked superseded by a record that was not yet binding.
 | [0013](0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md) | MOSAIQ is published through Cloudflare with an origin certificate | Accepted |
 | [0014](0014-service-owned-transactions-and-typed-write-failures.md) | Services own transactions and translate typed write failures | Accepted |
 | [0015](0015-containers-are-a-development-path-only.md) | Docker Compose is a development path only, and is never run on the instance | Accepted |
-| [0016](0016-the-second-delivery-reinstates-the-distributed-architecture.md) | The second delivery reinstates the distributed architecture | Proposed |
+| [0016](0016-the-second-delivery-reinstates-the-distributed-architecture.md) | The second delivery reinstates the distributed architecture | Accepted |
 
 ## Writing one
 

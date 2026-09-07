@@ -32,6 +32,11 @@ HEALTH_ATTEMPTS=${HEALTH_ATTEMPTS:-10}
 # of step, so a merged change to HSTS, the CSP, the real-IP trust list or
 # server_name could sit in the repository while the instance served the previous
 # file, with nothing visibly broken. It is reported here on every run. #169.
+# The published documentation tree (deliverable 14). It is a copy rather than a
+# symlink into the checkout: NGINX serves it directly, and pointing the alias at
+# a git working tree makes every `git checkout` briefly visible to the public.
+DOCS_DST=${DOCS_DST:-/opt/mosaiq/docs}
+
 NGINX_CONF_DIR=${NGINX_CONF_DIR:-/etc/nginx/conf.d}
 # Only the files that reach the instance: mosaiq.compose.conf is for local
 # verification against compose and is never installed.
@@ -118,6 +123,57 @@ nginx_drift_check() {
     return 0
 }
 
+# Publish docs/ from the commit being deployed. Deliverables 10, 13 and 14 live
+# in that tree, and until #182 this was a manual scp nobody ran: the published
+# copy sat on an ADR-0006-era snapshot for weeks while every merge went green.
+#
+# Two failure modes are handled here because both actually happened. The tree
+# has to arrive complete, and it has to be readable: SELinux is Enforcing, a
+# copy carries the source's context, and httpd_t cannot read anything labelled
+# otherwise. `restorecon` applies the fcontext rule that is already in policy.
+#
+# Like nginx_drift_check, this never rolls back. A documentation copy is not a
+# reason to take a healthy application off the instance — but a failure here is
+# printed loudly, because a green deploy that silently drops a graded
+# deliverable is worse than a red one.
+publish_docs() {
+    local src="$REPO_DIR/docs"
+
+    if [[ ! -d $src ]]; then
+        echo "no docs/ in $target — nothing to publish"
+        return 0
+    fi
+
+    if ! rm -rf "$DOCS_DST" || ! cp -a "$src" "$DOCS_DST"; then
+        echo "!!! FAILED to copy $src to $DOCS_DST — the published documentation" >&2
+        echo "!!! may be missing or incomplete. The application is unaffected." >&2
+        return 0
+    fi
+
+    chown -R "$APP_USER:$APP_USER" "$DOCS_DST" || true
+
+    if command -v restorecon >/dev/null 2>&1; then
+        restorecon -R "$DOCS_DST" >/dev/null 2>&1 || true
+    fi
+
+    local files
+    files=$(find "$DOCS_DST" -type f 2>/dev/null | wc -l)
+    echo "published $files files to $DOCS_DST"
+
+    # Labelled wrong means present and unreadable: NGINX answers 403, and a
+    # Cloudflare HIT on an older copy can make a spot check look fine anyway.
+    if command -v find >/dev/null 2>&1; then
+        local unlabelled
+        unlabelled=$(find "$DOCS_DST" -context '*user_tmp_t*' 2>/dev/null | wc -l)
+        if [[ ${unlabelled:-0} -gt 0 ]]; then
+            echo "!!! $unlabelled file(s) still labelled user_tmp_t — NGINX will answer 403." >&2
+            echo "!!! Fix: sudo restorecon -Rv $DOCS_DST" >&2
+        fi
+    fi
+
+    return 0
+}
+
 say "Deploy requested: $target"
 as_app git -C "$REPO_DIR" fetch --quiet --prune origin
 
@@ -137,12 +193,16 @@ if [[ $dry_run == --dry-run ]]; then
     health_check
     say "NGINX config"
     nginx_drift_check
+    say "Documentation"
+    echo "would publish $REPO_DIR/docs to $DOCS_DST"
     exit 0
 fi
 
 if [[ $previous == "$(as_app git -C "$REPO_DIR" rev-parse "$target")" ]]; then
     say "Already serving that commit — verifying health and stopping"
     health_check
+    say "Documentation"
+    publish_docs
     say "NGINX config"
     nginx_drift_check
     exit 0
@@ -183,6 +243,9 @@ health_check
 trap - ERR
 say "Deployed $(as_app git -C "$REPO_DIR" rev-parse --short HEAD)"
 systemctl --no-pager --lines=0 status "$SERVICE" | head -3
+
+say "Documentation"
+publish_docs
 
 say "NGINX config"
 nginx_drift_check

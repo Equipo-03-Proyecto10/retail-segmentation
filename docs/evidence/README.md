@@ -53,11 +53,11 @@ here is a gap, not an omission from this index.
 | [F6-06](f6-06-continuous-deployment.md) | The deploy pipeline, the rollback test, and the four failures before it |
 | [F6-07](f6-07-proof-of-deployment.md) | **Deliverable 13, partial.** The application answering through the reverse proxy on the published host |
 
-**Deliverable 13 is not complete.** The F6-07 document covers what can be
-observed from outside the instance. Three acceptance criteria on #109 need a
-shell on the host - the unit active and enabled, the unit restarting after a
-kill, and `docker compose` serving the same application - and the document
-names the commands that produce them.
+**Deliverable 13 is not complete.** The F6-07 document covers the unit's state
+and everything observable from outside the instance. Two acceptance criteria on
+#109 remain, both because they change the instance: the unit restarting after a
+kill, and `docker compose` serving the same application. The document names the
+commands that produce them.
 
 ## Review passes
 

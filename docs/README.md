@@ -23,7 +23,7 @@ Documents that do not exist yet are produced by the story that needs them:
 
 | Deliverable | Produced by |
 |---|---|
-| Proof of deployment — deliverable 13 | F6-07 (#109), partially captured; three criteria need a shell on the instance |
+| Proof of deployment — deliverable 13 | F6-07 (#109), partially captured; two criteria remain, both change the instance |
 | Final verification of the published delivery | F6-05 (#81) |
 
 Everything is written in English — code, comments, commits, issues,

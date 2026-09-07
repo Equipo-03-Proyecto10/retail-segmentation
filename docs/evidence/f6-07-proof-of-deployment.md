@@ -5,8 +5,8 @@ the published host `mosaiq.maxthecoder.online`, which
 [ADR-0013](../adr/0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md)
 records as the delivery's URL.
 
-**This document is partial.** Three of the five acceptance criteria on #109 need
-a shell on the instance and are not captured here. They are named at the bottom
+**This document is partial.** Two of the five acceptance criteria on #109 are
+not captured here, because each one changes the state of the instance. They are named at the bottom
 with the commands that produce them, so whoever has the shell can paste the
 output without re-deriving what to run. Deliverable 13 is not complete until
 they are.
@@ -14,6 +14,47 @@ they are.
 No password, key or token appears in any output below (AC 5). Cloudflare
 telemetry headers — `report-to`, `nel`, `cf-ray`, `alt-svc` — carry opaque
 reporting tokens and are stripped from the captures rather than published.
+
+## AC 1 — the service is active and enabled
+
+```
+$ systemctl status mosaiq --no-pager
+
+● mosaiq.service - MOSAIQ web application (gunicorn)
+     Loaded: loaded (/etc/systemd/system/mosaiq.service; enabled; preset: disabled)
+     Active: active (running) since Mon 2026-09-07 15:50:23 UTC; 42min ago
+       Docs: https://github.com/Equipo-03-Proyecto10/retail-segmentation/blob/develop/deploy/README.md
+   Main PID: 64097 (gunicorn)
+     Status: "Gunicorn arbiter booted"
+      Tasks: 3 (limit: 48442)
+     Memory: 70M (peak: 189.2M)
+     CGroup: /system.slice/mosaiq.service
+             ├─64097 /opt/mosaiq/venv/bin/python3.12 /opt/mosaiq/venv/bin/gunicorn --bind 127.0.0.1:8000 --workers 2 --access-logfile - --error-logfile - "web.app:create_app()"
+             ├─64098 …
+             └─64102 …
+
+$ systemctl is-enabled mosaiq
+enabled
+
+$ systemctl show mosaiq -p MainPID -p NRestarts -p Restart
+Restart=on-failure
+MainPID=64097
+NRestarts=0
+```
+
+`enabled` is what survives a reboot: systemd starts the unit from the boot
+target without anyone logging in. `Restart=on-failure` is what AC 2 exercises,
+and `NRestarts=0` is the baseline it moves from.
+
+**Gunicorn binds `127.0.0.1:8000` — loopback only.** The application has no
+listener on a public interface, so it cannot be reached except through NGINX.
+This is the other half of AC 3: the reverse proxy is not merely the front door,
+it is the only door. It also matches the firewall policy in
+[`../infra.md`](../infra.md), which allows only 22, 80 and 443 inbound.
+
+The output carries no password, key or token (AC 5): the process line shows the
+bind address and worker count, and the configuration the application reads lives
+in an environment file the unit loads, not in the command line.
 
 ## AC 3 — the application answers through the reverse proxy, on the host
 
@@ -102,13 +143,12 @@ $ curl -sS -o /dev/null -w "%{http_code} %{content_type}\n" https://mosaiq.maxth
 
 ## Not evidenced here
 
-These three acceptance criteria on #109 need a shell on
-`mosaiq-deployment-vm` (`northamerica-south1-a`). Nothing below has been run,
-and no output for them is claimed.
+These two acceptance criteria on #109 need a shell on
+`mosaiq-deployment-vm` (`northamerica-south1-a`). Neither has been run, and no
+output for them is claimed.
 
 | AC | What it needs | Command |
 |---|---|---|
-| 1 — service active and enabled | `systemctl` output for the unit | `systemctl status mosaiq --no-pager` and `systemctl is-enabled mosaiq` |
 | 2 — it restarts on its own | The unit killed, and the state before and after | `systemctl show mosaiq -p MainPID`, then `sudo kill -9 <pid>`, then the same `show` and `systemctl status` again |
 | 4 — container execution | `docker compose` serving the same application, per [ADR-0006](../adr/0006-run-under-both-systemd-and-docker-compose.md) | `docker compose -f compose.yaml up -d`, a request against it, then `docker compose down` |
 

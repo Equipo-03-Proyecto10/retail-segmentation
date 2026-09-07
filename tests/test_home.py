@@ -35,6 +35,20 @@ def test_the_landing_page_reaches_every_layer(client: FlaskClient) -> None:
     assert "testing" in body
 
 
+def test_the_landing_page_uses_the_supplied_mosaic_imagery(
+    client: FlaskClient,
+) -> None:
+    body = client.get("/").get_data(as_text=True)
+
+    for image in (
+        "mosaic-seasons-panel.png",
+        "mosaic-oceanus-head.png",
+        "mosaic-helmet.png",
+    ):
+        assert f"/static/images/mosaics/{image}" in body
+    assert "Sign in to MOSAIQ" in body
+
+
 def test_the_browser_receives_html(client: FlaskClient) -> None:
     """C-1 and C-2: the exchange format is HTML, never JSON or XML."""
     response = client.get("/")

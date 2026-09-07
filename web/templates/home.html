@@ -1,40 +1,115 @@
 {% extends "base.html" %}
 
 {% block title %}{{ status.name }} · Retail segmentation{% endblock %}
+{% block public_content_modifier %} mq-public-content--landing{% endblock %}
 
 {% block content %}
-  <section class="mq-landing">
-    <div>
-      <p class="mq-label mq-landing__eyebrow">Retail intelligence · Team 03</p>
-      <h1 class="mq-landing__title">Every customer is one tile.</h1>
-      <p class="mq-landing__lede">
-        {{ status.name }} gives retail teams one precise view of products,
-        customers, stock and current segment assignments.
-      </p>
-      <a class="mq-btn mq-btn--primary" href="{{ url_for('auth.login') }}">Sign in to MOSAIQ</a>
-    </div>
-
-    <aside class="mq-panel" aria-label="Application status">
-      <header class="mq-panel__header">
-        <h2 class="mq-panel__title">{{ status.tagline }}</h2>
-        <span class="mq-pill mq-pill--success"><span class="mq-pill__dot"></span>Available</span>
-      </header>
-      <div class="mq-panel__body">
-        <dl class="mq-status-list">
-          <div class="mq-status-list__row">
-            <dt class="mq-caption">Environment</dt>
-            <dd class="mq-mono">{{ status.environment }}</dd>
-          </div>
-          <div class="mq-status-list__row">
-            <dt class="mq-caption">Interface</dt>
-            <dd>Server-rendered HTML</dd>
-          </div>
-          <div class="mq-status-list__row">
-            <dt class="mq-caption">Access</dt>
-            <dd>Role-based</dd>
-          </div>
-        </dl>
+  <div class="mq-site" data-mq-site="marble">
+    <header class="mq-site__hero">
+      <div class="mq-site__hero-copy">
+        <span class="mq-site__eyebrow">Retail intelligence · Team 03</span>
+        <h1 class="mq-site__display mq-site__display--xl">Every customer is one tile</h1>
+        <p class="mq-site__lede">
+          {{ status.name }} gives retail teams one precise view of products,
+          customers, stock and current segment assignments. Every record stays
+          close enough to inspect and connected enough to understand.
+        </p>
+        <div class="mq-site__cta-row">
+          <a class="mq-site__btn" href="{{ url_for('auth.login') }}">Sign in to MOSAIQ</a>
+          <a class="mq-site__btn mq-site__btn--ghost" href="#platform">See the platform</a>
+        </div>
+        <div class="mq-meander" aria-hidden="true"></div>
       </div>
-    </aside>
-  </section>
+      <div class="mq-site__hero-art">
+        <img
+          class="mq-site__img"
+          src="{{ url_for('static', filename='images/mosaics/mosaic-seasons-panel.png') }}"
+          alt="Roman floor mosaic with a central figure and four seasonal medallions"
+        >
+      </div>
+    </header>
+
+    <section class="mq-site__section" id="platform">
+      <div class="mq-site__section-head">
+        <span class="mq-site__eyebrow">The platform</span>
+        <h2 class="mq-site__display mq-site__display--lg">One operating view of retail data</h2>
+      </div>
+      <div class="mq-site__cols">
+        <article class="mq-site__col">
+          <span class="mq-site__col-index">I</span>
+          <h3 class="mq-site__col-title">Catalog context</h3>
+          <p class="mq-site__col-text">Products, stores, categories, channels and stock stay available through one searchable catalog.</p>
+        </article>
+        <article class="mq-site__col">
+          <span class="mq-site__col-index">II</span>
+          <h3 class="mq-site__col-title">Current segments</h3>
+          <p class="mq-site__col-text">Customer records expose their current assignment and the business rule that gives the segment meaning.</p>
+        </article>
+        <article class="mq-site__col">
+          <span class="mq-site__col-index">III</span>
+          <h3 class="mq-site__col-title">Auditable changes</h3>
+          <p class="mq-site__col-text">Roles limit each workflow, while the audit log keeps catalog and business-rule changes traceable.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="mq-site__section" id="method">
+      <div class="mq-site__section-head">
+        <span class="mq-site__eyebrow">Method</span>
+        <h2 class="mq-site__display mq-site__display--lg">Clear steps, visible records</h2>
+      </div>
+      <div class="mq-site__split">
+        <figure class="mq-site__figure">
+          <img
+            class="mq-site__img"
+            src="{{ url_for('static', filename='images/mosaics/mosaic-helmet.png') }}"
+            alt="Mosaic of a crested Greek helmet in slate and papaya tiles"
+          >
+          <figcaption>Tesserae are cut before they are placed</figcaption>
+        </figure>
+        <p class="mq-site__lede">
+          Staff browse the records their role permits, inspect the detail behind
+          each result, confirm controlled changes and trace those changes in the
+          same server-rendered application.
+        </p>
+      </div>
+    </section>
+
+    <section class="mq-site__band" id="why-mosaiq">
+      <img
+        class="mq-site__img"
+        src="{{ url_for('static', filename='images/mosaics/mosaic-oceanus-head.png') }}"
+        alt="Roman mosaic of Oceanus surrounded by fish and dolphins"
+      >
+      <div class="mq-site__band-caption">
+        <span class="mq-site__eyebrow">Why the name</span>
+        <p>A mosaic resolves into one picture from many distinct tiles. MOSAIQ keeps the same relationship between a retail operation and each customer record.</p>
+      </div>
+    </section>
+
+    <section class="mq-site__section" id="access">
+      <div class="mq-site__section-head">
+        <span class="mq-site__eyebrow">Application status</span>
+        <h2 class="mq-site__display mq-site__display--lg">{{ status.tagline }}</h2>
+      </div>
+      <div class="mq-site__stats" aria-label="Application status details">
+        <div class="mq-site__stat">
+          <span class="mq-site__stat-value mq-site__status-value">Available</span>
+          <span class="mq-site__stat-label">Status</span>
+        </div>
+        <div class="mq-site__stat">
+          <span class="mq-site__stat-value mq-site__status-value">{{ status.environment }}</span>
+          <span class="mq-site__stat-label">Environment</span>
+        </div>
+        <div class="mq-site__stat">
+          <span class="mq-site__stat-value mq-site__status-value">HTML</span>
+          <span class="mq-site__stat-label">Server-rendered interface</span>
+        </div>
+        <div class="mq-site__stat">
+          <span class="mq-site__stat-value mq-site__status-value">Role-based</span>
+          <span class="mq-site__stat-label">Access</span>
+        </div>
+      </div>
+    </section>
+  </div>
 {% endblock %}

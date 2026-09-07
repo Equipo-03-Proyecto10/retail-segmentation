@@ -1,8 +1,8 @@
 /* Base — element defaults only. No component styling here. */
 *,*::before,*::after{box-sizing:border-box}
 body.mq-app{margin:0;background:var(--mq-bg-canvas);color:var(--mq-text-primary);font-family:var(--mq-font-sans);font-size:var(--mq-size-13);line-height:var(--mq-lh-13);-webkit-font-smoothing:antialiased}
-.mq-app a{color:var(--mq-text-link);text-decoration:none;border-bottom:1px solid transparent}
-.mq-app a:hover{color:var(--mq-text-link-hover);border-bottom-color:currentColor}
+:where(.mq-app) a{color:var(--mq-text-link);text-decoration:none;border-bottom:1px solid transparent}
+:where(.mq-app) a:hover{color:var(--mq-text-link-hover);border-bottom-color:currentColor}
 .mq-app :focus-visible{outline:var(--mq-focus-ring-width) solid var(--mq-focus-ring);outline-offset:var(--mq-focus-ring-offset)}
 .mq-num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
 .mq-mono{font-family:var(--mq-font-mono);font-variant-numeric:tabular-nums}

@@ -6,9 +6,12 @@
     <title>{% block title %}{{ application_name }}{% endblock %}</title>
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
-    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
   </head>
-  <body class="mq-app mq-density-compact">
+  <body
+    class="mq-app mq-density-compact"
+    data-mq-theme-scope="{{ 'app' if signed_in else 'site' }}"
+  >
     {% if signed_in %}
       <div class="mq-shell">
         <nav class="mq-nav" id="primary-navigation" aria-label="Main navigation">
@@ -107,7 +110,7 @@
             </div>
           </nav>
         </header>
-        <main class="mq-public-content" id="main-content">
+        <main class="mq-public-content{% block public_content_modifier %}{% endblock %}" id="main-content">
           {% for category, message in get_flashed_messages(with_categories=true) %}
             {% set tone = category if category in ("success", "warning", "danger", "info") else "info" %}
             <div class="mq-alert mq-alert--{{ tone }}" role="status">

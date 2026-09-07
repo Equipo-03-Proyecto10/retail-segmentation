@@ -400,6 +400,21 @@ body.mq-app {
   flex: 1;
 }
 
+.mq-public-content--landing {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mq-public-content--landing .mq-site {
+  min-height: 100%;
+}
+
+.mq-site__status-value {
+  overflow-wrap: anywhere;
+}
+
 .mq-public-footer {
   justify-content: space-between;
   border-top: 1px solid var(--mq-border-subtle);

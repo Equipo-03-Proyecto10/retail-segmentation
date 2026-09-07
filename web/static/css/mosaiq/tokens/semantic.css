@@ -7,14 +7,14 @@
 --mq-bg-hover:var(--mq-neutral-100);
 --mq-bg-active:var(--mq-neutral-200);
 --mq-bg-selected:var(--mq-orange-100);
---mq-bg-nav:var(--mq-neutral-900);
---mq-nav-text:var(--mq-neutral-300);
---mq-nav-text-strong:var(--mq-white);
---mq-nav-text-muted:var(--mq-neutral-500);
---mq-nav-text-disabled:var(--mq-neutral-600);
---mq-nav-hover-bg:rgba(255,255,255,.06);
---mq-nav-active-bg:rgba(255,107,0,.12);
---mq-nav-border:var(--mq-neutral-700);
+--mq-bg-nav:var(--mq-white);
+--mq-nav-text:var(--mq-neutral-700);
+--mq-nav-text-strong:var(--mq-neutral-900);
+--mq-nav-text-muted:var(--mq-neutral-600);
+--mq-nav-text-disabled:var(--mq-neutral-500);
+--mq-nav-hover-bg:var(--mq-neutral-100);
+--mq-nav-active-bg:var(--mq-orange-100);
+--mq-nav-border:var(--mq-neutral-200);
 --mq-bg-disabled:var(--mq-neutral-100);
 --mq-border-subtle:var(--mq-neutral-200);
 --mq-border-default:var(--mq-neutral-300);
@@ -27,16 +27,14 @@
 --mq-text-inverse-secondary:var(--mq-neutral-400);
 --mq-text-link:var(--mq-orange-700);
 --mq-text-link-hover:var(--mq-orange-800);
-/* Accent. Two fills, two foregrounds — they are not interchangeable.
-   --mq-accent is the interactive fill and is the ONLY one that takes
-   --mq-accent-on (white). --mq-accent-bold is the brand papaya, too light for
-   white text, so it takes --mq-accent-bold-on (black). Ratios:
-   accent/on 6.4:1 · accent-hover/on 9.4:1 · accent-active/on 12.4:1
+/* Accent. Light surfaces use the deeper brand orange with black text, then
+   brighten on hover and active. Dark surfaces override this with papaya.
+   Ratios: accent/on 5.1:1 · accent-hover/on 7.4:1 · accent-active/on 12.7:1
    accent-bold/bold-on 7.4:1 · accent-subtle/subtle-on 10.5:1 */
---mq-accent:var(--mq-orange-700);
---mq-accent-hover:var(--mq-orange-800);
---mq-accent-active:var(--mq-orange-900);
---mq-accent-on:var(--mq-white);
+--mq-accent:var(--mq-orange-600);
+--mq-accent-hover:var(--mq-orange-500);
+--mq-accent-active:var(--mq-orange-300);
+--mq-accent-on:var(--mq-black);
 --mq-accent-bold:var(--mq-orange-500);
 --mq-accent-bold-on:var(--mq-black);
 --mq-accent-subtle:var(--mq-orange-100);

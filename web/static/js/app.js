@@ -1,11 +1,15 @@
 (function () {
   "use strict";
 
-  var themeKey = "mq-app-theme";
+  function themeKey() {
+    return document.body.dataset.mqThemeScope === "site"
+      ? "mq-site-theme"
+      : "mq-app-theme";
+  }
 
   function readTheme() {
     try {
-      return window.localStorage.getItem(themeKey) === "dark" ? "dark" : "light";
+      return window.localStorage.getItem(themeKey()) === "dark" ? "dark" : "light";
     } catch (_error) {
       return "light";
     }
@@ -19,8 +23,11 @@
       root.removeAttribute("data-mq-theme");
     }
     root.style.colorScheme = theme;
+    document.querySelectorAll(".mq-site").forEach(function (site) {
+      site.setAttribute("data-mq-site", theme === "dark" ? "obsidian" : "marble");
+    });
     try {
-      window.localStorage.setItem(themeKey, theme);
+      window.localStorage.setItem(themeKey(), theme);
     } catch (_error) {
       return;
     }
@@ -29,6 +36,8 @@
   applyTheme(readTheme());
 
   document.addEventListener("DOMContentLoaded", function () {
+    applyTheme(readTheme());
+
     document.querySelectorAll("[data-mq-theme-value]").forEach(function (button) {
       var selected = button.getAttribute("data-mq-theme-value") === readTheme();
       button.setAttribute("aria-pressed", selected ? "true" : "false");

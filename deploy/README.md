@@ -223,6 +223,14 @@ v6 ranges need a second rule of their own.
    `Hostname eq mosaiq.maxthecoder.online`.
 4. **SSL/TLS → Edge Certificates**: *Always Use HTTPS* on, *Minimum TLS* 1.2,
    confirm *Universal SSL* is Active for the hostname (up to ~15 min).
+5. **Caching → Configuration → Browser Cache TTL**: set it to
+   **Respect Existing Headers**. It defaults to *4 hours*, and that value does
+   not add caching on top of ours — it **replaces** the `Cache-Control` the
+   origin sends. Flask already answers `no-cache` with a strong `ETag`, so
+   browsers revalidate and get a cheap `304`; leaving the default gives every
+   returning visitor up to four hours of stale CSS and JavaScript after each
+   deploy, with no way for the application to break them out of it. The reason
+   and the measurement are in [`docs/infra.md`](../docs/infra.md).
 
 **On the instance:**
 

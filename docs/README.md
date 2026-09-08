@@ -14,6 +14,7 @@
 | [Business rules](business-rules.md) | The invariants, and where each one is actually enforced |
 | [Data model](data-model.md) | The PostgreSQL model: conceptual, 4NF normalization with its justification, ER diagram, data dictionary |
 | [Datastore designs](datastores/) | MongoDB and Redis designs for later deliveries. Nothing in there is implemented |
+| [Wireframes](wireframes/) | Low-fidelity structure for every screen — what is on each page and how a role reaches it, decided before the visual design |
 | [Design system](design-system/) | MOSAIQ's tokens, components, and the two reference sheets to build screens from |
 | [Decisions](adr/) | Architecture Decision Records |
 | [Evidence](evidence/) | Observed results per story: database access, integrity, screenshots, negative tests, review passes, deployment |

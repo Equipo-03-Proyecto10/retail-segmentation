@@ -11,6 +11,10 @@
   </header>
 {%- endmacro %}
 
+{% macro count_label(total, singular, plural=None) -%}
+  {{ total }} {{ singular if total == 1 else (plural or singular ~ "s") }}
+{%- endmacro %}
+
 {% macro alert(message, tone="danger", title=None) -%}
   <div class="mq-alert mq-alert--{{ tone }}" role="alert">
     <span class="mq-alert__icon" aria-hidden="true">{{ "×" if tone == "danger" else "i" }}</span>

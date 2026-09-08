@@ -5,7 +5,7 @@
 {% block breadcrumbs %}{{ application_name }} / Analysis / Segments{% endblock %}
 
 {% block content %}
-  {% from "macros/ui.html" import empty_state, page_header, pagination %}
+  {% from "macros/ui.html" import count_label, empty_state, page_header, pagination %}
   {{ page_header("Segments", "Search by name, then open a segment to inspect its rule and current customers.", "Current assignments") }}
 
   <form class="mq-filterbar" method="get" action="{{ url_for('catalog.segments') }}">
@@ -23,7 +23,7 @@
 
   {% if segments %}
     <section class="mq-panel mq-panel--table mq-density-compact">
-      <div class="mq-table__toolbar"><span class="mq-table__count">{{ total }} segments</span><span class="mq-caption">Current rule catalog</span></div>
+      <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(total, "segment") }}</span><span class="mq-caption">Current rule catalog</span></div>
       <div class="mq-table-wrap">
         <table class="mq-table">
           <thead><tr><th scope="col">ID</th><th class="mq-table__cell--sticky" scope="col">Name</th><th scope="col">Valid from</th><th scope="col">Valid to</th></tr></thead>
@@ -43,7 +43,7 @@
       {{ pagination(
         page,
         total_pages,
-        "Page {} of {} · {} segments".format(page, total_pages, total),
+        "Page {} of {} · ".format(page, total_pages) ~ count_label(total, "segment"),
         url_for('catalog.segments', page=page - 1, q=search) if page > 1 else none,
         url_for('catalog.segments', page=page + 1, q=search) if page < total_pages else none
       ) }}

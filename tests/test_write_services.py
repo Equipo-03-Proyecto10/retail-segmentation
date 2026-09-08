@@ -2,11 +2,17 @@
 
 import ast
 import re
+from decimal import Decimal
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-from psycopg.errors import ForeignKeyViolation
+from psycopg.errors import (
+    CheckViolation,
+    ForeignKeyViolation,
+    NotNullViolation,
+    RestrictViolation,
+)
 
 from web.db.transactions import atomic
 from web.services import catalog, users
@@ -83,13 +89,40 @@ def test_failed_demo_deactivation_rolls_back_administrator_installation(monkeypa
 
 
 @pytest.mark.parametrize("entity", ["store", "category", "channel", "product", "role"])
-def test_delete_constraints_use_one_typed_failure(entity):
+@pytest.mark.parametrize("violation", [ForeignKeyViolation, RestrictViolation])
+def test_delete_constraints_use_one_typed_failure(entity, violation):
+    """A protected row refuses the same way whichever code the server sends.
+
+    `ON DELETE RESTRICT` in sql/01_schema.sql arrives as RestrictViolation
+    (23001), not ForeignKeyViolation (23503); the two are siblings, so a
+    translation that named only the second let the refusal escape as a 500.
+    """
     connection = MagicMock()
     connection.cursor.return_value.__enter__.return_value.execute.side_effect = (
-        ForeignKeyViolation()
+        violation()
     )
     with pytest.raises(catalog.CatalogConflict, match="still reference"):
         getattr(catalog, f"delete_{entity}")(connection, 1)
+    connection.rollback.assert_called_once()
+    connection.commit.assert_not_called()
+
+
+@pytest.mark.parametrize("violation", [CheckViolation, NotNullViolation])
+def test_any_other_constraint_still_reaches_the_form(violation):
+    """A CHECK or NOT NULL refusal is a refused value, not a server fault."""
+    connection = MagicMock()
+    connection.cursor.return_value.__enter__.return_value.execute.side_effect = (
+        violation()
+    )
+    with pytest.raises(catalog.CatalogConflict, match="refused by a database"):
+        catalog.create_product(
+            connection,
+            product_id=1,
+            sku="SKU",
+            name="Product",
+            category_id=1,
+            list_price=Decimal("10.00"),
+        )
     connection.rollback.assert_called_once()
     connection.commit.assert_not_called()
 

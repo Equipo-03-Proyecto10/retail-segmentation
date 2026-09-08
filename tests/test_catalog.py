@@ -501,3 +501,28 @@ def test_out_of_range_pages_return_to_last_page_with_filters(
     target = urlsplit(response.location)
     assert target.path == f"/catalog/{resource}"
     assert parse_qs(target.query) == parse_qs(query) | {"page": ["2"]}
+
+
+# ---------- counts read as English ----------
+
+
+@pytest.mark.parametrize(
+    "total,expected",
+    [(1, "1 product"), (2, "2 products"), (0, "0 products")],
+)
+def test_the_result_count_agrees_with_the_number_it_reports(
+    app: Flask, monkeypatch: pytest.MonkeyPatch, total: int, expected: str
+) -> None:
+    """A single match reads "1 product", not "1 products"."""
+    rows = [_product(number) for number in range(1, total + 1)]
+    monkeypatch.setattr(
+        "web.routes.catalog.list_products", lambda *a, **k: (rows, total)
+    )
+    client = app.test_client()
+    _sign_in(client, "ANALYST")
+
+    body = client.get("/catalog/products").get_data(as_text=True)
+
+    if total:
+        assert expected in body
+        assert "1 products" not in body

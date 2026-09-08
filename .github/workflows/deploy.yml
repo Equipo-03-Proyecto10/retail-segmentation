@@ -93,12 +93,29 @@ jobs:
 
       - name: Report what is now serving
         if: always()
+        # This step observes, it does not decide. `deploy.sh` already health-checks
+        # and rolls back, so the Deploy step above is what says whether the deploy
+        # worked. Letting this one fail the job means a transient hiccup between the
+        # runner and Google marks a good deploy red — which happened on
+        # 2026-09-08 with "problem refreshing your current auth tokens:
+        # Connection reset by peer", after Deploy had already succeeded. A red
+        # deploy nobody can trust is worse than no report.
+        continue-on-error: true
         run: |
-          gcloud compute ssh "$INSTANCE" \
-            --project="$GCP_PROJECT" --zone="$GCP_ZONE" --quiet \
-            --command="sudo -u mosaiq git -C /opt/mosaiq/current rev-parse HEAD; \
-                       systemctl is-active mosaiq; \
-                       curl -sk -o /dev/null -w 'https %{http_code}\n' https://127.0.0.1/"
+          for attempt in 1 2 3; do
+            gcloud compute ssh "$INSTANCE" \
+              --project="$GCP_PROJECT" --zone="$GCP_ZONE" --quiet \
+              --command="sudo -u mosaiq git -C /opt/mosaiq/current rev-parse HEAD; \
+                         systemctl is-active mosaiq; \
+                         curl -sk -o /dev/null -w 'https %{http_code}\n' https://127.0.0.1/" \
+              && exit 0
+            echo "attempt $attempt could not reach the instance; retrying in 10s"
+            sleep 10
+          done
+          echo "::warning::Could not read the instance state after three attempts."
+          echo "Deploy's own verdict stands. Check by hand with:"
+          echo "  gcloud compute ssh $INSTANCE --zone=$GCP_ZONE \\"
+          echo "    --command='sudo -u mosaiq git -C /opt/mosaiq/current rev-parse HEAD'"
 
       - name: Remove the uploaded script
         if: always()

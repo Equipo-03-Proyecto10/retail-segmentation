@@ -282,6 +282,36 @@ Applied on `mosaiq-deployment-vm` on 2026-09-07:
 Cloudflare edge settings: SSL/TLS mode **Full (strict)**, **Always Use HTTPS**
 on, Universal SSL active for the hostname.
 
+### Browser Cache TTL must respect the origin
+
+**Caching → Configuration → Browser Cache TTL is `4 hours`, and it needs to be
+`Respect Existing Headers`.** That setting does not add caching on top of ours;
+it *replaces* the `Cache-Control` the origin sends, for every static file.
+
+The application already gets this right on its own. Flask serves `web/static`
+with `Cache-Control: no-cache` and a strong `ETag`, which means "always ask, and
+I will answer `304` if nothing changed" — cheap, and impossible to serve stale.
+The edge overwrites that header with a four-hour lifetime, so a returning
+visitor uses whatever they already hold and never asks.
+
+Measured on 2026-09-07, same file, same ETag, two different answers:
+
+| Where | `Cache-Control` |
+|---|---|
+| Origin, measured on the instance (`curl -skI https://127.0.0.1/static/…`) | `no-cache` |
+| What the browser receives through the edge | `max-age=14400` |
+
+The cost is a stale-asset window after every deploy, as long as the TTL. It was
+caught after the F6-03 font fix: browsers kept the pre-fix
+`tokens/fonts.css` — the version that still `@import`-ed
+`fonts.googleapis.com` — the CSP blocked that import, and the page rendered in
+system fonts while the origin was serving the correct file all along. Filenames
+carry no version, so a content change alone cannot break a browser out of it.
+
+Changing this needs the Cloudflare dashboard, so it belongs to whoever holds the
+zone. Nothing in this repository can override it: a CDN that rewrites
+`Cache-Control` wins over whatever the origin says.
+
 Verified from outside GCP: `https://mosaiq.maxthecoder.online/` → `HTTP/2 200`
 (TLS 1.3) with a valid edge certificate (`CN=maxthecoder.online`, Google Trust
 Services, via Cloudflare Universal SSL); `http://` → `301`; the origin presents

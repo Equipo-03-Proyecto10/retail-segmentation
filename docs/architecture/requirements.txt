@@ -1,0 +1,13 @@
+# Dependencies for the icon-based infrastructure diagram only.
+#
+# Deliberately not in web/requirements-dev.txt: that file pulls in the
+# application runtime and is installed by everyone who runs the tests, and none
+# of them needs a diagram renderer. Create the environment beside this file:
+#
+#   python -m venv docs/architecture/.venv
+#   docs/architecture/.venv/bin/pip install -r docs/architecture/requirements.txt
+#
+# `diagrams` renders through Graphviz, which is a system package, not a wheel:
+#   sudo pacman -S graphviz     (Arch)     sudo dnf install graphviz  (CentOS)
+
+diagrams==0.24.4

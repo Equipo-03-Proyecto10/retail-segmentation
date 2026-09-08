@@ -1,0 +1,108 @@
+# Architectural design of the monolith: layers, their MVC roles, and the
+# datastores that are designed but not implemented in this delivery.
+# Sources: web/app.py create_app(), web/routes, web/middleware/authz.py,
+# web/services, web/db, sql/01_schema.sql, docs/datastores/,
+# ADR-0001, ADR-0005, ADR-0007, ADR-0014, ADR-0016.
+direction: right
+
+vars: {
+  d2-config: {
+    layout-engine: elk
+  }
+}
+
+classes: {
+  edgeio: {
+    style: { fill: "#E2EBF6"; stroke: "#1F5FA8"; font-color: "#232320" }
+  }
+  gatenode: {
+    style: { fill: "#FAE4E2"; stroke: "#C0342B"; font-color: "#232320" }
+  }
+  appnode: {
+    style: { fill: "#FFE8D1"; stroke: "#D45400"; font-color: "#232320" }
+  }
+  store: {
+    style: { fill: "#E3F2E9"; stroke: "#1F7A4C"; font-color: "#232320" }
+  }
+  notbuilt: {
+    style: {
+      fill: "#F4F4F2"; stroke: "#B3B3AE"; font-color: "#6B6B65"
+      stroke-dash: 4
+    }
+  }
+  layer: {
+    style: { fill: "#FAFAF9"; stroke: "#D5D5D1"; font-color: "#232320"; font-size: 20 }
+  }
+}
+
+req: "Request from NGINX\n127.0.0.1:8000" { class: edgeio; shape: oval }
+
+mono: "THE MONOLITH — one deployable unit, one process (ADR-0001)" {
+  class: layer
+
+  gate: "Request preamble — web/app.py\nProxyFix + request id\nAuthorization gate — web/middleware/authz.py\ndefault deny (ADR-0007)" {
+    class: gatenode
+  }
+
+  ctl: "CONTROLLER — web/routes" {
+    class: layer
+    r: "one blueprint each\nhome · auth · admin · catalog\naudit · segment_run · pagination" {
+      class: appnode
+    }
+  }
+
+  mdl: "MODEL — business rules, then persistence" {
+    class: layer
+    s: "web/services\nowns the transaction (ADR-0014)\nauth · users · catalog · audit\nsegmentation · uploads · dashboard" {
+      class: appnode
+    }
+    d: "web/db\npsycopg, parameterized only\na module per table area" {
+      class: appnode
+    }
+    s -> d
+  }
+
+  vw: "VIEW — web/templates, web/static" {
+    class: layer
+    t: "Jinja2 templates and macros\nself-hosted IBM Plex\ndesign-system CSS" {
+      class: appnode
+    }
+  }
+}
+
+runs: "Runs today — one engine (C-6)" {
+  class: layer
+  pg: "PostgreSQL 18.6 — retail\n19 tables, 4NF\npartial unique index: one administrator\nfn_audit() triggers" {
+    class: store
+    shape: cylinder
+  }
+}
+
+designed: "DESIGNED, NOT IMPLEMENTED" {
+  class: layer
+  caveat: "No engine is installed, no connection code\nis written, no configuration variable\nexists (ADR-0005).\nReinstated for the second delivery\nby ADR-0016." {
+    class: notbuilt
+  }
+  mongo: "MongoDB — docs/datastores/mongodb-design.md\nconsumption_profile · rfm_snapshot\nsegment_migration · clustering_model\nrecommendation · experiment_event" {
+    class: notbuilt
+  }
+  redis: "Redis — docs/datastores/redis-design.md\nsessions · revoked tokens · cache\ncounters · locks · rate limits" {
+    class: notbuilt
+  }
+}
+
+html: "Server-rendered HTML\nno JSON, no XML — C-2" { class: edgeio; shape: oval }
+
+req -> mono.gate
+mono.gate -> mono.ctl.r: allowed
+mono.gate -> html: refused
+mono.ctl.r -> mono.mdl.s
+mono.ctl.r -> mono.vw.t
+mono.vw.t -> html
+mono.mdl.d -> runs.pg: SQL
+mono.mdl.s -> designed.redis: designed only {
+  style: { stroke-dash: 4; stroke: "#8C8C86"; font-color: "#4F4F4A"; font-size: 15 }
+}
+mono.mdl.d -> designed.mongo: designed only {
+  style: { stroke-dash: 4; stroke: "#8C8C86"; font-color: "#4F4F4A"; font-size: 15 }
+}

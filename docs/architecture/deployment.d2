@@ -1,0 +1,72 @@
+# Deployment view of the delivered system (first delivery).
+# Sources: docs/scope.md §3, docs/infra.md, deploy/nginx/mosaiq.conf,
+# deploy/systemd/mosaiq.service, deploy/deploy.sh, ADR-0009, ADR-0013.
+direction: down
+
+vars: {
+  d2-config: {
+    layout-engine: dagre
+  }
+}
+
+classes: {
+  external: { style: { fill: "#E2EBF6"; stroke: "#1F5FA8"; font-color: "#232320" } }
+  allow:    { style: { fill: "#E3F2E9"; stroke: "#1F7A4C"; font-color: "#232320" } }
+  deny:     { style: { fill: "#FAE4E2"; stroke: "#C0342B"; font-color: "#232320" } }
+  store:    { style: { fill: "#F2EEDC"; stroke: "#8A6D1F"; font-color: "#232320" } }
+  appnode:  { style: { fill: "#FFE8D1"; stroke: "#D45400"; font-color: "#232320" } }
+  plain:    { style: { fill: "#FFFFFF"; stroke: "#B3B3AE"; font-color: "#232320" } }
+  layer:    { style: { fill: "#FAFAF9"; stroke: "#D5D5D1"; font-color: "#232320"; font-size: 20 } }
+}
+
+visitor: "Visitor browser" { class: external; shape: oval }
+ci: "GitHub Actions · deploy.yml\nafter a merge to main (F6-06)" { class: external }
+direct: "Any other source\nreaching the origin address" { class: external; shape: oval }
+
+edge: "Cloudflare edge — ADR-0013" {
+  class: layer
+  cf: "Managed edge certificate\nAlways Use HTTPS\nCF-Connecting-IP" { class: external }
+}
+
+gcp: "GCP · project iac-dev-01 · northamerica-south1-a" {
+  class: layer
+
+  fw: "VPC ingress — network tag mosaiq-server" {
+    class: layer
+    fw443: "mosaiq-allow-https :443\nCloudflare ranges only" { class: allow }
+    fw22: "mosaiq-allow-ssh :22\nOS Login" { class: allow }
+    fwdeny: "mosaiq-deny-other-ingress\npriority 1000 — dropped" { class: deny }
+  }
+
+  vm: "mosaiq-deployment-vm · e2-standard-2 · CentOS 10 Stream" {
+    class: layer
+    nginx: "NGINX 1.26\nTLS termination, Origin CA pair\nHSTS · CSP · 5 MiB body cap\n:80 returns 301 to :443" { class: appnode }
+    docsdir: "/docs/ alias\n/opt/mosaiq/docs — F6-04" { class: plain }
+    deploysh: "deploy.sh\nrewrites /opt/mosaiq/current\nrestarts the unit" { class: plain }
+    gunicorn: "Gunicorn · 2 workers\nsystemd mosaiq.service\nRestart=on-failure\n127.0.0.1:8000" { class: appnode }
+    flask: "Flask + Jinja2\nweb.app:create_app()\nserver-rendered HTML only" { class: appnode }
+    uploads: "web/uploads/\nlocal disk, sole writable path" { class: store; shape: parallelogram }
+    journal: "journald\nSyslogIdentifier=mosaiq" { class: plain }
+    pg: "PostgreSQL 18.6\ndatabase retail\nlistener 127.0.0.1:5432" { class: store; shape: cylinder }
+  }
+}
+
+visitor -> edge.cf: HTTPS
+edge.cf -> gcp.fw.fw443: "HTTPS, edge IPs only"
+ci -> gcp.fw.fw22: SSH
+direct -> gcp.fw.fwdeny: "no route past this rule" {
+  style: { stroke-dash: 4; stroke: "#8C8C86"; font-color: "#4F4F4A" }
+}
+
+gcp.fw.fw443 -> gcp.vm.nginx
+gcp.fw.fw22 -> gcp.vm.deploysh
+gcp.vm.deploysh -> gcp.vm.gunicorn: "systemctl restart" {
+  style: { stroke-dash: 4; stroke: "#8C8C86"; font-color: "#4F4F4A" }
+}
+
+gcp.vm.nginx -> gcp.vm.gunicorn: "proxy_pass\nX-Forwarded-For, one hop"
+gcp.vm.nginx -> gcp.vm.docsdir
+gcp.vm.gunicorn -> gcp.vm.flask
+gcp.vm.flask -> gcp.vm.pg: "psycopg · parameterized SQL\nrole retail_app, DML only"
+gcp.vm.flask -> gcp.vm.uploads
+gcp.vm.gunicorn -> gcp.vm.journal: "stdout / stderr"

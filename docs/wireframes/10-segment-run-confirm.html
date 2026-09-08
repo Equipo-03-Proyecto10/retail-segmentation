@@ -1,0 +1,106 @@
+        <!doctype html>
+        <html lang="en">
+        <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>10 · Confirm recalculation — MOSAIQ wireframe</title>
+        <style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#e9e9e9;color:#333;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;padding:28px}
+.sheet{display:flex;gap:24px;align-items:flex-start;max-width:1560px;margin:0 auto}
+.stage{flex:0 0 1180px}
+.aside{flex:1;min-width:300px;background:#fff;border:1px solid #333;padding:20px 22px}
+.aside h2{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#666;margin-bottom:14px;border-bottom:1px solid #ccc;padding-bottom:8px}
+.aside dl div{display:flex;gap:10px;padding:5px 0;border-bottom:1px dashed #ddd;font-size:12.5px}
+.aside dt{flex:0 0 78px;color:#888;text-transform:uppercase;font-size:10.5px;letter-spacing:.06em;padding-top:2px}
+.aside dd{flex:1}
+.aside ol{margin:16px 0 0 0;padding:0;list-style:none;counter-reset:n}
+.aside ol li{counter-increment:n;position:relative;padding:10px 0 10px 34px;border-bottom:1px dashed #ddd;font-size:12.5px}
+.aside ol li::before{content:counter(n);position:absolute;left:0;top:9px;width:22px;height:22px;border:1.5px solid #333;border-radius:50%;text-align:center;line-height:19px;font-size:12px;font-weight:700;background:#fff}
+.aside .disc{margin-top:16px;font-size:11px;color:#888;font-style:italic;line-height:1.45}
+code{font-family:'SF Mono',ui-monospace,Menlo,Consolas,monospace;font-size:.92em;background:#eee;padding:0 3px;border-radius:2px}
+
+/* --- browser frame --- */
+.win{background:#fff;border:1px solid #333}
+.win__bar{display:flex;align-items:center;gap:8px;background:#ddd;border-bottom:1px solid #333;padding:7px 12px}
+.win__bar i{width:10px;height:10px;border:1.5px solid #555;border-radius:50%;display:block}
+.win__url{flex:1;margin-left:10px;background:#fff;border:1px solid #aaa;border-radius:3px;padding:3px 9px;font:11.5px/1 'SF Mono',ui-monospace,Menlo,Consolas,monospace;color:#555}
+.win__body{padding:0}
+
+/* --- app chrome --- */
+.mast{display:flex;align-items:center;gap:14px;border-bottom:2px solid #333;padding:12px 18px}
+.mast__brand{font-weight:800;letter-spacing:.14em;border:2px solid #333;padding:5px 12px}
+.mast__nav{display:flex;gap:6px;flex:1}
+.mast__nav span{border:1px solid #999;padding:4px 11px;font-size:12px;color:#555}
+.mast__nav span.on{border-color:#333;color:#111;font-weight:700;background:#eee}
+.mast__user{display:flex;align-items:center;gap:10px;font-size:12px;color:#555}
+.mast__user b{width:22px;height:22px;border:1px solid #999;border-radius:50%;display:inline-block}
+
+.main{padding:26px 30px 40px}
+h1.t{font-size:24px;font-weight:800;margin-bottom:6px}
+p.lede{color:#666;max-width:60ch;margin-bottom:20px}
+h2.s{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:#555;margin:26px 0 12px}
+
+/* --- primitives --- */
+.field{margin-bottom:14px;max-width:420px}
+.field label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#777;margin-bottom:4px}
+.inp{border:1px dashed #888;background:#fafafa;padding:9px 10px;color:#999;font-size:13px}
+.inp--sm{max-width:230px}
+.btn{display:inline-block;border:1.5px solid #333;background:#ddd;padding:8px 16px;font-size:12.5px;font-weight:700}
+.btn--ghost{background:#fff;font-weight:400;color:#555}
+.link{color:#333;text-decoration:underline;font-size:12.5px}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.note{border-left:3px solid #999;background:#f3f3f3;padding:10px 14px;font-size:12.5px;color:#555;max-width:64ch;margin:14px 0}
+.err{border:1px solid #999;background:#f0f0f0;padding:9px 12px;font-size:12px;color:#444;max-width:52ch;margin:6px 0}
+.mark{display:inline-block;min-width:19px;height:19px;line-height:16px;text-align:center;border:1.5px solid #333;border-radius:50%;font-size:11px;font-weight:700;background:#fff;vertical-align:middle;margin-left:6px}
+.figs{display:flex;gap:14px;flex-wrap:wrap;margin:6px 0 4px}
+.fig{border:1px solid #999;padding:14px 18px;min-width:130px}
+.fig b{display:block;font-size:22px;font-weight:800}
+.fig span{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#777}
+.tag{border:1px solid #666;font-size:10px;padding:1px 5px;text-transform:uppercase;letter-spacing:.05em}
+
+/* --- table --- */
+table.wf{width:100%;border-collapse:collapse;margin:6px 0 12px;font-size:12.5px}
+table.wf th{background:#e4e4e4;border:1px solid #999;text-align:left;padding:7px 9px;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:#555}
+table.wf td{border:1px solid #bbb;padding:8px 9px;color:#888}
+table.wf td.d{color:#333}
+.pager{display:flex;gap:14px;align-items:center;font-size:12px;color:#777;margin-top:6px}
+.ph{border:1px dashed #888;background:repeating-linear-gradient(45deg,#f4f4f4,#f4f4f4 8px,#ececec 8px,#ececec 16px);display:flex;align-items:center;justify-content:center;color:#999;font-size:12px}
+.foot{border-top:1px solid #999;padding:12px 18px;font-size:11px;color:#888}
+</style>
+        </head>
+        <body>
+        <div class="sheet">
+          <div class="stage">
+            <div class="win">
+              <div class="win__bar"><i></i><i></i><i></i>
+                <span class="win__url">https://mosaiq.example/segment-run  (review)</span>
+              </div>
+              <div class="win__body">
+
+      <div class="mast"><span class="mast__brand">MOSAIQ</span><nav class="mast__nav"><span class="">Home</span><span class="">Catalogs</span><span class="">Manage</span><span class="on">Segment run</span><span class="">Audit log</span></nav><span class="mast__user"><span>R. Operator</span><b></b><span class="btn btn--ghost" style="padding:4px 10px">Sign out</span></span></div>
+      <div class="main" style="max-width:600px">
+        <h1 class="t">Confirm recalculation</h1>
+        <p style="margin-bottom:16px">This will recalculate segment assignments
+        for every customer using the last <b>365 days</b> of sales. Existing
+        assignments may be replaced or cleared. The audit log will record each
+        change. <span class="mark">1</span></p>
+        <div class="row"><span class="btn">Confirm recalculation</span><span class="link">Cancel</span></div>
+      </div>
+      <div class="foot">MOSAIQ · Team 03</div>
+
+              </div>
+            </div>
+          </div>
+          <div class="aside">
+            <h2>10 — Confirm recalculation</h2>
+            <dl><div><dt>Route</dt><dd><code>POST /segment-run</code> (review step)</dd></div><div><dt>Roles</dt><dd>ADMIN only</dd></div><div><dt>Requirements</dt><dd>RF-12</dd></div><div><dt>Template</dt><dd><code>segment_run/confirm.html</code></dd></div><div><dt>Demo item</dt><dd>Ejecución de un proceso principal</dd></div></dl>
+            <ol><li>The window is carried forward as a hidden value and restated in words so the administrator confirms the actual number, not a remembered one. Cancel returns to the form with nothing written.</li><li>Same confirmation shape as screen 08 — any action that changes many rows at once gets an interstitial that names the scope and the consequence.</li></ol>
+            <p class="disc">Low-fidelity wireframe. Structure and intent only —
+            the visual design (type, colour, spacing, components) is decided
+            separately in <code>docs/design-system/</code> and applied in the
+            Jinja2 template. Nothing here is functional.</p>
+          </div>
+        </div>
+        </body>
+        </html>

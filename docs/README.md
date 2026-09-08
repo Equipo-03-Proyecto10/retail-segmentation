@@ -13,6 +13,7 @@
 | [User stories](user-stories.md) | What each role needs from the application, with acceptance criteria |
 | [Business rules](business-rules.md) | The invariants, and where each one is actually enforced |
 | [Architecture](architecture/) | Deployment and application views: the monolith, its layers and their MVC roles |
+| [System and demonstration guide](demo-system-guide.md) | End-to-end request journey, current capabilities, main process, architecture decisions, limitations, and rehearsal order |
 | [Data model](data-model.md) | The PostgreSQL model: conceptual, 4NF normalization with its justification, ER diagram, data dictionary |
 | [Datastore designs](datastores/) | MongoDB and Redis designs for later deliveries. Nothing in there is implemented |
 | [Wireframes](wireframes/) | Low-fidelity structure for every screen — what is on each page and how a role reaches it, decided before the visual design |

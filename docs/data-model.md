@@ -492,7 +492,7 @@ delete. Two groups of tables carry it:
 | Group | Tables | Why |
 |---|---|---|
 | Business rules | `segment`, `segment_rule`, `campaign`, `experiment` | Changing a rule silently changes what every report means |
-| Catalogs | `category`, `product`, `store`, `customer`, `app_user` | These are what the administrator module edits, so this is what the demonstration's audit trail shows |
+| Catalogs | `category`, `product`, `store`, `channel`, `role`, `customer`, `app_user` | These are what the administrator module edits, so this is what the demonstration's audit trail shows |
 
 Individual sales are **not** audited. Their volume and history already live in
 `transaction` and `transaction_line`, and auditing them would double the write

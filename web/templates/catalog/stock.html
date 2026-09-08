@@ -5,7 +5,7 @@
 {% block breadcrumbs %}{{ application_name }} / Catalogs / Stock{% endblock %}
 
 {% block content %}
-  {% from "macros/ui.html" import empty_state, page_header, pagination, status_pill %}
+  {% from "macros/ui.html" import count_label, empty_state, page_header, pagination, status_pill %}
   {{ page_header("Stock", "Quantity on hand per store and product. Rows below {} units are flagged as low.".format(low_stock_threshold), "Inventory consultation") }}
 
   <form class="mq-filterbar" method="get" action="{{ url_for('catalog.stock') }}">
@@ -30,7 +30,7 @@
 
   {% if rows %}
     <section class="mq-panel mq-panel--table mq-density-compact">
-      <div class="mq-table__toolbar"><span class="mq-table__count">{{ total }} stock rows</span><span class="mq-pill mq-pill--warning"><span class="mq-pill__dot"></span>Below {{ low_stock_threshold }} is low</span></div>
+      <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(total, "stock row") }}</span><span class="mq-pill mq-pill--warning"><span class="mq-pill__dot"></span>Below {{ low_stock_threshold }} is low</span></div>
       <div class="mq-table-wrap">
         <table class="mq-table">
           <thead><tr><th class="mq-table__cell--sticky" scope="col">Store</th><th scope="col">SKU</th><th scope="col">Product</th><th class="mq-table__cell--num" scope="col">On hand</th><th scope="col">Updated</th></tr></thead>
@@ -50,7 +50,7 @@
       {{ pagination(
         page,
         total_pages,
-        "Page {} of {} · {} rows".format(page, total_pages, total),
+        "Page {} of {} · ".format(page, total_pages) ~ count_label(total, "row"),
         url_for('catalog.stock', page=page - 1, q=search, store=store_id) if page > 1 else none,
         url_for('catalog.stock', page=page + 1, q=search, store=store_id) if page < total_pages else none
       ) }}

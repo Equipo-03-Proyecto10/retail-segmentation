@@ -6,6 +6,8 @@ starts the same application on the port named in the environment.
 
 from __future__ import annotations
 
+import mimetypes
+
 from flask import Flask
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -19,6 +21,22 @@ from web.middleware import register_middleware
 from web.routes import register_blueprints
 from web.security import configure_session
 from web.services.status import APPLICATION_NAME
+
+
+def _register_font_types() -> None:
+    """Name the font types ourselves instead of inheriting them (RFC 8081).
+
+    Flask serves `web/static` through `mimetypes.guess_type`, which reads the
+    host's mime database first and falls back to the standard library's map.
+    The instance runs Python 3.12 on CentOS Stream, which ships no
+    `/etc/mime.types` and whose stdlib map has no `.woff2`, so the vendored
+    IBM Plex files went out as `application/octet-stream`. A newer Python — the
+    3.14 a developer may have locally — does know them, so this is invisible
+    until it is deployed. Stating the two types here makes the answer the same
+    on every host.
+    """
+    mimetypes.add_type("font/woff2", ".woff2")
+    mimetypes.add_type("font/woff", ".woff")
 
 
 def _trust_forwarding_headers(app: Flask, hops: int) -> None:
@@ -48,6 +66,8 @@ def create_app(
     if config is None:
         load_dotenv_file()
         config = Config.from_env()
+
+    _register_font_types()
 
     app = Flask(__name__)
     app.config["SECRET_KEY"] = config.secret_key

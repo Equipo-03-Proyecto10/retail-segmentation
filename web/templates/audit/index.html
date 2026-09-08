@@ -5,7 +5,7 @@
 {% block breadcrumbs %}{{ application_name }} / Governance / Audit log{% endblock %}
 
 {% block content %}
-  {% from "macros/ui.html" import alert, empty_state, page_header, pagination, status_pill %}
+  {% from "macros/ui.html" import alert, count_label, empty_state, page_header, pagination, status_pill %}
   {{ page_header("Audit log", "Every catalog and business-rule change, newest first. Entries are append-only.", "Governance") }}
 
   {% if error %}{{ alert(error) }}{% endif %}
@@ -23,14 +23,14 @@
 
   {% if page.entries %}
     <section class="mq-panel mq-panel--table mq-density-compact">
-      <div class="mq-table__toolbar"><span class="mq-table__count">{{ page.total }} entries</span><span class="mq-pill mq-pill--neutral"><span class="mq-pill__dot"></span>Append-only</span></div>
+      <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(page.total, "entry", "entries") }}</span><span class="mq-pill mq-pill--neutral"><span class="mq-pill__dot"></span>Append-only</span></div>
       <div class="mq-table-wrap"><table class="mq-table"><thead><tr><th class="mq-table__cell--sticky" scope="col">When</th><th scope="col">Entity</th><th scope="col">Key</th><th scope="col">Action</th><th scope="col">By</th><th scope="col"><span class="mq-visually-hidden">Entry</span></th></tr></thead><tbody>
         {% for entry in page.entries %}<tr><td class="mq-table__cell--sticky mq-mono">{{ entry.executed_at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ entry.entity }}</td><td class="mq-mono">{{ entry.entity_pk }}</td><td>{{ status_pill(entry.action, "info") }}</td><td>{% if entry.actor_name %}{{ entry.actor_name }}{% else %}<span class="mq-unattributed">unattributed</span>{% endif %}</td><td><a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('audit.detail', audit_id=entry.audit_id) }}">Open</a></td></tr>{% endfor %}
       </tbody></table></div>
       {{ pagination(
         page.page,
         page.page_count,
-        "Page {} of {} · {} entries".format(page.page, page.page_count, page.total),
+        "Page {} of {} · ".format(page.page, page.page_count) ~ count_label(page.total, "entry", "entries"),
         url_for('audit.index', entity=entity, from=date_from, to=date_to, page=page.page - 1) if page.has_previous else none,
         url_for('audit.index', entity=entity, from=date_from, to=date_to, page=page.page + 1) if page.has_next else none
       ) }}

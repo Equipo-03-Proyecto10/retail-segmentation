@@ -193,3 +193,14 @@ notices, and it now demonstrably has two failure modes rather than one — a sta
 tree, and an unreadable one. Whether it joins the deploy is a decision for the
 team, but this story found the same class of gap twice in one afternoon: an
 artifact complete in the repository and absent from where it is graded.
+
+## Independent re-check (Raquel de la Garza, 2026-09-07)
+
+Re-verified from a separate machine, no cookies:
+
+```
+$ curl -sI https://mosaiq.maxthecoder.online/
+HTTP/2 200
+```
+
+Confirms AC 1 still holds at the time of this delivery.

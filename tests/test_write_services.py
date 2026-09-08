@@ -1,6 +1,7 @@
 """Atomic service operations and the layer boundaries behind them."""
 
 import ast
+import re
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -148,6 +149,42 @@ def test_layer_boundaries_keep_sql_and_transactions_out_of_entry_points():
                 assert path == Path("web/db/transactions.py"), path
             if node.func.attr in {"execute", "executemany"} and node.args:
                 assert not isinstance(node.args[0], ast.JoinedStr | ast.BinOp), path
+
+
+def test_every_table_the_application_writes_carries_an_audit_trigger():
+    """RF-14: a table the administrator edits leaves a trail (RNF-17).
+
+    `channel` and `role` reached the instance without one. They are edited from
+    /admin/channels and /admin/roles exactly like the other catalogs, but the
+    trigger list in sql/01_schema.sql is written by hand and had missed them,
+    so those changes were untraceable — `role` being the code the permission
+    matrix keys on. Both sides are read from source here, so the next table
+    added to one and not the other fails the build instead of shipping.
+    """
+    written = {
+        node.args[0].value
+        for node in ast.walk(ast.parse(Path("web/services/catalog.py").read_text()))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_catalog_write"
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+    }
+    # User management writes app_user through its own service, not the catalog
+    # decorator, and is just as much an administrator write path.
+    written.add("app_user")
+
+    audited = set(
+        re.findall(
+            r"CREATE TRIGGER\s+\w+\s+AFTER[\s\w]*?\sON\s+(\w+)",
+            Path("sql/01_schema.sql").read_text(),
+        )
+    )
+
+    assert written, "no _catalog_write decorators found — has the pattern moved?"
+    assert (
+        not written - audited
+    ), f"written but not audited: {sorted(written - audited)}"
 
 
 @pytest.mark.parametrize(

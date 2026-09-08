@@ -194,7 +194,7 @@ CROSS JOIN generate_series(1,5) p;
 
 -- ---------- audit_log ----------
 -- Filled by the triggers as the statements above ran: segment, segment_rule,
--- campaign, experiment, category, product, store, customer and app_user.
--- Nothing is inserted here by hand.
+-- campaign, experiment, category, product, store, channel, role, customer and
+-- app_user. Nothing is inserted here by hand.
 
 COMMIT;

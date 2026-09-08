@@ -22,6 +22,12 @@ psql -d retail -f sql/verify_integrity.sql
 Environment: PostgreSQL 16.15 on Debian, in a throwaway container. The three
 ordered scripts each exited 0.
 
+Re-run on 2026-09-07 after `trg_audit_channel` and `trg_audit_role` were added,
+on 16.15 as above and again on 18.6, the version the instance runs. Both exited
+0 and both reported the same counts. `audit_log` moved from 280 to **292**: the
+seed's 5 channels and 7 roles now leave a trail like every other audited table.
+Every other count is unchanged.
+
 ## Result
 
 | | Cases | Outcome |
@@ -237,7 +243,7 @@ role and channel are exempt: see sql/seed-exempt.txt
          table_name         | exact_rows 
 ----------------------------+------------
  app_user                   |         30
- audit_log                  |        280
+ audit_log                  |        292
  campaign                   |         30
  category                   |         30
  channel                    |          5

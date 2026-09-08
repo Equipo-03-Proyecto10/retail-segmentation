@@ -310,6 +310,19 @@ CREATE TRIGGER trg_audit_app_user
 AFTER INSERT OR UPDATE OR DELETE ON app_user
 FOR EACH ROW EXECUTE FUNCTION fn_audit('user_id');
 
+-- channel and role are edited from /admin/channels and /admin/roles like the
+-- catalogs above, so they are audited for the same reason. role carries the
+-- code the permission matrix keys on (web/middleware/authz.py): without this,
+-- a role could be created, renamed or dropped on the instance with nothing
+-- recording who did it.
+CREATE TRIGGER trg_audit_channel
+AFTER INSERT OR UPDATE OR DELETE ON channel
+FOR EACH ROW EXECUTE FUNCTION fn_audit('channel_id');
+
+CREATE TRIGGER trg_audit_role
+AFTER INSERT OR UPDATE OR DELETE ON role
+FOR EACH ROW EXECUTE FUNCTION fn_audit('role_id');
+
 -- BEGIN APPLICATION ROLE VERIFICATION
 -- F1-05 (#53). Opt-in acceptance checks, kept here because even a rejected
 -- DROP belongs in the only file allowed to contain table DDL. Normal schema

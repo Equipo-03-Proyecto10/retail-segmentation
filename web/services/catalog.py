@@ -13,7 +13,12 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from functools import wraps
 
 from psycopg import Connection
-from psycopg.errors import ForeignKeyViolation, UniqueViolation
+from psycopg.errors import (
+    ForeignKeyViolation,
+    IntegrityError,
+    RestrictViolation,
+    UniqueViolation,
+)
 
 from web.db import categories, channels, products, roles, stores
 from web.db.transactions import atomic
@@ -182,6 +187,44 @@ class CatalogConflict(Exception):
         self.field = field
 
 
+def _refusal(entity: str, operation: str, error: IntegrityError) -> CatalogConflict:
+    """Turn one database refusal into the message the form should show.
+
+    Every integrity violation is translated, not only the two the catalogs meet
+    most often. `ON DELETE RESTRICT`, which sql/01_schema.sql uses to protect a
+    referenced row, reaches psycopg as `RestrictViolation` — a *sibling* of
+    `ForeignKeyViolation` under `IntegrityError`, not a subclass. Catching only
+    the latter let a blocked delete escape the route's `except CatalogConflict`
+    and reach the visitor as a 500 instead of the 409 the route renders. The
+    same gap covered `CheckViolation` (`list_price >= 0`) and `NotNullViolation`.
+    """
+    if isinstance(error, ForeignKeyViolation | RestrictViolation):
+        if operation == "delete":
+            return CatalogConflict(
+                "",
+                f"Cannot delete this {entity}: other records still reference it.",
+            )
+        field = "parent_category_id" if entity == "category" else "category_id"
+        return CatalogConflict(field, "That category does not exist.")
+
+    if isinstance(error, UniqueViolation):
+        field = {"role": "code", "product": "sku"}.get(entity, "name")
+        constraint = error.diag.constraint_name
+        if constraint and constraint.endswith("_pkey"):
+            field = f"{entity}_id"
+        description = {"role": "code", "product": "SKU"}.get(entity, "name")
+        if operation == "create":
+            description = f"ID or {description}"
+        return CatalogConflict(
+            field, f"A {entity} with that {description} already exists."
+        )
+
+    # Anything else the database refuses is still a refused value, so it belongs
+    # on the form rather than on the error page. The wording stays general: the
+    # constraint name is a schema detail, not something to show a visitor.
+    return CatalogConflict("", f"That {entity} was refused by a database constraint.")
+
+
 def _catalog_write(entity: str, operation: str):
     """Share transaction ownership and failure translation across catalogs."""
 
@@ -192,36 +235,14 @@ def _catalog_write(entity: str, operation: str):
         def execute(connection, *args, **kwargs):
             try:
                 result = write(connection, *args, **kwargs)
-            except (UniqueViolation, ForeignKeyViolation) as error:
+            except IntegrityError as error:
                 logging.getLogger(__name__).info(
                     "catalog_refused entity=%s operation=%s reason=%s",
                     entity,
                     operation,
                     type(error).__name__,
                 )
-                if isinstance(error, ForeignKeyViolation):
-                    if operation == "delete":
-                        raise CatalogConflict(
-                            "",
-                            f"Cannot delete this {entity}: "
-                            "other records still reference it.",
-                        ) from error
-                    field = (
-                        "parent_category_id" if entity == "category" else "category_id"
-                    )
-                    raise CatalogConflict(
-                        field, "That category does not exist."
-                    ) from error
-                field = {"role": "code", "product": "sku"}.get(entity, "name")
-                constraint = error.diag.constraint_name
-                if constraint and constraint.endswith("_pkey"):
-                    field = f"{entity}_id"
-                description = {"role": "code", "product": "SKU"}.get(entity, "name")
-                if operation == "create":
-                    description = f"ID or {description}"
-                raise CatalogConflict(
-                    field, f"A {entity} with that {description} already exists."
-                ) from error
+                raise _refusal(entity, operation, error) from error
             logging.getLogger(__name__).info(
                 "catalog_succeeded entity=%s operation=%s",
                 entity,

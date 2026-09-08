@@ -388,3 +388,45 @@ def test_catalog_controls_follow_write_permission(
         f"/admin/{plural}/1/delete",
     ]:
         assert (path in body) == (role == "ADMIN")
+
+
+# ---------- deletion refused by a foreign key ----------
+
+
+@pytest.mark.parametrize(
+    "entity,plural",
+    [
+        ("store", "stores"),
+        ("category", "categories"),
+        ("channel", "channels"),
+        ("product", "products"),
+        ("role", "roles"),
+    ],
+)
+def test_a_delete_that_is_still_referenced_explains_itself(
+    client: FlaskClient, monkeypatch, entity: str, plural: str
+) -> None:
+    """Every catalog answers a blocked delete with 409 and the reason.
+
+    The service layer already turns the database's refusal into a
+    CatalogConflict (tests/test_write_services.py). What this covers is the
+    other half: each route catching it, re-rendering its own listing and
+    saying why, instead of letting the exception escape as a 500.
+    """
+    message = f"Cannot delete this {entity}: other records still reference it."
+
+    def refuse(connection, record_id):
+        raise CatalogConflict("", message)
+
+    monkeypatch.setattr(
+        admin, f"get_{entity}", Mock(return_value=Mock(image_path=None))
+    )
+    monkeypatch.setattr(admin, f"delete_{entity}", refuse)
+    monkeypatch.setattr(admin, f"list_{plural}", Mock(return_value=([], 0)))
+
+    response = client.post(f"/admin/{plural}/1/delete", data={"confirm": "yes"})
+
+    assert response.status_code == 409
+    body = response.get_data(as_text=True)
+    assert message in body
+    assert all(text not in body for text in ("Traceback", "Werkzeug", "psycopg"))

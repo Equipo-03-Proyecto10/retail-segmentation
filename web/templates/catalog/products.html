@@ -5,7 +5,7 @@
 {% block breadcrumbs %}{{ application_name }} / Catalogs / Products{% endblock %}
 
 {% block content %}
-  {% from "macros/ui.html" import empty_state, page_header, pagination, status_pill %}
+  {% from "macros/ui.html" import count_label, empty_state, page_header, pagination, status_pill %}
   {{ page_header("Products", "Search the catalog by SKU or name, then open a product.", "Catalog consultation") }}
 
   <form class="mq-filterbar" method="get" action="{{ url_for('catalog.products') }}">
@@ -23,7 +23,7 @@
 
   {% if products %}
     <section class="mq-panel mq-panel--table mq-density-compact">
-      <div class="mq-table__toolbar"><span class="mq-table__count">{{ total }} products</span><span class="mq-caption">Read only</span></div>
+      <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(total, "product") }}</span><span class="mq-caption">Read only</span></div>
       <div class="mq-table-wrap">
         <table class="mq-table">
           <thead><tr><th scope="col">ID</th><th scope="col">SKU</th><th scope="col">Name</th><th scope="col">Category</th><th class="mq-table__cell--num" scope="col">Price MXN</th><th scope="col">Status</th></tr></thead>
@@ -44,7 +44,7 @@
       {{ pagination(
         page,
         total_pages,
-        "Page {} of {} · {} products".format(page, total_pages, total),
+        "Page {} of {} · ".format(page, total_pages) ~ count_label(total, "product"),
         url_for('catalog.products', page=page - 1, q=search) if page > 1 else none,
         url_for('catalog.products', page=page + 1, q=search) if page < total_pages else none
       ) }}

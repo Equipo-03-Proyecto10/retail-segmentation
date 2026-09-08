@@ -5,7 +5,7 @@
 {% block breadcrumbs %}{{ application_name }} / Analysis / Segments / {{ segment.name }}{% endblock %}
 
 {% block content %}
-  {% from "macros/ui.html" import empty_state, page_header, pagination %}
+  {% from "macros/ui.html" import count_label, empty_state, page_header, pagination %}
   {% call page_header(segment.name, segment.description or "No description", "Segment") %}
     <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('catalog.segments') }}">Back to segments</a>
   {% endcall %}
@@ -27,7 +27,7 @@
 
   {% if members %}
     <section class="mq-panel mq-panel--table mq-density-compact">
-      <div class="mq-table__toolbar"><span class="mq-table__count">{{ total }} customers in this segment</span><span class="mq-caption">Current assignments</span></div>
+      <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(total, "customer") }} in this segment</span><span class="mq-caption">Current assignments</span></div>
       <div class="mq-table-wrap">
         <table class="mq-table">
           <thead><tr><th class="mq-table__cell--sticky" scope="col">Name</th><th scope="col">Email</th></tr></thead>
@@ -37,7 +37,7 @@
       {{ pagination(
         page,
         total_pages,
-        "Page {} of {} · {} customers".format(page, total_pages, total),
+        "Page {} of {} · ".format(page, total_pages) ~ count_label(total, "customer"),
         url_for('catalog.segment_detail', segment_id=segment.segment_id, page=page - 1) if page > 1 else none,
         url_for('catalog.segment_detail', segment_id=segment.segment_id, page=page + 1) if page < total_pages else none
       ) }}

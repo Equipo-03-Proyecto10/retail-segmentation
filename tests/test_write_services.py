@@ -1,11 +1,18 @@
 """Atomic service operations and the layer boundaries behind them."""
 
 import ast
+import re
+from decimal import Decimal
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-from psycopg.errors import ForeignKeyViolation
+from psycopg.errors import (
+    CheckViolation,
+    ForeignKeyViolation,
+    NotNullViolation,
+    RestrictViolation,
+)
 
 from web.db.transactions import atomic
 from web.services import catalog, users
@@ -82,13 +89,40 @@ def test_failed_demo_deactivation_rolls_back_administrator_installation(monkeypa
 
 
 @pytest.mark.parametrize("entity", ["store", "category", "channel", "product", "role"])
-def test_delete_constraints_use_one_typed_failure(entity):
+@pytest.mark.parametrize("violation", [ForeignKeyViolation, RestrictViolation])
+def test_delete_constraints_use_one_typed_failure(entity, violation):
+    """A protected row refuses the same way whichever code the server sends.
+
+    `ON DELETE RESTRICT` in sql/01_schema.sql arrives as RestrictViolation
+    (23001), not ForeignKeyViolation (23503); the two are siblings, so a
+    translation that named only the second let the refusal escape as a 500.
+    """
     connection = MagicMock()
     connection.cursor.return_value.__enter__.return_value.execute.side_effect = (
-        ForeignKeyViolation()
+        violation()
     )
     with pytest.raises(catalog.CatalogConflict, match="still reference"):
         getattr(catalog, f"delete_{entity}")(connection, 1)
+    connection.rollback.assert_called_once()
+    connection.commit.assert_not_called()
+
+
+@pytest.mark.parametrize("violation", [CheckViolation, NotNullViolation])
+def test_any_other_constraint_still_reaches_the_form(violation):
+    """A CHECK or NOT NULL refusal is a refused value, not a server fault."""
+    connection = MagicMock()
+    connection.cursor.return_value.__enter__.return_value.execute.side_effect = (
+        violation()
+    )
+    with pytest.raises(catalog.CatalogConflict, match="refused by a database"):
+        catalog.create_product(
+            connection,
+            product_id=1,
+            sku="SKU",
+            name="Product",
+            category_id=1,
+            list_price=Decimal("10.00"),
+        )
     connection.rollback.assert_called_once()
     connection.commit.assert_not_called()
 
@@ -115,6 +149,42 @@ def test_layer_boundaries_keep_sql_and_transactions_out_of_entry_points():
                 assert path == Path("web/db/transactions.py"), path
             if node.func.attr in {"execute", "executemany"} and node.args:
                 assert not isinstance(node.args[0], ast.JoinedStr | ast.BinOp), path
+
+
+def test_every_table_the_application_writes_carries_an_audit_trigger():
+    """RF-14: a table the administrator edits leaves a trail (RNF-17).
+
+    `channel` and `role` reached the instance without one. They are edited from
+    /admin/channels and /admin/roles exactly like the other catalogs, but the
+    trigger list in sql/01_schema.sql is written by hand and had missed them,
+    so those changes were untraceable — `role` being the code the permission
+    matrix keys on. Both sides are read from source here, so the next table
+    added to one and not the other fails the build instead of shipping.
+    """
+    written = {
+        node.args[0].value
+        for node in ast.walk(ast.parse(Path("web/services/catalog.py").read_text()))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_catalog_write"
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+    }
+    # User management writes app_user through its own service, not the catalog
+    # decorator, and is just as much an administrator write path.
+    written.add("app_user")
+
+    audited = set(
+        re.findall(
+            r"CREATE TRIGGER\s+\w+\s+AFTER[\s\w]*?\sON\s+(\w+)",
+            Path("sql/01_schema.sql").read_text(),
+        )
+    )
+
+    assert written, "no _catalog_write decorators found — has the pattern moved?"
+    assert (
+        not written - audited
+    ), f"written but not audited: {sorted(written - audited)}"
 
 
 @pytest.mark.parametrize(

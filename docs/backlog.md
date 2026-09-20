@@ -1,7 +1,8 @@
 # Backlog
 
-Work for the current delivery, grouped by the scope phases. Story identifiers
-are `F<phase>-<n>`.
+Work across both deliveries, grouped by planning phase. Phases 0-6 record the
+completed first delivery. Phases 7-12 cover the monolith analytics part of the
+second delivery. Story identifiers are `F<phase>-<n>`.
 
 Estimates are set by the team at Planning, not here. Sprint membership lives in
 the GitHub Projects `Sprint` field, not in this document — a backlog that
@@ -9,6 +10,12 @@ duplicates the board drifts from it within a week.
 
 Priority: **P0** the delivery fails without it · **P1** required, schedulable
 later · **P2** optional.
+
+**This is not the whole second-delivery backlog.** [ADR-0016][adr-0016]
+requires the distributed architecture, but each component is blocked on a
+decision that does not exist yet. Phases 7-12 plan only the monolith analytics
+work and create no microservice, client application, MongoDB or Redis
+implementation, or shared authentication scheme.
 
 ## Dependency graph
 
@@ -96,6 +103,72 @@ flowchart TD
     F3-12 --> F6-08
     F4-01 --> F6-08
     F6-02 --> F6-08
+
+    F4-01 --> F4-07
+    F12-01 --> F4-08
+    F12-02 --> F4-08
+    F12-03 --> F4-08
+    F12-04 --> F4-08
+
+    F2-05 --> F7-01
+    F7-01 --> F7-02
+    F3-10 --> F7-02
+    F7-02 --> F7-03
+    F4-07 --> F7-03
+    F7-02 --> F7-04
+    F7-03 --> F7-05
+    F7-04 --> F7-05
+    F7-05 --> F7-06
+
+    F2-05 --> F8-01
+    F8-01 --> F8-02
+    F4-07 --> F8-02
+    F8-02 --> F8-03
+    F7-02 --> F8-03
+    F8-03 --> F8-04
+    F4-07 --> F8-04
+    F8-04 --> F8-05
+
+    F7-02 --> F9-01
+    F8-02 --> F9-01
+    F9-01 --> F9-02
+    F9-02 --> F9-03
+    F7-01 --> F9-03
+    F9-03 --> F9-04
+    F4-07 --> F9-04
+
+    F8-03 --> F10-01
+    F9-03 --> F10-01
+    F2-05 --> F10-01
+    F10-01 --> F10-02
+    F4-07 --> F10-02
+
+    F2-05 --> F11-01
+    F7-01 --> F11-01
+    F11-01 --> F11-02
+    F4-07 --> F11-02
+    F11-01 --> F11-03
+    F11-02 --> F11-03
+    F4-07 --> F11-03
+    F11-03 --> F11-04
+    F11-04 --> F11-05
+    F11-04 --> F11-06
+    F8-02 --> F11-06
+    F11-05 --> F11-07
+    F11-06 --> F11-07
+    F4-07 --> F11-07
+
+    F7-05 --> F12-01
+    F8-03 --> F12-01
+    F9-04 --> F12-01
+    F4-07 --> F12-01
+    F7-06 --> F12-02
+    F4-07 --> F12-02
+    F8-05 --> F12-03
+    F10-02 --> F12-03
+    F4-07 --> F12-03
+    F11-07 --> F12-04
+    F4-07 --> F12-04
 ```
 
 ---
@@ -214,6 +287,8 @@ persisted.
 | F4-04 | Secure sessions; no secrets in source, all configuration in `.env` | P0 | F3-02 |
 | F4-05 | Controlled error handling and basic application logging | P1 | F3-01 |
 | F4-06 | Create the real administrator on the instance without a published password | P0 | F3-03, F4-02 |
+| F4-07 | Assign each Delivery 2 analytics surface to permissions held by the existing role profiles | P0 | F4-01 |
+| F4-08 | Verify every Delivery 2 analytics route is default-deny and permits only its declared profiles | P0 | F12-01, F12-02, F12-03, F12-04 |
 
 **F4-06 closes the gap the seed leaves open.** `sql/02_seed_30_per_table.sql`
 creates thirty demonstration accounts, the administrator among them, all with a
@@ -226,6 +301,15 @@ instance carries the demonstration accounts at all.
 **F4-02 needs both halves.** The application check alone is bypassed by a direct
 `INSERT`; the index alone produces an unexplained database error in the user
 interface. Neither is sufficient by itself.
+
+**The Delivery 2 profiles already exist.** `ANALYST`, `STORE_MANAGER`,
+`MARKETING`, `INVENTORY_PLANNER` and `AUDITOR` are seeded and enforced by the
+default-deny gate in
+[ADR-0007](adr/0007-permissions-in-code-with-a-default-deny-middleware.md).
+`F4-07` assigns the new surfaces to permissions; it does not recreate roles or
+weaken the twice-enforced single-administrator rule. `F4-08` stays in the
+security phase but waits for the last analytics routes so it can verify the
+complete surface.
 
 ## Phase 5 — Testing and quality
 
@@ -289,3 +373,110 @@ sequence, on the instance, against one set of data.
 **Deploy early.** F6-01 and F6-02 depend on almost nothing and are scheduled as
 soon as the application serves a single page. A first deployment attempted near
 the delivery date is the most common way this kind of project fails.
+
+## Phase 7 — Segmentation traceability
+
+| ID | Story | Priority | Depends on |
+|---|---|---|---|
+| F7-01 | Add the ordered stable segment-label vocabulary to the 4NF model, schema and seed | P0 | F2-05 |
+| F7-02 | Replace `customer.current_segment_id` in the 4NF model, schema and seed with durable runs and assignment history, and move every current-segment write and read to the open history row | P0 | F7-01, F3-10 |
+| F7-03 | Run-history view with method, parameters, executor, counts and customer assignments | P0 | F7-02, F4-07 |
+| F7-04 | Detect each customer's label migration between any two completed runs, including the unassigned state | P0 | F7-02 |
+| F7-05 | Migration matrix for two selected runs | P0 | F7-03, F7-04 |
+| F7-06 | Per-customer migration explanation from the R, F and M measure and score deltas between two runs | P0 | F7-05 |
+
+**The label vocabulary starts here.** Assignment history needs a constrained
+label before it can store the first durable result. Putting the vocabulary in
+Phase 9 would make Phase 7 persist unconstrained strings or depend forward on
+the modelling phase. [ADR-0018][adr-0018] defines the order and the
+method-independent boundary that `F7-01` records.
+
+**F7-02 retires the old source of truth in one story.** F3-10 (#102) currently
+writes `customer.current_segment_id`, while catalog queries read it. Dropping
+the column without rewriting both sides would leave the application broken.
+The schema, the run transaction and all present-tense reads therefore move
+together under [ADR-0017][adr-0017].
+
+## Phase 8 — Sales ingestion and consumption profile
+
+| ID | Story | Priority | Depends on |
+|---|---|---|---|
+| F8-01 | Define the durable source transaction identifier and duplicate rule in the 4NF model, schema and seed | P0 | F2-05 |
+| F8-02 | Import versioned sales CSV files row by row and return a reconciled rejection report with row numbers and reasons | P0 | F8-01, F4-07 |
+| F8-03 | Build the customer consumption profile: total spend, average ticket, frequency, last purchase, dominant channel and store, favourite categories, frequent products, average discount, RFM, and current and previous segment | P0 | F8-02, F7-02 |
+| F8-04 | Server-rendered consumption profile view | P0 | F8-03, F4-07 |
+| F8-05 | Detect channel, store and category shifts in the consumption profile | P0 | F8-04 |
+
+**The CSV contract needs one schema story first.** The current database
+generates `transaction.transaction_id`, while the file supplies a transaction
+identifier used for retries and duplicate detection. [ADR-0020][adr-0020]
+leaves that physical mapping to the 4NF analysis, so `F8-01` settles it before
+the importer persists a row.
+
+## Phase 9 — Segmentation modelling
+
+| ID | Story | Priority | Depends on |
+|---|---|---|---|
+| F9-01 | Formalize the existing RFM rules as the `RFM_RULES` adapter behind a method-agnostic run pipeline | P0 | F7-02, F8-02 |
+| F9-02 | Implement the `KMEANS` adapter over normalized RFM features, recording its parameters and quality metrics | P0 | F9-01 |
+| F9-03 | Map K-means clusters to stable labels with ADR-0018's deterministic best-to-worst ordering | P0 | F9-02, F7-01 |
+| F9-04 | Model comparison view over rule-based and K-means runs | P0 | F9-03, F4-07 |
+
+**The adapters stop at the same boundary.** A run may record its method and
+parameters, but assignment history, comparison and every later consumer read
+the stable label. Raw K-means cluster ids never enter that contract.
+
+## Phase 10 — Recommendations
+
+| ID | Story | Priority | Depends on |
+|---|---|---|---|
+| F10-01 | Recommend products from the stable segment label, preferred categories and purchase history, restricted to stock in the customer's usual store, with a reason for every result | P0 | F8-03, F9-03, F2-05 |
+| F10-02 | Server-rendered customer recommendation view that never shows a zero-stock product | P0 | F10-01, F4-07 |
+
+**Recommendations do not know the segmentation method.** They receive the
+stable label produced by the pipeline and cannot branch on `RFM_RULES`,
+`KMEANS` or a raw cluster id. That keeps the contract in ADR-0018 testable at
+the consumer boundary.
+
+## Phase 11 — Campaigns and experiments
+
+| ID | Story | Priority | Depends on |
+|---|---|---|---|
+| F11-01 | Revise the campaign and experiment schema, seed and 4NF model for stable-label targeting, exactly one control group, at least one treatment group, one arm per customer, a fixed conversion window, data origin, exposures and conversions | P0 | F2-05, F7-01 |
+| F11-02 | Campaign workflow from draft through activation, completion or cancellation, targeting a stable segment label | P0 | F11-01, F4-07 |
+| F11-03 | Experiment setup with a mandatory control, treatment groups, target metric, conversion window and data origin fixed before the first assignment | P0 | F11-01, F11-02, F4-07 |
+| F11-04 | Record group assignment as a durable event before exposure or outcome is known | P0 | F11-03 |
+| F11-05 | Record treatment exposure as a separate event and refuse exposure for the control group | P0 | F11-04 |
+| F11-06 | Record conversion separately by linking an assignment to a qualifying sale inside the fixed window | P0 | F11-04, F8-02 |
+| F11-07 | Measure intent-to-treat uplift from all assigned customers, validate it with A/A and fixed injected-uplift cases, and label every seeded or injected result `Synthetic` | P0 | F11-05, F11-06, F4-07 |
+
+**F11-01 repairs constraints the current schema cannot express.** Today one
+customer may enter two arms of the same experiment, and an experiment may have
+zero or several control groups. Exposure and conversion have no durable home.
+The schema story must land before the workflow that follows
+[ADR-0019][adr-0019] uses those relations.
+
+**Assignment, exposure and conversion stay separate.** An assigned customer
+remains in the treatment denominator even without an exposure, and a purchase
+becomes a conversion only through its recorded attribution inside the window.
+Generated evidence keeps its `Synthetic` label through every result surface.
+
+## Phase 12 — Analytics
+
+| ID | Story | Priority | Depends on |
+|---|---|---|---|
+| F12-01 | Highcharts segmentation dashboard for segment sizes, RFM distribution, migration flow and revenue by stable segment label | P0 | F7-05, F8-03, F9-04, F4-07 |
+| F12-02 | Filtered segment history and migration reports with per-customer explanations | P0 | F7-06, F4-07 |
+| F12-03 | Filtered consumption-shift and recommendation reports | P0 | F8-05, F10-02, F4-07 |
+| F12-04 | Filtered campaign and experiment reports for assignment, exposure, conversion and uplift, preserving the data-origin label | P0 | F11-07, F4-07 |
+
+**The dashboard is server-rendered HTML with Highcharts.** This is Delivery 2
+work, so the first delivery's C-1 and C-2 constraints do not govern it. The
+choice does not abolish those constraints generally or introduce an ingestion
+endpoint; ADR-0020 still makes CSV the only sales entry point for this phase.
+
+[adr-0016]: adr/0016-the-second-delivery-reinstates-the-distributed-architecture.md
+[adr-0017]: adr/0017-segment-assignment-history-replaces-the-mutable-current-segment.md
+[adr-0018]: adr/0018-two-segmentation-strategies-behind-one-method-agnostic-pipeline.md
+[adr-0019]: adr/0019-experiment-measurement-separates-assignment-exposure-and-conversion.md
+[adr-0020]: adr/0020-csv-is-the-sole-sales-ingestion-entry-point-for-this-delivery.md

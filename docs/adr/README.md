@@ -52,6 +52,13 @@ the merge that wrote them down: ADR-0006 by ADR-0015, and ADR-0001 and ADR-0005
 by ADR-0016. Until each transition they were marked superseded by a record that
 was not yet binding, which the status vocabulary does not really allow.
 
+ADR-0017 to ADR-0020 were written together as the Delivery 2 analytics decision
+set and merged as `Proposed` in PR #201, before any implementation existed. The
+team accepted all four before the first story that depends on them was pulled,
+which is the order the rule above asks for. Their decision text is unchanged.
+ADR-0021 was accepted in the pull request that introduced it, before F9-02
+(#215) was pulled. It answers Q-10, which that story could not start without.
+
 ## Index
 
 | ADR | Title | Status |
@@ -72,10 +79,11 @@ was not yet binding, which the status vocabulary does not really allow.
 | [0014](0014-service-owned-transactions-and-typed-write-failures.md) | Services own transactions and translate typed write failures | Accepted |
 | [0015](0015-containers-are-a-development-path-only.md) | Docker Compose is a development path only, and is never run on the instance | Accepted |
 | [0016](0016-the-second-delivery-reinstates-the-distributed-architecture.md) | The second delivery reinstates the distributed architecture | Accepted |
-| [0017](0017-segment-assignment-history-replaces-the-mutable-current-segment.md) | Segment assignment history replaces the mutable current segment | Proposed |
-| [0018](0018-two-segmentation-strategies-behind-one-method-agnostic-pipeline.md) | Two segmentation strategies feed one label-based, method-agnostic pipeline | Proposed |
-| [0019](0019-experiment-measurement-separates-assignment-exposure-and-conversion.md) | Experiment measurement separates assignment, exposure and conversion | Proposed |
-| [0020](0020-csv-is-the-sole-sales-ingestion-entry-point-for-this-delivery.md) | CSV is the sole sales ingestion entry point for this delivery | Proposed |
+| [0017](0017-segment-assignment-history-replaces-the-mutable-current-segment.md) | Segment assignment history replaces the mutable current segment | Accepted |
+| [0018](0018-two-segmentation-strategies-behind-one-method-agnostic-pipeline.md) | Two segmentation strategies feed one label-based, method-agnostic pipeline | Accepted |
+| [0019](0019-experiment-measurement-separates-assignment-exposure-and-conversion.md) | Experiment measurement separates assignment, exposure and conversion | Accepted |
+| [0020](0020-csv-is-the-sole-sales-ingestion-entry-point-for-this-delivery.md) | CSV is the sole sales ingestion entry point for this delivery | Accepted |
+| [0021](0021-k-means-is-implemented-in-the-application-rather-than-taken-as-a-dependency.md) | K-means is implemented in the application rather than taken as a dependency | Accepted |
 
 ## Writing one
 

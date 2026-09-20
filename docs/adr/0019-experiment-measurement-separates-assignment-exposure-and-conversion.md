@@ -1,6 +1,6 @@
 # ADR-0019 — Experiment measurement separates assignment, exposure and conversion
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** —
 **Supersedes:** —

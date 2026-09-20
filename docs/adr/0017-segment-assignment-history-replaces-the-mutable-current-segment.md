@@ -1,6 +1,6 @@
 # ADR-0017 — Segment assignment history replaces the mutable current segment
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** —
 **Supersedes:** —

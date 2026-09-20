@@ -1,6 +1,6 @@
 # ADR-0020 — CSV is the sole sales ingestion entry point for this delivery
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** —
 **Supersedes:** —

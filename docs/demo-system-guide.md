@@ -1,5 +1,15 @@
 # MOSAIQ System and Demonstration Guide
 
+**This is the deliverable of F6-08 (#110).** That story asked that "a short
+script — who signs in, what they click, what to say — is committed so anyone on
+the team can run it". Sections 13 and 14 are that script. Sections 1 to 12 are
+the system knowledge needed to answer questions around it, which is the other
+half of rehearsing a demonstration rather than reciting one.
+
+It is recorded here because the commit that added it did not say so, and a
+reader arriving at a 700-line file with no stated owner cannot tell whether it
+is a deliverable or someone's notes.
+
 This is the compact technical guide to keep at hand while rehearsing the
 demonstration. It describes the system that exists in this repository today,
 not an intended system inferred from its name. It separates three states:

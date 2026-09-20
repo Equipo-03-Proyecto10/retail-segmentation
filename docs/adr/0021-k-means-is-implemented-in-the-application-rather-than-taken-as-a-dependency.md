@@ -1,6 +1,6 @@
 # ADR-0021 — K-means is implemented in the application rather than taken as a dependency
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #215 (F9-02)
 **Supersedes:** —

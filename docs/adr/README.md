@@ -56,6 +56,8 @@ ADR-0017 to ADR-0020 were written together as the Delivery 2 analytics decision
 set and merged as `Proposed` in PR #201, before any implementation existed. The
 team accepted all four before the first story that depends on them was pulled,
 which is the order the rule above asks for. Their decision text is unchanged.
+ADR-0021 was accepted in the pull request that introduced it, before F9-02
+(#215) was pulled. It answers Q-10, which that story could not start without.
 
 ## Index
 
@@ -81,7 +83,7 @@ which is the order the rule above asks for. Their decision text is unchanged.
 | [0018](0018-two-segmentation-strategies-behind-one-method-agnostic-pipeline.md) | Two segmentation strategies feed one label-based, method-agnostic pipeline | Accepted |
 | [0019](0019-experiment-measurement-separates-assignment-exposure-and-conversion.md) | Experiment measurement separates assignment, exposure and conversion | Accepted |
 | [0020](0020-csv-is-the-sole-sales-ingestion-entry-point-for-this-delivery.md) | CSV is the sole sales ingestion entry point for this delivery | Accepted |
-| [0021](0021-k-means-is-implemented-in-the-application-rather-than-taken-as-a-dependency.md) | K-means is implemented in the application rather than taken as a dependency | Proposed |
+| [0021](0021-k-means-is-implemented-in-the-application-rather-than-taken-as-a-dependency.md) | K-means is implemented in the application rather than taken as a dependency | Accepted |
 
 ## Writing one
 

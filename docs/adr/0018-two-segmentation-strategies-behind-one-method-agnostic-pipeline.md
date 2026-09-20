@@ -1,6 +1,6 @@
 # ADR-0018 — Two segmentation strategies feed one label-based, method-agnostic pipeline
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** —
 **Supersedes:** —

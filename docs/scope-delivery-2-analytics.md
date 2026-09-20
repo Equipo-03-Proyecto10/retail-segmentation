@@ -58,11 +58,12 @@ Only these additions apply on top of [`scope.md`](scope.md) §3:
 
 | Purpose | Technology | Reason |
 |---|---|---|
-| K-means fitting | **Undecided** — see §10, Q-10 | [ADR-0018](adr/0018-two-segmentation-strategies-behind-one-method-agnostic-pipeline.md) requires a `KMEANS` strategy. Whether that arrives as a library or as an implementation in the application is not yet decided |
+| K-means fitting | None — implemented in the application | [ADR-0021](adr/0021-k-means-is-implemented-in-the-application-rather-than-taken-as-a-dependency.md) decides the `KMEANS` strategy [ADR-0018](adr/0018-two-segmentation-strategies-behind-one-method-agnostic-pipeline.md) requires is written in the service layer. `web/requirements.txt` is unchanged |
 | Dashboard charts | Highcharts | Renders the required analytics dashboards on server-rendered pages |
 
 No datastore, runtime, web framework or deployment unit is added in this
-phase. Highcharts is already committed under
+phase, and no Python package either: the runtime stays at the five in
+`web/requirements.txt`. Highcharts is already committed under
 [`design-system/charts/`](design-system/charts/) by
 [ADR-0002](adr/0002-mosaiq-identity-and-design-system.md), so Phase 12 adopts
 an existing choice rather than making a new one.
@@ -164,12 +165,14 @@ renumbered or restated here.
 
 ## 10. Open questions
 
-One question is open. It does not stop work: Phase 9 is the first story that
-needs an answer, and phases 7 and 8 come first.
+No scope questions remain open.
 
-| ID | Question | Working assumption |
-|---|---|---|
-| Q-10 | [ADR-0018](adr/0018-two-segmentation-strategies-behind-one-method-agnostic-pipeline.md) requires K-means. Does the application take a scientific-computing dependency such as scikit-learn, or implement the fit itself? | Neither is assumed yet. The runtime today is five packages with no scientific stack and no ORM, deliberately — `web/requirements.txt` records why. A dependency of that size is an architectural decision, so it needs its own ADR before Phase 9 starts, not a line in a requirements file |
+**Q-10 is answered.** It asked whether K-means arrives as a
+scientific-computing dependency such as scikit-learn or as an implementation in
+the application. The team decided the application implements it, and the
+reasoning — including what the decision costs — is in
+[ADR-0021](adr/0021-k-means-is-implemented-in-the-application-rather-than-taken-as-a-dependency.md).
+The runtime therefore stays at five packages.
 
 Two things that look like open questions are not. ADR-0018's ordered
 segment-label vocabulary is Phase 7 schema and 4NF work that the Phase 9

@@ -1,127 +1,176 @@
-# Roadmap — after this delivery
+# Roadmap — second delivery work
 
-The segmentation analytics are the reason the project exists, but they are not
-part of the current delivery. This file records what is deferred and how it
-re-enters the plan, so that nothing gets built speculatively now and nothing
-gets rediscovered from scratch later.
+Phases 0–6 completed the first delivery. The second delivery is now underway
+through the monolith's analytics work, organized as phases 7–12. The
+distributed components required by the same delivery have not started.
+
+This file records what is underway, what has not started, and how each kind of
+work enters the repository. It is not a schedule. The analytics boundary is in
+[`scope-delivery-2-analytics.md`](scope-delivery-2-analytics.md), while
+[`scope.md`](scope.md) remains the unchanged first-delivery boundary.
 
 ---
 
-## Deferred modules
+## The monolith analytics phase
 
-| Module | What it adds |
-|---|---|
-| Transaction ingestion | CSV upload with row-level validation and a rejection report |
-| RFM computation | Recency, Frequency and Monetary per customer over a configurable window, with quintile scoring |
-| Batch clustering | K-means over the RFM features, with run parameters and quality metrics recorded per run |
-| Segment history | Segment assignments kept as history rather than as a mutable column |
-| Segment migration | A report of which customers moved between two runs, and in which direction |
-| Dashboards | Segment sizes, RFM distribution, migration flow, revenue by segment |
+The modules that this roadmap once deferred are now part of the second
+delivery. They extend the existing Flask application. They do not add a
+microservice, client application, additional datastore, token format,
+ingestion endpoint, or second deployable unit.
 
-## How a deferred module re-enters
+| Phase | Name | What it builds | Governing decision |
+|---|---|---|---|
+| 7 | Segmentation traceability | Durable segmentation runs and segment assignment history in place of the mutable current segment | [ADR-0017](adr/0017-segment-assignment-history-replaces-the-mutable-current-segment.md) |
+| 8 | Sales ingestion and consumption profile | Versioned CSV transaction ingestion, rejection reporting and RFM profiles over a configurable window with quintile scoring | [ADR-0020](adr/0020-csv-is-the-sole-sales-ingestion-entry-point-for-this-delivery.md), [ADR-0017](adr/0017-segment-assignment-history-replaces-the-mutable-current-segment.md) |
+| 9 | Segmentation modelling | Rule-based RFM and batch K-means behind one pipeline, recorded run parameters and quality measures, and label-based migration reports and matrices | [ADR-0017](adr/0017-segment-assignment-history-replaces-the-mutable-current-segment.md), [ADR-0018](adr/0018-two-segmentation-strategies-behind-one-method-agnostic-pipeline.md) |
+| 10 | Recommendations | Recommendations derived from the same stable, method-agnostic assignment history | [ADR-0017](adr/0017-segment-assignment-history-replaces-the-mutable-current-segment.md), [ADR-0018](adr/0018-two-segmentation-strategies-behind-one-method-agnostic-pipeline.md) |
+| 11 | Campaigns and experiments | Campaign workflows and experiment measurement with separate assignment, exposure and conversion events | [ADR-0019](adr/0019-experiment-measurement-separates-assignment-exposure-and-conversion.md) |
+| 12 | Analytics | Server-rendered dashboards for segment sizes, RFM distribution, migration, revenue by segment and experiment results | [ADR-0017](adr/0017-segment-assignment-history-replaces-the-mutable-current-segment.md), [ADR-0018](adr/0018-two-segmentation-strategies-behind-one-method-agnostic-pipeline.md), [ADR-0019](adr/0019-experiment-measurement-separates-assignment-exposure-and-conversion.md) |
 
-Phases 0 and 1 happen once. The instance, the operating system, PostgreSQL and
-the deployment pipeline are already in place after the current delivery, so a
-new module starts at **Phase 3** and runs the short cycle:
+**None of the old deferred-module list remains deferred.** Transaction
+ingestion and RFM computation move into Phase 8. Batch clustering and segment
+migration move into Phase 9. Segment history moves into Phase 7. Dashboards
+move into Phase 12.
+
+**The governing analytics ADRs are still Proposed.** ADR-0017 through
+ADR-0020 state the decisions under review. They become binding when accepted,
+before the implementation that depends on them merges.
+
+## How work enters
+
+### A module of the monolith
+
+Phases 0 and 1 happen once. The instance, operating system, PostgreSQL and
+deployment pipeline already exist, so each analytics module uses the same
+short engineering cycle as any other addition to the Flask application:
 
 ```
 Phase 2 (only if it needs new tables)
   └─> Phase 3  build the module
-      └─> Phase 4  define its roles and permissions
+      └─> Phase 4  declare its required permissions
           └─> Phase 5  functional and negative tests
               └─> Phase 6  deploy and publish
 ```
 
-A module that needs new tables amends the 4NF model and `sql/01_schema.sql`
-first. Schema work stays in Phase 2 even when it is triggered by a Phase 3
-story, so the model keeps a single home.
+These phase numbers name the existing engineering cycle; they do not renumber
+the second-delivery phases above. A module that needs new tables amends the
+4NF model and [`sql/01_schema.sql`](../sql/01_schema.sql) first. Schema work
+keeps one home even when a Phase 7–12 capability triggers it.
+
+The five non-administrative operational profiles already exist: ANALYST,
+STORE_MANAGER, MARKETING, INVENTORY_PLANNER and AUDITOR. New screens inherit
+the default-deny gate in
+[ADR-0007](adr/0007-permissions-in-code-with-a-default-deny-middleware.md).
+The new work decides which existing permissions each surface requires; it does
+not rebuild the profiles.
+
+Constraint C-4 is unchanged. There is exactly one administrator. A second is
+refused by the application and by the partial unique index. Neither
+enforcement may be removed.
+
+### A distributed component
+
+A microservice, client application, shared token mechanism or additional
+datastore does not enter through the monolith's short cycle. Each adds a new
+system boundary or operational dependency.
+
+[ADR-0016](adr/0016-the-second-delivery-reinstates-the-distributed-architecture.md)
+reinstates that architecture but deliberately does not choose its boundaries
+or contracts. Distributed work re-enters only after the integration-contracts
+ADR required by ADR-0016 exists and is accepted. Service boundaries, JWT,
+datastore ownership and deployment then need their own accepted decisions
+before their implementations begin.
+
+Until those records exist, ADR-0016 remains checkable by absence. The
+repository contains no service skeleton, client application, second deployable
+unit, MongoDB or Redis connection, shared JWT implementation, or HTTP sales
+ingestion endpoint. Phase 8 uses CSV under
+[ADR-0020](adr/0020-csv-is-the-sole-sales-ingestion-entry-point-for-this-delivery.md)
+without pre-empting a later integration contract.
 
 ## The second delivery
 
-The sections above defer *modules of this monolith*. The second delivery is a
-different kind of change: it adds deployable units, so none of it re-enters
-through the short cycle, and the monolith stops being the system.
-
-Its scope is set by the course and is not the team's to choose. What it requires:
-
-| | |
-|---|---|
-| Microservices | Six to ten, each with one responsibility, its own container, versioned routes, auth, JSON **and** XML responses, a health endpoint and OpenAPI documentation |
-| Android client | Consumes JSON only. At least four microservices, plus two device capabilities — camera, QR, GPS, notifications, local storage, sensors |
-| Desktop client | Consumes XML only, validated against an XSD. At least four microservices, and a **different** process from the mobile one |
-| MongoDB | Real storage, with insert, query, update, aggregation and indexing demonstrated |
-| Redis | Sessions, revoked tokens, cache, counters, rate limits. Every component consults it during authentication or authorization |
-| Integration contracts | Specified **before** the clients are built — JSON shapes, HTTP codes, pagination, versioning; XML elements, hierarchy, XSD, namespaces |
-| The web system | Keeps working independently, and grows: more profiles, advanced administration, filters, pagination, reports, Highcharts, file upload, history, internal notifications |
-
-The demonstration is one process executed across components: the mobile client
-sends JSON, a microservice validates the JWT, Redis confirms the session is
-live, the data lands in PostgreSQL or MongoDB, the web system displays it, and
-the desktop client reads it back over XML.
-
-**This reverses [ADR-0001](adr/0001-flask-monolith-on-a-single-vm.md) and
-[ADR-0005](adr/0005-document-mongodb-and-redis-designs-without-implementing-them.md).**
-The first retired the four-component architecture "rather than deferred" and
-said deferred work re-enters "as modules of this monolith rather than as
-services". The second committed the MongoDB and Redis designs on the condition
-that no engine is installed and no connection code is written.
 [ADR-0016](adr/0016-the-second-delivery-reinstates-the-distributed-architecture.md)
-supersedes both.
+is Accepted. It makes the monolith one component of the distributed second
+delivery; it does not replace it. The course scope requires all of the
+following:
 
-ADR-0016 reinstates the architecture and nothing else. It does not decide which
-services exist, where their boundaries fall, what the contracts contain, how JWT
-is issued and revoked, or which datastore holds what. Each of those is a
-decision with its own record, and the scope's own sequencing puts the contracts
-first.
+| Part | Requirement | Current position |
+|---|---|---|
+| Microservices | Six to ten, each with one responsibility, its own container, versioned routes, authentication, JSON **and** XML responses, a health endpoint and OpenAPI documentation | Not started; boundaries and contracts are undecided |
+| Android client | Consumes JSON only. At least four microservices, plus two device capabilities — camera, QR, GPS, notifications, local storage or sensors | Not started; it follows the contracts decision |
+| Desktop client | Consumes XML only, validated against an XSD. At least four microservices, and a **different** process from the mobile one | Not started; it follows the contracts decision |
+| MongoDB | Real storage, with insert, query, update, aggregation and indexing demonstrated | Not started; ownership and use are undecided |
+| Redis | Sessions, revoked tokens, cache, counters and rate limits. Every component consults it during authentication or authorization | Not started; ownership and failure behaviour are undecided |
+| Shared JWT | Issued and validated across components, with revocation enforced through Redis | Not started; issuance, signing and revocation are undecided |
+| Integration contracts | Specified **before** the clients are built — JSON shapes, HTTP codes, pagination and versioning; XML elements, hierarchy, XSD and namespaces | Not started; this is the first gate for distributed work |
+| The web system | Keeps working independently, and grows: the five additional profiles already delivered, advanced administration, filters, pagination, reports, Highcharts, file upload, history and internal notifications | Underway through phases 7–12 |
 
-**Nothing here is built yet**, and the first delivery's constraints — C-1, C-2,
-C-3 and C-7 in [`scope.md`](scope.md) — still hold for everything in this
-repository today. That document is titled "Scope — First delivery" and stays
-that way; the second delivery needs its own.
+The end-to-end demonstration remains one process across components. The mobile
+client sends JSON, a microservice validates the JWT, Redis confirms that the
+session is live, the data lands in PostgreSQL or MongoDB, the web system
+displays it, and the desktop client reads it back over XML.
 
-The previous four-component design is not a starting point to copy — it was
-written for a different product shape — but it answered some of these questions
-once and is worth reading before redesigning the same things. It is in the
-history at `c4a2b63`; see the last section of this file.
+The distributed rows above are not deferred to a later delivery. They are
+unstarted parts of this delivery, blocked on the decisions that ADR-0016
+requires. The analytics phase can proceed because it grows the independent
+monolith without choosing any of those missing contracts.
 
-## Two decisions worth carrying forward
+**ADR-0016 supersedes the former monolith-only boundary.** It reverses
+[ADR-0001](adr/0001-flask-monolith-on-a-single-vm.md) and
+[ADR-0005](adr/0005-document-mongodb-and-redis-designs-without-implementing-them.md)
+for the second delivery. Constraints C-1, C-2, C-3 and C-7 remain the first
+delivery's boundary. They neither bind the second delivery nor disappear from
+the delivery they governed.
 
-These came out of the earlier design work. They are cheap to honour when the
-tables are first designed and expensive to retrofit, so they are recorded here
-rather than left in the history.
+Kubernetes and managed database services remain outside the second delivery.
+Nothing in ADR-0016 brings them into scope.
 
-**Segment assignments are never updated in place.** There is no mutable
-`customer.segment_id`. A new run closes the previous assignment by setting its
-end timestamp and inserts a new row. A `UNIQUE` or exclusion constraint keeps a
-customer from holding two open assignments at once. Without this, the history
-the project is meant to preserve is overwritten on every run.
+## Two warnings promoted into decisions
 
-**Migration is a change of segment *label*, not of segment id.** Segments belong
-to the run that produced them, so a new row exists for every segment on every
-run and the id differs every time. A migration report that compares ids reports
-100% migration on every run — and raises no error while doing it. Compare the
-stable label code instead.
+The earlier design exposed two failure modes before the analytics work began.
+They are now explicit second-delivery decisions rather than reminders for a
+later module. ADR-0017 and ADR-0018 are Proposed during planning and must be
+accepted before their dependent implementation merges.
+
+**Segment assignments are never updated in place.**
+[ADR-0017](adr/0017-segment-assignment-history-replaces-the-mutable-current-segment.md)
+replaces the mutable `customer.current_segment_id` with a run and assignment
+history. A new run closes the previous open assignment and inserts its
+successor, including an unassigned result. A partial unique index prevents a
+customer from holding two open assignments at once. Without this history,
+every run overwrites the evidence the project needs for trends and migration.
+
+**Migration is a change of segment label, not of segment id.**
+[ADR-0018](adr/0018-two-segmentation-strategies-behind-one-method-agnostic-pipeline.md)
+makes stable label codes the output of both rule-based RFM and K-means.
+Segments and raw cluster identifiers belong to the run that produced them, so
+their identifiers can differ on every run. Comparing those identifiers can
+report 100% migration when no customer moved, without raising an error. Every
+downstream report compares the stable label code instead.
 
 ## The dashboards constraint, resolved by the second delivery
 
-This section used to record an open question for the Product Owner. Scope
-constraint C-2 forbids JSON as the exchange format between internal components,
-charting libraries normally read a JSON endpoint, and whether a server-rendered
-page embedding its own chart data counted as an internal exchange was
-unanswered.
+This section used to record an open question for the Product Owner. First
+delivery constraint C-2 forbids JSON as the exchange format between internal
+components, while charting libraries normally read a JSON endpoint. Whether a
+server-rendered page embedding its own chart data counted as an internal
+exchange was unanswered.
 
-The second delivery's scope answers it without anyone having to ask: it requires
-Highcharts in the web system and JSON between components in the same document.
-C-2 is a first-delivery constraint and the dashboards are not first-delivery
-work, so the two never actually meet.
+The second delivery's scope resolves the question. It requires Highcharts in
+the web system and JSON between distributed components. C-2 remains a
+first-delivery constraint, while the Phase 12 dashboards are second-delivery
+work. They therefore do not conflict.
 
-The question stands only for anything built under the first delivery's
-constraints — which the dashboards are not.
+The dashboards still render as HTML from the monolith. That implementation
+choice is valid in the second delivery; it is not evidence that C-2 still
+binds it or that C-2 has been abolished generally.
 
 ## Where the earlier design lives
 
 The previous scope had a fully specified data model, DDL and verification
-script for all of the above. They were removed when the scope changed to a
-monolith. They remain in the Git history at commit `c4a2b63` under
-`docs/data/`, `docs/architecture/` and `infra/sql/schema/`, and are worth
-reading before redesigning the same tables.
+script for the analytics and distributed design. They were removed when the
+scope changed to a monolith. They remain in the Git history at commit
+`c4a2b63` under `docs/data/`, `docs/architecture/` and
+`infra/sql/schema/`, and are worth reading before the team redesigns the same
+tables or contracts.

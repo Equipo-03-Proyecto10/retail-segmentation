@@ -72,6 +72,10 @@ was not yet binding, which the status vocabulary does not really allow.
 | [0014](0014-service-owned-transactions-and-typed-write-failures.md) | Services own transactions and translate typed write failures | Accepted |
 | [0015](0015-containers-are-a-development-path-only.md) | Docker Compose is a development path only, and is never run on the instance | Accepted |
 | [0016](0016-the-second-delivery-reinstates-the-distributed-architecture.md) | The second delivery reinstates the distributed architecture | Accepted |
+| [0017](0017-segment-assignment-history-replaces-the-mutable-current-segment.md) | Segment assignment history replaces the mutable current segment | Proposed |
+| [0018](0018-two-segmentation-strategies-behind-one-method-agnostic-pipeline.md) | Two segmentation strategies feed one label-based, method-agnostic pipeline | Proposed |
+| [0019](0019-experiment-measurement-separates-assignment-exposure-and-conversion.md) | Experiment measurement separates assignment, exposure and conversion | Proposed |
+| [0020](0020-csv-is-the-sole-sales-ingestion-entry-point-for-this-delivery.md) | CSV is the sole sales ingestion entry point for this delivery | Proposed |
 
 ## Writing one
 

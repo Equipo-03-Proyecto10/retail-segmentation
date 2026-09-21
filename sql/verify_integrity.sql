@@ -122,8 +122,8 @@ ROLLBACK;
 \echo ''
 \echo '-- N8: CHECK, campaign status outside the domain [expect: 23514 check_violation]'
 BEGIN;
-INSERT INTO campaign (campaign_id, name, segment_id, starts_on, ends_on, status)
-VALUES (9005, 'Bad status', 1, DATE '2026-01-01', DATE '2026-02-01', 'PAUSED');
+INSERT INTO campaign (campaign_id, name, label_code, starts_on, ends_on, status)
+VALUES (9005, 'Bad status', 'CHAMPION', DATE '2026-01-01', DATE '2026-02-01', 'PAUSED');
 ROLLBACK;
 
 \echo ''
@@ -143,8 +143,8 @@ ROLLBACK;
 \echo ''
 \echo '-- N11: CHECK, campaign ending before it starts [expect: 23514 check_violation]'
 BEGIN;
-INSERT INTO campaign (campaign_id, name, segment_id, starts_on, ends_on, status)
-VALUES (9007, 'Ends before it starts', 1, DATE '2026-03-01', DATE '2026-01-01', 'DRAFT');
+INSERT INTO campaign (campaign_id, name, label_code, starts_on, ends_on, status)
+VALUES (9007, 'Ends before it starts', 'CHAMPION', DATE '2026-03-01', DATE '2026-01-01', 'DRAFT');
 ROLLBACK;
 
 \echo ''
@@ -218,6 +218,48 @@ ROLLBACK;
 BEGIN;
 INSERT INTO transaction (source_transaction_id, customer_id, store_id, channel_id, occurred_at, total)
 VALUES (NULL, '00000000-0000-0000-0000-000000000001', 1, 1, now(), 100.00);
+ROLLBACK;
+
+\echo ''
+\echo '-- N21: one customer in two arms of the same experiment [expect: 23505 unique_violation]'
+-- RN-23. Customer from assignment (experiment_id=1, k=0) re-assigned to the
+-- experiment's treatment group.
+BEGIN;
+INSERT INTO experiment_assignment (experiment_id, group_id, customer_id)
+VALUES (1, 2, '00000000-0000-0000-0000-000000000001');
+ROLLBACK;
+
+\echo ''
+\echo '-- N22: a second control group for the same experiment [expect: 23505 unique_violation]'
+-- RN-24.
+BEGIN;
+INSERT INTO experiment_group (group_id, experiment_id, kind) VALUES (9001, 1, 'CONTROL');
+ROLLBACK;
+
+\echo ''
+\echo '-- N23: a campaign targeting an unknown label      [expect: 23503 foreign_key_violation]'
+-- RN-22.
+BEGIN;
+INSERT INTO campaign (campaign_id, name, label_code, starts_on, ends_on, status)
+VALUES (9009, 'Ghost label', 'GHOST', DATE '2026-01-01', DATE '2026-02-01', 'DRAFT');
+ROLLBACK;
+
+\echo ''
+\echo '-- N24: CHECK, non-positive conversion window      [expect: 23514 check_violation]'
+-- RN-25.
+BEGIN;
+INSERT INTO experiment (experiment_id, name, campaign_id, target_metric, starts_on,
+                         conversion_window_days, data_origin)
+VALUES (9010, 'Bad window', 1, 'CONVERSION', DATE '2026-01-01', 0, 'OBSERVED');
+ROLLBACK;
+
+\echo ''
+\echo '-- N25: CHECK, data origin outside the domain      [expect: 23514 check_violation]'
+-- RN-26.
+BEGIN;
+INSERT INTO experiment (experiment_id, name, campaign_id, target_metric, starts_on,
+                         conversion_window_days, data_origin)
+VALUES (9011, 'Bad origin', 1, 'CONVERSION', DATE '2026-01-01', 14, 'FAKE');
 ROLLBACK;
 
 \echo ''

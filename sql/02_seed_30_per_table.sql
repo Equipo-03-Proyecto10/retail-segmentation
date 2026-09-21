@@ -10,10 +10,11 @@
 --    dependent tables can reference customers and users inside this same
 --    script, and so that a reload produces the same database twice.
 --
--- 2) role and channel hold fewer than 30 rows. Their domains are seven roles
---    and five sales channels; padding them with filler to reach the minimum
---    would make the seed misrepresent the business. Both are listed in
---    sql/seed-exempt.txt with the reason, which is the mechanism CI reads.
+-- 2) role, channel and segment_label hold fewer than 30 rows. Their domains
+--    are seven roles, five sales channels and six ordered business labels;
+--    padding them with filler to reach the minimum would make the seed
+--    misrepresent the business. All three are listed in sql/seed-exempt.txt
+--    with the reason, which is the mechanism CI reads.
 --
 -- 3) audit_log is not inserted into by hand. The triggers in 01_schema.sql
 --    fill it as this script loads the audited tables, which is also what
@@ -77,6 +78,16 @@ FROM generate_series(1,30) n;
 INSERT INTO segment (segment_id, name, description, rule_id, valid_from, valid_to)
 SELECT n, 'Segment ' || n, 'Segment derived from RULE_' || lpad(n::text,3,'0'), n, DATE '2026-01-01', NULL
 FROM generate_series(1,30) n;
+
+-- ---------- segment_label (6, best to worst — ADR-0018) ----------
+INSERT INTO segment_label (label_code, ordinal_position, name, description) VALUES
+    ('CHAMPION',   1, 'Champion',    'Highest recency, frequency and monetary value'),
+    ('LOYAL',      2, 'Loyal',       'Buys often and recently, consistent spend'),
+    ('POTENTIAL',  3, 'Potential',   'Recent customer with room to grow frequency'),
+    ('AT_RISK',    4, 'At risk',     'Used to buy often, recency has slipped'),
+    ('HIBERNATING',5, 'Hibernating', 'Low recency, frequency and monetary value'),
+    ('LOST',       6, 'Lost',        'No recent activity across all three measures');
+
 
 -- ---------- app_user (30, exactly one administrator) ----------
 -- AGENTS.md: there is exactly one administrator. User 1 holds role 1 and no

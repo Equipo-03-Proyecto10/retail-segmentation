@@ -29,6 +29,7 @@ Stories: F2-01 (conceptual model), F2-02 (normalization), F2-03 (logical model).
 | `transaction_line` | One product within one sale, with its quantity and the price actually paid |
 | `inventory` | Stock of one product at one store |
 | `segment_rule` | The RFM bands that define a segment |
+| `segment_label` | The stable, ordered vocabulary every segmentation run's assignments draw from |
 | `segment` | A named group of customers, valid over a period, defined by one rule |
 | `campaign` | Marketing action aimed at one segment, over a date range, in a status |
 | `experiment` | An A/B test, optionally attached to a campaign, measuring one metric |
@@ -300,6 +301,23 @@ Table constraint: `r_min <= r_max AND f_min <= f_max AND m_min <= m_max`.
 | `rule_id` | `INT` | NN | FK → `segment_rule`, `RESTRICT` | The RFM bands that define it |
 | `valid_from` | `DATE` | NN | — | First day the definition applies |
 | `valid_to` | `DATE` | yes | `CHECK >= valid_from` | Last day; `NULL` while current |
+
+
+#### `segment_label`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `label_code` | `VARCHAR(40)` | NN | PK | Stable code an assignment carries, e.g. `CHAMPION` |
+| `ordinal_position` | `SMALLINT` | NN | UQ, `CHECK > 0` | Declared best-to-worst business order — ADR-0018 |
+| `name` | `VARCHAR(80)` | NN | — | Display name |
+| `description` | `VARCHAR(255)` | yes | — | What the label means commercially |
+
+Single-column primary key rather than a surrogate id: `label_code` is what
+every downstream consumer — assignment history, migration, dashboards,
+recommendations — reads and compares, per ADR-0018, so it is the natural key
+rather than an internal one a join would have to resolve back to it anyway.
+`ordinal_position` is unique on its own so K-means centroids can be paired
+with labels deterministically without a tie; it is not a foreign key target.
 
 #### `app_user`
 

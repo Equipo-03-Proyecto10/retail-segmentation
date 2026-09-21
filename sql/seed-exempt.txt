@@ -15,3 +15,9 @@ role
 # Five sales channels: mobile app, web, physical store, marketplace and call
 # centre. A sixth is a business decision, not seed data.
 channel
+
+# Six ordered business labels, best to worst — ADR-0018. A seventh would be a
+# business decision about how many segments the company recognizes, not seed
+# data; padding this table would misrepresent the vocabulary as larger than
+# it is.
+segment_label

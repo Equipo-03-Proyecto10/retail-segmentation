@@ -64,6 +64,18 @@ CREATE TABLE segment (
     CHECK (valid_to IS NULL OR valid_to >= valid_from)
 );
 
+
+-- The stable, ordered label vocabulary every segmentation run's assignments
+-- must draw from — ADR-0018. ordinal_position is unique so K-means centroids
+-- can be paired deterministically with labels in declared best-to-worst
+-- business order; it is not a foreign key target itself.
+CREATE TABLE segment_label (
+    label_code       VARCHAR(40) PRIMARY KEY,
+    ordinal_position  SMALLINT NOT NULL UNIQUE CHECK (ordinal_position > 0),
+    name              VARCHAR(80) NOT NULL,
+    description       VARCHAR(255)
+);
+
 -- ---------- USERS AND CUSTOMERS ----------
 
 -- app_user, not user: user is a reserved word in PostgreSQL and would have to

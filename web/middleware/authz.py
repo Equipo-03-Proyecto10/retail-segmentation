@@ -63,6 +63,7 @@ CAMPAIGN_WRITE = "campaign.write"
 SEGMENT_RUN_EXECUTE = "segment_run.execute"
 REPORT_READ = "report.read"
 AUDIT_READ = "audit.read"
+SALES_INGEST_EXECUTE = "sales_ingest.execute"
 
 ALL_PERMISSIONS = frozenset(
     {
@@ -79,6 +80,7 @@ ALL_PERMISSIONS = frozenset(
         SEGMENT_RUN_EXECUTE,
         REPORT_READ,
         AUDIT_READ,
+        SALES_INGEST_EXECUTE,
     }
 )
 
@@ -103,6 +105,7 @@ PERMISSIONS: dict[str, frozenset[str]] = {
             REPORT_READ,
             AUDIT_READ,
             INVENTORY_WRITE,
+            SALES_INGEST_EXECUTE,
         }
     ),
     "ANALYST": frozenset({CATALOG_READ, SEGMENT_READ, CAMPAIGN_READ, REPORT_READ}),

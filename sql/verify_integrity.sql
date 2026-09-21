@@ -202,6 +202,25 @@ UPDATE app_user SET role_id = 1 WHERE email = 'user2@mosaiq-demo.com';
 ROLLBACK;
 
 \echo ''
+\echo '-- N19: duplicate source_transaction_id          [expect: 23505 unique_violation]'
+-- A file re-sent in full must be rejected as a duplicate, not inserted again
+-- (F8-01). transaction_id 1 seeds source_transaction_id 'TXN-00000001'.
+BEGIN;
+INSERT INTO transaction (source_transaction_id, customer_id, store_id, channel_id, occurred_at, total)
+VALUES ('TXN-00000001', '00000000-0000-0000-0000-000000000001', 1, 1, now(), 100.00);
+ROLLBACK;
+
+\echo ''
+\echo '-- N20: NOT NULL, transaction without a source id [expect: 23502 not_null_violation]'
+-- A row whose source identifier is absent is rejected with that reason, not
+-- defaulted (F8-01). Row-level CSV validation of this rule is F8-02's job;
+-- this proves the schema refuses it with no application in the picture.
+BEGIN;
+INSERT INTO transaction (source_transaction_id, customer_id, store_id, channel_id, occurred_at, total)
+VALUES (NULL, '00000000-0000-0000-0000-000000000001', 1, 1, now(), 100.00);
+ROLLBACK;
+
+\echo ''
 \echo '=============================================='
 \echo 'Volume check — at least 30 rows per table'
 \echo 'role and channel are exempt: see sql/seed-exempt.txt'

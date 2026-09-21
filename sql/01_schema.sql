@@ -145,12 +145,20 @@ CREATE TABLE product (
 );
 
 CREATE TABLE transaction (
-    transaction_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    customer_id    UUID NOT NULL REFERENCES customer(customer_id) ON DELETE RESTRICT,
-    store_id       SMALLINT NOT NULL REFERENCES store(store_id) ON DELETE RESTRICT,
-    channel_id     SMALLINT NOT NULL REFERENCES channel(channel_id) ON DELETE RESTRICT,
-    occurred_at    TIMESTAMPTZ NOT NULL,
-    total          NUMERIC(12,2) NOT NULL CHECK (total >= 0)
+    transaction_id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    -- The identifier the sales contract supplies (ADR-0020), durable and
+    -- distinct from the surrogate key above. UNIQUE so a file re-sent in
+    -- full is rejected as a duplicate rather than inserted a second time;
+    -- NOT NULL because a row whose identifier is absent is rejected for
+    -- that reason, not defaulted. Global UNIQUE is enough while CSV is the
+    -- sole producer (ADR-0020); docs/data-model.md §4 records what a later
+    -- multi-producer contract would need to change here.
+    source_transaction_id  VARCHAR(64) NOT NULL UNIQUE,
+    customer_id            UUID NOT NULL REFERENCES customer(customer_id) ON DELETE RESTRICT,
+    store_id               SMALLINT NOT NULL REFERENCES store(store_id) ON DELETE RESTRICT,
+    channel_id             SMALLINT NOT NULL REFERENCES channel(channel_id) ON DELETE RESTRICT,
+    occurred_at            TIMESTAMPTZ NOT NULL,
+    total                  NUMERIC(12,2) NOT NULL CHECK (total >= 0)
 );
 
 CREATE TABLE transaction_line (

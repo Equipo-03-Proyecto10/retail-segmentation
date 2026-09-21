@@ -142,8 +142,12 @@ FROM generate_series(1,40) n;
 -- ---------- transaction (300, spread over roughly six months) ----------
 -- Six months of history is what makes the deferred RFM work meaningful later:
 -- recency and frequency need a window to be measured over.
-INSERT INTO transaction (customer_id, store_id, channel_id, occurred_at, total)
-SELECT ('00000000-0000-0000-0000-' || lpad((1+((n-1)%30))::text,12,'0'))::uuid,
+--
+-- source_transaction_id mirrors the sales contract's identifier (F8-01): a
+-- deterministic, unique string per row, in the same spirit as product.sku.
+INSERT INTO transaction (source_transaction_id, customer_id, store_id, channel_id, occurred_at, total)
+SELECT 'TXN-' || lpad(n::text,8,'0'),
+       ('00000000-0000-0000-0000-' || lpad((1+((n-1)%30))::text,12,'0'))::uuid,
        1 + ((n*7) % 30),
        1 + ((n*3) % 5),
        now() - ((n % 180) || ' days')::interval,

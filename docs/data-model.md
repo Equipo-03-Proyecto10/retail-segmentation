@@ -82,9 +82,12 @@ and [`business-rules.md`](business-rules.md) RN-01 explains the split.
 
 **Functional.** Each surrogate key determines every non-key attribute of its
 row: `product_id → sku, name, category_id, list_price, image_path, is_active`,
-and equivalently for the other entities. Two candidate keys carry a functional
-dependency of their own and are therefore `UNIQUE`: `sku → product_id` and
-`email → user_id`.
+and equivalently for the other entities. Three candidate keys carry a
+functional dependency of their own and are therefore `UNIQUE`: `sku →
+product_id`, `email → user_id`, and `source_transaction_id → transaction_id` —
+the identifier the sales contract supplies determines the row the database
+generated for it, so a re-sent file finds the same row instead of creating
+another.
 
 The composite keys behave the same way:
 `(transaction_id, product_id) → quantity, unit_price` and
@@ -367,6 +370,7 @@ These two are the 4NF decomposition from §2.4.
 | Column | Type | Null | Constraints | Meaning |
 |---|---|---|---|---|
 | `transaction_id` | `BIGINT` | NN | PK, `GENERATED ALWAYS AS IDENTITY` | Sale identifier |
+| `source_transaction_id` | `VARCHAR(64)` | NN | UQ | Identifier the sales contract supplies (ADR-0020); a file re-sent in full finds this row instead of duplicating it |
 | `customer_id` | `UUID` | NN | FK → `customer`, `RESTRICT` | Who bought |
 | `store_id` | `SMALLINT` | NN | FK → `store`, `RESTRICT` | Where |
 | `channel_id` | `SMALLINT` | NN | FK → `channel`, `RESTRICT` | Through which channel |
@@ -455,6 +459,18 @@ explicit integers because their rows are referenced by seed and by tests.
 
 `gen_random_uuid()` is core in PostgreSQL 13 and later, so no extension is
 needed for it. `pg_trgm` is installed for the name searches F3-05 performs.
+
+**Source transaction identifiers.** `transaction.source_transaction_id` holds
+the identifier the sales contract supplies, distinct from the surrogate
+`transaction_id` the database generates (ADR-0020). It is `VARCHAR(64)`: wide
+enough for an alphanumeric producer identifier or a UUID-shaped one, without
+inviting an unbounded value. It is `NOT NULL` because a row whose identifier
+is absent is rejected for that reason, not defaulted — F8-02 turns that rule
+into a row-level validation error. It is globally `UNIQUE` rather than unique
+per producer: ADR-0020 names CSV as the sole sales ingestion entry point for
+this delivery, so exactly one producer exists, and a global constraint and a
+per-producer one coincide. A later multi-producer contract would need a
+composite key over `(producer_id, source_transaction_id)` instead.
 
 **Delete rules.** `RESTRICT` on catalog references — a category with products
 cannot be deleted, and neither can a customer with sales. `CASCADE` on the

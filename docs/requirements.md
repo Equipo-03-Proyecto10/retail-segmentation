@@ -74,15 +74,15 @@ links here rather than repeating it, because two copies of a matrix drift.
 `full` create, read, update and delete · `read` read only · `own` only their own
 row · `—` no access.
 
-| Role | Catalogs | Users | Segments and rules | Campaigns | Segment run | Reports | Audit log |
-|---|---|---|---|---|---|---|---|
-| `ADMIN` | full | full | full | full | run | read | read |
-| `ANALYST` | read | — | read | read | — | read | — |
-| `STORE_MANAGER` | read | — | — | — | — | read, own store | — |
-| `MARKETING` | read | — | read | full | — | read | — |
-| `INVENTORY_PLANNER` | read, `inventory` write | — | — | — | — | read | — |
-| `AUDITOR` | read | read | read | read | — | read | read |
-| `CUSTOMER` | — | own | — | — | — | — | — |
+| Role | Catalogs | Users | Segments and rules | Campaigns | Segment run | Sales ingestion | Reports | Audit log |
+|---|---|---|---|---|---|---|---|---|
+| `ADMIN` | full | full | full | full | run | ingest | read | read |
+| `ANALYST` | read | — | read | read | — | — | read | — |
+| `STORE_MANAGER` | read | — | — | — | — | — | read, own store | — |
+| `MARKETING` | read | — | read | full | — | — | read | — |
+| `INVENTORY_PLANNER` | read, `inventory` write | — | — | — | — | — | read | — |
+| `AUDITOR` | read | read | read | read | — | — | read | read |
+| `CUSTOMER` | — | own | — | — | — | — | — | — |
 
 Three things this matrix is deliberately strict about:
 

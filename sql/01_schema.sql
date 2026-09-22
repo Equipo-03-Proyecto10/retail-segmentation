@@ -252,7 +252,7 @@ CREATE TABLE transaction_line (
 CREATE TABLE campaign (
     campaign_id INT PRIMARY KEY,
     name        VARCHAR(120) NOT NULL,
-    segment_id  INT NOT NULL REFERENCES segment(segment_id) ON DELETE RESTRICT,
+    label_code  VARCHAR(40) NOT NULL REFERENCES segment_label(label_code) ON DELETE RESTRICT,
     starts_on   DATE NOT NULL,
     ends_on     DATE NOT NULL,
     status      VARCHAR(20) NOT NULL CHECK (status IN ('DRAFT','ACTIVE','FINISHED','CANCELLED')),
@@ -260,26 +260,79 @@ CREATE TABLE campaign (
 );
 
 CREATE TABLE experiment (
-    experiment_id INT PRIMARY KEY,
-    name          VARCHAR(120) NOT NULL,
-    campaign_id   INT REFERENCES campaign(campaign_id) ON DELETE SET NULL,
-    target_metric VARCHAR(60) NOT NULL,
-    starts_on     DATE NOT NULL,
-    ends_on       DATE,
+    experiment_id          INT PRIMARY KEY,
+    name                   VARCHAR(120) NOT NULL,
+    campaign_id            INT REFERENCES campaign(campaign_id) ON DELETE SET NULL,
+    target_metric          VARCHAR(60) NOT NULL,
+    starts_on              DATE NOT NULL,
+    ends_on                DATE,
+    -- ADR-0019: fixed before the run starts, immutable after the first
+    -- assignment. The schema can only require positivity; F11-04's service
+    -- locks it once assignment begins.
+    conversion_window_days SMALLINT NOT NULL CHECK (conversion_window_days > 0),
+    -- OBSERVED is a real experiment over real assignments. SEEDED is
+    -- ADR-0019's A/A validation; INJECTED is its fixed-seed synthetic-uplift
+    -- fixture. F11-07 renders the Synthetic label for the latter two.
+    data_origin            VARCHAR(20) NOT NULL
+                              CHECK (data_origin IN ('OBSERVED','SEEDED','INJECTED')),
     CHECK (ends_on IS NULL OR ends_on >= starts_on)
 );
 
 CREATE TABLE experiment_group (
     group_id      INT PRIMARY KEY,
     experiment_id INT NOT NULL REFERENCES experiment(experiment_id) ON DELETE CASCADE,
-    kind          VARCHAR(20) NOT NULL CHECK (kind IN ('CONTROL','TREATMENT'))
+    kind          VARCHAR(20) NOT NULL CHECK (kind IN ('CONTROL','TREATMENT')),
+    -- Lets experiment_assignment's FK pin a row to both its group and that
+    -- group's experiment at once, so an assignment can never claim a group
+    -- belonging to a different experiment.
+    UNIQUE (group_id, experiment_id)
 );
 
-CREATE TABLE experiment_group_customer (
-    group_id    INT NOT NULL REFERENCES experiment_group(group_id) ON DELETE CASCADE,
-    customer_id UUID NOT NULL REFERENCES customer(customer_id) ON DELETE CASCADE,
-    assigned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (group_id, customer_id)
+-- At most one control group per experiment (ADR-0019), the same shape as
+-- ux_app_user_single_administrator. At least one treatment group before
+-- activation is not expressible here -- nothing forces a row to exist -- and
+-- is F11-03's service-level check.
+CREATE UNIQUE INDEX ux_experiment_one_control
+    ON experiment_group (experiment_id) WHERE kind = 'CONTROL';
+
+-- One durable row per customer assigned to an experiment (ADR-0019), before
+-- any outcome is known. Replaces experiment_group_customer, whose
+-- (group_id, customer_id) primary key let one customer enter two arms of
+-- the same experiment as long as the group differed; experiment_id is
+-- carried directly here so UNIQUE (experiment_id, customer_id) closes that
+-- gap, and the composite foreign key stops experiment_id being spoofed.
+CREATE TABLE experiment_assignment (
+    assignment_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    experiment_id INT NOT NULL,
+    group_id      INT NOT NULL,
+    customer_id   UUID NOT NULL REFERENCES customer(customer_id) ON DELETE RESTRICT,
+    assigned_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (experiment_id, customer_id),
+    FOREIGN KEY (group_id, experiment_id)
+        REFERENCES experiment_group (group_id, experiment_id) ON DELETE CASCADE
+);
+
+-- A later, separate event: an assigned customer may remain unexposed
+-- (ADR-0019), so exposure is never folded into the assignment row. More
+-- than one exposure per assignment is allowed -- "each later exposure" is
+-- plural in the ADR -- so there is no uniqueness constraint here.
+CREATE TABLE experiment_exposure (
+    exposure_id   BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    assignment_id BIGINT NOT NULL REFERENCES experiment_assignment(assignment_id) ON DELETE CASCADE,
+    exposed_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Conversion links an assignment to a qualifying sale rather than adding an
+-- experiment column to transaction (ADR-0019). UNIQUE stops the same sale
+-- being recorded as a conversion twice for the same assignment; it does not
+-- limit an assignment to one conversion, since an average-ticket metric can
+-- legitimately draw on more than one qualifying sale.
+CREATE TABLE experiment_conversion (
+    conversion_id  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    assignment_id  BIGINT NOT NULL REFERENCES experiment_assignment(assignment_id) ON DELETE CASCADE,
+    transaction_id BIGINT NOT NULL REFERENCES transaction(transaction_id) ON DELETE CASCADE,
+    converted_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (assignment_id, transaction_id)
 );
 
 -- ---------- INVENTORY ----------
@@ -313,8 +366,9 @@ CREATE INDEX idx_transaction_customer_date        ON transaction (customer_id, o
 CREATE INDEX idx_transaction_store_date           ON transaction (store_id, occurred_at);
 CREATE INDEX idx_transaction_line_product         ON transaction_line (product_id);
 CREATE INDEX idx_product_category                 ON product (category_id);
-CREATE INDEX idx_campaign_segment                 ON campaign (segment_id);
-CREATE INDEX idx_experiment_group_customer_cust   ON experiment_group_customer (customer_id);
+CREATE INDEX idx_campaign_label                   ON campaign (label_code);
+CREATE INDEX idx_experiment_assignment_customer   ON experiment_assignment (customer_id);
+CREATE INDEX idx_experiment_exposure_assignment   ON experiment_exposure (assignment_id);
 CREATE INDEX idx_audit_log_entity                 ON audit_log (entity, entity_pk);
 
 -- =========================================================

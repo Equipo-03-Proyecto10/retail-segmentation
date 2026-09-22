@@ -206,18 +206,22 @@ FROM transaction t
 CROSS JOIN generate_series(0,1) d;
 
 -- ---------- campaign (30) ----------
-INSERT INTO campaign (campaign_id, name, segment_id, starts_on, ends_on, status)
-SELECT n, 'Campaign ' || n, n,
+INSERT INTO campaign (campaign_id, name, label_code, starts_on, ends_on, status)
+SELECT n, 'Campaign ' || n,
+       (ARRAY['CHAMPION','LOYAL','POTENTIAL','AT_RISK','HIBERNATING','LOST'])[1+((n-1)%6)],
        DATE '2026-01-01' + (n || ' days')::interval,
        DATE '2026-01-01' + ((n+30) || ' days')::interval,
        (ARRAY['DRAFT','ACTIVE','FINISHED','CANCELLED'])[1+((n-1)%4)]
 FROM generate_series(1,30) n;
 
 -- ---------- experiment (30) ----------
-INSERT INTO experiment (experiment_id, name, campaign_id, target_metric, starts_on, ends_on)
+INSERT INTO experiment (experiment_id, name, campaign_id, target_metric, starts_on, ends_on,
+                         conversion_window_days, data_origin)
 SELECT n, 'Experiment ' || n, n,
        (ARRAY['CONVERSION','AVERAGE_TICKET'])[1+((n-1)%2)],
-       DATE '2026-02-01', DATE '2026-03-01'
+       DATE '2026-02-01', DATE '2026-03-01',
+       7 + ((n-1) % 4) * 7,
+       (ARRAY['OBSERVED','SEEDED','INJECTED'])[1+((n-1)%3)]
 FROM generate_series(1,30) n;
 
 -- ---------- experiment_group (2 per experiment = 60) ----------
@@ -226,11 +230,38 @@ SELECT (n-1)*2 + 1, n, 'CONTROL' FROM generate_series(1,30) n
 UNION ALL
 SELECT (n-1)*2 + 2, n, 'TREATMENT' FROM generate_series(1,30) n;
 
--- ---------- experiment_group_customer (60 groups x 2 customers = 120) ----------
-INSERT INTO experiment_group_customer (group_id, customer_id)
-SELECT g, ('00000000-0000-0000-0000-' || lpad((1+((g*7+c) % 30))::text,12,'0'))::uuid
-FROM generate_series(1,60) g
-CROSS JOIN generate_series(0,1) c;
+-- ---------- experiment_assignment (4 per experiment = 120) ----------
+-- k 0-1 go to the control group, 2-3 to treatment. The customer offset is
+-- scoped to the experiment (base (n-1)*4, span 4 < 30) so no customer
+-- repeats within one experiment, satisfying UNIQUE (experiment_id, customer_id).
+INSERT INTO experiment_assignment (experiment_id, group_id, customer_id)
+SELECT n,
+       (n-1)*2 + 1 + (k/2),
+       ('00000000-0000-0000-0000-' || lpad((1+(((n-1)*4+k) % 30))::text,12,'0'))::uuid
+FROM generate_series(1,30) n
+CROSS JOIN generate_series(0,3) k;
+
+-- ---------- experiment_exposure (one treatment assignee per experiment = 30) ----------
+-- Picks the first treatment assignment per experiment by assignment_id,
+-- derived structurally from experiment_assignment/experiment_group rather
+-- than re-deriving the customer offset formula above, so the two inserts
+-- cannot drift apart if that formula changes.
+INSERT INTO experiment_exposure (assignment_id)
+SELECT assignment_id FROM (
+    SELECT a.assignment_id,
+           ROW_NUMBER() OVER (PARTITION BY a.experiment_id ORDER BY a.assignment_id) AS rn
+    FROM experiment_assignment a
+    JOIN experiment_group g ON g.group_id = a.group_id
+    WHERE g.kind = 'TREATMENT'
+) ranked
+WHERE rn = 1;
+
+-- ---------- experiment_conversion (one qualifying sale per exposure = 30) ----------
+INSERT INTO experiment_conversion (assignment_id, transaction_id)
+SELECT e.assignment_id,
+       (SELECT MIN(t.transaction_id) FROM transaction t WHERE t.customer_id = a.customer_id)
+FROM experiment_exposure e
+JOIN experiment_assignment a ON a.assignment_id = e.assignment_id;
 
 -- ---------- inventory (30 stores x 5 products = 150) ----------
 INSERT INTO inventory (store_id, product_id, quantity_on_hand)

@@ -156,9 +156,54 @@ segment is information; a wrong one is not.
 statement that assigns the others. **Verified** —
 [`evidence/f3-10-segment-run.md`](evidence/f3-10-segment-run.md). · `RF-12`
 
+### RN-22 — A campaign targets a real, stable segment label
+**Enforced:** `campaign_label_code_fkey` → `segment_label(label_code)`.
+**Verified** — case N23.
+
+### RN-23 — A customer holds at most one assignment per experiment
+Two arms of the same experiment is not two independent facts; it is a
+measurement error.
+
+**Enforced:** `experiment_assignment_experiment_id_customer_id_key`.
+**Verified** — case N21.
+
+### RN-24 — An experiment has at most one control group
+**Enforced:** `ux_experiment_one_control`. **Verified** — case N22.
+
+The other half — at least one treatment group before activation — is not
+expressible as a static constraint, the same shape as RN-01's *never zero*
+half. It waits on F11-03's service-level check.
+
+### RN-25 — An experiment's conversion window is a positive number of days
+**Enforced:** `experiment_conversion_window_days_check`. **Verified** — case
+N24.
+
+Fixed before the run starts and immutable after the first assignment
+(ADR-0019) is not yet enforced anywhere; it waits on F11-04's service, which
+must lock the value before assignment begins.
+
+### RN-26 — Every experiment's data carries its origin
+`OBSERVED`, `SEEDED` or `INJECTED`.
+
+**Enforced:** `experiment_data_origin_check`. **Verified** — case N25.
+
+Rendering the `Synthetic` label on every screen and export for `SEEDED` and
+`INJECTED` data (ADR-0019) is not yet built; it waits on F11-07.
+
+### RN-27 — Exposure and conversion are recorded as events separate from assignment
+Neither is a column on `experiment_assignment`: an assigned customer may
+remain unexposed, and a conversion is a link to a qualifying `transaction`,
+not a second total invented on the experiment side.
+
+**Enforced:** the model — `experiment_exposure` and `experiment_conversion`
+are their own relations, foreign-keyed to `experiment_assignment`.
+
+Refusing exposure for the control group (ADR-0019) is not yet enforced
+anywhere; it waits on F11-05.
+
 ## Audit
 
-### RN-22 — Every change to a catalog or a business rule is recorded
+### RN-28 — Every change to a catalog or a business rule is recorded
 Inserts, updates and deletes on `category`, `product`, `store`, `customer`,
 `app_user`, `segment`, `segment_rule`, `campaign`, `experiment`, `channel`,
 `role` and `customer_segment_history` all write an audit entry. The last one
@@ -174,11 +219,11 @@ write cost of the busiest table in the model.
 **Enforced:** `AFTER INSERT OR UPDATE OR DELETE` triggers calling
 `fn_audit()`. **Verified** — case P2. · `RF-14`
 
-### RN-23 — The audit log never carries a credential
+### RN-29 — The audit log never carries a credential
 **Enforced:** `fn_audit()` strips `password_hash` from both payloads before
 writing. **Verified** — case P3: zero hashes across 280 audit rows. · `RNF-17`
 
-### RN-24 — The audit log is append-only
+### RN-30 — The audit log is append-only
 Nothing in the application updates or deletes an entry. Entries are kept
 indefinitely as compliance evidence.
 
@@ -194,6 +239,12 @@ Every rule in this document is now enforced somewhere. The four that were open
 were all application-side, and all four are closed: RN-01 by F4-02 (#70), RN-03
 by F3-03 (#63), RN-05 by F4-01 (#69) and RN-21 by F3-10 (#102). A rule added
 from here starts in this section until the story that enforces it lands.
+
+F11-01 adds four more, each waiting on its own later story: RN-24 (at least
+one treatment group before activation) waits on F11-03, RN-25 (locking the
+conversion window before assignment) waits on F11-04, RN-26 (rendering the
+`Synthetic` label) waits on F11-07, and RN-27 (refusing exposure for the
+control group) waits on F11-05.
 
 RN-01 was the one to watch — a hard rule in `AGENTS.md` and a success criterion
 in [`scope.md`](scope.md) §7 that held only because the seed happened to contain

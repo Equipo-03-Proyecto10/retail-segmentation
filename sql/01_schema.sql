@@ -121,7 +121,6 @@ CREATE TABLE customer (
     email                   VARCHAR(160) UNIQUE,
     phone                   VARCHAR(20),
     registration_channel_id SMALLINT NOT NULL REFERENCES channel(channel_id) ON DELETE RESTRICT,
-    current_segment_id      INT REFERENCES segment(segment_id) ON DELETE SET NULL,
     registered_on           DATE NOT NULL DEFAULT CURRENT_DATE,
     CHECK (email IS NULL OR email ~ '@')
 );
@@ -141,6 +140,43 @@ CREATE TABLE customer_interest_category (
     category_id SMALLINT NOT NULL REFERENCES category(category_id) ON DELETE CASCADE,
     PRIMARY KEY (customer_id, category_id)
 );
+
+
+-- ---------- SEGMENTATION HISTORY (F7-02, replaces the mutable segment column) ----------
+
+-- One row per recalculation. method is fixed to RFM_RULES today; KMEANS is
+-- reserved for the Stage 3 adapter ADR-0018 describes, not produced yet.
+CREATE TABLE segmentation_run (
+    run_id      BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    method      VARCHAR(20) NOT NULL CHECK (method IN ('RFM_RULES', 'KMEANS')),
+    window_days INT NOT NULL CHECK (window_days > 0),
+    run_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Durable assignment history — ADR-0017. A run never overwrites a customer's
+-- row; it closes the open one (valid_to) and opens a new one. segment_id is
+-- NULL for a customer with no sales in the scored window: RN-21, an
+-- unassigned result is recorded, never skipped.
+CREATE TABLE customer_segment_history (
+    history_id  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    customer_id UUID NOT NULL REFERENCES customer(customer_id) ON DELETE CASCADE,
+    run_id      BIGINT NOT NULL REFERENCES segmentation_run(run_id) ON DELETE CASCADE,
+    segment_id  INT REFERENCES segment(segment_id) ON DELETE SET NULL,
+    r_score     SMALLINT,
+    f_score     SMALLINT,
+    m_score     SMALLINT,
+    valid_from  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    valid_to    TIMESTAMPTZ,
+    CHECK (valid_to IS NULL OR valid_to >= valid_from)
+);
+
+-- Exactly one open row per customer — the partial unique index a concurrent
+-- writer collides against, not just an application-level check.
+CREATE UNIQUE INDEX ux_customer_segment_history_open
+    ON customer_segment_history (customer_id) WHERE valid_to IS NULL;
+
+CREATE INDEX idx_customer_segment_history_customer
+    ON customer_segment_history (customer_id, valid_from);
 
 -- ---------- PRODUCT CATALOG AND SALES ----------
 
@@ -246,7 +282,6 @@ CREATE TABLE audit_log (
 CREATE INDEX idx_transaction_customer_date        ON transaction (customer_id, occurred_at);
 CREATE INDEX idx_transaction_store_date           ON transaction (store_id, occurred_at);
 CREATE INDEX idx_transaction_line_product         ON transaction_line (product_id);
-CREATE INDEX idx_customer_segment                 ON customer (current_segment_id);
 CREATE INDEX idx_product_category                 ON product (category_id);
 CREATE INDEX idx_campaign_segment                 ON campaign (segment_id);
 CREATE INDEX idx_experiment_group_customer_cust   ON experiment_group_customer (customer_id);

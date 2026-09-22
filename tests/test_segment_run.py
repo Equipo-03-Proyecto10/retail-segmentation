@@ -1,4 +1,4 @@
-"""The segment recalculation (#102, F3-10).
+"""The segment recalculation (#102, F3-10, F7-02).
 
 The scoring and matching are one SQL statement, and what it actually does over
 real sales is verified against PostgreSQL in
@@ -268,7 +268,7 @@ def test_the_window_is_a_parameter_and_never_interpolated() -> None:
     recalculate_segments(connection, 90)
 
     statement, parameters = cursor.execute.call_args.args
-    assert parameters == (90, 5, 5, 5, 5, 5, 5)
+    assert parameters == (90, 90, 5, 5, 5, 5, 5, 5)
     assert "90" not in statement
 
 

@@ -21,3 +21,9 @@ channel
 # data; padding this table would misrepresent the vocabulary as larger than
 # it is.
 segment_label
+
+# One row: the seed loads a single illustrative run so the catalog has
+# something to display. A real deployment accumulates many over time, which
+# is exactly what F7-02 exists to preserve — this table's real domain grows
+# from operator activity, not from seed data.
+segmentation_run

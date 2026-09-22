@@ -24,7 +24,7 @@ from web.db.channels import Channel
 from web.db.customers import Customer
 from web.db.inventory import LOW_STOCK_THRESHOLD, StockRow
 from web.db.products import Product
-from web.db.segments import Segment, SegmentRule
+from web.db.segments import CustomerSegmentAssignment, Segment, SegmentRule
 
 
 @pytest.fixture
@@ -71,7 +71,6 @@ def _customer(name: str = "Ada Lovelace", *, segment_id: int | None = 4) -> Cust
         email="ada@example.test",
         phone="5500000001",
         registration_channel_id=2,
-        current_segment_id=segment_id,
         registered_on=date(2026, 1, 15),
     )
 
@@ -286,6 +285,17 @@ def test_customer_detail_shows_interests_channels_and_the_segment(
     monkeypatch.setattr("web.routes.catalog.get_customer", lambda _c, _id: _customer())
     monkeypatch.setattr(
         "web.routes.catalog.get_channel", lambda _c, _id: Channel(2, "Web")
+    )
+    monkeypatch.setattr(
+        "web.routes.catalog.get_current_assignment",
+        lambda _c, _id: CustomerSegmentAssignment(
+            customer_id="00000000-0000-0000-0000-000000000001",
+            segment_id=4,
+            r_score=4,
+            f_score=4,
+            m_score=4,
+            valid_from=datetime(2026, 1, 1),
+        ),
     )
     monkeypatch.setattr("web.routes.catalog.get_segment", lambda _c, _id: _segment(4))
     monkeypatch.setattr(

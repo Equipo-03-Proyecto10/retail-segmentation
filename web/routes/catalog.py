@@ -28,7 +28,12 @@ from web.db.customers import (
 )
 from web.db.inventory import LOW_STOCK_THRESHOLD, list_stock
 from web.db.products import get_product, list_products
-from web.db.segments import get_segment, get_segment_rule, list_segments
+from web.db.segments import (
+    get_current_assignment,
+    get_segment,
+    get_segment_rule,
+    list_segments,
+)
 from web.db.stores import list_all_stores
 from web.middleware.authz import CATALOG_READ, SEGMENT_READ, requires
 from web.routes.pagination import redirect_last_page
@@ -121,9 +126,10 @@ def customer_detail(customer_id: UUID) -> str:
         abort(404)
 
     channel = get_channel(connection, customer.registration_channel_id)
+    assignment = get_current_assignment(connection, customer.customer_id)
     segment = (
-        get_segment(connection, customer.current_segment_id)
-        if customer.current_segment_id is not None
+        get_segment(connection, assignment.segment_id)
+        if assignment is not None and assignment.segment_id is not None
         else None
     )
     return render_template(

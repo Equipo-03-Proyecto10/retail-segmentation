@@ -113,15 +113,34 @@ FROM generate_series(1,30) n;
 -- user_id stays NULL: a customer record and an application account are
 -- separate things, and linking them is what F3-06 does for the loyalty
 -- customers who actually sign in.
-INSERT INTO customer (customer_id, user_id, name, email, phone, registration_channel_id, current_segment_id, registered_on)
+INSERT INTO customer (customer_id, user_id, name, email, phone, registration_channel_id, registered_on)
 SELECT ('00000000-0000-0000-0000-' || lpad(n::text,12,'0'))::uuid,
        NULL,
        'Demo Customer ' || n,
        'customer' || n || '@mosaiq-demo.com',
        '55' || lpad(n::text,8,'0'),
        1 + ((n-1) % 5),
-       1 + ((n-1) % 30),
        CURRENT_DATE - (n*7 || ' days')::interval
+FROM generate_series(1,30) n;
+
+-- ---------- segmentation_run + customer_segment_history (F7-02) ----------
+-- One seed run, and one open history row per customer, so the catalog has
+-- something to display without requiring an operator to trigger a real
+-- recalculation first. Customers 1-30 are spread across the 30 segments
+-- (segment_id 1-30) the same way the old mutable column used to; r/f/m scores
+-- are illustrative, not derived from the seeded transactions.
+INSERT INTO segmentation_run (method, window_days, run_at)
+VALUES ('RFM_RULES', 180, now());
+
+INSERT INTO customer_segment_history
+    (customer_id, run_id, segment_id, r_score, f_score, m_score, valid_from)
+SELECT ('00000000-0000-0000-0000-' || lpad(n::text,12,'0'))::uuid,
+       (SELECT run_id FROM segmentation_run ORDER BY run_id DESC LIMIT 1),
+       n,
+       1 + ((n-1) % 5),
+       1 + ((n*2-1) % 5),
+       1 + ((n*3-1) % 5),
+       now()
 FROM generate_series(1,30) n;
 
 -- ---------- customer_preferred_channel (30 customers x 2 channels = 60) ----------

@@ -31,9 +31,12 @@ Stories: F2-01 (conceptual model), F2-02 (normalization), F2-03 (logical model).
 | `segment_rule` | The RFM bands that define a segment |
 | `segment_label` | The stable, ordered vocabulary every segmentation run's assignments draw from |
 | `segment` | A named group of customers, valid over a period, defined by one rule |
-| `campaign` | Marketing action aimed at one segment, over a date range, in a status |
-| `experiment` | An A/B test, optionally attached to a campaign, measuring one metric |
+| `campaign` | Marketing action aimed at one stable segment label, over a date range, in a status |
+| `experiment` | An A/B test, optionally attached to a campaign, with a fixed conversion window and a data origin |
 | `experiment_group` | A control or treatment arm of an experiment |
+| `experiment_assignment` | One customer's durable assignment to one arm of an experiment, before any outcome is known |
+| `experiment_exposure` | One exposure event for an assigned customer, recorded separately from assignment |
+| `experiment_conversion` | A qualifying sale linked back to an assignment, inside its experiment's conversion window |
 | `audit_log` | Who changed which business rule or catalog row, when, and to what |
 
 ### Relationships
@@ -46,8 +49,12 @@ Stories: F2-01 (conceptual model), F2-02 (normalization), F2-03 (logical model).
 - `category` (N) — is a child of — (0..1) `category`
 - `customer` (N) — currently belongs to — (0..1) `segment`
 - `segment` (N) — is defined by — (1) `segment_rule`
-- `campaign` (N) — targets — (1) `segment`
-- `experiment` (1) — has — (N) `experiment_group` — includes — (N) `customer`
+- `campaign` (N) — targets — (1) `segment_label`
+- `experiment` (1) — has — (N) `experiment_group`
+- `experiment_group` (1) — has — (N) `experiment_assignment` — assigns — (1) `customer`
+- `experiment_assignment` (1) — has — (N) `experiment_exposure`
+- `experiment_assignment` (1) — has — (N) `experiment_conversion`
+- `transaction` (1) — qualifies — (N) `experiment_conversion`
 - `inventory` (N) — is stock of — (1) `product` at (1) `store`
 - `customer` (1) — prefers — (N) `channel`
 - `customer` (1) — is interested in — (N) `category`
@@ -203,9 +210,11 @@ reproduces exactly the original relation, which is the defining property of a
 valid 4NF decomposition.
 
 Every other relation in the model is already in 4NF. The remaining composite-key
-tables — `transaction_line`, `inventory`, `experiment_group_customer` — each
-carry a single multivalued fact plus attributes that depend on the whole key,
-so there is nothing to decompose.
+tables — `transaction_line`, `inventory` — each carry a single multivalued
+fact plus attributes that depend on the whole key, so there is nothing to
+decompose. `experiment_assignment` (F11-01, replacing the composite-keyed
+`experiment_group_customer`) is not in this group: it carries a surrogate key
+for reasons of physical design, not normalization — see §4.
 
 ---
 
@@ -234,11 +243,14 @@ erDiagram
     product                    ||--o{ inventory                  : "is stocked as"
     segment_rule               ||--o{ segment                    : "defines"
     segment                    |o--o{ customer                   : "currently groups"
-    segment                    ||--o{ campaign                   : "is targeted by"
+    segment_label              ||--o{ campaign                   : "is targeted by"
     campaign                   |o--o{ experiment                 : "originates"
     experiment                 ||--o{ experiment_group           : "has"
-    experiment_group           ||--o{ experiment_group_customer  : "includes"
-    customer                   ||--o{ experiment_group_customer  : "participates in"
+    experiment_group           ||--o{ experiment_assignment      : "has"
+    customer                   ||--o{ experiment_assignment      : "is assigned"
+    experiment_assignment      ||--o{ experiment_exposure        : "is exposed via"
+    experiment_assignment      ||--o{ experiment_conversion      : "converts via"
+    transaction                ||--o{ experiment_conversion      : "qualifies"
 ```
 
 ### Data dictionary
@@ -410,7 +422,7 @@ These two are the 4NF decomposition from §2.4.
 |---|---|---|---|---|
 | `campaign_id` | `INT` | NN | PK | Campaign identifier |
 | `name` | `VARCHAR(120)` | NN | — | Campaign name |
-| `segment_id` | `INT` | NN | FK → `segment`, `RESTRICT` | Segment targeted |
+| `label_code` | `VARCHAR(40)` | NN | FK → `segment_label`, `RESTRICT` | Stable segment label targeted (ADR-0018) |
 | `starts_on` | `DATE` | NN | — | Start |
 | `ends_on` | `DATE` | NN | `CHECK >= starts_on` | End |
 | `status` | `VARCHAR(20)` | NN | `CHECK IN ('DRAFT','ACTIVE','FINISHED','CANCELLED')` | Lifecycle state |
@@ -425,22 +437,67 @@ These two are the 4NF decomposition from §2.4.
 | `target_metric` | `VARCHAR(60)` | NN | — | Metric measured, e.g. `CONVERSION` |
 | `starts_on` | `DATE` | NN | — | Start |
 | `ends_on` | `DATE` | yes | `CHECK >= starts_on` | End; `NULL` while running |
+| `conversion_window_days` | `SMALLINT` | NN | `CHECK > 0` | Fixed before the run starts, immutable after the first assignment (ADR-0019) |
+| `data_origin` | `VARCHAR(20)` | NN | `CHECK IN ('OBSERVED','SEEDED','INJECTED')` | Real experiment, A/A validation, or injected-uplift fixture (ADR-0019) |
 
 #### `experiment_group`
 
 | Column | Type | Null | Constraints | Meaning |
 |---|---|---|---|---|
 | `group_id` | `INT` | NN | PK | Group identifier |
-| `experiment_id` | `INT` | NN | FK → `experiment`, `CASCADE` | Its experiment |
+| `experiment_id` | `INT` | NN | FK → `experiment`, `CASCADE`; UQ with `group_id` | Its experiment |
 | `kind` | `VARCHAR(20)` | NN | `CHECK IN ('CONTROL','TREATMENT')` | Which arm |
 
-#### `experiment_group_customer`
+At most one `CONTROL` row per experiment:
+`ux_experiment_one_control ON experiment_group (experiment_id) WHERE kind = 'CONTROL'`.
+`UNIQUE (group_id, experiment_id)` exists so `experiment_assignment`'s
+composite foreign key can pin an assignment to both its group and that
+group's experiment at once.
+
+#### `experiment_assignment`
 
 | Column | Type | Null | Constraints | Meaning |
 |---|---|---|---|---|
-| `group_id` | `INT` | NN | PK, FK → `experiment_group`, `CASCADE` | The arm |
-| `customer_id` | `UUID` | NN | PK, FK → `customer`, `CASCADE` | The customer in it |
-| `assigned_at` | `TIMESTAMPTZ` | NN | default `now()` | When they were assigned |
+| `assignment_id` | `BIGINT` | NN | PK, `GENERATED ALWAYS AS IDENTITY` | Assignment identifier |
+| `experiment_id` | `INT` | NN | UQ with `customer_id`; FK (with `group_id`) → `experiment_group` | The experiment |
+| `group_id` | `INT` | NN | FK (with `experiment_id`) → `experiment_group` | The arm assigned to |
+| `customer_id` | `UUID` | NN | FK → `customer`, `RESTRICT` | The customer assigned |
+| `assigned_at` | `TIMESTAMPTZ` | NN | default `now()` | When the assignment was made, before any outcome is known |
+
+Replaces `experiment_group_customer`. `UNIQUE (experiment_id, customer_id)`
+is RN-23: one customer cannot enter two arms of the same experiment. The
+composite `FOREIGN KEY (group_id, experiment_id)` means `experiment_id`
+cannot be spoofed even though it is denormalized onto this table alongside
+`group_id`.
+
+#### `experiment_exposure`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `exposure_id` | `BIGINT` | NN | PK, `GENERATED ALWAYS AS IDENTITY` | Exposure identifier |
+| `assignment_id` | `BIGINT` | NN | FK → `experiment_assignment`, `CASCADE` | The assignment exposed |
+| `exposed_at` | `TIMESTAMPTZ` | NN | default `now()` | When the exposure happened |
+
+A later, separate event (ADR-0019): an assigned customer may remain
+unexposed, so exposure is never folded into the assignment row. More than
+one exposure per assignment is allowed, so there is no uniqueness
+constraint here.
+
+#### `experiment_conversion`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `conversion_id` | `BIGINT` | NN | PK, `GENERATED ALWAYS AS IDENTITY` | Conversion identifier |
+| `assignment_id` | `BIGINT` | NN | UQ with `transaction_id`; FK → `experiment_assignment`, `CASCADE` | The assignment converting |
+| `transaction_id` | `BIGINT` | NN | UQ with `assignment_id`; FK → `transaction`, `RESTRICT` | The qualifying sale |
+| `converted_at` | `TIMESTAMPTZ` | NN | default `now()` | When the conversion was recorded |
+
+Links an assignment to a qualifying sale rather than adding an experiment
+column to `transaction` (ADR-0019). `UNIQUE (assignment_id, transaction_id)`
+stops the same sale being recorded as a conversion twice for the same
+assignment; it does not limit an assignment to one conversion, since an
+`AVERAGE_TICKET` metric can legitimately draw on more than one qualifying
+sale.
 
 #### `inventory`
 
@@ -490,11 +547,25 @@ this delivery, so exactly one producer exists, and a global constraint and a
 per-producer one coincide. A later multi-producer contract would need a
 composite key over `(producer_id, source_transaction_id)` instead.
 
+**Experiment assignment identifiers.** `experiment_assignment` (F11-01)
+carries a surrogate `assignment_id` rather than staying a pure
+`(group_id, customer_id)` bridge row, because `experiment_exposure` and
+`experiment_conversion` each need to reference "this one assignment" as a
+single foreign-key target — a composite bridge key cannot cleanly serve that
+role once two more relations hang off it. This is a physical-design choice,
+not a normalization step: see §2.4.
+
 **Delete rules.** `RESTRICT` on catalog references — a category with products
-cannot be deleted, and neither can a customer with sales. `CASCADE` on the
-bridge tables, where a child row has no meaning without its parent.
-`SET NULL` where the reference is optional context rather than structure:
-`customer.current_segment_id`, `audit_log.user_id`.
+cannot be deleted, and neither can a customer with sales. `RESTRICT` also
+protects the durable event tables `experiment_assignment.customer_id` and
+`experiment_conversion.transaction_id`, the same way `transaction.customer_id`
+protects sale history — these are historical events, not disposable bridge
+rows. `CASCADE` on the bridge tables, and on the chain from `experiment`
+down through `experiment_group`, `experiment_assignment`,
+`experiment_exposure` and `experiment_conversion`, where a child row has no
+meaning without its parent. `SET NULL` where the reference is optional
+context rather than structure: `customer.current_segment_id`,
+`audit_log.user_id`.
 
 **Indexes.**
 
@@ -505,8 +576,9 @@ bridge tables, where a child row has no meaning without its parent.
 | `idx_transaction_line_product` | `transaction_line (product_id)` | Units sold of one product |
 | `idx_customer_segment` | `customer (current_segment_id)` | Members of a segment |
 | `idx_product_category` | `product (category_id)` | Catalog browsing by category |
-| `idx_campaign_segment` | `campaign (segment_id)` | Campaigns aimed at a segment |
-| `idx_experiment_group_customer_cust` | `experiment_group_customer (customer_id)` | Experiments a customer is in |
+| `idx_campaign_label` | `campaign (label_code)` | Campaigns aimed at a segment label |
+| `idx_experiment_assignment_customer` | `experiment_assignment (customer_id)` | Experiments a customer is in |
+| `idx_experiment_exposure_assignment` | `experiment_exposure (assignment_id)` | Whether an assignment was exposed |
 | `idx_audit_log_entity` | `audit_log (entity, entity_pk)` | The history of one row |
 
 **Partitioning is not implemented.** `transaction` is the fastest-growing table
@@ -530,7 +602,10 @@ delete. Two groups of tables carry it:
 
 Individual sales are **not** audited. Their volume and history already live in
 `transaction` and `transaction_line`, and auditing them would double the write
-cost of the busiest table in the model.
+cost of the busiest table in the model. `experiment_group`,
+`experiment_assignment`, `experiment_exposure` and `experiment_conversion`
+are unaudited for the same reason: they are themselves append-only event
+records, not mutable rows a reviewer needs a before/after snapshot of.
 
 Two details worth knowing:
 

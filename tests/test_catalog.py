@@ -63,7 +63,7 @@ def _product(product_id: int = 1, *, image_path: str | None = None) -> Product:
     )
 
 
-def _customer(name: str = "Ada Lovelace", *, segment_id: int | None = 4) -> Customer:
+def _customer(name: str = "Ada Lovelace") -> Customer:
     return Customer(
         customer_id="00000000-0000-0000-0000-000000000001",
         user_id=None,
@@ -291,6 +291,7 @@ def test_customer_detail_shows_interests_channels_and_the_segment(
         lambda _c, _id: CustomerSegmentAssignment(
             customer_id="00000000-0000-0000-0000-000000000001",
             segment_id=4,
+            label_code="CHAMPION",
             r_score=4,
             f_score=4,
             m_score=4,

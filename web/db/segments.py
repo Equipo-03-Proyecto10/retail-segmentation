@@ -37,12 +37,7 @@ from psycopg import Connection
 _QUINTILES = 5
 
 _RECALCULATE = """
-WITH new_run AS (
-    INSERT INTO segmentation_run (method, window_days)
-    VALUES ('RFM_RULES', %s)
-    RETURNING run_id
-),
-window_sales AS (
+WITH window_sales AS (
     SELECT customer_id,
            max(occurred_at) AS last_purchase,
            count(*)         AS frequency,
@@ -64,21 +59,58 @@ scored AS (
 matched AS (
     -- Every customer, not only those with sales: a customer absent from
     -- window_sales has no r/f/m and no matching segment, so they land here
-    -- with all four columns NULL — RN-21's unassigned result, recorded
-    -- rather than skipped.
+    -- with all columns but customer_id NULL — RN-21's unassigned result,
+    -- recorded rather than skipped.
+    --
+    -- The LATERAL join picks the same "lowest segment_id" winner the old
+    -- MIN(seg.segment_id) subquery did (ORDER BY segment_id LIMIT 1 is
+    -- equivalent), but as a join it can also carry that winning row's
+    -- label_code -- ADR-0018's stable vocabulary -- without a second,
+    -- possibly inconsistent, correlated subquery.
     SELECT c.customer_id,
            s.r, s.f, s.m,
-           (SELECT min(seg.segment_id)
-              FROM segment AS seg
-              JOIN segment_rule AS sr ON sr.rule_id = seg.rule_id
-             WHERE s.r BETWEEN sr.r_min AND sr.r_max
-               AND s.f BETWEEN sr.f_min AND sr.f_max
-               AND s.m BETWEEN sr.m_min AND sr.m_max
-               AND seg.valid_from <= CURRENT_DATE
-               AND (seg.valid_to IS NULL OR seg.valid_to >= CURRENT_DATE)
-           ) AS segment_id
+           w.last_purchase, w.frequency, w.monetary,
+           bm.segment_id,
+           bm.label_code
       FROM customer AS c
       LEFT JOIN scored AS s ON s.customer_id = c.customer_id
+      LEFT JOIN window_sales AS w ON w.customer_id = c.customer_id
+      LEFT JOIN LATERAL (
+          SELECT seg.segment_id, seg.label_code
+            FROM segment AS seg
+            JOIN segment_rule AS sr ON sr.rule_id = seg.rule_id
+           WHERE s.r BETWEEN sr.r_min AND sr.r_max
+             AND s.f BETWEEN sr.f_min AND sr.f_max
+             AND s.m BETWEEN sr.m_min AND sr.m_max
+             AND seg.valid_from <= CURRENT_DATE
+             AND (seg.valid_to IS NULL OR seg.valid_to >= CURRENT_DATE)
+           ORDER BY seg.segment_id
+           LIMIT 1
+      ) AS bm ON true
+),
+new_run AS (
+    -- Placed after `matched`, not before: `matched` doesn't depend on the
+    -- run row at all, and a data-modifying CTE cannot see another
+    -- statement's effect on its own target table within the same query
+    -- (only RETURNING crosses that boundary) -- an earlier version tried to
+    -- backfill customer_count with a second UPDATE CTE keyed on new_run's
+    -- RETURNING id, and PostgreSQL silently matched zero rows because
+    -- new_run's insert isn't visible to a plain WHERE-clause scan of
+    -- segmentation_run from a sibling CTE. Computing the count here, before
+    -- the row is even inserted, sidesteps that rule entirely.
+    --
+    -- parameters and executed_by are ADR-0017's parameter snapshot and
+    -- executing user. executed_by reuses the same connection GUC fn_audit()
+    -- reads (web/middleware/authz.py sets it once per request), not a new
+    -- Python-side actor parameter.
+    INSERT INTO segmentation_run
+        (method, window_days, parameters, customer_count, executed_by)
+    VALUES (
+        'RFM_RULES', %s, jsonb_build_object('window_days', %s),
+        (SELECT count(*) FROM matched),
+        NULLIF(current_setting('mosaiq.user_id', true), '')::uuid
+    )
+    RETURNING run_id
 ),
 current_open AS (
     SELECT h.customer_id, h.segment_id AS open_segment_id
@@ -88,8 +120,12 @@ current_open AS (
 changed AS (
     -- Only customers whose result differs from their currently open row —
     -- same IS DISTINCT FROM guard the old UPDATE used, so a second run over
-    -- unchanged sales still writes and audits nothing.
-    SELECT m.customer_id, m.r, m.f, m.m, m.segment_id
+    -- unchanged sales still writes and audits nothing. Still keyed on
+    -- segment_id, the finer-grained identity: two segments sharing one
+    -- label_code are still a real change worth a new history row.
+    SELECT m.customer_id, m.r, m.f, m.m,
+           m.last_purchase, m.frequency, m.monetary,
+           m.segment_id, m.label_code
     FROM matched AS m
     LEFT JOIN current_open AS co ON co.customer_id = m.customer_id
     WHERE co.customer_id IS NULL
@@ -111,10 +147,14 @@ opened AS (
     -- before `closed`'s UPDATE finished clearing the old open row, and
     -- collide with ux_customer_segment_history_open.
     INSERT INTO customer_segment_history
-        (customer_id, run_id, segment_id, r_score, f_score, m_score, valid_from)
+        (customer_id, run_id, segment_id, label_code,
+         recency_last_purchase_at, frequency_count, monetary_total,
+         r_score, f_score, m_score, valid_from)
     SELECT ch.customer_id,
            (SELECT run_id FROM new_run),
-           ch.segment_id, ch.r, ch.f, ch.m,
+           ch.segment_id, ch.label_code,
+           ch.last_purchase, ch.frequency, ch.monetary,
+           ch.r, ch.f, ch.m,
            now()
     FROM changed AS ch
     LEFT JOIN closed AS cl ON cl.customer_id = ch.customer_id
@@ -149,7 +189,10 @@ def recalculate_segments(
     fails part way leaves neither the run row nor any assignment behind.
     """
     with connection.cursor() as cursor:
-        cursor.execute(_RECALCULATE, (window_days, window_days) + (_QUINTILES,) * 6)
+        cursor.execute(
+            _RECALCULATE,
+            (window_days,) + (_QUINTILES,) * 6 + (window_days, window_days),
+        )
         row = cursor.fetchone()
 
     return RecalculationCounts(
@@ -271,6 +314,7 @@ class CustomerSegmentAssignment:
 
     customer_id: str
     segment_id: int | None
+    label_code: str | None
     r_score: int | None
     f_score: int | None
     m_score: int | None
@@ -285,7 +329,8 @@ def get_current_assignment(
     with connection.cursor() as cursor:
         cursor.execute(
             """
-            SELECT customer_id, segment_id, r_score, f_score, m_score, valid_from
+            SELECT customer_id, segment_id, label_code, r_score, f_score,
+                   m_score, valid_from
             FROM customer_segment_history
             WHERE customer_id = %s AND valid_to IS NULL
             """,
@@ -309,9 +354,10 @@ def get_current_assignments(
     with connection.cursor() as cursor:
         cursor.execute(
             """
-            SELECT customer_id, segment_id, r_score, f_score, m_score, valid_from
+            SELECT customer_id, segment_id, label_code, r_score, f_score,
+                   m_score, valid_from
             FROM customer_segment_history
-            WHERE customer_id = ANY(%s) AND valid_to IS NULL
+            WHERE customer_id = ANY(%s::uuid[]) AND valid_to IS NULL
             """,
             ([str(cid) for cid in customer_ids],),
         )

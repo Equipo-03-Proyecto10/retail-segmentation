@@ -52,7 +52,7 @@
         <dl class="mq-description-list">
           <dt>Window</dt><dd>{{ result.window_days }} days ending today</dd>
           <dt>Segments changed</dt><dd>{{ result.reassigned }}</dd>
-          <dt>Segments cleared</dt><dd>{{ result.cleared }} — customers with no sales in the window</dd>
+          <dt>Segments cleared</dt><dd>{{ result.cleared }} — customers with no sales in the window, or no matching rule</dd>
         </dl>
       </div>
     </section>
@@ -60,7 +60,7 @@
     {% if result.changed_nothing %}
       <div class="mq-alert mq-alert--info" role="status"><span class="mq-alert__icon">i</span><div class="mq-stack"><span class="mq-alert__title">Nothing changed</span><span class="mq-alert__text">Nothing was written and the audit log has no new entries.</span></div></div>
     {% else %}
-      <div class="mq-alert mq-alert--success" role="status"><span class="mq-alert__icon">i</span><div class="mq-stack"><span class="mq-alert__title">Assignments updated</span><span class="mq-alert__text">{{ result.reassigned + result.cleared }} customers changed segment. <a href="{{ url_for('audit.index', entity='customer') }}">Read the audit entries.</a></span></div></div>
+      <div class="mq-alert mq-alert--success" role="status"><span class="mq-alert__icon">i</span><div class="mq-stack"><span class="mq-alert__title">Assignments updated</span><span class="mq-alert__text">{{ result.reassigned + result.cleared }} customers changed segment. <a href="{{ url_for('audit.index', entity='customer_segment_history') }}">Read the audit entries.</a></span></div></div>
     {% endif %}
   {% endif %}
 {% endblock %}

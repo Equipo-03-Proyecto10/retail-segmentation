@@ -127,7 +127,7 @@ def test_an_auditor_may_read_the_result_but_not_cause_one(app: Flask) -> None:
         ).status_code
         == 403
     )
-    assert client.get("/audit/?entity=customer").status_code == 200
+    assert client.get("/audit/?entity=customer_segment_history").status_code == 200
 
 
 def test_signed_out_it_sends_you_to_sign_in(app: Flask) -> None:
@@ -268,7 +268,7 @@ def test_the_window_is_a_parameter_and_never_interpolated() -> None:
     recalculate_segments(connection, 90)
 
     statement, parameters = cursor.execute.call_args.args
-    assert parameters == (90, 90, 5, 5, 5, 5, 5, 5)
+    assert parameters == (90, 5, 5, 5, 5, 5, 5, 90, 90)
     assert "90" not in statement
 
 

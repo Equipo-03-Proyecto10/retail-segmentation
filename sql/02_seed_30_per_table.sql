@@ -74,12 +74,8 @@ SELECT n,
        1 + ((n*3-1) % 3), 3 + ((n*3-1) % 3)
 FROM generate_series(1,30) n;
 
--- ---------- segment (30, one per rule) ----------
-INSERT INTO segment (segment_id, name, description, rule_id, valid_from, valid_to)
-SELECT n, 'Segment ' || n, 'Segment derived from RULE_' || lpad(n::text,3,'0'), n, DATE '2026-01-01', NULL
-FROM generate_series(1,30) n;
-
 -- ---------- segment_label (6, best to worst — ADR-0018) ----------
+-- Inserted before segment: segment.label_code references this vocabulary.
 INSERT INTO segment_label (label_code, ordinal_position, name, description) VALUES
     ('CHAMPION',   1, 'Champion',    'Highest recency, frequency and monetary value'),
     ('LOYAL',      2, 'Loyal',       'Buys often and recently, consistent spend'),
@@ -87,6 +83,13 @@ INSERT INTO segment_label (label_code, ordinal_position, name, description) VALU
     ('AT_RISK',    4, 'At risk',     'Used to buy often, recency has slipped'),
     ('HIBERNATING',5, 'Hibernating', 'Low recency, frequency and monetary value'),
     ('LOST',       6, 'Lost',        'No recent activity across all three measures');
+
+-- ---------- segment (30, one per rule, 5 per label) ----------
+INSERT INTO segment (segment_id, name, description, rule_id, label_code, valid_from, valid_to)
+SELECT n, 'Segment ' || n, 'Segment derived from RULE_' || lpad(n::text,3,'0'), n,
+       (ARRAY['CHAMPION','LOYAL','POTENTIAL','AT_RISK','HIBERNATING','LOST'])[1+((n-1)%6)],
+       DATE '2026-01-01', NULL
+FROM generate_series(1,30) n;
 
 
 -- ---------- app_user (30, exactly one administrator) ----------
@@ -127,16 +130,25 @@ FROM generate_series(1,30) n;
 -- One seed run, and one open history row per customer, so the catalog has
 -- something to display without requiring an operator to trigger a real
 -- recalculation first. Customers 1-30 are spread across the 30 segments
--- (segment_id 1-30) the same way the old mutable column used to; r/f/m scores
--- are illustrative, not derived from the seeded transactions.
-INSERT INTO segmentation_run (method, window_days, run_at)
-VALUES ('RFM_RULES', 180, now());
+-- (segment_id 1-30) the same way the old mutable column used to; r/f/m
+-- scores and the raw values below are illustrative, not derived from the
+-- seeded transactions. executed_by stays NULL: the seed script is not the
+-- administrator running a recalculation, the same reasoning app_user's own
+-- seed comment gives for leaving audit_log.user_id NULL on seed rows.
+INSERT INTO segmentation_run (method, window_days, parameters, customer_count, run_at)
+VALUES ('RFM_RULES', 180, '{"window_days": 180}'::jsonb, 30, now());
 
 INSERT INTO customer_segment_history
-    (customer_id, run_id, segment_id, r_score, f_score, m_score, valid_from)
+    (customer_id, run_id, segment_id, label_code,
+     recency_last_purchase_at, frequency_count, monetary_total,
+     r_score, f_score, m_score, valid_from)
 SELECT ('00000000-0000-0000-0000-' || lpad(n::text,12,'0'))::uuid,
        (SELECT run_id FROM segmentation_run ORDER BY run_id DESC LIMIT 1),
        n,
+       (ARRAY['CHAMPION','LOYAL','POTENTIAL','AT_RISK','HIBERNATING','LOST'])[1+((n-1)%6)],
+       now() - (n || ' days')::interval,
+       5 + (n % 20),
+       round((100 + (n % 30) * 37.5)::numeric, 2),
        1 + ((n-1) % 5),
        1 + ((n*2-1) % 5),
        1 + ((n*3-1) % 5),
@@ -228,7 +240,7 @@ CROSS JOIN generate_series(1,5) p;
 
 -- ---------- audit_log ----------
 -- Filled by the triggers as the statements above ran: segment, segment_rule,
--- campaign, experiment, category, product, store, channel, role, customer and
--- app_user. Nothing is inserted here by hand.
+-- campaign, experiment, category, product, store, channel, role, customer,
+-- app_user and customer_segment_history. Nothing is inserted here by hand.
 
 COMMIT;

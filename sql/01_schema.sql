@@ -264,7 +264,7 @@ CREATE TABLE experiment_exposure (
 CREATE TABLE experiment_conversion (
     conversion_id  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     assignment_id  BIGINT NOT NULL REFERENCES experiment_assignment(assignment_id) ON DELETE CASCADE,
-    transaction_id BIGINT NOT NULL REFERENCES transaction(transaction_id) ON DELETE RESTRICT,
+    transaction_id BIGINT NOT NULL REFERENCES transaction(transaction_id) ON DELETE CASCADE,
     converted_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (assignment_id, transaction_id)
 );

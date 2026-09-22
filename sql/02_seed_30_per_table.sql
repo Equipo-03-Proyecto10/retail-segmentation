@@ -211,13 +211,19 @@ FROM generate_series(1,30) n
 CROSS JOIN generate_series(0,3) k;
 
 -- ---------- experiment_exposure (one treatment assignee per experiment = 30) ----------
+-- Picks the first treatment assignment per experiment by assignment_id,
+-- derived structurally from experiment_assignment/experiment_group rather
+-- than re-deriving the customer offset formula above, so the two inserts
+-- cannot drift apart if that formula changes.
 INSERT INTO experiment_exposure (assignment_id)
-SELECT a.assignment_id
-FROM experiment_assignment a
-JOIN experiment_group g ON g.group_id = a.group_id
-WHERE g.kind = 'TREATMENT'
-  AND a.customer_id = ('00000000-0000-0000-0000-' ||
-        lpad((1 + (((a.experiment_id-1)*4 + 2) % 30))::text,12,'0'))::uuid;
+SELECT assignment_id FROM (
+    SELECT a.assignment_id,
+           ROW_NUMBER() OVER (PARTITION BY a.experiment_id ORDER BY a.assignment_id) AS rn
+    FROM experiment_assignment a
+    JOIN experiment_group g ON g.group_id = a.group_id
+    WHERE g.kind = 'TREATMENT'
+) ranked
+WHERE rn = 1;
 
 -- ---------- experiment_conversion (one qualifying sale per exposure = 30) ----------
 INSERT INTO experiment_conversion (assignment_id, transaction_id)

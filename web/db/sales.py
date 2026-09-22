@@ -35,7 +35,28 @@ def get_transaction_by_source_id(
             (source_transaction_id,),
         )
         row = cursor.fetchone()
-    return TransactionHeader(*row) if row else None
+    if row is None:
+        return None
+    (
+        transaction_id,
+        source_transaction_id,
+        customer_id,
+        store_id,
+        channel_id,
+        occurred_at,
+    ) = row
+    # customer_id comes back as uuid.UUID (psycopg's default loader for the
+    # UUID column type), not str; normalizing here keeps this dataclass's
+    # own type hint true so a caller can compare it against a CSV-sourced
+    # str without UUID.__eq__ silently returning NotImplemented/unequal.
+    return TransactionHeader(
+        transaction_id=transaction_id,
+        source_transaction_id=source_transaction_id,
+        customer_id=str(customer_id),
+        store_id=store_id,
+        channel_id=channel_id,
+        occurred_at=occurred_at,
+    )
 
 
 def insert_transaction(

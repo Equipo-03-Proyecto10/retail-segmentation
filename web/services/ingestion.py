@@ -10,9 +10,9 @@ from datetime import datetime
 from decimal import Decimal
 
 from psycopg import Connection
-from psycopg.errors import UniqueViolation
+from psycopg.errors import DataError, ForeignKeyViolation, UniqueViolation
 
-from web.db import channels, customers, products, sales, stores
+from web.db import sales
 from web.db.transactions import atomic
 
 
@@ -32,6 +32,24 @@ class RowRejected(Exception):
     """One sales row failed validation or persistence; the load continues."""
 
 
+# Maps the FK constraints a header or line insert can violate to the entity
+# name the rejection message names. Existence is left to the schema's own FK
+# constraints (ADR-0020's insert-then-translate pattern, matching
+# web/services/catalog.py's _refusal) rather than re-checked here with a
+# SELECT per referenced id.
+_FK_ENTITY_BY_CONSTRAINT = {
+    "transaction_customer_id_fkey": "customer",
+    "transaction_store_id_fkey": "store",
+    "transaction_channel_id_fkey": "channel",
+    "transaction_line_product_id_fkey": "product",
+}
+
+
+def _unknown_reference(error: ForeignKeyViolation) -> RowRejected:
+    entity = _FK_ENTITY_BY_CONSTRAINT.get(error.diag.constraint_name, "reference")
+    return RowRejected(f"unknown {entity}")
+
+
 @atomic
 def ingest_row(connection: Connection, row: SalesRow) -> None:
     """Validate and persist one sales row, or raise RowRejected."""
@@ -42,25 +60,25 @@ def ingest_row(connection: Connection, row: SalesRow) -> None:
     if row.unit_price < 0:
         raise RowRejected("unit price cannot be negative")
 
-    if customers.get_customer(connection, row.customer_id) is None:
-        raise RowRejected(f"unknown customer {row.customer_id}")
-    if stores.get_store(connection, row.store_id) is None:
-        raise RowRejected(f"unknown store {row.store_id}")
-    if channels.get_channel(connection, row.channel_id) is None:
-        raise RowRejected(f"unknown channel {row.channel_id}")
-    if products.get_product(connection, row.product_id) is None:
-        raise RowRejected(f"unknown product {row.product_id}")
-
     header = sales.get_transaction_by_source_id(connection, row.source_transaction_id)
     if header is None:
-        transaction_id = sales.insert_transaction(
-            connection,
-            source_transaction_id=row.source_transaction_id,
-            customer_id=row.customer_id,
-            store_id=row.store_id,
-            channel_id=row.channel_id,
-            occurred_at=row.occurred_at,
-        )
+        try:
+            transaction_id = sales.insert_transaction(
+                connection,
+                source_transaction_id=row.source_transaction_id,
+                customer_id=row.customer_id,
+                store_id=row.store_id,
+                channel_id=row.channel_id,
+                occurred_at=row.occurred_at,
+            )
+        except ForeignKeyViolation as error:
+            raise _unknown_reference(error) from error
+        except UniqueViolation as error:
+            raise RowRejected(
+                f"duplicate: {row.source_transaction_id} was created concurrently"
+            ) from error
+        except DataError as error:
+            raise RowRejected(f"malformed row: {error}") from error
     else:
         if (
             header.customer_id != row.customer_id
@@ -87,5 +105,9 @@ def ingest_row(connection: Connection, row: SalesRow) -> None:
             f"duplicate: {row.source_transaction_id} already has a line for "
             f"product {row.product_id}"
         ) from error
+    except ForeignKeyViolation as error:
+        raise _unknown_reference(error) from error
+    except DataError as error:
+        raise RowRejected(f"malformed row: {error}") from error
 
     sales.recompute_total(connection, transaction_id)

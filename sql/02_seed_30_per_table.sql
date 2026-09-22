@@ -136,6 +136,11 @@ FROM generate_series(1,30) n;
 -- administrator running a recalculation, the same reasoning app_user's own
 -- seed comment gives for leaving audit_log.user_id NULL on seed rows.
 INSERT INTO segmentation_run (method, window_days, parameters, customer_count, run_at)
+SELECT 'RFM_RULES', 180, '{"window_days": 180}'::jsonb, 30,
+       now() - (n || ' days')::interval
+FROM generate_series(29, 1, -1) n;
+
+INSERT INTO segmentation_run (method, window_days, parameters, customer_count, run_at)
 VALUES ('RFM_RULES', 180, '{"window_days": 180}'::jsonb, 30, now());
 
 INSERT INTO customer_segment_history

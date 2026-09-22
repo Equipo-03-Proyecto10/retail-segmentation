@@ -71,14 +71,11 @@ CREATE TABLE segment (
     name        VARCHAR(80) NOT NULL UNIQUE,
     description VARCHAR(255),
     rule_id     INT NOT NULL REFERENCES segment_rule(rule_id) ON DELETE RESTRICT,
-    -- The stable business label this RFM band represents (ADR-0018:
-    -- "RFM_RULES emits the label code selected by the matching RFM band").
-    -- Several segments legitimately share one label_code -- the vocabulary
-    -- is coarser than the rule bands by design.
     label_code  VARCHAR(40) NOT NULL REFERENCES segment_label(label_code) ON DELETE RESTRICT,
     valid_from  DATE NOT NULL,
     valid_to    DATE,
-    CHECK (valid_to IS NULL OR valid_to >= valid_from)
+    CHECK (valid_to IS NULL OR valid_to >= valid_from),
+    UNIQUE (segment_id, label_code)
 );
 
 -- ---------- USERS AND CUSTOMERS ----------
@@ -185,8 +182,10 @@ CREATE TABLE customer_segment_history (
     history_id  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     customer_id UUID NOT NULL REFERENCES customer(customer_id) ON DELETE CASCADE,
     run_id      BIGINT NOT NULL REFERENCES segmentation_run(run_id) ON DELETE CASCADE,
-    segment_id  INT REFERENCES segment(segment_id) ON DELETE SET NULL,
-    label_code  VARCHAR(40) REFERENCES segment_label(label_code) ON DELETE RESTRICT,
+    segment_id  INT,
+    label_code  VARCHAR(40),
+    FOREIGN KEY (segment_id, label_code)
+        REFERENCES segment (segment_id, label_code) ON DELETE SET NULL,
     -- Raw recency, frequency and monetary values (ADR-0017), alongside their
     -- quintile scores below.
     recency_last_purchase_at TIMESTAMPTZ,

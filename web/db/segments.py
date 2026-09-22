@@ -60,18 +60,25 @@ matched AS (
     -- Every customer, not only those with sales: a customer absent from
     -- window_sales has no r/f/m and no matching segment, so they land here
     -- with all columns but customer_id NULL — RN-21's unassigned result,
-    -- recorded rather than skipped.
+    -- recorded rather than skipped. This is the only case ADR-0018 allows a
+    -- null label for.
     --
     -- The LATERAL join picks the same "lowest segment_id" winner the old
     -- MIN(seg.segment_id) subquery did (ORDER BY segment_id LIMIT 1 is
     -- equivalent), but as a join it can also carry that winning row's
     -- label_code -- ADR-0018's stable vocabulary -- without a second,
     -- possibly inconsistent, correlated subquery.
+    --
+    -- A customer who *does* have sales but matches no rule band still gets a
+    -- label — ADR-0018 forbids a null label for anyone actually scored. The
+    -- second LATERAL falls back to the worst-ranked segment (highest
+    -- ordinal_position) only when the first found no exact band match and
+    -- the customer has an r/f/m triple to fall back from at all.
     SELECT c.customer_id,
            s.r, s.f, s.m,
            w.last_purchase, w.frequency, w.monetary,
-           bm.segment_id,
-           bm.label_code
+           COALESCE(bm.segment_id, fb.segment_id)     AS segment_id,
+           COALESCE(bm.label_code, fb.label_code)     AS label_code
       FROM customer AS c
       LEFT JOIN scored AS s ON s.customer_id = c.customer_id
       LEFT JOIN window_sales AS w ON w.customer_id = c.customer_id
@@ -87,6 +94,16 @@ matched AS (
            ORDER BY seg.segment_id
            LIMIT 1
       ) AS bm ON true
+      LEFT JOIN LATERAL (
+          SELECT seg.segment_id, seg.label_code
+            FROM segment AS seg
+            JOIN segment_label AS sl ON sl.label_code = seg.label_code
+           WHERE w.customer_id IS NOT NULL AND bm.segment_id IS NULL
+             AND seg.valid_from <= CURRENT_DATE
+             AND (seg.valid_to IS NULL OR seg.valid_to >= CURRENT_DATE)
+           ORDER BY sl.ordinal_position DESC, seg.segment_id
+           LIMIT 1
+      ) AS fb ON true
 ),
 new_run AS (
     -- Placed after `matched`, not before: `matched` doesn't depend on the
@@ -118,20 +135,22 @@ current_open AS (
     WHERE h.valid_to IS NULL
 ),
 changed AS (
-    -- Only customers whose result differs from their currently open row —
-    -- same IS DISTINCT FROM guard the old UPDATE used, so a second run over
-    -- unchanged sales still writes and audits nothing. Still keyed on
-    -- segment_id, the finer-grained identity: two segments sharing one
-    -- label_code are still a real change worth a new history row.
+    -- ADR-0017: every customer in the run writes a history row, whether or
+    -- not their result changed -- the ADR's own compliance query checks
+    -- count(h.run_id) = r.customer_count for every run. changed_flag keeps
+    -- the distinction the old IS DISTINCT FROM guard used to make, now for
+    -- the result counts below rather than for deciding who gets written.
     SELECT m.customer_id, m.r, m.f, m.m,
            m.last_purchase, m.frequency, m.monetary,
-           m.segment_id, m.label_code
+           m.segment_id, m.label_code,
+           (co.customer_id IS NULL
+              OR co.open_segment_id IS DISTINCT FROM m.segment_id) AS changed_flag
     FROM matched AS m
     LEFT JOIN current_open AS co ON co.customer_id = m.customer_id
-    WHERE co.customer_id IS NULL
-       OR co.open_segment_id IS DISTINCT FROM m.segment_id
 ),
 closed AS (
+    -- Closes the prior open row for every customer, "including when labels
+    -- do not change" (ADR-0017) -- there is no WHERE on changed_flag here.
     UPDATE customer_segment_history AS h
        SET valid_to = now()
       FROM changed AS ch
@@ -163,8 +182,10 @@ opened AS (
 SELECT (SELECT count(*) FROM matched)                              AS processed,
        (SELECT count(*) FROM matched WHERE segment_id IS NOT NULL) AS assigned,
        (SELECT count(*) FROM matched WHERE segment_id IS NULL)     AS unmatched,
-       (SELECT count(*) FROM opened WHERE segment_id IS NOT NULL)  AS reassigned,
-       (SELECT count(*) FROM opened WHERE segment_id IS NULL)      AS cleared
+       (SELECT count(*) FROM changed
+         WHERE changed_flag AND segment_id IS NOT NULL)            AS reassigned,
+        (SELECT count(*) FROM changed
+         WHERE changed_flag AND segment_id IS NULL)                AS cleared
 """
 
 

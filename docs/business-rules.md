@@ -205,14 +205,18 @@ anywhere; it waits on F11-05.
 
 ### RN-28 — Every change to a catalog or a business rule is recorded
 Inserts, updates and deletes on `category`, `product`, `store`, `customer`,
-`app_user`, `segment`, `segment_rule`, `campaign` and `experiment` all write an
-audit entry.
+`app_user`, `segment`, `segment_rule`, `campaign`, `experiment`, `channel`,
+`role` and `customer_segment_history` all write an audit entry. The last one
+replaces the signal that used to come from updating
+`customer.current_segment_id` directly — ADR-0017 retires that column in
+favour of durable history, so the history table itself is what a
+segmentation run's assignments are now traced through.
 
 Individual sales are deliberately **not** audited: their history already lives
 in `transaction` and `transaction_line`, and auditing them would double the
 write cost of the busiest table in the model.
 
-**Enforced:** nine `AFTER INSERT OR UPDATE OR DELETE` triggers calling
+**Enforced:** `AFTER INSERT OR UPDATE OR DELETE` triggers calling
 `fn_audit()`. **Verified** — case P2. · `RF-14`
 
 ### RN-29 — The audit log never carries a credential

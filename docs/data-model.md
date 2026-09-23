@@ -209,6 +209,19 @@ The decomposition is lossless: joining the two tables on `customer_id`
 reproduces exactly the original relation, which is the defining property of a
 valid 4NF decomposition.
 
+`segmentation_run` and `customer_segment_history` (ADR-0017, F7-02) are a
+second instance of the same discipline, one level up. A single relation
+carrying a run's own facts (`method`, `window_days`, `parameters`,
+`customer_count`, `executed_by`, `run_at`) together with every customer's
+result for that run would repeat the run-level facts once per customer and
+risk them disagreeing within one calculation — exactly the anomaly ADR-0017's
+"store only timestamped customer-history rows, with no run entity"
+alternative was rejected for. `run_id` and `customer_id` are independent
+axes — one run has many customer results, and (across time) one customer has
+many runs — so the run's own attributes and each customer's per-run result
+are decomposed into two relations joined by `run_id`, the same shape as the
+`customer_preferred_channel` / `customer_interest_category` split above.
+
 Every other relation in the model is already in 4NF. The remaining composite-key
 tables — `transaction_line`, `inventory` — each carry a single multivalued
 fact plus attributes that depend on the whole key, so there is nothing to
@@ -311,6 +324,7 @@ Table constraint: `r_min <= r_max AND f_min <= f_max AND m_min <= m_max`.
 | `name` | `VARCHAR(80)` | NN | UQ | Segment name |
 | `description` | `VARCHAR(255)` | yes | — | What the segment means commercially |
 | `rule_id` | `INT` | NN | FK → `segment_rule`, `RESTRICT` | The RFM bands that define it |
+| `label_code` | `VARCHAR(40)` | NN | FK → `segment_label`, `RESTRICT` | The stable business label this band represents — ADR-0018 |
 | `valid_from` | `DATE` | NN | — | First day the definition applies |
 | `valid_to` | `DATE` | yes | `CHECK >= valid_from` | Last day; `NULL` while current |
 
@@ -355,17 +369,53 @@ Named `app_user` because `user` is a reserved word in PostgreSQL.
 | `email` | `VARCHAR(160)` | yes | UQ, `CHECK ~ '@'` | Contact address |
 | `phone` | `VARCHAR(20)` | yes | — | Contact number |
 | `registration_channel_id` | `SMALLINT` | NN | FK → `channel`, `RESTRICT` | Where the customer was acquired |
-| `current_segment_id` | `INT` | yes | FK → `segment`, `SET NULL` | Segment the customer currently sits in |
 | `registered_on` | `DATE` | NN | default `CURRENT_DATE` | Registration date |
 
-`current_segment_id` is a **known limitation**, recorded here rather than left
-to be discovered. [`roadmap.md`](roadmap.md) states that segment assignments
-must be kept as history and never updated in place, because overwriting them
-destroys exactly the migration history the project exists to report on. The
-column stays for this delivery because there is no segmentation run to produce
-history yet; the segment-history module replaces it with an assignment table
-carrying `valid_from`/`valid_to` and a constraint that stops a customer holding
-two open assignments. See [ADR-0004](adr/0004-model-ahead-of-the-deferred-segmentation-modules.md).
+There is no `current_segment_id` column. ADR-0004 called the mutable column
+the first delivery briefly carried a known limitation and predicted its
+replacement; ADR-0017 fulfils that prediction with `segmentation_run` and
+`customer_segment_history` below — a customer's current segment is the
+`customer_segment_history` row with `valid_to IS NULL`, never a column on
+`customer` itself, so it cannot disagree with the history it is drawn from.
+
+#### `segmentation_run`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `run_id` | `BIGINT` | NN | PK, identity | Run identifier |
+| `method` | `VARCHAR(20)` | NN | `CHECK IN ('RFM_RULES','KMEANS')` | The strategy that produced this run — ADR-0018 |
+| `window_days` | `INT` | NN | `CHECK > 0` | Sales window scored |
+| `parameters` | `JSONB` | NN | default `{}` | Parameter snapshot (e.g. `{"window_days": N}`; a future `KMEANS` run's `k` and feature list) — ADR-0017 |
+| `customer_count` | `INT` | NN | default `0` | Customers this run scored |
+| `executed_by` | `UUID` | yes | FK → `app_user`, `SET NULL` | Who ran it; `NULL` for a seed or maintenance run, the same reasoning `audit_log.user_id` uses |
+| `run_at` | `TIMESTAMPTZ` | NN | default `now()` | When the run executed |
+
+#### `customer_segment_history`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `history_id` | `BIGINT` | NN | PK, identity | Row identifier |
+| `customer_id` | `UUID` | NN | FK → `customer`, `CASCADE` | The customer |
+| `run_id` | `BIGINT` | NN | FK → `segmentation_run`, `CASCADE` | The run that produced this result |
+| `segment_id` | `INT` | yes | FK → `segment`, `SET NULL` | The matched RFM band, `NULL` if unassigned (RN-21) |
+| `label_code` | `VARCHAR(40)` | yes | FK → `segment_label`, `RESTRICT` | The matched segment's stable label, denormalized from `segment.label_code` — what ADR-0018's downstream consumers (migration, dashboards, recommendations) read, without joining through a `segment` row that can later be retired |
+| `recency_last_purchase_at` | `TIMESTAMPTZ` | yes | — | Raw recency input |
+| `frequency_count` | `INT` | yes | — | Raw frequency input |
+| `monetary_total` | `NUMERIC(12,2)` | yes | — | Raw monetary input |
+| `r_score`, `f_score`, `m_score` | `SMALLINT` | yes | — | Quintile scores derived from the raw values above |
+| `valid_from` | `TIMESTAMPTZ` | NN | default `now()` | When this result became current |
+| `valid_to` | `TIMESTAMPTZ` | yes | `CHECK >= valid_from` | When it stopped being current; `NULL` while open |
+
+`segment_id` and `label_code` are both kept, deliberately not one or the
+other: `segment_id` is what the already-shipped F3-05 catalog feature
+(`web/db/customers.py`'s `list_customers_in_segment`, `web/routes/catalog.py`'s
+`customer_detail`) browses by — the exact matched RFM band — and several
+segments can share one `label_code` by design (ADR-0018), so replacing
+`segment_id` with `label_code` would change which customers "browse segment
+N" shows. A partial unique index (`ux_customer_segment_history_open`) still
+enforces at most one open row per customer (RN-20), and
+`idx_customer_segment_history_customer` supports the per-customer history
+read.
 
 #### `customer_preferred_channel`
 
@@ -564,8 +614,8 @@ rows. `CASCADE` on the bridge tables, and on the chain from `experiment`
 down through `experiment_group`, `experiment_assignment`,
 `experiment_exposure` and `experiment_conversion`, where a child row has no
 meaning without its parent. `SET NULL` where the reference is optional
-context rather than structure: `customer.current_segment_id`,
-`audit_log.user_id`.
+context rather than structure: `customer_segment_history.segment_id`,
+`segmentation_run.executed_by`, `audit_log.user_id`.
 
 **Indexes.**
 
@@ -574,7 +624,8 @@ context rather than structure: `customer.current_segment_id`,
 | `idx_transaction_customer_date` | `transaction (customer_id, occurred_at)` | A customer's purchase history; the RFM window later |
 | `idx_transaction_store_date` | `transaction (store_id, occurred_at)` | Sales by store over a period |
 | `idx_transaction_line_product` | `transaction_line (product_id)` | Units sold of one product |
-| `idx_customer_segment` | `customer (current_segment_id)` | Members of a segment |
+| `ux_customer_segment_history_open` | `customer_segment_history (customer_id) WHERE valid_to IS NULL` | A customer's current segment; also RN-20's constraint |
+| `idx_customer_segment_history_customer` | `customer_segment_history (customer_id, valid_from)` | A customer's segment history over time |
 | `idx_product_category` | `product (category_id)` | Catalog browsing by category |
 | `idx_campaign_label` | `campaign (label_code)` | Campaigns aimed at a segment label |
 | `idx_experiment_assignment_customer` | `experiment_assignment (customer_id)` | Experiments a customer is in |

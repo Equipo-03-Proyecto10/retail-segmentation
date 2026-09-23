@@ -54,26 +54,28 @@ CREATE TABLE segment_rule (
 
 -- ---------- SEGMENTATION ----------
 
-CREATE TABLE segment (
-    segment_id  INT PRIMARY KEY,
-    name        VARCHAR(80) NOT NULL UNIQUE,
-    description VARCHAR(255),
-    rule_id     INT NOT NULL REFERENCES segment_rule(rule_id) ON DELETE RESTRICT,
-    valid_from  DATE NOT NULL,
-    valid_to    DATE,
-    CHECK (valid_to IS NULL OR valid_to >= valid_from)
-);
-
-
 -- The stable, ordered label vocabulary every segmentation run's assignments
 -- must draw from — ADR-0018. ordinal_position is unique so K-means centroids
 -- can be paired deterministically with labels in declared best-to-worst
--- business order; it is not a foreign key target itself.
+-- business order; it is not a foreign key target itself. Declared before
+-- segment so segment.label_code can reference it.
 CREATE TABLE segment_label (
     label_code       VARCHAR(40) PRIMARY KEY,
     ordinal_position  SMALLINT NOT NULL UNIQUE CHECK (ordinal_position > 0),
     name              VARCHAR(80) NOT NULL,
     description       VARCHAR(255)
+);
+
+CREATE TABLE segment (
+    segment_id  INT PRIMARY KEY,
+    name        VARCHAR(80) NOT NULL UNIQUE,
+    description VARCHAR(255),
+    rule_id     INT NOT NULL REFERENCES segment_rule(rule_id) ON DELETE RESTRICT,
+    label_code  VARCHAR(40) NOT NULL REFERENCES segment_label(label_code) ON DELETE RESTRICT,
+    valid_from  DATE NOT NULL,
+    valid_to    DATE,
+    CHECK (valid_to IS NULL OR valid_to >= valid_from),
+    UNIQUE (segment_id, label_code)
 );
 
 -- ---------- USERS AND CUSTOMERS ----------
@@ -121,7 +123,6 @@ CREATE TABLE customer (
     email                   VARCHAR(160) UNIQUE,
     phone                   VARCHAR(20),
     registration_channel_id SMALLINT NOT NULL REFERENCES channel(channel_id) ON DELETE RESTRICT,
-    current_segment_id      INT REFERENCES segment(segment_id) ON DELETE SET NULL,
     registered_on           DATE NOT NULL DEFAULT CURRENT_DATE,
     CHECK (email IS NULL OR email ~ '@')
 );
@@ -141,6 +142,70 @@ CREATE TABLE customer_interest_category (
     category_id SMALLINT NOT NULL REFERENCES category(category_id) ON DELETE CASCADE,
     PRIMARY KEY (customer_id, category_id)
 );
+
+
+-- ---------- SEGMENTATION HISTORY (F7-02, replaces the mutable segment column) ----------
+
+-- One row per recalculation. method is fixed to RFM_RULES today; KMEANS is
+-- reserved for the Stage 3 adapter ADR-0018 describes, not produced yet.
+-- parameters, customer_count and executed_by are ADR-0017's "parameter
+-- snapshot, produced customer count, and executing user" -- executed_by is
+-- nullable for the same reason audit_log.user_id is: a seed or maintenance
+-- run has no real actor.
+CREATE TABLE segmentation_run (
+    run_id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    method         VARCHAR(20) NOT NULL CHECK (method IN ('RFM_RULES', 'KMEANS')),
+    window_days    INT NOT NULL CHECK (window_days > 0),
+    parameters     JSONB NOT NULL DEFAULT '{}'::jsonb,
+    customer_count INT NOT NULL DEFAULT 0,
+    executed_by    UUID REFERENCES app_user(user_id) ON DELETE SET NULL,
+    run_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Durable assignment history — ADR-0017 and ADR-0018. A run never overwrites
+-- a customer's row; it closes the open one (valid_to) and opens a new one.
+-- segment_id and label_code are both NULL for a customer with no sales in
+-- the scored window: RN-21, an unassigned result is recorded, never skipped.
+--
+-- segment_id is kept alongside label_code (ADR-0018's stable vocabulary,
+-- what migration/dashboard/recommendation consumers read) rather than
+-- replaced by it: web/db/customers.py's list_customers_in_segment and
+-- web/routes/catalog.py's customer_detail (F3-05, already shipped) browse
+-- by the exact matched RFM band, and several segments can legitimately
+-- share one label_code -- collapsing to label_code alone would change which
+-- customers "browse segment N" shows. label_code is redundant with
+-- segment_id (segment.label_code) but kept denormalized here so a report
+-- reads the stable label directly instead of joining through segment, whose
+-- rows can later be retired (ON DELETE SET NULL) while history must not
+-- lose its label.
+CREATE TABLE customer_segment_history (
+    history_id  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    customer_id UUID NOT NULL REFERENCES customer(customer_id) ON DELETE CASCADE,
+    run_id      BIGINT NOT NULL REFERENCES segmentation_run(run_id) ON DELETE CASCADE,
+    segment_id  INT,
+    label_code  VARCHAR(40),
+    FOREIGN KEY (segment_id, label_code)
+        REFERENCES segment (segment_id, label_code) ON DELETE SET NULL,
+    -- Raw recency, frequency and monetary values (ADR-0017), alongside their
+    -- quintile scores below.
+    recency_last_purchase_at TIMESTAMPTZ,
+    frequency_count          INT,
+    monetary_total           NUMERIC(12,2),
+    r_score     SMALLINT,
+    f_score     SMALLINT,
+    m_score     SMALLINT,
+    valid_from  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    valid_to    TIMESTAMPTZ,
+    CHECK (valid_to IS NULL OR valid_to >= valid_from)
+);
+
+-- Exactly one open row per customer — the partial unique index a concurrent
+-- writer collides against, not just an application-level check.
+CREATE UNIQUE INDEX ux_customer_segment_history_open
+    ON customer_segment_history (customer_id) WHERE valid_to IS NULL;
+
+CREATE INDEX idx_customer_segment_history_customer
+    ON customer_segment_history (customer_id, valid_from);
 
 -- ---------- PRODUCT CATALOG AND SALES ----------
 
@@ -299,7 +364,6 @@ CREATE TABLE audit_log (
 CREATE INDEX idx_transaction_customer_date        ON transaction (customer_id, occurred_at);
 CREATE INDEX idx_transaction_store_date           ON transaction (store_id, occurred_at);
 CREATE INDEX idx_transaction_line_product         ON transaction_line (product_id);
-CREATE INDEX idx_customer_segment                 ON customer (current_segment_id);
 CREATE INDEX idx_product_category                 ON product (category_id);
 CREATE INDEX idx_campaign_label                   ON campaign (label_code);
 CREATE INDEX idx_experiment_assignment_customer   ON experiment_assignment (customer_id);
@@ -396,6 +460,14 @@ FOR EACH ROW EXECUTE FUNCTION fn_audit('channel_id');
 CREATE TRIGGER trg_audit_role
 AFTER INSERT OR UPDATE OR DELETE ON role
 FOR EACH ROW EXECUTE FUNCTION fn_audit('role_id');
+
+-- ADR-0017 retires customer.current_segment_id in favour of durable history;
+-- this trigger is what replaces the audit signal that used to come from
+-- updating that column. Every open/close pair a segmentation run writes
+-- (web/db/segments.py) is now traceable the same way a catalog edit is.
+CREATE TRIGGER trg_audit_customer_segment_history
+AFTER INSERT OR UPDATE OR DELETE ON customer_segment_history
+FOR EACH ROW EXECUTE FUNCTION fn_audit('history_id');
 
 -- BEGIN APPLICATION ROLE VERIFICATION
 -- F1-05 (#53). Opt-in acceptance checks, kept here because even a rejected

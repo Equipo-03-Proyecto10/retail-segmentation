@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Campaigns · {{ application_name }}{% endblock %}
+{% block topbar_title %}Campaigns{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Analysis / Campaigns{% endblock %}
+
+{% block content %}
+  {% from "macros/ui.html" import alert, empty_state, page_header, pagination, status_pill %}
+  {% set tones = {"DRAFT": "neutral", "ACTIVE": "success", "FINISHED": "info", "CANCELLED": "warning"} %}
+  {% call page_header("Campaigns", "Run a campaign from draft to completion against a stable segment label.", "Analysis") %}
+    {% if can('campaign.write') %}<a class="mq-btn mq-btn--primary mq-btn--sm" href="{{ url_for('campaigns.create') }}">New campaign</a>{% endif %}
+  {% endcall %}
+  {% if error %}{{ alert(error) }}{% endif %}
+  {% if campaigns %}
+    <section class="mq-panel mq-panel--table mq-density-compact">
+      <div class="mq-table__toolbar"><span class="mq-table__count">Campaign lifecycle</span></div>
+      <div class="mq-table-wrap"><table class="mq-table"><thead><tr><th scope="col">ID</th><th class="mq-table__cell--sticky" scope="col">Name</th><th scope="col">Target label</th><th scope="col">Starts</th><th scope="col">Ends</th><th scope="col">Status</th>{% if can('campaign.write') %}<th scope="col">Actions</th>{% endif %}</tr></thead><tbody>
+        {% for c in campaigns %}<tr><td class="mq-mono">{{ c.campaign_id }}</td><td class="mq-table__cell--sticky">{{ c.name }}</td><td class="mq-mono">{{ c.label_code }}</td><td class="mq-num">{{ c.starts_on }}</td><td class="mq-num">{{ c.ends_on }}</td><td>{{ status_pill(c.status.title(), tones[c.status]) }}</td>{% if can('campaign.write') %}<td>
+          {% if transitions[c.status] %}<div class="mq-table__actions">
+            {% if c.status == "DRAFT" %}<a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('campaigns.edit', campaign_id=c.campaign_id, page=page) }}">Edit</a>
+            <form class="mq-inline-form" method="post" action="{{ url_for('campaigns.change_status', campaign_id=c.campaign_id, action='activate', page=page) }}"><button class="mq-btn mq-btn--primary mq-btn--sm" type="submit">Activate</button></form>{% endif %}
+            {% if c.status == "ACTIVE" %}<form class="mq-inline-form" method="post" action="{{ url_for('campaigns.change_status', campaign_id=c.campaign_id, action='complete', page=page) }}"><button class="mq-btn mq-btn--primary mq-btn--sm" type="submit">Complete</button></form>{% endif %}
+            <form class="mq-inline-form" method="post" action="{{ url_for('campaigns.change_status', campaign_id=c.campaign_id, action='cancel', page=page) }}"><button class="mq-btn mq-btn--destructive mq-btn--sm" type="submit">Cancel</button></form>
+          </div>{% else %}<span class="mq-caption">Closed</span>{% endif %}
+        </td>{% endif %}</tr>{% endfor %}
+      </tbody></table></div>
+      {{ pagination(page, total_pages, "Page {} of {}".format(page, total_pages), url_for('campaigns.index', page=page - 1) if page > 1 else none, url_for('campaigns.index', page=page + 1) if page < total_pages else none) }}
+    </section>
+  {% else %}{{ empty_state("No campaigns yet", "Create a draft campaign to begin.") }}{% endif %}
+{% endblock %}

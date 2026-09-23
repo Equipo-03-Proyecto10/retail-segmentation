@@ -397,10 +397,9 @@ def test_planned_menu_entries_reach_a_status_page() -> None:
     client = _app().test_client()
     _sign_in(client, "ADMIN")
 
-    for path in ("/campaigns/", "/reports/"):
-        response = client.get(path)
-        assert response.status_code == 200
-        assert "Still building" in response.get_data(as_text=True)
+    response = client.get("/reports/")
+    assert response.status_code == 200
+    assert "Still building" in response.get_data(as_text=True)
 
 
 def test_the_signed_in_name_and_sign_out_replace_the_sign_in_link() -> None:

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% set form_title = "Edit campaign" if request.endpoint == "campaigns.edit" else "New campaign" %}
+
+{% block title %}{{ form_title }} · {{ application_name }}{% endblock %}
+{% block topbar_title %}{{ form_title }}{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Analysis / Campaigns / {{ form_title }}{% endblock %}
+
+{% block content %}
+  {% from "macros/ui.html" import page_header %}
+  {{ page_header(form_title, "A campaign targets a segment label, not one run's segment. Only a draft can be edited.", "Campaigns") }}
+  <section class="mq-panel mq-form-panel"><header class="mq-panel__header"><h2 class="mq-panel__title">Campaign details</h2></header><div class="mq-panel__body">
+    <form class="mq-form" method="post"><div class="mq-form__grid">
+      <div class="mq-field mq-form__span-2"><label class="mq-field__label mq-field__label--required" for="name">Name</label><input class="mq-input{% if errors.name %} mq-input--error{% endif %}" type="text" id="name" name="name" value="{{ campaign.name if campaign else '' }}" required>{% if errors.name %}<span class="mq-field__error">{{ errors.name }}</span>{% endif %}</div>
+      <div class="mq-field mq-form__span-2"><label class="mq-field__label mq-field__label--required" for="label_code">Target label</label><select class="mq-select{% if errors.label_code %} mq-select--error{% endif %}" id="label_code" name="label_code" required><option value="">Choose a label</option>{% for label in labels %}<option value="{{ label.label_code }}" {% if campaign and campaign.label_code == label.label_code %}selected{% endif %}>{{ label.name }} ({{ label.label_code }})</option>{% endfor %}</select>{% if errors.label_code %}<span class="mq-field__error">{{ errors.label_code }}</span>{% endif %}</div>
+      <div class="mq-field"><label class="mq-field__label mq-field__label--required" for="starts_on">Start date</label><input class="mq-input mq-input--num{% if errors.starts_on %} mq-input--error{% endif %}" type="date" id="starts_on" name="starts_on" value="{{ campaign.starts_on if campaign else '' }}" required>{% if errors.starts_on %}<span class="mq-field__error">{{ errors.starts_on }}</span>{% endif %}</div>
+      <div class="mq-field"><label class="mq-field__label mq-field__label--required" for="ends_on">End date</label><input class="mq-input mq-input--num{% if errors.ends_on %} mq-input--error{% endif %}" type="date" id="ends_on" name="ends_on" value="{{ campaign.ends_on if campaign else '' }}" required>{% if errors.ends_on %}<span class="mq-field__error">{{ errors.ends_on }}</span>{% endif %}</div>
+      {% if errors.get("") %}<span class="mq-field__error mq-form__span-2">{{ errors[""] }}</span>{% endif %}
+    </div><div class="mq-form__actions"><button class="mq-btn mq-btn--primary" type="submit">Save</button><a class="mq-btn mq-btn--secondary" href="{{ url_for('campaigns.index', page=request.args.get('page', 1, type=int)) }}">Cancel</a></div></form>
+  </div></section>
+{% endblock %}

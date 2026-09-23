@@ -67,6 +67,33 @@ UPDATE app_user SET name = 'Rotated administrator' WHERE role_id = 1;
 SELECT 'P5 renamed: ' || name FROM app_user WHERE role_id = 1;
 ROLLBACK;
 
+\echo ''
+\echo '-- P6: a campaign status transition writes one audit entry with both statuses'
+-- F11-02 (#221): "the transition is recorded" is this trigger's job, not a
+-- second history table. Seed campaign 1 is a DRAFT.
+BEGIN;
+UPDATE campaign SET status = 'ACTIVE' WHERE campaign_id = 1 AND status = 'DRAFT';
+SELECT 'P6 transition recorded: ' || (data_before ->> 'status') || ' -> ' ||
+       (data_after ->> 'status')
+  FROM audit_log
+ WHERE entity = 'campaign' AND entity_pk = '1'
+ ORDER BY audit_id DESC LIMIT 1;
+ROLLBACK;
+
+\echo ''
+\echo '-- P7: the application''s next-id insert for a campaign takes the next free id'
+-- The same INSERT ... SELECT web/db/campaigns.py runs under its advisory lock.
+-- This shows the statement is valid and picks max + 1; that concurrent creates
+-- stay distinct is the lock's job and is not a single-session case.
+BEGIN;
+INSERT INTO campaign (campaign_id, name, label_code, starts_on, ends_on, status)
+SELECT COALESCE(max(campaign_id), 0) + 1, 'Integrity probe', 'LOYAL',
+       DATE '2027-01-01', DATE '2027-01-31', 'DRAFT'
+  FROM campaign;
+SELECT 'P7 allocated: ' || (max(campaign_id) - 30)::text || ' above the seeded 30'
+  FROM campaign;
+ROLLBACK;
+
 \echo '=============================================='
 \echo 'NEGATIVE CASES — every one of these must be refused'
 \echo '=============================================='

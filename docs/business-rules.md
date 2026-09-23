@@ -201,6 +201,41 @@ are their own relations, foreign-keyed to `experiment_assignment`.
 Refusing exposure for the control group (ADR-0019) is not yet enforced
 anywhere; it waits on F11-05.
 
+### RN-31 — A campaign moves only along fixed transitions, and two states are final
+`DRAFT` → `ACTIVE` or `CANCELLED`; `ACTIVE` → `FINISHED` or `CANCELLED`.
+`FINISHED` and `CANCELLED` permit nothing further. An illegal move is refused
+with a message naming the campaign, its status and what it may become; it is
+never silently ignored. The update is conditional on the status the service
+read, so two people moving the same campaign at once cannot both succeed. Each
+transition is one `UPDATE`, so RN-28's trigger records it, with the acting user,
+without a second history table. State is explicit; dates never imply it.
+
+A draft may also be cancelled — the issue lists only draft → active and
+active → finished/cancelled, and discarding a draft is the natural reading of
+"cancellation" (decided at F11-02, #221).
+
+**Enforced:** application — `TRANSITIONS` in `web/services/campaigns.py`. Not
+expressible in the schema: `campaign_status_check` says which statuses exist,
+not which moves between them are legal. **Verified** — the rules by
+`tests/test_campaigns.py`; the audit entry per transition by case P6 in
+`sql/verify_integrity.sql`, which the mocked-cursor tests cannot show.
+
+### RN-32 — Only a draft campaign is edited, and its target is a label code
+A campaign's name, target label and dates change only while it is a `DRAFT`. The
+target is a `label_code` from the vocabulary (RN-22), never the id of a segment
+belonging to one run, so it survives every recalculation. `starts_on`, `ends_on`
+and `label_code` are `NOT NULL`, so an activated campaign always has all three.
+
+`campaign_id` has no identity; the service allocates `max(campaign_id) + 1`
+under a transaction-scoped advisory lock rather than asking the user to type
+one.
+
+**Enforced:** application for draft-only editing; `campaign_label_code_fkey` for
+the label. **Verified** — draft-only editing by `tests/test_campaigns.py`; the
+label by case N23; the allocation statement by case P7. Concurrent creates
+getting distinct ids is the advisory lock's job and is not a single-session
+case: it was reviewed against PostgreSQL 16 and 18 in PR #240, not scripted.
+
 ## Audit
 
 ### RN-28 — Every change to a catalog or a business rule is recorded

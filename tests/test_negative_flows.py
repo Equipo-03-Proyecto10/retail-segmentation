@@ -57,7 +57,20 @@ ADMIN_ROUTES = [
     ("GET", "/segment-run/"),
     ("POST", "/segment-run/"),
 ]
-PROTECTED_ROUTES = [("GET", path) for path in READ_ROUTES] + ADMIN_ROUTES
+# campaign.write is held by ADMIN and MARKETING, so these cannot share
+# ADMIN_ROUTES' "only the administrator" refusal test.
+CAMPAIGN_WRITE_ROUTES = [
+    ("GET", "/campaigns/new"),
+    ("POST", "/campaigns/new"),
+    ("GET", "/campaigns/1/edit"),
+    ("POST", "/campaigns/1/edit"),
+    ("POST", "/campaigns/1/activate"),
+    ("POST", "/campaigns/1/complete"),
+    ("POST", "/campaigns/1/cancel"),
+]
+PROTECTED_ROUTES = (
+    [("GET", path) for path in READ_ROUTES] + ADMIN_ROUTES + CAMPAIGN_WRITE_ROUTES
+)
 PRODUCT = dict(
     product_id="1", sku="TEST", name="Product", category_id="1", list_price="10"
 )
@@ -165,6 +178,17 @@ def test_customer_access(app, method, path, caplog):
 )
 @pytest.mark.parametrize("method,path", ADMIN_ROUTES)
 def test_other_roles_cannot_administer(app, method, path, role):
+    client = app.test_client()
+    sign_in(client, role)
+    assert_page(client.open(path, method=method), 403, "Forbidden")
+    app.extensions["database_connector"].assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "role", ["ANALYST", "STORE_MANAGER", "INVENTORY_PLANNER", "AUDITOR"]
+)
+@pytest.mark.parametrize("method,path", CAMPAIGN_WRITE_ROUTES)
+def test_roles_without_campaign_write_cannot_change_campaigns(app, method, path, role):
     client = app.test_client()
     sign_in(client, role)
     assert_page(client.open(path, method=method), 403, "Forbidden")

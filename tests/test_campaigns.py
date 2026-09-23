@@ -9,6 +9,7 @@ each UPDATE is a schema fact, not something a mocked cursor can show.
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from itertools import chain, repeat
 from unittest.mock import MagicMock, Mock
@@ -271,12 +272,52 @@ def test_only_a_draft_can_be_edited(app: Flask, connection: MagicMock) -> None:
     _existing(connection, "DRAFT")
     assert client.get("/campaigns/7/edit").status_code == 200
 
+    # A read has no conflict to report: back to the list with the reason.
     _existing(connection, "ACTIVE")
-    assert client.get("/campaigns/7/edit").status_code == 409
+    response = client.get("/campaigns/7/edit?page=2")
+    assert response.status_code == 302
+    assert response.location.endswith("/campaigns/?page=2")
+    with client.session_transaction() as flask_session:
+        assert flask_session["_flashes"] == [
+            ("danger", "Campaign 7 is active; only a draft can be edited.")
+        ]
+
     response = client.post("/campaigns/7/edit", data=FORM)
     assert response.status_code == 409
     assert "only a draft can be edited" in response.get_data(as_text=True)
     assert _updates(connection) == []
+
+
+def test_a_non_draft_is_refused_before_the_form_is_validated(
+    app: Flask, connection: MagicMock
+) -> None:
+    """Invalid data on a campaign that can never be saved must not re-invite edits."""
+    client = app.test_client()
+    _sign_in(client, "MARKETING")
+    _existing(connection, "ACTIVE")
+
+    response = client.post("/campaigns/7/edit", data=FORM | {"name": ""})
+    body = response.get_data(as_text=True)
+
+    assert response.status_code == 409
+    assert "only a draft can be edited" in body
+    assert 'name="label_code"' not in body  # the edit form is not shown again
+
+
+def test_a_draft_that_moved_on_mid_edit_is_refused_not_overwritten(
+    app: Flask, connection: MagicMock
+) -> None:
+    client = app.test_client()
+    _sign_in(client, "MARKETING")
+    _existing(connection, "DRAFT")
+    _cursor(connection).rowcount = 0  # activated by someone else after we read it
+
+    response = client.post("/campaigns/7/edit", data=FORM)
+
+    assert response.status_code == 409
+    assert "left draft while you were editing it" in response.get_data(as_text=True)
+    connection.commit.assert_not_called()
+    connection.rollback.assert_called_once()
 
 
 def test_editing_a_draft_rewrites_only_while_it_is_still_a_draft(
@@ -292,6 +333,71 @@ def test_editing_a_draft_rewrites_only_while_it_is_still_a_draft(
     ((statement, parameters),) = _updates(connection)
     assert "status = 'DRAFT'" in statement
     assert parameters[1] == "LOYAL"
+
+
+# ---------- the list, as the people who use it ----------
+
+
+def test_marketing_sees_the_right_actions_for_every_status(
+    app: Flask, connection: MagicMock
+) -> None:
+    """The one place a write permission and a non-empty list meet."""
+    client = app.test_client()
+    _sign_in(client, "MARKETING")
+    statuses = ["DRAFT", "ACTIVE", "FINISHED", "CANCELLED"]
+    _cursor(connection).fetchall.return_value = [
+        tuple(_campaign(status, campaign_id).__dict__.values())
+        for campaign_id, status in enumerate(statuses, start=1)
+    ]
+    _cursor(connection).fetchone.return_value = (4,)
+
+    response = client.get("/campaigns/")
+    body = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    rows = body.split("<tbody>")[1].split("</tr>")[:4]
+    controls = [
+        re.findall(r">(Edit|Activate|Complete|Cancel|Closed)<", row) for row in rows
+    ]
+    assert controls == [
+        ["Edit", "Activate", "Cancel"],
+        ["Complete", "Cancel"],
+        ["Closed"],
+        ["Closed"],
+    ]
+    # Every control points at a real endpoint and carries the page it came from.
+    assert 'action="/campaigns/1/activate?page=1"' in body
+    assert 'action="/campaigns/2/complete?page=1"' in body
+    assert 'action="/campaigns/2/cancel?page=1"' in body
+    assert 'href="/campaigns/1/edit?page=1"' in body
+    assert 'href="/campaigns/new"' in body
+
+
+def test_a_write_returns_to_the_page_it_started_from(
+    app: Flask, connection: MagicMock
+) -> None:
+    client = app.test_client()
+    _sign_in(client, "MARKETING")
+    _existing(connection, "DRAFT")
+
+    response = client.post("/campaigns/7/activate?page=3")
+
+    assert response.status_code == 302
+    assert response.location.endswith("/campaigns/?page=3")
+
+
+def test_a_refusal_on_a_later_page_keeps_its_message(
+    app: Flask, connection: MagicMock
+) -> None:
+    """redirect_last_page would answer a POST with a GET redirect to a POST rule."""
+    client = app.test_client()
+    _sign_in(client, "MARKETING")
+    _existing(connection, "FINISHED")
+
+    response = client.post("/campaigns/7/activate?page=9")
+
+    assert response.status_code == 409
+    assert "no further transition is permitted" in response.get_data(as_text=True)
 
 
 # ---------- who may reach it ----------

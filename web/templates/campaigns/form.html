@@ -15,6 +15,6 @@
       <div class="mq-field"><label class="mq-field__label mq-field__label--required" for="starts_on">Start date</label><input class="mq-input mq-input--num{% if errors.starts_on %} mq-input--error{% endif %}" type="date" id="starts_on" name="starts_on" value="{{ campaign.starts_on if campaign else '' }}" required>{% if errors.starts_on %}<span class="mq-field__error">{{ errors.starts_on }}</span>{% endif %}</div>
       <div class="mq-field"><label class="mq-field__label mq-field__label--required" for="ends_on">End date</label><input class="mq-input mq-input--num{% if errors.ends_on %} mq-input--error{% endif %}" type="date" id="ends_on" name="ends_on" value="{{ campaign.ends_on if campaign else '' }}" required>{% if errors.ends_on %}<span class="mq-field__error">{{ errors.ends_on }}</span>{% endif %}</div>
       {% if errors.get("") %}<span class="mq-field__error mq-form__span-2">{{ errors[""] }}</span>{% endif %}
-    </div><div class="mq-form__actions"><button class="mq-btn mq-btn--primary" type="submit">Save</button><a class="mq-btn mq-btn--secondary" href="{{ url_for('campaigns.index') }}">Cancel</a></div></form>
+    </div><div class="mq-form__actions"><button class="mq-btn mq-btn--primary" type="submit">Save</button><a class="mq-btn mq-btn--secondary" href="{{ url_for('campaigns.index', page=request.args.get('page', 1, type=int)) }}">Cancel</a></div></form>
   </div></section>
 {% endblock %}

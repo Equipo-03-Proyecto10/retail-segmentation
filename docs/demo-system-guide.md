@@ -67,7 +67,8 @@ migration reports and analytical dashboards are future work.
 |---|---|
 | Running now | Public landing page; login and logout; permission-based navigation; catalogue administration; user creation and activation/deactivation; product-image upload; read-only consultation of products, customers, stock and segments; manual RFM recalculation; audit-log consultation; controlled errors; operational CLI commands |
 | Running now | One Flask/Jinja2 application over PostgreSQL, deployed through Cloudflare, NGINX, Gunicorn and systemd on one GCP Compute Engine instance |
-| Modelled only | Campaigns and experiments have tables, seed data and permissions, but no working create/update workflow |
+| Running now | Campaign lifecycle (F11-02): create and edit a draft, activate, complete or cancel, each transition audited |
+| Modelled only | Experiments have tables, seed data and permissions, but no working create/update workflow |
 | Modelled only | MongoDB and Redis have design documents. Neither engine, dependency, connection, environment variable nor runtime component currently exists |
 | Future analytics | CSV transaction ingestion, extended RFM analysis, K-means clustering, segment-assignment history, migration reports and dashboards |
 | Future architecture | Six to ten containerised microservices, Android over JSON, desktop over XML/XSD, JWT, Redis, MongoDB and OpenAPI contracts |
@@ -385,7 +386,7 @@ Gunicorn starts the same factory as `web.app:create_app()`.
 | `catalog` | `/catalog` | Read-only products, customers, stock, segments and details |
 | `segment_run` | `/segment-run` | Administrator-only, confirmed RFM recalculation |
 | `audit` | `/audit` | Administrator/auditor filtering, pagination and before/after detail |
-| `campaigns` | `/campaigns` | Permission-gated coming-soon page only |
+| `campaigns` | `/campaigns` | Campaign list for `campaign.read`; create, edit-while-draft, activate, complete and cancel for `campaign.write` (ADMIN, MARKETING) |
 | `reports` | `/reports` | Permission-gated coming-soon page only |
 
 ---
@@ -397,12 +398,12 @@ canonical permission matrix.
 
 | Role | Current useful access |
 |---|---|
-| `ADMIN` | All current consultation; full CRUD for category, product, store, channel and role; users; segment run; audit log |
-| `ANALYST` | Product and stock consultation; customers and segments; campaign/report placeholders |
+| `ADMIN` | All current consultation; full CRUD for category, product, store, channel and role; users; segment run; campaign lifecycle; audit log |
+| `ANALYST` | Product and stock consultation; customers and segments; read-only campaign list; report placeholder |
 | `STORE_MANAGER` | Product and stock consultation; report placeholder; no customer directory |
-| `MARKETING` | Product, stock, customer and segment consultation; campaign/report placeholders |
+| `MARKETING` | Product, stock, customer and segment consultation; campaign lifecycle (create, edit draft, activate, complete, cancel); report placeholder |
 | `INVENTORY_PLANNER` | Product and stock consultation; report placeholder; no inventory-write screen yet |
-| `AUDITOR` | Read-only product, stock, customer, segment and user views; campaign/report placeholders; audit log |
+| `AUDITOR` | Read-only product, stock, customer, segment and user views; read-only campaign list; report placeholder; audit log |
 | `CUSTOMER` | Authenticated home only; `user.self` exists in the permission vocabulary but has no self-service route yet |
 
 The canonical matrix is [`requirements.md`](requirements.md) section 3. It is
@@ -653,11 +654,14 @@ future intent separately.
    deactivates them, but exposes no general edit/role-change form.
 6. HU-01 mentions a five-failure cool-off period. No login rate limiter exists
    in the current application.
-7. The permission matrix includes inventory writes, customer self-service and
-   campaign writes, but there are no current workflows for those capabilities.
-8. Campaign and report navigation entries intentionally render coming-soon
-   pages. Their presence is not proof of feature completion.
-9. MongoDB, Redis, microservices, Android, desktop, JWT, OpenAPI, JSON APIs and
+7. The permission matrix includes inventory writes and customer self-service,
+   but there are no current workflows for those capabilities.
+8. The report navigation entry intentionally renders a coming-soon page. Its
+   presence is not proof of feature completion.
+9. Campaigns run a lifecycle only. A campaign is not yet linked to an
+   experiment, and nothing measures its effect until the F11 experiment
+   stories land.
+10. MongoDB, Redis, microservices, Android, desktop, JWT, OpenAPI, JSON APIs and
    XML/XSD contracts belong to the future delivery and do not run today.
 
 ---

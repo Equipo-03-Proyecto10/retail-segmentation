@@ -216,7 +216,9 @@ active → finished/cancelled, and discarding a draft is the natural reading of
 
 **Enforced:** application — `TRANSITIONS` in `web/services/campaigns.py`. Not
 expressible in the schema: `campaign_status_check` says which statuses exist,
-not which moves between them are legal. **Verified** — `tests/test_campaigns.py`.
+not which moves between them are legal. **Verified** — the rules by
+`tests/test_campaigns.py`; the audit entry per transition by case P6 in
+`sql/verify_integrity.sql`, which the mocked-cursor tests cannot show.
 
 ### RN-32 — Only a draft campaign is edited, and its target is a label code
 A campaign's name, target label and dates change only while it is a `DRAFT`. The
@@ -229,7 +231,10 @@ under a transaction-scoped advisory lock rather than asking the user to type
 one.
 
 **Enforced:** application for draft-only editing; `campaign_label_code_fkey` for
-the label. **Verified** — `tests/test_campaigns.py`.
+the label. **Verified** — draft-only editing by `tests/test_campaigns.py`; the
+label by case N23; the allocation statement by case P7. Concurrent creates
+getting distinct ids is the advisory lock's job and is not a single-session
+case: it was reviewed against PostgreSQL 16 and 18 in PR #240, not scripted.
 
 ## Audit
 

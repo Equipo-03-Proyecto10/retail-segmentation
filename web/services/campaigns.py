@@ -42,6 +42,7 @@ ACTIONS: dict[str, str] = {
 }
 
 _NAME_MAX = 120
+_LABEL_MAX = 40
 
 
 class CampaignNotFound(Exception):
@@ -68,6 +69,11 @@ class CampaignInput:
     ends_on: date
 
 
+def not_a_draft(campaign_id: int, status: str) -> str:
+    """The refusal shown when an edit is attempted on a campaign that moved on."""
+    return f"Campaign {campaign_id} is {status.lower()}; only a draft can be edited."
+
+
 def _parse_date(raw: str, label: str) -> tuple[date | None, str | None]:
     if not raw:
         return None, f"{label} is required."
@@ -90,7 +96,7 @@ def validate_campaign(
 
     if not label_code:
         errors["label_code"] = "Choose the segment label this campaign targets."
-    elif len(label_code) > 40:
+    elif len(label_code) > _LABEL_MAX:
         errors["label_code"] = "That label is not in the vocabulary."
 
     start, start_error = _parse_date(starts_on, "Start date")
@@ -141,10 +147,7 @@ def _update(connection: Connection, campaign_id: int, data: CampaignInput) -> No
     if current is None:
         raise CampaignNotFound(campaign_id)
     if current.status != DRAFT:
-        raise InvalidTransition(
-            f"Campaign {campaign_id} is {current.status.lower()}; only a draft "
-            "can be edited."
-        )
+        raise InvalidTransition(not_a_draft(campaign_id, current.status))
     edited = campaigns.update_draft(
         connection,
         campaign_id,

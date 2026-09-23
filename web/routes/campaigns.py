@@ -31,7 +31,9 @@ bp = Blueprint("campaigns", __name__, url_prefix="/campaigns")
 
 _PER_PAGE = 20
 
-_DONE = {"activate": "activated", "complete": "completed", "cancel": "cancelled"}
+
+def _page() -> int:
+    return parse_pagination(request.args.get("page"))
 
 
 def _render_index(
@@ -41,8 +43,11 @@ def _render_index(
         get_connection(), page=page, per_page=_PER_PAGE
     )
     total_pages = page_count(total, _PER_PAGE)
-    if response := redirect_last_page(page, total_pages):
+    # A refusal answers a POST, and redirect_last_page would answer it with a
+    # GET redirect to a POST-only rule and lose the message. Clamp instead.
+    if error is None and (response := redirect_last_page(page, total_pages)):
         return response
+    page = min(page, total_pages)
     return (
         render_template(
             "campaigns/index.html",
@@ -56,7 +61,9 @@ def _render_index(
     )
 
 
-def _render_form(campaign, errors: dict[str, str], status: int = 200):
+def _render_form(
+    campaign: object, errors: dict[str, str], status: int = 200
+) -> ResponseReturnValue:
     return (
         render_template(
             "campaigns/form.html",
@@ -80,7 +87,7 @@ def _form_values() -> dict[str, str]:
 @bp.get("/", endpoint="index")
 @requires(CAMPAIGN_READ)
 def index() -> ResponseReturnValue:
-    return _render_index(page=parse_pagination(request.args.get("page")))
+    return _render_index(page=_page())
 
 
 @bp.route("/new", methods=["GET", "POST"])
@@ -104,38 +111,37 @@ def create() -> ResponseReturnValue:
 @bp.route("/<int:campaign_id>/edit", methods=["GET", "POST"])
 @requires(CAMPAIGN_WRITE)
 def edit(campaign_id: int) -> ResponseReturnValue:
+    page = _page()
     campaign = get_campaign(get_connection(), campaign_id)
     if campaign is None:
         abort(404)
 
+    # Before any validation: a form that can never be saved must not invite
+    # corrections. The service checks again inside its transaction.
+    if campaign.status != service.DRAFT:
+        message = service.not_a_draft(campaign_id, campaign.status)
+        if request.method == "GET":
+            flash(message, "danger")
+            return redirect(url_for("campaigns.index", page=page))
+        return _render_index(page=page, error=message, status=409)
+
     if request.method == "GET":
-        if campaign.status != service.DRAFT:
-            return _render_index(
-                page=1,
-                error=(
-                    f"Campaign {campaign_id} is {campaign.status.lower()}; only a "
-                    "draft can be edited."
-                ),
-                status=409,
-            )
         return _render_form(campaign, {})
 
     values = _form_values()
     data, errors = service.validate_campaign(**values)
     if data is None:
-        return _render_form(dict(values, campaign_id=campaign_id), errors, 400)
+        return _render_form(values, errors, 400)
     try:
         service.update_draft(get_connection(), campaign_id, data)
     except service.CampaignNotFound:
         abort(404)
     except service.InvalidTransition as refusal:
-        return _render_index(page=1, error=str(refusal), status=409)
+        return _render_index(page=page, error=str(refusal), status=409)
     except service.CampaignRefused as refusal:
-        return _render_form(
-            dict(values, campaign_id=campaign_id), {refusal.field: str(refusal)}, 409
-        )
+        return _render_form(values, {refusal.field: str(refusal)}, 409)
     flash("Campaign updated.", "success")
-    return redirect(url_for("campaigns.index"))
+    return redirect(url_for("campaigns.index", page=page))
 
 
 @bp.post("/<int:campaign_id>/<action>")
@@ -143,11 +149,12 @@ def edit(campaign_id: int) -> ResponseReturnValue:
 def change_status(campaign_id: int, action: str) -> ResponseReturnValue:
     if action not in service.ACTIONS:
         abort(404)
+    page = _page()
     try:
-        service.transition(get_connection(), campaign_id, action)
+        status = service.transition(get_connection(), campaign_id, action)
     except service.CampaignNotFound:
         abort(404)
     except service.InvalidTransition as refusal:
-        return _render_index(page=1, error=str(refusal), status=409)
-    flash(f"Campaign {campaign_id} {_DONE[action]}.", "success")
-    return redirect(url_for("campaigns.index"))
+        return _render_index(page=page, error=str(refusal), status=409)
+    flash(f"Campaign {campaign_id} is now {status.lower()}.", "success")
+    return redirect(url_for("campaigns.index", page=page))

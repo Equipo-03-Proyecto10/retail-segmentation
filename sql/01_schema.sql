@@ -176,8 +176,12 @@ CREATE TABLE segmentation_run (
 -- customers "browse segment N" shows. label_code is redundant with
 -- segment_id (segment.label_code) but kept denormalized here so a report
 -- reads the stable label directly instead of joining through segment, whose
--- rows can later be retired (ON DELETE SET NULL) while history must not
--- lose its label.
+-- rows can later be retired while history must not lose its label. The
+-- composite foreign key enforces that a real segment_id carries that
+-- segment's label; its PostgreSQL 15+ column-list action, ON DELETE SET NULL
+-- (segment_id), retires only the band reference. The separate label_code
+-- foreign key enforces ADR-0018's vocabulary even when MATCH SIMPLE skips
+-- the composite check because segment_id is NULL, as future KMEANS rows are.
 --
 -- ADR-0017 requires one result per customer in each run, enforced by
 -- UNIQUE (run_id, customer_id). The partial open-row index cannot provide
@@ -191,7 +195,10 @@ CREATE TABLE customer_segment_history (
     segment_id  INT,
     label_code  VARCHAR(40),
     FOREIGN KEY (segment_id, label_code)
-        REFERENCES segment (segment_id, label_code) ON DELETE SET NULL,
+        REFERENCES segment (segment_id, label_code)
+        ON DELETE SET NULL (segment_id),
+    FOREIGN KEY (label_code)
+        REFERENCES segment_label (label_code) ON DELETE RESTRICT,
     -- Raw recency, frequency and monetary values (ADR-0017), alongside their
     -- quintile scores below.
     recency_last_purchase_at TIMESTAMPTZ,

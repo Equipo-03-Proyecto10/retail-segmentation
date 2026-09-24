@@ -1,9 +1,11 @@
 """The segment recalculation (#102, F3-10, F7-02).
 
-The scoring and matching are one SQL statement, and what it actually does over
-real sales is verified against PostgreSQL in
-docs/evidence/f3-10-segment-run.md — including the criterion no unit test can
-reach, that a second run over the same sales writes nothing at all.
+The scoring and matching are one SQL statement. What it did over real sales
+before F7-02 is recorded against PostgreSQL in
+docs/evidence/f3-10-segment-run.md. Since F7-02 (ADR-0017) a repeated run over
+the same sales still changes no assignment, but it records one history row per
+customer instead of writing nothing, and no unit test can reach either half
+of that.
 
 What these tests cover is the application around it: who may run it, what a
 window is allowed to be, and that the page reports what the run did.
@@ -212,10 +214,10 @@ def test_the_result_page_reports_what_the_run_did(
     assert "0.04s" in body, "how long it took"
 
 
-def test_a_run_that_changed_nothing_says_so(
+def test_a_run_with_no_segment_changes_reports_recorded_history(
     app: Flask, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The second run over the same sales, which must also audit nothing."""
+    """The second run records history even when every assignment is unchanged."""
     monkeypatch.setattr(
         "web.routes.segment_run.run",
         lambda _c, _w: _result(reassigned=0, cleared=0),
@@ -229,15 +231,19 @@ def test_a_run_that_changed_nothing_says_so(
         )
     )
 
-    assert "Nothing changed" in body
-    assert "audit log has no new entries" in body
+    assert "No segment changed" in body
+    assert "The run was still recorded with one result row per customer." in body
+    assert "Nothing was written" not in body
+    assert "no new entries" not in body
 
 
-def test_changed_nothing_is_about_writes_not_about_customers() -> None:
-    """A run can process every customer and still write nothing."""
-    assert _result(processed=30, assigned=18, reassigned=0, cleared=0).changed_nothing
-    assert not _result(reassigned=1, cleared=0).changed_nothing
-    assert not _result(reassigned=0, cleared=1).changed_nothing
+def test_no_segment_changed_is_about_assignment_changes() -> None:
+    """The result count, not whether run history was written, drives the flag."""
+    assert _result(
+        processed=30, assigned=18, reassigned=0, cleared=0
+    ).no_segment_changed
+    assert not _result(reassigned=1, cleared=0).no_segment_changed
+    assert not _result(reassigned=0, cleared=1).no_segment_changed
 
 
 def test_the_run_commits_so_the_audit_entries_survive() -> None:
@@ -272,8 +278,8 @@ def test_the_window_is_a_parameter_and_never_interpolated() -> None:
     assert "90" not in statement
 
 
-def test_the_statement_writes_only_where_the_segment_actually_changes() -> None:
-    """What keeps the second run silent, and the audit log honest."""
+def test_the_statement_tracks_assignment_changes_for_result_counts() -> None:
+    """The change predicate feeds counts, not the history writes."""
     from web.db.segments import _RECALCULATE
 
     assert "IS DISTINCT FROM" in _RECALCULATE

@@ -13,13 +13,14 @@
       <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(total, "run") }}</span><span class="mq-caption">Most recent first</span></div>
       <div class="mq-table-wrap">
         <table class="mq-table">
-          <thead><tr><th scope="col">Run</th><th scope="col">Method</th><th scope="col">Window</th><th scope="col">Customers</th><th scope="col">Executed by</th><th scope="col">Run at</th></tr></thead>
+          <thead><tr><th scope="col">Run</th><th scope="col">Method</th><th scope="col">Window</th><th scope="col">Parameters</th><th scope="col">Customers</th><th scope="col">Executed by</th><th scope="col">Run at</th></tr></thead>
           <tbody>
             {% for run in runs %}
               <tr>
                 <td class="mq-mono"><a class="mq-table__link" href="{{ url_for('run_history.detail', run_id=run.run_id) }}">#{{ run.run_id }}</a></td>
                 <td>{{ run.method }}</td>
                 <td class="mq-mono">{{ run.window_days }} days</td>
+                <td class="mq-mono">{% for key, value in run.parameters.items() %}{{ key }}: {{ value }}{% if not loop.last %}, {% endif %}{% endfor %}</td>
                 <td class="mq-mono">{{ run.customer_count }}</td>
                 <td>{{ run.executed_by_name or "System" }}</td>
                 <td class="mq-mono">{{ run.run_at.strftime("%Y-%m-%d %H:%M") }}</td>
@@ -38,8 +39,8 @@
     </section>
   {% else %}
     {{ empty_state(
-      "No runs have completed yet",
-      "Runs will appear here once a segment recalculation has been executed."
+      "No segmentation runs yet",
+      "Run history will appear here once someone triggers a segment recalculation."
     ) }}
   {% endif %}
 {% endblock %}

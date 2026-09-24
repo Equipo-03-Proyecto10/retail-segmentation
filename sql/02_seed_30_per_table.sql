@@ -135,30 +135,45 @@ FROM generate_series(1,30) n;
 -- seeded transactions. executed_by stays NULL: the seed script is not the
 -- administrator running a recalculation, the same reasoning app_user's own
 -- seed comment gives for leaving audit_log.user_id NULL on seed rows.
-INSERT INTO segmentation_run (method, window_days, parameters, customer_count, run_at)
-SELECT 'RFM_RULES', 180, '{"window_days": 180}'::jsonb, 30,
-       now() - (n || ' days')::interval
-FROM generate_series(29, 1, -1) n;
+-- 30 runs, oldest first, each with its own full 30-row history batch that
+-- the next run's INSERT immediately closes (valid_to). Only the last run's
+-- batch stays open. Anything short of this leaves ADR-0017's compliance
+-- query (count(h.run_id) = r.customer_count for every run) failing on every
+-- seeded run but the last, and a run-history detail page reporting
+-- "customer_count 30" beside an empty assignment table.
+DO $$
+DECLARE
+    d INT;
+    new_run_id BIGINT;
+BEGIN
+    FOR d IN REVERSE 29..0 LOOP
+        INSERT INTO segmentation_run (method, window_days, parameters, customer_count, run_at)
+        VALUES ('RFM_RULES', 180, '{"window_days": 180}'::jsonb, 30, now() - (d || ' days')::interval)
+        RETURNING run_id INTO new_run_id;
 
-INSERT INTO segmentation_run (method, window_days, parameters, customer_count, run_at)
-VALUES ('RFM_RULES', 180, '{"window_days": 180}'::jsonb, 30, now());
+        UPDATE customer_segment_history
+           SET valid_to = now() - (d || ' days')::interval
+         WHERE valid_to IS NULL;
 
-INSERT INTO customer_segment_history
-    (customer_id, run_id, segment_id, label_code,
-     recency_last_purchase_at, frequency_count, monetary_total,
-     r_score, f_score, m_score, valid_from)
-SELECT ('00000000-0000-0000-0000-' || lpad(n::text,12,'0'))::uuid,
-       (SELECT run_id FROM segmentation_run ORDER BY run_id DESC LIMIT 1),
-       n,
-       (ARRAY['CHAMPION','LOYAL','POTENTIAL','AT_RISK','HIBERNATING','LOST'])[1+((n-1)%6)],
-       now() - (n || ' days')::interval,
-       5 + (n % 20),
-       round((100 + (n % 30) * 37.5)::numeric, 2),
-       1 + ((n-1) % 5),
-       1 + ((n*2-1) % 5),
-       1 + ((n*3-1) % 5),
-       now()
-FROM generate_series(1,30) n;
+        INSERT INTO customer_segment_history
+            (customer_id, run_id, segment_id, label_code,
+             recency_last_purchase_at, frequency_count, monetary_total,
+             r_score, f_score, m_score, valid_from, valid_to)
+        SELECT ('00000000-0000-0000-0000-' || lpad(n::text,12,'0'))::uuid,
+               new_run_id,
+               n,
+               (ARRAY['CHAMPION','LOYAL','POTENTIAL','AT_RISK','HIBERNATING','LOST'])[1+((n-1)%6)],
+               now() - (n || ' days')::interval,
+               5 + (n % 20),
+               round((100 + (n % 30) * 37.5)::numeric, 2),
+               1 + ((n-1) % 5),
+               1 + ((n*2-1) % 5),
+               1 + ((n*3-1) % 5),
+               now() - (d || ' days')::interval,
+               CASE WHEN d > 0 THEN now() - ((d-1) || ' days')::interval END
+        FROM generate_series(1,30) n;
+    END LOOP;
+END $$;
 
 -- ---------- customer_preferred_channel (30 customers x 2 channels = 60) ----------
 INSERT INTO customer_preferred_channel (customer_id, channel_id)

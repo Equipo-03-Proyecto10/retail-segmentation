@@ -149,7 +149,7 @@ def test_the_list_reports_no_runs_yet(
 
     body = client.get("/run-history/").get_data(as_text=True)
 
-    assert "No runs have completed yet" in body
+    assert "No segmentation runs yet" in body
 
 
 # ---------- the detail ----------

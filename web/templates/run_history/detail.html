@@ -19,7 +19,7 @@
         <dt>Customers scored</dt><dd class="mq-mono">{{ run.customer_count }}</dd>
         <dt>Executed by</dt><dd>{{ run.executed_by_name or "System" }}</dd>
         <dt>Run at</dt><dd class="mq-mono">{{ run.run_at.strftime("%Y-%m-%d %H:%M:%S") }}</dd>
-        <dt>Parameters</dt><dd><code>{{ run.parameters }}</code></dd>
+        <dt>Parameters</dt><dd class="mq-mono">{% for key, value in run.parameters.items() %}{{ key }}: {{ value }}{% if not loop.last %}, {% endif %}{% endfor %}</dd>
       </dl>
     </div>
   </section>

@@ -28,7 +28,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 from psycopg import Connection
 
@@ -452,7 +454,7 @@ class RunAssignment:
     scored, including those left unassigned (RN-21): segment_id and
     label_code are simply None for them, never omitted."""
 
-    customer_id: str
+    customer_id: UUID
     customer_name: str
     segment_id: int | None
     label_code: str | None
@@ -461,7 +463,7 @@ class RunAssignment:
     m_score: int | None
     recency_last_purchase_at: datetime | None
     frequency_count: int | None
-    monetary_total: str | None
+    monetary_total: Decimal | None
 
 
 def list_run_assignments(

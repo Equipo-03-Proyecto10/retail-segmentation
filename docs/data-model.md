@@ -395,8 +395,8 @@ replacement; ADR-0017 fulfils that prediction with `segmentation_run` and
 | Column | Type | Null | Constraints | Meaning |
 |---|---|---|---|---|
 | `history_id` | `BIGINT` | NN | PK, identity | Row identifier |
-| `customer_id` | `UUID` | NN | FK → `customer`, `CASCADE` | The customer |
-| `run_id` | `BIGINT` | NN | FK → `segmentation_run`, `CASCADE` | The run that produced this result |
+| `customer_id` | `UUID` | NN | FK → `customer`, `CASCADE`; `UNIQUE` with `run_id` | The customer |
+| `run_id` | `BIGINT` | NN | FK → `segmentation_run`, `CASCADE`; first in `UNIQUE (run_id, customer_id)` | The run that produced this result |
 | `segment_id` | `INT` | yes | FK → `segment`, `SET NULL` | The matched RFM band, `NULL` if unassigned (RN-21) |
 | `label_code` | `VARCHAR(40)` | yes | FK → `segment_label`, `RESTRICT` | The matched segment's stable label, denormalized from `segment.label_code` — what ADR-0018's downstream consumers (migration, dashboards, recommendations) read, without joining through a `segment` row that can later be retired |
 | `recency_last_purchase_at` | `TIMESTAMPTZ` | yes | — | Raw recency input |
@@ -416,6 +416,14 @@ N" shows. A partial unique index (`ux_customer_segment_history_open`) still
 enforces at most one open row per customer (RN-20), and
 `idx_customer_segment_history_customer` supports the per-customer history
 read.
+
+ADR-0017's `UNIQUE (run_id, customer_id)` guarantees that a run records at
+most one result for each customer. The partial open-row index cannot enforce
+that pair because a duplicate whose `valid_to` is set is outside its
+predicate. `run_id` comes first so the unique constraint's backing index also
+serves every per-run read and cascaded run deletion, while
+`idx_customer_segment_history_customer` remains ordered for per-customer
+history reads.
 
 #### `customer_preferred_channel`
 

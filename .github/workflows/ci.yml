@@ -100,6 +100,42 @@ jobs:
           psql -v ON_ERROR_STOP=1 -d retail -f sql/01_schema.sql
           psql -v ON_ERROR_STOP=1 -d retail -f sql/02_seed_30_per_table.sql
 
+      # Fail when the seed or a schema change leaves assignment history at odds
+      # with its runs or ADR-0018's label contract, printing the offending rows.
+      - name: Segmentation history satisfies the ADR compliance queries
+        run: |
+          violations="$(
+            psql -v ON_ERROR_STOP=1 -d retail -At -F ' | ' <<'SQL'
+          SELECT 'ADR-0017 multiple open rows', customer_id, count(*)
+          FROM customer_segment_history
+          WHERE valid_to IS NULL
+          GROUP BY customer_id
+          HAVING count(*) > 1;
+
+          SELECT 'ADR-0017 run count mismatch', r.run_id,
+                 r.customer_count, count(h.run_id)
+          FROM segmentation_run AS r
+          LEFT JOIN customer_segment_history AS h ON h.run_id = r.run_id
+          GROUP BY r.run_id, r.customer_count
+          HAVING count(h.run_id) <> r.customer_count;
+
+          SELECT 'ADR-0018 unknown label', h.customer_id, h.run_id, h.label_code
+          FROM customer_segment_history AS h
+          WHERE h.label_code IS NOT NULL
+            AND h.label_code NOT IN (SELECT label_code FROM segment_label);
+
+          SELECT 'ADR-0018 unassigned row has score', h.customer_id, h.run_id
+          FROM customer_segment_history AS h
+          WHERE h.label_code IS NULL
+            AND h.r_score IS NOT NULL;
+          SQL
+          )"
+          if [ -n "$violations" ]; then
+            printf '%s\n' "$violations"
+            exit 1
+          fi
+          echo "Segmentation history satisfies ADR-0017 and ADR-0018."
+
       - name: Application role can write data but cannot drop a table
         env:
           PGUSER: retail_app

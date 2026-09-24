@@ -17,11 +17,11 @@ Two things make it repeatable, and both are deliberate:
 
 F7-02 replaces the mutable segment column customer used to carry with durable
 history (ADR-0017): every run inserts one `segmentation_run` row, and every
-customer's result lands in `customer_segment_history` — closing the
-previously open row and opening a new one only when the result actually
-changed. Nothing is written for a customer whose segment does not change: the
-same `IS DISTINCT FROM` guard that used to keep the audit trigger quiet on a
-second run now keeps history from growing on one.
+customer's result lands in a new `customer_segment_history` row. The statement
+closes the previously open row even when the segment is unchanged, so every
+run records one result row per customer. Its `changed_flag` distinguishes
+changed assignments only for the result counts; it does not decide which rows
+are written.
 """
 
 from __future__ import annotations

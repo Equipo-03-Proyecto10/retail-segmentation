@@ -3,12 +3,12 @@
 RF-12, and the demonstration list's "ejecución de un proceso principal". The
 narrow slice this delivers is written down in `docs/requirements.md`: quintile
 R/F/M scoring over a window of recorded sales, matched against the bands
-already in `segment_rule`. Not k-means, not migration reporting —
-[`docs/roadmap.md`](../../docs/roadmap.md) defers those. ADR-0004 predicted
-the mutable column this module used to write would be replaced; F7-02
-completed that replacement in web/db/segments.py, and this module now
-produces durable runs and history instead. Nothing here adds anything else
-that depends on it.
+already in `segment_rule`. This module runs only that rule-based recalculation;
+K-means (F9-02/F9-03 under ADR-0018 and ADR-0021) and migration reporting
+(F7-04) are separate planned stories in `docs/backlog.md`. ADR-0004 predicted
+the mutable column this module used to write would be replaced; F7-02 completed
+that replacement in web/db/segments.py, and this module now produces durable
+runs and history instead. Nothing here implements the separate stories.
 
 RN-21 lives here: a customer with no sales in the window is *unassigned*, not
 left holding a stale segment. An empty segment is information; a wrong one is
@@ -53,8 +53,8 @@ class RunResult:
     seconds: float
 
     @property
-    def changed_nothing(self) -> bool:
-        """True when the run wrote nothing — and so audited nothing."""
+    def no_segment_changed(self) -> bool:
+        """True when no customer's segment assignment changed in the run."""
         return self.reassigned == 0 and self.cleared == 0
 
 

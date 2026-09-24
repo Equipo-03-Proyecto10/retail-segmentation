@@ -50,6 +50,7 @@ def execute() -> tuple[str, int] | str:
     result = run(get_connection(), window)
 
     # Rendered rather than redirected: the numbers are the point of the page,
-    # and a resubmitted run is safe by construction — the same sales produce
-    # the same assignment, and the second run writes nothing.
+    # and a resubmitted run is harmless by construction — the same sales
+    # produce the same assignment, so a second run changes no segment; it only
+    # records one more run in the history (ADR-0017).
     return render_template("segment_run/index.html", window=window, result=result)

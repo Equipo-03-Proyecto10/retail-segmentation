@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}Run #{{ run.run_id }} · {{ application_name }}{% endblock %}
+{% block topbar_title %}Run detail{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Analysis / Run history / Run #{{ run.run_id }}{% endblock %}
+
+{% block content %}
+  {% from "macros/ui.html" import count_label, empty_state, page_header, pagination %}
+  {% call page_header("Run #" ~ run.run_id, "Every customer this run scored, with the label and raw values it produced.", "Segmentation run") %}
+    <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('run_history.index') }}">Back to run history</a>
+  {% endcall %}
+
+  <section class="mq-panel">
+    <header class="mq-panel__header"><h2 class="mq-panel__title">Run details</h2><span class="mq-caption mq-mono">run {{ run.run_id }}</span></header>
+    <div class="mq-panel__body">
+      <dl class="mq-description-list">
+        <dt>Method</dt><dd>{{ run.method }}</dd>
+        <dt>Window</dt><dd class="mq-mono">{{ run.window_days }} days</dd>
+        <dt>Customers scored</dt><dd class="mq-mono">{{ run.customer_count }}</dd>
+        <dt>Executed by</dt><dd>{{ run.executed_by_name or "System" }}</dd>
+        <dt>Run at</dt><dd class="mq-mono">{{ run.run_at.strftime("%Y-%m-%d %H:%M:%S") }}</dd>
+        <dt>Parameters</dt><dd><code>{{ run.parameters }}</code></dd>
+      </dl>
+    </div>
+  </section>
+
+  {% if assignments %}
+    <section class="mq-panel mq-panel--table mq-density-compact">
+      <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(total, "customer") }} scored</span><span class="mq-caption">Assignments from this run</span></div>
+      <div class="mq-table-wrap">
+        <table class="mq-table">
+          <thead><tr><th class="mq-table__cell--sticky" scope="col">Customer</th><th scope="col">Label</th><th scope="col">R</th><th scope="col">F</th><th scope="col">M</th><th scope="col">Last purchase</th><th scope="col">Orders</th><th scope="col">Spend</th></tr></thead>
+          <tbody>
+            {% for a in assignments %}
+              <tr>
+                <td class="mq-table__cell--sticky"><a class="mq-table__link" href="{{ url_for('catalog.customer_detail', customer_id=a.customer_id) }}">{{ a.customer_name }}</a></td>
+                <td>{{ a.label_code or "Unassigned" }}</td>
+                <td class="mq-num">{{ a.r_score if a.r_score is not none else "—" }}</td>
+                <td class="mq-num">{{ a.f_score if a.f_score is not none else "—" }}</td>
+                <td class="mq-num">{{ a.m_score if a.m_score is not none else "—" }}</td>
+                <td class="mq-mono">{{ a.recency_last_purchase_at.strftime("%Y-%m-%d") if a.recency_last_purchase_at else "—" }}</td>
+                <td class="mq-num">{{ a.frequency_count if a.frequency_count is not none else "—" }}</td>
+                <td class="mq-num">{{ a.monetary_total if a.monetary_total is not none else "—" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {{ pagination(
+        page,
+        total_pages,
+        "Page {} of {} · ".format(page, total_pages) ~ count_label(total, "customer"),
+        url_for('run_history.detail', run_id=run.run_id, page=page - 1) if page > 1 else none,
+        url_for('run_history.detail', run_id=run.run_id, page=page + 1) if page < total_pages else none
+      ) }}
+    </section>
+  {% else %}
+    {{ empty_state("No customers were scored in this run.", "This run may not have completed correctly.") }}
+  {% endif %}
+{% endblock %}

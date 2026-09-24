@@ -379,6 +379,7 @@ def test_the_menu_is_driven_by_permissions_rather_than_by_role() -> None:
         "Segments",
         "Campaigns",
         "Segment run",
+        "Run history",
         "Reports",
         "Audit log",
     ]
@@ -387,6 +388,7 @@ def test_the_menu_is_driven_by_permissions_rather_than_by_role() -> None:
         "Catalogs",
         "Segments",
         "Campaigns",
+        "Run history",
         "Reports",
     ]
     assert _menu_labels(app.test_client()) == ["Home"]

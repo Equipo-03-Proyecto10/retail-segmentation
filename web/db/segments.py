@@ -385,3 +385,116 @@ def get_current_assignments(
         rows = cursor.fetchall()
 
     return {str(row[0]): CustomerSegmentAssignment(*row) for row in rows}
+
+
+# ---------- run history (F7-03) ----------
+
+
+@dataclass(frozen=True)
+class SegmentationRun:
+    run_id: int
+    method: str
+    window_days: int
+    parameters: dict
+    customer_count: int
+    executed_by: str | None
+    executed_by_name: str | None
+    run_at: datetime
+
+
+def list_runs(
+    connection: Connection[Any], *, page: int, per_page: int
+) -> tuple[list[SegmentationRun], int]:
+    """Return a page of completed runs, most recent first, and the total."""
+    offset = (page - 1) * per_page
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT r.run_id, r.method, r.window_days, r.parameters,
+                   r.customer_count, r.executed_by, u.name, r.run_at
+            FROM segmentation_run AS r
+            LEFT JOIN app_user AS u ON u.user_id = r.executed_by
+            ORDER BY r.run_at DESC, r.run_id DESC
+            LIMIT %s OFFSET %s
+            """,
+            (per_page, offset),
+        )
+        rows = cursor.fetchall()
+
+        cursor.execute("SELECT count(*) FROM segmentation_run")
+        total = cursor.fetchone()[0]
+
+    return [SegmentationRun(*row) for row in rows], total
+
+
+def get_run(connection: Connection[Any], run_id: int) -> SegmentationRun | None:
+    """Return one run by id, or None if it does not exist."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT r.run_id, r.method, r.window_days, r.parameters,
+                   r.customer_count, r.executed_by, u.name, r.run_at
+            FROM segmentation_run AS r
+            LEFT JOIN app_user AS u ON u.user_id = r.executed_by
+            WHERE r.run_id = %s
+            """,
+            (run_id,),
+        )
+        row = cursor.fetchone()
+
+    return SegmentationRun(*row) if row else None
+
+
+@dataclass(frozen=True)
+class RunAssignment:
+    """One customer's result within a specific run — every customer the run
+    scored, including those left unassigned (RN-21): segment_id and
+    label_code are simply None for them, never omitted."""
+
+    customer_id: str
+    customer_name: str
+    segment_id: int | None
+    label_code: str | None
+    r_score: int | None
+    f_score: int | None
+    m_score: int | None
+    recency_last_purchase_at: datetime | None
+    frequency_count: int | None
+    monetary_total: str | None
+
+
+def list_run_assignments(
+    connection: Connection[Any], run_id: int, *, page: int, per_page: int
+) -> tuple[list[RunAssignment], int]:
+    """Return a page of this run's customer assignments, and the total.
+
+    Every customer the run scored appears here, whether or not they matched
+    a segment — unassigned is a result, not an omission (RN-21).
+    """
+    offset = (page - 1) * per_page
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT h.customer_id, c.name, h.segment_id, h.label_code,
+                   h.r_score, h.f_score, h.m_score,
+                   h.recency_last_purchase_at, h.frequency_count,
+                   h.monetary_total
+            FROM customer_segment_history AS h
+            JOIN customer AS c ON c.customer_id = h.customer_id
+            WHERE h.run_id = %s
+            ORDER BY c.name, h.customer_id
+            LIMIT %s OFFSET %s
+            """,
+            (run_id, per_page, offset),
+        )
+        rows = cursor.fetchall()
+
+        cursor.execute(
+            "SELECT count(*) FROM customer_segment_history WHERE run_id = %s",
+            (run_id,),
+        )
+        total = cursor.fetchone()[0]
+
+    return [RunAssignment(*row) for row in rows], total

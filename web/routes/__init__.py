@@ -13,6 +13,7 @@ from web.routes.campaigns import bp as campaigns_bp
 from web.routes.catalog import bp as catalog_bp
 from web.routes.home import bp as home_bp
 from web.routes.placeholders import reports_bp
+from web.routes.run_history import bp as run_history_bp
 from web.routes.segment_run import bp as segment_run_bp
 
 
@@ -24,5 +25,6 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(audit_bp)
     app.register_blueprint(catalog_bp)
     app.register_blueprint(segment_run_bp)
+    app.register_blueprint(run_history_bp)
     app.register_blueprint(campaigns_bp)
     app.register_blueprint(reports_bp)

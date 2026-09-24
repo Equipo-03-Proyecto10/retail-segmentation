@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Run history · {{ application_name }}{% endblock %}
+{% block topbar_title %}Run history{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Analysis / Run history{% endblock %}
+
+{% block content %}
+  {% from "macros/ui.html" import count_label, empty_state, page_header, pagination %}
+  {{ page_header("Run history", "Every completed segmentation run, traced back to its method, parameters and the person who ran it.", "Segmentation traceability") }}
+
+  {% if runs %}
+    <section class="mq-panel mq-panel--table mq-density-compact">
+      <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(total, "run") }}</span><span class="mq-caption">Most recent first</span></div>
+      <div class="mq-table-wrap">
+        <table class="mq-table">
+          <thead><tr><th scope="col">Run</th><th scope="col">Method</th><th scope="col">Window</th><th scope="col">Customers</th><th scope="col">Executed by</th><th scope="col">Run at</th></tr></thead>
+          <tbody>
+            {% for run in runs %}
+              <tr>
+                <td class="mq-mono"><a class="mq-table__link" href="{{ url_for('run_history.detail', run_id=run.run_id) }}">#{{ run.run_id }}</a></td>
+                <td>{{ run.method }}</td>
+                <td class="mq-mono">{{ run.window_days }} days</td>
+                <td class="mq-mono">{{ run.customer_count }}</td>
+                <td>{{ run.executed_by_name or "System" }}</td>
+                <td class="mq-mono">{{ run.run_at.strftime("%Y-%m-%d %H:%M") }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {{ pagination(
+        page,
+        total_pages,
+        "Page {} of {} · ".format(page, total_pages) ~ count_label(total, "run"),
+        url_for('run_history.index', page=page - 1) if page > 1 else none,
+        url_for('run_history.index', page=page + 1) if page < total_pages else none
+      ) }}
+    </section>
+  {% else %}
+    {{ empty_state(
+      "No runs have completed yet",
+      "Runs will appear here once a segment recalculation has been executed."
+    ) }}
+  {% endif %}
+{% endblock %}

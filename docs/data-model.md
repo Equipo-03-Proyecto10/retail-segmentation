@@ -395,10 +395,10 @@ replacement; ADR-0017 fulfils that prediction with `segmentation_run` and
 | Column | Type | Null | Constraints | Meaning |
 |---|---|---|---|---|
 | `history_id` | `BIGINT` | NN | PK, identity | Row identifier |
-| `customer_id` | `UUID` | NN | FK → `customer`, `CASCADE` | The customer |
-| `run_id` | `BIGINT` | NN | FK → `segmentation_run`, `CASCADE` | The run that produced this result |
-| `segment_id` | `INT` | yes | FK → `segment`, `SET NULL` | The matched RFM band, `NULL` if unassigned (RN-21) |
-| `label_code` | `VARCHAR(40)` | yes | FK → `segment_label`, `RESTRICT` | The matched segment's stable label, denormalized from `segment.label_code` — what ADR-0018's downstream consumers (migration, dashboards, recommendations) read, without joining through a `segment` row that can later be retired |
+| `customer_id` | `UUID` | NN | FK → `customer`, `CASCADE`; `UNIQUE` with `run_id` | The customer |
+| `run_id` | `BIGINT` | NN | FK → `segmentation_run`, `CASCADE`; first in `UNIQUE (run_id, customer_id)` | The run that produced this result |
+| `segment_id` | `INT` | yes | Composite FK with `label_code` → `segment (segment_id, label_code)`, `SET NULL (segment_id)` | The matched RFM band, `NULL` if unassigned (RN-21) or if the referenced band is retired |
+| `label_code` | `VARCHAR(40)` | yes | Composite FK with `segment_id` → `segment (segment_id, label_code)`; FK → `segment_label`, `RESTRICT` | The stable label, preserved if its matched RFM band is retired; ADR-0018's downstream consumers (migration, dashboards, recommendations) read it without joining through that segment row |
 | `recency_last_purchase_at` | `TIMESTAMPTZ` | yes | — | Raw recency input |
 | `frequency_count` | `INT` | yes | — | Raw frequency input |
 | `monetary_total` | `NUMERIC(12,2)` | yes | — | Raw monetary input |
@@ -412,10 +412,24 @@ other: `segment_id` is what the already-shipped F3-05 catalog feature
 `customer_detail`) browses by — the exact matched RFM band — and several
 segments can share one `label_code` by design (ADR-0018), so replacing
 `segment_id` with `label_code` would change which customers "browse segment
-N" shows. A partial unique index (`ux_customer_segment_history_open`) still
-enforces at most one open row per customer (RN-20), and
+N" shows. Their composite foreign key enforces the functional dependency
+that a real `segment_id` carries its segment's `label_code`. Deleting that
+segment uses PostgreSQL 15+'s column-list action to set only `segment_id` to
+null, preserving the stable label. The direct `label_code` foreign key keeps
+the vocabulary constrained when `segment_id` is null and the composite
+`MATCH SIMPLE` check does not apply; deleting a referenced vocabulary label
+is restricted. A partial unique index (`ux_customer_segment_history_open`)
+still enforces at most one open row per customer (RN-20), and
 `idx_customer_segment_history_customer` supports the per-customer history
 read.
+
+ADR-0017's `UNIQUE (run_id, customer_id)` guarantees that a run records at
+most one result for each customer. The partial open-row index cannot enforce
+that pair because a duplicate whose `valid_to` is set is outside its
+predicate. `run_id` comes first so the unique constraint's backing index also
+serves every per-run read and cascaded run deletion, while
+`idx_customer_segment_history_customer` remains ordered for per-customer
+history reads.
 
 #### `customer_preferred_channel`
 
@@ -606,16 +620,18 @@ role once two more relations hang off it. This is a physical-design choice,
 not a normalization step: see §2.4.
 
 **Delete rules.** `RESTRICT` on catalog references — a category with products
-cannot be deleted, and neither can a customer with sales. `RESTRICT` also
-protects the durable event tables `experiment_assignment.customer_id` and
+cannot be deleted, and neither can a customer with sales. It also protects
+the stable `segment_label` vocabulary while history references a label, and
+the durable event tables `experiment_assignment.customer_id` and
 `experiment_conversion.transaction_id`, the same way `transaction.customer_id`
 protects sale history — these are historical events, not disposable bridge
 rows. `CASCADE` on the bridge tables, and on the chain from `experiment`
 down through `experiment_group`, `experiment_assignment`,
 `experiment_exposure` and `experiment_conversion`, where a child row has no
 meaning without its parent. `SET NULL` where the reference is optional
-context rather than structure: `customer_segment_history.segment_id`,
-`segmentation_run.executed_by`, `audit_log.user_id`.
+context rather than structure: `customer_segment_history.segment_id` (that
+column only, so the row keeps its `label_code`), `segmentation_run.executed_by`,
+`audit_log.user_id`.
 
 **Indexes.**
 

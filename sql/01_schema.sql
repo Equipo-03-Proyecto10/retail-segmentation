@@ -176,8 +176,18 @@ CREATE TABLE segmentation_run (
 -- customers "browse segment N" shows. label_code is redundant with
 -- segment_id (segment.label_code) but kept denormalized here so a report
 -- reads the stable label directly instead of joining through segment, whose
--- rows can later be retired (ON DELETE SET NULL) while history must not
--- lose its label.
+-- rows can later be retired while history must not lose its label. The
+-- composite foreign key enforces that a real segment_id carries that
+-- segment's label; its PostgreSQL 15+ column-list action, ON DELETE SET NULL
+-- (segment_id), retires only the band reference. The separate label_code
+-- foreign key enforces ADR-0018's vocabulary even when MATCH SIMPLE skips
+-- the composite check because segment_id is NULL, as future KMEANS rows are.
+--
+-- ADR-0017 requires one result per customer in each run, enforced by
+-- UNIQUE (run_id, customer_id). The partial open-row index cannot provide
+-- that guarantee because a closed duplicate is outside its predicate.
+-- run_id leads the constraint so its backing index also serves per-run reads
+-- and cascaded deletes; the separate customer-first index serves history.
 CREATE TABLE customer_segment_history (
     history_id  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     customer_id UUID NOT NULL REFERENCES customer(customer_id) ON DELETE CASCADE,
@@ -185,7 +195,10 @@ CREATE TABLE customer_segment_history (
     segment_id  INT,
     label_code  VARCHAR(40),
     FOREIGN KEY (segment_id, label_code)
-        REFERENCES segment (segment_id, label_code) ON DELETE SET NULL,
+        REFERENCES segment (segment_id, label_code)
+        ON DELETE SET NULL (segment_id),
+    FOREIGN KEY (label_code)
+        REFERENCES segment_label (label_code) ON DELETE RESTRICT,
     -- Raw recency, frequency and monetary values (ADR-0017), alongside their
     -- quintile scores below.
     recency_last_purchase_at TIMESTAMPTZ,
@@ -196,7 +209,8 @@ CREATE TABLE customer_segment_history (
     m_score     SMALLINT,
     valid_from  TIMESTAMPTZ NOT NULL DEFAULT now(),
     valid_to    TIMESTAMPTZ,
-    CHECK (valid_to IS NULL OR valid_to >= valid_from)
+    CHECK (valid_to IS NULL OR valid_to >= valid_from),
+    UNIQUE (run_id, customer_id)
 );
 
 -- Exactly one open row per customer — the partial unique index a concurrent

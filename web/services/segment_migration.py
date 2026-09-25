@@ -8,10 +8,14 @@ never on segment_id, and never on segmentation_run.method. Two runs from
 different methods (RFM_RULES and KMEANS) compare cleanly because the label
 vocabulary is the one contract both methods write to.
 
-ADR-0003: this module is pure — no SQL, no Connection. It classifies over
-plain dicts a caller (web/routes, or another service) builds from
-web.db.segments.list_run_labels and get_run_at. That split is what lets the
-tests here pass plain dicts instead of faking a cursor.
+ADR-0003: the classification itself is pure — no SQL, no Connection. It
+classifies over plain dicts a caller builds from web.db.segments.
+list_run_labels and get_run_at, imported at module level like every other
+service (web/services/audit.py, campaigns.py, segmentation.py, …). That
+split is what lets the tests here pass plain dicts to classify_migration
+instead of faking a cursor, while compute_migration's own SQL-reading
+wiring is covered separately, by asserting on the statements the mocked
+cursor received.
 """
 
 from __future__ import annotations
@@ -19,6 +23,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
+
+from psycopg import Connection
+
+from web.db.segments import get_label_ordinals, get_run_at, list_run_labels
 
 
 class MigrationCategory(Enum):
@@ -83,15 +91,17 @@ def _classify(
         return MigrationCategory.UNCHANGED, None
 
     # Lower ordinal_position is better (ADR-0018: declared best-to-worst).
-    # A label missing from ordinals (should not happen with a consistent
-    # vocabulary) leaves direction unset rather than guessing.
-    before_rank = ordinals.get(label_before)
-    after_rank = ordinals.get(label_after)
-    direction = None
-    if before_rank is not None and after_rank is not None:
-        direction = (
-            Direction.IMPROVED if after_rank < before_rank else Direction.DECLINED
-        )
+    # label_code references segment_label (ON DELETE RESTRICT), and
+    # get_label_ordinals reads all of segment_label, so a label missing
+    # from ordinals means something other than a label code reached this
+    # comparison -- e.g. a raw segment_id, the exact bug this guards
+    # against. Fail loudly rather than report a move with no direction.
+    try:
+        before_rank = ordinals[label_before]
+        after_rank = ordinals[label_after]
+    except KeyError as exc:
+        raise ValueError(f"Label {exc.args[0]!r} is not in the vocabulary.") from exc
+    direction = Direction.IMPROVED if after_rank < before_rank else Direction.DECLINED
     return MigrationCategory.MOVED, direction
 
 
@@ -131,20 +141,16 @@ def classify_migration(
 
 
 def compute_migration(
-    connection: Any, run_id_a: int, run_id_b: int
+    connection: Connection[Any], run_id_a: int, run_id_b: int
 ) -> list[CustomerMigration]:
     """Read both runs and classify every customer between them.
 
-    Refuses an unknown run id or a reversed pair rather than silently
-    returning a misleading result (ADR-0018's "plausible, no error" failure
-    mode): both runs are fetched by id and ordered by their own run_at,
-    never by the order the caller happened to pass them in, and never by
-    method.
+    Refuses an unknown run id (UnknownRun) rather than silently returning a
+    misleading result (ADR-0018's "plausible, no error" failure mode).
+    Reorders the pair by each run's own run_at, never by the order the
+    caller happened to pass them in, and never by method -- so passing
+    (later, earlier) gives the same result as (earlier, later).
     """
-    # Imported here, not at module load, to keep this module importable
-    # without web.db in a pure-unit test context.
-    from web.db.segments import get_label_ordinals, get_run_at, list_run_labels
-
     run_at_a = get_run_at(connection, run_id_a)
     run_at_b = get_run_at(connection, run_id_b)
     if run_at_a is None:

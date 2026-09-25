@@ -6,17 +6,20 @@ raw cluster ids would silently produce 100% migration on every run, the
 exact failure this record exists to prevent.
 
 classify_migration is pure (web/services/segment_migration.py, ADR-0003), so
-these tests drive it directly with plain dicts. compute_migration's database
-wiring (run lookup, ordering, refusing unknown ids) is exercised separately,
-with a mocked connection, lower in this file.
+most tests drive it directly with plain dicts. compute_migration's database
+wiring (run lookup, ordering, refusing unknown ids, and -- critically --
+which columns the SQL actually reads) is exercised separately below, with a
+mocked connection.
 """
 
 from __future__ import annotations
 
+from datetime import datetime
 from unittest.mock import MagicMock
 
 import pytest
 
+from web.db.segments import get_run_at, list_run_labels
 from web.services.segment_migration import (
     CustomerMigration,
     Direction,
@@ -98,6 +101,13 @@ def test_non_moved_categories_carry_no_direction() -> None:
     assert assigned[0].direction is None
 
 
+def test_a_label_missing_from_the_vocabulary_raises_rather_than_guessing() -> None:
+    """A label not in ordinals means something other than a label code
+    reached the comparison -- e.g. a raw segment_id. Fail loudly."""
+    with pytest.raises(ValueError, match="not in the vocabulary"):
+        classify_migration({"c1": "CHAMPION"}, {"c1": "2"}, _ORDINALS)
+
+
 # ---------- criterion: a customer absent from one run is its own category ----------
 
 
@@ -127,20 +137,38 @@ def test_nobody_is_silently_dropped() -> None:
 
 
 # ---------- criterion: different methods still compare cleanly ----------
-#
-# classify_migration's signature takes label dicts only — no method, no
-# segment_id, nowhere for either to enter the comparison. Two runs of
-# different methods therefore compare identically to two runs of the same
-# method, and AC 3 (permuting raw cluster ids changes nothing) holds by
-# construction: this module never reads a raw cluster id in the first place,
-# so there is nothing for a permutation to disturb.
 
 
 def test_signature_never_admits_method_or_segment_id() -> None:
+    """classify_migration's own parameters admit no method or segment_id --
+    but this only proves the pure function can't branch on them. The SQL
+    that fills labels_a/labels_b could still read the wrong column; the
+    next test guards that."""
     import inspect
 
     parameters = inspect.signature(classify_migration).parameters
     assert set(parameters) == {"labels_a", "labels_b", "ordinals"}
+
+
+def test_run_queries_read_label_code_never_segment_id_or_method() -> None:
+    """AC 2/3 can only actually break in the SQL: classify_migration never
+    sees a column, so a query that reads segment_id or method instead of
+    label_code would still pass every classify_migration test above while
+    reporting the exact "plausible, no error" migration ADR-0018 warns
+    about. This asserts on the statements the cursor received."""
+    connection = MagicMock()
+    cursor = connection.cursor.return_value.__enter__.return_value
+    cursor.fetchall.return_value = []
+    cursor.fetchone.return_value = None
+
+    list_run_labels(connection, 1)
+    get_run_at(connection, 1)
+
+    statements = [call.args[0].lower() for call in cursor.execute.call_args_list]
+    assert "label_code" in statements[0]
+    for statement in statements:
+        assert "segment_id" not in statement
+        assert "method" not in statement
 
 
 # ---------- compute_migration: database wiring ----------
@@ -148,7 +176,7 @@ def test_signature_never_admits_method_or_segment_id() -> None:
 
 def test_an_unknown_run_id_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "web.db.segments.get_run_at",
+        "web.services.segment_migration.get_run_at",
         lambda _c, run_id: None if run_id == 999 else object(),
     )
     with pytest.raises(UnknownRun):
@@ -160,18 +188,20 @@ def test_reversed_arguments_give_the_same_result(
 ) -> None:
     """Passing (later, earlier) must not silently swap newly_assigned and
     newly_unassigned — compute_migration orders the pair by run_at itself."""
-    from datetime import datetime
-
     run_ats = {1: datetime(2026, 1, 1), 2: datetime(2026, 2, 1)}
     labels = {1: {"c1": None}, 2: {"c1": "LOYAL"}}
 
     monkeypatch.setattr(
-        "web.db.segments.get_run_at", lambda _c, run_id: run_ats[run_id]
+        "web.services.segment_migration.get_run_at",
+        lambda _c, run_id: run_ats[run_id],
     )
     monkeypatch.setattr(
-        "web.db.segments.list_run_labels", lambda _c, run_id: labels[run_id]
+        "web.services.segment_migration.list_run_labels",
+        lambda _c, run_id: labels[run_id],
     )
-    monkeypatch.setattr("web.db.segments.get_label_ordinals", lambda _c: _ORDINALS)
+    monkeypatch.setattr(
+        "web.services.segment_migration.get_label_ordinals", lambda _c: _ORDINALS
+    )
 
     forward = compute_migration(MagicMock(), 1, 2)
     backward = compute_migration(MagicMock(), 2, 1)

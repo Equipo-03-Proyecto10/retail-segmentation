@@ -55,6 +55,6 @@
       ) }}
     </section>
   {% else %}
-    {{ empty_state("No customers were scored in this run.", "A run with no customers likely used a window with no recorded sales.") }}
+    {{ empty_state("No customers were scored in this run.", "A run records every customer, unassigned ones included, so there were no customers when it ran.") }}
   {% endif %}
 {% endblock %}

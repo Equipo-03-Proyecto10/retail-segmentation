@@ -93,6 +93,23 @@ CREATE TABLE app_user (
     CHECK (email ~ '@')
 );
 
+-- Server-side sessions (ADR-0022, #251). The signed cookie carries only
+-- session_id; every request re-reads the row, the user's is_active and role,
+-- so signing out (RF-02) and deactivation (RF-09) take effect on the very next
+-- request. Runtime state, not business data: not audited (RN-28 does not list
+-- it) and seed-exempt, since seeding it would invent sign-ins.
+CREATE TABLE app_session (
+    session_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id    UUID NOT NULL REFERENCES app_user(user_id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    revoked_at TIMESTAMPTZ,
+    CONSTRAINT app_session_revoked_after_created CHECK (revoked_at >= created_at)
+);
+
+-- Deactivation revokes every open session of one user.
+CREATE INDEX idx_app_session_open_by_user
+    ON app_session (user_id) WHERE revoked_at IS NULL;
+
 -- The schema half of the single-administrator rule (RN-01, F4-02). Every row
 -- the predicate admits holds the same role_id, so uniqueness over that column
 -- admits exactly one of them.

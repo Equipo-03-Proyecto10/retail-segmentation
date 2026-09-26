@@ -22,4 +22,6 @@ channel
 # it is.
 segment_label
 
-
+# Server-side sessions (ADR-0022). Runtime state written by signing in, not
+# business data: seeding rows would record sign-ins that never happened.
+app_session

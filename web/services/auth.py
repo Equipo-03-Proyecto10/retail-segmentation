@@ -10,11 +10,19 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from uuid import UUID
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from psycopg import Connection
 
+from web.db.sessions import (
+    SessionPrincipal,
+    load_principal,
+    open_session,
+    revoke_session,
+)
+from web.db.transactions import atomic
 from web.db.users import AppUser, get_user_by_email
 
 _hasher = PasswordHasher()
@@ -61,3 +69,45 @@ def authenticate(
         return LoginResult(success=False)
 
     return LoginResult(success=True, user=user)
+
+
+# ---------- server-side sessions (ADR-0022, #251) ----------
+
+
+@atomic
+def start_session(connection: Connection, user_id: UUID | str) -> str:
+    """Open a server-side session for a user who just authenticated.
+
+    The returned id is all the cookie needs to carry: everything else about
+    the visitor is re-read from the database on each request.
+    """
+    return str(open_session(connection, user_id))
+
+
+@atomic
+def end_session(connection: Connection, session_id: str | None) -> None:
+    """Revoke the session server-side (RF-02), so a copy of the cookie taken
+    before signing out no longer authenticates anyone."""
+    parsed = _session_uuid(session_id)
+    if parsed is not None:
+        revoke_session(connection, parsed)
+
+
+def current_principal(
+    connection: Connection, session_id: str | None
+) -> SessionPrincipal | None:
+    """Who the session belongs to right now, or None when it is unknown,
+    revoked, or its user has been deactivated (RF-09)."""
+    parsed = _session_uuid(session_id)
+    if parsed is None:
+        return None
+    return load_principal(connection, parsed)
+
+
+def _session_uuid(session_id: str | None) -> UUID | None:
+    if not session_id:
+        return None
+    try:
+        return UUID(str(session_id))
+    except ValueError:
+        return None

@@ -21,3 +21,6 @@ select = ["E", "F", "I", "B", "UP"]
 # `pytest` from the repository root.
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+    "real_sessions: resolve the session through the real app_session lookup instead of trusting the cookie (tests/conftest.py)",
+]

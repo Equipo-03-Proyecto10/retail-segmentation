@@ -263,8 +263,11 @@ def test_deactivating_anybody_else_is_ordinary_work() -> None:
 
     set_active(connection, _ANALYST_ID, False)
 
-    assert len(connection.writes) == 1
+    # The deactivation, then the revocation of every open session (RF-09, #251).
+    assert len(connection.writes) == 2
     assert connection.writes[0][1] == (False, str(_ANALYST_ID))
+    assert connection.writes[1][0].startswith("UPDATE app_session SET revoked_at")
+    assert connection.writes[1][1] == (str(_ANALYST_ID),)
 
 
 def test_reactivating_the_administrator_is_not_refused() -> None:

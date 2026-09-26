@@ -19,7 +19,7 @@ from flask.typing import ResponseReturnValue
 from web.db import get_connection
 from web.middleware import public, requires
 from web.middleware.authz import safe_next
-from web.services.auth import authenticate
+from web.services.auth import authenticate, end_session, start_session
 
 bp = Blueprint("auth", __name__)
 
@@ -53,6 +53,7 @@ def login() -> ResponseReturnValue:
         )
 
     session.clear()
+    session["sid"] = start_session(connection, result.user.user_id)
     session["user_id"] = str(result.user.user_id)
     session["role_id"] = result.user.role_id
     session["role_code"] = result.user.role_code
@@ -65,5 +66,8 @@ def login() -> ResponseReturnValue:
 @requires()
 def logout() -> ResponseReturnValue:
     current_app.logger.info("logout_succeeded")
+    # RF-02: revoke server-side first, so the cookie already in the browser
+    # (or copied from it) stops working, not only the one sent back now.
+    end_session(get_connection(), session.get("sid"))
     session.clear()
     return redirect(url_for("home.index"))

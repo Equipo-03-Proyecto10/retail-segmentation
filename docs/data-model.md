@@ -20,6 +20,7 @@ Stories: F2-01 (conceptual model), F2-02 (normalization), F2-03 (logical model).
 |---|---|
 | `role` | A permission profile. Seven exist; see the matrix below |
 | `app_user` | Someone who signs in. Exactly one holds the administrator role |
+| `app_session` | One sign-in, server-side: open until signed out or revoked (ADR-0022) |
 | `customer` | Someone the business sells to. Not every customer signs in |
 | `channel` | A route to market: mobile app, web, physical store, marketplace, call centre |
 | `category` | A product classification, self-referencing so a category can have a parent |
@@ -42,6 +43,7 @@ Stories: F2-01 (conceptual model), F2-02 (normalization), F2-03 (logical model).
 ### Relationships
 
 - `app_user` (N) — has — (1) `role`
+- `app_user` (1) — opens — (N) `app_session`
 - `customer` (1) — makes — (N) `transaction`
 - `store` (1) — registers — (N) `transaction`
 - `transaction` (1) — contains — (N) `transaction_line` (N) — references — (1) `product`
@@ -240,6 +242,7 @@ erDiagram
     role                       ||--o{ app_user                   : "defines"
     app_user                   |o--o| customer                   : "signs in as"
     app_user                   |o--o{ audit_log                  : "performs"
+    app_user                   ||--o{ app_session                : "opens"
     channel                    ||--o{ customer                   : "registers"
     channel                    ||--o{ transaction                : "carries"
     channel                    ||--o{ customer_preferred_channel : "preferred by"
@@ -358,6 +361,25 @@ with labels deterministically without a tie; it is not a foreign key target.
 | `created_at` | `TIMESTAMPTZ` | NN | default `now()` | Account creation |
 
 Named `app_user` because `user` is a reserved word in PostgreSQL.
+
+#### `app_session`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `session_id` | `UUID` | NN | PK, default `gen_random_uuid()` | The only thing the signed cookie carries |
+| `user_id` | `UUID` | NN | FK → `app_user`, `CASCADE` | Who signed in |
+| `created_at` | `TIMESTAMPTZ` | NN | default `now()` | Sign-in |
+| `revoked_at` | `TIMESTAMPTZ` | yes | `CHECK >= created_at` (`app_session_revoked_after_created`) | Sign-out or revocation; `NULL` while open |
+
+ADR-0022 (#251). Every request resolves its session here, with the user's
+`is_active` and role, so signing out (RF-02), deactivation (RF-09) and a role
+change take effect on the next request. Every non-key column depends on
+`session_id` alone, so the table is in 4NF with nothing to decompose. The
+partial index `idx_app_session_open_by_user` serves deactivation, which revokes
+every open session of one user. `CASCADE` from `app_user` is safe because
+users are deactivated, never deleted (RN-04). It is runtime state, not
+business data: not audited, and exempt from the 30-row seed minimum
+(`sql/seed-exempt.txt`), since seeding it would invent sign-ins.
 
 #### `customer`
 
@@ -673,6 +695,8 @@ cost of the busiest table in the model. `experiment_group`,
 `experiment_assignment`, `experiment_exposure` and `experiment_conversion`
 are unaudited for the same reason: they are themselves append-only event
 records, not mutable rows a reviewer needs a before/after snapshot of.
+`app_session` is unaudited too: it is runtime state, written on every sign-in
+and sign-out, and `created_at`/`revoked_at` already are its history.
 
 Two details worth knowing:
 

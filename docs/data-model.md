@@ -292,7 +292,11 @@ Nullability is stated for every column. `PK` primary key, `FK` foreign key,
 |---|---|---|---|---|
 | `category_id` | `SMALLINT` | NN | PK | Category identifier |
 | `name` | `VARCHAR(80)` | NN | UQ | Category name |
-| `parent_category_id` | `SMALLINT` | yes | FK → `category`, `ON DELETE RESTRICT` | Parent in the hierarchy; `NULL` at the top level |
+| `parent_category_id` | `SMALLINT` | yes | FK → `category`, `ON DELETE RESTRICT`; `CHECK <> category_id` (`category_not_own_parent`) | Parent in the hierarchy; `NULL` at the top level |
+
+The hierarchy is a tree (RN-33). `category_not_own_parent` refuses the one-row
+cycle; a CHECK cannot see other rows, so `trg_category_no_cycle` walks up from
+the new parent and refuses a longer cycle as `category_no_cycle`.
 
 #### `store`
 

@@ -60,8 +60,12 @@ def test_malformed_category_parent_is_a_field_error(client, connection, path, pa
     [(UniqueViolation, b"already exists"), (ForeignKeyViolation, b"does not exist")],
 )
 def test_category_constraint_refusal_is_controlled(
-    client, connection, path, error, message
+    client, connection, path, error, message, monkeypatch
 ):
+    # The RN-33 subtree check reads the same mocked cursor; this test is about
+    # translating the write's refusal, so the move itself is a legal one.
+    monkeypatch.setattr("web.db.categories.is_in_subtree", lambda *_a: False)
+
     def execute(statement, parameters=None):
         if statement.lstrip().startswith(("INSERT", "UPDATE")):
             raise error("private database detail")

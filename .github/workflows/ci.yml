@@ -102,7 +102,7 @@ jobs:
 
       # Fail when the seed or a schema change leaves assignment history at odds
       # with its runs or ADR-0018's label contract, printing the offending rows.
-      - name: Segmentation history satisfies the ADR compliance queries
+      - name: Seed satisfies the ADR compliance queries
         run: |
           violations="$(
             psql -v ON_ERROR_STOP=1 -d retail -At -F ' | ' <<'SQL'
@@ -128,13 +128,20 @@ jobs:
           FROM customer_segment_history AS h
           WHERE h.label_code IS NULL
             AND h.r_score IS NOT NULL;
+
+          SELECT 'ADR-0020 total disagrees with lines', t.transaction_id,
+                 t.total, COALESCE(SUM(l.quantity * l.unit_price), 0)
+          FROM transaction AS t
+          LEFT JOIN transaction_line AS l ON l.transaction_id = t.transaction_id
+          GROUP BY t.transaction_id, t.total
+          HAVING t.total <> COALESCE(SUM(l.quantity * l.unit_price), 0);
           SQL
           )"
           if [ -n "$violations" ]; then
             printf '%s\n' "$violations"
             exit 1
           fi
-          echo "Segmentation history satisfies ADR-0017 and ADR-0018."
+          echo "Seed satisfies ADR-0017, ADR-0018 and ADR-0020."
 
       - name: Application role can write data but cannot drop a table
         env:

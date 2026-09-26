@@ -11,19 +11,19 @@ from __future__ import annotations
 from flask import Blueprint, render_template, request
 
 from web.db import get_connection
-from web.db.segments import get_label_ordinals, list_runs
+from web.db.segments import get_label_ordinals, get_run, list_runs
 from web.middleware.authz import SEGMENT_READ, requires
 from web.services.segment_migration import (
     UnknownRun,
     build_migration_matrix,
     compute_migration,
+    order_runs,
 )
 
 bp = Blueprint("migration_matrix", __name__, url_prefix="/migration-matrix")
 
-# Every run, for the two selector dropdowns -- a page of 20 (run_history's
-# own page size) is plenty to compare against; older runs stay reachable by
-# id in the URL even once off this list.
+# The newest runs, for the two selector dropdowns. An older run selected by
+# id in the URL is added to the options, so it stays selected on resubmit.
 _RUN_OPTIONS = 100
 
 
@@ -47,12 +47,23 @@ def index() -> str:
             error = "Choose two runs to compare."
         else:
             try:
-                migrations = compute_migration(connection, run_a_id, run_b_id)
+                earlier_id, later_id = order_runs(connection, run_a_id, run_b_id)
             except UnknownRun:
                 error = "One of the selected runs no longer exists."
             else:
+                # Show the pair in the order the matrix uses, so the "Earlier
+                # run" picker always names the run the rows come from.
+                run_a_raw, run_b_raw = str(earlier_id), str(later_id)
+                migrations = compute_migration(connection, earlier_id, later_id)
                 ordinals = get_label_ordinals(connection)
                 matrix = build_migration_matrix(migrations, ordinals)
+
+    listed = {run.run_id for run in runs}
+    for raw in dict.fromkeys((run_a_raw, run_b_raw)):
+        if raw.isdigit() and int(raw) not in listed:
+            selected = get_run(connection, int(raw))
+            if selected is not None:
+                runs.append(selected)
 
     return render_template(
         "migration_matrix/index.html",

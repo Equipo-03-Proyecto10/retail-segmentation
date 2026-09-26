@@ -44,11 +44,23 @@ def test_a_moved_customer_lands_at_before_row_after_column() -> None:
 
 
 def test_row_and_column_labels_follow_ordinal_position() -> None:
-    """Best-to-worst (ADR-0018), Unassigned last."""
+    """Best-to-worst (ADR-0018), then Unassigned, then the absence row/column."""
     matrix = build_migration_matrix([], _ORDINALS)
 
-    assert matrix.row_labels == ["CHAMPION", "LOYAL", "AT_RISK", "Unassigned"]
-    assert matrix.column_labels == ["CHAMPION", "LOYAL", "AT_RISK", "Unassigned"]
+    assert matrix.row_labels == [
+        "CHAMPION",
+        "LOYAL",
+        "AT_RISK",
+        "Unassigned",
+        "Not in earlier run",
+    ]
+    assert matrix.column_labels == [
+        "CHAMPION",
+        "LOYAL",
+        "AT_RISK",
+        "Unassigned",
+        "Not in later run",
+    ]
 
 
 def test_multiple_customers_in_the_same_cell_are_counted_together() -> None:
@@ -126,12 +138,10 @@ def test_staying_unassigned_lands_on_the_unassigned_diagonal() -> None:
     assert matrix.cells["Unassigned"]["Unassigned"] == 1
 
 
-# ---------- customers absent from one run don't distort the matrix ----------
+# ---------- AC 2: customers absent from one run still reconcile ----------
 
 
-def test_a_customer_absent_from_one_run_is_excluded_from_the_grid() -> None:
-    """absent_from_earlier/absent_from_later have no before/after pair to
-    place -- they're covered by F7-04's own categories, not this matrix."""
+def test_a_customer_absent_from_one_run_gets_its_own_row_or_column() -> None:
     migrations = [
         _m(None, "CHAMPION", MigrationCategory.ABSENT_FROM_EARLIER),
         _m("LOYAL", None, MigrationCategory.ABSENT_FROM_LATER),
@@ -139,8 +149,33 @@ def test_a_customer_absent_from_one_run_is_excluded_from_the_grid() -> None:
     ]
     matrix = build_migration_matrix(migrations, _ORDINALS)
 
-    assert sum(matrix.row_totals.values()) == 1
-    assert matrix.cells["CHAMPION"]["CHAMPION"] == 1
+    assert matrix.cells["Not in earlier run"]["CHAMPION"] == 1
+    assert matrix.cells["LOYAL"]["Not in later run"] == 1
+    assert sum(matrix.row_totals.values()) == 3
+
+
+def test_totals_reconcile_with_each_run_when_the_runs_scored_different_customers() -> (
+    None
+):
+    """The earlier run labels c1-c3 CHAMPION; the later run drops c3 and adds
+    c4. The CHAMPION row still totals 3 (the earlier run's count), and the
+    CHAMPION column 3 (the later run's)."""
+    migrations = [
+        _m("CHAMPION", "CHAMPION", MigrationCategory.UNCHANGED),
+        _m("CHAMPION", "CHAMPION", MigrationCategory.UNCHANGED),
+        _m("CHAMPION", None, MigrationCategory.ABSENT_FROM_LATER),
+        _m(None, "CHAMPION", MigrationCategory.ABSENT_FROM_EARLIER),
+    ]
+    matrix = build_migration_matrix(migrations, _ORDINALS)
+
+    earlier_rows = [row for row in matrix.row_labels if row != "Not in earlier run"]
+    later_columns = [
+        column for column in matrix.column_labels if column != "Not in later run"
+    ]
+    assert matrix.row_totals["CHAMPION"] == 3
+    assert matrix.column_totals["CHAMPION"] == 3
+    assert sum(matrix.row_totals[row] for row in earlier_rows) == 3
+    assert sum(matrix.column_totals[column] for column in later_columns) == 3
 
 
 def test_an_empty_migration_list_gives_an_all_zero_matrix() -> None:

@@ -36,6 +36,15 @@ instance. `transfer_administrator` is the single operation that moves the role
 between two users, because promoting the successor and demoting the incumbent
 are each refused on their own. · `RF-05`
 
+A role's **code** never changes, because the two halves above key on
+different things: the permission matrix (`web/middleware/authz.py`) on the
+code, the index on `role_id = 1`. Renaming codes would let them drift apart —
+moving `ADMIN` to another `role_id` hands its permissions to every holder of
+that role, and no index guards it (#252). **Enforced:** twice, like *never
+two*. The role form shows the code read-only and refuses a changed one, and
+`trg_role_code_immutable` refuses any `UPDATE` of `role.code` as
+`role_code_immutable`. **Verified** — case N29 and `tests/test_admin_crud.py`.
+
 ### RN-02 — A user's email is unique and is an email address
 No two accounts share an address, and an address without `@` is refused.
 

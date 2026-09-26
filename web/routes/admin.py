@@ -54,6 +54,7 @@ from web.middleware.authz import (
 from web.routes.pagination import redirect_last_page
 from web.services.catalog import (
     INT_MAX,
+    ROLE_CODE_IMMUTABLE,
     CatalogConflict,
     create_category,
     create_channel,
@@ -962,10 +963,16 @@ def edit_role_view(role_id: int) -> ResponseReturnValue:
     if request.method == "GET":
         return render_template("admin/role_form.html", role=role, errors={})
 
-    code = request.form.get("code", "").strip()
+    # The code is shown read-only and never written (RN-01, #252). A request
+    # that still carries a different one is refused rather than silently
+    # ignored, so nobody believes a rename took effect.
+    code = role.code
+    submitted_code = request.form.get("code")
     description = request.form.get("description", "").strip() or None
 
     errors = validate_role(code=code, description=description or "")
+    if submitted_code is not None and submitted_code.strip() != code:
+        errors["code"] = ROLE_CODE_IMMUTABLE
     if errors:
         return (
             render_template(
@@ -977,7 +984,7 @@ def edit_role_view(role_id: int) -> ResponseReturnValue:
         )
 
     try:
-        update_role(connection, role_id, code=code, description=description)
+        update_role(connection, role_id, description=description)
     except CatalogConflict as error:
         return (
             render_template(

@@ -13,7 +13,7 @@ already exercised at length by tests/test_single_administrator.py.
 
 from __future__ import annotations
 
-from unittest.mock import ANY, MagicMock, Mock
+from unittest.mock import ANY, MagicMock, Mock, patch
 
 import pytest
 from flask.testing import FlaskClient
@@ -284,15 +284,74 @@ def test_a_valid_role_is_created_and_redirects_to_the_list(
 def test_a_valid_role_edit_is_saved_and_redirects_to_the_list(
     client: FlaskClient, monkeypatch
 ) -> None:
-    monkeypatch.setattr(admin, "get_role", Mock(return_value=Mock()))
+    monkeypatch.setattr(admin, "get_role", Mock(return_value=Mock(code="SUPPORT")))
+    update = Mock(return_value=None)
+    monkeypatch.setattr(admin, "update_role", update)
+    response = client.post("/admin/roles/1/edit", data={"description": "Renamed"})
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/roles")
+    update.assert_called_once_with(ANY, 1, description="Renamed")
+
+
+@pytest.mark.parametrize("code", ["ROOT", "ADMIN", ""])
+def test_a_role_code_change_is_refused_and_nothing_is_written(
+    client: FlaskClient, monkeypatch, code: str
+) -> None:
+    """RN-01 (#252): renaming ANALYST to ADMIN handed administrator access to
+    every analyst. The code is immutable, whatever the form sends."""
+    monkeypatch.setattr(admin, "get_role", Mock(return_value=Mock(code="ANALYST")))
     update = Mock(return_value=None)
     monkeypatch.setattr(admin, "update_role", update)
     response = client.post(
-        "/admin/roles/1/edit", data={"code": "SUPPORT2", "description": "Renamed"}
+        "/admin/roles/2/edit", data={"code": code, "description": "Analyst"}
     )
-    assert response.status_code == 302
-    assert response.headers["Location"].endswith("/admin/roles")
-    update.assert_called_once_with(ANY, 1, code="SUPPORT2", description="Renamed")
+    assert response.status_code == 400
+    assert b"cannot change" in response.data
+    update.assert_not_called()
+
+
+def test_the_edit_form_shows_the_code_read_only(
+    client: FlaskClient, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        admin,
+        "get_role",
+        Mock(return_value=Mock(role_id=2, code="ANALYST", description="Analyst")),
+    )
+    body = client.get("/admin/roles/2/edit").get_data(as_text=True)
+    assert 'value="ANALYST" readonly' in body
+    assert 'name="code"' not in body
+
+
+def test_the_databases_refusal_of_a_rename_is_a_form_error() -> None:
+    """The trigger is the second half: its refusal never reaches a 500."""
+    from psycopg.errors import CheckViolation
+
+    from web.services import catalog
+
+    violation = CheckViolation()
+    connection = MagicMock()
+    cursor = connection.cursor.return_value.__enter__.return_value
+    cursor.execute.side_effect = violation
+    with patch.object(
+        type(violation),
+        "diag",
+        property(lambda _self: Mock(constraint_name="role_code_immutable")),
+    ):
+        with pytest.raises(catalog.CatalogConflict) as refusal:
+            catalog.update_role(connection, 1, description="x")
+    assert refusal.value.field == "code"
+
+
+def test_the_role_update_never_writes_the_code() -> None:
+    from web.db import roles
+
+    connection = MagicMock()
+    cursor = connection.cursor.return_value.__enter__.return_value
+    roles.update_role(connection, 1, description="System administrator")
+    sql, params = cursor.execute.call_args.args
+    assert "code" not in sql
+    assert params == ("System administrator", 1)
 
 
 def test_a_role_with_nothing_referencing_it_is_deleted(

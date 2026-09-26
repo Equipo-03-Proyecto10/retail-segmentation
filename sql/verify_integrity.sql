@@ -290,6 +290,14 @@ VALUES (9011, 'Bad origin', 1, 'CONVERSION', DATE '2026-01-01', 14, 'FAKE');
 ROLLBACK;
 
 \echo ''
+\echo '-- N29: renaming a role code                      [expect: 23514 check_violation]'
+-- RN-01 (#252): the permission matrix is keyed by the code and the
+-- single-administrator index by role_id, so codes are immutable.
+BEGIN;
+UPDATE role SET code = 'ROOT' WHERE role_id = 1;
+ROLLBACK;
+
+\echo ''
 \echo '=============================================='
 \echo 'Volume check — at least 30 rows per table'
 \echo 'role and channel are exempt: see sql/seed-exempt.txt'

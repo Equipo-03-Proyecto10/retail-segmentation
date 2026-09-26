@@ -38,6 +38,7 @@ READ_ROUTES = [
     "/catalog/segments/1",
     "/run-history/",
     "/run-history/1",
+    "/migration-matrix/",
     "/campaigns/",
     "/reports/",
 ]

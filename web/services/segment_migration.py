@@ -167,3 +167,87 @@ def compute_migration(
     ordinals = get_label_ordinals(connection)
 
     return classify_migration(labels_earlier, labels_later, ordinals)
+
+
+_UNASSIGNED = "Unassigned"
+
+
+@dataclass(frozen=True)
+class MigrationMatrix:
+    """A cross-tabulation of every customer's earlier label (row) against
+    their later label (column) — AC 1. row_labels and column_labels share
+    the same ordered vocabulary (best-to-worst, ADR-0018's ordinal_position)
+    with an "Unassigned" row/column appended, so unassigned customers get
+    their own row and column rather than being folded into an existing
+    label (AC 3).
+
+    cells[row_label][column_label] is the customer count for that pair.
+    row_totals and column_totals are provided so a caller can check they
+    reconcile with each run's own assigned/unassigned counts (AC 2) without
+    re-summing the matrix itself.
+    """
+
+    row_labels: list[str]
+    column_labels: list[str]
+    cells: dict[str, dict[str, int]]
+    row_totals: dict[str, int]
+    column_totals: dict[str, int]
+
+
+def build_migration_matrix(
+    migrations: list[CustomerMigration], ordinals: dict[str, int]
+) -> MigrationMatrix:
+    """Cross-tabulate a list of CustomerMigration into rows (earlier label)
+    by columns (later label), counting customers per cell.
+
+    Only customers present in both runs contribute a cell: someone absent
+    from one run has no "earlier" or "later" label to place in this grid at
+    all (F7-04's own absent_from_earlier/absent_from_later categories cover
+    them; the matrix reconciles against the runs' assigned/unassigned
+    counts, not against every migration record). label_before/label_after
+    of None — an unassigned result, not an absence — map to the Unassigned
+    row or column.
+
+    Labels are ordered best-to-worst by ordinal_position, exactly the order
+    segment_label declares (ADR-0018), with Unassigned last since it isn't
+    part of that vocabulary and has no rank to sort by.
+    """
+    ordered_labels = [
+        label for label, _ in sorted(ordinals.items(), key=lambda item: item[1])
+    ]
+    row_labels = ordered_labels + [_UNASSIGNED]
+    column_labels = ordered_labels + [_UNASSIGNED]
+
+    cells: dict[str, dict[str, int]] = {
+        row: {column: 0 for column in column_labels} for row in row_labels
+    }
+
+    for migration in migrations:
+        if migration.category in (
+            MigrationCategory.ABSENT_FROM_EARLIER,
+            MigrationCategory.ABSENT_FROM_LATER,
+        ):
+            continue
+        row = (
+            migration.label_before
+            if migration.label_before is not None
+            else _UNASSIGNED
+        )
+        column = (
+            migration.label_after if migration.label_after is not None else _UNASSIGNED
+        )
+        cells[row][column] += 1
+
+    row_totals = {row: sum(cells[row].values()) for row in row_labels}
+    column_totals = {
+        column: sum(cells[row][column] for row in row_labels)
+        for column in column_labels
+    }
+
+    return MigrationMatrix(
+        row_labels=row_labels,
+        column_labels=column_labels,
+        cells=cells,
+        row_totals=row_totals,
+        column_totals=column_totals,
+    )

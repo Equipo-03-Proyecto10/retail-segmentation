@@ -140,16 +140,14 @@ def classify_migration(
     return result
 
 
-def compute_migration(
+def order_runs(
     connection: Connection[Any], run_id_a: int, run_id_b: int
-) -> list[CustomerMigration]:
-    """Read both runs and classify every customer between them.
+) -> tuple[int, int]:
+    """Return (earlier_id, later_id) by each run's own run_at, never by the
+    order the caller happened to pass them in, and never by method.
 
     Refuses an unknown run id (UnknownRun) rather than silently returning a
     misleading result (ADR-0018's "plausible, no error" failure mode).
-    Reorders the pair by each run's own run_at, never by the order the
-    caller happened to pass them in, and never by method -- so passing
-    (later, earlier) gives the same result as (earlier, later).
     """
     run_at_a = get_run_at(connection, run_id_a)
     run_at_b = get_run_at(connection, run_id_b)
@@ -158,12 +156,109 @@ def compute_migration(
     if run_at_b is None:
         raise UnknownRun(f"Run {run_id_b} does not exist.")
 
-    earlier_id, later_id = (
-        (run_id_a, run_id_b) if run_at_a <= run_at_b else (run_id_b, run_id_a)
-    )
+    return (run_id_a, run_id_b) if run_at_a <= run_at_b else (run_id_b, run_id_a)
+
+
+def compute_migration(
+    connection: Connection[Any], run_id_a: int, run_id_b: int
+) -> list[CustomerMigration]:
+    """Read both runs and classify every customer between them.
+
+    The pair is reordered by run_at (order_runs), so passing (later,
+    earlier) gives the same result as (earlier, later).
+    """
+    earlier_id, later_id = order_runs(connection, run_id_a, run_id_b)
 
     labels_earlier = list_run_labels(connection, earlier_id)
     labels_later = list_run_labels(connection, later_id)
     ordinals = get_label_ordinals(connection)
 
     return classify_migration(labels_earlier, labels_later, ordinals)
+
+
+_UNASSIGNED = "Unassigned"
+_NOT_IN_EARLIER = "Not in earlier run"
+_NOT_IN_LATER = "Not in later run"
+
+
+@dataclass(frozen=True)
+class MigrationMatrix:
+    """A cross-tabulation of every customer's earlier label (row) against
+    their later label (column) — AC 1. row_labels and column_labels share
+    the same ordered vocabulary (best-to-worst, ADR-0018's ordinal_position)
+    with an "Unassigned" row/column appended, so unassigned customers get
+    their own row and column rather than being folded into an existing
+    label (AC 3). A last "Not in earlier run" row and "Not in later run"
+    column hold customers only one of the two runs scored, so no customer
+    is dropped from the grid.
+
+    cells[row_label][column_label] is the customer count for that pair.
+    row_totals and column_totals are provided so a caller can check they
+    reconcile with each run's own assigned/unassigned counts (AC 2) without
+    re-summing the matrix itself.
+    """
+
+    row_labels: list[str]
+    column_labels: list[str]
+    cells: dict[str, dict[str, int]]
+    row_totals: dict[str, int]
+    column_totals: dict[str, int]
+
+
+def build_migration_matrix(
+    migrations: list[CustomerMigration], ordinals: dict[str, int]
+) -> MigrationMatrix:
+    """Cross-tabulate a list of CustomerMigration into rows (earlier label)
+    by columns (later label), counting customers per cell.
+
+    label_before/label_after of None — an unassigned result, not an
+    absence — map to the Unassigned row or column. A customer absent from
+    the earlier run lands in the "Not in earlier run" row; one absent from
+    the later run, in the "Not in later run" column. That is what makes
+    AC 2 hold even when the two runs scored different customers: every
+    row but "Not in earlier run" sums to the earlier run's count for that
+    label, and every column but "Not in later run" to the later run's.
+
+    Labels are ordered best-to-worst by ordinal_position, exactly the order
+    segment_label declares (ADR-0018), then Unassigned since it isn't part
+    of that vocabulary and has no rank to sort by, then the absence row or
+    column.
+    """
+    ordered_labels = [
+        label for label, _ in sorted(ordinals.items(), key=lambda item: item[1])
+    ]
+    row_labels = ordered_labels + [_UNASSIGNED, _NOT_IN_EARLIER]
+    column_labels = ordered_labels + [_UNASSIGNED, _NOT_IN_LATER]
+
+    cells: dict[str, dict[str, int]] = {
+        row: {column: 0 for column in column_labels} for row in row_labels
+    }
+
+    for migration in migrations:
+        if migration.category is MigrationCategory.ABSENT_FROM_EARLIER:
+            row = _NOT_IN_EARLIER
+        elif migration.label_before is None:
+            row = _UNASSIGNED
+        else:
+            row = migration.label_before
+        if migration.category is MigrationCategory.ABSENT_FROM_LATER:
+            column = _NOT_IN_LATER
+        elif migration.label_after is None:
+            column = _UNASSIGNED
+        else:
+            column = migration.label_after
+        cells[row][column] += 1
+
+    row_totals = {row: sum(cells[row].values()) for row in row_labels}
+    column_totals = {
+        column: sum(cells[row][column] for row in row_labels)
+        for column in column_labels
+    }
+
+    return MigrationMatrix(
+        row_labels=row_labels,
+        column_labels=column_labels,
+        cells=cells,
+        row_totals=row_totals,
+        column_totals=column_totals,
+    )

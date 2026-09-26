@@ -389,6 +389,47 @@ def get_current_assignments(
     return {str(row[0]): CustomerSegmentAssignment(*row) for row in rows}
 
 
+# ---------- reading for migration (F7-04) ----------
+
+
+def get_run_at(connection: Connection[Any], run_id: int) -> datetime | None:
+    """Return one run's timestamp, or None if the run does not exist.
+
+    Only run_at — never method — so a caller comparing two runs can validate
+    and order them without being tempted to branch on method (ADR-0018).
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT run_at FROM segmentation_run WHERE run_id = %s", (run_id,)
+        )
+        row = cursor.fetchone()
+
+    return row[0] if row else None
+
+
+def list_run_labels(connection: Connection[Any], run_id: int) -> dict[Any, str | None]:
+    """Return every customer this run scored, mapped to the label_code it
+    assigned — None where the customer was scored but left unassigned
+    (RN-21). SQL only: the migration classification itself lives in
+    web/services/segment_migration.py (ADR-0003)."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT customer_id, label_code FROM customer_segment_history"
+            " WHERE run_id = %s",
+            (run_id,),
+        )
+        return dict(cursor.fetchall())
+
+
+def get_label_ordinals(connection: Connection[Any]) -> dict[str, int]:
+    """Return every label_code mapped to its ordinal_position (ADR-0018's
+    declared best-to-worst business order) — the vocabulary migration
+    direction is computed against."""
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT label_code, ordinal_position FROM segment_label")
+        return dict(cursor.fetchall())
+
+
 # ---------- run history (F7-03) ----------
 
 

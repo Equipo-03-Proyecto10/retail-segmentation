@@ -77,6 +77,17 @@ The hierarchy is protected by the same rule as the product reference.
 **Enforced:** `category_parent_category_id_fkey` `ON DELETE RESTRICT`.
 **Verified** — case N16. · `RF-07`
 
+### RN-33 — The category hierarchy is a tree
+A category cannot be its own parent, and cannot be moved under one of its own
+subcategories: a cycle would make every walk of the hierarchy endless.
+
+**Enforced:** twice. The application refuses the move with a message on the
+parent field (`web/services/catalog.py:update_category`), and the database
+refuses it independently: `category_not_own_parent` (CHECK) for the one-row
+cycle, `trg_category_no_cycle` (raising `category_no_cycle`) for longer ones.
+**Verified** — cases N27 and N28, and `tests/test_category_hierarchy.py`. ·
+`RF-07`
+
 ### RN-08 — A customer with recorded sales cannot be deleted
 Sales history is the basis of every segment; deleting the customer would orphan
 it.

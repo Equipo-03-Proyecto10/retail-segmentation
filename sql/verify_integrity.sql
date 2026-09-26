@@ -198,6 +198,22 @@ DELETE FROM category WHERE category_id = 1;
 ROLLBACK;
 
 \echo ''
+\echo '-- N27: CHECK, a category as its own parent       [expect: 23514 check_violation]'
+-- RN-33 (#253). The BEFORE trigger reports it as category_no_cycle first;
+-- category_not_own_parent is the backstop if the trigger is ever dropped.
+BEGIN;
+UPDATE category SET parent_category_id = 11 WHERE category_id = 11;
+ROLLBACK;
+
+\echo ''
+\echo '-- N28: a category under its own subcategory      [expect: 23514 check_violation]'
+-- RN-33: category 1 is the parent of 11, so 1 under 11 closes a cycle;
+-- trg_category_no_cycle refuses it as category_no_cycle (#253).
+BEGIN;
+UPDATE category SET parent_category_id = 11 WHERE category_id = 1;
+ROLLBACK;
+
+\echo ''
 \echo '-- N14: RESTRICT, deleting a customer with sales [expect: 23503 foreign_key_violation]'
 BEGIN;
 DELETE FROM customer WHERE customer_id = '00000000-0000-0000-0000-000000000001';

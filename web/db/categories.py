@@ -110,6 +110,29 @@ def create_category(
         )
 
 
+def is_in_subtree(connection: Connection, root_id: int, candidate_id: int) -> bool:
+    """Whether candidate_id is root_id itself or one of its descendants.
+
+    Moving root_id under such a candidate would close a cycle (RN-33). UNION,
+    not UNION ALL, so the walk still ends if a cycle is somehow already stored.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            WITH RECURSIVE subtree(category_id) AS (
+                SELECT %s::smallint
+                UNION
+                SELECT c.category_id
+                FROM category AS c
+                JOIN subtree AS s ON c.parent_category_id = s.category_id
+            )
+            SELECT EXISTS (SELECT 1 FROM subtree WHERE category_id = %s)
+            """,
+            (root_id, candidate_id),
+        )
+        return bool(cursor.fetchone()[0])
+
+
 def update_category(
     connection: Connection,
     category_id: int,

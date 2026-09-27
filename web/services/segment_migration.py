@@ -262,3 +262,99 @@ def build_migration_matrix(
         row_totals=row_totals,
         column_totals=column_totals,
     )
+
+
+@dataclass(frozen=True)
+class ComponentDelta:
+    """One RFM component's raw value and score in both runs, and the score
+    delta between them. raw_before/raw_after and score_before/score_after
+    are None exactly when that run left the customer unassigned -- RN-21 --
+    so the caller can say "no scores exist for that run" instead of
+    printing a false zero."""
+
+    name: str
+    raw_before: Any
+    raw_after: Any
+    score_before: int | None
+    score_after: int | None
+
+    @property
+    def score_delta(self) -> int | None:
+        if self.score_before is None or self.score_after is None:
+            return None
+        return self.score_after - self.score_before
+
+
+@dataclass(frozen=True)
+class MigrationExplanation:
+    """Why one customer moved (or didn't) between two runs, entirely from
+    the stored R/F/M values and scores on each run's history row -- no
+    recomputation (ADR-0017). recency/frequency/monetary are the three
+    ComponentDelta. most_changed names whichever has the largest absolute
+    score_delta; it is None when either run left the customer unassigned,
+    since a score_delta of None can't be compared to the other two."""
+
+    recency: ComponentDelta
+    frequency: ComponentDelta
+    monetary: ComponentDelta
+    label_before: str | None
+    label_after: str | None
+    label_changed: bool
+
+    @property
+    def most_changed(self) -> ComponentDelta | None:
+        deltas = [self.recency, self.frequency, self.monetary]
+        if any(delta.score_delta is None for delta in deltas):
+            return None
+        if all(delta.score_delta == 0 for delta in deltas):
+            return None
+        return max(deltas, key=lambda delta: abs(delta.score_delta))
+
+
+def explain_migration(
+    assignment_before: Any, assignment_after: Any
+) -> MigrationExplanation:
+    """Build the explanation from two RunAssignment-shaped objects (or None,
+    when the customer was not part of that run at all) -- the two rows
+    web.db.segments.get_customer_assignment_for_run reads, one per run.
+
+    Pure function: everything it needs is already on the stored assignment,
+    per ADR-0017 -- it reads r_score/f_score/m_score and the matching raw
+    columns, and does not touch transaction or transaction_line to
+    recompute anything.
+    """
+
+    def _component(name: str, raw_attr: str, score_attr: str) -> ComponentDelta:
+        return ComponentDelta(
+            name=name,
+            raw_before=(
+                getattr(assignment_before, raw_attr, None)
+                if assignment_before
+                else None
+            ),
+            raw_after=(
+                getattr(assignment_after, raw_attr, None) if assignment_after else None
+            ),
+            score_before=(
+                getattr(assignment_before, score_attr, None)
+                if assignment_before
+                else None
+            ),
+            score_after=(
+                getattr(assignment_after, score_attr, None)
+                if assignment_after
+                else None
+            ),
+        )
+
+    label_before = assignment_before.label_code if assignment_before else None
+    label_after = assignment_after.label_code if assignment_after else None
+
+    return MigrationExplanation(
+        recency=_component("Recency", "recency_last_purchase_at", "r_score"),
+        frequency=_component("Frequency", "frequency_count", "f_score"),
+        monetary=_component("Monetary", "monetary_total", "m_score"),
+        label_before=label_before,
+        label_after=label_after,
+        label_changed=label_before != label_after,
+    )

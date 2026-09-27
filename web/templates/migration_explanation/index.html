@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Migration explanation · {{ application_name }}{% endblock %}
+{% block topbar_title %}Migration explanation{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Analysis / Migration matrix / Explanation{% endblock %}
+
+{% block content %}
+  {% from "macros/ui.html" import page_header %}
+  {{ page_header(customer_name, "Between run #" ~ earlier_run.run_id ~ " (" ~ earlier_run.run_at.strftime("%Y-%m-%d") ~ ") and run #" ~ later_run.run_id ~ " (" ~ later_run.run_at.strftime("%Y-%m-%d") ~ ").", "Migration explanation") }}
+
+  <section class="mq-panel">
+    <div class="mq-panel__body">
+      {% if explanation.label_changed %}
+        <p><strong>{{ explanation.label_before or "Unassigned" }}</strong> → <strong>{{ explanation.label_after or "Unassigned" }}</strong></p>
+      {% else %}
+        <p>The label did not change: stayed <strong>{{ explanation.label_before or "Unassigned" }}</strong>.</p>
+      {% endif %}
+      {% if explanation.most_changed %}
+        <p class="mq-caption">{{ explanation.most_changed.name }} moved the most (score delta {{ "%+d"|format(explanation.most_changed.score_delta) }}).</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="mq-panel mq-panel--table mq-density-compact">
+    <div class="mq-table-wrap">
+      <table class="mq-table">
+        <thead>
+          <tr>
+            <th scope="col">Component</th>
+            <th scope="col">Raw before</th>
+            <th scope="col">Score before</th>
+            <th scope="col">Raw after</th>
+            <th scope="col">Score after</th>
+            <th scope="col">Score delta</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for component in [explanation.recency, explanation.frequency, explanation.monetary] %}
+            <tr>
+              <td>{{ component.name }}</td>
+              <td class="mq-mono">{% if component.raw_before is none %}No scores for this run{% else %}{{ component.raw_before }}{% endif %}</td>
+              <td class="mq-num">{% if component.score_before is none %}—{% else %}{{ component.score_before }}{% endif %}</td>
+              <td class="mq-mono">{% if component.raw_after is none %}No scores for this run{% else %}{{ component.raw_after }}{% endif %}</td>
+              <td class="mq-num">{% if component.score_after is none %}—{% else %}{{ component.score_after }}{% endif %}</td>
+              <td class="mq-num mq-mono">{% if component.score_delta is none %}—{% else %}{{ "%+d"|format(component.score_delta) }}{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

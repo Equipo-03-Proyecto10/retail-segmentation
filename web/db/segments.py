@@ -541,3 +541,28 @@ def list_run_assignments(
         total = cursor.fetchone()[0]
 
     return [RunAssignment(*row) for row in rows], total
+
+
+def get_customer_assignment_for_run(
+    connection: Connection[Any], run_id: int, customer_id: Any
+) -> RunAssignment | None:
+    """Return one customer's result within one specific run, or None if
+    that customer was not part of the run (F7-06). Raw R/F/M values and
+    scores come straight from the stored history row -- no recomputation
+    (ADR-0017)."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT h.customer_id, c.name, h.segment_id, h.label_code,
+                   h.r_score, h.f_score, h.m_score,
+                   h.recency_last_purchase_at, h.frequency_count,
+                   h.monetary_total
+            FROM customer_segment_history AS h
+            JOIN customer AS c ON c.customer_id = h.customer_id
+            WHERE h.run_id = %s AND h.customer_id = %s
+            """,
+            (run_id, str(customer_id)),
+        )
+        row = cursor.fetchone()
+
+    return RunAssignment(*row) if row else None

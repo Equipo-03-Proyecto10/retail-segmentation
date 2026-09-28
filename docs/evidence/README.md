@@ -68,6 +68,12 @@ right place for it, and which the team accepted on 2026-09-07.
 | [F8-04](f8-04-consumption-profile-view.md) | The consumption profile page at 375 px and 1440 px: every measure with its unit and window, the no-purchase-history case, and the refusal of a role without `segment.read` |
 | [F8-05](f8-05-consumption-shifts.md) | Channel, store and category shifts between two stated periods, cross-checked against an independent recomputation on the seeded database, with absence, ties and the shared boundary instant reproduced |
 
+## Phase 9 — segmentation modelling
+
+| Document | What it records |
+|---|---|
+| [F9-01](f9-01-rfm-rules-adapter.md) | The rule-based scoring as an adapter behind a method-agnostic pipeline: the new writes compared with the old single statement on the seeded database, the method domain enforced by the database, and a consumer that is never told the method |
+
 ## Review passes
 
 These follow a specific review rather than a story.

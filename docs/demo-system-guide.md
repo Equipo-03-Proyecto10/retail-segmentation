@@ -46,18 +46,18 @@ explained.
 MOSAIQ currently addresses the problem in two stages:
 
 1. It centralises and governs the retail data in a normalised PostgreSQL model.
-2. It runs a deliberately narrow RFM recalculation that assigns each customer
-   their current segment from recorded sales and configured rule bands.
+2. It runs RFM recalculation through a method-agnostic pipeline that persists
+   each run and every customer's assignment history.
 
 A safe one-sentence description for the demonstration is:
 
 > MOSAIQ is a server-rendered retail data-management platform that protects and
 > connects customer, sales, catalogue and inventory data, then uses a
-> deterministic RFM-by-quintile process to recalculate the current customer
-> segment with full change auditing.
+> deterministic RFM-by-quintile process to record current and historical
+> customer segment assignments with full change auditing.
 
-It is not yet a complete analytics platform. Clustering, assignment history,
-migration reports and analytical dashboards are future work.
+It is not yet a complete analytics platform. K-means clustering and analytical
+dashboards are future work; assignment history and migration reports now run.
 
 ---
 
@@ -70,7 +70,8 @@ migration reports and analytical dashboards are future work.
 | Running now | Campaign lifecycle (F11-02): create and edit a draft, activate, complete or cancel, each transition audited |
 | Modelled only | Experiments have tables, seed data and permissions, but no working create/update workflow |
 | Modelled only | MongoDB and Redis have design documents. Neither engine, dependency, connection, environment variable nor runtime component currently exists |
-| Future analytics | CSV transaction ingestion, extended RFM analysis, K-means clustering, segment-assignment history, migration reports and dashboards |
+| Running now | CSV transaction ingestion, persisted segmentation runs, segment-assignment history and migration reports |
+| Future analytics | Extended RFM analysis, K-means clustering and dashboards |
 | Future architecture | Six to ten containerised microservices, Android over JSON, desktop over XML/XSD, JWT, Redis, MongoDB and OpenAPI contracts |
 
 The second-delivery architecture is authorised by
@@ -104,13 +105,13 @@ bands in `segment_rule`, considering only segments valid on the current date.
 
 - One matching rule assigns its segment.
 - Several matching rules deterministically choose the lowest `segment_id`.
-- Sales but no matching rule leave the customer unassigned and counted as
-  unmatched.
-- No sales in the window clear any stale current assignment.
+- Sales but no matching rule fall back to the worst-ranked active segment's
+  label.
+- No sales in the window produce an open history row with a null label.
 
-The query breaks equal measurements by `customer_id`, and updates with `IS
-DISTINCT FROM`, so identical source sales always produce the same answer and a
-second identical run writes nothing.
+The query breaks equal measurements by `customer_id`, so identical source sales
+always produce the same answer. Every run closes the prior open rows and writes
+one new history row per customer, even when every assignment is unchanged.
 
 ### 3.2 Execution sequence
 
@@ -143,14 +144,14 @@ sequenceDiagram
     Gate->>Route: Allowed
     Route->>Service: run(connection, 180)
     Service->>Tx: Begin owned unit of work
-    Tx->>DB: recalculate_segments(...)
-    DB->>PG: One parameterised CTE statement
-    PG->>PG: Aggregate and score R/F/M
-    PG->>PG: Match rules and update/clear customers
-    PG->>Audit: Trigger once per changed row
+    Tx->>DB: score_rfm_rules(...), the RFM_RULES adapter's read
+    DB->>PG: One parameterised SELECT: quintile scores matched to segment bands
+    PG-->>DB: One row per customer
+    DB-->>Service: One labelled assignment per customer
+    Service->>DB: create_run, close_open_assignments, insert_assignments
+    DB->>PG: Run row, closed history rows, one new history row per customer
+    PG->>Audit: Trigger once per history row
     Audit->>PG: Insert audit_log entry without password_hash
-    PG-->>DB: processed, assigned, unmatched, changed, cleared
-    DB-->>Service: RecalculationCounts
     Service->>Tx: Commit once
     Service-->>Route: RunResult plus elapsed time
     Route->>View: Render result
@@ -180,14 +181,11 @@ band combinations, all requiring `M >= 3`. See
 This process is quintile scoring plus rule matching. It does **not** provide:
 
 - K-means or another clustering algorithm.
-- A persisted record of segmentation runs and their parameters.
-- A semantic segment-assignment history table.
-- Migration comparison between two runs.
 - Analytical charts or dashboards.
 
-It overwrites `customer.current_segment_id`. The audit log records the changes,
-but an audit trail is not a replacement for a domain-level assignment-history
-model.
+It persists each run and its parameters, closes each customer's prior open
+history row, and writes one successor. The open row is the current assignment;
+closed rows support migration comparison between runs.
 
 ---
 
@@ -689,8 +687,9 @@ inactive on the published instance.
    by store.
 8. **Run the main process.** Choose 180 days, pause on the confirmation page,
    run it, and interpret every output count. Explain why unmatched is valid.
-9. **Run it again.** Use the zero-change result to demonstrate determinism and
-   idempotence.
+9. **Run it again.** Use the zero-change result to demonstrate deterministic
+   assignments, and show that the run still records one successor history row
+   per customer.
 10. **Show the audit trail.** Filter `customer` entries and open one
     before/after detail produced by the segment run.
 11. **Explain deployment.** Walk from Cloudflare to NGINX, Gunicorn/systemd,
@@ -698,8 +697,8 @@ inactive on the published instance.
 12. **Show containers separately.** Demonstrate Compose on a developer machine,
     never on the instance, and explain that both execution paths use the same
     application dependencies and environment contract.
-13. **Close with the boundary.** Name clustering, history, migration,
-    dashboards and the distributed second delivery as future work.
+13. **Close with the boundary.** Name K-means clustering, dashboards and the
+    distributed second delivery as future work; history and migration run now.
 
 ---
 

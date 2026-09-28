@@ -324,6 +324,42 @@ under any permutation of its input, and on real rows by
 Deciding that "discount" means this, and not a stored discount, is recorded here
 because the schema has no such column. · `F8-03`
 
+### RN-36 — A consumption shift compares two stated periods, and absence is not a shift
+A shift is a change in what a customer mostly buys through, where and of: their
+dominant channel, their dominant store or their leading category. Detection
+compares two periods and reports, per customer, which of the three changed, with
+the value before and the value after.
+
+The periods are chosen by the caller and stated on the result, never implied.
+Each is half-open, `[start, end)`, so two adjacent periods never both count the
+same instant. Overlapping periods are refused, because a sale in both would make
+the two sides less independent than the comparison assumes; their lengths may
+differ, and each is reported with its own. Passed the wrong way round they are put
+in order by their start.
+
+"Dominant" and "leading" are what the consumption profile says they are (RN-35),
+ranked by the same functions with the same tie-breaks, so a customer's dominant
+store in a shift report is their dominant store on their profile. A tie that
+resolves differently in the two periods because the spend moved is a change under
+that rule, and is reported as one.
+
+A customer with accepted sales in only one period is **absent** from the other,
+with the empty side named, and is not compared: "no sales" is not a channel, a
+store or a category. A customer with none in either period is not in the report.
+A customer with sales in both whose three leaders did not change has no entry,
+but is counted, so the report reconciles: every customer with sales is compared or
+absent, and every compared customer is shifted or unchanged. A category needs a
+leader on both sides; a purchase with no product lines has none, and no category
+shift is reported for it.
+
+**Enforced:** application — `web/services/consumption_shift.py` for the rules,
+`web/db/consumption_shift.py` for the reads, which are `SELECT`-only,
+parameterized and over accepted sales (ADR-0020). **Verified** — the rules by
+`tests/test_consumption_shift.py`, the statements by
+`tests/test_consumption_shift_db.py`, and both against the seeded PostgreSQL by
+[`evidence/f8-05-consumption-shifts.md`](evidence/f8-05-consumption-shifts.md).
+Reporting shifts as a page is F12-03, not this rule. · `F8-05`
+
 ## Audit
 
 ### RN-28 — Every change to a catalog or a business rule is recorded

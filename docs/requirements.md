@@ -78,7 +78,7 @@ row · `—` no access.
 |---|---|---|---|---|---|---|---|---|
 | `ADMIN` | full | full | full | full | run | ingest | read | read |
 | `ANALYST` | read | — | read | read | — | — | read | — |
-| `STORE_MANAGER` | read | — | — | — | — | — | read, own store | — |
+| `STORE_MANAGER` | read | — | read | — | — | — | read, own store | — |
 | `MARKETING` | read | — | read | full | — | — | read | — |
 | `INVENTORY_PLANNER` | read, `inventory` write | — | — | — | — | — | read | — |
 | `AUDITOR` | read | read | read | read | — | — | read | read |
@@ -105,11 +105,14 @@ F3-11 (#103). Why the matrix is code rather than two more tables:
 #65) gives every `catalog` reader a read-only view of stock per store and
 product, and every `segment` reader a read-only view of the customer directory
 and segment membership — customer data is the substrate of segmentation, so it
-follows `segment.read` rather than `catalog.read`. This keeps `STORE_MANAGER`
-and `INVENTORY_PLANNER` out of the customer directory.
+follows `segment.read` rather than `catalog.read`. This keeps
+`INVENTORY_PLANNER` out of the customer directory.
 [ADR-0010](adr/0010-the-consultation-module-is-a-separate-read-only-blueprint.md)
 records why, and why `STORE_MANAGER`'s "own store" scoping is a query filter
-rather than row-level security (`app_user` has no store).
+rather than row-level security (`app_user` has no store). `STORE_MANAGER` holds
+`segment.read` since F10-02, so a store manager can act on a customer's
+recommendations at the counter, and reads the whole directory:
+[ADR-0023](adr/0023-store-managers-read-segments-and-customers.md).
 
 ## 4. Traceability
 

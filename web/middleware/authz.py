@@ -111,7 +111,7 @@ PERMISSIONS: dict[str, frozenset[str]] = {
         }
     ),
     "ANALYST": frozenset({CATALOG_READ, SEGMENT_READ, CAMPAIGN_READ, REPORT_READ}),
-    "STORE_MANAGER": frozenset({CATALOG_READ, REPORT_READ}),
+    "STORE_MANAGER": frozenset({CATALOG_READ, SEGMENT_READ, REPORT_READ}),
     "MARKETING": frozenset(
         {
             CATALOG_READ,

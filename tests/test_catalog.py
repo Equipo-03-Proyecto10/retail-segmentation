@@ -578,7 +578,7 @@ def test_the_hub_hides_customer_and_segment_links_from_a_catalog_only_role(
     app: Flask,
 ) -> None:
     reader = app.test_client()
-    _sign_in(reader, "STORE_MANAGER")
+    _sign_in(reader, "INVENTORY_PLANNER")
     body = reader.get("/catalog/").get_data(as_text=True)
 
     assert "/catalog/products" in body

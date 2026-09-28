@@ -48,9 +48,7 @@ def test_an_analyst_reaches_the_page(
     assert client.get("/migration-matrix/").status_code == 200
 
 
-@pytest.mark.parametrize(
-    "role_code", ["STORE_MANAGER", "INVENTORY_PLANNER", "CUSTOMER"]
-)
+@pytest.mark.parametrize("role_code", ["INVENTORY_PLANNER", "CUSTOMER"])
 def test_a_profile_without_segment_read_is_refused(app: Flask, role_code: str) -> None:
     client = app.test_client()
     _sign_in(client, role_code)

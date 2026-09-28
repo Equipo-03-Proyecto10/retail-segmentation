@@ -97,9 +97,7 @@ def test_an_analyst_reaches_both_pages(
     assert client.get("/run-history/1").status_code == 200
 
 
-@pytest.mark.parametrize(
-    "role_code", ["STORE_MANAGER", "INVENTORY_PLANNER", "CUSTOMER"]
-)
+@pytest.mark.parametrize("role_code", ["INVENTORY_PLANNER", "CUSTOMER"])
 def test_a_profile_without_segment_read_is_refused(app: Flask, role_code: str) -> None:
     client = app.test_client()
     _sign_in(client, role_code)

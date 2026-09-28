@@ -35,6 +35,12 @@ deciding what a store manager may see about a customer, for example only custome
 own store. That is a decision about the permission matrix and about customer data, so it is
 not made here. It is the same question raised on the consumption profile (F8-04).
 
+*Decided since by #280: `STORE_MANAGER` holds `segment.read`
+([ADR-0023](../adr/0023-store-managers-read-segments-and-customers.md)), so the store
+manager now reaches this page. See
+[`store-manager-segment-read.md`](store-manager-segment-read.md). The refusal below
+records the page as it was merged.*
+
 ## How this run was produced
 
 Against the database the three ordered scripts build from empty, with the application run as

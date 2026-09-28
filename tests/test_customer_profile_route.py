@@ -168,9 +168,7 @@ def _open(
 # ---------- who may open it ----------
 
 
-@pytest.mark.parametrize(
-    "role_code", ["STORE_MANAGER", "INVENTORY_PLANNER", "CUSTOMER"]
-)
+@pytest.mark.parametrize("role_code", ["INVENTORY_PLANNER", "CUSTOMER"])
 def test_a_profile_without_segment_read_is_refused(
     app: Flask, monkeypatch: pytest.MonkeyPatch, role_code: str
 ) -> None:
@@ -180,7 +178,9 @@ def test_a_profile_without_segment_read_is_refused(
     fake.assert_not_called()
 
 
-@pytest.mark.parametrize("role_code", ["ADMIN", "ANALYST", "MARKETING", "AUDITOR"])
+@pytest.mark.parametrize(
+    "role_code", ["ADMIN", "ANALYST", "STORE_MANAGER", "MARKETING", "AUDITOR"]
+)
 def test_the_roles_that_read_segments_may_open_it(
     app: Flask, monkeypatch: pytest.MonkeyPatch, role_code: str
 ) -> None:

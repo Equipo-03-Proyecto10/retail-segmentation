@@ -69,9 +69,7 @@ def _assignment(**overrides) -> RunAssignment:
     return RunAssignment(**{**defaults, **overrides})
 
 
-@pytest.mark.parametrize(
-    "role_code", ["STORE_MANAGER", "INVENTORY_PLANNER", "CUSTOMER"]
-)
+@pytest.mark.parametrize("role_code", ["INVENTORY_PLANNER", "CUSTOMER"])
 def test_a_profile_without_segment_read_is_refused(app: Flask, role_code: str) -> None:
     client = app.test_client()
     _sign_in(client, role_code)

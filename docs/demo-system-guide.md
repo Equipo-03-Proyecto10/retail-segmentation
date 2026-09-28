@@ -398,7 +398,7 @@ canonical permission matrix.
 |---|---|
 | `ADMIN` | All current consultation; full CRUD for category, product, store, channel and role; users; segment run; campaign lifecycle; audit log |
 | `ANALYST` | Product and stock consultation; customers and segments; read-only campaign list; report placeholder |
-| `STORE_MANAGER` | Product and stock consultation; report placeholder; no customer directory |
+| `STORE_MANAGER` | Product and stock consultation; customers, segments, consumption profiles and recommendations (read only, ADR-0023); report placeholder |
 | `MARKETING` | Product, stock, customer and segment consultation; campaign lifecycle (create, edit draft, activate, complete, cancel); report placeholder |
 | `INVENTORY_PLANNER` | Product and stock consultation; report placeholder; no inventory-write screen yet |
 | `AUDITOR` | Read-only product, stock, customer, segment and user views; read-only campaign list; report placeholder; audit log |

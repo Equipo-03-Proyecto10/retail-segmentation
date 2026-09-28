@@ -116,6 +116,10 @@ class MethodUnavailable(RuntimeError):
     """A method in the domain that has no adapter to run it yet."""
 
 
+class AdapterMismatch(ValueError):
+    """An adapter was supplied for a different segmentation method."""
+
+
 class InvalidAssignment(ValueError):
     """An assignment the pipeline will not record."""
 
@@ -152,10 +156,12 @@ class Assignment:
     def validate(self) -> None:
         """Refuse a customer who was measured but left unlabelled: ADR-0018 says
         a customer the run actually scored is always labelled."""
-        measured = (
+        raw_values = (
             self.last_purchase_at,
             self.frequency,
             self.monetary,
+        )
+        measured = raw_values + (
             self.r_score,
             self.f_score,
             self.m_score,
@@ -164,6 +170,11 @@ class Assignment:
             raise InvalidAssignment(
                 f"Customer {self.customer_id} was measured but is not labelled. "
                 "Only a customer with no sales in the window may be left unassigned."
+            )
+        if self.label_code is not None and any(value is None for value in raw_values):
+            raise InvalidAssignment(
+                f"Customer {self.customer_id} is labelled but does not carry "
+                "all raw recency, frequency and monetary values."
             )
 
     def as_row(self) -> tuple[Any, ...]:
@@ -190,8 +201,12 @@ class MethodOutput:
     parameters: Mapping[str, Any] = field(default_factory=dict)
 
 
-# A method's adapter: read the sales, decide, return. It writes nothing.
-Adapter = Callable[[Any, int], MethodOutput]
+@dataclass(frozen=True)
+class MethodAdapter:
+    """A read-only segmentation decision function bound to its method."""
+
+    method: str
+    decide: Callable[[Any, int], MethodOutput]
 
 
 @dataclass(frozen=True)
@@ -290,7 +305,9 @@ def rfm_rules_adapter(connection: Any, window_days: int) -> MethodOutput:
 LabelMapper = Callable[[KMeansFit], Mapping[int, str]]
 
 
-def kmeans_adapter(params: KMeansParams, label_for_clusters: LabelMapper) -> Adapter:
+def kmeans_adapter(
+    params: KMeansParams, label_for_clusters: LabelMapper
+) -> MethodAdapter:
     """K-means over the window's normalised R/F/M, labelled by `label_for_clusters`.
 
     Only customers with sales are clustered. Those without have no R/F/M to
@@ -352,10 +369,12 @@ def kmeans_adapter(params: KMeansParams, label_for_clusters: LabelMapper) -> Ada
             )
         return MethodOutput(assignments=assignments, parameters=parameters)
 
-    return adapt
+    return MethodAdapter("KMEANS", adapt)
 
 
-_ADAPTERS: dict[str, Adapter] = {"RFM_RULES": rfm_rules_adapter}
+_ADAPTERS: dict[str, MethodAdapter] = {
+    "RFM_RULES": MethodAdapter("RFM_RULES", rfm_rules_adapter)
+}
 
 
 # ---------- the pipeline ----------
@@ -363,7 +382,7 @@ _ADAPTERS: dict[str, Adapter] = {"RFM_RULES": rfm_rules_adapter}
 
 @atomic
 def _record(
-    connection: Any, method: str, window_days: int, adapter: Adapter
+    connection: Any, method: str, window_days: int, adapter: MethodAdapter
 ) -> RunResult:
     """Read, decide, write, and commit, as one unit of work.
 
@@ -373,7 +392,7 @@ def _record(
     every history row roll back together if any part of this fails.
     """
     started = time.perf_counter()
-    output = adapter(connection, window_days)
+    output = adapter.decide(connection, window_days)
     assignments = _validated(output)
 
     prior = read_open_assignments(connection)
@@ -401,7 +420,7 @@ def run_method(
     connection: Any,
     method: str,
     window_days: int,
-    adapter: Adapter | None = None,
+    adapter: MethodAdapter | None = None,
 ) -> RunResult:
     """Run one segmentation method over a window and record the outcome.
 
@@ -417,6 +436,10 @@ def run_method(
     chosen = adapter if adapter is not None else _ADAPTERS.get(method)
     if chosen is None:
         raise MethodUnavailable(f"No adapter is available to run {method} yet.")
+    if chosen.method != method:
+        raise AdapterMismatch(
+            f"The {chosen.method} adapter cannot run the requested {method} method."
+        )
 
     logger = logging.getLogger(__name__)
     logger.info("segment_run_started window_days=%s method=%s", window_days, method)

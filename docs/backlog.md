@@ -391,9 +391,9 @@ Phase 9 would make Phase 7 persist unconstrained strings or depend forward on
 the modelling phase. [ADR-0018][adr-0018] defines the order and the
 method-independent boundary that `F7-01` records.
 
-**F7-02 retires the old source of truth in one story.** F3-10 (#102) currently
-writes `customer.current_segment_id`, while catalog queries read it. Dropping
-the column without rewriting both sides would leave the application broken.
+**F7-02 retires the old source of truth in one story.** At planning time F3-10
+(#102) wrote `customer.current_segment_id`, while catalog queries read it.
+Dropping the column without rewriting both sides would leave the application broken.
 The schema, the run transaction and all present-tense reads therefore move
 together under [ADR-0017][adr-0017].
 

@@ -36,8 +36,10 @@ from web.services.segment_migration import (
 )
 from web.services.segmentation import (
     METHODS,
+    AdapterMismatch,
     Assignment,
     InvalidAssignment,
+    MethodAdapter,
     MethodOutput,
     MethodUnavailable,
     UnknownMethod,
@@ -93,14 +95,18 @@ def _wire(
     return manager
 
 
-def _adapter(*assignments: Assignment, parameters: dict | None = None):
+def _adapter(
+    *assignments: Assignment,
+    parameters: dict | None = None,
+    method: str = "RFM_RULES",
+) -> MethodAdapter:
     def adapt(_connection, window_days: int) -> MethodOutput:
         return MethodOutput(
             assignments=tuple(assignments),
             parameters=parameters or {"window_days": window_days},
         )
 
-    return adapt
+    return MethodAdapter(method, adapt)
 
 
 # ---------- the method domain ----------
@@ -151,6 +157,25 @@ def test_kmeans_without_an_adapter_is_unavailable_and_writes_nothing(
     with pytest.raises(MethodUnavailable):
         run_method(MagicMock(), "KMEANS", 180)
 
+    manager.create_run.assert_not_called()
+
+
+def test_an_adapter_for_another_method_is_refused_before_it_reads_or_writes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = _wire(monkeypatch)
+    decide = Mock(return_value=MethodOutput((_scored(_ADA, "LOYAL"),)))
+
+    with pytest.raises(AdapterMismatch, match="KMEANS adapter.*RFM_RULES"):
+        run_method(
+            MagicMock(),
+            "RFM_RULES",
+            180,
+            adapter=MethodAdapter("KMEANS", decide),
+        )
+
+    decide.assert_not_called()
+    manager.read_open_assignments.assert_not_called()
     manager.create_run.assert_not_called()
 
 
@@ -223,6 +248,29 @@ def test_an_assignment_without_a_label_must_carry_no_measurement() -> None:
 
 def test_an_unassigned_customer_is_a_valid_assignment() -> None:
     _unassigned(_ADA).validate()
+
+
+@pytest.mark.parametrize("missing", ["last_purchase_at", "frequency", "monetary"])
+def test_a_labelled_assignment_must_carry_every_raw_rfm_value(missing: str) -> None:
+    values = {
+        "last_purchase_at": _SALE,
+        "frequency": 3,
+        "monetary": Decimal("25.00"),
+    }
+    values[missing] = None
+
+    with pytest.raises(InvalidAssignment, match="all raw recency"):
+        Assignment(customer_id=_ADA, label_code="LOYAL", **values).validate()
+
+
+def test_a_labelled_assignment_may_omit_quintile_scores() -> None:
+    Assignment(
+        customer_id=_ADA,
+        label_code="LOYAL",
+        last_purchase_at=_SALE,
+        frequency=3,
+        monetary=Decimal("25.00"),
+    ).validate()
 
 
 def test_the_pipeline_refuses_a_scored_customer_left_unlabelled_before_any_write(
@@ -447,7 +495,10 @@ def test_downstream_method_independence_writes_are_the_same_for_each_method(
     field that says which method the run was."""
     manager = _wire(monkeypatch)
     adapter = _adapter(
-        _scored(_ADA, "LOYAL"), _scored(_BOB, "CHAMPION"), _unassigned(_CAL)
+        _scored(_ADA, "LOYAL"),
+        _scored(_BOB, "CHAMPION"),
+        _unassigned(_CAL),
+        method=method,
     )
 
     run_method(

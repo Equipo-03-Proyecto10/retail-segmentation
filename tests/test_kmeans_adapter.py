@@ -324,6 +324,19 @@ def test_kmeans_is_still_unavailable_without_an_adapter(monkeypatch) -> None:
         run_method(MagicMock(), "KMEANS", 180)
 
 
+def test_the_kmeans_adapter_cannot_be_recorded_as_another_method(
+    monkeypatch,
+) -> None:
+    manager = _wire(monkeypatch)
+    adapter = kmeans_adapter(KMeansParams(k=3, seed=1), _mapper())
+
+    assert adapter.method == "KMEANS"
+    with pytest.raises(segmentation.AdapterMismatch):
+        run_method(MagicMock(), "RFM_RULES", 180, adapter=adapter)
+
+    manager.create_run.assert_not_called()
+
+
 # ---------- ADR-0021 compliance ----------
 
 

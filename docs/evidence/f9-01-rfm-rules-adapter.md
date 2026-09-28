@@ -18,8 +18,13 @@ inserts. The statement is now two halves:
 
 | Half | Where | Knows about the method? |
 |---|---|---|
-| **Decides**: quintile scores matched to the segment bands | `score_rfm_rules` in `web/db/segments.py`, wrapped by `rfm_rules_adapter` in `web/services/segmentation.py` | It *is* the method |
+| **Decides**: quintile scores matched to the segment bands | `score_rfm_rules` in `web/db/segments.py`, wrapped by the `MethodAdapter("RFM_RULES", rfm_rules_adapter)` registration in `web/services/segmentation.py` | The frozen adapter declares its method |
 | **Records**: creates the run, closes the open rows, opens one row per customer | `create_run`, `close_open_assignments`, `insert_assignments`, driven by `run_method` | No |
+
+A supplied adapter is accepted only when its declared method equals the requested
+method. `run_method` raises `AdapterMismatch` before calling the adapter or reading
+or writing the database, preventing one strategy's output from being recorded
+under another method's name.
 
 `run(connection, window_days)` keeps its signature, so the segment-run page and its
 tests are untouched. The old `_RECALCULATE` statement and `recalculate_segments`
@@ -81,7 +86,9 @@ scored customers left unlabelled      : 0
 ```
 
 Before any row is written the pipeline also refuses a customer who was measured but
-left unlabelled, and the same customer twice in one run
+left unlabelled, a labelled customer missing any raw recency, frequency or monetary
+value, and the same customer twice in one run. Quintile scores remain optional
+because methods such as K-means do not produce them
 (`tests/test_segmentation_pipeline.py`).
 
 **A value outside `RFM_RULES` or `KMEANS` is refused by the database.** The service
@@ -146,12 +153,12 @@ run 41 rows closed at the instant the next run opened: 30 of 30
 
 ## Tests
 
-`tests/test_segmentation_pipeline.py` (34 tests) and
+`tests/test_segmentation_pipeline.py` (39 tests) and
 `tests/test_segments_pipeline_db.py` (17) are new. ADR-0018's selection runs:
 
 ```
 $ pytest -q tests/test_segmentation_pipeline.py -k 'method_domain or cluster_id_permutation or downstream_method_independence'
-15 passed, 19 deselected
+15 passed, 24 deselected
 ```
 
 `cluster_id_permutation` selects nothing yet, on purpose: it belongs to F9-03, which
@@ -168,7 +175,7 @@ exists:
 
 ```
 $ pytest -q
-1030 passed         # 983 on develop, minus 4 moved or removed, plus 51 new
+1075 passed
 $ black --check .   # All done
 $ ruff check .      # All checks passed!
 ```
@@ -183,10 +190,10 @@ $ ruff check .      # All checks passed!
   `MethodUnavailable` for it. The adapter arrives with F9-02 and carries F9-03's
   mapping; supplying it to `run_method`, and not registering it, means no run can
   reach the database before the mapping exists.
-* **`docs/demo-system-guide.md`'s sequence diagram** named the deleted function and
-  is updated. The paragraph after it still says the process "overwrites
-  `customer.current_segment_id`" and lists history and migration as missing; that is
-  first-delivery text that F7 made false and is out of this story's scope.
+* **`docs/demo-system-guide.md` reflects the durable pipeline.** It describes the
+  open history row as current, the worst-ranked-label fallback for a scored
+  customer with no matching band, and the successor row written for every customer
+  on every run.
 
 ## Not evidenced here
 

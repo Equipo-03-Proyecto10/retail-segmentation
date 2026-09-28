@@ -157,24 +157,24 @@ table-level `segment_rule_check`. **Verified** — case N9.
 **Enforced:** `experiment_group_kind_check`.
 
 ### RN-20 — A customer sits in at most one segment at a time
-**Enforced:** the model — `customer.current_segment_id` is a single nullable
-column, so a second concurrent segment is not expressible.
+The current segment is the open `customer_segment_history` row, whose
+`valid_to` is null. Closed rows preserve earlier assignments.
 
-This rule is **correct today and wrong tomorrow.** [`roadmap.md`](roadmap.md)
-requires segment assignments to be kept as history rather than overwritten, and
-when the segment-history module lands, this column is replaced by an assignment
-table where the same rule becomes "at most one *open* assignment" and needs a
-real constraint. See
-[ADR-0004](adr/0004-model-ahead-of-the-deferred-segmentation-modules.md).
+**Enforced:** partial unique index `ux_customer_segment_history_open`, which
+allows at most one open row per customer. **Verified** —
+[`evidence/f9-01-rfm-rules-adapter.md`](evidence/f9-01-rfm-rules-adapter.md) and
+`tests/test_segmentation_pipeline.py`. See
+[ADR-0017](adr/0017-segment-assignment-history-replaces-the-mutable-current-segment.md).
 
 ### RN-21 — A customer with no sales in the window is unassigned
 The recalculation clears the segment rather than leaving a stale one. An empty
 segment is information; a wrong one is not.
 
-**Enforced:** application, F3-10 (#102) — the recalculation clears
-`current_segment_id` for every customer with no sales in the window, in the same
-statement that assigns the others. **Verified** —
-[`evidence/f3-10-segment-run.md`](evidence/f3-10-segment-run.md). · `RF-12`
+**Enforced:** the segmentation pipeline writes a new open history row with a
+null label for every customer with no sales in the window, in the same
+transaction that records the run and all other assignments. **Verified** —
+[`evidence/f9-01-rfm-rules-adapter.md`](evidence/f9-01-rfm-rules-adapter.md) and
+`tests/test_segmentation_pipeline.py`. · `RF-12`
 
 ### RN-22 — A campaign targets a real, stable segment label
 **Enforced:** `campaign_label_code_fkey` → `segment_label(label_code)`.

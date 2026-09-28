@@ -1,6 +1,7 @@
 """Operational events are traceable without leaking credentials."""
 
 import logging
+from datetime import UTC, datetime
 from io import BytesIO
 from unittest.mock import MagicMock, Mock
 
@@ -70,7 +71,9 @@ def test_segment_completion_is_logged_only_after_commit(caplog, monkeypatch):
     from web.db.segments import ScoredCustomer
 
     create_app(configuration(), database_connector=Mock(return_value=MagicMock()))
-    labelled = ScoredCustomer("a", None, 1, 1, 1, 1, 1, 1, "LOYAL")
+    labelled = ScoredCustomer(
+        "a", datetime(2026, 9, 1, tzinfo=UTC), 1, 1, 1, 1, 1, 1, "LOYAL"
+    )
     unassigned = ScoredCustomer("b", None, None, None, None, None, None, None, None)
     for name, value in {
         "score_rfm_rules": Mock(return_value=[labelled, unassigned]),

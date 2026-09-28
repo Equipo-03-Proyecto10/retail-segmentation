@@ -43,7 +43,7 @@ from web.db.stores import (
     get_store,
     list_stores,
 )
-from web.db.users import list_role_options, list_users
+from web.db.users import get_user_by_id, list_role_options, list_users
 from web.middleware.authz import (
     CATALOG_READ,
     CATALOG_WRITE,
@@ -94,6 +94,7 @@ from web.services.users import (
     UnknownUserError,
     create_user,
     set_active,
+    update_user,
     validate_user,
 )
 
@@ -1127,6 +1128,102 @@ def create_user_view() -> ResponseReturnValue:
         )
 
     flash("User created.", "success")
+    return redirect(url_for("admin.list_users_view"))
+
+
+@bp.route("/users/<uuid:user_id>/edit", methods=["GET", "POST"])
+@requires(USER_WRITE)
+def edit_user_view(user_id: UUID) -> ResponseReturnValue:
+    """Correct a user's name, email and role (RF-09, #289).
+
+    Password rotation and activation stay on their own screens (F4-06's own
+    procedure, and activate/deactivate below); this form only ever writes
+    name, email and role.
+    """
+    connection = get_connection()
+    user = get_user_by_id(connection, user_id)
+    if user is None:
+        abort(404)
+    roles = list_role_options(connection)
+
+    if request.method in ("GET", "HEAD"):
+        return render_template(
+            "admin/user_form.html",
+            user=user,
+            errors={},
+            roles=roles,
+            minimum_password_length=MINIMUM_PASSWORD_LENGTH,
+            editing=True,
+        )
+
+    name = request.form.get("name", "").strip()
+    email = request.form.get("email", "").strip()
+    role_code = request.form.get("role_code", "")
+
+    errors = validate_user(
+        name=name,
+        email=email,
+        password="x" * MINIMUM_PASSWORD_LENGTH,
+        role_code=role_code,
+    )
+    errors.pop("password", None)
+
+    if errors:
+        return (
+            render_template(
+                "admin/user_form.html",
+                user={
+                    "user_id": user_id,
+                    "name": name,
+                    "email": email,
+                    "role_code": role_code,
+                },
+                errors=errors,
+                roles=roles,
+                minimum_password_length=MINIMUM_PASSWORD_LENGTH,
+                editing=True,
+            ),
+            400,
+        )
+
+    try:
+        update_user(connection, user_id, name=name, email=email, role_code=role_code)
+    except (SingleAdministratorError, UnknownRoleError) as error:
+        return (
+            render_template(
+                "admin/user_form.html",
+                user={
+                    "user_id": user_id,
+                    "name": name,
+                    "email": email,
+                    "role_code": role_code,
+                },
+                errors={"role_code": str(error)},
+                roles=roles,
+                minimum_password_length=MINIMUM_PASSWORD_LENGTH,
+                editing=True,
+            ),
+            409,
+        )
+    except DuplicateEmailError as error:
+        return (
+            render_template(
+                "admin/user_form.html",
+                user={
+                    "user_id": user_id,
+                    "name": name,
+                    "email": email,
+                    "role_code": role_code,
+                },
+                errors={"email": str(error)},
+                roles=roles,
+                minimum_password_length=MINIMUM_PASSWORD_LENGTH,
+                editing=True,
+            ),
+            409,
+        )
+
+    flash("User updated.", "success")
     return redirect(url_for("admin.list_users_view"))
 
 

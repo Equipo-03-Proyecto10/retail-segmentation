@@ -17,11 +17,12 @@ ends, so the same statement is repeatable for a fixed `until` instead of
 depending on the clock of whichever connection ran it.
 
 The current and previous segment are read from `customer_segment_history`
-(ADR-0017): the open row, and the most recently closed one. Neither is a
-mutable column, and neither statement reads `segmentation_run.method` --
-ADR-0018 says a consumer of assignments never learns which strategy produced
-them. The run is joined only for `run_at` and `window_days`, so a page can say
-what window an R/F/M value was measured over.
+(ADR-0017): the open row, and the most recently closed one. One statement reads
+both so a concurrent segment run cannot make two READ COMMITTED snapshots
+return the same row as current and previous. It never reads
+`segmentation_run.method` -- ADR-0018 says a consumer of assignments never
+learns which strategy produced them. The run is joined only for `run_at` and
+`window_days`, so a page can say what window an R/F/M value was measured over.
 """
 
 from __future__ import annotations
@@ -267,10 +268,10 @@ def get_discount_totals(
     return DiscountTotals(paid=paid, at_list=at_list)
 
 
-def get_open_history_row(
+def get_current_and_previous_history_rows(
     connection: Connection[Any], customer_id: Any
-) -> HistoryRow | None:
-    """The customer's open assignment: the row whose valid_to is NULL."""
+) -> tuple[HistoryRow | None, HistoryRow | None]:
+    """The open assignment and most recently closed assignment in one read."""
     with connection.cursor() as cursor:
         cursor.execute(
             """
@@ -281,40 +282,18 @@ def get_open_history_row(
             FROM customer_segment_history AS h
             JOIN segmentation_run AS r ON r.run_id = h.run_id
             LEFT JOIN segment_label AS sl ON sl.label_code = h.label_code
-            WHERE h.customer_id = %(customer_id)s AND h.valid_to IS NULL
+            WHERE h.customer_id = %(customer_id)s
+            ORDER BY (h.valid_to IS NULL) DESC,
+                     h.valid_to DESC,
+                     h.history_id DESC
+            LIMIT 2
             """,
             {"customer_id": str(customer_id)},
         )
-        row = cursor.fetchone()
+        rows = [HistoryRow(*row) for row in cursor.fetchall()]
 
-    return HistoryRow(*row) if row else None
-
-
-def get_previous_history_row(
-    connection: Connection[Any], customer_id: Any
-) -> HistoryRow | None:
-    """The customer's most recently closed assignment, or None when they have
-    only ever held the open one.
-
-    Ordered by when the row was closed, with the history id as the tiebreak,
-    so two rows closed at the same instant still resolve to the same answer.
-    """
-    with connection.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT h.run_id, h.label_code, sl.name,
-                   h.recency_last_purchase_at, h.frequency_count,
-                   h.monetary_total, h.r_score, h.f_score, h.m_score,
-                   h.valid_from, h.valid_to, r.run_at, r.window_days
-            FROM customer_segment_history AS h
-            JOIN segmentation_run AS r ON r.run_id = h.run_id
-            LEFT JOIN segment_label AS sl ON sl.label_code = h.label_code
-            WHERE h.customer_id = %(customer_id)s AND h.valid_to IS NOT NULL
-            ORDER BY h.valid_to DESC, h.history_id DESC
-            LIMIT 1
-            """,
-            {"customer_id": str(customer_id)},
-        )
-        row = cursor.fetchone()
-
-    return HistoryRow(*row) if row else None
+    if not rows:
+        return None, None
+    if rows[0].valid_to is None:
+        return rows[0], rows[1] if len(rows) > 1 else None
+    return None, rows[0]

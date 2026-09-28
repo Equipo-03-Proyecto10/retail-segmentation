@@ -26,9 +26,8 @@ from web.db.consumption import (
     HistoryRow,
     ProductTotal,
     SalesTotals,
+    get_current_and_previous_history_rows,
     get_discount_totals,
-    get_open_history_row,
-    get_previous_history_row,
     get_sales_totals,
     list_category_totals,
     list_channel_totals,
@@ -204,48 +203,63 @@ _HISTORY_ROW = (
 )
 
 
-def test_the_open_row_is_the_one_whose_validity_has_not_ended() -> None:
+def test_open_and_closed_rows_are_current_and_previous() -> None:
     connection = MagicMock()
-    _cursor(connection).fetchone.return_value = _HISTORY_ROW
+    closed = (*_HISTORY_ROW[:10], _UNTIL, *_HISTORY_ROW[11:])
+    _cursor(connection).fetchall.return_value = [_HISTORY_ROW, closed]
 
-    row = get_open_history_row(connection, _CUSTOMER)
+    current, previous = get_current_and_previous_history_rows(connection, _CUSTOMER)
 
     statement, params = _statement_and_params(connection)
-    assert "h.valid_to IS NULL" in statement
     assert params == {"customer_id": _CUSTOMER}
-    assert row == HistoryRow(*_HISTORY_ROW)
+    assert current == HistoryRow(*_HISTORY_ROW)
+    assert previous == HistoryRow(*closed)
+    assert current != previous
 
 
-def test_the_previous_row_is_the_most_recently_closed_one() -> None:
+def test_only_an_open_history_row_has_no_previous() -> None:
     connection = MagicMock()
-    _cursor(connection).fetchone.return_value = _HISTORY_ROW
+    _cursor(connection).fetchall.return_value = [_HISTORY_ROW]
 
-    get_previous_history_row(connection, _CUSTOMER)
-
-    statement, _ = _statement_and_params(connection)
-    assert "h.valid_to IS NOT NULL" in statement
-    assert "ORDER BY h.valid_to DESC, h.history_id DESC" in statement
-    assert "LIMIT 1" in statement
+    assert get_current_and_previous_history_rows(connection, _CUSTOMER) == (
+        HistoryRow(*_HISTORY_ROW),
+        None,
+    )
 
 
-@pytest.mark.parametrize("read", [get_open_history_row, get_previous_history_row])
-def test_no_history_row_is_none(read) -> None:
+def test_only_closed_history_rows_return_the_most_recent_as_previous() -> None:
     connection = MagicMock()
-    _cursor(connection).fetchone.return_value = None
+    recent = (*_HISTORY_ROW[:10], _UNTIL, *_HISTORY_ROW[11:])
+    older = (*_HISTORY_ROW[:10], _SINCE, *_HISTORY_ROW[11:])
+    _cursor(connection).fetchall.return_value = [recent, older]
 
-    assert read(connection, _CUSTOMER) is None
+    assert get_current_and_previous_history_rows(connection, _CUSTOMER) == (
+        None,
+        HistoryRow(*recent),
+    )
 
 
-@pytest.mark.parametrize("read", [get_open_history_row, get_previous_history_row])
-def test_the_history_reads_never_ask_which_method_wrote_a_run(read) -> None:
+def test_no_history_rows_return_no_current_or_previous() -> None:
+    connection = MagicMock()
+    _cursor(connection).fetchall.return_value = []
+
+    assert get_current_and_previous_history_rows(connection, _CUSTOMER) == (None, None)
+
+
+def test_history_is_one_limited_statement_that_never_reads_the_method() -> None:
     """ADR-0018: a consumer of assignments reads the label and never branches
     on segmentation_run.method, or on a raw cluster id."""
     connection = MagicMock()
-    _cursor(connection).fetchone.return_value = None
+    _cursor(connection).fetchall.return_value = []
 
-    read(connection, _CUSTOMER)
+    get_current_and_previous_history_rows(connection, _CUSTOMER)
 
     statement, _ = _statement_and_params(connection)
+    assert _cursor(connection).execute.call_count == 1
+    assert "ORDER BY (h.valid_to IS NULL) DESC" in statement
+    assert "h.valid_to DESC" in statement
+    assert "h.history_id DESC" in statement
+    assert "LIMIT 2" in statement
     assert "method" not in statement.lower()
     assert "cluster" not in statement.lower()
 

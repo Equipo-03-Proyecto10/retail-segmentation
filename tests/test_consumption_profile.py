@@ -5,7 +5,7 @@ web/services/consumption_profile.py (ADR-0003), so the ranking and tie-break
 tests drive it with plain values and no database. `build_profile` is exercised
 with the web.db reads replaced by fakes, which is how these tests can state
 exactly which window a query was asked for and prove that a customer with no
-sales never reaches the history queries at all.
+sales skips every remaining sales query while retaining assignment history.
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ from web.services.consumption_profile import (
     ConsumptionProfile,
     RfmSnapshot,
     SegmentState,
+    UnknownCustomer,
     average_discount_pct,
     average_ticket,
     build_profile,
@@ -218,6 +219,7 @@ def _wire(
     """Replace every web.db read the service uses. Returns the fakes so a test
     can assert on the arguments they were called with."""
     fakes = {
+        "get_customer": Mock(return_value=object()),
         "get_sales_totals": Mock(
             return_value=SalesTotals(
                 purchases=purchases,
@@ -239,8 +241,9 @@ def _wire(
         "get_discount_totals": Mock(
             return_value=DiscountTotals(Decimal("80.00"), Decimal("100.00"))
         ),
-        "get_open_history_row": Mock(return_value=open_row),
-        "get_previous_history_row": Mock(return_value=previous_row),
+        "get_current_and_previous_history_rows": Mock(
+            return_value=(open_row, previous_row)
+        ),
     }
     for name, fake in fakes.items():
         monkeypatch.setattr(profile_service, name, fake)
@@ -310,6 +313,29 @@ def test_a_window_the_segment_run_would_refuse_is_refused(
     fakes["get_sales_totals"].assert_not_called()
 
 
+def test_a_malformed_customer_id_is_refused_without_querying(monkeypatch) -> None:
+    fakes = _wire(monkeypatch)
+
+    with pytest.raises(UnknownCustomer):
+        build_profile(Mock(), "not-a-uuid", as_of=_AS_OF)
+
+    for fake in fakes.values():
+        fake.assert_not_called()
+
+
+def test_an_unknown_customer_is_refused_before_any_sales_read(monkeypatch) -> None:
+    fakes = _wire(monkeypatch)
+    fakes["get_customer"].return_value = None
+
+    with pytest.raises(UnknownCustomer):
+        build_profile(Mock(), _CUSTOMER, as_of=_AS_OF)
+
+    fakes["get_customer"].assert_called_once()
+    for name, fake in fakes.items():
+        if name != "get_customer":
+            fake.assert_not_called()
+
+
 # ---------- a customer with no accepted sales ----------
 
 
@@ -323,10 +349,15 @@ def test_a_customer_with_no_accepted_sales_gets_an_empty_profile(monkeypatch) ->
     assert profile.window_days == DEFAULT_WINDOW_DAYS
 
 
-def test_an_empty_profile_reports_no_measurement_at_all_rather_than_zeros(
+def test_an_empty_profile_keeps_history_but_no_sales_measurements(
     monkeypatch,
 ) -> None:
-    _wire(monkeypatch, purchases=0)
+    _wire(
+        monkeypatch,
+        purchases=0,
+        open_row=_history(),
+        previous_row=_history(29, "CHAMPION", valid_to=_AS_OF),
+    )
 
     profile = build_profile(Mock(), _CUSTOMER, as_of=_AS_OF)
 
@@ -337,21 +368,30 @@ def test_an_empty_profile_reports_no_measurement_at_all_rather_than_zeros(
     assert profile.dominant_channel is None
     assert profile.dominant_store is None
     assert profile.average_discount_pct is None
-    assert profile.rfm is None
-    assert profile.current_segment is None
-    assert profile.previous_segment is None
+    assert profile.rfm is not None
+    assert profile.rfm.frequency == 10
+    assert profile.current_segment.label_code == "LOYAL"
+    assert profile.previous_segment.label_code == "CHAMPION"
     assert profile.favourite_categories == ()
     assert profile.frequent_products == ()
 
 
-def test_an_empty_profile_stops_after_the_first_query(monkeypatch) -> None:
+def test_an_empty_profile_skips_the_remaining_sales_reads(monkeypatch) -> None:
     fakes = _wire(monkeypatch, purchases=0)
 
     build_profile(Mock(), _CUSTOMER, as_of=_AS_OF)
 
-    for name, fake in fakes.items():
-        if name != "get_sales_totals":
-            fake.assert_not_called()
+    fakes["get_customer"].assert_called_once()
+    fakes["get_sales_totals"].assert_called_once()
+    fakes["get_current_and_previous_history_rows"].assert_called_once()
+    for name in (
+        "get_discount_totals",
+        "list_channel_totals",
+        "list_store_totals",
+        "list_category_totals",
+        "list_product_totals",
+    ):
+        fakes[name].assert_not_called()
 
 
 # ---------- R, F, M and the segments, all from assignment history ----------

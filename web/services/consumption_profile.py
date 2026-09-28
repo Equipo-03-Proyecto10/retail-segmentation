@@ -39,8 +39,10 @@ would look plausible and be wrong:
   who paid more than today's list price shows a negative figure. It is
   reported as measured rather than clamped, and it is a comparison with the
   current list price, not a record of promotions.
-* **Empty.** No accepted sale in the window means an empty profile: every
-  measurement is None (never zero) and nothing further is queried.
+* **Empty.** No accepted sale in the window means every sales-derived measure
+  is None (never zero), and the remaining sales reads are skipped. R/F/M and
+  segment states still come from assignment history, independent of the
+  profile window.
 
 Ties are broken by the rules above and by nothing else, so the same sales give
 the same profile whatever order the database returns its rows in.
@@ -48,6 +50,7 @@ the same profile whatever order the database returns its rows in.
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -60,15 +63,15 @@ from web.db.consumption import (
     GroupTotal,
     HistoryRow,
     ProductTotal,
+    get_current_and_previous_history_rows,
     get_discount_totals,
-    get_open_history_row,
-    get_previous_history_row,
     get_sales_totals,
     list_category_totals,
     list_channel_totals,
     list_product_totals,
     list_store_totals,
 )
+from web.db.customers import get_customer
 from web.services.segmentation import (
     DEFAULT_WINDOW_DAYS,
     MAX_WINDOW_DAYS,
@@ -84,6 +87,10 @@ TOP_CATEGORIES = 3
 TOP_PRODUCTS = 5
 
 _CENT = Decimal("0.01")
+
+
+class UnknownCustomer(ValueError):
+    """The id is not a UUID, or names no customer."""
 
 
 # ---------- what a profile is ----------
@@ -127,10 +134,10 @@ class RfmSnapshot:
 class ConsumptionProfile:
     """What is known about one customer's buying over one window.
 
-    Every measurement is None when there is nothing to measure; a count or a
-    total of zero is never used to mean "no data". `has_sales` says which case
-    this is, and a caller renders "no purchase history" from it rather than
-    from the absence of any one field.
+    Every sales-derived measurement is None when there is nothing to measure;
+    a count or total of zero is never used to mean "no data". `has_sales` says
+    which case this is. R/F/M and segments remain available from assignment
+    history even when the profile window contains no sales.
     """
 
     customer_id: str
@@ -262,8 +269,10 @@ def build_profile(
     """Compute one customer's consumption profile over the last `window_days`.
 
     A window outside what a segment run accepts raises InvalidWindow, so the
-    two surfaces refuse the same inputs. A customer with no accepted sale in the
-    window gets an empty profile rather than an error.
+    two surfaces refuse the same inputs. UnknownCustomer is raised for an
+    invalid or absent customer; a page maps it to 404. A customer with no
+    accepted sale in the window gets an empty sales profile rather than an
+    error, while retaining assignment history.
     """
     if not MIN_WINDOW_DAYS <= window_days <= MAX_WINDOW_DAYS:
         raise InvalidWindow(
@@ -271,11 +280,20 @@ def build_profile(
             f"{MAX_WINDOW_DAYS} days."
         )
 
+    try:
+        customer_key = str(uuid.UUID(str(customer_id)))
+    except ValueError as exc:
+        raise UnknownCustomer from exc
+    if get_customer(connection, customer_key) is None:
+        raise UnknownCustomer
+
     until = as_of if as_of is not None else datetime.now(UTC)
     since = until - timedelta(days=window_days)
-    customer_key = str(customer_id)
 
     totals = get_sales_totals(connection, customer_key, since, until)
+    open_row, previous_row = get_current_and_previous_history_rows(
+        connection, customer_key
+    )
     if totals.purchases == 0:
         return ConsumptionProfile(
             customer_id=customer_key,
@@ -283,11 +301,12 @@ def build_profile(
             window_start=since,
             window_end=until,
             has_sales=False,
+            rfm=_rfm_snapshot(open_row),
+            current_segment=_segment_state(open_row) if open_row else None,
+            previous_segment=_segment_state(previous_row) if previous_row else None,
         )
 
     discount = get_discount_totals(connection, customer_key, since, until)
-    open_row = get_open_history_row(connection, customer_key)
-    previous_row = get_previous_history_row(connection, customer_key)
 
     return ConsumptionProfile(
         customer_id=customer_key,

@@ -207,7 +207,43 @@ seeded into the normalisation, the refill, the convergence flag, the tie rule an
 the seed each fail a test, and against real rows and an
 independent exact-arithmetic computation by
 [`evidence/f9-02-kmeans-fit.md`](evidence/f9-02-kmeans-fit.md). The mapping from
-clusters to labels is F9-03's. · `F9-02`
+clusters to labels is RN-38's. · `F9-02`
+
+### RN-38 — A K-means cluster becomes a stable label by what it contains, never by its number
+Cluster numbers are arbitrary names one fit gave its clusters: with the same
+customers and the same partition, one run may call a cluster 3 and the next may call
+it 1, and a report comparing them would claim a migration when nobody moved. Every
+cluster therefore takes its label from its contents, by one rule:
+
+1. Clusters are ordered by the descending sum of their centroid's R, F and M, each
+   normalised so that higher is better (RN-37).
+2. A tie is broken by the higher R, then the higher F, then the higher M.
+3. A tie between identical centroids is broken by the lexicographically smallest
+   customer id among the cluster's members.
+4. That order is paired with the label vocabulary in the order `segment_label`
+   declares it, best to worst. **The vocabulary's size must equal k.**
+
+The customer-id tie-break is deterministic and has no commercial meaning: ids are
+compared as text, so `10` sorts before `9`. It exists so that two clusters identical
+in every measure cannot be ordered by anything arbitrary. The sum is exact and does
+not depend on the order of its terms, because a plain floating-point sum ranks
+`0.1 + 0.2 + 0.3` and `0.3 + 0.2 + 0.1` by rounding instead of tying them and
+moving on to R. What a label means commercially is reduced to that declared order:
+two centroids with similar totals can exchange labels when their R, F and M cross,
+even if few customers moved.
+
+A K-means run whose k is not the vocabulary's size is **refused when it is started**,
+before any sale is read and before anything is written. Customers with no sales in
+the window are unassigned (RN-21) and take no cluster. No raw cluster number is ever
+stored: `customer_segment_history` has no column that could hold one, and a run's
+parameters record cluster sizes as a list, not a mapping by number.
+
+**Enforced:** application — `web/services/cluster_labels.py` for the rule and
+`run_kmeans` in `web/services/segmentation.py` for the refusal. **Verified** — by
+`tests/test_cluster_labels.py`, `tests/test_kmeans_run.py` and the two cases
+ADR-0018 names in `tests/test_segmentation_pipeline.py`, including that faults seeded
+into each step of the rule fail a test, and against a real K-means run by
+[`evidence/f9-03-cluster-labels.md`](evidence/f9-03-cluster-labels.md). · `F9-03`
 
 ### RN-22 — A campaign targets a real, stable segment label
 **Enforced:** `campaign_label_code_fkey` → `segment_label(label_code)`.

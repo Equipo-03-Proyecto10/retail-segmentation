@@ -85,17 +85,41 @@ def test_names_the_component_with_the_largest_score_delta() -> None:
     after = _assignment(label_code="AT_RISK", r_score=1, f_score=2, m_score=3)
     explanation = explain_migration(before, after)
 
-    assert explanation.most_changed is explanation.recency
+    assert explanation.most_changed == (explanation.recency,)
     assert explanation.recency.score_delta == -4
+    assert (
+        explanation.most_changed_caption == "Recency moved the most (score delta -4)."
+    )
 
 
-def test_ties_pick_one_component_but_never_crash() -> None:
-    """Not a specified tiebreak in the issue -- just needs to resolve."""
+def test_a_tie_names_every_component_that_shares_it() -> None:
+    """#297: two (or three) components at the same absolute delta must all
+    be named, not silently reduced to whichever came first in the list."""
     before = _assignment(label_code="LOYAL", r_score=3, f_score=3, m_score=3)
     after = _assignment(label_code="AT_RISK", r_score=1, f_score=1, m_score=3)
     explanation = explain_migration(before, after)
 
-    assert explanation.most_changed in (explanation.recency, explanation.frequency)
+    assert explanation.most_changed == (explanation.recency, explanation.frequency)
+    assert (
+        explanation.most_changed_caption
+        == "Recency and Frequency moved equally (score deltas -2, -2)."
+    )
+
+
+def test_a_three_way_tie_names_all_three() -> None:
+    before = _assignment(label_code="LOYAL", r_score=3, f_score=3, m_score=3)
+    after = _assignment(label_code="AT_RISK", r_score=2, f_score=4, m_score=2)
+    explanation = explain_migration(before, after)
+
+    assert explanation.most_changed == (
+        explanation.recency,
+        explanation.frequency,
+        explanation.monetary,
+    )
+    assert (
+        explanation.most_changed_caption
+        == "Recency, Frequency and Monetary moved equally (score deltas -1, +1, -1)."
+    )
 
 
 # ---------- AC 3: an unchanged label still shows deltas, and says so ----------

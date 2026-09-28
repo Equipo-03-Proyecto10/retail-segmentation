@@ -110,6 +110,7 @@ class RecommendationResult:
     """
 
     customer_id: str
+    customer_name: str
     status: Status
     message: str
     window_days: int
@@ -280,6 +281,7 @@ def recommend(
     )
     base = dict(
         customer_id=profile.customer_id,
+        customer_name=profile.customer_name,
         window_days=profile.window_days,
         window_start=profile.window_start,
         window_end=profile.window_end,

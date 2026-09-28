@@ -462,6 +462,12 @@ def test_only_the_usual_stores_stock_is_read(monkeypatch) -> None:
     assert world.stocked.call_args.args[1] == 8  # the profile's dominant store
 
 
+def test_the_result_carries_the_customers_name(monkeypatch) -> None:
+    _World(monkeypatch)
+
+    assert recommend(MagicMock(), _ID).customer_name == "Ada Lovelace"
+
+
 def test_the_result_names_the_store_and_the_window_it_was_computed_for(
     monkeypatch,
 ) -> None:

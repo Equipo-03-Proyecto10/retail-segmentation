@@ -124,13 +124,18 @@ def _refusal(error: IntegrityError) -> CampaignRefused:
 
 @atomic
 def _create(connection: Connection, data: CampaignInput) -> int:
-    return campaigns.create_campaign(
+    campaign_id = campaigns.create_campaign(
         connection,
         name=data.name,
         label_code=data.label_code,
         starts_on=data.starts_on,
         ends_on=data.ends_on,
     )
+    if campaign_id is None:
+        raise CampaignRefused(
+            "", "A draft with this name, label and dates already exists."
+        )
+    return campaign_id
 
 
 def create_campaign(connection: Connection, data: CampaignInput) -> int:

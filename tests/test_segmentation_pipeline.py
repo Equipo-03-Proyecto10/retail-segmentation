@@ -316,6 +316,47 @@ def test_the_run_reads_what_was_open_then_records_the_run_then_closes_then_opens
     ]
 
 
+def test_the_run_takes_its_serializing_lock_before_reading_what_was_open(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#285: two runs submitted at the same time must not both read the prior
+    open assignments and then race to close and reopen the same rows. Locking
+    ahead of that read, not just ahead of the writes, is what makes the second
+    run's own bookkeeping (what it reports as reassigned or cleared) reflect
+    the first run's committed result rather than stale state."""
+    order: list[str] = []
+    manager = _wire(monkeypatch)
+    manager.read_open_assignments.side_effect = (
+        lambda *a, **k: order.append("read_open_assignments") or {}
+    )
+    monkeypatch.setattr(
+        segmentation,
+        "lock_for_run",
+        Mock(side_effect=lambda *a, **k: order.append("lock_for_run")),
+    )
+    adapter = _adapter(_scored(_ADA, "LOYAL"))
+
+    run_method(MagicMock(), "RFM_RULES", 180, adapter=adapter)
+
+    assert order == ["lock_for_run", "read_open_assignments"]
+
+
+def test_the_run_records_everything_at_the_instant_the_lock_returned(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#285: a run that waited on the lock must not write its transaction's
+    now(), which is older than the run it waited for."""
+    manager = _wire(monkeypatch)
+    monkeypatch.setattr(segmentation, "lock_for_run", Mock(return_value=_SALE))
+    adapter = _adapter(_scored(_ADA, "LOYAL"))
+
+    run_method(MagicMock(), "RFM_RULES", 180, adapter=adapter)
+
+    assert manager.create_run.call_args.kwargs["run_at"] == _SALE
+    assert manager.close_open_assignments.call_args.kwargs["at"] == _SALE
+    assert manager.insert_assignments.call_args.kwargs["at"] == _SALE
+
+
 def test_every_customer_in_the_run_has_their_open_row_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

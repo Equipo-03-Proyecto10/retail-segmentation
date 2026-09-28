@@ -34,6 +34,8 @@ from web.db.segments import (
 _SALE = datetime(2026, 9, 1, 9, 0, tzinfo=UTC)
 _ADA = "00000000-0000-0000-0000-000000000001"
 _BOB = "00000000-0000-0000-0000-000000000002"
+# The instant lock_for_run returns: every write of one run is recorded at it.
+_AT = datetime(2026, 9, 28, 12, 0, tzinfo=UTC)
 
 
 def _cursor(connection: MagicMock) -> MagicMock:
@@ -156,12 +158,13 @@ def test_the_run_row_carries_method_window_parameters_count_and_the_actor() -> N
     cursor = _cursor(connection)
     cursor.fetchone.return_value = (11,)
 
-    run_id = create_run(connection, "KMEANS", 45, {"k": 5, "seed": 7}, 30)
+    run_id = create_run(connection, "KMEANS", 45, {"k": 5, "seed": 7}, 30, run_at=_AT)
 
     statement, parameters = cursor.execute.call_args.args
     assert run_id == 11
     assert parameters[0] == "KMEANS" and parameters[1] == 45 and parameters[3] == 30
     assert json.loads(parameters[2]) == {"k": 5, "seed": 7}
+    assert parameters[4] == _AT and "now()" not in statement
     # The actor is the connection setting the audit trigger reads, not a Python
     # argument that a caller could forget or forge.
     assert "current_setting('mosaiq.user_id', true)" in statement
@@ -172,7 +175,14 @@ def test_the_parameters_are_stored_in_a_stable_key_order() -> None:
     connection = MagicMock()
     _cursor(connection).fetchone.return_value = (1,)
 
-    create_run(connection, "RFM_RULES", 180, {"window_days": 180, "quintiles": 5}, 1)
+    create_run(
+        connection,
+        "RFM_RULES",
+        180,
+        {"window_days": 180, "quintiles": 5},
+        1,
+        run_at=_AT,
+    )
 
     (_, parameters) = _cursor(connection).execute.call_args.args
     assert parameters[2] == '{"quintiles": 5, "window_days": 180}'
@@ -187,7 +197,7 @@ def test_a_parameter_that_cannot_be_stored_as_json_is_refused_before_the_insert(
     connection = MagicMock()
 
     with pytest.raises(ValueError):
-        create_run(connection, "KMEANS", 180, {"inertia": bad}, 1)
+        create_run(connection, "KMEANS", 180, {"inertia": bad}, 1, run_at=_AT)
 
     _cursor(connection).execute.assert_not_called()
 
@@ -213,19 +223,19 @@ def test_closing_takes_the_customers_as_a_typed_array_parameter() -> None:
     connection = MagicMock()
     cursor = _cursor(connection)
 
-    close_open_assignments(connection, [_ADA, _BOB])
+    close_open_assignments(connection, [_ADA, _BOB], at=_AT)
 
     statement, parameters = cursor.execute.call_args.args
     assert "ANY(%s::uuid[])" in statement
     assert "valid_to IS NULL" in statement
-    assert parameters == ([_ADA, _BOB],)
+    assert parameters == (_AT, [_ADA, _BOB])
     assert _ADA not in statement
 
 
 def test_closing_nobody_runs_no_statement() -> None:
     connection = MagicMock()
 
-    close_open_assignments(connection, [])
+    close_open_assignments(connection, [], at=_AT)
 
     _cursor(connection).execute.assert_not_called()
 
@@ -238,19 +248,21 @@ def test_the_assignments_are_inserted_with_one_parameterized_statement() -> None
         (_BOB, None, None, None, None, None, None, None, None),
     ]
 
-    insert_assignments(connection, 11, rows)
+    insert_assignments(connection, 11, rows, at=_AT)
 
     statement, batch = cursor.executemany.call_args.args
     assert "INSERT INTO customer_segment_history" in statement
-    assert statement.count("%s") == 10  # customer, run, and the eight fields
-    assert "now()" in statement  # closing and opening share one instant
-    assert batch == [(_ADA, 11, *rows[0][1:]), (_BOB, 11, *rows[1][1:])]
+    # customer, run, the eight fields, and valid_from: the instant the previous
+    # rows were closed at, so closing and opening share it
+    assert statement.count("%s") == 11
+    assert "now()" not in statement
+    assert batch == [(_ADA, 11, *rows[0][1:], _AT), (_BOB, 11, *rows[1][1:], _AT)]
 
 
 def test_inserting_nothing_runs_no_statement() -> None:
     connection = MagicMock()
 
-    insert_assignments(connection, 11, [])
+    insert_assignments(connection, 11, [], at=_AT)
 
     _cursor(connection).executemany.assert_not_called()
 

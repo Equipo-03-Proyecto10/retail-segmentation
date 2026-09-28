@@ -65,6 +65,7 @@ right place for it, and which the team accepted on 2026-09-07.
 | Document | What it records |
 |---|---|
 | [F8-03](f8-03-consumption-profile.md) | The consumption profile computed over accepted sales, cross-checked against independent queries on the seeded database, with its ties, empty case and single-assignment case reproduced |
+| [F8-04](f8-04-consumption-profile-view.md) | The consumption profile page at 375 px and 1440 px: every measure with its unit and window, the no-purchase-history case, and the refusal of a role without `segment.read` |
 
 ## Review passes
 

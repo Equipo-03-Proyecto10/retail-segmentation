@@ -38,7 +38,9 @@ from web.db.stores import list_all_stores
 from web.middleware.authz import CATALOG_READ, SEGMENT_READ, requires
 from web.routes.pagination import redirect_last_page
 from web.services.catalog import parse_pagination
+from web.services.consumption_profile import UnknownCustomer, build_profile
 from web.services.pagination import page_count
+from web.services.segmentation import InvalidWindow, parse_window
 
 bp = Blueprint("catalog", __name__, url_prefix="/catalog")
 
@@ -139,6 +141,53 @@ def customer_detail(customer_id: UUID) -> str:
         segment=segment,
         interests=list_interest_categories(connection, customer.customer_id),
         preferred_channels=list_preferred_channels(connection, customer.customer_id),
+    )
+
+
+@bp.get("/customers/<uuid:customer_id>/profile")
+@requires(SEGMENT_READ)
+def customer_profile(customer_id: UUID) -> str | tuple[str, int]:
+    """One customer's consumption profile (F8-04).
+
+    Gated on segment.read like the rest of the customer surface (ADR-0010,
+    F4-07's permission map). The window is a query parameter read with the same
+    parser the segment run uses, so the two refuse the same inputs. A window
+    the parser refuses answers 400 and explains itself; the profile is not
+    computed at all.
+    """
+    connection = get_connection()
+    customer = get_customer(connection, customer_id)
+    if customer is None:
+        abort(404)
+
+    raw_window = request.args.get("window")
+    try:
+        window_days = parse_window(raw_window)
+    except InvalidWindow as refusal:
+        return (
+            render_template(
+                "catalog/customer_profile.html",
+                customer=customer,
+                profile=None,
+                window=raw_window,
+                error=str(refusal),
+            ),
+            400,
+        )
+
+    try:
+        profile = build_profile(
+            connection, customer.customer_id, window_days=window_days
+        )
+    except UnknownCustomer:
+        abort(404)
+
+    return render_template(
+        "catalog/customer_profile.html",
+        customer=customer,
+        profile=profile,
+        window=window_days,
+        error=None,
     )
 
 

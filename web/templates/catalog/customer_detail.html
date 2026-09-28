@@ -7,6 +7,7 @@
 {% block content %}
   {% from "macros/ui.html" import page_header, status_pill %}
   {% call page_header(customer.name, "Registered on {}".format(customer.registered_on.strftime("%Y-%m-%d")), "Customer") %}
+    <a class="mq-btn mq-btn--primary mq-btn--sm" href="{{ url_for('catalog.customer_profile', customer_id=customer.customer_id) }}">Consumption profile</a>
     <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('catalog.customers') }}">Back to customers</a>
   {% endcall %}
 

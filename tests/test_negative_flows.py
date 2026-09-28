@@ -34,6 +34,7 @@ READ_ROUTES = [
     "/catalog/customers",
     f"/catalog/customers/{USER_ID}",
     f"/catalog/customers/{USER_ID}/profile",
+    f"/catalog/customers/{USER_ID}/recommendations",
     "/catalog/stock",
     "/catalog/segments",
     "/catalog/segments/1",

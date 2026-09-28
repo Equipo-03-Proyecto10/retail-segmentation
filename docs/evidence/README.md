@@ -82,6 +82,7 @@ right place for it, and which the team accepted on 2026-09-07.
 | Document | What it records |
 |---|---|
 | [F10-01](f10-01-recommendations.md) | Product recommendations with a stated reason for each: the recommendations of all 30 seeded customers checked against an independently written query, stock in the usual store enforced, no segment and no usual store stated instead of substituted, and only the stable label read |
+| [Category subtree](recommendations-category-subtree.md) | #277: a preferred or bought category covers the categories below it, checked against an independent recursive query on all 30 seeded customers and shown on a subcategory product stocked in a rolled-back transaction |
 
 ## Review passes
 

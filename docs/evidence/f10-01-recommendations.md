@@ -198,7 +198,9 @@ $ ruff check .      # All checks passed!
   window (180 days by default) can be recommended again.
 * **Categories are matched as the product carries them,** with no roll-up to a parent, as
   the consumption profile does. A customer whose registered interest is a *parent* category
-  matches only products in that exact category.
+  matches only products in that exact category. *Changed since by #277: a category now
+  covers the categories below it. See
+  [`recommendations-category-subtree.md`](recommendations-category-subtree.md).*
 * **A segment of one gives no segment signal.** With no other customer in the segment there
   is nobody whose purchases can speak for it, so the other two signals decide.
 * **The seed has no zero-stock rows and no inactive products,** so criterion 3 was shown by

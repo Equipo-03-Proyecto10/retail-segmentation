@@ -19,6 +19,10 @@ customer:
 * *purchase history*: it is in a category the customer buys from (their top
   categories over the window, RN-35).
 
+A category covers every category below it, at any depth, and never one above or
+beside it (#277): an interest in *Dairy* matches a product in *Milk*. When several
+categories above a product match, the nearest is the one named and counted.
+
 **How they are ordered.** By the number of signals that match, then by how many
 segment customers bought it, then by how much of the customer's buying its category
 is, then by product id. There are no weights, so there is nothing to tune and every
@@ -45,6 +49,7 @@ from typing import Any
 
 from psycopg import Connection
 
+from web.db.categories import Category, list_all_categories
 from web.db.consumption import list_product_totals
 from web.db.customers import list_interest_categories
 from web.db.recommendations import (
@@ -128,11 +133,39 @@ def _days(count: int) -> str:
     return f"{count} {_plural(count, 'day', 'days')}"
 
 
+def _lineage(category_id: int, categories: Mapping[int, Category]) -> list[int]:
+    """The category and every category above it, nearest first. The hierarchy is
+    a tree (RN-33), so the walk ends at a top-level category."""
+    chain = [category_id]
+    while (
+        category := categories.get(chain[-1])
+    ) is not None and category.parent_category_id is not None:
+        chain.append(category.parent_category_id)
+    return chain
+
+
+def _nearest(lineage: Sequence[int], matches: Collection[int]) -> int | None:
+    return next(
+        (category_id for category_id in lineage if category_id in matches), None
+    )
+
+
+def _placed(
+    product: StockedProduct, matched: int, categories: Mapping[int, Category]
+) -> str:
+    """Where the product sits, naming the category that matched when it is one
+    above the product's own."""
+    if matched == product.category_id:
+        return f"In {product.category_name}"
+    return f"In {product.category_name}, part of {categories[matched].name}"
+
+
 def rank_candidates(
     stocked: Sequence[StockedProduct],
     *,
     preferred_category_ids: Collection[int],
     category_purchases: Mapping[int, int],
+    categories: Mapping[int, Category],
     total_purchases: int,
     purchased_product_ids: Collection[int],
     segment_buyers: Mapping[int, int],
@@ -145,8 +178,10 @@ def rank_candidates(
     A product needs stock, must not have been bought already, and must match at
     least one signal. Quantity is checked here as well as in the read: stock is the
     one thing a recommendation must never get wrong, so it is not trusted to a
-    single place.
+    single place. `categories` is the hierarchy, by id, that a preferred or bought
+    category covers its subcategories through.
     """
+    bought_categories = {c for c, count in category_purchases.items() if count >= 1}
     ranked: list[tuple[tuple[int, int, int, int], Recommendation]] = []
     for product in stocked:
         if product.quantity_on_hand <= 0:
@@ -165,22 +200,30 @@ def rank_candidates(
                     f"last {_days(window_days)}",
                 )
             )
-        if product.category_id in preferred_category_ids:
+        lineage = _lineage(product.category_id, categories)
+        preferred = _nearest(lineage, preferred_category_ids)
+        if preferred is not None:
             reasons.append(
                 Reason(
                     Signal.PREFERRED_CATEGORY,
-                    f"In {product.category_name}, a category the customer said "
-                    "they like",
+                    f"{_placed(product, preferred, categories)}, a category the "
+                    "customer said they like",
                 )
             )
-        history = category_purchases.get(product.category_id, 0)
-        if history >= 1:
+        bought = _nearest(lineage, bought_categories)
+        history = category_purchases[bought] if bought is not None else 0
+        if bought is not None:
+            source = (
+                f"The customer bought from {product.category_name}"
+                if bought == product.category_id
+                else f"{_placed(product, bought, categories)}; the customer bought "
+                f"from {categories[bought].name}"
+            )
             reasons.append(
                 Reason(
                     Signal.PURCHASE_HISTORY,
-                    f"The customer bought from {product.category_name} in {history} "
-                    f"of their {total_purchases} purchases in the last "
-                    f"{_days(window_days)}",
+                    f"{source} in {history} of their {total_purchases} purchases in "
+                    f"the last {_days(window_days)}",
                 )
             )
         if not reasons:
@@ -290,6 +333,7 @@ def recommend(
         profile.window_start,
         profile.window_end,
     )
+    categories = {c.category_id: c for c in list_all_categories(connection)}
 
     items = rank_candidates(
         stocked,
@@ -298,6 +342,7 @@ def recommend(
             category.category_id: category.purchases
             for category in profile.favourite_categories
         },
+        categories=categories,
         total_purchases=profile.purchase_count or 0,
         purchased_product_ids={product.product_id for product in purchased},
         segment_buyers=buyers,

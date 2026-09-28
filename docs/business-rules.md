@@ -291,8 +291,13 @@ A product is recommended to a customer only when all of these hold:
   customers whose **open** assignment carries the same label bought it in the window
   (*segment*); it is in a category the customer registered an interest in (*preferred
   category*); or it is in one of the categories they buy from (*purchase history*, their
-  top three over the window, RN-35). Categories are matched as the product carries them,
-  with no roll-up to a parent. In stock is not a reason.
+  top three over the window, RN-35). In stock is not a reason.
+* **A category covers the categories below it.** A preferred or bought category matches a
+  product in that category or in any category below it, at any depth, and never one above
+  or beside it: an interest in *Dairy* matches a product in *Milk*. The hierarchy is a
+  tree (RN-33). When more than one category above a product matches, the nearest is the
+  one named in the reason and, for purchase history, the one whose share is counted.
+  Decided in the review of #276 (#277).
 * **It carries its reasons.** Every recommendation lists each signal that matched, in a
   fixed order, in words and with the figures behind it, and the quantity the store holds.
 
@@ -315,10 +320,14 @@ recommendations whatever produced them.
 **Enforced:** application — `web/services/recommendations.py` for the rules and
 `web/db/recommendations.py` for the two reads it adds (`SELECT`-only, parameterized).
 The open assignment, the usual store and the categories bought come from the consumption
-profile. **Verified** — by `tests/test_recommendations.py` and
-`tests/test_recommendations_db.py`, including that faults seeded into each rule above
-fail a test, and against the seeded PostgreSQL and an independently written query by
-[`evidence/f10-01-recommendations.md`](evidence/f10-01-recommendations.md). · `F10-01`
+profile, and the hierarchy from `list_all_categories`. **Verified** — by
+`tests/test_recommendations.py` and `tests/test_recommendations_db.py`, including that
+faults seeded into each rule above fail a test, and against the seeded PostgreSQL and an
+independently written query by
+[`evidence/f10-01-recommendations.md`](evidence/f10-01-recommendations.md) and, for the
+category hierarchy,
+[`evidence/recommendations-category-subtree.md`](evidence/recommendations-category-subtree.md).
+· `F10-01`
 
 ### RN-22 — A campaign targets a real, stable segment label
 **Enforced:** `campaign_label_code_fkey` → `segment_label(label_code)`.

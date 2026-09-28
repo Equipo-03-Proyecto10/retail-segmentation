@@ -72,6 +72,7 @@ right place for it, and which the team accepted on 2026-09-07.
 | Document | What it records |
 |---|---|
 | [F9-01](f9-01-rfm-rules-adapter.md) | The rule-based scoring as an adapter behind a method-agnostic pipeline: the new writes compared with the old single statement on the seeded database, the method domain enforced by the database, and a consumer that is never told the method |
+| [F9-02](f9-02-kmeans-fit.md) | The K-means fit written in the application: checked against exact rational arithmetic and scikit-learn, its empty-cluster, non-convergence and tie behaviours on real rows, and the parameters and quality measures a run records |
 
 ## Review passes
 

@@ -176,6 +176,39 @@ segment is information; a wrong one is not.
 statement that assigns the others. **Verified** —
 [`evidence/f3-10-segment-run.md`](evidence/f3-10-segment-run.md). · `RF-12`
 
+### RN-37 — A K-means run is reproducible from what it records, and each of its numerical hazards has a defined behaviour
+The fit is fixed by the seed, k, the iteration limit, the tolerance and the feature
+window, and all five are stored on the run with its quality measures, so a run can
+be reproduced from the database alone. Customers are sorted by id before anything
+is done, so the order rows arrive in cannot reach the result. Only customers with
+sales in the window are clustered; the rest are the unassigned result (RN-21).
+
+| Situation | What happens | Where it is recorded |
+|---|---|---|
+| A feature is the same for every customer | It maps to 0, not to a division by zero, and reversing recency does not turn it into the best score | `normalisation` |
+| A cluster is empty after an assignment step | It is refilled with the customer farthest from their own centroid, taken only from a cluster holding at least two, and the lowest customer id on a tie. A run never ends with fewer than k clusters | `empty_cluster_policy`, `quality.empty_cluster_events` |
+| The iteration limit is reached before the tolerance | The run is written and recorded as not converged. It is never presented as settled | `quality.converged`, `quality.stopped_on`, and a logged warning |
+| A customer is equidistant from two centroids | They go to the lower-numbered cluster | `tie_break` |
+| Fewer customers have sales than k | The run is refused and nothing is written | — |
+
+Quality is recorded as inertia, mean silhouette (absent above 2,000 customers,
+where it would be quadratic in pure Python, and for a single cluster, where it is
+undefined) and the cluster sizes, largest first. Sizes are a list and not a mapping
+by cluster number: a raw cluster number means something only inside one fit and is
+never something a report can key on (ADR-0018). A clustered customer carries their
+raw recency, frequency and monetary values and no quintile scores, which are
+RFM_RULES' and would make two measures look like one.
+
+**Enforced:** application — `web/services/kmeans.py` for the fit and
+`kmeans_adapter` in `web/services/segmentation.py` for what is written. No
+scientific-computing dependency is taken (ADR-0021). **Verified** — by
+`tests/test_kmeans.py` and `tests/test_kmeans_adapter.py`, including that faults
+seeded into the normalisation, the refill, the convergence flag, the tie rule and
+the seed each fail a test, and against real rows and an
+independent exact-arithmetic computation by
+[`evidence/f9-02-kmeans-fit.md`](evidence/f9-02-kmeans-fit.md). The mapping from
+clusters to labels is F9-03's. · `F9-02`
+
 ### RN-22 — A campaign targets a real, stable segment label
 **Enforced:** `campaign_label_code_fkey` → `segment_label(label_code)`.
 **Verified** — case N23.

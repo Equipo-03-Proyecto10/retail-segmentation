@@ -92,6 +92,7 @@ decision text is unchanged.
 | [0022](0022-sessions-are-resolved-server-side-on-every-request.md) | Sessions are resolved server-side on every request | Proposed |
 | [0023](0023-store-managers-read-segments-and-customers.md) | Store managers hold `segment.read`, and so read customers and segments | Accepted |
 | [0024](0024-the-application-role-cannot-update-or-delete-the-audit-log.md) | The application role cannot update or delete the audit log | Accepted |
+| [0025](0025-state-changing-requests-carry-a-synchroniser-csrf-token.md) | State-changing requests carry a synchroniser CSRF token | Proposed |
 
 ## Writing one
 

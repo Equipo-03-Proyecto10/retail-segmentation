@@ -17,10 +17,16 @@ from flask import Flask
 
 from web.middleware.authz import install as install_authorization
 from web.middleware.authz import public, requires
+from web.middleware.csrf import install as install_csrf_protection
 
 __all__ = ["public", "register_middleware", "requires"]
 
 
 def register_middleware(app: Flask) -> None:
-    """Attach every middleware. One line per concern, as they land."""
+    """Attach every middleware. One line per concern, as they land.
+
+    CSRF (#294, ADR-0025) is registered first, so a forged or missing token
+    is refused before session resolution or authorization ever runs.
+    """
+    install_csrf_protection(app)
     install_authorization(app)

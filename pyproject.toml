@@ -23,4 +23,5 @@ pythonpath = ["."]
 testpaths = ["tests"]
 markers = [
     "real_sessions: resolve the session through the real app_session lookup instead of trusting the cookie (tests/conftest.py)",
+    "real_csrf: check the real CSRF token/Origin check instead of stubbing it off (tests/conftest.py)",
 ]

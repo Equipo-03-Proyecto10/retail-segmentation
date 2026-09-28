@@ -10,7 +10,7 @@ reuses an existing declaration, per ADR-0007.
 | 7 | Run RFM_RULES / KMEANS | `segment_run.execute` (existing) | ADMIN |
 | 8 | Sales CSV ingestion | `sales_ingest.execute` (**new**) | ADMIN |
 | 8 | Consumption profile (read) | `segment.read` (existing) | ADMIN, ANALYST, MARKETING, AUDITOR |
-| 9 | Model parameters and quality measures (read) | `segment.read` (existing) | ADMIN, ANALYST, MARKETING, AUDITOR |
+| 9 | Model comparison, parameters and quality measures (read) | `segment.read` (existing) | ADMIN, ANALYST, MARKETING, AUDITOR |
 | 10 | Recommendations (read) | `segment.read` (existing) | ADMIN, ANALYST, MARKETING, AUDITOR |
 | 11 | Campaigns and experiments (assignment, exposure, conversion) | `campaign.read` / `campaign.write` (existing) | same as campaigns today |
 | 12 | Segment / RFM / migration dashboards | `segment.read` (existing) | ADMIN, ANALYST, MARKETING, AUDITOR |

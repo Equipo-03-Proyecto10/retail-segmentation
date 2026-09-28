@@ -245,6 +245,40 @@ ADR-0018 names in `tests/test_segmentation_pipeline.py`, including that faults s
 into each step of the rule fail a test, and against a real K-means run by
 [`evidence/f9-03-cluster-labels.md`](evidence/f9-03-cluster-labels.md). · `F9-03`
 
+### RN-39 — Two runs are compared by label code, and the method is only a description of a run
+A model comparison sets one rule-based run beside one K-means run over the same
+customers and reports, on label codes alone (ADR-0018):
+
+* **The population under each label, for each run**, in the vocabulary's declared
+  best-to-worst order and then *Unassigned*. A label nobody holds is listed with zero.
+* **Agreement per customer.** A customer both runs scored *agrees* when they were
+  given the same label and *disagrees* otherwise. Two runs that both left a customer
+  unassigned agree, because each found nothing to label and that is a result and not
+  an absence; one that left them unassigned and one that labelled them disagree.
+* **A customer only one run scored** is named as that, and is neither an agreement nor
+  a disagreement, because there is nothing to compare them with. The counts reconcile:
+  everyone either run scored is agreed, disagreed or in only one.
+* **A cross-tabulation** of the customers both runs scored, whose cells sum to them
+  and whose diagonal sums to the agreements.
+
+A comparison has no direction. Migration is a change over time and reads "improved"
+and "declined"; two runs compared side by side say only where they differ, and never
+that one is better.
+
+**The method is run metadata.** The page uses it to offer one run of each kind, to
+refuse a run of the wrong kind in a slot, and to name each run on screen. The
+comparison is built from two runs' rows and the label vocabulary and is never given
+the method, so an assignment cannot be interpreted through it: the same labelled rows
+give the same comparison whatever produced them.
+
+**Enforced:** application — `web/services/model_comparison.py` for the rules,
+`web/db/model_comparison.py` for the reads (`SELECT`-only, parameterized, and the
+assignment reader does not select the method), and the page gated on `segment.read`
+(`docs/analytics-permission-map.md`, Phase 9). **Verified** — by
+`tests/test_model_comparison.py` and `tests/test_model_comparison_route.py`, including
+that faults seeded into each rule above fail a test, and against the seeded PostgreSQL
+by [`evidence/f9-04-model-comparison.md`](evidence/f9-04-model-comparison.md). · `F9-04`
+
 ### RN-22 — A campaign targets a real, stable segment label
 **Enforced:** `campaign_label_code_fkey` → `segment_label(label_code)`.
 **Verified** — case N23.

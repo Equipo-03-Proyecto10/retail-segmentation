@@ -1,9 +1,8 @@
-"""The reads behind shift detection (F8-05).
+"""The single-snapshot read behind shift detection (F8-05).
 
-What only the SQL can get wrong: that every statement is parameterized, that a
-period is half-open so two adjacent periods never share an instant, that it
-reads accepted sales and nothing else, and that its rows come back grouped by
-customer. Ranking is not done here; it is web/services/consumption_shift.py's.
+The SQL returns both periods and all dimensions in one parameterized statement.
+These tests cover its bounds, sources, aggregation definitions and mapping;
+ranking remains the service's responsibility.
 """
 
 from __future__ import annotations
@@ -14,30 +13,23 @@ from decimal import Decimal
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
-
 from web.db import consumption_shift
 from web.db.consumption import CategoryTotal, GroupTotal
-from web.db.consumption_shift import (
-    list_category_totals_by_customer,
-    list_channel_totals_by_customer,
-    list_store_totals_by_customer,
-)
+from web.db.consumption_shift import list_totals_for_periods
 
-_START = datetime(2026, 3, 1, tzinfo=UTC)
-_END = datetime(2026, 6, 1, tzinfo=UTC)
+_T0 = datetime(2026, 3, 1, tzinfo=UTC)
+_T1 = datetime(2026, 6, 1, tzinfo=UTC)
+_T2 = datetime(2026, 9, 1, tzinfo=UTC)
 _ADA = "00000000-0000-0000-0000-000000000001"
 _BOB = "00000000-0000-0000-0000-000000000002"
-
-_READS = [
-    list_channel_totals_by_customer,
-    list_store_totals_by_customer,
-    list_category_totals_by_customer,
-]
 
 
 def _cursor(connection: MagicMock) -> MagicMock:
     return connection.cursor.return_value.__enter__.return_value
+
+
+def _read(connection: MagicMock):
+    return list_totals_for_periods(connection, _T0, _T1, _T1, _T2)
 
 
 def _statement_and_params(connection: MagicMock) -> tuple[str, dict]:
@@ -45,80 +37,108 @@ def _statement_and_params(connection: MagicMock) -> tuple[str, dict]:
     return call.args[0], call.args[1]
 
 
-@pytest.mark.parametrize("read", _READS)
-def test_every_read_is_parameterized(read) -> None:
+def test_both_periods_and_all_dimensions_are_read_by_one_statement() -> None:
     connection = MagicMock()
     _cursor(connection).fetchall.return_value = []
 
-    read(connection, _START, _END)
+    _read(connection)
+
+    _cursor(connection).execute.assert_called_once()
+    statement, _ = _statement_and_params(connection)
+    assert "'earlier'" in statement and "'later'" in statement
+    assert "'channel' AS dimension" in statement
+    assert "'store' AS dimension" in statement
+    assert "'category' AS dimension" in statement
+    assert statement.count("UNION ALL") == 2
+
+
+def test_the_single_read_binds_both_periods_as_parameters() -> None:
+    connection = MagicMock()
+    _cursor(connection).fetchall.return_value = []
+
+    _read(connection)
 
     statement, params = _statement_and_params(connection)
-    assert params == {"start": _START, "end": _END}
-    assert "%(start)s" in statement and "%(end)s" in statement
+    assert params == {
+        "earlier_start": _T0,
+        "earlier_end": _T1,
+        "later_start": _T1,
+        "later_end": _T2,
+    }
+    assert "%(earlier_start)s" in statement
+    assert "%(earlier_end)s" in statement
+    assert "%(later_start)s" in statement
+    assert "%(later_end)s" in statement
 
 
-@pytest.mark.parametrize("read", _READS)
-def test_a_period_is_closed_at_its_start_and_open_at_its_end(read) -> None:
-    """Half-open, so two adjacent periods never both count the same instant."""
+def test_each_period_is_closed_at_its_start_and_open_at_its_end() -> None:
     connection = MagicMock()
     _cursor(connection).fetchall.return_value = []
 
-    read(connection, _START, _END)
+    _read(connection)
 
     statement, _ = _statement_and_params(connection)
-    assert ">= %(start)s" in statement
-    assert "< %(end)s" in statement
-    assert "<= %(end)s" not in statement
+    assert statement.count("t.occurred_at >= periods.start_at") == 3
+    assert statement.count("t.occurred_at < periods.end_at") == 3
+    assert "t.occurred_at <= periods.end_at" not in statement
 
 
-@pytest.mark.parametrize("read", _READS)
-def test_every_read_starts_from_the_sales_the_ingestion_accepted(read) -> None:
+def test_header_and_category_sources_match_their_definitions() -> None:
     connection = MagicMock()
     _cursor(connection).fetchall.return_value = []
 
-    read(connection, _START, _END)
+    _read(connection)
 
     statement, _ = _statement_and_params(connection)
-    assert "FROM transaction" in statement
+    assert statement.count("JOIN transaction AS t") == 3
+    assert statement.count("JOIN transaction_line AS tl") == 1
+    assert statement.count("JOIN product AS p") == 1
+    assert statement.count("JOIN category AS c") == 1
     assert "reject" not in statement.lower()
 
 
-@pytest.mark.parametrize("read", _READS)
-def test_every_read_groups_by_customer(read) -> None:
+def test_category_counts_each_purchase_once_and_preserves_units_and_spend() -> None:
     connection = MagicMock()
     _cursor(connection).fetchall.return_value = []
 
-    read(connection, _START, _END)
+    _read(connection)
 
     statement, _ = _statement_and_params(connection)
-    assert "t.customer_id" in statement.split("GROUP BY")[1]
+    assert "count(DISTINCT t.transaction_id) AS purchases" in statement
+    assert "sum(tl.quantity) AS units" in statement
+    assert "sum(tl.quantity * tl.unit_price) AS spend" in statement
 
 
-@pytest.mark.parametrize("read", _READS)
-def test_no_rows_is_an_empty_mapping(read) -> None:
+def test_tagged_rows_are_mapped_to_their_period_and_dimension() -> None:
+    connection = MagicMock()
+    _cursor(connection).fetchall.return_value = [
+        ("earlier", "channel", _ADA, 1, "web", 3, None, Decimal("30.00")),
+        ("earlier", "store", _ADA, 4, "North", 3, None, Decimal("30.00")),
+        ("earlier", "category", _ADA, 7, "Dairy", 2, 5, Decimal("12.50")),
+        ("later", "channel", _BOB, 2, "app", 1, None, Decimal("8.00")),
+        ("later", "store", _BOB, 5, "South", 1, None, Decimal("8.00")),
+        ("later", "category", _BOB, 8, "Snacks", 1, 2, Decimal("8.00")),
+    ]
+
+    earlier, later = _read(connection)
+
+    assert earlier == (
+        {_ADA: [GroupTotal(1, "web", 3, Decimal("30.00"))]},
+        {_ADA: [GroupTotal(4, "North", 3, Decimal("30.00"))]},
+        {_ADA: [CategoryTotal(7, "Dairy", 2, 5, Decimal("12.50"))]},
+    )
+    assert later == (
+        {_BOB: [GroupTotal(2, "app", 1, Decimal("8.00"))]},
+        {_BOB: [GroupTotal(5, "South", 1, Decimal("8.00"))]},
+        {_BOB: [CategoryTotal(8, "Snacks", 1, 2, Decimal("8.00"))]},
+    )
+
+
+def test_no_rows_returns_empty_inputs_for_both_periods() -> None:
     connection = MagicMock()
     _cursor(connection).fetchall.return_value = []
 
-    assert read(connection, _START, _END) == {}
-
-
-def test_channel_and_store_rows_are_grouped_under_their_customer() -> None:
-    connection = MagicMock()
-    _cursor(connection).fetchall.return_value = [
-        (_ADA, 1, "web", 3, Decimal("30.00")),
-        (_ADA, 2, "app", 1, Decimal("5.00")),
-        (_BOB, 1, "web", 2, Decimal("20.00")),
-    ]
-
-    expected = {
-        _ADA: [
-            GroupTotal(1, "web", 3, Decimal("30.00")),
-            GroupTotal(2, "app", 1, Decimal("5.00")),
-        ],
-        _BOB: [GroupTotal(1, "web", 2, Decimal("20.00"))],
-    }
-    assert list_channel_totals_by_customer(connection, _START, _END) == expected
-    assert list_store_totals_by_customer(connection, _START, _END) == expected
+    assert _read(connection) == (({}, {}, {}), ({}, {}, {}))
 
 
 def test_a_customer_id_that_is_a_uuid_object_is_keyed_as_text() -> None:
@@ -126,35 +146,12 @@ def test_a_customer_id_that_is_a_uuid_object_is_keyed_as_text() -> None:
 
     connection = MagicMock()
     _cursor(connection).fetchall.return_value = [
-        (UUID(_ADA), 1, "web", 3, Decimal("30.00"))
+        ("earlier", "channel", UUID(_ADA), 1, "web", 3, None, Decimal("30.00"))
     ]
 
-    assert list(list_channel_totals_by_customer(connection, _START, _END)) == [_ADA]
+    earlier, _ = _read(connection)
 
-
-def test_category_rows_are_grouped_under_their_customer() -> None:
-    connection = MagicMock()
-    _cursor(connection).fetchall.return_value = [
-        (_ADA, 7, "Dairy", 2, 5, Decimal("12.50")),
-        (_BOB, 8, "Snacks", 1, 1, Decimal("3.00")),
-    ]
-
-    assert list_category_totals_by_customer(connection, _START, _END) == {
-        _ADA: [CategoryTotal(7, "Dairy", 2, 5, Decimal("12.50"))],
-        _BOB: [CategoryTotal(8, "Snacks", 1, 1, Decimal("3.00"))],
-    }
-
-
-def test_a_category_counts_a_purchase_once_however_many_of_its_products_it_holds() -> (
-    None
-):
-    connection = MagicMock()
-    _cursor(connection).fetchall.return_value = []
-
-    list_category_totals_by_customer(connection, _START, _END)
-
-    statement, _ = _statement_and_params(connection)
-    assert "count(DISTINCT t.transaction_id)" in statement
+    assert list(earlier[0]) == [_ADA]
 
 
 def test_the_module_writes_nothing() -> None:

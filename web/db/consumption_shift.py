@@ -1,22 +1,17 @@
-"""Reads behind consumption-shift detection (F8-05).
+"""The single read behind consumption-shift detection (F8-05).
 
-Read only, and every statement is parameterized. Where web/db/consumption.py
-summarises one customer over one window, these read every customer over one
-*period* in a single statement each, so detecting shifts costs a fixed number of
-round trips however many customers there are.
+The detector needs channel, store and category totals for two periods. They are
+read by one parameterized statement so PostgreSQL evaluates all six groupings
+against one READ COMMITTED snapshot. A CSV load can contain back-dated sales;
+separate statements could therefore mix states and invent or hide a shift.
 
-Nothing here ranks or compares. Each function returns every group a customer has
-in the period, keyed by customer, and the service decides which is dominant
-(RN-35) and whether it changed.
+Nothing here ranks or compares. The rows are tagged by period and dimension,
+then mapped back to the inputs used by the RN-35 ranking functions in the
+service. Channel and store totals come from transaction headers. Category
+totals additionally join transaction_line, product and category.
 
-Accepted sales only: ADR-0020 persists a CSV row only once it is accepted, so
-`transaction` and `transaction_line` are the accepted sales, and no status column
-is invented to filter on.
-
-A period is **half-open**, [start, end): it includes its first instant and not
-its last. Two adjacent periods, one ending where the next begins, therefore never
-both count the same instant. web/db/consumption.py's profile window is closed at
-both ends because it is one window ending now, not one of a pair.
+Accepted sales only: ADR-0020 persists a CSV row only once it is accepted. A
+period is half-open, [start, end), so adjacent periods never share an instant.
 """
 
 from __future__ import annotations
@@ -29,81 +24,100 @@ from psycopg import Connection
 
 from web.db.consumption import CategoryTotal, GroupTotal
 
+DimensionTotals = tuple[
+    dict[str, list[GroupTotal]],
+    dict[str, list[GroupTotal]],
+    dict[str, list[CategoryTotal]],
+]
 
-def list_channel_totals_by_customer(
-    connection: Connection[Any], start: datetime, end: datetime
-) -> dict[str, list[GroupTotal]]:
-    """Every channel each customer bought through in the period."""
+
+def list_totals_for_periods(
+    connection: Connection[Any],
+    earlier_start: datetime,
+    earlier_end: datetime,
+    later_start: datetime,
+    later_end: datetime,
+) -> tuple[DimensionTotals, DimensionTotals]:
+    """Return channel, store and category totals for both periods at once."""
     with connection.cursor() as cursor:
         cursor.execute(
             """
-            SELECT t.customer_id, ch.channel_id, ch.name, count(*), sum(t.total)
-            FROM transaction AS t
+            WITH periods(period, start_at, end_at) AS (
+                VALUES
+                    ('earlier', %(earlier_start)s::timestamptz,
+                     %(earlier_end)s::timestamptz),
+                    ('later', %(later_start)s::timestamptz,
+                     %(later_end)s::timestamptz)
+            )
+            SELECT periods.period, 'channel' AS dimension,
+                   t.customer_id, ch.channel_id, ch.name,
+                   count(*) AS purchases, NULL::bigint AS units,
+                   sum(t.total) AS spend
+            FROM periods
+            JOIN transaction AS t
+              ON t.occurred_at >= periods.start_at
+             AND t.occurred_at < periods.end_at
             JOIN channel AS ch ON ch.channel_id = t.channel_id
-            WHERE t.occurred_at >= %(start)s
-              AND t.occurred_at < %(end)s
-            GROUP BY t.customer_id, ch.channel_id, ch.name
-            """,
-            {"start": start, "end": end},
-        )
-        rows = cursor.fetchall()
+            GROUP BY periods.period, t.customer_id, ch.channel_id, ch.name
 
-    grouped: dict[str, list[GroupTotal]] = defaultdict(list)
-    for customer_id, *group in rows:
-        grouped[str(customer_id)].append(GroupTotal(*group))
-    return dict(grouped)
+            UNION ALL
 
-
-def list_store_totals_by_customer(
-    connection: Connection[Any], start: datetime, end: datetime
-) -> dict[str, list[GroupTotal]]:
-    """Every store each customer bought at in the period."""
-    with connection.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT t.customer_id, s.store_id, s.name, count(*), sum(t.total)
-            FROM transaction AS t
+            SELECT periods.period, 'store' AS dimension,
+                   t.customer_id, s.store_id, s.name,
+                   count(*) AS purchases, NULL::bigint AS units,
+                   sum(t.total) AS spend
+            FROM periods
+            JOIN transaction AS t
+              ON t.occurred_at >= periods.start_at
+             AND t.occurred_at < periods.end_at
             JOIN store AS s ON s.store_id = t.store_id
-            WHERE t.occurred_at >= %(start)s
-              AND t.occurred_at < %(end)s
-            GROUP BY t.customer_id, s.store_id, s.name
-            """,
-            {"start": start, "end": end},
-        )
-        rows = cursor.fetchall()
+            GROUP BY periods.period, t.customer_id, s.store_id, s.name
 
-    grouped: dict[str, list[GroupTotal]] = defaultdict(list)
-    for customer_id, *group in rows:
-        grouped[str(customer_id)].append(GroupTotal(*group))
-    return dict(grouped)
+            UNION ALL
 
-
-def list_category_totals_by_customer(
-    connection: Connection[Any], start: datetime, end: datetime
-) -> dict[str, list[CategoryTotal]]:
-    """Every category each customer bought from in the period, by the category
-    the product itself carries (no roll-up to a parent). A customer whose
-    purchases in the period have no product lines has no entry."""
-    with connection.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT t.customer_id, c.category_id, c.name,
-                   count(DISTINCT t.transaction_id),
-                   sum(tl.quantity),
-                   sum(tl.quantity * tl.unit_price)
-            FROM transaction AS t
-            JOIN transaction_line AS tl ON tl.transaction_id = t.transaction_id
+            SELECT periods.period, 'category' AS dimension,
+                   t.customer_id, c.category_id, c.name,
+                   count(DISTINCT t.transaction_id) AS purchases,
+                   sum(tl.quantity) AS units,
+                   sum(tl.quantity * tl.unit_price) AS spend
+            FROM periods
+            JOIN transaction AS t
+              ON t.occurred_at >= periods.start_at
+             AND t.occurred_at < periods.end_at
+            JOIN transaction_line AS tl
+              ON tl.transaction_id = t.transaction_id
             JOIN product AS p ON p.product_id = tl.product_id
             JOIN category AS c ON c.category_id = p.category_id
-            WHERE t.occurred_at >= %(start)s
-              AND t.occurred_at < %(end)s
-            GROUP BY t.customer_id, c.category_id, c.name
+            GROUP BY periods.period, t.customer_id, c.category_id, c.name
             """,
-            {"start": start, "end": end},
+            {
+                "earlier_start": earlier_start,
+                "earlier_end": earlier_end,
+                "later_start": later_start,
+                "later_end": later_end,
+            },
         )
         rows = cursor.fetchall()
 
-    grouped: dict[str, list[CategoryTotal]] = defaultdict(list)
-    for customer_id, *group in rows:
-        grouped[str(customer_id)].append(CategoryTotal(*group))
-    return dict(grouped)
+    totals = {
+        period: {
+            "channel": defaultdict(list),
+            "store": defaultdict(list),
+            "category": defaultdict(list),
+        }
+        for period in ("earlier", "later")
+    }
+    for period, dimension, customer_id, item_id, name, purchases, units, spend in rows:
+        if dimension == "category":
+            total = CategoryTotal(item_id, name, purchases, units, spend)
+        else:
+            total = GroupTotal(item_id, name, purchases, spend)
+        totals[period][dimension][str(customer_id)].append(total)
+
+    return tuple(
+        tuple(
+            dict(totals[period][dimension])
+            for dimension in ("channel", "store", "category")
+        )
+        for period in ("earlier", "later")
+    )

@@ -3,9 +3,9 @@
 A shift is a change in what a customer mostly buys through, where and of: their
 dominant channel, their dominant store or their leading category. Every rule that
 decides one is a pure function in web/services/consumption_shift.py (ADR-0003),
-so these tests drive it with plain rows. `detect_shifts` is exercised with the
-web.db reads replaced by fakes, which is how they can state exactly which period
-each read was asked for.
+so these tests drive it with plain rows. `detect_shifts` is exercised with its
+single database read replaced by a fake, making the mapping of its earlier and
+later result rows explicit.
 
 "Dominant" means what it means in the consumption profile (RN-35), and the tests
 prove the two agree by feeding the same tied rows through both.
@@ -16,7 +16,7 @@ from __future__ import annotations
 import itertools
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 
@@ -325,44 +325,38 @@ def test_the_report_is_ordered_by_customer_id_whatever_order_the_input_had() -> 
     assert [s.customer_id for s in report.shifts] == [_ADA, _BOB, _CAL]
 
 
-# ---------- wiring: which period each read is asked for ----------
+# ---------- wiring: one snapshot supplies both periods ----------
 
 
-def _fake_reads(monkeypatch, earlier_rows, later_rows) -> dict[str, Mock]:
-    """Each fake returns `earlier_rows` when asked for the earlier period's start
-    and `later_rows` otherwise, so a swap of the two periods is visible."""
-
-    def make(index: int) -> Mock:
-        def read(_connection, start, end):
-            return (earlier_rows if start == _EARLIER.start else later_rows)[index]
-
-        return Mock(side_effect=read)
-
-    fakes = {
-        "list_channel_totals_by_customer": make(0),
-        "list_store_totals_by_customer": make(1),
-        "list_category_totals_by_customer": make(2),
-    }
-    for name, fake in fakes.items():
-        monkeypatch.setattr(shift_service, name, fake)
-    return fakes
+def _fake_read(monkeypatch, earlier_rows, later_rows) -> Mock:
+    read = Mock(return_value=(earlier_rows, later_rows))
+    monkeypatch.setattr(shift_service, "list_totals_for_periods", read)
+    return read
 
 
-def test_each_read_is_asked_for_each_period(monkeypatch) -> None:
-    empty = ({}, {}, {})
-    fakes = _fake_reads(monkeypatch, empty, empty)
+def test_the_single_read_is_asked_for_both_ordered_periods(monkeypatch) -> None:
+    read = _fake_read(monkeypatch, ({}, {}, {}), ({}, {}, {}))
 
-    detect_shifts(Mock(), _EARLIER, _LATER)
+    connection = Mock()
+    detect_shifts(connection, _LATER, _EARLIER)
 
-    for fake in fakes.values():
-        asked = [call.args[1:] for call in fake.call_args_list]
-        assert asked == [(_T0, _T1), (_T1, _T2)]
+    read.assert_called_once_with(connection, _T0, _T1, _T1, _T2)
+
+
+def test_detect_shifts_issues_exactly_one_statement() -> None:
+    connection = MagicMock()
+    cursor = connection.cursor.return_value.__enter__.return_value
+    cursor.fetchall.return_value = []
+
+    detect_shifts(connection, _EARLIER, _LATER)
+
+    cursor.execute.assert_called_once()
 
 
 def test_detect_shifts_compares_earlier_against_later(monkeypatch) -> None:
     earlier = ({_ADA: [_g(1, 5)]}, {_ADA: [_g(10, 5)]}, {_ADA: [_c(100, 5)]})
     later = ({_ADA: [_g(2, 5)]}, {_ADA: [_g(10, 5)]}, {_ADA: [_c(100, 5)]})
-    _fake_reads(monkeypatch, earlier, later)
+    _fake_read(monkeypatch, earlier, later)
 
     report = detect_shifts(Mock(), _EARLIER, _LATER)
 
@@ -376,7 +370,7 @@ def test_detect_shifts_gives_the_same_report_for_periods_passed_in_either_order(
 ) -> None:
     earlier = ({_ADA: [_g(1, 5)]}, {_ADA: [_g(10, 5)]}, {})
     later = ({_ADA: [_g(2, 5)]}, {_ADA: [_g(10, 5)]}, {})
-    _fake_reads(monkeypatch, earlier, later)
+    _fake_read(monkeypatch, earlier, later)
 
     forward = detect_shifts(Mock(), _EARLIER, _LATER)
     backward = detect_shifts(Mock(), _LATER, _EARLIER)
@@ -385,10 +379,9 @@ def test_detect_shifts_gives_the_same_report_for_periods_passed_in_either_order(
 
 
 def test_detect_shifts_refuses_bad_periods_before_reading_anything(monkeypatch) -> None:
-    fakes = _fake_reads(monkeypatch, ({}, {}, {}), ({}, {}, {}))
+    read = _fake_read(monkeypatch, ({}, {}, {}), ({}, {}, {}))
 
     with pytest.raises(InvalidPeriods):
         detect_shifts(Mock(), _EARLIER, Period(_T1 - timedelta(days=1), _T2))
 
-    for fake in fakes.values():
-        fake.assert_not_called()
+    read.assert_not_called()

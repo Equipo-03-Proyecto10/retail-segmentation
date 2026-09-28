@@ -36,6 +36,10 @@ quietly meant something else would look plausible and be wrong:
   to compare, so no category shift is reported for that customer.
 
 Only accepted sales are read (ADR-0020). Nothing here writes.
+
+All totals for both periods and all three dimensions are fetched in one SQL
+statement. This gives detection one READ COMMITTED snapshot even when a CSV
+load containing back-dated sales commits while a report is being produced.
 """
 
 from __future__ import annotations
@@ -48,11 +52,7 @@ from typing import Any
 from psycopg import Connection
 
 from web.db.consumption import CategoryTotal, GroupTotal
-from web.db.consumption_shift import (
-    list_category_totals_by_customer,
-    list_channel_totals_by_customer,
-    list_store_totals_by_customer,
-)
+from web.db.consumption_shift import list_totals_for_periods
 from web.services.consumption_profile import rank_categories, rank_dominant
 
 
@@ -274,16 +274,6 @@ def compare_periods(
     )
 
 
-def _leaders_in(
-    connection: Connection[Any], period: Period
-) -> dict[str, CustomerLeaders]:
-    return build_leaders(
-        list_channel_totals_by_customer(connection, period.start, period.end),
-        list_store_totals_by_customer(connection, period.start, period.end),
-        list_category_totals_by_customer(connection, period.start, period.end),
-    )
-
-
 def detect_shifts(
     connection: Connection[Any], first: Period, second: Period
 ) -> ShiftReport:
@@ -291,12 +281,19 @@ def detect_shifts(
     category changed between two periods.
 
     The periods are validated and ordered before anything is read, so a bad pair
-    costs no query. The report carries them.
+    costs no query. One statement reads both periods from one database snapshot.
     """
     earlier, later = order_periods(first, second)
+    earlier_totals, later_totals = list_totals_for_periods(
+        connection,
+        earlier.start,
+        earlier.end,
+        later.start,
+        later.end,
+    )
     return compare_periods(
         earlier,
         later,
-        _leaders_in(connection, earlier),
-        _leaders_in(connection, later),
+        build_leaders(*earlier_totals),
+        build_leaders(*later_totals),
     )

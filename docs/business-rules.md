@@ -353,8 +353,11 @@ leader on both sides; a purchase with no product lines has none, and no category
 shift is reported for it.
 
 **Enforced:** application — `web/services/consumption_shift.py` for the rules,
-`web/db/consumption_shift.py` for the reads, which are `SELECT`-only,
-parameterized and over accepted sales (ADR-0020). **Verified** — the rules by
+`web/db/consumption_shift.py` for the single, `SELECT`-only parameterized read
+of both periods. Channel and store totals use accepted transaction headers;
+category totals additionally use their lines and products (ADR-0020). Reading
+both periods in one statement gives the detector one database snapshot.
+**Verified** — the rules by
 `tests/test_consumption_shift.py`, the statements by
 `tests/test_consumption_shift_db.py`, and both against the seeded PostgreSQL by
 [`evidence/f8-05-consumption-shifts.md`](evidence/f8-05-consumption-shifts.md).

@@ -107,7 +107,7 @@ empty period     refused: A period must end after it starts.
 naive datetimes  refused: A period must carry a timezone at both ends.
 ```
 
-`tests/test_consumption_shift.py` asserts that none of the three reads runs when the
+`tests/test_consumption_shift.py` asserts that the single read does not run when the
 periods are refused.
 
 ## "Dominant" means what it means on the profile
@@ -123,17 +123,21 @@ because the spend moved is a change under that rule, and the report says so.
 
 ```
 $ pytest -q
-1072 passed         # 1020 with F8-04, plus 52 in tests/test_consumption_shift.py
-                    # and tests/test_consumption_shift_db.py
+1065 passed         # 1023 on develop, plus 42 in this story's two test files
 $ black --check .   # All done
 $ ruff check .      # All checks passed!
 ```
 
-The reads are three `SELECT` statements per period, one per dimension, each grouped
-by customer, so the number of round trips does not grow with the number of
-customers. Every statement is parameterized, reads `transaction` and
-`transaction_line` (accepted sales, ADR-0020), and the module contains no write and
-no commit; `tests/test_consumption_shift_db.py` asserts each of those.
+One parameterized statement reads both periods and all three dimensions, with
+each row tagged as `earlier` or `later` and as `channel`, `store` or `category`.
+Channel and store totals come from accepted `transaction` headers; only category
+totals join `transaction_line`, `product` and `category`. Keeping the six grouped
+results in one statement gives them one READ COMMITTED snapshot, so a concurrent
+CSV load containing back-dated sales cannot mix database states and invent or hide
+a shift. `tests/test_consumption_shift_db.py` asserts the one execute call,
+parameter binding and half-open bounds, the dimension-specific sources and
+aggregates, tagged-row mapping, and the absence of writes. The service test also
+asserts that `detect_shifts` issues exactly one statement.
 
 ## Not evidenced here
 

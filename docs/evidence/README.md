@@ -60,6 +60,12 @@ developer machine, which
 [ADR-0015](../adr/0015-containers-are-a-development-path-only.md) settles as the
 right place for it, and which the team accepted on 2026-09-07.
 
+## Phase 8 — sales ingestion and consumption profile
+
+| Document | What it records |
+|---|---|
+| [F8-03](f8-03-consumption-profile.md) | The consumption profile computed over accepted sales, cross-checked against independent queries on the seeded database, with its ties, empty case and single-assignment case reproduced |
+
 ## Review passes
 
 These follow a specific review rather than a story.

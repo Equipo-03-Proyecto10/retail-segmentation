@@ -256,6 +256,74 @@ label by case N23; the allocation statement by case P7. Concurrent creates
 getting distinct ids is the advisory lock's job and is not a single-session
 case: it was reviewed against PostgreSQL 16 and 18 in PR #240, not scripted.
 
+## Consumption profile
+
+### RN-34 — A consumption profile is computed from accepted sales, over a stated window, and its sales measures are absent when there are none
+A profile summarises one customer's buying from the sales the ingestion
+accepted (ADR-0020), over the last `window_days` days ending at a stated moment.
+Rows the ingestion rejected are never persisted, so reading `transaction` and
+`transaction_line` is reading accepted sales. The window is part of the profile,
+so a page can say what span every figure covers.
+
+A customer with no accepted sale in the window still gets a profile, not an
+error and not a row of zeros. Every sales-derived measure is absent, and the
+remaining sales reads are skipped; R/F/M and the current and previous segment
+still come from assignment history because their run window is independent of
+the profile window. Zero purchases and zero spend are measurements; this case
+makes neither claim.
+
+The customer's R, F and M values and scores, and their current and previous
+segment, are read from assignment history (ADR-0017) — the open row, and the
+most recently closed row — and never from a mutable column. A customer who has
+held one assignment only has **no** previous segment; the profile reports that
+as absent instead of repeating the current one. A previous result of
+*unassigned* (RN-21) is kept distinct from an absent one, because a run did
+score that customer. No part of a profile names the method that produced a run
+(ADR-0018).
+
+The open row and the most recently closed row are read by one statement, so a
+segment run committed between two `READ COMMITTED` reads cannot make the same
+history row appear as both current and previous. An id that is not a UUID, or
+that names no customer, raises `UnknownCustomer`; the page that shows the
+profile (F8-04) maps it to HTTP 404.
+
+**Enforced:** application — `web/services/consumption_profile.py` for the rules,
+`web/db/consumption.py` for the reads, which are `SELECT`-only and parameterized.
+**Verified** — the rules by `tests/test_consumption_profile.py`, the statements
+by `tests/test_consumption_db.py`, and the reads against the seeded PostgreSQL by
+[`evidence/f8-03-consumption-profile.md`](evidence/f8-03-consumption-profile.md),
+which the mocked-cursor tests cannot show. · `F8-03`
+
+### RN-35 — Every ranking in a profile has a stated tie-break, and every derived measure is defined
+The order in which the database returns rows is not defined, so a ranking that
+did not name its tie-breaks would give a customer a different "dominant" store
+on different days.
+
+| Measure | Rule |
+|---|---|
+| Dominant channel, dominant store | most purchases; then highest spend; then lowest id |
+| Favourite categories (top 3) | most purchases containing the category; then units; then spend; then lowest id |
+| Frequent products (top 5) | most purchases including the product; then units; then lowest id |
+| Total spend, average ticket | from the purchase headers (`transaction.total`) — the quantity the segment run scores as Monetary — so a profile's spend and its M value are one measurement. Average ticket is spend per purchase, rounded half up to the cent |
+| Purchase frequency | the number of accepted purchases in the window — the F the segment run ranks |
+| Average discount | `(1 - paid / listed) * 100`, weighted by value, where `listed` prices the same units at `product.list_price` |
+
+**The discount is a comparison with the current list price, not a record of
+promotions.** RN-13 stores the price actually charged but not the list price a
+sale was made against, so a later price change moves this figure without any
+discount having been granted, and a customer who paid more than today's list
+price shows a negative number. It is reported as measured, not clamped to zero.
+A product listed at zero is left out of both sums rather than divided by.
+
+**Enforced:** application — `rank_dominant`, `rank_categories`, `rank_products`,
+`average_ticket` and `average_discount_pct` in
+`web/services/consumption_profile.py`, each of them pure. **Verified** — by
+`tests/test_consumption_profile.py`, including that every ranking is unchanged
+under any permutation of its input, and on real rows by
+[`evidence/f8-03-consumption-profile.md`](evidence/f8-03-consumption-profile.md).
+Deciding that "discount" means this, and not a stored discount, is recorded here
+because the schema has no such column. · `F8-03`
+
 ## Audit
 
 ### RN-28 — Every change to a catalog or a business rule is recorded

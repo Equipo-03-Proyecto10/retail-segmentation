@@ -42,8 +42,10 @@ from flask import (
 )
 from werkzeug.wrappers import Response
 
-from web.db import set_connection_initializer
+from web.db import get_connection, set_connection_initializer
 from web.db.audit import set_audit_actor
+from web.db.sessions import SessionPrincipal
+from web.services.auth import current_principal
 
 # ---------- the permission vocabulary ----------
 
@@ -350,6 +352,45 @@ def menu() -> list[MenuItem]:
 # ---------- the gate ----------
 
 
+def _principal_for(session_id: str | None) -> SessionPrincipal | None:
+    """The database's answer for one session id. The connection is opened here,
+    only once there is a signed-in session to resolve."""
+    return current_principal(get_connection(), session_id)
+
+
+def resolve_session() -> None:
+    """Re-read who the session belongs to, from the database, on every request.
+
+    ADR-0022 (#251) supersedes ADR-0007's "trusted until sign-out": the cookie
+    is only a pointer to an `app_session` row. A session that was revoked
+    (RF-02), whose user was deactivated (RF-09), or that predates server-side
+    sessions is cleared here, so the gate below sees an anonymous visitor. A
+    role change reaches the session on the next request instead of the next
+    sign-in. Registered before `authorize`.
+    """
+    if not session.get("user_id") or request.endpoint == "static":
+        return
+
+    principal = _principal_for(session.get("sid"))
+    if principal is None:
+        current_app.logger.info(
+            "session_ended user=%s reason=revoked_or_inactive", session["user_id"]
+        )
+        session.clear()
+        return
+
+    # Only write what changed, so an unchanged session is not re-sent.
+    current = {
+        "user_id": str(principal.user_id),
+        "role_id": principal.role_id,
+        "role_code": principal.role_code,
+        "name": principal.name,
+    }
+    for key, value in current.items():
+        if session.get(key) != value:
+            session[key] = value
+
+
 def _acting_user_id() -> str | None:
     """Who the audit triggers should credit, or None when nobody is acting.
 
@@ -424,6 +465,7 @@ def authorize() -> Response | None:
 
 def install(app: Flask) -> None:
     """Attach the gate and the template values the menu is built from."""
+    app.before_request(resolve_session)
     app.before_request(authorize)
 
     # The audit triggers in sql/01_schema.sql read `mosaiq.user_id` off the

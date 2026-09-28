@@ -63,6 +63,11 @@ records, and reached `main` in the release that followed (#282): the order the
 rule above exists to prevent. Its owner accepted it on 2026-09-28, after that
 release, and this transition records that rather than backdating it. Its
 decision text is unchanged.
+ADR-0022 merged into `develop` while still `Proposed`, with the change it
+records (#251), and reached `main` the same way. Its owner accepted it on
+2026-09-28, once the QA pass over `develop` (#298) confirmed `app_session` is
+implemented and deployed exactly as decided, and this transition records that
+rather than backdating it. Its decision text is unchanged.
 
 ## Index
 
@@ -89,7 +94,7 @@ decision text is unchanged.
 | [0019](0019-experiment-measurement-separates-assignment-exposure-and-conversion.md) | Experiment measurement separates assignment, exposure and conversion | Accepted |
 | [0020](0020-csv-is-the-sole-sales-ingestion-entry-point-for-this-delivery.md) | CSV is the sole sales ingestion entry point for this delivery | Accepted |
 | [0021](0021-k-means-is-implemented-in-the-application-rather-than-taken-as-a-dependency.md) | K-means is implemented in the application rather than taken as a dependency | Accepted |
-| [0022](0022-sessions-are-resolved-server-side-on-every-request.md) | Sessions are resolved server-side on every request | Proposed |
+| [0022](0022-sessions-are-resolved-server-side-on-every-request.md) | Sessions are resolved server-side on every request | Accepted |
 | [0023](0023-store-managers-read-segments-and-customers.md) | Store managers hold `segment.read`, and so read customers and segments | Accepted |
 | [0024](0024-the-application-role-cannot-update-or-delete-the-audit-log.md) | The application role cannot update or delete the audit log | Accepted |
 

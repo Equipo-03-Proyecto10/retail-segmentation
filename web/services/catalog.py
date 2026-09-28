@@ -181,6 +181,9 @@ def validate_role(*, code: str, description: str) -> dict[str, str]:
 
 
 CATEGORY_CYCLE = "A category cannot sit under itself or one of its own subcategories."
+ROLE_CODE_IMMUTABLE = (
+    "A role's code cannot change: the permission matrix is keyed by it."
+)
 
 
 class CatalogConflict(Exception):
@@ -229,6 +232,12 @@ def _refusal(entity: str, operation: str, error: IntegrityError) -> CatalogConfl
     ):
         return CatalogConflict("parent_category_id", CATEGORY_CYCLE)
 
+    if (
+        isinstance(error, CheckViolation)
+        and error.diag.constraint_name == "role_code_immutable"
+    ):
+        return CatalogConflict("code", ROLE_CODE_IMMUTABLE)
+
     # Anything else the database refuses is still a refused value, so it belongs
     # on the form rather than on the error page. The wording stays general: the
     # constraint name is a schema detail, not something to show a visitor.
@@ -275,10 +284,14 @@ def create_role(
 
 @_catalog_write("role", "update")
 def update_role(
-    connection: Connection, role_id: int, *, code: str, description: str | None
+    connection: Connection, role_id: int, *, description: str | None
 ) -> None:
-    """Update a role, translating constraint refusals."""
-    roles.update_role(connection, role_id, code=code, description=description)
+    """Update a role's description, translating constraint refusals.
+
+    A role's code cannot change (RN-01, #252): the permission matrix is keyed
+    by it, while the single-administrator index is keyed by role_id.
+    """
+    roles.update_role(connection, role_id, description=description)
 
 
 @_catalog_write("role", "delete")

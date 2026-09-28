@@ -19,6 +19,26 @@ CREATE TABLE role (
     description VARCHAR(160)
 );
 
+-- RN-01 (#252): a role's code never changes. The permission matrix in
+-- web/middleware/authz.py is keyed by the code, and the single-administrator
+-- index below is keyed by role_id = 1; renaming codes would let the two drift
+-- apart, handing ADMIN's permissions to another role_id that no index guards.
+-- SQLSTATE 23514 and the constraint name let the application translate the
+-- refusal like any other CHECK.
+CREATE OR REPLACE FUNCTION fn_role_code_immutable() RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.code IS DISTINCT FROM OLD.code THEN
+        RAISE EXCEPTION 'role % keeps its code %', OLD.role_id, OLD.code
+            USING ERRCODE = 'check_violation', CONSTRAINT = 'role_code_immutable';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_role_code_immutable
+    BEFORE UPDATE OF code ON role
+    FOR EACH ROW EXECUTE FUNCTION fn_role_code_immutable();
+
 CREATE TABLE channel (
     channel_id SMALLINT PRIMARY KEY,
     name       VARCHAR(60) NOT NULL UNIQUE

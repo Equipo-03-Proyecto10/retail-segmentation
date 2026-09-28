@@ -258,17 +258,19 @@ case: it was reviewed against PostgreSQL 16 and 18 in PR #240, not scripted.
 
 ## Consumption profile
 
-### RN-33 — A consumption profile is computed from accepted sales, over a stated window, and is empty when there are none
+### RN-34 — A consumption profile is computed from accepted sales, over a stated window, and its sales measures are absent when there are none
 A profile summarises one customer's buying from the sales the ingestion
 accepted (ADR-0020), over the last `window_days` days ending at a stated moment.
 Rows the ingestion rejected are never persisted, so reading `transaction` and
 `transaction_line` is reading accepted sales. The window is part of the profile,
 so a page can say what span every figure covers.
 
-A customer with no accepted sale in the window gets an **empty** profile, not an
-error and not a row of zeros: every measurement is absent, and nothing further is
-queried. Zero purchases and zero spend are measurements; an empty profile makes
-neither claim.
+A customer with no accepted sale in the window still gets a profile, not an
+error and not a row of zeros. Every sales-derived measure is absent, and the
+remaining sales reads are skipped; R/F/M and the current and previous segment
+still come from assignment history because their run window is independent of
+the profile window. Zero purchases and zero spend are measurements; this case
+makes neither claim.
 
 The customer's R, F and M values and scores, and their current and previous
 segment, are read from assignment history (ADR-0017) — the open row, and the
@@ -279,6 +281,12 @@ as absent instead of repeating the current one. A previous result of
 score that customer. No part of a profile names the method that produced a run
 (ADR-0018).
 
+The open row and the most recently closed row are read by one statement, so a
+segment run committed between two `READ COMMITTED` reads cannot make the same
+history row appear as both current and previous. An id that is not a UUID, or
+that names no customer, raises `UnknownCustomer`; the page that shows the
+profile (F8-04) maps it to HTTP 404.
+
 **Enforced:** application — `web/services/consumption_profile.py` for the rules,
 `web/db/consumption.py` for the reads, which are `SELECT`-only and parameterized.
 **Verified** — the rules by `tests/test_consumption_profile.py`, the statements
@@ -286,7 +294,7 @@ by `tests/test_consumption_db.py`, and the reads against the seeded PostgreSQL b
 [`evidence/f8-03-consumption-profile.md`](evidence/f8-03-consumption-profile.md),
 which the mocked-cursor tests cannot show. · `F8-03`
 
-### RN-34 — Every ranking in a profile has a stated tie-break, and every derived measure is defined
+### RN-35 — Every ranking in a profile has a stated tie-break, and every derived measure is defined
 The order in which the database returns rows is not defined, so a ranking that
 did not name its tie-breaks would give a customer a different "dominant" store
 on different days.

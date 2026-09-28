@@ -180,6 +180,7 @@ def validate_role(*, code: str, description: str) -> dict[str, str]:
     return errors
 
 
+CATEGORY_CYCLE = "A category cannot sit under itself or one of its own subcategories."
 ROLE_CODE_IMMUTABLE = (
     "A role's code cannot change: the permission matrix is keyed by it."
 )
@@ -224,6 +225,12 @@ def _refusal(entity: str, operation: str, error: IntegrityError) -> CatalogConfl
         return CatalogConflict(
             field, f"A {entity} with that {description} already exists."
         )
+
+    if isinstance(error, CheckViolation) and error.diag.constraint_name in (
+        "category_not_own_parent",
+        "category_no_cycle",
+    ):
+        return CatalogConflict("parent_category_id", CATEGORY_CYCLE)
 
     if (
         isinstance(error, CheckViolation)
@@ -390,7 +397,16 @@ def update_category(
     name: str,
     parent_category_id: int | None,
 ) -> None:
-    """Update a category, translating constraint refusals."""
+    """Update a category, translating constraint refusals.
+
+    RN-33: moving a category under itself or one of its own subcategories is
+    refused here with a message on the parent field; trg_category_no_cycle
+    refuses the same change independently in the database.
+    """
+    if parent_category_id is not None and categories.is_in_subtree(
+        connection, category_id, parent_category_id
+    ):
+        raise CatalogConflict("parent_category_id", CATEGORY_CYCLE)
     categories.update_category(
         connection, category_id, name=name, parent_category_id=parent_category_id
     )

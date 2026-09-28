@@ -14,6 +14,8 @@ from datetime import datetime
 
 from psycopg import Connection
 
+from web.db.search import ilike_pattern
+
 # HU-11: a quantity below this is shown as needing attention. A presentation
 # threshold, not a business rule — tune it here rather than in a template.
 LOW_STOCK_THRESHOLD = 20
@@ -45,7 +47,10 @@ def list_stock(
     """Return a page of stock rows joined to their store and product, and the
     total. Optionally narrowed to one store and/or a product SKU/name match."""
     offset = (page - 1) * per_page
-    parameters = {"store_id": store_id, "search": f"%{search}%" if search else None}
+    parameters = {
+        "store_id": store_id,
+        "search": ilike_pattern(search) if search else None,
+    }
 
     with connection.cursor() as cursor:
         cursor.execute(

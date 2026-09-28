@@ -41,6 +41,8 @@ from uuid import UUID
 
 from psycopg import Connection
 
+from web.db.search import ilike_pattern
+
 # Quintiles: 5 is the best score in each measure — most recent, most frequent,
 # highest spend — which is the orientation segment_rule's bands are written in.
 QUINTILES = 5
@@ -311,7 +313,7 @@ def list_segments(
 
     with connection.cursor() as cursor:
         if search:
-            pattern = f"%{search}%"
+            pattern = ilike_pattern(search)
             cursor.execute(
                 """
                 SELECT segment_id, name, description, rule_id, valid_from, valid_to
@@ -335,7 +337,7 @@ def list_segments(
         rows = cursor.fetchall()
 
         if search:
-            pattern = f"%{search}%"
+            pattern = ilike_pattern(search)
             cursor.execute(
                 "SELECT count(*) FROM segment WHERE name ILIKE %s", (pattern,)
             )

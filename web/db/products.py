@@ -10,6 +10,8 @@ from decimal import Decimal
 
 from psycopg import Connection
 
+from web.db.search import ilike_pattern
+
 
 @dataclass(frozen=True)
 class Product:
@@ -32,7 +34,7 @@ def list_products(
 
     with connection.cursor() as cursor:
         if search:
-            pattern = f"%{search}%"
+            pattern = ilike_pattern(search)
             cursor.execute(
                 """
                 SELECT p.product_id, p.sku, p.name, p.category_id, p.list_price,
@@ -59,7 +61,7 @@ def list_products(
         rows = cursor.fetchall()
 
         if search:
-            pattern = f"%{search}%"
+            pattern = ilike_pattern(search)
             cursor.execute(
                 "SELECT count(*) FROM product WHERE sku ILIKE %s OR name ILIKE %s",
                 (pattern, pattern),

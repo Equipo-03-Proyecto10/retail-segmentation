@@ -10,6 +10,7 @@ runs and rows the page was given.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, Mock
 
@@ -173,11 +174,15 @@ def test_a_chosen_pair_is_the_pair_compared(app, monkeypatch) -> None:
 
 
 def test_an_older_chosen_run_stays_selectable(app, monkeypatch) -> None:
-    _world(monkeypatch)
+    """A run past the newest offered is looked up by id and added to its list."""
+    world = _world(monkeypatch)
+    monkeypatch.setattr("web.routes.model_comparison._RUN_OPTIONS", 1)
 
     body = _body(_open(app, _URL + "?rules_run=5&kmeans_run=6"))
 
-    assert 'value="5" selected' in body or 'value="5"  selected' in body
+    assert re.search(r'value="5"\s+selected', body)
+    assert re.search(r'value="6"\s+selected', body)
+    assert sorted(call.args[1] for call in world.read.call_args_list) == [5, 6]
 
 
 def test_the_comparison_is_built_by_one_function_and_is_never_given_a_kind(

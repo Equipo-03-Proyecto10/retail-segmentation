@@ -33,8 +33,8 @@ _EXPECTED_HEADER = (
 
 
 class UnsupportedContractVersion(Exception):
-    """The requested contract version, or the file's header, is not one this
-    adapter understands."""
+    """The requested contract version, the file's header, or its encoding is
+    not one this adapter understands."""
 
 
 @dataclass(frozen=True)
@@ -86,18 +86,28 @@ def load_sales_csv(
 
     received = 0
     rejections: list[RowRejection] = []
-    with path.open(newline="", encoding="utf-8") as handle:
-        reader = csv.DictReader(handle)
-        if reader.fieldnames is None or tuple(reader.fieldnames) != _EXPECTED_HEADER:
-            raise UnsupportedContractVersion(
-                f"the header does not match contract version {CONTRACT_VERSION}"
-            )
-        for row_number, raw in enumerate(reader, start=1):
-            received += 1
-            try:
-                ingest(connection, _parse_row(raw))
-            except RowRejected as error:
-                rejections.append(RowRejection(row_number, str(error)))
+    try:
+        # utf-8-sig accepts a leading byte-order mark (as Excel's "CSV UTF-8"
+        # export writes one) and is otherwise identical to utf-8.
+        with path.open(newline="", encoding="utf-8-sig") as handle:
+            reader = csv.DictReader(handle)
+            if (
+                reader.fieldnames is None
+                or tuple(reader.fieldnames) != _EXPECTED_HEADER
+            ):
+                raise UnsupportedContractVersion(
+                    f"the header does not match contract version {CONTRACT_VERSION}"
+                )
+            for row_number, raw in enumerate(reader, start=1):
+                received += 1
+                try:
+                    ingest(connection, _parse_row(raw))
+                except RowRejected as error:
+                    rejections.append(RowRejection(row_number, str(error)))
+    except UnicodeDecodeError as error:
+        raise UnsupportedContractVersion(
+            f"the file is not valid utf-8: {error}"
+        ) from error
 
     return LoadReport(
         received=received,

@@ -62,6 +62,33 @@ def test_a_header_that_does_not_match_the_contract_is_refused(tmp_path: Path) ->
         )
 
 
+def test_a_leading_byte_order_mark_is_accepted(tmp_path: Path) -> None:
+    """#287: Excel's "CSV UTF-8" export prefixes a BOM; opening with plain
+    utf-8 folded it into the first field name and failed the header check."""
+    path = tmp_path / "sales.csv"
+    path.write_bytes(
+        f"﻿{_HEADER}\nTXN-1,cust-1,1,1,2026-01-15T10:00:00+00:00,1,2,9.99\n".encode()
+    )
+
+    report = load_sales_csv(
+        object(), path, contract_version=CONTRACT_VERSION, ingest=_accept_everything
+    )
+
+    assert report.received == 1
+    assert report.accepted == 1
+
+
+def test_a_file_that_is_not_valid_utf8_is_a_typed_refusal(tmp_path: Path) -> None:
+    """#287: a raw UnicodeDecodeError must not escape the loader."""
+    path = tmp_path / "sales.csv"
+    path.write_bytes(_HEADER.encode("utf-8") + b"\n" + b"\xff\xfe not utf-8\n")
+
+    with pytest.raises(UnsupportedContractVersion, match="utf-8"):
+        load_sales_csv(
+            object(), path, contract_version=CONTRACT_VERSION, ingest=_accept_everything
+        )
+
+
 def test_four_rows_two_valid_two_invalid_report_4_2_2(tmp_path: Path) -> None:
     path = _write_csv(
         tmp_path,

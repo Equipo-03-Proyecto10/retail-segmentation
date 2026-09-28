@@ -475,10 +475,10 @@ CREATE TRIGGER trg_audit_role
 AFTER INSERT OR UPDATE OR DELETE ON role
 FOR EACH ROW EXECUTE FUNCTION fn_audit('role_id');
 
--- ADR-0017 retires customer.current_segment_id in favour of durable history;
--- this trigger is what replaces the audit signal that used to come from
--- updating that column. Every open/close pair a segmentation run writes
--- (web/db/segments.py) is now traceable the same way a catalog edit is.
+-- ADR-0017 retires the customer's mutable current-segment column in favour of
+-- durable history; this trigger is what replaces the audit signal that used
+-- to come from updating that column. Every open/close pair a segmentation run
+-- writes (web/db/segments.py) is now traceable the same way a catalog edit is.
 CREATE TRIGGER trg_audit_customer_segment_history
 AFTER INSERT OR UPDATE OR DELETE ON customer_segment_history
 FOR EACH ROW EXECUTE FUNCTION fn_audit('history_id');

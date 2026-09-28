@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
@@ -134,6 +134,7 @@ class RfmSnapshot:
 class ConsumptionProfile:
     """What is known about one customer's buying over one window.
 
+    The customer id and name identify the customer this profile describes.
     Every sales-derived measurement is None when there is nothing to measure;
     a count or total of zero is never used to mean "no data". `has_sales` says
     which case this is. R/F/M and segments remain available from assignment
@@ -141,6 +142,7 @@ class ConsumptionProfile:
     """
 
     customer_id: str
+    customer_name: str
     window_days: int
     window_start: datetime
     window_end: datetime
@@ -272,7 +274,8 @@ def build_profile(
     two surfaces refuse the same inputs. UnknownCustomer is raised for an
     invalid or absent customer; a page maps it to 404. A customer with no
     accepted sale in the window gets an empty sales profile rather than an
-    error, while retaining assignment history.
+    error, while retaining assignment history. When `as_of` is omitted, the
+    connection's session time zone keeps the window aligned with database data.
     """
     if not MIN_WINDOW_DAYS <= window_days <= MAX_WINDOW_DAYS:
         raise InvalidWindow(
@@ -284,10 +287,11 @@ def build_profile(
         customer_key = str(uuid.UUID(str(customer_id)))
     except ValueError as exc:
         raise UnknownCustomer from exc
-    if get_customer(connection, customer_key) is None:
+    customer = get_customer(connection, customer_key)
+    if customer is None:
         raise UnknownCustomer
 
-    until = as_of if as_of is not None else datetime.now(UTC)
+    until = as_of if as_of is not None else datetime.now(connection.info.timezone)
     since = until - timedelta(days=window_days)
 
     totals = get_sales_totals(connection, customer_key, since, until)
@@ -297,6 +301,7 @@ def build_profile(
     if totals.purchases == 0:
         return ConsumptionProfile(
             customer_id=customer_key,
+            customer_name=customer.name,
             window_days=window_days,
             window_start=since,
             window_end=until,
@@ -310,6 +315,7 @@ def build_profile(
 
     return ConsumptionProfile(
         customer_id=customer_key,
+        customer_name=customer.name,
         window_days=window_days,
         window_start=since,
         window_end=until,

@@ -59,6 +59,8 @@ ADMIN_ROUTES = [
 ] + [
     ("GET", "/admin/users/new"),
     ("POST", "/admin/users/new"),
+    ("GET", f"/admin/users/{USER_ID}/edit"),
+    ("POST", f"/admin/users/{USER_ID}/edit"),
     ("POST", f"/admin/users/{USER_ID}/activate"),
     ("POST", f"/admin/users/{USER_ID}/deactivate"),
     ("GET", "/segment-run/"),

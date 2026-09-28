@@ -154,6 +154,22 @@ def update_role(connection: Connection, user_id: UUID | str, role_id: int) -> No
         )
 
 
+def update_name_and_email(
+    connection: Connection, user_id: UUID | str, *, name: str, email: str
+) -> None:
+    """Correct an existing account's name and email (RF-09, #289).
+
+    The role is changed separately, by update_role -- reusing the same
+    write RN-01's transfer already relies on rather than adding a second
+    path to the same column.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE app_user SET name = %s, email = %s WHERE user_id = %s",
+            (name, email, str(user_id)),
+        )
+
+
 def update_active(connection: Connection, user_id: UUID | str, is_active: bool) -> None:
     """Activate or deactivate a user. Deletion is never how access is removed."""
     with connection.cursor() as cursor:

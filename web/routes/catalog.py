@@ -40,7 +40,12 @@ from web.routes.pagination import redirect_last_page
 from web.services.catalog import parse_pagination
 from web.services.consumption_profile import UnknownCustomer, build_profile
 from web.services.pagination import page_count
-from web.services.segmentation import InvalidWindow, parse_window
+from web.services.segmentation import (
+    MAX_WINDOW_DAYS,
+    MIN_WINDOW_DAYS,
+    InvalidWindow,
+    parse_window,
+)
 
 bp = Blueprint("catalog", __name__, url_prefix="/catalog")
 
@@ -156,38 +161,41 @@ def customer_profile(customer_id: UUID) -> str | tuple[str, int]:
     computed at all.
     """
     connection = get_connection()
-    customer = get_customer(connection, customer_id)
-    if customer is None:
-        abort(404)
-
     raw_window = request.args.get("window")
     try:
         window_days = parse_window(raw_window)
     except InvalidWindow as refusal:
+        customer = get_customer(connection, customer_id)
+        if customer is None:
+            abort(404)
         return (
             render_template(
                 "catalog/customer_profile.html",
-                customer=customer,
+                customer_id=customer.customer_id,
+                customer_name=customer.name,
                 profile=None,
                 window=raw_window,
                 error=str(refusal),
+                min_window=MIN_WINDOW_DAYS,
+                max_window=MAX_WINDOW_DAYS,
             ),
             400,
         )
 
     try:
-        profile = build_profile(
-            connection, customer.customer_id, window_days=window_days
-        )
+        profile = build_profile(connection, customer_id, window_days=window_days)
     except UnknownCustomer:
         abort(404)
 
     return render_template(
         "catalog/customer_profile.html",
-        customer=customer,
+        customer_id=profile.customer_id,
+        customer_name=profile.customer_name,
         profile=profile,
         window=window_days,
         error=None,
+        min_window=MIN_WINDOW_DAYS,
+        max_window=MAX_WINDOW_DAYS,
     )
 
 

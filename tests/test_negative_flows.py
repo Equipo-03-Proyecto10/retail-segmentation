@@ -248,7 +248,7 @@ def test_rejected_login(app, connection, password_hash, case, caplog):
     with client.session_transaction() as session:
         assert "user_id" not in session and "role_code" not in session
     statement, parameters = cursor.execute.call_args.args
-    assert "WHERE u.email = %s" in statement and parameters == (email,)
+    assert "WHERE lower(u.email) = lower(%s)" in statement and parameters == (email,)
     if email:
         assert email not in statement
     assert USER["password"] not in caplog.text and password_hash not in caplog.text

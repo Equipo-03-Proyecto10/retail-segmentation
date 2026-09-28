@@ -58,6 +58,11 @@ team accepted all four before the first story that depends on them was pulled,
 which is the order the rule above asks for. Their decision text is unchanged.
 ADR-0021 was accepted in the pull request that introduced it, before F9-02
 (#215) was pulled. It answers Q-10, which that story could not start without.
+ADR-0023 merged into `develop` while still `Proposed` (#281), with the change it
+records, and reached `main` in the release that followed (#282): the order the
+rule above exists to prevent. Its owner accepted it on 2026-09-28, after that
+release, and this transition records that rather than backdating it. Its
+decision text is unchanged.
 
 ## Index
 
@@ -85,7 +90,8 @@ ADR-0021 was accepted in the pull request that introduced it, before F9-02
 | [0020](0020-csv-is-the-sole-sales-ingestion-entry-point-for-this-delivery.md) | CSV is the sole sales ingestion entry point for this delivery | Accepted |
 | [0021](0021-k-means-is-implemented-in-the-application-rather-than-taken-as-a-dependency.md) | K-means is implemented in the application rather than taken as a dependency | Accepted |
 | [0022](0022-sessions-are-resolved-server-side-on-every-request.md) | Sessions are resolved server-side on every request | Proposed |
-| [0023](0023-store-managers-read-segments-and-customers.md) | Store managers hold `segment.read`, and so read customers and segments | Proposed |
+| [0023](0023-store-managers-read-segments-and-customers.md) | Store managers hold `segment.read`, and so read customers and segments | Accepted |
+| [0024](0024-the-application-role-cannot-update-or-delete-the-audit-log.md) | The application role cannot update or delete the audit log | Accepted |
 
 ## Writing one
 

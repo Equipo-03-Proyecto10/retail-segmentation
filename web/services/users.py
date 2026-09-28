@@ -75,6 +75,15 @@ class UnknownUserError(Exception):
     """A user id that does not exist in `app_user`."""
 
 
+def normalize_email(email: str) -> str:
+    """One spelling per mailbox (#288): trimmed and lower-cased.
+
+    The schema's unique index on lower(email) refuses a second spelling too;
+    normalising here means what is stored is also what the person sees.
+    """
+    return email.strip().lower()
+
+
 def _role_id(connection: Connection, role_code: str) -> int:
     role_id = get_role_id_by_code(connection, role_code)
     if role_id is None:
@@ -140,7 +149,7 @@ def create_user(
             connection,
             role_id=role_id,
             name=name,
-            email=email,
+            email=normalize_email(email),
             password_hash=hash_password(password),
         )
     except UniqueViolation as error:

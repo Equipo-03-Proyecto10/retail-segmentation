@@ -85,3 +85,4 @@ These follow a specific review rather than a story.
 | [Instance findings](instance-findings-fixes.md) | The 17 findings of the 2026-09-06 browser review, and their disposition |
 | [Navigation and upload hotfix](navigation-upload-hotfix.md) | The integration review of PR #132 |
 | [F5-03 resolution](review-findings-resolution.md) | Resolution of #157–#165, and the ADR acceptance basis |
+| [Catalog label reads](catalog-label-reads.md) | #272, found reviewing F9-03: the customer pages read the label, so a K-means assignment is no longer shown as *Unassigned*, before and after on a real K-means run at 375 px and 1440 px |

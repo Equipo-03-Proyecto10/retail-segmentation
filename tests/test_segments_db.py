@@ -10,7 +10,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
-from web.db.segments import get_current_assignment, get_current_assignments
+from web.db.segments import (
+    get_current_assignment,
+    get_current_assignments,
+    get_label_name,
+)
 
 _CUSTOMER_1 = "00000000-0000-0000-0000-000000000001"
 _VALID_FROM = datetime(2026, 1, 15, tzinfo=UTC)
@@ -46,3 +50,21 @@ def test_get_current_assignments_with_no_ids_makes_no_call() -> None:
 
     assert get_current_assignments(connection, []) == {}
     connection.cursor.assert_not_called()
+
+
+def test_get_label_name_reads_one_label_by_code_as_a_parameter() -> None:
+    connection = MagicMock()
+    cursor = connection.cursor.return_value.__enter__.return_value
+    cursor.fetchone.return_value = ("Loyal",)
+
+    assert get_label_name(connection, "LOYAL") == "Loyal"
+
+    statement, parameters = cursor.execute.call_args.args
+    assert parameters == ("LOYAL",) and "LOYAL" not in statement
+
+
+def test_get_label_name_is_none_for_a_code_outside_the_vocabulary() -> None:
+    connection = MagicMock()
+    connection.cursor.return_value.__enter__.return_value.fetchone.return_value = None
+
+    assert get_label_name(connection, "NOT_A_LABEL") is None

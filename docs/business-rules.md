@@ -48,8 +48,9 @@ two*. The role form shows the code read-only and refuses a changed one, and
 ### RN-02 — A user's email is unique and is an email address
 No two accounts share an address, and an address without `@` is refused.
 
-**Enforced:** `app_user_email_key` and `app_user_email_check`. **Verified** —
-cases N3 and N7. · `RF-01`
+**Enforced:** `ux_app_user_email_lower`, a unique index on `lower(email)` so
+letter case does not create a second account, and `app_user_email_check`; the
+application lower-cases the address. **Verified** — cases N3 and N7. · `RF-01`
 
 ### RN-03 — A password is never stored, logged or transmitted in the clear
 Only an argon2id hash is stored. The database never hashes and never receives a

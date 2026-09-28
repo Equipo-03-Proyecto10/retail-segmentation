@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from web.db.users import get_user_by_email, update_password_hash
-from web.services.users import normalize_email
+from web.services.users import create_user, normalize_email
 
 SCHEMA = Path(__file__).resolve().parents[1] / "sql/01_schema.sql"
 
@@ -19,6 +19,23 @@ SCHEMA = Path(__file__).resolve().parents[1] / "sql/01_schema.sql"
 )
 def test_every_spelling_of_a_mailbox_normalises_to_one(raw: str) -> None:
     assert normalize_email(raw) == "user2@mosaiq-demo.com"
+
+
+def test_create_user_stores_the_normalised_address() -> None:
+    connection = MagicMock()
+    cursor = connection.cursor.return_value.__enter__.return_value
+    cursor.fetchone.side_effect = [(2,), ("new-user-id",)]
+
+    create_user(
+        connection,
+        name="New user",
+        email=" New.User@Mosaiq-Demo.com ",
+        password="Password123!",
+        role_code="ANALYST",
+    )
+
+    _statement, parameters = cursor.execute.call_args_list[1].args
+    assert parameters[2] == "new.user@mosaiq-demo.com"
 
 
 def _statement(cursor) -> str:

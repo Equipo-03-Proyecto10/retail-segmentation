@@ -536,3 +536,87 @@ def test_downstream_method_independence_migration_reads_labels_and_nothing_else(
     assert build_migration_matrix(across_methods, ordinals) == build_migration_matrix(
         same_method, ordinals
     )
+
+
+# ---------- F9-03: the two ADR-0018 cases K-means adds ----------
+
+
+def _kmeans_reads(monkeypatch: pytest.MonkeyPatch, *, labels: int = 3) -> Mock:
+    """The reads run_kmeans makes, over nine customers in three tight groups."""
+    manager = _wire(monkeypatch)
+    manager.get_label_ordinals = Mock(
+        return_value={f"L{n}": n for n in range(1, labels + 1)}
+    )
+    monkeypatch.setattr(segmentation, "get_label_ordinals", manager.get_label_ordinals)
+    rows = [
+        segments_db.CustomerSales(
+            f"00000000-0000-0000-0000-{g * 3 + i + 1:012d}",
+            _SALE.replace(day=1 + g * 9),
+            2 + g * 7 + i,
+            Decimal(100 + g * 700 + i),
+        )
+        for g in range(3)
+        for i in range(3)
+    ]
+    manager.read_rfm_inputs = Mock(return_value=rows)
+    monkeypatch.setattr(segmentation, "read_rfm_inputs", manager.read_rfm_inputs)
+    return manager
+
+
+def test_method_domain_refuses_a_kmeans_run_whose_k_differs_from_the_label_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from web.services.cluster_labels import VocabularySizeMismatch
+    from web.services.kmeans import KMeansParams
+    from web.services.segmentation import run_kmeans
+
+    manager = _kmeans_reads(monkeypatch, labels=3)
+
+    with pytest.raises(VocabularySizeMismatch):
+        run_kmeans(MagicMock(), 180, KMeansParams(k=4, seed=1))
+
+    manager.read_rfm_inputs.assert_not_called()
+    manager.create_run.assert_not_called()
+    manager.insert_assignments.assert_not_called()
+
+
+def test_cluster_id_permutation_writes_identical_customer_label_pairs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rename every cluster of a fixed partition and expect identical
+    (customer_id, label_code) rows, as the ADR's compliance case reads."""
+    import itertools
+
+    from web.services import kmeans
+    from web.services.kmeans import KMeansParams
+    from web.services.segmentation import run_kmeans
+
+    def written(permutation: tuple[int, ...] | None) -> list[tuple]:
+        manager = _kmeans_reads(monkeypatch, labels=3)
+        if permutation is not None:
+            real_fit = kmeans.fit_customers
+
+            def renamed(rows, params):
+                result = real_fit(rows, params)
+                centroids = [None] * len(result.centroids)
+                for old, new in enumerate(permutation):
+                    centroids[new] = result.centroids[old]
+                return kmeans.KMeansFit(
+                    **{
+                        **result.__dict__,
+                        "assignments": tuple(
+                            permutation[a] for a in result.assignments
+                        ),
+                        "centroids": tuple(centroids),
+                    }
+                )
+
+            monkeypatch.setattr(segmentation, "fit_customers", renamed)
+        run_kmeans(MagicMock(), 180, KMeansParams(k=3, seed=2))
+        ((_, _run, rows),) = [c.args for c in manager.insert_assignments.call_args_list]
+        return sorted((row[0], row[2]) for row in rows)
+
+    baseline = written(None)
+    for permutation in itertools.permutations(range(3)):
+        monkeypatch.undo()
+        assert written(permutation) == baseline, permutation

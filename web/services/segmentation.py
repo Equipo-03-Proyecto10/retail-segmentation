@@ -34,12 +34,14 @@ from web.db.segments import (
     QUINTILES,
     close_open_assignments,
     create_run,
+    get_label_ordinals,
     insert_assignments,
     read_open_assignments,
     read_rfm_inputs,
     score_rfm_rules,
 )
 from web.db.transactions import atomic
+from web.services.cluster_labels import VocabularySizeMismatch, label_clusters
 from web.services.kmeans import (
     KMeansFit,
     KMeansParams,
@@ -372,6 +374,32 @@ def kmeans_adapter(
     return MethodAdapter("KMEANS", adapt)
 
 
+def _run_kmeans_adapter(params: KMeansParams) -> MethodAdapter:
+    """`kmeans_adapter` with ADR-0018's mapping wired in, reading the vocabulary
+    itself and refusing before it reads a single sale.
+
+    The vocabulary is read best to worst by `ordinal_position`, the order the
+    schema declares, and its size must be `k`. That check is the first thing done,
+    ahead of the sales and the fit, so a run that cannot be labelled costs nothing
+    and writes nothing.
+    """
+
+    def adapt(connection: Any, window_days: int) -> MethodOutput:
+        ordinals = get_label_ordinals(connection)
+        vocabulary = sorted(ordinals, key=ordinals.__getitem__)
+        if len(vocabulary) != params.k:
+            raise VocabularySizeMismatch(
+                f"K-means was asked for k={params.k} clusters but the label "
+                f"vocabulary has {len(vocabulary)} labels. They must be equal, so "
+                "every cluster has one label and no label is left over."
+            )
+        return kmeans_adapter(
+            params, lambda fitted: label_clusters(fitted, vocabulary)
+        ).decide(connection, window_days)
+
+    return MethodAdapter("KMEANS", adapt)
+
+
 _ADAPTERS: dict[str, MethodAdapter] = {
     "RFM_RULES": MethodAdapter("RFM_RULES", rfm_rules_adapter)
 }
@@ -463,3 +491,16 @@ def run_method(
 def run(connection: Any, window_days: int) -> RunResult:
     """The RFM_RULES recalculation the segment-run page triggers (F3-10)."""
     return run_method(connection, "RFM_RULES", window_days)
+
+
+def run_kmeans(connection: Any, window_days: int, params: KMeansParams) -> RunResult:
+    """Run K-means over a window, labelled by ADR-0018's deterministic mapping.
+
+    `params.k` must equal the size of the label vocabulary; otherwise the run is
+    refused (VocabularySizeMismatch) before any sale is read or any assignment is
+    written. This is how a KMEANS run is started: `run_method` has no default k or
+    seed to give, so it cannot start one on its own.
+    """
+    return run_method(
+        connection, "KMEANS", window_days, adapter=_run_kmeans_adapter(params)
+    )

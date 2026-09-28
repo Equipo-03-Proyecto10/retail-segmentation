@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import mimetypes
 
-from flask import Flask
+from flask import Flask, Response, request
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from web.cli import register_commands
@@ -85,6 +85,21 @@ def create_app(
     # the visitor sees on the 403 page.
     register_middleware(app)
     init_database(app, database_connector)
+
+    @app.after_request
+    def forbid_caching(response: Response) -> Response:
+        """Keep signed-in pages out of the browser cache (#291).
+
+        `no-store` stops the browser and its back/forward cache from keeping a
+        page after sign-out, so on a shared machine Back cannot show the
+        previous user's customer or sales data. Only /static stays cacheable:
+        it holds no account data. Setting this on every other response, rather
+        than only when a user is signed in, means a route cannot forget it.
+        """
+        if not request.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Pragma"] = "no-cache"
+        return response
 
     @app.context_processor
     def application_identity() -> dict[str, str]:

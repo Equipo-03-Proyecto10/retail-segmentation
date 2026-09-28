@@ -229,6 +229,17 @@ def test_then_by_how_much_of_their_buying_the_category_is() -> None:
     assert _ids(result) == [2, 1]
 
 
+def test_segment_buyers_outrank_category_share() -> None:
+    """RN-40 orders buyers before share: more of the segment beats a bigger share."""
+    result = _rank(
+        [_stock(1, category_id=1), _stock(2, category_id=2)],
+        segment_buyers={1: 5, 2: 2},
+        category_purchases={1: 1, 2: 8},
+    )
+
+    assert _ids(result) == [1, 2]
+
+
 def test_the_ranking_does_not_depend_on_the_order_products_arrive_in() -> None:
     rng = random.Random(3)
     stocked = [_stock(n, category_id=n % 4) for n in range(1, 13)]

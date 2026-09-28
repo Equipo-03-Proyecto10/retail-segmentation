@@ -157,6 +157,7 @@ Faults were seeded into the code one at a time, and each was required to make a 
 | Products the customer already bought recommended | 2 |
 | A product with no signal recommended | 2 |
 | Fewer signals ranked first | 1 |
+| Category share ranked before segment buyers | 1 |
 | Ties broken by the higher product id | 2 |
 | The limit ignored | 1 |
 | The segment taken as everyone who ever held the label | 1 |
@@ -173,13 +174,17 @@ appeared in the statement and a statement can carry a parameter and ignore it. T
 criterion 2, so it was closed with a test that pins the filter clause itself, and the fault
 now fails one.
 
+A second was found in review: ranking by category share before segment buyers broke no
+test, because the test named for that order only varied the buyers. RN-40 puts buyers
+first, so a test now compares the two directly, and the fault fails it.
+
 ## Tests
 
-`tests/test_recommendations.py` (41) and `tests/test_recommendations_db.py` (16) are new.
+`tests/test_recommendations.py` (42) and `tests/test_recommendations_db.py` (16) are new.
 
 ```
 $ pytest -q
-1368 passed         # 1311 on develop, plus 57
+1369 passed         # 1311 on develop, plus 58
 $ black --check .   # All done
 $ ruff check .      # All checks passed!
 ```

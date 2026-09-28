@@ -36,9 +36,17 @@ from web.db.segments import (
     create_run,
     insert_assignments,
     read_open_assignments,
+    read_rfm_inputs,
     score_rfm_rules,
 )
 from web.db.transactions import atomic
+from web.services.kmeans import (
+    KMeansFit,
+    KMeansParams,
+    RawRfm,
+    fit_customers,
+    recorded_parameters,
+)
 
 # The seed covers 180 days of sales, so the default window sees all of it.
 # Per-run rather than per-deployment: the operator chooses the window on the
@@ -114,6 +122,10 @@ class AdapterMismatch(ValueError):
 
 class InvalidAssignment(ValueError):
     """An assignment the pipeline will not record."""
+
+
+class LabelMappingIncomplete(InvalidAssignment):
+    """A mapping from clusters to labels that leaves a cluster without one."""
 
 
 @dataclass(frozen=True)
@@ -281,6 +293,83 @@ def rfm_rules_adapter(connection: Any, window_days: int) -> MethodOutput:
         assignments=assignments,
         parameters={"window_days": window_days, "quintiles": QUINTILES},
     )
+
+
+# ---------- the KMEANS adapter ----------
+
+# Turns a finished fit into a label for every cluster number, {cluster: label}.
+# ADR-0018 defines that mapping (F9-03): centroids ordered by descending R + F + M
+# and paired with the configured vocabulary, best to worst. It is handed to the
+# adapter rather than written into it, so this file never invents a label and a
+# raw cluster number cannot become one by any other route.
+LabelMapper = Callable[[KMeansFit], Mapping[int, str]]
+
+
+def kmeans_adapter(
+    params: KMeansParams, label_for_clusters: LabelMapper
+) -> MethodAdapter:
+    """K-means over the window's normalised R/F/M, labelled by `label_for_clusters`.
+
+    Only customers with sales are clustered. Those without have no R/F/M to
+    cluster, so they are recorded as the unassigned result (RN-21) rather than
+    forced into a cluster (ADR-0018). A clustered customer carries their raw
+    recency, frequency and monetary values and no quintile scores: those belong to
+    RFM_RULES, and inventing them here would make two measures look like one.
+
+    The run records every parameter of the fit and its quality measures (F9-02). A
+    fit that stopped on the iteration limit is recorded as not converged and logged
+    as a warning; it is still written, and never presented as settled.
+    """
+
+    def adapt(connection: Any, window_days: int) -> MethodOutput:
+        inputs = read_rfm_inputs(connection, window_days)
+        measured = [row for row in inputs if row.frequency is not None]
+        fitted = fit_customers(
+            [
+                RawRfm(
+                    row.customer_id, row.last_purchase_at, row.frequency, row.monetary
+                )
+                for row in measured
+            ],
+            params,
+        )
+
+        labels = label_for_clusters(fitted)
+        unlabelled = [c for c in range(params.k) if c not in labels]
+        if unlabelled:
+            raise LabelMappingIncomplete(
+                f"The mapping leaves {len(unlabelled)} of {params.k} clusters "
+                "without a label."
+            )
+        cluster_of = dict(zip(fitted.customer_ids, fitted.assignments, strict=True))
+
+        assignments = tuple(
+            Assignment(
+                customer_id=row.customer_id,
+                label_code=(
+                    labels[cluster_of[row.customer_id]]
+                    if row.customer_id in cluster_of
+                    else None
+                ),
+                last_purchase_at=row.last_purchase_at,
+                frequency=row.frequency,
+                monetary=row.monetary,
+            )
+            for row in inputs
+        )
+
+        parameters = recorded_parameters(fitted, window_days)
+        parameters["quality"]["customers_unassigned"] = len(inputs) - len(measured)
+        if not fitted.converged:
+            logging.getLogger(__name__).warning(
+                "kmeans_not_converged window_days=%s iterations=%s final_shift=%.6f",
+                window_days,
+                fitted.iterations,
+                fitted.final_shift,
+            )
+        return MethodOutput(assignments=assignments, parameters=parameters)
+
+    return MethodAdapter("KMEANS", adapt)
 
 
 _ADAPTERS: dict[str, MethodAdapter] = {

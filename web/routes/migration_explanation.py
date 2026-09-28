@@ -9,6 +9,8 @@ segmentation surface (ADR-0010).
 
 from __future__ import annotations
 
+import uuid
+
 from flask import Blueprint, abort, render_template, request
 
 from web.db import get_connection
@@ -32,6 +34,11 @@ def index() -> str:
     customer_id = request.args.get("customer_id", "")
 
     if not (run_a_raw.isdigit() and run_b_raw.isdigit() and customer_id):
+        abort(404)
+
+    try:
+        uuid.UUID(customer_id)
+    except ValueError:
         abort(404)
 
     try:

@@ -92,11 +92,12 @@ def create_app(
 
         `no-store` stops the browser and its back/forward cache from keeping a
         page after sign-out, so on a shared machine Back cannot show the
-        previous user's customer or sales data. Only /static stays cacheable:
-        it holds no account data. Setting this on every other response, rather
-        than only when a user is signed in, means a route cannot forget it.
+        previous user's customer or sales data. Only successful /static
+        responses stay cacheable because they hold no account data. Setting
+        this on every other response, rather than only when a user is signed
+        in, means a route cannot forget it.
         """
-        if not request.path.startswith("/static/"):
+        if not (request.path.startswith("/static/") and response.status_code < 400):
             response.headers["Cache-Control"] = "no-store"
             response.headers["Pragma"] = "no-cache"
         return response

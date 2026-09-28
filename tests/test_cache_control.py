@@ -1,8 +1,9 @@
 """Pages must not be kept by the browser after sign-out (#291).
 
 An after_request hook sets `Cache-Control: no-store` on everything except
-/static. These tests use pages reachable without a database. The hook does not
-look at who is signed in, so a signed-in page gets the same headers.
+successful /static responses. These tests use pages reachable without a
+database. The hook does not look at who is signed in, so a signed-in page gets
+the same headers.
 """
 
 from __future__ import annotations
@@ -44,3 +45,23 @@ def test_static_files_stay_cacheable(app: Flask) -> None:
 
     assert response.status_code == 200
     assert "no-store" not in response.headers.get("Cache-Control", "")
+
+
+def test_signed_in_page_is_never_stored(app: Flask) -> None:
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session.update(user_id="u-1", role_code="ADMIN", name="Admin")
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+
+def test_missing_static_file_is_never_stored(app: Flask) -> None:
+    response = app.test_client().get("/static/does-not-exist.css")
+
+    assert response.status_code == 404
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"

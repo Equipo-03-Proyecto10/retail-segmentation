@@ -446,6 +446,12 @@ CREATE TABLE audit_log (
     executed_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Append-only for the application role (RN-30, RNF-17, #290). The role that
+-- owns the schema keeps every privilege, so archiving is still possible;
+-- only retail_app loses UPDATE and DELETE. TRUNCATE was never granted. The
+-- audit trigger only INSERTs, so it is unaffected. ADR-0024.
+REVOKE UPDATE, DELETE ON audit_log FROM retail_app;
+
 -- =========================================================
 -- INDEXES
 -- =========================================================
@@ -600,6 +606,7 @@ BEGIN
     IF EXISTS (
         SELECT FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname = 'public' AND c.relkind = 'r'
+          AND c.relname <> 'audit_log'
           AND (NOT has_table_privilege(c.oid, 'SELECT')
                OR NOT has_table_privilege(c.oid, 'INSERT')
                OR NOT has_table_privilege(c.oid, 'UPDATE')
@@ -609,6 +616,15 @@ BEGIN
         RAISE EXCEPTION 'Application table privileges differ from the DML-only policy';
     END IF;
     RAISE NOTICE 'PASS: restricted role, no ownership or CREATE, DML on all tables';
+
+    IF NOT has_table_privilege('public.audit_log', 'SELECT')
+       OR NOT has_table_privilege('public.audit_log', 'INSERT')
+       OR has_table_privilege('public.audit_log', 'UPDATE')
+       OR has_table_privilege('public.audit_log', 'DELETE')
+       OR has_table_privilege('public.audit_log', 'TRUNCATE') THEN
+        RAISE EXCEPTION 'audit_log must be append-only for the application role (RN-30)';
+    END IF;
+    RAISE NOTICE 'PASS: audit_log is append-only for the application role';
 
     BEGIN
         DROP TABLE public.inventory;
@@ -634,6 +650,18 @@ BEGIN
           AND action IN ('INSERT', 'UPDATE', 'DELETE')) <> 3 THEN
         RAISE EXCEPTION 'Audited writes did not record all three actions';
     END IF;
+    BEGIN
+        UPDATE public.audit_log SET entity = entity WHERE audit_id > audit_before;
+        RAISE EXCEPTION 'FAIL: retail_app was allowed to UPDATE audit_log';
+    EXCEPTION WHEN insufficient_privilege THEN
+        RAISE NOTICE 'PASS: UPDATE audit_log refused (SQLSTATE 42501)';
+    END;
+    BEGIN
+        DELETE FROM public.audit_log WHERE audit_id > audit_before;
+        RAISE EXCEPTION 'FAIL: retail_app was allowed to DELETE audit_log';
+    EXCEPTION WHEN insufficient_privilege THEN
+        RAISE NOTICE 'PASS: DELETE audit_log refused (SQLSTATE 42501)';
+    END;
     RAISE NOTICE 'PASS: SELECT, INSERT, UPDATE, DELETE and audit sequence access';
 END;
 $verify$;

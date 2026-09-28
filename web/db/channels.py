@@ -6,6 +6,8 @@ from dataclasses import dataclass
 
 from psycopg import Connection
 
+from web.db.search import ilike_pattern
+
 
 @dataclass(frozen=True)
 class Channel:
@@ -22,7 +24,7 @@ def list_channels(
 
     with connection.cursor() as cursor:
         if search:
-            pattern = f"%{search}%"
+            pattern = ilike_pattern(search)
             cursor.execute(
                 """
                 SELECT channel_id, name
@@ -46,7 +48,7 @@ def list_channels(
         rows = cursor.fetchall()
 
         if search:
-            pattern = f"%{search}%"
+            pattern = ilike_pattern(search)
             cursor.execute(
                 "SELECT count(*) FROM channel WHERE name ILIKE %s", (pattern,)
             )

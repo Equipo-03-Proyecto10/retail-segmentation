@@ -11,6 +11,8 @@ from uuid import UUID
 
 from psycopg import Connection
 
+from web.db.search import ilike_pattern
+
 # The role that RN-01 allows exactly one of. Named here rather than repeated as
 # a string literal, and matched against the schema's partial unique index by
 # tests/test_single_administrator.py.
@@ -238,7 +240,7 @@ def list_users(
 
     with connection.cursor() as cursor:
         if search:
-            pattern = f"%{search}%"
+            pattern = ilike_pattern(search)
             cursor.execute(
                 """
                 SELECT u.user_id, u.role_id, r.code, r.description, u.name,
@@ -266,7 +268,7 @@ def list_users(
         rows = cursor.fetchall()
 
         if search:
-            pattern = f"%{search}%"
+            pattern = ilike_pattern(search)
             cursor.execute(
                 "SELECT count(*) FROM app_user WHERE name ILIKE %s OR email ILIKE %s",
                 (pattern, pattern),

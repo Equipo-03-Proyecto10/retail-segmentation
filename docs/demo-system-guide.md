@@ -143,14 +143,14 @@ sequenceDiagram
     Gate->>Route: Allowed
     Route->>Service: run(connection, 180)
     Service->>Tx: Begin owned unit of work
-    Tx->>DB: recalculate_segments(...)
-    DB->>PG: One parameterised CTE statement
-    PG->>PG: Aggregate and score R/F/M
-    PG->>PG: Match rules and update/clear customers
-    PG->>Audit: Trigger once per changed row
+    Tx->>DB: score_rfm_rules(...), the RFM_RULES adapter's read
+    DB->>PG: One parameterised SELECT: quintile scores matched to segment bands
+    PG-->>DB: One row per customer
+    DB-->>Service: One labelled assignment per customer
+    Service->>DB: create_run, close_open_assignments, insert_assignments
+    DB->>PG: Run row, closed history rows, one new history row per customer
+    PG->>Audit: Trigger once per history row
     Audit->>PG: Insert audit_log entry without password_hash
-    PG-->>DB: processed, assigned, unmatched, changed, cleared
-    DB-->>Service: RecalculationCounts
     Service->>Tx: Commit once
     Service-->>Route: RunResult plus elapsed time
     Route->>View: Render result

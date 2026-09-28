@@ -21,7 +21,6 @@ from flask.testing import FlaskClient
 
 from web.app import create_app
 from web.config import Config
-from web.db.segments import RecalculationCounts, recalculate_segments
 from web.services.segmentation import (
     DEFAULT_WINDOW_DAYS,
     MAX_WINDOW_DAYS,
@@ -246,65 +245,36 @@ def test_no_segment_changed_is_about_assignment_changes() -> None:
     assert not _result(reassigned=0, cleared=1).no_segment_changed
 
 
-def test_the_run_commits_so_the_audit_entries_survive() -> None:
+def test_the_run_commits_so_the_audit_entries_survive(monkeypatch) -> None:
+    """One commit, after every write: the audit rows the triggers write are part
+    of the run, so a caller that forgot to commit would roll back the assignment
+    and the record of having made it."""
+    from web.db.segments import ScoredCustomer
+
+    rows = [
+        ScoredCustomer(f"c{n}", None, None, None, None, None, None, None, None)
+        for n in range(30)
+    ]
+    for name, value in {
+        "score_rfm_rules": Mock(return_value=rows),
+        "read_open_assignments": Mock(return_value={}),
+        "create_run": Mock(return_value=1),
+        "close_open_assignments": Mock(),
+        "insert_assignments": Mock(),
+    }.items():
+        monkeypatch.setattr(f"web.services.segmentation.{name}", value)
     connection = MagicMock()
-    connection.cursor.return_value.__enter__.return_value.fetchone.return_value = (
-        30,
-        18,
-        12,
-        30,
-        0,
-    )
 
     result = run(connection, 180)
 
     connection.commit.assert_called_once_with()
-    assert (result.processed, result.assigned, result.unmatched) == (30, 18, 12)
+    assert (result.processed, result.assigned, result.unmatched) == (30, 0, 30)
     assert result.seconds >= 0
 
 
-# ---------- the statement itself ----------
-
-
-def test_the_window_is_a_parameter_and_never_interpolated() -> None:
-    connection = MagicMock()
-    cursor = connection.cursor.return_value.__enter__.return_value
-    cursor.fetchone.return_value = (0, 0, 0, 0, 0)
-
-    recalculate_segments(connection, 90)
-
-    statement, parameters = cursor.execute.call_args.args
-    assert parameters == (90, 5, 5, 5, 5, 5, 5, 90, 90)
-    assert "90" not in statement
-
-
-def test_the_statement_tracks_assignment_changes_for_result_counts() -> None:
-    """The change predicate feeds counts, not the history writes."""
-    from web.db.segments import _RECALCULATE
-
-    assert "IS DISTINCT FROM" in _RECALCULATE
-
-
-def test_every_quintile_is_ordered_deterministically() -> None:
-    """Ties broken by customer_id, or two runs could disagree and both be right."""
-    from web.db.segments import _RECALCULATE
-
-    windows = [line for line in _RECALCULATE.splitlines() if "OVER (ORDER BY" in line]
-
-    assert len(windows) == 3
-    assert all(", customer_id)" in line for line in windows)
-
-
-def test_the_counts_come_back_in_the_order_the_statement_selects_them() -> None:
-    connection = MagicMock()
-    cursor = connection.cursor.return_value.__enter__.return_value
-    cursor.fetchone.return_value = (30, 18, 12, 7, 3)
-
-    counts = recalculate_segments(connection, 180)
-
-    assert counts == RecalculationCounts(
-        processed=30, assigned=18, unmatched=12, reassigned=7, cleared=3
-    )
+# The statements themselves are covered in tests/test_segments_pipeline_db.py:
+# the window is a parameter, every quintile is ordered deterministically, and the
+# writes that record a run are parameterized.
 
 
 @pytest.mark.parametrize("data", [{}, {"window": ""}, {"window": "   "}])

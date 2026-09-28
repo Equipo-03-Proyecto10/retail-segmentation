@@ -1,11 +1,21 @@
-"""The segment recalculation, expressed as one statement (F3-10, F7-02).
+"""SQL under the segmentation pipeline (F3-10, F7-02, F9-01).
 
-Scoring, matching and writing happen in a single round trip. That is not an
-optimisation: the run has to be atomic, and it has to be *repeatable* — the
-same sales must produce the same assignment, or RN-20's audit trail fills with
-entries recording a segment flapping between two equally valid answers.
+F3-10 scored, matched and wrote in one statement, which made the run atomic and
+repeatable but meant no second method could reuse the writing. The pipeline
+(ADR-0018) needs the two halves apart: what a *method* decides, and what the
+pipeline *records* whichever method decided it.
 
-Two things make it repeatable, and both are deliberate:
+**The decision.** `score_rfm_rules` is the RFM_RULES adapter's read: quintile
+scores, matched against the segment bands, one row per customer. `read_rfm_inputs`
+is what a second method reads: the raw recency, frequency and monetary values per
+customer, with no scoring.
+
+**The record.** `create_run`, `close_open_assignments` and `insert_assignments`
+write a run and its assignments and know nothing about which method produced
+them. None of them commits; the service owns the transaction (ADR-0014), so a
+run that fails part way leaves neither the run row nor any assignment behind.
+
+Two things make a run repeatable, and both are in the adapter's read:
 
 * every `ntile` window is ordered by `customer_id` after its measure, so
   customers who tie on recency, frequency or spend are always cut into the same
@@ -15,17 +25,14 @@ Two things make it repeatable, and both are deliberate:
   set would be disjoint, and until it is, the tie is broken the same way every
   time.
 
-F7-02 replaces the mutable segment column customer used to carry with durable
-history (ADR-0017): every run inserts one `segmentation_run` row, and every
-customer's result lands in a new `customer_segment_history` row. The statement
-closes the previously open row even when the segment is unchanged, so every
-run records one result row per customer. Its `changed_flag` distinguishes
-changed assignments only for the result counts; it does not decide which rows
-are written.
+ADR-0017: every run writes one `customer_segment_history` row per customer, and
+closes the previously open row even when the result is unchanged. Closing and
+opening share one `now()`, so a customer's rows are contiguous.
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
@@ -36,9 +43,9 @@ from psycopg import Connection
 
 # Quintiles: 5 is the best score in each measure — most recent, most frequent,
 # highest spend — which is the orientation segment_rule's bands are written in.
-_QUINTILES = 5
+QUINTILES = 5
 
-_RECALCULATE = """
+_SCORE_AND_MATCH = """
 WITH window_sales AS (
     SELECT customer_id,
            max(occurred_at) AS last_purchase,
@@ -57,174 +64,218 @@ scored AS (
            %s + 1 - ntile(%s)
                OVER (ORDER BY monetary DESC, customer_id)      AS m
     FROM window_sales
-),
-matched AS (
-    -- Every customer, not only those with sales: a customer absent from
-    -- window_sales has no r/f/m and no matching segment, so they land here
-    -- with all columns but customer_id NULL — RN-21's unassigned result,
-    -- recorded rather than skipped. This is the only case ADR-0018 allows a
-    -- null label for.
-    --
-    -- The LATERAL join picks the same "lowest segment_id" winner the old
-    -- MIN(seg.segment_id) subquery did (ORDER BY segment_id LIMIT 1 is
-    -- equivalent), but as a join it can also carry that winning row's
-    -- label_code -- ADR-0018's stable vocabulary -- without a second,
-    -- possibly inconsistent, correlated subquery.
-    --
-    -- A customer who *does* have sales but matches no rule band still gets a
-    -- label — ADR-0018 forbids a null label for anyone actually scored. The
-    -- second LATERAL falls back to the worst-ranked segment (highest
-    -- ordinal_position) only when the first found no exact band match and
-    -- the customer has an r/f/m triple to fall back from at all.
-    SELECT c.customer_id,
-           s.r, s.f, s.m,
-           w.last_purchase, w.frequency, w.monetary,
-           COALESCE(bm.segment_id, fb.segment_id)     AS segment_id,
-           COALESCE(bm.label_code, fb.label_code)     AS label_code
-      FROM customer AS c
-      LEFT JOIN scored AS s ON s.customer_id = c.customer_id
-      LEFT JOIN window_sales AS w ON w.customer_id = c.customer_id
-      LEFT JOIN LATERAL (
-          SELECT seg.segment_id, seg.label_code
-            FROM segment AS seg
-            JOIN segment_rule AS sr ON sr.rule_id = seg.rule_id
-           WHERE s.r BETWEEN sr.r_min AND sr.r_max
-             AND s.f BETWEEN sr.f_min AND sr.f_max
-             AND s.m BETWEEN sr.m_min AND sr.m_max
-             AND seg.valid_from <= CURRENT_DATE
-             AND (seg.valid_to IS NULL OR seg.valid_to >= CURRENT_DATE)
-           ORDER BY seg.segment_id
-           LIMIT 1
-      ) AS bm ON true
-      LEFT JOIN LATERAL (
-          SELECT seg.segment_id, seg.label_code
-            FROM segment AS seg
-            JOIN segment_label AS sl ON sl.label_code = seg.label_code
-           WHERE w.customer_id IS NOT NULL AND bm.segment_id IS NULL
-             AND seg.valid_from <= CURRENT_DATE
-             AND (seg.valid_to IS NULL OR seg.valid_to >= CURRENT_DATE)
-           ORDER BY sl.ordinal_position DESC, seg.segment_id
-           LIMIT 1
-      ) AS fb ON true
-),
-new_run AS (
-    -- Placed after `matched`, not before: `matched` doesn't depend on the
-    -- run row at all, and a data-modifying CTE cannot see another
-    -- statement's effect on its own target table within the same query
-    -- (only RETURNING crosses that boundary) -- an earlier version tried to
-    -- backfill customer_count with a second UPDATE CTE keyed on new_run's
-    -- RETURNING id, and PostgreSQL silently matched zero rows because
-    -- new_run's insert isn't visible to a plain WHERE-clause scan of
-    -- segmentation_run from a sibling CTE. Computing the count here, before
-    -- the row is even inserted, sidesteps that rule entirely.
-    --
-    -- parameters and executed_by are ADR-0017's parameter snapshot and
-    -- executing user. executed_by reuses the same connection GUC fn_audit()
-    -- reads (web/middleware/authz.py sets it once per request), not a new
-    -- Python-side actor parameter.
-    INSERT INTO segmentation_run
-        (method, window_days, parameters, customer_count, executed_by)
-    VALUES (
-        'RFM_RULES', %s, jsonb_build_object('window_days', %s),
-        (SELECT count(*) FROM matched),
-        NULLIF(current_setting('mosaiq.user_id', true), '')::uuid
-    )
-    RETURNING run_id
-),
-current_open AS (
-    SELECT h.customer_id, h.segment_id AS open_segment_id
-    FROM customer_segment_history AS h
-    WHERE h.valid_to IS NULL
-),
-changed AS (
-    -- ADR-0017: every customer in the run writes a history row, whether or
-    -- not their result changed -- the ADR's own compliance query checks
-    -- count(h.run_id) = r.customer_count for every run. changed_flag keeps
-    -- the distinction the old IS DISTINCT FROM guard used to make, now for
-    -- the result counts below rather than for deciding who gets written.
-    SELECT m.customer_id, m.r, m.f, m.m,
-           m.last_purchase, m.frequency, m.monetary,
-           m.segment_id, m.label_code,
-           (co.customer_id IS NULL
-              OR co.open_segment_id IS DISTINCT FROM m.segment_id) AS changed_flag
-    FROM matched AS m
-    LEFT JOIN current_open AS co ON co.customer_id = m.customer_id
-),
-closed AS (
-    -- Closes the prior open row for every customer, "including when labels
-    -- do not change" (ADR-0017) -- there is no WHERE on changed_flag here.
-    UPDATE customer_segment_history AS h
-       SET valid_to = now()
-      FROM changed AS ch
-     WHERE h.customer_id = ch.customer_id
-       AND h.valid_to IS NULL
-    RETURNING h.customer_id
-),
-opened AS (
-    -- The LEFT JOIN to `closed` is not filtering anything (cl is unused) —
-    -- it exists purely to create a data dependency. Sibling data-modifying
-    -- CTEs in PostgreSQL have no guaranteed execution order unless one
-    -- references the other; without this, `opened`'s INSERT could run
-    -- before `closed`'s UPDATE finished clearing the old open row, and
-    -- collide with ux_customer_segment_history_open.
-    INSERT INTO customer_segment_history
-        (customer_id, run_id, segment_id, label_code,
-         recency_last_purchase_at, frequency_count, monetary_total,
-         r_score, f_score, m_score, valid_from)
-    SELECT ch.customer_id,
-           (SELECT run_id FROM new_run),
-           ch.segment_id, ch.label_code,
-           ch.last_purchase, ch.frequency, ch.monetary,
-           ch.r, ch.f, ch.m,
-           now()
-    FROM changed AS ch
-    LEFT JOIN closed AS cl ON cl.customer_id = ch.customer_id
-    RETURNING customer_id, segment_id
 )
-SELECT (SELECT count(*) FROM matched)                              AS processed,
-       (SELECT count(*) FROM matched WHERE segment_id IS NOT NULL) AS assigned,
-       (SELECT count(*) FROM matched WHERE segment_id IS NULL)     AS unmatched,
-       (SELECT count(*) FROM changed
-         WHERE changed_flag AND segment_id IS NOT NULL)            AS reassigned,
-        (SELECT count(*) FROM changed
-         WHERE changed_flag AND segment_id IS NULL)                AS cleared
+-- Every customer, not only those with sales: a customer absent from
+-- window_sales has no r/f/m and no matching segment, so every column but
+-- customer_id comes back NULL. That is RN-21's unassigned result, recorded
+-- rather than skipped, and the only case ADR-0018 allows a null label for.
+--
+-- The first LATERAL join takes the segment whose band holds the triple, the
+-- lowest segment_id when several do, and carries that row's label_code, the
+-- stable vocabulary of ADR-0018, in the same join.
+--
+-- A customer who does have sales but matches no band still gets a label,
+-- because ADR-0018 forbids a null label for anyone actually scored. The second
+-- LATERAL join falls back to the worst-ranked segment, the highest
+-- ordinal_position, only when the first found nothing and the customer has a
+-- triple to fall back from at all.
+SELECT c.customer_id,
+       w.last_purchase, w.frequency, w.monetary,
+       s.r, s.f, s.m,
+       COALESCE(bm.segment_id, fb.segment_id) AS segment_id,
+       COALESCE(bm.label_code, fb.label_code) AS label_code
+  FROM customer AS c
+  LEFT JOIN scored AS s ON s.customer_id = c.customer_id
+  LEFT JOIN window_sales AS w ON w.customer_id = c.customer_id
+  LEFT JOIN LATERAL (
+      SELECT seg.segment_id, seg.label_code
+        FROM segment AS seg
+        JOIN segment_rule AS sr ON sr.rule_id = seg.rule_id
+       WHERE s.r BETWEEN sr.r_min AND sr.r_max
+         AND s.f BETWEEN sr.f_min AND sr.f_max
+         AND s.m BETWEEN sr.m_min AND sr.m_max
+         AND seg.valid_from <= CURRENT_DATE
+         AND (seg.valid_to IS NULL OR seg.valid_to >= CURRENT_DATE)
+       ORDER BY seg.segment_id
+       LIMIT 1
+  ) AS bm ON true
+  LEFT JOIN LATERAL (
+      SELECT seg.segment_id, seg.label_code
+        FROM segment AS seg
+        JOIN segment_label AS sl ON sl.label_code = seg.label_code
+       WHERE w.customer_id IS NOT NULL AND bm.segment_id IS NULL
+         AND seg.valid_from <= CURRENT_DATE
+         AND (seg.valid_to IS NULL OR seg.valid_to >= CURRENT_DATE)
+       ORDER BY sl.ordinal_position DESC, seg.segment_id
+       LIMIT 1
+  ) AS fb ON true
+ ORDER BY c.customer_id
+"""
+
+_RFM_INPUTS = """
+SELECT c.customer_id, w.last_purchase, w.frequency, w.monetary
+  FROM customer AS c
+  LEFT JOIN (
+      SELECT customer_id,
+             max(occurred_at) AS last_purchase,
+             count(*)         AS frequency,
+             sum(total)       AS monetary
+      FROM transaction
+      WHERE occurred_at >= now() - make_interval(days => %s)
+      GROUP BY customer_id
+  ) AS w ON w.customer_id = c.customer_id
+ ORDER BY c.customer_id
 """
 
 
 @dataclass(frozen=True)
-class RecalculationCounts:
-    """What one run did, straight from the statement that did it."""
+class ScoredCustomer:
+    """One customer as the RFM_RULES adapter's read returns them.
 
-    processed: int
-    assigned: int
-    unmatched: int
-    reassigned: int
-    cleared: int
-
-
-def recalculate_segments(
-    connection: Connection[Any], window_days: int
-) -> RecalculationCounts:
-    """Score, match and write every customer's segment as a new run. One
-    statement.
-
-    The caller owns the transaction: nothing here commits, so a run that
-    fails part way leaves neither the run row nor any assignment behind.
+    Every field but `customer_id` is None for a customer with no sales in the
+    window, which is the unassigned result and not an omission.
     """
+
+    customer_id: str
+    last_purchase_at: datetime | None
+    frequency: int | None
+    monetary: Decimal | None
+    r_score: int | None
+    f_score: int | None
+    m_score: int | None
+    segment_id: int | None
+    label_code: str | None
+
+
+@dataclass(frozen=True)
+class CustomerSales:
+    """A customer's raw recency, frequency and monetary values over a window,
+    unscored. All three are None when the window holds no sale."""
+
+    customer_id: str
+    last_purchase_at: datetime | None
+    frequency: int | None
+    monetary: Decimal | None
+
+
+def score_rfm_rules(
+    connection: Connection[Any], window_days: int
+) -> list[ScoredCustomer]:
+    """Score every customer's recency, frequency and spend in quintiles and match
+    each against the segment bands. Reads only; the caller records the result."""
+    with connection.cursor() as cursor:
+        cursor.execute(_SCORE_AND_MATCH, (window_days,) + (QUINTILES,) * 6)
+        rows = cursor.fetchall()
+
+    return [ScoredCustomer(str(row[0]), *row[1:]) for row in rows]
+
+
+def read_rfm_inputs(
+    connection: Connection[Any], window_days: int
+) -> list[CustomerSales]:
+    """Every customer's raw recency, frequency and monetary values over the
+    window, ordered by customer id, for a method that scores them itself."""
+    with connection.cursor() as cursor:
+        cursor.execute(_RFM_INPUTS, (window_days,))
+        rows = cursor.fetchall()
+
+    return [CustomerSales(str(row[0]), *row[1:]) for row in rows]
+
+
+def create_run(
+    connection: Connection[Any],
+    method: str,
+    window_days: int,
+    parameters: dict[str, Any],
+    customer_count: int,
+) -> int:
+    """Insert the run row and return its id.
+
+    `parameters` is ADR-0017's snapshot of what produced the run. It is stored
+    with its keys sorted so the same parameters are always the same text, and
+    NaN and Infinity are refused: jsonb has neither, and a metric that came out
+    as one is a defect in the run that must not be written as a plausible number.
+    `executed_by` is the connection setting fn_audit() reads (web/middleware/
+    authz.py sets it once per request), not a Python-side actor argument.
+    """
+    snapshot = json.dumps(parameters, sort_keys=True, allow_nan=False)
     with connection.cursor() as cursor:
         cursor.execute(
-            _RECALCULATE,
-            (window_days,) + (_QUINTILES,) * 6 + (window_days, window_days),
+            """
+            INSERT INTO segmentation_run
+                (method, window_days, parameters, customer_count, executed_by)
+            VALUES (
+                %s, %s, %s::jsonb, %s,
+                NULLIF(current_setting('mosaiq.user_id', true), '')::uuid
+            )
+            RETURNING run_id
+            """,
+            (method, window_days, snapshot, customer_count),
         )
-        row = cursor.fetchone()
+        return cursor.fetchone()[0]
 
-    return RecalculationCounts(
-        processed=row[0],
-        assigned=row[1],
-        unmatched=row[2],
-        reassigned=row[3],
-        cleared=row[4],
-    )
+
+def read_open_assignments(
+    connection: Connection[Any],
+) -> dict[str, tuple[int | None, str | None]]:
+    """Each customer's open assignment, as (segment_id, label_code), before a
+    run replaces it. A customer with no history is simply absent."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT customer_id, segment_id, label_code
+            FROM customer_segment_history
+            WHERE valid_to IS NULL
+            """
+        )
+        rows = cursor.fetchall()
+
+    return {
+        str(customer_id): (segment_id, label) for customer_id, segment_id, label in rows
+    }
+
+
+def close_open_assignments(
+    connection: Connection[Any], customer_ids: list[str]
+) -> None:
+    """Close the open assignment of every listed customer, whether or not the
+    run is about to write the same result again (ADR-0017)."""
+    if not customer_ids:
+        return
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            UPDATE customer_segment_history
+               SET valid_to = now()
+             WHERE valid_to IS NULL
+               AND customer_id = ANY(%s::uuid[])
+            """,
+            (customer_ids,),
+        )
+
+
+def insert_assignments(
+    connection: Connection[Any], run_id: int, rows: list[tuple[Any, ...]]
+) -> None:
+    """Open one history row per customer for this run.
+
+    Each row is (customer, segment, label, last purchase, frequency, monetary,
+    r, f, m). The pipeline has already closed the previous open rows, and
+    `now()` is the same instant they were closed at.
+    """
+    if not rows:
+        return
+    with connection.cursor() as cursor:
+        cursor.executemany(
+            """
+            INSERT INTO customer_segment_history
+                (customer_id, run_id, segment_id, label_code,
+                 recency_last_purchase_at, frequency_count, monetary_total,
+                 r_score, f_score, m_score, valid_from)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+            """,
+            [(row[0], run_id, *row[1:]) for row in rows],
+        )
 
 
 # ---------- reading segments and their rules (F3-05 / RF-13) ----------

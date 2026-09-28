@@ -543,9 +543,11 @@ writing. **Verified** — case P3: zero hashes across 280 audit rows. · `RNF-17
 Nothing in the application updates or deletes an entry. Entries are kept
 indefinitely as compliance evidence.
 
-**Enforced:** application — the audit view offers no write action. Not
-constrained in the schema, because the role that owns the schema must remain
-able to archive. Reviewed. · `RF-14`
+**Enforced:** application *and* schema — the audit view offers no write
+action, and `retail_app` holds no `UPDATE` or `DELETE` on `audit_log`
+(`REVOKE` in `sql/01_schema.sql`, checked by its self-test). The role that
+owns the schema keeps its privileges, so archiving remains possible.
+ADR-0024. · `RF-14`
 
 ---
 

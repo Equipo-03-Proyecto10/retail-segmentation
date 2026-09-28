@@ -196,9 +196,15 @@ def update_user(
     exactly as it does at creation -- a second ADMIN is refused, and
     demoting the last one is refused too (use transfer_administrator for
     that). One transaction: if the role move is refused, the name/email
-    write is rolled back with it.
+    write is rolled back with it. The address is normalised as at creation
+    (#288), and a clash with another account's address is DuplicateEmailError.
     """
-    update_name_and_email(connection, user_id, name=name.strip(), email=email.strip())
+    try:
+        update_name_and_email(
+            connection, user_id, name=name.strip(), email=normalize_email(email)
+        )
+    except UniqueViolation as error:
+        raise _translate_unique_violation(error) from error
     change_role(connection, user_id, role_code)
 
 

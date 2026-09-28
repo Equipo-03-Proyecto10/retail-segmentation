@@ -1146,7 +1146,7 @@ def edit_user_view(user_id: UUID) -> ResponseReturnValue:
         abort(404)
     roles = list_role_options(connection)
 
-    if request.method == "GET":
+    if request.method in ("GET", "HEAD"):
         return render_template(
             "admin/user_form.html",
             user=user,

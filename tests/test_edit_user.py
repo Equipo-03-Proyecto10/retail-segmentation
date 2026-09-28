@@ -6,10 +6,12 @@ from unittest.mock import MagicMock, Mock
 
 import pytest
 from flask import Flask
+from psycopg.errors import UniqueViolation
 
 from web.app import create_app
 from web.config import Config
 from web.services.users import (
+    DuplicateEmailError,
     SingleAdministratorError,
     update_user,
 )
@@ -102,3 +104,55 @@ def test_promoting_to_a_second_administrator_is_refused(
         update_user(
             MagicMock(), "u1", name="X", email="x@example.com", role_code="ADMIN"
         )
+
+
+def test_update_user_stores_the_normalised_address(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    written = {}
+    monkeypatch.setattr(
+        "web.services.users.update_name_and_email",
+        lambda _c, _uid, **kw: written.update(kw),
+    )
+    monkeypatch.setattr("web.services.users.change_role", lambda *a, **k: None)
+
+    update_user(
+        MagicMock(), "u1", name="Jane", email=" Jane@Example.COM ", role_code="ANALYST"
+    )
+
+    assert written["email"] == "jane@example.com"
+
+
+def _clash(*_a, **_k):
+    raise UniqueViolation("duplicate key value violates ux_app_user_email_lower")
+
+
+def test_an_address_another_account_holds_is_a_duplicate_email(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("web.services.users.update_name_and_email", _clash)
+
+    with pytest.raises(DuplicateEmailError):
+        update_user(
+            MagicMock(), "u1", name="X", email="taken@example.com", role_code="ANALYST"
+        )
+
+
+def test_the_edit_form_explains_a_duplicate_email_instead_of_failing(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("web.routes.admin.get_user_by_id", lambda *a, **k: Mock())
+    monkeypatch.setattr(
+        "web.routes.admin.list_role_options", lambda *a, **k: [("ANALYST", None)]
+    )
+    monkeypatch.setattr("web.services.users.update_name_and_email", _clash)
+    client = app.test_client()
+    _sign_in(client, "ADMIN")
+
+    response = client.post(
+        "/admin/users/11111111-1111-1111-1111-000000000002/edit",
+        data={"name": "X", "email": "TAKEN@example.com", "role_code": "ANALYST"},
+    )
+
+    assert response.status_code == 409
+    assert b"A user with that email already exists." in response.data

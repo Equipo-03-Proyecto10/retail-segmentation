@@ -10,6 +10,7 @@ asks for, and that an administrator-only route still refuses a regular user.
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from datetime import date, datetime
 from unittest.mock import MagicMock, Mock
 
@@ -21,7 +22,7 @@ from web.app import create_app
 from web.config import Config
 from web.db.categories import Category
 from web.db.channels import Channel
-from web.db.customers import Customer
+from web.db.customers import Customer, list_customers
 from web.db.inventory import LOW_STOCK_THRESHOLD, StockRow
 from web.db.products import Product
 from web.db.segments import CustomerSegmentAssignment, Segment, SegmentRule
@@ -298,6 +299,9 @@ def test_customer_detail_shows_interests_channels_and_the_segment(
             valid_from=datetime(2026, 1, 1),
         ),
     )
+    monkeypatch.setattr(
+        "web.routes.catalog.get_label_name", lambda _c, _code: "Champion"
+    )
     monkeypatch.setattr("web.routes.catalog.get_segment", lambda _c, _id: _segment(4))
     monkeypatch.setattr(
         "web.routes.catalog.list_interest_categories",
@@ -317,7 +321,85 @@ def test_customer_detail_shows_interests_channels_and_the_segment(
     assert "Running" in body
     assert "Email" in body
     assert "Web" in body
+    assert "Champion" in body
     assert 'href="/catalog/segments/4"' in body
+
+
+def _open_customer_with(
+    app: Flask,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    segment_id: int | None,
+    label_code: str | None,
+) -> str:
+    """Open the customer detail page over one open history row."""
+    names = {"LOYAL": "Loyal", "CHAMPION": "Champion"}
+    monkeypatch.setattr("web.routes.catalog.get_customer", lambda _c, _id: _customer())
+    monkeypatch.setattr("web.routes.catalog.get_channel", lambda _c, _id: None)
+    monkeypatch.setattr(
+        "web.routes.catalog.get_current_assignment",
+        lambda _c, _id: CustomerSegmentAssignment(
+            customer_id="00000000-0000-0000-0000-000000000001",
+            segment_id=segment_id,
+            label_code=label_code,
+            r_score=None,
+            f_score=None,
+            m_score=None,
+            valid_from=datetime(2026, 1, 1),
+        ),
+    )
+    monkeypatch.setattr(
+        "web.routes.catalog.get_label_name", lambda _c, code: names[code]
+    )
+    monkeypatch.setattr("web.routes.catalog.get_segment", lambda _c, _id: _segment(4))
+    monkeypatch.setattr("web.routes.catalog.list_interest_categories", lambda *a: [])
+    monkeypatch.setattr("web.routes.catalog.list_preferred_channels", lambda *a: [])
+    client = app.test_client()
+    _sign_in(client, "ANALYST")
+
+    return client.get(
+        "/catalog/customers/00000000-0000-0000-0000-000000000001"
+    ).get_data(as_text=True)
+
+
+def test_a_k_means_assignment_shows_its_label_and_no_segment(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#272: a K-means row carries a label and no segment, and is not unassigned."""
+    body = _open_customer_with(app, monkeypatch, segment_id=None, label_code="LOYAL")
+
+    assert "Loyal" in body
+    assert "Unassigned" not in body
+    assert "/catalog/segments/" not in body
+
+
+def test_the_unassigned_result_is_shown_as_unassigned(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    body = _open_customer_with(app, monkeypatch, segment_id=None, label_code=None)
+
+    assert "Unassigned" in body
+    assert "/catalog/segments/" not in body
+
+
+def test_a_customer_never_scored_is_unassigned(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("web.routes.catalog.get_customer", lambda _c, _id: _customer())
+    monkeypatch.setattr("web.routes.catalog.get_channel", lambda _c, _id: None)
+    monkeypatch.setattr(
+        "web.routes.catalog.get_current_assignment", lambda _c, _id: None
+    )
+    monkeypatch.setattr("web.routes.catalog.list_interest_categories", lambda *a: [])
+    monkeypatch.setattr("web.routes.catalog.list_preferred_channels", lambda *a: [])
+    client = app.test_client()
+    _sign_in(client, "ANALYST")
+
+    body = client.get(
+        "/catalog/customers/00000000-0000-0000-0000-000000000001"
+    ).get_data(as_text=True)
+
+    assert "Unassigned" in body
 
 
 def test_customer_detail_is_a_404_when_unknown(
@@ -333,6 +415,39 @@ def test_customer_detail_is_a_404_when_unknown(
         ).status_code
         == 404
     )
+
+
+def test_the_customer_list_shows_each_customers_label_or_unassigned(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    labelled = replace(_customer("Ada Lovelace"), label_name="Loyal")
+    unassigned = replace(_customer("Grace Hopper"), label_name=None)
+    monkeypatch.setattr(
+        "web.routes.catalog.list_customers",
+        lambda *a, **k: ([labelled, unassigned], 2),
+    )
+    client = app.test_client()
+    _sign_in(client, "ANALYST")
+
+    body = client.get("/catalog/customers").get_data(as_text=True)
+
+    assert "Loyal" in body
+    assert "Unassigned" in body
+
+
+def test_the_customer_list_reads_the_label_not_the_segment() -> None:
+    """#272: every method writes the label; only a rule-based run writes a segment."""
+    for search in (None, "ada"):
+        connection = MagicMock()
+        cursor = connection.cursor.return_value.__enter__.return_value
+        cursor.fetchall.return_value = []
+        cursor.fetchone.return_value = (0,)
+
+        list_customers(connection, search=search, page=1, per_page=20)
+
+        statement = cursor.execute.call_args_list[0].args[0]
+        assert "segment_label AS l ON l.label_code = h.label_code" in statement
+        assert "h.segment_id" not in statement
 
 
 def test_customers_list_reports_an_empty_search(
@@ -425,6 +540,7 @@ def test_segment_detail_lists_members_and_the_rule_bands(
 
     assert "Grace Hopper" in body
     assert "RULE_004" in body
+    assert "a K-means assignment carries a label and no segment" in body
     assert re.search(r"4[–-]5", body)
 
 
@@ -442,6 +558,7 @@ def test_segment_detail_reports_an_empty_segment(
     body = client.get("/catalog/segments/4").get_data(as_text=True)
 
     assert "No customers are currently in this segment." in body
+    assert "Only a rule-based run places customers in a segment" in body
 
 
 def test_segment_detail_is_a_404_when_unknown(

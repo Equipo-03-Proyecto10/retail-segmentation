@@ -481,6 +481,18 @@ def get_label_ordinals(connection: Connection[Any]) -> dict[str, int]:
         return dict(cursor.fetchall())
 
 
+def get_label_name(connection: Connection[Any], label_code: str) -> str | None:
+    """Return a label's display name, or None if the code is not in the
+    vocabulary."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT name FROM segment_label WHERE label_code = %s", (label_code,)
+        )
+        row = cursor.fetchone()
+
+    return row[0] if row else None
+
+
 # ---------- run history (F7-03) ----------
 
 

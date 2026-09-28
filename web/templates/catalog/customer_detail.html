@@ -27,8 +27,12 @@
       <header class="mq-panel__header"><h2 class="mq-panel__title">Preferences and segment</h2></header>
       <div class="mq-panel__body">
         <dl class="mq-description-list">
-          <dt>Current segment</dt>
-          <dd>{% if segment %}<a href="{{ url_for('catalog.segment_detail', segment_id=segment.segment_id) }}">{{ status_pill(segment.name, "info") }}</a>{% else %}{{ status_pill("Unassigned") }}{% endif %}</dd>
+          <dt>Current label</dt>
+          <dd>{% if label %}{{ status_pill(label, "info") }}{% else %}{{ status_pill("Unassigned") }}{% endif %}</dd>
+          {% if segment %}
+            <dt>Rule-based segment</dt>
+            <dd><a href="{{ url_for('catalog.segment_detail', segment_id=segment.segment_id) }}">{{ segment.name }}</a></dd>
+          {% endif %}
           <dt>Categories of interest</dt><dd>{{ interests | map(attribute='name') | join(', ') if interests else "None recorded" }}</dd>
           <dt>Preferred channels</dt><dd>{{ preferred_channels | map(attribute='name') | join(', ') if preferred_channels else "None recorded" }}</dd>
         </dl>

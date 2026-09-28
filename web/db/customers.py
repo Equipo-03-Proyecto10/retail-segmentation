@@ -6,9 +6,13 @@ everywhere in web/db, every statement is parameterized and no identifier is
 interpolated into SQL.
 
 F7-02: this module no longer reads or writes a mutable segment column on
-that column does not exist. A customer's current segment is the open row in
+that column does not exist. A customer's current assignment is the open row in
 customer_segment_history (web/db/segments.py), joined in here for the
 listing view and read separately by the caller for the detail view.
+
+What a listing shows of that row is its label (ADR-0018), which every method
+writes. A segment is rule-based only: a K-means assignment carries a label and
+no segment (#272).
 """
 
 from __future__ import annotations
@@ -31,7 +35,7 @@ class Customer:
     phone: str | None
     registration_channel_id: int
     registered_on: date
-    segment_name: str | None = None
+    label_name: str | None = None
 
 
 def list_customers(
@@ -40,9 +44,9 @@ def list_customers(
     """Return a page of customers, optionally filtered by name or email, and
     the total row count for building pagination controls.
 
-    segment_name comes from each customer's currently open history row, not
-    from a column on customer — the LEFT JOIN reaches the same place
-    the mutable column used to point at, one hop further away.
+    label_name is the name of the label on each customer's currently open
+    history row, whichever method wrote it, and None when that row is the
+    unassigned result (RN-21) or the customer has never been scored.
     """
     offset = (page - 1) * per_page
 
@@ -53,11 +57,11 @@ def list_customers(
                 """
                 SELECT c.customer_id, c.user_id, c.name, c.email, c.phone,
                        c.registration_channel_id, c.registered_on,
-                       s.name
+                       l.name
                 FROM customer AS c
                 LEFT JOIN customer_segment_history AS h
                        ON h.customer_id = c.customer_id AND h.valid_to IS NULL
-                LEFT JOIN segment AS s ON s.segment_id = h.segment_id
+                LEFT JOIN segment_label AS l ON l.label_code = h.label_code
                 WHERE c.name ILIKE %s OR c.email ILIKE %s
                 ORDER BY c.name, c.customer_id
                 LIMIT %s OFFSET %s
@@ -69,11 +73,11 @@ def list_customers(
                 """
                 SELECT c.customer_id, c.user_id, c.name, c.email, c.phone,
                        c.registration_channel_id, c.registered_on,
-                       s.name
+                       l.name
                 FROM customer AS c
                 LEFT JOIN customer_segment_history AS h
                        ON h.customer_id = c.customer_id AND h.valid_to IS NULL
-                LEFT JOIN segment AS s ON s.segment_id = h.segment_id
+                LEFT JOIN segment_label AS l ON l.label_code = h.label_code
                 ORDER BY c.name, c.customer_id
                 LIMIT %s OFFSET %s
                 """,
@@ -159,7 +163,8 @@ def list_customers_in_segment(
 
     "Currently assigned" means holding an open customer_segment_history row
     for this segment — the same meaning the old mutable column used
-    to have, read from history instead of from a column.
+    to have, read from history instead of from a column. Only a rule-based
+    assignment names a segment; a customer K-means labelled is not listed here.
     """
     offset = (page - 1) * per_page
 

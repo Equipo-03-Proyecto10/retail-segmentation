@@ -23,17 +23,17 @@
 
   {% if customers %}
     <section class="mq-panel mq-panel--table mq-density-compact">
-      <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(total, "customer") }}</span><span class="mq-caption">Current segment assignment</span></div>
+      <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(total, "customer") }}</span><span class="mq-caption">Current label, whichever method assigned it</span></div>
       <div class="mq-table-wrap">
         <table class="mq-table">
-          <thead><tr><th class="mq-table__cell--sticky" scope="col">Name</th><th scope="col">Email</th><th scope="col">Phone</th><th scope="col">Segment</th></tr></thead>
+          <thead><tr><th class="mq-table__cell--sticky" scope="col">Name</th><th scope="col">Email</th><th scope="col">Phone</th><th scope="col">Label</th></tr></thead>
           <tbody>
             {% for customer in customers %}
               <tr>
                 <td class="mq-table__cell--sticky"><a class="mq-table__link" href="{{ url_for('catalog.customer_detail', customer_id=customer.customer_id) }}">{{ customer.name }}</a></td>
                 <td>{{ customer.email or "—" }}</td>
                 <td class="mq-mono">{{ customer.phone or "—" }}</td>
-                <td>{{ status_pill(customer.segment_name or "Unassigned", "info" if customer.segment_name else "neutral") }}</td>
+                <td>{{ status_pill(customer.label_name or "Unassigned", "info" if customer.label_name else "neutral") }}</td>
               </tr>
             {% endfor %}
           </tbody>

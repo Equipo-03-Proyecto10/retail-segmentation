@@ -30,6 +30,7 @@ from web.db.inventory import LOW_STOCK_THRESHOLD, list_stock
 from web.db.products import get_product, list_products
 from web.db.segments import (
     get_current_assignment,
+    get_label_name,
     get_segment,
     get_segment_rule,
     list_segments,
@@ -133,7 +134,14 @@ def customer_detail(customer_id: UUID) -> str:
         abort(404)
 
     channel = get_channel(connection, customer.registration_channel_id)
+    # The label is what every method writes (ADR-0018), so it is what the page
+    # shows; a segment exists only for a rule-based assignment (#272).
     assignment = get_current_assignment(connection, customer.customer_id)
+    label = (
+        get_label_name(connection, assignment.label_code)
+        if assignment is not None and assignment.label_code is not None
+        else None
+    )
     segment = (
         get_segment(connection, assignment.segment_id)
         if assignment is not None and assignment.segment_id is not None
@@ -143,6 +151,7 @@ def customer_detail(customer_id: UUID) -> str:
         "catalog/customer_detail.html",
         customer=customer,
         registration_channel=channel,
+        label=label,
         segment=segment,
         interests=list_interest_categories(connection, customer.customer_id),
         preferred_channels=list_preferred_channels(connection, customer.customer_id),

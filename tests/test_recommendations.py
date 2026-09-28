@@ -63,6 +63,7 @@ def _rank(stocked, **overrides):
     defaults = dict(
         preferred_category_ids=frozenset(),
         category_purchases={},
+        categories={},
         total_purchases=10,
         purchased_product_ids=frozenset(),
         segment_buyers={},
@@ -266,6 +267,102 @@ def test_only_the_top_limit_are_returned() -> None:
     assert _ids(result) == [1, 2, 3, 4, 5]
 
 
+# ---------- a category covers the categories below it (#277) ----------
+
+_TREE = {
+    c.category_id: c
+    for c in (
+        Category(1, "Dairy", None),
+        Category(11, "Milk", 1),
+        Category(12, "Yoghurt", 1),
+        Category(111, "Skimmed milk", 11),
+        Category(2, "Bakery", None),
+    )
+}
+
+
+def _stock_in(product_id: int, category_id: int) -> StockedProduct:
+    return StockedProduct(
+        product_id, f"Product {product_id}", category_id, _TREE[category_id].name, 5
+    )
+
+
+def test_a_preferred_category_covers_the_categories_below_it_at_any_depth() -> None:
+    result = _rank(
+        [_stock_in(1, 11), _stock_in(2, 111)],
+        preferred_category_ids={1},
+        categories=_TREE,
+    )
+
+    by_id = {r.product_id: r for r in result}
+    assert set(by_id) == {1, 2}
+    assert by_id[1].reasons[0].signal is Signal.PREFERRED_CATEGORY
+    assert by_id[1].reasons[0].text.startswith("In Milk, part of Dairy, a category")
+    assert by_id[2].reasons[0].text.startswith("In Skimmed milk, part of Dairy,")
+
+
+def test_a_category_does_not_cover_those_above_or_beside_it() -> None:
+    result = _rank(
+        [_stock_in(1, 1), _stock_in(2, 12), _stock_in(3, 2)],
+        preferred_category_ids={11},
+        category_purchases={11: 4},
+        categories=_TREE,
+    )
+
+    assert result == ()
+
+
+def test_a_category_they_buy_from_covers_the_categories_below_it() -> None:
+    (only,) = _rank(
+        [_stock_in(1, 111)],
+        category_purchases={1: 6},
+        total_purchases=10,
+        categories=_TREE,
+    )
+
+    assert [r.signal for r in only.reasons] == [Signal.PURCHASE_HISTORY]
+    assert only.reasons[0].text.startswith(
+        "In Skimmed milk, part of Dairy; the customer bought from Dairy in 6 of "
+        "their 10 purchases"
+    )
+
+
+def test_the_nearest_matching_category_is_the_one_named_and_counted() -> None:
+    (only,) = _rank(
+        [_stock_in(1, 111)],
+        preferred_category_ids={1, 11},
+        category_purchases={1: 9, 11: 2},
+        categories=_TREE,
+    )
+
+    preferred, history = only.reasons
+    assert "part of Milk," in preferred.text
+    assert "bought from Milk in 2 of" in history.text
+
+
+def test_the_share_of_the_nearest_bought_category_is_what_ranks() -> None:
+    result = _rank(
+        [_stock_in(1, 111), _stock_in(2, 12)],
+        category_purchases={1: 9, 11: 2},
+        categories=_TREE,
+    )
+
+    # 1 counts Milk's 2 (nearest), 2 counts Dairy's 9, so 2 ranks first
+    assert _ids(result) == [2, 1]
+
+
+def test_an_exact_match_reads_as_it_always_did() -> None:
+    (only,) = _rank(
+        [_stock_in(1, 11)],
+        preferred_category_ids={11},
+        category_purchases={11: 3},
+        categories=_TREE,
+    )
+
+    assert only.reasons[0].text == "In Milk, a category the customer said they like"
+    assert only.reasons[1].text.startswith("The customer bought from Milk in 3 of")
+
+
 # ---------- recommend: the whole computation ----------
 
 
@@ -313,12 +410,14 @@ class _World:
             ]
         )
         self.buyers = Mock(return_value={14: 3, 15: 9})
+        self.categories = Mock(return_value=[])
         for name, fake in {
             "build_profile": self.profile,
             "list_interest_categories": self.interests,
             "list_product_totals": self.purchased,
             "list_stocked_products": self.stocked,
             "list_segment_buyers": self.buyers,
+            "list_all_categories": self.categories,
         }.items():
             monkeypatch.setattr(service, name, fake)
 
@@ -337,6 +436,22 @@ def test_it_combines_the_segment_label_the_preferred_categories_and_the_history(
     assert {s.signal for s in by_id[14].reasons} == {Signal.SEGMENT}
     assert 11 not in by_id  # bought already
     assert result.label_code == "LOYAL"
+
+
+def test_it_reads_the_hierarchy_so_an_interest_covers_its_subcategories(
+    monkeypatch,
+) -> None:
+    world = _World(monkeypatch)
+    world.interests.return_value = [_TREE[1]]
+    world.categories.return_value = list(_TREE.values())
+    world.stocked.return_value = [_stock_in(21, 111)]
+    world.buyers.return_value = {}
+
+    result = recommend(MagicMock(), _ID)
+
+    (only,) = result.recommendations
+    assert only.product_id == 21
+    assert [r.signal for r in only.reasons] == [Signal.PREFERRED_CATEGORY]
 
 
 def test_only_the_usual_stores_stock_is_read(monkeypatch) -> None:
@@ -409,6 +524,7 @@ def test_no_segment_is_never_replaced_by_a_fallback(monkeypatch) -> None:
     world.stocked.assert_not_called()
     world.buyers.assert_not_called()
     world.purchased.assert_not_called()
+    world.categories.assert_not_called()
 
 
 def test_an_open_assignment_that_is_unassigned_is_also_no_segment(monkeypatch) -> None:

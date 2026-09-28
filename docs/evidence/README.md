@@ -83,6 +83,7 @@ right place for it, and which the team accepted on 2026-09-07.
 |---|---|
 | [F10-01](f10-01-recommendations.md) | Product recommendations with a stated reason for each: the recommendations of all 30 seeded customers checked against an independently written query, stock in the usual store enforced, no segment and no usual store stated instead of substituted, and only the stable label read |
 | [F10-02](f10-02-customer-recommendations.md) | The customer recommendations page at 375 px and 1440 px: product, store, stock and reason on each recommendation, a product leaving the list when its stock reaches zero and the page is reloaded, the explained empty states, and the refusal of a role without `segment.read` |
+| [Category subtree](recommendations-category-subtree.md) | #277: a preferred or bought category covers the categories below it, checked against an independent recursive query on all 30 seeded customers and shown on a subcategory product stocked in a rolled-back transaction |
 
 ## Review passes
 

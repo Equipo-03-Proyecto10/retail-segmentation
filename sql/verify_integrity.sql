@@ -50,10 +50,12 @@ ROLLBACK;
 
 \echo ''
 \echo '-- P4: deleting a transaction cascades to its lines'
+-- Transaction 300 is not any customer's first sale, so no seeded conversion
+-- references it; one that is referenced is N26's refusal instead.
 BEGIN;
-SELECT 'P4 lines before: ' || count(*)::text FROM transaction_line WHERE transaction_id = 1;
-DELETE FROM transaction WHERE transaction_id = 1;
-SELECT 'P4 lines after: ' || count(*)::text FROM transaction_line WHERE transaction_id = 1;
+SELECT 'P4 lines before: ' || count(*)::text FROM transaction_line WHERE transaction_id = 300;
+DELETE FROM transaction WHERE transaction_id = 300;
+SELECT 'P4 lines after: ' || count(*)::text FROM transaction_line WHERE transaction_id = 300;
 ROLLBACK;
 
 \echo ''
@@ -198,6 +200,22 @@ DELETE FROM category WHERE category_id = 1;
 ROLLBACK;
 
 \echo ''
+\echo '-- N27: CHECK, a category as its own parent       [expect: 23514 check_violation]'
+-- RN-33 (#253). The BEFORE trigger reports it as category_no_cycle first;
+-- category_not_own_parent is the backstop if the trigger is ever dropped.
+BEGIN;
+UPDATE category SET parent_category_id = 11 WHERE category_id = 11;
+ROLLBACK;
+
+\echo ''
+\echo '-- N28: a category under its own subcategory      [expect: 23514 check_violation]'
+-- RN-33: category 1 is the parent of 11, so 1 under 11 closes a cycle;
+-- trg_category_no_cycle refuses it as category_no_cycle (#253).
+BEGIN;
+UPDATE category SET parent_category_id = 11 WHERE category_id = 1;
+ROLLBACK;
+
+\echo ''
 \echo '-- N14: RESTRICT, deleting a customer with sales [expect: 23503 foreign_key_violation]'
 BEGIN;
 DELETE FROM customer WHERE customer_id = '00000000-0000-0000-0000-000000000001';
@@ -287,6 +305,22 @@ BEGIN;
 INSERT INTO experiment (experiment_id, name, campaign_id, target_metric, starts_on,
                          conversion_window_days, data_origin)
 VALUES (9011, 'Bad origin', 1, 'CONVERSION', DATE '2026-01-01', 14, 'FAKE');
+ROLLBACK;
+
+\echo ''
+\echo '-- N26: deleting a sale an experiment counted     [expect: 23001 restrict_violation]'
+-- data-model.md, Delete rules: experiment_conversion is a durable event (#255).
+BEGIN;
+DELETE FROM transaction
+WHERE transaction_id = (SELECT transaction_id FROM experiment_conversion ORDER BY conversion_id LIMIT 1);
+ROLLBACK;
+
+\echo ''
+\echo '-- N29: renaming a role code                      [expect: 23514 check_violation]'
+-- RN-01 (#252): the permission matrix is keyed by the code and the
+-- single-administrator index by role_id, so codes are immutable.
+BEGIN;
+UPDATE role SET code = 'ROOT' WHERE role_id = 1;
 ROLLBACK;
 
 \echo ''

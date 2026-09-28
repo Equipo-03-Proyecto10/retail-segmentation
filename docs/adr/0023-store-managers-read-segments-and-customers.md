@@ -1,6 +1,6 @@
 # ADR-0023 — Store managers hold `segment.read`, and so read customers and segments
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #280
 **Supersedes:** ADR-0010, in part — only its consequence that `segment.read` keeps `STORE_MANAGER` out of the customer directory

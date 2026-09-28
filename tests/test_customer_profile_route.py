@@ -116,6 +116,7 @@ def _rfm_with(**overrides) -> RfmSnapshot:
 def _profile(**overrides) -> ConsumptionProfile:
     defaults = dict(
         customer_id=_ID,
+        customer_name="Ada Lovelace",
         window_days=180,
         window_start=_START,
         window_end=_END,
@@ -147,10 +148,17 @@ def _open(
 ) -> tuple[object, Mock]:
     """Sign in, give the page a profile, request the URL. Returns the response
     and the fake `build_profile`, so a test can inspect how it was called."""
-    fake = Mock(return_value=profile if profile is not None else _profile())
+    selected_customer = customer or _customer()
+    fake = Mock(
+        return_value=(
+            profile
+            if profile is not None
+            else _profile(customer_name=selected_customer.name)
+        )
+    )
     monkeypatch.setattr("web.routes.catalog.build_profile", fake)
     monkeypatch.setattr(
-        "web.routes.catalog.get_customer", lambda _c, _id: customer or _customer()
+        "web.routes.catalog.get_customer", lambda _c, _id: selected_customer
     )
     client = app.test_client()
     _sign_in(client, role)
@@ -295,6 +303,34 @@ def test_a_chosen_window_reaches_the_service(
     assert fake.call_args.kwargs["window_days"] == 30
 
 
+def test_the_success_path_looks_the_customer_up_once(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    customer_lookup = Mock(return_value=_customer())
+    profile = _profile()
+
+    def build_with_lookup(connection, customer_id, *, window_days):
+        customer_lookup(connection, customer_id)
+        return profile
+
+    monkeypatch.setattr("web.routes.catalog.build_profile", build_with_lookup)
+    monkeypatch.setattr("web.routes.catalog.get_customer", customer_lookup)
+    client = app.test_client()
+    _sign_in(client)
+
+    assert client.get(_URL).status_code == 200
+    customer_lookup.assert_called_once()
+
+
+def test_the_window_limits_come_from_the_route_constants(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("web.routes.catalog.MAX_WINDOW_DAYS", 999)
+    response, _ = _open(app, monkeypatch)
+
+    assert "Enter a whole number between 1 and 999." in response.get_data(as_text=True)
+
+
 @pytest.mark.parametrize("raw", ["abc", "0", "-5", "3651", "", "1.5"])
 def test_a_window_the_segment_run_would_refuse_is_a_400_that_explains_itself(
     app: Flask, monkeypatch: pytest.MonkeyPatch, raw: str
@@ -422,14 +458,13 @@ def test_a_customer_the_latest_run_left_unassigned_holds_no_rfm_values(
 def test_an_unknown_customer_is_a_404(
     app: Flask, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    fake = Mock()
+    fake = Mock(side_effect=UnknownCustomer)
     monkeypatch.setattr("web.routes.catalog.build_profile", fake)
-    monkeypatch.setattr("web.routes.catalog.get_customer", lambda _c, _id: None)
     client = app.test_client()
     _sign_in(client)
 
     assert client.get(_URL).status_code == 404
-    fake.assert_not_called()
+    fake.assert_called_once()
 
 
 def test_a_customer_the_service_refuses_is_a_404(
@@ -438,7 +473,6 @@ def test_a_customer_the_service_refuses_is_a_404(
     monkeypatch.setattr(
         "web.routes.catalog.build_profile", Mock(side_effect=UnknownCustomer)
     )
-    monkeypatch.setattr("web.routes.catalog.get_customer", lambda _c, _id: _customer())
     client = app.test_client()
     _sign_in(client)
 

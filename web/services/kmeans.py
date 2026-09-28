@@ -112,7 +112,8 @@ class KMeansFit:
 
     `customer_ids`, `points` and `assignments` are aligned and ordered by customer
     id. `assignments[i]` is the cluster number of customer `customer_ids[i]`, and
-    each centroid is the mean of exactly the customers assigned to it.
+    assignments are the nearest-final-centroid partition, except when the empty
+    cluster policy must move a customer to keep every cluster represented.
     """
 
     params: KMeansParams
@@ -320,8 +321,10 @@ def fit(
     """Cluster customers with Lloyd's algorithm.
 
     Customers are sorted by id first, so the result depends on the data and the
-    parameters and on nothing else. Raises TooFewCustomers when there are fewer
-    customers than k.
+    parameters and on nothing else. After the last centroid update, one final
+    assignment step makes the stored partition and its quality measures correspond
+    to the final centroids. Raises TooFewCustomers when there are fewer customers
+    than k.
     """
     if len(customer_ids) != len(points):
         raise ValueError("Customers and points must pair up one to one.")
@@ -358,6 +361,8 @@ def fit(
             break
 
     converged = shift <= params.tolerance
+    assignments = [nearest(point, centroids) for point in data]
+    events += refill_empty_clusters(data, assignments, centroids)
     sizes = [0] * k
     for cluster in assignments:
         sizes[cluster] += 1

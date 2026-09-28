@@ -188,6 +188,46 @@ def test_the_same_data_seed_and_parameters_give_the_same_partition() -> None:
         assert again.iterations == first.iterations
 
 
+def test_stored_assignments_use_the_nearest_final_centroids() -> None:
+    points = [
+        (0.370594, 0.907625, 0.396027),
+        (0.206053, 0.817798, 0.758784),
+        (0.698283, 0.021814, 0.407230),
+    ]
+
+    result = fit(_ids(3), points, KMeansParams(k=2, seed=7, tolerance=0.5))
+
+    assert result.converged is True
+    assert result.assignments == tuple(
+        nearest(point, result.centroids) for point in result.points
+    )
+
+
+@pytest.mark.parametrize("max_iterations", [1, 100])
+def test_seeded_random_fits_store_the_nearest_final_centroid_partition(
+    max_iterations,
+) -> None:
+    for seed in range(12):
+        ids, points = _cloud(30, seed)
+        result = fit(
+            ids,
+            points,
+            KMeansParams(
+                k=4,
+                seed=seed,
+                max_iterations=max_iterations,
+                tolerance=0.0,
+            ),
+        )
+
+        assert result.empty_cluster_events == 0
+        assert result.assignments == tuple(
+            nearest(point, result.centroids) for point in result.points
+        )
+        if max_iterations == 1:
+            assert result.stopped_on == "iteration_limit"
+
+
 def test_the_partition_does_not_depend_on_the_order_customers_arrive_in() -> None:
     """The database returns rows in whatever order it likes. The fit sorts by
     customer id before it does anything, so that order cannot reach the result."""
@@ -318,9 +358,8 @@ def test_a_fit_that_converges_on_its_last_allowed_iteration_counts_as_converged(
     assert one_short.converged is False and one_short.stopped_on == "iteration_limit"
 
 
-def test_the_partition_a_non_converged_fit_returns_is_still_a_consistent_one() -> None:
-    """Whether or not it converged, every customer is in exactly one cluster and
-    each centroid is the mean of its members."""
+def test_the_partition_a_non_converged_fit_returns_uses_final_centroids() -> None:
+    """An iteration-limit stop still finishes with a final assignment step."""
     ids, points = _cloud(40, 9)
 
     result = fit(
@@ -328,14 +367,9 @@ def test_the_partition_a_non_converged_fit_returns_is_still_a_consistent_one() -
     )
 
     assert len(result.assignments) == 40
-    for cluster in range(3):
-        members = [
-            p
-            for p, a in zip(result.points, result.assignments, strict=True)
-            if a == cluster
-        ]
-        mean = tuple(sum(p[d] for p in members) / len(members) for d in range(3))
-        assert result.centroids[cluster] == pytest.approx(mean)
+    assert result.assignments == tuple(
+        nearest(point, result.centroids) for point in result.points
+    )
 
 
 # ---------- empty clusters ----------

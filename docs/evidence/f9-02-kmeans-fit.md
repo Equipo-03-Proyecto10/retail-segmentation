@@ -5,6 +5,9 @@ fit is written in the application without a scientific-computing dependency
 (ADR-0021), it is reproducible from what the run records, and each of its three
 numerical hazards (an empty cluster, a fit that does not converge, a tie between
 equally distant centroids) has a defined behaviour that is recorded and tested.
+The stored partition is assigned once more after the last centroid update, so its
+labels and quality measures use the nearest final centroids rather than the centres
+from the preceding iteration.
 
 Covers the acceptance criteria on F9-02 and business rule RN-37. It builds on F9-01's
 pipeline. No schema change, no new dependency, no new permission, and no page: how a

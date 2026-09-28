@@ -60,6 +60,32 @@ developer machine, which
 [ADR-0015](../adr/0015-containers-are-a-development-path-only.md) settles as the
 right place for it, and which the team accepted on 2026-09-07.
 
+## Phase 8 — sales ingestion and consumption profile
+
+| Document | What it records |
+|---|---|
+| [F8-03](f8-03-consumption-profile.md) | The consumption profile computed over accepted sales, cross-checked against independent queries on the seeded database, with its ties, empty case and single-assignment case reproduced |
+| [F8-04](f8-04-consumption-profile-view.md) | The consumption profile page at 375 px and 1440 px: every measure with its unit and window, the no-purchase-history case, and the refusal of a role without `segment.read` |
+| [F8-05](f8-05-consumption-shifts.md) | Channel, store and category shifts between two stated periods, cross-checked against an independent recomputation on the seeded database, with absence, ties and the shared boundary instant reproduced |
+
+## Phase 9 — segmentation modelling
+
+| Document | What it records |
+|---|---|
+| [F9-01](f9-01-rfm-rules-adapter.md) | The rule-based scoring as an adapter behind a method-agnostic pipeline: the new writes compared with the old single statement on the seeded database, the method domain enforced by the database, and a consumer that is never told the method |
+| [F9-02](f9-02-kmeans-fit.md) | The K-means fit written in the application: checked against exact rational arithmetic and scikit-learn, its empty-cluster, non-convergence and tie behaviours on real rows, and the parameters and quality measures a run records |
+| [F9-03](f9-03-cluster-labels.md) | K-means clusters mapped to the stable labels by ADR-0018's deterministic order: checked against the stored rows, 500 renamings of a real partition, a refused k, and two runs that number the same partition differently |
+| [F9-04](f9-04-model-comparison.md) | The model comparison page at 375 px and 1440 px: per-label populations and per-customer agreement checked against independent SQL, a run whose labels are copied giving 100% agreement whatever its method, the empty and error states, and the refusal of a role without `segment.read` |
+
+## Phase 10 — recommendations
+
+| Document | What it records |
+|---|---|
+| [F10-01](f10-01-recommendations.md) | Product recommendations with a stated reason for each: the recommendations of all 30 seeded customers checked against an independently written query, stock in the usual store enforced, no segment and no usual store stated instead of substituted, and only the stable label read |
+| [F10-02](f10-02-customer-recommendations.md) | The customer recommendations page at 375 px and 1440 px: product, store, stock and reason on each recommendation, a product leaving the list when its stock reaches zero and the page is reloaded, the explained empty states, and the refusal of a role without `segment.read` |
+| [Category subtree](recommendations-category-subtree.md) | #277: a preferred or bought category covers the categories below it, checked against an independent recursive query on all 30 seeded customers and shown on a subcategory product stocked in a rolled-back transaction |
+| [Store managers read segments](store-manager-segment-read.md) | #280 and ADR-0023: `STORE_MANAGER` holds `segment.read`, reaching every customer and segment surface (recommendations at 375 px and 1440 px) and still refused every write, while `INVENTORY_PLANNER` stays out |
+
 ## Review passes
 
 These follow a specific review rather than a story.
@@ -69,3 +95,4 @@ These follow a specific review rather than a story.
 | [Instance findings](instance-findings-fixes.md) | The 17 findings of the 2026-09-06 browser review, and their disposition |
 | [Navigation and upload hotfix](navigation-upload-hotfix.md) | The integration review of PR #132 |
 | [F5-03 resolution](review-findings-resolution.md) | Resolution of #157–#165, and the ADR acceptance basis |
+| [Catalog label reads](catalog-label-reads.md) | #272, found reviewing F9-03: the customer pages read the label, so a K-means assignment is no longer shown as *Unassigned*, before and after on a real K-means run at 375 px and 1440 px |

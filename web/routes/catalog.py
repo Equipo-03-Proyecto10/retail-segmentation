@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from flask import Blueprint, Response, abort, render_template, request
+from flask import Blueprint, Response, abort, make_response, render_template, request
 
 from web.db import get_connection
 from web.db.categories import get_category
@@ -28,12 +28,26 @@ from web.db.customers import (
 )
 from web.db.inventory import LOW_STOCK_THRESHOLD, list_stock
 from web.db.products import get_product, list_products
-from web.db.segments import get_segment, get_segment_rule, list_segments
+from web.db.segments import (
+    get_current_assignment,
+    get_label_name,
+    get_segment,
+    get_segment_rule,
+    list_segments,
+)
 from web.db.stores import list_all_stores
 from web.middleware.authz import CATALOG_READ, SEGMENT_READ, requires
 from web.routes.pagination import redirect_last_page
 from web.services.catalog import parse_pagination
+from web.services.consumption_profile import UnknownCustomer, build_profile
 from web.services.pagination import page_count
+from web.services.recommendations import recommend
+from web.services.segmentation import (
+    MAX_WINDOW_DAYS,
+    MIN_WINDOW_DAYS,
+    InvalidWindow,
+    parse_window,
+)
 
 bp = Blueprint("catalog", __name__, url_prefix="/catalog")
 
@@ -121,18 +135,136 @@ def customer_detail(customer_id: UUID) -> str:
         abort(404)
 
     channel = get_channel(connection, customer.registration_channel_id)
+    # The label is what every method writes (ADR-0018), so it is what the page
+    # shows; a segment exists only for a rule-based assignment (#272).
+    assignment = get_current_assignment(connection, customer.customer_id)
+    label = (
+        get_label_name(connection, assignment.label_code)
+        if assignment is not None and assignment.label_code is not None
+        else None
+    )
     segment = (
-        get_segment(connection, customer.current_segment_id)
-        if customer.current_segment_id is not None
+        get_segment(connection, assignment.segment_id)
+        if assignment is not None and assignment.segment_id is not None
         else None
     )
     return render_template(
         "catalog/customer_detail.html",
         customer=customer,
         registration_channel=channel,
+        label=label,
         segment=segment,
         interests=list_interest_categories(connection, customer.customer_id),
         preferred_channels=list_preferred_channels(connection, customer.customer_id),
+    )
+
+
+@bp.get("/customers/<uuid:customer_id>/profile")
+@requires(SEGMENT_READ)
+def customer_profile(customer_id: UUID) -> str | tuple[str, int]:
+    """One customer's consumption profile (F8-04).
+
+    Gated on segment.read like the rest of the customer surface (ADR-0010,
+    F4-07's permission map). The window is a query parameter read with the same
+    parser the segment run uses, so the two refuse the same inputs. A window
+    the parser refuses answers 400 and explains itself; the profile is not
+    computed at all.
+    """
+    connection = get_connection()
+    raw_window = request.args.get("window")
+    try:
+        window_days = parse_window(raw_window)
+    except InvalidWindow as refusal:
+        customer = get_customer(connection, customer_id)
+        if customer is None:
+            abort(404)
+        return (
+            render_template(
+                "catalog/customer_profile.html",
+                customer_id=customer.customer_id,
+                customer_name=customer.name,
+                profile=None,
+                window=raw_window,
+                error=str(refusal),
+                min_window=MIN_WINDOW_DAYS,
+                max_window=MAX_WINDOW_DAYS,
+            ),
+            400,
+        )
+
+    try:
+        profile = build_profile(connection, customer_id, window_days=window_days)
+    except UnknownCustomer:
+        abort(404)
+
+    return render_template(
+        "catalog/customer_profile.html",
+        customer_id=profile.customer_id,
+        customer_name=profile.customer_name,
+        profile=profile,
+        window=window_days,
+        error=None,
+        min_window=MIN_WINDOW_DAYS,
+        max_window=MAX_WINDOW_DAYS,
+    )
+
+
+@bp.get("/customers/<uuid:customer_id>/recommendations")
+@requires(SEGMENT_READ)
+def customer_recommendations(customer_id: UUID) -> tuple[Response, int]:
+    """One customer's product recommendations, with the reason for each (F10-02).
+
+    Gated on segment.read like the rest of the customer surface (ADR-0010, F4-07's
+    permission map). Computed afresh on every request, so a product whose stock
+    reaches zero is gone on the next reload, and the response is marked `no-store`
+    so a browser does not show an older list. The window is read with the parser
+    the segment run uses, and a customer with nothing to recommend is told why.
+    """
+    connection = get_connection()
+    raw_window = request.args.get("window")
+
+    def page(status_code: int, window: object, **context) -> tuple[Response, int]:
+        response = make_response(
+            render_template(
+                "catalog/customer_recommendations.html",
+                customer_id=customer_id,
+                window=window,
+                min_window=MIN_WINDOW_DAYS,
+                max_window=MAX_WINDOW_DAYS,
+                **context,
+            )
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response, status_code
+
+    def refused(refusal: InvalidWindow) -> tuple[Response, int]:
+        customer = get_customer(connection, customer_id)
+        if customer is None:
+            abort(404)
+        return page(
+            400,
+            raw_window,
+            customer_name=customer.name,
+            result=None,
+            error=str(refusal),
+        )
+
+    try:
+        window_days = parse_window(raw_window)
+    except InvalidWindow as refusal:
+        return refused(refusal)
+
+    try:
+        result = recommend(connection, customer_id, window_days=window_days)
+    except UnknownCustomer:
+        abort(404)
+
+    return page(
+        200,
+        window_days,
+        customer_name=result.customer_name,
+        result=result,
+        error=None,
     )
 
 

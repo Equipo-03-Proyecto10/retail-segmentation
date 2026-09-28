@@ -1,9 +1,11 @@
-"""The segment recalculation (#102, F3-10).
+"""The segment recalculation (#102, F3-10, F7-02).
 
-The scoring and matching are one SQL statement, and what it actually does over
-real sales is verified against PostgreSQL in
-docs/evidence/f3-10-segment-run.md — including the criterion no unit test can
-reach, that a second run over the same sales writes nothing at all.
+The scoring and matching are one SQL statement. What it did over real sales
+before F7-02 is recorded against PostgreSQL in
+docs/evidence/f3-10-segment-run.md. Since F7-02 (ADR-0017) a repeated run over
+the same sales still changes no assignment, but it records one history row per
+customer instead of writing nothing, and no unit test can reach either half
+of that.
 
 What these tests cover is the application around it: who may run it, what a
 window is allowed to be, and that the page reports what the run did.
@@ -19,7 +21,6 @@ from flask.testing import FlaskClient
 
 from web.app import create_app
 from web.config import Config
-from web.db.segments import RecalculationCounts, recalculate_segments
 from web.services.segmentation import (
     DEFAULT_WINDOW_DAYS,
     MAX_WINDOW_DAYS,
@@ -127,7 +128,7 @@ def test_an_auditor_may_read_the_result_but_not_cause_one(app: Flask) -> None:
         ).status_code
         == 403
     )
-    assert client.get("/audit/?entity=customer").status_code == 200
+    assert client.get("/audit/?entity=customer_segment_history").status_code == 200
 
 
 def test_signed_out_it_sends_you_to_sign_in(app: Flask) -> None:
@@ -212,10 +213,10 @@ def test_the_result_page_reports_what_the_run_did(
     assert "0.04s" in body, "how long it took"
 
 
-def test_a_run_that_changed_nothing_says_so(
+def test_a_run_with_no_segment_changes_reports_recorded_history(
     app: Flask, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The second run over the same sales, which must also audit nothing."""
+    """The second run records history even when every assignment is unchanged."""
     monkeypatch.setattr(
         "web.routes.segment_run.run",
         lambda _c, _w: _result(reassigned=0, cleared=0),
@@ -229,76 +230,51 @@ def test_a_run_that_changed_nothing_says_so(
         )
     )
 
-    assert "Nothing changed" in body
-    assert "audit log has no new entries" in body
+    assert "No segment changed" in body
+    assert "The run was still recorded with one result row per customer." in body
+    assert "Nothing was written" not in body
+    assert "no new entries" not in body
 
 
-def test_changed_nothing_is_about_writes_not_about_customers() -> None:
-    """A run can process every customer and still write nothing."""
-    assert _result(processed=30, assigned=18, reassigned=0, cleared=0).changed_nothing
-    assert not _result(reassigned=1, cleared=0).changed_nothing
-    assert not _result(reassigned=0, cleared=1).changed_nothing
+def test_no_segment_changed_is_about_assignment_changes() -> None:
+    """The result count, not whether run history was written, drives the flag."""
+    assert _result(
+        processed=30, assigned=18, reassigned=0, cleared=0
+    ).no_segment_changed
+    assert not _result(reassigned=1, cleared=0).no_segment_changed
+    assert not _result(reassigned=0, cleared=1).no_segment_changed
 
 
-def test_the_run_commits_so_the_audit_entries_survive() -> None:
+def test_the_run_commits_so_the_audit_entries_survive(monkeypatch) -> None:
+    """One commit, after every write: the audit rows the triggers write are part
+    of the run, so a caller that forgot to commit would roll back the assignment
+    and the record of having made it."""
+    from web.db.segments import ScoredCustomer
+
+    rows = [
+        ScoredCustomer(f"c{n}", None, None, None, None, None, None, None, None)
+        for n in range(30)
+    ]
+    for name, value in {
+        "score_rfm_rules": Mock(return_value=rows),
+        "read_open_assignments": Mock(return_value={}),
+        "create_run": Mock(return_value=1),
+        "close_open_assignments": Mock(),
+        "insert_assignments": Mock(),
+    }.items():
+        monkeypatch.setattr(f"web.services.segmentation.{name}", value)
     connection = MagicMock()
-    connection.cursor.return_value.__enter__.return_value.fetchone.return_value = (
-        30,
-        18,
-        12,
-        30,
-        0,
-    )
 
     result = run(connection, 180)
 
     connection.commit.assert_called_once_with()
-    assert (result.processed, result.assigned, result.unmatched) == (30, 18, 12)
+    assert (result.processed, result.assigned, result.unmatched) == (30, 0, 30)
     assert result.seconds >= 0
 
 
-# ---------- the statement itself ----------
-
-
-def test_the_window_is_a_parameter_and_never_interpolated() -> None:
-    connection = MagicMock()
-    cursor = connection.cursor.return_value.__enter__.return_value
-    cursor.fetchone.return_value = (0, 0, 0, 0, 0)
-
-    recalculate_segments(connection, 90)
-
-    statement, parameters = cursor.execute.call_args.args
-    assert parameters == (90, 5, 5, 5, 5, 5, 5)
-    assert "90" not in statement
-
-
-def test_the_statement_writes_only_where_the_segment_actually_changes() -> None:
-    """What keeps the second run silent, and the audit log honest."""
-    from web.db.segments import _RECALCULATE
-
-    assert "IS DISTINCT FROM" in _RECALCULATE
-
-
-def test_every_quintile_is_ordered_deterministically() -> None:
-    """Ties broken by customer_id, or two runs could disagree and both be right."""
-    from web.db.segments import _RECALCULATE
-
-    windows = [line for line in _RECALCULATE.splitlines() if "OVER (ORDER BY" in line]
-
-    assert len(windows) == 3
-    assert all(", customer_id)" in line for line in windows)
-
-
-def test_the_counts_come_back_in_the_order_the_statement_selects_them() -> None:
-    connection = MagicMock()
-    cursor = connection.cursor.return_value.__enter__.return_value
-    cursor.fetchone.return_value = (30, 18, 12, 7, 3)
-
-    counts = recalculate_segments(connection, 180)
-
-    assert counts == RecalculationCounts(
-        processed=30, assigned=18, unmatched=12, reassigned=7, cleared=3
-    )
+# The statements themselves are covered in tests/test_segments_pipeline_db.py:
+# the window is a parameter, every quintile is ordered deterministically, and the
+# writes that record a run are parameterized.
 
 
 @pytest.mark.parametrize("data", [{}, {"window": ""}, {"window": "   "}])

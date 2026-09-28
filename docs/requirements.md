@@ -74,15 +74,15 @@ links here rather than repeating it, because two copies of a matrix drift.
 `full` create, read, update and delete · `read` read only · `own` only their own
 row · `—` no access.
 
-| Role | Catalogs | Users | Segments and rules | Campaigns | Segment run | Reports | Audit log |
-|---|---|---|---|---|---|---|---|
-| `ADMIN` | full | full | full | full | run | read | read |
-| `ANALYST` | read | — | read | read | — | read | — |
-| `STORE_MANAGER` | read | — | — | — | — | read, own store | — |
-| `MARKETING` | read | — | read | full | — | read | — |
-| `INVENTORY_PLANNER` | read, `inventory` write | — | — | — | — | read | — |
-| `AUDITOR` | read | read | read | read | — | read | read |
-| `CUSTOMER` | — | own | — | — | — | — | — |
+| Role | Catalogs | Users | Segments and rules | Campaigns | Segment run | Sales ingestion | Reports | Audit log |
+|---|---|---|---|---|---|---|---|---|
+| `ADMIN` | full | full | full | full | run | ingest | read | read |
+| `ANALYST` | read | — | read | read | — | — | read | — |
+| `STORE_MANAGER` | read | — | read | — | — | — | read, own store | — |
+| `MARKETING` | read | — | read | full | — | — | read | — |
+| `INVENTORY_PLANNER` | read, `inventory` write | — | — | — | — | — | read | — |
+| `AUDITOR` | read | read | read | read | — | — | read | read |
+| `CUSTOMER` | — | own | — | — | — | — | — | — |
 
 Three things this matrix is deliberately strict about:
 
@@ -105,11 +105,14 @@ F3-11 (#103). Why the matrix is code rather than two more tables:
 #65) gives every `catalog` reader a read-only view of stock per store and
 product, and every `segment` reader a read-only view of the customer directory
 and segment membership — customer data is the substrate of segmentation, so it
-follows `segment.read` rather than `catalog.read`. This keeps `STORE_MANAGER`
-and `INVENTORY_PLANNER` out of the customer directory.
+follows `segment.read` rather than `catalog.read`. This keeps
+`INVENTORY_PLANNER` out of the customer directory.
 [ADR-0010](adr/0010-the-consultation-module-is-a-separate-read-only-blueprint.md)
 records why, and why `STORE_MANAGER`'s "own store" scoping is a query filter
-rather than row-level security (`app_user` has no store).
+rather than row-level security (`app_user` has no store). `STORE_MANAGER` holds
+`segment.read` since F10-02, so a store manager can act on a customer's
+recommendations at the counter, and reads the whole directory:
+[ADR-0023](adr/0023-store-managers-read-segments-and-customers.md).
 
 ## 4. Traceability
 
@@ -118,9 +121,9 @@ is a gap, and the point of the table is that the gap is visible.
 
 | Demonstration item | Requirements | Story | Issue | State |
 |---|---|---|---|---|
-| Inicio de sesión | RF-01, RF-02 | F3-03 | #63 | Built — login, logout and argon2 password hashing |
+| Inicio de sesión | RF-01, RF-02 | F3-03 | #63, #251 | Built — login, logout and argon2 password hashing; server-side sessions revoked on sign-out (ADR-0022, #251) |
 | Acceso diferenciado por perfil | RF-03, RF-04, RF-05 | F4-01, F4-02 | #69, #70 | Built — the middleware (#69) and the single administrator (#70) |
-| Operación de catálogos | RF-06, RF-07, RF-08, RF-09 | F3-04, F3-06, F3-07 | #64, #66, #67 | Built — CRUD over every catalog (#64), user management (#66) and image upload (#67) |
+| Operación de catálogos | RF-06, RF-07, RF-08, RF-09 | F3-04, F3-06, F3-07 | #64, #66, #67, #251 | Built — CRUD over every catalog (#64), user management (#66) and image upload (#67); deactivation ends open sessions (#251) |
 | Ejecución de un proceso principal | RF-12 | F3-10 | #102 | Built — quintile R/F/M over a configurable window |
 | Almacenamiento en PostgreSQL | RNF-08, RNF-09, RNF-10 | F2-04, F2-05, F2-06 | #57, #58, #59 | Built — the three scripts, verified in [`evidence/f1-04-f1-05-postgresql-access.md`](evidence/f1-04-f1-05-postgresql-access.md) |
 | Consulta de información | RF-10, RF-11, RF-13 | F3-05 | #65 | Built — the `/catalog` consultation module: products, customers, stock and segment membership, read-only |

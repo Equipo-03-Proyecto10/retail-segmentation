@@ -25,6 +25,7 @@ from uuid import UUID
 from psycopg import Connection
 from psycopg.errors import UniqueViolation
 
+from web.db.sessions import revoke_user_sessions
 from web.db.transactions import atomic
 from web.db.users import (
     ADMINISTRATOR_ROLE_CODE,
@@ -182,6 +183,9 @@ def set_active(connection: Connection, user_id: UUID | str, is_active: bool) -> 
         _refuse_leaving_nobody(connection)
 
     update_active(connection, user.user_id, is_active)
+    if not is_active:
+        # RF-09 on the very next request, not at the next sign-in (#251).
+        revoke_user_sessions(connection, user.user_id)
 
 
 @atomic

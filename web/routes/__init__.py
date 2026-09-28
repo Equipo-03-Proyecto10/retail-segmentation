@@ -9,9 +9,14 @@ from flask import Flask
 from web.routes.admin import bp as admin_bp
 from web.routes.audit import bp as audit_bp
 from web.routes.auth import bp as auth_bp
+from web.routes.campaigns import bp as campaigns_bp
 from web.routes.catalog import bp as catalog_bp
 from web.routes.home import bp as home_bp
-from web.routes.placeholders import campaigns_bp, reports_bp
+from web.routes.migration_explanation import bp as migration_explanation_bp
+from web.routes.migration_matrix import bp as migration_matrix_bp
+from web.routes.model_comparison import bp as model_comparison_bp
+from web.routes.placeholders import reports_bp
+from web.routes.run_history import bp as run_history_bp
 from web.routes.segment_run import bp as segment_run_bp
 
 
@@ -23,5 +28,9 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(audit_bp)
     app.register_blueprint(catalog_bp)
     app.register_blueprint(segment_run_bp)
+    app.register_blueprint(run_history_bp)
+    app.register_blueprint(migration_matrix_bp)
+    app.register_blueprint(migration_explanation_bp)
+    app.register_blueprint(model_comparison_bp)
     app.register_blueprint(campaigns_bp)
     app.register_blueprint(reports_bp)

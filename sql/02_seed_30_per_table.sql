@@ -10,10 +10,11 @@
 --    dependent tables can reference customers and users inside this same
 --    script, and so that a reload produces the same database twice.
 --
--- 2) role and channel hold fewer than 30 rows. Their domains are seven roles
---    and five sales channels; padding them with filler to reach the minimum
---    would make the seed misrepresent the business. Both are listed in
---    sql/seed-exempt.txt with the reason, which is the mechanism CI reads.
+-- 2) role, channel and segment_label hold fewer than 30 rows. Their domains
+--    are seven roles, five sales channels and six ordered business labels;
+--    padding them with filler to reach the minimum would make the seed
+--    misrepresent the business. All three are listed in sql/seed-exempt.txt
+--    with the reason, which is the mechanism CI reads.
 --
 -- 3) audit_log is not inserted into by hand. The triggers in 01_schema.sql
 --    fill it as this script loads the audited tables, which is also what
@@ -73,10 +74,23 @@ SELECT n,
        1 + ((n*3-1) % 3), 3 + ((n*3-1) % 3)
 FROM generate_series(1,30) n;
 
--- ---------- segment (30, one per rule) ----------
-INSERT INTO segment (segment_id, name, description, rule_id, valid_from, valid_to)
-SELECT n, 'Segment ' || n, 'Segment derived from RULE_' || lpad(n::text,3,'0'), n, DATE '2026-01-01', NULL
+-- ---------- segment_label (6, best to worst — ADR-0018) ----------
+-- Inserted before segment: segment.label_code references this vocabulary.
+INSERT INTO segment_label (label_code, ordinal_position, name, description) VALUES
+    ('CHAMPION',   1, 'Champion',    'Highest recency, frequency and monetary value'),
+    ('LOYAL',      2, 'Loyal',       'Buys often and recently, consistent spend'),
+    ('POTENTIAL',  3, 'Potential',   'Recent customer with room to grow frequency'),
+    ('AT_RISK',    4, 'At risk',     'Used to buy often, recency has slipped'),
+    ('HIBERNATING',5, 'Hibernating', 'Low recency, frequency and monetary value'),
+    ('LOST',       6, 'Lost',        'No recent activity across all three measures');
+
+-- ---------- segment (30, one per rule, 5 per label) ----------
+INSERT INTO segment (segment_id, name, description, rule_id, label_code, valid_from, valid_to)
+SELECT n, 'Segment ' || n, 'Segment derived from RULE_' || lpad(n::text,3,'0'), n,
+       (ARRAY['CHAMPION','LOYAL','POTENTIAL','AT_RISK','HIBERNATING','LOST'])[1+((n-1)%6)],
+       DATE '2026-01-01', NULL
 FROM generate_series(1,30) n;
+
 
 -- ---------- app_user (30, exactly one administrator) ----------
 -- AGENTS.md: there is exactly one administrator. User 1 holds role 1 and no
@@ -102,16 +116,99 @@ FROM generate_series(1,30) n;
 -- user_id stays NULL: a customer record and an application account are
 -- separate things, and linking them is what F3-06 does for the loyalty
 -- customers who actually sign in.
-INSERT INTO customer (customer_id, user_id, name, email, phone, registration_channel_id, current_segment_id, registered_on)
+INSERT INTO customer (customer_id, user_id, name, email, phone, registration_channel_id, registered_on)
 SELECT ('00000000-0000-0000-0000-' || lpad(n::text,12,'0'))::uuid,
        NULL,
        'Demo Customer ' || n,
        'customer' || n || '@mosaiq-demo.com',
        '55' || lpad(n::text,8,'0'),
        1 + ((n-1) % 5),
-       1 + ((n-1) % 30),
        CURRENT_DATE - (n*7 || ' days')::interval
 FROM generate_series(1,30) n;
+
+-- ---------- segmentation_run + customer_segment_history (F7-02) ----------
+-- Every run carries one row per customer, as ADR-0017's run-count compliance
+-- query requires. A four-customer window advances two places per run; odd
+-- customers move one label down and even customers one label up, spreading
+-- three or four moves across every pair while most customers remain stable.
+-- Customers 20 and 10 are unassigned in runs 8 and 20 respectively, so both
+-- demonstrate assigned-to-unassigned-to-assigned transitions (RN-21).
+-- Scores sit inside the assigned segment's rule band, so every move also
+-- shows R/F/M deltas (F7-06); they and the raw values are illustrative, not
+-- derived from the seeded transactions. executed_by stays NULL: the seed
+-- script is not the administrator running a recalculation, the same
+-- reasoning app_user's own seed comment gives for leaving audit_log.user_id
+-- NULL on seed rows.
+INSERT INTO segmentation_run (method, window_days, parameters, customer_count, run_at)
+SELECT 'RFM_RULES', 180, '{"window_days": 180}'::jsonb, 30,
+       now() - (n || ' days')::interval
+FROM generate_series(29, 1, -1) n;
+
+INSERT INTO segmentation_run (method, window_days, parameters, customer_count, run_at)
+VALUES ('RFM_RULES', 180, '{"window_days": 180}'::jsonb, 30, now());
+
+INSERT INTO customer_segment_history
+    (customer_id, run_id, segment_id, label_code,
+     recency_last_purchase_at, frequency_count, monetary_total,
+     r_score, f_score, m_score, valid_from, valid_to)
+WITH ordered_runs AS (
+    SELECT run_id,
+           run_at,
+           row_number() OVER (ORDER BY run_at, run_id) AS run_number,
+           lead(run_at) OVER (ORDER BY run_at, run_id) AS next_run_at
+    FROM segmentation_run
+),
+ordered_customers AS (
+    SELECT customer_id,
+           row_number() OVER (ORDER BY customer_id) AS customer_number
+    FROM customer
+),
+assignments AS (
+    SELECT r.run_id,
+           r.run_at,
+           r.next_run_at,
+           r.run_number,
+           c.customer_id,
+           c.customer_number,
+           CASE
+               WHEN (c.customer_number = 20 AND r.run_number = 8)
+                 OR (c.customer_number = 10 AND r.run_number = 20) THEN NULL
+               WHEN mod(
+                        c.customer_number - 1
+                        - mod((r.run_number - 1) * 2, 30) + 30,
+                        30
+                    ) < 4
+                   THEN c.customer_number
+                        + CASE WHEN c.customer_number % 2 = 0 THEN -1 ELSE 1 END
+               ELSE c.customer_number
+           END AS segment_id
+    FROM ordered_runs AS r
+    CROSS JOIN ordered_customers AS c
+)
+SELECT a.customer_id,
+       a.run_id,
+       s.segment_id,
+       s.label_code,
+       CASE WHEN s.segment_id IS NOT NULL
+            THEN a.run_at
+                 - ((6 - sr.r_min) * 7 + mod(a.customer_number, 7)
+                    || ' days')::interval END,
+       CASE WHEN s.segment_id IS NOT NULL
+            THEN sr.f_min * 10 + mod(a.customer_number, 10) END,
+       CASE WHEN s.segment_id IS NOT NULL
+            THEN round(((sr.m_min
+                         + mod(s.segment_id - 1, sr.m_max - sr.m_min + 1)) * 100
+                        + a.customer_number * 2.5)::numeric, 2) END,
+       CASE WHEN s.segment_id IS NOT NULL THEN sr.r_min END,
+       CASE WHEN s.segment_id IS NOT NULL THEN sr.f_min END,
+       CASE WHEN s.segment_id IS NOT NULL
+            THEN sr.m_min
+                 + mod(s.segment_id - 1, sr.m_max - sr.m_min + 1) END,
+       a.run_at,
+       a.next_run_at
+FROM assignments AS a
+LEFT JOIN segment AS s ON s.segment_id = a.segment_id
+LEFT JOIN segment_rule AS sr ON sr.rule_id = s.rule_id;
 
 -- ---------- customer_preferred_channel (30 customers x 2 channels = 60) ----------
 INSERT INTO customer_preferred_channel (customer_id, channel_id)
@@ -142,8 +239,12 @@ FROM generate_series(1,40) n;
 -- ---------- transaction (300, spread over roughly six months) ----------
 -- Six months of history is what makes the deferred RFM work meaningful later:
 -- recency and frequency need a window to be measured over.
-INSERT INTO transaction (customer_id, store_id, channel_id, occurred_at, total)
-SELECT ('00000000-0000-0000-0000-' || lpad((1+((n-1)%30))::text,12,'0'))::uuid,
+--
+-- source_transaction_id mirrors the sales contract's identifier (F8-01): a
+-- deterministic, unique string per row, in the same spirit as product.sku.
+INSERT INTO transaction (source_transaction_id, customer_id, store_id, channel_id, occurred_at, total)
+SELECT 'TXN-' || lpad(n::text,8,'0'),
+       ('00000000-0000-0000-0000-' || lpad((1+((n-1)%30))::text,12,'0'))::uuid,
        1 + ((n*7) % 30),
        1 + ((n*3) % 5),
        now() - ((n % 180) || ' days')::interval,
@@ -159,19 +260,35 @@ SELECT t.transaction_id,
 FROM transaction t
 CROSS JOIN generate_series(0,1) d;
 
+-- ADR-0020: a header total is derived from its persisted lines, never supplied
+-- beside them. The insert above writes a placeholder; this makes every seeded
+-- total reconcile with its own lines (#254).
+UPDATE transaction AS t
+SET total = l.line_total
+FROM (
+    SELECT transaction_id, SUM(quantity * unit_price) AS line_total
+    FROM transaction_line
+    GROUP BY transaction_id
+) AS l
+WHERE l.transaction_id = t.transaction_id;
+
 -- ---------- campaign (30) ----------
-INSERT INTO campaign (campaign_id, name, segment_id, starts_on, ends_on, status)
-SELECT n, 'Campaign ' || n, n,
+INSERT INTO campaign (campaign_id, name, label_code, starts_on, ends_on, status)
+SELECT n, 'Campaign ' || n,
+       (ARRAY['CHAMPION','LOYAL','POTENTIAL','AT_RISK','HIBERNATING','LOST'])[1+((n-1)%6)],
        DATE '2026-01-01' + (n || ' days')::interval,
        DATE '2026-01-01' + ((n+30) || ' days')::interval,
        (ARRAY['DRAFT','ACTIVE','FINISHED','CANCELLED'])[1+((n-1)%4)]
 FROM generate_series(1,30) n;
 
 -- ---------- experiment (30) ----------
-INSERT INTO experiment (experiment_id, name, campaign_id, target_metric, starts_on, ends_on)
+INSERT INTO experiment (experiment_id, name, campaign_id, target_metric, starts_on, ends_on,
+                         conversion_window_days, data_origin)
 SELECT n, 'Experiment ' || n, n,
        (ARRAY['CONVERSION','AVERAGE_TICKET'])[1+((n-1)%2)],
-       DATE '2026-02-01', DATE '2026-03-01'
+       DATE '2026-02-01', DATE '2026-03-01',
+       7 + ((n-1) % 4) * 7,
+       (ARRAY['OBSERVED','SEEDED','INJECTED'])[1+((n-1)%3)]
 FROM generate_series(1,30) n;
 
 -- ---------- experiment_group (2 per experiment = 60) ----------
@@ -180,11 +297,38 @@ SELECT (n-1)*2 + 1, n, 'CONTROL' FROM generate_series(1,30) n
 UNION ALL
 SELECT (n-1)*2 + 2, n, 'TREATMENT' FROM generate_series(1,30) n;
 
--- ---------- experiment_group_customer (60 groups x 2 customers = 120) ----------
-INSERT INTO experiment_group_customer (group_id, customer_id)
-SELECT g, ('00000000-0000-0000-0000-' || lpad((1+((g*7+c) % 30))::text,12,'0'))::uuid
-FROM generate_series(1,60) g
-CROSS JOIN generate_series(0,1) c;
+-- ---------- experiment_assignment (4 per experiment = 120) ----------
+-- k 0-1 go to the control group, 2-3 to treatment. The customer offset is
+-- scoped to the experiment (base (n-1)*4, span 4 < 30) so no customer
+-- repeats within one experiment, satisfying UNIQUE (experiment_id, customer_id).
+INSERT INTO experiment_assignment (experiment_id, group_id, customer_id)
+SELECT n,
+       (n-1)*2 + 1 + (k/2),
+       ('00000000-0000-0000-0000-' || lpad((1+(((n-1)*4+k) % 30))::text,12,'0'))::uuid
+FROM generate_series(1,30) n
+CROSS JOIN generate_series(0,3) k;
+
+-- ---------- experiment_exposure (one treatment assignee per experiment = 30) ----------
+-- Picks the first treatment assignment per experiment by assignment_id,
+-- derived structurally from experiment_assignment/experiment_group rather
+-- than re-deriving the customer offset formula above, so the two inserts
+-- cannot drift apart if that formula changes.
+INSERT INTO experiment_exposure (assignment_id)
+SELECT assignment_id FROM (
+    SELECT a.assignment_id,
+           ROW_NUMBER() OVER (PARTITION BY a.experiment_id ORDER BY a.assignment_id) AS rn
+    FROM experiment_assignment a
+    JOIN experiment_group g ON g.group_id = a.group_id
+    WHERE g.kind = 'TREATMENT'
+) ranked
+WHERE rn = 1;
+
+-- ---------- experiment_conversion (one qualifying sale per exposure = 30) ----------
+INSERT INTO experiment_conversion (assignment_id, transaction_id)
+SELECT e.assignment_id,
+       (SELECT MIN(t.transaction_id) FROM transaction t WHERE t.customer_id = a.customer_id)
+FROM experiment_exposure e
+JOIN experiment_assignment a ON a.assignment_id = e.assignment_id;
 
 -- ---------- inventory (30 stores x 5 products = 150) ----------
 INSERT INTO inventory (store_id, product_id, quantity_on_hand)
@@ -194,7 +338,7 @@ CROSS JOIN generate_series(1,5) p;
 
 -- ---------- audit_log ----------
 -- Filled by the triggers as the statements above ran: segment, segment_rule,
--- campaign, experiment, category, product, store, channel, role, customer and
--- app_user. Nothing is inserted here by hand.
+-- campaign, experiment, category, product, store, channel, role, customer,
+-- app_user and customer_segment_history. Nothing is inserted here by hand.
 
 COMMIT;

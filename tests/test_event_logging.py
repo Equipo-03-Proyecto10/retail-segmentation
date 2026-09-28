@@ -1,6 +1,7 @@
 """Operational events are traceable without leaking credentials."""
 
 import logging
+from datetime import UTC, datetime
 from io import BytesIO
 from unittest.mock import MagicMock, Mock
 
@@ -66,16 +67,23 @@ def test_sign_in_and_out_events_share_context_without_passwords(caplog, monkeypa
     assert "\nforged" not in caplog.text
 
 
-def test_segment_completion_is_logged_only_after_commit(caplog):
+def test_segment_completion_is_logged_only_after_commit(caplog, monkeypatch):
+    from web.db.segments import ScoredCustomer
+
     create_app(configuration(), database_connector=Mock(return_value=MagicMock()))
-    connection = MagicMock()
-    connection.cursor.return_value.__enter__.return_value.fetchone.return_value = (
-        30,
-        20,
-        10,
-        4,
-        2,
+    labelled = ScoredCustomer(
+        "a", datetime(2026, 9, 1, tzinfo=UTC), 1, 1, 1, 1, 1, 1, "LOYAL"
     )
+    unassigned = ScoredCustomer("b", None, None, None, None, None, None, None, None)
+    for name, value in {
+        "score_rfm_rules": Mock(return_value=[labelled, unassigned]),
+        "read_open_assignments": Mock(return_value={"a": (1, "CHAMPION")}),
+        "create_run": Mock(return_value=9),
+        "close_open_assignments": Mock(),
+        "insert_assignments": Mock(),
+    }.items():
+        monkeypatch.setattr(f"web.services.segmentation.{name}", value)
+    connection = MagicMock()
 
     def commit():
         assert "segment_run_started" in caplog.text
@@ -83,7 +91,7 @@ def test_segment_completion_is_logged_only_after_commit(caplog):
 
     connection.commit.side_effect = commit
     run(connection, 180)
-    assert "processed=30 assigned=20 unmatched=10 reassigned=4 cleared=2" in caplog.text
+    assert "processed=2 assigned=1 unmatched=1 reassigned=1 cleared=1" in caplog.text
 
 
 def test_upload_rejection_logs_reason_without_file_contents(caplog):

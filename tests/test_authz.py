@@ -324,6 +324,17 @@ def test_the_regular_user_and_the_administrator_both_exist() -> None:
     )
 
 
+def test_a_store_manager_reads_segments_and_customers_and_writes_nothing() -> None:
+    """ADR-0023: the role F10-02 is written for reaches every `segment.read`
+    surface, and gains nothing it could change them with."""
+    assert permissions_for("STORE_MANAGER") == {
+        "catalog.read",
+        "segment.read",
+        "report.read",
+    }
+    assert "segment.read" not in permissions_for("INVENTORY_PLANNER")
+
+
 def test_every_permission_named_anywhere_is_part_of_the_vocabulary() -> None:
     granted = {permission for role in PERMISSIONS.values() for permission in role}
     navigated = {entry.permission for entry in NAVIGATION if entry.permission}
@@ -379,6 +390,9 @@ def test_the_menu_is_driven_by_permissions_rather_than_by_role() -> None:
         "Segments",
         "Campaigns",
         "Segment run",
+        "Run history",
+        "Migration matrix",
+        "Model comparison",
         "Reports",
         "Audit log",
     ]
@@ -387,9 +401,27 @@ def test_the_menu_is_driven_by_permissions_rather_than_by_role() -> None:
         "Catalogs",
         "Segments",
         "Campaigns",
+        "Run history",
+        "Migration matrix",
+        "Model comparison",
         "Reports",
     ]
     assert _menu_labels(app.test_client()) == ["Home"]
+
+
+def test_a_store_managers_menu_offers_the_segment_surfaces_and_nothing_to_run() -> None:
+    store_manager = _app().test_client()
+    _sign_in(store_manager, "STORE_MANAGER")
+
+    assert _menu_labels(store_manager) == [
+        "Home",
+        "Catalogs",
+        "Segments",
+        "Run history",
+        "Migration matrix",
+        "Model comparison",
+        "Reports",
+    ]
 
 
 def test_planned_menu_entries_reach_a_status_page() -> None:
@@ -397,10 +429,9 @@ def test_planned_menu_entries_reach_a_status_page() -> None:
     client = _app().test_client()
     _sign_in(client, "ADMIN")
 
-    for path in ("/campaigns/", "/reports/"):
-        response = client.get(path)
-        assert response.status_code == 200
-        assert "Still building" in response.get_data(as_text=True)
+    response = client.get("/reports/")
+    assert response.status_code == 200
+    assert "Still building" in response.get_data(as_text=True)
 
 
 def test_the_signed_in_name_and_sign_out_replace_the_sign_in_link() -> None:

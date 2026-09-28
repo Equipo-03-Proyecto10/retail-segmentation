@@ -80,13 +80,17 @@ def create_role(
 
 
 def update_role(
-    connection: Connection, role_id: int, *, code: str, description: str | None
+    connection: Connection, role_id: int, *, description: str | None
 ) -> None:
-    """Update one role; the service owns the transaction."""
+    """Update one role's description; the service owns the transaction.
+
+    The code is never written here: it is immutable (RN-01, #252), and
+    trg_role_code_immutable refuses any statement that tries.
+    """
     with connection.cursor() as cursor:
         cursor.execute(
-            "UPDATE role SET code = %s, description = %s WHERE role_id = %s",
-            (code, description, role_id),
+            "UPDATE role SET description = %s WHERE role_id = %s",
+            (description, role_id),
         )
 
 

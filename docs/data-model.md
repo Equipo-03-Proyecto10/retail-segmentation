@@ -20,6 +20,7 @@ Stories: F2-01 (conceptual model), F2-02 (normalization), F2-03 (logical model).
 |---|---|
 | `role` | A permission profile. Seven exist; see the matrix below |
 | `app_user` | Someone who signs in. Exactly one holds the administrator role |
+| `app_session` | One sign-in, server-side: open until signed out or revoked (ADR-0022) |
 | `customer` | Someone the business sells to. Not every customer signs in |
 | `channel` | A route to market: mobile app, web, physical store, marketplace, call centre |
 | `category` | A product classification, self-referencing so a category can have a parent |
@@ -29,15 +30,20 @@ Stories: F2-01 (conceptual model), F2-02 (normalization), F2-03 (logical model).
 | `transaction_line` | One product within one sale, with its quantity and the price actually paid |
 | `inventory` | Stock of one product at one store |
 | `segment_rule` | The RFM bands that define a segment |
+| `segment_label` | The stable, ordered vocabulary every segmentation run's assignments draw from |
 | `segment` | A named group of customers, valid over a period, defined by one rule |
-| `campaign` | Marketing action aimed at one segment, over a date range, in a status |
-| `experiment` | An A/B test, optionally attached to a campaign, measuring one metric |
+| `campaign` | Marketing action aimed at one stable segment label, over a date range, in a status |
+| `experiment` | An A/B test, optionally attached to a campaign, with a fixed conversion window and a data origin |
 | `experiment_group` | A control or treatment arm of an experiment |
+| `experiment_assignment` | One customer's durable assignment to one arm of an experiment, before any outcome is known |
+| `experiment_exposure` | One exposure event for an assigned customer, recorded separately from assignment |
+| `experiment_conversion` | A qualifying sale linked back to an assignment, inside its experiment's conversion window |
 | `audit_log` | Who changed which business rule or catalog row, when, and to what |
 
 ### Relationships
 
 - `app_user` (N) — has — (1) `role`
+- `app_user` (1) — opens — (N) `app_session`
 - `customer` (1) — makes — (N) `transaction`
 - `store` (1) — registers — (N) `transaction`
 - `transaction` (1) — contains — (N) `transaction_line` (N) — references — (1) `product`
@@ -45,8 +51,12 @@ Stories: F2-01 (conceptual model), F2-02 (normalization), F2-03 (logical model).
 - `category` (N) — is a child of — (0..1) `category`
 - `customer` (N) — currently belongs to — (0..1) `segment`
 - `segment` (N) — is defined by — (1) `segment_rule`
-- `campaign` (N) — targets — (1) `segment`
-- `experiment` (1) — has — (N) `experiment_group` — includes — (N) `customer`
+- `campaign` (N) — targets — (1) `segment_label`
+- `experiment` (1) — has — (N) `experiment_group`
+- `experiment_group` (1) — has — (N) `experiment_assignment` — assigns — (1) `customer`
+- `experiment_assignment` (1) — has — (N) `experiment_exposure`
+- `experiment_assignment` (1) — has — (N) `experiment_conversion`
+- `transaction` (1) — qualifies — (N) `experiment_conversion`
 - `inventory` (N) — is stock of — (1) `product` at (1) `store`
 - `customer` (1) — prefers — (N) `channel`
 - `customer` (1) — is interested in — (N) `category`
@@ -82,9 +92,12 @@ and [`business-rules.md`](business-rules.md) RN-01 explains the split.
 
 **Functional.** Each surrogate key determines every non-key attribute of its
 row: `product_id → sku, name, category_id, list_price, image_path, is_active`,
-and equivalently for the other entities. Two candidate keys carry a functional
-dependency of their own and are therefore `UNIQUE`: `sku → product_id` and
-`email → user_id`.
+and equivalently for the other entities. Three candidate keys carry a
+functional dependency of their own and are therefore `UNIQUE`: `sku →
+product_id`, `email → user_id`, and `source_transaction_id → transaction_id` —
+the identifier the sales contract supplies determines the row the database
+generated for it, so a re-sent file finds the same row instead of creating
+another.
 
 The composite keys behave the same way:
 `(transaction_id, product_id) → quantity, unit_price` and
@@ -198,10 +211,25 @@ The decomposition is lossless: joining the two tables on `customer_id`
 reproduces exactly the original relation, which is the defining property of a
 valid 4NF decomposition.
 
+`segmentation_run` and `customer_segment_history` (ADR-0017, F7-02) are a
+second instance of the same discipline, one level up. A single relation
+carrying a run's own facts (`method`, `window_days`, `parameters`,
+`customer_count`, `executed_by`, `run_at`) together with every customer's
+result for that run would repeat the run-level facts once per customer and
+risk them disagreeing within one calculation — exactly the anomaly ADR-0017's
+"store only timestamped customer-history rows, with no run entity"
+alternative was rejected for. `run_id` and `customer_id` are independent
+axes — one run has many customer results, and (across time) one customer has
+many runs — so the run's own attributes and each customer's per-run result
+are decomposed into two relations joined by `run_id`, the same shape as the
+`customer_preferred_channel` / `customer_interest_category` split above.
+
 Every other relation in the model is already in 4NF. The remaining composite-key
-tables — `transaction_line`, `inventory`, `experiment_group_customer` — each
-carry a single multivalued fact plus attributes that depend on the whole key,
-so there is nothing to decompose.
+tables — `transaction_line`, `inventory` — each carry a single multivalued
+fact plus attributes that depend on the whole key, so there is nothing to
+decompose. `experiment_assignment` (F11-01, replacing the composite-keyed
+`experiment_group_customer`) is not in this group: it carries a surrogate key
+for reasons of physical design, not normalization — see §4.
 
 ---
 
@@ -214,6 +242,7 @@ erDiagram
     role                       ||--o{ app_user                   : "defines"
     app_user                   |o--o| customer                   : "signs in as"
     app_user                   |o--o{ audit_log                  : "performs"
+    app_user                   ||--o{ app_session                : "opens"
     channel                    ||--o{ customer                   : "registers"
     channel                    ||--o{ transaction                : "carries"
     channel                    ||--o{ customer_preferred_channel : "preferred by"
@@ -230,11 +259,14 @@ erDiagram
     product                    ||--o{ inventory                  : "is stocked as"
     segment_rule               ||--o{ segment                    : "defines"
     segment                    |o--o{ customer                   : "currently groups"
-    segment                    ||--o{ campaign                   : "is targeted by"
+    segment_label              ||--o{ campaign                   : "is targeted by"
     campaign                   |o--o{ experiment                 : "originates"
     experiment                 ||--o{ experiment_group           : "has"
-    experiment_group           ||--o{ experiment_group_customer  : "includes"
-    customer                   ||--o{ experiment_group_customer  : "participates in"
+    experiment_group           ||--o{ experiment_assignment      : "has"
+    customer                   ||--o{ experiment_assignment      : "is assigned"
+    experiment_assignment      ||--o{ experiment_exposure        : "is exposed via"
+    experiment_assignment      ||--o{ experiment_conversion      : "converts via"
+    transaction                ||--o{ experiment_conversion      : "qualifies"
 ```
 
 ### Data dictionary
@@ -263,7 +295,11 @@ Nullability is stated for every column. `PK` primary key, `FK` foreign key,
 |---|---|---|---|---|
 | `category_id` | `SMALLINT` | NN | PK | Category identifier |
 | `name` | `VARCHAR(80)` | NN | UQ | Category name |
-| `parent_category_id` | `SMALLINT` | yes | FK → `category`, `ON DELETE RESTRICT` | Parent in the hierarchy; `NULL` at the top level |
+| `parent_category_id` | `SMALLINT` | yes | FK → `category`, `ON DELETE RESTRICT`; `CHECK <> category_id` (`category_not_own_parent`) | Parent in the hierarchy; `NULL` at the top level |
+
+The hierarchy is a tree (RN-33). `category_not_own_parent` refuses the one-row
+cycle; a CHECK cannot see other rows, so `trg_category_no_cycle` walks up from
+the new parent and refuses a longer cycle as `category_no_cycle`.
 
 #### `store`
 
@@ -295,8 +331,26 @@ Table constraint: `r_min <= r_max AND f_min <= f_max AND m_min <= m_max`.
 | `name` | `VARCHAR(80)` | NN | UQ | Segment name |
 | `description` | `VARCHAR(255)` | yes | — | What the segment means commercially |
 | `rule_id` | `INT` | NN | FK → `segment_rule`, `RESTRICT` | The RFM bands that define it |
+| `label_code` | `VARCHAR(40)` | NN | FK → `segment_label`, `RESTRICT` | The stable business label this band represents — ADR-0018 |
 | `valid_from` | `DATE` | NN | — | First day the definition applies |
 | `valid_to` | `DATE` | yes | `CHECK >= valid_from` | Last day; `NULL` while current |
+
+
+#### `segment_label`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `label_code` | `VARCHAR(40)` | NN | PK | Stable code an assignment carries, e.g. `CHAMPION` |
+| `ordinal_position` | `SMALLINT` | NN | UQ, `CHECK > 0` | Declared best-to-worst business order — ADR-0018 |
+| `name` | `VARCHAR(80)` | NN | — | Display name |
+| `description` | `VARCHAR(255)` | yes | — | What the label means commercially |
+
+Single-column primary key rather than a surrogate id: `label_code` is what
+every downstream consumer — assignment history, migration, dashboards,
+recommendations — reads and compares, per ADR-0018, so it is the natural key
+rather than an internal one a join would have to resolve back to it anyway.
+`ordinal_position` is unique on its own so K-means centroids can be paired
+with labels deterministically without a tie; it is not a foreign key target.
 
 #### `app_user`
 
@@ -312,6 +366,25 @@ Table constraint: `r_min <= r_max AND f_min <= f_max AND m_min <= m_max`.
 
 Named `app_user` because `user` is a reserved word in PostgreSQL.
 
+#### `app_session`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `session_id` | `UUID` | NN | PK, default `gen_random_uuid()` | The only thing the signed cookie carries |
+| `user_id` | `UUID` | NN | FK → `app_user`, `CASCADE` | Who signed in |
+| `created_at` | `TIMESTAMPTZ` | NN | default `now()` | Sign-in |
+| `revoked_at` | `TIMESTAMPTZ` | yes | `CHECK >= created_at` (`app_session_revoked_after_created`) | Sign-out or revocation; `NULL` while open |
+
+ADR-0022 (#251). Every request resolves its session here, with the user's
+`is_active` and role, so signing out (RF-02), deactivation (RF-09) and a role
+change take effect on the next request. Every non-key column depends on
+`session_id` alone, so the table is in 4NF with nothing to decompose. The
+partial index `idx_app_session_open_by_user` serves deactivation, which revokes
+every open session of one user. `CASCADE` from `app_user` is safe because
+users are deactivated, never deleted (RN-04). It is runtime state, not
+business data: not audited, and exempt from the 30-row seed minimum
+(`sql/seed-exempt.txt`), since seeding it would invent sign-ins.
+
 #### `customer`
 
 | Column | Type | Null | Constraints | Meaning |
@@ -322,17 +395,67 @@ Named `app_user` because `user` is a reserved word in PostgreSQL.
 | `email` | `VARCHAR(160)` | yes | UQ, `CHECK ~ '@'` | Contact address |
 | `phone` | `VARCHAR(20)` | yes | — | Contact number |
 | `registration_channel_id` | `SMALLINT` | NN | FK → `channel`, `RESTRICT` | Where the customer was acquired |
-| `current_segment_id` | `INT` | yes | FK → `segment`, `SET NULL` | Segment the customer currently sits in |
 | `registered_on` | `DATE` | NN | default `CURRENT_DATE` | Registration date |
 
-`current_segment_id` is a **known limitation**, recorded here rather than left
-to be discovered. [`roadmap.md`](roadmap.md) states that segment assignments
-must be kept as history and never updated in place, because overwriting them
-destroys exactly the migration history the project exists to report on. The
-column stays for this delivery because there is no segmentation run to produce
-history yet; the segment-history module replaces it with an assignment table
-carrying `valid_from`/`valid_to` and a constraint that stops a customer holding
-two open assignments. See [ADR-0004](adr/0004-model-ahead-of-the-deferred-segmentation-modules.md).
+There is no `current_segment_id` column. ADR-0004 called the mutable column
+the first delivery briefly carried a known limitation and predicted its
+replacement; ADR-0017 fulfils that prediction with `segmentation_run` and
+`customer_segment_history` below — a customer's current segment is the
+`customer_segment_history` row with `valid_to IS NULL`, never a column on
+`customer` itself, so it cannot disagree with the history it is drawn from.
+
+#### `segmentation_run`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `run_id` | `BIGINT` | NN | PK, identity | Run identifier |
+| `method` | `VARCHAR(20)` | NN | `CHECK IN ('RFM_RULES','KMEANS')` | The strategy that produced this run — ADR-0018 |
+| `window_days` | `INT` | NN | `CHECK > 0` | Sales window scored |
+| `parameters` | `JSONB` | NN | default `{}` | Parameter snapshot (e.g. `{"window_days": N}`; a future `KMEANS` run's `k` and feature list) — ADR-0017 |
+| `customer_count` | `INT` | NN | default `0` | Customers this run scored |
+| `executed_by` | `UUID` | yes | FK → `app_user`, `SET NULL` | Who ran it; `NULL` for a seed or maintenance run, the same reasoning `audit_log.user_id` uses |
+| `run_at` | `TIMESTAMPTZ` | NN | default `now()` | When the run executed |
+
+#### `customer_segment_history`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `history_id` | `BIGINT` | NN | PK, identity | Row identifier |
+| `customer_id` | `UUID` | NN | FK → `customer`, `CASCADE`; `UNIQUE` with `run_id` | The customer |
+| `run_id` | `BIGINT` | NN | FK → `segmentation_run`, `CASCADE`; first in `UNIQUE (run_id, customer_id)` | The run that produced this result |
+| `segment_id` | `INT` | yes | Composite FK with `label_code` → `segment (segment_id, label_code)`, `SET NULL (segment_id)` | The matched RFM band, `NULL` if unassigned (RN-21) or if the referenced band is retired |
+| `label_code` | `VARCHAR(40)` | yes | Composite FK with `segment_id` → `segment (segment_id, label_code)`; FK → `segment_label`, `RESTRICT` | The stable label, preserved if its matched RFM band is retired; ADR-0018's downstream consumers (migration, dashboards, recommendations) read it without joining through that segment row |
+| `recency_last_purchase_at` | `TIMESTAMPTZ` | yes | — | Raw recency input |
+| `frequency_count` | `INT` | yes | — | Raw frequency input |
+| `monetary_total` | `NUMERIC(12,2)` | yes | — | Raw monetary input |
+| `r_score`, `f_score`, `m_score` | `SMALLINT` | yes | — | Quintile scores derived from the raw values above |
+| `valid_from` | `TIMESTAMPTZ` | NN | default `now()` | When this result became current |
+| `valid_to` | `TIMESTAMPTZ` | yes | `CHECK >= valid_from` | When it stopped being current; `NULL` while open |
+
+`segment_id` and `label_code` are both kept, deliberately not one or the
+other: `segment_id` is what the already-shipped F3-05 catalog feature
+(`web/db/customers.py`'s `list_customers_in_segment`, `web/routes/catalog.py`'s
+`customer_detail`) browses by — the exact matched RFM band — and several
+segments can share one `label_code` by design (ADR-0018), so replacing
+`segment_id` with `label_code` would change which customers "browse segment
+N" shows. Their composite foreign key enforces the functional dependency
+that a real `segment_id` carries its segment's `label_code`. Deleting that
+segment uses PostgreSQL 15+'s column-list action to set only `segment_id` to
+null, preserving the stable label. The direct `label_code` foreign key keeps
+the vocabulary constrained when `segment_id` is null and the composite
+`MATCH SIMPLE` check does not apply; deleting a referenced vocabulary label
+is restricted. A partial unique index (`ux_customer_segment_history_open`)
+still enforces at most one open row per customer (RN-20), and
+`idx_customer_segment_history_customer` supports the per-customer history
+read.
+
+ADR-0017's `UNIQUE (run_id, customer_id)` guarantees that a run records at
+most one result for each customer. The partial open-row index cannot enforce
+that pair because a duplicate whose `valid_to` is set is outside its
+predicate. `run_id` comes first so the unique constraint's backing index also
+serves every per-run read and cascaded run deletion, while
+`idx_customer_segment_history_customer` remains ordered for per-customer
+history reads.
 
 #### `customer_preferred_channel`
 
@@ -367,6 +490,7 @@ These two are the 4NF decomposition from §2.4.
 | Column | Type | Null | Constraints | Meaning |
 |---|---|---|---|---|
 | `transaction_id` | `BIGINT` | NN | PK, `GENERATED ALWAYS AS IDENTITY` | Sale identifier |
+| `source_transaction_id` | `VARCHAR(64)` | NN | UQ | Identifier the sales contract supplies (ADR-0020); a file re-sent in full finds this row instead of duplicating it |
 | `customer_id` | `UUID` | NN | FK → `customer`, `RESTRICT` | Who bought |
 | `store_id` | `SMALLINT` | NN | FK → `store`, `RESTRICT` | Where |
 | `channel_id` | `SMALLINT` | NN | FK → `channel`, `RESTRICT` | Through which channel |
@@ -388,7 +512,7 @@ These two are the 4NF decomposition from §2.4.
 |---|---|---|---|---|
 | `campaign_id` | `INT` | NN | PK | Campaign identifier |
 | `name` | `VARCHAR(120)` | NN | — | Campaign name |
-| `segment_id` | `INT` | NN | FK → `segment`, `RESTRICT` | Segment targeted |
+| `label_code` | `VARCHAR(40)` | NN | FK → `segment_label`, `RESTRICT` | Stable segment label targeted (ADR-0018) |
 | `starts_on` | `DATE` | NN | — | Start |
 | `ends_on` | `DATE` | NN | `CHECK >= starts_on` | End |
 | `status` | `VARCHAR(20)` | NN | `CHECK IN ('DRAFT','ACTIVE','FINISHED','CANCELLED')` | Lifecycle state |
@@ -403,22 +527,67 @@ These two are the 4NF decomposition from §2.4.
 | `target_metric` | `VARCHAR(60)` | NN | — | Metric measured, e.g. `CONVERSION` |
 | `starts_on` | `DATE` | NN | — | Start |
 | `ends_on` | `DATE` | yes | `CHECK >= starts_on` | End; `NULL` while running |
+| `conversion_window_days` | `SMALLINT` | NN | `CHECK > 0` | Fixed before the run starts, immutable after the first assignment (ADR-0019) |
+| `data_origin` | `VARCHAR(20)` | NN | `CHECK IN ('OBSERVED','SEEDED','INJECTED')` | Real experiment, A/A validation, or injected-uplift fixture (ADR-0019) |
 
 #### `experiment_group`
 
 | Column | Type | Null | Constraints | Meaning |
 |---|---|---|---|---|
 | `group_id` | `INT` | NN | PK | Group identifier |
-| `experiment_id` | `INT` | NN | FK → `experiment`, `CASCADE` | Its experiment |
+| `experiment_id` | `INT` | NN | FK → `experiment`, `CASCADE`; UQ with `group_id` | Its experiment |
 | `kind` | `VARCHAR(20)` | NN | `CHECK IN ('CONTROL','TREATMENT')` | Which arm |
 
-#### `experiment_group_customer`
+At most one `CONTROL` row per experiment:
+`ux_experiment_one_control ON experiment_group (experiment_id) WHERE kind = 'CONTROL'`.
+`UNIQUE (group_id, experiment_id)` exists so `experiment_assignment`'s
+composite foreign key can pin an assignment to both its group and that
+group's experiment at once.
+
+#### `experiment_assignment`
 
 | Column | Type | Null | Constraints | Meaning |
 |---|---|---|---|---|
-| `group_id` | `INT` | NN | PK, FK → `experiment_group`, `CASCADE` | The arm |
-| `customer_id` | `UUID` | NN | PK, FK → `customer`, `CASCADE` | The customer in it |
-| `assigned_at` | `TIMESTAMPTZ` | NN | default `now()` | When they were assigned |
+| `assignment_id` | `BIGINT` | NN | PK, `GENERATED ALWAYS AS IDENTITY` | Assignment identifier |
+| `experiment_id` | `INT` | NN | UQ with `customer_id`; FK (with `group_id`) → `experiment_group` | The experiment |
+| `group_id` | `INT` | NN | FK (with `experiment_id`) → `experiment_group` | The arm assigned to |
+| `customer_id` | `UUID` | NN | FK → `customer`, `RESTRICT` | The customer assigned |
+| `assigned_at` | `TIMESTAMPTZ` | NN | default `now()` | When the assignment was made, before any outcome is known |
+
+Replaces `experiment_group_customer`. `UNIQUE (experiment_id, customer_id)`
+is RN-23: one customer cannot enter two arms of the same experiment. The
+composite `FOREIGN KEY (group_id, experiment_id)` means `experiment_id`
+cannot be spoofed even though it is denormalized onto this table alongside
+`group_id`.
+
+#### `experiment_exposure`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `exposure_id` | `BIGINT` | NN | PK, `GENERATED ALWAYS AS IDENTITY` | Exposure identifier |
+| `assignment_id` | `BIGINT` | NN | FK → `experiment_assignment`, `CASCADE` | The assignment exposed |
+| `exposed_at` | `TIMESTAMPTZ` | NN | default `now()` | When the exposure happened |
+
+A later, separate event (ADR-0019): an assigned customer may remain
+unexposed, so exposure is never folded into the assignment row. More than
+one exposure per assignment is allowed, so there is no uniqueness
+constraint here.
+
+#### `experiment_conversion`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `conversion_id` | `BIGINT` | NN | PK, `GENERATED ALWAYS AS IDENTITY` | Conversion identifier |
+| `assignment_id` | `BIGINT` | NN | UQ with `transaction_id`; FK → `experiment_assignment`, `CASCADE` | The assignment converting |
+| `transaction_id` | `BIGINT` | NN | UQ with `assignment_id`; FK → `transaction`, `RESTRICT` | The qualifying sale |
+| `converted_at` | `TIMESTAMPTZ` | NN | default `now()` | When the conversion was recorded |
+
+Links an assignment to a qualifying sale rather than adding an experiment
+column to `transaction` (ADR-0019). `UNIQUE (assignment_id, transaction_id)`
+stops the same sale being recorded as a conversion twice for the same
+assignment; it does not limit an assignment to one conversion, since an
+`AVERAGE_TICKET` metric can legitimately draw on more than one qualifying
+sale.
 
 #### `inventory`
 
@@ -456,11 +625,39 @@ explicit integers because their rows are referenced by seed and by tests.
 `gen_random_uuid()` is core in PostgreSQL 13 and later, so no extension is
 needed for it. `pg_trgm` is installed for the name searches F3-05 performs.
 
+**Source transaction identifiers.** `transaction.source_transaction_id` holds
+the identifier the sales contract supplies, distinct from the surrogate
+`transaction_id` the database generates (ADR-0020). It is `VARCHAR(64)`: wide
+enough for an alphanumeric producer identifier or a UUID-shaped one, without
+inviting an unbounded value. It is `NOT NULL` because a row whose identifier
+is absent is rejected for that reason, not defaulted — F8-02 turns that rule
+into a row-level validation error. It is globally `UNIQUE` rather than unique
+per producer: ADR-0020 names CSV as the sole sales ingestion entry point for
+this delivery, so exactly one producer exists, and a global constraint and a
+per-producer one coincide. A later multi-producer contract would need a
+composite key over `(producer_id, source_transaction_id)` instead.
+
+**Experiment assignment identifiers.** `experiment_assignment` (F11-01)
+carries a surrogate `assignment_id` rather than staying a pure
+`(group_id, customer_id)` bridge row, because `experiment_exposure` and
+`experiment_conversion` each need to reference "this one assignment" as a
+single foreign-key target — a composite bridge key cannot cleanly serve that
+role once two more relations hang off it. This is a physical-design choice,
+not a normalization step: see §2.4.
+
 **Delete rules.** `RESTRICT` on catalog references — a category with products
-cannot be deleted, and neither can a customer with sales. `CASCADE` on the
-bridge tables, where a child row has no meaning without its parent.
-`SET NULL` where the reference is optional context rather than structure:
-`customer.current_segment_id`, `audit_log.user_id`.
+cannot be deleted, and neither can a customer with sales. It also protects
+the stable `segment_label` vocabulary while history references a label, and
+the durable event tables `experiment_assignment.customer_id` and
+`experiment_conversion.transaction_id`, the same way `transaction.customer_id`
+protects sale history — these are historical events, not disposable bridge
+rows. `CASCADE` on the bridge tables, and on the chain from `experiment`
+down through `experiment_group`, `experiment_assignment`,
+`experiment_exposure` and `experiment_conversion`, where a child row has no
+meaning without its parent. `SET NULL` where the reference is optional
+context rather than structure: `customer_segment_history.segment_id` (that
+column only, so the row keeps its `label_code`), `segmentation_run.executed_by`,
+`audit_log.user_id`.
 
 **Indexes.**
 
@@ -469,10 +666,12 @@ bridge tables, where a child row has no meaning without its parent.
 | `idx_transaction_customer_date` | `transaction (customer_id, occurred_at)` | A customer's purchase history; the RFM window later |
 | `idx_transaction_store_date` | `transaction (store_id, occurred_at)` | Sales by store over a period |
 | `idx_transaction_line_product` | `transaction_line (product_id)` | Units sold of one product |
-| `idx_customer_segment` | `customer (current_segment_id)` | Members of a segment |
+| `ux_customer_segment_history_open` | `customer_segment_history (customer_id) WHERE valid_to IS NULL` | A customer's current segment; also RN-20's constraint |
+| `idx_customer_segment_history_customer` | `customer_segment_history (customer_id, valid_from)` | A customer's segment history over time |
 | `idx_product_category` | `product (category_id)` | Catalog browsing by category |
-| `idx_campaign_segment` | `campaign (segment_id)` | Campaigns aimed at a segment |
-| `idx_experiment_group_customer_cust` | `experiment_group_customer (customer_id)` | Experiments a customer is in |
+| `idx_campaign_label` | `campaign (label_code)` | Campaigns aimed at a segment label |
+| `idx_experiment_assignment_customer` | `experiment_assignment (customer_id)` | Experiments a customer is in |
+| `idx_experiment_exposure_assignment` | `experiment_exposure (assignment_id)` | Whether an assignment was exposed |
 | `idx_audit_log_entity` | `audit_log (entity, entity_pk)` | The history of one row |
 
 **Partitioning is not implemented.** `transaction` is the fastest-growing table
@@ -496,7 +695,12 @@ delete. Two groups of tables carry it:
 
 Individual sales are **not** audited. Their volume and history already live in
 `transaction` and `transaction_line`, and auditing them would double the write
-cost of the busiest table in the model.
+cost of the busiest table in the model. `experiment_group`,
+`experiment_assignment`, `experiment_exposure` and `experiment_conversion`
+are unaudited for the same reason: they are themselves append-only event
+records, not mutable rows a reviewer needs a before/after snapshot of.
+`app_session` is unaudited too: it is runtime state, written on every sign-in
+and sign-out, and `created_at`/`revoked_at` already are its history.
 
 Two details worth knowing:
 

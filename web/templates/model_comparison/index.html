@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+
+{% block title %}Model comparison · {{ application_name }}{% endblock %}
+{% block topbar_title %}Model comparison{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Analysis / Model comparison{% endblock %}
+
+{% block content %}
+  {% from "macros/ui.html" import alert, count_label, empty_state, page_header, pagination, status_pill %}
+  {% macro when(run) %}{{ run.run_at.strftime("%Y-%m-%d %H:%M") }}{% endmacro %}
+  {% macro percent(share) %}{% if share is none %}—{% else %}{{ "{:.1%}".format(share) }}{% endif %}{% endmacro %}
+  {% macro label_name(label) %}{{ label if label else "Unassigned" }}{% endmacro %}
+
+  {{ page_header(
+    "Model comparison",
+    "What a rule-based run and a K-means run assign to the same customers, compared by label code. The method is shown to describe each run; it is never what an assignment is read through.",
+    "Segmentation modelling"
+  ) }}
+
+  <section class="mq-panel">
+    <div class="mq-panel__body">
+      <form class="mq-filterbar" method="get" action="{{ url_for('model_comparison.index') }}">
+        <div class="mq-filterbar__row">
+          <div class="mq-filterbar__group">
+            <label class="mq-field__label" for="rules_run">Rule-based run</label>
+            <select class="mq-input" id="rules_run" name="rules_run">
+              {% for run in rules_options %}
+                <option value="{{ run.run_id }}" {% if rules and rules.run_id == run.run_id %}selected{% endif %}>#{{ run.run_id }} — {{ when(run) }} · {{ count_label(run.customer_count, "customer") }}</option>
+              {% else %}
+                <option value="">No rule-based run</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mq-filterbar__group">
+            <label class="mq-field__label" for="kmeans_run">K-means run</label>
+            <select class="mq-input" id="kmeans_run" name="kmeans_run">
+              {% for run in kmeans_options %}
+                <option value="{{ run.run_id }}" {% if kmeans and kmeans.run_id == run.run_id %}selected{% endif %}>#{{ run.run_id }} — {{ when(run) }} · {{ count_label(run.customer_count, "customer") }}</option>
+              {% else %}
+                <option value="">No K-means run</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mq-filterbar__actions">
+            <button class="mq-btn mq-btn--primary mq-btn--sm" type="submit">Compare</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  {% if error %}{{ alert(error) }}{% endif %}
+
+  {% if not comparison and not error %}
+    {% if not rules %}
+      {{ empty_state("No rule-based run has been recorded yet", "Start one from Segment run; a comparison needs one run of each kind.", "No runs") }}
+    {% endif %}
+    {% if not kmeans %}
+      {{ empty_state("No K-means run has been recorded yet", "K-means runs cannot be started from a screen in this release, so there is nothing to compare yet.", "No runs") }}
+    {% endif %}
+  {% endif %}
+
+  {% if comparison %}
+    <div class="mq-grid mq-grid--2">
+      {% for run, heading, parameters in [(rules, "Rule-based run", rules_parameters), (kmeans, "K-means run", kmeans_parameters)] %}
+        <section class="mq-panel">
+          <header class="mq-panel__header">
+            <h2 class="mq-panel__title">{{ heading }} #{{ run.run_id }}</h2>
+            <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('run_history.detail', run_id=run.run_id) }}">Open run</a>
+          </header>
+          <div class="mq-panel__body">
+            <dl class="mq-description-list">
+              <dt>Method</dt><dd class="mq-mono">{{ run.method }}</dd>
+              <dt>Recorded</dt><dd class="mq-mono">{{ when(run) }}</dd>
+              <dt>Window</dt><dd>{{ run.window_days }} days</dd>
+              <dt>Customers</dt><dd class="mq-num">{{ run.customer_count }}</dd>
+            </dl>
+            <details>
+              <summary class="mq-caption">Recorded parameters</summary>
+              <dl class="mq-description-list">
+                {% for name, value in parameters %}
+                  <dt class="mq-mono">{{ name }}</dt><dd class="mq-mono">{{ value }}</dd>
+                {% else %}
+                  <dt>Parameters</dt><dd>None recorded</dd>
+                {% endfor %}
+              </dl>
+            </details>
+          </div>
+        </section>
+      {% endfor %}
+    </div>
+
+    <div class="mq-grid mq-grid--4">
+      <article class="mq-metric">
+        <span class="mq-metric__label">Customers in both runs</span>
+        <span class="mq-metric__value">{{ "{:,}".format(comparison.compared) }}</span>
+        <div class="mq-metric__footer"><span>Only in rule-based run: {{ comparison.only_first }} · only in K-means run: {{ comparison.only_second }}</span></div>
+      </article>
+      <article class="mq-metric">
+        <span class="mq-metric__label">Agree</span>
+        <span class="mq-metric__value">{{ "{:,}".format(comparison.agree) }}<span class="mq-metric__unit">customers</span></span>
+        <div class="mq-metric__footer"><span>Given the same label by both</span></div>
+      </article>
+      <article class="mq-metric">
+        <span class="mq-metric__label">Disagree</span>
+        <span class="mq-metric__value">{{ "{:,}".format(comparison.disagree) }}<span class="mq-metric__unit">customers</span></span>
+        <div class="mq-metric__footer"><span>Given different labels</span></div>
+      </article>
+      <article class="mq-metric">
+        <span class="mq-metric__label">Agreement rate</span>
+        <span class="mq-metric__value">{{ percent(comparison.agreement_rate) }}</span>
+        <div class="mq-metric__footer"><span>Of the customers in both runs</span></div>
+      </article>
+    </div>
+
+    <section class="mq-panel mq-panel--table mq-density-compact">
+      <header class="mq-panel__header">
+        <h2 class="mq-panel__title">Population per label</h2>
+        <span class="mq-caption">Best to worst, as the vocabulary declares it</span>
+      </header>
+      <div class="mq-table-wrap">
+        <table class="mq-table">
+          <thead>
+            <tr>
+              <th class="mq-table__cell--sticky" scope="col">Label</th>
+              <th class="mq-table__cell--num" scope="col">Rule-based #{{ rules.run_id }}</th>
+              <th class="mq-table__cell--num" scope="col">Share</th>
+              <th class="mq-table__cell--num" scope="col">K-means #{{ kmeans.run_id }}</th>
+              <th class="mq-table__cell--num" scope="col">Share</th>
+              <th class="mq-table__cell--num" scope="col">Difference</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in comparison.populations %}
+              <tr>
+                <td class="mq-table__cell--sticky">{{ label_name(p.label) }}</td>
+                <td class="mq-table__cell--num">{{ p.first }}</td>
+                <td class="mq-table__cell--num mq-mono">{{ percent(p.share_first) }}</td>
+                <td class="mq-table__cell--num">{{ p.second }}</td>
+                <td class="mq-table__cell--num mq-mono">{{ percent(p.share_second) }}</td>
+                <td class="mq-table__cell--num mq-mono">{% set delta = p.second - p.first %}{{ "%+d"|format(delta) if delta else "0" }}</td>
+              </tr>
+            {% endfor %}
+            <tr>
+              <td class="mq-table__cell--sticky">Total</td>
+              <td class="mq-table__cell--num mq-mono">{{ comparison.first_total }}</td>
+              <td></td>
+              <td class="mq-table__cell--num mq-mono">{{ comparison.second_total }}</td>
+              <td></td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="mq-panel mq-panel--table mq-density-compact">
+      <header class="mq-panel__header">
+        <h2 class="mq-panel__title">Where they agree</h2>
+        <span class="mq-caption">Rows: rule-based label · Columns: K-means label · The diagonal is agreement</span>
+      </header>
+      <div class="mq-table-wrap">
+        <table class="mq-table">
+          <thead>
+            <tr>
+              <th class="mq-table__cell--sticky" scope="col">Rule-based \ K-means</th>
+              {% for column in comparison.column_labels %}
+                <th class="mq-table__cell--num" scope="col">{{ column }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in comparison.column_labels %}
+              <tr>
+                <td class="mq-table__cell--sticky">{{ row }}</td>
+                {% for column in comparison.column_labels %}
+                  <td class="mq-table__cell--num">{% if row == column %}<strong>{{ comparison.cells[row][column] }}</strong>{% else %}{{ comparison.cells[row][column] }}{% endif %}</td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="mq-panel mq-panel--table mq-density-compact">
+      <div class="mq-table__toolbar">
+        <span class="mq-table__count">{{ count_label(total, "customer") }}</span>
+        <span>
+          {% for key, text in [("all", "All"), ("agree", "Agree"), ("disagree", "Disagree"), ("one_run", "Only one run")] %}
+            <a class="mq-btn mq-btn--{{ 'primary' if status == key else 'secondary' }} mq-btn--sm" href="{{ url_for('model_comparison.index', rules_run=rules.run_id, kmeans_run=kmeans.run_id, status=key) }}">{{ text }}</a>
+          {% endfor %}
+        </span>
+      </div>
+      {% if customers %}
+        <div class="mq-table-wrap">
+          <table class="mq-table">
+            <thead>
+              <tr>
+                <th class="mq-table__cell--sticky" scope="col">Customer</th>
+                <th scope="col">Rule-based label</th>
+                <th scope="col">K-means label</th>
+                <th scope="col">Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for c in customers %}
+                <tr>
+                  <td class="mq-table__cell--sticky"><a class="mq-table__link" href="{{ url_for('catalog.customer_detail', customer_id=c.customer_id) }}">{{ c.name }}</a></td>
+                  <td>{% if c.status.value == "only_in_second" %}<span class="mq-caption">Not in this run</span>{% else %}{{ label_name(c.first) }}{% endif %}</td>
+                  <td>{% if c.status.value == "only_in_first" %}<span class="mq-caption">Not in this run</span>{% else %}{{ label_name(c.second) }}{% endif %}</td>
+                  <td>
+                    {% if c.status.value == "agree" %}{{ status_pill("Agree", "success") }}
+                    {% elif c.status.value == "disagree" %}{{ status_pill("Disagree", "warning") }}
+                    {% elif c.status.value == "only_in_first" %}{{ status_pill("Only in rule-based run", "neutral") }}
+                    {% else %}{{ status_pill("Only in K-means run", "neutral") }}{% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {{ pagination(
+          page,
+          total_pages,
+          "Page {} of {} · ".format(page, total_pages) ~ count_label(total, "customer"),
+          url_for('model_comparison.index', rules_run=rules.run_id, kmeans_run=kmeans.run_id, status=status, page=page - 1) if page > 1 else none,
+          url_for('model_comparison.index', rules_run=rules.run_id, kmeans_run=kmeans.run_id, status=status, page=page + 1) if page < total_pages else none
+        ) }}
+      {% else %}
+        <div class="mq-panel__body"><p class="mq-caption">No customers match this filter.</p></div>
+      {% endif %}
+    </section>
+  {% endif %}
+{% endblock %}

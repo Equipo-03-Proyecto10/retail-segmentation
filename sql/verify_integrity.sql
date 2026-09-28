@@ -50,10 +50,12 @@ ROLLBACK;
 
 \echo ''
 \echo '-- P4: deleting a transaction cascades to its lines'
+-- Transaction 300 is not any customer's first sale, so no seeded conversion
+-- references it; one that is referenced is N26's refusal instead.
 BEGIN;
-SELECT 'P4 lines before: ' || count(*)::text FROM transaction_line WHERE transaction_id = 1;
-DELETE FROM transaction WHERE transaction_id = 1;
-SELECT 'P4 lines after: ' || count(*)::text FROM transaction_line WHERE transaction_id = 1;
+SELECT 'P4 lines before: ' || count(*)::text FROM transaction_line WHERE transaction_id = 300;
+DELETE FROM transaction WHERE transaction_id = 300;
+SELECT 'P4 lines after: ' || count(*)::text FROM transaction_line WHERE transaction_id = 300;
 ROLLBACK;
 
 \echo ''
@@ -65,6 +67,33 @@ ROLLBACK;
 BEGIN;
 UPDATE app_user SET name = 'Rotated administrator' WHERE role_id = 1;
 SELECT 'P5 renamed: ' || name FROM app_user WHERE role_id = 1;
+ROLLBACK;
+
+\echo ''
+\echo '-- P6: a campaign status transition writes one audit entry with both statuses'
+-- F11-02 (#221): "the transition is recorded" is this trigger's job, not a
+-- second history table. Seed campaign 1 is a DRAFT.
+BEGIN;
+UPDATE campaign SET status = 'ACTIVE' WHERE campaign_id = 1 AND status = 'DRAFT';
+SELECT 'P6 transition recorded: ' || (data_before ->> 'status') || ' -> ' ||
+       (data_after ->> 'status')
+  FROM audit_log
+ WHERE entity = 'campaign' AND entity_pk = '1'
+ ORDER BY audit_id DESC LIMIT 1;
+ROLLBACK;
+
+\echo ''
+\echo '-- P7: the application''s next-id insert for a campaign takes the next free id'
+-- The same INSERT ... SELECT web/db/campaigns.py runs under its advisory lock.
+-- This shows the statement is valid and picks max + 1; that concurrent creates
+-- stay distinct is the lock's job and is not a single-session case.
+BEGIN;
+INSERT INTO campaign (campaign_id, name, label_code, starts_on, ends_on, status)
+SELECT COALESCE(max(campaign_id), 0) + 1, 'Integrity probe', 'LOYAL',
+       DATE '2027-01-01', DATE '2027-01-31', 'DRAFT'
+  FROM campaign;
+SELECT 'P7 allocated: ' || (max(campaign_id) - 30)::text || ' above the seeded 30'
+  FROM campaign;
 ROLLBACK;
 
 \echo '=============================================='
@@ -122,8 +151,8 @@ ROLLBACK;
 \echo ''
 \echo '-- N8: CHECK, campaign status outside the domain [expect: 23514 check_violation]'
 BEGIN;
-INSERT INTO campaign (campaign_id, name, segment_id, starts_on, ends_on, status)
-VALUES (9005, 'Bad status', 1, DATE '2026-01-01', DATE '2026-02-01', 'PAUSED');
+INSERT INTO campaign (campaign_id, name, label_code, starts_on, ends_on, status)
+VALUES (9005, 'Bad status', 'CHAMPION', DATE '2026-01-01', DATE '2026-02-01', 'PAUSED');
 ROLLBACK;
 
 \echo ''
@@ -143,8 +172,8 @@ ROLLBACK;
 \echo ''
 \echo '-- N11: CHECK, campaign ending before it starts [expect: 23514 check_violation]'
 BEGIN;
-INSERT INTO campaign (campaign_id, name, segment_id, starts_on, ends_on, status)
-VALUES (9007, 'Ends before it starts', 1, DATE '2026-03-01', DATE '2026-01-01', 'DRAFT');
+INSERT INTO campaign (campaign_id, name, label_code, starts_on, ends_on, status)
+VALUES (9007, 'Ends before it starts', 'CHAMPION', DATE '2026-03-01', DATE '2026-01-01', 'DRAFT');
 ROLLBACK;
 
 \echo ''
@@ -168,6 +197,22 @@ ROLLBACK;
 -- by the same rule as the product reference, and by a different constraint.
 BEGIN;
 DELETE FROM category WHERE category_id = 1;
+ROLLBACK;
+
+\echo ''
+\echo '-- N27: CHECK, a category as its own parent       [expect: 23514 check_violation]'
+-- RN-33 (#253). The BEFORE trigger reports it as category_no_cycle first;
+-- category_not_own_parent is the backstop if the trigger is ever dropped.
+BEGIN;
+UPDATE category SET parent_category_id = 11 WHERE category_id = 11;
+ROLLBACK;
+
+\echo ''
+\echo '-- N28: a category under its own subcategory      [expect: 23514 check_violation]'
+-- RN-33: category 1 is the parent of 11, so 1 under 11 closes a cycle;
+-- trg_category_no_cycle refuses it as category_no_cycle (#253).
+BEGIN;
+UPDATE category SET parent_category_id = 11 WHERE category_id = 1;
 ROLLBACK;
 
 \echo ''
@@ -199,6 +244,83 @@ ROLLBACK;
 -- takes it no more easily than an INSERT.
 BEGIN;
 UPDATE app_user SET role_id = 1 WHERE email = 'user2@mosaiq-demo.com';
+ROLLBACK;
+
+\echo ''
+\echo '-- N19: duplicate source_transaction_id          [expect: 23505 unique_violation]'
+-- A file re-sent in full must be rejected as a duplicate, not inserted again
+-- (F8-01). transaction_id 1 seeds source_transaction_id 'TXN-00000001'.
+BEGIN;
+INSERT INTO transaction (source_transaction_id, customer_id, store_id, channel_id, occurred_at, total)
+VALUES ('TXN-00000001', '00000000-0000-0000-0000-000000000001', 1, 1, now(), 100.00);
+ROLLBACK;
+
+\echo ''
+\echo '-- N20: NOT NULL, transaction without a source id [expect: 23502 not_null_violation]'
+-- A row whose source identifier is absent is rejected with that reason, not
+-- defaulted (F8-01). Row-level CSV validation of this rule is F8-02's job;
+-- this proves the schema refuses it with no application in the picture.
+BEGIN;
+INSERT INTO transaction (source_transaction_id, customer_id, store_id, channel_id, occurred_at, total)
+VALUES (NULL, '00000000-0000-0000-0000-000000000001', 1, 1, now(), 100.00);
+ROLLBACK;
+
+\echo ''
+\echo '-- N21: one customer in two arms of the same experiment [expect: 23505 unique_violation]'
+-- RN-23. Customer from assignment (experiment_id=1, k=0) re-assigned to the
+-- experiment's treatment group.
+BEGIN;
+INSERT INTO experiment_assignment (experiment_id, group_id, customer_id)
+VALUES (1, 2, '00000000-0000-0000-0000-000000000001');
+ROLLBACK;
+
+\echo ''
+\echo '-- N22: a second control group for the same experiment [expect: 23505 unique_violation]'
+-- RN-24.
+BEGIN;
+INSERT INTO experiment_group (group_id, experiment_id, kind) VALUES (9001, 1, 'CONTROL');
+ROLLBACK;
+
+\echo ''
+\echo '-- N23: a campaign targeting an unknown label      [expect: 23503 foreign_key_violation]'
+-- RN-22.
+BEGIN;
+INSERT INTO campaign (campaign_id, name, label_code, starts_on, ends_on, status)
+VALUES (9009, 'Ghost label', 'GHOST', DATE '2026-01-01', DATE '2026-02-01', 'DRAFT');
+ROLLBACK;
+
+\echo ''
+\echo '-- N24: CHECK, non-positive conversion window      [expect: 23514 check_violation]'
+-- RN-25.
+BEGIN;
+INSERT INTO experiment (experiment_id, name, campaign_id, target_metric, starts_on,
+                         conversion_window_days, data_origin)
+VALUES (9010, 'Bad window', 1, 'CONVERSION', DATE '2026-01-01', 0, 'OBSERVED');
+ROLLBACK;
+
+\echo ''
+\echo '-- N25: CHECK, data origin outside the domain      [expect: 23514 check_violation]'
+-- RN-26.
+BEGIN;
+INSERT INTO experiment (experiment_id, name, campaign_id, target_metric, starts_on,
+                         conversion_window_days, data_origin)
+VALUES (9011, 'Bad origin', 1, 'CONVERSION', DATE '2026-01-01', 14, 'FAKE');
+ROLLBACK;
+
+\echo ''
+\echo '-- N26: deleting a sale an experiment counted     [expect: 23001 restrict_violation]'
+-- data-model.md, Delete rules: experiment_conversion is a durable event (#255).
+BEGIN;
+DELETE FROM transaction
+WHERE transaction_id = (SELECT transaction_id FROM experiment_conversion ORDER BY conversion_id LIMIT 1);
+ROLLBACK;
+
+\echo ''
+\echo '-- N29: renaming a role code                      [expect: 23514 check_violation]'
+-- RN-01 (#252): the permission matrix is keyed by the code and the
+-- single-administrator index by role_id, so codes are immutable.
+BEGIN;
+UPDATE role SET code = 'ROOT' WHERE role_id = 1;
 ROLLBACK;
 
 \echo ''

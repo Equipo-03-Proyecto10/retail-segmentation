@@ -27,7 +27,7 @@
 
   {% if members %}
     <section class="mq-panel mq-panel--table mq-density-compact">
-      <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(total, "customer") }} in this segment</span><span class="mq-caption">Current assignments</span></div>
+      <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(total, "customer") }} in this segment</span><span class="mq-caption">Current rule-based assignments; a K-means assignment carries a label and no segment</span></div>
       <div class="mq-table-wrap">
         <table class="mq-table">
           <thead><tr><th class="mq-table__cell--sticky" scope="col">Name</th><th scope="col">Email</th></tr></thead>
@@ -43,6 +43,6 @@
       ) }}
     </section>
   {% else %}
-    {{ empty_state("No customers are currently in this segment.", "Run the current assignment process or inspect another segment.") }}
+    {{ empty_state("No customers are currently in this segment.", "Only a rule-based run places customers in a segment. Run one, or inspect another segment.") }}
   {% endif %}
 {% endblock %}

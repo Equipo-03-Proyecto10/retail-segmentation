@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Migration matrix · {{ application_name }}{% endblock %}
+{% block topbar_title %}Migration matrix{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Analysis / Migration matrix{% endblock %}
+
+{% block content %}
+  {% from "macros/ui.html" import page_header %}
+  {{ page_header("Migration matrix", "Compare two runs: rows are the earlier run's labels, columns are the later run's, cells are customer counts.", "Segmentation traceability") }}
+
+  <section class="mq-panel">
+    <div class="mq-panel__body">
+      <form class="mq-filterbar" method="get" action="{{ url_for('migration_matrix.index') }}">
+        <div class="mq-filterbar__row">
+          <div class="mq-filterbar__group">
+            <label class="mq-field__label" for="run_a">Earlier run</label>
+            <select class="mq-input" id="run_a" name="run_a">
+              <option value="">Choose a run</option>
+              {% for run in runs %}
+                <option value="{{ run.run_id }}" {% if run_a == run.run_id|string %}selected{% endif %}>#{{ run.run_id }} — {{ run.run_at.strftime("%Y-%m-%d %H:%M") }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mq-filterbar__group">
+            <label class="mq-field__label" for="run_b">Later run</label>
+            <select class="mq-input" id="run_b" name="run_b">
+              <option value="">Choose a run</option>
+              {% for run in runs %}
+                <option value="{{ run.run_id }}" {% if run_b == run.run_id|string %}selected{% endif %}>#{{ run.run_id }} — {{ run.run_at.strftime("%Y-%m-%d %H:%M") }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mq-filterbar__actions">
+            <button class="mq-btn mq-btn--primary mq-btn--sm" type="submit">Compare</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  {% if error %}
+    <section class="mq-panel">
+      <div class="mq-panel__body"><p class="mq-caption">{{ error }}</p></div>
+    </section>
+  {% elif matrix %}
+    <section class="mq-panel mq-panel--table mq-density-compact">
+      <div class="mq-table__toolbar"><span class="mq-caption">Rows: earlier run's label · Columns: later run's label · Customers scored by only one run are counted under "Not in earlier run" / "Not in later run"</span></div>
+      <div class="mq-table-wrap">
+        <table class="mq-table">
+          <thead>
+            <tr>
+              <th class="mq-table__cell--sticky" scope="col">From \ To</th>
+              {% for column in matrix.column_labels %}
+                <th class="mq-num" scope="col">{{ column }}</th>
+              {% endfor %}
+              <th class="mq-num" scope="col">Row total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in matrix.row_labels %}
+              <tr>
+                <td class="mq-table__cell--sticky">{{ row }}</td>
+                {% for column in matrix.column_labels %}
+                  <td class="mq-num">{{ matrix.cells[row][column] }}</td>
+                {% endfor %}
+                <td class="mq-num mq-mono">{{ matrix.row_totals[row] }}</td>
+              </tr>
+            {% endfor %}
+            <tr>
+              <td class="mq-table__cell--sticky">Column total</td>
+              {% for column in matrix.column_labels %}
+                <td class="mq-num mq-mono">{{ matrix.column_totals[column] }}</td>
+              {% endfor %}
+              <td class="mq-num mq-mono">{{ matrix.row_totals.values() | sum }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {% endif %}
+{% endblock %}

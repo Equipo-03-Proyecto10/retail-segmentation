@@ -132,8 +132,7 @@ than being silently coerced.
 
 `docs/roadmap.md` defers RFM computation, and this story brings forward its
 smallest slice: quintile scoring over a window, matched against the
-`segment_rule` bands already in the schema. Not k-means, not segment history,
-not migration reporting, no dashboard. It writes `customer.current_segment_id`,
-which [ADR-0004](../adr/0004-model-ahead-of-the-deferred-segmentation-modules.md)
-records as a column the segment-history module will replace with an assignment
-table, and it adds nothing else that depends on that column.
+`segment_rule` bands already in the schema. At the time of this evidence it was
+not k-means, segment history, migration reporting or a dashboard. It wrote the
+then-current `customer.current_segment_id`; ADR-0017 later retired that column
+in favour of durable assignment history.

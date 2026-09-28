@@ -131,6 +131,20 @@ def test_an_anonymous_post_is_refused_rather_than_redirected() -> None:
     assert app.test_client().post("/reports").status_code == 403
 
 
+def test_an_anonymous_head_is_sent_to_sign_in_like_a_get() -> None:
+    app = _app()
+
+    @app.get("/reports")
+    @requires("report.read")
+    def reports() -> str:  # pragma: no cover - must never run
+        raise AssertionError("the view ran for an anonymous visitor")
+
+    response = app.test_client().head("/reports")
+
+    assert response.status_code == 302
+    assert urlsplit(response.headers["Location"]).path == "/login"
+
+
 def test_a_public_route_is_reachable_signed_out() -> None:
     assert _app().test_client().get("/").status_code == 200
 

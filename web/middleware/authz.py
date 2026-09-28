@@ -453,9 +453,9 @@ def authorize() -> Response | None:
         return None
 
     if not is_signed_in():
-        # A GET can be replayed after signing in; a POST body cannot survive
+        # A GET or HEAD can be replayed after signing in; a POST body cannot survive
         # the round trip, so it is refused rather than silently dropped.
-        if request.method == "GET":
+        if request.method in ("GET", "HEAD"):
             return redirect(url_for("auth.login", next=_current_target()))
         _refuse("not signed in", endpoint)
 

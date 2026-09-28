@@ -77,6 +77,12 @@ right place for it, and which the team accepted on 2026-09-07.
 | [F9-03](f9-03-cluster-labels.md) | K-means clusters mapped to the stable labels by ADR-0018's deterministic order: checked against the stored rows, 500 renamings of a real partition, a refused k, and two runs that number the same partition differently |
 | [F9-04](f9-04-model-comparison.md) | The model comparison page at 375 px and 1440 px: per-label populations and per-customer agreement checked against independent SQL, a run whose labels are copied giving 100% agreement whatever its method, the empty and error states, and the refusal of a role without `segment.read` |
 
+## Phase 10 — recommendations
+
+| Document | What it records |
+|---|---|
+| [F10-01](f10-01-recommendations.md) | Product recommendations with a stated reason for each: the recommendations of all 30 seeded customers checked against an independently written query, stock in the usual store enforced, no segment and no usual store stated instead of substituted, and only the stable label read |
+
 ## Review passes
 
 These follow a specific review rather than a story.

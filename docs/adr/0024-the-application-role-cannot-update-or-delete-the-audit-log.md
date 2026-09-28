@@ -1,6 +1,6 @@
 # ADR-0024 — The application role cannot update or delete the audit log
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Raquel
 **Issue:** #290
 **Supersedes:** — *(it replaces the reasoning recorded under RN-30, which was not an ADR)*

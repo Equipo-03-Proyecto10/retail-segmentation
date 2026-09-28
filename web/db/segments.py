@@ -45,6 +45,13 @@ from psycopg import Connection
 # highest spend — which is the orientation segment_rule's bands are written in.
 QUINTILES = 5
 
+# Takes a transaction-scoped advisory lock, so two concurrent runs cannot both
+# close the same open history rows and race to reopen them: the loser would
+# hit ux_customer_segment_history_open as an unhandled 500 instead of simply
+# running after the winner (#285). Advisory rather than LOCK TABLE: it
+# serializes runs without blocking reads of the segmentation history.
+_RUN_LOCK_KEY = 285_001
+
 _SCORE_AND_MATCH = """
 WITH window_sales AS (
     SELECT customer_id,
@@ -180,6 +187,15 @@ def read_rfm_inputs(
         rows = cursor.fetchall()
 
     return [CustomerSales(str(row[0]), *row[1:]) for row in rows]
+
+
+def lock_for_run(connection: Connection[Any]) -> None:
+    """Serialize runs: block until any other run in flight has committed or
+    rolled back. Held for the rest of the transaction (#285), so the read of
+    the prior open assignments, the close, and the insert all see one
+    consistent, uncontested state."""
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_xact_lock(%s)", (_RUN_LOCK_KEY,))
 
 
 def create_run(

@@ -36,6 +36,7 @@ from web.db.segments import (
     create_run,
     get_label_ordinals,
     insert_assignments,
+    lock_for_run,
     read_open_assignments,
     read_rfm_inputs,
     score_rfm_rules,
@@ -415,6 +416,7 @@ def _record(
     every history row roll back together if any part of this fails.
     """
     started = time.perf_counter()
+    lock_for_run(connection)
     output = adapter.decide(connection, window_days)
     assignments = _validated(output)
 

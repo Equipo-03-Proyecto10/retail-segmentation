@@ -41,7 +41,7 @@ from web.db.segments import (
     score_rfm_rules,
 )
 from web.db.transactions import atomic
-from web.services.cluster_labels import VocabularySizeMismatch, label_clusters
+from web.services.cluster_labels import check_vocabulary_size, label_clusters
 from web.services.kmeans import (
     KMeansFit,
     KMeansParams,
@@ -387,12 +387,7 @@ def _run_kmeans_adapter(params: KMeansParams) -> MethodAdapter:
     def adapt(connection: Any, window_days: int) -> MethodOutput:
         ordinals = get_label_ordinals(connection)
         vocabulary = sorted(ordinals, key=ordinals.__getitem__)
-        if len(vocabulary) != params.k:
-            raise VocabularySizeMismatch(
-                f"K-means was asked for k={params.k} clusters but the label "
-                f"vocabulary has {len(vocabulary)} labels. They must be equal, so "
-                "every cluster has one label and no label is left over."
-            )
+        check_vocabulary_size(params.k, vocabulary)
         return kmeans_adapter(
             params, lambda fitted: label_clusters(fitted, vocabulary)
         ).decide(connection, window_days)

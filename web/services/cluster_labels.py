@@ -56,19 +56,23 @@ def rank_clusters(result: KMeansFit) -> list[int]:
     return sorted(range(len(result.centroids)), key=lambda c: _order_key(result, c))
 
 
-def label_clusters(result: KMeansFit, vocabulary: Sequence[str]) -> dict[int, str]:
-    """The label of every cluster, pairing the best-to-worst order with the
-    vocabulary given best to worst.
-
-    Raises VocabularySizeMismatch unless there is exactly one label per cluster.
-    """
-    k = len(result.centroids)
+def check_vocabulary_size(k: int, vocabulary: Sequence[str]) -> None:
+    """Raise VocabularySizeMismatch unless there is exactly one label per cluster."""
     if len(vocabulary) != k:
         raise VocabularySizeMismatch(
             f"K-means was asked for k={k} clusters but the label vocabulary has "
             f"{len(vocabulary)} labels. They must be equal, so every cluster has "
             "one label and no label is left over."
         )
+
+
+def label_clusters(result: KMeansFit, vocabulary: Sequence[str]) -> dict[int, str]:
+    """The label of every cluster, pairing the best-to-worst order with the
+    vocabulary given best to worst.
+
+    Raises VocabularySizeMismatch unless there is exactly one label per cluster.
+    """
+    check_vocabulary_size(len(result.centroids), vocabulary)
     return {
         cluster: vocabulary[rank] for rank, cluster in enumerate(rank_clusters(result))
     }

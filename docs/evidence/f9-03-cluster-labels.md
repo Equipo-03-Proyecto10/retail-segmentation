@@ -173,12 +173,13 @@ $ ruff check .      # All checks passed!
   cluster has the lowest recency and the highest spend, and ranks above `HIBERNATING`
   and `LOST` because R + F + M puts it there. That is ADR-0018's stated limit: a label
   means its position in the declared order.
-* **Open for the team: K-means assignments still carry no `segment_id`.** The issue
-  does not mention it, so it is left empty. Pages that list a segment's members read
-  `segment_id`, so a K-means run's customers do not appear there. Making them appear
-  needs a decision on how a label resolves to a segment, since a label can be carried
-  by several segments. The migration code and ADR-0018's queries read labels and are
-  unaffected.
+* **K-means assignments carry no `segment_id`, and the catalog pages still read it
+  (#272).** A label can be carried by several segments, so none is guessed here. But
+  the customer detail page, the customer list and the segment member list read
+  `segment_id`. After a K-means run the customer detail says *Unassigned* for a
+  customer who holds a label, and the customer list shows no segment. The migration
+  code and ADR-0018's queries read labels and are unaffected. Nothing starts a
+  K-means run from the UI yet; #272 must land before or with F9-04, which adds that.
 
 ## Not evidenced here
 

@@ -14,7 +14,9 @@ import itertools
 from dataclasses import fields
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import Mock
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -219,7 +221,7 @@ def _wire(
     """Replace every web.db read the service uses. Returns the fakes so a test
     can assert on the arguments they were called with."""
     fakes = {
-        "get_customer": Mock(return_value=object()),
+        "get_customer": Mock(return_value=SimpleNamespace(name="Ada Lovelace")),
         "get_sales_totals": Mock(
             return_value=SalesTotals(
                 purchases=purchases,
@@ -260,6 +262,7 @@ def test_a_customer_with_accepted_sales_carries_every_measure(monkeypatch) -> No
     profile = build_profile(Mock(), _CUSTOMER, as_of=_AS_OF)
 
     assert profile.has_sales is True
+    assert profile.customer_name == "Ada Lovelace"
     assert profile.total_spend == Decimal("1000.00")
     assert profile.purchase_count == 10
     assert profile.average_ticket == Decimal("100.00")
@@ -299,8 +302,22 @@ def test_the_default_window_is_the_one_the_segment_run_defaults_to(monkeypatch) 
 
 def test_as_of_defaults_to_the_present(monkeypatch) -> None:
     _wire(monkeypatch)
-    profile = build_profile(Mock(), _CUSTOMER)
-    assert abs(datetime.now(UTC) - profile.window_end) < timedelta(seconds=5)
+    timezone = ZoneInfo("America/Mexico_City")
+    connection = Mock()
+    connection.info.timezone = timezone
+    profile = build_profile(connection, _CUSTOMER)
+    assert abs(datetime.now(timezone) - profile.window_end) < timedelta(seconds=5)
+
+
+def test_the_default_window_end_uses_the_connection_time_zone(monkeypatch) -> None:
+    _wire(monkeypatch)
+    timezone = ZoneInfo("America/Mexico_City")
+    connection = Mock()
+    connection.info.timezone = timezone
+
+    profile = build_profile(connection, _CUSTOMER)
+
+    assert profile.window_end.tzinfo is timezone
 
 
 @pytest.mark.parametrize("days", [0, -1, 3651])

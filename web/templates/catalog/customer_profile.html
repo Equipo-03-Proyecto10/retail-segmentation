@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 
-{% block title %}{{ customer.name }} · Consumption profile · {{ application_name }}{% endblock %}
+{% block title %}{{ customer_name }} · Consumption profile · {{ application_name }}{% endblock %}
 {% block topbar_title %}Consumption profile{% endblock %}
-{% block breadcrumbs %}{{ application_name }} / Catalogs / Customers / {{ customer.name }} / Consumption profile{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Catalogs / Customers / {{ customer_name }} / Consumption profile{% endblock %}
 
 {% block content %}
   {% from "macros/ui.html" import alert, empty_state, page_header, status_pill %}
@@ -13,10 +13,10 @@
   {% if profile %}
     {% set summary = "Accepted sales from " ~ day(profile.window_start) ~ " to " ~ day(profile.window_end) ~ " · " ~ profile.window_days ~ "-day window" %}
   {% else %}
-    {% set summary = "Choose a window between 1 and 3650 days." %}
+    {% set summary = "Choose a window between " ~ min_window ~ " and " ~ max_window ~ " days." %}
   {% endif %}
-  {% call page_header(customer.name, summary, "Consumption profile") %}
-    <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('catalog.customer_detail', customer_id=customer.customer_id) }}">Back to customer</a>
+  {% call page_header(customer_name, summary, "Consumption profile") %}
+    <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('catalog.customer_detail', customer_id=customer_id) }}">Back to customer</a>
   {% endcall %}
 
   {% if error %}{{ alert(error) }}{% endif %}
@@ -24,11 +24,11 @@
   <section class="mq-panel mq-form-panel">
     <header class="mq-panel__header"><h2 class="mq-panel__title">Window</h2></header>
     <div class="mq-panel__body">
-      <form class="mq-form" method="get" action="{{ url_for('catalog.customer_profile', customer_id=customer.customer_id) }}">
+      <form class="mq-form" method="get" action="{{ url_for('catalog.customer_profile', customer_id=customer_id) }}">
         <div class="mq-field">
           <label class="mq-field__label" for="window">Window, in days</label>
-          <input class="mq-input mq-input--num" type="number" id="window" name="window" value="{{ window }}" min="1" max="3650" required>
-          <span class="mq-field__hint">The sales measures cover this many days up to now. Enter a whole number between 1 and 3650.</span>
+          <input class="mq-input mq-input--num" type="number" id="window" name="window" value="{{ window }}" min="{{ min_window }}" max="{{ max_window }}" required>
+          <span class="mq-field__hint">The sales measures cover this many days up to now. Enter a whole number between {{ min_window }} and {{ max_window }}.</span>
         </div>
         <div class="mq-form__actions">
           <button class="mq-btn mq-btn--primary" type="submit">Apply window</button>

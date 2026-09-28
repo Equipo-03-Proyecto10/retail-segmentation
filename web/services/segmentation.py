@@ -416,16 +416,25 @@ def _record(
     every history row roll back together if any part of this fails.
     """
     started = time.perf_counter()
-    lock_for_run(connection)
+    recorded_at = lock_for_run(connection)
     output = adapter.decide(connection, window_days)
     assignments = _validated(output)
 
     prior = read_open_assignments(connection)
     run_id = create_run(
-        connection, method, window_days, dict(output.parameters), len(assignments)
+        connection,
+        method,
+        window_days,
+        dict(output.parameters),
+        len(assignments),
+        run_at=recorded_at,
     )
-    close_open_assignments(connection, [a.customer_id for a in assignments])
-    insert_assignments(connection, run_id, [a.as_row() for a in assignments])
+    close_open_assignments(
+        connection, [a.customer_id for a in assignments], at=recorded_at
+    )
+    insert_assignments(
+        connection, run_id, [a.as_row() for a in assignments], at=recorded_at
+    )
 
     counts = summarise(assignments, prior)
     return RunResult(

@@ -85,6 +85,7 @@ ADR-0021 was accepted in the pull request that introduced it, before F9-02
 | [0020](0020-csv-is-the-sole-sales-ingestion-entry-point-for-this-delivery.md) | CSV is the sole sales ingestion entry point for this delivery | Accepted |
 | [0021](0021-k-means-is-implemented-in-the-application-rather-than-taken-as-a-dependency.md) | K-means is implemented in the application rather than taken as a dependency | Accepted |
 | [0022](0022-sessions-are-resolved-server-side-on-every-request.md) | Sessions are resolved server-side on every request | Proposed |
+| [0023](0023-store-managers-read-segments-and-customers.md) | Store managers hold `segment.read`, and so read customers and segments | Proposed |
 
 ## Writing one
 

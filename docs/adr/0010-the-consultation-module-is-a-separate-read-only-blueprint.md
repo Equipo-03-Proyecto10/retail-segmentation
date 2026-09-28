@@ -4,7 +4,7 @@
 **Owner:** Marcelo
 **Issue:** #65 (F3-05)
 **Supersedes:** —
-**Superseded by:** —
+**Superseded by:** [ADR-0023](0023-store-managers-read-segments-and-customers.md), in part — only the consequence that `segment.read` keeps `STORE_MANAGER` out of the customer directory
 
 ---
 

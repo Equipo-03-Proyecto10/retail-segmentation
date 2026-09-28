@@ -137,9 +137,7 @@ def _body(response) -> str:
 # ---------- who may open it ----------
 
 
-@pytest.mark.parametrize(
-    "role_code", ["STORE_MANAGER", "INVENTORY_PLANNER", "CUSTOMER"]
-)
+@pytest.mark.parametrize("role_code", ["INVENTORY_PLANNER", "CUSTOMER"])
 def test_a_profile_without_segment_read_is_refused(app, monkeypatch, role_code) -> None:
     response, fake = _open(app, monkeypatch, role=role_code)
 
@@ -147,7 +145,9 @@ def test_a_profile_without_segment_read_is_refused(app, monkeypatch, role_code) 
     fake.assert_not_called()
 
 
-@pytest.mark.parametrize("role_code", ["ADMIN", "ANALYST", "MARKETING", "AUDITOR"])
+@pytest.mark.parametrize(
+    "role_code", ["ADMIN", "ANALYST", "STORE_MANAGER", "MARKETING", "AUDITOR"]
+)
 def test_the_roles_that_read_segments_may_open_it(app, monkeypatch, role_code) -> None:
     response, _ = _open(app, monkeypatch, role=role_code)
 

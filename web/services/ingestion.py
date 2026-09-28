@@ -57,6 +57,8 @@ def ingest_row(connection: Connection, row: SalesRow) -> None:
         raise RowRejected("source transaction id is required")
     if row.quantity <= 0:
         raise RowRejected("quantity must be positive")
+    if not row.unit_price.is_finite():
+        raise RowRejected("unit price must be a finite number")
     if row.unit_price < 0:
         raise RowRejected("unit price cannot be negative")
 

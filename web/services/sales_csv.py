@@ -52,6 +52,8 @@ class LoadReport:
 
 
 def _parse_row(raw: dict[str, str]) -> SalesRow:
+    if any(value is None for value in raw.values()):
+        raise RowRejected("row has fewer columns than the header")
     try:
         occurred_at = datetime.fromisoformat(raw["occurred_at"])
         if occurred_at.tzinfo is None:
@@ -66,7 +68,7 @@ def _parse_row(raw: dict[str, str]) -> SalesRow:
             quantity=int(raw["quantity"]),
             unit_price=Decimal(raw["unit_price"]),
         )
-    except (KeyError, ValueError, InvalidOperation) as error:
+    except (KeyError, ValueError, InvalidOperation, TypeError) as error:
         raise RowRejected(f"malformed row: {error}") from error
 
 

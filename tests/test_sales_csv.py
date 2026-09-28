@@ -102,6 +102,31 @@ def test_a_rejection_carries_its_row_number_and_reason(tmp_path: Path) -> None:
     assert "malformed" in rejection.reason
 
 
+def test_a_short_row_is_rejected_and_the_load_continues(tmp_path: Path) -> None:
+    """#286: a row with fewer columns than the header must not abort the load
+    -- datetime.fromisoformat(None) used to raise an uncaught TypeError,
+    losing every row after it."""
+    path = _write_csv(
+        tmp_path,
+        [
+            "TXN-1,cust-1,1,1,2026-01-15T10:00:00+00:00,1,2,9.99",
+            "TXN-2,cust-1,1",
+            "TXN-3,cust-1,1,1,2026-01-15T10:00:00+00:00,1,1,5.00",
+        ],
+    )
+
+    report = load_sales_csv(
+        object(), path, contract_version=CONTRACT_VERSION, ingest=_accept_everything
+    )
+
+    assert report.received == 3
+    assert report.accepted == 2
+    assert report.rejected == 1
+    rejection = report.rejections[0]
+    assert rejection.row_number == 2
+    assert "fewer columns" in rejection.reason
+
+
 def test_a_business_rejection_from_ingest_is_counted_the_same_way(
     tmp_path: Path,
 ) -> None:

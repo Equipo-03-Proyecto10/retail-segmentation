@@ -269,6 +269,20 @@ def test_negative_unit_price_is_rejected() -> None:
     assert connection.headers == {}
 
 
+@pytest.mark.parametrize("unit_price", [Decimal("NaN"), Decimal("Infinity")])
+def test_a_non_finite_unit_price_is_rejected_not_a_crash(
+    unit_price: Decimal,
+) -> None:
+    """#286: comparing a NaN Decimal with `<` raises InvalidOperation instead
+    of returning a bool, which used to escape as an unhandled 500."""
+    connection = _Connection()
+
+    with pytest.raises(RowRejected, match="finite"):
+        ingest_row(connection, _row(unit_price=unit_price))
+
+    assert connection.headers == {}
+
+
 # ---------- foreign-key rejections ----------
 
 

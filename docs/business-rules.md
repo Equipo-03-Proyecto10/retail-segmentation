@@ -279,6 +279,47 @@ assignment reader does not select the method), and the page gated on `segment.re
 that faults seeded into each rule above fail a test, and against the seeded PostgreSQL
 by [`evidence/f9-04-model-comparison.md`](evidence/f9-04-model-comparison.md). · `F9-04`
 
+### RN-40 — A recommendation is in stock at the customer's usual store, matches a stated signal, and says why
+A product is recommended to a customer only when all of these hold:
+
+* **It is eligible.** It is active, has a *positive* quantity on hand in the customer's
+  **usual store**, and the customer has not already bought it in the window. The usual
+  store is the consumption profile's dominant store (RN-35), so it is the store the
+  profile names. A product with no stock there never appears, whatever it scores, and
+  neither does one that only another store holds.
+* **It is relevant.** At least one of three signals says why *this* customer: other
+  customers whose **open** assignment carries the same label bought it in the window
+  (*segment*); it is in a category the customer registered an interest in (*preferred
+  category*); or it is in one of the categories they buy from (*purchase history*, their
+  top three over the window, RN-35). Categories are matched as the product carries them,
+  with no roll-up to a parent. In stock is not a reason.
+* **It carries its reasons.** Every recommendation lists each signal that matched, in a
+  fixed order, in words and with the figures behind it, and the quantity the store holds.
+
+Recommendations are ordered by the number of signals that match, then by how many
+segment customers bought the product, then by how much of the customer's buying its
+category is, then by product id. There are no weights: nothing is tuned, and every
+position can be explained by the reasons it carries. At most ten are returned by
+default, from one to fifty.
+
+**When it cannot recommend, it says so and reads nothing else.** A customer with no open
+assignment, or whose latest assignment is the unassigned result (RN-21), has no segment,
+and the result says which of the two it is instead of falling back to another source. A
+customer with no accepted sale in the window has no usual store, so stock cannot be
+checked, and the result says that. The segment is checked first. Nothing is guessed.
+
+Only the stable label is read (ADR-0018): the computation is not told, and does not
+read, how a run was produced or any raw cluster number, so the same labels give the same
+recommendations whatever produced them.
+
+**Enforced:** application — `web/services/recommendations.py` for the rules and
+`web/db/recommendations.py` for the two reads it adds (`SELECT`-only, parameterized).
+The open assignment, the usual store and the categories bought come from the consumption
+profile. **Verified** — by `tests/test_recommendations.py` and
+`tests/test_recommendations_db.py`, including that faults seeded into each rule above
+fail a test, and against the seeded PostgreSQL and an independently written query by
+[`evidence/f10-01-recommendations.md`](evidence/f10-01-recommendations.md). · `F10-01`
+
 ### RN-22 — A campaign targets a real, stable segment label
 **Enforced:** `campaign_label_code_fkey` → `segment_label(label_code)`.
 **Verified** — case N23.

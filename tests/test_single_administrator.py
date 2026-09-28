@@ -222,7 +222,7 @@ def test_a_unique_violation_underneath_reads_the_same_as_the_check() -> None:
 def test_another_unique_violation_is_not_disguised_as_the_admin_rule() -> None:
     """A duplicate email is a different problem and must keep its own error."""
     connection = _Connection(
-        administrators=0, raises=_IndexViolation("app_user_email_key")
+        administrators=0, raises=_IndexViolation("ux_app_user_email_lower")
     )
 
     with pytest.raises(DuplicateEmailError):

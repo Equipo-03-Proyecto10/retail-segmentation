@@ -144,7 +144,7 @@ CREATE TABLE app_user (
     user_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     role_id       SMALLINT NOT NULL REFERENCES role(role_id) ON DELETE RESTRICT,
     name          VARCHAR(120) NOT NULL,
-    email         VARCHAR(160) NOT NULL UNIQUE,
+    email         VARCHAR(160) NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     is_active     BOOLEAN NOT NULL DEFAULT TRUE,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -190,6 +190,13 @@ CREATE INDEX idx_app_session_open_by_user
 -- an unexplained database error.
 CREATE UNIQUE INDEX ux_app_user_single_administrator
     ON app_user (role_id) WHERE role_id = 1;
+
+-- One account per mailbox, whatever the letter case (#288). A plain UNIQUE on
+-- email treated USER2@ and user2@ as different people, so an administrator
+-- could create three accounts for one address. The application lower-cases
+-- the address before writing and when signing in (web/services/users.py,
+-- web/db/users.py); this index is the half a direct INSERT cannot bypass.
+CREATE UNIQUE INDEX ux_app_user_email_lower ON app_user (lower(email));
 
 CREATE TABLE customer (
     customer_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),

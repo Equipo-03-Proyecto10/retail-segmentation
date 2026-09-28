@@ -50,10 +50,12 @@ ROLLBACK;
 
 \echo ''
 \echo '-- P4: deleting a transaction cascades to its lines'
+-- Transaction 300 is not any customer's first sale, so no seeded conversion
+-- references it; one that is referenced is N26's refusal instead.
 BEGIN;
-SELECT 'P4 lines before: ' || count(*)::text FROM transaction_line WHERE transaction_id = 1;
-DELETE FROM transaction WHERE transaction_id = 1;
-SELECT 'P4 lines after: ' || count(*)::text FROM transaction_line WHERE transaction_id = 1;
+SELECT 'P4 lines before: ' || count(*)::text FROM transaction_line WHERE transaction_id = 300;
+DELETE FROM transaction WHERE transaction_id = 300;
+SELECT 'P4 lines after: ' || count(*)::text FROM transaction_line WHERE transaction_id = 300;
 ROLLBACK;
 
 \echo ''
@@ -287,6 +289,14 @@ BEGIN;
 INSERT INTO experiment (experiment_id, name, campaign_id, target_metric, starts_on,
                          conversion_window_days, data_origin)
 VALUES (9011, 'Bad origin', 1, 'CONVERSION', DATE '2026-01-01', 14, 'FAKE');
+ROLLBACK;
+
+\echo ''
+\echo '-- N26: deleting a sale an experiment counted     [expect: 23001 restrict_violation]'
+-- data-model.md, Delete rules: experiment_conversion is a durable event (#255).
+BEGIN;
+DELETE FROM transaction
+WHERE transaction_id = (SELECT transaction_id FROM experiment_conversion ORDER BY conversion_id LIMIT 1);
 ROLLBACK;
 
 \echo ''

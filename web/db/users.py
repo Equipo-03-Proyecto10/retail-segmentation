@@ -43,7 +43,7 @@ def get_user_by_email(connection: Connection, email: str) -> AppUser | None:
                    u.email, u.password_hash, u.is_active
             FROM app_user AS u
             JOIN role AS r ON r.role_id = u.role_id
-            WHERE u.email = %s
+            WHERE lower(u.email) = lower(%s)
             """,
             (email,),
         )
@@ -303,7 +303,7 @@ def update_password_hash(
     """Replace the hash for an existing account."""
     with connection.cursor() as cursor:
         cursor.execute(
-            "UPDATE app_user SET password_hash = %s WHERE email = %s",
+            "UPDATE app_user SET password_hash = %s WHERE lower(email) = lower(%s)",
             (password_hash, email),
         )
 

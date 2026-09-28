@@ -93,7 +93,7 @@ def index() -> ResponseReturnValue:
 @bp.route("/new", methods=["GET", "POST"])
 @requires(CAMPAIGN_WRITE)
 def create() -> ResponseReturnValue:
-    if request.method == "GET":
+    if request.method in ("GET", "HEAD"):
         return _render_form(None, {})
 
     values = _form_values()
@@ -120,12 +120,12 @@ def edit(campaign_id: int) -> ResponseReturnValue:
     # corrections. The service checks again inside its transaction.
     if campaign.status != service.DRAFT:
         message = service.not_a_draft(campaign_id, campaign.status)
-        if request.method == "GET":
+        if request.method in ("GET", "HEAD"):
             flash(message, "danger")
             return redirect(url_for("campaigns.index", page=page))
         return _render_index(page=page, error=message, status=409)
 
-    if request.method == "GET":
+    if request.method in ("GET", "HEAD"):
         return _render_form(campaign, {})
 
     values = _form_values()

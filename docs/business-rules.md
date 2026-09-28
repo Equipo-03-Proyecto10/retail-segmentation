@@ -48,8 +48,9 @@ two*. The role form shows the code read-only and refuses a changed one, and
 ### RN-02 — A user's email is unique and is an email address
 No two accounts share an address, and an address without `@` is refused.
 
-**Enforced:** `app_user_email_key` and `app_user_email_check`. **Verified** —
-cases N3 and N7. · `RF-01`
+**Enforced:** `ux_app_user_email_lower`, a unique index on `lower(email)` so
+letter case does not create a second account, and `app_user_email_check`; the
+application lower-cases the address. **Verified** — cases N3 and N7. · `RF-01`
 
 ### RN-03 — A password is never stored, logged or transmitted in the clear
 Only an argon2id hash is stored. The database never hashes and never receives a
@@ -542,9 +543,11 @@ writing. **Verified** — case P3: zero hashes across 280 audit rows. · `RNF-17
 Nothing in the application updates or deletes an entry. Entries are kept
 indefinitely as compliance evidence.
 
-**Enforced:** application — the audit view offers no write action. Not
-constrained in the schema, because the role that owns the schema must remain
-able to archive. Reviewed. · `RF-14`
+**Enforced:** application *and* schema — the audit view offers no write
+action, and `retail_app` holds no `UPDATE` or `DELETE` on `audit_log`
+(`REVOKE` in `sql/01_schema.sql`, checked by its self-test). The role that
+owns the schema keeps its privileges, so archiving remains possible.
+ADR-0024. · `RF-14`
 
 ---
 

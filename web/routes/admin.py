@@ -138,7 +138,7 @@ def list_stores_view() -> ResponseReturnValue:
 @bp.route("/stores/new", methods=["GET", "POST"])
 @requires(CATALOG_WRITE)
 def create_store_view() -> ResponseReturnValue:
-    if request.method == "GET":
+    if request.method in ("GET", "HEAD"):
         return render_template("admin/store_form.html", store=None, errors={})
 
     connection = get_connection()
@@ -191,7 +191,7 @@ def edit_store_view(store_id: int) -> ResponseReturnValue:
     if store is None:
         abort(404)
 
-    if request.method == "GET":
+    if request.method in ("GET", "HEAD"):
         return render_template("admin/store_form.html", store=store, errors={})
 
     name = request.form.get("name", "").strip()
@@ -304,7 +304,7 @@ def create_category_view() -> ResponseReturnValue:
     connection = get_connection()
     all_categories = list_all_categories(connection)
 
-    if request.method == "GET":
+    if request.method in ("GET", "HEAD"):
         return render_template(
             "admin/category_form.html",
             category=None,
@@ -375,7 +375,7 @@ def edit_category_view(category_id: int) -> ResponseReturnValue:
         c for c in list_all_categories(connection) if c.category_id != category_id
     ]
 
-    if request.method == "GET":
+    if request.method in ("GET", "HEAD"):
         return render_template(
             "admin/category_form.html",
             category=category,
@@ -492,7 +492,7 @@ def list_channels_view() -> ResponseReturnValue:
 @bp.route("/channels/new", methods=["GET", "POST"])
 @requires(CATALOG_WRITE)
 def create_channel_view() -> ResponseReturnValue:
-    if request.method == "GET":
+    if request.method in ("GET", "HEAD"):
         return render_template("admin/channel_form.html", channel=None, errors={})
 
     connection = get_connection()
@@ -539,7 +539,7 @@ def edit_channel_view(channel_id: int) -> ResponseReturnValue:
     if channel is None:
         abort(404)
 
-    if request.method == "GET":
+    if request.method in ("GET", "HEAD"):
         return render_template("admin/channel_form.html", channel=channel, errors={})
 
     name = request.form.get("name", "").strip()
@@ -642,7 +642,7 @@ def create_product_view() -> ResponseReturnValue:
     connection = get_connection()
     all_categories = list_all_categories(connection)
 
-    if request.method == "GET":
+    if request.method in ("GET", "HEAD"):
         return render_template(
             "admin/product_form.html",
             product=None,
@@ -742,7 +742,7 @@ def edit_product_view(product_id: int) -> ResponseReturnValue:
 
     all_categories = list_all_categories(connection)
 
-    if request.method == "GET":
+    if request.method in ("GET", "HEAD"):
         return render_template(
             "admin/product_form.html",
             product=product,
@@ -915,7 +915,7 @@ def list_roles_view() -> ResponseReturnValue:
 @bp.route("/roles/new", methods=["GET", "POST"])
 @requires(CATALOG_WRITE)
 def create_role_view() -> ResponseReturnValue:
-    if request.method == "GET":
+    if request.method in ("GET", "HEAD"):
         return render_template("admin/role_form.html", role=None, errors={})
 
     connection = get_connection()
@@ -961,7 +961,7 @@ def edit_role_view(role_id: int) -> ResponseReturnValue:
     if role is None:
         abort(404)
 
-    if request.method == "GET":
+    if request.method in ("GET", "HEAD"):
         return render_template("admin/role_form.html", role=role, errors={})
 
     # The code is shown read-only and never written (RN-01, #252). A request
@@ -1070,7 +1070,7 @@ def create_user_view() -> ResponseReturnValue:
     connection = get_connection()
     roles = list_role_options(connection)
 
-    if request.method == "GET":
+    if request.method in ("GET", "HEAD"):
         return render_template(
             "admin/user_form.html",
             user=None,

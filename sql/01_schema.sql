@@ -19,6 +19,26 @@ CREATE TABLE role (
     description VARCHAR(160)
 );
 
+-- RN-01 (#252): a role's code never changes. The permission matrix in
+-- web/middleware/authz.py is keyed by the code, and the single-administrator
+-- index below is keyed by role_id = 1; renaming codes would let the two drift
+-- apart, handing ADMIN's permissions to another role_id that no index guards.
+-- SQLSTATE 23514 and the constraint name let the application translate the
+-- refusal like any other CHECK.
+CREATE OR REPLACE FUNCTION fn_role_code_immutable() RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.code IS DISTINCT FROM OLD.code THEN
+        RAISE EXCEPTION 'role % keeps its code %', OLD.role_id, OLD.code
+            USING ERRCODE = 'check_violation', CONSTRAINT = 'role_code_immutable';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_role_code_immutable
+    BEFORE UPDATE OF code ON role
+    FOR EACH ROW EXECUTE FUNCTION fn_role_code_immutable();
+
 CREATE TABLE channel (
     channel_id SMALLINT PRIMARY KEY,
     name       VARCHAR(60) NOT NULL UNIQUE
@@ -27,8 +47,46 @@ CREATE TABLE channel (
 CREATE TABLE category (
     category_id        SMALLINT PRIMARY KEY,
     name               VARCHAR(80) NOT NULL UNIQUE,
-    parent_category_id SMALLINT REFERENCES category(category_id) ON DELETE RESTRICT
+    parent_category_id SMALLINT REFERENCES category(category_id) ON DELETE RESTRICT,
+    -- RN-33: the hierarchy is a tree. The CHECK refuses the one-row cycle;
+    -- trg_category_no_cycle below refuses the longer ones (#253).
+    CONSTRAINT category_not_own_parent CHECK (parent_category_id <> category_id)
 );
+
+-- RN-33: a category may not sit under one of its own subcategories. A CHECK
+-- cannot see other rows, so the walk up from the new parent is a trigger.
+-- The advisory lock serializes hierarchy changes: without it, two concurrent
+-- moves (A under B, B under A) could each pass against the other's old state.
+-- SQLSTATE 23514 and the constraint name let the application translate the
+-- refusal like any other CHECK.
+CREATE OR REPLACE FUNCTION fn_category_no_cycle() RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.parent_category_id IS NULL THEN
+        RETURN NEW;
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtext('category_hierarchy'));
+    IF EXISTS (
+        WITH RECURSIVE ancestor(category_id) AS (
+            SELECT NEW.parent_category_id
+            UNION
+            SELECT c.parent_category_id
+            FROM category AS c
+            JOIN ancestor AS a ON a.category_id = c.category_id
+            WHERE c.parent_category_id IS NOT NULL
+        )
+        SELECT 1 FROM ancestor WHERE category_id = NEW.category_id
+    ) THEN
+        RAISE EXCEPTION 'category % cannot sit under its own subcategory %',
+            NEW.category_id, NEW.parent_category_id
+            USING ERRCODE = 'check_violation', CONSTRAINT = 'category_no_cycle';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_category_no_cycle
+    BEFORE INSERT OR UPDATE OF parent_category_id ON category
+    FOR EACH ROW EXECUTE FUNCTION fn_category_no_cycle();
 
 CREATE TABLE store (
     store_id  SMALLINT PRIMARY KEY,
@@ -360,7 +418,7 @@ CREATE TABLE experiment_exposure (
 CREATE TABLE experiment_conversion (
     conversion_id  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     assignment_id  BIGINT NOT NULL REFERENCES experiment_assignment(assignment_id) ON DELETE CASCADE,
-    transaction_id BIGINT NOT NULL REFERENCES transaction(transaction_id) ON DELETE CASCADE,
+    transaction_id BIGINT NOT NULL REFERENCES transaction(transaction_id) ON DELETE RESTRICT,
     converted_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (assignment_id, transaction_id)
 );

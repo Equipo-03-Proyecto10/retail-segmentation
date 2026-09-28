@@ -36,6 +36,15 @@ instance. `transfer_administrator` is the single operation that moves the role
 between two users, because promoting the successor and demoting the incumbent
 are each refused on their own. · `RF-05`
 
+A role's **code** never changes, because the two halves above key on
+different things: the permission matrix (`web/middleware/authz.py`) on the
+code, the index on `role_id = 1`. Renaming codes would let them drift apart —
+moving `ADMIN` to another `role_id` hands its permissions to every holder of
+that role, and no index guards it (#252). **Enforced:** twice, like *never
+two*. The role form shows the code read-only and refuses a changed one, and
+`trg_role_code_immutable` refuses any `UPDATE` of `role.code` as
+`role_code_immutable`. **Verified** — case N29 and `tests/test_admin_crud.py`.
+
 ### RN-02 — A user's email is unique and is an email address
 No two accounts share an address, and an address without `@` is refused.
 
@@ -76,6 +85,17 @@ The hierarchy is protected by the same rule as the product reference.
 
 **Enforced:** `category_parent_category_id_fkey` `ON DELETE RESTRICT`.
 **Verified** — case N16. · `RF-07`
+
+### RN-33 — The category hierarchy is a tree
+A category cannot be its own parent, and cannot be moved under one of its own
+subcategories: a cycle would make every walk of the hierarchy endless.
+
+**Enforced:** twice. The application refuses the move with a message on the
+parent field (`web/services/catalog.py:update_category`), and the database
+refuses it independently: `category_not_own_parent` (CHECK) for the one-row
+cycle, `trg_category_no_cycle` (raising `category_no_cycle`) for longer ones.
+**Verified** — cases N27 and N28, and `tests/test_category_hierarchy.py`. ·
+`RF-07`
 
 ### RN-08 — A customer with recorded sales cannot be deleted
 Sales history is the basis of every segment; deleting the customer would orphan

@@ -260,6 +260,18 @@ SELECT t.transaction_id,
 FROM transaction t
 CROSS JOIN generate_series(0,1) d;
 
+-- ADR-0020: a header total is derived from its persisted lines, never supplied
+-- beside them. The insert above writes a placeholder; this makes every seeded
+-- total reconcile with its own lines (#254).
+UPDATE transaction AS t
+SET total = l.line_total
+FROM (
+    SELECT transaction_id, SUM(quantity * unit_price) AS line_total
+    FROM transaction_line
+    GROUP BY transaction_id
+) AS l
+WHERE l.transaction_id = t.transaction_id;
+
 -- ---------- campaign (30) ----------
 INSERT INTO campaign (campaign_id, name, label_code, starts_on, ends_on, status)
 SELECT n, 'Campaign ' || n,

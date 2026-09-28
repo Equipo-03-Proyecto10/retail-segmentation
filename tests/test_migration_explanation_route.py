@@ -102,7 +102,18 @@ def test_an_unknown_run_is_a_404(app: Flask, monkeypatch: pytest.MonkeyPatch) ->
     client = app.test_client()
     _sign_in(client, "ANALYST")
 
-    response = client.get("/migration-explanation/?run_a=1&run_b=999&customer_id=c1")
+    response = client.get(
+        "/migration-explanation/"
+        "?run_a=1&run_b=999&customer_id=00000000-0000-0000-0000-000000000001"
+    )
+    assert response.status_code == 404
+
+
+def test_a_malformed_customer_id_is_a_404(app: Flask) -> None:
+    client = app.test_client()
+    _sign_in(client, "ANALYST")
+
+    response = client.get("/migration-explanation/?run_a=1&run_b=2&customer_id=bad")
     assert response.status_code == 404
 
 
@@ -123,7 +134,10 @@ def test_a_customer_absent_from_both_runs_is_a_404(
     client = app.test_client()
     _sign_in(client, "ANALYST")
 
-    response = client.get("/migration-explanation/?run_a=1&run_b=2&customer_id=nobody")
+    response = client.get(
+        "/migration-explanation/"
+        "?run_a=1&run_b=2&customer_id=00000000-0000-0000-0000-000000000099"
+    )
     assert response.status_code == 404
 
 
@@ -147,7 +161,8 @@ def test_renders_the_explanation_for_a_moved_customer(
     _sign_in(client, "ANALYST")
 
     body = client.get(
-        "/migration-explanation/?run_a=1&run_b=2&customer_id=c1"
+        "/migration-explanation/"
+        "?run_a=1&run_b=2&customer_id=00000000-0000-0000-0000-000000000001"
     ).get_data(as_text=True)
 
     assert "Ada Lovelace" in body

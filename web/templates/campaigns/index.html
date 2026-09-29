@@ -8,6 +8,7 @@
   {% from "macros/ui.html" import alert, empty_state, page_header, pagination, status_pill %}
   {% set tones = {"DRAFT": "neutral", "ACTIVE": "success", "FINISHED": "info", "CANCELLED": "warning"} %}
   {% call page_header("Campaigns", "Run a campaign from draft to completion against a stable segment label.", "Analysis") %}
+    <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('experiments.index') }}">Experiments</a>
     {% if can('campaign.write') %}<a class="mq-btn mq-btn--primary mq-btn--sm" href="{{ url_for('campaigns.create') }}">New campaign</a>{% endif %}
   {% endcall %}
   {% if error %}{{ alert(error) }}{% endif %}

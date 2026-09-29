@@ -23,6 +23,7 @@ from psycopg.errors import (
 
 from web.db import categories, channels, products, roles, stores
 from web.db.transactions import atomic
+from web.parsing import page_number, whole_number
 
 
 @dataclass(frozen=True)
@@ -41,11 +42,7 @@ INT_MAX = 2147483647
 
 def _parse_bounded(raw: str, *, maximum: int) -> int | None:
     """Return the key when it fits the column, and None when it does not."""
-    try:
-        value = int(raw)
-    except ValueError:
-        return None
-    return value if 0 <= value <= maximum else None
+    return whole_number(raw, maximum)
 
 
 def parse_identifier(
@@ -101,12 +98,7 @@ def validate_category(*, name: str) -> dict[str, str]:
 
 def parse_pagination(page_param: str | None, per_page_default: int = 20) -> int:
     """Parse the page query parameter, defaulting to 1 on anything invalid."""
-    try:
-        page = int(page_param) if page_param else 1
-    except ValueError:
-        return 1
-
-    return page if 1 <= page <= 2_147_483_647 else 1
+    return page_number(page_param)
 
 
 def validate_channel(*, name: str) -> dict[str, str]:
@@ -138,7 +130,7 @@ def validate_product(
     elif len(name) > 150:
         errors["name"] = "Name must be 150 characters or fewer."
 
-    if not category_id or not category_id.isdigit():
+    if not category_id or not (category_id.isascii() and category_id.isdigit()):
         errors["category_id"] = "Category is required."
     elif _parse_bounded(category_id, maximum=SMALLINT_MAX) is None:
         errors["category_id"] = (

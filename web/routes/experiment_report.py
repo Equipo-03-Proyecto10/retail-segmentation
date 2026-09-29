@@ -13,19 +13,13 @@ from flask import Blueprint, Response, render_template, request
 from web.db import get_connection
 from web.db.experiments import list_campaign_choices
 from web.middleware.authz import CAMPAIGN_READ, requires
+from web.parsing import page_number
 from web.services import experiment_report as service
 from web.services.experiments import DATA_ORIGINS, TARGET_METRICS
 
 bp = Blueprint("experiment_report", __name__, url_prefix="/experiment-report")
 
 _EMPTY = service.ReportPage((), 0, 1, 1)
-
-
-def _a_page(raw: str | None) -> int:
-    try:
-        return max(1, int(raw or 1))
-    except ValueError:
-        return 1
 
 
 def _context() -> dict:
@@ -62,7 +56,7 @@ def index() -> str | tuple[str, int]:
         get_connection(),
         campaign_id=campaign_id,
         data_origin=origin,
-        page=_a_page(request.args.get("page")),
+        page=page_number(request.args.get("page")),
     )
     return render_template(
         "experiment_report/index.html", report=report, error=None, **context

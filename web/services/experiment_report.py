@@ -23,6 +23,7 @@ from web.db import experiment_conversions as conversions
 from web.db import experiment_report as report_db
 from web.db.experiment_report import ReportGroup
 from web.db.experiments import Experiment
+from web.parsing import whole_number
 from web.services import experiment_uplift as uplift
 from web.services.experiments import DATA_ORIGINS, is_synthetic
 from web.services.pagination import page_count
@@ -102,10 +103,8 @@ def parse_filters(
     report's rather than dropping it (RN-45)."""
     campaign_id: int | None = None
     if campaign:
-        if not (campaign.isascii() and campaign.isdigit()) or int(campaign) > 2**31 - 1:
-            raise InvalidFilter("Choose a campaign from the list.")
-        campaign_id = int(campaign)
-        if campaign_id not in offered_campaign_ids:
+        campaign_id = whole_number(campaign)
+        if campaign_id is None or campaign_id not in offered_campaign_ids:
             raise InvalidFilter("Choose a campaign from the list.")
     if origin and origin not in DATA_ORIGINS:
         raise InvalidFilter("Choose a data origin from the list.")

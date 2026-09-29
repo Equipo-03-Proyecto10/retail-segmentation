@@ -97,6 +97,7 @@ right place for it, and which the team accepted on 2026-09-07.
 | Document | What it records |
 |---|---|
 | [F12-01](f12-01-segmentation-dashboard.md) | The segmentation dashboard: segment sizes, RFM distribution, migration flow and revenue by label for one run, checked against independent SQL and a real browser with no external network requests, Highcharts vendored rather than loaded from a CDN, and the refusal of a role without `segment.read` |
+| [F12-02](f12-02-segment-history-report.md) | The filtered segment history and migration report: 1,020 rows across every run checked against SQL, filters that combine and are reflected back into the form, an expanded row's R/F/M explanation checked against a real customer's actual label change, the no-rows state, and the refusal of a role without `segment.read` |
 
 ## Review passes
 

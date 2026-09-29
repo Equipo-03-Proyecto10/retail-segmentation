@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block title %}Segment history report · {{ application_name }}{% endblock %}
+{% block topbar_title %}Segment history report{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Analysis / Segment history report{% endblock %}
+
+{% block content %}
+  {% from "macros/ui.html" import alert, count_label, empty_state, page_header, pagination, status_pill %}
+  {{ page_header(
+    "Segment history report",
+    "Every segment assignment, filterable by run, label and period, each with why the customer got there.",
+    "Segmentation modelling"
+  ) }}
+
+  {% if error %}{{ alert(error) }}{% endif %}
+
+  <form class="mq-filterbar" method="get" action="{{ url_for('segment_history_report.index') }}">
+    <div class="mq-filterbar__row">
+      <div class="mq-filterbar__group">
+        <label class="mq-field__label" for="run">Run</label>
+        <select class="mq-select" id="run" name="run">
+          <option value="">All runs</option>
+          {% for option in runs %}
+            <option value="{{ option.run_id }}" {{ "selected" if run == option.run_id|string }}>#{{ option.run_id }} — {{ option.run_at.strftime("%Y-%m-%d %H:%M") }} · {{ option.method }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="mq-filterbar__group">
+        <label class="mq-field__label" for="label">Label</label>
+        <select class="mq-select" id="label" name="label">
+          <option value="">All labels</option>
+          {% for code in vocabulary %}
+            <option value="{{ code }}" {{ "selected" if label == code }}>{{ code }}</option>
+          {% endfor %}
+          <option value="unassigned" {{ "selected" if label == "unassigned" }}>Unassigned</option>
+        </select>
+      </div>
+      <div class="mq-bitemporal">
+        <div class="mq-bitemporal__axis"><label class="mq-bitemporal__axis-label" for="period_start">Run from</label><input class="mq-input" type="date" id="period_start" name="period_start" value="{{ period_start }}"></div>
+        <span class="mq-bitemporal__rule" aria-hidden="true"></span>
+        <div class="mq-bitemporal__axis"><label class="mq-bitemporal__axis-label" for="period_end">Run to</label><input class="mq-input" type="date" id="period_end" name="period_end" value="{{ period_end }}"></div>
+      </div>
+      <div class="mq-filterbar__actions">
+        <a class="mq-btn mq-btn--tertiary mq-btn--sm" href="{{ url_for('segment_history_report.index') }}">Clear</a>
+        <button class="mq-btn mq-btn--primary mq-btn--sm" type="submit">Filter</button>
+      </div>
+    </div>
+  </form>
+
+  {% if report.rows %}
+    <section class="mq-panel mq-panel--table mq-density-compact">
+      <div class="mq-table__toolbar">
+        <span class="mq-table__count">{{ count_label(report.total, "row", "rows") }}</span>
+      </div>
+      <div class="mq-table-wrap">
+        <table class="mq-table">
+          <thead>
+            <tr>
+              <th class="mq-table__cell--sticky" scope="col">Customer</th>
+              <th scope="col">Run</th>
+              <th scope="col">Label</th>
+              <th scope="col">Valid from</th>
+              <th scope="col">Valid to</th>
+              <th scope="col"><span class="mq-visually-hidden">Explanation</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in report.rows %}
+              {% set entry = row.entry %}
+              <tr>
+                <td class="mq-table__cell--sticky"><a class="mq-table__link" href="{{ url_for('catalog.customer_detail', customer_id=entry.assignment.customer_id) }}">{{ entry.assignment.customer_name }}</a></td>
+                <td class="mq-mono">#{{ entry.run_id }} · {{ entry.run_at.strftime("%Y-%m-%d") }} · {{ entry.method }}</td>
+                <td>{% if entry.label_name %}{{ status_pill(entry.label_name, "info") }}{% else %}{{ status_pill("Unassigned", "neutral") }}{% endif %}</td>
+                <td class="mq-mono">{{ entry.valid_from.strftime("%Y-%m-%d") }}</td>
+                <td class="mq-mono">{% if entry.valid_to %}{{ entry.valid_to.strftime("%Y-%m-%d") }}{% else %}<span class="mq-caption">still open</span>{% endif %}</td>
+                <td>
+                  {% if row.explanation %}
+                    <details>
+                      <summary>Why this label?</summary>
+                      {% set explanation = row.explanation %}
+                      {% if explanation.label_changed %}
+                        <p><strong>{{ explanation.label_before or "Unassigned" }}</strong> → <strong>{{ explanation.label_after or "Unassigned" }}</strong></p>
+                      {% else %}
+                        <p>The label did not change: stayed <strong>{{ explanation.label_before or "Unassigned" }}</strong>.</p>
+                      {% endif %}
+                      {% if explanation.most_changed_caption %}
+                        <p class="mq-caption">{{ explanation.most_changed_caption }}</p>
+                      {% endif %}
+                      <table class="mq-table">
+                        <thead>
+                          <tr>
+                            <th scope="col">Component</th>
+                            <th scope="col">Raw before</th>
+                            <th scope="col">Score before</th>
+                            <th scope="col">Raw after</th>
+                            <th scope="col">Score after</th>
+                            <th scope="col">Score delta</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {% for component in [explanation.recency, explanation.frequency, explanation.monetary] %}
+                            <tr>
+                              <td>{{ component.name }}</td>
+                              <td class="mq-mono">{% if component.raw_before is none %}No scores for this run{% else %}{{ component.raw_before }}{% endif %}</td>
+                              <td class="mq-num">{% if component.score_before is none %}—{% else %}{{ component.score_before }}{% endif %}</td>
+                              <td class="mq-mono">{% if component.raw_after is none %}No scores for this run{% else %}{{ component.raw_after }}{% endif %}</td>
+                              <td class="mq-num">{% if component.score_after is none %}—{% else %}{{ component.score_after }}{% endif %}</td>
+                              <td class="mq-num mq-mono">{% if component.score_delta is none %}—{% else %}{{ "%+d"|format(component.score_delta) }}{% endif %}</td>
+                            </tr>
+                          {% endfor %}
+                        </tbody>
+                      </table>
+                    </details>
+                  {% else %}
+                    <span class="mq-caption">First assignment on record</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {{ pagination(
+        report.page,
+        report.page_count,
+        "Page {} of {} · ".format(report.page, report.page_count) ~ count_label(report.total, "row", "rows"),
+        url_for('segment_history_report.index', run=run, label=label, period_start=period_start, period_end=period_end, page=report.page - 1) if report.has_previous else none,
+        url_for('segment_history_report.index', run=run, label=label, period_start=period_start, period_end=period_end, page=report.page + 1) if report.has_next else none
+      ) }}
+    </section>
+  {% elif not error %}
+    {{ empty_state("No rows match those filters", "Widen the run period, choose another run or label, or clear the filters.") }}
+  {% endif %}
+{% endblock %}

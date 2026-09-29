@@ -44,6 +44,7 @@ READ_ROUTES = [
     "/migration-explanation/",
     "/model-comparison/",
     "/segmentation-dashboard/",
+    "/segment-history-report/",
     "/campaigns/",
     "/experiments/",
     "/reports/",

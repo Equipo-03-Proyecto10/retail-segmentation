@@ -380,6 +380,45 @@ each rule above fail a test, and against the seeded PostgreSQL and a real browse
 [`evidence/f12-01-segmentation-dashboard.md`](evidence/f12-01-segmentation-dashboard.md).
 · `F12-01`
 
+### RN-42 — The segment history report's filters combine, and a row's explanation is its customer's previous run
+
+The report lists `customer_segment_history` rows across every run, filtered by
+three independent, optional conditions that combine with AND:
+
+* **run** — one specific run's rows only;
+* **label** — one specific label's rows, or specifically the rows a run left
+  unassigned (RN-21), which is not the same as no label filter at all;
+* **period** — rows whose own run's `run_at` falls in a stated range, closed on
+  its last day, the same "whole day" rule `web.db.audit`'s date filters already
+  use.
+
+A filter combination that matches nothing is a report with no rows, not an error:
+the count and the list read share the same filters, so the two never disagree.
+
+**Expanding a row shows why that customer holds that label**, built by F7-06's
+`explain_migration` from exactly two rows: this one, and the same customer's
+assignment on the run immediately before this row's run (found the same way
+F12-01's dashboard finds a run's previous run — the run immediately before it by
+`run_at`, whichever method produced either). A customer's first-ever row has no
+earlier run to compare it with, and says so rather than showing an empty or
+invented comparison. Nothing here recomputes a score; every value comes from the
+stored history rows (ADR-0017).
+
+**Enforced:** application — `web/services/segment_history_report.py` for the
+filters and the per-row explanation, `web/db/segment_history_report.py` for the
+two reads (`SELECT`-only, parameterized, paginated). Building SQL text with an
+f-string or concatenation is refused elsewhere in this codebase
+(`tests/test_write_services.py`), so the count and list statements' identical
+`WHERE` clauses are two literals kept in step by a test that compares them,
+matching `web.db.audit`'s own established pattern rather than sharing the clause
+at runtime. The page is gated on `segment.read`
+(`docs/analytics-permission-map.md`, Phase 12). **Verified** — by
+`tests/test_segment_history_report.py`, `tests/test_segment_history_report_db.py`
+and `tests/test_segment_history_report_route.py`, including that faults seeded
+into each rule above fail a test, and against the seeded PostgreSQL by
+[`evidence/f12-02-segment-history-report.md`](evidence/f12-02-segment-history-report.md).
+· `F12-02`
+
 ### RN-22 — A campaign targets a real, stable segment label
 **Enforced:** `campaign_label_code_fkey` → `segment_label(label_code)`.
 **Verified** — case N23.

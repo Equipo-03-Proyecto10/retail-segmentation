@@ -396,23 +396,30 @@ measurement error.
 
 The other half — at least one treatment group before activation — is not
 expressible as a static constraint, the same shape as RN-01's *never zero*
-half. It waits on F11-03's service-level check.
+half. The application enforces it: setup always writes one control with the
+treatment groups, and a campaign cannot be activated while an experiment
+attached to it lacks a control or a treatment group
+(`web/services/experiments.py` `activation_refusal`, F11-03).
 
 ### RN-25 — An experiment's conversion window is a positive number of days
 **Enforced:** `experiment_conversion_window_days_check`. **Verified** — case
 N24.
 
 Fixed before the run starts and immutable after the first assignment
-(ADR-0019) is not yet enforced anywhere; it waits on F11-04's service, which
-must lock the value before assignment begins.
+(ADR-0019): the application refuses a change to the window, or to the target
+metric, once the experiment has an assignment. The edit locks the experiment
+row before counting; F11-04 must take at least `FOR SHARE` on it before the
+first assignment. · `F11-03`
 
 ### RN-26 — Every experiment's data carries its origin
 `OBSERVED`, `SEEDED` or `INJECTED`.
 
 **Enforced:** `experiment_data_origin_check`. **Verified** — case N25.
 
-Rendering the `Synthetic` label on every screen and export for `SEEDED` and
-`INJECTED` data (ADR-0019) is not yet built; it waits on F11-07.
+The origin is chosen when the experiment is set up and is never updated
+afterwards, so every later result reads the origin it was created with. The
+experiment screens label `SEEDED` and `INJECTED` experiments `Synthetic`
+(F11-03). The results and exports that F11-07 adds must carry the same label.
 
 ### RN-27 — Exposure and conversion are recorded as events separate from assignment
 Neither is a column on `experiment_assignment`: an assigned customer may

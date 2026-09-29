@@ -1,0 +1,134 @@
+"""Experiment setup (F11-03).
+
+Reading needs `campaign.read`; setup and every change need `campaign.write`,
+the permissions docs/analytics-permission-map.md assigns to experiments. The
+setup rules are the service's; a route only reads the request and renders the
+outcome.
+"""
+
+from __future__ import annotations
+
+from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask.typing import ResponseReturnValue
+
+from web.db import get_connection
+from web.db.experiments import get_experiment, list_campaign_choices, list_experiments
+from web.middleware.authz import CAMPAIGN_READ, CAMPAIGN_WRITE, requires
+from web.routes.pagination import redirect_last_page
+from web.services import experiments as service
+from web.services.catalog import parse_pagination
+from web.services.pagination import page_count
+
+bp = Blueprint("experiments", __name__, url_prefix="/experiments")
+
+_PER_PAGE = 20
+
+
+def _render_form(
+    experiment: object,
+    errors: dict[str, str],
+    status: int = 200,
+    *,
+    existing: object = None,
+) -> ResponseReturnValue:
+    """`existing` is the stored experiment when editing: what the form shows as
+    fixed (its origin, its groups, and any rule its assignments locked)."""
+    return (
+        render_template(
+            "experiments/form.html",
+            experiment=experiment,
+            existing=existing,
+            errors=errors,
+            campaigns=list_campaign_choices(get_connection()),
+            target_metrics=service.TARGET_METRICS,
+            data_origins=service.DATA_ORIGINS,
+            treatment_groups_max=service.TREATMENT_GROUPS_MAX,
+        ),
+        status,
+    )
+
+
+def _form_values(*, creating: bool) -> dict[str, str]:
+    values = {
+        "name": request.form.get("name", "").strip(),
+        "campaign_id": request.form.get("campaign_id", ""),
+        "target_metric": request.form.get("target_metric", ""),
+        "starts_on": request.form.get("starts_on", ""),
+        "ends_on": request.form.get("ends_on", ""),
+        "conversion_window_days": request.form.get(
+            "conversion_window_days", ""
+        ).strip(),
+    }
+    if creating:
+        values["data_origin"] = request.form.get("data_origin", "")
+        values["treatment_groups"] = request.form.get("treatment_groups", "").strip()
+    return values
+
+
+@bp.get("/", endpoint="index")
+@requires(CAMPAIGN_READ)
+def index() -> ResponseReturnValue:
+    page = parse_pagination(request.args.get("page"))
+    experiment_page, total = list_experiments(
+        get_connection(), page=page, per_page=_PER_PAGE
+    )
+    total_pages = page_count(total, _PER_PAGE)
+    if response := redirect_last_page(page, total_pages):
+        return response
+    return render_template(
+        "experiments/index.html",
+        experiments=experiment_page,
+        page=page,
+        total_pages=total_pages,
+        target_metrics=service.TARGET_METRICS,
+        is_synthetic=service.is_synthetic,
+    )
+
+
+@bp.route("/new", methods=["GET", "POST"])
+@requires(CAMPAIGN_WRITE)
+def create() -> ResponseReturnValue:
+    if request.method in ("GET", "HEAD"):
+        return _render_form(None, {})
+
+    values = _form_values(creating=True)
+    data, errors = service.validate_experiment(**values)
+    if data is None:
+        return _render_form(values, errors, 400)
+    try:
+        experiment_id = service.create_experiment(get_connection(), data)
+    except service.ExperimentRefused as refusal:
+        return _render_form(values, {refusal.field: str(refusal)}, 409)
+    flash(
+        f"Experiment {experiment_id} created with one control and "
+        f"{data.treatment_groups} treatment group"
+        f"{'' if data.treatment_groups == 1 else 's'}.",
+        "success",
+    )
+    return redirect(url_for("experiments.index"))
+
+
+@bp.route("/<int:experiment_id>/edit", methods=["GET", "POST"])
+@requires(CAMPAIGN_WRITE)
+def edit(experiment_id: int) -> ResponseReturnValue:
+    existing = get_experiment(get_connection(), experiment_id)
+    if existing is None:
+        abort(404)
+
+    if request.method in ("GET", "HEAD"):
+        return _render_form(existing, {}, existing=existing)
+
+    values = _form_values(creating=False)
+    data, errors = service.validate_experiment(**values)
+    if data is None:
+        return _render_form(values, errors, 400, existing=existing)
+    try:
+        service.update_experiment(get_connection(), experiment_id, data)
+    except service.ExperimentNotFound:
+        abort(404)
+    except service.ExperimentRefused as refusal:
+        return _render_form(
+            values, {refusal.field: str(refusal)}, 409, existing=existing
+        )
+    flash(f"Experiment {experiment_id} updated.", "success")
+    return redirect(url_for("experiments.index"))

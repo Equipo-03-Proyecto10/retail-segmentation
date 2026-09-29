@@ -86,6 +86,12 @@ right place for it, and which the team accepted on 2026-09-07.
 | [Category subtree](recommendations-category-subtree.md) | #277: a preferred or bought category covers the categories below it, checked against an independent recursive query on all 30 seeded customers and shown on a subcategory product stocked in a rolled-back transaction |
 | [Store managers read segments](store-manager-segment-read.md) | #280 and ADR-0023: `STORE_MANAGER` holds `segment.read`, reaching every customer and segment surface (recommendations at 375 px and 1440 px) and still refused every write, while `INVENTORY_PLANNER` stays out |
 
+## Phase 11 — campaigns and experiments
+
+| Document | What it records |
+|---|---|
+| [F11-03](f11-03-experiment-setup.md) | Experiment setup on a real database: one control and the treatment groups written together, the conversion window and target metric locked after the first assignment, a campaign refused activation while an attached experiment lacks a group, the data origin fixed and labelled `Synthetic`, at 375 px and 1440 px |
+
 ## Phase 12 — analytics
 
 | Document | What it records |

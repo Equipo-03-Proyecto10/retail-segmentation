@@ -1,0 +1,249 @@
+"""Data access for experiment setup (F11-03).
+
+Every statement is parameterized; the setup rules live in
+web/services/experiments.py, which owns the transaction (ADR-0014).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+
+from psycopg import Connection
+
+# Takes a transaction-scoped advisory lock, so two concurrent creates cannot
+# both read the same max(experiment_id) or max(group_id): neither column has an
+# identity (F11-01 kept the seeded ids), the same reason campaigns lock.
+_CREATE_LOCK_KEY = 222_001
+
+CONTROL = "CONTROL"
+TREATMENT = "TREATMENT"
+
+
+@dataclass(frozen=True)
+class Experiment:
+    experiment_id: int
+    name: str
+    campaign_id: int | None
+    campaign_name: str | None
+    target_metric: str
+    starts_on: date
+    ends_on: date | None
+    conversion_window_days: int
+    data_origin: str
+    control_groups: int
+    treatment_groups: int
+    assignments: int
+
+
+@dataclass(frozen=True)
+class CampaignChoice:
+    campaign_id: int
+    name: str
+    status: str
+
+
+@dataclass(frozen=True)
+class GroupCounts:
+    experiment_id: int
+    name: str
+    control_groups: int
+    treatment_groups: int
+
+
+# One row per experiment with its group and assignment counts; the two reads
+# differ only in their last clause.
+_LIST_EXPERIMENTS = """
+    SELECT e.experiment_id, e.name, e.campaign_id, c.name, e.target_metric,
+           e.starts_on, e.ends_on, e.conversion_window_days, e.data_origin,
+           (SELECT count(*) FROM experiment_group AS g
+             WHERE g.experiment_id = e.experiment_id AND g.kind = 'CONTROL'),
+           (SELECT count(*) FROM experiment_group AS g
+             WHERE g.experiment_id = e.experiment_id AND g.kind = 'TREATMENT'),
+           (SELECT count(*) FROM experiment_assignment AS a
+             WHERE a.experiment_id = e.experiment_id)
+      FROM experiment AS e
+      LEFT JOIN campaign AS c ON c.campaign_id = e.campaign_id
+     ORDER BY e.experiment_id DESC
+     LIMIT %s OFFSET %s
+"""
+
+_GET_EXPERIMENT = """
+    SELECT e.experiment_id, e.name, e.campaign_id, c.name, e.target_metric,
+           e.starts_on, e.ends_on, e.conversion_window_days, e.data_origin,
+           (SELECT count(*) FROM experiment_group AS g
+             WHERE g.experiment_id = e.experiment_id AND g.kind = 'CONTROL'),
+           (SELECT count(*) FROM experiment_group AS g
+             WHERE g.experiment_id = e.experiment_id AND g.kind = 'TREATMENT'),
+           (SELECT count(*) FROM experiment_assignment AS a
+             WHERE a.experiment_id = e.experiment_id)
+      FROM experiment AS e
+      LEFT JOIN campaign AS c ON c.campaign_id = e.campaign_id
+     WHERE e.experiment_id = %s
+"""
+
+
+def list_experiments(
+    connection: Connection, *, page: int, per_page: int
+) -> tuple[list[Experiment], int]:
+    """Return one page of experiments, newest first, and the total row count."""
+    offset = (page - 1) * per_page
+    with connection.cursor() as cursor:
+        cursor.execute(_LIST_EXPERIMENTS, (per_page, offset))
+        rows = cursor.fetchall()
+        cursor.execute("SELECT count(*) FROM experiment")
+        total = cursor.fetchone()[0]
+    return [Experiment(*row) for row in rows], total
+
+
+def get_experiment(connection: Connection, experiment_id: int) -> Experiment | None:
+    """Return one experiment with its group and assignment counts, or None."""
+    with connection.cursor() as cursor:
+        cursor.execute(_GET_EXPERIMENT, (experiment_id,))
+        row = cursor.fetchone()
+    return None if row is None else Experiment(*row)
+
+
+def lock_experiment(connection: Connection, experiment_id: int) -> bool:
+    """Lock the experiment row for the rest of the transaction; False if absent.
+
+    An edit takes this before counting assignments, so the count it acts on is
+    the one it writes against. F11-04 must take at least FOR SHARE on the same
+    row before recording an experiment's first assignment, or an edit and that
+    assignment could each pass their check concurrently.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT 1 FROM experiment WHERE experiment_id = %s FOR UPDATE",
+            (experiment_id,),
+        )
+        return cursor.fetchone() is not None
+
+
+def list_campaign_choices(connection: Connection) -> list[CampaignChoice]:
+    """Every campaign an experiment can be attached to, newest first."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT campaign_id, name, status FROM campaign ORDER BY campaign_id DESC"
+        )
+        rows = cursor.fetchall()
+    return [CampaignChoice(*row) for row in rows]
+
+
+def create_experiment(
+    connection: Connection,
+    *,
+    name: str,
+    campaign_id: int | None,
+    target_metric: str,
+    starts_on: date,
+    ends_on: date | None,
+    conversion_window_days: int,
+    data_origin: str,
+    treatment_groups: int,
+) -> int | None:
+    """Insert an experiment with one control and `treatment_groups` treatment
+    groups under the next free ids, and return its id; or None when one with
+    the same name, campaign and start date already exists (a resubmitted
+    form, as #296 found for campaigns, not a second experiment)."""
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_xact_lock(%s)", (_CREATE_LOCK_KEY,))
+        cursor.execute(
+            """
+            SELECT 1 FROM experiment
+             WHERE name = %s AND campaign_id IS NOT DISTINCT FROM %s::int
+               AND starts_on = %s
+            """,
+            (name, campaign_id, starts_on),
+        )
+        if cursor.fetchone() is not None:
+            return None
+        cursor.execute(
+            """
+            INSERT INTO experiment (experiment_id, name, campaign_id, target_metric,
+                                    starts_on, ends_on, conversion_window_days,
+                                    data_origin)
+            SELECT COALESCE(max(experiment_id), 0) + 1, %s, %s, %s, %s, %s, %s, %s
+            FROM experiment
+            RETURNING experiment_id
+            """,
+            (
+                name,
+                campaign_id,
+                target_metric,
+                starts_on,
+                ends_on,
+                conversion_window_days,
+                data_origin,
+            ),
+        )
+        experiment_id = cursor.fetchone()[0]
+        cursor.execute("SELECT COALESCE(max(group_id), 0) FROM experiment_group")
+        last_group = cursor.fetchone()[0]
+        kinds = [CONTROL] + [TREATMENT] * treatment_groups
+        cursor.executemany(
+            "INSERT INTO experiment_group (group_id, experiment_id, kind) "
+            "VALUES (%s, %s, %s)",
+            [
+                (last_group + offset, experiment_id, kind)
+                for offset, kind in enumerate(kinds, start=1)
+            ],
+        )
+        return experiment_id
+
+
+def update_experiment(
+    connection: Connection,
+    experiment_id: int,
+    *,
+    name: str,
+    campaign_id: int | None,
+    target_metric: str,
+    starts_on: date,
+    ends_on: date | None,
+    conversion_window_days: int,
+) -> bool:
+    """Rewrite an experiment's editable fields. `data_origin` is not among
+    them: it is fixed at creation (RN-26). Returns False when no row matched."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            UPDATE experiment
+               SET name = %s, campaign_id = %s, target_metric = %s,
+                   starts_on = %s, ends_on = %s, conversion_window_days = %s
+             WHERE experiment_id = %s
+            """,
+            (
+                name,
+                campaign_id,
+                target_metric,
+                starts_on,
+                ends_on,
+                conversion_window_days,
+                experiment_id,
+            ),
+        )
+        return cursor.rowcount == 1
+
+
+def list_group_counts_for_campaign(
+    connection: Connection, campaign_id: int
+) -> list[GroupCounts]:
+    """Each experiment attached to the campaign, with its control and treatment
+    group counts, for the check activation makes (RN-24)."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT e.experiment_id, e.name,
+                   count(g.group_id) FILTER (WHERE g.kind = 'CONTROL'),
+                   count(g.group_id) FILTER (WHERE g.kind = 'TREATMENT')
+              FROM experiment AS e
+              LEFT JOIN experiment_group AS g ON g.experiment_id = e.experiment_id
+             WHERE e.campaign_id = %s
+             GROUP BY e.experiment_id, e.name
+             ORDER BY e.experiment_id
+            """,
+            (campaign_id,),
+        )
+        rows = cursor.fetchall()
+    return [GroupCounts(*row) for row in rows]

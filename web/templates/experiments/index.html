@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Experiments · {{ application_name }}{% endblock %}
+{% block topbar_title %}Experiments{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Analysis / Campaigns / Experiments{% endblock %}
+
+{% block content %}
+  {% from "macros/ui.html" import empty_state, page_header, pagination, status_pill %}
+  {% call page_header("Experiments", "One control, at least one treatment, and a target metric, conversion window and data origin fixed before the first assignment.", "Campaigns") %}
+    <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('campaigns.index') }}">Campaigns</a>
+    {% if can('campaign.write') %}<a class="mq-btn mq-btn--primary mq-btn--sm" href="{{ url_for('experiments.create') }}">New experiment</a>{% endif %}
+  {% endcall %}
+  {% if experiments %}
+    <section class="mq-panel mq-panel--table mq-density-compact">
+      <div class="mq-table__toolbar"><span class="mq-table__count">Experiment setup</span></div>
+      <div class="mq-table-wrap"><table class="mq-table"><thead><tr><th scope="col">ID</th><th class="mq-table__cell--sticky" scope="col">Name</th><th scope="col">Campaign</th><th scope="col">Target metric</th><th scope="col">Window</th><th scope="col">Groups</th><th scope="col">Assigned</th><th scope="col">Data origin</th>{% if can('campaign.write') %}<th scope="col">Actions</th>{% endif %}</tr></thead><tbody>
+        {% for e in experiments %}<tr><td class="mq-mono">{{ e.experiment_id }}</td><td class="mq-table__cell--sticky">{{ e.name }}</td><td>{% if e.campaign_id %}{{ e.campaign_name }} <span class="mq-mono">#{{ e.campaign_id }}</span>{% else %}<span class="mq-caption">None</span>{% endif %}</td><td>{{ target_metrics.get(e.target_metric, e.target_metric) }}</td><td class="mq-num">{{ e.conversion_window_days }} d</td><td>{{ e.control_groups }} control · {{ e.treatment_groups }} treatment</td><td class="mq-num">{{ e.assignments }}</td><td>{% if is_synthetic(e.data_origin) %}{{ status_pill("Synthetic", "warning") }} {% endif %}<span class="mq-mono">{{ e.data_origin }}</span></td>{% if can('campaign.write') %}<td><div class="mq-table__actions"><a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('experiments.edit', experiment_id=e.experiment_id) }}">Edit</a></div></td>{% endif %}</tr>{% endfor %}
+      </tbody></table></div>
+      {{ pagination(page, total_pages, "Page {} of {}".format(page, total_pages), url_for('experiments.index', page=page - 1) if page > 1 else none, url_for('experiments.index', page=page + 1) if page < total_pages else none) }}
+    </section>
+  {% else %}{{ empty_state("No experiments yet", "Set up an experiment with its control and treatment groups to begin.") }}{% endif %}
+{% endblock %}

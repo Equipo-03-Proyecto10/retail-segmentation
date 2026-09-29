@@ -49,6 +49,7 @@ READ_ROUTES = [
     "/experiments/",
     "/experiments/1/exposure",
     "/experiments/1/conversion",
+    "/experiments/1/uplift",
     "/reports/",
 ]
 ADMIN_ROUTES = [

@@ -146,3 +146,27 @@ def list_attributions(
         )
         total = cursor.fetchone()[0]
     return [Attribution(row[0], row[1], str(row[2]), *row[3:]) for row in rows], total
+
+
+def read_aa_population(
+    connection: Connection, cutoff: datetime, window_days: int
+) -> list[tuple[str, bool]]:
+    """Every customer with a sale before `cutoff`, and whether they bought in the
+    `window_days` from it: the population an A/A validation splits (ADR-0019).
+    Nothing after the cut-off decides who is in it."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT known.customer_id,
+                   EXISTS (SELECT 1 FROM transaction AS later
+                            WHERE later.customer_id = known.customer_id
+                              AND later.occurred_at >= %s
+                              AND later.occurred_at < %s
+                                                     + make_interval(days => %s))
+              FROM (SELECT DISTINCT customer_id FROM transaction
+                     WHERE occurred_at < %s) AS known
+             ORDER BY known.customer_id
+            """,
+            (cutoff, cutoff, window_days, cutoff),
+        )
+        return [(str(row[0]), bool(row[1])) for row in cursor.fetchall()]

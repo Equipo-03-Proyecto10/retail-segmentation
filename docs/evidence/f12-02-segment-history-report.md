@@ -7,7 +7,7 @@ to the R/F/M explanation of why that customer holds that label, says so plainly
 when a filter combination matches nothing, and is refused by the default-deny gate
 to any profile without `segment.read`.
 
-Covers the four acceptance criteria on F12-02 and business rule RN-42. It reuses
+Covers the four acceptance criteria on F12-02 and business rule RN-43. It reuses
 F7-06's `explain_migration` and F12-01's `get_previous_run` unchanged; the two new
 reads, the filter orchestration and the page are this story's own. No schema
 change, nothing here writes.

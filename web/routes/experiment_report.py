@@ -2,7 +2,7 @@
 
 Read-only, gated on campaign.read like the experiments it reports on
 (docs/analytics-permission-map.md). Filters are optional and combine; a value
-the report does not offer is refused, not dropped (RN-42). The export applies
+the report does not offer is refused, not dropped (RN-45). The export applies
 the same filters and carries the data-origin label into the file.
 """
 
@@ -44,7 +44,9 @@ def index() -> str | tuple[str, int]:
     context = _context()
     try:
         campaign_id, origin = service.parse_filters(
-            context["campaign"], context["origin"]
+            context["campaign"],
+            context["origin"],
+            {choice.campaign_id for choice in context["campaigns"]},
         )
     except service.InvalidFilter as error:
         return (
@@ -70,9 +72,12 @@ def index() -> str | tuple[str, int]:
 @bp.get("/export.csv", endpoint="export")
 @requires(CAMPAIGN_READ)
 def export() -> Response | tuple[str, int]:
+    context = _context()
     try:
         campaign_id, origin = service.parse_filters(
-            request.args.get("campaign", ""), request.args.get("origin", "")
+            context["campaign"],
+            context["origin"],
+            {choice.campaign_id for choice in context["campaigns"]},
         )
     except service.InvalidFilter as error:
         return str(error), 400

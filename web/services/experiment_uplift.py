@@ -160,10 +160,28 @@ def compare_arms(
 ) -> tuple[conversions.GroupConversion, tuple[ArmResult, ...]]:
     """Every treatment arm against the control, over all assigned customers.
     Raises UpliftRefused when the counts leave nothing to compare."""
+    unrecorded = sum(group.unrecorded for group in groups)
+    if unrecorded:
+        raise UpliftRefused(
+            f"Experiment {experiment_id} has {unrecorded} assigned "
+            f"{'customer' if unrecorded == 1 else 'customers'} with a qualifying "
+            "sale that has not been recorded yet. Evaluate conversion before "
+            "measuring uplift."
+        )
     control = next((g for g in groups if g.kind == experiments.CONTROL), None)
+    treatments = tuple(g for g in groups if g.kind == experiments.TREATMENT)
     if control is None or control.assigned == 0:
         raise UpliftRefused(
             f"Experiment {experiment_id}'s control group has no assigned customers."
+        )
+    empty_treatments = [group.group_id for group in treatments if group.assigned == 0]
+    if empty_treatments:
+        group_word = "group" if len(empty_treatments) == 1 else "groups"
+        group_ids = ", ".join(str(group_id) for group_id in empty_treatments)
+        raise UpliftRefused(
+            f"Experiment {experiment_id}'s treatment {group_word} "
+            f"{group_ids} {'has' if len(empty_treatments) == 1 else 'have'} "
+            "no assigned customers."
         )
     arms = tuple(
         ArmResult(
@@ -172,8 +190,7 @@ def compare_arms(
                 control.assigned, control.converted, g.assigned, g.converted
             ),
         )
-        for g in groups
-        if g.kind == experiments.TREATMENT and g.assigned
+        for g in treatments
     )
     if not arms:
         raise UpliftRefused(

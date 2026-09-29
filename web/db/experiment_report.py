@@ -17,7 +17,7 @@ from web.db.experiments import Experiment
 
 @dataclass(frozen=True)
 class ReportGroup:
-    """One arm's three counts, each over its own denominator."""
+    """One arm's three displayed counts and conversion completeness."""
 
     experiment_id: int
     group_id: int
@@ -26,6 +26,7 @@ class ReportGroup:
     exposed: int
     converted: int
     pending: int
+    unrecorded: int = 0
 
     @property
     def not_converted(self) -> int:
@@ -85,7 +86,8 @@ def list_report_groups(
 ) -> list[ReportGroup]:
     """Each group of the given experiments with its assigned, exposed, converted
     and pending counts. A customer is pending while their window is open at
-    `now` and they have not converted."""
+    `now` and they have not converted. `unrecorded` catches qualifying sales
+    that must be evaluated before uplift can be measured."""
     if not experiment_ids:
         return []
     with connection.cursor() as cursor:
@@ -98,7 +100,14 @@ def list_report_groups(
                        EXISTS (SELECT 1 FROM experiment_conversion AS c
                                 WHERE c.assignment_id = a.assignment_id) AS converted,
                        a.assigned_at
-                       + make_interval(days => e.conversion_window_days) > %s AS open
+                       + make_interval(days => e.conversion_window_days) > %s AS open,
+                       EXISTS (SELECT 1 FROM transaction AS t
+                                WHERE t.customer_id = a.customer_id
+                                  AND t.occurred_at >= a.assigned_at
+                                  AND t.occurred_at < a.assigned_at
+                                      + make_interval(
+                                          days => e.conversion_window_days))
+                           AS qualifies
                   FROM experiment_assignment AS a
                   JOIN experiment AS e ON e.experiment_id = a.experiment_id
                  WHERE a.experiment_id = ANY(%s)
@@ -106,7 +115,8 @@ def list_report_groups(
             SELECT g.experiment_id, g.group_id, g.kind, count(f.group_id),
                    count(*) FILTER (WHERE f.exposed),
                    count(*) FILTER (WHERE f.converted),
-                   count(*) FILTER (WHERE NOT f.converted AND f.open)
+                   count(*) FILTER (WHERE NOT f.converted AND f.open),
+                   count(*) FILTER (WHERE NOT f.converted AND f.qualifies)
               FROM experiment_group AS g
               LEFT JOIN flags AS f ON f.group_id = g.group_id
              WHERE g.experiment_id = ANY(%s)

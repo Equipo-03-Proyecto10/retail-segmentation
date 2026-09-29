@@ -93,6 +93,8 @@ right place for it, and which the team accepted on 2026-09-07.
 | [F11-03](f11-03-experiment-setup.md) | Experiment setup on a real database: one control and the treatment groups written together, the conversion window and target metric locked after the first assignment, a campaign refused activation while an attached experiment lacks a group, the data origin fixed and labelled `Synthetic`, at 375 px and 1440 px |
 | [F11-04](f11-04-group-assignment.md) | Group assignment as `retail_app` on a real database: the campaign's population split into balanced arms in one transaction, a second attempt refused, `UPDATE` and `DELETE` refused by the schema (42501) as well as by the application, the preview and a refusal at 375 px and 1440 px |
 | [F11-05](f11-05-experiment-exposure.md) | Exposure as a separate durable event on a real database: assigned/unexposed customers remain in the denominator, control is refused by the service and schema, exposure rows are append-only for `retail_app`, and the diagnostic and refusal are shown at 375 px and 1440 px |
+| [F11-06](f11-06-experiment-conversion.md) | Conversion as an assignment-to-sale attribution on a real database: only sales inside the fixed window are attributed, re-evaluation adds nothing, open windows are pending, unrecorded qualifying sales are flagged, and the trace is shown at 375 px and 1440 px |
+| [F11-07](f11-07-experiment-uplift.md) | Intent-to-treat uplift validated by an A/A split over real later transactions and by the fixed 10,000-per-arm injected fixture, with incomplete arms/counts refused and the `Synthetic` result shown at 375 px and 1440 px |
 
 ## Phase 12 — analytics
 
@@ -100,6 +102,7 @@ right place for it, and which the team accepted on 2026-09-07.
 |---|---|
 | [F12-01](f12-01-segmentation-dashboard.md) | The segmentation dashboard: segment sizes, RFM distribution, migration flow and revenue by label for one run, checked against independent SQL and a real browser with no external network requests, Highcharts vendored rather than loaded from a CDN, and the refusal of a role without `segment.read` |
 | [F12-02](f12-02-segment-history-report.md) | The filtered segment history and migration report: 1,020 rows across every run checked against SQL, filters that combine and are reflected back into the form, an expanded row's R/F/M explanation checked against a real customer's actual label change, the no-rows state, and the refusal of a role without `segment.read` |
+| [F12-03](f12-03-consumption-reports.md) | The filtered consumption-shift and recommendation reports: a real cross-store shift and its filter checked end to end, a product's stock taken to zero in Postgres and the report regenerated to show it gone, independent empty states per report, and the refusal of a role without `segment.read` |
 
 ## Review passes
 

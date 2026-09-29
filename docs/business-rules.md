@@ -380,7 +380,7 @@ each rule above fail a test, and against the seeded PostgreSQL and a real browse
 [`evidence/f12-01-segmentation-dashboard.md`](evidence/f12-01-segmentation-dashboard.md).
 · `F12-01`
 
-### RN-42 — The segment history report's filters combine, and a row's explanation is its customer's previous run
+### RN-43 — The segment history report's filters combine, and a row's explanation is its customer's previous run
 
 The report lists `customer_segment_history` rows across every run, filtered by
 three independent, optional conditions that combine with AND:
@@ -418,6 +418,50 @@ and `tests/test_segment_history_report_route.py`, including that faults seeded
 into each rule above fail a test, and against the seeded PostgreSQL by
 [`evidence/f12-02-segment-history-report.md`](evidence/f12-02-segment-history-report.md).
 · `F12-02`
+
+### RN-44 — Consumption-shift and recommendation report rows are filtered, never recomputed, and every filter must match
+
+Two independent reports share one filter bar: **store**, **channel**, **category**
+and a **period** stated as "as of" plus a window in days. Neither report
+recomputes anything F8-05 or F10-01 already do; each filters what they already
+compute.
+
+* **The shift report** reuses F8-05's `detect_shifts` over the two consecutive
+  periods the window implies. A shift row matches a store, channel or category
+  filter when that dimension's **before or after** leader is the filter — a
+  customer who started or stopped using it, either direction. A dimension the
+  customer did not shift in never matches a filter that is set. Every filter
+  that is set must match; a filter left unset never excludes a row.
+* **The recommendation report** reuses F10-01's `recommend`, once per customer,
+  flattened to one row per recommended product. Store and channel narrow to the
+  customer's own usual store and dominant channel; category narrows the
+  recommended products themselves, since one customer's recommendations can
+  span several categories. A customer `recommend` did not actually recommend
+  anything to (no segment, no usual store, nothing in stock matched) contributes
+  no rows.
+* **A filter combination that matches nothing** is an empty report, reported
+  independently for each of the two sections — one report can be empty while
+  the other is not, since they are filtered separately over the same rows.
+* **Every recommendation row carries its own reason and its own stock**, read
+  fresh from `recommend` on every request: nothing here caches a result, so a
+  product whose stock reaches zero is absent the next time the report runs
+  (verified live in evidence, not merely inferred from F10-01's own guarantee).
+
+**Enforced:** application — `web/services/consumption_reports.py` for the
+filters, `web/db/consumption_reports.py` for the one new read (bulk customer
+names; `SELECT`-only, parameterized). `RecommendationResult` (F10-01) now also
+carries `channel_id`/`channel_name`, from the same profile window `store_id`/
+`store_name` already come from, so the two are known or absent together. The
+page is gated on `segment.read` (`docs/analytics-permission-map.md`, Phase 12;
+`STORE_MANAGER`, the role this story is written for, holds it per ADR-0023).
+**Verified** — by `tests/test_consumption_reports.py`,
+`tests/test_consumption_reports_db.py` and
+`tests/test_consumption_reports_route.py`, including that faults seeded into
+each rule above fail a test, and against the seeded PostgreSQL, with a real
+store and channel shift injected and a product's stock taken to zero and the
+report regenerated, by
+[`evidence/f12-03-consumption-reports.md`](evidence/f12-03-consumption-reports.md).
+· `F12-03`
 
 ### RN-22 — A campaign targets a real, stable segment label
 **Enforced:** `campaign_label_code_fkey` → `segment_label(label_code)`.
@@ -498,22 +542,29 @@ or after `assigned_at` and before `assigned_at` plus the experiment's
 naming the assignment and the sale; evaluating again adds nothing
 (`UNIQUE (assignment_id, transaction_id)`). A customer with no conversion is
 *pending* while their window is open and *not converted* only once it has
-closed. `transaction` carries no experiment column, and conversions are never
-rewritten.
+closed. Those outcomes count recorded conversions; a customer with a qualifying
+sale that no evaluation has recorded yet is flagged on the page instead of being
+shown silently as pending or not converted. `transaction` carries no experiment
+column. The application only ever adds conversions; unlike exposures
+(ADR-0027), `retail_app` still holds `UPDATE` and `DELETE` on
+`experiment_conversion`, so the database does not yet enforce that.
 
 **Uplift (F11-07).** The result is intent to treat: each treatment arm's
 conversion rate minus the control's, over every assigned customer whether or not
 they were exposed, with a 95% interval and a two-sided test at alpha 0.05 (each
 arm on its own, no correction for several). Customers whose window is still open
 count as not converted so far and the result is marked *Preliminary*. An
-experiment with no control, no assignments, or a target metric other than
-`CONVERSION` is refused; nothing is computed against "everyone else". A result
-from a `SEEDED` or `INJECTED` experiment carries the literal label `Synthetic`.
+experiment with no control, no assignments, an empty control or treatment arm,
+unrecorded qualifying sales, or a target metric other than `CONVERSION` is
+refused; nothing is computed against "everyone else" or from incomplete outcome
+counts. A result from a `SEEDED` or `INJECTED` experiment carries the literal
+label `Synthetic`.
 It is trusted because two checks hold: an A/A split from pre-cut-off data shows
 no significant difference, and a fixed-seed injected uplift (10,000 per arm, 10%
 against 15%) is recovered within 0.1 point with an interval excluding zero.
 
-**Report and export (F12-04).** The experiment report shows assignment,
+### RN-45 — The experiment report keeps counts, filters and provenance explicit
+The experiment report shows assignment,
 exposure and conversion as three counts per arm, each labelled with what it
 counts, beside the intent-to-treat uplift and its 95% interval (F11-07's own
 functions). Campaign and data-origin filters are optional, combine, and reach

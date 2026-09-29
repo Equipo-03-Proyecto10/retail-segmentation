@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import csv
 import io
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -94,14 +95,18 @@ class ReportPage:
         return self.page < self.page_count
 
 
-def parse_filters(campaign: str, origin: str) -> tuple[int | None, str | None]:
+def parse_filters(
+    campaign: str, origin: str, offered_campaign_ids: Collection[int]
+) -> tuple[int | None, str | None]:
     """Read the two optional filters, refusing a value that is not one of the
-    report's rather than dropping it (RN-42)."""
+    report's rather than dropping it (RN-45)."""
     campaign_id: int | None = None
     if campaign:
         if not (campaign.isascii() and campaign.isdigit()) or int(campaign) > 2**31 - 1:
             raise InvalidFilter("Choose a campaign from the list.")
         campaign_id = int(campaign)
+        if campaign_id not in offered_campaign_ids:
+            raise InvalidFilter("Choose a campaign from the list.")
     if origin and origin not in DATA_ORIGINS:
         raise InvalidFilter("Choose a data origin from the list.")
     return campaign_id, origin or None
@@ -128,6 +133,7 @@ def _report_of(experiment: Experiment, groups: list[ReportGroup]) -> ExperimentR
                         g.converted,
                         g.pending,
                         g.not_converted,
+                        g.unrecorded,
                     )
                     for g in mine
                 ],

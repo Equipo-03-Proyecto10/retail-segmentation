@@ -93,6 +93,20 @@ def test_an_experiment_without_a_control_reports_the_refusal_not_a_figure(
     assert row.arms == () and "no control group" in row.refusal
 
 
+def test_unrecorded_qualifying_sales_refuse_uplift_in_the_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    groups = [
+        ReportGroup(31, 61, "CONTROL", 1000, 0, 100, 40, 1),
+        ReportGroup(31, 62, "TREATMENT", 1000, 700, 150, 20, 0),
+    ]
+
+    (row,) = _report(monkeypatch, groups=groups).rows
+
+    assert row.arms == ()
+    assert "qualifying sale that has not been recorded yet" in row.refusal
+
+
 # ---------- provenance ----------
 
 
@@ -198,7 +212,16 @@ def test_a_filter_the_report_does_not_offer_is_refused(
     campaign: str, origin: str
 ) -> None:
     with pytest.raises(service.InvalidFilter):
-        service.parse_filters(campaign, origin)
+        service.parse_filters(campaign, origin, {7})
+
+
+def test_a_numeric_campaign_the_report_does_not_offer_is_refused() -> None:
+    with pytest.raises(service.InvalidFilter, match="Choose a campaign"):
+        service.parse_filters("999", "", {7, 8})
+
+
+def test_an_offered_campaign_is_accepted() -> None:
+    assert service.parse_filters("7", "OBSERVED", {7, 8}) == (7, "OBSERVED")
 
 
 def test_no_experiment_ids_means_no_group_query() -> None:
@@ -273,6 +296,20 @@ def test_a_bad_filter_is_a_400(app: Flask, monkeypatch: pytest.MonkeyPatch) -> N
     )
 
     response = _client(app).get("/experiment-report/?origin=REAL")
+
+    assert response.status_code == 400
+    mocks["list_report_experiments"].assert_not_called()
+
+
+def test_a_numeric_campaign_not_offered_by_the_report_is_a_400(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mocks = _wire(monkeypatch, [])
+    monkeypatch.setattr(
+        "web.routes.experiment_report.list_campaign_choices", Mock(return_value=[])
+    )
+
+    response = _client(app).get("/experiment-report/?campaign=999")
 
     assert response.status_code == 400
     mocks["list_report_experiments"].assert_not_called()

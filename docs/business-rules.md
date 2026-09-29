@@ -492,6 +492,19 @@ append-only for `retail_app`, which holds no `UPDATE` or `DELETE` privilege
 (ADR-0027). The exposure rate (exposed / assigned, treatment only) is shown as a
 delivery diagnostic; the result is measured on everyone assigned.
 
+**Conversion (F11-06).** A sale qualifies when the assigned customer made it at
+or after `assigned_at` and before `assigned_at` plus the experiment's
+`conversion_window_days`. Evaluating records one `experiment_conversion` row
+naming the assignment and the sale; evaluating again adds nothing
+(`UNIQUE (assignment_id, transaction_id)`). A customer with no conversion is
+*pending* while their window is open and *not converted* only once it has
+closed. Those outcomes count recorded conversions; a customer with a qualifying
+sale that no evaluation has recorded yet is flagged on the page instead of being
+shown silently as pending or not converted. `transaction` carries no experiment
+column. The application only ever adds conversions; unlike exposures
+(ADR-0027), `retail_app` still holds `UPDATE` and `DELETE` on
+`experiment_conversion`, so the database does not yet enforce that.
+
 ### RN-31 — A campaign moves only along fixed transitions, and two states are final
 `DRAFT` → `ACTIVE` or `CANCELLED`; `ACTIVE` → `FINISHED` or `CANCELLED`.
 `FINISHED` and `CANCELLED` permit nothing further. An illegal move is refused

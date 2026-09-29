@@ -115,3 +115,4 @@ These follow a specific review rather than a story.
 | [Navigation and upload hotfix](navigation-upload-hotfix.md) | The integration review of PR #132 |
 | [F5-03 resolution](review-findings-resolution.md) | Resolution of #157–#165, and the ADR acceptance basis |
 | [Catalog label reads](catalog-label-reads.md) | #272, found reviewing F9-03: the customer pages read the label, so a K-means assignment is no longer shown as *Unassigned*, before and after on a real K-means run at 375 px and 1440 px |
+| [#345](f345-segment-rule-bands.md) | The seeded RFM bands partition the 125 triples so every label is reachable, and the run page separates customers with no sales from customers who matched no rule; the seed itself was not run on PostgreSQL here |

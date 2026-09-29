@@ -93,7 +93,8 @@ SELECT c.customer_id,
        w.last_purchase, w.frequency, w.monetary,
        s.r, s.f, s.m,
        COALESCE(bm.segment_id, fb.segment_id) AS segment_id,
-       COALESCE(bm.label_code, fb.label_code) AS label_code
+       COALESCE(bm.label_code, fb.label_code) AS label_code,
+       (bm.segment_id IS NULL AND fb.segment_id IS NOT NULL) AS via_fallback
   FROM customer AS c
   LEFT JOIN scored AS s ON s.customer_id = c.customer_id
   LEFT JOIN window_sales AS w ON w.customer_id = c.customer_id
@@ -155,6 +156,9 @@ class ScoredCustomer:
     m_score: int | None
     segment_id: int | None
     label_code: str | None
+    # True when no band held the customer's triple and the worst label was
+    # used instead (#345); the run reports how many, never hides them.
+    via_fallback: bool = False
 
 
 @dataclass(frozen=True)

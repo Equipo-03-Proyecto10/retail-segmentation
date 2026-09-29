@@ -65,14 +65,50 @@ SELECT n, 'Store ' || n,
        TRUE
 FROM generate_series(1,30) n;
 
--- ---------- segment_rule (30 RFM band combinations) ----------
-INSERT INTO segment_rule (rule_id, rule_code, r_min, r_max, f_min, f_max, m_min, m_max)
-SELECT n,
-       'RULE_' || lpad(n::text,3,'0'),
-       1 + ((n-1) % 3), 3 + ((n-1) % 3),
-       1 + ((n*2-1) % 3), 3 + ((n*2-1) % 3),
-       1 + ((n*3-1) % 3), 3 + ((n*3-1) % 3)
-FROM generate_series(1,30) n;
+-- ---------- segment_rule (30 RFM bands that partition the 125 triples) ----------
+-- Every (R, F, M) triple of scores 1 to 5 falls in exactly one band, so the
+-- fallback in web/db/segments.py is a last resort that a seeded run never needs
+-- (#345, ADR-0018). Segment n takes the label of position (n-1) % 6, so each
+-- label owns five bands; the comment on each row names it. Recency and
+-- frequency place a customer on a grid and monetary splits the bottom of it:
+--   CHAMPION     recent and frequent (R and F 4-5); the best cell splits on M
+--   LOYAL        frequent or recent-enough regulars (F 3-5 with R 3, or F 3)
+--   POTENTIAL    recent but infrequent (F 1-2 with R 3-5)
+--   AT_RISK      used to buy often, recency has slipped (R 1-2, F 3-5)
+--   HIBERNATING  low recency and frequency but a mid or high spend (M 3-5)
+--   LOST         low recency, frequency and spend (M 1-2)
+-- tests/test_seed_segment_rules.py checks the partition arithmetic.
+INSERT INTO segment_rule (rule_id, rule_code, r_min, r_max, f_min, f_max, m_min, m_max) VALUES
+    (1, 'RULE_001', 5, 5, 5, 5, 4, 5),  -- CHAMPION
+    (2, 'RULE_002', 5, 5, 3, 3, 1, 5),  -- LOYAL
+    (3, 'RULE_003', 5, 5, 2, 2, 1, 5),  -- POTENTIAL
+    (4, 'RULE_004', 2, 2, 5, 5, 1, 5),  -- AT_RISK
+    (5, 'RULE_005', 1, 1, 3, 3, 3, 5),  -- HIBERNATING
+    (6, 'RULE_006', 1, 1, 3, 3, 1, 2),  -- LOST
+    (7, 'RULE_007', 5, 5, 5, 5, 1, 3),  -- CHAMPION
+    (8, 'RULE_008', 4, 4, 3, 3, 1, 5),  -- LOYAL
+    (9, 'RULE_009', 4, 4, 2, 2, 1, 5),  -- POTENTIAL
+    (10, 'RULE_010', 2, 2, 4, 4, 1, 5),  -- AT_RISK
+    (11, 'RULE_011', 2, 2, 2, 2, 3, 5),  -- HIBERNATING
+    (12, 'RULE_012', 2, 2, 2, 2, 1, 2),  -- LOST
+    (13, 'RULE_013', 5, 5, 4, 4, 1, 5),  -- CHAMPION
+    (14, 'RULE_014', 3, 3, 5, 5, 1, 5),  -- LOYAL
+    (15, 'RULE_015', 3, 3, 2, 2, 1, 5),  -- POTENTIAL
+    (16, 'RULE_016', 2, 2, 3, 3, 1, 5),  -- AT_RISK
+    (17, 'RULE_017', 1, 1, 2, 2, 3, 5),  -- HIBERNATING
+    (18, 'RULE_018', 1, 1, 2, 2, 1, 2),  -- LOST
+    (19, 'RULE_019', 4, 4, 5, 5, 1, 5),  -- CHAMPION
+    (20, 'RULE_020', 3, 3, 4, 4, 1, 5),  -- LOYAL
+    (21, 'RULE_021', 3, 3, 1, 1, 1, 5),  -- POTENTIAL
+    (22, 'RULE_022', 1, 1, 5, 5, 1, 5),  -- AT_RISK
+    (23, 'RULE_023', 2, 2, 1, 1, 3, 5),  -- HIBERNATING
+    (24, 'RULE_024', 2, 2, 1, 1, 1, 2),  -- LOST
+    (25, 'RULE_025', 4, 4, 4, 4, 1, 5),  -- CHAMPION
+    (26, 'RULE_026', 3, 3, 3, 3, 1, 5),  -- LOYAL
+    (27, 'RULE_027', 4, 5, 1, 1, 1, 5),  -- POTENTIAL
+    (28, 'RULE_028', 1, 1, 4, 4, 1, 5),  -- AT_RISK
+    (29, 'RULE_029', 1, 1, 1, 1, 3, 5),  -- HIBERNATING
+    (30, 'RULE_030', 1, 1, 1, 1, 1, 2);  -- LOST
 
 -- ---------- segment_label (6, best to worst — ADR-0018) ----------
 -- Inserted before segment: segment.label_code references this vocabulary.
@@ -84,7 +120,7 @@ INSERT INTO segment_label (label_code, ordinal_position, name, description) VALU
     ('HIBERNATING',5, 'Hibernating', 'Low recency, frequency and monetary value'),
     ('LOST',       6, 'Lost',        'No recent activity across all three measures');
 
--- ---------- segment (30, one per rule, 5 per label) ----------
+-- ---------- segment (30, one per rule, 5 per label, label = position (n-1) % 6) ----------
 INSERT INTO segment (segment_id, name, description, rule_id, label_code, valid_from, valid_to)
 SELECT n, 'Segment ' || n, 'Segment derived from RULE_' || lpad(n::text,3,'0'), n,
        (ARRAY['CHAMPION','LOYAL','POTENTIAL','AT_RISK','HIBERNATING','LOST'])[1+((n-1)%6)],

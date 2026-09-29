@@ -323,6 +323,8 @@ the new parent and refuses a longer cycle as `category_no_cycle`.
 
 Table constraint: `r_min <= r_max AND f_min <= f_max AND m_min <= m_max`.
 
+The seeded bands partition the 125 (R, F, M) triples, five bands per label (RN-46).
+
 #### `segment`
 
 | Column | Type | Null | Constraints | Meaning |

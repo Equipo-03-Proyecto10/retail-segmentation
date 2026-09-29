@@ -16,6 +16,7 @@
         </div>
       </div>
       <form class="mq-form__actions" method="post" action="{{ url_for('segment_run.execute') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="window" value="{{ window }}">
         <button class="mq-btn mq-btn--primary" type="submit" name="confirm" value="yes">Confirm recalculation</button>
         <a class="mq-btn mq-btn--secondary" href="{{ url_for('segment_run.index') }}">Cancel</a>

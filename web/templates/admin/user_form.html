@@ -8,7 +8,7 @@
   {% from "macros/ui.html" import page_header %}
   {{ page_header("Edit user" if editing else "New user", "Correct this account's name, email and role." if editing else "Create an account and assign one reviewed role.", "Administration") }}
   <section class="mq-panel mq-form-panel"><header class="mq-panel__header"><h2 class="mq-panel__title">Account details</h2><span class="mq-caption">Exactly one administrator</span></header><div class="mq-panel__body">
-    <form class="mq-form" method="post"><div class="mq-form__grid">
+    <form class="mq-form" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="mq-form__grid">
       <div class="mq-field"><label class="mq-field__label mq-field__label--required" for="name">Name</label><input class="mq-input{% if errors.name %} mq-input--error{% endif %}" type="text" id="name" name="name" value="{{ user.name if user else '' }}" required autocomplete="name">{% if errors.name %}<span class="mq-field__error">{{ errors.name }}</span>{% endif %}</div>
       <div class="mq-field"><label class="mq-field__label mq-field__label--required" for="email">Email</label><input class="mq-input{% if errors.email %} mq-input--error{% endif %}" type="email" id="email" name="email" value="{{ user.email if user else '' }}" required autocomplete="email">{% if errors.email %}<span class="mq-field__error">{{ errors.email }}</span>{% endif %}</div>
       {% if not editing %}

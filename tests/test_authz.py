@@ -401,6 +401,7 @@ def test_the_menu_is_driven_by_permissions_rather_than_by_role() -> None:
         "Home",
         "Catalogs",
         "Users",
+        "Sales import",
         "Segments",
         "Campaigns",
         "Segment run",

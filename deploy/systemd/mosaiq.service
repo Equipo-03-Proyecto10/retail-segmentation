@@ -25,9 +25,14 @@ Group=mosaiq
 #                            SESSION_COOKIE_SECURE=true, TRUSTED_PROXY_HOPS=1, …
 WorkingDirectory=/opt/mosaiq/current
 EnvironmentFile=/etc/mosaiq/mosaiq.env
+# --timeout 120: gunicorn's default of 30 s killed the worker mid-way through
+# a 10,000-row sales import (#334, ~36 s), leaving rows committed and no load
+# record. NGINX still answers 504 after its own 60 s, but the worker finishes
+# and the load appears in the import history.
 ExecStart=/opt/mosaiq/venv/bin/gunicorn \
     --bind 127.0.0.1:8000 \
     --workers 2 \
+    --timeout 120 \
     --access-logfile - \
     --error-logfile - \
     "web.app:create_app()"

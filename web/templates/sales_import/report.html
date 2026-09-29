@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Load #{{ load.load_id }} · {{ application_name }}{% endblock %}
+{% block topbar_title %}Import report{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Administration / Sales import / Load #{{ load.load_id }}{% endblock %}
+
+{% block content %}
+  {% from "macros/ui.html" import count_label, empty_state, page_header %}
+  {% call page_header("Load #" ~ load.load_id, load.filename ~ " — uploaded " ~ load.loaded_at.strftime("%Y-%m-%d %H:%M"), "Sales import") %}
+    <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('sales_import.index') }}">Back to sales import</a>
+  {% endcall %}
+
+  <section class="mq-panel">
+    <div class="mq-panel__body">
+      <dl class="mq-description-list">
+        <dt>Received</dt><dd class="mq-mono">{{ load.received_count }}</dd>
+        <dt>Accepted</dt><dd class="mq-mono">{{ load.accepted_count }}</dd>
+        <dt>Rejected</dt><dd class="mq-mono">{{ load.rejected_count }}</dd>
+        <dt>Uploaded by</dt><dd>{{ load.loaded_by_name or "System" }}</dd>
+      </dl>
+    </div>
+  </section>
+
+  {% if rejections %}
+    <section class="mq-panel mq-panel--table mq-density-compact">
+      <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(rejections|length, "rejected row") }}</span>
+        <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('sales_import.download_rejections', load_id=load.load_id) }}">Download CSV</a>
+      </div>
+      <div class="mq-table-wrap">
+        <table class="mq-table">
+          <thead><tr><th scope="col">Line</th><th scope="col">Reason</th></tr></thead>
+          <tbody>
+            {% for rejection in rejections %}
+              <tr><td class="mq-mono">{{ rejection.line_number }}</td><td>{{ rejection.reason }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {% else %}
+    {{ empty_state("No rejected rows", "Every row in this file was accepted.") }}
+  {% endif %}
+{% endblock %}

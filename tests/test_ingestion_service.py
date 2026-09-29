@@ -14,7 +14,14 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
-from psycopg.errors import DataError, ForeignKeyViolation, UniqueViolation
+from psycopg.errors import (
+    DataError,
+    ForeignKeyViolation,
+    InvalidTextRepresentation,
+    NumericValueOutOfRange,
+    StringDataRightTruncation,
+    UniqueViolation,
+)
 
 from web.services.ingestion import RowRejected, SalesRow, ingest_row
 
@@ -409,3 +416,70 @@ def test_a_source_transaction_id_created_concurrently_is_rejected() -> None:
 
     with pytest.raises(RowRejected, match="created concurrently"):
         ingest_row(connection, _row())
+
+
+# ---------- #334: PostgreSQL's own text never reaches the administrator ----------
+
+# Real server messages, including the CONTEXT/DETAIL lines psycopg keeps in
+# str(error) -- what the rejection report used to show verbatim.
+_SERVER_TEXT = {
+    InvalidTextRepresentation: 'invalid input syntax for type uuid: "x"\n'
+    "CONTEXT:  unnamed portal parameter $2 = '...'",
+    StringDataRightTruncation: "value too long for type character varying(64)",
+    NumericValueOutOfRange: "numeric field overflow\nDETAIL:  A field with "
+    "precision 10, scale 2 must round to an absolute value less than 10^8.",
+    DataError: "some other data error",
+}
+
+
+@pytest.mark.parametrize(
+    ("error_type", "reason"),
+    [
+        (
+            InvalidTextRepresentation,
+            "malformed row: customer_id is not a valid identifier",
+        ),
+        (StringDataRightTruncation, "malformed row: transaction_id is too long"),
+        (
+            NumericValueOutOfRange,
+            "malformed row: store_id or channel_id is out of range",
+        ),
+        (DataError, "malformed row: a value is not in the expected format"),
+    ],
+)
+def test_a_header_value_postgresql_refuses_is_named_in_business_terms(
+    monkeypatch: pytest.MonkeyPatch, error_type: type[DataError], reason: str
+) -> None:
+    def _refuse(*_args, **_kwargs):
+        raise error_type(_SERVER_TEXT[error_type])
+
+    monkeypatch.setattr("web.db.sales.insert_transaction", _refuse)
+
+    with pytest.raises(RowRejected) as rejection:
+        ingest_row(_Connection(), _row())
+
+    assert str(rejection.value) == reason
+
+
+@pytest.mark.parametrize(
+    ("error_type", "reason"),
+    [
+        (
+            NumericValueOutOfRange,
+            "malformed row: product_id, quantity or unit_price is out of range",
+        ),
+        (DataError, "malformed row: a value is not in the expected format"),
+    ],
+)
+def test_a_line_value_postgresql_refuses_is_named_in_business_terms(
+    monkeypatch: pytest.MonkeyPatch, error_type: type[DataError], reason: str
+) -> None:
+    def _refuse(*_args, **_kwargs):
+        raise error_type(_SERVER_TEXT[error_type])
+
+    monkeypatch.setattr("web.db.sales.insert_transaction_line", _refuse)
+
+    with pytest.raises(RowRejected) as rejection:
+        ingest_row(_Connection(), _row())
+
+    assert str(rejection.value) == reason

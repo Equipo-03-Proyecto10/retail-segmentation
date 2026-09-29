@@ -20,6 +20,7 @@ from web.routes.migration_matrix import bp as migration_matrix_bp
 from web.routes.model_comparison import bp as model_comparison_bp
 from web.routes.placeholders import reports_bp
 from web.routes.run_history import bp as run_history_bp
+from web.routes.sales_import import bp as sales_import_bp
 from web.routes.segment_history_report import bp as segment_history_report_bp
 from web.routes.segment_run import bp as segment_run_bp
 from web.routes.segmentation_dashboard import bp as segmentation_dashboard_bp
@@ -42,5 +43,6 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(experiment_report_bp)
     app.register_blueprint(segmentation_dashboard_bp)
     app.register_blueprint(campaigns_bp)
+    app.register_blueprint(sales_import_bp)
     app.register_blueprint(experiments_bp)
     app.register_blueprint(reports_bp)

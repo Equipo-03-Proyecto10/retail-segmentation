@@ -25,3 +25,9 @@ segment_label
 # Server-side sessions (ADR-0022). Runtime state written by signing in, not
 # business data: seeding rows would record sign-ins that never happened.
 app_session
+
+# Sales CSV upload attempts and their rejection details (#334). Runtime
+# state written by an administrator's upload, not business data to seed --
+# same reasoning as app_session above.
+sales_load
+sales_load_rejection

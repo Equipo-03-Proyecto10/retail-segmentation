@@ -7,6 +7,8 @@ performs, not the no-op every other test runs against.
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
 from unittest.mock import MagicMock, Mock
 
 import pytest
@@ -170,3 +172,61 @@ def test_the_token_is_stable_within_one_session(app: Flask) -> None:
         second = flask_session["csrf_token"]
 
     assert first == second
+
+
+_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_every_post_form_sends_the_token() -> None:
+    """Every other test stubs the check off, so a form added without its token
+    would pass the suite and be refused in production."""
+    missing = [
+        f"{path.relative_to(_ROOT)}: {form[:60]}"
+        for path in (_ROOT / "web/templates").rglob("*.html")
+        for form in re.findall(r"<form\b.*?</form>", path.read_text(), re.S | re.I)
+        if re.search(r"method=[\"\']post", form, re.I)
+        and 'name="csrf_token" value="{{ csrf_token() }}"' not in form
+    ]
+
+    assert missing == []
+
+
+def test_a_forwarded_host_with_a_port_matches_an_origin_with_that_port(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Behind the compose overlay (published on 8080) the browser sends
+    Origin: http://127.0.0.1:8080; X-Forwarded-Host must carry the port."""
+    application = create_app(
+        Config(
+            secret_key="test",
+            environment="testing",
+            port=5000,
+            log_level="INFO",
+            session_cookie_secure=False,
+            database_url="unused-by-test",
+            trusted_proxy_hops=1,
+        ),
+        database_connector=Mock(return_value=MagicMock()),
+    )
+    _allow_login(monkeypatch)
+    client = application.test_client()
+    _with_session_token(client)
+
+    response = client.post(
+        "/login",
+        data={**_CREDENTIALS, "csrf_token": _TOKEN},
+        headers={
+            "X-Forwarded-For": "203.0.113.9",
+            "X-Forwarded-Proto": "http",
+            "X-Forwarded-Host": "127.0.0.1:8080",
+            "Origin": "http://127.0.0.1:8080",
+        },
+    )
+
+    assert response.status_code == 302
+
+
+def test_the_compose_overlay_forwards_the_host_with_its_port() -> None:
+    conf = (_ROOT / "deploy/nginx/mosaiq.compose.conf").read_text()
+
+    assert re.search(r"proxy_set_header\s+X-Forwarded-Host\s+\$http_host;", conf)

@@ -1,6 +1,6 @@
 # ADR-0025 — State-changing requests carry a synchroniser CSRF token
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Max
 **Issue:** #294
 **Supersedes:** —

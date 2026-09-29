@@ -170,6 +170,49 @@ def assign(experiment_id: int) -> ResponseReturnValue:
     return redirect(url_for("experiments.index"))
 
 
+@bp.get("/<int:experiment_id>/exposure", endpoint="exposure")
+@requires(CAMPAIGN_READ)
+def exposure(experiment_id: int) -> ResponseReturnValue:
+    return _render_exposure(experiment_id)
+
+
+def _render_exposure(
+    experiment_id: int, *, error: str | None = None, status: int = 200
+) -> ResponseReturnValue:
+    try:
+        summary = service.exposure_summary(get_connection(), experiment_id)
+    except service.ExperimentNotFound:
+        abort(404)
+    return (
+        render_template(
+            "experiments/exposure.html",
+            summary=summary,
+            error=error,
+            customer_id=request.form.get("customer_id", ""),
+            is_synthetic=service.is_synthetic,
+        ),
+        status,
+    )
+
+
+@bp.post("/<int:experiment_id>/exposure", endpoint="record_exposure")
+@requires(CAMPAIGN_WRITE)
+def record_exposure(experiment_id: int) -> ResponseReturnValue:
+    customer_id = service.parse_customer_id(request.form.get("customer_id", ""))
+    if customer_id is None:
+        return _render_exposure(
+            experiment_id, error="Enter the customer's id (a UUID).", status=400
+        )
+    try:
+        service.record_exposure(get_connection(), experiment_id, customer_id)
+    except service.ExperimentNotFound:
+        abort(404)
+    except service.ExposureRefused as refusal:
+        return _render_exposure(experiment_id, error=str(refusal), status=409)
+    flash(f"Exposure recorded for customer {customer_id}.", "success")
+    return redirect(url_for("experiments.exposure", experiment_id=experiment_id))
+
+
 _ATTRIBUTIONS_PER_PAGE = 50
 
 

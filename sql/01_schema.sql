@@ -425,6 +425,40 @@ CREATE TABLE experiment_exposure (
     exposed_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- ADR-0019 requires the schema, not only the service, to keep the control arm
+-- unexposed. The trigger follows the assignment to its group instead of
+-- copying `kind` onto the event, which would create a second value that could
+-- disagree with experiment_group. It also covers an owner changing an
+-- exposure's assignment_id; retail_app cannot update the row at all.
+CREATE FUNCTION fn_experiment_exposure_treatment_only()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+          FROM experiment_assignment AS a
+          JOIN experiment_group AS g
+            ON g.group_id = a.group_id
+           AND g.experiment_id = a.experiment_id
+         WHERE a.assignment_id = NEW.assignment_id
+           AND g.kind = 'CONTROL'
+    ) THEN
+        RAISE EXCEPTION 'Control-group assignment % cannot be exposed', NEW.assignment_id
+            USING ERRCODE = '23514',
+                  CONSTRAINT = 'experiment_exposure_treatment_only';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_experiment_exposure_treatment_only
+BEFORE INSERT OR UPDATE OF assignment_id ON experiment_exposure
+FOR EACH ROW EXECUTE FUNCTION fn_experiment_exposure_treatment_only();
+
+-- An exposure is a durable event, not mutable state (ADR-0019, ADR-0027).
+-- The owner retains maintenance privileges and foreign-key cascades still run
+-- as the owner; the application role can only read and append events.
+REVOKE UPDATE, DELETE ON experiment_exposure FROM retail_app;
+
 -- Conversion links an assignment to a qualifying sale rather than adding an
 -- experiment column to transaction (ADR-0019). UNIQUE stops the same sale
 -- being recorded as a conversion twice for the same assignment; it does not
@@ -621,7 +655,9 @@ BEGIN
     IF EXISTS (
         SELECT FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname = 'public' AND c.relkind = 'r'
-          AND c.relname NOT IN ('audit_log', 'experiment_assignment')
+          AND c.relname NOT IN (
+              'audit_log', 'experiment_assignment', 'experiment_exposure'
+          )
           AND (NOT has_table_privilege(c.oid, 'SELECT')
                OR NOT has_table_privilege(c.oid, 'INSERT')
                OR NOT has_table_privilege(c.oid, 'UPDATE')
@@ -630,7 +666,7 @@ BEGIN
     ) THEN
         RAISE EXCEPTION 'Application table privileges differ from the DML-only policy';
     END IF;
-    RAISE NOTICE 'PASS: restricted role, no ownership or CREATE, DML on all tables';
+    RAISE NOTICE 'PASS: restricted role; ordinary tables retain DML privileges';
 
     IF NOT has_table_privilege('public.audit_log', 'SELECT')
        OR NOT has_table_privilege('public.audit_log', 'INSERT')
@@ -649,6 +685,15 @@ BEGIN
         RAISE EXCEPTION 'experiment_assignment must be append-only for the application role (RN-42)';
     END IF;
     RAISE NOTICE 'PASS: experiment_assignment is append-only for the application role';
+
+    IF NOT has_table_privilege('public.experiment_exposure', 'SELECT')
+       OR NOT has_table_privilege('public.experiment_exposure', 'INSERT')
+       OR has_table_privilege('public.experiment_exposure', 'UPDATE')
+       OR has_table_privilege('public.experiment_exposure', 'DELETE')
+       OR has_table_privilege('public.experiment_exposure', 'TRUNCATE') THEN
+        RAISE EXCEPTION 'experiment_exposure must be append-only for the application role (RN-27)';
+    END IF;
+    RAISE NOTICE 'PASS: experiment_exposure is append-only for the application role';
 
     BEGIN
         DROP TABLE public.inventory;
@@ -698,6 +743,33 @@ BEGIN
         RAISE EXCEPTION 'FAIL: retail_app was allowed to DELETE experiment_assignment';
     EXCEPTION WHEN insufficient_privilege THEN
         RAISE NOTICE 'PASS: DELETE experiment_assignment refused (SQLSTATE 42501)';
+    END;
+    BEGIN
+        UPDATE public.experiment_exposure SET exposed_at = exposed_at
+         WHERE exposure_id = -1;
+        RAISE EXCEPTION 'FAIL: retail_app was allowed to UPDATE experiment_exposure';
+    EXCEPTION WHEN insufficient_privilege THEN
+        RAISE NOTICE 'PASS: UPDATE experiment_exposure refused (SQLSTATE 42501)';
+    END;
+    BEGIN
+        DELETE FROM public.experiment_exposure WHERE exposure_id = -1;
+        RAISE EXCEPTION 'FAIL: retail_app was allowed to DELETE experiment_exposure';
+    EXCEPTION WHEN insufficient_privilege THEN
+        RAISE NOTICE 'PASS: DELETE experiment_exposure refused (SQLSTATE 42501)';
+    END;
+    BEGIN
+        INSERT INTO public.experiment_exposure (assignment_id)
+        SELECT a.assignment_id
+          FROM public.experiment_assignment AS a
+          JOIN public.experiment_group AS g
+            ON g.group_id = a.group_id
+           AND g.experiment_id = a.experiment_id
+         WHERE g.kind = 'CONTROL'
+         ORDER BY a.assignment_id
+         LIMIT 1;
+        RAISE EXCEPTION 'FAIL: retail_app exposed a control-group assignment';
+    EXCEPTION WHEN check_violation THEN
+        RAISE NOTICE 'PASS: control-group exposure refused (SQLSTATE 23514)';
     END;
     RAISE NOTICE 'PASS: SELECT, INSERT, UPDATE, DELETE and audit sequence access';
 END;

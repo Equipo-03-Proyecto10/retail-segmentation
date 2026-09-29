@@ -23,6 +23,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 from datetime import date
+from uuid import UUID
 
 from psycopg import Connection
 from psycopg.errors import ForeignKeyViolation, IntegrityError, UniqueViolation
@@ -417,3 +418,83 @@ def assign(connection: Connection, experiment_id: int) -> AssignmentPlan:
             f"A customer in this population is already assigned in experiment "
             f"{experiment_id}; nothing was written."
         ) from error
+
+
+# ---------- exposure (F11-05) ----------
+
+
+class ExposureRefused(Exception):
+    """An exposure cannot be recorded; the message says why."""
+
+
+@dataclass(frozen=True)
+class ExposureSummary:
+    experiment: experiments.Experiment
+    groups: tuple[experiments.GroupExposure, ...]
+
+    @property
+    def treatment_assigned(self) -> int:
+        return sum(g.assigned for g in self.groups if g.kind == experiments.TREATMENT)
+
+    @property
+    def treatment_exposed(self) -> int:
+        return sum(g.exposed for g in self.groups if g.kind == experiments.TREATMENT)
+
+    @property
+    def not_exposed(self) -> int:
+        return self.treatment_assigned - self.treatment_exposed
+
+    @property
+    def exposure_rate(self) -> float | None:
+        """Share of the assigned treatment customers who were reached. A
+        delivery diagnostic: it says whether the campaign reached people, not
+        whether it worked (ADR-0019)."""
+        if not self.treatment_assigned:
+            return None
+        return self.treatment_exposed / self.treatment_assigned
+
+
+def exposure_summary(connection: Connection, experiment_id: int) -> ExposureSummary:
+    experiment = experiments.get_experiment(connection, experiment_id)
+    if experiment is None:
+        raise ExperimentNotFound(experiment_id)
+    return ExposureSummary(
+        experiment, tuple(experiments.list_group_exposure(connection, experiment_id))
+    )
+
+
+def parse_customer_id(raw: str) -> str | None:
+    """The canonical UUID text, or None; a malformed id is refused before it
+    reaches a UUID column and surfaces as a database error."""
+    try:
+        return str(UUID(raw.strip()))
+    except ValueError:
+        return None
+
+
+@atomic
+def _record_exposure(connection: Connection, experiment_id: int, customer_id: str):
+    # Same lock as assignment: an exposure can only follow an assignment that
+    # is already committed, never race the one that would create it.
+    if not experiments.lock_experiment(connection, experiment_id):
+        raise ExperimentNotFound(experiment_id)
+    found = experiments.find_assignment(connection, experiment_id, customer_id)
+    if found is None:
+        raise ExposureRefused(
+            f"Customer {customer_id} is not assigned in experiment {experiment_id}, "
+            "so there is nothing to expose. Exposure follows assignment."
+        )
+    assignment_id, kind = found
+    if kind == experiments.CONTROL:
+        raise ExposureRefused(
+            f"Customer {customer_id} is in the control group of experiment "
+            f"{experiment_id}. The control group is never exposed (ADR-0019)."
+        )
+    experiments.insert_exposure(connection, assignment_id)
+
+
+def record_exposure(connection: Connection, experiment_id: int, customer_id: str):
+    """Record that an assigned treatment customer was exposed, as its own event
+    with its own timestamp. The control group is refused: exposing it would
+    contaminate the comparison the experiment exists to make."""
+    _record_exposure(connection, experiment_id, customer_id)

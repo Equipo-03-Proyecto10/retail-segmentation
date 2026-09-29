@@ -300,3 +300,69 @@ def insert_assignments(
             "VALUES (%s, %s, %s)",
             [(experiment_id, group_id, customer_id) for group_id, customer_id in rows],
         )
+
+
+# ---------- exposure (F11-05) ----------
+
+
+@dataclass(frozen=True)
+class GroupExposure:
+    """One arm's counts: how many customers were assigned to it, and how many
+    of them have at least one exposure. An assigned customer never exposed
+    stays in `assigned` and is absent from `exposed` (ADR-0019)."""
+
+    group_id: int
+    kind: str
+    assigned: int
+    exposed: int
+
+
+def find_assignment(
+    connection: Connection, experiment_id: int, customer_id: str
+) -> tuple[int, str] | None:
+    """The customer's assignment in the experiment as (assignment_id, kind of
+    its group), or None when they were never assigned."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT a.assignment_id, g.kind
+              FROM experiment_assignment AS a
+              JOIN experiment_group AS g ON g.group_id = a.group_id
+             WHERE a.experiment_id = %s AND a.customer_id = %s
+            """,
+            (experiment_id, customer_id),
+        )
+        row = cursor.fetchone()
+    return None if row is None else (row[0], row[1])
+
+
+def insert_exposure(connection: Connection, assignment_id: int) -> None:
+    """Record one exposure. `exposed_at` is the column's default, its own
+    timestamp, separate from `assigned_at`. Exposures are only ever added."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "INSERT INTO experiment_exposure (assignment_id) VALUES (%s)",
+            (assignment_id,),
+        )
+
+
+def list_group_exposure(
+    connection: Connection, experiment_id: int
+) -> list[GroupExposure]:
+    """Assigned and exposed customers per group, control first."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT g.group_id, g.kind, count(a.assignment_id),
+                   count(a.assignment_id) FILTER (
+                       WHERE EXISTS (SELECT 1 FROM experiment_exposure AS x
+                                      WHERE x.assignment_id = a.assignment_id))
+              FROM experiment_group AS g
+              LEFT JOIN experiment_assignment AS a ON a.group_id = g.group_id
+             WHERE g.experiment_id = %s
+             GROUP BY g.group_id, g.kind
+             ORDER BY g.kind <> 'CONTROL', g.group_id
+            """,
+            (experiment_id,),
+        )
+        return [GroupExposure(*row) for row in cursor.fetchall()]

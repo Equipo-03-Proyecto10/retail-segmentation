@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}Exposure · {{ application_name }}{% endblock %}
+{% block topbar_title %}Exposure{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Analysis / Campaigns / Experiments / Exposure{% endblock %}
+
+{% block content %}
+  {% from "macros/ui.html" import alert, page_header, status_pill %}
+  {% set e = summary.experiment %}
+  {{ page_header("Exposure", "Assigned is not exposed. Exposure is recorded as its own event, so a customer who was never reached stays in the assigned population.", "Experiments") }}
+  {% if error %}{{ alert(error, "danger", "Not recorded") }}{% endif %}
+  <section class="mq-panel">
+    <header class="mq-panel__header"><h2 class="mq-panel__title">Experiment {{ e.experiment_id }} · {{ e.name }}</h2>{% if is_synthetic(e.data_origin) %}{{ status_pill("Synthetic", "warning") }}{% endif %}</header>
+    <div class="mq-panel__body">
+      {% if e.assignments == 0 %}
+        <p>Nobody is assigned yet, so nobody can be exposed.</p>
+      {% else %}
+        <div class="mq-table-wrap"><table class="mq-table"><thead><tr><th scope="col">Group</th><th scope="col">Arm</th><th scope="col" class="mq-num">Assigned</th><th scope="col" class="mq-num">Exposed</th></tr></thead><tbody>
+          {% for g in summary.groups %}<tr><td class="mq-mono">{{ g.group_id }}</td><td>{{ g.kind.title() }}</td><td class="mq-num">{{ g.assigned }}</td><td class="mq-num">{% if g.kind == "CONTROL" %}<span class="mq-caption">Never exposed</span>{% else %}{{ g.exposed }}{% endif %}</td></tr>{% endfor %}
+        </tbody></table></div>
+        <p><strong>Delivery diagnostic:</strong> {{ summary.treatment_exposed }} of {{ summary.treatment_assigned }} assigned treatment customers were exposed{% if summary.exposure_rate is not none %} ({{ "%.1f" | format(summary.exposure_rate * 100) }}%){% endif %}; {{ summary.not_exposed }} were not reached. This says whether the campaign was delivered, not whether it worked. The result is measured on everyone assigned.</p>
+      {% endif %}
+    </div>
+  </section>
+  {% if can('campaign.write') and e.assignments %}
+    <section class="mq-panel mq-form-panel">
+      <header class="mq-panel__header"><h2 class="mq-panel__title">Record an exposure</h2></header>
+      <div class="mq-panel__body">
+        <form class="mq-form" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="mq-field"><label class="mq-field__label mq-field__label--required" for="customer_id">Customer id</label><input class="mq-input mq-mono" type="text" id="customer_id" name="customer_id" value="{{ customer_id }}" required autocomplete="off"><span class="mq-field__hint">Only customers assigned to a treatment group can be exposed.</span></div>
+          <div class="mq-form__actions"><button class="mq-btn mq-btn--primary" type="submit">Record exposure</button><a class="mq-btn mq-btn--secondary" href="{{ url_for('experiments.index') }}">Back to experiments</a></div>
+        </form>
+      </div>
+    </section>
+  {% endif %}
+{% endblock %}

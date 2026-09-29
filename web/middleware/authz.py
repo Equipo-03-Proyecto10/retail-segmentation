@@ -307,6 +307,30 @@ NAVIGATION: tuple[MenuEntry, ...] = (
     MenuEntry(
         "Model comparison", "model_comparison.index", SEGMENT_READ, "Analysis", "⇄"
     ),
+    MenuEntry(
+        "Segmentation dashboard",
+        "segmentation_dashboard.index",
+        SEGMENT_READ,
+        "Analysis",
+        "▥",
+    ),
+    MenuEntry(
+        "Segment history report",
+        "segment_history_report.index",
+        SEGMENT_READ,
+        "Analysis",
+        "☰",
+    ),
+    MenuEntry(
+        "Consumption reports",
+        "consumption_reports.index",
+        SEGMENT_READ,
+        "Analysis",
+        "⇵",
+    ),
+    MenuEntry(
+        "Experiment report", "experiment_report.index", CAMPAIGN_READ, "Analysis", "◫"
+    ),
     MenuEntry("Reports", "reports.index", REPORT_READ, "Analysis", "∷"),
     MenuEntry("Audit log", "audit.index", AUDIT_READ, "Governance", "⊞"),
 )

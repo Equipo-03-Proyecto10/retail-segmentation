@@ -3,6 +3,7 @@
 import pytest
 
 from web.config import (
+    DEFAULT_DATA_IS_SYNTHETIC,
     DEFAULT_ENVIRONMENT,
     DEFAULT_LOG_LEVEL,
     DEFAULT_PORT,
@@ -24,6 +25,7 @@ def test_reads_every_value_from_the_environment() -> None:
             "SESSION_COOKIE_SECURE": "true",
             "TRUSTED_PROXY_HOPS": "2",
             "DATABASE_URL": "configured-by-the-environment",
+            "DATA_IS_SYNTHETIC": "false",
         }
     )
 
@@ -34,6 +36,7 @@ def test_reads_every_value_from_the_environment() -> None:
     assert config.session_cookie_secure is True
     assert config.trusted_proxy_hops == 2
     assert config.database_url == "configured-by-the-environment"
+    assert config.data_is_synthetic is False
 
 
 def test_falls_back_to_documented_defaults_for_optional_values() -> None:
@@ -44,6 +47,7 @@ def test_falls_back_to_documented_defaults_for_optional_values() -> None:
     assert config.port == DEFAULT_PORT
     assert config.log_level == DEFAULT_LOG_LEVEL
     assert config.session_cookie_secure is DEFAULT_SESSION_COOKIE_SECURE
+    assert config.data_is_synthetic is DEFAULT_DATA_IS_SYNTHETIC
     assert config.trusted_proxy_hops == DEFAULT_TRUSTED_PROXY_HOPS
 
 

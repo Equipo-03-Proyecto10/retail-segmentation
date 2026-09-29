@@ -407,6 +407,10 @@ def test_the_menu_is_driven_by_permissions_rather_than_by_role() -> None:
         "Run history",
         "Migration matrix",
         "Model comparison",
+        "Segmentation dashboard",
+        "Segment history report",
+        "Consumption reports",
+        "Experiment report",
         "Reports",
         "Audit log",
     ]
@@ -418,6 +422,10 @@ def test_the_menu_is_driven_by_permissions_rather_than_by_role() -> None:
         "Run history",
         "Migration matrix",
         "Model comparison",
+        "Segmentation dashboard",
+        "Segment history report",
+        "Consumption reports",
+        "Experiment report",
         "Reports",
     ]
     assert _menu_labels(app.test_client()) == ["Home"]
@@ -434,6 +442,9 @@ def test_a_store_managers_menu_offers_the_segment_surfaces_and_nothing_to_run() 
         "Run history",
         "Migration matrix",
         "Model comparison",
+        "Segmentation dashboard",
+        "Segment history report",
+        "Consumption reports",
         "Reports",
     ]
 

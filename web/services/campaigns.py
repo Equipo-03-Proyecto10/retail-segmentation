@@ -19,6 +19,7 @@ from psycopg.errors import CheckViolation, ForeignKeyViolation, IntegrityError
 
 from web.db import campaigns
 from web.db.transactions import atomic
+from web.services.experiments import activation_refusal
 
 DRAFT = "DRAFT"
 ACTIVE = "ACTIVE"
@@ -204,6 +205,10 @@ def transition(connection: Connection, campaign_id: int, action: str) -> str:
         raise CampaignNotFound(campaign_id)
     if target not in TRANSITIONS[current.status]:
         raise _refuse_move(campaign_id, current.status, target)
+    # Activation starts the campaign, and assignment with it: every experiment
+    # attached must by then have its control and a treatment (RN-24, F11-03).
+    if target == ACTIVE and (refusal := activation_refusal(connection, campaign_id)):
+        raise InvalidTransition(refusal)
     if not campaigns.change_status(
         connection, campaign_id, current=current.status, new=target
     ):

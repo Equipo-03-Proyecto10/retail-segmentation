@@ -43,7 +43,16 @@ READ_ROUTES = [
     "/migration-matrix/",
     "/migration-explanation/",
     "/model-comparison/",
+    "/segmentation-dashboard/",
+    "/segment-history-report/",
+    "/consumption-reports/",
     "/campaigns/",
+    "/experiments/",
+    "/experiments/1/exposure",
+    "/experiments/1/conversion",
+    "/experiments/1/uplift",
+    "/experiment-report/",
+    "/experiment-report/export.csv",
     "/reports/",
 ]
 ADMIN_ROUTES = [
@@ -76,6 +85,14 @@ CAMPAIGN_WRITE_ROUTES = [
     ("POST", "/campaigns/1/activate"),
     ("POST", "/campaigns/1/complete"),
     ("POST", "/campaigns/1/cancel"),
+    ("GET", "/experiments/new"),
+    ("POST", "/experiments/new"),
+    ("GET", "/experiments/1/edit"),
+    ("POST", "/experiments/1/edit"),
+    ("GET", "/experiments/1/assign"),
+    ("POST", "/experiments/1/assign"),
+    ("POST", "/experiments/1/exposure"),
+    ("POST", "/experiments/1/conversion"),
 ]
 PROTECTED_ROUTES = (
     [("GET", path) for path in READ_ROUTES] + ADMIN_ROUTES + CAMPAIGN_WRITE_ROUTES

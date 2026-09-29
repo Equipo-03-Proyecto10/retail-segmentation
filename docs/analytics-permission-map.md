@@ -16,6 +16,7 @@ reuses an existing declaration, per ADR-0007.
 | 12 | Segment / RFM / migration dashboards | `segment.read` (existing) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | 12 | Revenue dashboard | `report.read` (existing) | everyone who already holds `report.read` |
 | 12 | Experiment dashboard | `campaign.read` (existing) | same as campaigns today |
+| 12 | Experiment report and its CSV export (`/experiment-report/`) | `campaign.read` (existing) | same as campaigns today |
 
 `ADMIN` remains the only administrative profile. No new profile is created.
 

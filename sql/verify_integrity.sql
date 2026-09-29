@@ -130,8 +130,10 @@ ROLLBACK;
 \echo ''
 \echo '-- N5: orphan foreign key, transaction -> customer [expect: 23503 foreign_key_violation]'
 BEGIN;
-INSERT INTO transaction (customer_id, store_id, channel_id, occurred_at, total)
-VALUES ('99999999-9999-9999-9999-999999999999', 1, 1, now(), 100.00);
+-- source_transaction_id is NOT NULL since #209: without one the row fails that
+-- check first and the foreign key is never reached (#262).
+INSERT INTO transaction (source_transaction_id, customer_id, store_id, channel_id, occurred_at, total)
+VALUES ('VERIFY-N5', '99999999-9999-9999-9999-999999999999', 1, 1, now(), 100.00);
 ROLLBACK;
 
 \echo ''
@@ -313,6 +315,41 @@ ROLLBACK;
 BEGIN;
 DELETE FROM transaction
 WHERE transaction_id = (SELECT transaction_id FROM experiment_conversion ORDER BY conversion_id LIMIT 1);
+ROLLBACK;
+
+\echo ''
+\echo '-- N30: exposing a control assignment             [expect: 23514 check_violation]'
+-- RN-27 and ADR-0019 require the schema to refuse this even when the service
+-- is bypassed. The seed gives every experiment two control assignments.
+BEGIN;
+INSERT INTO experiment_exposure (assignment_id)
+SELECT a.assignment_id
+  FROM experiment_assignment AS a
+  JOIN experiment_group AS g
+    ON g.group_id = a.group_id
+   AND g.experiment_id = a.experiment_id
+ WHERE g.kind = 'CONTROL'
+ ORDER BY a.assignment_id
+ LIMIT 1;
+ROLLBACK;
+
+\echo ''
+\echo '-- N31: moving an exposure to the control arm     [expect: 23514 check_violation]'
+-- The trigger protects both insertion and owner-level maintenance. retail_app
+-- cannot reach this statement because experiment_exposure is append-only.
+BEGIN;
+UPDATE experiment_exposure
+   SET assignment_id = (
+       SELECT a.assignment_id
+         FROM experiment_assignment AS a
+         JOIN experiment_group AS g
+           ON g.group_id = a.group_id
+          AND g.experiment_id = a.experiment_id
+        WHERE g.kind = 'CONTROL'
+        ORDER BY a.assignment_id
+        LIMIT 1
+   )
+ WHERE exposure_id = (SELECT min(exposure_id) FROM experiment_exposure);
 ROLLBACK;
 
 \echo ''

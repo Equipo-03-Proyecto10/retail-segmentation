@@ -330,6 +330,139 @@ category hierarchy,
 [`evidence/recommendations-category-subtree.md`](evidence/recommendations-category-subtree.md).
 · `F10-01`
 
+### RN-41 — The segmentation dashboard is a snapshot of one run, keyed on label, and marked when its data is not real
+One dashboard shows four things about one segmentation run: how many customers hold
+each label, the distribution of raw recency and frequency among the customers a
+label was computed for, how customers moved between labels since the run
+immediately before it, and how much each label's customers spent in the run's own
+window. All four read the stable label code; none reads which method produced the
+run.
+
+* **Segment sizes and revenue** are listed in the vocabulary's declared order, a
+  label with none shown at zero rather than omitted (RN-40's principle).
+* **The RFM distribution** bins the scored customers' raw recency and frequency into
+  five quintiles each, recomputed here rather than read from `r_score`/`f_score`,
+  which are stored for only one of the two segmentation methods (F9-02) and would
+  make the chart mean something different depending on which one produced the run.
+  An unassigned customer has neither value and is excluded.
+* **Migration flow** is the previous run, by `run_at`, compared to this one on
+  label code (RN-39), whichever methods produced either run. A customer only one of
+  the two runs scored is a change in population, not a move between labels, and is
+  reported as a count beside the chart rather than as a flow between labels.
+* **Revenue is summed over the run's own window** (`window_days` ending at
+  `run_at`), the same period its R/F/M were measured over.
+
+**The chart data is embedded in the server-rendered page, not fetched from a JSON
+endpoint** (`docs/roadmap.md`'s dashboards constraint). Application pages carry a
+same-origin-only script policy (`deploy/nginx/mosaiq.conf`), so the page loads
+Highcharts from this application's own static files rather than a CDN — the
+allowance in `docs/design-system/charts/` does not extend to application pages —
+and the embedded data sits in an inert `<script type="application/json">` block a
+same-origin script reads, never in an inline `<script>` block the policy would
+block.
+
+**A `Synthetic` badge marks the dashboard's figures as demonstration data**, driven
+by `Config.data_is_synthetic` (default true). No table this dashboard reads —
+`segmentation_run`, `customer_segment_history`, `transaction` — carries a data-origin
+marker the way the experiment tables do (ADR-0019); that marker is scoped to
+campaigns and experiments. This default reflects that every instance shown running
+today holds only the seeded demonstration data, and is a decision recorded for
+confirmation, not a fact this delivery's schema can check row by row.
+
+**Enforced:** application — `web/services/segmentation_dashboard.py` for the four
+charts, `web/db/segmentation_dashboard.py` for its two new reads (`SELECT`-only,
+parameterized), reusing `web/services/segment_migration.py` unchanged for the
+migration comparison. The page is gated on `segment.read`
+(`docs/analytics-permission-map.md`, Phase 12). **Verified** — by
+`tests/test_segmentation_dashboard.py`, `tests/test_segmentation_dashboard_db.py`
+and `tests/test_segmentation_dashboard_route.py`, including that faults seeded into
+each rule above fail a test, and against the seeded PostgreSQL and a real browser by
+[`evidence/f12-01-segmentation-dashboard.md`](evidence/f12-01-segmentation-dashboard.md).
+· `F12-01`
+
+### RN-43 — The segment history report's filters combine, and a row's explanation is its customer's previous run
+
+The report lists `customer_segment_history` rows across every run, filtered by
+three independent, optional conditions that combine with AND:
+
+* **run** — one specific run's rows only;
+* **label** — one specific label's rows, or specifically the rows a run left
+  unassigned (RN-21), which is not the same as no label filter at all;
+* **period** — rows whose own run's `run_at` falls in a stated range, closed on
+  its last day, the same "whole day" rule `web.db.audit`'s date filters already
+  use.
+
+A filter combination that matches nothing is a report with no rows, not an error:
+the count and the list read share the same filters, so the two never disagree.
+
+**Expanding a row shows why that customer holds that label**, built by F7-06's
+`explain_migration` from exactly two rows: this one, and the same customer's
+assignment on the run immediately before this row's run (found the same way
+F12-01's dashboard finds a run's previous run — the run immediately before it by
+`run_at`, whichever method produced either). A customer's first-ever row has no
+earlier run to compare it with, and says so rather than showing an empty or
+invented comparison. Nothing here recomputes a score; every value comes from the
+stored history rows (ADR-0017).
+
+**Enforced:** application — `web/services/segment_history_report.py` for the
+filters and the per-row explanation, `web/db/segment_history_report.py` for the
+two reads (`SELECT`-only, parameterized, paginated). Building SQL text with an
+f-string or concatenation is refused elsewhere in this codebase
+(`tests/test_write_services.py`), so the count and list statements' identical
+`WHERE` clauses are two literals kept in step by a test that compares them,
+matching `web.db.audit`'s own established pattern rather than sharing the clause
+at runtime. The page is gated on `segment.read`
+(`docs/analytics-permission-map.md`, Phase 12). **Verified** — by
+`tests/test_segment_history_report.py`, `tests/test_segment_history_report_db.py`
+and `tests/test_segment_history_report_route.py`, including that faults seeded
+into each rule above fail a test, and against the seeded PostgreSQL by
+[`evidence/f12-02-segment-history-report.md`](evidence/f12-02-segment-history-report.md).
+· `F12-02`
+
+### RN-44 — Consumption-shift and recommendation report rows are filtered, never recomputed, and every filter must match
+
+Two independent reports share one filter bar: **store**, **channel**, **category**
+and a **period** stated as "as of" plus a window in days. Neither report
+recomputes anything F8-05 or F10-01 already do; each filters what they already
+compute.
+
+* **The shift report** reuses F8-05's `detect_shifts` over the two consecutive
+  periods the window implies. A shift row matches a store, channel or category
+  filter when that dimension's **before or after** leader is the filter — a
+  customer who started or stopped using it, either direction. A dimension the
+  customer did not shift in never matches a filter that is set. Every filter
+  that is set must match; a filter left unset never excludes a row.
+* **The recommendation report** reuses F10-01's `recommend`, once per customer,
+  flattened to one row per recommended product. Store and channel narrow to the
+  customer's own usual store and dominant channel; category narrows the
+  recommended products themselves, since one customer's recommendations can
+  span several categories. A customer `recommend` did not actually recommend
+  anything to (no segment, no usual store, nothing in stock matched) contributes
+  no rows.
+* **A filter combination that matches nothing** is an empty report, reported
+  independently for each of the two sections — one report can be empty while
+  the other is not, since they are filtered separately over the same rows.
+* **Every recommendation row carries its own reason and its own stock**, read
+  fresh from `recommend` on every request: nothing here caches a result, so a
+  product whose stock reaches zero is absent the next time the report runs
+  (verified live in evidence, not merely inferred from F10-01's own guarantee).
+
+**Enforced:** application — `web/services/consumption_reports.py` for the
+filters, `web/db/consumption_reports.py` for the one new read (bulk customer
+names; `SELECT`-only, parameterized). `RecommendationResult` (F10-01) now also
+carries `channel_id`/`channel_name`, from the same profile window `store_id`/
+`store_name` already come from, so the two are known or absent together. The
+page is gated on `segment.read` (`docs/analytics-permission-map.md`, Phase 12;
+`STORE_MANAGER`, the role this story is written for, holds it per ADR-0023).
+**Verified** — by `tests/test_consumption_reports.py`,
+`tests/test_consumption_reports_db.py` and
+`tests/test_consumption_reports_route.py`, including that faults seeded into
+each rule above fail a test, and against the seeded PostgreSQL, with a real
+store and channel shift injected and a product's stock taken to zero and the
+report regenerated, by
+[`evidence/f12-03-consumption-reports.md`](evidence/f12-03-consumption-reports.md).
+· `F12-03`
+
 ### RN-22 — A campaign targets a real, stable segment label
 **Enforced:** `campaign_label_code_fkey` → `segment_label(label_code)`.
 **Verified** — case N23.
@@ -339,30 +472,52 @@ Two arms of the same experiment is not two independent facts; it is a
 measurement error.
 
 **Enforced:** `experiment_assignment_experiment_id_customer_id_key`.
-**Verified** — case N21.
+**Verified** — case N21. The application assigns an experiment once, under a
+lock on the experiment row, and reports the index's refusal instead of failing
+(F11-04).
+
+### RN-42 — An assignment is never rewritten
+An experiment's arms are fixed when its customers are assigned, before anything
+is delivered. Moving a customer to another arm, or removing one, afterwards
+would change the denominator after the outcome is visible. Assignment happens
+once per experiment: the campaign must be active, so its target label can no
+longer change, and the whole population is written in one transaction or not
+at all.
+
+**Enforced:** application *and* schema. No module updates or deletes an
+assignment, and `retail_app` holds no `UPDATE` or `DELETE` on
+`experiment_assignment` (`REVOKE` in `sql/01_schema.sql`, checked by its
+self-test). ADR-0026. · `F11-04`
 
 ### RN-24 — An experiment has at most one control group
 **Enforced:** `ux_experiment_one_control`. **Verified** — case N22.
 
 The other half — at least one treatment group before activation — is not
 expressible as a static constraint, the same shape as RN-01's *never zero*
-half. It waits on F11-03's service-level check.
+half. The application enforces it: setup always writes one control with the
+treatment groups, and a campaign cannot be activated while an experiment
+attached to it lacks a control or a treatment group
+(`web/services/experiments.py` `activation_refusal`, F11-03).
 
 ### RN-25 — An experiment's conversion window is a positive number of days
 **Enforced:** `experiment_conversion_window_days_check`. **Verified** — case
 N24.
 
 Fixed before the run starts and immutable after the first assignment
-(ADR-0019) is not yet enforced anywhere; it waits on F11-04's service, which
-must lock the value before assignment begins.
+(ADR-0019): the application refuses a change to the window, or to the target
+metric, once the experiment has an assignment. The edit locks the experiment
+row before counting; F11-04 must take at least `FOR SHARE` on it before the
+first assignment. · `F11-03`
 
 ### RN-26 — Every experiment's data carries its origin
 `OBSERVED`, `SEEDED` or `INJECTED`.
 
 **Enforced:** `experiment_data_origin_check`. **Verified** — case N25.
 
-Rendering the `Synthetic` label on every screen and export for `SEEDED` and
-`INJECTED` data (ADR-0019) is not yet built; it waits on F11-07.
+The origin is chosen when the experiment is set up and is never updated
+afterwards, so every later result reads the origin it was created with. The
+experiment screens label `SEEDED` and `INJECTED` experiments `Synthetic`
+(F11-03). The results and exports that F11-07 adds must carry the same label.
 
 ### RN-27 — Exposure and conversion are recorded as events separate from assignment
 Neither is a column on `experiment_assignment`: an assigned customer may
@@ -372,8 +527,51 @@ not a second total invented on the experiment side.
 **Enforced:** the model — `experiment_exposure` and `experiment_conversion`
 are their own relations, foreign-keyed to `experiment_assignment`.
 
-Refusing exposure for the control group (ADR-0019) is not yet enforced
-anywhere; it waits on F11-05.
+**Enforced** for the control group by the service and schema (F11-05): exposing
+a customer whose group is `CONTROL`, or who was never assigned, is refused and
+writes nothing. `trg_experiment_exposure_treatment_only` follows the assignment
+to its group and refuses a direct `INSERT` or an owner-level reassignment with
+SQLSTATE `23514`; it does not duplicate `kind` onto the event. Exposures are
+append-only for `retail_app`, which holds no `UPDATE` or `DELETE` privilege
+(ADR-0027). The exposure rate (exposed / assigned, treatment only) is shown as a
+delivery diagnostic; the result is measured on everyone assigned.
+
+**Conversion (F11-06).** A sale qualifies when the assigned customer made it at
+or after `assigned_at` and before `assigned_at` plus the experiment's
+`conversion_window_days`. Evaluating records one `experiment_conversion` row
+naming the assignment and the sale; evaluating again adds nothing
+(`UNIQUE (assignment_id, transaction_id)`). A customer with no conversion is
+*pending* while their window is open and *not converted* only once it has
+closed. Those outcomes count recorded conversions; a customer with a qualifying
+sale that no evaluation has recorded yet is flagged on the page instead of being
+shown silently as pending or not converted. `transaction` carries no experiment
+column. The application only ever adds conversions; unlike exposures
+(ADR-0027), `retail_app` still holds `UPDATE` and `DELETE` on
+`experiment_conversion`, so the database does not yet enforce that.
+
+**Uplift (F11-07).** The result is intent to treat: each treatment arm's
+conversion rate minus the control's, over every assigned customer whether or not
+they were exposed, with a 95% interval and a two-sided test at alpha 0.05 (each
+arm on its own, no correction for several). Customers whose window is still open
+count as not converted so far and the result is marked *Preliminary*. An
+experiment with no control, no assignments, an empty control or treatment arm,
+unrecorded qualifying sales, or a target metric other than `CONVERSION` is
+refused; nothing is computed against "everyone else" or from incomplete outcome
+counts. A result from a `SEEDED` or `INJECTED` experiment carries the literal
+label `Synthetic`.
+It is trusted because two checks hold: an A/A split from pre-cut-off data shows
+no significant difference, and a fixed-seed injected uplift (10,000 per arm, 10%
+against 15%) is recovered within 0.1 point with an interval excluding zero.
+
+### RN-45 — The experiment report keeps counts, filters and provenance explicit
+The experiment report shows assignment,
+exposure and conversion as three counts per arm, each labelled with what it
+counts, beside the intent-to-treat uplift and its 95% interval (F11-07's own
+functions). Campaign and data-origin filters are optional, combine, and reach
+both the page and its total; a value the report does not offer is refused. The
+CSV export applies the same filters and repeats `data_origin` and the
+`Synthetic` label on every line, so provenance is in the file and not only on
+the screen; text cells that would read as spreadsheet formulas are defused.
 
 ### RN-31 — A campaign moves only along fixed transitions, and two states are final
 `DRAFT` → `ACTIVE` or `CANCELLED`; `ACTIVE` → `FINISHED` or `CANCELLED`.

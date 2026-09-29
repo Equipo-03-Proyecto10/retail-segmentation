@@ -83,6 +83,8 @@ CAMPAIGN_WRITE_ROUTES = [
     ("POST", "/experiments/new"),
     ("GET", "/experiments/1/edit"),
     ("POST", "/experiments/1/edit"),
+    ("GET", "/experiments/1/assign"),
+    ("POST", "/experiments/1/assign"),
 ]
 PROTECTED_ROUTES = (
     [("GET", path) for path in READ_ROUTES] + ADMIN_ROUTES + CAMPAIGN_WRITE_ROUTES

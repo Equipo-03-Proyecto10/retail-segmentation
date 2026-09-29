@@ -407,6 +407,14 @@ CREATE TABLE experiment_assignment (
         REFERENCES experiment_group (group_id, experiment_id) ON DELETE CASCADE
 );
 
+-- Append-only for the application role (RN-42, #223, ADR-0026): an
+-- assignment fixes the experiment's denominator before any outcome is known,
+-- so moving a customer to another arm afterwards would rewrite the result.
+-- The owner keeps every privilege, and foreign-key cascades run as the owner,
+-- so only retail_app's own UPDATE and DELETE are refused. A row lock on this
+-- table needs UPDATE; the application locks the experiment row instead.
+REVOKE UPDATE, DELETE ON experiment_assignment FROM retail_app;
+
 -- A later, separate event: an assigned customer may remain unexposed
 -- (ADR-0019), so exposure is never folded into the assignment row. More
 -- than one exposure per assignment is allowed -- "each later exposure" is
@@ -613,7 +621,7 @@ BEGIN
     IF EXISTS (
         SELECT FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname = 'public' AND c.relkind = 'r'
-          AND c.relname <> 'audit_log'
+          AND c.relname NOT IN ('audit_log', 'experiment_assignment')
           AND (NOT has_table_privilege(c.oid, 'SELECT')
                OR NOT has_table_privilege(c.oid, 'INSERT')
                OR NOT has_table_privilege(c.oid, 'UPDATE')
@@ -632,6 +640,15 @@ BEGIN
         RAISE EXCEPTION 'audit_log must be append-only for the application role (RN-30)';
     END IF;
     RAISE NOTICE 'PASS: audit_log is append-only for the application role';
+
+    IF NOT has_table_privilege('public.experiment_assignment', 'SELECT')
+       OR NOT has_table_privilege('public.experiment_assignment', 'INSERT')
+       OR has_table_privilege('public.experiment_assignment', 'UPDATE')
+       OR has_table_privilege('public.experiment_assignment', 'DELETE')
+       OR has_table_privilege('public.experiment_assignment', 'TRUNCATE') THEN
+        RAISE EXCEPTION 'experiment_assignment must be append-only for the application role (RN-42)';
+    END IF;
+    RAISE NOTICE 'PASS: experiment_assignment is append-only for the application role';
 
     BEGIN
         DROP TABLE public.inventory;
@@ -668,6 +685,19 @@ BEGIN
         RAISE EXCEPTION 'FAIL: retail_app was allowed to DELETE audit_log';
     EXCEPTION WHEN insufficient_privilege THEN
         RAISE NOTICE 'PASS: DELETE audit_log refused (SQLSTATE 42501)';
+    END;
+    BEGIN
+        UPDATE public.experiment_assignment SET group_id = group_id
+         WHERE assignment_id = -1;
+        RAISE EXCEPTION 'FAIL: retail_app was allowed to UPDATE experiment_assignment';
+    EXCEPTION WHEN insufficient_privilege THEN
+        RAISE NOTICE 'PASS: UPDATE experiment_assignment refused (SQLSTATE 42501)';
+    END;
+    BEGIN
+        DELETE FROM public.experiment_assignment WHERE assignment_id = -1;
+        RAISE EXCEPTION 'FAIL: retail_app was allowed to DELETE experiment_assignment';
+    EXCEPTION WHEN insufficient_privilege THEN
+        RAISE NOTICE 'PASS: DELETE experiment_assignment refused (SQLSTATE 42501)';
     END;
     RAISE NOTICE 'PASS: SELECT, INSERT, UPDATE, DELETE and audit sequence access';
 END;

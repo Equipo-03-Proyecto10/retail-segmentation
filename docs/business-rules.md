@@ -428,7 +428,22 @@ Two arms of the same experiment is not two independent facts; it is a
 measurement error.
 
 **Enforced:** `experiment_assignment_experiment_id_customer_id_key`.
-**Verified** — case N21.
+**Verified** — case N21. The application assigns an experiment once, under a
+lock on the experiment row, and reports the index's refusal instead of failing
+(F11-04).
+
+### RN-42 — An assignment is never rewritten
+An experiment's arms are fixed when its customers are assigned, before anything
+is delivered. Moving a customer to another arm, or removing one, afterwards
+would change the denominator after the outcome is visible. Assignment happens
+once per experiment: the campaign must be active, so its target label can no
+longer change, and the whole population is written in one transaction or not
+at all.
+
+**Enforced:** application *and* schema. No module updates or deletes an
+assignment, and `retail_app` holds no `UPDATE` or `DELETE` on
+`experiment_assignment` (`REVOKE` in `sql/01_schema.sql`, checked by its
+self-test). ADR-0026. · `F11-04`
 
 ### RN-24 — An experiment has at most one control group
 **Enforced:** `ux_experiment_one_control`. **Verified** — case N22.

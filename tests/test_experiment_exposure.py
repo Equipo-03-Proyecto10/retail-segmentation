@@ -1,12 +1,15 @@
-"""Exposure as its own event (F11-05, ADR-0019).
+"""Exposure as its own event (F11-05, ADR-0019, ADR-0027).
 
-The database is mocked, as in the other route tests. What is proved here is the
-application's rule; the tables themselves come from sql/01_schema.sql.
+The service and route database calls are mocked, as in the other route tests.
+Static checks keep their database counterparts in sql/01_schema.sql; CI and the
+story evidence execute those counterparts against PostgreSQL.
 """
 
 from __future__ import annotations
 
+import re
 from itertools import chain, repeat
+from pathlib import Path
 from unittest.mock import MagicMock, Mock
 
 import pytest
@@ -21,6 +24,8 @@ from web.services import experiments as service
 
 USER_ID = "11111111-1111-1111-1111-000000000001"
 CUSTOMER = "00000000-0000-0000-0000-000000000005"
+ROOT = Path(__file__).resolve().parents[1]
+SCHEMA = (ROOT / "sql/01_schema.sql").read_text()
 GROUPS = [
     GroupExposure(61, "CONTROL", 5, 0),
     GroupExposure(62, "TREATMENT", 4, 3),
@@ -146,17 +151,35 @@ def test_the_exposure_insert_is_parameterized_and_carries_no_timestamp() -> None
 
 
 def test_no_module_rewrites_an_exposure() -> None:
-    import re
-    from pathlib import Path
-
-    root = Path(__file__).resolve().parents[1]
     rewrite = re.compile(
         r"(UPDATE\s+experiment_exposure|DELETE\s+FROM\s+experiment_exposure)",
         re.IGNORECASE,
     )
     assert [
-        p.name for p in (root / "web").rglob("*.py") if rewrite.search(p.read_text())
+        p.name for p in (ROOT / "web").rglob("*.py") if rewrite.search(p.read_text())
     ] == []
+
+
+def test_the_schema_refuses_a_control_group_exposure() -> None:
+    assert "CREATE FUNCTION fn_experiment_exposure_treatment_only()" in SCHEMA
+    assert "g.kind = 'CONTROL'" in SCHEMA
+    assert "CONSTRAINT = 'experiment_exposure_treatment_only'" in SCHEMA
+    assert "CREATE TRIGGER trg_experiment_exposure_treatment_only" in SCHEMA
+    assert "BEFORE INSERT OR UPDATE OF assignment_id" in SCHEMA
+
+
+def test_the_schema_makes_exposures_append_only_for_the_application_role() -> None:
+    revoke = "REVOKE UPDATE, DELETE ON experiment_exposure FROM retail_app;"
+
+    assert SCHEMA.index("CREATE TABLE experiment_exposure") < SCHEMA.index(revoke)
+    assert re.search(r"c\.relname NOT IN \([^)]*'experiment_exposure'", SCHEMA)
+
+
+def test_the_self_test_proves_both_database_refusals() -> None:
+    assert "PASS: experiment_exposure is append-only" in SCHEMA
+    assert "PASS: UPDATE experiment_exposure refused" in SCHEMA
+    assert "PASS: DELETE experiment_exposure refused" in SCHEMA
+    assert "PASS: control-group exposure refused" in SCHEMA
 
 
 # ---------- the page ----------

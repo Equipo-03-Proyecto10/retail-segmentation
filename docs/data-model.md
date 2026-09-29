@@ -571,7 +571,11 @@ cannot be spoofed even though it is denormalized onto this table alongside
 A later, separate event (ADR-0019): an assigned customer may remain
 unexposed, so exposure is never folded into the assignment row. More than
 one exposure per assignment is allowed, so there is no uniqueness
-constraint here.
+constraint here. `trg_experiment_exposure_treatment_only` follows the
+assignment to `experiment_group` and refuses `CONTROL`; keeping `kind` in its
+one existing relation avoids a duplicate value and leaves the 4NF
+decomposition unchanged. `retail_app` can select and insert exposure events but
+cannot update or delete them (ADR-0027).
 
 #### `experiment_conversion`
 

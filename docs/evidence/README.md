@@ -94,6 +94,7 @@ right place for it, and which the team accepted on 2026-09-07.
 | [F11-04](f11-04-group-assignment.md) | Group assignment as `retail_app` on a real database: the campaign's population split into balanced arms in one transaction, a second attempt refused, `UPDATE` and `DELETE` refused by the schema (42501) as well as by the application, the preview and a refusal at 375 px and 1440 px |
 | [F11-05](f11-05-experiment-exposure.md) | Exposure as a separate durable event on a real database: assigned/unexposed customers remain in the denominator, control is refused by the service and schema, exposure rows are append-only for `retail_app`, and the diagnostic and refusal are shown at 375 px and 1440 px |
 | [F11-06](f11-06-experiment-conversion.md) | Conversion as an assignment-to-sale attribution on a real database: only sales inside the fixed window are attributed, re-evaluation adds nothing, open windows are pending, unrecorded qualifying sales are flagged, and the trace is shown at 375 px and 1440 px |
+| [F11-07](f11-07-experiment-uplift.md) | Intent-to-treat uplift validated by an A/A split over real later transactions and by the fixed 10,000-per-arm injected fixture, with incomplete arms/counts refused and the `Synthetic` result shown at 375 px and 1440 px |
 
 ## Phase 12 — analytics
 

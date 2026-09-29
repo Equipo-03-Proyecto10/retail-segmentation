@@ -34,7 +34,7 @@ def login() -> ResponseReturnValue:
     # form; `safe_next` refuses anything that is not a path on this site.
     destination = safe_next(request.values.get("next"))
 
-    if request.method == "GET":
+    if request.method in ("GET", "HEAD"):
         return render_template("auth/login.html", next=destination)
 
     email = request.form.get("email", "").strip()

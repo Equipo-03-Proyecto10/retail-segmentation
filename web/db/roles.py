@@ -6,6 +6,8 @@ from dataclasses import dataclass
 
 from psycopg import Connection
 
+from web.db.search import ilike_pattern
+
 
 @dataclass(frozen=True)
 class Role:
@@ -23,7 +25,7 @@ def list_roles(
 
     with connection.cursor() as cursor:
         if search:
-            pattern = f"%{search}%"
+            pattern = ilike_pattern(search)
             cursor.execute(
                 """
                 SELECT role_id, code, description
@@ -47,7 +49,7 @@ def list_roles(
         rows = cursor.fetchall()
 
         if search:
-            pattern = f"%{search}%"
+            pattern = ilike_pattern(search)
             cursor.execute("SELECT count(*) FROM role WHERE code ILIKE %s", (pattern,))
         else:
             cursor.execute("SELECT count(*) FROM role")

@@ -57,6 +57,7 @@
               <span class="mq-caption mq-mono">{{ current_user_role }}</span>
             </div>
             <form method="post" action="{{ url_for('auth.logout') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button class="mq-btn mq-btn--tertiary mq-btn--sm mq-nav__signout" type="submit">
                 <span aria-hidden="true">↪</span>
                 <span class="mq-nav__signout-label">Sign out</span>

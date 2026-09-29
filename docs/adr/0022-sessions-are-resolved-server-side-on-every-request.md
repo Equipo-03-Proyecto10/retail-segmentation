@@ -1,6 +1,6 @@
 # ADR-0022 — Sessions are resolved server-side on every request
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #251
 **Supersedes:** ADR-0007, in part — only its consequence that "the session's `role_code` is trusted until sign-out"

@@ -15,8 +15,8 @@
       {% else %}
         <p>The label did not change: stayed <strong>{{ explanation.label_before or "Unassigned" }}</strong>.</p>
       {% endif %}
-      {% if explanation.most_changed %}
-        <p class="mq-caption">{{ explanation.most_changed.name }} moved the most (score delta {{ "%+d"|format(explanation.most_changed.score_delta) }}).</p>
+      {% if explanation.most_changed_caption %}
+        <p class="mq-caption">{{ explanation.most_changed_caption }}</p>
       {% endif %}
     </div>
   </section>

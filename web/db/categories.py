@@ -11,6 +11,8 @@ from dataclasses import dataclass
 
 from psycopg import Connection
 
+from web.db.search import ilike_pattern
+
 
 @dataclass(frozen=True)
 class Category:
@@ -28,7 +30,7 @@ def list_categories(
 
     with connection.cursor() as cursor:
         if search:
-            pattern = f"%{search}%"
+            pattern = ilike_pattern(search)
             cursor.execute(
                 """
                 SELECT category_id, name, parent_category_id
@@ -52,7 +54,7 @@ def list_categories(
         rows = cursor.fetchall()
 
         if search:
-            pattern = f"%{search}%"
+            pattern = ilike_pattern(search)
             cursor.execute(
                 "SELECT count(*) FROM category WHERE name ILIKE %s", (pattern,)
             )

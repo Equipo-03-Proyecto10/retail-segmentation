@@ -24,6 +24,7 @@ from psycopg import Connection
 
 from web.db.categories import Category
 from web.db.channels import Channel
+from web.db.search import ilike_pattern
 
 
 @dataclass(frozen=True)
@@ -52,7 +53,7 @@ def list_customers(
 
     with connection.cursor() as cursor:
         if search:
-            pattern = f"%{search}%"
+            pattern = ilike_pattern(search)
             cursor.execute(
                 """
                 SELECT c.customer_id, c.user_id, c.name, c.email, c.phone,
@@ -86,7 +87,7 @@ def list_customers(
         rows = cursor.fetchall()
 
         if search:
-            pattern = f"%{search}%"
+            pattern = ilike_pattern(search)
             cursor.execute(
                 "SELECT count(*) FROM customer WHERE name ILIKE %s OR email ILIKE %s",
                 (pattern, pattern),

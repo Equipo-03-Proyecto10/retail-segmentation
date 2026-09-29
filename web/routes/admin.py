@@ -43,7 +43,7 @@ from web.db.stores import (
     get_store,
     list_stores,
 )
-from web.db.users import list_role_options, list_users
+from web.db.users import get_user_by_id, list_role_options, list_users
 from web.middleware.authz import (
     CATALOG_READ,
     CATALOG_WRITE,
@@ -94,6 +94,7 @@ from web.services.users import (
     UnknownUserError,
     create_user,
     set_active,
+    update_user,
     validate_user,
 )
 
@@ -137,7 +138,7 @@ def list_stores_view() -> ResponseReturnValue:
 @bp.route("/stores/new", methods=["GET", "POST"])
 @requires(CATALOG_WRITE)
 def create_store_view() -> ResponseReturnValue:
-    if request.method == "GET":
+    if request.method in ("GET", "HEAD"):
         return render_template("admin/store_form.html", store=None, errors={})
 
     connection = get_connection()
@@ -190,7 +191,7 @@ def edit_store_view(store_id: int) -> ResponseReturnValue:
     if store is None:
         abort(404)
 
-    if request.method == "GET":
+    if request.method in ("GET", "HEAD"):
         return render_template("admin/store_form.html", store=store, errors={})
 
     name = request.form.get("name", "").strip()
@@ -303,7 +304,7 @@ def create_category_view() -> ResponseReturnValue:
     connection = get_connection()
     all_categories = list_all_categories(connection)
 
-    if request.method == "GET":
+    if request.method in ("GET", "HEAD"):
         return render_template(
             "admin/category_form.html",
             category=None,
@@ -374,7 +375,7 @@ def edit_category_view(category_id: int) -> ResponseReturnValue:
         c for c in list_all_categories(connection) if c.category_id != category_id
     ]
 
-    if request.method == "GET":
+    if request.method in ("GET", "HEAD"):
         return render_template(
             "admin/category_form.html",
             category=category,
@@ -491,7 +492,7 @@ def list_channels_view() -> ResponseReturnValue:
 @bp.route("/channels/new", methods=["GET", "POST"])
 @requires(CATALOG_WRITE)
 def create_channel_view() -> ResponseReturnValue:
-    if request.method == "GET":
+    if request.method in ("GET", "HEAD"):
         return render_template("admin/channel_form.html", channel=None, errors={})
 
     connection = get_connection()
@@ -538,7 +539,7 @@ def edit_channel_view(channel_id: int) -> ResponseReturnValue:
     if channel is None:
         abort(404)
 
-    if request.method == "GET":
+    if request.method in ("GET", "HEAD"):
         return render_template("admin/channel_form.html", channel=channel, errors={})
 
     name = request.form.get("name", "").strip()
@@ -641,7 +642,7 @@ def create_product_view() -> ResponseReturnValue:
     connection = get_connection()
     all_categories = list_all_categories(connection)
 
-    if request.method == "GET":
+    if request.method in ("GET", "HEAD"):
         return render_template(
             "admin/product_form.html",
             product=None,
@@ -741,7 +742,7 @@ def edit_product_view(product_id: int) -> ResponseReturnValue:
 
     all_categories = list_all_categories(connection)
 
-    if request.method == "GET":
+    if request.method in ("GET", "HEAD"):
         return render_template(
             "admin/product_form.html",
             product=product,
@@ -914,7 +915,7 @@ def list_roles_view() -> ResponseReturnValue:
 @bp.route("/roles/new", methods=["GET", "POST"])
 @requires(CATALOG_WRITE)
 def create_role_view() -> ResponseReturnValue:
-    if request.method == "GET":
+    if request.method in ("GET", "HEAD"):
         return render_template("admin/role_form.html", role=None, errors={})
 
     connection = get_connection()
@@ -960,7 +961,7 @@ def edit_role_view(role_id: int) -> ResponseReturnValue:
     if role is None:
         abort(404)
 
-    if request.method == "GET":
+    if request.method in ("GET", "HEAD"):
         return render_template("admin/role_form.html", role=role, errors={})
 
     # The code is shown read-only and never written (RN-01, #252). A request
@@ -1069,7 +1070,7 @@ def create_user_view() -> ResponseReturnValue:
     connection = get_connection()
     roles = list_role_options(connection)
 
-    if request.method == "GET":
+    if request.method in ("GET", "HEAD"):
         return render_template(
             "admin/user_form.html",
             user=None,
@@ -1127,6 +1128,102 @@ def create_user_view() -> ResponseReturnValue:
         )
 
     flash("User created.", "success")
+    return redirect(url_for("admin.list_users_view"))
+
+
+@bp.route("/users/<uuid:user_id>/edit", methods=["GET", "POST"])
+@requires(USER_WRITE)
+def edit_user_view(user_id: UUID) -> ResponseReturnValue:
+    """Correct a user's name, email and role (RF-09, #289).
+
+    Password rotation and activation stay on their own screens (F4-06's own
+    procedure, and activate/deactivate below); this form only ever writes
+    name, email and role.
+    """
+    connection = get_connection()
+    user = get_user_by_id(connection, user_id)
+    if user is None:
+        abort(404)
+    roles = list_role_options(connection)
+
+    if request.method in ("GET", "HEAD"):
+        return render_template(
+            "admin/user_form.html",
+            user=user,
+            errors={},
+            roles=roles,
+            minimum_password_length=MINIMUM_PASSWORD_LENGTH,
+            editing=True,
+        )
+
+    name = request.form.get("name", "").strip()
+    email = request.form.get("email", "").strip()
+    role_code = request.form.get("role_code", "")
+
+    errors = validate_user(
+        name=name,
+        email=email,
+        password="x" * MINIMUM_PASSWORD_LENGTH,
+        role_code=role_code,
+    )
+    errors.pop("password", None)
+
+    if errors:
+        return (
+            render_template(
+                "admin/user_form.html",
+                user={
+                    "user_id": user_id,
+                    "name": name,
+                    "email": email,
+                    "role_code": role_code,
+                },
+                errors=errors,
+                roles=roles,
+                minimum_password_length=MINIMUM_PASSWORD_LENGTH,
+                editing=True,
+            ),
+            400,
+        )
+
+    try:
+        update_user(connection, user_id, name=name, email=email, role_code=role_code)
+    except (SingleAdministratorError, UnknownRoleError) as error:
+        return (
+            render_template(
+                "admin/user_form.html",
+                user={
+                    "user_id": user_id,
+                    "name": name,
+                    "email": email,
+                    "role_code": role_code,
+                },
+                errors={"role_code": str(error)},
+                roles=roles,
+                minimum_password_length=MINIMUM_PASSWORD_LENGTH,
+                editing=True,
+            ),
+            409,
+        )
+    except DuplicateEmailError as error:
+        return (
+            render_template(
+                "admin/user_form.html",
+                user={
+                    "user_id": user_id,
+                    "name": name,
+                    "email": email,
+                    "role_code": role_code,
+                },
+                errors={"email": str(error)},
+                roles=roles,
+                minimum_password_length=MINIMUM_PASSWORD_LENGTH,
+                editing=True,
+            ),
+            409,
+        )
+
+    flash("User updated.", "success")
     return redirect(url_for("admin.list_users_view"))
 
 

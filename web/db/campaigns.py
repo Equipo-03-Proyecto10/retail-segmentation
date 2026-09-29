@@ -81,14 +81,28 @@ def create_campaign(
     label_code: str,
     starts_on: date,
     ends_on: date,
-) -> int:
-    """Insert a DRAFT campaign under the next free id and return that id.
+) -> int | None:
+    """Insert a DRAFT campaign under the next free id and return that id, or
+    None when a draft with the same name, label and dates already exists
+    (#296: a double-click or a resubmitted form, not a second campaign).
 
     campaign_id has no identity (the issue's "no schema change"), so the id is
-    allocated here, under an advisory lock held until the service commits.
+    allocated here, under an advisory lock held until the service commits;
+    the same lock makes the duplicate check and the insert see one
+    consistent state instead of two submissions both passing it.
     """
     with connection.cursor() as cursor:
         cursor.execute("SELECT pg_advisory_xact_lock(%s)", (_CREATE_LOCK_KEY,))
+        cursor.execute(
+            """
+            SELECT 1 FROM campaign
+             WHERE name = %s AND label_code = %s
+               AND starts_on = %s AND ends_on = %s AND status = 'DRAFT'
+            """,
+            (name, label_code, starts_on, ends_on),
+        )
+        if cursor.fetchone() is not None:
+            return None
         cursor.execute(
             """
             INSERT INTO campaign (campaign_id, name, label_code, starts_on,

@@ -9,7 +9,7 @@
     <header class="mq-panel__header"><h1 class="mq-panel__title">Confirm deletion</h1></header>
     <div class="mq-panel__body mq-stack">
       <div class="mq-alert mq-alert--danger" role="alert"><span class="mq-alert__icon" aria-hidden="true">!</span><div class="mq-stack"><span class="mq-alert__title">Delete {{ entity }}</span><span class="mq-alert__text">Delete <strong>{{ record.code if entity == 'role' else record.name }}</strong>? This cannot be undone.</span></div></div>
-      <form class="mq-form__actions" method="post"><button class="mq-btn mq-btn--destructive" type="submit" name="confirm" value="yes">Confirm deletion</button><a class="mq-btn mq-btn--secondary" href="{{ url_for(list_endpoint) }}">Cancel</a></form>
+      <form class="mq-form__actions" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="mq-btn mq-btn--destructive" type="submit" name="confirm" value="yes">Confirm deletion</button><a class="mq-btn mq-btn--secondary" href="{{ url_for(list_endpoint) }}">Cancel</a></form>
     </div>
   </section>
 {% endblock %}

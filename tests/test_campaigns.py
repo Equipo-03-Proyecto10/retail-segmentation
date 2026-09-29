@@ -208,7 +208,9 @@ def test_a_campaign_is_created_as_a_draft_naming_a_label_code(
 ) -> None:
     client = app.test_client()
     _sign_in(client, "MARKETING")
-    _cursor(connection).fetchone.return_value = (8,)
+    # First fetchone is the duplicate-draft check (no match), second is the
+    # INSERT's RETURNING campaign_id.
+    _cursor(connection).fetchone.side_effect = [None, (8,)]
 
     response = client.post("/campaigns/new", data=FORM)
 
@@ -218,6 +220,25 @@ def test_a_campaign_is_created_as_a_draft_naming_a_label_code(
     assert "'DRAFT'" in insert[0]
     assert insert[1] == ("Win-back", "AT_RISK", date(2026, 10, 1), date(2026, 10, 31))
     connection.commit.assert_called_once()
+
+
+def test_resubmitting_the_same_draft_does_not_create_a_second_campaign(
+    app: Flask, connection: MagicMock
+) -> None:
+    """#296: a double-click or a Back-and-resubmit must not write a second
+    identical draft. The duplicate-draft check finds a match, so no INSERT
+    is ever attempted."""
+    client = app.test_client()
+    _sign_in(client, "MARKETING")
+    _cursor(connection).fetchone.return_value = (1,)
+
+    response = client.post("/campaigns/new", data=FORM)
+
+    assert response.status_code == 409
+    assert "already exists" in response.get_data(as_text=True)
+    statements = [call.args[0] for call in _cursor(connection).execute.call_args_list]
+    assert not any("INSERT INTO campaign" in statement for statement in statements)
+    connection.commit.assert_not_called()
 
 
 @pytest.mark.parametrize(

@@ -26,6 +26,7 @@
     <header class="mq-panel__header"><h2 class="mq-panel__title">Run settings</h2></header>
     <div class="mq-panel__body">
       <form class="mq-form" method="post" action="{{ url_for('segment_run.execute') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="mq-field">
           <label class="mq-field__label mq-field__label--required" for="window">Window, in days</label>
           <input class="mq-input mq-input--num" type="number" id="window" name="window" value="{{ window }}" min="1" max="3650" required>

@@ -5,6 +5,12 @@ from `app_session`. Most route tests sign in by writing `user_id` and
 `role_code` straight into the cookie through `session_transaction()`, against
 a mocked connection, so by default the lookup is stubbed to trust what the
 test wrote. Tests of the lookup itself opt out with `@pytest.mark.real_sessions`.
+
+CSRF (#294, ADR-0025): every unsafe-method request is checked against a
+per-session token and, when present, the `Origin` header. Route tests post
+plain `data={...}` dicts with no token, so by default the check is stubbed
+off the same way; tests of the check itself opt out with
+`@pytest.mark.real_csrf`.
 """
 
 from __future__ import annotations
@@ -31,3 +37,10 @@ def _stub_session_lookup(request: pytest.FixtureRequest, monkeypatch) -> None:
     if request.node.get_closest_marker("real_sessions"):
         return
     monkeypatch.setattr("web.middleware.authz._principal_for", _trust_the_cookie)
+
+
+@pytest.fixture(autouse=True)
+def _stub_csrf(request: pytest.FixtureRequest, monkeypatch) -> None:
+    if request.node.get_closest_marker("real_csrf"):
+        return
+    monkeypatch.setattr("web.middleware.csrf.verify_csrf", lambda: None)

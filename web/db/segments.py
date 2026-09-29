@@ -27,7 +27,8 @@ Two things make a run repeatable, and both are in the adapter's read:
 
 ADR-0017: every run writes one `customer_segment_history` row per customer, and
 closes the previously open row even when the result is unchanged. Closing and
-opening share one `now()`, so a customer's rows are contiguous.
+opening share one instant, taken by `lock_for_run`, so a customer's rows are
+contiguous.
 """
 
 from __future__ import annotations
@@ -41,9 +42,18 @@ from uuid import UUID
 
 from psycopg import Connection
 
+from web.db.search import ilike_pattern
+
 # Quintiles: 5 is the best score in each measure — most recent, most frequent,
 # highest spend — which is the orientation segment_rule's bands are written in.
 QUINTILES = 5
+
+# Takes a transaction-scoped advisory lock, so two concurrent runs cannot both
+# close the same open history rows and race to reopen them: the loser would
+# hit ux_customer_segment_history_open as an unhandled 500 instead of simply
+# running after the winner (#285). Advisory rather than LOCK TABLE: it
+# serializes runs without blocking reads of the segmentation history.
+_RUN_LOCK_KEY = 285_001
 
 _SCORE_AND_MATCH = """
 WITH window_sales AS (
@@ -182,14 +192,36 @@ def read_rfm_inputs(
     return [CustomerSales(str(row[0]), *row[1:]) for row in rows]
 
 
+def lock_for_run(connection: Connection[Any]) -> datetime:
+    """Serialize runs, and return the instant this run is recorded at.
+
+    Blocks until any other run in flight has committed or rolled back. Held for
+    the rest of the transaction (#285), so the read of the prior open
+    assignments, the close, and the insert all see one consistent, uncontested
+    state.
+
+    The instant is read after the lock is granted, not taken from `now()`:
+    `now()` is when the transaction began, which for a run that waited is
+    before the run it waited for. Closing that run's rows at such an instant
+    would put `valid_to` before their `valid_from`, and its run_at would sort
+    it ahead of a run whose assignments it replaced.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_xact_lock(%s)", (_RUN_LOCK_KEY,))
+        cursor.execute("SELECT clock_timestamp()")
+        return cursor.fetchone()[0]
+
+
 def create_run(
     connection: Connection[Any],
     method: str,
     window_days: int,
     parameters: dict[str, Any],
     customer_count: int,
+    *,
+    run_at: datetime,
 ) -> int:
-    """Insert the run row and return its id.
+    """Insert the run row, recorded at `run_at`, and return its id.
 
     `parameters` is ADR-0017's snapshot of what produced the run. It is stored
     with its keys sorted so the same parameters are always the same text, and
@@ -203,14 +235,15 @@ def create_run(
         cursor.execute(
             """
             INSERT INTO segmentation_run
-                (method, window_days, parameters, customer_count, executed_by)
+                (method, window_days, parameters, customer_count, executed_by,
+                 run_at)
             VALUES (
                 %s, %s, %s::jsonb, %s,
-                NULLIF(current_setting('mosaiq.user_id', true), '')::uuid
+                NULLIF(current_setting('mosaiq.user_id', true), '')::uuid, %s
             )
             RETURNING run_id
             """,
-            (method, window_days, snapshot, customer_count),
+            (method, window_days, snapshot, customer_count, run_at),
         )
         return cursor.fetchone()[0]
 
@@ -236,32 +269,36 @@ def read_open_assignments(
 
 
 def close_open_assignments(
-    connection: Connection[Any], customer_ids: list[str]
+    connection: Connection[Any], customer_ids: list[str], *, at: datetime
 ) -> None:
-    """Close the open assignment of every listed customer, whether or not the
-    run is about to write the same result again (ADR-0017)."""
+    """Close, at `at`, the open assignment of every listed customer, whether or
+    not the run is about to write the same result again (ADR-0017)."""
     if not customer_ids:
         return
     with connection.cursor() as cursor:
         cursor.execute(
             """
             UPDATE customer_segment_history
-               SET valid_to = now()
+               SET valid_to = %s
              WHERE valid_to IS NULL
                AND customer_id = ANY(%s::uuid[])
             """,
-            (customer_ids,),
+            (at, customer_ids),
         )
 
 
 def insert_assignments(
-    connection: Connection[Any], run_id: int, rows: list[tuple[Any, ...]]
+    connection: Connection[Any],
+    run_id: int,
+    rows: list[tuple[Any, ...]],
+    *,
+    at: datetime,
 ) -> None:
     """Open one history row per customer for this run.
 
     Each row is (customer, segment, label, last purchase, frequency, monetary,
-    r, f, m). The pipeline has already closed the previous open rows, and
-    `now()` is the same instant they were closed at.
+    r, f, m). The pipeline has already closed the previous open rows, and `at`
+    is the same instant they were closed at.
     """
     if not rows:
         return
@@ -272,9 +309,9 @@ def insert_assignments(
                 (customer_id, run_id, segment_id, label_code,
                  recency_last_purchase_at, frequency_count, monetary_total,
                  r_score, f_score, m_score, valid_from)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
-            [(row[0], run_id, *row[1:]) for row in rows],
+            [(row[0], run_id, *row[1:], at) for row in rows],
         )
 
 
@@ -311,7 +348,7 @@ def list_segments(
 
     with connection.cursor() as cursor:
         if search:
-            pattern = f"%{search}%"
+            pattern = ilike_pattern(search)
             cursor.execute(
                 """
                 SELECT segment_id, name, description, rule_id, valid_from, valid_to
@@ -335,7 +372,7 @@ def list_segments(
         rows = cursor.fetchall()
 
         if search:
-            pattern = f"%{search}%"
+            pattern = ilike_pattern(search)
             cursor.execute(
                 "SELECT count(*) FROM segment WHERE name ILIKE %s", (pattern,)
             )

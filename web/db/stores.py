@@ -10,6 +10,8 @@ from dataclasses import dataclass
 
 from psycopg import Connection
 
+from web.db.search import ilike_pattern
+
 
 @dataclass(frozen=True)
 class Store:
@@ -29,7 +31,7 @@ def list_stores(
 
     with connection.cursor() as cursor:
         if search:
-            pattern = f"%{search}%"
+            pattern = ilike_pattern(search)
             cursor.execute(
                 """
                 SELECT store_id, name, city, state, is_active
@@ -53,7 +55,7 @@ def list_stores(
         rows = cursor.fetchall()
 
         if search:
-            pattern = f"%{search}%"
+            pattern = ilike_pattern(search)
             cursor.execute(
                 """
                 SELECT count(*) FROM store

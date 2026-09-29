@@ -37,6 +37,7 @@ from web.db.users import (
     get_user_by_id,
     insert_user,
     update_active,
+    update_name_and_email,
     update_password_hash,
     update_role,
 )
@@ -177,6 +178,34 @@ def change_role(connection: Connection, user_id: UUID | str, role_code: str) -> 
         update_role(connection, user.user_id, role_id)
     except UniqueViolation as error:
         raise _translate_unique_violation(error) from error
+
+
+@atomic
+def update_user(
+    connection: Connection,
+    user_id: UUID | str,
+    *,
+    name: str,
+    email: str,
+    role_code: str,
+) -> None:
+    """Correct an existing account's name, email and role (RF-09, #289).
+
+    Name and email are written first; the role move reuses change_role, so
+    RN-01's single-administrator refusal (SingleAdministratorError) applies
+    exactly as it does at creation -- a second ADMIN is refused, and
+    demoting the last one is refused too (use transfer_administrator for
+    that). One transaction: if the role move is refused, the name/email
+    write is rolled back with it. The address is normalised as at creation
+    (#288), and a clash with another account's address is DuplicateEmailError.
+    """
+    try:
+        update_name_and_email(
+            connection, user_id, name=name.strip(), email=normalize_email(email)
+        )
+    except UniqueViolation as error:
+        raise _translate_unique_violation(error) from error
+    change_role(connection, user_id, role_code)
 
 
 @atomic

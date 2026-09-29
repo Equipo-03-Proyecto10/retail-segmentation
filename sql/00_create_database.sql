@@ -40,8 +40,10 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 -- The application connects through a restricted role, never as the role that
 -- owns the schema — docs/backlog.md F1-05. psql does not substitute variables
 -- inside a dollar-quoted body, so the password reaches the block through a
--- session setting rather than being interpolated into it.
-SELECT set_config('mosaiq.app_password', :'app_password', false);
+-- session setting rather than being interpolated into it. SET, not
+-- SELECT set_config(): a SELECT returns the password as a result row, and psql
+-- prints it to whoever runs the script. RESET below drops it from the session.
+SET mosaiq.app_password = :'app_password';
 
 DO $$
 DECLARE
@@ -54,6 +56,8 @@ BEGIN
   END IF;
 END
 $$;
+
+RESET mosaiq.app_password;
 
 GRANT CONNECT ON DATABASE retail TO retail_app;
 GRANT USAGE ON SCHEMA public TO retail_app;

@@ -11,6 +11,8 @@ from uuid import UUID
 
 from psycopg import Connection
 
+from web.db.search import ilike_pattern
+
 # The role that RN-01 allows exactly one of. Named here rather than repeated as
 # a string literal, and matched against the schema's partial unique index by
 # tests/test_single_administrator.py.
@@ -154,6 +156,22 @@ def update_role(connection: Connection, user_id: UUID | str, role_id: int) -> No
         )
 
 
+def update_name_and_email(
+    connection: Connection, user_id: UUID | str, *, name: str, email: str
+) -> None:
+    """Correct an existing account's name and email (RF-09, #289).
+
+    The role is changed separately, by update_role -- reusing the same
+    write RN-01's transfer already relies on rather than adding a second
+    path to the same column.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE app_user SET name = %s, email = %s WHERE user_id = %s",
+            (name, email, str(user_id)),
+        )
+
+
 def update_active(connection: Connection, user_id: UUID | str, is_active: bool) -> None:
     """Activate or deactivate a user. Deletion is never how access is removed."""
     with connection.cursor() as cursor:
@@ -222,7 +240,7 @@ def list_users(
 
     with connection.cursor() as cursor:
         if search:
-            pattern = f"%{search}%"
+            pattern = ilike_pattern(search)
             cursor.execute(
                 """
                 SELECT u.user_id, u.role_id, r.code, r.description, u.name,
@@ -250,7 +268,7 @@ def list_users(
         rows = cursor.fetchall()
 
         if search:
-            pattern = f"%{search}%"
+            pattern = ilike_pattern(search)
             cursor.execute(
                 "SELECT count(*) FROM app_user WHERE name ILIKE %s OR email ILIKE %s",
                 (pattern, pattern),

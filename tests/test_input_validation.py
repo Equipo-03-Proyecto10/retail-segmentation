@@ -38,7 +38,7 @@ class _Cursor:
     def __init__(self) -> None:
         self._statement = ""
 
-    def __enter__(self) -> "_Cursor":
+    def __enter__(self) -> _Cursor:
         return self
 
     def __exit__(self, *_exc) -> None:

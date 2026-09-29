@@ -13,7 +13,17 @@ import io
 import tempfile
 from pathlib import Path
 
-from flask import Blueprint, Response, abort, render_template, request, session
+from flask import (
+    Blueprint,
+    Response,
+    abort,
+    current_app,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 from werkzeug.utils import secure_filename
 
 from web.db import get_connection
@@ -35,79 +45,77 @@ from web.services.sales_csv import (
 bp = Blueprint("sales_import", __name__, url_prefix="/admin/sales-import")
 
 _PER_PAGE = 20
+_FILENAME_MAX = 255
+
+
+def _render_index(page: int, *, error: str | None = None) -> str | Response:
+    """The upload form above the real upload history, also when a submitted
+    file was refused -- the history does not vanish because of one bad file."""
+    loads, total = list_sales_loads(get_connection(), page=page, per_page=_PER_PAGE)
+    total_pages = page_count(total, _PER_PAGE)
+    if error is None and (response := redirect_last_page(page, total_pages)):
+        return response
+    return render_template(
+        "sales_import/index.html",
+        loads=loads,
+        page=page,
+        total_pages=total_pages,
+        total=total,
+        contract_version=CONTRACT_VERSION,
+        error=error,
+    )
+
+
+def _refuse(error: str) -> tuple[str | Response, int]:
+    return _render_index(1, error=error), 400
 
 
 @bp.get("/")
 @requires(SALES_INGEST_EXECUTE)
 def index() -> str | Response:
     """The upload form, and a history of previous attempts."""
-    connection = get_connection()
-    page = parse_pagination(request.args.get("page"))
-    loads, total = list_sales_loads(connection, page=page, per_page=_PER_PAGE)
-    if response := redirect_last_page(page, page_count(total, _PER_PAGE)):
-        return response
-    return render_template(
-        "sales_import/index.html",
-        loads=loads,
-        page=page,
-        total_pages=page_count(total, _PER_PAGE),
-        total=total,
-        contract_version=CONTRACT_VERSION,
-    )
+    return _render_index(parse_pagination(request.args.get("page")))
 
 
 @bp.post("/")
 @requires(SALES_INGEST_EXECUTE)
-def upload() -> str | Response:
-    """Accept one CSV file, load it, and show the resulting report."""
+def upload() -> Response | tuple[str | Response, int]:
+    """Accept one CSV file, load it, and redirect to the stored report."""
     file = request.files.get("file")
     if file is None or not file.filename:
-        return (
-            render_template(
-                "sales_import/index.html",
-                loads=[],
-                page=1,
-                total_pages=1,
-                total=0,
-                contract_version=CONTRACT_VERSION,
-                error="Choose a CSV file to upload.",
-            ),
-            400,
-        )
+        return _refuse("Choose a CSV file to upload.")
 
-    filename = secure_filename(file.filename) or "upload.csv"
-    connection = get_connection()
+    # sales_load.filename is VARCHAR(255), and the client's name is only
+    # displayed: the file itself is saved under a fixed name, so a name too
+    # long for the filesystem cannot turn into a 500.
+    filename = secure_filename(file.filename)[:_FILENAME_MAX] or "upload.csv"
+    max_bytes = current_app.config["APP_CONFIG"].max_upload_bytes
 
     with tempfile.TemporaryDirectory() as tmp_dir:
-        tmp_path = Path(tmp_dir) / filename
+        tmp_path = Path(tmp_dir) / "upload.csv"
         file.save(tmp_path)
+        # MAX_CONTENT_LENGTH leaves FORM_OVERHEAD_BYTES of room for the rest
+        # of the form, so a file just over MAX_UPLOAD_BYTES still arrives.
+        if tmp_path.stat().st_size > max_bytes:
+            return _refuse(
+                f"The file is larger than the {max_bytes / (1024 * 1024):.0f} MB "
+                "upload limit. Split it and upload each part."
+            )
         try:
-            report, load_id = load_and_record_sales_csv(
-                connection,
+            _, load_id = load_and_record_sales_csv(
+                get_connection(),
                 tmp_path,
                 filename=filename,
                 contract_version=CONTRACT_VERSION,
                 loaded_by=session.get("user_id"),
             )
         except UnsupportedContractVersion as error:
-            return (
-                render_template(
-                    "sales_import/index.html",
-                    loads=[],
-                    page=1,
-                    total_pages=1,
-                    total=0,
-                    contract_version=CONTRACT_VERSION,
-                    error=str(error),
-                ),
-                400,
-            )
+            return _refuse(f"The file was not loaded: {error}.")
 
-    return render_template(
-        "sales_import/report.html",
-        load=get_sales_load(connection, load_id),
-        rejections=list_sales_load_rejections(connection, load_id),
-    )
+    # Redirected rather than rendered, unlike segment_run: reloading a
+    # rendered report would post the file again, recording a second load
+    # whose every row is rejected as a duplicate of the first.
+    return redirect(url_for("sales_import.detail", load_id=load_id), code=303)
 
 
 @bp.get("/<int:load_id>")

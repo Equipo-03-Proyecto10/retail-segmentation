@@ -47,8 +47,10 @@ def insert_sales_load(
     loaded_by: UUID | str | None,
     rejections: list[tuple[int, str]],
 ) -> int:
-    """Record one upload attempt and every rejected line, in the same
-    transaction as the ingest itself (the caller's @atomic covers both)."""
+    """Record one upload attempt and every rejected line in one transaction.
+
+    The sales rows themselves are not part of it: each one has already
+    committed or rolled back on its own inside ingest_row."""
     with connection.cursor() as cursor:
         cursor.execute(
             """

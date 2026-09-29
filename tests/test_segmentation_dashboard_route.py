@@ -227,7 +227,7 @@ def test_no_other_inline_script_carries_executable_code(app, monkeypatch) -> Non
     'unsafe-inline', which application pages do not have."""
     body = _body(_open(app, monkeypatch)[0])
 
-    for match in re.finditer(r"<script([^>]*)>", body):
+    for match in re.finditer(r"<script([^>]*)>", body, re.IGNORECASE):
         attrs = match.group(1)
         if 'type="application/json"' in attrs:
             continue

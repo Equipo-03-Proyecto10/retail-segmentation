@@ -290,9 +290,12 @@ class MigrationExplanation:
     """Why one customer moved (or didn't) between two runs, entirely from
     the stored R/F/M values and scores on each run's history row -- no
     recomputation (ADR-0017). recency/frequency/monetary are the three
-    ComponentDelta. most_changed names whichever has the largest absolute
-    score_delta; it is None when either run left the customer unassigned,
-    since a score_delta of None can't be compared to the other two."""
+    ComponentDelta. most_changed names every component sharing the largest
+    absolute score_delta -- one when a single component moved most, more
+    when two or three tie (#297: a tie must not be reported as if only one
+    of them moved). It is None when either run left the customer
+    unassigned, since a score_delta of None can't be compared to the other
+    two, or when nothing moved at all."""
 
     recency: ComponentDelta
     frequency: ComponentDelta
@@ -302,13 +305,32 @@ class MigrationExplanation:
     label_changed: bool
 
     @property
-    def most_changed(self) -> ComponentDelta | None:
+    def most_changed(self) -> tuple[ComponentDelta, ...] | None:
         deltas = [self.recency, self.frequency, self.monetary]
         if any(delta.score_delta is None for delta in deltas):
             return None
-        if all(delta.score_delta == 0 for delta in deltas):
+        largest = max(abs(delta.score_delta) for delta in deltas)
+        if largest == 0:
             return None
-        return max(deltas, key=lambda delta: abs(delta.score_delta))
+        return tuple(delta for delta in deltas if abs(delta.score_delta) == largest)
+
+    @property
+    def most_changed_caption(self) -> str | None:
+        """The sentence the page shows: the one component that moved the
+        most, or, on a tie, every component that shares it named as having
+        moved equally (#297) rather than picking one by list order."""
+        changed = self.most_changed
+        if changed is None:
+            return None
+        if len(changed) == 1:
+            component = changed[0]
+            return (
+                f"{component.name} moved the most "
+                f"(score delta {component.score_delta:+d})."
+            )
+        names = ", ".join(c.name for c in changed[:-1]) + f" and {changed[-1].name}"
+        deltas = ", ".join(f"{c.score_delta:+d}" for c in changed)
+        return f"{names} moved equally (score deltas {deltas})."
 
 
 def explain_migration(

@@ -314,6 +314,13 @@ NAVIGATION: tuple[MenuEntry, ...] = (
         "Analysis",
         "▥",
     ),
+    MenuEntry(
+        "Segment history report",
+        "segment_history_report.index",
+        SEGMENT_READ,
+        "Analysis",
+        "☰",
+    ),
     MenuEntry("Reports", "reports.index", REPORT_READ, "Analysis", "∷"),
     MenuEntry("Audit log", "audit.index", AUDIT_READ, "Governance", "⊞"),
 )

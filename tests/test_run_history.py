@@ -134,7 +134,7 @@ def test_the_list_shows_method_window_customers_and_executor(
     assert "#7" in body
     assert "RFM_RULES" in body
     assert "180 days" in body
-    assert ">window_days: 180<" in body
+    assert ">—<" in body  # RFM_RULES has no K/seed, shown as em dash
     assert "30" in body
     assert "Grace Hopper" in body
 

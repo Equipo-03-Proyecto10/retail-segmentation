@@ -492,8 +492,12 @@ or after `assigned_at` and before `assigned_at` plus the experiment's
 naming the assignment and the sale; evaluating again adds nothing
 (`UNIQUE (assignment_id, transaction_id)`). A customer with no conversion is
 *pending* while their window is open and *not converted* only once it has
-closed. `transaction` carries no experiment column, and conversions are never
-rewritten.
+closed. Those outcomes count recorded conversions; a customer with a qualifying
+sale that no evaluation has recorded yet is flagged on the page instead of being
+shown silently as pending or not converted. `transaction` carries no experiment
+column. The application only ever adds conversions; unlike exposures
+(ADR-0027), `retail_app` still holds `UPDATE` and `DELETE` on
+`experiment_conversion`, so the database does not yet enforce that.
 
 ### RN-31 — A campaign moves only along fixed transitions, and two states are final
 `DRAFT` → `ACTIVE` or `CANCELLED`; `ACTIVE` → `FINISHED` or `CANCELLED`.

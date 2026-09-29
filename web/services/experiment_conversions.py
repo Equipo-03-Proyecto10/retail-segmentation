@@ -36,6 +36,12 @@ class ConversionSummary:
     def pending(self) -> int:
         return sum(group.pending for group in self.groups)
 
+    @property
+    def unrecorded(self) -> int:
+        """Customers with a qualifying sale that no evaluation has recorded yet.
+        Until it is zero, the outcome counts understate conversion."""
+        return sum(group.unrecorded for group in self.groups)
+
 
 def conversion_summary(
     connection: Connection, experiment_id: int, now: datetime | None = None

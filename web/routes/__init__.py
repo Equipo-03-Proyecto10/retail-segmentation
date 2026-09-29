@@ -18,7 +18,7 @@ from web.routes.home import bp as home_bp
 from web.routes.migration_explanation import bp as migration_explanation_bp
 from web.routes.migration_matrix import bp as migration_matrix_bp
 from web.routes.model_comparison import bp as model_comparison_bp
-from web.routes.placeholders import reports_bp
+from web.routes.reports import reports_bp
 from web.routes.run_history import bp as run_history_bp
 from web.routes.segment_history_report import bp as segment_history_report_bp
 from web.routes.segment_run import bp as segment_run_bp

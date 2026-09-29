@@ -279,7 +279,9 @@ def stock() -> str | Response:
     page, search, search_value = _page_args()
 
     store_raw = request.args.get("store", "").strip()
-    store_id = whole_number(store_raw, SMALLINT_MAX)
+    store_id = whole_number(store_raw, SMALLINT_MAX) if store_raw else None
+    if store_raw and store_id is None:
+        abort(400)
 
     rows, total = list_stock(
         connection,

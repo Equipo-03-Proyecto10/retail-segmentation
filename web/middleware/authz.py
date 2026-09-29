@@ -291,6 +291,9 @@ NAVIGATION: tuple[MenuEntry, ...] = (
     MenuEntry("Home", "home.index", None, "Workspace", "◇"),
     MenuEntry("Catalogs", "catalog.index", CATALOG_READ, "Workspace", "▦"),
     MenuEntry("Users", "admin.list_users_view", USER_READ, "Workspace", "○"),
+    MenuEntry(
+        "Sales import", "sales_import.index", SALES_INGEST_EXECUTE, "Workspace", "⇪"
+    ),
     MenuEntry("Segments", "catalog.segments", SEGMENT_READ, "Analysis", "▪"),
     MenuEntry("Campaigns", "campaigns.index", CAMPAIGN_READ, "Analysis", "≡"),
     MenuEntry(

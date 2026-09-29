@@ -20,6 +20,7 @@ from web.db import get_connection
 from web.db.model_comparison import list_run_label_rows, list_runs_of_method
 from web.db.segments import SegmentationRun, get_label_ordinals, get_run
 from web.middleware.authz import SEGMENT_READ, requires
+from web.parsing import BIGINT_MAX, whole_number
 from web.routes.pagination import redirect_last_page
 from web.services.catalog import parse_pagination
 from web.services.model_comparison import (
@@ -34,7 +35,6 @@ bp = Blueprint("model_comparison", __name__, url_prefix="/model-comparison")
 
 _PER_PAGE = 20
 _RUN_OPTIONS = 100
-_BIGGEST_RUN_ID = 2**63 - 1
 
 # The two kinds of run the page compares, one of each: (query parameter, kind, name).
 _SLOTS = (
@@ -65,13 +65,13 @@ def index() -> tuple[str, int] | str | Response:
         if not raw:
             chosen[slot] = options[slot][0] if options[slot] else None
             continue
-        if not (raw.isascii() and raw.isdigit()):
+        run_id = whole_number(raw, BIGINT_MAX)
+        if run_id is None:
             error, chosen[slot] = "Choose one run from each list.", None
             continue
-        run_id = int(raw)
         run = next((r for r in options[slot] if r.run_id == run_id), None)
         if run is None:
-            run = get_run(connection, run_id) if run_id <= _BIGGEST_RUN_ID else None
+            run = get_run(connection, run_id)
             if run is None:
                 abort(404)
             if run.method != kind:

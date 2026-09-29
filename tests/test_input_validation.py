@@ -156,7 +156,7 @@ _URLS_349 = [
     "/segment-history-report/?period_start=0001-01-01",
     "/audit/?from=0001-01-01",
     "/segmentation-dashboard/?run=99999999999999999999",
-    "/model-comparison/?rfm=99999999999999999999",
+    "/model-comparison/?rules_run=99999999999999999999",
 ]
 
 
@@ -181,6 +181,24 @@ def test_an_unusable_window_is_refused_with_its_bounds(app: Flask) -> None:
 
     assert response.status_code == 400
     assert "1 to 3650" in response.get_data(as_text=True)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "/catalog/stock?store=%C2%B2",
+        "/catalog/stock?store=2147483648",
+        "/segmentation-dashboard/?run=99999999999999999999",
+        "/model-comparison/?rules_run=99999999999999999999",
+    ],
+)
+def test_an_out_of_domain_id_is_refused_before_it_reaches_sql(
+    app: Flask, url: str
+) -> None:
+    response = _admin(app).get(url)
+
+    assert response.status_code == 400
+    assert _refused_as_a_page(response)
 
 
 # ---------- #347: a NUL byte ----------

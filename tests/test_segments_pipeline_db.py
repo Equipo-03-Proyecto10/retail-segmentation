@@ -275,3 +275,13 @@ def test_the_old_single_statement_is_gone() -> None:
 
     assert "_RECALCULATE" not in source
     assert not re.search(r"def recalculate_segments", source)
+
+
+def test_the_scoring_statement_reports_whether_the_fallback_labelled_the_customer() -> (
+    None
+):
+    """#345: the run counts fallbacks, so the read has to say which they were."""
+    from web.db.segments import _SCORE_AND_MATCH
+
+    assert "AS via_fallback" in _SCORE_AND_MATCH
+    assert "bm.segment_id IS NULL AND fb.segment_id IS NOT NULL" in _SCORE_AND_MATCH

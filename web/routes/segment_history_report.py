@@ -20,6 +20,7 @@ from web.db import get_connection
 from web.db.segment_history_report import UNASSIGNED
 from web.db.segments import get_label_ordinals, list_runs
 from web.middleware.authz import SEGMENT_READ, requires
+from web.services.catalog import INT_MAX
 from web.services.segment_history_report import InvalidPeriod, ReportPage, build_report
 
 bp = Blueprint("segment_history_report", __name__, url_prefix="/segment-history-report")
@@ -47,10 +48,14 @@ def _a_page(raw: str | None) -> int:
 
 def _a_run(raw: str | None) -> int | None:
     """None when unset; the run id when it is one; -1 when the value given
-    could not be a run id at all (refused, not silently dropped)."""
+    could not be a run id at all (refused, not silently dropped). A whole
+    number past the column's range is one of those: PostgreSQL would answer
+    it with NumericValueOutOfRange, a 500 rather than a refusal."""
     if not raw:
         return None
-    return int(raw) if raw.isascii() and raw.isdigit() else -1
+    if not (raw.isascii() and raw.isdigit()) or int(raw) > INT_MAX:
+        return -1
+    return int(raw)
 
 
 @bp.get("/")

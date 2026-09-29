@@ -243,7 +243,7 @@ def test_the_chosen_filters_are_reflected_back_into_the_form(app, monkeypatch) -
     assert 'value="LOYAL" selected' in body.replace("  ", " ")
 
 
-@pytest.mark.parametrize("raw", ["abc", "1.5", "-1"])
+@pytest.mark.parametrize("raw", ["abc", "1.5", "-1", "2147483648", "99999999999"])
 def test_a_run_choice_that_is_not_a_whole_number_is_a_400(
     app, monkeypatch, raw
 ) -> None:

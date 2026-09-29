@@ -483,8 +483,14 @@ not a second total invented on the experiment side.
 **Enforced:** the model — `experiment_exposure` and `experiment_conversion`
 are their own relations, foreign-keyed to `experiment_assignment`.
 
-Refusing exposure for the control group (ADR-0019) is not yet enforced
-anywhere; it waits on F11-05.
+**Enforced** for the control group by the service and schema (F11-05): exposing
+a customer whose group is `CONTROL`, or who was never assigned, is refused and
+writes nothing. `trg_experiment_exposure_treatment_only` follows the assignment
+to its group and refuses a direct `INSERT` or an owner-level reassignment with
+SQLSTATE `23514`; it does not duplicate `kind` onto the event. Exposures are
+append-only for `retail_app`, which holds no `UPDATE` or `DELETE` privilege
+(ADR-0027). The exposure rate (exposed / assigned, treatment only) is shown as a
+delivery diagnostic; the result is measured on everyone assigned.
 
 ### RN-31 — A campaign moves only along fixed transitions, and two states are final
 `DRAFT` → `ACTIVE` or `CANCELLED`; `ACTIVE` → `FINISHED` or `CANCELLED`.

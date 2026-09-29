@@ -157,9 +157,11 @@ Do not rerun the full schema against a populated database. The verification
 section lives there to keep all table DDL, including the rejected `DROP`, in
 the required file. CI extracts and runs the same section after a clean seed.
 It fails unless the role lacks administrative flags, memberships, object
-ownership, persistent `CREATE` and `TRUNCATE`, while retaining DML on all
-application tables. It also attempts `DROP TABLE inventory` and requires
-SQLSTATE `42501`, then exercises all four DML operations on an audited category.
+ownership, persistent `CREATE` and `TRUNCATE`, while retaining DML on ordinary
+application tables and only `SELECT`/`INSERT` on the append-only audit,
+assignment and exposure tables. It also attempts `DROP TABLE inventory`,
+rewrites of each append-only table, and a control-group exposure; each must be
+refused before it exercises all four DML operations on an audited category.
 
 Every probe rolls back, including an unexpectedly successful `DROP`. Category
 ID `32767` must be unused; a collision fails instead of modifying an existing

@@ -318,6 +318,41 @@ WHERE transaction_id = (SELECT transaction_id FROM experiment_conversion ORDER B
 ROLLBACK;
 
 \echo ''
+\echo '-- N30: exposing a control assignment             [expect: 23514 check_violation]'
+-- RN-27 and ADR-0019 require the schema to refuse this even when the service
+-- is bypassed. The seed gives every experiment two control assignments.
+BEGIN;
+INSERT INTO experiment_exposure (assignment_id)
+SELECT a.assignment_id
+  FROM experiment_assignment AS a
+  JOIN experiment_group AS g
+    ON g.group_id = a.group_id
+   AND g.experiment_id = a.experiment_id
+ WHERE g.kind = 'CONTROL'
+ ORDER BY a.assignment_id
+ LIMIT 1;
+ROLLBACK;
+
+\echo ''
+\echo '-- N31: moving an exposure to the control arm     [expect: 23514 check_violation]'
+-- The trigger protects both insertion and owner-level maintenance. retail_app
+-- cannot reach this statement because experiment_exposure is append-only.
+BEGIN;
+UPDATE experiment_exposure
+   SET assignment_id = (
+       SELECT a.assignment_id
+         FROM experiment_assignment AS a
+         JOIN experiment_group AS g
+           ON g.group_id = a.group_id
+          AND g.experiment_id = a.experiment_id
+        WHERE g.kind = 'CONTROL'
+        ORDER BY a.assignment_id
+        LIMIT 1
+   )
+ WHERE exposure_id = (SELECT min(exposure_id) FROM experiment_exposure);
+ROLLBACK;
+
+\echo ''
 \echo '-- N29: renaming a role code                      [expect: 23514 check_violation]'
 -- RN-01 (#252): the permission matrix is keyed by the code and the
 -- single-administrator index by role_id, so codes are immutable.

@@ -47,6 +47,7 @@ READ_ROUTES = [
     "/segment-history-report/",
     "/campaigns/",
     "/experiments/",
+    "/experiments/1/conversion",
     "/reports/",
 ]
 ADMIN_ROUTES = [
@@ -85,6 +86,7 @@ CAMPAIGN_WRITE_ROUTES = [
     ("POST", "/experiments/1/edit"),
     ("GET", "/experiments/1/assign"),
     ("POST", "/experiments/1/assign"),
+    ("POST", "/experiments/1/conversion"),
 ]
 PROTECTED_ROUTES = (
     [("GET", path) for path in READ_ROUTES] + ADMIN_ROUTES + CAMPAIGN_WRITE_ROUTES

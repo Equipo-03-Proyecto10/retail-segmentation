@@ -486,6 +486,15 @@ are their own relations, foreign-keyed to `experiment_assignment`.
 Refusing exposure for the control group (ADR-0019) is not yet enforced
 anywhere; it waits on F11-05.
 
+**Conversion (F11-06).** A sale qualifies when the assigned customer made it at
+or after `assigned_at` and before `assigned_at` plus the experiment's
+`conversion_window_days`. Evaluating records one `experiment_conversion` row
+naming the assignment and the sale; evaluating again adds nothing
+(`UNIQUE (assignment_id, transaction_id)`). A customer with no conversion is
+*pending* while their window is open and *not converted* only once it has
+closed. `transaction` carries no experiment column, and conversions are never
+rewritten.
+
 ### RN-31 — A campaign moves only along fixed transitions, and two states are final
 `DRAFT` → `ACTIVE` or `CANCELLED`; `ACTIVE` → `FINISHED` or `CANCELLED`.
 `FINISHED` and `CANCELLED` permit nothing further. An illegal move is refused

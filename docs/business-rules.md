@@ -513,6 +513,15 @@ It is trusted because two checks hold: an A/A split from pre-cut-off data shows
 no significant difference, and a fixed-seed injected uplift (10,000 per arm, 10%
 against 15%) is recovered within 0.1 point with an interval excluding zero.
 
+**Report and export (F12-04).** The experiment report shows assignment,
+exposure and conversion as three counts per arm, each labelled with what it
+counts, beside the intent-to-treat uplift and its 95% interval (F11-07's own
+functions). Campaign and data-origin filters are optional, combine, and reach
+both the page and its total; a value the report does not offer is refused. The
+CSV export applies the same filters and repeats `data_origin` and the
+`Synthetic` label on every line, so provenance is in the file and not only on
+the screen; text cells that would read as spreadsheet formulas are defused.
+
 ### RN-31 — A campaign moves only along fixed transitions, and two states are final
 `DRAFT` → `ACTIVE` or `CANCELLED`; `ACTIVE` → `FINISHED` or `CANCELLED`.
 `FINISHED` and `CANCELLED` permit nothing further. An illegal move is refused

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}Experiment report · {{ application_name }}{% endblock %}
+{% block topbar_title %}Experiment report{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Analysis / Experiment report{% endblock %}
+
+{% block content %}
+  {% from "macros/ui.html" import alert, empty_state, page_header, pagination, status_pill %}
+  {% call page_header("Experiment report", "Assignment, exposure and conversion are counted separately, each over its own denominator. Uplift is intent to treat over everyone assigned.", "Analysis") %}
+    <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('experiment_report.export', campaign=campaign, origin=origin) }}">Export CSV</a>
+  {% endcall %}
+  <form class="mq-form" method="get" action="{{ url_for('experiment_report.index') }}">
+    <div class="mq-field"><label class="mq-field__label" for="campaign">Campaign</label><select class="mq-select" id="campaign" name="campaign"><option value="">All campaigns</option>{% for c in campaigns %}<option value="{{ c.campaign_id }}" {% if campaign == c.campaign_id|string %}selected{% endif %}>#{{ c.campaign_id }} {{ c.name }}</option>{% endfor %}</select></div>
+    <div class="mq-field"><label class="mq-field__label" for="origin">Data origin</label><select class="mq-select" id="origin" name="origin"><option value="">All origins</option>{% for code, label in data_origins.items() %}<option value="{{ code }}" {% if origin == code %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="mq-form__actions"><button class="mq-btn mq-btn--primary" type="submit">Apply filters</button><a class="mq-btn mq-btn--secondary" href="{{ url_for('experiment_report.index') }}">Clear</a></div>
+  </form>
+  {% if error %}{{ alert(error, "danger", "Filter not applied") }}{% endif %}
+  {% for r in report.rows %}
+    {% set e = r.experiment %}
+    <section class="mq-panel mq-panel--table mq-density-compact">
+      <header class="mq-panel__header"><h2 class="mq-panel__title">Experiment {{ e.experiment_id }} · {{ e.name }}</h2>{% if r.label %}{{ status_pill(r.label, "warning") }}{% endif %} <span class="mq-mono">{{ e.data_origin }}</span></header>
+      <div class="mq-panel__body">
+        <p class="mq-caption">{% if e.campaign_id %}Campaign #{{ e.campaign_id }} {{ e.campaign_name }} · {% endif %}{{ target_metrics.get(e.target_metric, e.target_metric) }} within {{ e.conversion_window_days }} days</p>
+        {% if r.label %}{{ alert("Derived from " ~ e.data_origin.lower() ~ " data: " ~ r.label ~ ", not an observed business result.", "warning", r.label) }}{% endif %}
+        <div class="mq-table-wrap"><table class="mq-table"><thead><tr><th scope="col">Group</th><th scope="col">Arm</th><th scope="col" class="mq-num">Assigned</th><th scope="col" class="mq-num">Exposed</th><th scope="col" class="mq-num">Converted</th><th scope="col" class="mq-num">Pending</th><th scope="col" class="mq-num">Uplift (points)</th><th scope="col" class="mq-num">95% interval</th></tr></thead><tbody>
+          {% for g in r.groups %}{% set c = r.uplift_of(g.group_id) %}<tr><td class="mq-mono">{{ g.group_id }}</td><td>{{ g.kind.title() }}</td><td class="mq-num">{{ g.assigned }}</td><td class="mq-num">{% if g.kind == "CONTROL" %}<span class="mq-caption">Never exposed</span>{% else %}{{ g.exposed }}{% endif %}</td><td class="mq-num">{{ g.converted }}</td><td class="mq-num">{{ g.pending }}</td><td class="mq-num">{% if c %}{{ "%+.2f" | format(c.uplift * 100) }}{% else %}–{% endif %}</td><td class="mq-num">{% if c %}{{ "%+.2f" | format(c.ci_low * 100) }} to {{ "%+.2f" | format(c.ci_high * 100) }}{% else %}–{% endif %}</td></tr>{% endfor %}
+        </tbody></table></div>
+        <p class="mq-caption"><strong>Assigned</strong> counts customers placed in the arm. <strong>Exposed</strong> counts assigned customers reached, a delivery diagnostic. <strong>Converted</strong> counts assigned customers with a qualifying sale in their window. Uplift is intent to treat over all assigned customers, exposed or not, against the control.</p>
+        {% if r.refusal %}{{ alert(r.refusal, "warning", "Uplift not measured") }}{% elif r.pending %}{{ alert(r.pending ~ " assigned customers have not converted yet and their window is still open, so uplift can still change.", "warning", "Preliminary") }}{% endif %}
+      </div>
+    </section>
+  {% else %}
+    {{ empty_state("No experiments match", "Change or clear the filters, or set up an experiment.") }}
+  {% endfor %}
+  {% if report.rows %}{{ pagination(report.page, report.page_count, "Page {} of {}".format(report.page, report.page_count), url_for('experiment_report.index', campaign=campaign, origin=origin, page=report.page - 1) if report.has_previous else none, url_for('experiment_report.index', campaign=campaign, origin=origin, page=report.page + 1) if report.has_next else none) }}{% endif %}
+{% endblock %}

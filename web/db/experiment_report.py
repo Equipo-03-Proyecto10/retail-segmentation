@@ -1,0 +1,118 @@
+"""Data access for the campaign and experiment report (F12-04).
+
+Read-only. Every statement is parameterized. Assignment, exposure and
+conversion are counted from their own relations and returned separately: the
+report never derives one from another (ADR-0019).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+
+from psycopg import Connection
+
+from web.db.experiments import Experiment
+
+
+@dataclass(frozen=True)
+class ReportGroup:
+    """One arm's three counts, each over its own denominator."""
+
+    experiment_id: int
+    group_id: int
+    kind: str
+    assigned: int
+    exposed: int
+    converted: int
+    pending: int
+
+    @property
+    def not_converted(self) -> int:
+        return self.assigned - self.converted - self.pending
+
+
+_FILTER = """
+     WHERE (%(campaign)s::int IS NULL OR e.campaign_id = %(campaign)s::int)
+       AND (%(origin)s::text IS NULL OR e.data_origin = %(origin)s::text)
+"""
+
+_LIST_EXPERIMENTS = (
+    """
+    SELECT e.experiment_id, e.name, e.campaign_id, c.name, e.target_metric,
+           e.starts_on, e.ends_on, e.conversion_window_days, e.data_origin,
+           (SELECT count(*) FROM experiment_group AS g
+             WHERE g.experiment_id = e.experiment_id AND g.kind = 'CONTROL'),
+           (SELECT count(*) FROM experiment_group AS g
+             WHERE g.experiment_id = e.experiment_id AND g.kind = 'TREATMENT'),
+           (SELECT count(*) FROM experiment_assignment AS a
+             WHERE a.experiment_id = e.experiment_id)
+      FROM experiment AS e
+      LEFT JOIN campaign AS c ON c.campaign_id = e.campaign_id
+    """
+    + _FILTER
+    + " ORDER BY e.experiment_id DESC LIMIT %(limit)s OFFSET %(offset)s"
+)
+_COUNT_EXPERIMENTS = "SELECT count(*) FROM experiment AS e" + _FILTER
+
+
+def list_report_experiments(
+    connection: Connection,
+    *,
+    campaign_id: int | None,
+    data_origin: str | None,
+    limit: int,
+    offset: int,
+) -> tuple[list[Experiment], int]:
+    """The experiments matching every filter given, newest first, and how many
+    match in all. The page and its total read the same filter."""
+    params = {
+        "campaign": campaign_id,
+        "origin": data_origin,
+        "limit": limit,
+        "offset": offset,
+    }
+    with connection.cursor() as cursor:
+        cursor.execute(_LIST_EXPERIMENTS, params)
+        rows = cursor.fetchall()
+        cursor.execute(_COUNT_EXPERIMENTS, params)
+        total = cursor.fetchone()[0]
+    return [Experiment(*row) for row in rows], total
+
+
+def list_report_groups(
+    connection: Connection, experiment_ids: list[int], now: datetime
+) -> list[ReportGroup]:
+    """Each group of the given experiments with its assigned, exposed, converted
+    and pending counts. A customer is pending while their window is open at
+    `now` and they have not converted."""
+    if not experiment_ids:
+        return []
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            WITH flags AS (
+                SELECT a.group_id,
+                       EXISTS (SELECT 1 FROM experiment_exposure AS x
+                                WHERE x.assignment_id = a.assignment_id) AS exposed,
+                       EXISTS (SELECT 1 FROM experiment_conversion AS c
+                                WHERE c.assignment_id = a.assignment_id) AS converted,
+                       a.assigned_at
+                       + make_interval(days => e.conversion_window_days) > %s AS open
+                  FROM experiment_assignment AS a
+                  JOIN experiment AS e ON e.experiment_id = a.experiment_id
+                 WHERE a.experiment_id = ANY(%s)
+            )
+            SELECT g.experiment_id, g.group_id, g.kind, count(f.group_id),
+                   count(*) FILTER (WHERE f.exposed),
+                   count(*) FILTER (WHERE f.converted),
+                   count(*) FILTER (WHERE NOT f.converted AND f.open)
+              FROM experiment_group AS g
+              LEFT JOIN flags AS f ON f.group_id = g.group_id
+             WHERE g.experiment_id = ANY(%s)
+             GROUP BY g.experiment_id, g.group_id, g.kind
+             ORDER BY g.experiment_id DESC, g.kind <> 'CONTROL', g.group_id
+            """,
+            (now, experiment_ids, experiment_ids),
+        )
+        return [ReportGroup(*row) for row in cursor.fetchall()]

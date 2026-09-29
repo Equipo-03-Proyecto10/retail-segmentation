@@ -50,6 +50,8 @@ READ_ROUTES = [
     "/experiments/1/exposure",
     "/experiments/1/conversion",
     "/experiments/1/uplift",
+    "/experiment-report/",
+    "/experiment-report/export.csv",
     "/reports/",
 ]
 ADMIN_ROUTES = [

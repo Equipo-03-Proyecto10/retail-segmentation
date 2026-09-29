@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 SCHEMA = (Path(__file__).resolve().parents[1] / "sql/01_schema.sql").read_text()
@@ -17,7 +18,7 @@ def test_the_revoke_comes_after_the_table_it_names() -> None:
 
 
 def test_the_self_test_excepts_audit_log_from_the_all_privileges_check() -> None:
-    assert "c.relname <> 'audit_log'" in SCHEMA
+    assert re.search(r"c\.relname NOT IN \([^)]*'audit_log'", SCHEMA)
 
 
 def test_the_self_test_proves_update_and_delete_are_refused() -> None:

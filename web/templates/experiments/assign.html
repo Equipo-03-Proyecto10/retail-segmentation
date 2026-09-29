@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}Assign customers · {{ application_name }}{% endblock %}
+{% block topbar_title %}Assign customers{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Analysis / Campaigns / Experiments / Assign customers{% endblock %}
+
+{% block content %}
+  {% from "macros/ui.html" import alert, page_header, status_pill %}
+  {% set shown = plan.experiment if plan else experiment %}
+  {{ page_header("Assign customers", "Assignment fixes each arm before anything is delivered. It happens once and is never rewritten.", "Experiments") }}
+  {% if error %}{{ alert(error, "danger", "Not assigned") }}{% endif %}
+  {% if plan %}
+    <section class="mq-panel mq-form-panel">
+      <header class="mq-panel__header"><h2 class="mq-panel__title">Experiment {{ plan.experiment.experiment_id }} · {{ plan.experiment.name }}</h2>{% if plan.experiment.data_origin in ("SEEDED", "INJECTED") %}{{ status_pill("Synthetic", "warning") }}{% endif %}</header>
+      <div class="mq-panel__body">
+        <p>Campaign <span class="mq-mono">#{{ plan.experiment.campaign_id }}</span> {{ plan.experiment.campaign_name }} targets <span class="mq-mono">{{ plan.label_code }}</span>. The <strong>{{ plan.population }}</strong> customers holding that label now are split at random into these arms:</p>
+        <div class="mq-table-wrap"><table class="mq-table"><thead><tr><th scope="col">Group</th><th scope="col">Arm</th><th scope="col" class="mq-num">Customers</th></tr></thead><tbody>
+          {% for arm in plan.arms %}<tr><td class="mq-mono">{{ arm.group_id }}</td><td>{{ arm.kind.title() }}</td><td class="mq-num">{{ arm.customers | length }}</td></tr>{% endfor %}
+        </tbody></table></div>
+        {{ alert("Once written, no assignment can be edited or deleted, and this experiment cannot be assigned again. Its target metric and conversion window become fixed too.", "warning", "This cannot be undone") }}
+        <form class="mq-form" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="mq-form__actions"><button class="mq-btn mq-btn--primary" type="submit">Assign {{ plan.population }} customers</button><a class="mq-btn mq-btn--secondary" href="{{ url_for('experiments.index') }}">Cancel</a></div>
+        </form>
+      </div>
+    </section>
+  {% else %}
+    <div class="mq-form__actions"><a class="mq-btn mq-btn--secondary" href="{{ url_for('experiments.index') }}">Back to experiments</a>{% if shown and shown.assignments == 0 %} <a class="mq-btn mq-btn--secondary" href="{{ url_for('experiments.edit', experiment_id=shown.experiment_id) }}">Edit experiment</a>{% endif %}</div>
+  {% endif %}
+{% endblock %}

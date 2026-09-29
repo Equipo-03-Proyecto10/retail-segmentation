@@ -91,6 +91,7 @@ right place for it, and which the team accepted on 2026-09-07.
 | Document | What it records |
 |---|---|
 | [F11-03](f11-03-experiment-setup.md) | Experiment setup on a real database: one control and the treatment groups written together, the conversion window and target metric locked after the first assignment, a campaign refused activation while an attached experiment lacks a group, the data origin fixed and labelled `Synthetic`, at 375 px and 1440 px |
+| [F11-04](f11-04-group-assignment.md) | Group assignment as `retail_app` on a real database: the campaign's population split into balanced arms in one transaction, a second attempt refused, `UPDATE` and `DELETE` refused by the schema (42501) as well as by the application, the preview and a refusal at 375 px and 1440 px |
 
 ## Phase 12 — analytics
 

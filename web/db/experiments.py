@@ -247,3 +247,56 @@ def list_group_counts_for_campaign(
         )
         rows = cursor.fetchall()
     return [GroupCounts(*row) for row in rows]
+
+
+# ---------- assignment (F11-04) ----------
+
+
+def list_groups(connection: Connection, experiment_id: int) -> list[tuple[int, str]]:
+    """The experiment's groups as (group_id, kind), control first, then the
+    treatments in id order: the order customers are dealt into them."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT group_id, kind FROM experiment_group
+             WHERE experiment_id = %s
+             ORDER BY kind <> 'CONTROL', group_id
+            """,
+            (experiment_id,),
+        )
+        return [(group_id, kind) for group_id, kind in cursor.fetchall()]
+
+
+def read_target_population(connection: Connection, label_code: str) -> list[str]:
+    """Every customer whose open segment assignment carries the label, in
+    customer_id order: the population a campaign on that label targets now."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT customer_id FROM customer_segment_history
+             WHERE valid_to IS NULL AND label_code = %s
+             ORDER BY customer_id
+            """,
+            (label_code,),
+        )
+        return [str(row[0]) for row in cursor.fetchall()]
+
+
+def insert_assignments(
+    connection: Connection, experiment_id: int, rows: list[tuple[int, str]]
+) -> None:
+    """Write one assignment per (group_id, customer_id). `assigned_at` is the
+    column's default, so every row of one assignment carries the same instant.
+
+    There is deliberately no function here that updates or deletes an
+    assignment: once written it is never rewritten (RN-42, ADR-0026), and the
+    schema refuses retail_app both statements as well.
+    """
+    if not rows:
+        return
+    with connection.cursor() as cursor:
+        cursor.executemany(
+            "INSERT INTO experiment_assignment (experiment_id, group_id, customer_id) "
+            "VALUES (%s, %s, %s)",
+            [(experiment_id, group_id, customer_id) for group_id, customer_id in rows],
+        )

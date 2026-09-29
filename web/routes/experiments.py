@@ -132,3 +132,37 @@ def edit(experiment_id: int) -> ResponseReturnValue:
         )
     flash(f"Experiment {experiment_id} updated.", "success")
     return redirect(url_for("experiments.index"))
+
+
+@bp.route("/<int:experiment_id>/assign", methods=["GET", "POST"])
+@requires(CAMPAIGN_WRITE)
+def assign(experiment_id: int) -> ResponseReturnValue:
+    """Preview the split, then assign on confirmation (F11-04).
+
+    The preview and the write use the same checks, so a refusal reads the same
+    on either; the write re-checks under the experiment's lock.
+    """
+    connection = get_connection()
+    try:
+        if request.method in ("GET", "HEAD"):
+            plan = service.plan_assignment(connection, experiment_id)
+            return render_template("experiments/assign.html", plan=plan, error=None)
+        plan = service.assign(connection, experiment_id)
+    except service.ExperimentNotFound:
+        abort(404)
+    except service.AssignmentRefused as refusal:
+        return (
+            render_template(
+                "experiments/assign.html",
+                plan=None,
+                experiment=get_experiment(connection, experiment_id),
+                error=str(refusal),
+            ),
+            409,
+        )
+    sizes = ", ".join(f"{arm.kind.lower()} {len(arm.customers)}" for arm in plan.arms)
+    flash(
+        f"Experiment {experiment_id}: {plan.population} customers assigned ({sizes}).",
+        "success",
+    )
+    return redirect(url_for("experiments.index"))

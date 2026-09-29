@@ -15,6 +15,7 @@ import json
 import re
 from datetime import UTC, datetime
 from decimal import Decimal
+from html.parser import HTMLParser
 from unittest.mock import MagicMock, Mock
 
 import pytest
@@ -232,6 +233,27 @@ def test_no_other_inline_script_carries_executable_code(app, monkeypatch) -> Non
         if 'type="application/json"' in attrs:
             continue
         assert 'src="/static/' in attrs, attrs
+
+
+class _InlineHandlers(HTMLParser):
+    """Every on* attribute on any element, found the way a browser tokenises
+    tags rather than with a regex."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.found: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.found += [f"<{tag} {name}>" for name, _ in attrs if name.startswith("on")]
+
+
+def test_no_element_carries_an_inline_event_handler(app, monkeypatch) -> None:
+    """An onchange= or onclick= attribute is inline script too: the instance's
+    same-origin script-src refuses it, so the handler silently never runs."""
+    audit = _InlineHandlers()
+    audit.feed(_body(_open(app, monkeypatch)[0]))
+
+    assert audit.found == []
 
 
 # ---------- which run, and refusing a bad one ----------

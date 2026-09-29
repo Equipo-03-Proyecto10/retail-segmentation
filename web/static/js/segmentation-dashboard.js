@@ -9,6 +9,16 @@
 (function () {
   "use strict";
 
+  // Choosing a run shows it at once; the Show button remains for when this
+  // script does not run. Attached here, not as an onchange attribute: an
+  // inline handler is script the page's same-origin script-src refuses.
+  var picker = document.getElementById("run");
+  if (picker && picker.form) {
+    picker.addEventListener("change", function () {
+      picker.form.submit();
+    });
+  }
+
   var node = document.getElementById("mq-dashboard-data");
   if (!node) return;
   var data = JSON.parse(node.textContent);

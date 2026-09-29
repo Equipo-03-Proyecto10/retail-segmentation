@@ -34,7 +34,7 @@
           <div class="mq-filterbar__row">
             <div class="mq-filterbar__group">
               <label class="mq-field__label" for="run">Run</label>
-              <select class="mq-input" id="run" name="run" onchange="this.form.submit()">
+              <select class="mq-input" id="run" name="run">
                 {% for run in runs %}
                   <option value="{{ run.run_id }}" {% if run.run_id == dashboard.run.run_id %}selected{% endif %}>#{{ run.run_id }} — {{ when(run) }} · {{ run.method }} · {{ run.customer_count }} customers</option>
                 {% endfor %}

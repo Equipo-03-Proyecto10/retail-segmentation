@@ -16,7 +16,7 @@
     <span class="mq-alert__icon" aria-hidden="true">i</span>
     <div class="mq-stack">
       <span class="mq-alert__title">Two ways to form segments</span>
-      <span class="mq-alert__text">RFM rules score quintiles from 1 to 5 and match against the fixed bands in segment_rule. K-means finds clusters directly from the data. Customers with no sales in the window are left unassigned either way.</span>
+      <span class="mq-alert__text">RFM rules score quintiles from 1 to 5 and match against the fixed bands in segment_rule. A scored customer whose values match no rule takes the lowest label and is counted as a fallback. K-means finds clusters directly from the data. Customers with no sales in the window are left unassigned either way.</span>
     </div>
   </div>
 
@@ -67,10 +67,11 @@
   </section>
 
   {% if result %}
-    <div class="mq-grid mq-grid--4">
+    <div class="mq-grid mq-grid--3">
       <article class="mq-metric"><span class="mq-metric__label">Customers processed</span><span class="mq-metric__value">{{ "{:,}".format(result.processed) }}</span><div class="mq-metric__footer"><span>{{ result.window_days }}-day window · {{ result.method }}</span></div></article>
       <article class="mq-metric"><span class="mq-metric__label">Segments assigned</span><span class="mq-metric__value">{{ "{:,}".format(result.assigned) }}</span><div class="mq-metric__footer"><span>Current assignment</span></div></article>
-      <article class="mq-metric"><span class="mq-metric__label">Matched no rule</span><span class="mq-metric__value">{{ "{:,}".format(result.unmatched) }}</span><div class="mq-metric__footer"><span>Left unassigned</span></div></article>
+      <article class="mq-metric"><span class="mq-metric__label">No sales in window</span><span class="mq-metric__value">{{ "{:,}".format(result.unmatched) }}</span><div class="mq-metric__footer"><span>Left unassigned</span></div></article>
+      <article class="mq-metric"><span class="mq-metric__label">Matched no rule</span><span class="mq-metric__value">{{ "{:,}".format(result.fallback) }}</span><div class="mq-metric__footer"><span>Took the lowest label</span></div></article>
       <article class="mq-metric"><span class="mq-metric__label">Time taken</span><span class="mq-metric__value">{{ "%.2f"|format(result.seconds) }}s</span><div class="mq-metric__footer"><span>Completed</span></div></article>
     </div>
 
@@ -81,7 +82,7 @@
           <dt>Method</dt><dd>{{ result.method }}</dd>
           <dt>Window</dt><dd>{{ result.window_days }} days ending today</dd>
           <dt>Segments changed</dt><dd>{{ result.reassigned }}</dd>
-          <dt>Segments cleared</dt><dd>{{ result.cleared }} — customers with no sales in the window, or no matching rule</dd>
+          <dt>Segments cleared</dt><dd>{{ result.cleared }} — customers with no sales in the window</dd>
         </dl>
       </div>
     </section>

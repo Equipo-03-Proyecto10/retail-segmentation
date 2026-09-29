@@ -198,7 +198,9 @@ def test_the_result_page_reports_what_the_run_did(
 ) -> None:
     monkeypatch.setattr(
         "web.routes.segment_run.run",
-        lambda _c, _w: _result(processed=30, assigned=18, unmatched=12, seconds=0.0421),
+        lambda _c, _w: _result(
+            processed=30, assigned=18, unmatched=12, fallback=7, seconds=0.0421
+        ),
     )
     client = app.test_client()
     _sign_in(client, "ADMIN")
@@ -209,8 +211,12 @@ def test_the_result_page_reports_what_the_run_did(
 
     assert "Customers processed" in body and "30" in body
     assert "Segments assigned" in body and "18" in body
-    assert "Matched no rule" in body and "12" in body
+    assert "No sales in window" in body and "12" in body
+    assert "Matched no rule" in body and "Took the lowest label" in body
     assert "0.04s" in body, "how long it took"
+    # #345: a no-rule customer is labelled, not left unassigned, so the page
+    # must not claim otherwise.
+    assert "no matching rule are left unassigned" not in _flattened(body)
 
 
 def test_a_run_with_no_segment_changes_reports_recorded_history(

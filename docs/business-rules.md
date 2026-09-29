@@ -177,6 +177,20 @@ transaction that records the run and all other assignments. **Verified** —
 [`evidence/f9-01-rfm-rules-adapter.md`](evidence/f9-01-rfm-rules-adapter.md) and
 `tests/test_segmentation_pipeline.py`. · `RF-12`
 
+### RN-46 — The seeded RFM bands partition the score space, and a fallback is counted, not hidden
+The demonstration bands in `sql/02_seed_30_per_table.sql` cover all 125 (R, F, M)
+triples with no overlap, and every label owns five of the thirty bands, so a seeded
+run can assign every label and never needs the fallback. A customer with sales whose
+triple matches no band (bands an administrator retuned) still takes the worst label,
+because ADR-0018 forbids a null label for anyone scored; the run reports how many
+did as "Matched no rule", separately from customers with no sales in the window
+(RN-21), who stay unassigned.
+
+**Enforced:** the fallback join in `web.db.segments` and the `via_fallback` flag it
+returns. **Verified** — `tests/test_seed_segment_rules.py` (partition, every label
+and every segment reachable), `tests/test_segmentation_pipeline.py`,
+[`evidence/f345-segment-rule-bands.md`](evidence/f345-segment-rule-bands.md).
+
 ### RN-37 — A K-means run is reproducible from what it records, and each of its numerical hazards has a defined behaviour
 The fit is fixed by the seed, k, the iteration limit, the tolerance and the feature
 window, and all five are stored on the run with its quality measures, so a run can

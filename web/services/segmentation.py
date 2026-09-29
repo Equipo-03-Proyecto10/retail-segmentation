@@ -77,6 +77,7 @@ class RunResult:
     seconds: float
     run_id: int | None = None
     method: str = "RFM_RULES"
+    fallback: int = 0
 
     @property
     def no_segment_changed(self) -> bool:
@@ -155,6 +156,7 @@ class Assignment:
     r_score: int | None = None
     f_score: int | None = None
     m_score: int | None = None
+    via_fallback: bool = False
 
     def validate(self) -> None:
         """Refuse a customer who was measured but left unlabelled: ADR-0018 says
@@ -221,6 +223,7 @@ class RunCounts:
     unmatched: int
     reassigned: int
     cleared: int
+    fallback: int = 0
 
 
 def summarise(
@@ -253,6 +256,7 @@ def summarise(
         unmatched=len(assignments) - assigned,
         reassigned=reassigned,
         cleared=cleared,
+        fallback=sum(1 for a in assignments if a.via_fallback),
     )
 
 
@@ -289,6 +293,7 @@ def rfm_rules_adapter(connection: Any, window_days: int) -> MethodOutput:
             r_score=row.r_score,
             f_score=row.f_score,
             m_score=row.m_score,
+            via_fallback=row.via_fallback,
         )
         for row in score_rfm_rules(connection, window_days)
     )
@@ -444,6 +449,7 @@ def _record(
         unmatched=counts.unmatched,
         reassigned=counts.reassigned,
         cleared=counts.cleared,
+        fallback=counts.fallback,
         seconds=time.perf_counter() - started,
         run_id=run_id,
         method=method,

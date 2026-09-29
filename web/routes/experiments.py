@@ -17,6 +17,7 @@ from web.db.experiments import get_experiment, list_campaign_choices, list_exper
 from web.middleware.authz import CAMPAIGN_READ, CAMPAIGN_WRITE, requires
 from web.routes.pagination import redirect_last_page
 from web.services import experiment_conversions as conversion_service
+from web.services import experiment_uplift as uplift_service
 from web.services import experiments as service
 from web.services.catalog import parse_pagination
 from web.services.pagination import page_count
@@ -267,3 +268,25 @@ def evaluate_conversion(experiment_id: int) -> ResponseReturnValue:
         "success",
     )
     return redirect(url_for("experiments.conversion", experiment_id=experiment_id))
+
+
+@bp.get("/<int:experiment_id>/uplift", endpoint="uplift")
+@requires(CAMPAIGN_READ)
+def uplift(experiment_id: int) -> ResponseReturnValue:
+    try:
+        result = uplift_service.measure_uplift(get_connection(), experiment_id)
+    except service.ExperimentNotFound:
+        abort(404)
+    except uplift_service.UpliftRefused as refusal:
+        return (
+            render_template(
+                "experiments/uplift.html",
+                result=None,
+                experiment=get_experiment(get_connection(), experiment_id),
+                error=str(refusal),
+            ),
+            409,
+        )
+    return render_template(
+        "experiments/uplift.html", result=result, experiment=None, error=None
+    )

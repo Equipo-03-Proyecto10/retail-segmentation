@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block title %}Uplift · {{ application_name }}{% endblock %}
+{% block topbar_title %}Uplift{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Analysis / Campaigns / Experiments / Uplift{% endblock %}
+
+{% block content %}
+  {% from "macros/ui.html" import alert, page_header, status_pill %}
+  {{ page_header("Uplift", "Each treatment arm against the control, over every assigned customer whether or not they were exposed.", "Experiments") }}
+  {% if error %}{{ alert(error, "danger", "Not measured") }}
+    <div class="mq-form__actions"><a class="mq-btn mq-btn--secondary" href="{{ url_for('experiments.index') }}">Back to experiments</a></div>
+  {% else %}
+    {% set e = result.experiment %}
+    <section class="mq-panel">
+      <header class="mq-panel__header"><h2 class="mq-panel__title">Experiment {{ e.experiment_id }} · {{ e.name }}</h2>{% if result.label %}{{ status_pill(result.label, "warning") }}{% endif %}</header>
+      <div class="mq-panel__body">
+        {% if result.label %}{{ alert("This result comes from " ~ e.data_origin.lower() ~ " data. It is " ~ result.label ~ ", not an observed business result.", "warning", result.label) }}{% endif %}
+        <p>Conversion rate within {{ e.conversion_window_days }} days of assignment. Control: <strong>{{ result.control.converted }}</strong> of {{ result.control.assigned }} ({{ "%.2f" | format(result.arms[0].comparison.control_rate * 100) }}%).</p>
+        <div class="mq-table-wrap"><table class="mq-table"><thead><tr><th scope="col">Group</th><th scope="col" class="mq-num">Assigned</th><th scope="col" class="mq-num">Converted</th><th scope="col" class="mq-num">Rate</th><th scope="col" class="mq-num">Uplift (points)</th><th scope="col" class="mq-num">95% interval</th><th scope="col" class="mq-num">p-value</th><th scope="col">Result</th></tr></thead><tbody>
+          {% for arm in result.arms %}{% set c = arm.comparison %}<tr><td class="mq-mono">{{ arm.group_id }}</td><td class="mq-num">{{ c.treatment_n }}</td><td class="mq-num">{{ c.treatment_converted }}</td><td class="mq-num">{{ "%.2f" | format(c.treatment_rate * 100) }}%</td><td class="mq-num">{{ "%+.2f" | format(c.uplift * 100) }}</td><td class="mq-num">{{ "%+.2f" | format(c.ci_low * 100) }} to {{ "%+.2f" | format(c.ci_high * 100) }}</td><td class="mq-num">{{ "%.4f" | format(c.p_value) }}</td><td>{% if c.significant %}{{ status_pill("Significant at 0.05", "success") }}{% else %}{{ status_pill("Not significant", "neutral") }}{% endif %}</td></tr>{% endfor %}
+        </tbody></table></div>
+        {% if result.pending %}{{ alert(result.pending ~ " assigned customers have not converted yet and their window is still open. They count as not converted for now, so this result can still change.", "warning", "Preliminary") }}{% endif %}
+        <p class="mq-caption">Intent to treat: the exposure rate is a delivery diagnostic and plays no part here. Each arm is tested on its own at alpha 0.05, with no correction for several arms.</p>
+        <div class="mq-form__actions"><a class="mq-btn mq-btn--secondary" href="{{ url_for('experiments.conversion', experiment_id=e.experiment_id) }}">Conversion detail</a><a class="mq-btn mq-btn--secondary" href="{{ url_for('experiments.index') }}">Back to experiments</a></div>
+      </div>
+    </section>
+  {% endif %}
+{% endblock %}

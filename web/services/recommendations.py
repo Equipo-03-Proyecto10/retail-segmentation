@@ -105,8 +105,11 @@ class Recommendation:
 class RecommendationResult:
     """What was asked, what was found, and, when nothing could be recommended, why.
 
-    `message` always says what happened in words. `store_*` is None until a usual
-    store is known, and `label_*` until a segment is.
+    `message` always says what happened in words. `store_*` and `channel_*` are
+    None until a usual store is known (F12-03 reads `channel_*` to filter a
+    report by the customer's dominant channel; it comes from the same profile
+    window `store_*` does, so the two are known or absent together), and
+    `label_*` until a segment is.
     """
 
     customer_id: str
@@ -120,6 +123,8 @@ class RecommendationResult:
     label_name: str | None = None
     store_id: int | None = None
     store_name: str | None = None
+    channel_id: int | None = None
+    channel_name: str | None = None
     recommendations: tuple[Recommendation, ...] = ()
 
 
@@ -353,11 +358,14 @@ def recommend(
         limit=limit,
     )
 
+    channel = profile.dominant_channel
     known = dict(
         label_code=segment.label_code,
         label_name=label_name,
         store_id=store.item_id,
         store_name=store.name,
+        channel_id=channel.item_id if channel else None,
+        channel_name=channel.name if channel else None,
     )
     if not items:
         return RecommendationResult(

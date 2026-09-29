@@ -1,7 +1,7 @@
 """Assembling the filtered segment history report (F12-02).
 
 Every applied filter -- run, label, period -- reaches both the count and the
-list read, so the page and its total always agree (RN-42). Each row carries a
+list read, so the page and its total always agree (RN-43). Each row carries a
 per-customer explanation, built the same way F7-06 already builds one: from
 the row's own values and the customer's assignment on the run immediately
 before this row's run (F12-01's `get_previous_run`, reused rather than

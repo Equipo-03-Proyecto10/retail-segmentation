@@ -468,6 +468,33 @@ def test_the_result_carries_the_customers_name(monkeypatch) -> None:
     assert recommend(MagicMock(), _ID).customer_name == "Ada Lovelace"
 
 
+def test_the_result_names_the_dominant_channel_alongside_the_store(monkeypatch) -> None:
+    """channel_* comes from the same profile window store_* does, so the two
+    are known or absent together (F12-03 filters a report by either)."""
+    _World(monkeypatch)
+
+    result = recommend(MagicMock(), _ID)
+
+    assert (result.channel_id, result.channel_name) == (4, "Marketplace")
+
+
+def test_no_usual_store_means_no_channel_either(monkeypatch) -> None:
+    _World(
+        monkeypatch,
+        _profile(
+            has_sales=False,
+            dominant_store=None,
+            dominant_channel=None,
+            purchase_count=None,
+            favourite_categories=(),
+        ),
+    )
+
+    result = recommend(MagicMock(), _ID)
+
+    assert result.channel_id is None and result.channel_name is None
+
+
 def test_the_result_names_the_store_and_the_window_it_was_computed_for(
     monkeypatch,
 ) -> None:

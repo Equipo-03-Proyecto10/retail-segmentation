@@ -19,6 +19,7 @@ from psycopg.errors import CheckViolation, ForeignKeyViolation, IntegrityError
 
 from web.db import campaigns
 from web.db.transactions import atomic
+from web.parsing import iso_date
 from web.services.experiments import activation_refusal
 
 DRAFT = "DRAFT"
@@ -78,10 +79,10 @@ def not_a_draft(campaign_id: int, status: str) -> str:
 def _parse_date(raw: str, label: str) -> tuple[date | None, str | None]:
     if not raw:
         return None, f"{label} is required."
-    try:
-        return date.fromisoformat(raw), None
-    except ValueError:
+    value = iso_date(raw)
+    if value is None:
         return None, f"{label} must be a date (YYYY-MM-DD)."
+    return value, None
 
 
 def validate_campaign(

@@ -18,6 +18,7 @@ from web.db.categories import list_all_categories
 from web.db.channels import list_channels
 from web.db.stores import list_stores
 from web.middleware.authz import SEGMENT_READ, requires
+from web.parsing import iso_date, page_number, whole_number
 from web.services.consumption_reports import (
     build_recommendation_report,
     build_shift_report,
@@ -28,6 +29,7 @@ from web.services.recommendations import InvalidLimit
 bp = Blueprint("consumption_reports", __name__, url_prefix="/consumption-reports")
 
 DEFAULT_WINDOW_DAYS = 180
+MAX_WINDOW_DAYS = 3650
 
 
 def _an_int(raw: str | None) -> int | None:
@@ -35,30 +37,28 @@ def _an_int(raw: str | None) -> int | None:
     value given could not be one at all (refused, not silently dropped)."""
     if not raw:
         return None
-    return int(raw) if raw.isascii() and raw.isdigit() else -1
+    value = whole_number(raw)
+    return -1 if value is None else value
 
 
 def _a_date(raw: str | None) -> date | None:
     if not raw:
         return None
-    try:
-        return date.fromisoformat(raw)
-    except ValueError:
-        raise ValueError("Enter a valid date in YYYY-MM-DD format.") from None
-
-
-def _a_page(raw: str | None) -> int:
-    try:
-        return max(1, int(raw or 1))
-    except ValueError:
-        return 1
+    value = iso_date(raw)
+    if value is None:
+        raise ValueError("Enter a valid date in YYYY-MM-DD format.")
+    return value
 
 
 def _a_window(raw: str | None) -> int:
-    try:
-        return int(raw) if raw else DEFAULT_WINDOW_DAYS
-    except ValueError:
-        raise ValueError("The window is a whole number of days.") from None
+    if not raw:
+        return DEFAULT_WINDOW_DAYS
+    days = whole_number(raw, MAX_WINDOW_DAYS)
+    if not days:
+        raise ValueError(
+            f"The window is a whole number of days, 1 to {MAX_WINDOW_DAYS}."
+        )
+    return days
 
 
 @bp.get("/")
@@ -118,7 +118,7 @@ def index() -> str | tuple[str, int]:
             store_id=store_id,
             channel_id=channel_id,
             category_id=category_id,
-            page=_a_page(request.args.get("page")),
+            page=page_number(request.args.get("page")),
         )
     except (ValueError, InvalidPeriods, InvalidLimit) as error:
         return (

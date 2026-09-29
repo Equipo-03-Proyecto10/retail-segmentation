@@ -18,6 +18,7 @@ from flask import Flask
 from web.middleware.authz import install as install_authorization
 from web.middleware.authz import public, requires
 from web.middleware.csrf import install as install_csrf_protection
+from web.middleware.input import install as install_input_checks
 
 __all__ = ["public", "register_middleware", "requires"]
 
@@ -30,3 +31,5 @@ def register_middleware(app: Flask) -> None:
     """
     install_csrf_protection(app)
     install_authorization(app)
+    # Last: a request refused for CSRF or authorization keeps that reason.
+    install_input_checks(app)

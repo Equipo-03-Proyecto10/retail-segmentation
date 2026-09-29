@@ -13,6 +13,7 @@ from flask import Blueprint, render_template, request
 from web.db import get_connection
 from web.db.segments import get_label_ordinals, get_run, list_runs
 from web.middleware.authz import SEGMENT_READ, requires
+from web.parsing import BIGINT_MAX, whole_number
 from web.services.segment_migration import (
     UnknownRun,
     build_migration_matrix,
@@ -41,9 +42,9 @@ def index() -> str:
     matrix = None
     error = None
     if run_a_raw and run_b_raw:
-        try:
-            run_a_id, run_b_id = int(run_a_raw), int(run_b_raw)
-        except ValueError:
+        run_a_id = whole_number(run_a_raw, BIGINT_MAX)
+        run_b_id = whole_number(run_b_raw, BIGINT_MAX)
+        if run_a_id is None or run_b_id is None:
             error = "Choose two runs to compare."
         else:
             try:
@@ -60,8 +61,9 @@ def index() -> str:
 
     listed = {run.run_id for run in runs}
     for raw in dict.fromkeys((run_a_raw, run_b_raw)):
-        if raw.isdigit() and int(raw) not in listed:
-            selected = get_run(connection, int(raw))
+        run_id = whole_number(raw, BIGINT_MAX)
+        if run_id is not None and run_id not in listed:
+            selected = get_run(connection, run_id)
             if selected is not None:
                 runs.append(selected)
 

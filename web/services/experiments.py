@@ -31,6 +31,7 @@ from psycopg.errors import ForeignKeyViolation, IntegrityError, UniqueViolation
 from web.db import experiments
 from web.db.campaigns import get_campaign
 from web.db.transactions import atomic
+from web.parsing import iso_date, whole_number
 
 # What F11-07 measures. The schema stores free text; the vocabulary is this
 # service's, and matches the values the seed already uses.
@@ -89,17 +90,15 @@ def is_synthetic(data_origin: str) -> bool:
 
 
 def _parse_date(raw: str, label: str) -> tuple[date | None, str | None]:
-    try:
-        return date.fromisoformat(raw), None
-    except ValueError:
+    value = iso_date(raw)
+    if value is None:
         return None, f"{label} must be a date (YYYY-MM-DD)."
+    return value, None
 
 
 def _parse_whole(raw: str, low: int, high: int) -> int | None:
-    if not (raw.isascii() and raw.isdigit()):
-        return None
-    value = int(raw)
-    return value if low <= value <= high else None
+    value = whole_number(raw, high)
+    return value if value is not None and value >= low else None
 
 
 def validate_experiment(

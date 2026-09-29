@@ -13,6 +13,7 @@ from flask import Blueprint, abort, render_template, request
 
 from web.db import get_connection
 from web.middleware.authz import AUDIT_READ, requires
+from web.parsing import iso_date, page_number
 from web.services.audit import Page, read_entry, read_page
 
 bp = Blueprint("audit", __name__, url_prefix="/audit")
@@ -22,17 +23,10 @@ def _a_date(raw: str | None) -> date | None:
     """Read an optional date, refusing invalid filters instead of dropping them."""
     if not raw:
         return None
-    try:
-        return date.fromisoformat(raw)
-    except ValueError:
-        raise ValueError("Enter valid dates in YYYY-MM-DD format.") from None
-
-
-def _a_page(raw: str | None) -> int:
-    try:
-        return max(1, int(raw or 1))
-    except ValueError:
-        return 1
+    value = iso_date(raw)
+    if value is None:
+        raise ValueError("Enter valid dates in YYYY-MM-DD format.")
+    return value
 
 
 @bp.get("/")
@@ -63,7 +57,7 @@ def index() -> str | tuple[str, int]:
         entity=entity,
         date_from=date_from,
         date_to=date_to,
-        page=_a_page(request.args.get("page")),
+        page=page_number(request.args.get("page")),
     )
 
     # An entity that is not one the log holds filters to nothing, which would

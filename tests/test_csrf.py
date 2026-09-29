@@ -67,6 +67,30 @@ def test_a_post_with_no_token_at_all_is_refused(app: Flask) -> None:
     assert response.status_code == 403
 
 
+def test_a_nul_does_not_hide_a_missing_csrf_token(app: Flask) -> None:
+    response = app.test_client().post(
+        "/login", data={"email": "a\x00b@example.com", "password": "password"}
+    )
+
+    assert response.status_code == 403
+
+
+def test_a_nul_with_a_valid_csrf_token_is_then_refused_as_input(app: Flask) -> None:
+    client = app.test_client()
+    _with_session_token(client)
+
+    response = client.post(
+        "/login",
+        data={
+            "email": "a\x00b@example.com",
+            "password": "password",
+            "csrf_token": _TOKEN,
+        },
+    )
+
+    assert response.status_code == 400
+
+
 def test_a_post_with_a_token_but_no_session_token_is_refused(app: Flask) -> None:
     client = app.test_client()
 

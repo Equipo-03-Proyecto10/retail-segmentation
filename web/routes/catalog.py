@@ -37,8 +37,9 @@ from web.db.segments import (
 )
 from web.db.stores import list_all_stores
 from web.middleware.authz import CATALOG_READ, SEGMENT_READ, requires
+from web.parsing import whole_number
 from web.routes.pagination import redirect_last_page
-from web.services.catalog import parse_pagination
+from web.services.catalog import SMALLINT_MAX, parse_pagination
 from web.services.consumption_profile import UnknownCustomer, build_profile
 from web.services.pagination import page_count
 from web.services.recommendations import recommend
@@ -278,7 +279,9 @@ def stock() -> str | Response:
     page, search, search_value = _page_args()
 
     store_raw = request.args.get("store", "").strip()
-    store_id = int(store_raw) if store_raw.isdigit() else None
+    store_id = whole_number(store_raw, SMALLINT_MAX) if store_raw else None
+    if store_raw and store_id is None:
+        abort(400)
 
     rows, total = list_stock(
         connection,

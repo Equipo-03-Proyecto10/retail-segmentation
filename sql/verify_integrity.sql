@@ -130,8 +130,10 @@ ROLLBACK;
 \echo ''
 \echo '-- N5: orphan foreign key, transaction -> customer [expect: 23503 foreign_key_violation]'
 BEGIN;
-INSERT INTO transaction (customer_id, store_id, channel_id, occurred_at, total)
-VALUES ('99999999-9999-9999-9999-999999999999', 1, 1, now(), 100.00);
+-- source_transaction_id is NOT NULL since #209: without one the row fails that
+-- check first and the foreign key is never reached (#262).
+INSERT INTO transaction (source_transaction_id, customer_id, store_id, channel_id, occurred_at, total)
+VALUES ('VERIFY-N5', '99999999-9999-9999-9999-999999999999', 1, 1, now(), 100.00);
 ROLLBACK;
 
 \echo ''

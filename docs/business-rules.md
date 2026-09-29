@@ -483,8 +483,12 @@ not a second total invented on the experiment side.
 **Enforced:** the model — `experiment_exposure` and `experiment_conversion`
 are their own relations, foreign-keyed to `experiment_assignment`.
 
-Refusing exposure for the control group (ADR-0019) is not yet enforced
-anywhere; it waits on F11-05.
+**Enforced** for the control group by the service (F11-05): exposing a customer
+whose group is `CONTROL`, or who was never assigned, is refused and writes
+nothing. The schema cannot express it, because `experiment_exposure` does not
+know its group, so a direct `INSERT` bypasses the check. Exposures are only
+added, never rewritten. The exposure rate (exposed / assigned, treatment only)
+is shown as a delivery diagnostic; the result is measured on everyone assigned.
 
 ### RN-31 — A campaign moves only along fixed transitions, and two states are final
 `DRAFT` → `ACTIVE` or `CANCELLED`; `ACTIVE` → `FINISHED` or `CANCELLED`.

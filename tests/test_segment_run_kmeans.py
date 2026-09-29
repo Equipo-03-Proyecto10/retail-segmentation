@@ -15,6 +15,7 @@ from flask.testing import FlaskClient
 from web.app import create_app
 from web.config import Config
 from web.services.cluster_labels import VocabularySizeMismatch
+from web.services.kmeans import TooFewCustomers
 from web.services.segmentation import RunResult
 
 
@@ -183,6 +184,31 @@ def test_a_k_that_mismatches_the_vocabulary_is_refused_with_400(
 
     assert response.status_code == 400
     assert "vocabulary" in response.get_data(as_text=True)
+
+
+def test_fewer_customers_than_k_is_a_readable_400(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _raise(*_a, **_k):
+        raise TooFewCustomers("Only 4 customers have sales; k=6 needs at least 6.")
+
+    monkeypatch.setattr("web.routes.segment_run.run_kmeans", _raise)
+    client = app.test_client()
+    _sign_in(client, "ADMIN")
+
+    response = client.post(
+        "/segment-run/",
+        data={
+            "method": "KMEANS",
+            "window": "180",
+            "k": "6",
+            "seed": "1",
+            "confirm": "yes",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Only 4 customers" in response.get_data(as_text=True)
 
 
 def test_missing_k_is_refused_not_silently_defaulted(app: Flask) -> None:

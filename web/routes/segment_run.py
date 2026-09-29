@@ -12,7 +12,7 @@ from flask import Blueprint, render_template, request
 from web.db import get_connection
 from web.middleware.authz import SEGMENT_RUN_EXECUTE, requires
 from web.services.cluster_labels import VocabularySizeMismatch
-from web.services.kmeans import InvalidParameters, KMeansParams
+from web.services.kmeans import InvalidParameters, KMeansParams, TooFewCustomers
 from web.services.segmentation import (
     DEFAULT_WINDOW_DAYS,
     InvalidWindow,
@@ -116,7 +116,7 @@ def execute() -> tuple[str, int] | str:
             result = run_kmeans(connection, window, kmeans_params)
         else:
             result = run(connection, window)
-    except (InvalidParameters, VocabularySizeMismatch) as refusal:
+    except (InvalidParameters, TooFewCustomers, VocabularySizeMismatch) as refusal:
         return (
             render_template(
                 "segment_run/index.html",

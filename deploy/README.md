@@ -338,6 +338,38 @@ It never runs SQL. The three scripts in `sql/` build a database from empty and
 are not migrations, so a release needing a schema change needs a person —
 ADR-0011 records this as a deliberate gap.
 
+### Checking the database has kept up with the code
+
+Because the deploy never runs SQL, a database can fall behind the commit it
+serves without anything failing. #346 was that: the instance database predated
+the exposure trigger (ADR-0027) and the append-only revokes (ADR-0026, ADR-0027),
+and `retail_app` could still update and delete assignments and exposures.
+[`check-schema-drift.sh`](check-schema-drift.sh) makes the gap visible. It is
+read-only on both sides and compares the schema and what `retail_app` may do to
+each table, against a clean build of the three scripts at the deployed commit:
+
+```sh
+# 1. Anywhere with a scratch PostgreSQL, at the commit the instance serves:
+git checkout <deployed-sha>
+psql -v ON_ERROR_STOP=1 -f sql/00_create_database.sql
+psql -v ON_ERROR_STOP=1 -d retail -f sql/01_schema.sql
+deploy/check-schema-drift.sh dump /tmp/reference
+
+# 2. On the instance:
+sudo -u postgres PGDATABASE=retail deploy/check-schema-drift.sh dump /tmp/live
+
+# 3. Bring both directories to one place and compare (exit 1 means drift):
+deploy/check-schema-drift.sh compare /tmp/reference /tmp/live
+```
+
+Run it after any release that changes `sql/01_schema.sql`, and before a demo.
+
+**When it reports drift**, the fix is to rebuild the instance database from the
+three scripts, not to patch it: AGENTS.md keeps DDL in `sql/01_schema.sql` and
+forbids altering a table by hand on the server. That drops the database, so it
+is a decision for whoever owns the instance (the instance holds demonstration
+data only), and it should be taken together with the demonstration reset in #360.
+
 ### The NGINX config is applied by hand, on purpose
 
 The deploy does not install `deploy/nginx/*.conf`. It runs under `sudo` and

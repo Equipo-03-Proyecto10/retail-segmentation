@@ -12,9 +12,11 @@ from flask import Blueprint, abort, flash, redirect, render_template, request, u
 from flask.typing import ResponseReturnValue
 
 from web.db import get_connection
+from web.db.experiment_conversions import list_attributions
 from web.db.experiments import get_experiment, list_campaign_choices, list_experiments
 from web.middleware.authz import CAMPAIGN_READ, CAMPAIGN_WRITE, requires
 from web.routes.pagination import redirect_last_page
+from web.services import experiment_conversions as conversion_service
 from web.services import experiments as service
 from web.services.catalog import parse_pagination
 from web.services.pagination import page_count
@@ -209,3 +211,59 @@ def record_exposure(experiment_id: int) -> ResponseReturnValue:
         return _render_exposure(experiment_id, error=str(refusal), status=409)
     flash(f"Exposure recorded for customer {customer_id}.", "success")
     return redirect(url_for("experiments.exposure", experiment_id=experiment_id))
+
+
+_ATTRIBUTIONS_PER_PAGE = 50
+
+
+def _render_conversion(
+    experiment_id: int, *, error: str | None = None, status: int = 200
+) -> ResponseReturnValue:
+    connection = get_connection()
+    page = parse_pagination(request.args.get("page"))
+    try:
+        summary = conversion_service.conversion_summary(connection, experiment_id)
+    except service.ExperimentNotFound:
+        abort(404)
+    attributions, total = list_attributions(
+        connection, experiment_id, page=page, per_page=_ATTRIBUTIONS_PER_PAGE
+    )
+    total_pages = page_count(total, _ATTRIBUTIONS_PER_PAGE)
+    if response := redirect_last_page(page, total_pages):
+        return response
+    return (
+        render_template(
+            "experiments/conversion.html",
+            summary=summary,
+            attributions=attributions,
+            total=total,
+            page=page,
+            total_pages=total_pages,
+            error=error,
+            is_synthetic=service.is_synthetic,
+        ),
+        status,
+    )
+
+
+@bp.get("/<int:experiment_id>/conversion", endpoint="conversion")
+@requires(CAMPAIGN_READ)
+def conversion(experiment_id: int) -> ResponseReturnValue:
+    return _render_conversion(experiment_id)
+
+
+@bp.post("/<int:experiment_id>/conversion", endpoint="evaluate_conversion")
+@requires(CAMPAIGN_WRITE)
+def evaluate_conversion(experiment_id: int) -> ResponseReturnValue:
+    try:
+        added = conversion_service.evaluate(get_connection(), experiment_id)
+    except service.ExperimentNotFound:
+        abort(404)
+    except conversion_service.ConversionRefused as refusal:
+        return _render_conversion(experiment_id, error=str(refusal), status=409)
+    flash(
+        f"Experiment {experiment_id}: {added} new conversion"
+        f"{'' if added == 1 else 's'} recorded.",
+        "success",
+    )
+    return redirect(url_for("experiments.conversion", experiment_id=experiment_id))

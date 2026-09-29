@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Conversion · {{ application_name }}{% endblock %}
+{% block topbar_title %}Conversion{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Analysis / Campaigns / Experiments / Conversion{% endblock %}
+
+{% block content %}
+  {% from "macros/ui.html" import alert, empty_state, page_header, pagination, status_pill %}
+  {% set e = summary.experiment %}
+  {{ page_header("Conversion", "A conversion links an assignment to a real sale inside the experiment's fixed window. It can be reproduced from the recorded rows.", "Experiments") }}
+  {% if error %}{{ alert(error, "danger", "Not evaluated") }}{% endif %}
+  <section class="mq-panel">
+    <header class="mq-panel__header"><h2 class="mq-panel__title">Experiment {{ e.experiment_id }} · {{ e.name }}</h2>{% if is_synthetic(e.data_origin) %}{{ status_pill("Synthetic", "warning") }}{% endif %}</header>
+    <div class="mq-panel__body">
+      {% if e.assignments == 0 %}
+        <p>Nobody is assigned yet, so there is nothing to convert.</p>
+      {% else %}
+        <p>A sale qualifies when the assigned customer made it from their assignment until <strong>{{ e.conversion_window_days }} days</strong> after it. Counts are as of {{ summary.evaluated_at.strftime("%Y-%m-%d %H:%M UTC") }}.</p>
+        <div class="mq-table-wrap"><table class="mq-table"><thead><tr><th scope="col">Group</th><th scope="col">Arm</th><th scope="col" class="mq-num">Assigned</th><th scope="col" class="mq-num">Converted</th><th scope="col" class="mq-num">Pending</th><th scope="col" class="mq-num">Not converted</th></tr></thead><tbody>
+          {% for g in summary.groups %}<tr><td class="mq-mono">{{ g.group_id }}</td><td>{{ g.kind.title() }}</td><td class="mq-num">{{ g.assigned }}</td><td class="mq-num">{{ g.converted }}</td><td class="mq-num">{{ g.pending }}</td><td class="mq-num">{{ g.not_converted }}</td></tr>{% endfor %}
+        </tbody></table></div>
+        {% if summary.pending %}<p class="mq-caption">{{ summary.pending }} assigned customers have not converted yet but their window is still open. They are pending, not counted as not converted.</p>{% endif %}
+      {% endif %}
+      {% if can('campaign.write') and e.assignments %}
+        <form class="mq-form" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="mq-form__actions"><button class="mq-btn mq-btn--primary" type="submit">Evaluate conversion</button><a class="mq-btn mq-btn--secondary" href="{{ url_for('experiments.index') }}">Back to experiments</a></div>
+        </form>
+      {% endif %}
+    </div>
+  </section>
+  {% if attributions %}
+    <section class="mq-panel mq-panel--table mq-density-compact">
+      <div class="mq-table__toolbar"><span class="mq-table__count">{{ total }} recorded conversions</span></div>
+      <div class="mq-table-wrap"><table class="mq-table"><thead><tr><th scope="col">Assignment</th><th scope="col">Customer</th><th scope="col">Arm</th><th scope="col">Assigned at</th><th scope="col">Window closes</th><th scope="col">Sale</th><th scope="col">Sale at</th><th scope="col" class="mq-num">Total</th></tr></thead><tbody>
+        {% for a in attributions %}<tr><td class="mq-mono">{{ a.assignment_id }}</td><td class="mq-mono">{{ a.customer_id }}</td><td>{{ a.kind.title() }}</td><td>{{ a.assigned_at.strftime("%Y-%m-%d %H:%M") }}</td><td>{{ a.window_ends_at.strftime("%Y-%m-%d %H:%M") }}</td><td class="mq-mono">#{{ a.transaction_id }} {{ a.source_transaction_id }}</td><td>{{ a.occurred_at.strftime("%Y-%m-%d %H:%M") }}</td><td class="mq-num">{{ a.total }}</td></tr>{% endfor %}
+      </tbody></table></div>
+      {{ pagination(page, total_pages, "Page {} of {}".format(page, total_pages), url_for('experiments.conversion', experiment_id=e.experiment_id, page=page - 1) if page > 1 else none, url_for('experiments.conversion', experiment_id=e.experiment_id, page=page + 1) if page < total_pages else none) }}
+    </section>
+  {% elif e.assignments %}{{ empty_state("No conversions recorded", "Evaluate conversion to attribute the qualifying sales inside each customer's window.") }}{% endif %}
+{% endblock %}

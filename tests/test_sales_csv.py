@@ -147,7 +147,7 @@ def test_a_rejection_carries_its_row_number_and_reason(tmp_path: Path) -> None:
 
     assert len(report.rejections) == 1
     rejection = report.rejections[0]
-    assert rejection.row_number == 2
+    assert rejection.line_number == 3
     assert "malformed" in rejection.reason
 
 
@@ -172,7 +172,7 @@ def test_a_short_row_is_rejected_and_the_load_continues(tmp_path: Path) -> None:
     assert report.accepted == 2
     assert report.rejected == 1
     rejection = report.rejections[0]
-    assert rejection.row_number == 2
+    assert rejection.line_number == 3
     assert "fewer columns" in rejection.reason
 
 
@@ -198,4 +198,4 @@ def test_a_business_rejection_from_ingest_is_counted_the_same_way(
     assert report.received == 2
     assert report.accepted == 1
     assert report.rejected == 1
-    assert report.rejections[0] == RowRejection(2, "unknown product")
+    assert report.rejections[0] == RowRejection(3, "unknown product")

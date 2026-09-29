@@ -102,6 +102,16 @@ ANALYTICS_ROUTES: tuple[tuple[str, str, str, str], ...] = (
     ("experiment_report.index", "GET", "/experiment-report/", CAMPAIGN_READ),
     ("experiment_report.export", "GET", "/experiment-report/export.csv", CAMPAIGN_READ),
     ("reports.index", "GET", "/reports/", REPORT_READ),
+    # Phase 8: sales CSV import (#334).
+    ("sales_import.index", "GET", "/admin/sales-import/", SALES_INGEST_EXECUTE),
+    ("sales_import.upload", "POST", "/admin/sales-import/", SALES_INGEST_EXECUTE),
+    ("sales_import.detail", "GET", "/admin/sales-import/1", SALES_INGEST_EXECUTE),
+    (
+        "sales_import.download_rejections",
+        "GET",
+        "/admin/sales-import/1/rejections.csv",
+        SALES_INGEST_EXECUTE,
+    ),
 )
 
 # Blueprints that are not analytics. A blueprint absent from both this set and

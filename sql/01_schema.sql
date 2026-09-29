@@ -342,6 +342,35 @@ CREATE TABLE transaction_line (
     PRIMARY KEY (transaction_id, product_id)
 );
 
+-- ---------- SALES CSV IMPORT (F8-01, #334) ----------
+--
+-- One row per upload attempt, so the administrator's rejection report stays
+-- retrievable after the page is left (AC 3) instead of living only in the
+-- HTTP response that produced it.
+CREATE TABLE sales_load (
+    load_id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    filename          VARCHAR(255) NOT NULL,
+    contract_version  INT NOT NULL,
+    received_count    INT NOT NULL CHECK (received_count >= 0),
+    accepted_count    INT NOT NULL CHECK (accepted_count >= 0),
+    rejected_count    INT NOT NULL CHECK (rejected_count >= 0),
+    loaded_by         UUID REFERENCES app_user(user_id) ON DELETE SET NULL,
+    loaded_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (received_count = accepted_count + rejected_count)
+);
+
+-- One row per rejected line, with the file's own line number (the header is
+-- line 1, so the first data row is line 2) -- not the record index, which
+-- would be off by one against what the administrator sees in a spreadsheet.
+CREATE TABLE sales_load_rejection (
+    rejection_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    load_id      BIGINT NOT NULL REFERENCES sales_load(load_id) ON DELETE CASCADE,
+    line_number  INT NOT NULL CHECK (line_number > 0),
+    reason       VARCHAR(255) NOT NULL
+);
+
+CREATE INDEX idx_sales_load_rejection_load ON sales_load_rejection (load_id);
+
 -- ---------- CAMPAIGNS AND EXPERIMENTS ----------
 
 CREATE TABLE campaign (

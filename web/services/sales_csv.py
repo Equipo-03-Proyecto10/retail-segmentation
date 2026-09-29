@@ -13,6 +13,7 @@ from pathlib import Path
 
 from psycopg import Connection
 
+from web.db.sales_loads import insert_sales_load
 from web.services.ingestion import RowRejected, SalesRow, ingest_row
 
 CONTRACT_VERSION = 1
@@ -39,7 +40,7 @@ class UnsupportedContractVersion(Exception):
 
 @dataclass(frozen=True)
 class RowRejection:
-    row_number: int
+    line_number: int
     reason: str
 
 
@@ -119,12 +120,15 @@ def load_sales_csv(
             raise UnsupportedContractVersion(
                 f"the header does not match contract version {CONTRACT_VERSION}"
             )
-        for row_number, raw in enumerate(reader, start=1):
+        # start=2: the header occupies line 1, so the first data row is
+        # line 2 -- the administrator's rejection report names file line
+        # numbers (#334), not record indexes.
+        for line_number, raw in enumerate(reader, start=2):
             received += 1
             try:
                 ingest(connection, _parse_row(raw))
             except RowRejected as error:
-                rejections.append(RowRejection(row_number, str(error)))
+                rejections.append(RowRejection(line_number, str(error)))
 
     return LoadReport(
         received=received,
@@ -132,3 +136,36 @@ def load_sales_csv(
         rejected=len(rejections),
         rejections=tuple(rejections),
     )
+
+
+def load_and_record_sales_csv(
+    connection: Connection,
+    path: Path,
+    *,
+    filename: str,
+    contract_version: int,
+    loaded_by: str | None,
+    ingest: Callable[[Connection, SalesRow], None] = ingest_row,
+) -> tuple[LoadReport, int]:
+    """Load a file and persist the attempt as a sales_load row, so the
+    rejection report stays retrievable after the page is left (AC 3).
+
+    Returns the report and the new load_id. Recording happens in the same
+    call the caller already wraps in a transaction (web/routes), so a load
+    and its rejection rows commit or roll back together with the sales
+    rows themselves.
+    """
+    report = load_sales_csv(
+        connection, path, contract_version=contract_version, ingest=ingest
+    )
+    load_id = insert_sales_load(
+        connection,
+        filename=filename,
+        contract_version=contract_version,
+        received_count=report.received,
+        accepted_count=report.accepted,
+        rejected_count=report.rejected,
+        loaded_by=loaded_by,
+        rejections=[(r.line_number, r.reason) for r in report.rejections],
+    )
+    return report, load_id

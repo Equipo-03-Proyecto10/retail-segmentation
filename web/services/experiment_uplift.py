@@ -133,32 +133,33 @@ class MeasuredUplift:
         return self.control.pending + sum(g.pending for g in self.treatments)
 
 
-def measure_uplift(
-    connection: Connection, experiment_id: int, now: datetime | None = None
-) -> MeasuredUplift:
-    """Measure every treatment arm against the control over all assigned
-    customers. Refused, never computed against 'everyone else', when the
-    experiment has no control."""
-    experiment = experiments.get_experiment(connection, experiment_id)
-    if experiment is None:
-        raise ExperimentNotFound(experiment_id)
-    if experiment.control_groups < 1:
-        raise UpliftRefused(
+def refusal_before_counts(
+    experiment_id: int, control_groups: int, target_metric: str, assignments: int
+) -> str | None:
+    """Why uplift cannot be measured from the experiment's setup alone, or None."""
+    if control_groups < 1:
+        return (
             f"Experiment {experiment_id} has no control group. Uplift is measured "
             "against the control, never against everyone else."
         )
-    if experiment.target_metric != CONVERSION_METRIC:
-        raise UpliftRefused(
-            f"Experiment {experiment_id} is measured on {experiment.target_metric}. "
+    if target_metric != CONVERSION_METRIC:
+        return (
+            f"Experiment {experiment_id} is measured on {target_metric}. "
             "Only the conversion rate is measured so far."
         )
-    if not experiment.assignments:
-        raise UpliftRefused(
+    if not assignments:
+        return (
             f"Experiment {experiment_id} has no assignments, so there is nothing "
             "to compare."
         )
-    moment = now or datetime.now(UTC)
-    groups = conversions.list_group_conversion(connection, experiment_id, moment)
+    return None
+
+
+def compare_arms(
+    experiment_id: int, groups: list[conversions.GroupConversion]
+) -> tuple[conversions.GroupConversion, tuple[ArmResult, ...]]:
+    """Every treatment arm against the control, over all assigned customers.
+    Raises UpliftRefused when the counts leave nothing to compare."""
     unrecorded = sum(group.unrecorded for group in groups)
     if unrecorded:
         raise UpliftRefused(
@@ -168,7 +169,7 @@ def measure_uplift(
             "measuring uplift."
         )
     control = next((g for g in groups if g.kind == experiments.CONTROL), None)
-    treatments = [g for g in groups if g.kind == experiments.TREATMENT]
+    treatments = tuple(g for g in groups if g.kind == experiments.TREATMENT)
     if control is None or control.assigned == 0:
         raise UpliftRefused(
             f"Experiment {experiment_id}'s control group has no assigned customers."
@@ -195,7 +196,31 @@ def measure_uplift(
         raise UpliftRefused(
             f"Experiment {experiment_id} has no assigned treatment customers."
         )
-    return MeasuredUplift(experiment, control, tuple(treatments), arms, moment)
+    return control, arms
+
+
+def measure_uplift(
+    connection: Connection, experiment_id: int, now: datetime | None = None
+) -> MeasuredUplift:
+    """Measure every treatment arm against the control over all assigned
+    customers. Refused, never computed against 'everyone else', when the
+    experiment has no control."""
+    experiment = experiments.get_experiment(connection, experiment_id)
+    if experiment is None:
+        raise ExperimentNotFound(experiment_id)
+    reason = refusal_before_counts(
+        experiment_id,
+        experiment.control_groups,
+        experiment.target_metric,
+        experiment.assignments,
+    )
+    if reason:
+        raise UpliftRefused(reason)
+    moment = now or datetime.now(UTC)
+    groups = conversions.list_group_conversion(connection, experiment_id, moment)
+    control, arms = compare_arms(experiment_id, groups)
+    treatments = tuple(g for g in groups if g.kind == experiments.TREATMENT)
+    return MeasuredUplift(experiment, control, treatments, arms, moment)
 
 
 # ---------- validation 1: A/A ----------

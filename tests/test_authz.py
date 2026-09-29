@@ -410,6 +410,7 @@ def test_the_menu_is_driven_by_permissions_rather_than_by_role() -> None:
         "Segmentation dashboard",
         "Segment history report",
         "Consumption reports",
+        "Experiment report",
         "Reports",
         "Audit log",
     ]
@@ -424,6 +425,7 @@ def test_the_menu_is_driven_by_permissions_rather_than_by_role() -> None:
         "Segmentation dashboard",
         "Segment history report",
         "Consumption reports",
+        "Experiment report",
         "Reports",
     ]
     assert _menu_labels(app.test_client()) == ["Home"]

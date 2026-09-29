@@ -94,4 +94,3 @@ page, warning, explanatory text and actions remain within the viewport.
 split, database-read parameters, injected fixture, intent-to-treat denominator,
 synthetic provenance, refusal paths, incomplete counts and the rendered page.
 The protected route also remains in the global negative-flow matrix.
-

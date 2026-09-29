@@ -33,8 +33,8 @@ _EXPECTED_HEADER = (
 
 
 class UnsupportedContractVersion(Exception):
-    """The requested contract version, or the file's header, is not one this
-    adapter understands."""
+    """The requested contract version, the file's header, or its encoding is
+    not one this adapter understands."""
 
 
 @dataclass(frozen=True)
@@ -72,6 +72,30 @@ def _parse_row(raw: dict[str, str]) -> SalesRow:
         raise RowRejected(f"malformed row: {error}") from error
 
 
+# utf-8-sig accepts a leading byte-order mark (as Excel's "CSV UTF-8" export
+# writes one) and is otherwise identical to utf-8.
+_ENCODING = "utf-8-sig"
+_DECODE_CHUNK = 64 * 1024
+
+
+def _refuse_undecodable(path: Path) -> None:
+    """Decode the whole file once, a chunk at a time, before any row is ingested.
+
+    Rows commit one at a time, and the reader decodes as it goes: a bad byte
+    past the first buffer would stop the load after the rows before it were
+    written, with no report of the rows after it (#287). This pass holds one
+    chunk, never the whole file.
+    """
+    try:
+        with path.open(newline="", encoding=_ENCODING) as handle:
+            while handle.read(_DECODE_CHUNK):
+                pass
+    except UnicodeDecodeError as error:
+        raise UnsupportedContractVersion(
+            f"the file is not valid utf-8: {error}"
+        ) from error
+
+
 def load_sales_csv(
     connection: Connection,
     path: Path,
@@ -85,10 +109,11 @@ def load_sales_csv(
             f"contract version {contract_version} is not supported; this "
             f"adapter understands version {CONTRACT_VERSION}"
         )
+    _refuse_undecodable(path)
 
     received = 0
     rejections: list[RowRejection] = []
-    with path.open(newline="", encoding="utf-8") as handle:
+    with path.open(newline="", encoding=_ENCODING) as handle:
         reader = csv.DictReader(handle)
         if reader.fieldnames is None or tuple(reader.fieldnames) != _EXPECTED_HEADER:
             raise UnsupportedContractVersion(

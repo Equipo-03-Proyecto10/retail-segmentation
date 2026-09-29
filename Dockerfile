@@ -36,4 +36,5 @@ EXPOSE 8000
 # only. The image carries no connection string — DATABASE_URL arrives from the
 # environment, which is what lets this same image talk to the db service
 # locally and to the instance's own PostgreSQL when it runs there.
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "2", "--access-logfile", "-", "web.app:create_app()"]
+# --timeout 120 matches deploy/systemd/mosaiq.service, which says why (#334).
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "2", "--timeout", "120", "--access-logfile", "-", "web.app:create_app()"]

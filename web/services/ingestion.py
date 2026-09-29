@@ -10,7 +10,14 @@ from datetime import datetime
 from decimal import Decimal
 
 from psycopg import Connection
-from psycopg.errors import DataError, ForeignKeyViolation, UniqueViolation
+from psycopg.errors import (
+    DataError,
+    ForeignKeyViolation,
+    InvalidTextRepresentation,
+    NumericValueOutOfRange,
+    StringDataRightTruncation,
+    UniqueViolation,
+)
 
 from web.db import sales
 from web.db.transactions import atomic
@@ -50,6 +57,27 @@ def _unknown_reference(error: ForeignKeyViolation) -> RowRejected:
     return RowRejected(f"unknown {entity}")
 
 
+# What a DataError on each insert can only be about, in the administrator's
+# terms. PostgreSQL's own text ("smallint out of range", "invalid input syntax
+# for type uuid" followed by a CONTEXT line) is never passed on: the rejection
+# report is read by the administrator, not a developer (#334).
+_HEADER_DATA_ERRORS: dict[type[DataError], str] = {
+    InvalidTextRepresentation: "customer_id is not a valid identifier",
+    StringDataRightTruncation: "transaction_id is too long",
+    NumericValueOutOfRange: "store_id or channel_id is out of range",
+}
+_LINE_DATA_ERRORS: dict[type[DataError], str] = {
+    NumericValueOutOfRange: "product_id, quantity or unit_price is out of range",
+}
+
+
+def _malformed(error: DataError, reasons: dict[type[DataError], str]) -> RowRejected:
+    for error_type, reason in reasons.items():
+        if isinstance(error, error_type):
+            return RowRejected(f"malformed row: {reason}")
+    return RowRejected("malformed row: a value is not in the expected format")
+
+
 @atomic
 def ingest_row(connection: Connection, row: SalesRow) -> None:
     """Validate and persist one sales row, or raise RowRejected."""
@@ -80,7 +108,7 @@ def ingest_row(connection: Connection, row: SalesRow) -> None:
                 f"duplicate: {row.source_transaction_id} was created concurrently"
             ) from error
         except DataError as error:
-            raise RowRejected(f"malformed row: {error}") from error
+            raise _malformed(error, _HEADER_DATA_ERRORS) from error
     else:
         if (
             header.customer_id != row.customer_id
@@ -110,6 +138,6 @@ def ingest_row(connection: Connection, row: SalesRow) -> None:
     except ForeignKeyViolation as error:
         raise _unknown_reference(error) from error
     except DataError as error:
-        raise RowRejected(f"malformed row: {error}") from error
+        raise _malformed(error, _LINE_DATA_ERRORS) from error
 
     sales.recompute_total(connection, transaction_id)

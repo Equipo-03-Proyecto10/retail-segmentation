@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Sales import · {{ application_name }}{% endblock %}
+{% block topbar_title %}Sales import{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Administration / Sales import{% endblock %}
+
+{% block content %}
+  {% from "macros/ui.html" import alert, count_label, empty_state, page_header, pagination %}
+  {{ page_header("Sales import", "Upload a sales CSV (contract version " ~ contract_version ~ "). Every row is received, accepted or rejected with a reason.", "Administration") }}
+
+  {% if error %}{{ alert(error) }}{% endif %}
+
+  <section class="mq-panel mq-form-panel">
+    <header class="mq-panel__header"><h2 class="mq-panel__title">Upload a file</h2></header>
+    <div class="mq-panel__body">
+      <form class="mq-form" method="post" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="mq-field"><label class="mq-field__label mq-field__label--required" for="file">CSV file</label><input class="mq-input" type="file" id="file" name="file" accept=".csv,text/csv" required></div>
+        <div class="mq-form__actions"><button class="mq-btn mq-btn--primary" type="submit">Upload</button></div>
+      </form>
+    </div>
+  </section>
+
+  {% if loads %}
+    <section class="mq-panel mq-panel--table mq-density-compact">
+      <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(total, "upload") }}</span><span class="mq-caption">Most recent first</span></div>
+      <div class="mq-table-wrap">
+        <table class="mq-table">
+          <thead><tr><th scope="col">Load</th><th scope="col">File</th><th scope="col">Received</th><th scope="col">Accepted</th><th scope="col">Rejected</th><th scope="col">Uploaded by</th><th scope="col">Uploaded at</th></tr></thead>
+          <tbody>
+            {% for load in loads %}
+              <tr>
+                <td class="mq-mono"><a class="mq-table__link" href="{{ url_for('sales_import.detail', load_id=load.load_id) }}">#{{ load.load_id }}</a></td>
+                <td>{{ load.filename }}</td>
+                <td class="mq-num">{{ load.received_count }}</td>
+                <td class="mq-num">{{ load.accepted_count }}</td>
+                <td class="mq-num">{{ load.rejected_count }}</td>
+                <td>{{ load.loaded_by_name or "System" }}</td>
+                <td class="mq-mono">{{ load.loaded_at.strftime("%Y-%m-%d %H:%M") }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {{ pagination(
+        page,
+        total_pages,
+        "Page {} of {} · ".format(page, total_pages) ~ count_label(total, "upload"),
+        url_for('sales_import.index', page=page - 1) if page > 1 else none,
+        url_for('sales_import.index', page=page + 1) if page < total_pages else none
+      ) }}
+    </section>
+  {% else %}
+    {{ empty_state("No uploads yet", "Upload a CSV file above to import sales data.") }}
+  {% endif %}
+{% endblock %}

@@ -8,7 +8,7 @@ reuses an existing declaration, per ADR-0007.
 |---|---|---|---|
 | 7 | Segment assignment history / migration (read) | `segment.read` (existing) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | 7 | Run RFM_RULES / KMEANS | `segment_run.execute` (existing) | ADMIN |
-| 8 | Sales CSV ingestion | `sales_ingest.execute` (**new**) | ADMIN |
+| 8 | Sales CSV ingestion | `sales_ingest.execute` (/admin/sales-import/) | ADMIN |
 | 8 | Consumption profile (read) | `segment.read` (existing) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | 9 | Model comparison, parameters and quality measures (read) | `segment.read` (existing) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | 10 | Recommendations (read) | `segment.read` (existing) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |

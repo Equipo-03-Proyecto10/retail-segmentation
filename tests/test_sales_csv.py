@@ -89,6 +89,28 @@ def test_a_file_that_is_not_valid_utf8_is_a_typed_refusal(tmp_path: Path) -> Non
         )
 
 
+def test_a_bad_byte_deep_in_the_file_refuses_it_before_any_row_is_ingested(
+    tmp_path: Path,
+) -> None:
+    """#287: the reader decodes as it goes and rows commit one at a time, so a
+    bad byte past the first buffer must not leave the rows before it written."""
+    row = "TXN-{},cust-1,1,1,2026-01-15T10:00:00+00:00,1,2,9.99\n"
+    body = "".join(row.format(number) for number in range(2000))
+    path = tmp_path / "sales.csv"
+    path.write_bytes(f"{_HEADER}\n{body}".encode() + b"\xff\n")
+    ingested = []
+
+    with pytest.raises(UnsupportedContractVersion, match="utf-8"):
+        load_sales_csv(
+            object(),
+            path,
+            contract_version=CONTRACT_VERSION,
+            ingest=lambda _connection, sale: ingested.append(sale),
+        )
+
+    assert ingested == []
+
+
 def test_four_rows_two_valid_two_invalid_report_4_2_2(tmp_path: Path) -> None:
     path = _write_csv(
         tmp_path,

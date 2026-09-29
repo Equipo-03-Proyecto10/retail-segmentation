@@ -86,6 +86,12 @@ right place for it, and which the team accepted on 2026-09-07.
 | [Category subtree](recommendations-category-subtree.md) | #277: a preferred or bought category covers the categories below it, checked against an independent recursive query on all 30 seeded customers and shown on a subcategory product stocked in a rolled-back transaction |
 | [Store managers read segments](store-manager-segment-read.md) | #280 and ADR-0023: `STORE_MANAGER` holds `segment.read`, reaching every customer and segment surface (recommendations at 375 px and 1440 px) and still refused every write, while `INVENTORY_PLANNER` stays out |
 
+## Phase 12 — analytics
+
+| Document | What it records |
+|---|---|
+| [F12-01](f12-01-segmentation-dashboard.md) | The segmentation dashboard: segment sizes, RFM distribution, migration flow and revenue by label for one run, checked against independent SQL and a real browser with no external network requests, Highcharts vendored rather than loaded from a CDN, and the refusal of a role without `segment.read` |
+
 ## Review passes
 
 These follow a specific review rather than a story.

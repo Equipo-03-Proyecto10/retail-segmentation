@@ -43,6 +43,7 @@ READ_ROUTES = [
     "/migration-matrix/",
     "/migration-explanation/",
     "/model-comparison/",
+    "/segmentation-dashboard/",
     "/campaigns/",
     "/reports/",
 ]

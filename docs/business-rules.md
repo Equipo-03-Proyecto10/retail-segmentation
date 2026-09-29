@@ -330,6 +330,56 @@ category hierarchy,
 [`evidence/recommendations-category-subtree.md`](evidence/recommendations-category-subtree.md).
 · `F10-01`
 
+### RN-41 — The segmentation dashboard is a snapshot of one run, keyed on label, and marked when its data is not real
+One dashboard shows four things about one segmentation run: how many customers hold
+each label, the distribution of raw recency and frequency among the customers a
+label was computed for, how customers moved between labels since the run
+immediately before it, and how much each label's customers spent in the run's own
+window. All four read the stable label code; none reads which method produced the
+run.
+
+* **Segment sizes and revenue** are listed in the vocabulary's declared order, a
+  label with none shown at zero rather than omitted (RN-40's principle).
+* **The RFM distribution** bins the scored customers' raw recency and frequency into
+  five quintiles each, recomputed here rather than read from `r_score`/`f_score`,
+  which are stored for only one of the two segmentation methods (F9-02) and would
+  make the chart mean something different depending on which one produced the run.
+  An unassigned customer has neither value and is excluded.
+* **Migration flow** is the previous run, by `run_at`, compared to this one on
+  label code (RN-39), whichever methods produced either run. A customer only one of
+  the two runs scored is a change in population, not a move between labels, and is
+  reported as a count beside the chart rather than as a flow between labels.
+* **Revenue is summed over the run's own window** (`window_days` ending at
+  `run_at`), the same period its R/F/M were measured over.
+
+**The chart data is embedded in the server-rendered page, not fetched from a JSON
+endpoint** (`docs/roadmap.md`'s dashboards constraint). Application pages carry a
+same-origin-only script policy (`deploy/nginx/mosaiq.conf`), so the page loads
+Highcharts from this application's own static files rather than a CDN — the
+allowance in `docs/design-system/charts/` does not extend to application pages —
+and the embedded data sits in an inert `<script type="application/json">` block a
+same-origin script reads, never in an inline `<script>` block the policy would
+block.
+
+**A `Synthetic` badge marks the dashboard's figures as demonstration data**, driven
+by `Config.data_is_synthetic` (default true). No table this dashboard reads —
+`segmentation_run`, `customer_segment_history`, `transaction` — carries a data-origin
+marker the way the experiment tables do (ADR-0019); that marker is scoped to
+campaigns and experiments. This default reflects that every instance shown running
+today holds only the seeded demonstration data, and is a decision recorded for
+confirmation, not a fact this delivery's schema can check row by row.
+
+**Enforced:** application — `web/services/segmentation_dashboard.py` for the four
+charts, `web/db/segmentation_dashboard.py` for its two new reads (`SELECT`-only,
+parameterized), reusing `web/services/segment_migration.py` unchanged for the
+migration comparison. The page is gated on `segment.read`
+(`docs/analytics-permission-map.md`, Phase 12). **Verified** — by
+`tests/test_segmentation_dashboard.py`, `tests/test_segmentation_dashboard_db.py`
+and `tests/test_segmentation_dashboard_route.py`, including that faults seeded into
+each rule above fail a test, and against the seeded PostgreSQL and a real browser by
+[`evidence/f12-01-segmentation-dashboard.md`](evidence/f12-01-segmentation-dashboard.md).
+· `F12-01`
+
 ### RN-22 — A campaign targets a real, stable segment label
 **Enforced:** `campaign_label_code_fkey` → `segment_label(label_code)`.
 **Verified** — case N23.

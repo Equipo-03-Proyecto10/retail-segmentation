@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Segmentation dashboard · {{ application_name }}{% endblock %}
+{% block topbar_title %}Segmentation dashboard{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Analysis / Segmentation dashboard{% endblock %}
+
+{% block content %}
+  {% from "macros/ui.html" import alert, empty_state, page_header, status_pill %}
+  {% macro when(run) %}{{ run.run_at.strftime("%Y-%m-%d %H:%M") }}{% endmacro %}
+
+  {{ page_header(
+    "Segmentation dashboard",
+    "Segment sizes, the RFM distribution, migration against the previous run, and revenue by label, for one run.",
+    "Segmentation modelling"
+  ) }}
+
+  {% if is_synthetic %}
+    <div class="mq-alert mq-alert--info" role="status">
+      <span class="mq-pill mq-pill--info">Synthetic</span>
+      These figures come from demonstration data, not observed business activity.
+    </div>
+  {% endif %}
+
+  {% if error %}{{ alert(error) }}{% endif %}
+
+  {% if not dashboard %}
+    {% if not error %}
+      {{ empty_state("No segmentation run yet", "Start one from Segment run; the dashboard needs at least one completed run.", "No runs") }}
+    {% endif %}
+  {% else %}
+    <section class="mq-panel">
+      <div class="mq-panel__body">
+        <form class="mq-filterbar" method="get" action="{{ url_for('segmentation_dashboard.index') }}">
+          <div class="mq-filterbar__row">
+            <div class="mq-filterbar__group">
+              <label class="mq-field__label" for="run">Run</label>
+              <select class="mq-input" id="run" name="run" onchange="this.form.submit()">
+                {% for run in runs %}
+                  <option value="{{ run.run_id }}" {% if run.run_id == dashboard.run.run_id %}selected{% endif %}>#{{ run.run_id }} — {{ when(run) }} · {{ run.method }} · {{ run.customer_count }} customers</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="mq-filterbar__actions">
+              <button class="mq-btn mq-btn--primary mq-btn--sm" type="submit">Show</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <div class="mq-grid mq-grid--3">
+      <article class="mq-metric">
+        <span class="mq-metric__label">Run</span>
+        <span class="mq-metric__value">#{{ dashboard.run.run_id }}</span>
+        <div class="mq-metric__footer"><span>{{ dashboard.run.method }} · {{ when(dashboard.run) }}</span></div>
+      </article>
+      <article class="mq-metric">
+        <span class="mq-metric__label">Customers</span>
+        <span class="mq-metric__value">{{ dashboard.run.customer_count }}</span>
+        <div class="mq-metric__footer"><span>{{ dashboard.run.window_days }}-day window</span></div>
+      </article>
+      <article class="mq-metric">
+        <span class="mq-metric__label">Previous run</span>
+        {% if dashboard.previous_run %}
+          <span class="mq-metric__value">#{{ dashboard.previous_run.run_id }}</span>
+          <div class="mq-metric__footer"><span>{{ dashboard.previous_run.method }} · {{ when(dashboard.previous_run) }}</span></div>
+        {% else %}
+          <span class="mq-metric__value">—</span>
+          <div class="mq-metric__footer"><span>No earlier run to compare against</span></div>
+        {% endif %}
+      </article>
+    </div>
+
+    <div class="mq-grid mq-grid--2">
+      <section class="mq-panel">
+        <header class="mq-panel__header">
+          <h2 class="mq-panel__title">Segment sizes</h2>
+          <span class="mq-caption mq-mono">column · categorical</span>
+        </header>
+        <div class="mq-panel__body">
+          <div id="mq-chart-sizes" class="mq-chart" role="img" aria-label="Customers per label"></div>
+        </div>
+      </section>
+
+      <section class="mq-panel">
+        <header class="mq-panel__header">
+          <h2 class="mq-panel__title">Revenue by label</h2>
+          <span class="mq-caption mq-mono">column · categorical</span>
+        </header>
+        <div class="mq-panel__body">
+          <div id="mq-chart-revenue" class="mq-chart" role="img" aria-label="Revenue per label over the run's window"></div>
+        </div>
+      </section>
+
+      <section class="mq-panel">
+        <header class="mq-panel__header">
+          <h2 class="mq-panel__title">RFM distribution</h2>
+          <span class="mq-caption mq-mono">heatmap · sequential</span>
+        </header>
+        <div class="mq-panel__body">
+          <div id="mq-chart-rfm" class="mq-chart" role="img" aria-label="Customers by recency and frequency quintile"></div>
+        </div>
+      </section>
+
+      <section class="mq-panel">
+        <header class="mq-panel__header">
+          <h2 class="mq-panel__title">Migration flow</h2>
+          <span class="mq-caption mq-mono">sankey · categorical</span>
+        </header>
+        <div class="mq-panel__body">
+          {% if dashboard.migration %}
+            <div id="mq-chart-migration" class="mq-chart" role="img" aria-label="Customers moving between labels since the previous run"></div>
+            <dl class="mq-description-list">
+              <dt>New to the population</dt><dd>{{ dashboard.migration.new_to_population }}</dd>
+              <dt>Left the population</dt><dd>{{ dashboard.migration.left_the_population }}</dd>
+            </dl>
+          {% else %}
+            <p class="mq-caption">There is no earlier run to compare this one against.</p>
+          {% endif %}
+        </div>
+      </section>
+    </div>
+
+    <script type="application/json" id="mq-dashboard-data">{{ chart_data | safe }}</script>
+    <script src="{{ url_for('static', filename='vendor/highcharts/highcharts.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/highcharts/highcharts-more.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/highcharts/modules/heatmap.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/highcharts/modules/sankey.js') }}"></script>
+    <script src="{{ url_for('static', filename='css/mosaiq/charts/mosaiq-highcharts-theme.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/segmentation-dashboard.js') }}" defer></script>
+  {% endif %}
+{% endblock %}

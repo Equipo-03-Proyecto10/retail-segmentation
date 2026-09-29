@@ -554,9 +554,11 @@ conversion rate minus the control's, over every assigned customer whether or not
 they were exposed, with a 95% interval and a two-sided test at alpha 0.05 (each
 arm on its own, no correction for several). Customers whose window is still open
 count as not converted so far and the result is marked *Preliminary*. An
-experiment with no control, no assignments, or a target metric other than
-`CONVERSION` is refused; nothing is computed against "everyone else". A result
-from a `SEEDED` or `INJECTED` experiment carries the literal label `Synthetic`.
+experiment with no control, no assignments, an empty control or treatment arm,
+unrecorded qualifying sales, or a target metric other than `CONVERSION` is
+refused; nothing is computed against "everyone else" or from incomplete outcome
+counts. A result from a `SEEDED` or `INJECTED` experiment carries the literal
+label `Synthetic`.
 It is trusted because two checks hold: an A/A split from pre-cut-off data shows
 no significant difference, and a fixed-seed injected uplift (10,000 per arm, 10%
 against 15%) is recovered within 0.1 point with an interval excluding zero.

@@ -175,9 +175,9 @@ def _wire(
         Mock(
             return_value=groups
             or [
-                GroupConversion(61, "CONTROL", 100, 10, 5, 85),
-                GroupConversion(62, "TREATMENT", 100, 25, 0, 75),
-                GroupConversion(63, "TREATMENT", 100, 12, 3, 85),
+                GroupConversion(61, "CONTROL", 100, 10, 5, 85, 0),
+                GroupConversion(62, "TREATMENT", 100, 25, 0, 75, 0),
+                GroupConversion(63, "TREATMENT", 100, 12, 3, 85, 0),
             ]
         ),
     )
@@ -232,12 +232,48 @@ def test_an_empty_control_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     _wire(
         monkeypatch,
         groups=[
-            GroupConversion(61, "CONTROL", 0, 0, 0, 0),
-            GroupConversion(62, "TREATMENT", 10, 1, 0, 9),
+            GroupConversion(61, "CONTROL", 0, 0, 0, 0, 0),
+            GroupConversion(62, "TREATMENT", 10, 1, 0, 9, 0),
         ],
     )
 
     with pytest.raises(uplift.UpliftRefused, match="control group has no assigned"):
+        uplift.measure_uplift(MagicMock(), 31, NOW)
+
+
+def test_an_empty_treatment_arm_is_refused_instead_of_silently_omitted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _wire(
+        monkeypatch,
+        experiment=_experiment(assignments=110),
+        groups=[
+            GroupConversion(61, "CONTROL", 100, 10, 0, 90, 0),
+            GroupConversion(62, "TREATMENT", 10, 1, 0, 9, 0),
+            GroupConversion(63, "TREATMENT", 0, 0, 0, 0, 0),
+        ],
+    )
+
+    with pytest.raises(
+        uplift.UpliftRefused, match="treatment group 63 has no assigned customers"
+    ):
+        uplift.measure_uplift(MagicMock(), 31, NOW)
+
+
+def test_unrecorded_qualifying_sales_are_refused_before_uplift_is_reported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _wire(
+        monkeypatch,
+        groups=[
+            GroupConversion(61, "CONTROL", 100, 10, 0, 90, 1),
+            GroupConversion(62, "TREATMENT", 100, 20, 0, 80, 2),
+        ],
+    )
+
+    with pytest.raises(
+        uplift.UpliftRefused, match="3 assigned customers.*Evaluate conversion"
+    ):
         uplift.measure_uplift(MagicMock(), 31, NOW)
 
 

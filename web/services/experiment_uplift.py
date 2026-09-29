@@ -159,11 +159,28 @@ def measure_uplift(
         )
     moment = now or datetime.now(UTC)
     groups = conversions.list_group_conversion(connection, experiment_id, moment)
+    unrecorded = sum(group.unrecorded for group in groups)
+    if unrecorded:
+        raise UpliftRefused(
+            f"Experiment {experiment_id} has {unrecorded} assigned "
+            f"{'customer' if unrecorded == 1 else 'customers'} with a qualifying "
+            "sale that has not been recorded yet. Evaluate conversion before "
+            "measuring uplift."
+        )
     control = next((g for g in groups if g.kind == experiments.CONTROL), None)
     treatments = [g for g in groups if g.kind == experiments.TREATMENT]
     if control is None or control.assigned == 0:
         raise UpliftRefused(
             f"Experiment {experiment_id}'s control group has no assigned customers."
+        )
+    empty_treatments = [group.group_id for group in treatments if group.assigned == 0]
+    if empty_treatments:
+        group_word = "group" if len(empty_treatments) == 1 else "groups"
+        group_ids = ", ".join(str(group_id) for group_id in empty_treatments)
+        raise UpliftRefused(
+            f"Experiment {experiment_id}'s treatment {group_word} "
+            f"{group_ids} {'has' if len(empty_treatments) == 1 else 'have'} "
+            "no assigned customers."
         )
     arms = tuple(
         ArmResult(
@@ -173,7 +190,6 @@ def measure_uplift(
             ),
         )
         for g in treatments
-        if g.assigned
     )
     if not arms:
         raise UpliftRefused(

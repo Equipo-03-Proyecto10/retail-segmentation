@@ -17,7 +17,10 @@ from psycopg import Connection
 @dataclass(frozen=True)
 class GroupConversion:
     """One arm's outcome counts. Every assigned customer is in exactly one of
-    `converted`, `pending` and `not_converted`."""
+    `converted`, `pending` and `not_converted`, judged from the conversions
+    already recorded. `unrecorded` is not a fourth outcome: it counts those
+    not yet recorded as converted who nonetheless have a qualifying sale, which
+    the next evaluation will attribute."""
 
     group_id: int
     kind: str
@@ -25,6 +28,7 @@ class GroupConversion:
     converted: int
     pending: int
     not_converted: int
+    unrecorded: int
 
 
 @dataclass(frozen=True)
@@ -81,7 +85,10 @@ def list_group_conversion(
 
     A customer with no attributed sale is *pending* while their window is still
     open at `now`, and *not converted* only once it has closed: an unfinished
-    window is not a failure to convert.
+    window is not a failure to convert. The outcomes count recorded
+    conversions only; `unrecorded` says how many of the rest already have a
+    qualifying sale, so the page cannot pass off "not yet evaluated" as
+    "did not convert".
     """
     with connection.cursor() as cursor:
         cursor.execute(
@@ -91,7 +98,14 @@ def list_group_conversion(
                        EXISTS (SELECT 1 FROM experiment_conversion AS c
                                 WHERE c.assignment_id = a.assignment_id) AS converted,
                        a.assigned_at
-                       + make_interval(days => e.conversion_window_days) > %s AS open
+                       + make_interval(days => e.conversion_window_days) > %s AS open,
+                       EXISTS (SELECT 1 FROM transaction AS t
+                                WHERE t.customer_id = a.customer_id
+                                  AND t.occurred_at >= a.assigned_at
+                                  AND t.occurred_at < a.assigned_at
+                                      + make_interval(
+                                          days => e.conversion_window_days))
+                           AS qualifies
                   FROM experiment_assignment AS a
                   JOIN experiment AS e ON e.experiment_id = a.experiment_id
                  WHERE a.experiment_id = %s
@@ -99,7 +113,8 @@ def list_group_conversion(
             SELECT g.group_id, g.kind, count(o.group_id),
                    count(*) FILTER (WHERE o.converted),
                    count(*) FILTER (WHERE NOT o.converted AND o.open),
-                   count(*) FILTER (WHERE NOT o.converted AND NOT o.open)
+                   count(*) FILTER (WHERE NOT o.converted AND NOT o.open),
+                   count(*) FILTER (WHERE NOT o.converted AND o.qualifies)
               FROM experiment_group AS g
               LEFT JOIN outcome AS o ON o.group_id = g.group_id
              WHERE g.experiment_id = %s

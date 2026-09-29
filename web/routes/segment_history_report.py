@@ -2,7 +2,7 @@
 
 Read-only, gated on segment.read like the rest of the segmentation surface
 (ADR-0010). Every filter -- run, label, period -- is optional and combines
-with the others (RN-42); each row's explanation is built by F7-06's own
+with the others (RN-43); each row's explanation is built by F7-06's own
 machinery, reused rather than duplicated. A run id that does not exist is
 just a filter no row matches, exactly like any other filter combination with
 nothing to show -- this page does not resolve "the" run the way F12-01's

@@ -301,12 +301,19 @@ SELECT (n-1)*2 + 2, n, 'TREATMENT' FROM generate_series(1,30) n;
 -- k 0-1 go to the control group, 2-3 to treatment. The customer offset is
 -- scoped to the experiment (base (n-1)*4, span 4 < 30) so no customer
 -- repeats within one experiment, satisfying UNIQUE (experiment_id, customer_id).
-INSERT INTO experiment_assignment (experiment_id, group_id, customer_id)
+-- assigned_at sits half a day before customer c's sale of c days ago (the
+-- transaction seed gives customer c a sale every 30 days starting c days ago),
+-- so every assignee has a sale inside even the shortest (7-day) window and
+-- the seeded conversions below satisfy the F11-06 rule. Windows of 7-28 days
+-- against assignments 1.5-30.5 days old leave some open and some closed.
+INSERT INTO experiment_assignment (experiment_id, group_id, customer_id, assigned_at)
 SELECT n,
        (n-1)*2 + 1 + (k/2),
-       ('00000000-0000-0000-0000-' || lpad((1+(((n-1)*4+k) % 30))::text,12,'0'))::uuid
+       ('00000000-0000-0000-0000-' || lpad(c::text,12,'0'))::uuid,
+       now() - (c || ' days')::interval - interval '12 hours'
 FROM generate_series(1,30) n
-CROSS JOIN generate_series(0,3) k;
+CROSS JOIN generate_series(0,3) k
+CROSS JOIN LATERAL (SELECT 1+(((n-1)*4+k) % 30) AS c) AS customer_index;
 
 -- ---------- experiment_exposure (one treatment assignee per experiment = 30) ----------
 -- Picks the first treatment assignment per experiment by assignment_id,
@@ -324,11 +331,17 @@ SELECT assignment_id FROM (
 WHERE rn = 1;
 
 -- ---------- experiment_conversion (one qualifying sale per exposure = 30) ----------
+-- Qualifying means what F11-06 evaluates: the assignee's own sale in
+-- [assigned_at, assigned_at + conversion_window_days).
 INSERT INTO experiment_conversion (assignment_id, transaction_id)
 SELECT e.assignment_id,
-       (SELECT MIN(t.transaction_id) FROM transaction t WHERE t.customer_id = a.customer_id)
+       (SELECT MIN(t.transaction_id) FROM transaction t
+         WHERE t.customer_id = a.customer_id
+           AND t.occurred_at >= a.assigned_at
+           AND t.occurred_at < a.assigned_at + make_interval(days => x.conversion_window_days))
 FROM experiment_exposure e
-JOIN experiment_assignment a ON a.assignment_id = e.assignment_id;
+JOIN experiment_assignment a ON a.assignment_id = e.assignment_id
+JOIN experiment x ON x.experiment_id = a.experiment_id;
 
 -- ---------- inventory (30 stores x 5 products = 150) ----------
 INSERT INTO inventory (store_id, product_id, quantity_on_hand)

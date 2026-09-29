@@ -1,8 +1,8 @@
 """Conversion as an attribution from an assignment to a sale (F11-06, ADR-0019).
 
 The database is mocked, as in the other route tests, so what is proved here is
-the service's rules and the shape of the SQL it sends. The window arithmetic
-itself is PostgreSQL's and was not exercised: there is no local database.
+the service's rules and the shape of the SQL it sends. The window arithmetic is
+PostgreSQL's; the story evidence runs it against the three scripts.
 """
 
 from __future__ import annotations
@@ -30,8 +30,8 @@ ROOT = Path(__file__).resolve().parents[1]
 USER_ID = "11111111-1111-1111-1111-000000000001"
 NOW = datetime(2026, 10, 20, 12, 0, tzinfo=UTC)
 GROUPS = [
-    GroupConversion(61, "CONTROL", 5, 1, 2, 2),
-    GroupConversion(62, "TREATMENT", 5, 2, 1, 2),
+    GroupConversion(61, "CONTROL", 5, 1, 2, 2, 0),
+    GroupConversion(62, "TREATMENT", 5, 2, 1, 2, 0),
 ]
 
 
@@ -171,7 +171,7 @@ def test_re_evaluating_cannot_record_a_sale_twice() -> None:
 def test_pending_is_an_open_window_and_not_converted_a_closed_one() -> None:
     connection = MagicMock()
     cursor = connection.cursor.return_value.__enter__.return_value
-    cursor.fetchall.return_value = [(61, "CONTROL", 5, 1, 2, 2)]
+    cursor.fetchall.return_value = [(61, "CONTROL", 5, 1, 2, 2, 1)]
 
     counts = db.list_group_conversion(connection, 31, NOW)
 
@@ -179,7 +179,24 @@ def test_pending_is_an_open_window_and_not_converted_a_closed_one() -> None:
     assert "FILTER (WHERE NOT o.converted AND o.open)" in sql
     assert "FILTER (WHERE NOT o.converted AND NOT o.open)" in sql
     assert cursor.execute.call_args.args[1] == (NOW, 31, 31)
-    assert counts == [GroupConversion(61, "CONTROL", 5, 1, 2, 2)]
+    assert counts == [GroupConversion(61, "CONTROL", 5, 1, 2, 2, 1)]
+
+
+def test_an_unrecorded_qualifying_sale_uses_the_evaluation_window() -> None:
+    connection = MagicMock()
+    cursor = connection.cursor.return_value.__enter__.return_value
+    cursor.fetchall.return_value = []
+
+    db.list_group_conversion(connection, 31, NOW)
+
+    sql = _sql_of(cursor.execute.call_args)
+    assert "FILTER (WHERE NOT o.converted AND o.qualifies)" in sql
+    assert "t.customer_id = a.customer_id" in sql
+    assert "t.occurred_at >= a.assigned_at" in sql
+    assert (
+        "t.occurred_at < a.assigned_at "
+        "+ make_interval( days => e.conversion_window_days)" in sql
+    )
 
 
 def test_a_sale_carries_no_experiment_column() -> None:
@@ -255,6 +272,23 @@ def test_the_page_separates_pending_from_not_converted_and_traces_a_sale(
     assert "pending, not counted as not converted" in body
     assert "TX-77" in body and "#77" in body  # traceable to the sale
     assert "900" in body  # and to the assignment
+    assert "Not yet evaluated" not in body
+
+
+def test_the_page_warns_when_a_qualifying_sale_is_not_yet_recorded(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mocks = _wire(monkeypatch)
+    mocks["list_group_conversion"].return_value = [
+        GroupConversion(61, "CONTROL", 5, 1, 2, 2, 1),
+        GroupConversion(62, "TREATMENT", 5, 2, 1, 2, 2),
+    ]
+
+    response = _as(app, "MARKETING").get("/experiments/31/conversion")
+
+    body = response.get_data(as_text=True)
+    assert "Not yet evaluated" in body
+    assert "3 assigned customers have a qualifying sale" in body
 
 
 def test_evaluating_redirects_with_the_count(

@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+
+{% block title %}Consumption reports · {{ application_name }}{% endblock %}
+{% block topbar_title %}Consumption reports{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Analysis / Consumption reports{% endblock %}
+
+{% block content %}
+  {% from "macros/ui.html" import alert, count_label, page_header, pagination, status_pill %}
+  {% set signal_names = {"segment": "Segment", "preferred_category": "Preferred category", "purchase_history": "Purchase history"} %}
+  {% macro leader(dimension) %}{% if dimension %}{{ dimension.before.name }} → {{ dimension.after.name }}{% else %}<span class="mq-caption">unchanged</span>{% endif %}{% endmacro %}
+
+  {{ page_header(
+    "Consumption reports",
+    "Consumption shifts and product recommendations, filterable by store, channel, category and period, so the store can act on what changed.",
+    "Segmentation modelling"
+  ) }}
+
+  {% if error %}{{ alert(error) }}{% endif %}
+
+  <form class="mq-filterbar" method="get" action="{{ url_for('consumption_reports.index') }}">
+    <div class="mq-filterbar__row">
+      <div class="mq-filterbar__group">
+        <label class="mq-field__label" for="store">Store</label>
+        <select class="mq-select" id="store" name="store">
+          <option value="">All stores</option>
+          {% for option in stores %}
+            <option value="{{ option.store_id }}" {{ "selected" if store == option.store_id|string }}>{{ option.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="mq-filterbar__group">
+        <label class="mq-field__label" for="channel">Channel</label>
+        <select class="mq-select" id="channel" name="channel">
+          <option value="">All channels</option>
+          {% for option in channels %}
+            <option value="{{ option.channel_id }}" {{ "selected" if channel == option.channel_id|string }}>{{ option.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="mq-filterbar__group">
+        <label class="mq-field__label" for="category">Category</label>
+        <select class="mq-select" id="category" name="category">
+          <option value="">All categories</option>
+          {% for option in categories %}
+            <option value="{{ option.category_id }}" {{ "selected" if category == option.category_id|string }}>{{ option.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="mq-filterbar__group">
+        <label class="mq-field__label" for="as_of">As of</label>
+        <input class="mq-input" type="date" id="as_of" name="as_of" value="{{ as_of }}" placeholder="today">
+      </div>
+      <div class="mq-filterbar__group">
+        <label class="mq-field__label" for="window_days">Window, in days</label>
+        <input class="mq-input mq-input--num" type="number" id="window_days" name="window_days" value="{{ window_days }}" min="1" max="3650">
+      </div>
+      <div class="mq-filterbar__actions">
+        <a class="mq-btn mq-btn--tertiary mq-btn--sm" href="{{ url_for('consumption_reports.index') }}">Clear</a>
+        <button class="mq-btn mq-btn--primary mq-btn--sm" type="submit">Filter</button>
+      </div>
+    </div>
+  </form>
+
+  {% if shifts %}
+    <section class="mq-panel mq-panel--table mq-density-compact">
+      <header class="mq-panel__header">
+        <h2 class="mq-panel__title">Consumption shifts</h2>
+        <span class="mq-caption">{{ shifts.earlier.start.strftime("%Y-%m-%d") }} → {{ shifts.earlier.end.strftime("%Y-%m-%d") }}, compared with {{ shifts.later.start.strftime("%Y-%m-%d") }} → {{ shifts.later.end.strftime("%Y-%m-%d") }}</span>
+      </header>
+      {% if shifts.rows %}
+        <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(shifts.rows|length, "shift", "shifts") }}</span></div>
+        <div class="mq-table-wrap">
+          <table class="mq-table">
+            <thead>
+              <tr>
+                <th class="mq-table__cell--sticky" scope="col">Customer</th>
+                <th scope="col">Channel</th>
+                <th scope="col">Store</th>
+                <th scope="col">Category</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in shifts.rows %}
+                <tr>
+                  <td class="mq-table__cell--sticky"><a class="mq-table__link" href="{{ url_for('catalog.customer_detail', customer_id=row.customer_id) }}">{{ row.customer_name }}</a></td>
+                  <td>{{ leader(row.shift.channel) }}</td>
+                  <td>{{ leader(row.shift.store) }}</td>
+                  <td>{{ leader(row.shift.category) }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="mq-panel__body"><p class="mq-caption">No shifts match those filters.</p></div>
+      {% endif %}
+    </section>
+  {% endif %}
+
+  {% if recommendations %}
+    <section class="mq-panel mq-panel--table mq-density-compact">
+      <header class="mq-panel__header">
+        <h2 class="mq-panel__title">Recommendations</h2>
+      </header>
+      {% if recommendations.rows %}
+        <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(recommendations.total, "recommendation", "recommendations") }}</span></div>
+        <div class="mq-table-wrap">
+          <table class="mq-table">
+            <thead>
+              <tr>
+                <th class="mq-table__cell--sticky" scope="col">Customer</th>
+                <th scope="col">Store</th>
+                <th scope="col">Product</th>
+                <th scope="col">Category</th>
+                <th scope="col">Stock</th>
+                <th scope="col">Why</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in recommendations.rows %}
+                <tr>
+                  <td class="mq-table__cell--sticky"><a class="mq-table__link" href="{{ url_for('catalog.customer_detail', customer_id=row.customer_id) }}">{{ row.customer_name }}</a></td>
+                  <td>{{ row.store_name }}</td>
+                  <td><a class="mq-table__link" href="{{ url_for('catalog.product_detail', product_id=row.product_id) }}">{{ row.product_name }}</a></td>
+                  <td>{{ row.category_name }}</td>
+                  <td class="mq-num">{{ row.in_stock }} {{ "unit" if row.in_stock == 1 else "units" }}</td>
+                  <td>
+                    <ul>
+                      {% for reason in row.reasons %}
+                        <li>{{ status_pill(signal_names[reason.signal.value], "neutral") }} {{ reason.text }}</li>
+                      {% endfor %}
+                    </ul>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {{ pagination(
+          recommendations.page,
+          recommendations.page_count,
+          "Page {} of {} · ".format(recommendations.page, recommendations.page_count) ~ count_label(recommendations.total, "recommendation", "recommendations"),
+          url_for('consumption_reports.index', store=store, channel=channel, category=category, as_of=as_of, window_days=window_days, page=recommendations.page - 1) if recommendations.has_previous else none,
+          url_for('consumption_reports.index', store=store, channel=channel, category=category, as_of=as_of, window_days=window_days, page=recommendations.page + 1) if recommendations.has_next else none
+        ) }}
+      {% else %}
+        <div class="mq-panel__body"><p class="mq-caption">No recommendations match those filters.</p></div>
+      {% endif %}
+    </section>
+  {% endif %}
+
+{% endblock %}

@@ -1,6 +1,6 @@
 # ADR-0027 — Experiment exposures are treatment-only and append-only
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Max
 **Issue:** #224
 **Supersedes:** —

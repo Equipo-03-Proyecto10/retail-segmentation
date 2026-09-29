@@ -20,6 +20,14 @@ DEFAULT_PORT = 5000
 DEFAULT_LOG_LEVEL = "INFO"
 DEFAULT_SESSION_COOKIE_SECURE = False
 DEFAULT_TRUSTED_PROXY_HOPS = 0
+# F12-01: no table in this delivery's schema marks a segmentation row's data
+# origin (ADR-0019's data_origin is the experiment tables', not the customer
+# or sales tables), and no schema change is in scope for that story. Every
+# instance this application has ever been shown running against holds only
+# the demonstration seed (sql/02_seed_30_per_table.sql), so the default marks
+# dashboard figures Synthetic; a deployment with real accepted sales turns it
+# off. This default is a decision, not a certainty -- see F12-01's evidence.
+DEFAULT_DATA_IS_SYNTHETIC = True
 
 # Uploaded images (F3-07, #67). Matches the defaults documented in
 # .env.example: 5 MB, and only the three types a browser and Pillow both
@@ -104,6 +112,13 @@ class Config:
     `upload_dir`, `max_upload_bytes` and `allowed_image_types` govern F3-07:
     where an uploaded product image is written, the largest file accepted, and
     the MIME types treated as images at all.
+
+    `data_is_synthetic` marks every dashboard built from segmentation or sales
+    data as showing demonstration figures rather than observed business ones
+    (F12-01). It is an instance-level flag, not a per-row fact: nothing in
+    this delivery's schema records where a customer_segment_history or
+    transaction row came from, so the mark cannot be made truthfully any finer
+    than \"this whole instance\".
     """
 
     secret_key: str = field(repr=False)
@@ -122,6 +137,7 @@ class Config:
     allowed_image_types: frozenset[str] = field(
         default_factory=lambda: _set_env(None, default=DEFAULT_ALLOWED_IMAGE_TYPES)
     )
+    data_is_synthetic: bool = DEFAULT_DATA_IS_SYNTHETIC
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> Config:
@@ -166,5 +182,8 @@ class Config:
             ),
             allowed_image_types=_set_env(
                 env.get("ALLOWED_IMAGE_TYPES"), default=DEFAULT_ALLOWED_IMAGE_TYPES
+            ),
+            data_is_synthetic=_bool_env(
+                env.get("DATA_IS_SYNTHETIC"), default=DEFAULT_DATA_IS_SYNTHETIC
             ),
         )

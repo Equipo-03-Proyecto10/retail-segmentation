@@ -2,11 +2,11 @@
 
 Evidence that a customer's migration explanation is reachable from wherever a
 migration is shown, and reads as sentences a reader can act on: raw values with
-recency in days, a changed/stable judgement by RN-48's thresholds, a score change
+recency in days, a changed/stable judgement by RN-50's thresholds, a score change
 caused only by the quintile cut points named as such, and a customer new to the
 later run shown as new rather than as `Unassigned → X`.
 
-Covers the four acceptance criteria of #338 and business rule RN-48. No schema
+Covers the four acceptance criteria of #338 and business rule RN-50. No schema
 change, nothing here writes.
 
 ## How it was produced

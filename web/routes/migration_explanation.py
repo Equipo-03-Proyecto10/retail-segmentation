@@ -1,7 +1,7 @@
 """Per-customer migration explanation (F7-06, #338).
 
 Why one customer moved (or didn't) between two runs — one sentence per
-measure with its raw values and a changed/stable judgement (RN-48), then the
+measure with its raw values and a changed/stable judgement (RN-50), then the
 scores from both runs and their deltas. Everything comes from the stored
 history row (ADR-0017); nothing here recomputes a score. Read-only, gated on
 segment.read like the rest of the segmentation surface (ADR-0010).

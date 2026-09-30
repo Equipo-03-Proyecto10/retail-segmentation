@@ -15,6 +15,7 @@ they were vendored for the same reason.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -24,7 +25,12 @@ from web.db import get_connection
 from web.db.segments import get_run, list_runs
 from web.middleware.authz import SEGMENT_READ, requires
 from web.parsing import BIGINT_MAX, whole_number
-from web.services.segmentation_dashboard import Dashboard, NoRuns, build_dashboard
+from web.services.segmentation_dashboard import (
+    Dashboard,
+    NoRuns,
+    build_dashboard,
+    build_kpis,
+)
 
 bp = Blueprint("segmentation_dashboard", __name__, url_prefix="/segmentation-dashboard")
 
@@ -158,4 +164,5 @@ def index() -> Response | tuple[Response, int]:
         error=None,
         is_synthetic=config.data_is_synthetic,
         chart_data=_embed(payload),
+        kpis=build_kpis(connection, dashboard.run, datetime.now(UTC)),
     )

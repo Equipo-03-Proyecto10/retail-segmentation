@@ -408,11 +408,17 @@ ROLLBACK;
 
 \echo ''
 \echo '-- N32: CHECK, a quintile score outside 1 to 5    [expect: 23514 check_violation]'
--- #350: nothing bounded the scores a run could record.
+-- #350: nothing bounded the scores a run could record. An INSERT, not an UPDATE:
+-- the close-only trigger would refuse an UPDATE first, for a different reason.
 BEGIN;
-UPDATE customer_segment_history SET r_score = 9
- WHERE history_id = (SELECT min(history_id) FROM customer_segment_history
-                      WHERE r_score IS NOT NULL AND valid_to IS NULL);
+INSERT INTO segmentation_run (method, window_days) VALUES ('RFM_RULES', 180);
+INSERT INTO customer_segment_history
+    (customer_id, run_id, r_score, valid_from, valid_to)
+SELECT customer_id, (SELECT max(run_id) FROM segmentation_run), 9,
+       timestamptz '1990-01-01', timestamptz '1990-01-02'
+  FROM customer
+ ORDER BY customer_id
+ LIMIT 1;
 ROLLBACK;
 
 \echo ''

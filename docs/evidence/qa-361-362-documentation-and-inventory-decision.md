@@ -29,6 +29,6 @@ pytest -q tests/test_ingestion_service.py tests/test_inventory_db.py
 
 These checks cover the documentation decision and the production inventory
 write. With the combined seven-issue change set, `.venv/bin/pytest -q` passed
-all 2946 tests, `black --check .` left all 191 files unchanged, and `ruff
+all 2948 tests, `black --check .` left all 191 files unchanged, and `ruff
 check .` passed. The three SQL scripts loaded in order into an isolated empty
 PostgreSQL 18.6 cluster; no schema change was needed for this decision.

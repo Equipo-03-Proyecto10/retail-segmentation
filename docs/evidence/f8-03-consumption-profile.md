@@ -188,7 +188,7 @@ clamps it, and why RN-35 says what it is and is not.
 
 ```
 $ .venv/bin/pytest -q
-2946 passed in 188.91s
+2948 passed in 183.49s
 $ .venv/bin/black --check .
 191 files would be left unchanged.
 $ .venv/bin/ruff check .

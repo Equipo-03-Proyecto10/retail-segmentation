@@ -25,7 +25,7 @@ Repository-wide quality checks:
 ```text
 ./.venv/bin/black --check .  # 191 files unchanged
 ./.venv/bin/ruff check .    # All checks passed
-./.venv/bin/pytest -q       # 2946 passed
+./.venv/bin/pytest -q       # 2948 passed
 ```
 
 The schema change is in `sql/01_schema.sql`; the normal database CI job runs

@@ -194,7 +194,7 @@ lists in `tests/test_authz.py` now include *Consumption reports*, and the
 negative-flow matrix now includes `/consumption-reports/`.
 
 ```
-$ .venv/bin/pytest -q      # 2946 passed
+$ .venv/bin/pytest -q      # 2948 passed
 $ .venv/bin/black --check .  # 191 files unchanged
 $ .venv/bin/ruff check .   # All checks passed!
 ```

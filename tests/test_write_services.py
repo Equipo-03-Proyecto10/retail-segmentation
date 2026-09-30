@@ -204,3 +204,11 @@ def test_invalid_email_is_refused_without_a_backtracking_pattern(email):
         name="User", email=email, password="TestPassword!123", role_code="ANALYST"
     )
     assert "email" in errors
+
+
+@pytest.mark.parametrize("email", ["user@example.com", "first.last@sub.example.com"])
+def test_dotted_domain_email_is_accepted(email):
+    errors = users.validate_user(
+        name="User", email=email, password="TestPassword!123", role_code="ANALYST"
+    )
+    assert "email" not in errors

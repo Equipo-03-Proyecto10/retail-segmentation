@@ -20,7 +20,6 @@ rule those screens must not be able to talk their way around.
 
 from __future__ import annotations
 
-import re
 from uuid import UUID
 
 from psycopg import Connection
@@ -325,7 +324,23 @@ def transfer_administrator(
 
 
 MINIMUM_PASSWORD_LENGTH = 12
-_EMAIL_PATTERN = re.compile(r"[^@\s]+@[^@\s.]+(?:\.[^@\s.]+)+")
+
+
+def _valid_email(email: str) -> bool:
+    """Apply the schema's deliberately small email grammar in linear time.
+
+    Splitting once avoids a backtracking expression over an administrator-
+    supplied value. PostgreSQL remains the final authority through
+    ``app_user_email_check``; this gives the form the same useful error first.
+    """
+    if len(email) > 160 or email.count("@") != 1:
+        return False
+    if any(character.isspace() for character in email):
+        return False
+
+    local_part, domain = email.split("@")
+    labels = domain.split(".")
+    return bool(local_part) and len(labels) >= 2 and all(labels)
 
 
 def validate_user(
@@ -337,7 +352,7 @@ def validate_user(
         errors["name"] = "Name is required."
     elif len(name) > 120:
         errors["name"] = "Name must be 120 characters or fewer."
-    if len(email) > 160 or not _EMAIL_PATTERN.fullmatch(email):
+    if not _valid_email(email):
         errors["email"] = "A valid email is required."
     if len(password) < MINIMUM_PASSWORD_LENGTH:
         errors["password"] = (

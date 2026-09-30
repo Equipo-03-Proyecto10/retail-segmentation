@@ -294,6 +294,29 @@ assignment reader does not select the method), and the page gated on `segment.re
 that faults seeded into each rule above fail a test, and against the seeded PostgreSQL
 by [`evidence/f9-04-model-comparison.md`](evidence/f9-04-model-comparison.md). · `F9-04`
 
+### RN-47 — A migration matrix cell is a filtered, traceable customer list
+Migration is directional: the earlier run is the **before** state and the later run
+is the **after** state, regardless of the order in which the two run ids were
+selected. Every matrix cell links to the customers counted in that exact before /
+after pair. Each listed customer shows both labels and, when the label changed,
+`improved` or `declined` according to the vocabulary's ordinal order; each customer
+also links to the existing stored-score migration explanation for the same two runs.
+
+`Unassigned` means that the run scored the customer but produced no label. A customer
+absent from the earlier run is shown as **NEW** in the before column, while one absent
+from the later run remains explicitly **Not in later run**. These states are distinct
+from `Unassigned` and can each be selected as a filter, including zero-count cells.
+The customer list is the already-classified matrix result; it never performs a second
+comparison.
+
+**Enforced:** application — `compute_migration` and `build_migration_matrix` keep the
+classification and cell members together, and `web/routes/migration_matrix.py` only
+filters that result; the page remains read-only and gated on `segment.read`.
+**Verified** — by `tests/test_migration_matrix.py` and
+`tests/test_migration_matrix_route.py`, including reverse-selected runs, absent and
+unassigned states, direction, explanation links, invalid filters, authorization, and
+the scrollable table pattern used at narrow widths. · `F7-05`
+
 ### RN-40 — A recommendation is in stock at the customer's usual store, matches a stated signal, and says why
 A product is recommended to a customer only when all of these hold:
 

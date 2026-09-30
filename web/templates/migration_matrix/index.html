@@ -6,7 +6,17 @@
 
 {% block content %}
   {% from "macros/ui.html" import page_header %}
-  {{ page_header("Migration matrix", "Compare two runs: rows are the earlier run's labels, columns are the later run's, cells are customer counts.", "Segmentation traceability") }}
+  {% macro before_label(migration) -%}
+    {%- if migration.category.value == "absent_from_earlier" -%}NEW
+    {%- elif migration.label_before is none -%}Unassigned
+    {%- else -%}{{ migration.label_before }}{%- endif -%}
+  {%- endmacro %}
+  {% macro after_label(migration) -%}
+    {%- if migration.category.value == "absent_from_later" -%}Not in later run
+    {%- elif migration.label_after is none -%}Unassigned
+    {%- else -%}{{ migration.label_after }}{%- endif -%}
+  {%- endmacro %}
+  {{ page_header("Migration matrix", "Compare two runs: rows are the earlier run's labels, columns are the later run's. Select any cell to list its customers.", "Segmentation traceability") }}
 
   <section class="mq-panel">
     <div class="mq-panel__body">
@@ -42,9 +52,18 @@
     <section class="mq-panel">
       <div class="mq-panel__body"><p class="mq-caption">{{ error }}</p></div>
     </section>
+  {% elif filter_error and not matrix %}
+    <section class="mq-panel">
+      <div class="mq-panel__body"><p class="mq-caption">{{ filter_error }}</p></div>
+    </section>
   {% elif matrix %}
+    {% if filter_error %}
+      <section class="mq-panel">
+        <div class="mq-panel__body"><p class="mq-caption">{{ filter_error }}</p></div>
+      </section>
+    {% endif %}
     <section class="mq-panel mq-panel--table mq-density-compact">
-      <div class="mq-table__toolbar"><span class="mq-caption">Rows: earlier run's label · Columns: later run's label · Customers scored by only one run are counted under "Not in earlier run" / "Not in later run"</span></div>
+      <div class="mq-table__toolbar"><span class="mq-caption">Rows: before label · Columns: after label · NEW means absent from the earlier run; Unassigned means that run scored the customer without a label.</span></div>
       <div class="mq-table-wrap">
         <table class="mq-table">
           <thead>
@@ -61,7 +80,7 @@
               <tr>
                 <td class="mq-table__cell--sticky">{{ row }}</td>
                 {% for column in matrix.column_labels %}
-                  <td class="mq-num">{{ matrix.cells[row][column] }}</td>
+                  <td class="mq-num"><a class="mq-table__link" href="{{ url_for('migration_matrix.index', run_a=run_a, run_b=run_b, before=row, after=column) }}" aria-label="List customers from {{ row }} to {{ column }}">{{ matrix.cells[row][column] }}</a></td>
                 {% endfor %}
                 <td class="mq-num mq-mono">{{ matrix.row_totals[row] }}</td>
               </tr>
@@ -77,5 +96,40 @@
         </table>
       </div>
     </section>
+
+    {% if selected_from or selected_to %}
+      <section class="mq-panel mq-panel--table mq-density-compact">
+        <header class="mq-panel__header">
+          <h2 class="mq-panel__title">Customers{% if selected_from %} from {{ "NEW" if selected_from == "Not in earlier run" else selected_from }}{% endif %}{% if selected_to %} to {{ selected_to }}{% endif %}</h2>
+          <a class="mq-btn mq-btn--tertiary mq-btn--sm" href="{{ url_for('migration_matrix.index', run_a=run_a, run_b=run_b) }}">Clear cell filter</a>
+        </header>
+        <div class="mq-table-wrap">
+          <table class="mq-table">
+            <thead>
+              <tr>
+                <th class="mq-table__cell--sticky" scope="col">Customer</th>
+                <th scope="col">Before</th>
+                <th scope="col">After</th>
+                <th scope="col">Direction</th>
+                <th scope="col">Explanation</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for migration in selected_migrations %}
+                <tr>
+                  <td class="mq-table__cell--sticky"><a class="mq-table__link" href="{{ url_for('catalog.customer_detail', customer_id=migration.customer_id) }}">{{ customer_names.get(migration.customer_id|string, migration.customer_id) }}</a></td>
+                  <td>{{ before_label(migration) }}</td>
+                  <td>{{ after_label(migration) }}</td>
+                  <td>{% if migration.direction %}{{ migration.direction.value }}{% else %}—{% endif %}</td>
+                  <td><a class="mq-table__link" href="{{ url_for('migration_explanation.index', run_a=run_a, run_b=run_b, customer_id=migration.customer_id) }}">View explanation</a></td>
+                </tr>
+              {% else %}
+                <tr><td colspan="5">No customers are in this cell.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    {% endif %}
   {% endif %}
 {% endblock %}

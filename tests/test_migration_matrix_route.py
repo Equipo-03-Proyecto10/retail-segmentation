@@ -143,6 +143,14 @@ def _stub_matrix(monkeypatch: pytest.MonkeyPatch, runs: list) -> None:
     )
 
 
+def _stub_selected_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep selected ids in the option-list phase out of real SQL."""
+    monkeypatch.setattr(
+        "web.routes.migration_matrix.get_run",
+        lambda _connection, run_id: _run(run_id, run_id),
+    )
+
+
 def test_runs_picked_in_reverse_are_shown_in_the_order_the_matrix_uses(
     app: Flask, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -181,3 +189,229 @@ def test_a_run_older_than_the_option_list_stays_selected(
 
     run_a_select = body[body.index('id="run_a"') : body.index('id="run_b"')]
     assert '<option value="5" selected>' in run_a_select
+
+
+def test_a_cell_filter_lists_only_that_cells_customers_with_explanations(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from web.services.segment_migration import (
+        CustomerMigration,
+        Direction,
+        MigrationCategory,
+    )
+
+    customer_one = "11111111-1111-1111-1111-111111111111"
+    customer_two = "22222222-2222-2222-2222-222222222222"
+    customer_three = "33333333-3333-3333-3333-333333333333"
+    migrations = [
+        CustomerMigration(
+            customer_one,
+            "CHAMPION",
+            "LOYAL",
+            MigrationCategory.MOVED,
+            Direction.DECLINED,
+        ),
+        CustomerMigration(
+            customer_two,
+            "CHAMPION",
+            "LOYAL",
+            MigrationCategory.MOVED,
+            Direction.DECLINED,
+        ),
+        CustomerMigration(
+            customer_three,
+            "CHAMPION",
+            "AT_RISK",
+            MigrationCategory.MOVED,
+            Direction.DECLINED,
+        ),
+    ]
+    _stub_matrix(monkeypatch, [])
+    _stub_selected_runs(monkeypatch)
+    monkeypatch.setattr(
+        "web.routes.migration_matrix.compute_migration",
+        lambda *a, **k: migrations,
+    )
+    monkeypatch.setattr(
+        "web.routes.migration_matrix.get_label_ordinals",
+        lambda *a, **k: {"CHAMPION": 1, "LOYAL": 2, "AT_RISK": 3},
+    )
+    monkeypatch.setattr(
+        "web.routes.migration_matrix.order_runs", lambda _c, a, b: (a, b)
+    )
+    monkeypatch.setattr(
+        "web.routes.migration_matrix.list_customer_names",
+        lambda _c, ids: {
+            customer_one: "Ada One",
+            customer_two: "Bea Two",
+            customer_three: "Cy Three",
+        },
+    )
+    client = app.test_client()
+    _sign_in(client, "ANALYST")
+
+    response = client.get(
+        "/migration-matrix/?run_a=1&run_b=2&from_state=CHAMPION&to_state=LOYAL"
+    )
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+
+    assert "Ada One" in body and "Bea Two" in body
+    assert "Cy Three" not in body
+    assert "Before" in body and "After" in body and "declined" in body
+    assert "before=CHAMPION&amp;after=LOYAL" in body
+    assert (
+        f"/migration-explanation/?run_a=1&amp;run_b=2&amp;customer_id={customer_one}"
+        in body
+    )
+
+
+def test_a_cell_filter_shows_improved_direction(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from web.services.segment_migration import (
+        CustomerMigration,
+        Direction,
+        MigrationCategory,
+    )
+
+    customer_id = "11111111-1111-1111-1111-111111111111"
+    _stub_matrix(monkeypatch, [])
+    _stub_selected_runs(monkeypatch)
+    monkeypatch.setattr(
+        "web.routes.migration_matrix.compute_migration",
+        lambda *a, **k: [
+            CustomerMigration(
+                customer_id,
+                "LOST",
+                "CHAMPION",
+                MigrationCategory.MOVED,
+                Direction.IMPROVED,
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "web.routes.migration_matrix.get_label_ordinals",
+        lambda *a, **k: {"CHAMPION": 1, "LOST": 6},
+    )
+    monkeypatch.setattr(
+        "web.routes.migration_matrix.order_runs", lambda _c, a, b: (a, b)
+    )
+    monkeypatch.setattr(
+        "web.routes.migration_matrix.list_customer_names",
+        lambda _c, ids: {customer_id: "Improving customer"},
+    )
+    client = app.test_client()
+    _sign_in(client, "ANALYST")
+
+    response = client.get(
+        "/migration-matrix/?run_a=1&run_b=2&before=LOST&after=CHAMPION"
+    )
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "Improving customer" in body and "improved" in body
+
+
+def test_new_customer_filter_uses_an_unambiguous_new_before_state(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from web.services.segment_migration import CustomerMigration, MigrationCategory
+
+    customer_id = "11111111-1111-1111-1111-111111111111"
+    _stub_matrix(monkeypatch, [])
+    _stub_selected_runs(monkeypatch)
+    monkeypatch.setattr(
+        "web.routes.migration_matrix.compute_migration",
+        lambda *a, **k: [
+            CustomerMigration(
+                customer_id,
+                None,
+                "CHAMPION",
+                MigrationCategory.ABSENT_FROM_EARLIER,
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "web.routes.migration_matrix.order_runs", lambda _c, a, b: (a, b)
+    )
+    monkeypatch.setattr(
+        "web.routes.migration_matrix.list_customer_names",
+        lambda _c, ids: {customer_id: "New customer"},
+    )
+    client = app.test_client()
+    _sign_in(client, "ANALYST")
+
+    body = client.get(
+        "/migration-matrix/?run_a=1&run_b=2&from_state=NEW&to_state=CHAMPION"
+    ).get_data(as_text=True)
+
+    assert "New customer" in body
+    assert "NEW" in body
+    assert "<td>NEW</td>" in body
+
+
+@pytest.mark.parametrize(
+    "query, message",
+    [
+        ("from_state=not-a-state", "not in this matrix"),
+        ("to_state=not-a-state", "not in this matrix"),
+        ("from_state=CHAMPION&from_state=LOYAL", "only once"),
+    ],
+)
+def test_an_invalid_cell_filter_is_reported_without_recomputing_details(
+    app: Flask, monkeypatch: pytest.MonkeyPatch, query: str, message: str
+) -> None:
+    _stub_matrix(monkeypatch, [])
+    _stub_selected_runs(monkeypatch)
+    monkeypatch.setattr(
+        "web.routes.migration_matrix.order_runs", lambda _c, a, b: (a, b)
+    )
+    monkeypatch.setattr(
+        "web.routes.migration_matrix.compute_migration", lambda *a, **k: []
+    )
+    monkeypatch.setattr(
+        "web.routes.migration_matrix.get_label_ordinals",
+        lambda *a, **k: {"CHAMPION": 1},
+    )
+    monkeypatch.setattr(
+        "web.routes.migration_matrix.list_customer_names",
+        lambda *_a, **_k: pytest.fail("invalid filters must not load customers"),
+    )
+    client = app.test_client()
+    _sign_in(client, "ANALYST")
+
+    response = client.get(f"/migration-matrix/?run_a=1&run_b=2&{query}")
+
+    assert response.status_code == 400
+    assert message in response.get_data(as_text=True)
+
+
+def test_a_cell_filter_without_two_runs_is_refused(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_matrix(monkeypatch, [])
+    client = app.test_client()
+    _sign_in(client, "ANALYST")
+
+    response = client.get("/migration-matrix/?from_state=CHAMPION")
+
+    assert response.status_code == 400
+    assert "Choose two runs" in response.get_data(as_text=True)
+
+
+def test_the_matrix_has_a_scrollable_table_for_narrow_screens(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_matrix(monkeypatch, [])
+    _stub_selected_runs(monkeypatch)
+    monkeypatch.setattr(
+        "web.routes.migration_matrix.order_runs", lambda _c, a, b: (a, b)
+    )
+    client = app.test_client()
+    _sign_in(client, "ANALYST")
+
+    body = client.get("/migration-matrix/?run_a=1&run_b=2").get_data(as_text=True)
+
+    assert 'class="mq-table-wrap"' in body
+    assert 'class="mq-table__link"' in body

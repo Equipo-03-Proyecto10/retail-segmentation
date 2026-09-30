@@ -1,0 +1,48 @@
+{#- A customer's migration between two runs, in plain language (#338).
+
+    Shared by the migration explanation page and a customer's segment-change
+    page, so the two say the same thing about the same two runs. The
+    sentences and their changed/stable judgement come from
+    `web.services.segment_migration.describe_migration` (RN-48); nothing here
+    decides anything. -#}
+{% from "macros/ui.html" import status_pill %}
+
+{% macro label_or_unassigned(label) -%}
+  <strong>{{ label or "Unassigned" }}</strong>
+{%- endmacro %}
+
+{% macro migration_headline(explanation, narrative, earlier_run_id, later_run_id) -%}
+  {% if narrative.is_new %}
+    <p>{{ status_pill("New customer", "info") }} Not part of run #{{ earlier_run_id }}; first scored in run #{{ later_run_id }} as {{ label_or_unassigned(explanation.label_after) }}.</p>
+  {% elif narrative.left %}
+    <p>{{ status_pill("Not in later run") }} Was {{ label_or_unassigned(explanation.label_before) }} in run #{{ earlier_run_id }}; not part of run #{{ later_run_id }}.</p>
+  {% elif explanation.label_changed %}
+    <p>{{ label_or_unassigned(explanation.label_before) }} → {{ label_or_unassigned(explanation.label_after) }}</p>
+  {% else %}
+    <p>The label did not change: stayed {{ label_or_unassigned(explanation.label_before) }}.</p>
+  {% endif %}
+{%- endmacro %}
+
+{% macro explanation_sentences(narrative) -%}
+  {% if not (narrative.is_new or narrative.left) %}<p><strong>{{ narrative.summary }}</strong></p>{% endif %}
+  {{ rank_only_move(narrative) }}
+  <ul class="mq-stack">
+    {% for sentence in narrative.sentences %}
+      <li>
+        {{ status_pill(sentence.judgement.value, "warning" if sentence.judgement.value == "changed" else "neutral") }}
+        {{ sentence.text }}
+      </li>
+    {% endfor %}
+  </ul>
+  <p class="mq-caption">{{ narrative.threshold_note }}</p>
+{%- endmacro %}
+
+{% macro score_change(component) -%}
+  {% if component.score_delta is none %}—{% elif component.score_delta == 0 %}stable{% else %}{{ "%+d"|format(component.score_delta) }}{% endif %}
+{%- endmacro %}
+
+{% macro rank_only_move(narrative) -%}
+  {% if narrative.moved_by_rank_only %}
+    <p>The label changed although this customer's own values did not: other customers moved the quintile cut points, not this customer's behaviour.</p>
+  {% endif %}
+{%- endmacro %}

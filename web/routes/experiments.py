@@ -379,6 +379,16 @@ def uplift(experiment_id: int) -> ResponseReturnValue:
         result = uplift_service.measure_uplift(get_connection(), experiment_id)
     except service.ExperimentNotFound:
         abort(404)
+    except uplift_service.ConversionNotEvaluated as pending:
+        # Not a refusal of the experiment: the sales are there and only the
+        # attribution is missing, so the page says what to do (#343).
+        return render_template(
+            "experiments/uplift.html",
+            result=None,
+            experiment=get_experiment(get_connection(), experiment_id),
+            error=None,
+            needs_evaluation=str(pending),
+        )
     except uplift_service.UpliftRefused as refusal:
         return (
             render_template(

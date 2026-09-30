@@ -222,6 +222,22 @@ ticket" can still be chosen but is labelled as not measured yet.
 `web/services/campaigns.py`, `current_date` in `web/db/clock.py`, and the conditional
 insert in `web/db/experiments.py`. **Verified** — `tests/test_experiment_frame.py`.
 
+### RN-48 — Conversion is reported over the assigned and over the exposed, and the assigned rate decides
+Two rates sit side by side. The **intent-to-treat rate** is customers with a
+qualifying sale in their window, counted from assignment, over every customer
+assigned; the uplift, its interval and its test use only this rate (ADR-0019). The
+**per-exposure rate** is customers who bought within the window counted from their
+*first* exposure, over customers exposed, × 100, per treatment arm; the control is
+never exposed and has none. The second answers a narrower question, because the
+exposed are not a random sample of their arm, so it is a secondary measure and
+never replaces the first. It is read from `transaction`, so it does not wait for a
+conversion evaluation. Uplift before conversion is evaluated is a 200 that asks for
+the evaluation, not a 409.
+
+**Enforced:** `EXPOSED_CONVERTED_SQL` in `web/db/experiment_conversions.py`, shared
+by the uplift page and the report, and `ConversionNotEvaluated` in
+`web/services/experiment_uplift.py`. **Verified** — `tests/test_exposed_conversion.py`.
+
 ### RN-37 — A K-means run is reproducible from what it records, and each of its numerical hazards has a defined behaviour
 The fit is fixed by the seed, k, the iteration limit, the tolerance and the feature
 window, and all five are stored on the run with its quality measures, so a run can
@@ -347,6 +363,41 @@ filters that result; the page remains read-only and gated on `segment.read`.
 `tests/test_migration_matrix_route.py`, including reverse-selected runs, absent and
 unassigned states, direction, explanation links, invalid filters, authorization, and
 the scrollable table pattern used at narrow widths. · `F7-05`
+
+### RN-48 — A migration explanation judges the customer's own values, and says when only the rank moved
+A migration explanation states each measure as a sentence with its raw values from
+both runs — recency in whole days from the last purchase to the run that measured it,
+frequency in purchases, monetary in MXN — and judges it **changed** or **stable** on
+those raw values, never on the scores. A score is a quintile among every customer the
+run measured (`ntile` in RFM_RULES), so it moves when other customers move, and a
+K-means run stores values but no scores (ADR-0018). The raw values are the customer's
+own behaviour and exist for both methods.
+
+| Measure | Stable when | Why |
+|---|---|---|
+| Recency | it changed by **7 days or less** | Recency grows by itself between runs when the customer does not buy, a day per day; a week of drift is the same behaviour, while 18 → 72 days is not. |
+| Frequency | the purchase count is **unchanged** | A small whole count; one purchase more or less is a change. |
+| Monetary | it changed by **10% or less** of the earlier value | Spend is noisy; a relative band scales with how much the customer spends. An earlier value of zero is stable only if the later one is also zero. |
+
+When a measure's raw value is unchanged — for recency, the same last purchase within
+the 7-day drift — but its score moved, the explanation says the **rank** changed
+because other customers moved the quintile cut points, not the customer's behaviour.
+
+A customer **absent** from the earlier run is a **new customer**, and one absent from
+the later run is **not in the later run**. Neither is `Unassigned`, which means the
+run scored the customer and found no purchase to label (RN-21); a measure a run holds
+no value for is reported as not compared, with which of the two reasons applies.
+
+The explanation is reachable from every place a migration is shown: a customer in a
+migration matrix cell (RN-47) and each label change on a customer's segment timeline.
+
+**Enforced:** application — `describe_migration` in `web/services/segment_migration.py`,
+with the thresholds as the named constants `RECENCY_STABLE_DAYS`,
+`FREQUENCY_STABLE_PURCHASES` and `MONETARY_STABLE_RATIO`; the page states them from
+those constants. **Verified** — by `tests/test_migration_explanation.py` (each
+threshold's edge, the rank-only case, K-means rows without scores, absent versus
+unassigned), `tests/test_migration_explanation_route.py`, and
+`tests/test_customer_timeline_route.py` for the links. · `F7-08`
 
 ### RN-40 — A recommendation is in stock at the customer's usual store, matches a stated signal, and says why
 A product is recommended to a customer only when all of these hold:

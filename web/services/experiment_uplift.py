@@ -49,6 +49,12 @@ class UpliftRefused(Exception):
     """Uplift cannot be measured for this experiment; the message says why."""
 
 
+class ConversionNotEvaluated(UpliftRefused):
+    """Assigned customers have a qualifying sale that conversion has not
+    recorded yet. Not a fault of the experiment: it is answered with a call to
+    evaluate (#343), where every other refusal is a 409."""
+
+
 @dataclass(frozen=True)
 class Comparison:
     """A treatment proportion against a control proportion."""
@@ -125,6 +131,9 @@ class MeasuredUplift:
     treatments: tuple[conversions.GroupConversion, ...]
     arms: tuple[ArmResult, ...]
     measured_at: datetime
+    # Per-exposure conversion, a secondary measure beside the intent-to-treat
+    # arms (#343, ADR-0019): treatment arms only, since the control is never exposed.
+    exposed: tuple[conversions.ExposedConversion, ...] = ()
 
     @property
     def label(self) -> str | None:
@@ -164,7 +173,7 @@ def compare_arms(
     Raises UpliftRefused when the counts leave nothing to compare."""
     unrecorded = sum(group.unrecorded for group in groups)
     if unrecorded:
-        raise UpliftRefused(
+        raise ConversionNotEvaluated(
             f"Experiment {experiment_id} has {unrecorded} assigned "
             f"{'customer' if unrecorded == 1 else 'customers'} with a qualifying "
             "sale that has not been recorded yet. Evaluate conversion before "
@@ -224,7 +233,12 @@ def measure_uplift(
     groups = conversions.list_group_conversion(connection, experiment_id, moment)
     control, arms = compare_arms(experiment_id, groups)
     treatments = tuple(g for g in groups if g.kind == experiments.TREATMENT)
-    return MeasuredUplift(experiment, control, treatments, arms, moment)
+    exposed = tuple(
+        e
+        for e in conversions.list_exposed_conversion(connection, experiment_id)
+        if e.kind == experiments.TREATMENT
+    )
+    return MeasuredUplift(experiment, control, treatments, arms, moment, exposed)
 
 
 # ---------- validation 1: A/A ----------

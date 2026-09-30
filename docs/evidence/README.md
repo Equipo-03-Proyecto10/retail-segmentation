@@ -61,6 +61,12 @@ developer machine, which
 [ADR-0015](../adr/0015-containers-are-a-development-path-only.md) settles as the
 right place for it, and which the team accepted on 2026-09-07.
 
+## Phase 7 — segmentation traceability
+
+| Document | What it records |
+|---|---|
+| [F7-08](f7-08-migration-explanation-links.md) | The migration explanation linked from the matrix and the customer timeline and stated in plain language: recency in days, RN-48's changed/stable thresholds, a label moved only by the quintile cut points, and a new customer shown as new, at 375 px and 1440 px |
+
 ## Phase 8 — sales ingestion and consumption profile
 
 | Document | What it records |
@@ -120,3 +126,4 @@ These follow a specific review rather than a story.
 | [#345](f345-segment-rule-bands.md) | The seeded RFM bands partition the 125 triples so every label is reachable, and the run page separates customers with no sales from customers who matched no rule; the seed itself was not run on PostgreSQL here |
 | [#350](f350-history-protection.md) | History, runs and experiments protected from the application role, checked on PostgreSQL 16: clean load, the application-role self-test, cases N32 to N35, forbidden and allowed statements as `retail_app`, and a real RFM_RULES and KMEANS run |
 | [#357](f357-experiment-frame-and-exposure.md) | The experiment frame fixed after assignment, exposure refused outside it, and concurrent repeat exposures collapsed to one row, checked on PostgreSQL 16 with 8 concurrent connections |
+| [#343](f343-exposed-conversion.md) | Conversion among exposed customers beside intent to treat, checked against an independent query on PostgreSQL with boundary sales, the uplift page as a 200 before evaluation, and captures at 375 px and 1440 px |

@@ -20,10 +20,17 @@ from web.db import get_connection
 from web.middleware import public, requires
 from web.middleware.authz import safe_next
 from web.services.auth import authenticate, end_session, start_session
+from web.services.login_throttle import account_key, client_key
 
 bp = Blueprint("auth", __name__)
 
 _GENERIC_ERROR = "Invalid email or password."
+_THROTTLED_ERROR = "Too many sign-in attempts. Try again later."
+
+
+def _throttle_keys(email: str) -> tuple[str, ...]:
+    account = account_key(email)
+    return tuple(key for key in (account, client_key(request.remote_addr)) if key)
 
 
 @bp.route("/login", methods=["GET", "POST"])
@@ -40,6 +47,16 @@ def login() -> ResponseReturnValue:
     email = request.form.get("email", "").strip()
     password = request.form.get("password", "")
 
+    throttle = current_app.extensions["login_throttle"]
+    keys = _throttle_keys(email)
+    decision = throttle.check(keys)
+    if decision.blocked:
+        current_app.logger.info("login_throttled retry_after=%s", decision.retry_after)
+        response = render_template(
+            "auth/login.html", error=_THROTTLED_ERROR, next=destination
+        )
+        return response, 429, {"Retry-After": str(decision.retry_after)}
+
     connection = get_connection()
     result = authenticate(connection, email, password)
     current_app.logger.info(
@@ -47,11 +64,18 @@ def login() -> ResponseReturnValue:
     )
 
     if not result.success:
+        throttle.record_failure(keys)
         return (
             render_template("auth/login.html", error=_GENERIC_ERROR, next=destination),
             401,
         )
 
+    # A valid account clears only its own failures. Clearing the client bucket
+    # here would let a successful login for one account erase failed attempts
+    # against every other account from the same address.
+    account = account_key(email)
+    if account is not None:
+        throttle.clear((account,))
     session.clear()
     session["sid"] = start_session(connection, result.user.user_id)
     session["user_id"] = str(result.user.user_id)

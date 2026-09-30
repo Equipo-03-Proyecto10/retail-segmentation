@@ -36,6 +36,7 @@ here is a gap, not an omission from this index.
 | [F4-01](f4-01-authorization.md) | Route-level authorization against the permission matrix |
 | [F4-02](f4-02-single-administrator.md) | The single-administrator rule refused twice — application and partial unique index |
 | [F4-06](f4-06-real-administrator.md) | An administrator provisioned on the instance without a published password |
+| [#348](login-throttling.md) | Repeated sign-in failures are throttled per account and client, with a retryable HTML response |
 
 ## Phase 5 — tests and review
 

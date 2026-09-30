@@ -20,6 +20,8 @@ DEFAULT_PORT = 5000
 DEFAULT_LOG_LEVEL = "INFO"
 DEFAULT_SESSION_COOKIE_SECURE = False
 DEFAULT_TRUSTED_PROXY_HOPS = 0
+DEFAULT_LOGIN_THROTTLE_MAX_ATTEMPTS = 5
+DEFAULT_LOGIN_THROTTLE_WINDOW_SECONDS = 900
 # F12-01: no table in this delivery's schema marks a segmentation row's data
 # origin (ADR-0019's data_origin is the experiment tables', not the customer
 # or sales tables), and no schema change is in scope for that story. Every
@@ -138,6 +140,10 @@ class Config:
         default_factory=lambda: _set_env(None, default=DEFAULT_ALLOWED_IMAGE_TYPES)
     )
     data_is_synthetic: bool = DEFAULT_DATA_IS_SYNTHETIC
+    # Login failures are counted per account and client address. NGINX adds a
+    # worker-shared client limit in front of the two Gunicorn workers.
+    login_throttle_max_attempts: int = DEFAULT_LOGIN_THROTTLE_MAX_ATTEMPTS
+    login_throttle_window_seconds: int = DEFAULT_LOGIN_THROTTLE_WINDOW_SECONDS
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> Config:
@@ -185,5 +191,13 @@ class Config:
             ),
             data_is_synthetic=_bool_env(
                 env.get("DATA_IS_SYNTHETIC"), default=DEFAULT_DATA_IS_SYNTHETIC
+            ),
+            login_throttle_max_attempts=_int_env(
+                env.get("LOGIN_THROTTLE_MAX_ATTEMPTS"),
+                default=DEFAULT_LOGIN_THROTTLE_MAX_ATTEMPTS,
+            ),
+            login_throttle_window_seconds=_int_env(
+                env.get("LOGIN_THROTTLE_WINDOW_SECONDS"),
+                default=DEFAULT_LOGIN_THROTTLE_WINDOW_SECONDS,
             ),
         )

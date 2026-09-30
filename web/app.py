@@ -20,6 +20,7 @@ from web.log import configure_logging
 from web.middleware import register_middleware
 from web.routes import register_blueprints
 from web.security import configure_session
+from web.services.login_throttle import LoginThrottle
 from web.services.status import APPLICATION_NAME
 
 
@@ -73,6 +74,10 @@ def create_app(
     app.config["SECRET_KEY"] = config.secret_key
     app.config["APP_CONFIG"] = config
     app.config["MAX_CONTENT_LENGTH"] = config.max_upload_bytes + FORM_OVERHEAD_BYTES
+    app.extensions["login_throttle"] = LoginThrottle(
+        config.login_throttle_max_attempts,
+        config.login_throttle_window_seconds,
+    )
     # Debug mode is left off deliberately: it would replace the controlled
     # error pages (web/errors.py) with Werkzeug's interactive traceback.
 

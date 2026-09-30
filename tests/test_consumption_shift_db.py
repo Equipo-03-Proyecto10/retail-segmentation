@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import MagicMock
+from uuid import UUID
 
 from web.db import consumption_shift
 from web.db.consumption import CategoryTotal, GroupTotal
@@ -49,7 +50,8 @@ def test_both_periods_and_all_dimensions_are_read_by_one_statement() -> None:
     assert "'channel' AS dimension" in statement
     assert "'store' AS dimension" in statement
     assert "'category' AS dimension" in statement
-    assert statement.count("UNION ALL") == 2
+    assert "'lined' AS dimension" in statement
+    assert statement.count("UNION ALL") == 3
 
 
 def test_the_single_read_binds_both_periods_as_parameters() -> None:
@@ -64,6 +66,7 @@ def test_the_single_read_binds_both_periods_as_parameters() -> None:
         "earlier_end": _T1,
         "later_start": _T1,
         "later_end": _T2,
+        "customer_id": None,
     }
     assert "%(earlier_start)s" in statement
     assert "%(earlier_end)s" in statement
@@ -78,8 +81,8 @@ def test_each_period_is_closed_at_its_start_and_open_at_its_end() -> None:
     _read(connection)
 
     statement, _ = _statement_and_params(connection)
-    assert statement.count("t.occurred_at >= periods.start_at") == 3
-    assert statement.count("t.occurred_at < periods.end_at") == 3
+    assert statement.count("t.occurred_at >= periods.start_at") == 4
+    assert statement.count("t.occurred_at < periods.end_at") == 4
     assert "t.occurred_at <= periods.end_at" not in statement
 
 
@@ -90,7 +93,7 @@ def test_header_and_category_sources_match_their_definitions() -> None:
     _read(connection)
 
     statement, _ = _statement_and_params(connection)
-    assert statement.count("JOIN transaction AS t") == 3
+    assert statement.count("JOIN transaction AS t") == 4
     assert statement.count("JOIN transaction_line AS tl") == 1
     assert statement.count("JOIN product AS p") == 1
     assert statement.count("JOIN category AS c") == 1
@@ -118,6 +121,7 @@ def test_tagged_rows_are_mapped_to_their_period_and_dimension() -> None:
         ("later", "channel", _BOB, 2, "app", 1, None, Decimal("8.00")),
         ("later", "store", _BOB, 5, "South", 1, None, Decimal("8.00")),
         ("later", "category", _BOB, 8, "Snacks", 1, 2, Decimal("8.00")),
+        ("earlier", "lined", _ADA, 0, "", 2, None, None),
     ]
 
     earlier, later = _read(connection)
@@ -126,11 +130,13 @@ def test_tagged_rows_are_mapped_to_their_period_and_dimension() -> None:
         {_ADA: [GroupTotal(1, "web", 3, Decimal("30.00"))]},
         {_ADA: [GroupTotal(4, "North", 3, Decimal("30.00"))]},
         {_ADA: [CategoryTotal(7, "Dairy", 2, 5, Decimal("12.50"))]},
+        {_ADA: 2},
     )
     assert later == (
         {_BOB: [GroupTotal(2, "app", 1, Decimal("8.00"))]},
         {_BOB: [GroupTotal(5, "South", 1, Decimal("8.00"))]},
         {_BOB: [CategoryTotal(8, "Snacks", 1, 2, Decimal("8.00"))]},
+        {},
     )
 
 
@@ -138,7 +144,7 @@ def test_no_rows_returns_empty_inputs_for_both_periods() -> None:
     connection = MagicMock()
     _cursor(connection).fetchall.return_value = []
 
-    assert _read(connection) == (({}, {}, {}), ({}, {}, {}))
+    assert _read(connection) == (({}, {}, {}, {}), ({}, {}, {}, {}))
 
 
 def test_a_customer_id_that_is_a_uuid_object_is_keyed_as_text() -> None:
@@ -164,3 +170,37 @@ def test_the_module_writes_nothing() -> None:
         r"\.rollback\(",
     ):
         assert re.search(pattern, source, re.IGNORECASE) is None, pattern
+
+
+# ---------- #341: one customer, and the purchases with product lines ----------
+
+
+def test_every_grouping_can_be_narrowed_to_one_customer() -> None:
+    connection = MagicMock()
+    _cursor(connection).fetchall.return_value = []
+
+    list_totals_for_periods(connection, _T0, _T1, _T1, _T2, customer_id=UUID(_ADA))
+    statement, params = _statement_and_params(connection)
+
+    assert params["customer_id"] == _ADA
+    assert (
+        " ".join(statement.split()).count(
+            "AND (%(customer_id)s::uuid IS NULL "
+            "OR t.customer_id = %(customer_id)s::uuid)"
+        )
+        == 4
+    )
+
+
+def test_purchases_with_product_lines_are_counted_once_each() -> None:
+    connection = MagicMock()
+    _cursor(connection).fetchall.return_value = []
+
+    _read(connection)
+    statement = " ".join(_statement_and_params(connection)[0].split())
+
+    assert (
+        "WHERE EXISTS ( SELECT 1 FROM transaction_line AS line "
+        "WHERE line.transaction_id = t.transaction_id )" in statement
+    )
+    assert "GROUP BY periods.period, t.customer_id" in statement

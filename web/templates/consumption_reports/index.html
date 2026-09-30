@@ -7,7 +7,8 @@
 {% block content %}
   {% from "macros/ui.html" import alert, count_label, page_header, pagination, status_pill %}
   {% set signal_names = {"segment": "Segment", "preferred_category": "Preferred category", "purchase_history": "Purchase history"} %}
-  {% macro leader(dimension) %}{% if dimension %}{{ dimension.before.name }} → {{ dimension.after.name }}{% else %}<span class="mq-caption">unchanged</span>{% endif %}{% endmacro %}
+  {% macro with_share(leader) %}{{ leader.name }}{% if leader.share is not none %} {{ leader.share }} %{% endif %}{% endmacro %}
+  {% macro leader(dimension) %}{% if dimension %}{{ with_share(dimension.before) }} → {{ with_share(dimension.after) }}{% else %}<span class="mq-caption">unchanged</span>{% endif %}{% endmacro %}
 
   {{ page_header(
     "Consumption reports",
@@ -67,6 +68,9 @@
         <h2 class="mq-panel__title">Consumption shifts</h2>
         <span class="mq-caption">{{ shifts.earlier.start.strftime("%Y-%m-%d") }} → {{ shifts.earlier.end.strftime("%Y-%m-%d") }}, compared with {{ shifts.later.start.strftime("%Y-%m-%d") }} → {{ shifts.later.end.strftime("%Y-%m-%d") }}</span>
       </header>
+      <div class="mq-panel__body">
+        <p class="mq-caption" id="shift-counts">{{ shifts.compared }} {{ "customer" if shifts.compared == 1 else "customers" }} compared: {{ shifts.compared - shifts.unchanged }} shifted, {{ shifts.unchanged }} without a shift ({{ shifts.undecided }} whose leader changed with too few purchases or a tie to claim it). {{ shifts.absent }} with sales in only one period. Shares are % of purchases; a shift needs {{ min_purchases }} or more purchases in each period and a clear leader (RN-50).</p>
+      </div>
       {% if shifts.rows %}
         <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(shifts.rows|length, "shift", "shifts") }}</span></div>
         <div class="mq-table-wrap">

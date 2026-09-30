@@ -818,9 +818,11 @@ in order by their start.
 
 "Dominant" and "leading" are what the consumption profile says they are (RN-35),
 ranked by the same functions with the same tie-breaks, so a customer's dominant
-store in a shift report is their dominant store on their profile. A tie that
-resolves differently in the two periods because the spend moved is a change under
-that rule, and is reported as one.
+store in a shift report is their dominant store on their profile. A change of
+leader is claimed as a shift only when RN-50 allows it: enough purchases in both
+periods and a clear leader in each. A tie that the spend happened to break
+differently in the two periods is therefore **not** a shift (#341); until #341
+it was reported as one.
 
 A customer with accepted sales in only one period is **absent** from the other,
 with the empty side named, and is not compared: "no sales" is not a channel, a
@@ -841,6 +843,44 @@ both periods in one statement gives the detector one database snapshot.
 `tests/test_consumption_shift_db.py`, and both against the seeded PostgreSQL by
 [`evidence/f8-05-consumption-shifts.md`](evidence/f8-05-consumption-shifts.md).
 Reporting shifts as a page is F12-03, not this rule. · `F8-05`
+
+### RN-50 — A shift is claimed only with enough purchases and a clear leader, and every share is a share of purchases
+A customer's dominant channel, dominant store or leading category is claimed to have
+shifted between two periods only when all three hold:
+
+* **Enough purchases.** Each period has at least **3** purchases — for categories,
+  purchases with at least one product line. Below that, a single purchase decides
+  who leads. With three, a clear leader needs at least two of them.
+* **A clear leader in each period.** The leader has **strictly more purchases** than
+  the runner-up. When the top two tie on purchases, RN-35 still names the dominant
+  value by spend for display, but no shift is claimed from it: a 1-vs-1 tie that the
+  spend broke differently in each period is not a change of behaviour.
+* **A different leader.** The two clear leaders are not the same channel, store or
+  category.
+
+A compared customer whose leader changed without meeting these is **undecided**: not
+shifted, counted among the unchanged, and counted again on its own so the report
+says how many there were. The profile names the reason — which period had too few
+purchases, or which was tied.
+
+**Shares are shares of purchases**, the same quantity the ranking uses. A channel's
+or store's share is its purchases over the customer's purchases in the period. A
+category's is the purchases containing it over the purchases with product lines, so
+the shares of several categories can add up to more than 100 %: one purchase can
+hold more than one category. Shares are whole percentages, rounded half up.
+
+**On the profile**, the two periods are the two halves of the profile window, each
+`window_days // 2` days, taken back from the window's end by the same
+`consecutive_periods` the shift report uses. An odd window therefore leaves its
+oldest day out of the comparison, and a one-day window has no halves to compare.
+
+**Enforced:** application — `MIN_PURCHASES_PER_PERIOD`, `Leader.decisive` and
+`build_profile_shifts` in `web/services/consumption_shift.py`, used by both the
+profile and `/consumption-reports/`, so the two never disagree about a customer.
+**Verified** — by `tests/test_consumption_shift.py` (the minimum at its edge, the
+tie that spend used to flip, shares over 100 %, odd and one-day windows),
+`tests/test_consumption_shift_db.py`, `tests/test_consumption_profile_shifts_route.py`
+and `tests/test_consumption_reports_route.py`. · `F8-06`
 
 ## Audit
 

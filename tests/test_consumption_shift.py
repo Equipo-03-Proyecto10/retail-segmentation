@@ -24,13 +24,16 @@ from web.db.consumption import CategoryTotal, GroupTotal
 from web.services import consumption_shift as shift_service
 from web.services.consumption_profile import rank_categories, rank_dominant
 from web.services.consumption_shift import (
+    MIN_PURCHASES_PER_PERIOD,
     CustomerAbsence,
     DimensionShift,
     InvalidPeriods,
     Leader,
     Period,
+    ShiftStatus,
     Side,
     build_leaders,
+    build_profile_shifts,
     compare_periods,
     consecutive_periods,
     detect_shifts,
@@ -297,20 +300,23 @@ def test_the_leader_does_not_depend_on_the_order_rows_arrive_in() -> None:
     assert answers == {1}
 
 
-def test_a_tie_that_flips_between_periods_is_a_shift_by_the_stated_rule() -> None:
+def test_a_tie_that_flips_between_periods_by_spend_is_not_a_shift() -> None:
     """Before: channels 1 and 2 tie on purchases and 2 has the higher spend.
-    After: they tie again and 1 does. Under RN-35 that is a change of dominant
-    channel, and the report says so rather than second-guessing the rule."""
+    After: they tie again and 1 does. RN-35 still names a different dominant
+    channel in each period, but RN-50 claims no shift between two ties (#341):
+    the spend broke the tie, not the customer's behaviour."""
     before = build_leaders(
-        {_ADA: [_g(1, 3, "100.00"), _g(2, 3, "200.00")]}, {_ADA: [_g(1, 1)]}, {}
+        {_ADA: [_g(1, 3, "100.00"), _g(2, 3, "200.00")]}, {_ADA: [_g(1, 6)]}, {}
     )
     after = build_leaders(
-        {_ADA: [_g(1, 3, "300.00"), _g(2, 3, "200.00")]}, {_ADA: [_g(1, 1)]}, {}
+        {_ADA: [_g(1, 3, "300.00"), _g(2, 3, "200.00")]}, {_ADA: [_g(1, 6)]}, {}
     )
 
-    (shift,) = compare_periods(_EARLIER, _LATER, before, after).shifts
+    report = compare_periods(_EARLIER, _LATER, before, after)
 
-    assert shift.channel == DimensionShift(Leader(2, "item 2"), Leader(1, "item 1"))
+    assert before[_ADA].channel.item_id == 2 and after[_ADA].channel.item_id == 1
+    assert report.shifts == ()
+    assert report.unchanged == 1 and report.undecided == 1
 
 
 # ---------- the report is deterministic ----------
@@ -385,3 +391,240 @@ def test_detect_shifts_refuses_bad_periods_before_reading_anything(monkeypatch) 
         detect_shifts(Mock(), _EARLIER, Period(_T1 - timedelta(days=1), _T2))
 
     read.assert_not_called()
+
+
+# ---------- RN-50: enough purchases and a clear leader (#341) ----------
+
+
+def _channels(*groups: tuple[int, int]) -> dict[str, list[GroupTotal]]:
+    """One customer's channels as (channel id, purchases)."""
+    return {_ADA: [_g(item, purchases) for item, purchases in groups]}
+
+
+def _one_store(channels: dict[str, list[GroupTotal]]) -> dict[str, list[GroupTotal]]:
+    return {_ADA: [_g(10, sum(g.purchases for g in channels[_ADA]))]}
+
+
+def _compare(before_channels, after_channels):
+    before = build_leaders(before_channels, _one_store(before_channels), {})
+    after = build_leaders(after_channels, _one_store(after_channels), {})
+    return compare_periods(_EARLIER, _LATER, before, after)
+
+
+def test_the_minimum_is_three_purchases_per_period() -> None:
+    assert MIN_PURCHASES_PER_PERIOD == 3
+
+
+def test_three_purchases_on_each_side_with_a_clear_leader_is_a_shift() -> None:
+    report = _compare(_channels((1, 2), (2, 1)), _channels((2, 3)))
+
+    (shift,) = report.shifts
+    assert shift.channel.before.item_id == 1 and shift.channel.after.item_id == 2
+    assert report.undecided == 0
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        (((1, 2),), ((2, 3),)),  # two purchases before
+        (((1, 3),), ((2, 2),)),  # two purchases now
+        (((1, 1),), ((2, 1),)),  # the 1-vs-1 of the issue
+    ],
+)
+def test_fewer_than_three_purchases_in_a_period_claims_no_shift(before, after) -> None:
+    report = _compare(_channels(*before), _channels(*after))
+
+    assert report.shifts == ()
+    assert report.unchanged == 1 and report.undecided == 1
+
+
+def test_a_tie_on_purchases_in_either_period_claims_no_shift() -> None:
+    tied_before = _compare(_channels((1, 2), (2, 2)), _channels((2, 4)))
+    tied_after = _compare(_channels((1, 4)), _channels((1, 2), (2, 2)))
+
+    assert tied_before.shifts == () and tied_before.undecided == 1
+    assert tied_after.shifts == () and tied_after.undecided == 0  # 1 leads in both
+
+
+def test_a_tie_still_names_the_profiles_dominant_value_for_display() -> None:
+    leaders = build_leaders(
+        {_ADA: [_g(1, 2, "100.00"), _g(2, 2, "250.00")]}, {_ADA: [_g(10, 4)]}, {}
+    )
+    channel = leaders[_ADA].channel
+
+    assert channel.item_id == 2
+    assert channel.tied and not channel.decisive
+
+
+def test_the_same_clear_leader_on_both_sides_is_unchanged_not_undecided() -> None:
+    report = _compare(_channels((1, 3)), _channels((1, 5)))
+
+    assert report.shifts == () and report.undecided == 0
+
+
+def test_a_category_shift_needs_three_purchases_with_product_lines() -> None:
+    channels = {_ADA: [_g(1, 5)]}
+    stores = {_ADA: [_g(10, 5)]}
+    before = build_leaders(channels, stores, {_ADA: [_c(100, 2)]}, {_ADA: 2})
+    after = build_leaders(channels, stores, {_ADA: [_c(200, 5)]}, {_ADA: 5})
+
+    report = compare_periods(_EARLIER, _LATER, before, after)
+
+    assert report.shifts == () and report.undecided == 1
+    assert before[_ADA].category.period_purchases == 2
+
+
+# ---------- shares are shares of purchases (#341) ----------
+
+
+def test_a_channel_share_is_its_purchases_over_the_periods_purchases() -> None:
+    leaders = build_leaders(
+        _channels((1, 3), (2, 1)), _one_store(_channels((1, 3), (2, 1))), {}
+    )
+    channel = leaders[_ADA].channel
+
+    assert (channel.purchases, channel.period_purchases) == (3, 4)
+    assert channel.share == Decimal(75)
+
+
+def test_a_share_is_a_whole_percent_rounded_half_up() -> None:
+    assert Leader(1, "a", purchases=1, period_purchases=8).share == Decimal(13)
+    assert Leader(1, "a", purchases=2, period_purchases=3).share == Decimal(67)
+
+
+def test_category_shares_are_over_purchases_with_lines_and_can_exceed_100() -> None:
+    leaders = build_leaders(
+        {_ADA: [_g(1, 5)]},
+        {_ADA: [_g(10, 5)]},
+        {_ADA: [_c(100, 3), _c(200, 3), _c(300, 1)]},
+        {_ADA: 4},
+    )
+    shares = [category.share for category in leaders[_ADA].categories]
+
+    assert shares == [Decimal(75), Decimal(75), Decimal(25)]
+    assert sum(shares) > 100
+
+
+def test_the_profile_keeps_the_top_three_categories() -> None:
+    leaders = build_leaders(
+        {_ADA: [_g(1, 5)]},
+        {_ADA: [_g(10, 5)]},
+        {_ADA: [_c(i, 5 - i) for i in range(1, 5)]},
+        {_ADA: 5},
+    )
+    assert [c.item_id for c in leaders[_ADA].categories] == [1, 2, 3]
+
+
+def test_leaders_are_equal_by_id_whatever_their_counts() -> None:
+    assert Leader(1, "a", purchases=1, period_purchases=2) == Leader(1, "a")
+
+
+# ---------- the profile: the two halves of its window (#341) ----------
+
+
+def _profile_read(monkeypatch, earlier_rows, later_rows) -> Mock:
+    return _fake_read(monkeypatch, earlier_rows, later_rows)
+
+
+def _rows(channels, stores, categories, lined):
+    return ({_ADA: channels}, {_ADA: stores}, {_ADA: categories}, {_ADA: lined})
+
+
+def test_the_profile_compares_the_two_halves_of_its_window(monkeypatch) -> None:
+    read = _profile_read(monkeypatch, ({}, {}, {}, {}), ({}, {}, {}, {}))
+
+    shifts = build_profile_shifts(MagicMock(), _ADA, until=_T2, window_days=180)
+
+    assert shifts.half_days == 90
+    assert shifts.later == Period(_T2 - timedelta(days=90), _T2)
+    assert shifts.earlier == Period(_T2 - timedelta(days=180), _T2 - timedelta(days=90))
+    assert read.call_args.kwargs == {"customer_id": _ADA}
+
+
+def test_an_odd_window_is_halved_down_like_consecutive_periods(monkeypatch) -> None:
+    _profile_read(monkeypatch, ({}, {}, {}, {}), ({}, {}, {}, {}))
+
+    shifts = build_profile_shifts(MagicMock(), _ADA, until=_T2, window_days=7)
+
+    assert shifts.half_days == 3
+    assert (shifts.earlier, shifts.later) == consecutive_periods(_T2, 3)
+
+
+def test_a_one_day_window_has_no_halves_and_reads_nothing(monkeypatch) -> None:
+    read = _profile_read(monkeypatch, ({}, {}, {}, {}), ({}, {}, {}, {}))
+
+    assert build_profile_shifts(MagicMock(), _ADA, until=_T2, window_days=1) is None
+    read.assert_not_called()
+
+
+def test_the_profile_flags_a_shift_with_shares_on_both_sides(monkeypatch) -> None:
+    _profile_read(
+        monkeypatch,
+        _rows([_g(1, 4), _g(2, 2)], [_g(10, 6)], [_c(100, 4), _c(200, 3)], 6),
+        _rows([_g(2, 3), _g(1, 1)], [_g(20, 4)], [_c(200, 3), _c(100, 1)], 4),
+    )
+
+    shifts = build_profile_shifts(MagicMock(), _ADA, until=_T2, window_days=180)
+
+    assert (shifts.earlier_purchases, shifts.later_purchases) == (6, 4)
+    assert shifts.channel.status is ShiftStatus.SHIFTED
+    assert (shifts.channel.before.share, shifts.channel.after.share) == (
+        Decimal(67),
+        Decimal(75),
+    )
+    assert shifts.store.status is ShiftStatus.SHIFTED
+    assert shifts.category.status is ShiftStatus.SHIFTED
+    assert [c.item_id for c in shifts.categories_before] == [100, 200]
+    assert [c.share for c in shifts.categories_after] == [Decimal(75), Decimal(25)]
+    assert all(d.reason is None for d in shifts.dimensions)
+
+
+def test_the_profile_says_why_no_shift_is_claimed(monkeypatch) -> None:
+    _profile_read(
+        monkeypatch,
+        _rows([_g(1, 2)], [_g(10, 1), _g(11, 1)], [_c(100, 2)], 2),
+        _rows([_g(2, 3)], [_g(20, 3)], [_c(100, 3)], 3),
+    )
+
+    shifts = build_profile_shifts(MagicMock(), _ADA, until=_T2, window_days=180)
+
+    assert shifts.channel.status is ShiftStatus.UNDECIDED
+    assert shifts.channel.reason == (
+        "Not enough purchases: 2 in the earlier period, 3 needed."
+    )
+    assert shifts.store.status is ShiftStatus.UNDECIDED
+    assert shifts.store.reason.startswith("Not enough purchases")
+    assert shifts.category.status is ShiftStatus.UNCHANGED
+
+
+def test_the_profile_names_a_tie(monkeypatch) -> None:
+    _profile_read(
+        monkeypatch,
+        _rows([_g(1, 2), _g(2, 2)], [_g(10, 4)], [], 0),
+        _rows([_g(2, 4)], [_g(10, 4)], [], 0),
+    )
+
+    shifts = build_profile_shifts(MagicMock(), _ADA, until=_T2, window_days=180)
+
+    assert shifts.channel.reason == (
+        "Tied in the earlier period: 2 purchases each for the top two."
+    )
+    assert shifts.category.status is ShiftStatus.NOT_COMPARED
+    assert shifts.category.reason == (
+        "No purchases with product lines in the earlier period."
+    )
+
+
+def test_a_customer_with_no_sales_in_a_half_is_not_compared(monkeypatch) -> None:
+    _profile_read(
+        monkeypatch,
+        ({}, {}, {}, {}),
+        _rows([_g(2, 3)], [_g(20, 3)], [_c(100, 3)], 3),
+    )
+
+    shifts = build_profile_shifts(MagicMock(), _ADA, until=_T2, window_days=180)
+
+    assert shifts.earlier_purchases == 0
+    assert shifts.channel.status is ShiftStatus.NOT_COMPARED
+    assert shifts.channel.reason == "No purchases in the earlier period."
+    assert shifts.categories_before == ()

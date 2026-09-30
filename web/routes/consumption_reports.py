@@ -23,7 +23,7 @@ from web.services.consumption_reports import (
     build_recommendation_report,
     build_shift_report,
 )
-from web.services.consumption_shift import InvalidPeriods
+from web.services.consumption_shift import MIN_PURCHASES_PER_PERIOD, InvalidPeriods
 from web.services.recommendations import InvalidLimit
 
 bp = Blueprint("consumption_reports", __name__, url_prefix="/consumption-reports")
@@ -137,5 +137,6 @@ def index() -> str | tuple[str, int]:
         shifts=shifts,
         recommendations=recommendations,
         error=None,
+        min_purchases=MIN_PURCHASES_PER_PERIOD,
         **context,
     )

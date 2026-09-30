@@ -75,6 +75,11 @@ class FilteredShiftReport:
     rows: tuple[ShiftRow, ...]
     compared: int
     unchanged: int
+    # Shown on the page so the report reconciles (#341): every customer with
+    # sales is compared or absent, and `undecided` is the part of `unchanged`
+    # whose leader changed without a claimable shift (RN-50).
+    absent: int = 0
+    undecided: int = 0
 
 
 def _touches(dimension, item_id: int | None) -> bool:
@@ -134,6 +139,8 @@ def build_shift_report(
         rows=rows,
         compared=report.compared,
         unchanged=report.unchanged,
+        absent=len(report.absences),
+        undecided=report.undecided,
     )
 
 

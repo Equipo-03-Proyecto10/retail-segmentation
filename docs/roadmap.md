@@ -68,6 +68,23 @@ Constraint C-4 is unchanged. There is exactly one administrator. A second is
 refused by the application and by the partial unique index. Neither
 enforcement may be removed.
 
+### Declared capabilities sequenced after the analytics phase
+
+Three permissions intentionally have no route today. They remain visible in
+the authorization vocabulary so the matrix does not silently lose the product
+roles, but their surfaces require decisions or data the current phase does not
+have. They are not implemented as part of the QA fixes that identified them.
+
+| Permission | Follow-up work required before a route exists |
+|---|---|
+| `inventory.write` | Build the separate, auditable stock receipt/transfer/count/adjustment entry point reserved by [ADR-0031](adr/0031-sales-ingestion-decrements-inventory-atomically.md). Define its adjustment reason, idempotency and concurrency rules first; accepted sales already decrement stock in ingestion. |
+| `segment.write` | Define governance for edits to the stable label vocabulary and RFM rule catalog without rewriting the meaning of completed runs. |
+| `user.self` | Define how the existing optional `customer.user_id` ownership link is assigned and maintained, populate it for loyalty accounts, then build the customer self-service view over that link. |
+
+`sales_ingest.execute` is no longer in this list: the server-rendered
+`/admin/sales-import/` surface uses it. The complete current accounting is in
+[`analytics-permission-map.md`](analytics-permission-map.md).
+
 ### A distributed component
 
 A microservice, client application, shared token mechanism or additional

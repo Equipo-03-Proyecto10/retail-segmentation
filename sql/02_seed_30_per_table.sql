@@ -150,8 +150,9 @@ FROM generate_series(1,30) n;
 
 -- ---------- customer (30) ----------
 -- user_id stays NULL: a customer record and an application account are
--- separate things, and linking them is what F3-06 does for the loyalty
--- customers who actually sign in.
+-- separate things. A future customer self-service story must define how a
+-- loyalty account claims and maintains this optional ownership link before it
+-- populates it; the current administrator user workflow does not guess.
 INSERT INTO customer (customer_id, user_id, name, email, phone, registration_channel_id, registered_on)
 SELECT ('00000000-0000-0000-0000-' || lpad(n::text,12,'0'))::uuid,
        NULL,

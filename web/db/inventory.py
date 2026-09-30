@@ -1,7 +1,8 @@
-"""Data access for inventory — read only (F3-05 / RF-11, HU-11).
+"""Data access for inventory (F3-05 / RF-11, HU-11).
 
 Stock is quantity on hand per store and product. The consultation module reads
-it; it is never written here.
+it, and sales ingestion decrements it in the same transaction as the accepted
+transaction header and line.
 
 The filtered queries use fixed SQL with nullable bound parameters, following
 the same rule as web/db/audit.py: no text is interpolated into a statement.
@@ -19,6 +20,72 @@ from web.db.search import ilike_pattern
 # HU-11: a quantity below this is shown as needing attention. A presentation
 # threshold, not a business rule — tune it here rather than in a template.
 LOW_STOCK_THRESHOLD = 20
+
+
+class StockUnavailable(Exception):
+    """A sale cannot consume the requested store/product stock."""
+
+    def __init__(
+        self, *, store_id: int, product_id: int, available: int | None
+    ) -> None:
+        self.store_id = store_id
+        self.product_id = product_id
+        self.available = available
+        super().__init__(
+            "inventory row is missing"
+            if available is None
+            else f"only {available} units are available"
+        )
+
+
+def decrement_stock(
+    connection: Connection,
+    *,
+    store_id: int,
+    product_id: int,
+    quantity: int,
+) -> int:
+    """Atomically consume stock, returning the remaining quantity.
+
+    PostgreSQL locks the matching inventory row for the conditional update and
+    rechecks the quantity after a concurrent updater commits. If the update
+    affects no row, the follow-up lock distinguishes an absent inventory row
+    from insufficient stock. The caller owns the surrounding transaction, so
+    any later refusal rolls this decrement back with the sale.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            UPDATE inventory
+            SET quantity_on_hand = quantity_on_hand - %s,
+                updated_at = now()
+            WHERE store_id = %s
+              AND product_id = %s
+              AND quantity_on_hand >= %s
+            RETURNING quantity_on_hand
+            """,
+            (quantity, store_id, product_id, quantity),
+        )
+        row = cursor.fetchone()
+        if row is not None:
+            return row[0]
+
+        cursor.execute(
+            """
+            SELECT quantity_on_hand
+            FROM inventory
+            WHERE store_id = %s AND product_id = %s
+            FOR UPDATE
+            """,
+            (store_id, product_id),
+        )
+        row = cursor.fetchone()
+
+    raise StockUnavailable(
+        store_id=store_id,
+        product_id=product_id,
+        available=None if row is None else row[0],
+    )
 
 
 @dataclass(frozen=True)

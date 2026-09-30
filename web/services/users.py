@@ -20,6 +20,7 @@ rule those screens must not be able to talk their way around.
 
 from __future__ import annotations
 
+import re
 from uuid import UUID
 
 from psycopg import Connection
@@ -324,6 +325,7 @@ def transfer_administrator(
 
 
 MINIMUM_PASSWORD_LENGTH = 12
+_EMAIL_PATTERN = re.compile(r"[^@\s]+@[^@\s.]+(?:\.[^@\s.]+)+")
 
 
 def validate_user(
@@ -335,15 +337,7 @@ def validate_user(
         errors["name"] = "Name is required."
     elif len(name) > 120:
         errors["name"] = "Name must be 120 characters or fewer."
-    local, separator, domain = email.partition("@")
-    if (
-        len(email) > 160
-        or not local
-        or not separator
-        or not domain
-        or "@" in domain
-        or any(character.isspace() for character in email)
-    ):
+    if len(email) > 160 or not _EMAIL_PATTERN.fullmatch(email):
         errors["email"] = "A valid email is required."
     if len(password) < MINIMUM_PASSWORD_LENGTH:
         errors["password"] = (

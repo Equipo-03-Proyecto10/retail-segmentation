@@ -103,6 +103,9 @@ rather than backdating it. Its decision text is unchanged.
 | [0028](0028-experiment-treatment-arms-may-omit-control.md) | Experiment treatment arms may omit a control | Accepted |
 | [0029](0029-segment-history-runs-and-experiments-are-protected-from-the-application-role.md) | Segment history, runs and experiments are protected from the application role | Accepted |
 | [0030](0030-k-means-clusters-are-paired-with-labels-by-proportional-rank.md) | K-means clusters are paired with the stable labels by proportional rank, so k need not equal the vocabulary's size | Proposed |
+| [0031](0031-sales-ingestion-decrements-inventory-atomically.md) | Accepted sales decrement inventory atomically | Proposed |
+| [0032](0032-server-side-sessions-have-idle-and-absolute-lifetimes.md) | Server-side sessions have idle and absolute lifetimes | Proposed |
+| [0033](0033-duplicate-transport-security-policy-at-application-and-proxy.md) | Keep the transport security policy at Flask and NGINX | Proposed |
 
 ## Writing one
 

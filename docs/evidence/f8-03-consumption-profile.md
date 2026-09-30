@@ -48,7 +48,7 @@ frequent prods  : Demo Product 3 (3, 9) · Demo Product 33 (3, 9) · Demo Produc
 avg discount %  : 64.94
 rfm             : F=11 · M=402.50 · scores=2/1/4 (run 30, 180 days)
 current segment : LOYAL     (run 30, open)
-previous segment: CHAMPION  (run 29, closed when run 30 opened)
+previous segment: CHAMPION  (run 29, before the current LOYAL streak)
 ```
 
 The two ties in the product list are real and were broken by the stated rule:
@@ -63,7 +63,7 @@ Cross-check, each side written independently:
 | average ticket | 142.00 | `1420.00 / 10` |
 | dominant channel, dominant store | 4 · 8 | first row of `ORDER BY count DESC, sum DESC, id ASC` |
 | average discount | 64.94 | `1 - Σ(qty·unit_price)/Σ(qty·list_price)`, ×100 |
-| current and previous segment | run 30 LOYAL · run 29 CHAMPION | open row · last closed row by `valid_to` |
+| current and previous segment | run 30 LOYAL · run 29 CHAMPION | current label streak · first prior different label |
 
 ```
 All cross-checks against independent SQL agree.
@@ -122,6 +122,14 @@ previous: CHAMPION
 
 The point is only that the two absences are told apart.
 
+**Unchanged reruns do not reset the current segment's `since`.** The history
+read groups contiguous rows with the same label (including consecutive
+unassigned rows), reports the open row's latest R/F/M values, and uses the
+streak's first `valid_from` as the current segment start. Its previous segment
+is the first row before that streak whose label differs. The focused regression
+tests cover the repeated-label case and the SQL boundary that treats NULL as a
+real unassigned state.
+
 These definitions and the previous-segment semantics were accepted by the
 Proxy PO in issue #211 on 2026-09-27, including the meanings of discount,
 spend and an empty sales profile.
@@ -145,10 +153,10 @@ customer and one malformed id. Both raised `UnknownCustomer`, which the F8-04 pa
 will map to HTTP 404.
 
 **The same history row is never both current and previous.** Scenario H built
-all 30 seeded profiles and found zero repeated rows. The open and most recently
-closed rows come from one `get_current_and_previous_history_rows` statement, so
-a segment run committed between two `READ COMMITTED` reads cannot create that
-contradiction.
+all 30 seeded profiles and found zero repeated rows. The current label streak
+and its preceding different row come from one `get_current_and_previous_history_rows`
+statement, so a segment run committed between two `READ COMMITTED` reads cannot
+create that contradiction.
 
 ## What the seed does to the numbers
 
@@ -179,11 +187,11 @@ clamps it, and why RN-35 says what it is and is not.
 ## Quality gates
 
 ```
-$ pytest -q
-983 passed in 12.84s
-$ black --check .
-90 files would be left unchanged.
-$ ruff check .
+$ .venv/bin/pytest -q
+2946 passed in 188.91s
+$ .venv/bin/black --check .
+191 files would be left unchanged.
+$ .venv/bin/ruff check .
 All checks passed!
 ```
 

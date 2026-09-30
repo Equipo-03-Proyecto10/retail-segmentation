@@ -216,11 +216,38 @@ def test_the_window_reaches_both_builders(app, monkeypatch) -> None:
     assert rec_fake.call_args.kwargs["window_days"] == 45
 
 
+def test_shift_and_recommendation_pages_are_independent_and_reach_their_builders(
+    app, monkeypatch
+) -> None:
+    _, shift_fake, rec_fake = _open(app, monkeypatch, url=_URL + "?shift_page=3&page=2")
+
+    assert shift_fake.call_args.kwargs["page"] == 3
+    assert rec_fake.call_args.kwargs["page"] == 2
+
+
 def test_the_chosen_filters_are_reflected_back_into_the_form(app, monkeypatch) -> None:
     body = _body(_open(app, monkeypatch, url=_URL + "?store=8&channel=4")[0])
 
     assert 'value="8" selected' in body.replace("  ", " ")
     assert 'value="4" selected' in body.replace("  ", " ")
+
+
+def test_pagination_links_keep_filters_and_the_other_report_page(
+    app, monkeypatch
+) -> None:
+    body = _body(
+        _open(
+            app,
+            monkeypatch,
+            url=_URL + "?store=8&shift_page=2&page=2",
+            shifts=_shift_report(total=51, page=2, page_count=3),
+            recommendations=_recommendation_page(page=2, page_count=3),
+        )[0]
+    )
+
+    assert "store=8" in body
+    assert "shift_page=1" in body and "shift_page=3" in body
+    assert "page=1" in body and "page=3" in body
 
 
 @pytest.mark.parametrize("param", ["store", "channel", "category"])

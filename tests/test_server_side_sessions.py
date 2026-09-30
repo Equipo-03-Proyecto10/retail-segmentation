@@ -159,3 +159,25 @@ def test_the_lookup_requires_an_open_session_and_an_active_user() -> None:
     assert load_principal(connection, UUID(_SID)) is None
     sql = cursor.execute.call_args.args[0]
     assert "s.revoked_at IS NULL" in sql and "u.is_active" in sql
+
+
+def test_the_lookup_applies_both_lifetimes_and_renews_idle_activity() -> None:
+    from web.db.sessions import load_principal
+
+    connection = MagicMock()
+    cursor = connection.cursor.return_value.__enter__.return_value
+    cursor.fetchone.return_value = (_USER, 2, "ANALYST", "Demo User 2")
+
+    principal = load_principal(
+        connection,
+        UUID(_SID),
+        idle_timeout_seconds=60,
+        absolute_timeout_seconds=3600,
+    )
+
+    assert principal == SessionPrincipal(_USER, 2, "ANALYST", "Demo User 2")
+    lookup_sql, lookup_params = cursor.execute.call_args_list[0].args
+    assert "s.created_at > now()" in lookup_sql
+    assert "s.last_seen_at > now()" in lookup_sql
+    assert lookup_params == (UUID(_SID), 3600, 60)
+    assert "SET last_seen_at = now()" in cursor.execute.call_args_list[1].args[0]

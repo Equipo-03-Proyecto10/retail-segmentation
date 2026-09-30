@@ -278,7 +278,7 @@ sudo openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
 ### 2. Install the config and reload
 
 `deploy/nginx/mosaiq.conf` already carries `server_name mosaiq.maxthecoder.online`,
-the Cloudflare `real_ip` include and the staged HSTS.
+the Cloudflare `real_ip` include and the one-year HSTS policy.
 
 ```sh
 sudo cp /opt/mosaiq/current/deploy/nginx/mosaiq.conf            /etc/nginx/conf.d/mosaiq.conf

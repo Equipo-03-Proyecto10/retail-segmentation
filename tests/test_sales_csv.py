@@ -178,6 +178,29 @@ def test_a_short_row_is_rejected_and_the_load_continues(tmp_path: Path) -> None:
     assert "fewer columns" in rejection.reason
 
 
+def test_a_row_with_an_extra_column_is_rejected_and_the_load_continues(
+    tmp_path: Path,
+) -> None:
+    path = _write_csv(
+        tmp_path,
+        [
+            "TXN-1,cust-1,1,1,2026-01-15T10:00:00+00:00,1,2,9.99,unexpected",
+            "TXN-2,cust-1,1,1,2026-01-15T10:00:00+00:00,1,1,5.00",
+        ],
+    )
+
+    report = load_sales_csv(
+        object(), path, contract_version=CONTRACT_VERSION, ingest=_accept_everything
+    )
+
+    assert report.received == 2
+    assert report.accepted == 1
+    assert report.rejected == 1
+    assert report.rejections == (
+        RowRejection(2, "row has more columns than the header"),
+    )
+
+
 def test_a_business_rejection_from_ingest_is_counted_the_same_way(
     tmp_path: Path,
 ) -> None:

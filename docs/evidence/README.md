@@ -37,6 +37,7 @@ here is a gap, not an omission from this index.
 | [F4-02](f4-02-single-administrator.md) | The single-administrator rule refused twice — application and partial unique index |
 | [F4-06](f4-06-real-administrator.md) | An administrator provisioned on the instance without a published password |
 | [#348](login-throttling.md) | Repeated sign-in failures are throttled per account and client, with a retryable HTML response |
+| [#359](f359-security-hardening.md) | Session lifetimes, strict email and role-code validation, and defense-in-depth security headers |
 
 ## Phase 5 — tests and review
 
@@ -46,6 +47,7 @@ here is a gap, not an omission from this index.
 | [F5-02](f5-02-negative-tests.md) | **Deliverable 11.** Access refusals, invalid submissions and controlled failures |
 | [F5-03](f5-03-code-review.md) | The whole-codebase review pass and the issues it opened |
 | [F5-04](f5-04-key-functionality.md) | **Deliverable 10.** A captioned screenshot for every demonstration item |
+| [#361 and #362](qa-361-362-documentation-and-inventory-decision.md) | Requirements, integrity error names and permissions reconciled with the delivered analytics phase; atomic sales stock consumption recorded in ADR-0031 |
 
 ## Phase 6 — deployment
 
@@ -75,6 +77,7 @@ right place for it, and which the team accepted on 2026-09-07.
 | [F8-04](f8-04-consumption-profile-view.md) | The consumption profile page at 375 px and 1440 px: every measure with its unit and window, the no-purchase-history case, and the refusal of a role without `segment.read` |
 | [F8-05](f8-05-consumption-shifts.md) | Channel, store and category shifts between two stated periods, cross-checked against an independent recomputation on the seeded database, with absence, ties and the shared boundary instant reproduced |
 | [F8-06](f8-06-profile-shifts.md) | Before and now on the consumption profile: dominant channel and store and top categories with shares of purchases, a shift claimed only with enough purchases and a clear leader (RN-50), the reason when it is not, and the shift report's reconciled counts, at 375 px and 1440 px |
+| [#355 and #356](f355-f356-sales-ingestion-guards.md) | Concurrent transaction totals and sales-ingestion/RFM boundary guards, verified by focused regression tests |
 
 ## Phase 9 — segmentation modelling
 

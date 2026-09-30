@@ -64,6 +64,7 @@ WITH window_sales AS (
            sum(total)       AS monetary
     FROM transaction
     WHERE occurred_at >= now() - make_interval(days => %s)
+      AND occurred_at <= now()
     GROUP BY customer_id
 ),
 -- #352: a plain `ntile(5) OVER (ORDER BY measure, customer_id)` splits ties
@@ -153,6 +154,7 @@ SELECT c.customer_id, w.last_purchase, w.frequency, w.monetary
              sum(total)       AS monetary
       FROM transaction
       WHERE occurred_at >= now() - make_interval(days => %s)
+        AND occurred_at <= now()
       GROUP BY customer_id
   ) AS w ON w.customer_id = c.customer_id
  ORDER BY c.customer_id

@@ -135,6 +135,34 @@ jobs:
           LEFT JOIN transaction_line AS l ON l.transaction_id = t.transaction_id
           GROUP BY t.transaction_id, t.total
           HAVING t.total <> COALESCE(SUM(l.quantity * l.unit_price), 0);
+
+          WITH expected AS (
+            SELECT h.history_id,
+                   max(t.occurred_at) AS last_purchase,
+                   NULLIF(count(t.transaction_id), 0)::int AS frequency,
+                   sum(t.total) AS monetary
+            FROM customer_segment_history AS h
+            JOIN segmentation_run AS r ON r.run_id = h.run_id
+            LEFT JOIN transaction AS t
+              ON t.customer_id = h.customer_id
+             AND t.occurred_at >= r.run_at - make_interval(days => r.window_days)
+             AND t.occurred_at <= r.run_at
+            GROUP BY h.history_id
+          )
+          SELECT 'F7-02 history disagrees with sales', h.history_id,
+                 h.frequency_count, e.frequency, h.monetary_total, e.monetary
+          FROM customer_segment_history AS h
+          JOIN expected AS e ON e.history_id = h.history_id
+          WHERE h.recency_last_purchase_at IS DISTINCT FROM e.last_purchase
+             OR h.frequency_count IS DISTINCT FROM e.frequency
+             OR h.monetary_total IS DISTINCT FROM e.monetary;
+
+          SELECT 'customer registered after a sale', c.customer_id,
+                 c.registered_on, min(t.occurred_at::date)
+          FROM customer AS c
+          JOIN transaction AS t ON t.customer_id = c.customer_id
+          GROUP BY c.customer_id, c.registered_on
+          HAVING min(t.occurred_at::date) < c.registered_on;
           SQL
           )"
           if [ -n "$violations" ]; then

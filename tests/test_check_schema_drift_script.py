@@ -88,6 +88,14 @@ def test_the_script_reads_and_never_writes_the_database() -> None:
         ), f"{verb} in a script that must be read-only"
 
 
+def test_privilege_dump_checks_effective_role_privileges() -> None:
+    """PUBLIC and inherited grants must not hide application-role drift."""
+    text = SCRIPT.read_text()
+
+    assert "has_table_privilege" in text
+    assert "grantee = :'role'" not in text
+
+
 def test_the_repository_schema_carries_what_the_instance_lacked() -> None:
     """#346's diagnosis, so a reference build is the right thing to compare to."""
     schema = (ROOT / "sql/01_schema.sql").read_text()

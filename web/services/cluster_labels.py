@@ -15,8 +15,13 @@ never of what it is *called*:
 2. break a tie by the higher R, then the higher F, then the higher M;
 3. break a tie between identical centroids by the lexicographically smallest
    customer id among the cluster's members;
-4. pair that order with the vocabulary in its declared best-to-worst order, whose
-   size must equal k.
+4. pair that order with the vocabulary in its declared best-to-worst order by
+   proportional rank (ADR-0030): the cluster in position `i` of `k` takes the
+   label in position `i * (V - 1) / (k - 1)` of the `V` labels, rounded to the
+   nearest, and a half rounded towards the worse label. The best cluster is
+   always the best label and the worst always the worst. With `k == V` this is
+   position `i` exactly, the one-to-one pairing ADR-0018 required; with fewer
+   clusters some labels hold none, and with more some are shared.
 
 The customer-id tie-break is deterministic and has no commercial meaning. It exists
 so that two clusters that are the same in every measure cannot be ordered by
@@ -30,13 +35,18 @@ says. Ties are otherwise on the float values exactly as the fit computed them.
 """
 
 import math
+from collections import Counter
 from collections.abc import Sequence
 
 from web.services.kmeans import KMeansFit
 
+# ADR-0030: one cluster has no best-to-worst order to pair with anything.
+MIN_CLUSTERS = 2
+MAPPING_RULE = "rank_proportional_endpoints_anchored"
+
 
 class VocabularySizeMismatch(ValueError):
-    """A label vocabulary whose size is not the number of clusters."""
+    """A number of clusters, or a vocabulary, that cannot be paired by rank."""
 
 
 def _order_key(result: KMeansFit, cluster: int) -> tuple:
@@ -57,24 +67,63 @@ def rank_clusters(result: KMeansFit) -> list[int]:
 
 
 def check_vocabulary_size(k: int, vocabulary: Sequence[str]) -> None:
-    """Raise VocabularySizeMismatch unless there is exactly one label per cluster."""
-    if len(vocabulary) != k:
+    """Raise VocabularySizeMismatch unless `k` clusters can be paired with the
+    vocabulary by rank: at least two clusters, and at least one label."""
+    if k < MIN_CLUSTERS:
         raise VocabularySizeMismatch(
-            f"K-means was asked for k={k} clusters but the label vocabulary has "
-            f"{len(vocabulary)} labels. They must be equal, so every cluster has "
-            "one label and no label is left over."
+            f"K-means was asked for k={k} clusters. It needs at least "
+            f"{MIN_CLUSTERS}: a single cluster has no best-to-worst order to "
+            "pair with the labels."
         )
+    if not vocabulary:
+        raise VocabularySizeMismatch("The label vocabulary is empty.")
+
+
+def label_index(rank: int, k: int, vocabulary_size: int) -> int:
+    """The vocabulary position of the cluster in position `rank` of `k`.
+
+    `rank * (V - 1) / (k - 1)`, rounded to the nearest position with a half
+    going to the worse (higher) one, computed in integers so no float decides a
+    label. Position 0 is always 0 and position `k - 1` always `V - 1`.
+    """
+    span = vocabulary_size - 1
+    return (2 * rank * span + (k - 1)) // (2 * (k - 1))
+
+
+def labels_by_rank(k: int, vocabulary: Sequence[str]) -> list[str]:
+    """The label of each position in the best-to-worst order of `k` clusters."""
+    check_vocabulary_size(k, vocabulary)
+    return [vocabulary[label_index(rank, k, len(vocabulary))] for rank in range(k)]
 
 
 def label_clusters(result: KMeansFit, vocabulary: Sequence[str]) -> dict[int, str]:
     """The label of every cluster, pairing the best-to-worst order with the
-    vocabulary given best to worst.
+    vocabulary given best to worst, by proportional rank (ADR-0030).
 
-    Raises VocabularySizeMismatch unless there is exactly one label per cluster.
+    Raises VocabularySizeMismatch for fewer than two clusters.
     """
-    check_vocabulary_size(len(result.centroids), vocabulary)
+    labels = labels_by_rank(len(result.centroids), vocabulary)
+    return {cluster: labels[rank] for rank, cluster in enumerate(rank_clusters(result))}
+
+
+def describe_mapping(k: int, vocabulary: Sequence[str]) -> dict:
+    """What a run records about its pairing (ADR-0030), keyed by label code and
+    by position in the best-to-worst order -- never by cluster number, which
+    means nothing outside one fit (ADR-0018, RN-38).
+
+    `shared_labels` are the labels more than one cluster took;
+    `labels_without_cluster` the ones no cluster took, and so no customer.
+    Both are in the vocabulary's order.
+    """
+    by_rank = labels_by_rank(k, vocabulary)
+    counts = Counter(by_rank)
     return {
-        cluster: vocabulary[rank] for rank, cluster in enumerate(rank_clusters(result))
+        "rule": MAPPING_RULE,
+        "vocabulary_size": len(vocabulary),
+        "labels_by_rank": by_rank,
+        "clusters_per_label": {label: counts[label] for label in vocabulary},
+        "shared_labels": [label for label in vocabulary if counts[label] > 1],
+        "labels_without_cluster": [label for label in vocabulary if not counts[label]],
     }
 
 

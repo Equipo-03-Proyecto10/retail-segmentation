@@ -423,6 +423,7 @@ the importer persists a row.
 | F9-02 | Implement the `KMEANS` adapter over normalized RFM features, recording its parameters and quality metrics | P0 | F9-01 |
 | F9-03 | Map K-means clusters to stable labels with ADR-0018's deterministic best-to-worst ordering | P0 | F9-02, F7-01 |
 | F9-04 | Model comparison view over rule-based and K-means runs | P0 | F9-03, F4-07 |
+| F9-05 | Run K-means with any k of at least 2, pairing clusters with the stable labels by proportional rank and recording shared and unused labels on the run (#336, ADR-0030) | P0 | F9-03, F9-04 |
 
 **The adapters stop at the same boundary.** A run may record its method and
 parameters, but assignment history, comparison and every later consumer read

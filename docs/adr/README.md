@@ -90,7 +90,7 @@ rather than backdating it. Its decision text is unchanged.
 | [0015](0015-containers-are-a-development-path-only.md) | Docker Compose is a development path only, and is never run on the instance | Accepted |
 | [0016](0016-the-second-delivery-reinstates-the-distributed-architecture.md) | The second delivery reinstates the distributed architecture | Accepted |
 | [0017](0017-segment-assignment-history-replaces-the-mutable-current-segment.md) | Segment assignment history replaces the mutable current segment | Accepted |
-| [0018](0018-two-segmentation-strategies-behind-one-method-agnostic-pipeline.md) | Two segmentation strategies feed one label-based, method-agnostic pipeline | Accepted |
+| [0018](0018-two-segmentation-strategies-behind-one-method-agnostic-pipeline.md) | Two segmentation strategies feed one label-based, method-agnostic pipeline | Superseded by [0030](0030-k-means-clusters-are-paired-with-labels-by-proportional-rank.md) |
 | [0019](0019-experiment-measurement-separates-assignment-exposure-and-conversion.md) | Experiment measurement separates assignment, exposure and conversion | Accepted |
 | [0020](0020-csv-is-the-sole-sales-ingestion-entry-point-for-this-delivery.md) | CSV is the sole sales ingestion entry point for this delivery | Accepted |
 | [0021](0021-k-means-is-implemented-in-the-application-rather-than-taken-as-a-dependency.md) | K-means is implemented in the application rather than taken as a dependency | Accepted |
@@ -102,6 +102,7 @@ rather than backdating it. Its decision text is unchanged.
 | [0027](0027-experiment-exposures-are-treatment-only-and-append-only.md) | Experiment exposures are treatment-only and append-only | Accepted |
 | [0028](0028-experiment-treatment-arms-may-omit-control.md) | Experiment treatment arms may omit a control | Accepted |
 | [0029](0029-segment-history-runs-and-experiments-are-protected-from-the-application-role.md) | Segment history, runs and experiments are protected from the application role | Accepted |
+| [0030](0030-k-means-clusters-are-paired-with-labels-by-proportional-rank.md) | K-means clusters are paired with the stable labels by proportional rank, so k need not equal the vocabulary's size | Proposed |
 
 ## Writing one
 

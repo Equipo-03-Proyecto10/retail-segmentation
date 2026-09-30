@@ -201,8 +201,8 @@ and totals not negative).
 **Enforced:** `REVOKE`s on `retail_app`, `GRANT UPDATE (valid_to)`, the trigger
 `trg_customer_segment_history_close_only`, the `CHECK`s and
 `ex_customer_segment_history_no_overlap` in `sql/01_schema.sql`. **Verified** —
-`tests/test_history_protection.py`, the application-role self-test and cases N32 to
-N35 of `sql/verify_integrity.sql`. See
+`tests/test_history_protection.py`, the application-role self-test and cases N33 to
+N36 of `sql/verify_integrity.sql`. See
 [ADR-0029](adr/0029-segment-history-runs-and-experiments-are-protected-from-the-application-role.md).
 
 ### RN-49 — An experiment's frame is fixed with its first assignment, and exposure is refused outside it

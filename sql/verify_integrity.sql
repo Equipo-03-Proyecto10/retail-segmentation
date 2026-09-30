@@ -407,7 +407,7 @@ UPDATE role SET code = 'ROOT' WHERE role_id = 1;
 ROLLBACK;
 
 \echo ''
-\echo '-- N32: CHECK, a quintile score outside 1 to 5    [expect: 23514 check_violation]'
+\echo '-- N33: CHECK, a quintile score outside 1 to 5    [expect: 23514 check_violation]'
 -- #350: nothing bounded the scores a run could record. An INSERT, not an UPDATE:
 -- the close-only trigger would refuse an UPDATE first, for a different reason.
 BEGIN;
@@ -422,7 +422,7 @@ SELECT customer_id, (SELECT max(run_id) FROM segmentation_run), 9,
 ROLLBACK;
 
 \echo ''
-\echo '-- N33: overlapping segment intervals for one customer [expect: 23P01 exclusion_violation]'
+\echo '-- N34: overlapping segment intervals for one customer [expect: 23P01 exclusion_violation]'
 -- #350: the open-row index guarded only the present. A closed interval that runs
 -- across the customer's current one is refused by the exclusion constraint.
 BEGIN;
@@ -437,7 +437,7 @@ SELECT h.customer_id, (SELECT max(run_id) FROM segmentation_run),
 ROLLBACK;
 
 \echo ''
-\echo '-- N34: reopening or rewriting a closed history row [expect: 23514 check_violation]'
+\echo '-- N35: reopening or rewriting a closed history row [expect: 23514 check_violation]'
 -- #350: a closed row is history. The trigger applies to the owner as well as to
 -- retail_app, which cannot update the row at all.
 BEGIN;
@@ -447,7 +447,7 @@ UPDATE customer_segment_history SET valid_to = valid_to + interval '1 day'
 ROLLBACK;
 
 \echo ''
-\echo '-- N35: changing a history row other than closing it [expect: 23514 check_violation]'
+\echo '-- N36: changing a history row other than closing it [expect: 23514 check_violation]'
 BEGIN;
 UPDATE customer_segment_history SET label_code = 'LOST'
  WHERE history_id = (SELECT min(history_id) FROM customer_segment_history

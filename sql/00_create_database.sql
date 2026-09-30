@@ -37,6 +37,12 @@ CREATE DATABASE retail
 -- pgcrypto would have been for does not happen here.
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
+-- btree_gist lets an exclusion constraint compare a uuid for equality next to a
+-- range overlap: customer_segment_history uses it so one customer's segment
+-- intervals can never overlap (#350, ADR-0029). A trusted extension since
+-- PostgreSQL 13, so the database owner may create it.
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+
 -- The application connects through a restricted role, never as the role that
 -- owns the schema — docs/backlog.md F1-05. psql does not substitute variables
 -- inside a dollar-quoted body, so the password reaches the block through a

@@ -101,6 +101,7 @@ rather than backdating it. Its decision text is unchanged.
 | [0026](0026-experiment-assignments-are-append-only-for-the-application-role.md) | Experiment assignments are append-only for the application role | Proposed |
 | [0027](0027-experiment-exposures-are-treatment-only-and-append-only.md) | Experiment exposures are treatment-only and append-only | Accepted |
 | [0028](0028-experiment-treatment-arms-may-omit-control.md) | Experiment treatment arms may omit a control | Accepted |
+| [0029](0029-segment-history-runs-and-experiments-are-protected-from-the-application-role.md) | Segment history, runs and experiments are protected from the application role | Accepted |
 
 ## Writing one
 

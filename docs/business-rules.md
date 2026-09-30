@@ -191,6 +191,20 @@ returns. **Verified** — `tests/test_seed_segment_rules.py` (partition, every l
 and every segment reachable), `tests/test_segmentation_pipeline.py`,
 [`evidence/f345-segment-rule-bands.md`](evidence/f345-segment-rule-bands.md).
 
+### RN-47 — The application role can close a segment assignment and nothing else
+A history row is closed once, by setting `valid_to`, and never changed or deleted
+afterwards. A run, an experiment and an experiment group are never deleted by the
+application, and a run is never rewritten. One customer's segment intervals never
+overlap, and the scores and measures of a row are bounded (scores 1 to 5, counts
+and totals not negative).
+
+**Enforced:** `REVOKE`s on `retail_app`, `GRANT UPDATE (valid_to)`, the trigger
+`trg_customer_segment_history_close_only`, the `CHECK`s and
+`ex_customer_segment_history_no_overlap` in `sql/01_schema.sql`. **Verified** —
+`tests/test_history_protection.py`, the application-role self-test and cases N32 to
+N35 of `sql/verify_integrity.sql`. See
+[ADR-0029](adr/0029-segment-history-runs-and-experiments-are-protected-from-the-application-role.md).
+
 ### RN-37 — A K-means run is reproducible from what it records, and each of its numerical hazards has a defined behaviour
 The fit is fixed by the seed, k, the iteration limit, the tolerance and the feature
 window, and all five are stored on the run with its quality measures, so a run can

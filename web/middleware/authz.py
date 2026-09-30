@@ -385,7 +385,13 @@ def menu() -> list[MenuItem]:
 def _principal_for(session_id: str | None) -> SessionPrincipal | None:
     """The database's answer for one session id. The connection is opened here,
     only once there is a signed-in session to resolve."""
-    return current_principal(get_connection(), session_id)
+    config = current_app.config["APP_CONFIG"]
+    return current_principal(
+        get_connection(),
+        session_id,
+        idle_timeout_seconds=config.session_idle_timeout_seconds,
+        absolute_timeout_seconds=config.session_absolute_timeout_seconds,
+    )
 
 
 def resolve_session() -> None:
@@ -404,7 +410,8 @@ def resolve_session() -> None:
     principal = _principal_for(session.get("sid"))
     if principal is None:
         current_app.logger.info(
-            "session_ended user=%s reason=revoked_or_inactive", session["user_id"]
+            "session_ended user=%s reason=revoked_inactive_or_expired",
+            session["user_id"],
         )
         session.clear()
         return

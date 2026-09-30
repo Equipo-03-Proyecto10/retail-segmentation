@@ -13,6 +13,11 @@ from uuid import UUID
 
 from psycopg import Connection
 
+from web.config import (
+    DEFAULT_SESSION_ABSOLUTE_TIMEOUT_SECONDS,
+    DEFAULT_SESSION_IDLE_TIMEOUT_SECONDS,
+)
+
 
 @dataclass(frozen=True)
 class SessionPrincipal:
@@ -35,10 +40,19 @@ def open_session(connection: Connection[Any], user_id: UUID | str) -> UUID:
 
 
 def load_principal(
-    connection: Connection[Any], session_id: UUID
+    connection: Connection[Any],
+    session_id: UUID,
+    *,
+    idle_timeout_seconds: int = DEFAULT_SESSION_IDLE_TIMEOUT_SECONDS,
+    absolute_timeout_seconds: int = DEFAULT_SESSION_ABSOLUTE_TIMEOUT_SECONDS,
 ) -> SessionPrincipal | None:
     """The open session's user, or None if the session is revoked or unknown,
-    or its user has been deactivated."""
+    or its user has been deactivated.
+
+    The two age checks are deliberately in SQL, next to the revoked and active
+    checks.  A session that is expired must not be usable for even one request,
+    and `last_seen_at` is updated only after the row passes both limits.
+    """
     with connection.cursor() as cursor:
         cursor.execute(
             """
@@ -49,10 +63,22 @@ def load_principal(
             WHERE s.session_id = %s
               AND s.revoked_at IS NULL
               AND u.is_active
+              AND s.created_at > now() - make_interval(secs => %s)
+              AND s.last_seen_at > now() - make_interval(secs => %s)
+            FOR UPDATE OF s
             """,
-            (session_id,),
+            (session_id, absolute_timeout_seconds, idle_timeout_seconds),
         )
         row = cursor.fetchone()
+        if row is not None:
+            cursor.execute(
+                """
+                UPDATE app_session
+                   SET last_seen_at = now()
+                 WHERE session_id = %s AND revoked_at IS NULL
+                """,
+                (session_id,),
+            )
 
     return SessionPrincipal(*row) if row else None
 

@@ -4,7 +4,7 @@ parameterized; see web/services/ingestion.py for the business rules."""
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from psycopg import Connection
@@ -20,6 +20,14 @@ class TransactionHeader:
     occurred_at: datetime
 
 
+@dataclass(frozen=True)
+class SaleReferences:
+    """Customer and product facts needed before accepting one sale row."""
+
+    registered_on: date
+    product_is_active: bool | None
+
+
 def get_transaction_by_source_id(
     connection: Connection, source_transaction_id: str
 ) -> TransactionHeader | None:
@@ -31,6 +39,7 @@ def get_transaction_by_source_id(
                    store_id, channel_id, occurred_at
             FROM transaction
             WHERE source_transaction_id = %s
+            FOR UPDATE
             """,
             (source_transaction_id,),
         )
@@ -57,6 +66,34 @@ def get_transaction_by_source_id(
         channel_id=channel_id,
         occurred_at=occurred_at,
     )
+
+
+def get_sale_references(
+    connection: Connection, *, customer_id: str, product_id: int
+) -> SaleReferences | None:
+    """Return registration and product-state facts for one sale row.
+
+    The customer is the required side of the join: ``None`` means that the
+    customer does not exist, while a ``None`` product state distinguishes an
+    unknown product from an inactive one.  Keeping this read in ``web.db``
+    preserves the service/SQL boundary from ADR-0003 and keeps both values
+    from being trusted as client input.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT c.registered_on, p.is_active
+            FROM customer AS c
+            LEFT JOIN product AS p ON p.product_id = %s
+            WHERE c.customer_id = %s
+            """,
+            (product_id, customer_id),
+        )
+        row = cursor.fetchone()
+    if row is None:
+        return None
+    registered_on, product_is_active = row
+    return SaleReferences(registered_on, product_is_active)
 
 
 def insert_transaction(

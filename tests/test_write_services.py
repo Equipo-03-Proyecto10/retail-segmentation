@@ -188,10 +188,27 @@ def test_every_table_the_application_writes_carries_an_audit_trigger():
 
 
 @pytest.mark.parametrize(
-    "email", ["", "@example.com", "user@", "a@b@c", "a b@example.com", "!" * 100_000]
+    "email",
+    [
+        "",
+        "@example.com",
+        "user@",
+        "a@b",
+        "a@b@c",
+        "a b@example.com",
+        "!" * 100_000,
+    ],
 )
 def test_invalid_email_is_refused_without_a_backtracking_pattern(email):
     errors = users.validate_user(
         name="User", email=email, password="TestPassword!123", role_code="ANALYST"
     )
     assert "email" in errors
+
+
+@pytest.mark.parametrize("email", ["user@example.com", "first.last@sub.example.com"])
+def test_dotted_domain_email_is_accepted(email):
+    errors = users.validate_user(
+        name="User", email=email, password="TestPassword!123", role_code="ANALYST"
+    )
+    assert "email" not in errors

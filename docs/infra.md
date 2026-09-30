@@ -232,7 +232,7 @@ story `F6-01` (#77). Config and runbook: [`deploy/`](../deploy/README.md).
 | Real client IP | Cloudflare edge ranges trusted (`cloudflare-real-ip.conf`), `real_ip_header CF-Connecting-IP` — the access log and the `X-Forwarded-For` handed to gunicorn carry the visitor, not an edge IP |
 | SELinux | `httpd_can_network_connect` set to `1` |
 | TLS | `/etc/nginx/tls/mosaiq.{crt,key}` — a **Cloudflare Origin CA** pair on the instance, browsers see Cloudflare's managed edge certificate ([ADR-0013](adr/0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md), Path C, `F6-03` #79). Paths A (Let's Encrypt) and B (self-signed) documented as fallbacks. |
-| HSTS | `max-age=2592000` (30 days) on HTTPS responses. Raise to `31536000` once Cloudflare's edge certificate has auto-renewed once. No `includeSubDomains`. |
+| HSTS repository target | `max-age=31536000; includeSubDomains` on HTTPS responses. NGINX hides Flask's upstream copy before adding the proxy-boundary policy, so proxied responses contain one value per security header. The historical deployment capture below remains at 30 days until this config is deployed. |
 
 Applied on `mosaiq-deployment-vm` on 2026-09-06. `nginx/1.26.3`,
 `systemctl is-enabled nginx` → `enabled`. The stock `server {}` block in
@@ -275,7 +275,10 @@ Applied on `mosaiq-deployment-vm` on 2026-09-07:
   self-signed pair is kept as `*.selfsigned-20260907T064344Z`.
 - `/etc/nginx/conf.d/mosaiq.conf` + `cloudflare-real-ip.conf` from the repo
   (`server_name mosaiq.maxthecoder.online`, `real_ip_header CF-Connecting-IP`,
-  HSTS `max-age=2592000`). `nginx -t` clean, reloaded.
+  HSTS `max-age=2592000` at the time of this historical capture). `nginx -t`
+  clean, reloaded. The current repository policy is one year with
+  `includeSubDomains`; apply the NGINX config and recapture the headers before
+  treating deployment evidence as current.
 - App env already set for TLS: `SESSION_COOKIE_SECURE=true`,
   `TRUSTED_PROXY_HOPS=1`.
 

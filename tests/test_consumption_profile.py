@@ -11,7 +11,7 @@ sales skips every remaining sales query while retaining assignment history.
 from __future__ import annotations
 
 import itertools
-from dataclasses import fields
+from dataclasses import fields, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
@@ -449,6 +449,25 @@ def test_the_current_and_previous_segment_come_from_the_open_and_last_closed_row
     assert profile.previous_segment.label_code == "CHAMPION"
     assert profile.previous_segment.run_id == 29
     assert profile.previous_segment.valid_to == closed_at
+
+
+def test_the_profile_keeps_the_current_streak_start_and_prior_different_segment(
+    monkeypatch,
+) -> None:
+    streak_start = _AS_OF - timedelta(days=30)
+    open_row = _history(32, "LOYAL")
+    # The SQL history read supplies the streak's first valid_from on the open
+    # row even though runs 30 and 31 reconfirmed the same label.
+    open_row = replace(open_row, valid_from=streak_start)
+    previous = _history(29, "CHAMPION", valid_to=streak_start)
+    _wire(monkeypatch, open_row=open_row, previous_row=previous)
+
+    profile = build_profile(Mock(), _CUSTOMER, as_of=_AS_OF)
+
+    assert profile.current_segment.valid_from == streak_start
+    assert profile.current_segment.run_id == 32
+    assert profile.previous_segment.label_code == "CHAMPION"
+    assert profile.previous_segment.run_id == 29
 
 
 def test_a_customer_with_one_assignment_only_has_no_previous_segment(

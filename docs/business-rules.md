@@ -50,7 +50,20 @@ No two accounts share an address, and an address without `@` is refused.
 
 **Enforced:** `ux_app_user_email_lower`, a unique index on `lower(email)` so
 letter case does not create a second account, and `app_user_email_check`; the
-application lower-cases the address. **Verified** — cases N3 and N7. · `RF-01`
+database and application both require a dotted domain (so `a@b` is refused),
+and the application lower-cases the address. **Verified** — cases N3 and N7,
+plus `tests/test_write_services.py`. · `RF-01`
+
+### RN-02a — Role codes are canonical permission keys
+Role codes are ASCII identifiers beginning with an uppercase letter. Lowercase,
+Unicode look-alike and `ADMIN`-look-alike codes are refused; only role 1 may
+carry the exact `ADMIN` code. This keeps a visually misleading role from being
+stored outside the single-administrator index or mistaken for a permission
+key.
+
+**Enforced:** `role_code_format`, `role_admin_code_bound_to_reserved_id` and
+`role_admin_lookalike` in `sql/01_schema.sql`, plus `validate_role` in
+`web/services/catalog.py`. · `RF-06`
 
 ### RN-03 — A password is never stored, logged or transmitted in the clear
 Only an argon2id hash is stored. The database never hashes and never receives a
@@ -135,7 +148,13 @@ through the product. The application must never populate it by copying the
 current list price at read time. Reviewed, not constrained. · `RF-10`
 
 ### RN-14 — Stock is never negative
-**Enforced:** `inventory_quantity_on_hand_check`. · `RF-11`
+Stock is consumed by an accepted sale for the same store, product and quantity.
+The decrement is in the sale's transaction: a missing inventory row or
+insufficient stock rejects the row and rolls back its header, line and any
+partial stock change. A duplicate line cannot consume stock twice.
+
+**Enforced:** the `inventory.quantity_on_hand >= 0` check and the conditional
+update in `web.db.inventory.decrement_stock`. · `RF-11`
 
 ## Campaigns, segments and experiments
 
@@ -591,12 +610,13 @@ compute.
   customer did not shift in never matches a filter that is set. Every filter
   that is set must match; a filter left unset never excludes a row.
 * **The recommendation report** reuses F10-01's `recommend`, once per customer,
-  flattened to one row per recommended product. Store and channel narrow to the
-  customer's own usual store and dominant channel; category narrows the
-  recommended products themselves, since one customer's recommendations can
-  span several categories. A customer `recommend` did not actually recommend
-  anything to (no segment, no usual store, nothing in stock matched) contributes
-  no rows.
+  flattened to one row per recommended product. Every customer is consumed;
+  listing is batched only to bound memory and never caps the report. Store and
+  channel narrow to the customer's own usual store and dominant channel;
+  category narrows the recommended products themselves, since one customer's
+  recommendations can span several categories. A customer `recommend` did not
+  actually recommend anything to (no segment, no usual store, nothing in stock
+  matched) contributes no rows.
 * **A filter combination that matches nothing** is an empty report, reported
   independently for each of the two sections — one report can be empty while
   the other is not, since they are filtered separately over the same rows.
@@ -604,6 +624,10 @@ compute.
   fresh from `recommend` on every request: nothing here caches a result, so a
   product whose stock reaches zero is absent the next time the report runs
   (verified live in evidence, not merely inferred from F10-01's own guarantee).
+* **Both result tables are server-paginated** with the same 25-row page size.
+  Shift rows are filtered before pagination, and each table has its own page
+  parameter so moving through one preserves the other table's page and every
+  selected filter.
 
 **Enforced:** application — `web/services/consumption_reports.py` for the
 filters, `web/db/consumption_reports.py` for the one new read (bulk customer
@@ -774,6 +798,27 @@ label by case N23; the allocation statement by case P7. Concurrent creates
 getting distinct ids is the advisory lock's job and is not a single-session
 case: it was reviewed against PostgreSQL 16 and 18 in PR #240, not scripted.
 
+### RN-37 — Accepted sales are dated, attributable and safe to reload
+The CSV adapter rejects a row with extra columns, a future `occurred_at`, a
+spreadsheet-formula-like source transaction id, a non-positive price, or a
+price that has more than two decimal places. A sale must be on or after the
+customer's `registered_on` date and its product must still be active. These
+checks happen before either header or line persistence, so a refused row
+cannot leave a partial transaction behind.
+
+Rows for one source transaction are serialized by locking the existing
+transaction header before appending a line. The header total is then derived
+from all committed lines, so two concurrent loads cannot overwrite it with a
+subtotal. A segmentation run also closes its sales window at the database's
+current timestamp; a future-dated row can therefore never improve recency.
+
+**Enforced:** application — `web/services/ingestion.py` and
+`web/services/sales_csv.py`; parameterized reads in `web/db/sales.py`; the
+header lock in `get_transaction_by_source_id`; and the upper bound in
+`web/db/segments.py`. **Verified** — by
+`tests/test_ingestion_service.py`, `tests/test_sales_csv.py`,
+`tests/test_sales_db.py` and `tests/test_segments_pipeline_db.py`. · #355 · #356
+
 ## Consumption profile
 
 ### RN-34 — A consumption profile is computed from accepted sales, over a stated window, and its sales measures are absent when there are none
@@ -791,18 +836,21 @@ the profile window. Zero purchases and zero spend are measurements; this case
 makes neither claim.
 
 The customer's R, F and M values and scores, and their current and previous
-segment, are read from assignment history (ADR-0017) — the open row, and the
-most recently closed row — and never from a mutable column. A customer who has
-held one assignment only has **no** previous segment; the profile reports that
-as absent instead of repeating the current one. A previous result of
-*unassigned* (RN-21) is kept distinct from an absent one, because a run did
-score that customer. No part of a profile names the method that produced a run
-(ADR-0018).
+segment, are read from assignment history (ADR-0017) and never from a mutable
+column. The current segment is the open row, but its `since` date is the first
+`valid_from` in the contiguous streak of that same label, so an unchanged
+rerun does not reset the date. The previous segment is the first row before
+that streak with a different label, not merely the immediately preceding run.
+Unassigned (RN-21) is a state like any label, so consecutive unassigned rows
+form one streak and a change to or from it is reported. A customer who has held
+one assignment only has **no** previous segment; the profile reports that as
+absent instead of repeating the current one. No part of a profile names the
+method that produced a run (ADR-0018).
 
-The open row and the most recently closed row are read by one statement, so a
-segment run committed between two `READ COMMITTED` reads cannot make the same
-history row appear as both current and previous. An id that is not a UUID, or
-that names no customer, raises `UnknownCustomer`; the page that shows the
+The current streak and its preceding different row are read by one statement,
+so a segment run committed between two `READ COMMITTED` reads cannot make the
+same history row appear as both current and previous. An id that is not a UUID,
+or that names no customer, raises `UnknownCustomer`; the page that shows the
 profile (F8-04) maps it to HTTP 404.
 
 **Enforced:** application — `web/services/consumption_profile.py` for the rules,

@@ -3,7 +3,9 @@
 What MOSAIQ must do, and what must be true of how it does it. Deliverable 1 in
 [`scope.md`](scope.md) §5.
 
-Every requirement here is inside the boundary in [`scope.md`](scope.md). Where a
+The first-delivery requirements are inside [`scope.md`](scope.md); RF-12 and the
+analytics permissions also reflect the later monolith phase bounded by
+[`scope-delivery-2-analytics.md`](scope-delivery-2-analytics.md). Where a
 requirement is a deliberately small slice of something larger that is deferred,
 it says so and names what was left out — a requirement that quietly promises
 less than its title suggests is worse than one that is honestly narrow.
@@ -29,17 +31,18 @@ are in [`user-stories.md`](user-stories.md); invariants they rely on are in
 | RF-09 | The administrator creates users, edits them, and deactivates them. Deactivation, not deletion, is how access is removed, so history keeps its actor | Operación de catálogos | F3-06 (#66) |
 | RF-10 | A signed-in user lists, searches and opens the detail of customers and products, within what their role permits | Consulta de información | F3-05 (#65) |
 | RF-11 | A user consults stock per store and product | Consulta de información | F3-05 (#65) |
-| RF-12 | The administrator runs a segment recalculation: Recency, Frequency and Monetary are scored per customer over a window of recorded sales, matched against the bands in `segment_rule`, and the resulting segment is written to the customer | Ejecución de un proceso principal | F3-10 (#102) |
+| RF-12 | The administrator runs an atomic segment recalculation with either `RFM_RULES` or `KMEANS`: Recency, Frequency and Monetary are derived over a closed sales window, the method maps each result to a stable label, and the completed run and its assignments remain available as history | Ejecución de un proceso principal | F3-10 (#102), F7-02, F9-01–F9-03 |
 | RF-13 | A user consults which customers are in a segment, and which segment a customer is in | Consulta de información | F3-05 (#65) |
 | RF-14 | The administrator and the auditor read the log of changes to catalogs and business rules, filtered by entity and date, with before and after values | Registro de auditoría | F3-11 (#103) |
 | RF-15 | A failure the user caused shows a page explaining what to do; a failure they did not shows a controlled error page and is logged with enough detail to diagnose. Neither shows a stack trace | — | F4-05 (#73) |
 
-**RF-12 is a deliberately narrow slice.** [`roadmap.md`](roadmap.md) defers RFM
-computation, clustering, segment history and migration reporting. What this
-delivery promises is quintile scoring over a configurable window and a match
-against the rule bands already in the schema. What it does not promise: k-means,
-history, migration reports, dashboards. See
-[ADR-0004](adr/0004-model-ahead-of-the-deferred-segmentation-modules.md).
+**RF-12 grew in Delivery 2.** The first delivery implemented the original
+rule-band slice. The monolith analytics phase then added durable assignment
+history, migration reporting, `KMEANS`, recommendations, experiments and
+dashboards. Their boundary and success criteria are in
+[`scope-delivery-2-analytics.md`](scope-delivery-2-analytics.md); the phase
+ordering remains in [`roadmap.md`](roadmap.md). ADR-0017 through ADR-0021
+govern the later implementation of the work ADR-0004 originally deferred.
 
 ## 2. Non-functional requirements
 
@@ -65,6 +68,7 @@ Each states how it is checked. A quality nobody can verify is a wish.
 | RNF-16 | Uploaded images are limited to 5 MB and to JPEG, PNG and WebP. A file outside those limits is refused with a message | `MAX_UPLOAD_BYTES` and `ALLOWED_IMAGE_TYPES` in `.env.example`; negative tests in F5-02 (#75) |
 | RNF-17 | The audit log is append-only. Nothing in the application updates or deletes an entry, and no entry carries a credential | `fn_audit()` strips `password_hash`; verified as case P3 in the integrity evidence |
 | RNF-18 | A list page over seed-sized data renders in under one second on the instance | Measured at F5-01 (#74) against the 30-row catalogs and 300 transactions |
+| RNF-19 | Server-side sessions expire after 30 minutes without activity and after 8 hours absolutely; responses carry the application security-header baseline and HTTPS responses carry one-year HSTS with `includeSubDomains` | `tests/test_server_side_sessions.py`, `tests/test_security.py`, `tests/test_nginx_security_headers.py` |
 
 ## 3. Permission matrix
 
@@ -90,15 +94,22 @@ Three things this matrix is deliberately strict about:
   customer, and an analyst who can trigger it can change what every report says.
 - **`AUDITOR` reads the audit log and cannot write anywhere.** An auditor who can
   edit the thing they audit is not an auditor.
-- **`CUSTOMER` reaches their own row and nothing else.** It is the role a loyalty
-  customer signs in with, not a staff role.
+- **`CUSTOMER` has only a future own-row capability.** The role is for a
+  loyalty customer rather than staff, but no self-service route exists until a
+  lifecycle populates and maintains the schema's optional
+  `customer.user_id` ownership link. The seed and current user-management
+  workflow leave that link empty, so the dormant `user.self` permission grants
+  no current route or access.
 
 Enforced by the authorization middleware at the route level — F4-01 (#69),
 which transcribes this table into `web/middleware/authz.py` and refuses any
-route that declares nothing. Where a cell says `own` or `own store`, the gate
-decides that the page may be reached at all; narrowing the query to the
-caller's own rows belongs to the story that writes the query, F3-05 (#65) and
-F3-11 (#103). Why the matrix is code rather than two more tables:
+route that declares nothing. A matrix cell does not invent a route: the
+dormant `inventory.write`, `segment.write` and `user.self` declarations and
+their prerequisites are accounted for in
+[`analytics-permission-map.md`](analytics-permission-map.md). Where a cell
+says `own` or `own store`, the gate decides that the page may be reached at
+all; narrowing a query to the caller's own rows belongs to the surface that
+eventually claims that permission. Why the matrix is code rather than two more tables:
 [ADR-0007](adr/0007-permissions-in-code-with-a-default-deny-middleware.md).
 
 **Customers and stock are not columns above.** The consultation module (F3-05,

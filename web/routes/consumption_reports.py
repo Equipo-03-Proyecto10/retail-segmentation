@@ -110,6 +110,7 @@ def index() -> str | tuple[str, int]:
             store_id=store_id,
             channel_id=channel_id,
             category_id=category_id,
+            page=page_number(request.args.get("shift_page")),
         )
         recommendations = build_recommendation_report(
             connection,

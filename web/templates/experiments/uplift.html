@@ -30,7 +30,7 @@
         </tbody></table></div>
         <p class="mq-caption"><strong>Per exposure:</strong> customers who bought after their first exposure, within {{ e.conversion_window_days }} days of it, over customers exposed &times; 100. It answers a narrower question than the uplift above, since the exposed are not a random sample of the arm. The uplift and its interval stay intent to treat.</p>
         {% if result.pending %}{{ alert(result.pending ~ " assigned customers have not converted yet and their window is still open. They count as not converted for now, so this result can still change.", "warning", "Preliminary") }}{% endif %}
-        <p class="mq-caption">Intent to treat: the exposure rate is a delivery diagnostic and plays no part here. Each arm is tested on its own at alpha 0.05, with no correction for several arms.</p>
+        <p class="mq-caption">Intent to treat: how many customers were exposed is a delivery diagnostic and plays no part in the uplift. Each arm is tested on its own at alpha 0.05, with no correction for several arms.</p>
         <div class="mq-form__actions"><a class="mq-btn mq-btn--secondary" href="{{ url_for('experiments.conversion', experiment_id=e.experiment_id) }}">Conversion detail</a><a class="mq-btn mq-btn--secondary" href="{{ url_for('experiments.index') }}">Back to experiments</a></div>
       </div>
     </section>

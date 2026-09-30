@@ -377,6 +377,27 @@ def test_the_page_prints_the_means_the_experiments_and_the_products(
     assert "first 100 of 250 labelled customers" in body
 
 
+def test_a_product_stocked_at_many_stores_lists_five_and_totals_the_rest(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stores = tuple((f"Store {n:02d}", n) for n in range(1, 13))
+    kpis = service.Kpis(
+        label_means=(service.MeansRow("CHAMPION", 1),),
+        active_experiments=(),
+        recommended=service.TopRecommended(
+            (service.RecommendedProduct(10, "Milk", "Dairy", 12, stores),), 12, 12
+        ),
+        scored=True,
+    )
+
+    body = _page(app, monkeypatch, kpis)
+
+    assert "12 stores," in body
+    assert '<span class="mq-num">78</span> units in stock' in body, "1 + 2 + ... + 12"
+    assert "Store 05" in body and "Store 06" not in body
+    assert "and 7 more" in body
+
+
 def test_an_empty_run_says_so_instead_of_showing_empty_tables(
     app: Flask, monkeypatch: pytest.MonkeyPatch
 ) -> None:

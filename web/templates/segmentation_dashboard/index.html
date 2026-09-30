@@ -156,7 +156,7 @@
       <header class="mq-panel__header"><h2 class="mq-panel__title">Most recommended products</h2></header>
       {% if kpis.recommended.products %}
         <div class="mq-table-wrap"><table class="mq-table"><thead><tr><th scope="col">Product</th><th scope="col">Category</th><th scope="col" class="mq-num">Customers</th><th scope="col">Stock at the stores it is recommended from</th></tr></thead><tbody>
-          {% for p in kpis.recommended.products %}<tr><td>{{ p.name }} <span class="mq-mono">#{{ p.product_id }}</span></td><td>{{ p.category_name }}</td><td class="mq-num">{{ p.customers }}</td><td>{% for store, units in p.stock %}{{ store }}: <span class="mq-num">{{ units }}</span>{% if not loop.last %} · {% endif %}{% endfor %}</td></tr>{% endfor %}
+          {% for p in kpis.recommended.products %}<tr><td>{{ p.name }} <span class="mq-mono">#{{ p.product_id }}</span></td><td>{{ p.category_name }}</td><td class="mq-num">{{ p.customers }}</td><td>{{ p.stock | length }} store{{ "" if p.stock | length == 1 else "s" }}, <span class="mq-num">{{ p.stock | map(attribute=1) | sum }}</span> units in stock: {% for store, units in p.stock[:5] %}{{ store }}: <span class="mq-num">{{ units }}</span>{% if not loop.last %} · {% endif %}{% endfor %}{% if p.stock | length > 5 %} · and {{ p.stock | length - 5 }} more{% endif %}</td></tr>{% endfor %}
         </tbody></table></div>
       {% else %}
         <div class="mq-panel__body"><p class="mq-caption">No customer of this run has a recommendation: none has a usual store with matching stock.</p></div>

@@ -34,6 +34,75 @@ class GroupConversion:
 
 
 @dataclass(frozen=True)
+class ExposedConversion:
+    """One arm's per-exposure figures (#343): customers exposed, and how many of
+    them bought within the conversion window counted from their first exposure.
+    The control is never exposed, so it has 0 and no rate."""
+
+    group_id: int
+    kind: str
+    exposed: int
+    converted: int
+
+    @property
+    def rate(self) -> float | None:
+        return self.converted / self.exposed if self.exposed else None
+
+
+# An exposed customer converted "after exposure" when a sale of theirs falls in
+# [first exposed_at, first exposed_at + the experiment's window). Read from
+# `transaction`, not from experiment_conversion, so it does not wait for an
+# evaluation, and counted from the first exposure so a customer is one, however
+# often they were reached (ADR-0019). Expects the aliases `a` (the assignment)
+# and `e` (its experiment), the shape every caller already has.
+EXPOSED_CONVERTED_SQL = """
+EXISTS (SELECT 1
+          FROM (SELECT min(x.exposed_at) AS first_at
+                  FROM experiment_exposure AS x
+                 WHERE x.assignment_id = a.assignment_id) AS fx
+          JOIN transaction AS t
+            ON t.customer_id = a.customer_id
+           AND t.occurred_at >= fx.first_at
+           AND t.occurred_at < fx.first_at
+                               + make_interval(days => e.conversion_window_days)
+         WHERE fx.first_at IS NOT NULL)
+"""
+
+_EXPOSED_CONVERSION = (
+    """
+    WITH flags AS (
+        SELECT a.group_id,
+               EXISTS (SELECT 1 FROM experiment_exposure AS x
+                        WHERE x.assignment_id = a.assignment_id) AS exposed,
+    """
+    + EXPOSED_CONVERTED_SQL
+    + """ AS exposed_converted
+          FROM experiment_assignment AS a
+          JOIN experiment AS e ON e.experiment_id = a.experiment_id
+         WHERE a.experiment_id = %s
+    )
+    SELECT g.group_id, g.kind,
+           count(*) FILTER (WHERE f.exposed),
+           count(*) FILTER (WHERE f.exposed_converted)
+      FROM experiment_group AS g
+      LEFT JOIN flags AS f ON f.group_id = g.group_id
+     WHERE g.experiment_id = %s
+     GROUP BY g.group_id, g.kind
+     ORDER BY g.kind <> 'CONTROL', g.group_id
+    """
+)
+
+
+def list_exposed_conversion(
+    connection: Connection, experiment_id: int
+) -> list[ExposedConversion]:
+    """Per-exposure figures per group, control first."""
+    with connection.cursor() as cursor:
+        cursor.execute(_EXPOSED_CONVERSION, (experiment_id, experiment_id))
+        return [ExposedConversion(*row) for row in cursor.fetchall()]
+
+
+@dataclass(frozen=True)
 class Attribution:
     """A conversion with everything needed to reproduce it: the assignment, the
     window it was judged against and the sale that qualified."""

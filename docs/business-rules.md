@@ -222,6 +222,22 @@ ticket" can still be chosen but is labelled as not measured yet.
 `web/services/campaigns.py`, `current_date` in `web/db/clock.py`, and the conditional
 insert in `web/db/experiments.py`. **Verified** — `tests/test_experiment_frame.py`.
 
+### RN-48 — Conversion is reported over the assigned and over the exposed, and the assigned rate decides
+Two rates sit side by side. The **intent-to-treat rate** is customers with a
+qualifying sale in their window, counted from assignment, over every customer
+assigned; the uplift, its interval and its test use only this rate (ADR-0019). The
+**per-exposure rate** is customers who bought within the window counted from their
+*first* exposure, over customers exposed, × 100, per treatment arm; the control is
+never exposed and has none. The second answers a narrower question, because the
+exposed are not a random sample of their arm, so it is a secondary measure and
+never replaces the first. It is read from `transaction`, so it does not wait for a
+conversion evaluation. Uplift before conversion is evaluated is a 200 that asks for
+the evaluation, not a 409.
+
+**Enforced:** `EXPOSED_CONVERTED_SQL` in `web/db/experiment_conversions.py`, shared
+by the uplift page and the report, and `ConversionNotEvaluated` in
+`web/services/experiment_uplift.py`. **Verified** — `tests/test_exposed_conversion.py`.
+
 ### RN-37 — A K-means run is reproducible from what it records, and each of its numerical hazards has a defined behaviour
 The fit is fixed by the seed, k, the iteration limit, the tolerance and the feature
 window, and all five are stored on the run with its quality measures, so a run can

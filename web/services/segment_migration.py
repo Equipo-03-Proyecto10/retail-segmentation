@@ -418,13 +418,13 @@ def explain_migration(
     )
 
 
-# ---------- the explanation in plain language (#338, RN-48) ----------
+# ---------- the explanation in plain language (#338, RN-50) ----------
 
 # Whether a measure "changed" is judged on its raw value, never on its score.
 # A quintile score is a rank among every customer the run measured (RFM_RULES
 # scores with ntile), so it moves when other customers move, and a K-means run
 # stores no scores at all (ADR-0018). The raw values are the customer's own
-# behaviour and exist for both methods. RN-48 in docs/business-rules.md records
+# behaviour and exist for both methods. RN-50 in docs/business-rules.md records
 # each threshold and why it is that number.
 
 # Recency grows by itself between runs when a customer does not buy -- a day
@@ -471,7 +471,7 @@ class MigrationNarrative:
     is_new: bool
     left: bool
     # The label changed while every measure the customer controls stayed
-    # stable and at least one score moved: the move is the rank's (RN-48).
+    # stable and at least one score moved: the move is the rank's (RN-50).
     moved_by_rank_only: bool = False
     # Recency in days as each run measured it, for a page's table of values.
     recency_days_before: int | None = None
@@ -484,7 +484,7 @@ class MigrationNarrative:
 
     @property
     def threshold_note(self) -> str:
-        """RN-48's thresholds, stated from the constants the judgement uses."""
+        """RN-50's thresholds, stated from the constants the judgement uses."""
         purchases = (
             "the same number of purchases"
             if FREQUENCY_STABLE_PURCHASES == 0
@@ -493,7 +493,7 @@ class MigrationNarrative:
         return (
             "Changed or stable is judged on the customer's own values, not the "
             f"scores: recency within {RECENCY_STABLE_DAYS} days, {purchases}, "
-            f"and spend within {MONETARY_STABLE_RATIO:.0%} are stable (RN-48)."
+            f"and spend within {MONETARY_STABLE_RATIO:.0%} are stable (RN-50)."
         )
 
 
@@ -677,7 +677,7 @@ def describe_migration(
 ) -> MigrationNarrative:
     """The explanation in plain language (#338): one sentence per measure
     with its raw values -- recency in days, measured against each run's own
-    `run_at` -- and a changed/stable judgement by RN-48's thresholds.
+    `run_at` -- and a changed/stable judgement by RN-50's thresholds.
 
     Pure, like `explain_migration`: the run timestamps are passed in rather
     than read, so every threshold edge is testable without a database.

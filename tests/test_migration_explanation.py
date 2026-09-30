@@ -195,7 +195,7 @@ def test_most_changed_is_none_when_nothing_moved() -> None:
     assert explanation.most_changed is None
 
 
-# ---------- #338: the explanation in plain language (RN-48) ----------
+# ---------- #338: the explanation in plain language (RN-50) ----------
 
 _RUN_BEFORE = datetime(2026, 8, 1, 3, 0, tzinfo=UTC)
 _RUN_AFTER = datetime(2026, 9, 1, 3, 0, tzinfo=UTC)
@@ -372,7 +372,7 @@ def test_the_page_states_the_thresholds_from_the_constants() -> None:
     assert narrative.threshold_note == (
         "Changed or stable is judged on the customer's own values, not the "
         "scores: recency within 7 days, the same number of purchases, and spend "
-        "within 10% are stable (RN-48)."
+        "within 10% are stable (RN-50)."
     )
 
 

@@ -364,7 +364,7 @@ filters that result; the page remains read-only and gated on `segment.read`.
 unassigned states, direction, explanation links, invalid filters, authorization, and
 the scrollable table pattern used at narrow widths. · `F7-05`
 
-### RN-48 — A migration explanation judges the customer's own values, and says when only the rank moved
+### RN-50 — A migration explanation judges the customer's own values, and says when only the rank moved
 A migration explanation states each measure as a sentence with its raw values from
 both runs — recency in whole days from the last purchase to the run that measured it,
 frequency in purchases, monetary in MXN — and judges it **changed** or **stable** on

@@ -50,8 +50,11 @@ dump() {
   # Start with every privilege present in the catalog, then ask PostgreSQL for
   # the role's effective privilege.  Looking only for rows granted directly to
   # the role would miss a grant inherited through PUBLIC or a role membership.
+  # MATERIALIZED keeps the schema filter ahead of has_table_privilege: inlined,
+  # the planner may call it on pg_catalog rows first and fail on names such as
+  # public.pg_statistic, leaving privileges.txt empty.
   psql -X -A -t -v ON_ERROR_STOP=1 -v role="$APP_ROLE" <<'SQL' >"$out/privileges.txt"
-WITH candidate AS (
+WITH candidate AS MATERIALIZED (
     SELECT DISTINCT table_name, privilege_type
       FROM information_schema.table_privileges
      WHERE table_schema = 'public'

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from web.services.segment_migration import (
     CustomerMigration,
+    Direction,
     MigrationCategory,
     build_migration_matrix,
 )
@@ -72,6 +73,31 @@ def test_multiple_customers_in_the_same_cell_are_counted_together() -> None:
     matrix = build_migration_matrix(migrations, _ORDINALS)
 
     assert matrix.cells["CHAMPION"]["LOYAL"] == 3
+
+
+def test_each_cell_keeps_the_exact_customers_used_for_its_count() -> None:
+    migrations = [
+        CustomerMigration(
+            "c1", "CHAMPION", "LOYAL", MigrationCategory.MOVED, Direction.DECLINED
+        ),
+        CustomerMigration(
+            "c2", "CHAMPION", "LOYAL", MigrationCategory.MOVED, Direction.DECLINED
+        ),
+        CustomerMigration(
+            "c3", "CHAMPION", "AT_RISK", MigrationCategory.MOVED, Direction.DECLINED
+        ),
+    ]
+
+    matrix = build_migration_matrix(migrations, _ORDINALS)
+
+    assert [m.customer_id for m in matrix.cell_migrations["CHAMPION"]["LOYAL"]] == [
+        "c1",
+        "c2",
+    ]
+    assert (
+        len(matrix.cell_migrations["CHAMPION"]["LOYAL"])
+        == matrix.cells["CHAMPION"]["LOYAL"]
+    )
 
 
 # ---------- AC 2: row and column totals reconcile with assignment counts ----------
@@ -152,6 +178,16 @@ def test_a_customer_absent_from_one_run_gets_its_own_row_or_column() -> None:
     assert matrix.cells["Not in earlier run"]["CHAMPION"] == 1
     assert matrix.cells["LOYAL"]["Not in later run"] == 1
     assert sum(matrix.row_totals.values()) == 3
+
+
+def test_a_customer_absent_from_earlier_run_is_marked_as_new_in_its_member() -> None:
+    migration = _m(None, "CHAMPION", MigrationCategory.ABSENT_FROM_EARLIER)
+
+    matrix = build_migration_matrix([migration], _ORDINALS)
+
+    member = matrix.cell_migrations["Not in earlier run"]["CHAMPION"][0]
+    assert member.category is MigrationCategory.ABSENT_FROM_EARLIER
+    assert member.label_before is None
 
 
 def test_totals_reconcile_with_each_run_when_the_runs_scored_different_customers() -> (

@@ -20,7 +20,7 @@ cursor received.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
@@ -203,6 +203,35 @@ class MigrationMatrix:
     cells: dict[str, dict[str, int]]
     row_totals: dict[str, int]
     column_totals: dict[str, int]
+    # The same migrations used to produce ``cells`` grouped by cell.  Keeping
+    # the members alongside the counts prevents a detail view from running a
+    # second classification (and accidentally disagreeing with the matrix).
+    cell_migrations: dict[str, dict[str, tuple[CustomerMigration, ...]]] = field(
+        default_factory=dict
+    )
+
+
+def migration_cell_labels(migration: CustomerMigration) -> tuple[str, str]:
+    """Return the matrix row and column for one already-classified customer.
+
+    ``None`` labels mean an unassigned result, except for the two explicit
+    absence categories.  Keeping this mapping in the service makes filters
+    and detail rows use exactly the same states as the count matrix.
+    """
+    if migration.category is MigrationCategory.ABSENT_FROM_EARLIER:
+        row = _NOT_IN_EARLIER
+    elif migration.label_before is None:
+        row = _UNASSIGNED
+    else:
+        row = migration.label_before
+
+    if migration.category is MigrationCategory.ABSENT_FROM_LATER:
+        column = _NOT_IN_LATER
+    elif migration.label_after is None:
+        column = _UNASSIGNED
+    else:
+        column = migration.label_after
+    return row, column
 
 
 def build_migration_matrix(
@@ -233,21 +262,14 @@ def build_migration_matrix(
     cells: dict[str, dict[str, int]] = {
         row: {column: 0 for column in column_labels} for row in row_labels
     }
+    cell_migrations: dict[str, dict[str, list[CustomerMigration]]] = {
+        row: {column: [] for column in column_labels} for row in row_labels
+    }
 
     for migration in migrations:
-        if migration.category is MigrationCategory.ABSENT_FROM_EARLIER:
-            row = _NOT_IN_EARLIER
-        elif migration.label_before is None:
-            row = _UNASSIGNED
-        else:
-            row = migration.label_before
-        if migration.category is MigrationCategory.ABSENT_FROM_LATER:
-            column = _NOT_IN_LATER
-        elif migration.label_after is None:
-            column = _UNASSIGNED
-        else:
-            column = migration.label_after
+        row, column = migration_cell_labels(migration)
         cells[row][column] += 1
+        cell_migrations[row][column].append(migration)
 
     row_totals = {row: sum(cells[row].values()) for row in row_labels}
     column_totals = {
@@ -261,6 +283,10 @@ def build_migration_matrix(
         cells=cells,
         row_totals=row_totals,
         column_totals=column_totals,
+        cell_migrations={
+            row: {column: tuple(members) for column, members in columns.items()}
+            for row, columns in cell_migrations.items()
+        },
     )
 
 

@@ -1,9 +1,10 @@
 # F11-03 — Experiment setup
 
 Issue #222. An experiment's measurement rules are fixed before its first
-assignment ([ADR-0019](../adr/0019-experiment-measurement-separates-assignment-exposure-and-conversion.md)):
-exactly one control group, at least one treatment group, a target metric, a
-conversion window and a data origin.
+assignment ([ADR-0019](../adr/0019-experiment-measurement-separates-assignment-exposure-and-conversion.md)).
+[ADR-0028](../adr/0028-experiment-treatment-arms-may-omit-control.md) later
+made the control optional for an exactly-two-treatment design and required a
+user-supplied name and treatment description for every arm.
 
 ## How this run was produced
 
@@ -14,12 +15,13 @@ screens were captured through gunicorn in Chromium, signed in as the seeded
 administrator. Every seeded experiment already has four assignments, so each
 one shows the locked form.
 
-## Criterion 1 — setup requires one control, a treatment, a metric, a window and an origin
+## Criterion 1 — setup requires defined arms, a metric, a window and an origin
 
 The form asks for all of them. Validation refuses a missing or invalid value
 per field (`tests/test_experiments.py::test_setup_refuses_a_missing_or_invalid_field`).
-The control group is not a choice: creation always writes exactly one, with
-the treatment groups, in the same transaction.
+Creation writes either one control plus at least one treatment, or exactly two
+treatments with no control, in the same transaction. Every arm requires its
+own name and treatment description.
 
 ```
 created experiment 31 groups: [('CONTROL', 1), ('TREATMENT', 2)]
@@ -52,14 +54,14 @@ assignment, so the two cannot pass their checks concurrently.
 |---|---|
 | 1440 px | [`f11-03-edit-locked-1440.png`](f11-03-edit-locked-1440.png): the rules shown read-only, with the notice |
 
-## Criterion 3 — activation without a control group is refused
+## Criterion 3 — activation requires a valid controlled or no-control design
 
 An experiment has no status of its own. It starts with its campaign, so the
-check runs when the campaign is activated: every experiment attached must
-have one control group and at least one treatment group (RN-24). The
-database already refuses a second control; this is the half a constraint
-cannot express. Here, campaign 1's experiment lost its treatment group through
-direct SQL:
+check runs when the campaign is activated: every attached experiment must have
+at least one treatment; when it has no control, it must have exactly two
+treatments (RN-24). The database already refuses a second control; the
+required group counts are the half a static constraint cannot express. Here,
+campaign 1's experiment lost its treatment group through direct SQL:
 
 ```
 activate campaign with a treatment-less experiment: Campaign 1 cannot be activated: experiment 1 (Experiment 1) has no treatment group.
@@ -67,8 +69,8 @@ its status: DRAFT
 activate a complete one: ACTIVE
 ```
 
-A missing control group is refused the same way
-(`test_an_incomplete_experiment_blocks_its_campaigns_activation`).
+A no-control design with one or three treatments is refused the same way;
+exactly two treatments are accepted (`test_no_control_requires_exactly_two_named_treatment_arms`).
 
 ## Criterion 4 — the data origin is stored and carried
 

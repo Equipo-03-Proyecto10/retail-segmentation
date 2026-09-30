@@ -13,6 +13,7 @@ reuses an existing declaration, per ADR-0007.
 | 9 | Model comparison, parameters and quality measures (read) | `segment.read` (existing) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | 10 | Recommendations (read) | `segment.read` (existing) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | 11 | Campaigns and experiments (assignment, exposure, conversion) | `campaign.read` / `campaign.write` (existing) | same as campaigns today |
+| 11 | Experiment arm detail and bulk exposure (`/experiments/<id>/groups/<group_id>`) | `campaign.read` / `campaign.write` | same as campaigns today |
 | 12 | Segment / RFM / migration dashboards | `segment.read` (existing) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | 12 | Revenue dashboard | `report.read` (existing) | everyone who already holds `report.read` |
 | 12 | Experiment dashboard | `campaign.read` (existing) | same as campaigns today |

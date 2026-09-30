@@ -503,14 +503,22 @@ assignment, and `retail_app` holds no `UPDATE` or `DELETE` on
 `experiment_assignment` (`REVOKE` in `sql/01_schema.sql`, checked by its
 self-test). ADR-0026. · `F11-04`
 
-### RN-24 — An experiment has at most one control group
-**Enforced:** `ux_experiment_one_control`. **Verified** — case N22.
+### RN-24 — An experiment has at most one control group, and control is optional
+An experiment may have zero or one control group. Existing controlled
+experiments use one control; a no-control experiment has exactly two treatment
+arms and is not eligible for control-relative uplift. Every arm has a fixed,
+user-supplied name and treatment description.
+
+**Enforced:** `ux_experiment_one_control` and application validation. Arm
+definitions cannot be changed after assignment. **Verified** — case N22 and
+F11-08 (#342).
 
 The other half — at least one treatment group before activation — is not
 expressible as a static constraint, the same shape as RN-01's *never zero*
-half. The application enforces it: setup always writes one control with the
-treatment groups, and a campaign cannot be activated while an experiment
-attached to it lacks a control or a treatment group
+half. The application enforces it: setup always writes the selected control
+(if any) with the treatment groups, and a campaign cannot be activated while
+an experiment attached to it lacks a treatment group or has a no-control
+design with anything other than exactly two treatment arms
 (`web/services/experiments.py` `activation_refusal`, F11-03).
 
 ### RN-25 — An experiment's conversion window is a positive number of days

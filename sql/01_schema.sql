@@ -406,18 +406,43 @@ CREATE TABLE experiment_group (
     group_id      INT PRIMARY KEY,
     experiment_id INT NOT NULL REFERENCES experiment(experiment_id) ON DELETE CASCADE,
     kind          VARCHAR(20) NOT NULL CHECK (kind IN ('CONTROL','TREATMENT')),
+    -- User-facing arm definition.  These values are fixed once assignment
+    -- starts; the application refuses edits after that point.
+    name          VARCHAR(120) NOT NULL CHECK (btrim(name) <> ''),
+    treatment_description VARCHAR(500) NOT NULL CHECK (btrim(treatment_description) <> ''),
     -- Lets experiment_assignment's FK pin a row to both its group and that
     -- group's experiment at once, so an assignment can never claim a group
     -- belonging to a different experiment.
     UNIQUE (group_id, experiment_id)
 );
 
--- At most one control group per experiment (ADR-0019), the same shape as
+-- At most one control group per experiment (ADR-0028), the same shape as
 -- ux_app_user_single_administrator. At least one treatment group before
 -- activation is not expressible here -- nothing forces a row to exist -- and
 -- is F11-03's service-level check.
 CREATE UNIQUE INDEX ux_experiment_one_control
     ON experiment_group (experiment_id) WHERE kind = 'CONTROL';
+
+CREATE FUNCTION fn_experiment_group_definition_immutable()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF (NEW.kind, NEW.name, NEW.treatment_description)
+       IS DISTINCT FROM (OLD.kind, OLD.name, OLD.treatment_description)
+       AND EXISTS (
+           SELECT 1 FROM experiment_assignment
+            WHERE group_id = OLD.group_id
+       ) THEN
+        RAISE EXCEPTION 'Experiment group % is fixed after assignment', OLD.group_id
+            USING ERRCODE = '23514',
+                  CONSTRAINT = 'experiment_group_definition_immutable';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_experiment_group_definition_immutable
+BEFORE UPDATE OF kind, name, treatment_description ON experiment_group
+FOR EACH ROW EXECUTE FUNCTION fn_experiment_group_definition_immutable();
 
 -- One durable row per customer assigned to an experiment (ADR-0019), before
 -- any outcome is known. Replaces experiment_group_customer, whose

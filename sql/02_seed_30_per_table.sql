@@ -328,10 +328,10 @@ SELECT n, 'Experiment ' || n, n,
 FROM generate_series(1,30) n;
 
 -- ---------- experiment_group (2 per experiment = 60) ----------
-INSERT INTO experiment_group (group_id, experiment_id, kind)
-SELECT (n-1)*2 + 1, n, 'CONTROL' FROM generate_series(1,30) n
+INSERT INTO experiment_group (group_id, experiment_id, kind, name, treatment_description)
+SELECT (n-1)*2 + 1, n, 'CONTROL', 'Holdout ' || n, 'No treatment delivered.' FROM generate_series(1,30) n
 UNION ALL
-SELECT (n-1)*2 + 2, n, 'TREATMENT' FROM generate_series(1,30) n;
+SELECT (n-1)*2 + 2, n, 'TREATMENT', 'Offer ' || n, 'Personalized offer for experiment ' || n FROM generate_series(1,30) n;
 
 -- ---------- experiment_assignment (4 per experiment = 120) ----------
 -- k 0-1 go to the control group, 2-3 to treatment. The customer offset is

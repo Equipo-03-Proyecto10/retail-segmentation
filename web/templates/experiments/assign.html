@@ -15,7 +15,7 @@
       <div class="mq-panel__body">
         <p>Campaign <span class="mq-mono">#{{ plan.experiment.campaign_id }}</span> {{ plan.experiment.campaign_name }} targets <span class="mq-mono">{{ plan.label_code }}</span>. The <strong>{{ plan.population }}</strong> customers holding that label now are split at random into these arms:</p>
         <div class="mq-table-wrap"><table class="mq-table"><thead><tr><th scope="col">Group</th><th scope="col">Arm</th><th scope="col" class="mq-num">Customers</th></tr></thead><tbody>
-          {% for arm in plan.arms %}<tr><td class="mq-mono">{{ arm.group_id }}</td><td>{{ arm.kind.title() }}</td><td class="mq-num">{{ arm.customers | length }}</td></tr>{% endfor %}
+          {% for arm in plan.arms %}<tr><td class="mq-mono">{{ arm.group_id }}</td><td>{{ arm.name or arm.kind.title() }}<br><span class="mq-caption">{{ arm.treatment_description }}</span></td><td class="mq-num">{{ arm.customers | length }}</td></tr>{% endfor %}
         </tbody></table></div>
         {{ alert("Once written, no assignment can be edited or deleted, and this experiment cannot be assigned again. Its target metric and conversion window become fixed too.", "warning", "This cannot be undone") }}
         <form class="mq-form" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -24,6 +24,7 @@
       </div>
     </section>
   {% else %}
+    {% if shown and groups %}<section class="mq-panel"><header class="mq-panel__header"><h2 class="mq-panel__title">Arm definitions</h2></header><div class="mq-panel__body">{% for arm in groups %}<p><strong>{{ arm.name }}</strong>: {{ arm.treatment_description }}</p>{% endfor %}</div></section>{% endif %}
     <div class="mq-form__actions"><a class="mq-btn mq-btn--secondary" href="{{ url_for('experiments.index') }}">Back to experiments</a>{% if shown and shown.assignments == 0 %} <a class="mq-btn mq-btn--secondary" href="{{ url_for('experiments.edit', experiment_id=shown.experiment_id) }}">Edit experiment</a>{% endif %}</div>
   {% endif %}
 {% endblock %}

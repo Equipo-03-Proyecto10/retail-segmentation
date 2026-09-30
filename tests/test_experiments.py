@@ -35,9 +35,29 @@ FORM = dict(
     conversion_window_days="14",
     data_origin="OBSERVED",
     treatment_groups="2",
+    control_group="CONTROL",
+    control_name="Holdout",
+    control_description="No treatment delivered.",
+    treatment_1_name="Offer A",
+    treatment_1_description="Ten percent discount.",
+    treatment_2_name="Offer B",
+    treatment_2_description="Free shipping.",
 )
 EDIT = {
-    key: FORM[key] for key in FORM if key not in {"data_origin", "treatment_groups"}
+    key: FORM[key]
+    for key in FORM
+    if key
+    not in {
+        "data_origin",
+        "treatment_groups",
+        "control_group",
+        "control_name",
+        "control_description",
+        "treatment_1_name",
+        "treatment_1_description",
+        "treatment_2_name",
+        "treatment_2_description",
+    }
 }
 
 
@@ -123,6 +143,8 @@ def test_a_complete_setup_validates() -> None:
         ("data_origin", "REAL"),
         ("treatment_groups", "0"),
         ("treatment_groups", ""),
+        ("treatment_groups", "two"),
+        ("control_group", "SURPRISE"),
         ("campaign_id", "seven"),
     ],
 )
@@ -165,13 +187,22 @@ def test_creation_writes_exactly_one_control_and_the_treatments(
         conversion_window_days=14,
         data_origin="SEEDED",
         treatment_groups=2,
+        group_definitions=[
+            ("Control", "No treatment delivered."),
+            ("Treatment 2", "Treatment arm."),
+            ("Treatment 3", "Treatment arm."),
+        ],
     )
 
     assert experiment_id == 31
     assert "pg_advisory_xact_lock" in cursor.execute.call_args_list[0].args[0]
     statement, rows = cursor.executemany.call_args.args
     assert "INSERT INTO experiment_group" in statement
-    assert rows == [(61, 31, "CONTROL"), (62, 31, "TREATMENT"), (63, 31, "TREATMENT")]
+    assert rows == [
+        (61, 31, "CONTROL", "Control", "No treatment delivered."),
+        (62, 31, "TREATMENT", "Treatment 2", "Treatment arm."),
+        (63, 31, "TREATMENT", "Treatment 3", "Treatment arm."),
+    ]
     for call in cursor.execute.call_args_list:
         assert "SEEDED" not in call.args[0]  # every value is a parameter
 
@@ -293,10 +324,7 @@ def test_the_data_origin_is_never_rewritten(connection: MagicMock) -> None:
 # ---------- activation needs a control and a treatment ----------
 
 
-@pytest.mark.parametrize(
-    "controls,treatments,missing",
-    [(0, 2, "no control group"), (1, 0, "no treatment group")],
-)
+@pytest.mark.parametrize("controls,treatments,missing", [(1, 0, "no treatment group")])
 def test_an_incomplete_experiment_blocks_its_campaigns_activation(
     monkeypatch: pytest.MonkeyPatch, controls: int, treatments: int, missing: str
 ) -> None:
@@ -321,6 +349,31 @@ def test_an_incomplete_experiment_blocks_its_campaigns_activation(
         campaign_service.transition(MagicMock(), 7, "activate")
 
     change_status.assert_not_called()
+
+
+def test_a_no_control_two_treatment_experiment_allows_campaign_activation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        db,
+        "list_group_counts_for_campaign",
+        Mock(return_value=[GroupCounts(3, "Two offers", 0, 2)]),
+    )
+    monkeypatch.setattr(
+        campaign_service.campaigns,
+        "get_campaign",
+        Mock(
+            return_value=Campaign(
+                7, "Win-back", "AT_RISK", date(2026, 10, 1), date(2026, 10, 31), "DRAFT"
+            )
+        ),
+    )
+    change_status = Mock(return_value=True)
+    monkeypatch.setattr(campaign_service.campaigns, "change_status", change_status)
+
+    campaign_service.transition(MagicMock(), 7, "activate")
+
+    change_status.assert_called_once()
 
 
 def test_a_complete_experiment_lets_its_campaign_activate(

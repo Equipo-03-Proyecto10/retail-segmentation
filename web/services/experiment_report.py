@@ -39,6 +39,8 @@ EXPORT_COLUMNS = (
     "data_origin",
     "label",
     "arm",
+    "arm_name",
+    "treatment_description",
     "group_id",
     "assigned",
     "exposed",
@@ -133,6 +135,8 @@ def _report_of(experiment: Experiment, groups: list[ReportGroup]) -> ExperimentR
                         g.pending,
                         g.not_converted,
                         g.unrecorded,
+                        g.name,
+                        g.treatment_description,
                     )
                     for g in mine
                 ],
@@ -218,6 +222,8 @@ def export_csv(
                         e.data_origin,
                         report.label or "",
                         g.kind,
+                        g.name,
+                        g.treatment_description,
                         g.group_id,
                         g.assigned,
                         g.exposed,

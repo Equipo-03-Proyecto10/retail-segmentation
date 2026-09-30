@@ -84,6 +84,7 @@ right place for it, and which the team accepted on 2026-09-07.
 | [F9-02](f9-02-kmeans-fit.md) | The K-means fit written in the application: checked against exact rational arithmetic and scikit-learn, its empty-cluster, non-convergence and tie behaviours on real rows, and the parameters and quality measures a run records |
 | [F9-03](f9-03-cluster-labels.md) | K-means clusters mapped to the stable labels by ADR-0018's deterministic order: checked against the stored rows, 500 renamings of a real partition, a refused k, and two runs that number the same partition differently |
 | [F9-04](f9-04-model-comparison.md) | The model comparison page at 375 px and 1440 px: per-label populations and per-customer agreement checked against independent SQL, a run whose labels are copied giving 100% agreement whatever its method, the empty and error states, and the refusal of a role without `segment.read` |
+| [F9-05](f9-05-kmeans-variable-k.md) | K-means with k = 5 and k = 8 on the seeded database, paired with the stable labels by ADR-0030's proportional rank: the pairing and the shared and unused labels each run records, ADR-0030's database checks at zero, every downstream page reading only labels, at 375 px and 1440 px |
 
 ## Phase 10 — recommendations
 

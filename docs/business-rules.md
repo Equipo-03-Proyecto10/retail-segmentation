@@ -283,7 +283,15 @@ cluster therefore takes its label from its contents, by one rule:
 3. A tie between identical centroids is broken by the lexicographically smallest
    customer id among the cluster's members.
 4. That order is paired with the label vocabulary in the order `segment_label`
-   declares it, best to worst. **The vocabulary's size must equal k.**
+   declares it, best to worst, **by proportional rank** (ADR-0030, #336): of `k`
+   clusters and `V` labels, the cluster in position `i` (0 = best) takes the label
+   in position `i × (V − 1) / (k − 1)`, rounded to the nearest position and, when it
+   falls exactly halfway, **towards the worse label**. The best cluster always takes
+   the best label and the worst the worst. With `k = V` each cluster takes the label
+   in its own position, as before; with `k < V` some labels take no cluster, and
+   with `k > V` several clusters share a label. Over the six seeded labels, `k = 5`
+   gives CHAMPION, LOYAL, AT_RISK, HIBERNATING, LOST (POTENTIAL unused) and `k = 8`
+   gives CHAMPION, LOYAL, LOYAL, POTENTIAL, AT_RISK, HIBERNATING, HIBERNATING, LOST.
 
 The customer-id tie-break is deterministic and has no commercial meaning: ids are
 compared as text, so `10` sorts before `9`. It exists so that two clusters identical
@@ -294,18 +302,28 @@ moving on to R. What a label means commercially is reduced to that declared orde
 two centroids with similar totals can exchange labels when their R, F and M cross,
 even if few customers moved.
 
-A K-means run whose k is not the vocabulary's size is **refused when it is started**,
-before any sale is read and before anything is written. Customers with no sales in
-the window are unassigned (RN-21) and take no cluster. No raw cluster number is ever
-stored: `customer_segment_history` has no column that could hold one, and a run's
-parameters record cluster sizes as a list, not a mapping by number.
+With `k ≠ V` a label is a relative position — AT_RISK is "the middle of five" under
+`k = 5` and "the fifth of eight" under `k = 8` — so comparing two runs with
+different `k` can show migrations caused by the change of model rather than by the
+customer. That is recorded in ADR-0030 and not resolved by this rule.
 
-**Enforced:** application — `web/services/cluster_labels.py` for the rule and
-`run_kmeans` in `web/services/segmentation.py` for the refusal. **Verified** — by
-`tests/test_cluster_labels.py`, `tests/test_kmeans_run.py` and the two cases
-ADR-0018 names in `tests/test_segmentation_pipeline.py`, including that faults seeded
-into each step of the rule fail a test, and against a real K-means run by
-[`evidence/f9-03-cluster-labels.md`](evidence/f9-03-cluster-labels.md). · `F9-03`
+A K-means run with **k below 2 is refused when it is started**, before any sale is
+read and before anything is written: one cluster has no order to pair. Customers
+with no sales in the window are unassigned (RN-21) and take no cluster. No raw
+cluster number is ever stored: `customer_segment_history` has no column that could
+hold one, a run's parameters record cluster sizes as a list, not a mapping by
+number, and the pairing is recorded under `label_mapping` by label code and
+position only — which labels are shared by several clusters and which have none.
+
+**Enforced:** application — `web/services/cluster_labels.py` for the rule and the
+recorded pairing, and `run_kmeans` in `web/services/segmentation.py` for the refusal.
+**Verified** — by `tests/test_cluster_labels.py`, `tests/test_kmeans_run.py` and the
+cases ADR-0030 names in `tests/test_segmentation_pipeline.py`, including that faults
+seeded into each step of the rule fail a test, and against real K-means runs by
+[`evidence/f9-03-cluster-labels.md`](evidence/f9-03-cluster-labels.md) and, for
+`k = 5` and `k = 8`,
+[`evidence/f9-05-kmeans-variable-k.md`](evidence/f9-05-kmeans-variable-k.md).
+· `F9-03`, `F9-05`
 
 ### RN-39 — Two runs are compared by label code, and the method is only a description of a run
 A model comparison sets one rule-based run beside one K-means run over the same

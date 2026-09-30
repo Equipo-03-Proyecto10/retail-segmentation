@@ -79,17 +79,14 @@ def _rows(manager: Mock) -> dict[str, tuple]:
     return {row[0]: row for row in rows}
 
 
-# ---------- refusing a k that is not the vocabulary's size ----------
+# ---------- refusing a k that cannot be paired (ADR-0030) ----------
 
 
-@pytest.mark.parametrize("k", [3, 4, 6, 8])
-def test_a_k_that_is_not_the_vocabulary_size_is_refused_before_any_sale_is_read(
-    monkeypatch, k: int
-) -> None:
+def test_a_single_cluster_is_refused_before_any_sale_is_read(monkeypatch) -> None:
     manager = _wire(monkeypatch)
 
-    with pytest.raises(VocabularySizeMismatch, match=f"k={k}.*5|5.*k={k}"):
-        run_kmeans(MagicMock(), 180, KMeansParams(k=k, seed=1))
+    with pytest.raises(VocabularySizeMismatch, match="k=1.*at least 2"):
+        run_kmeans(MagicMock(), 180, KMeansParams(k=1, seed=1))
 
     manager.read_rfm_inputs.assert_not_called()
     manager.create_run.assert_not_called()
@@ -102,7 +99,7 @@ def test_a_refused_run_rolls_back_and_commits_nothing(monkeypatch) -> None:
     _wire(monkeypatch)
 
     with pytest.raises(VocabularySizeMismatch):
-        run_kmeans(connection, 180, KMeansParams(k=4, seed=1))
+        run_kmeans(connection, 180, KMeansParams(k=1, seed=1))
 
     connection.rollback.assert_called_once_with()
     connection.commit.assert_not_called()
@@ -235,3 +232,111 @@ def test_kmeans_still_cannot_be_started_without_its_parameters(monkeypatch) -> N
 
     with pytest.raises(MethodUnavailable):
         run_method(MagicMock(), "KMEANS", 180)
+
+
+# ---------- any k over the six-label vocabulary (#336, ADR-0030) ----------
+
+_SIX_ORDINALS = {
+    "LOST": 6,
+    "CHAMPION": 1,
+    "HIBERNATING": 5,
+    "AT_RISK": 4,
+    "POTENTIAL": 3,
+    "LOYAL": 2,
+}
+_SIX = ["CHAMPION", "LOYAL", "POTENTIAL", "AT_RISK", "HIBERNATING", "LOST"]
+
+
+def _groups(count: int) -> list[CustomerSales]:
+    """`count` tight groups of three customers, best group first, far enough apart
+    that any k equal to `count` finds exactly these groups."""
+    rows = []
+    for group in range(count):
+        for i in range(3):
+            rows.append(
+                CustomerSales(
+                    _cid(group * 3 + i + 1),
+                    _NOW - timedelta(days=5 + group * 30 + i),
+                    60 - group * 7 + i,
+                    Decimal(9000 - group * 1000 + i * 5),
+                )
+            )
+    return rows
+
+
+def _labels_by_group(manager: Mock, count: int) -> list[str]:
+    written = _rows(manager)
+    by_group = []
+    for group in range(count):
+        labels = {written[_cid(group * 3 + i + 1)][2] for i in range(3)}
+        assert len(labels) == 1, "a group was split across labels"
+        by_group.append(labels.pop())
+    return by_group
+
+
+def _run(monkeypatch, k: int) -> Mock:
+    manager = _wire(monkeypatch, ordinals=_SIX_ORDINALS, rows=_groups(k))
+    run_kmeans(MagicMock(), 180, KMeansParams(k=k, seed=1))
+    return manager
+
+
+def test_k_six_pairs_the_six_groups_one_to_one_as_before(monkeypatch) -> None:
+    manager = _run(monkeypatch, 6)
+
+    assert _labels_by_group(manager, 6) == _SIX
+    mapping = manager.create_run.call_args.args[3]["label_mapping"]
+    assert mapping["clusters_per_label"] == dict.fromkeys(_SIX, 1)
+    assert mapping["shared_labels"] == [] and mapping["labels_without_cluster"] == []
+
+
+def test_k_five_is_run_rather_than_refused_and_leaves_potential_unused(
+    monkeypatch,
+) -> None:
+    manager = _run(monkeypatch, 5)
+
+    assert _labels_by_group(manager, 5) == [
+        "CHAMPION",
+        "LOYAL",
+        "AT_RISK",
+        "HIBERNATING",
+        "LOST",
+    ]
+    parameters = manager.create_run.call_args.args[3]
+    assert parameters["k"] == 5
+    assert parameters["label_mapping"]["labels_without_cluster"] == ["POTENTIAL"]
+
+
+def test_k_eight_shares_labels_and_the_run_records_which(monkeypatch) -> None:
+    manager = _run(monkeypatch, 8)
+
+    assert _labels_by_group(manager, 8) == [
+        "CHAMPION",
+        "LOYAL",
+        "LOYAL",
+        "POTENTIAL",
+        "AT_RISK",
+        "HIBERNATING",
+        "HIBERNATING",
+        "LOST",
+    ]
+    mapping = manager.create_run.call_args.args[3]["label_mapping"]
+    assert mapping["shared_labels"] == ["LOYAL", "HIBERNATING"]
+    assert mapping["clusters_per_label"]["LOYAL"] == 2
+
+
+@pytest.mark.parametrize("k", [2, 5, 6, 8])
+def test_whatever_k_only_vocabulary_labels_and_no_cluster_number_is_written(
+    monkeypatch, k: int
+) -> None:
+    manager = _run(monkeypatch, k)
+
+    labels = {row[2] for row in _rows(manager).values()}
+    assert labels <= set(_SIX)
+    for row in _rows(manager).values():
+        assert row[1] is None  # no segment: a K-means result has no rule band
+    parameters = manager.create_run.call_args.args[3]
+    stored = json.dumps(parameters)
+    mapping = parameters["label_mapping"]
+    assert set(mapping["clusters_per_label"]) == set(_SIX)
+    assert all(label in _SIX for label in mapping["labels_by_rank"])
+    assert not re.search(r'"\d+"\s*:', stored)  # nothing keyed by a number

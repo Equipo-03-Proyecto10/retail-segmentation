@@ -42,8 +42,8 @@
         <div id="kmeans-fields" style="display: {% if method == 'KMEANS' %}block{% else %}none{% endif %};">
           <div class="mq-field">
             <label class="mq-field__label mq-field__label--required" for="k">K (number of clusters)</label>
-            <input class="mq-input mq-input--num" type="number" id="k" name="k" value="{{ (form_values or {}).get('k', '') }}" min="1">
-            <span class="mq-field__hint">Must equal the size of the label vocabulary.</span>
+            <input class="mq-input mq-input--num" type="number" id="k" name="k" value="{{ (form_values or {}).get('k', '') }}" min="2">
+            <span class="mq-field__hint">2 or more. Clusters are paired with the labels by rank, best to worst: with fewer clusters than labels some labels go unused, with more some are shared (ADR-0030).</span>
           </div>
           <div class="mq-field">
             <label class="mq-field__label mq-field__label--required" for="seed">Seed</label>

@@ -591,7 +591,7 @@ def test_downstream_method_independence_migration_reads_labels_and_nothing_else(
     )
 
 
-# ---------- F9-03: the two ADR-0018 cases K-means adds ----------
+# ---------- F9-03: the ADR-0018 cases K-means adds, as ADR-0030 revises them ----------
 
 
 def _kmeans_reads(monkeypatch: pytest.MonkeyPatch, *, labels: int = 3) -> Mock:
@@ -616,7 +616,26 @@ def _kmeans_reads(monkeypatch: pytest.MonkeyPatch, *, labels: int = 3) -> Mock:
     return manager
 
 
-def test_method_domain_refuses_a_kmeans_run_whose_k_differs_from_the_label_count(
+def test_a_kmeans_run_whose_k_differs_from_the_label_count_is_paired_by_rank(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ADR-0030's compliance case, which replaces ADR-0018's refusal: a k other
+    than the vocabulary's size is run, and what reaches the history rows is only
+    label codes from the vocabulary."""
+    from web.services.kmeans import KMeansParams
+    from web.services.segmentation import run_kmeans
+
+    manager = _kmeans_reads(monkeypatch, labels=3)
+
+    run_kmeans(MagicMock(), 180, KMeansParams(k=2, seed=1))
+
+    manager.create_run.assert_called_once()
+    ((_, _run, rows),) = [c.args for c in manager.insert_assignments.call_args_list]
+    vocabulary = set(manager.get_label_ordinals.return_value)
+    assert {row[2] for row in rows if row[2] is not None} <= vocabulary
+
+
+def test_method_domain_refuses_a_kmeans_run_of_a_single_cluster(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from web.services.cluster_labels import VocabularySizeMismatch
@@ -626,7 +645,7 @@ def test_method_domain_refuses_a_kmeans_run_whose_k_differs_from_the_label_count
     manager = _kmeans_reads(monkeypatch, labels=3)
 
     with pytest.raises(VocabularySizeMismatch):
-        run_kmeans(MagicMock(), 180, KMeansParams(k=4, seed=1))
+        run_kmeans(MagicMock(), 180, KMeansParams(k=1, seed=1))
 
     manager.read_rfm_inputs.assert_not_called()
     manager.create_run.assert_not_called()

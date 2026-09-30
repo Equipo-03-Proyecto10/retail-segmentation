@@ -220,3 +220,57 @@ def test_the_detail_is_a_404_when_the_run_is_unknown(
     _sign_in(client, "ANALYST")
 
     assert client.get("/run-history/999999").status_code == 404
+
+
+# ---------- #336: a K-means run shows how its clusters were paired ----------
+
+_SIX = ["CHAMPION", "LOYAL", "POTENTIAL", "AT_RISK", "HIBERNATING", "LOST"]
+
+
+def _detail(app: Flask, monkeypatch: pytest.MonkeyPatch, parameters: dict) -> str:
+    monkeypatch.setattr(
+        "web.routes.run_history.get_run",
+        lambda _c, _id: _run(run_id=7, method="KMEANS", parameters=parameters),
+    )
+    monkeypatch.setattr(
+        "web.routes.run_history.list_run_assignments", lambda *a, **k: ([], 0)
+    )
+    client = app.test_client()
+    _sign_in(client, "ANALYST")
+    return " ".join(client.get("/run-history/7").get_data(as_text=True).split())
+
+
+def test_a_run_with_shared_labels_says_which_and_how_many_clusters(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from web.services.cluster_labels import describe_mapping
+
+    body = _detail(
+        app, monkeypatch, {"k": 8, "label_mapping": describe_mapping(8, _SIX)}
+    )
+
+    assert "8 clusters over 6 labels, paired by rank (ADR-0030)" in body
+    assert "Shared: LOYAL (2 clusters), HIBERNATING (2 clusters)." in body
+    # the mapping is not repeated as bare keys in the parameter list
+    assert "label_mapping:" not in body
+
+
+def test_a_run_with_an_unused_label_says_no_customer_holds_it(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from web.services.cluster_labels import describe_mapping
+
+    body = _detail(
+        app, monkeypatch, {"k": 5, "label_mapping": describe_mapping(5, _SIX)}
+    )
+
+    assert "No label is shared." in body
+    assert "No cluster, so no customer: POTENTIAL." in body
+
+
+def test_a_run_recorded_before_the_mapping_existed_shows_no_mapping_line(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    body = _detail(app, monkeypatch, {"k": 6})
+
+    assert 'id="label-mapping"' not in body

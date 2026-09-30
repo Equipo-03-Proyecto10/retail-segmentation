@@ -161,11 +161,65 @@ def test_a_non_numeric_k_is_refused_with_400(app: Flask) -> None:
     assert response.status_code == 400
 
 
-def test_a_k_that_mismatches_the_vocabulary_is_refused_with_400(
+@pytest.mark.parametrize("k", [5, 8])
+def test_a_k_other_than_the_vocabulary_size_reaches_the_run(
+    app: Flask, monkeypatch: pytest.MonkeyPatch, k: int
+) -> None:
+    """#336: K is no longer fixed at 6; the page passes any K on to the run,
+    which pairs its clusters with the labels by rank (ADR-0030)."""
+    captured = {}
+
+    def _fake_run_kmeans(connection, window_days, params):
+        captured["k"] = params.k
+        return RunResult(
+            window_days=window_days,
+            processed=30,
+            assigned=28,
+            unmatched=2,
+            reassigned=28,
+            cleared=2,
+            seconds=0.5,
+            run_id=100,
+            method="KMEANS",
+        )
+
+    monkeypatch.setattr("web.routes.segment_run.run_kmeans", _fake_run_kmeans)
+    client = app.test_client()
+    _sign_in(client, "ADMIN")
+
+    response = client.post(
+        "/segment-run/",
+        data={
+            "method": "KMEANS",
+            "window": "180",
+            "k": str(k),
+            "seed": "1",
+            "confirm": "yes",
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["k"] == k
+
+
+def test_the_form_says_how_k_is_paired_with_the_labels(app: Flask) -> None:
+    client = app.test_client()
+    _sign_in(client, "ADMIN")
+
+    body = client.get("/segment-run/").get_data(as_text=True)
+
+    assert 'name="k"' in body and 'min="2"' in body
+    assert "paired with the labels by rank" in body
+    assert "Must equal the size of the label vocabulary" not in body
+
+
+def test_a_single_cluster_is_refused_with_400(
     app: Flask, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def _raise(*_a, **_k):
-        raise VocabularySizeMismatch("k must equal 6, the label vocabulary size.")
+        raise VocabularySizeMismatch(
+            "K-means was asked for k=1 clusters. It needs at least 2."
+        )
 
     monkeypatch.setattr("web.routes.segment_run.run_kmeans", _raise)
     client = app.test_client()
@@ -176,14 +230,14 @@ def test_a_k_that_mismatches_the_vocabulary_is_refused_with_400(
         data={
             "method": "KMEANS",
             "window": "180",
-            "k": "3",
+            "k": "1",
             "seed": "1",
             "confirm": "yes",
         },
     )
 
     assert response.status_code == 400
-    assert "vocabulary" in response.get_data(as_text=True)
+    assert "at least 2" in response.get_data(as_text=True)
 
 
 def test_fewer_customers_than_k_is_a_readable_400(

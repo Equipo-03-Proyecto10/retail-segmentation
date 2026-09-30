@@ -444,11 +444,13 @@ replacement; ADR-0017 fulfils that prediction with `segmentation_run` and
 | `segment_id` | `INT` | yes | Composite FK with `label_code` → `segment (segment_id, label_code)`, `SET NULL (segment_id)` | The matched RFM band, `NULL` if unassigned (RN-21) or if the referenced band is retired |
 | `label_code` | `VARCHAR(40)` | yes | Composite FK with `segment_id` → `segment (segment_id, label_code)`; FK → `segment_label`, `RESTRICT` | The stable label, preserved if its matched RFM band is retired; ADR-0018's downstream consumers (migration, dashboards, recommendations) read it without joining through that segment row |
 | `recency_last_purchase_at` | `TIMESTAMPTZ` | yes | — | Raw recency input |
-| `frequency_count` | `INT` | yes | — | Raw frequency input |
-| `monetary_total` | `NUMERIC(12,2)` | yes | — | Raw monetary input |
-| `r_score`, `f_score`, `m_score` | `SMALLINT` | yes | — | Quintile scores derived from the raw values above |
+| `frequency_count` | `INT` | yes | `CHECK >= 0` | Raw frequency input |
+| `monetary_total` | `NUMERIC(12,2)` | yes | `CHECK >= 0` | Raw monetary input |
+| `r_score`, `f_score`, `m_score` | `SMALLINT` | yes | each `CHECK BETWEEN 1 AND 5` | Quintile scores derived from the raw values above |
 | `valid_from` | `TIMESTAMPTZ` | NN | default `now()` | When this result became current |
 | `valid_to` | `TIMESTAMPTZ` | yes | `CHECK >= valid_from` | When it stopped being current; `NULL` while open |
+
+Table constraint: `ex_customer_segment_history_no_overlap` excludes two rows of one customer whose `[valid_from, valid_to)` ranges overlap (needs `btree_gist`). The application role may only update `valid_to`, and a trigger lets any role close a row once and change nothing else (RN-47, ADR-0029).
 
 `segment_id` and `label_code` are both kept, deliberately not one or the
 other: `segment_id` is what the already-shipped F3-05 catalog feature

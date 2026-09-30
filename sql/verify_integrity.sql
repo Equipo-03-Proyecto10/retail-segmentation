@@ -407,6 +407,48 @@ UPDATE role SET code = 'ROOT' WHERE role_id = 1;
 ROLLBACK;
 
 \echo ''
+\echo '-- N32: CHECK, a quintile score outside 1 to 5    [expect: 23514 check_violation]'
+-- #350: nothing bounded the scores a run could record.
+BEGIN;
+UPDATE customer_segment_history SET r_score = 9
+ WHERE history_id = (SELECT min(history_id) FROM customer_segment_history
+                      WHERE r_score IS NOT NULL AND valid_to IS NULL);
+ROLLBACK;
+
+\echo ''
+\echo '-- N33: overlapping segment intervals for one customer [expect: 23P01 exclusion_violation]'
+-- #350: the open-row index guarded only the present. A closed interval that runs
+-- across the customer's current one is refused by the exclusion constraint.
+BEGIN;
+INSERT INTO segmentation_run (method, window_days) VALUES ('RFM_RULES', 180);
+INSERT INTO customer_segment_history (customer_id, run_id, valid_from, valid_to)
+SELECT h.customer_id, (SELECT max(run_id) FROM segmentation_run),
+       h.valid_from - interval '30 days', h.valid_from + interval '1 hour'
+  FROM customer_segment_history AS h
+ WHERE h.valid_to IS NULL
+ ORDER BY h.customer_id
+ LIMIT 1;
+ROLLBACK;
+
+\echo ''
+\echo '-- N34: reopening or rewriting a closed history row [expect: 23514 check_violation]'
+-- #350: a closed row is history. The trigger applies to the owner as well as to
+-- retail_app, which cannot update the row at all.
+BEGIN;
+UPDATE customer_segment_history SET valid_to = valid_to + interval '1 day'
+ WHERE history_id = (SELECT min(history_id) FROM customer_segment_history
+                      WHERE valid_to IS NOT NULL);
+ROLLBACK;
+
+\echo ''
+\echo '-- N35: changing a history row other than closing it [expect: 23514 check_violation]'
+BEGIN;
+UPDATE customer_segment_history SET label_code = 'LOST'
+ WHERE history_id = (SELECT min(history_id) FROM customer_segment_history
+                      WHERE valid_to IS NULL AND label_code IS DISTINCT FROM 'LOST');
+ROLLBACK;
+
+\echo ''
 \echo '=============================================='
 \echo 'Volume check — at least 30 rows per table'
 \echo 'role and channel are exempt: see sql/seed-exempt.txt'

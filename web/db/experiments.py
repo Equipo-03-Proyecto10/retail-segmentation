@@ -451,14 +451,39 @@ def find_assignment(
     return None if row is None else (row[0], row[1])
 
 
-def insert_exposure(connection: Connection, assignment_id: int) -> None:
-    """Record one exposure. `exposed_at` is the column's default, its own
-    timestamp, separate from `assigned_at`. Exposures are only ever added."""
+_INSERT_EXPOSURE = """
+    INSERT INTO experiment_exposure (assignment_id)
+    SELECT %s
+     WHERE NOT EXISTS (
+        SELECT 1 FROM experiment_exposure
+         WHERE assignment_id = %s
+           AND exposed_at > now() - make_interval(secs => %s))
+"""
+
+
+def insert_exposure(
+    connection: Connection, assignment_id: int, *, repeat_seconds: int
+) -> bool:
+    """Record one exposure, unless this assignment was exposed within the last
+    `repeat_seconds`; returns whether a row was written. `exposed_at` is the
+    column's default, its own timestamp, separate from `assigned_at`. Exposures
+    are only ever added, and a later one is still recorded (ADR-0019): what is
+    skipped is a repeat of the same moment, a double-click or a concurrent
+    submit. The caller holds the experiment's row lock, so the check and the
+    insert cannot interleave with another request's."""
+    with connection.cursor() as cursor:
+        cursor.execute(_INSERT_EXPOSURE, (assignment_id, assignment_id, repeat_seconds))
+        return cursor.rowcount == 1
+
+
+def get_campaign_status(connection: Connection, campaign_id: int) -> str | None:
+    """A campaign's status, or None when the id names no campaign."""
     with connection.cursor() as cursor:
         cursor.execute(
-            "INSERT INTO experiment_exposure (assignment_id) VALUES (%s)",
-            (assignment_id,),
+            "SELECT status FROM campaign WHERE campaign_id = %s", (campaign_id,)
         )
+        row = cursor.fetchone()
+    return None if row is None else row[0]
 
 
 def list_group_exposure(

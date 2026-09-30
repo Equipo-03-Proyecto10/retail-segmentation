@@ -47,11 +47,21 @@ dump() {
   pg_dump --schema-only --no-owner --no-privileges --no-comments \
     | grep -v -E '^(-- Dumped (from|by)|\\(un)?restrict )' >"$out/schema.sql"
   # The role is a psql variable, quoted by psql, never spliced into the text.
+  # Start with every privilege present in the catalog, then ask PostgreSQL for
+  # the role's effective privilege.  Looking only for rows granted directly to
+  # the role would miss a grant inherited through PUBLIC or a role membership.
   psql -X -A -t -v ON_ERROR_STOP=1 -v role="$APP_ROLE" <<'SQL' >"$out/privileges.txt"
-SELECT table_name || ' ' || privilege_type
-  FROM information_schema.table_privileges
- WHERE grantee = :'role' AND table_schema = 'public'
- ORDER BY table_name, privilege_type;
+WITH candidate AS (
+    SELECT DISTINCT table_name, privilege_type
+      FROM information_schema.table_privileges
+     WHERE table_schema = 'public'
+)
+SELECT c.table_name || ' ' || c.privilege_type
+  FROM candidate AS c
+ WHERE has_table_privilege(
+           :'role', format('%I.%I', 'public', c.table_name), c.privilege_type
+       )
+ ORDER BY c.table_name, c.privilege_type;
 SQL
   echo "wrote $out/schema.sql and $out/privileges.txt"
 }

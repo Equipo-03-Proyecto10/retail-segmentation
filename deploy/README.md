@@ -346,7 +346,8 @@ the exposure trigger (ADR-0027) and the append-only revokes (ADR-0026, ADR-0027)
 and `retail_app` could still update and delete assignments and exposures.
 [`check-schema-drift.sh`](check-schema-drift.sh) makes the gap visible. It is
 read-only on both sides and compares the schema and what `retail_app` may do to
-each table, against a clean build of the three scripts at the deployed commit:
+each table (including privileges inherited through `PUBLIC` or role
+membership), against a clean build of the three scripts at the deployed commit:
 
 ```sh
 # 1. Anywhere with a scratch PostgreSQL, at the commit the instance serves:

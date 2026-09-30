@@ -1,5 +1,9 @@
 # F6-07 — Proof of deployment
 
+Historical operator and administrator addresses are redacted in this
+published copy. Deployment hostnames, service state and command outcomes are
+unchanged.
+
 Deliverable 13 in [`../scope.md`](../scope.md) §5. Captured on 2026-09-07 against
 the published host `mosaiq.maxthecoder.online`, which
 [ADR-0013](../adr/0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md)
@@ -188,7 +192,7 @@ Demonstration accounts that can still sign in: 30
 
 **After.** The documented command was run on the instance, the password typed
 at its prompt and never passed as an argument. It was run twice: first onto
-`cloudcompute97@gmail.com`, then again onto the address the team settled on.
+`[redacted deployment account]`, then again onto the address the team settled on.
 The first account was deactivated through the application's own user management
 (F3-06), which is the only path that closes an account.
 
@@ -196,7 +200,7 @@ The first account was deactivated through the application's own user management
 $ flask --app web.app account-report
 
 33 accounts, 1 of them active.
-  ADMIN              mosaiq-devs-supera@udem.edu
+  ADMIN              [redacted team administrator address]
 Demonstration accounts that can still sign in: 0
 ```
 
@@ -210,7 +214,7 @@ This closes finding 01 of [`instance-findings-fixes.md`](instance-findings-fixes
 which recorded the published demonstration credentials as pending operator
 input.
 
-**The address is deliberately not the operator's.** `mosaiq-devs-supera@udem.edu`
+**The address is deliberately not the operator's.** `[redacted team administrator address]`
 is a team address; the instance's SSH access is held by a personal Google
 account. Keeping them separate means compromising one does not reach the other.
 An earlier run of this procedure had used the SSH account itself, and was

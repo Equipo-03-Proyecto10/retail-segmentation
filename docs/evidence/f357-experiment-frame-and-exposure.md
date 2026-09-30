@@ -35,11 +35,13 @@ exposures plural and stops the accident (a repeat within 60 seconds) instead. If
 wants exactly one, that is a schema change (a unique index) and an ADR superseding the
 plural wording.
 
-## Not done
+## Corrections after review
 
-- The dates are compared with the application server's `date.today()`, and the database's
-  `current_date` was a day ahead on this machine (UTC container, local host). On an
-  instance where both share a time zone it does not matter; here it moved the boundary by
-  a day, which the check above allowed for.
-- Nothing on the instance. No 375/1440 px captures of the edit form (three fields became
-  read-only once an experiment has assignments).
+The first verification exposed a real boundary defect: the application server's
+`date.today()` and PostgreSQL's `CURRENT_DATE` differed by a day on this machine. The
+merged implementation now reads the business date from PostgreSQL on the same connection
+that records the event. The single-customer and bulk exposure paths also share the date,
+campaign-status and 60-second repeat guards; `tests/test_experiment_frame.py` covers both.
+
+Nothing was changed on the instance. There are no 375/1440 px captures of the edit form
+(three fields became read-only once an experiment has assignments).

@@ -209,17 +209,18 @@ N35 of `sql/verify_integrity.sql`. See
 Once anyone is assigned, an experiment's campaign, start date, end date, target
 metric and conversion window no longer change; only its name does (ADR-0019). An
 experiment cannot be attached to a campaign that is finished or cancelled, and a
-campaign that ended before today is not activated. An exposure is refused before
-the experiment starts, after it ends, and when its campaign is finished or
-cancelled. Exposures stay plural (ADR-0019): a later exposure is recorded, but a
-repeat for the same assignment within 60 seconds adds nothing, so a double-click or
-concurrent submits leave one row. "Average ticket" can still be chosen but is
-labelled as not measured yet.
+campaign that ended before PostgreSQL's `CURRENT_DATE` is not activated. Individual
+and bulk exposures are refused before the experiment starts, after it ends, and when
+its campaign is finished or cancelled. They use that same database date, so the web
+server and PostgreSQL cannot disagree at midnight. Exposures stay plural (ADR-0019):
+a later exposure is recorded, but a repeat for the same assignment within 60 seconds
+adds nothing, so a double-click or concurrent submits leave one row. "Average
+ticket" can still be chosen but is labelled as not measured yet.
 
-**Enforced:** `_update`, `_create` and `_record_exposure` in
-`web/services/experiments.py`, `transition` in `web/services/campaigns.py`, and the
-conditional insert in `web/db/experiments.py`. **Verified** —
-`tests/test_experiment_frame.py`.
+**Enforced:** `_update`, `_create`, `_record_exposure` and
+`_record_group_exposures` in `web/services/experiments.py`, `transition` in
+`web/services/campaigns.py`, `current_date` in `web/db/clock.py`, and the conditional
+insert in `web/db/experiments.py`. **Verified** — `tests/test_experiment_frame.py`.
 
 ### RN-37 — A K-means run is reproducible from what it records, and each of its numerical hazards has a defined behaviour
 The fit is fixed by the seed, k, the iteration limit, the tolerance and the feature

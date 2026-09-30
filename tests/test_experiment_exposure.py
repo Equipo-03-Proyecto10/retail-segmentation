@@ -37,6 +37,7 @@ GROUPS = [
 def _wire(
     monkeypatch: pytest.MonkeyPatch, *, found: tuple[int, str] | None
 ) -> dict[str, Mock]:
+    monkeypatch.setattr(service, "business_date", Mock(return_value=date(2026, 10, 15)))
     mocks = {
         "lock_experiment": Mock(return_value=True),
         "find_assignment": Mock(return_value=found),

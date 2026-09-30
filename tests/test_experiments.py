@@ -346,7 +346,7 @@ def test_an_incomplete_experiment_blocks_its_campaigns_activation(
     monkeypatch.setattr(campaign_service.campaigns, "change_status", change_status)
 
     with pytest.raises(campaign_service.InvalidTransition, match=missing):
-        campaign_service.transition(MagicMock(), 7, "activate")
+        campaign_service.transition(MagicMock(), 7, "activate", date(2026, 10, 15))
 
     change_status.assert_not_called()
 
@@ -371,7 +371,7 @@ def test_a_no_control_two_treatment_experiment_allows_campaign_activation(
     change_status = Mock(return_value=True)
     monkeypatch.setattr(campaign_service.campaigns, "change_status", change_status)
 
-    campaign_service.transition(MagicMock(), 7, "activate")
+    campaign_service.transition(MagicMock(), 7, "activate", date(2026, 10, 15))
 
     change_status.assert_called_once()
 

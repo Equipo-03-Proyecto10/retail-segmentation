@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, Mock
 import pytest
 from flask import Flask
 
+from tests.test_experiment_assignment import _experiment
 from web.app import create_app
 from web.config import Config
 from web.db import experiments as db
@@ -19,6 +20,7 @@ from web.services import experiments as service
 
 ROOT = Path(__file__).resolve().parents[1]
 CUSTOMERS = [f"00000000-0000-0000-0000-{n:012d}" for n in range(1, 11)]
+TODAY = date(2026, 10, 15)
 
 
 @pytest.fixture
@@ -194,17 +196,36 @@ def _group() -> ExperimentGroup:
     return ExperimentGroup(2, 7, "TREATMENT", "Offer A", "Discount.", 2)
 
 
+def _wire_bulk_frame(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        db,
+        "get_experiment",
+        Mock(
+            return_value=_experiment(
+                experiment_id=7,
+                campaign_id=1,
+                starts_on=date(2026, 10, 1),
+                ends_on=date(2026, 10, 31),
+            )
+        ),
+    )
+    monkeypatch.setattr(db, "get_campaign_status", Mock(return_value="ACTIVE"))
+
+
 def test_bulk_exposure_selected_subset_is_append_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _wire_bulk_frame(monkeypatch)
     monkeypatch.setattr(db, "lock_experiment", Mock(return_value=True))
     monkeypatch.setattr(db, "list_group_definitions", Mock(return_value=[_group()]))
     ids = Mock(return_value=[10, 11])
     monkeypatch.setattr(db, "list_assignment_ids", ids)
-    insert = Mock()
+    insert = Mock(return_value=True)
     monkeypatch.setattr(db, "insert_exposure", insert)
 
-    count = service.record_group_exposures(MagicMock(), 7, 2, CUSTOMERS[:2])
+    count = service.record_group_exposures(
+        MagicMock(), 7, 2, CUSTOMERS[:2], today=TODAY
+    )
 
     assert count == 2
     assert [call.args[1] for call in insert.call_args_list] == [10, 11]
@@ -213,14 +234,15 @@ def test_bulk_exposure_selected_subset_is_append_only(
 def test_bulk_exposure_all_uses_no_customer_filter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _wire_bulk_frame(monkeypatch)
     monkeypatch.setattr(db, "lock_experiment", Mock(return_value=True))
     monkeypatch.setattr(db, "list_group_definitions", Mock(return_value=[_group()]))
     ids = Mock(return_value=[10, 11])
     monkeypatch.setattr(db, "list_assignment_ids", ids)
-    monkeypatch.setattr(db, "insert_exposure", Mock())
+    monkeypatch.setattr(db, "insert_exposure", Mock(return_value=True))
 
     connection = MagicMock()
-    assert service.record_group_exposures(connection, 7, 2) == 2
+    assert service.record_group_exposures(connection, 7, 2, today=TODAY) == 2
     assert ids.call_args.args == (connection, 7, 2, None)
 
 
@@ -231,6 +253,7 @@ def test_bulk_exposure_all_uses_no_customer_filter(
 def test_bulk_exposure_rejects_empty_invalid_or_cross_arm_selection(
     monkeypatch: pytest.MonkeyPatch, selected: list[str], message: str
 ) -> None:
+    _wire_bulk_frame(monkeypatch)
     monkeypatch.setattr(db, "lock_experiment", Mock(return_value=True))
     monkeypatch.setattr(db, "list_group_definitions", Mock(return_value=[_group()]))
     monkeypatch.setattr(db, "list_assignment_ids", Mock(return_value=[]))
@@ -238,7 +261,7 @@ def test_bulk_exposure_rejects_empty_invalid_or_cross_arm_selection(
     monkeypatch.setattr(db, "insert_exposure", insert)
 
     with pytest.raises(service.ExposureRefused, match=message):
-        service.record_group_exposures(MagicMock(), 7, 2, selected)
+        service.record_group_exposures(MagicMock(), 7, 2, selected, today=TODAY)
 
     insert.assert_not_called()
 
@@ -251,7 +274,7 @@ def test_bulk_exposure_rejects_control(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(db, "insert_exposure", insert)
 
     with pytest.raises(service.ExposureRefused, match="never exposed"):
-        service.record_group_exposures(MagicMock(), 7, 1, CUSTOMERS[:1])
+        service.record_group_exposures(MagicMock(), 7, 1, CUSTOMERS[:1], today=TODAY)
 
     insert.assert_not_called()
 
@@ -259,6 +282,7 @@ def test_bulk_exposure_rejects_control(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_bulk_exposure_rejects_duplicate_selection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _wire_bulk_frame(monkeypatch)
     monkeypatch.setattr(db, "lock_experiment", Mock(return_value=True))
     monkeypatch.setattr(db, "list_group_definitions", Mock(return_value=[_group()]))
     monkeypatch.setattr(db, "list_assignment_ids", Mock(return_value=[10]))
@@ -266,7 +290,9 @@ def test_bulk_exposure_rejects_duplicate_selection(
     monkeypatch.setattr(db, "insert_exposure", insert)
 
     with pytest.raises(service.ExposureRefused, match="assigned"):
-        service.record_group_exposures(MagicMock(), 7, 2, [CUSTOMERS[0], CUSTOMERS[0]])
+        service.record_group_exposures(
+            MagicMock(), 7, 2, [CUSTOMERS[0], CUSTOMERS[0]], today=TODAY
+        )
 
     insert.assert_not_called()
 
@@ -274,16 +300,17 @@ def test_bulk_exposure_rejects_duplicate_selection(
 def test_bulk_exposure_rolls_back_when_one_insert_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _wire_bulk_frame(monkeypatch)
     monkeypatch.setattr(db, "lock_experiment", Mock(return_value=True))
     monkeypatch.setattr(db, "list_group_definitions", Mock(return_value=[_group()]))
     monkeypatch.setattr(db, "list_assignment_ids", Mock(return_value=[10, 11]))
     monkeypatch.setattr(
-        db, "insert_exposure", Mock(side_effect=[None, RuntimeError("lost")])
+        db, "insert_exposure", Mock(side_effect=[True, RuntimeError("lost")])
     )
     connection = MagicMock()
 
     with pytest.raises(RuntimeError):
-        service.record_group_exposures(connection, 7, 2)
+        service.record_group_exposures(connection, 7, 2, today=TODAY)
 
     connection.rollback.assert_called_once()
     connection.commit.assert_not_called()

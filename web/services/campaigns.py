@@ -18,6 +18,7 @@ from psycopg import Connection
 from psycopg.errors import CheckViolation, ForeignKeyViolation, IntegrityError
 
 from web.db import campaigns
+from web.db.clock import current_date as business_date
 from web.db.transactions import atomic
 from web.parsing import iso_date
 from web.services.experiments import activation_refusal
@@ -208,7 +209,9 @@ def transition(
         raise CampaignNotFound(campaign_id)
     if target not in TRANSITIONS[current.status]:
         raise _refuse_move(campaign_id, current.status, target)
-    if target == ACTIVE and current.ends_on < (today or date.today()):
+    if target == ACTIVE and current.ends_on < (
+        today if today is not None else business_date(connection)
+    ):
         raise InvalidTransition(
             f"Campaign {campaign_id} ended on {current.ends_on}, so it cannot be "
             "activated; edit the draft's dates first."

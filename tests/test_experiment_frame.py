@@ -13,12 +13,22 @@ import pytest
 
 from tests.test_experiment_assignment import _experiment
 from tests.test_experiments import EDIT, FORM
+from web.db import clock
 from web.db import experiments as db
 from web.db.campaigns import Campaign
 from web.services import campaigns as campaign_service
 from web.services import experiments as service
 
 TODAY = date(2026, 10, 15)
+
+
+def test_the_business_date_comes_from_postgresql() -> None:
+    connection = MagicMock()
+    cursor = connection.cursor.return_value.__enter__.return_value
+    cursor.fetchone.return_value = (TODAY,)
+
+    assert clock.current_date(connection) == TODAY
+    assert cursor.execute.call_args.args == ("SELECT CURRENT_DATE", ())
 
 
 def _wire_update(monkeypatch, current, status="ACTIVE") -> Mock:
@@ -198,6 +208,35 @@ def test_a_campaign_ending_today_or_later_can_be_activated(
     assert _transition(monkeypatch, date(2026, 12, 31), TODAY) == "ACTIVE"
 
 
+def test_campaign_activation_defaults_to_the_database_date(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_today = Mock(return_value=TODAY)
+    monkeypatch.setattr(campaign_service, "business_date", database_today)
+    monkeypatch.setattr(
+        campaign_service.campaigns,
+        "get_campaign",
+        Mock(
+            return_value=Campaign(
+                7,
+                "Win-back",
+                "AT_RISK",
+                date(2026, 10, 1),
+                TODAY,
+                "DRAFT",
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        campaign_service.campaigns, "change_status", Mock(return_value=True)
+    )
+    monkeypatch.setattr(campaign_service, "activation_refusal", lambda *_a: None)
+    connection = MagicMock()
+
+    assert campaign_service.transition(connection, 7, "activate") == "ACTIVE"
+    database_today.assert_called_once_with(connection)
+
+
 def test_a_campaign_that_has_not_started_can_be_activated_early(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -274,6 +313,18 @@ def test_an_exposure_inside_the_experiment_is_recorded(
     assert insert.call_args.kwargs["repeat_seconds"] == service.EXPOSURE_REPEAT_SECONDS
 
 
+def test_an_exposure_defaults_to_the_database_date(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _wire_exposure(monkeypatch)
+    database_today = Mock(return_value=TODAY)
+    monkeypatch.setattr(service, "business_date", database_today)
+    connection = MagicMock()
+
+    assert service.record_exposure(connection, 31, CUSTOMER) is True
+    database_today.assert_called_once_with(connection)
+
+
 @pytest.mark.parametrize(
     "today,message",
     [
@@ -332,6 +383,76 @@ def test_a_repeat_of_the_same_moment_reports_that_nothing_was_added(
     _wire_exposure(monkeypatch, written=False)
 
     assert service.record_exposure(MagicMock(), 31, CUSTOMER, TODAY) is False
+
+
+def _wire_bulk_exposure(
+    monkeypatch: pytest.MonkeyPatch, *, status: str = "ACTIVE", written: bool = True
+) -> Mock:
+    insert = _wire_exposure(monkeypatch, status=status, written=written)
+    monkeypatch.setattr(
+        db,
+        "list_group_definitions",
+        Mock(
+            return_value=[
+                db.ExperimentGroup(2, 31, "TREATMENT", "Offer", "Discount", 1)
+            ]
+        ),
+    )
+    monkeypatch.setattr(db, "list_assignment_ids", Mock(return_value=[900]))
+    return insert
+
+
+@pytest.mark.parametrize(
+    "today,message",
+    [
+        (date(2026, 9, 30), "starts on 2026-10-01"),
+        (date(2026, 11, 1), "ended on 2026-10-31"),
+    ],
+)
+def test_bulk_exposure_uses_the_same_experiment_dates(
+    monkeypatch: pytest.MonkeyPatch, today: date, message: str
+) -> None:
+    insert = _wire_bulk_exposure(monkeypatch)
+
+    with pytest.raises(service.ExposureRefused, match=message):
+        service.record_group_exposures(MagicMock(), 31, 2, [CUSTOMER], today=today)
+
+    insert.assert_not_called()
+
+
+@pytest.mark.parametrize("status", ["FINISHED", "CANCELLED"])
+def test_bulk_exposure_uses_the_same_campaign_guard(
+    monkeypatch: pytest.MonkeyPatch, status: str
+) -> None:
+    insert = _wire_bulk_exposure(monkeypatch, status=status)
+
+    with pytest.raises(service.ExposureRefused, match=status.lower()):
+        service.record_group_exposures(MagicMock(), 31, 2, [CUSTOMER], today=TODAY)
+
+    insert.assert_not_called()
+
+
+def test_bulk_exposure_uses_the_same_repeat_guard(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    insert = _wire_bulk_exposure(monkeypatch, written=False)
+
+    assert (
+        service.record_group_exposures(MagicMock(), 31, 2, [CUSTOMER], today=TODAY) == 0
+    )
+    assert insert.call_args.kwargs["repeat_seconds"] == service.EXPOSURE_REPEAT_SECONDS
+
+
+def test_bulk_exposure_defaults_to_the_database_date(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _wire_bulk_exposure(monkeypatch)
+    database_today = Mock(return_value=TODAY)
+    monkeypatch.setattr(service, "business_date", database_today)
+    connection = MagicMock()
+
+    assert service.record_group_exposures(connection, 31, 2, [CUSTOMER]) == 1
+    database_today.assert_called_once_with(connection)
 
 
 def test_the_repeat_guard_is_a_conditional_insert_by_assignment_and_time() -> None:

@@ -1,0 +1,72 @@
+{#- Before and now on the consumption profile (#341): the customer's dominant
+    channel and store and their top categories in the two halves of the
+    profile window, with shares, and whether a shift is claimed (RN-50).
+
+    Included by catalog/customer_profile.html with `shifts` (a ProfileShifts,
+    or None when the window is too short to halve) and `min_purchases`. Kept in
+    its own file so the profile page carries a single line for it. -#}
+{% from "macros/ui.html" import status_pill %}
+{% macro day(moment) %}{{ moment.strftime("%Y-%m-%d") }}{% endmacro %}
+{% macro noun(n, singular) %}{{ singular if n == 1 else singular ~ "s" }}{% endmacro %}
+{% macro share(leader) %}{% if leader %}{{ leader.name }} <span class="mq-num">{{ leader.share }} %</span> <span class="mq-caption">({{ leader.purchases }} of {{ leader.period_purchases }})</span>{% else %}<span class="mq-caption">—</span>{% endif %}{% endmacro %}
+{% macro categories(leaders) %}
+  {% if leaders %}
+    <ol class="mq-stack">
+      {% for leader in leaders %}<li>{{ share(leader) }}</li>{% endfor %}
+    </ol>
+  {% else %}
+    <span class="mq-caption">No purchases with product lines</span>
+  {% endif %}
+{% endmacro %}
+
+{% if shifts %}
+  {% set status_tone = {"shifted": "warning", "unchanged": "neutral", "undecided": "neutral", "not compared": "neutral"} %}
+  {% set status_text = {"shifted": "Shifted", "unchanged": "No shift", "undecided": "No shift claimed", "not compared": "Not compared"} %}
+  <section class="mq-panel mq-panel--table mq-density-compact" aria-labelledby="shifts-title">
+    <header class="mq-panel__header">
+      <h2 class="mq-panel__title" id="shifts-title">Before and now</h2>
+      <span class="mq-caption">{{ day(shifts.earlier.start) }} to {{ day(shifts.earlier.end) }} against {{ day(shifts.later.start) }} to {{ day(shifts.later.end) }} · {{ shifts.half_days }} {{ noun(shifts.half_days, "day") }} each</span>
+    </header>
+    <div class="mq-table-wrap">
+      <table class="mq-table">
+        <thead>
+          <tr>
+            <th scope="col">Dimension</th>
+            <th scope="col">Before · % of purchases</th>
+            <th scope="col">Now · % of purchases</th>
+            <th scope="col">Shift</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Purchases</td>
+            <td class="mq-num">{{ shifts.earlier_purchases }}</td>
+            <td class="mq-num">{{ shifts.later_purchases }}</td>
+            <td></td>
+          </tr>
+          {% for dimension in shifts.dimensions %}
+            <tr>
+              <td>{{ dimension.name }}</td>
+              <td>{{ share(dimension.before) }}</td>
+              <td>{{ share(dimension.after) }}</td>
+              <td>
+                {{ status_pill(status_text[dimension.status.value], status_tone[dimension.status.value]) }}
+                {% if dimension.reason %}<span class="mq-caption">{{ dimension.reason }}</span>{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          <tr>
+            <td>Top categories</td>
+            <td>{{ categories(shifts.categories_before) }}</td>
+            <td>{{ categories(shifts.categories_after) }}</td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="mq-panel__body">
+      <p class="mq-caption">Shares are % of purchases in each period. A category's share is the purchases containing it over the purchases with product lines, so several categories can add up to more than 100 %: one purchase can hold more than one.</p>
+      <p class="mq-caption">A shift is claimed only with at least {{ min_purchases }} purchases in each period and a leader with more purchases than the next one; a tie is never broken by spend for this (RN-50). Every customer's shifts over {{ shifts.half_days }}-day periods are on the <a href="{{ url_for('consumption_reports.index', window_days=shifts.half_days) }}">consumption reports</a> page.</p>
+    </div>
+  </section>
+{% endif %}

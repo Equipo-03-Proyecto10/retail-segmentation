@@ -407,6 +407,7 @@ together under [ADR-0017][adr-0017].
 | F8-03 | Build the customer consumption profile: total spend, average ticket, frequency, last purchase, dominant channel and store, favourite categories, frequent products, average discount, RFM, and current and previous segment | P0 | F8-02, F7-02 |
 | F8-04 | Server-rendered consumption profile view | P0 | F8-03, F4-07 |
 | F8-05 | Detect channel, store and category shifts in the consumption profile | P0 | F8-04 |
+| F8-06 | Show dominant channel and store and top categories before and now on the consumption profile, with shares of purchases, and claim a shift only with enough purchases and a clear leader (#341) | P0 | F8-05, F12-03 |
 
 **The CSV contract needs one schema story first.** The current database
 generates `transaction.transaction_id`, while the file supplies a transaction

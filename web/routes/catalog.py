@@ -41,6 +41,10 @@ from web.parsing import DATE_MAX, DATE_MIN, iso_date, whole_number
 from web.routes.pagination import redirect_last_page
 from web.services.catalog import SMALLINT_MAX, parse_pagination
 from web.services.consumption_profile import UnknownCustomer, build_profile
+from web.services.consumption_shift import (
+    MIN_PURCHASES_PER_PERIOD,
+    build_profile_shifts,
+)
 from web.services.customer_timeline import (
     UnknownChange,
     build_change,
@@ -249,6 +253,14 @@ def customer_profile(customer_id: UUID) -> str | tuple[str, int]:
         error=None,
         min_window=MIN_WINDOW_DAYS,
         max_window=MAX_WINDOW_DAYS,
+        # Before and now, over the two halves of the same window (#341).
+        shifts=build_profile_shifts(
+            connection,
+            profile.customer_id,
+            until=profile.window_end,
+            window_days=window_days,
+        ),
+        min_purchases=MIN_PURCHASES_PER_PERIOD,
     )
 
 

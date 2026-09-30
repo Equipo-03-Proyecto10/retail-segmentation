@@ -12,12 +12,23 @@
         <span class="mq-alert__icon" aria-hidden="true">!</span>
         <div class="mq-stack">
           <span class="mq-alert__title">Current assignments may change</span>
-          <span class="mq-alert__text">This recalculates every customer using the last <strong>{{ window }} days</strong> of sales. Existing assignments may be replaced or cleared, and the audit log records each change.</span>
+          {% if method == "KMEANS" %}
+            <span class="mq-alert__text">This runs K-means (K={{ kmeans_params.k }}, seed={{ kmeans_params.seed }}) over the last <strong>{{ window }} days</strong> of sales. Existing assignments may be replaced or cleared, and the audit log records each change.</span>
+          {% else %}
+            <span class="mq-alert__text">This recalculates every customer using the last <strong>{{ window }} days</strong> of sales. Existing assignments may be replaced or cleared, and the audit log records each change.</span>
+          {% endif %}
         </div>
       </div>
       <form class="mq-form__actions" method="post" action="{{ url_for('segment_run.execute') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="window" value="{{ window }}">
+        <input type="hidden" name="method" value="{{ method }}">
+        {% if method == "KMEANS" %}
+          <input type="hidden" name="k" value="{{ kmeans_params.k }}">
+          <input type="hidden" name="seed" value="{{ kmeans_params.seed }}">
+          <input type="hidden" name="max_iterations" value="{{ kmeans_params.max_iterations }}">
+          <input type="hidden" name="tolerance" value="{{ kmeans_params.tolerance }}">
+        {% endif %}
         <button class="mq-btn mq-btn--primary" type="submit" name="confirm" value="yes">Confirm recalculation</button>
         <a class="mq-btn mq-btn--secondary" href="{{ url_for('segment_run.index') }}">Cancel</a>
       </form>

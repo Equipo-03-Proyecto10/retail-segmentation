@@ -36,6 +36,7 @@ here is a gap, not an omission from this index.
 | [F4-01](f4-01-authorization.md) | Route-level authorization against the permission matrix |
 | [F4-02](f4-02-single-administrator.md) | The single-administrator rule refused twice — application and partial unique index |
 | [F4-06](f4-06-real-administrator.md) | An administrator provisioned on the instance without a published password |
+| [#348](login-throttling.md) | Repeated sign-in failures are throttled per account and client, with a retryable HTML response |
 
 ## Phase 5 — tests and review
 
@@ -60,6 +61,12 @@ developer machine, which
 [ADR-0015](../adr/0015-containers-are-a-development-path-only.md) settles as the
 right place for it, and which the team accepted on 2026-09-07.
 
+## Phase 7 — segmentation traceability
+
+| Document | What it records |
+|---|---|
+| [F7-08](f7-08-migration-explanation-links.md) | The migration explanation linked from the matrix and the customer timeline and stated in plain language: recency in days, RN-50's changed/stable thresholds, a label moved only by the quintile cut points, and a new customer shown as new, at 375 px and 1440 px |
+
 ## Phase 8 — sales ingestion and consumption profile
 
 | Document | What it records |
@@ -67,15 +74,18 @@ right place for it, and which the team accepted on 2026-09-07.
 | [F8-03](f8-03-consumption-profile.md) | The consumption profile computed over accepted sales, cross-checked against independent queries on the seeded database, with its ties, empty case and single-assignment case reproduced |
 | [F8-04](f8-04-consumption-profile-view.md) | The consumption profile page at 375 px and 1440 px: every measure with its unit and window, the no-purchase-history case, and the refusal of a role without `segment.read` |
 | [F8-05](f8-05-consumption-shifts.md) | Channel, store and category shifts between two stated periods, cross-checked against an independent recomputation on the seeded database, with absence, ties and the shared boundary instant reproduced |
+| [F8-06](f8-06-profile-shifts.md) | Before and now on the consumption profile: dominant channel and store and top categories with shares of purchases, a shift claimed only with enough purchases and a clear leader (RN-50), the reason when it is not, and the shift report's reconciled counts, at 375 px and 1440 px |
 
 ## Phase 9 — segmentation modelling
 
 | Document | What it records |
 |---|---|
 | [F9-01](f9-01-rfm-rules-adapter.md) | The rule-based scoring as an adapter behind a method-agnostic pipeline: the new writes compared with the old single statement on the seeded database, the method domain enforced by the database, and a consumer that is never told the method |
+| [#352](f352-quintile-ties.md) | A quintile-scoring defect fixed: 30 customers tied on frequency used to split across five different scores by customer id; verified on the seed (all 30 now share one score) and on a mixed population, with an independent SQL cross-check that no two customers who tie ever disagree |
 | [F9-02](f9-02-kmeans-fit.md) | The K-means fit written in the application: checked against exact rational arithmetic and scikit-learn, its empty-cluster, non-convergence and tie behaviours on real rows, and the parameters and quality measures a run records |
 | [F9-03](f9-03-cluster-labels.md) | K-means clusters mapped to the stable labels by ADR-0018's deterministic order: checked against the stored rows, 500 renamings of a real partition, a refused k, and two runs that number the same partition differently |
 | [F9-04](f9-04-model-comparison.md) | The model comparison page at 375 px and 1440 px: per-label populations and per-customer agreement checked against independent SQL, a run whose labels are copied giving 100% agreement whatever its method, the empty and error states, and the refusal of a role without `segment.read` |
+| [F9-05](f9-05-kmeans-variable-k.md) | K-means with k = 5 and k = 8 on the seeded database, paired with the stable labels by ADR-0030's proportional rank: the pairing and the shared and unused labels each run records, ADR-0030's database checks at zero, every downstream page reading only labels, at 375 px and 1440 px |
 
 ## Phase 10 — recommendations
 
@@ -115,3 +125,8 @@ These follow a specific review rather than a story.
 | [Navigation and upload hotfix](navigation-upload-hotfix.md) | The integration review of PR #132 |
 | [F5-03 resolution](review-findings-resolution.md) | Resolution of #157–#165, and the ADR acceptance basis |
 | [Catalog label reads](catalog-label-reads.md) | #272, found reviewing F9-03: the customer pages read the label, so a K-means assignment is no longer shown as *Unassigned*, before and after on a real K-means run at 375 px and 1440 px |
+| [#345](f345-segment-rule-bands.md) | The seeded RFM bands partition the 125 triples so every label is reachable, and the run page separates customers with no sales from customers who matched no rule; the seed itself was not run on PostgreSQL here |
+| [#350](f350-history-protection.md) | History, runs and experiments protected from the application role, checked on PostgreSQL 16: clean load, the application-role self-test, cases N33 to N36, forbidden and allowed statements as `retail_app`, and a real RFM_RULES and KMEANS run |
+| [#357](f357-experiment-frame-and-exposure.md) | The experiment frame fixed after assignment, exposure refused outside it, and concurrent repeat exposures collapsed to one row, checked on PostgreSQL 16 with 8 concurrent connections |
+| [#343](f343-exposed-conversion.md) | Conversion among exposed customers beside intent to treat, checked against an independent query on PostgreSQL with boundary sales, the uplift page as a 200 before evaluation, and captures at 375 px and 1440 px |
+| [#340](f340-dashboard-kpis.md) | The dashboard KPIs beyond the charts: average R/F/M per label, running experiments with conversion per arm, most recommended products with stock; with the queries to compare them and what was not run |

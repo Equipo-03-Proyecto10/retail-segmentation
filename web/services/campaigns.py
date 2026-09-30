@@ -18,7 +18,9 @@ from psycopg import Connection
 from psycopg.errors import CheckViolation, ForeignKeyViolation, IntegrityError
 
 from web.db import campaigns
+from web.db.clock import current_date as business_date
 from web.db.transactions import atomic
+from web.parsing import iso_date
 from web.services.experiments import activation_refusal
 
 DRAFT = "DRAFT"
@@ -78,10 +80,10 @@ def not_a_draft(campaign_id: int, status: str) -> str:
 def _parse_date(raw: str, label: str) -> tuple[date | None, str | None]:
     if not raw:
         return None, f"{label} is required."
-    try:
-        return date.fromisoformat(raw), None
-    except ValueError:
+    value = iso_date(raw)
+    if value is None:
         return None, f"{label} must be a date (YYYY-MM-DD)."
+    return value, None
 
 
 def validate_campaign(
@@ -192,7 +194,9 @@ def _refuse_move(campaign_id: int, status: str, target: str) -> InvalidTransitio
 
 
 @atomic
-def transition(connection: Connection, campaign_id: int, action: str) -> str:
+def transition(
+    connection: Connection, campaign_id: int, action: str, today: date | None = None
+) -> str:
     """Apply one lifecycle action and return the campaign's new status.
 
     Refuses with InvalidTransition rather than ignoring an illegal move, and
@@ -205,6 +209,13 @@ def transition(connection: Connection, campaign_id: int, action: str) -> str:
         raise CampaignNotFound(campaign_id)
     if target not in TRANSITIONS[current.status]:
         raise _refuse_move(campaign_id, current.status, target)
+    if target == ACTIVE and current.ends_on < (
+        today if today is not None else business_date(connection)
+    ):
+        raise InvalidTransition(
+            f"Campaign {campaign_id} ended on {current.ends_on}, so it cannot be "
+            "activated; edit the draft's dates first."
+        )
     # Activation starts the campaign, and assignment with it: every experiment
     # attached must by then have its control and a treatment (RN-24, F11-03).
     if target == ACTIVE and (refusal := activation_refusal(connection, campaign_id)):

@@ -110,3 +110,65 @@ def get_previous_run(
         row = cursor.fetchone()
 
     return SegmentationRun(*row) if row else None
+
+
+@dataclass(frozen=True)
+class LabelMeans:
+    """The means of one label's customers in a run (#340). The quintile means
+    are None for a run whose method produced no scores (K-means, ADR-0018); the
+    raw means are recorded for either method."""
+
+    label_code: str
+    customers: int
+    mean_r: Decimal | None
+    mean_f: Decimal | None
+    mean_m: Decimal | None
+    mean_recency_days: Decimal | None
+    mean_frequency: Decimal | None
+    mean_monetary: Decimal | None
+
+
+_LABEL_MEANS = """
+    SELECT label_code, count(*),
+           avg(r_score), avg(f_score), avg(m_score),
+           avg(extract(epoch FROM (%s - recency_last_purchase_at)) / 86400),
+           avg(frequency_count), avg(monetary_total)
+      FROM customer_segment_history
+     WHERE run_id = %s AND label_code IS NOT NULL
+     GROUP BY label_code
+"""
+
+
+def list_run_label_means(
+    connection: Connection[Any], run_id: int, run_at: datetime
+) -> list[LabelMeans]:
+    """Average R, F and M and the raw means per label, for the customers a run
+    labelled. Recency is in days before the run."""
+    with connection.cursor() as cursor:
+        cursor.execute(_LABEL_MEANS, (run_at, run_id))
+        return [LabelMeans(*row) for row in cursor.fetchall()]
+
+
+def list_run_labelled_customers(
+    connection: Connection[Any], run_id: int, limit: int
+) -> tuple[list[str], int]:
+    """The first `limit` customers a run labelled, by id, and how many it labelled."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT customer_id
+              FROM customer_segment_history
+             WHERE run_id = %s AND label_code IS NOT NULL
+             ORDER BY customer_id
+             LIMIT %s
+            """,
+            (run_id, limit),
+        )
+        ids = [str(row[0]) for row in cursor.fetchall()]
+        cursor.execute(
+            "SELECT count(*) FROM customer_segment_history "
+            "WHERE run_id = %s AND label_code IS NOT NULL",
+            (run_id,),
+        )
+        total = cursor.fetchone()[0]
+    return ids, total

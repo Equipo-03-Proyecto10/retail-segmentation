@@ -48,7 +48,7 @@ pair that only the edge trusts. Nothing needs to reach the box except an edge on
 hostname as SNI answered `HTTP/2 200` from `nginx/1.26.3` — the edge's filtering,
 WAF and real-client-IP were all optional for an attacker who knew the address.
 
-Applied with `cloudcompute97@gmail.com`, which holds
+Applied with `[redacted deployment account]`, which holds
 `roles/compute.securityAdmin`; the OS-Login `*.udem.edu` accounts carry only
 `compute.osAdminLogin` and cannot change firewall rules:
 
@@ -124,10 +124,10 @@ has `roles/compute.osAdminLogin` on project `iac-dev-01` and
 
 | Team account | Configuration | Shell verification |
 |---|---|---|
-| `cloudcompute97@gmail.com` | Configured | Verified on 2026-09-03 |
-| `maximiliano.rubio@udem.edu` | Configured | Verified by member on 2026-09-03 |
-| `estefania.najera@udem.edu` | Configured | Verified by member on 2026-09-03 |
-| `raquel.delagarzav@udem.edu` | Configured | Verified by member on 2026-09-03 |
+| `[redacted deployment account]` | Configured | Verified on 2026-09-03 |
+| `[redacted team member]` | Configured | Verified by member on 2026-09-03 |
+| `[redacted team member]` | Configured | Verified by member on 2026-09-03 |
+| `[redacted team member]` | Configured | Verified by member on 2026-09-03 |
 
 Each member verifies their own identity and shell with:
 

@@ -1,5 +1,9 @@
 # F4-06 — The real administrator on the instance
 
+The operator and administrator addresses in this historical evidence are
+redacted with `example.invalid` placeholders before publication. Account
+counts, command outcomes and authentication results are unchanged.
+
 Evidence that a deployed instance can be given an administrator whose password
 was never in this repository, and that the published one stops opening
 anything.
@@ -47,8 +51,8 @@ password without changing the refusal fails the build.
 
 ```
 $ flask --app web.app provision-administrator \
-      --name "Real Person" --email real@udem.edu --deactivate-demo-accounts
-real@udem.edu is now the administrator (there were 1 before).
+      --name "Real Person" --email redacted-admin@example.invalid --deactivate-demo-accounts
+redacted-admin@example.invalid is now the administrator (there were 1 before).
 Deactivated 30 demonstration accounts.
 Administrators: 1. Demonstration accounts that can still sign in: 0.
 ```
@@ -58,7 +62,7 @@ Administrators: 1. Demonstration accounts that can still sign in: 0.
 ```
 $ flask --app web.app account-report
 31 accounts, 1 of them active.
-  ADMIN              real@udem.edu
+  ADMIN              redacted-admin@example.invalid
 Demonstration accounts that can still sign in: 0
 ```
 
@@ -71,8 +75,8 @@ Checked directly against the database:
   user7@mosaiq-demo.com      refused
 
 === the real administrator ===
-  real@udem.edu with its own password: signed in as ADMIN
-  real@udem.edu with the published one: refused
+  redacted-admin@example.invalid with its own password: signed in as ADMIN
+  redacted-admin@example.invalid with the published one: refused
 
   administrators in the database: 1
   the seeded administrator row: ('admin@mosaiq-demo.com', False)
@@ -104,16 +108,16 @@ empty:
 
 ```
   administrators before: 0
-$ flask --app web.app provision-administrator --name "Second Person" --email second@udem.edu
-second@udem.edu is now the administrator (there were 0 before).
+$ flask --app web.app provision-administrator --name "Second Person" --email second-admin@example.invalid
+second-admin@example.invalid is now the administrator (there were 0 before).
 Administrators: 1. Demonstration accounts that can still sign in: 0.
 ```
 
 ## Rotating a password afterwards
 
 ```
-$ flask --app web.app rotate-password --email second@udem.edu
-The password for second@udem.edu has been changed.
+$ flask --app web.app rotate-password --email second-admin@example.invalid
+The password for second-admin@example.invalid has been changed.
   old password: refused
   new password: signed in
 ```

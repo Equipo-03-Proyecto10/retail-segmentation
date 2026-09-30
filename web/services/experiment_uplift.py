@@ -49,6 +49,12 @@ class UpliftRefused(Exception):
     """Uplift cannot be measured for this experiment; the message says why."""
 
 
+class ConversionNotEvaluated(UpliftRefused):
+    """Assigned customers have a qualifying sale that conversion has not
+    recorded yet. Not a fault of the experiment: it is answered with a call to
+    evaluate (#343), where every other refusal is a 409."""
+
+
 @dataclass(frozen=True)
 class Comparison:
     """A treatment proportion against a control proportion."""
@@ -114,6 +120,8 @@ def compare_proportions(
 class ArmResult:
     group_id: int
     comparison: Comparison
+    name: str = ""
+    treatment_description: str = ""
 
 
 @dataclass(frozen=True)
@@ -123,6 +131,9 @@ class MeasuredUplift:
     treatments: tuple[conversions.GroupConversion, ...]
     arms: tuple[ArmResult, ...]
     measured_at: datetime
+    # Per-exposure conversion, a secondary measure beside the intent-to-treat
+    # arms (#343, ADR-0019): treatment arms only, since the control is never exposed.
+    exposed: tuple[conversions.ExposedConversion, ...] = ()
 
     @property
     def label(self) -> str | None:
@@ -139,8 +150,8 @@ def refusal_before_counts(
     """Why uplift cannot be measured from the experiment's setup alone, or None."""
     if control_groups < 1:
         return (
-            f"Experiment {experiment_id} has no control group. Uplift is measured "
-            "against the control, never against everyone else."
+            f"Experiment {experiment_id} has no control group. Control-relative "
+            "uplift cannot be computed; never against everyone else."
         )
     if target_metric != CONVERSION_METRIC:
         return (
@@ -162,7 +173,7 @@ def compare_arms(
     Raises UpliftRefused when the counts leave nothing to compare."""
     unrecorded = sum(group.unrecorded for group in groups)
     if unrecorded:
-        raise UpliftRefused(
+        raise ConversionNotEvaluated(
             f"Experiment {experiment_id} has {unrecorded} assigned "
             f"{'customer' if unrecorded == 1 else 'customers'} with a qualifying "
             "sale that has not been recorded yet. Evaluate conversion before "
@@ -189,6 +200,8 @@ def compare_arms(
             compare_proportions(
                 control.assigned, control.converted, g.assigned, g.converted
             ),
+            g.name,
+            g.treatment_description,
         )
         for g in treatments
     )
@@ -220,7 +233,12 @@ def measure_uplift(
     groups = conversions.list_group_conversion(connection, experiment_id, moment)
     control, arms = compare_arms(experiment_id, groups)
     treatments = tuple(g for g in groups if g.kind == experiments.TREATMENT)
-    return MeasuredUplift(experiment, control, treatments, arms, moment)
+    exposed = tuple(
+        e
+        for e in conversions.list_exposed_conversion(connection, experiment_id)
+        if e.kind == experiments.TREATMENT
+    )
+    return MeasuredUplift(experiment, control, treatments, arms, moment, exposed)
 
 
 # ---------- validation 1: A/A ----------

@@ -20,7 +20,7 @@ from web.db import get_connection
 from web.db.segment_history_report import UNASSIGNED
 from web.db.segments import get_label_ordinals, list_runs
 from web.middleware.authz import SEGMENT_READ, requires
-from web.services.catalog import INT_MAX
+from web.parsing import iso_date, page_number, whole_number
 from web.services.segment_history_report import InvalidPeriod, ReportPage, build_report
 
 bp = Blueprint("segment_history_report", __name__, url_prefix="/segment-history-report")
@@ -33,17 +33,10 @@ def _a_date(raw: str | None) -> date | None:
     """Read an optional date, refusing an invalid one instead of dropping it."""
     if not raw:
         return None
-    try:
-        return date.fromisoformat(raw)
-    except ValueError:
-        raise ValueError("Enter valid dates in YYYY-MM-DD format.") from None
-
-
-def _a_page(raw: str | None) -> int:
-    try:
-        return max(1, int(raw or 1))
-    except ValueError:
-        return 1
+    value = iso_date(raw)
+    if value is None:
+        raise ValueError("Enter valid dates in YYYY-MM-DD format.")
+    return value
 
 
 def _a_run(raw: str | None) -> int | None:
@@ -53,9 +46,8 @@ def _a_run(raw: str | None) -> int | None:
     it with NumericValueOutOfRange, a 500 rather than a refusal."""
     if not raw:
         return None
-    if not (raw.isascii() and raw.isdigit()) or int(raw) > INT_MAX:
-        return -1
-    return int(raw)
+    value = whole_number(raw)
+    return -1 if value is None else value
 
 
 @bp.get("/")
@@ -99,7 +91,7 @@ def index() -> str | tuple[str, int]:
             label_code=label_code,
             period_start=period_start,
             period_end=period_end,
-            page=_a_page(request.args.get("page")),
+            page=page_number(request.args.get("page")),
         )
     except (ValueError, InvalidPeriod) as error:
         return (

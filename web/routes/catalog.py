@@ -37,9 +37,19 @@ from web.db.segments import (
 )
 from web.db.stores import list_all_stores
 from web.middleware.authz import CATALOG_READ, SEGMENT_READ, requires
+from web.parsing import DATE_MAX, DATE_MIN, iso_date, whole_number
 from web.routes.pagination import redirect_last_page
-from web.services.catalog import parse_pagination
+from web.services.catalog import SMALLINT_MAX, parse_pagination
 from web.services.consumption_profile import UnknownCustomer, build_profile
+from web.services.consumption_shift import (
+    MIN_PURCHASES_PER_PERIOD,
+    build_profile_shifts,
+)
+from web.services.customer_timeline import (
+    UnknownChange,
+    build_change,
+    build_timeline,
+)
 from web.services.pagination import page_count
 from web.services.recommendations import recommend
 from web.services.segmentation import (
@@ -128,11 +138,25 @@ def customers() -> str | Response:
 
 @bp.get("/customers/<uuid:customer_id>")
 @requires(SEGMENT_READ)
-def customer_detail(customer_id: UUID) -> str:
+def customer_detail(customer_id: UUID) -> str | tuple[str, int]:
+    """One customer, with their segment timeline (#337).
+
+    `?as_of=YYYY-MM-DD` also answers which assignment was open at the end of
+    that day. A value that is not a date answers 400 and says so; the rest of
+    the page is still shown, since it does not depend on the question.
+    """
     connection = get_connection()
     customer = get_customer(connection, customer_id)
     if customer is None:
         abort(404)
+
+    raw_as_of = request.args.get("as_of", "").strip()
+    as_of = iso_date(raw_as_of) if raw_as_of else None
+    as_of_error = (
+        f"Enter a date as YYYY-MM-DD between {DATE_MIN} and {DATE_MAX}."
+        if raw_as_of and as_of is None
+        else None
+    )
 
     channel = get_channel(connection, customer.registration_channel_id)
     # The label is what every method writes (ADR-0018), so it is what the page
@@ -148,7 +172,7 @@ def customer_detail(customer_id: UUID) -> str:
         if assignment is not None and assignment.segment_id is not None
         else None
     )
-    return render_template(
+    page = render_template(
         "catalog/customer_detail.html",
         customer=customer,
         registration_channel=channel,
@@ -156,6 +180,29 @@ def customer_detail(customer_id: UUID) -> str:
         segment=segment,
         interests=list_interest_categories(connection, customer.customer_id),
         preferred_channels=list_preferred_channels(connection, customer.customer_id),
+        timeline=build_timeline(connection, customer.customer_id, as_of=as_of),
+        as_of_value=raw_as_of,
+        as_of_error=as_of_error,
+    )
+    return (page, 400) if as_of_error else page
+
+
+@bp.get("/customers/<uuid:customer_id>/segment-changes/<int:run_id>")
+@requires(SEGMENT_READ)
+def customer_segment_change(customer_id: UUID, run_id: int) -> str:
+    """One assignment against the one before it, with the sales that entered
+    and left the calculation between the two runs (#337). A run that did not
+    assign this customer is a 404, like an unknown customer."""
+    connection = get_connection()
+    customer = get_customer(connection, customer_id)
+    if customer is None:
+        abort(404)
+    try:
+        change = build_change(connection, customer.customer_id, run_id)
+    except UnknownChange:
+        abort(404)
+    return render_template(
+        "catalog/customer_segment_change.html", customer=customer, change=change
     )
 
 
@@ -206,6 +253,14 @@ def customer_profile(customer_id: UUID) -> str | tuple[str, int]:
         error=None,
         min_window=MIN_WINDOW_DAYS,
         max_window=MAX_WINDOW_DAYS,
+        # Before and now, over the two halves of the same window (#341).
+        shifts=build_profile_shifts(
+            connection,
+            profile.customer_id,
+            until=profile.window_end,
+            window_days=window_days,
+        ),
+        min_purchases=MIN_PURCHASES_PER_PERIOD,
     )
 
 
@@ -278,7 +333,9 @@ def stock() -> str | Response:
     page, search, search_value = _page_args()
 
     store_raw = request.args.get("store", "").strip()
-    store_id = int(store_raw) if store_raw.isdigit() else None
+    store_id = whole_number(store_raw, SMALLINT_MAX) if store_raw else None
+    if store_raw and store_id is None:
+        abort(400)
 
     rows, total = list_stock(
         connection,

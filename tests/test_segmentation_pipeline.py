@@ -19,7 +19,7 @@ from __future__ import annotations
 import inspect
 import logging
 import re
-from dataclasses import fields
+from dataclasses import fields, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -50,6 +50,7 @@ from web.services.segmentation import (
 
 _ADA = "00000000-0000-0000-0000-000000000001"
 _BOB = "00000000-0000-0000-0000-000000000002"
+_CY = "00000000-0000-0000-0000-000000000003"
 _CAL = "00000000-0000-0000-0000-000000000003"
 _SALE = datetime(2026, 9, 1, 9, 0, tzinfo=UTC)
 
@@ -452,6 +453,17 @@ def test_the_result_carries_the_run_it_recorded(
 # ---------- the counts ----------
 
 
+def test_a_customer_labelled_by_the_fallback_is_assigned_and_counted_as_one() -> None:
+    """#345: matching no band is not the same as having no sales. The customer
+    is labelled (ADR-0018), so `unmatched` stays 0, and the fallback is
+    reported on its own so it cannot pass for a rule match."""
+    fallback = replace(_scored(_ADA, "LOST"), via_fallback=True)
+
+    counts = summarise([fallback, _scored(_BOB, "LOYAL"), _unassigned(_CY)], prior={})
+
+    assert (counts.assigned, counts.unmatched, counts.fallback) == (2, 1, 1)
+
+
 def test_a_customer_with_no_open_row_counts_as_reassigned_when_labelled() -> None:
     counts = summarise([_scored(_ADA, "LOYAL")], prior={})
 
@@ -579,7 +591,7 @@ def test_downstream_method_independence_migration_reads_labels_and_nothing_else(
     )
 
 
-# ---------- F9-03: the two ADR-0018 cases K-means adds ----------
+# ---------- F9-03: the ADR-0018 cases K-means adds, as ADR-0030 revises them ----------
 
 
 def _kmeans_reads(monkeypatch: pytest.MonkeyPatch, *, labels: int = 3) -> Mock:
@@ -604,7 +616,26 @@ def _kmeans_reads(monkeypatch: pytest.MonkeyPatch, *, labels: int = 3) -> Mock:
     return manager
 
 
-def test_method_domain_refuses_a_kmeans_run_whose_k_differs_from_the_label_count(
+def test_a_kmeans_run_whose_k_differs_from_the_label_count_is_paired_by_rank(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ADR-0030's compliance case, which replaces ADR-0018's refusal: a k other
+    than the vocabulary's size is run, and what reaches the history rows is only
+    label codes from the vocabulary."""
+    from web.services.kmeans import KMeansParams
+    from web.services.segmentation import run_kmeans
+
+    manager = _kmeans_reads(monkeypatch, labels=3)
+
+    run_kmeans(MagicMock(), 180, KMeansParams(k=2, seed=1))
+
+    manager.create_run.assert_called_once()
+    ((_, _run, rows),) = [c.args for c in manager.insert_assignments.call_args_list]
+    vocabulary = set(manager.get_label_ordinals.return_value)
+    assert {row[2] for row in rows if row[2] is not None} <= vocabulary
+
+
+def test_method_domain_refuses_a_kmeans_run_of_a_single_cluster(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from web.services.cluster_labels import VocabularySizeMismatch
@@ -614,7 +645,7 @@ def test_method_domain_refuses_a_kmeans_run_whose_k_differs_from_the_label_count
     manager = _kmeans_reads(monkeypatch, labels=3)
 
     with pytest.raises(VocabularySizeMismatch):
-        run_kmeans(MagicMock(), 180, KMeansParams(k=4, seed=1))
+        run_kmeans(MagicMock(), 180, KMeansParams(k=1, seed=1))
 
     manager.read_rfm_inputs.assert_not_called()
     manager.create_run.assert_not_called()

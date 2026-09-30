@@ -198,7 +198,7 @@ def test_the_filter_sql_is_parameterized_and_the_count_shares_it() -> None:
         connection, campaign_id=7, data_origin="SEEDED", limit=10, offset=0
     )
 
-    (page_call, count_call) = cursor.execute.call_args_list
+    page_call, count_call = cursor.execute.call_args_list
     for call in (page_call, count_call):
         assert "e.campaign_id = %(campaign)s::int" in call.args[0]
         assert "e.data_origin = %(origin)s::text" in call.args[0]
@@ -338,3 +338,50 @@ def test_the_export_refuses_a_bad_filter(app: Flask) -> None:
 def test_a_profile_without_campaign_read_is_refused(app: Flask) -> None:
     for path in ("/experiment-report/", "/experiment-report/export.csv"):
         assert _client(app, "STORE_MANAGER").get(path).status_code == 403
+
+
+# ---------- #358: numbers stay numbers in the export ----------
+
+
+def test_a_negative_number_is_not_quoted_as_text() -> None:
+    assert service._safe("-50.00") == "-50.00"
+    assert service._safe("-3") == "-3"
+    assert service._safe("0.05") == "0.05"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "=1+1",
+        "+1",
+        "@SUM(A1)",
+        "-1+2",
+        "-cmd|' /C calc'!A0",
+        "\tx",
+        "-",
+        "--5",
+        "-5.",
+        "-.5",
+    ],
+)
+def test_text_that_could_be_a_formula_is_still_defused(text: str) -> None:
+    assert service._safe(text) == "'" + text
+
+
+def test_a_negative_uplift_exports_as_a_number(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _wire(
+        monkeypatch,
+        [_experiment(assignments=2000)],
+        [
+            ReportGroup(31, 61, "CONTROL", 1000, 0, 200, 0),
+            ReportGroup(31, 62, "TREATMENT", 1000, 700, 100, 0),
+        ],
+    )
+    text = service.export_csv(MagicMock(), campaign_id=None, data_origin=None, now=NOW)
+    _, treatment = list(csv.DictReader(io.StringIO(text)))
+
+    assert treatment["uplift_points"] == "-10.00"
+    assert treatment["ci_low_points"].startswith("-")
+    assert "'" not in treatment["uplift_points"] + treatment["ci_low_points"]

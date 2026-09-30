@@ -120,6 +120,13 @@ class HistoryRow:
     run_at: datetime
     window_days: int
 
+    @property
+    def recency_last_purchase_at(self) -> datetime | None:
+        """The stored column's own name, which is the one `explain_migration`
+        (F7-06) reads, so a HistoryRow can stand in as either side of an
+        explanation without being copied into another shape (#337)."""
+        return self.last_purchase_at
+
 
 def get_sales_totals(
     connection: Connection[Any], customer_id: Any, since: datetime, until: datetime

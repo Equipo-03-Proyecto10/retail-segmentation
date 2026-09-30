@@ -1,10 +1,13 @@
-"""Per-customer migration explanation (F7-06).
+"""Per-customer migration explanation (F7-06, #338).
 
-Why one customer moved (or didn't) between two runs — the raw R/F/M values
-and scores from both runs, their deltas, and which component moved most.
-Everything comes from the stored history row (ADR-0017); nothing here
-recomputes a score. Read-only, gated on segment.read like the rest of the
-segmentation surface (ADR-0010).
+Why one customer moved (or didn't) between two runs — one sentence per
+measure with its raw values and a changed/stable judgement (RN-50), then the
+scores from both runs and their deltas. Everything comes from the stored
+history row (ADR-0017); nothing here recomputes a score. Read-only, gated on
+segment.read like the rest of the segmentation surface (ADR-0010).
+
+Reached from a customer listed in a migration matrix cell (#339) and from a
+change on the customer's segment timeline (#337).
 """
 
 from __future__ import annotations
@@ -16,7 +19,13 @@ from flask import Blueprint, abort, render_template, request
 from web.db import get_connection
 from web.db.segments import get_customer_assignment_for_run, get_run
 from web.middleware.authz import SEGMENT_READ, requires
-from web.services.segment_migration import UnknownRun, explain_migration, order_runs
+from web.parsing import BIGINT_MAX, whole_number
+from web.services.segment_migration import (
+    UnknownRun,
+    describe_migration,
+    explain_migration,
+    order_runs,
+)
 
 bp = Blueprint("migration_explanation", __name__, url_prefix="/migration-explanation")
 
@@ -25,24 +34,27 @@ bp = Blueprint("migration_explanation", __name__, url_prefix="/migration-explana
 @requires(SEGMENT_READ)
 def index() -> str:
     """Explain one customer's movement between two runs, given as query
-    parameters run_a, run_b and customer_id (typically reached from a link
-    on the migration matrix or a customer's detail page)."""
+    parameters run_a, run_b and customer_id, in either order."""
     connection = get_connection()
 
     run_a_raw = request.args.get("run_a", "")
     run_b_raw = request.args.get("run_b", "")
     customer_id = request.args.get("customer_id", "")
 
-    if not (run_a_raw.isdigit() and run_b_raw.isdigit() and customer_id):
+    run_a_id = whole_number(run_a_raw, BIGINT_MAX)
+    run_b_id = whole_number(run_b_raw, BIGINT_MAX)
+    if run_a_id is None or run_b_id is None or not customer_id:
         abort(404)
 
     try:
-        uuid.UUID(customer_id)
+        # `UUID()` also takes `urn:uuid:…`, braces and bare hex; PostgreSQL
+        # takes only some of those, so the id is used in its one canonical form.
+        customer_id = str(uuid.UUID(customer_id))
     except ValueError:
         abort(404)
 
     try:
-        earlier_id, later_id = order_runs(connection, int(run_a_raw), int(run_b_raw))
+        earlier_id, later_id = order_runs(connection, run_a_id, run_b_id)
     except UnknownRun:
         abort(404)
 
@@ -72,4 +84,9 @@ def index() -> str:
         customer_id=customer_id,
         customer_name=customer_name,
         explanation=explanation,
+        narrative=describe_migration(
+            explanation,
+            run_at_before=earlier_run.run_at,
+            run_at_after=later_run.run_at,
+        ),
     )

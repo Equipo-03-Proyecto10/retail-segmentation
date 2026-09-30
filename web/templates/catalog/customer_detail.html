@@ -5,7 +5,14 @@
 {% block breadcrumbs %}{{ application_name }} / Catalogs / Customers / {{ customer.name }}{% endblock %}
 
 {% block content %}
-  {% from "macros/ui.html" import page_header, status_pill %}
+  {% from "macros/ui.html" import alert, empty_state, page_header, status_pill %}
+  {% from "macros/migration.html" import rank_only_move, score_change %}
+  {% macro money(value) %}{{ "{:,.2f}".format(value) }}{% endmacro %}
+  {% macro day(moment) %}{{ moment.strftime("%Y-%m-%d") }}{% endmacro %}
+  {% macro noun(n, singular) %}{{ singular if n == 1 else singular ~ "s" }}{% endmacro %}
+  {% macro days(n) %}{% if n is none %}—{% else %}{{ n }} {{ noun(n, "day") }}{% endif %}{% endmacro %}
+  {% macro label_pill(row, tone="neutral") %}{% if row.label_code is none %}{{ status_pill("Unassigned") }}{% else %}{{ status_pill(row.label_name, tone) }}{% endif %}{% endmacro %}
+  {% macro score(value) %}{{ value if value is not none else "—" }}{% endmacro %}
   {% call page_header(customer.name, "Registered on {}".format(customer.registered_on.strftime("%Y-%m-%d")), "Customer") %}
     <a class="mq-btn mq-btn--primary mq-btn--sm" href="{{ url_for('catalog.customer_profile', customer_id=customer.customer_id) }}">Consumption profile</a>
     <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('catalog.customer_recommendations', customer_id=customer.customer_id) }}">Recommendations</a>
@@ -29,7 +36,7 @@
       <div class="mq-panel__body">
         <dl class="mq-description-list">
           <dt>Current label</dt>
-          <dd>{% if label %}{{ status_pill(label, "info") }}{% else %}{{ status_pill("Unassigned") }}{% endif %}</dd>
+          <dd>{% if label %}{{ status_pill(label, "info") }}{% else %}{{ status_pill("Unassigned") }}{% endif %}{% if timeline.current %} <span class="mq-caption">since {{ day(timeline.current.label_since) }}</span>{% endif %}</dd>
           {% if segment %}
             <dt>Rule-based segment</dt>
             <dd><a href="{{ url_for('catalog.segment_detail', segment_id=segment.segment_id) }}">{{ segment.name }}</a></dd>
@@ -40,4 +47,156 @@
       </div>
     </section>
   </div>
+
+  {% if timeline.current and timeline.previous %}
+    {% set now_row = timeline.current.row %}
+    {% set then_row = timeline.previous.row %}
+    <section class="mq-panel" aria-labelledby="comparison-title">
+      <header class="mq-panel__header">
+        <h2 class="mq-panel__title" id="comparison-title">Current and previous R/F/M</h2>
+        <span class="mq-caption">Run #{{ then_row.run_id }} against run #{{ now_row.run_id }}, as each run stored them</span>
+      </header>
+      <div class="mq-table-wrap">
+        <table class="mq-table">
+          <thead>
+            <tr>
+              <th scope="col">Measure</th>
+              <th scope="col">Previous · run #{{ then_row.run_id }}</th>
+              <th class="mq-table__cell--num" scope="col">Previous score</th>
+              <th scope="col">Current · run #{{ now_row.run_id }}</th>
+              <th class="mq-table__cell--num" scope="col">Current score</th>
+              <th class="mq-table__cell--num" scope="col">Score change</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Label</td>
+              <td>{{ label_pill(then_row) }}</td>
+              <td class="mq-table__cell--num">—</td>
+              <td>{{ label_pill(now_row, "info") }} <span class="mq-caption">since {{ day(timeline.current.label_since) }}</span></td>
+              <td class="mq-table__cell--num">—</td>
+              <td class="mq-table__cell--num">{{ "Changed" if timeline.comparison.label_changed else "Unchanged" }}</td>
+            </tr>
+            <tr>
+              <td>Recency</td>
+              <td>{{ days(timeline.previous.recency_days) }}{% if then_row.last_purchase_at %} <span class="mq-caption">last purchase {{ day(then_row.last_purchase_at) }}</span>{% endif %}</td>
+              <td class="mq-table__cell--num">{{ score(then_row.r_score) }}</td>
+              <td>{{ days(timeline.current.recency_days) }}{% if now_row.last_purchase_at %} <span class="mq-caption">last purchase {{ day(now_row.last_purchase_at) }}</span>{% endif %}</td>
+              <td class="mq-table__cell--num">{{ score(now_row.r_score) }}</td>
+              <td class="mq-table__cell--num">{{ score_change(timeline.comparison.recency) }}</td>
+            </tr>
+            <tr>
+              <td>Frequency</td>
+              <td>{% if then_row.frequency_count is not none %}{{ then_row.frequency_count }} {{ noun(then_row.frequency_count, "purchase") }}{% else %}—{% endif %}</td>
+              <td class="mq-table__cell--num">{{ score(then_row.f_score) }}</td>
+              <td>{% if now_row.frequency_count is not none %}{{ now_row.frequency_count }} {{ noun(now_row.frequency_count, "purchase") }}{% else %}—{% endif %}</td>
+              <td class="mq-table__cell--num">{{ score(now_row.f_score) }}</td>
+              <td class="mq-table__cell--num">{{ score_change(timeline.comparison.frequency) }}</td>
+            </tr>
+            <tr>
+              <td>Monetary</td>
+              <td>{% if then_row.monetary_total is not none %}{{ money(then_row.monetary_total) }} MXN{% else %}—{% endif %}</td>
+              <td class="mq-table__cell--num">{{ score(then_row.m_score) }}</td>
+              <td>{% if now_row.monetary_total is not none %}{{ money(now_row.monetary_total) }} MXN{% else %}—{% endif %}</td>
+              <td class="mq-table__cell--num">{{ score(now_row.m_score) }}</td>
+              <td class="mq-table__cell--num">{{ score_change(timeline.comparison.monetary) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="mq-panel__body">
+        <p>{{ timeline.narrative.summary }}</p>
+        {{ rank_only_move(timeline.narrative) }}
+        <p class="mq-caption">Recency is the days from the last purchase to the run that measured it. {% if timeline.comparison.most_changed_caption %}{{ timeline.comparison.most_changed_caption }}{% endif %}</p>
+        <p><a href="{{ url_for('catalog.customer_segment_change', customer_id=customer.customer_id, run_id=now_row.run_id) }}">Sales between run #{{ then_row.run_id }} and run #{{ now_row.run_id }}</a> · <a href="{{ url_for('migration_explanation.index', run_a=then_row.run_id, run_b=now_row.run_id, customer_id=customer.customer_id) }}">Explanation</a></p>
+      </div>
+    </section>
+  {% endif %}
+
+  <section class="mq-panel mq-form-panel" aria-labelledby="as-of-title">
+    <header class="mq-panel__header"><h2 class="mq-panel__title" id="as-of-title">Segment as of a date</h2></header>
+    <div class="mq-panel__body">
+      {% if as_of_error %}{{ alert(as_of_error) }}{% endif %}
+      <form class="mq-form" method="get" action="{{ url_for('catalog.customer_detail', customer_id=customer.customer_id) }}">
+        <div class="mq-field">
+          <label class="mq-field__label" for="as_of">Date</label>
+          <input class="mq-input" type="date" id="as_of" name="as_of" value="{{ as_of_value }}" required>
+          <span class="mq-field__hint">Shows the assignment that was open at the end of that day.</span>
+        </div>
+        <div class="mq-form__actions">
+          <button class="mq-btn mq-btn--primary" type="submit">Look up</button>
+        </div>
+      </form>
+      {% if timeline.as_of %}
+        {% set found = timeline.as_of_entry %}
+        <p role="status">
+          {% if found %}
+            On {{ timeline.as_of.strftime("%Y-%m-%d") }}: {{ label_pill(found.row, "info") }}
+            <span class="mq-caption">since {{ day(found.label_since) }} · run #{{ found.row.run_id }} · assignment {{ day(found.row.valid_from) }} to {% if found.row.valid_to %}{{ day(found.row.valid_to) }}{% else %}open{% endif %}</span>
+          {% else %}
+            On {{ timeline.as_of.strftime("%Y-%m-%d") }} no segmentation run had scored this customer.
+          {% endif %}
+        </p>
+      {% endif %}
+    </div>
+  </section>
+
+  {% if timeline.entries %}
+    <section class="mq-panel" aria-labelledby="timeline-title">
+      <header class="mq-panel__header">
+        <h2 class="mq-panel__title" id="timeline-title">Segment timeline</h2>
+        <span class="mq-caption">{{ timeline.entries | length }} {{ noun(timeline.entries | length, "assignment") }}, newest first</span>
+      </header>
+      <div class="mq-table-wrap">
+        <table class="mq-table">
+          <thead>
+            <tr>
+              <th scope="col">Run</th>
+              <th scope="col">Label</th>
+              <th scope="col">Valid from</th>
+              <th scope="col">Valid to</th>
+              <th class="mq-table__cell--num" scope="col">R</th>
+              <th class="mq-table__cell--num" scope="col">F</th>
+              <th class="mq-table__cell--num" scope="col">M</th>
+              <th scope="col">Recency</th>
+              <th class="mq-table__cell--num" scope="col">Frequency</th>
+              <th class="mq-table__cell--num" scope="col">Monetary (MXN)</th>
+              <th scope="col">Change</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for entry in timeline.entries %}
+              {% set row = entry.row %}
+              <tr>
+                <td><a href="{{ url_for('run_history.detail', run_id=row.run_id) }}">#{{ row.run_id }}</a> <span class="mq-caption">{{ day(row.run_at) }} · {{ row.window_days }}-day window</span></td>
+                <td>{{ label_pill(row, "info" if entry.is_open else "neutral") }} <span class="mq-caption">since {{ day(entry.label_since) }}</span></td>
+                <td class="mq-mono">{{ row.valid_from.strftime("%Y-%m-%d %H:%M") }}</td>
+                <td class="mq-mono">{% if row.valid_to %}{{ row.valid_to.strftime("%Y-%m-%d %H:%M") }}{% else %}Open{% endif %}</td>
+                <td class="mq-table__cell--num">{{ score(row.r_score) }}</td>
+                <td class="mq-table__cell--num">{{ score(row.f_score) }}</td>
+                <td class="mq-table__cell--num">{{ score(row.m_score) }}</td>
+                <td>{{ days(entry.recency_days) }}{% if row.last_purchase_at %} <span class="mq-caption">{{ day(row.last_purchase_at) }}</span>{% endif %}</td>
+                <td class="mq-table__cell--num">{{ row.frequency_count if row.frequency_count is not none else "—" }}</td>
+                <td class="mq-table__cell--num">{{ money(row.monetary_total) if row.monetary_total is not none else "—" }}</td>
+                <td>
+                  {% if entry.changed %}
+                    <span class="mq-stack">
+                      <a href="{{ url_for('catalog.customer_segment_change', customer_id=customer.customer_id, run_id=row.run_id) }}">What changed</a>
+                      <a href="{{ url_for('migration_explanation.index', run_a=entry.previous_run_id, run_b=row.run_id, customer_id=customer.customer_id) }}">Explanation</a>
+                    </span>
+                  {% elif entry.is_first %}
+                    <span class="mq-caption">First assignment</span>
+                  {% else %}
+                    <span class="mq-caption">Unchanged</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {% else %}
+    {{ empty_state("No segment history", "No segmentation run has scored this customer yet.", "None") }}
+  {% endif %}
 {% endblock %}

@@ -384,6 +384,8 @@ the delivery date is the most common way this kind of project fails.
 | F7-04 | Detect each customer's label migration between any two completed runs, including the unassigned state | P0 | F7-02 |
 | F7-05 | Migration matrix for two selected runs | P0 | F7-03, F7-04 |
 | F7-06 | Per-customer migration explanation from the R, F and M measure and score deltas between two runs | P0 | F7-05 |
+| F7-07 | Customer segment timeline: every assignment with R/F/M, the assignment open as of a date, recency in days, the date a label was entered, and the sales that entered and left the calculation between two runs (#337) | P0 | F7-06 |
+| F7-08 | Link the migration explanation from the migration matrix and the customer timeline, and state it in plain language with changed/stable thresholds, rank-only score changes and new customers (#338) | P0 | F7-06, F7-07 |
 
 **The label vocabulary starts here.** Assignment history needs a constrained
 label before it can store the first durable result. Putting the vocabulary in
@@ -406,6 +408,7 @@ together under [ADR-0017][adr-0017].
 | F8-03 | Build the customer consumption profile: total spend, average ticket, frequency, last purchase, dominant channel and store, favourite categories, frequent products, average discount, RFM, and current and previous segment | P0 | F8-02, F7-02 |
 | F8-04 | Server-rendered consumption profile view | P0 | F8-03, F4-07 |
 | F8-05 | Detect channel, store and category shifts in the consumption profile | P0 | F8-04 |
+| F8-06 | Show dominant channel and store and top categories before and now on the consumption profile, with shares of purchases, and claim a shift only with enough purchases and a clear leader (#341) | P0 | F8-05, F12-03 |
 
 **The CSV contract needs one schema story first.** The current database
 generates `transaction.transaction_id`, while the file supplies a transaction
@@ -421,6 +424,7 @@ the importer persists a row.
 | F9-02 | Implement the `KMEANS` adapter over normalized RFM features, recording its parameters and quality metrics | P0 | F9-01 |
 | F9-03 | Map K-means clusters to stable labels with ADR-0018's deterministic best-to-worst ordering | P0 | F9-02, F7-01 |
 | F9-04 | Model comparison view over rule-based and K-means runs | P0 | F9-03, F4-07 |
+| F9-05 | Run K-means with any k of at least 2, pairing clusters with the stable labels by proportional rank and recording shared and unused labels on the run (#336, ADR-0030) | P0 | F9-03, F9-04 |
 
 **The adapters stop at the same boundary.** A run may record its method and
 parameters, but assignment history, comparison and every later consumer read

@@ -25,7 +25,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -42,7 +42,11 @@ from web.db.segments import (
     score_rfm_rules,
 )
 from web.db.transactions import atomic
-from web.services.cluster_labels import check_vocabulary_size, label_clusters
+from web.services.cluster_labels import (
+    check_vocabulary_size,
+    describe_mapping,
+    label_clusters,
+)
 from web.services.kmeans import (
     KMeansFit,
     KMeansParams,
@@ -77,6 +81,7 @@ class RunResult:
     seconds: float
     run_id: int | None = None
     method: str = "RFM_RULES"
+    fallback: int = 0
 
     @property
     def no_segment_changed(self) -> bool:
@@ -155,6 +160,7 @@ class Assignment:
     r_score: int | None = None
     f_score: int | None = None
     m_score: int | None = None
+    via_fallback: bool = False
 
     def validate(self) -> None:
         """Refuse a customer who was measured but left unlabelled: ADR-0018 says
@@ -221,6 +227,7 @@ class RunCounts:
     unmatched: int
     reassigned: int
     cleared: int
+    fallback: int = 0
 
 
 def summarise(
@@ -253,6 +260,7 @@ def summarise(
         unmatched=len(assignments) - assigned,
         reassigned=reassigned,
         cleared=cleared,
+        fallback=sum(1 for a in assignments if a.via_fallback),
     )
 
 
@@ -289,6 +297,7 @@ def rfm_rules_adapter(connection: Any, window_days: int) -> MethodOutput:
             r_score=row.r_score,
             f_score=row.f_score,
             m_score=row.m_score,
+            via_fallback=row.via_fallback,
         )
         for row in score_rfm_rules(connection, window_days)
     )
@@ -376,22 +385,31 @@ def kmeans_adapter(
 
 
 def _run_kmeans_adapter(params: KMeansParams) -> MethodAdapter:
-    """`kmeans_adapter` with ADR-0018's mapping wired in, reading the vocabulary
+    """`kmeans_adapter` with the label pairing wired in, reading the vocabulary
     itself and refusing before it reads a single sale.
 
     The vocabulary is read best to worst by `ordinal_position`, the order the
-    schema declares, and its size must be `k`. That check is the first thing done,
-    ahead of the sales and the fit, so a run that cannot be labelled costs nothing
-    and writes nothing.
+    schema declares. Any `k` of at least two is paired with it by proportional
+    rank (ADR-0030); the check is the first thing done, ahead of the sales and
+    the fit, so a run that cannot be labelled costs nothing and writes nothing.
+    The run records how its clusters were paired, including any label shared by
+    several clusters or taken by none, under `label_mapping` in its parameters.
     """
 
     def adapt(connection: Any, window_days: int) -> MethodOutput:
         ordinals = get_label_ordinals(connection)
         vocabulary = sorted(ordinals, key=ordinals.__getitem__)
         check_vocabulary_size(params.k, vocabulary)
-        return kmeans_adapter(
+        output = kmeans_adapter(
             params, lambda fitted: label_clusters(fitted, vocabulary)
         ).decide(connection, window_days)
+        return replace(
+            output,
+            parameters={
+                **output.parameters,
+                "label_mapping": describe_mapping(params.k, vocabulary),
+            },
+        )
 
     return MethodAdapter("KMEANS", adapt)
 
@@ -444,6 +462,7 @@ def _record(
         unmatched=counts.unmatched,
         reassigned=counts.reassigned,
         cleared=counts.cleared,
+        fallback=counts.fallback,
         seconds=time.perf_counter() - started,
         run_id=run_id,
         method=method,
@@ -500,10 +519,11 @@ def run(connection: Any, window_days: int) -> RunResult:
 
 
 def run_kmeans(connection: Any, window_days: int, params: KMeansParams) -> RunResult:
-    """Run K-means over a window, labelled by ADR-0018's deterministic mapping.
+    """Run K-means over a window, labelled by ADR-0018's deterministic order and
+    ADR-0030's pairing by proportional rank.
 
-    `params.k` must equal the size of the label vocabulary; otherwise the run is
-    refused (VocabularySizeMismatch) before any sale is read or any assignment is
+    Any `params.k` of at least 2 is run; a smaller one is refused
+    (VocabularySizeMismatch) before any sale is read or any assignment is
     written. This is how a KMEANS run is started: `run_method` has no default k or
     seed to give, so it cannot start one on its own.
     """

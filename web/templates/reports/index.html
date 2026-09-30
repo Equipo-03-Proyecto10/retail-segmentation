@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Reports · {{ application_name }}{% endblock %}
+{% block topbar_title %}Reports{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Analysis / Reports{% endblock %}
+
+{% block content %}
+  {% from "macros/ui.html" import empty_state, page_header %}
+
+  {{ page_header("Reports", "Revenue for the latest " ~ revenue.window_days ~ " days of sales, and the analytics reports your profile can open.", "Analysis") }}
+
+  {% if is_synthetic %}
+    <div class="mq-alert mq-alert--info" role="status">
+      <span class="mq-pill mq-pill--info">Synthetic</span>
+      These figures come from demonstration data, not observed business activity.
+    </div>
+  {% endif %}
+
+  {% if revenue.transactions == 0 %}
+    {{ empty_state("No sales yet", "Revenue appears here once a sales file has been loaded.", "No sales") }}
+  {% else %}
+    <div class="mq-grid mq-grid--3">
+      <article class="mq-metric">
+        <span class="mq-metric__label">Revenue</span>
+        <span class="mq-metric__value mq-num">{{ "{:,.2f}".format(revenue.revenue) }}</span>
+        <div class="mq-metric__footer"><span>{{ revenue.window_days }} days to {{ revenue.until.strftime("%Y-%m-%d") }}</span></div>
+      </article>
+      <article class="mq-metric">
+        <span class="mq-metric__label">Sales</span>
+        <span class="mq-metric__value mq-num">{{ revenue.transactions }}</span>
+        <div class="mq-metric__footer"><span>Transactions in the window</span></div>
+      </article>
+    </div>
+
+    <div class="mq-grid mq-grid--2">
+      {% for title, rows in (("Revenue by channel", revenue.by_channel), ("Revenue by store", revenue.by_store)) %}
+        <section class="mq-panel mq-panel--table mq-density-compact">
+          <div class="mq-table__toolbar"><span class="mq-table__count">{{ title }}</span></div>
+          <div class="mq-table-wrap"><table class="mq-table"><thead><tr><th scope="col">{{ "Channel" if loop.first else "Store" }}</th><th scope="col" class="mq-num">Sales</th><th scope="col" class="mq-num">Revenue</th></tr></thead><tbody>
+            {% for row in rows %}<tr><td>{{ row.name }}</td><td class="mq-num">{{ row.transactions }}</td><td class="mq-num">{{ "{:,.2f}".format(row.revenue) }}</td></tr>{% endfor %}
+          </tbody></table></div>
+        </section>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% for title, links in groups %}
+    <section class="mq-panel">
+      <div class="mq-panel__body">
+        <h2 class="mq-label">{{ title }}</h2>
+        <ul class="mq-stack">
+          {% for link in links %}
+            <li><a href="{{ url_for(link.endpoint) }}">{{ link.title }}</a> <span class="mq-caption">{{ link.description }}</span></li>
+          {% endfor %}
+        </ul>
+      </div>
+    </section>
+  {% endfor %}
+{% endblock %}

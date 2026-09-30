@@ -114,7 +114,6 @@ def test_a_different_experiment_gets_a_different_split() -> None:
         (dict(campaign=_campaign("DRAFT")), "is draft"),
         (dict(campaign=_campaign("FINISHED")), "is finished"),
         (dict(experiment=_experiment(treatment_groups=0)), "no treatment group"),
-        (dict(experiment=_experiment(control_groups=0)), "no control group"),
         (dict(population=[]), "nobody to assign"),
     ],
 )
@@ -127,6 +126,19 @@ def test_assignment_is_refused_and_writes_nothing(
         service.assign(MagicMock(), 31)
 
     mocks["insert_assignments"].assert_not_called()
+
+
+def test_a_no_control_experiment_can_be_assigned_to_two_treatment_arms(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    no_control = _experiment(control_groups=0, treatment_groups=2)
+    mocks = _wire(monkeypatch, experiment=no_control, population=CUSTOMERS)
+    mocks["list_groups"].return_value = [(62, "TREATMENT"), (63, "TREATMENT")]
+
+    plan = service.assign(MagicMock(), 31)
+
+    assert [len(arm.customers) for arm in plan.arms] == [5, 5]
+    mocks["insert_assignments"].assert_called_once()
 
 
 def test_an_unknown_experiment_is_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -293,7 +305,7 @@ def test_confirming_assigns_and_reports_the_arm_sizes(
     assert response.status_code == 302
     mocks["insert_assignments"].assert_called_once()
     with client.session_transaction() as flask_session:
-        (_, message) = flask_session["_flashes"][0]
+        _, message = flask_session["_flashes"][0]
     assert "10 customers assigned" in message
 
 

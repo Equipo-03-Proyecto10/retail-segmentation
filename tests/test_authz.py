@@ -401,6 +401,7 @@ def test_the_menu_is_driven_by_permissions_rather_than_by_role() -> None:
         "Home",
         "Catalogs",
         "Users",
+        "Sales import",
         "Segments",
         "Campaigns",
         "Segment run",
@@ -447,16 +448,6 @@ def test_a_store_managers_menu_offers_the_segment_surfaces_and_nothing_to_run() 
         "Consumption reports",
         "Reports",
     ]
-
-
-def test_planned_menu_entries_reach_a_status_page() -> None:
-    """Visible destinations without a workflow explain their delivery status."""
-    client = _app().test_client()
-    _sign_in(client, "ADMIN")
-
-    response = client.get("/reports/")
-    assert response.status_code == 200
-    assert "Still building" in response.get_data(as_text=True)
 
 
 def test_the_signed_in_name_and_sign_out_replace_the_sign_in_link() -> None:

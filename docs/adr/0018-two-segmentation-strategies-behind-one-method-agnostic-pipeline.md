@@ -1,10 +1,10 @@
 # ADR-0018 — Two segmentation strategies feed one label-based, method-agnostic pipeline
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0030](0030-k-means-clusters-are-paired-with-labels-by-proportional-rank.md)
 **Owner:** Marcelo
 **Issue:** —
 **Supersedes:** —
-**Superseded by:** —
+**Superseded by:** [ADR-0030](0030-k-means-clusters-are-paired-with-labels-by-proportional-rank.md)
 
 ---
 

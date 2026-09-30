@@ -7,16 +7,19 @@ reuses an existing declaration, per ADR-0007.
 | Phase | Surface | Permission | Profiles |
 |---|---|---|---|
 | 7 | Segment assignment history / migration (read) | `segment.read` (existing) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
+| 7 | Customer segment timeline, as-of lookup and the sales behind a change (`/catalog/customers/<id>`, `/catalog/customers/<id>/segment-changes/<run>`, #337) | `segment.read` (existing) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | 7 | Run RFM_RULES / KMEANS | `segment_run.execute` (existing) | ADMIN |
-| 8 | Sales CSV ingestion | `sales_ingest.execute` (**new**) | ADMIN |
+| 8 | Sales CSV ingestion | `sales_ingest.execute` (/admin/sales-import/) | ADMIN |
 | 8 | Consumption profile (read) | `segment.read` (existing) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | 9 | Model comparison, parameters and quality measures (read) | `segment.read` (existing) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | 10 | Recommendations (read) | `segment.read` (existing) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | 11 | Campaigns and experiments (assignment, exposure, conversion) | `campaign.read` / `campaign.write` (existing) | same as campaigns today |
+| 11 | Experiment arm detail and bulk exposure (`/experiments/<id>/groups/<group_id>`) | `campaign.read` / `campaign.write` | same as campaigns today |
 | 12 | Segment / RFM / migration dashboards | `segment.read` (existing) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | 12 | Revenue dashboard | `report.read` (existing) | everyone who already holds `report.read` |
 | 12 | Experiment dashboard | `campaign.read` (existing) | same as campaigns today |
 | 12 | Experiment report and its CSV export (`/experiment-report/`) | `campaign.read` (existing) | same as campaigns today |
+| 12 | Consumption-shift and recommendation reports (`/consumption-reports/`) | `segment.read` (existing) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 
 `ADMIN` remains the only administrative profile. No new profile is created.
 

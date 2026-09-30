@@ -28,6 +28,8 @@ Stories: F2-01 (conceptual model), F2-02 (normalization), F2-03 (logical model).
 | `store` | A physical location that registers sales and holds inventory |
 | `transaction` | One sale: a customer, at a store, through a channel, at a time |
 | `transaction_line` | One product within one sale, with its quantity and the price actually paid |
+| `sales_load` | One administrator CSV upload attempt and its reconciled outcome |
+| `sales_load_rejection` | One rejected file line and the business reason it was refused |
 | `inventory` | Stock of one product at one store |
 | `segment_rule` | The RFM bands that define a segment |
 | `segment_label` | The stable, ordered vocabulary every segmentation run's assignments draw from |
@@ -47,6 +49,8 @@ Stories: F2-01 (conceptual model), F2-02 (normalization), F2-03 (logical model).
 - `customer` (1) — makes — (N) `transaction`
 - `store` (1) — registers — (N) `transaction`
 - `transaction` (1) — contains — (N) `transaction_line` (N) — references — (1) `product`
+- `app_user` (1) — submits — (N) `sales_load`; the user is optional so deleting an account does not delete import history
+- `sales_load` (1) — records — (N) `sales_load_rejection`
 - `product` (N) — belongs to — (1) `category`
 - `category` (N) — is a child of — (0..1) `category`
 - `customer` (N) — currently belongs to — (0..1) `segment`
@@ -224,6 +228,16 @@ many runs — so the run's own attributes and each customer's per-run result
 are decomposed into two relations joined by `run_id`, the same shape as the
 `customer_preferred_channel` / `customer_interest_category` split above.
 
+`sales_load` and `sales_load_rejection` apply the same rule to an upload and
+its rejected lines. Keeping `filename`, the contract version, the reconciled
+counts and the actor on every rejection would repeat one load-level fact once
+per bad line, while a fully accepted load would have no row in which to keep
+those facts. The load header is therefore one relation keyed by `load_id`, and
+the rejection relation carries only the single multivalued fact of that load:
+its rejected file lines and their reasons. Every non-key attribute in either
+relation depends on its own key, and neither relation contains a second
+independent multivalued dependency, so the decomposition is in 4NF.
+
 Every other relation in the model is already in 4NF. The remaining composite-key
 tables — `transaction_line`, `inventory` — each carry a single multivalued
 fact plus attributes that depend on the whole key, so there is nothing to
@@ -255,6 +269,8 @@ erDiagram
     store                      ||--o{ transaction                : "registers"
     transaction                ||--|{ transaction_line           : "contains"
     product                    ||--o{ transaction_line           : "is sold as"
+    app_user                   |o--o{ sales_load                 : "submits"
+    sales_load                 ||--o{ sales_load_rejection       : "records"
     store                      ||--o{ inventory                  : "holds"
     product                    ||--o{ inventory                  : "is stocked as"
     segment_rule               ||--o{ segment                    : "defines"
@@ -322,6 +338,8 @@ the new parent and refuses a longer cycle as `category_no_cycle`.
 | `m_min`, `m_max` | `SMALLINT` | NN | `CHECK BETWEEN 1 AND 5` | Monetary band |
 
 Table constraint: `r_min <= r_max AND f_min <= f_max AND m_min <= m_max`.
+
+The seeded bands partition the 125 (R, F, M) triples, five bands per label (RN-46).
 
 #### `segment`
 
@@ -426,11 +444,13 @@ replacement; ADR-0017 fulfils that prediction with `segmentation_run` and
 | `segment_id` | `INT` | yes | Composite FK with `label_code` → `segment (segment_id, label_code)`, `SET NULL (segment_id)` | The matched RFM band, `NULL` if unassigned (RN-21) or if the referenced band is retired |
 | `label_code` | `VARCHAR(40)` | yes | Composite FK with `segment_id` → `segment (segment_id, label_code)`; FK → `segment_label`, `RESTRICT` | The stable label, preserved if its matched RFM band is retired; ADR-0018's downstream consumers (migration, dashboards, recommendations) read it without joining through that segment row |
 | `recency_last_purchase_at` | `TIMESTAMPTZ` | yes | — | Raw recency input |
-| `frequency_count` | `INT` | yes | — | Raw frequency input |
-| `monetary_total` | `NUMERIC(12,2)` | yes | — | Raw monetary input |
-| `r_score`, `f_score`, `m_score` | `SMALLINT` | yes | — | Quintile scores derived from the raw values above |
+| `frequency_count` | `INT` | yes | `CHECK >= 0` | Raw frequency input |
+| `monetary_total` | `NUMERIC(12,2)` | yes | `CHECK >= 0` | Raw monetary input |
+| `r_score`, `f_score`, `m_score` | `SMALLINT` | yes | each `CHECK BETWEEN 1 AND 5` | Quintile scores derived from the raw values above |
 | `valid_from` | `TIMESTAMPTZ` | NN | default `now()` | When this result became current |
 | `valid_to` | `TIMESTAMPTZ` | yes | `CHECK >= valid_from` | When it stopped being current; `NULL` while open |
+
+Table constraint: `ex_customer_segment_history_no_overlap` excludes two rows of one customer whose `[valid_from, valid_to)` ranges overlap (needs `btree_gist`). The application role may only update `valid_to`, and a trigger lets any role close a row once and change nothing else (RN-47, ADR-0029).
 
 `segment_id` and `label_code` are both kept, deliberately not one or the
 other: `segment_id` is what the already-shipped F3-05 catalog feature
@@ -506,6 +526,37 @@ These two are the 4NF decomposition from §2.4.
 | `quantity` | `INT` | NN | `CHECK > 0` | Units sold |
 | `unit_price` | `NUMERIC(10,2)` | NN | `CHECK >= 0` | Price actually charged, not the product's list price |
 
+#### `sales_load`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `load_id` | `BIGINT` | NN | PK, `GENERATED ALWAYS AS IDENTITY` | Upload attempt identifier |
+| `filename` | `VARCHAR(255)` | NN | — | Sanitized client filename shown in the import history |
+| `contract_version` | `INT` | NN | — | Version of ADR-0020's CSV contract used for the upload |
+| `received_count` | `INT` | NN | `CHECK >= 0` | Data rows read from the file |
+| `accepted_count` | `INT` | NN | `CHECK >= 0` | Rows committed as sales |
+| `rejected_count` | `INT` | NN | `CHECK >= 0` | Rows refused with a recorded reason |
+| `loaded_by` | `UUID` | yes | FK → `app_user`, `SET NULL` | Administrator who submitted the file; preserved as `NULL` if that account is removed |
+| `loaded_at` | `TIMESTAMPTZ` | NN | default `now()` | When the attempt completed |
+
+The table-level check `received_count = accepted_count + rejected_count`
+keeps the stored report reconciled. This is runtime history rather than
+reference data, so it is exempt from the 30-row seed minimum in
+`sql/seed-exempt.txt`.
+
+#### `sales_load_rejection`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `rejection_id` | `BIGINT` | NN | PK, `GENERATED ALWAYS AS IDENTITY` | Rejection identifier |
+| `load_id` | `BIGINT` | NN | FK → `sales_load`, `CASCADE` | Upload attempt that produced the refusal |
+| `line_number` | `INT` | NN | `CHECK > 0` | Line in the original file, including its header as line 1 |
+| `reason` | `VARCHAR(255)` | NN | — | Business wording safe to show to the administrator |
+
+Rejections have no meaning without their load, so deleting a load cascades to
+them. They are runtime history and carry the same seed exemption as
+`sales_load`.
+
 #### `campaign`
 
 | Column | Type | Null | Constraints | Meaning |
@@ -537,12 +588,19 @@ These two are the 4NF decomposition from §2.4.
 | `group_id` | `INT` | NN | PK | Group identifier |
 | `experiment_id` | `INT` | NN | FK → `experiment`, `CASCADE`; UQ with `group_id` | Its experiment |
 | `kind` | `VARCHAR(20)` | NN | `CHECK IN ('CONTROL','TREATMENT')` | Which arm |
+| `name` | `VARCHAR(120)` | NN | — | User-facing arm name, fixed once assigned |
+| `treatment_description` | `VARCHAR(500)` | NN | — | User-facing treatment description, fixed once assigned |
 
-At most one `CONTROL` row per experiment:
+At most one `CONTROL` row per experiment; zero is valid for the two-treatment
+no-control design (ADR-0028):
 `ux_experiment_one_control ON experiment_group (experiment_id) WHERE kind = 'CONTROL'`.
 `UNIQUE (group_id, experiment_id)` exists so `experiment_assignment`'s
 composite foreign key can pin an assignment to both its group and that
 group's experiment at once.
+
+`trg_experiment_group_definition_immutable` rejects a kind, name or treatment
+description change after the first assignment, preserving the arm definition
+used by every later exposure, conversion and export (ADR-0028).
 
 #### `experiment_assignment`
 

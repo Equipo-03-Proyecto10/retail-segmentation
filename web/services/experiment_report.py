@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -23,6 +24,7 @@ from web.db import experiment_conversions as conversions
 from web.db import experiment_report as report_db
 from web.db.experiment_report import ReportGroup
 from web.db.experiments import Experiment
+from web.parsing import whole_number
 from web.services import experiment_uplift as uplift
 from web.services.experiments import DATA_ORIGINS, is_synthetic
 from web.services.pagination import page_count
@@ -38,12 +40,17 @@ EXPORT_COLUMNS = (
     "data_origin",
     "label",
     "arm",
+    "arm_name",
+    "treatment_description",
     "group_id",
     "assigned",
     "exposed",
     "converted",
     "pending",
     "not_converted",
+    "converted_after_exposure",
+    "rate_assigned_percent",
+    "rate_exposed_percent",
     "uplift_points",
     "ci_low_points",
     "ci_high_points",
@@ -102,10 +109,8 @@ def parse_filters(
     report's rather than dropping it (RN-45)."""
     campaign_id: int | None = None
     if campaign:
-        if not (campaign.isascii() and campaign.isdigit()) or int(campaign) > 2**31 - 1:
-            raise InvalidFilter("Choose a campaign from the list.")
-        campaign_id = int(campaign)
-        if campaign_id not in offered_campaign_ids:
+        campaign_id = whole_number(campaign)
+        if campaign_id is None or campaign_id not in offered_campaign_ids:
             raise InvalidFilter("Choose a campaign from the list.")
     if origin and origin not in DATA_ORIGINS:
         raise InvalidFilter("Choose a data origin from the list.")
@@ -134,6 +139,8 @@ def _report_of(experiment: Experiment, groups: list[ReportGroup]) -> ExperimentR
                         g.pending,
                         g.not_converted,
                         g.unrecorded,
+                        g.name,
+                        g.treatment_description,
                     )
                     for g in mine
                 ],
@@ -179,9 +186,24 @@ def build_report(
     return ReportPage(rows, total, page, page_count(total, PAGE_SIZE))
 
 
+def _percent(rate: float | None) -> str:
+    return "" if rate is None else f"{rate * 100:.2f}"
+
+
+# A plain number, negative included. The figures are formatted to strings before
+# they are written, so a negative uplift starts with "-" like a formula would;
+# it is a number, not text, and must stay one (#358).
+_NUMBER = re.compile(r"-?\d+(\.\d+)?")
+
+
 def _safe(value: object) -> object:
-    """Stop a spreadsheet reading a text cell as a formula."""
-    if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r"):
+    """Stop a spreadsheet reading a text cell as a formula. A number is left
+    alone: `-50.00` is a value, and quoting it would turn it into text."""
+    if (
+        isinstance(value, str)
+        and value[:1] in ("=", "+", "-", "@", "\t", "\r")
+        and _NUMBER.fullmatch(value) is None
+    ):
         return "'" + value
     return value
 
@@ -219,12 +241,21 @@ def export_csv(
                         e.data_origin,
                         report.label or "",
                         g.kind,
+                        g.name,
+                        g.treatment_description,
                         g.group_id,
                         g.assigned,
                         g.exposed,
                         g.converted,
                         g.pending,
                         g.not_converted,
+                        g.exposed_converted if g.kind == "TREATMENT" else "",
+                        _percent(g.conversion_rate),
+                        (
+                            _percent(g.exposed_conversion_rate)
+                            if g.kind == "TREATMENT"
+                            else ""
+                        ),
                         f"{c.uplift * 100:.2f}" if c else "",
                         f"{c.ci_low * 100:.2f}" if c else "",
                         f"{c.ci_high * 100:.2f}" if c else "",

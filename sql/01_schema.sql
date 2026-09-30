@@ -244,6 +244,12 @@ CREATE TABLE segmentation_run (
     run_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- A run is a record of what was computed and how, and the application only
+-- ever adds one (#350, ADR-0029). Rewriting or deleting it would change the
+-- provenance of every assignment that names it, and DELETE would cascade to
+-- them as the owner. Maintenance stays with the schema owner.
+REVOKE UPDATE, DELETE ON segmentation_run FROM retail_app;
+
 -- Durable assignment history — ADR-0017 and ADR-0018. A run never overwrites
 -- a customer's row; it closes the open one (valid_to) and opens a new one.
 -- segment_id and label_code are both NULL for a customer with no sales in
@@ -292,7 +298,24 @@ CREATE TABLE customer_segment_history (
     valid_from  TIMESTAMPTZ NOT NULL DEFAULT now(),
     valid_to    TIMESTAMPTZ,
     CHECK (valid_to IS NULL OR valid_to >= valid_from),
-    UNIQUE (run_id, customer_id)
+    -- Quintile scores run 1 to 5 (RN-18 states the same range for the bands),
+    -- and a count or a total of money is never negative. NULL passes: an
+    -- unassigned customer, and a K-means row, carry no scores (RN-21).
+    CHECK (r_score BETWEEN 1 AND 5),
+    CHECK (f_score BETWEEN 1 AND 5),
+    CHECK (m_score BETWEEN 1 AND 5),
+    CHECK (frequency_count >= 0),
+    CHECK (monetary_total >= 0),
+    UNIQUE (run_id, customer_id),
+    -- One customer is never in two segments at once, in the past as well as
+    -- now: the open-row index below only guards the present. Ranges are
+    -- half-open, so a row closed at the instant the next opens is adjacent, not
+    -- overlapping. Needs btree_gist for the uuid equality (00_create_database.sql).
+    CONSTRAINT ex_customer_segment_history_no_overlap
+        EXCLUDE USING gist (
+            customer_id WITH =,
+            tstzrange(valid_from, valid_to) WITH &&
+        )
 );
 
 -- Exactly one open row per customer — the partial unique index a concurrent
@@ -302,6 +325,38 @@ CREATE UNIQUE INDEX ux_customer_segment_history_open
 
 CREATE INDEX idx_customer_segment_history_customer
     ON customer_segment_history (customer_id, valid_from);
+
+-- A history row is never updated in place (ADR-0017); the one thing a run does
+-- to an existing row is close it. So the application role loses UPDATE and
+-- DELETE and gets back UPDATE on valid_to alone, and a trigger applies the same
+-- rule to everyone else: valid_to may be set once, on an open row, and nothing
+-- else about a row may change. The single exception is segment_id going NULL,
+-- which is the foreign key's own ON DELETE SET NULL (segment_id) retiring a band
+-- reference while the row keeps its label. Deleting a customer or a run still
+-- cascades, as the owner. #350, ADR-0029.
+REVOKE UPDATE, DELETE ON customer_segment_history FROM retail_app;
+GRANT UPDATE (valid_to) ON customer_segment_history TO retail_app;
+
+CREATE FUNCTION fn_customer_segment_history_close_only()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF (to_jsonb(NEW) - 'valid_to' - 'segment_id')
+           IS DISTINCT FROM (to_jsonb(OLD) - 'valid_to' - 'segment_id')
+       OR (NEW.segment_id IS DISTINCT FROM OLD.segment_id
+           AND NEW.segment_id IS NOT NULL)
+       OR (NEW.valid_to IS DISTINCT FROM OLD.valid_to
+           AND OLD.valid_to IS NOT NULL) THEN
+        RAISE EXCEPTION 'Segment history row % may only be closed, once', OLD.history_id
+            USING ERRCODE = '23514',
+                  CONSTRAINT = 'customer_segment_history_close_only';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_customer_segment_history_close_only
+BEFORE UPDATE ON customer_segment_history
+FOR EACH ROW EXECUTE FUNCTION fn_customer_segment_history_close_only();
 
 -- ---------- PRODUCT CATALOG AND SALES ----------
 
@@ -342,6 +397,35 @@ CREATE TABLE transaction_line (
     PRIMARY KEY (transaction_id, product_id)
 );
 
+-- ---------- SALES CSV IMPORT (F8-01, #334) ----------
+--
+-- One row per upload attempt, so the administrator's rejection report stays
+-- retrievable after the page is left (AC 3) instead of living only in the
+-- HTTP response that produced it.
+CREATE TABLE sales_load (
+    load_id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    filename          VARCHAR(255) NOT NULL,
+    contract_version  INT NOT NULL,
+    received_count    INT NOT NULL CHECK (received_count >= 0),
+    accepted_count    INT NOT NULL CHECK (accepted_count >= 0),
+    rejected_count    INT NOT NULL CHECK (rejected_count >= 0),
+    loaded_by         UUID REFERENCES app_user(user_id) ON DELETE SET NULL,
+    loaded_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (received_count = accepted_count + rejected_count)
+);
+
+-- One row per rejected line, with the file's own line number (the header is
+-- line 1, so the first data row is line 2) -- not the record index, which
+-- would be off by one against what the administrator sees in a spreadsheet.
+CREATE TABLE sales_load_rejection (
+    rejection_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    load_id      BIGINT NOT NULL REFERENCES sales_load(load_id) ON DELETE CASCADE,
+    line_number  INT NOT NULL CHECK (line_number > 0),
+    reason       VARCHAR(255) NOT NULL
+);
+
+CREATE INDEX idx_sales_load_rejection_load ON sales_load_rejection (load_id);
+
 -- ---------- CAMPAIGNS AND EXPERIMENTS ----------
 
 CREATE TABLE campaign (
@@ -373,22 +457,57 @@ CREATE TABLE experiment (
     CHECK (ends_on IS NULL OR ends_on >= starts_on)
 );
 
+-- The application never deletes an experiment (#350, ADR-0029). Foreign-key
+-- cascades run as the owner, so revoking DELETE on the assignments alone did not
+-- stop DELETE FROM experiment from removing the assignments, exposures and
+-- conversions beneath it. UPDATE stays: an experiment is edited before its first
+-- assignment.
+REVOKE DELETE ON experiment FROM retail_app;
+
 CREATE TABLE experiment_group (
     group_id      INT PRIMARY KEY,
     experiment_id INT NOT NULL REFERENCES experiment(experiment_id) ON DELETE CASCADE,
     kind          VARCHAR(20) NOT NULL CHECK (kind IN ('CONTROL','TREATMENT')),
+    -- User-facing arm definition.  These values are fixed once assignment
+    -- starts; the application refuses edits after that point.
+    name          VARCHAR(120) NOT NULL CHECK (btrim(name) <> ''),
+    treatment_description VARCHAR(500) NOT NULL CHECK (btrim(treatment_description) <> ''),
     -- Lets experiment_assignment's FK pin a row to both its group and that
     -- group's experiment at once, so an assignment can never claim a group
     -- belonging to a different experiment.
     UNIQUE (group_id, experiment_id)
 );
 
--- At most one control group per experiment (ADR-0019), the same shape as
+-- At most one control group per experiment (ADR-0028), the same shape as
 -- ux_app_user_single_administrator. At least one treatment group before
 -- activation is not expressible here -- nothing forces a row to exist -- and
 -- is F11-03's service-level check.
 CREATE UNIQUE INDEX ux_experiment_one_control
     ON experiment_group (experiment_id) WHERE kind = 'CONTROL';
+
+CREATE FUNCTION fn_experiment_group_definition_immutable()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF (NEW.kind, NEW.name, NEW.treatment_description)
+       IS DISTINCT FROM (OLD.kind, OLD.name, OLD.treatment_description)
+       AND EXISTS (
+           SELECT 1 FROM experiment_assignment
+            WHERE group_id = OLD.group_id
+       ) THEN
+        RAISE EXCEPTION 'Experiment group % is fixed after assignment', OLD.group_id
+            USING ERRCODE = '23514',
+                  CONSTRAINT = 'experiment_group_definition_immutable';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_experiment_group_definition_immutable
+BEFORE UPDATE OF kind, name, treatment_description ON experiment_group
+FOR EACH ROW EXECUTE FUNCTION fn_experiment_group_definition_immutable();
+
+-- The same reason as on experiment: deleting a group cascades to its assignments.
+REVOKE DELETE ON experiment_group FROM retail_app;
 
 -- One durable row per customer assigned to an experiment (ADR-0019), before
 -- any outcome is known. Replaces experiment_group_customer, whose
@@ -656,7 +775,9 @@ BEGIN
         SELECT FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname = 'public' AND c.relkind = 'r'
           AND c.relname NOT IN (
-              'audit_log', 'experiment_assignment', 'experiment_exposure'
+              'audit_log', 'experiment_assignment', 'experiment_exposure',
+              'experiment', 'experiment_group', 'segmentation_run',
+              'customer_segment_history'
           )
           AND (NOT has_table_privilege(c.oid, 'SELECT')
                OR NOT has_table_privilege(c.oid, 'INSERT')
@@ -694,6 +815,25 @@ BEGIN
         RAISE EXCEPTION 'experiment_exposure must be append-only for the application role (RN-27)';
     END IF;
     RAISE NOTICE 'PASS: experiment_exposure is append-only for the application role';
+
+    IF NOT has_table_privilege('public.experiment', 'UPDATE')
+       OR has_table_privilege('public.experiment', 'DELETE')
+       OR has_table_privilege('public.experiment_group', 'DELETE') THEN
+        RAISE EXCEPTION 'experiment and experiment_group must not be deletable by the application role (ADR-0029)';
+    END IF;
+    IF has_table_privilege('public.segmentation_run', 'UPDATE')
+       OR has_table_privilege('public.segmentation_run', 'DELETE')
+       OR NOT has_table_privilege('public.segmentation_run', 'INSERT') THEN
+        RAISE EXCEPTION 'segmentation_run must be insert-only for the application role (ADR-0029)';
+    END IF;
+    IF has_table_privilege('public.customer_segment_history', 'UPDATE')
+       OR has_table_privilege('public.customer_segment_history', 'DELETE')
+       OR NOT has_column_privilege('public.customer_segment_history', 'valid_to', 'UPDATE')
+       OR has_column_privilege('public.customer_segment_history', 'label_code', 'UPDATE')
+       OR has_column_privilege('public.customer_segment_history', 'segment_id', 'UPDATE') THEN
+        RAISE EXCEPTION 'customer_segment_history may only have valid_to updated by the application role (ADR-0029)';
+    END IF;
+    RAISE NOTICE 'PASS: history, runs and experiments are protected from the application role';
 
     BEGIN
         DROP TABLE public.inventory;

@@ -35,6 +35,7 @@ READ_ROUTES = [
     f"/catalog/customers/{USER_ID}",
     f"/catalog/customers/{USER_ID}/profile",
     f"/catalog/customers/{USER_ID}/recommendations",
+    f"/catalog/customers/{USER_ID}/segment-changes/1",
     "/catalog/stock",
     "/catalog/segments",
     "/catalog/segments/1",
@@ -49,6 +50,7 @@ READ_ROUTES = [
     "/campaigns/",
     "/experiments/",
     "/experiments/1/exposure",
+    "/experiments/1/groups/1",
     "/experiments/1/conversion",
     "/experiments/1/uplift",
     "/experiment-report/",
@@ -74,6 +76,10 @@ ADMIN_ROUTES = [
     ("POST", f"/admin/users/{USER_ID}/deactivate"),
     ("GET", "/segment-run/"),
     ("POST", "/segment-run/"),
+    ("GET", "/admin/sales-import/"),
+    ("POST", "/admin/sales-import/"),
+    ("GET", "/admin/sales-import/1"),
+    ("GET", "/admin/sales-import/1/rejections.csv"),
 ]
 # campaign.write is held by ADMIN and MARKETING, so these cannot share
 # ADMIN_ROUTES' "only the administrator" refusal test.
@@ -92,6 +98,7 @@ CAMPAIGN_WRITE_ROUTES = [
     ("GET", "/experiments/1/assign"),
     ("POST", "/experiments/1/assign"),
     ("POST", "/experiments/1/exposure"),
+    ("POST", "/experiments/1/groups/1"),
     ("POST", "/experiments/1/conversion"),
 ]
 PROTECTED_ROUTES = (

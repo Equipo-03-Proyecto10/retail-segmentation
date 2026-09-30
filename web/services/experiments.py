@@ -6,13 +6,12 @@ Assignment writes the campaign's current target population into the arms
 once, in one transaction, before anything is delivered; it is never rewritten
 afterwards (RN-42, ADR-0026).
 
-An experiment is created with exactly one control group and at least one
-treatment group, a target metric, a conversion window and a data origin, all
-in one transaction. After its first assignment the conversion window and the
-target metric can no longer change. The data origin can never change: it is
-the mark every later result carries (RN-26). A campaign cannot be activated
-while an experiment attached to it lacks a control or a treatment group
-(RN-24).
+An experiment is created with at least one treatment group and zero or one
+control group, a target metric, a conversion window, a data origin, and
+explicit arm definitions. A no-control experiment has exactly two treatments.
+After its first assignment the conversion window, target metric and arm
+definitions can no longer change. The data origin can never change: it is the
+mark every later result carries (RN-26).
 
 The service owns the transaction and the rules; SQL stays in
 web/db/experiments.py (ADR-0003, ADR-0014).
@@ -30,13 +29,17 @@ from psycopg.errors import ForeignKeyViolation, IntegrityError, UniqueViolation
 
 from web.db import experiments
 from web.db.campaigns import get_campaign
+from web.db.clock import current_date as business_date
 from web.db.transactions import atomic
+from web.parsing import iso_date, whole_number
 
 # What F11-07 measures. The schema stores free text; the vocabulary is this
 # service's, and matches the values the seed already uses.
 TARGET_METRICS: dict[str, str] = {
     "CONVERSION": "Conversion rate",
-    "AVERAGE_TICKET": "Average ticket",
+    # Selectable so the experiments already using it stay editable, but no
+    # measurement exists for it: uplift refuses it (#357).
+    "AVERAGE_TICKET": "Average ticket (not measured yet)",
 }
 
 # experiment_data_origin_check's values (RN-26). SEEDED is ADR-0019's A/A
@@ -54,6 +57,8 @@ WINDOW_MAX_DAYS = 32767
 # A bound for the form, not a rule of the design: the schema allows any number
 # of treatment arms, and ten is far beyond what one campaign can split.
 TREATMENT_GROUPS_MAX = 10
+
+_NO_CONTROL_VALUES = frozenset({"NONE", "NO", "NO_CONTROL", "NO-CONTROL", "FALSE", "0"})
 
 _NAME_MAX = 120
 
@@ -81,6 +86,8 @@ class ExperimentInput:
     # Only a new experiment chooses these two; an edit never changes them.
     data_origin: str | None = None
     treatment_groups: int | None = None
+    has_control: bool = True
+    group_definitions: tuple[tuple[str, str], ...] = ()
 
 
 def is_synthetic(data_origin: str) -> bool:
@@ -89,17 +96,15 @@ def is_synthetic(data_origin: str) -> bool:
 
 
 def _parse_date(raw: str, label: str) -> tuple[date | None, str | None]:
-    try:
-        return date.fromisoformat(raw), None
-    except ValueError:
+    value = iso_date(raw)
+    if value is None:
         return None, f"{label} must be a date (YYYY-MM-DD)."
+    return value, None
 
 
 def _parse_whole(raw: str, low: int, high: int) -> int | None:
-    if not (raw.isascii() and raw.isdigit()):
-        return None
-    value = int(raw)
-    return value if low <= value <= high else None
+    value = whole_number(raw, high)
+    return value if value is not None and value >= low else None
 
 
 def validate_experiment(
@@ -112,6 +117,11 @@ def validate_experiment(
     conversion_window_days: str,
     data_origin: str | None = None,
     treatment_groups: str | None = None,
+    control_group: str | None = None,
+    control_mode: str | None = None,
+    group_names: dict[str, str] | None = None,
+    group_descriptions: dict[str, str] | None = None,
+    **arm_fields: str,
 ) -> tuple[ExperimentInput | None, dict[str, str]]:
     """Validate the setup form. `data_origin` and `treatment_groups` are given
     only when creating; an edit passes neither and can change neither."""
@@ -154,15 +164,57 @@ def validate_experiment(
         )
 
     treatments: int | None = None
+    has_control = True
+    definitions: list[tuple[str, str]] = []
     if creating:
+        selected_control = control_group if control_group is not None else control_mode
+        selected_control = (selected_control or "CONTROL").strip().upper()
+        if selected_control != "CONTROL" and selected_control not in _NO_CONTROL_VALUES:
+            errors["control_group"] = "Choose whether this experiment has a control."
         if data_origin not in DATA_ORIGINS:
             errors["data_origin"] = "Choose where this experiment's data comes from."
-        treatments = _parse_whole(treatment_groups or "", 1, TREATMENT_GROUPS_MAX)
+        no_control = selected_control in _NO_CONTROL_VALUES
+        has_control = not no_control
+        minimum = 2 if no_control else 1
+        treatments = _parse_whole(treatment_groups or "", minimum, TREATMENT_GROUPS_MAX)
+        if no_control and treatments is not None and treatments != 2:
+            treatments = None
         if treatments is None:
-            errors["treatment_groups"] = (
-                "An experiment needs at least one treatment group "
-                f"(at most {TREATMENT_GROUPS_MAX})."
-            )
+            if no_control:
+                errors["treatment_groups"] = (
+                    "A no-control experiment needs exactly two treatment groups."
+                )
+            else:
+                errors["treatment_groups"] = (
+                    "An experiment needs at least one treatment group "
+                    f"(at most {TREATMENT_GROUPS_MAX})."
+                )
+        if treatments is not None:
+            keys = (["control"] if has_control else []) + [
+                f"treatment_{index}" for index in range(1, treatments + 1)
+            ]
+            names = group_names or {
+                key: arm_fields.get(f"{key}_name", "") for key in keys
+            }
+            descriptions = group_descriptions or {
+                key: arm_fields.get(f"{key}_description", "") for key in keys
+            }
+            for key in keys:
+                arm_name = names.get(key, "")
+                description = descriptions.get(key, "")
+                if not arm_name.strip():
+                    errors[f"{key}_name"] = "Arm name is required."
+                elif len(arm_name.strip()) > _NAME_MAX:
+                    errors[f"{key}_name"] = (
+                        f"Arm name must be {_NAME_MAX} characters or fewer."
+                    )
+                if not description.strip():
+                    errors[f"{key}_description"] = "Treatment description is required."
+                if len(description.strip()) > 500:
+                    errors[f"{key}_description"] = (
+                        "Treatment description must be 500 characters or fewer."
+                    )
+                definitions.append((arm_name.strip(), description.strip()))
 
     if errors:
         return None, errors
@@ -176,6 +228,8 @@ def validate_experiment(
             conversion_window_days=window,
             data_origin=data_origin if creating else None,
             treatment_groups=treatments,
+            has_control=has_control,
+            group_definitions=tuple(definitions),
         ),
         {},
     )
@@ -190,8 +244,30 @@ def _refusal(error: IntegrityError) -> ExperimentRefused:
     )
 
 
+# A campaign in either of these can take no new experiment and no exposure: its
+# run is over (#357). The names are campaign.status's; not imported from
+# web.services.campaigns, which imports this module.
+_CAMPAIGN_OVER = frozenset({"FINISHED", "CANCELLED"})
+
+# An exposure repeated within this many seconds for the same assignment is one
+# exposure: a double-click or a concurrent submit, not a second delivery.
+EXPOSURE_REPEAT_SECONDS = 60
+
+
+def _refuse_over_campaign(connection: Connection, campaign_id: int) -> None:
+    status = experiments.get_campaign_status(connection, campaign_id)
+    if status in _CAMPAIGN_OVER:
+        raise ExperimentRefused(
+            "campaign_id",
+            f"Campaign {campaign_id} is {status.lower()}; an experiment can only "
+            "be attached to a draft or an active campaign.",
+        )
+
+
 @atomic
 def _create(connection: Connection, data: ExperimentInput) -> int:
+    if data.campaign_id is not None:
+        _refuse_over_campaign(connection, data.campaign_id)
     experiment_id = experiments.create_experiment(
         connection,
         name=data.name,
@@ -202,6 +278,8 @@ def _create(connection: Connection, data: ExperimentInput) -> int:
         conversion_window_days=data.conversion_window_days,
         data_origin=data.data_origin,
         treatment_groups=data.treatment_groups,
+        control_group=data.has_control,
+        group_definitions=list(data.group_definitions),
     )
     if experiment_id is None:
         raise ExperimentRefused(
@@ -211,9 +289,16 @@ def _create(connection: Connection, data: ExperimentInput) -> int:
 
 
 def create_experiment(connection: Connection, data: ExperimentInput) -> int:
-    """Create an experiment with one control and its treatment groups."""
-    if data.data_origin is None or data.treatment_groups is None:
-        raise ValueError("a new experiment needs a data origin and treatment groups")
+    """Create an experiment with explicit, user-defined arm metadata."""
+    if (
+        data.data_origin is None
+        or data.treatment_groups is None
+        or not data.group_definitions
+    ):
+        raise ValueError(
+            "a new experiment needs a data origin, treatment groups, and "
+            "arm definitions"
+        )
     try:
         return _create(connection, data)
     except IntegrityError as error:
@@ -251,6 +336,21 @@ def _update(connection: Connection, experiment_id: int, data: ExperimentInput) -
                     experiment_id, current.assignments, "target metric"
                 ),
             )
+        # The frame the measurement is judged against: which campaign it belongs
+        # to and when it runs. Re-pointing or back-dating it after customers are
+        # assigned would change what the numbers mean (#357, ADR-0019).
+        for field, label, changed in (
+            ("campaign_id", "campaign", data.campaign_id != current.campaign_id),
+            ("starts_on", "start date", data.starts_on != current.starts_on),
+            ("ends_on", "end date", data.ends_on != current.ends_on),
+        ):
+            if changed:
+                raise ExperimentRefused(
+                    field,
+                    fixed_after_assignment(experiment_id, current.assignments, label),
+                )
+    elif data.campaign_id is not None and data.campaign_id != current.campaign_id:
+        _refuse_over_campaign(connection, data.campaign_id)
     experiments.update_experiment(
         connection,
         experiment_id,
@@ -276,15 +376,16 @@ def update_experiment(
 def activation_refusal(connection: Connection, campaign_id: int) -> str | None:
     """Why the campaign cannot be activated yet, or None if it can (RN-24).
 
-    Every experiment attached to it needs exactly one control group and at
-    least one treatment group before anyone can be assigned. The unique index
-    already stops a second control; this is the half a constraint cannot say.
+    Every experiment attached to it needs at least one treatment group before
+    anyone can be assigned. A control is optional for the two-treatment-arm
+    design (ADR-0028); the unique index still stops a second control.
     """
     for counts in experiments.list_group_counts_for_campaign(connection, campaign_id):
-        if counts.control_groups < 1:
+        if counts.control_groups == 0 and counts.treatment_groups != 2:
             return (
                 f"Campaign {campaign_id} cannot be activated: experiment "
-                f"{counts.experiment_id} ({counts.name}) has no control group."
+                f"{counts.experiment_id} ({counts.name}) has no control group "
+                "and must have exactly two treatment groups."
             )
         if counts.treatment_groups < 1:
             return (
@@ -310,6 +411,8 @@ class Arm:
     group_id: int
     kind: str
     customers: tuple[str, ...]
+    name: str = ""
+    treatment_description: str = ""
 
 
 @dataclass(frozen=True)
@@ -364,8 +467,13 @@ def _plan(connection: Connection, experiment_id: int) -> AssignmentPlan:
             f"Campaign {experiment.campaign_id} is {status}. Customers are assigned "
             "once it is active, when its target label can no longer change."
         )
-    if experiment.control_groups < 1 or experiment.treatment_groups < 1:
-        missing = "control" if experiment.control_groups < 1 else "treatment"
+    if experiment.control_groups == 0 and experiment.treatment_groups != 2:
+        raise AssignmentRefused(
+            f"Experiment {experiment_id} has no control group and must have "
+            "exactly two treatment groups."
+        )
+    if experiment.treatment_groups < 1:
+        missing = "treatment"
         raise AssignmentRefused(
             f"Experiment {experiment_id} has no {missing} group to assign into."
         )
@@ -376,9 +484,36 @@ def _plan(connection: Connection, experiment_id: int) -> AssignmentPlan:
             "is nobody to assign."
         )
     groups = experiments.list_groups(connection, experiment_id)
-    return AssignmentPlan(
-        experiment, campaign.label_code, split(experiment_id, customers, groups)
+    if len(customers) < len(groups):
+        raise AssignmentRefused(
+            f"Experiment {experiment_id} needs at least {len(groups)} customers "
+            f"to fill its {len(groups)} groups evenly; only {len(customers)} "
+            "customer population is available. Nothing was written."
+        )
+    definitions = {
+        group.group_id: group
+        for group in experiments.list_group_definitions(connection, experiment_id)
+    }
+    arms = split(experiment_id, customers, groups)
+    arms = tuple(
+        Arm(
+            arm.group_id,
+            arm.kind,
+            arm.customers,
+            (
+                definitions[arm.group_id].name
+                if arm.group_id in definitions
+                else arm.kind.title()
+            ),
+            (
+                definitions[arm.group_id].treatment_description
+                if arm.group_id in definitions
+                else ""
+            ),
+        )
+        for arm in arms
     )
+    return AssignmentPlan(experiment, campaign.label_code, arms)
 
 
 def plan_assignment(connection: Connection, experiment_id: int) -> AssignmentPlan:
@@ -472,8 +607,38 @@ def parse_customer_id(raw: str) -> str | None:
         return None
 
 
+def _validate_exposure_frame(
+    connection: Connection,
+    experiment: experiments.Experiment,
+    today: date,
+) -> None:
+    """Refuse delivery outside the experiment and campaign frame."""
+    if today < experiment.starts_on:
+        raise ExposureRefused(
+            f"Experiment {experiment.experiment_id} starts on "
+            f"{experiment.starts_on}; an exposure cannot be recorded before it."
+        )
+    if experiment.ends_on is not None and today > experiment.ends_on:
+        raise ExposureRefused(
+            f"Experiment {experiment.experiment_id} ended on {experiment.ends_on}; "
+            "an exposure cannot be recorded after it."
+        )
+    if experiment.campaign_id is not None:
+        status = experiments.get_campaign_status(connection, experiment.campaign_id)
+        if status in _CAMPAIGN_OVER:
+            raise ExposureRefused(
+                f"Campaign {experiment.campaign_id} is {status.lower()}; an "
+                "exposure cannot be recorded for its experiment."
+            )
+
+
 @atomic
-def _record_exposure(connection: Connection, experiment_id: int, customer_id: str):
+def _record_exposure(
+    connection: Connection,
+    experiment_id: int,
+    customer_id: str,
+    today: date | None,
+) -> bool:
     # Same lock as assignment: an exposure can only follow an assignment that
     # is already committed, never race the one that would create it.
     if not experiments.lock_experiment(connection, experiment_id):
@@ -490,11 +655,97 @@ def _record_exposure(connection: Connection, experiment_id: int, customer_id: st
             f"Customer {customer_id} is in the control group of experiment "
             f"{experiment_id}. The control group is never exposed (ADR-0019)."
         )
-    experiments.insert_exposure(connection, assignment_id)
+    experiment = experiments.get_experiment(connection, experiment_id)
+    if experiment is None:
+        raise ExperimentNotFound(experiment_id)
+    _validate_exposure_frame(
+        connection,
+        experiment,
+        today if today is not None else business_date(connection),
+    )
+    return experiments.insert_exposure(
+        connection, assignment_id, repeat_seconds=EXPOSURE_REPEAT_SECONDS
+    )
 
 
-def record_exposure(connection: Connection, experiment_id: int, customer_id: str):
+def record_exposure(
+    connection: Connection,
+    experiment_id: int,
+    customer_id: str,
+    today: date | None = None,
+) -> bool:
     """Record that an assigned treatment customer was exposed, as its own event
-    with its own timestamp. The control group is refused: exposing it would
-    contaminate the comparison the experiment exists to make."""
-    _record_exposure(connection, experiment_id, customer_id)
+    with its own timestamp; False when the same customer was exposed moments ago
+    and nothing was added. The control group is refused: exposing it would
+    contaminate the comparison the experiment exists to make. So is an exposure
+    outside the experiment's dates or for a campaign that is over (#357)."""
+    return _record_exposure(connection, experiment_id, customer_id, today)
+
+
+@atomic
+def _record_group_exposures(
+    connection: Connection,
+    experiment_id: int,
+    group_id: int,
+    customer_ids: list[str] | None,
+    today: date | None,
+) -> int:
+    if not experiments.lock_experiment(connection, experiment_id):
+        raise ExperimentNotFound(experiment_id)
+    definitions = experiments.list_group_definitions(connection, experiment_id)
+    group = next((item for item in definitions if item.group_id == group_id), None)
+    if group is None:
+        raise ExposureRefused(
+            f"Arm {group_id} does not belong to experiment {experiment_id}."
+        )
+    if group.kind == experiments.CONTROL:
+        raise ExposureRefused(
+            f"Arm {group.name} is the control group. "
+            "The control group is never exposed."
+        )
+    experiment = experiments.get_experiment(connection, experiment_id)
+    if experiment is None:
+        raise ExperimentNotFound(experiment_id)
+    _validate_exposure_frame(
+        connection,
+        experiment,
+        today if today is not None else business_date(connection),
+    )
+    ids = experiments.list_assignment_ids(
+        connection, experiment_id, group_id, customer_ids or None
+    )
+    if customer_ids and len(ids) != len(customer_ids):
+        raise ExposureRefused(
+            "Select only customers assigned to this treatment arm; nothing was written."
+        )
+    return sum(
+        experiments.insert_exposure(
+            connection,
+            assignment_id,
+            repeat_seconds=EXPOSURE_REPEAT_SECONDS,
+        )
+        for assignment_id in ids
+    )
+
+
+def record_group_exposures(
+    connection: Connection,
+    experiment_id: int,
+    group_id: int,
+    customer_ids: list[str] | None = None,
+    today: date | None = None,
+) -> int:
+    """Append non-repeated exposure events for a treatment-arm subset.
+
+    The bulk path uses the same experiment dates, campaign state and repeat
+    window as recording one customer.
+    """
+    if customer_ids is not None and not customer_ids:
+        raise ExposureRefused(
+            "Select at least one customer or choose all assigned customers; "
+            "nothing was written."
+        )
+    parsed = [parse_customer_id(value) for value in (customer_ids or [])]
+    if any(value is None for value in parsed):
+        raise ExposureRefused("Every selected customer id must be a UUID.")
+    return _record_group_exposures(connection, experiment_id, group_id, parsed, today)

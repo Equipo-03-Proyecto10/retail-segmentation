@@ -38,17 +38,27 @@ by label" means the label's spend in the same period that produced the label.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
+from web.db import experiment_report as report_db
+from web.db.clock import current_date as business_date
+from web.db.experiments import Experiment
 from web.db.segmentation_dashboard import (
+    LabelMeans,
     RunRfmRow,
     get_previous_run,
+    list_run_label_means,
+    list_run_labelled_customers,
     list_run_revenue_by_label,
     list_run_rfm_rows,
 )
 from web.db.segments import SegmentationRun, get_label_ordinals, get_run, list_runs
+from web.services.consumption_profile import UnknownCustomer
+from web.services.experiment_uplift import SYNTHETIC_LABEL
+from web.services.experiments import is_synthetic
+from web.services.recommendations import recommend
 from web.services.segment_migration import (
     CustomerMigration,
     MigrationCategory,
@@ -268,4 +278,195 @@ def build_dashboard(connection: Any, run_id: int | None) -> Dashboard:
         migration=migration,
         revenue_window_start=since,
         revenue_window_end=until,
+    )
+
+
+# ---------- the KPIs beyond the charts (#340) ----------
+#
+# Built apart from `build_dashboard` so the charts' data stays what F12-01 and
+# its tests describe. Everything here is read-only and arrives as figures the
+# page prints, each one reproducible with a single query.
+
+# The most customers whose recommendations are tallied. `recommend` reads a
+# profile, interests, stock and buyers for each, so an unbounded run would make
+# opening the dashboard scale with the customer base. The page says when it
+# stopped early, and by how much.
+RECOMMENDATION_CUSTOMER_CAP = 100
+TOP_RECOMMENDED = 5
+# The most experiments read for the active list, newest first.
+ACTIVE_EXPERIMENT_LIMIT = 200
+
+
+@dataclass(frozen=True)
+class MeansRow:
+    """One label's means; the vocabulary's order, so a label with no customers
+    still has a row."""
+
+    label: str
+    customers: int
+    mean_r: Decimal | None = None
+    mean_f: Decimal | None = None
+    mean_m: Decimal | None = None
+    mean_recency_days: Decimal | None = None
+    mean_frequency: Decimal | None = None
+    mean_monetary: Decimal | None = None
+
+
+def build_label_means(
+    means: list[LabelMeans], ordinals: dict[str, int]
+) -> tuple[MeansRow, ...]:
+    """Average R, F and M, and the raw means, for every label, best to worst."""
+    by_label = {m.label_code: m for m in means}
+    rows = []
+    for label in sorted(ordinals, key=ordinals.__getitem__):
+        found = by_label.get(label)
+        rows.append(
+            MeansRow(label, 0)
+            if found is None
+            else MeansRow(
+                label,
+                found.customers,
+                found.mean_r,
+                found.mean_f,
+                found.mean_m,
+                found.mean_recency_days,
+                found.mean_frequency,
+                found.mean_monetary,
+            )
+        )
+    return tuple(rows)
+
+
+@dataclass(frozen=True)
+class ActiveExperiment:
+    experiment: Experiment
+    # Reuse the experiment report's final arm shape (#379, #370): it carries
+    # the user-facing name and both conversion definitions without a second,
+    # dashboard-only representation drifting from it.
+    arms: tuple[report_db.ReportGroup, ...]
+
+    @property
+    def label(self) -> str | None:
+        return SYNTHETIC_LABEL if is_synthetic(self.experiment.data_origin) else None
+
+
+def build_active_experiments(
+    connection: Any, today: date, now: datetime
+) -> tuple[ActiveExperiment, ...]:
+    """Experiments running today, each with its arms' intent-to-treat conversion
+    rate (RN-48). Running means it has started, has not ended, and has assigned
+    someone: an experiment with no assignments has no rate to show."""
+    found = report_db.list_active_report_experiments(
+        connection,
+        active_on=today,
+        limit=ACTIVE_EXPERIMENT_LIMIT,
+    )
+    groups = report_db.list_report_groups(
+        connection, [e.experiment_id for e in found], now
+    )
+    return tuple(
+        ActiveExperiment(
+            e,
+            tuple(g for g in groups if g.experiment_id == e.experiment_id),
+        )
+        for e in found
+    )
+
+
+@dataclass(frozen=True)
+class RecommendedProduct:
+    product_id: int
+    name: str
+    category_name: str
+    customers: int
+    # (store name, units on hand there) for the stores it was recommended from.
+    stock: tuple[tuple[str, int], ...]
+
+
+@dataclass(frozen=True)
+class TopRecommended:
+    products: tuple[RecommendedProduct, ...]
+    considered: int
+    total: int
+
+    @property
+    def capped(self) -> bool:
+        return self.considered < self.total
+
+
+def build_top_recommended(
+    connection: Any,
+    customer_ids: list[str],
+    total: int,
+    *,
+    limit: int = TOP_RECOMMENDED,
+) -> TopRecommended:
+    """The products recommended to the most of these customers, each with its
+    stock at the stores it was recommended from.
+
+    Each customer is asked with `recommend`, the same call the customer page and
+    the F12-03 report make, so a number here is a number there. A customer the
+    recommender cannot serve (no segment, no usual store) adds nothing. Ties are
+    broken by product id.
+    """
+    customers: dict[int, int] = {}
+    named: dict[int, tuple[str, str]] = {}
+    stock: dict[int, dict[int, tuple[str, int]]] = {}
+    for customer_id in customer_ids:
+        try:
+            result = recommend(connection, customer_id)
+        except UnknownCustomer:
+            continue
+        for item in result.recommendations:
+            customers[item.product_id] = customers.get(item.product_id, 0) + 1
+            named[item.product_id] = (item.name, item.category_name)
+            if result.store_id is not None:
+                stock.setdefault(item.product_id, {})[result.store_id] = (
+                    result.store_name or str(result.store_id),
+                    item.in_stock,
+                )
+    ranked = sorted(
+        customers, key=lambda product_id: (-customers[product_id], product_id)
+    )
+    products = tuple(
+        RecommendedProduct(
+            product_id,
+            named[product_id][0],
+            named[product_id][1],
+            customers[product_id],
+            tuple(sorted(stock.get(product_id, {}).values())),
+        )
+        for product_id in ranked[:limit]
+    )
+    return TopRecommended(products, len(customer_ids), total)
+
+
+@dataclass(frozen=True)
+class Kpis:
+    label_means: tuple[MeansRow, ...]
+    active_experiments: tuple[ActiveExperiment, ...]
+    recommended: TopRecommended
+    scored: bool
+
+
+def build_kpis(
+    connection: Any,
+    run: SegmentationRun,
+    now: datetime,
+    *,
+    today: date | None = None,
+) -> Kpis:
+    """Average R/F/M per label, running experiments with their conversion rate
+    per arm, and the most recommended products with their stock, for one run."""
+    active_on = today if today is not None else business_date(connection)
+    ordinals = get_label_ordinals(connection)
+    means = list_run_label_means(connection, run.run_id, run.run_at)
+    ids, total = list_run_labelled_customers(
+        connection, run.run_id, RECOMMENDATION_CUSTOMER_CAP
+    )
+    return Kpis(
+        label_means=build_label_means(means, ordinals),
+        active_experiments=build_active_experiments(connection, active_on, now),
+        recommended=build_top_recommended(connection, ids, total),
+        scored=any(m.mean_r is not None for m in means),
     )

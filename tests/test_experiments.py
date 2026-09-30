@@ -35,9 +35,29 @@ FORM = dict(
     conversion_window_days="14",
     data_origin="OBSERVED",
     treatment_groups="2",
+    control_group="CONTROL",
+    control_name="Holdout",
+    control_description="No treatment delivered.",
+    treatment_1_name="Offer A",
+    treatment_1_description="Ten percent discount.",
+    treatment_2_name="Offer B",
+    treatment_2_description="Free shipping.",
 )
 EDIT = {
-    key: FORM[key] for key in FORM if key not in {"data_origin", "treatment_groups"}
+    key: FORM[key]
+    for key in FORM
+    if key
+    not in {
+        "data_origin",
+        "treatment_groups",
+        "control_group",
+        "control_name",
+        "control_description",
+        "treatment_1_name",
+        "treatment_1_description",
+        "treatment_2_name",
+        "treatment_2_description",
+    }
 }
 
 
@@ -123,6 +143,8 @@ def test_a_complete_setup_validates() -> None:
         ("data_origin", "REAL"),
         ("treatment_groups", "0"),
         ("treatment_groups", ""),
+        ("treatment_groups", "two"),
+        ("control_group", "SURPRISE"),
         ("campaign_id", "seven"),
     ],
 )
@@ -165,13 +187,22 @@ def test_creation_writes_exactly_one_control_and_the_treatments(
         conversion_window_days=14,
         data_origin="SEEDED",
         treatment_groups=2,
+        group_definitions=[
+            ("Control", "No treatment delivered."),
+            ("Treatment 2", "Treatment arm."),
+            ("Treatment 3", "Treatment arm."),
+        ],
     )
 
     assert experiment_id == 31
     assert "pg_advisory_xact_lock" in cursor.execute.call_args_list[0].args[0]
     statement, rows = cursor.executemany.call_args.args
     assert "INSERT INTO experiment_group" in statement
-    assert rows == [(61, 31, "CONTROL"), (62, 31, "TREATMENT"), (63, 31, "TREATMENT")]
+    assert rows == [
+        (61, 31, "CONTROL", "Control", "No treatment delivered."),
+        (62, 31, "TREATMENT", "Treatment 2", "Treatment arm."),
+        (63, 31, "TREATMENT", "Treatment 3", "Treatment arm."),
+    ]
     for call in cursor.execute.call_args_list:
         assert "SEEDED" not in call.args[0]  # every value is a parameter
 
@@ -293,10 +324,7 @@ def test_the_data_origin_is_never_rewritten(connection: MagicMock) -> None:
 # ---------- activation needs a control and a treatment ----------
 
 
-@pytest.mark.parametrize(
-    "controls,treatments,missing",
-    [(0, 2, "no control group"), (1, 0, "no treatment group")],
-)
+@pytest.mark.parametrize("controls,treatments,missing", [(1, 0, "no treatment group")])
 def test_an_incomplete_experiment_blocks_its_campaigns_activation(
     monkeypatch: pytest.MonkeyPatch, controls: int, treatments: int, missing: str
 ) -> None:
@@ -310,7 +338,7 @@ def test_an_incomplete_experiment_blocks_its_campaigns_activation(
         "get_campaign",
         Mock(
             return_value=Campaign(
-                7, "Win-back", "AT_RISK", date(2026, 10, 1), date(2026, 10, 31), "DRAFT"
+                7, "Win-back", "AT_RISK", date(2026, 10, 1), date(2999, 12, 31), "DRAFT"
             )
         ),
     )
@@ -318,9 +346,34 @@ def test_an_incomplete_experiment_blocks_its_campaigns_activation(
     monkeypatch.setattr(campaign_service.campaigns, "change_status", change_status)
 
     with pytest.raises(campaign_service.InvalidTransition, match=missing):
-        campaign_service.transition(MagicMock(), 7, "activate")
+        campaign_service.transition(MagicMock(), 7, "activate", date(2026, 10, 15))
 
     change_status.assert_not_called()
+
+
+def test_a_no_control_two_treatment_experiment_allows_campaign_activation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        db,
+        "list_group_counts_for_campaign",
+        Mock(return_value=[GroupCounts(3, "Two offers", 0, 2)]),
+    )
+    monkeypatch.setattr(
+        campaign_service.campaigns,
+        "get_campaign",
+        Mock(
+            return_value=Campaign(
+                7, "Win-back", "AT_RISK", date(2026, 10, 1), date(2026, 10, 31), "DRAFT"
+            )
+        ),
+    )
+    change_status = Mock(return_value=True)
+    monkeypatch.setattr(campaign_service.campaigns, "change_status", change_status)
+
+    campaign_service.transition(MagicMock(), 7, "activate", date(2026, 10, 15))
+
+    change_status.assert_called_once()
 
 
 def test_a_complete_experiment_lets_its_campaign_activate(
@@ -345,7 +398,7 @@ def test_cancelling_does_not_check_the_experiments(
         "get_campaign",
         Mock(
             return_value=Campaign(
-                7, "Win-back", "AT_RISK", date(2026, 10, 1), date(2026, 10, 31), "DRAFT"
+                7, "Win-back", "AT_RISK", date(2026, 10, 1), date(2999, 12, 31), "DRAFT"
             )
         ),
     )
@@ -454,6 +507,39 @@ def test_the_form_of_an_assigned_experiment_shows_the_rules_as_fixed(
 
     assert "Measurement rules fixed" in body
     assert 'name="conversion_window_days" value="14" readonly' in body
+
+
+def test_the_form_of_an_assigned_experiment_also_fixes_campaign_and_dates(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#357: the frame is locked with the measurement rules."""
+    _wire_pages(monkeypatch, _experiment(assignments=5))
+    client = app.test_client()
+    _sign_in(client, "MARKETING")
+
+    body = client.get("/experiments/3/edit").get_data(as_text=True)
+
+    assert "its campaign, dates, target metric and conversion window" in body
+    assert '<input type="hidden" name="campaign_id" value="7">' in body
+    assert 'name="starts_on" value="2026-10-01" required readonly' in body
+    assert 'name="ends_on" value="2026-10-31" readonly' in body
+    assert "<select" not in body.split('id="campaign_id"')[1].split("</div>")[0]
+
+
+def test_changing_an_assigned_experiments_start_date_is_a_409(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _wire_pages(monkeypatch, _experiment(assignments=5))
+    _wire_update(monkeypatch, _experiment(assignments=5))
+    client = app.test_client()
+    _sign_in(client, "MARKETING")
+
+    response = client.post(
+        "/experiments/3/edit", data={**EDIT, "starts_on": "2026-09-01"}
+    )
+
+    assert response.status_code == 409
+    assert "The start date is fixed" in response.get_data(as_text=True)
 
 
 def test_changing_an_assigned_experiments_window_is_a_409(

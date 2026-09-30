@@ -20,7 +20,9 @@ cursor received.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
+from decimal import Decimal
 from enum import Enum
 from typing import Any
 
@@ -203,6 +205,35 @@ class MigrationMatrix:
     cells: dict[str, dict[str, int]]
     row_totals: dict[str, int]
     column_totals: dict[str, int]
+    # The same migrations used to produce ``cells`` grouped by cell.  Keeping
+    # the members alongside the counts prevents a detail view from running a
+    # second classification (and accidentally disagreeing with the matrix).
+    cell_migrations: dict[str, dict[str, tuple[CustomerMigration, ...]]] = field(
+        default_factory=dict
+    )
+
+
+def migration_cell_labels(migration: CustomerMigration) -> tuple[str, str]:
+    """Return the matrix row and column for one already-classified customer.
+
+    ``None`` labels mean an unassigned result, except for the two explicit
+    absence categories.  Keeping this mapping in the service makes filters
+    and detail rows use exactly the same states as the count matrix.
+    """
+    if migration.category is MigrationCategory.ABSENT_FROM_EARLIER:
+        row = _NOT_IN_EARLIER
+    elif migration.label_before is None:
+        row = _UNASSIGNED
+    else:
+        row = migration.label_before
+
+    if migration.category is MigrationCategory.ABSENT_FROM_LATER:
+        column = _NOT_IN_LATER
+    elif migration.label_after is None:
+        column = _UNASSIGNED
+    else:
+        column = migration.label_after
+    return row, column
 
 
 def build_migration_matrix(
@@ -233,21 +264,14 @@ def build_migration_matrix(
     cells: dict[str, dict[str, int]] = {
         row: {column: 0 for column in column_labels} for row in row_labels
     }
+    cell_migrations: dict[str, dict[str, list[CustomerMigration]]] = {
+        row: {column: [] for column in column_labels} for row in row_labels
+    }
 
     for migration in migrations:
-        if migration.category is MigrationCategory.ABSENT_FROM_EARLIER:
-            row = _NOT_IN_EARLIER
-        elif migration.label_before is None:
-            row = _UNASSIGNED
-        else:
-            row = migration.label_before
-        if migration.category is MigrationCategory.ABSENT_FROM_LATER:
-            column = _NOT_IN_LATER
-        elif migration.label_after is None:
-            column = _UNASSIGNED
-        else:
-            column = migration.label_after
+        row, column = migration_cell_labels(migration)
         cells[row][column] += 1
+        cell_migrations[row][column].append(migration)
 
     row_totals = {row: sum(cells[row].values()) for row in row_labels}
     column_totals = {
@@ -261,6 +285,10 @@ def build_migration_matrix(
         cells=cells,
         row_totals=row_totals,
         column_totals=column_totals,
+        cell_migrations={
+            row: {column: tuple(members) for column, members in columns.items()}
+            for row, columns in cell_migrations.items()
+        },
     )
 
 
@@ -303,6 +331,12 @@ class MigrationExplanation:
     label_before: str | None
     label_after: str | None
     label_changed: bool
+    # Whether the customer was part of each run at all. A customer absent
+    # from the earlier run is new, which is not the same as having been
+    # scored and left unassigned (RN-21), though both give label_before None
+    # (#338).
+    in_earlier: bool = True
+    in_later: bool = True
 
     @property
     def most_changed(self) -> tuple[ComponentDelta, ...] | None:
@@ -379,4 +413,289 @@ def explain_migration(
         label_before=label_before,
         label_after=label_after,
         label_changed=label_before != label_after,
+        in_earlier=assignment_before is not None,
+        in_later=assignment_after is not None,
+    )
+
+
+# ---------- the explanation in plain language (#338, RN-50) ----------
+
+# Whether a measure "changed" is judged on its raw value, never on its score.
+# A quintile score is a rank among every customer the run measured (RFM_RULES
+# scores with ntile), so it moves when other customers move, and a K-means run
+# stores no scores at all (ADR-0018). The raw values are the customer's own
+# behaviour and exist for both methods. RN-50 in docs/business-rules.md records
+# each threshold and why it is that number.
+
+# Recency grows by itself between runs when a customer does not buy -- a day
+# per day -- so a week of drift is still the same behaviour.
+RECENCY_STABLE_DAYS = 7
+# A purchase count is small and whole; one purchase more or less is a change.
+FREQUENCY_STABLE_PURCHASES = 0
+# Spend is noisy; a relative band scales with how much the customer spends.
+MONETARY_STABLE_RATIO = Decimal("0.10")
+
+_RANK_ONLY = (
+    "other customers moved the quintile cut points, not this customer's behaviour"
+)
+
+
+class Judgement(Enum):
+    CHANGED = "changed"
+    STABLE = "stable"
+    NOT_MEASURED = "not measured"
+
+
+@dataclass(frozen=True)
+class MeasureSentence:
+    """One measure between two runs, as a sentence a reader can act on.
+
+    `phrase` is the short lower-case form the one-line summary joins.
+    `rank_only` is True when the raw value did not change but the score
+    did, which is a statement about the other customers, not this one.
+    """
+
+    name: str
+    judgement: Judgement
+    text: str
+    phrase: str
+    rank_only: bool = False
+
+
+@dataclass(frozen=True)
+class MigrationNarrative:
+    """The three sentences, the summary line, and whether the customer was
+    new to the later run or missing from it."""
+
+    sentences: tuple[MeasureSentence, ...]
+    is_new: bool
+    left: bool
+    # The label changed while every measure the customer controls stayed
+    # stable and at least one score moved: the move is the rank's (RN-50).
+    moved_by_rank_only: bool = False
+    # Recency in days as each run measured it, for a page's table of values.
+    recency_days_before: int | None = None
+    recency_days_after: int | None = None
+
+    @property
+    def summary(self) -> str:
+        text = ", ".join(sentence.phrase for sentence in self.sentences)
+        return text[:1].upper() + text[1:] + "."
+
+    @property
+    def threshold_note(self) -> str:
+        """RN-50's thresholds, stated from the constants the judgement uses."""
+        purchases = (
+            "the same number of purchases"
+            if FREQUENCY_STABLE_PURCHASES == 0
+            else f"purchases within {FREQUENCY_STABLE_PURCHASES}"
+        )
+        return (
+            "Changed or stable is judged on the customer's own values, not the "
+            f"scores: recency within {RECENCY_STABLE_DAYS} days, {purchases}, "
+            f"and spend within {MONETARY_STABLE_RATIO:.0%} are stable (RN-50)."
+        )
+
+
+def recency_days(last_purchase_at: datetime | None, run_at: datetime) -> int | None:
+    """Whole days from the last purchase to the run that measured it, or None
+    when the run found no purchase (an unassigned result, RN-21)."""
+    if last_purchase_at is None:
+        return None
+    return (run_at - last_purchase_at).days
+
+
+def _plural(count: int, singular: str) -> str:
+    return f"{count} {singular if count == 1 else singular + 's'}"
+
+
+def _money(value: Decimal) -> str:
+    return f"{value:,.2f}"
+
+
+def _missing(
+    component: ComponentDelta, explanation: MigrationExplanation
+) -> MeasureSentence | None:
+    """The sentence for a measure one of the runs holds no value for, or
+    None when both runs measured it."""
+    if component.raw_before is not None and component.raw_after is not None:
+        return None
+    reasons = []
+    if component.raw_before is None:
+        reasons.append(
+            "the customer was not part of the earlier run"
+            if not explanation.in_earlier
+            else "the earlier run found no purchase in its window"
+        )
+    if component.raw_after is None:
+        reasons.append(
+            "the customer is not part of the later run"
+            if not explanation.in_later
+            else "the later run found no purchase in its window"
+        )
+    return MeasureSentence(
+        name=component.name,
+        judgement=Judgement.NOT_MEASURED,
+        text=f"{component.name} cannot be compared: {' and '.join(reasons)}.",
+        phrase=f"{component.name.lower()} not compared",
+    )
+
+
+def _score_note(component: ComponentDelta, rank_only: bool) -> str:
+    delta = component.score_delta
+    if not delta:
+        return ""
+    if rank_only:
+        return (
+            f" Its score still went from {component.score_before} to "
+            f"{component.score_after}: {_RANK_ONLY}."
+        )
+    return f" Its score went from {component.score_before} to {component.score_after}."
+
+
+def _recency(
+    component: ComponentDelta,
+    explanation: MigrationExplanation,
+    run_at_before: datetime,
+    run_at_after: datetime,
+) -> MeasureSentence:
+    if missing := _missing(component, explanation):
+        return missing
+    before = recency_days(component.raw_before, run_at_before)
+    after = recency_days(component.raw_after, run_at_after)
+    stable = abs(after - before) <= RECENCY_STABLE_DAYS
+    same_purchase = component.raw_before == component.raw_after
+    rank_only = stable and same_purchase and bool(component.score_delta)
+
+    if before == after:
+        text = f"Recency stayed at {_plural(after, 'day')} — stable."
+    elif stable:
+        text = (
+            f"Recency went from {before} to {_plural(after, 'day')} — stable "
+            f"(within {RECENCY_STABLE_DAYS} days)."
+        )
+    else:
+        cause = (
+            "longer since the last purchase"
+            if after > before
+            else "a more recent purchase"
+        )
+        text = (
+            f"Recency went from {before} to {_plural(after, 'day')} — "
+            f"changed: {cause}."
+        )
+    return MeasureSentence(
+        name=component.name,
+        judgement=Judgement.STABLE if stable else Judgement.CHANGED,
+        text=text + (_score_note(component, rank_only) if stable else ""),
+        phrase=(
+            "recency stable"
+            if stable
+            else f"recency went from {before} to {_plural(after, 'day')}"
+        ),
+        rank_only=rank_only,
+    )
+
+
+def _frequency(
+    component: ComponentDelta, explanation: MigrationExplanation
+) -> MeasureSentence:
+    if missing := _missing(component, explanation):
+        return missing
+    before, after = component.raw_before, component.raw_after
+    stable = abs(after - before) <= FREQUENCY_STABLE_PURCHASES
+    rank_only = before == after and bool(component.score_delta)
+
+    if before == after:
+        text = f"Frequency stayed at {_plural(after, 'purchase')} — stable."
+    elif stable:
+        text = f"Frequency went from {before} to {_plural(after, 'purchase')} — stable."
+    else:
+        verb = "rose" if after > before else "dropped"
+        text = (
+            f"Frequency {verb} from {before} to {_plural(after, 'purchase')} — changed."
+        )
+    return MeasureSentence(
+        name=component.name,
+        judgement=Judgement.STABLE if stable else Judgement.CHANGED,
+        text=text + (_score_note(component, rank_only) if stable else ""),
+        phrase=(
+            "frequency stable"
+            if stable
+            else f"frequency {'rose' if after > before else 'dropped'} "
+            f"from {before} to {after}"
+        ),
+        rank_only=rank_only,
+    )
+
+
+def _monetary(
+    component: ComponentDelta, explanation: MigrationExplanation
+) -> MeasureSentence:
+    if missing := _missing(component, explanation):
+        return missing
+    before, after = component.raw_before, component.raw_after
+    if before == 0:
+        stable = after == 0
+    else:
+        stable = abs(after - before) / before <= MONETARY_STABLE_RATIO
+    rank_only = before == after and bool(component.score_delta)
+    percent = f"{MONETARY_STABLE_RATIO:.0%}"
+
+    if before == after:
+        text = f"Monetary stayed at {_money(after)} MXN — stable."
+    elif stable:
+        text = (
+            f"Monetary went from {_money(before)} to {_money(after)} MXN — stable "
+            f"(within {percent})."
+        )
+    else:
+        verb = "rose" if after > before else "fell"
+        text = (
+            f"Monetary {verb} from {_money(before)} to {_money(after)} MXN — "
+            f"changed (more than {percent})."
+        )
+    return MeasureSentence(
+        name=component.name,
+        judgement=Judgement.STABLE if stable else Judgement.CHANGED,
+        text=text + (_score_note(component, rank_only) if stable else ""),
+        phrase=(
+            "monetary stable"
+            if stable
+            else f"monetary {'rose' if after > before else 'fell'} "
+            f"from {_money(before)} to {_money(after)} MXN"
+        ),
+        rank_only=rank_only,
+    )
+
+
+def describe_migration(
+    explanation: MigrationExplanation,
+    *,
+    run_at_before: datetime,
+    run_at_after: datetime,
+) -> MigrationNarrative:
+    """The explanation in plain language (#338): one sentence per measure
+    with its raw values -- recency in days, measured against each run's own
+    `run_at` -- and a changed/stable judgement by RN-50's thresholds.
+
+    Pure, like `explain_migration`: the run timestamps are passed in rather
+    than read, so every threshold edge is testable without a database.
+    """
+    sentences = (
+        _recency(explanation.recency, explanation, run_at_before, run_at_after),
+        _frequency(explanation.frequency, explanation),
+        _monetary(explanation.monetary, explanation),
+    )
+    return MigrationNarrative(
+        sentences=sentences,
+        moved_by_rank_only=(
+            explanation.label_changed
+            and all(s.judgement is Judgement.STABLE for s in sentences)
+            and any(s.rank_only for s in sentences)
+        ),
+        is_new=not explanation.in_earlier,
+        left=not explanation.in_later,
+        recency_days_before=recency_days(explanation.recency.raw_before, run_at_before),
+        recency_days_after=recency_days(explanation.recency.raw_after, run_at_after),
     )

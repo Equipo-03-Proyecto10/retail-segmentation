@@ -15,6 +15,7 @@ they were vendored for the same reason.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -23,7 +24,13 @@ from flask import Blueprint, Response, abort, current_app, render_template, requ
 from web.db import get_connection
 from web.db.segments import get_run, list_runs
 from web.middleware.authz import SEGMENT_READ, requires
-from web.services.segmentation_dashboard import Dashboard, NoRuns, build_dashboard
+from web.parsing import BIGINT_MAX, whole_number
+from web.services.segmentation_dashboard import (
+    Dashboard,
+    NoRuns,
+    build_dashboard,
+    build_kpis,
+)
 
 bp = Blueprint("segmentation_dashboard", __name__, url_prefix="/segmentation-dashboard")
 
@@ -112,7 +119,8 @@ def index() -> Response | tuple[Response, int]:
     raw_run = request.args.get("run", "")
     run_id: int | None = None
     if raw_run:
-        if not (raw_run.isascii() and raw_run.isdigit()):
+        run_id = whole_number(raw_run, BIGINT_MAX)
+        if run_id is None:
             return (
                 render_template(
                     "segmentation_dashboard/index.html",
@@ -123,7 +131,6 @@ def index() -> Response | tuple[Response, int]:
                 ),
                 400,
             )
-        run_id = int(raw_run)
         if get_run(connection, run_id) is None:
             abort(404)
 
@@ -157,4 +164,5 @@ def index() -> Response | tuple[Response, int]:
         error=None,
         is_synthetic=config.data_is_synthetic,
         chart_data=_embed(payload),
+        kpis=build_kpis(connection, dashboard.run, datetime.now(UTC)),
     )

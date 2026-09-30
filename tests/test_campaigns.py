@@ -38,7 +38,7 @@ def _campaign(status: str, campaign_id: int = 7) -> Campaign:
         "Win-back",
         "AT_RISK",
         date(2026, 10, 1),
-        date(2026, 10, 31),
+        date(2999, 12, 31),
         status,
     )
 
@@ -55,7 +55,8 @@ def connection() -> MagicMock:
 
 
 @pytest.fixture
-def app(connection: MagicMock) -> Flask:
+def app(connection: MagicMock, monkeypatch: pytest.MonkeyPatch) -> Flask:
+    monkeypatch.setattr(service, "business_date", Mock(return_value=date(2026, 10, 15)))
     application = create_app(
         Config(
             secret_key="test",

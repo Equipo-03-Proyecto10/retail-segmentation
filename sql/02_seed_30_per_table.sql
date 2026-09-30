@@ -65,14 +65,50 @@ SELECT n, 'Store ' || n,
        TRUE
 FROM generate_series(1,30) n;
 
--- ---------- segment_rule (30 RFM band combinations) ----------
-INSERT INTO segment_rule (rule_id, rule_code, r_min, r_max, f_min, f_max, m_min, m_max)
-SELECT n,
-       'RULE_' || lpad(n::text,3,'0'),
-       1 + ((n-1) % 3), 3 + ((n-1) % 3),
-       1 + ((n*2-1) % 3), 3 + ((n*2-1) % 3),
-       1 + ((n*3-1) % 3), 3 + ((n*3-1) % 3)
-FROM generate_series(1,30) n;
+-- ---------- segment_rule (30 RFM bands that partition the 125 triples) ----------
+-- Every (R, F, M) triple of scores 1 to 5 falls in exactly one band, so the
+-- fallback in web/db/segments.py is a last resort that a seeded run never needs
+-- (#345, ADR-0018). Segment n takes the label of position (n-1) % 6, so each
+-- label owns five bands; the comment on each row names it. Recency and
+-- frequency place a customer on a grid and monetary splits the bottom of it:
+--   CHAMPION     recent and frequent (R and F 4-5); the best cell splits on M
+--   LOYAL        frequent or recent-enough regulars (F 3-5 with R 3, or F 3)
+--   POTENTIAL    recent but infrequent (F 1-2 with R 3-5)
+--   AT_RISK      used to buy often, recency has slipped (R 1-2, F 3-5)
+--   HIBERNATING  low recency and frequency but a mid or high spend (M 3-5)
+--   LOST         low recency, frequency and spend (M 1-2)
+-- tests/test_seed_segment_rules.py checks the partition arithmetic.
+INSERT INTO segment_rule (rule_id, rule_code, r_min, r_max, f_min, f_max, m_min, m_max) VALUES
+    (1, 'RULE_001', 5, 5, 5, 5, 4, 5),  -- CHAMPION
+    (2, 'RULE_002', 5, 5, 3, 3, 1, 5),  -- LOYAL
+    (3, 'RULE_003', 5, 5, 2, 2, 1, 5),  -- POTENTIAL
+    (4, 'RULE_004', 2, 2, 5, 5, 1, 5),  -- AT_RISK
+    (5, 'RULE_005', 1, 1, 3, 3, 3, 5),  -- HIBERNATING
+    (6, 'RULE_006', 1, 1, 3, 3, 1, 2),  -- LOST
+    (7, 'RULE_007', 5, 5, 5, 5, 1, 3),  -- CHAMPION
+    (8, 'RULE_008', 4, 4, 3, 3, 1, 5),  -- LOYAL
+    (9, 'RULE_009', 4, 4, 2, 2, 1, 5),  -- POTENTIAL
+    (10, 'RULE_010', 2, 2, 4, 4, 1, 5),  -- AT_RISK
+    (11, 'RULE_011', 2, 2, 2, 2, 3, 5),  -- HIBERNATING
+    (12, 'RULE_012', 2, 2, 2, 2, 1, 2),  -- LOST
+    (13, 'RULE_013', 5, 5, 4, 4, 1, 5),  -- CHAMPION
+    (14, 'RULE_014', 3, 3, 5, 5, 1, 5),  -- LOYAL
+    (15, 'RULE_015', 3, 3, 2, 2, 1, 5),  -- POTENTIAL
+    (16, 'RULE_016', 2, 2, 3, 3, 1, 5),  -- AT_RISK
+    (17, 'RULE_017', 1, 1, 2, 2, 3, 5),  -- HIBERNATING
+    (18, 'RULE_018', 1, 1, 2, 2, 1, 2),  -- LOST
+    (19, 'RULE_019', 4, 4, 5, 5, 1, 5),  -- CHAMPION
+    (20, 'RULE_020', 3, 3, 4, 4, 1, 5),  -- LOYAL
+    (21, 'RULE_021', 3, 3, 1, 1, 1, 5),  -- POTENTIAL
+    (22, 'RULE_022', 1, 1, 5, 5, 1, 5),  -- AT_RISK
+    (23, 'RULE_023', 2, 2, 1, 1, 3, 5),  -- HIBERNATING
+    (24, 'RULE_024', 2, 2, 1, 1, 1, 2),  -- LOST
+    (25, 'RULE_025', 4, 4, 4, 4, 1, 5),  -- CHAMPION
+    (26, 'RULE_026', 3, 3, 3, 3, 1, 5),  -- LOYAL
+    (27, 'RULE_027', 4, 5, 1, 1, 1, 5),  -- POTENTIAL
+    (28, 'RULE_028', 1, 1, 4, 4, 1, 5),  -- AT_RISK
+    (29, 'RULE_029', 1, 1, 1, 1, 3, 5),  -- HIBERNATING
+    (30, 'RULE_030', 1, 1, 1, 1, 1, 2);  -- LOST
 
 -- ---------- segment_label (6, best to worst — ADR-0018) ----------
 -- Inserted before segment: segment.label_code references this vocabulary.
@@ -84,7 +120,7 @@ INSERT INTO segment_label (label_code, ordinal_position, name, description) VALU
     ('HIBERNATING',5, 'Hibernating', 'Low recency, frequency and monetary value'),
     ('LOST',       6, 'Lost',        'No recent activity across all three measures');
 
--- ---------- segment (30, one per rule, 5 per label) ----------
+-- ---------- segment (30, one per rule, 5 per label, label = position (n-1) % 6) ----------
 INSERT INTO segment (segment_id, name, description, rule_id, label_code, valid_from, valid_to)
 SELECT n, 'Segment ' || n, 'Segment derived from RULE_' || lpad(n::text,3,'0'), n,
        (ARRAY['CHAMPION','LOYAL','POTENTIAL','AT_RISK','HIBERNATING','LOST'])[1+((n-1)%6)],
@@ -123,22 +159,13 @@ SELECT ('00000000-0000-0000-0000-' || lpad(n::text,12,'0'))::uuid,
        'customer' || n || '@mosaiq-demo.com',
        '55' || lpad(n::text,8,'0'),
        1 + ((n-1) % 5),
-       CURRENT_DATE - (n*7 || ' days')::interval
+       -- Every seeded sale is at most 180 days old.  Register the customer
+       -- before that history; otherwise a fresh seed could show purchases
+       -- months before the customer's registration date.
+       CURRENT_DATE - (180 + n)
 FROM generate_series(1,30) n;
 
--- ---------- segmentation_run + customer_segment_history (F7-02) ----------
--- Every run carries one row per customer, as ADR-0017's run-count compliance
--- query requires. A four-customer window advances two places per run; odd
--- customers move one label down and even customers one label up, spreading
--- three or four moves across every pair while most customers remain stable.
--- Customers 20 and 10 are unassigned in runs 8 and 20 respectively, so both
--- demonstrate assigned-to-unassigned-to-assigned transitions (RN-21).
--- Scores sit inside the assigned segment's rule band, so every move also
--- shows R/F/M deltas (F7-06); they and the raw values are illustrative, not
--- derived from the seeded transactions. executed_by stays NULL: the seed
--- script is not the administrator running a recalculation, the same
--- reasoning app_user's own seed comment gives for leaving audit_log.user_id
--- NULL on seed rows.
+-- ---------- segmentation runs (F7-02) ----------
 INSERT INTO segmentation_run (method, window_days, parameters, customer_count, run_at)
 SELECT 'RFM_RULES', 180, '{"window_days": 180}'::jsonb, 30,
        now() - (n || ' days')::interval
@@ -146,69 +173,6 @@ FROM generate_series(29, 1, -1) n;
 
 INSERT INTO segmentation_run (method, window_days, parameters, customer_count, run_at)
 VALUES ('RFM_RULES', 180, '{"window_days": 180}'::jsonb, 30, now());
-
-INSERT INTO customer_segment_history
-    (customer_id, run_id, segment_id, label_code,
-     recency_last_purchase_at, frequency_count, monetary_total,
-     r_score, f_score, m_score, valid_from, valid_to)
-WITH ordered_runs AS (
-    SELECT run_id,
-           run_at,
-           row_number() OVER (ORDER BY run_at, run_id) AS run_number,
-           lead(run_at) OVER (ORDER BY run_at, run_id) AS next_run_at
-    FROM segmentation_run
-),
-ordered_customers AS (
-    SELECT customer_id,
-           row_number() OVER (ORDER BY customer_id) AS customer_number
-    FROM customer
-),
-assignments AS (
-    SELECT r.run_id,
-           r.run_at,
-           r.next_run_at,
-           r.run_number,
-           c.customer_id,
-           c.customer_number,
-           CASE
-               WHEN (c.customer_number = 20 AND r.run_number = 8)
-                 OR (c.customer_number = 10 AND r.run_number = 20) THEN NULL
-               WHEN mod(
-                        c.customer_number - 1
-                        - mod((r.run_number - 1) * 2, 30) + 30,
-                        30
-                    ) < 4
-                   THEN c.customer_number
-                        + CASE WHEN c.customer_number % 2 = 0 THEN -1 ELSE 1 END
-               ELSE c.customer_number
-           END AS segment_id
-    FROM ordered_runs AS r
-    CROSS JOIN ordered_customers AS c
-)
-SELECT a.customer_id,
-       a.run_id,
-       s.segment_id,
-       s.label_code,
-       CASE WHEN s.segment_id IS NOT NULL
-            THEN a.run_at
-                 - ((6 - sr.r_min) * 7 + mod(a.customer_number, 7)
-                    || ' days')::interval END,
-       CASE WHEN s.segment_id IS NOT NULL
-            THEN sr.f_min * 10 + mod(a.customer_number, 10) END,
-       CASE WHEN s.segment_id IS NOT NULL
-            THEN round(((sr.m_min
-                         + mod(s.segment_id - 1, sr.m_max - sr.m_min + 1)) * 100
-                        + a.customer_number * 2.5)::numeric, 2) END,
-       CASE WHEN s.segment_id IS NOT NULL THEN sr.r_min END,
-       CASE WHEN s.segment_id IS NOT NULL THEN sr.f_min END,
-       CASE WHEN s.segment_id IS NOT NULL
-            THEN sr.m_min
-                 + mod(s.segment_id - 1, sr.m_max - sr.m_min + 1) END,
-       a.run_at,
-       a.next_run_at
-FROM assignments AS a
-LEFT JOIN segment AS s ON s.segment_id = a.segment_id
-LEFT JOIN segment_rule AS sr ON sr.rule_id = s.rule_id;
 
 -- ---------- customer_preferred_channel (30 customers x 2 channels = 60) ----------
 INSERT INTO customer_preferred_channel (customer_id, channel_id)
@@ -272,6 +236,94 @@ FROM (
 ) AS l
 WHERE l.transaction_id = t.transaction_id;
 
+-- ---------- customer_segment_history (F7-02) ----------
+-- History is a materialized record of each run's RFM input, not a second
+-- illustrative dataset.  Derive every raw value from the transactions that
+-- existed at that run's timestamp, and derive scores and labels with the same
+-- quintile/rule procedure as web/db/segments.py.  Keeping this after the
+-- transaction lines (and their reconciled headers) means the current profile,
+-- run history and sales block all describe the same accepted sales.
+INSERT INTO customer_segment_history
+    (customer_id, run_id, segment_id, label_code,
+     recency_last_purchase_at, frequency_count, monetary_total,
+     r_score, f_score, m_score, valid_from, valid_to)
+WITH ordered_runs AS (
+    SELECT run_id,
+           run_at,
+           window_days,
+           lead(run_at) OVER (ORDER BY run_at, run_id) AS next_run_at
+    FROM segmentation_run
+),
+window_sales AS (
+    SELECT r.run_id,
+           r.run_at,
+           r.next_run_at,
+           t.customer_id,
+           max(t.occurred_at) AS last_purchase,
+           count(*) AS frequency,
+           sum(t.total) AS monetary
+    FROM ordered_runs AS r
+    JOIN transaction AS t
+      ON t.occurred_at >= r.run_at - make_interval(days => r.window_days)
+     AND t.occurred_at <= r.run_at
+    GROUP BY r.run_id, r.run_at, r.next_run_at, t.customer_id
+),
+scored AS (
+    SELECT ws.*,
+           6 - ntile(5) OVER (
+                   PARTITION BY ws.run_id
+                   ORDER BY ws.last_purchase DESC, ws.customer_id
+               ) AS r_score,
+           6 - ntile(5) OVER (
+                   PARTITION BY ws.run_id
+                   ORDER BY ws.frequency DESC, ws.customer_id
+               ) AS f_score,
+           6 - ntile(5) OVER (
+                   PARTITION BY ws.run_id
+                   ORDER BY ws.monetary DESC, ws.customer_id
+               ) AS m_score
+    FROM window_sales AS ws
+)
+SELECT c.customer_id,
+       r.run_id,
+       COALESCE(matched.segment_id, fallback.segment_id),
+       COALESCE(matched.label_code, fallback.label_code),
+       s.last_purchase,
+       s.frequency::int,
+       s.monetary,
+       s.r_score,
+       s.f_score,
+       s.m_score,
+       r.run_at,
+       r.next_run_at
+FROM ordered_runs AS r
+CROSS JOIN customer AS c
+LEFT JOIN scored AS s
+       ON s.run_id = r.run_id AND s.customer_id = c.customer_id
+LEFT JOIN LATERAL (
+    SELECT seg.segment_id, seg.label_code
+    FROM segment AS seg
+    JOIN segment_rule AS sr ON sr.rule_id = seg.rule_id
+    WHERE s.r_score BETWEEN sr.r_min AND sr.r_max
+      AND s.f_score BETWEEN sr.f_min AND sr.f_max
+      AND s.m_score BETWEEN sr.m_min AND sr.m_max
+      AND seg.valid_from <= CURRENT_DATE
+      AND (seg.valid_to IS NULL OR seg.valid_to >= CURRENT_DATE)
+    ORDER BY seg.segment_id
+    LIMIT 1
+) AS matched ON true
+LEFT JOIN LATERAL (
+    SELECT seg.segment_id, seg.label_code
+    FROM segment AS seg
+    JOIN segment_label AS sl ON sl.label_code = seg.label_code
+    WHERE s.customer_id IS NOT NULL
+      AND matched.segment_id IS NULL
+      AND seg.valid_from <= CURRENT_DATE
+      AND (seg.valid_to IS NULL OR seg.valid_to >= CURRENT_DATE)
+    ORDER BY sl.ordinal_position DESC, seg.segment_id
+    LIMIT 1
+) AS fallback ON true;
+
 -- ---------- campaign (30) ----------
 INSERT INTO campaign (campaign_id, name, label_code, starts_on, ends_on, status)
 SELECT n, 'Campaign ' || n,
@@ -292,10 +344,10 @@ SELECT n, 'Experiment ' || n, n,
 FROM generate_series(1,30) n;
 
 -- ---------- experiment_group (2 per experiment = 60) ----------
-INSERT INTO experiment_group (group_id, experiment_id, kind)
-SELECT (n-1)*2 + 1, n, 'CONTROL' FROM generate_series(1,30) n
+INSERT INTO experiment_group (group_id, experiment_id, kind, name, treatment_description)
+SELECT (n-1)*2 + 1, n, 'CONTROL', 'Holdout ' || n, 'No treatment delivered.' FROM generate_series(1,30) n
 UNION ALL
-SELECT (n-1)*2 + 2, n, 'TREATMENT' FROM generate_series(1,30) n;
+SELECT (n-1)*2 + 2, n, 'TREATMENT', 'Offer ' || n, 'Personalized offer for experiment ' || n FROM generate_series(1,30) n;
 
 -- ---------- experiment_assignment (4 per experiment = 120) ----------
 -- k 0-1 go to the control group, 2-3 to treatment. The customer offset is

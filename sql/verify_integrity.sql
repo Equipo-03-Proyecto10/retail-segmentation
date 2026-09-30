@@ -280,7 +280,8 @@ ROLLBACK;
 \echo '-- N22: a second control group for the same experiment [expect: 23505 unique_violation]'
 -- RN-24.
 BEGIN;
-INSERT INTO experiment_group (group_id, experiment_id, kind) VALUES (9001, 1, 'CONTROL');
+INSERT INTO experiment_group (group_id, experiment_id, kind, name, treatment_description)
+VALUES (9001, 1, 'CONTROL', 'Integrity control', 'No treatment delivered.');
 ROLLBACK;
 
 \echo ''
@@ -316,6 +317,51 @@ BEGIN;
 DELETE FROM transaction
 WHERE transaction_id = (SELECT transaction_id FROM experiment_conversion ORDER BY conversion_id LIMIT 1);
 ROLLBACK;
+
+\echo ''
+\echo '-- N32: arm definitions editable before assignment, immutable after [expect: 23514 check_violation]'
+-- ADR-0028: setup may correct an arm before its denominator exists, but no
+-- design-defining field may change after assignment.
+BEGIN;
+INSERT INTO experiment (experiment_id, name, target_metric, starts_on,
+                        conversion_window_days, data_origin)
+VALUES (9012, 'Definition probe', 'CONVERSION', DATE '2026-01-01', 14, 'OBSERVED');
+INSERT INTO experiment_group
+       (group_id, experiment_id, kind, name, treatment_description)
+VALUES (9012, 9012, 'TREATMENT', 'Before', 'Before assignment.');
+UPDATE experiment_group
+   SET kind = 'CONTROL', name = 'Edited before assignment',
+       treatment_description = 'Edited before assignment.'
+ WHERE group_id = 9012;
+SELECT 'N32 before-assignment edit succeeded' WHERE EXISTS
+ (SELECT 1 FROM experiment_group WHERE group_id = 9012 AND kind = 'CONTROL');
+ROLLBACK;
+
+DO $$
+BEGIN
+    UPDATE experiment_group SET kind = 'TREATMENT' WHERE group_id = 1;
+    RAISE EXCEPTION 'FAIL: assigned arm kind was editable';
+EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE 'PASS: assigned arm kind refused (SQLSTATE 23514)';
+END;
+$$;
+DO $$
+BEGIN
+    UPDATE experiment_group SET name = 'Edited after assignment' WHERE group_id = 1;
+    RAISE EXCEPTION 'FAIL: assigned arm name was editable';
+EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE 'PASS: assigned arm name refused (SQLSTATE 23514)';
+END;
+$$;
+DO $$
+BEGIN
+    UPDATE experiment_group SET treatment_description = 'Edited after assignment.'
+     WHERE group_id = 1;
+    RAISE EXCEPTION 'FAIL: assigned arm description was editable';
+EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE 'PASS: assigned arm description refused (SQLSTATE 23514)';
+END;
+$$;
 
 \echo ''
 \echo '-- N30: exposing a control assignment             [expect: 23514 check_violation]'
@@ -358,6 +404,54 @@ ROLLBACK;
 -- single-administrator index by role_id, so codes are immutable.
 BEGIN;
 UPDATE role SET code = 'ROOT' WHERE role_id = 1;
+ROLLBACK;
+
+\echo ''
+\echo '-- N33: CHECK, a quintile score outside 1 to 5    [expect: 23514 check_violation]'
+-- #350: nothing bounded the scores a run could record. An INSERT, not an UPDATE:
+-- the close-only trigger would refuse an UPDATE first, for a different reason.
+BEGIN;
+INSERT INTO segmentation_run (method, window_days) VALUES ('RFM_RULES', 180);
+INSERT INTO customer_segment_history
+    (customer_id, run_id, r_score, valid_from, valid_to)
+SELECT customer_id, (SELECT max(run_id) FROM segmentation_run), 9,
+       timestamptz '1990-01-01', timestamptz '1990-01-02'
+  FROM customer
+ ORDER BY customer_id
+ LIMIT 1;
+ROLLBACK;
+
+\echo ''
+\echo '-- N34: overlapping segment intervals for one customer [expect: 23P01 exclusion_violation]'
+-- #350: the open-row index guarded only the present. A closed interval that runs
+-- across the customer's current one is refused by the exclusion constraint.
+BEGIN;
+INSERT INTO segmentation_run (method, window_days) VALUES ('RFM_RULES', 180);
+INSERT INTO customer_segment_history (customer_id, run_id, valid_from, valid_to)
+SELECT h.customer_id, (SELECT max(run_id) FROM segmentation_run),
+       h.valid_from - interval '30 days', h.valid_from + interval '1 hour'
+  FROM customer_segment_history AS h
+ WHERE h.valid_to IS NULL
+ ORDER BY h.customer_id
+ LIMIT 1;
+ROLLBACK;
+
+\echo ''
+\echo '-- N35: reopening or rewriting a closed history row [expect: 23514 check_violation]'
+-- #350: a closed row is history. The trigger applies to the owner as well as to
+-- retail_app, which cannot update the row at all.
+BEGIN;
+UPDATE customer_segment_history SET valid_to = valid_to + interval '1 day'
+ WHERE history_id = (SELECT min(history_id) FROM customer_segment_history
+                      WHERE valid_to IS NOT NULL);
+ROLLBACK;
+
+\echo ''
+\echo '-- N36: changing a history row other than closing it [expect: 23514 check_violation]'
+BEGIN;
+UPDATE customer_segment_history SET label_code = 'LOST'
+ WHERE history_id = (SELECT min(history_id) FROM customer_segment_history
+                      WHERE valid_to IS NULL AND label_code IS DISTINCT FROM 'LOST');
 ROLLBACK;
 
 \echo ''

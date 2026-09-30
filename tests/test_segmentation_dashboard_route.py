@@ -29,10 +29,13 @@ from web.services.segmentation_dashboard import (
     Dashboard,
     FlowLink,
     HeatmapCell,
+    Kpis,
     LabelRevenue,
+    MeansRow,
     MigrationFlow,
     NoRuns,
     SegmentSize,
+    TopRecommended,
 )
 
 _URL = "/segmentation-dashboard/"
@@ -111,6 +114,17 @@ def _dashboard(**overrides) -> Dashboard:
     return Dashboard(**{**defaults, **overrides})
 
 
+def _kpis() -> Kpis:
+    """The KPIs beyond the charts are built and tested in
+    tests/test_dashboard_kpis.py; here the page is only given some."""
+    return Kpis(
+        label_means=(MeansRow("CHAMPION", 2), MeansRow("LOST", 1)),
+        active_experiments=(),
+        recommended=TopRecommended((), 0, 0),
+        scored=True,
+    )
+
+
 def _open(
     app: Flask,
     monkeypatch: pytest.MonkeyPatch,
@@ -125,6 +139,9 @@ def _open(
     if side_effect is not None:
         fake = Mock(side_effect=side_effect)
     monkeypatch.setattr("web.routes.segmentation_dashboard.build_dashboard", fake)
+    monkeypatch.setattr(
+        "web.routes.segmentation_dashboard.build_kpis", Mock(return_value=_kpis())
+    )
     monkeypatch.setattr(
         "web.routes.segmentation_dashboard.list_runs",
         Mock(return_value=(runs if runs is not None else [_run(31), _run(30)], 2)),
@@ -291,6 +308,9 @@ def test_an_unknown_run_id_is_a_404(app, monkeypatch) -> None:
     )
     fake = Mock()
     monkeypatch.setattr("web.routes.segmentation_dashboard.build_dashboard", fake)
+    monkeypatch.setattr(
+        "web.routes.segmentation_dashboard.build_kpis", Mock(return_value=_kpis())
+    )
     monkeypatch.setattr(
         "web.routes.segmentation_dashboard.list_runs", Mock(return_value=([], 0))
     )

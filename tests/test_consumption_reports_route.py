@@ -312,3 +312,43 @@ def test_names_are_escaped(app, monkeypatch) -> None:
 
     assert "<script>alert(1)</script>" not in body
     assert "&lt;script&gt;" in body
+
+
+# ---------- #341: shares and a report that reconciles ----------
+
+
+def test_a_shift_shows_both_leaders_with_their_share_of_purchases(
+    app, monkeypatch
+) -> None:
+    report = _shift_report(
+        rows=(
+            ShiftRow(
+                "00000000-0000-0000-0000-000000000001",
+                "Ada Lovelace",
+                CustomerShift(
+                    customer_id="00000000-0000-0000-0000-000000000001",
+                    channel=DimensionShift(
+                        Leader(1, "physical_store", purchases=4, period_purchases=6),
+                        Leader(2, "web", purchases=3, period_purchases=4),
+                    ),
+                ),
+            ),
+        )
+    )
+    body = _body(_open(app, monkeypatch, shifts=report)[0])
+
+    assert "physical_store 67 % → web 75 %" in body
+
+
+def test_the_report_states_compared_shifted_undecided_and_absent(
+    app, monkeypatch
+) -> None:
+    report = _shift_report(compared=12, unchanged=11, undecided=4, absent=5)
+    body = _body(_open(app, monkeypatch, shifts=report)[0])
+
+    assert (
+        "12 customers compared: 1 shifted, 11 without a shift (4 whose leader "
+        "changed with too few purchases or a tie to claim it). 5 with sales in "
+        "only one period." in body
+    )
+    assert "a shift needs 3 or more purchases in each period" in body

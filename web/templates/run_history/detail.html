@@ -19,7 +19,18 @@
         <dt>Customers scored</dt><dd class="mq-mono">{{ run.customer_count }}</dd>
         <dt>Executed by</dt><dd>{{ run.executed_by_name or "System" }}</dd>
         <dt>Run at</dt><dd class="mq-mono">{{ run.run_at.strftime("%Y-%m-%d %H:%M:%S") }}</dd>
-        <dt>Parameters</dt><dd class="mq-mono">{% for key, value in run.parameters.items() %}{{ key }}: {{ value }}{% if not loop.last %}, {% endif %}{% endfor %}</dd>
+        <dt>Parameters</dt><dd class="mq-mono">{% for key, value in run.parameters.items() if key != "label_mapping" %}{{ key }}: {% if value is sameas true %}yes{% elif value is sameas false %}no{% elif value is none %}—{% elif value is iterable and value is not string %}{{ value|join(", ") }}{% else %}{{ value }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</dd>
+        {% set mapping = run.parameters.get("label_mapping") %}
+        {% if mapping %}
+          {# ADR-0030: how the clusters were paired with labels, by label code only. #}
+          <dt>Label mapping</dt>
+          <dd id="label-mapping">
+            {{ mapping.labels_by_rank | length }} clusters over {{ mapping.vocabulary_size }} labels, paired by rank (ADR-0030):
+            <span class="mq-mono">{{ mapping.labels_by_rank | join(" · ") }}</span>.
+            {% if mapping.shared_labels %}Shared: {% for label in mapping.shared_labels %}{{ label }} ({{ mapping.clusters_per_label[label] }} clusters){% if not loop.last %}, {% endif %}{% endfor %}.{% else %}No label is shared.{% endif %}
+            {% if mapping.labels_without_cluster %}No cluster, so no customer: {{ mapping.labels_without_cluster | join(", ") }}.{% endif %}
+          </dd>
+        {% endif %}
       </dl>
     </div>
   </section>

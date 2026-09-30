@@ -338,6 +338,71 @@ It never runs SQL. The three scripts in `sql/` build a database from empty and
 are not migrations, so a release needing a schema change needs a person —
 ADR-0011 records this as a deliberate gap.
 
+### Getting the instance ready to demonstrate (#360)
+
+The instance has to show what the delivery claims. In this order, by whoever
+holds the instance (none of it can be done from the repository):
+
+1. **Back up, then re-provision the database** from the three scripts at the
+   deployed commit. The final schema has 27 tables and also depends on
+   `btree_gist` from `00_create_database.sql`: it includes the complete exposure
+   and conversion event chain, named treatment arms with immutable definitions,
+   non-overlapping close-only segment history, insert-only segmentation runs,
+   protected experiments, the final grants/revokes, and seed bands that reach
+   every label (#345, #346, #350, #357). Do not patch the old database by hand.
+2. **Run `sql/verify_integrity.sql`, then `check-schema-drift.sh`** against a clean
+   build of the same commit. Every probe must pass and the schema, privileges and
+   role memberships must show no drift.
+3. **Install the final NGINX files and validate them**: copy both
+   `deploy/nginx/mosaiq.conf` and `cloudflare-real-ip.conf`, run `sudo nginx -t`,
+   then reload NGINX. This applies the POST-only sign-in limiter from #348/#378;
+   the deployment workflow reports proxy drift but deliberately does not copy it.
+4. **Run one `RFM_RULES` and one `KMEANS` segmentation** as the administrator, so
+   history derives from the transactions and `executed_by` is set; all thirty
+   seeded runs have it `NULL`.
+5. **Evaluate conversion** on each seeded experiment, so `/experiments/<id>/uplift`
+   has recorded conversions to compare, and verify the dashboard names each
+   final arm and excludes experiments attached to finished or cancelled campaigns.
+6. **Remove what does not belong**: the September 6 copy of repository files, the
+   `.env` and the two unused virtualenvs at the `/opt/mosaiq/` root, and
+   `mosaiq.conf.bak-*` in `/etc/nginx/conf.d/`.
+7. **Re-diff** the schema and grants against a clean build of `main` once more.
+
+The administrator's address is no longer published in `docs/evidence/` (#360).
+
+### Checking the database has kept up with the code
+
+Because the deploy never runs SQL, a database can fall behind the commit it
+serves without anything failing. #346 was that: the instance database predated
+the exposure trigger (ADR-0027) and the append-only revokes (ADR-0026, ADR-0027),
+and `retail_app` could still update and delete assignments and exposures.
+[`check-schema-drift.sh`](check-schema-drift.sh) makes the gap visible. It is
+read-only on both sides and compares the schema and what `retail_app` may do to
+each table (including privileges inherited through `PUBLIC` or role
+membership), against a clean build of the three scripts at the deployed commit:
+
+```sh
+# 1. Anywhere with a scratch PostgreSQL, at the commit the instance serves:
+git checkout <deployed-sha>
+psql -v ON_ERROR_STOP=1 -f sql/00_create_database.sql
+psql -v ON_ERROR_STOP=1 -d retail -f sql/01_schema.sql
+deploy/check-schema-drift.sh dump /tmp/reference
+
+# 2. On the instance:
+sudo -u postgres PGDATABASE=retail deploy/check-schema-drift.sh dump /tmp/live
+
+# 3. Bring both directories to one place and compare (exit 1 means drift):
+deploy/check-schema-drift.sh compare /tmp/reference /tmp/live
+```
+
+Run it after any release that changes `sql/01_schema.sql`, and before a demo.
+
+**When it reports drift**, the fix is to rebuild the instance database from the
+three scripts, not to patch it: AGENTS.md keeps DDL in `sql/01_schema.sql` and
+forbids altering a table by hand on the server. That drops the database, so it
+is a decision for whoever owns the instance (the instance holds demonstration
+data only), and it should be taken together with the demonstration reset in #360.
+
 ### The NGINX config is applied by hand, on purpose
 
 The deploy does not install `deploy/nginx/*.conf`. It runs under `sudo` and

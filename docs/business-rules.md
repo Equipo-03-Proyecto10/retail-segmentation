@@ -177,6 +177,88 @@ transaction that records the run and all other assignments. **Verified** —
 [`evidence/f9-01-rfm-rules-adapter.md`](evidence/f9-01-rfm-rules-adapter.md) and
 `tests/test_segmentation_pipeline.py`. · `RF-12`
 
+### RN-46 — The seeded RFM bands partition the score space, and a fallback is counted, not hidden
+The demonstration bands in `sql/02_seed_30_per_table.sql` cover all 125 (R, F, M)
+triples with no overlap, and every label owns five of the thirty bands, so a seeded
+run can assign every label and never needs the fallback. A customer with sales whose
+triple matches no band (bands an administrator retuned) still takes the worst label,
+because ADR-0018 forbids a null label for anyone scored; the run reports how many
+did as "Matched no rule", separately from customers with no sales in the window
+(RN-21), who stay unassigned.
+
+**Enforced:** the fallback join in `web.db.segments` and the `via_fallback` flag it
+returns. **Verified** — `tests/test_seed_segment_rules.py` (partition, every label
+and every segment reachable), `tests/test_segmentation_pipeline.py`,
+[`evidence/f345-segment-rule-bands.md`](evidence/f345-segment-rule-bands.md).
+
+### RN-51 — A quintile boundary is computed once per distinct value, so equal measures get equal scores
+Customers who tie on recency, frequency or spend must receive the same quintile
+score (the RFM convention); a boundary that depended on which row a tied value
+happened to belong to would split them across different scores for no reason a
+business user could defend (#352). `score_rfm_rules` computes each measure's five
+quintile boundaries once, over the *distinct* values the window holds, and every
+customer joins back to their own value's boundary — so two customers with the same
+recency, frequency or monetary value always share that measure's score, however
+many customers hold it, and the split never depends on customer id or on the order
+rows happen to arrive in. With fewer distinct values than quintiles, one or more of
+the worst scores go unused rather than being manufactured; with every customer tied
+on a measure, all of them take that measure's best score, since there is nothing to
+tell them apart by, and a single shared value naturally falls first in its own
+ordering.
+
+**Enforced:** `web.db.segments.score_rfm_rules`'s `r_bounds`, `f_bounds` and
+`m_bounds`. **Verified** — `tests/test_segments_pipeline_db.py` pins that no
+quintile's ordering names `customer_id`, and against the seeded PostgreSQL, where
+every one of the 30 customers ties on frequency, by
+[`evidence/f352-quintile-ties.md`](evidence/f352-quintile-ties.md).
+
+### RN-47 — The application role can close a segment assignment and nothing else
+A history row is closed once, by setting `valid_to`, and never changed or deleted
+afterwards. A run, an experiment and an experiment group are never deleted by the
+application, and a run is never rewritten. One customer's segment intervals never
+overlap, and the scores and measures of a row are bounded (scores 1 to 5, counts
+and totals not negative).
+
+**Enforced:** `REVOKE`s on `retail_app`, `GRANT UPDATE (valid_to)`, the trigger
+`trg_customer_segment_history_close_only`, the `CHECK`s and
+`ex_customer_segment_history_no_overlap` in `sql/01_schema.sql`. **Verified** —
+`tests/test_history_protection.py`, the application-role self-test and cases N33 to
+N36 of `sql/verify_integrity.sql`. See
+[ADR-0029](adr/0029-segment-history-runs-and-experiments-are-protected-from-the-application-role.md).
+
+### RN-49 — An experiment's frame is fixed with its first assignment, and exposure is refused outside it
+Once anyone is assigned, an experiment's campaign, start date, end date, target
+metric and conversion window no longer change; only its name does (ADR-0019). An
+experiment cannot be attached to a campaign that is finished or cancelled, and a
+campaign that ended before PostgreSQL's `CURRENT_DATE` is not activated. Individual
+and bulk exposures are refused before the experiment starts, after it ends, and when
+its campaign is finished or cancelled. They use that same database date, so the web
+server and PostgreSQL cannot disagree at midnight. Exposures stay plural (ADR-0019):
+a later exposure is recorded, but a repeat for the same assignment within 60 seconds
+adds nothing, so a double-click or concurrent submits leave one row. "Average
+ticket" can still be chosen but is labelled as not measured yet.
+
+**Enforced:** `_update`, `_create`, `_record_exposure` and
+`_record_group_exposures` in `web/services/experiments.py`, `transition` in
+`web/services/campaigns.py`, `current_date` in `web/db/clock.py`, and the conditional
+insert in `web/db/experiments.py`. **Verified** — `tests/test_experiment_frame.py`.
+
+### RN-48 — Conversion is reported over the assigned and over the exposed, and the assigned rate decides
+Two rates sit side by side. The **intent-to-treat rate** is customers with a
+qualifying sale in their window, counted from assignment, over every customer
+assigned; the uplift, its interval and its test use only this rate (ADR-0019). The
+**per-exposure rate** is customers who bought within the window counted from their
+*first* exposure, over customers exposed, × 100, per treatment arm; the control is
+never exposed and has none. The second answers a narrower question, because the
+exposed are not a random sample of their arm, so it is a secondary measure and
+never replaces the first. It is read from `transaction`, so it does not wait for a
+conversion evaluation. Uplift before conversion is evaluated is a 200 that asks for
+the evaluation, not a 409.
+
+**Enforced:** `EXPOSED_CONVERTED_SQL` in `web/db/experiment_conversions.py`, shared
+by the uplift page and the report, and `ConversionNotEvaluated` in
+`web/services/experiment_uplift.py`. **Verified** — `tests/test_exposed_conversion.py`.
+
 ### RN-37 — A K-means run is reproducible from what it records, and each of its numerical hazards has a defined behaviour
 The fit is fixed by the seed, k, the iteration limit, the tolerance and the feature
 window, and all five are stored on the run with its quality measures, so a run can
@@ -222,7 +304,15 @@ cluster therefore takes its label from its contents, by one rule:
 3. A tie between identical centroids is broken by the lexicographically smallest
    customer id among the cluster's members.
 4. That order is paired with the label vocabulary in the order `segment_label`
-   declares it, best to worst. **The vocabulary's size must equal k.**
+   declares it, best to worst, **by proportional rank** (ADR-0030, #336): of `k`
+   clusters and `V` labels, the cluster in position `i` (0 = best) takes the label
+   in position `i × (V − 1) / (k − 1)`, rounded to the nearest position and, when it
+   falls exactly halfway, **towards the worse label**. The best cluster always takes
+   the best label and the worst the worst. With `k = V` each cluster takes the label
+   in its own position, as before; with `k < V` some labels take no cluster, and
+   with `k > V` several clusters share a label. Over the six seeded labels, `k = 5`
+   gives CHAMPION, LOYAL, AT_RISK, HIBERNATING, LOST (POTENTIAL unused) and `k = 8`
+   gives CHAMPION, LOYAL, LOYAL, POTENTIAL, AT_RISK, HIBERNATING, HIBERNATING, LOST.
 
 The customer-id tie-break is deterministic and has no commercial meaning: ids are
 compared as text, so `10` sorts before `9`. It exists so that two clusters identical
@@ -233,18 +323,28 @@ moving on to R. What a label means commercially is reduced to that declared orde
 two centroids with similar totals can exchange labels when their R, F and M cross,
 even if few customers moved.
 
-A K-means run whose k is not the vocabulary's size is **refused when it is started**,
-before any sale is read and before anything is written. Customers with no sales in
-the window are unassigned (RN-21) and take no cluster. No raw cluster number is ever
-stored: `customer_segment_history` has no column that could hold one, and a run's
-parameters record cluster sizes as a list, not a mapping by number.
+With `k ≠ V` a label is a relative position — AT_RISK is "the middle of five" under
+`k = 5` and "the fifth of eight" under `k = 8` — so comparing two runs with
+different `k` can show migrations caused by the change of model rather than by the
+customer. That is recorded in ADR-0030 and not resolved by this rule.
 
-**Enforced:** application — `web/services/cluster_labels.py` for the rule and
-`run_kmeans` in `web/services/segmentation.py` for the refusal. **Verified** — by
-`tests/test_cluster_labels.py`, `tests/test_kmeans_run.py` and the two cases
-ADR-0018 names in `tests/test_segmentation_pipeline.py`, including that faults seeded
-into each step of the rule fail a test, and against a real K-means run by
-[`evidence/f9-03-cluster-labels.md`](evidence/f9-03-cluster-labels.md). · `F9-03`
+A K-means run with **k below 2 is refused when it is started**, before any sale is
+read and before anything is written: one cluster has no order to pair. Customers
+with no sales in the window are unassigned (RN-21) and take no cluster. No raw
+cluster number is ever stored: `customer_segment_history` has no column that could
+hold one, a run's parameters record cluster sizes as a list, not a mapping by
+number, and the pairing is recorded under `label_mapping` by label code and
+position only — which labels are shared by several clusters and which have none.
+
+**Enforced:** application — `web/services/cluster_labels.py` for the rule and the
+recorded pairing, and `run_kmeans` in `web/services/segmentation.py` for the refusal.
+**Verified** — by `tests/test_cluster_labels.py`, `tests/test_kmeans_run.py` and the
+cases ADR-0030 names in `tests/test_segmentation_pipeline.py`, including that faults
+seeded into each step of the rule fail a test, and against real K-means runs by
+[`evidence/f9-03-cluster-labels.md`](evidence/f9-03-cluster-labels.md) and, for
+`k = 5` and `k = 8`,
+[`evidence/f9-05-kmeans-variable-k.md`](evidence/f9-05-kmeans-variable-k.md).
+· `F9-03`, `F9-05`
 
 ### RN-39 — Two runs are compared by label code, and the method is only a description of a run
 A model comparison sets one rule-based run beside one K-means run over the same
@@ -279,6 +379,64 @@ assignment reader does not select the method), and the page gated on `segment.re
 `tests/test_model_comparison.py` and `tests/test_model_comparison_route.py`, including
 that faults seeded into each rule above fail a test, and against the seeded PostgreSQL
 by [`evidence/f9-04-model-comparison.md`](evidence/f9-04-model-comparison.md). · `F9-04`
+
+### RN-47 — A migration matrix cell is a filtered, traceable customer list
+Migration is directional: the earlier run is the **before** state and the later run
+is the **after** state, regardless of the order in which the two run ids were
+selected. Every matrix cell links to the customers counted in that exact before /
+after pair. Each listed customer shows both labels and, when the label changed,
+`improved` or `declined` according to the vocabulary's ordinal order; each customer
+also links to the existing stored-score migration explanation for the same two runs.
+
+`Unassigned` means that the run scored the customer but produced no label. A customer
+absent from the earlier run is shown as **NEW** in the before column, while one absent
+from the later run remains explicitly **Not in later run**. These states are distinct
+from `Unassigned` and can each be selected as a filter, including zero-count cells.
+The customer list is the already-classified matrix result; it never performs a second
+comparison.
+
+**Enforced:** application — `compute_migration` and `build_migration_matrix` keep the
+classification and cell members together, and `web/routes/migration_matrix.py` only
+filters that result; the page remains read-only and gated on `segment.read`.
+**Verified** — by `tests/test_migration_matrix.py` and
+`tests/test_migration_matrix_route.py`, including reverse-selected runs, absent and
+unassigned states, direction, explanation links, invalid filters, authorization, and
+the scrollable table pattern used at narrow widths. · `F7-05`
+
+### RN-50 — A migration explanation judges the customer's own values, and says when only the rank moved
+A migration explanation states each measure as a sentence with its raw values from
+both runs — recency in whole days from the last purchase to the run that measured it,
+frequency in purchases, monetary in MXN — and judges it **changed** or **stable** on
+those raw values, never on the scores. A score is a quintile among every customer the
+run measured (`ntile` in RFM_RULES), so it moves when other customers move, and a
+K-means run stores values but no scores (ADR-0018). The raw values are the customer's
+own behaviour and exist for both methods.
+
+| Measure | Stable when | Why |
+|---|---|---|
+| Recency | it changed by **7 days or less** | Recency grows by itself between runs when the customer does not buy, a day per day; a week of drift is the same behaviour, while 18 → 72 days is not. |
+| Frequency | the purchase count is **unchanged** | A small whole count; one purchase more or less is a change. |
+| Monetary | it changed by **10% or less** of the earlier value | Spend is noisy; a relative band scales with how much the customer spends. An earlier value of zero is stable only if the later one is also zero. |
+
+When a measure's raw value is unchanged — for recency, the same last purchase within
+the 7-day drift — but its score moved, the explanation says the **rank** changed
+because other customers moved the quintile cut points, not the customer's behaviour.
+
+A customer **absent** from the earlier run is a **new customer**, and one absent from
+the later run is **not in the later run**. Neither is `Unassigned`, which means the
+run scored the customer and found no purchase to label (RN-21); a measure a run holds
+no value for is reported as not compared, with which of the two reasons applies.
+
+The explanation is reachable from every place a migration is shown: a customer in a
+migration matrix cell (RN-47) and each label change on a customer's segment timeline.
+
+**Enforced:** application — `describe_migration` in `web/services/segment_migration.py`,
+with the thresholds as the named constants `RECENCY_STABLE_DAYS`,
+`FREQUENCY_STABLE_PURCHASES` and `MONETARY_STABLE_RATIO`; the page states them from
+those constants. **Verified** — by `tests/test_migration_explanation.py` (each
+threshold's edge, the rank-only case, K-means rows without scores, absent versus
+unassigned), `tests/test_migration_explanation_route.py`, and
+`tests/test_customer_timeline_route.py` for the links. · `F7-08`
 
 ### RN-40 — A recommendation is in stock at the customer's usual store, matches a stated signal, and says why
 A product is recommended to a customer only when all of these hold:
@@ -489,14 +647,22 @@ assignment, and `retail_app` holds no `UPDATE` or `DELETE` on
 `experiment_assignment` (`REVOKE` in `sql/01_schema.sql`, checked by its
 self-test). ADR-0026. · `F11-04`
 
-### RN-24 — An experiment has at most one control group
-**Enforced:** `ux_experiment_one_control`. **Verified** — case N22.
+### RN-24 — An experiment has at most one control group, and control is optional
+An experiment may have zero or one control group. Existing controlled
+experiments use one control; a no-control experiment has exactly two treatment
+arms and is not eligible for control-relative uplift. Every arm has a fixed,
+user-supplied name and treatment description.
+
+**Enforced:** `ux_experiment_one_control` and application validation. Arm
+definitions cannot be changed after assignment. **Verified** — case N22 and
+F11-08 (#342).
 
 The other half — at least one treatment group before activation — is not
 expressible as a static constraint, the same shape as RN-01's *never zero*
-half. The application enforces it: setup always writes one control with the
-treatment groups, and a campaign cannot be activated while an experiment
-attached to it lacks a control or a treatment group
+half. The application enforces it: setup always writes the selected control
+(if any) with the treatment groups, and a campaign cannot be activated while
+an experiment attached to it lacks a treatment group or has a no-control
+design with anything other than exactly two treatment arms
 (`web/services/experiments.py` `activation_refusal`, F11-03).
 
 ### RN-25 — An experiment's conversion window is a positive number of days
@@ -691,9 +857,11 @@ in order by their start.
 
 "Dominant" and "leading" are what the consumption profile says they are (RN-35),
 ranked by the same functions with the same tie-breaks, so a customer's dominant
-store in a shift report is their dominant store on their profile. A tie that
-resolves differently in the two periods because the spend moved is a change under
-that rule, and is reported as one.
+store in a shift report is their dominant store on their profile. A change of
+leader is claimed as a shift only when RN-50 allows it: enough purchases in both
+periods and a clear leader in each. A tie that the spend happened to break
+differently in the two periods is therefore **not** a shift (#341); until #341
+it was reported as one.
 
 A customer with accepted sales in only one period is **absent** from the other,
 with the empty side named, and is not compared: "no sales" is not a channel, a
@@ -714,6 +882,44 @@ both periods in one statement gives the detector one database snapshot.
 `tests/test_consumption_shift_db.py`, and both against the seeded PostgreSQL by
 [`evidence/f8-05-consumption-shifts.md`](evidence/f8-05-consumption-shifts.md).
 Reporting shifts as a page is F12-03, not this rule. · `F8-05`
+
+### RN-50 — A shift is claimed only with enough purchases and a clear leader, and every share is a share of purchases
+A customer's dominant channel, dominant store or leading category is claimed to have
+shifted between two periods only when all three hold:
+
+* **Enough purchases.** Each period has at least **3** purchases — for categories,
+  purchases with at least one product line. Below that, a single purchase decides
+  who leads. With three, a clear leader needs at least two of them.
+* **A clear leader in each period.** The leader has **strictly more purchases** than
+  the runner-up. When the top two tie on purchases, RN-35 still names the dominant
+  value by spend for display, but no shift is claimed from it: a 1-vs-1 tie that the
+  spend broke differently in each period is not a change of behaviour.
+* **A different leader.** The two clear leaders are not the same channel, store or
+  category.
+
+A compared customer whose leader changed without meeting these is **undecided**: not
+shifted, counted among the unchanged, and counted again on its own so the report
+says how many there were. The profile names the reason — which period had too few
+purchases, or which was tied.
+
+**Shares are shares of purchases**, the same quantity the ranking uses. A channel's
+or store's share is its purchases over the customer's purchases in the period. A
+category's is the purchases containing it over the purchases with product lines, so
+the shares of several categories can add up to more than 100 %: one purchase can
+hold more than one category. Shares are whole percentages, rounded half up.
+
+**On the profile**, the two periods are the two halves of the profile window, each
+`window_days // 2` days, taken back from the window's end by the same
+`consecutive_periods` the shift report uses. An odd window therefore leaves its
+oldest day out of the comparison, and a one-day window has no halves to compare.
+
+**Enforced:** application — `MIN_PURCHASES_PER_PERIOD`, `Leader.decisive` and
+`build_profile_shifts` in `web/services/consumption_shift.py`, used by both the
+profile and `/consumption-reports/`, so the two never disagree about a customer.
+**Verified** — by `tests/test_consumption_shift.py` (the minimum at its edge, the
+tie that spend used to flip, shares over 100 %, odd and one-day windows),
+`tests/test_consumption_shift_db.py`, `tests/test_consumption_profile_shifts_route.py`
+and `tests/test_consumption_reports_route.py`. · `F8-06`
 
 ## Audit
 

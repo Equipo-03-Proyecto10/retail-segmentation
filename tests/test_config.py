@@ -6,6 +6,8 @@ from web.config import (
     DEFAULT_DATA_IS_SYNTHETIC,
     DEFAULT_ENVIRONMENT,
     DEFAULT_LOG_LEVEL,
+    DEFAULT_LOGIN_THROTTLE_MAX_ATTEMPTS,
+    DEFAULT_LOGIN_THROTTLE_WINDOW_SECONDS,
     DEFAULT_PORT,
     DEFAULT_SECRET_KEY,
     DEFAULT_SESSION_COOKIE_SECURE,
@@ -26,6 +28,8 @@ def test_reads_every_value_from_the_environment() -> None:
             "TRUSTED_PROXY_HOPS": "2",
             "DATABASE_URL": "configured-by-the-environment",
             "DATA_IS_SYNTHETIC": "false",
+            "LOGIN_THROTTLE_MAX_ATTEMPTS": "7",
+            "LOGIN_THROTTLE_WINDOW_SECONDS": "120",
         }
     )
 
@@ -37,6 +41,8 @@ def test_reads_every_value_from_the_environment() -> None:
     assert config.trusted_proxy_hops == 2
     assert config.database_url == "configured-by-the-environment"
     assert config.data_is_synthetic is False
+    assert config.login_throttle_max_attempts == 7
+    assert config.login_throttle_window_seconds == 120
 
 
 def test_falls_back_to_documented_defaults_for_optional_values() -> None:
@@ -49,6 +55,8 @@ def test_falls_back_to_documented_defaults_for_optional_values() -> None:
     assert config.session_cookie_secure is DEFAULT_SESSION_COOKIE_SECURE
     assert config.data_is_synthetic is DEFAULT_DATA_IS_SYNTHETIC
     assert config.trusted_proxy_hops == DEFAULT_TRUSTED_PROXY_HOPS
+    assert config.login_throttle_max_attempts == DEFAULT_LOGIN_THROTTLE_MAX_ATTEMPTS
+    assert config.login_throttle_window_seconds == DEFAULT_LOGIN_THROTTLE_WINDOW_SECONDS
 
 
 @pytest.mark.parametrize("database_url", [None, "", "   "])
@@ -109,3 +117,19 @@ def test_trusted_proxy_hops_is_non_negative(value: str, expected: int) -> None:
     config = Config.from_env({"DATABASE_URL": "x", "TRUSTED_PROXY_HOPS": value})
 
     assert config.trusted_proxy_hops == expected
+
+
+@pytest.mark.parametrize(
+    "value", ["0", "-1", "nonsense", ""], ids=["zero", "negative", "text", "empty"]
+)
+def test_non_positive_login_throttle_values_use_safe_defaults(value: str) -> None:
+    config = Config.from_env(
+        {
+            "DATABASE_URL": "x",
+            "LOGIN_THROTTLE_MAX_ATTEMPTS": value,
+            "LOGIN_THROTTLE_WINDOW_SECONDS": value,
+        }
+    )
+
+    assert config.login_throttle_max_attempts == DEFAULT_LOGIN_THROTTLE_MAX_ATTEMPTS
+    assert config.login_throttle_window_seconds == DEFAULT_LOGIN_THROTTLE_WINDOW_SECONDS

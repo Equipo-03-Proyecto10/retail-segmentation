@@ -71,6 +71,17 @@
       </article>
     </div>
 
+    {% from "macros/ui.html" import status_pill %}
+    {% macro num(value, places=2) %}{% if value is none %}–{% else %}{{ ("%." ~ places ~ "f") | format(value) }}{% endif %}{% endmacro %}
+
+    <section class="mq-panel mq-panel--table mq-density-compact">
+      <header class="mq-panel__header"><h2 class="mq-panel__title">Average R, F and M by label</h2></header>
+      <div class="mq-table-wrap"><table class="mq-table"><thead><tr><th scope="col">Label</th><th scope="col" class="mq-num">Customers</th><th scope="col" class="mq-num">Mean R</th><th scope="col" class="mq-num">Mean F</th><th scope="col" class="mq-num">Mean M</th><th scope="col" class="mq-num">Days since last purchase</th><th scope="col" class="mq-num">Purchases</th><th scope="col" class="mq-num">Spend</th></tr></thead><tbody>
+        {% for m in kpis.label_means %}<tr><td>{{ m.label }}</td><td class="mq-num">{{ m.customers }}</td><td class="mq-num">{{ num(m.mean_r) }}</td><td class="mq-num">{{ num(m.mean_f) }}</td><td class="mq-num">{{ num(m.mean_m) }}</td><td class="mq-num">{{ num(m.mean_recency_days, 1) }}</td><td class="mq-num">{{ num(m.mean_frequency, 1) }}</td><td class="mq-num">{{ num(m.mean_monetary) }}</td></tr>{% endfor %}
+      </tbody></table></div>
+      <p class="mq-caption">Mean R, F and M are the quintile scores (1 to 5, 5 best). {% if not kpis.scored %}This run's method records no quintile scores, so they show a dash; the raw means to the right are recorded for every method.{% else %}The raw means (days since last purchase, purchases and spend in the run's window) are recorded for every method.{% endif %}</p>
+    </section>
+
     <div class="mq-grid mq-grid--2">
       <section class="mq-panel">
         <header class="mq-panel__header">
@@ -128,5 +139,29 @@
     <script src="{{ url_for('static', filename='vendor/highcharts/modules/sankey.js') }}"></script>
     <script src="{{ url_for('static', filename='css/mosaiq/charts/mosaiq-highcharts-theme.js') }}"></script>
     <script src="{{ url_for('static', filename='js/segmentation-dashboard.js') }}" defer></script>
+
+    <section class="mq-panel mq-panel--table mq-density-compact">
+      <header class="mq-panel__header"><h2 class="mq-panel__title">Active experiments</h2><span class="mq-caption">{{ kpis.active_experiments | length }} running today</span></header>
+      {% if kpis.active_experiments %}
+        <div class="mq-table-wrap"><table class="mq-table"><thead><tr><th scope="col">Experiment</th><th scope="col">Arm</th><th scope="col" class="mq-num">Assigned</th><th scope="col" class="mq-num">Converted</th><th scope="col" class="mq-num">Conversion rate</th></tr></thead><tbody>
+          {% for a in kpis.active_experiments %}{% for g in a.arms %}<tr><td>{% if loop.first %}<a href="{{ url_for('experiments.uplift', experiment_id=a.experiment.experiment_id) }}">{{ a.experiment.experiment_id }} · {{ a.experiment.name }}</a>{% if a.label %} {{ status_pill(a.label, "warning") }}{% endif %}{% endif %}</td><td>{{ g.name }} <span class="mq-caption">{{ g.kind.title() }} · <span class="mq-mono">{{ g.group_id }}</span></span></td><td class="mq-num">{{ g.assigned }}</td><td class="mq-num">{{ g.converted }}</td><td class="mq-num">{% if g.conversion_rate is not none %}{{ "%.2f" | format(g.conversion_rate * 100) }}%{% else %}–{% endif %}</td></tr>{% endfor %}{% endfor %}
+        </tbody></table></div>
+        <p class="mq-caption">Conversion rate is intent to treat: customers with a qualifying sale in their window over every customer assigned to the arm. See the experiment report for exposure and uplift.</p>
+      {% else %}
+        <div class="mq-panel__body"><p class="mq-caption">No experiment with assigned customers is running today.</p></div>
+      {% endif %}
+    </section>
+
+    <section class="mq-panel mq-panel--table mq-density-compact">
+      <header class="mq-panel__header"><h2 class="mq-panel__title">Most recommended products</h2></header>
+      {% if kpis.recommended.products %}
+        <div class="mq-table-wrap"><table class="mq-table"><thead><tr><th scope="col">Product</th><th scope="col">Category</th><th scope="col" class="mq-num">Customers</th><th scope="col">Stock at the stores it is recommended from</th></tr></thead><tbody>
+          {% for p in kpis.recommended.products %}<tr><td>{{ p.name }} <span class="mq-mono">#{{ p.product_id }}</span></td><td>{{ p.category_name }}</td><td class="mq-num">{{ p.customers }}</td><td>{{ p.stock | length }} store{{ "" if p.stock | length == 1 else "s" }}, <span class="mq-num">{{ p.stock | map(attribute=1) | sum }}</span> units in stock: {% for store, units in p.stock[:5] %}{{ store }}: <span class="mq-num">{{ units }}</span>{% if not loop.last %} · {% endif %}{% endfor %}{% if p.stock | length > 5 %} · and {{ p.stock | length - 5 }} more{% endif %}</td></tr>{% endfor %}
+        </tbody></table></div>
+      {% else %}
+        <div class="mq-panel__body"><p class="mq-caption">No customer of this run has a recommendation: none has a usual store with matching stock.</p></div>
+      {% endif %}
+      <p class="mq-caption">Counts customers each product is recommended to from their usual store's live stock and their current segment, the same recommendation the customer page shows. {% if kpis.recommended.capped %}Based on the first {{ kpis.recommended.considered }} of {{ kpis.recommended.total }} labelled customers, in customer id order.{% else %}Based on all {{ kpis.recommended.considered }} labelled customers.{% endif %}</p>
+    </section>
   {% endif %}
 {% endblock %}

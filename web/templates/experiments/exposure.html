@@ -16,7 +16,7 @@
         <p>Nobody is assigned yet, so nobody can be exposed.</p>
       {% else %}
         <div class="mq-table-wrap"><table class="mq-table"><thead><tr><th scope="col">Group</th><th scope="col">Arm</th><th scope="col" class="mq-num">Assigned</th><th scope="col" class="mq-num">Exposed</th></tr></thead><tbody>
-          {% for g in summary.groups %}<tr><td class="mq-mono">{{ g.group_id }}</td><td>{{ g.kind.title() }}</td><td class="mq-num">{{ g.assigned }}</td><td class="mq-num">{% if g.kind == "CONTROL" %}<span class="mq-caption">Never exposed</span>{% else %}{{ g.exposed }}{% endif %}</td></tr>{% endfor %}
+          {% for g in summary.groups %}<tr><td class="mq-mono">{{ g.group_id }}</td><td><a href="{{ url_for('experiments.group', experiment_id=e.experiment_id, group_id=g.group_id) }}">{{ g.name if g.name else g.kind.title() }}</a><br><span class="mq-caption">{{ g.treatment_description }}</span></td><td class="mq-num">{{ g.assigned }}</td><td class="mq-num">{% if g.kind == "CONTROL" %}<span class="mq-caption">Never exposed</span>{% else %}{{ g.exposed }}{% endif %}</td></tr>{% endfor %}
         </tbody></table></div>
         <p><strong>Delivery diagnostic:</strong> {{ summary.treatment_exposed }} of {{ summary.treatment_assigned }} assigned treatment customers were exposed{% if summary.exposure_rate is not none %} ({{ "%.1f" | format(summary.exposure_rate * 100) }}%){% endif %}; {{ summary.not_exposed }} were not reached. This says whether the campaign was delivered, not whether it worked. The result is measured on everyone assigned.</p>
       {% endif %}

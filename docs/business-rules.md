@@ -205,6 +205,22 @@ and totals not negative).
 N35 of `sql/verify_integrity.sql`. See
 [ADR-0029](adr/0029-segment-history-runs-and-experiments-are-protected-from-the-application-role.md).
 
+### RN-49 — An experiment's frame is fixed with its first assignment, and exposure is refused outside it
+Once anyone is assigned, an experiment's campaign, start date, end date, target
+metric and conversion window no longer change; only its name does (ADR-0019). An
+experiment cannot be attached to a campaign that is finished or cancelled, and a
+campaign that ended before today is not activated. An exposure is refused before
+the experiment starts, after it ends, and when its campaign is finished or
+cancelled. Exposures stay plural (ADR-0019): a later exposure is recorded, but a
+repeat for the same assignment within 60 seconds adds nothing, so a double-click or
+concurrent submits leave one row. "Average ticket" can still be chosen but is
+labelled as not measured yet.
+
+**Enforced:** `_update`, `_create` and `_record_exposure` in
+`web/services/experiments.py`, `transition` in `web/services/campaigns.py`, and the
+conditional insert in `web/db/experiments.py`. **Verified** —
+`tests/test_experiment_frame.py`.
+
 ### RN-37 — A K-means run is reproducible from what it records, and each of its numerical hazards has a defined behaviour
 The fit is fixed by the seed, k, the iteration limit, the tolerance and the feature
 window, and all five are stored on the run with its quality measures, so a run can

@@ -8,6 +8,7 @@ story evidence execute those counterparts against PostgreSQL.
 from __future__ import annotations
 
 import re
+from datetime import date
 from itertools import chain, repeat
 from pathlib import Path
 from unittest.mock import MagicMock, Mock
@@ -39,8 +40,12 @@ def _wire(
     mocks = {
         "lock_experiment": Mock(return_value=True),
         "find_assignment": Mock(return_value=found),
-        "insert_exposure": Mock(),
-        "get_experiment": Mock(return_value=_experiment(assignments=13)),
+        "insert_exposure": Mock(return_value=True),
+        "get_campaign_status": Mock(return_value="ACTIVE"),
+        # Started long ago, so these tests do not depend on today's date.
+        "get_experiment": Mock(
+            return_value=_experiment(assignments=13, starts_on=date(2026, 1, 1))
+        ),
         "list_group_exposure": Mock(return_value=GROUPS),
     }
     for name, mock in mocks.items():
@@ -142,12 +147,14 @@ def test_the_exposure_insert_is_parameterized_and_carries_no_timestamp() -> None
     connection = MagicMock()
     cursor = connection.cursor.return_value.__enter__.return_value
 
-    db.insert_exposure(connection, 900)
+    db.insert_exposure(connection, 900, repeat_seconds=60)
 
     statement, params = cursor.execute.call_args.args
-    assert statement.startswith("INSERT INTO experiment_exposure")
-    assert "exposed_at" not in statement  # the column default is its own instant
-    assert params == (900,)
+    assert "INSERT INTO experiment_exposure (assignment_id)" in statement
+    # exposed_at is never written: the column default is its own instant. It is
+    # only read, by the guard against a repeat of the same moment (#357).
+    assert "(assignment_id, exposed_at)" not in statement
+    assert params == (900, 900, 60)
 
 
 def test_no_module_rewrites_an_exposure() -> None:
@@ -261,3 +268,19 @@ def test_a_malformed_id_is_a_400_and_reaches_no_query(
 
     assert response.status_code == 400
     mocks["find_assignment"].assert_not_called()
+
+
+def test_a_repeat_of_the_same_moment_says_nothing_was_added(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#357: a double-click adds one row, and the page says the second did not."""
+    mocks = _wire(monkeypatch, found=(900, "TREATMENT"))
+    mocks["insert_exposure"].return_value = False
+    client = _as(app, "MARKETING")
+
+    response = client.post("/experiments/31/exposure", data={"customer_id": CUSTOMER})
+    page = client.get("/experiments/31/exposure").get_data(as_text=True)
+
+    assert response.status_code == 302
+    assert "was exposed moments ago; nothing was added" in page
+    assert "Exposure recorded for customer" not in page

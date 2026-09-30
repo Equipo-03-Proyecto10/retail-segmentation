@@ -36,7 +36,9 @@ from web.parsing import iso_date, whole_number
 # service's, and matches the values the seed already uses.
 TARGET_METRICS: dict[str, str] = {
     "CONVERSION": "Conversion rate",
-    "AVERAGE_TICKET": "Average ticket",
+    # Selectable so the experiments already using it stay editable, but no
+    # measurement exists for it: uplift refuses it (#357).
+    "AVERAGE_TICKET": "Average ticket (not measured yet)",
 }
 
 # experiment_data_origin_check's values (RN-26). SEEDED is ADR-0019's A/A
@@ -241,8 +243,30 @@ def _refusal(error: IntegrityError) -> ExperimentRefused:
     )
 
 
+# A campaign in either of these can take no new experiment and no exposure: its
+# run is over (#357). The names are campaign.status's; not imported from
+# web.services.campaigns, which imports this module.
+_CAMPAIGN_OVER = frozenset({"FINISHED", "CANCELLED"})
+
+# An exposure repeated within this many seconds for the same assignment is one
+# exposure: a double-click or a concurrent submit, not a second delivery.
+EXPOSURE_REPEAT_SECONDS = 60
+
+
+def _refuse_over_campaign(connection: Connection, campaign_id: int) -> None:
+    status = experiments.get_campaign_status(connection, campaign_id)
+    if status in _CAMPAIGN_OVER:
+        raise ExperimentRefused(
+            "campaign_id",
+            f"Campaign {campaign_id} is {status.lower()}; an experiment can only "
+            "be attached to a draft or an active campaign.",
+        )
+
+
 @atomic
 def _create(connection: Connection, data: ExperimentInput) -> int:
+    if data.campaign_id is not None:
+        _refuse_over_campaign(connection, data.campaign_id)
     experiment_id = experiments.create_experiment(
         connection,
         name=data.name,
@@ -311,6 +335,21 @@ def _update(connection: Connection, experiment_id: int, data: ExperimentInput) -
                     experiment_id, current.assignments, "target metric"
                 ),
             )
+        # The frame the measurement is judged against: which campaign it belongs
+        # to and when it runs. Re-pointing or back-dating it after customers are
+        # assigned would change what the numbers mean (#357, ADR-0019).
+        for field, label, changed in (
+            ("campaign_id", "campaign", data.campaign_id != current.campaign_id),
+            ("starts_on", "start date", data.starts_on != current.starts_on),
+            ("ends_on", "end date", data.ends_on != current.ends_on),
+        ):
+            if changed:
+                raise ExperimentRefused(
+                    field,
+                    fixed_after_assignment(experiment_id, current.assignments, label),
+                )
+    elif data.campaign_id is not None and data.campaign_id != current.campaign_id:
+        _refuse_over_campaign(connection, data.campaign_id)
     experiments.update_experiment(
         connection,
         experiment_id,
@@ -568,7 +607,9 @@ def parse_customer_id(raw: str) -> str | None:
 
 
 @atomic
-def _record_exposure(connection: Connection, experiment_id: int, customer_id: str):
+def _record_exposure(
+    connection: Connection, experiment_id: int, customer_id: str, today: date
+) -> bool:
     # Same lock as assignment: an exposure can only follow an assignment that
     # is already committed, never race the one that would create it.
     if not experiments.lock_experiment(connection, experiment_id):
@@ -585,14 +626,45 @@ def _record_exposure(connection: Connection, experiment_id: int, customer_id: st
             f"Customer {customer_id} is in the control group of experiment "
             f"{experiment_id}. The control group is never exposed (ADR-0019)."
         )
-    experiments.insert_exposure(connection, assignment_id)
+    experiment = experiments.get_experiment(connection, experiment_id)
+    if experiment is None:
+        raise ExperimentNotFound(experiment_id)
+    if today < experiment.starts_on:
+        raise ExposureRefused(
+            f"Experiment {experiment_id} starts on {experiment.starts_on}; an "
+            "exposure cannot be recorded before it."
+        )
+    if experiment.ends_on is not None and today > experiment.ends_on:
+        raise ExposureRefused(
+            f"Experiment {experiment_id} ended on {experiment.ends_on}; an "
+            "exposure cannot be recorded after it."
+        )
+    if experiment.campaign_id is not None:
+        status = experiments.get_campaign_status(connection, experiment.campaign_id)
+        if status in _CAMPAIGN_OVER:
+            raise ExposureRefused(
+                f"Campaign {experiment.campaign_id} is {status.lower()}; an "
+                "exposure cannot be recorded for its experiment."
+            )
+    return experiments.insert_exposure(
+        connection, assignment_id, repeat_seconds=EXPOSURE_REPEAT_SECONDS
+    )
 
 
-def record_exposure(connection: Connection, experiment_id: int, customer_id: str):
+def record_exposure(
+    connection: Connection,
+    experiment_id: int,
+    customer_id: str,
+    today: date | None = None,
+) -> bool:
     """Record that an assigned treatment customer was exposed, as its own event
-    with its own timestamp. The control group is refused: exposing it would
-    contaminate the comparison the experiment exists to make."""
-    _record_exposure(connection, experiment_id, customer_id)
+    with its own timestamp; False when the same customer was exposed moments ago
+    and nothing was added. The control group is refused: exposing it would
+    contaminate the comparison the experiment exists to make. So is an exposure
+    outside the experiment's dates or for a campaign that is over (#357)."""
+    return _record_exposure(
+        connection, experiment_id, customer_id, today or date.today()
+    )
 
 
 @atomic
@@ -622,9 +694,14 @@ def _record_group_exposures(
         raise ExposureRefused(
             "Select only customers assigned to this treatment arm; nothing was written."
         )
-    for assignment_id in ids:
-        experiments.insert_exposure(connection, assignment_id)
-    return len(ids)
+    return sum(
+        experiments.insert_exposure(
+            connection,
+            assignment_id,
+            repeat_seconds=EXPOSURE_REPEAT_SECONDS,
+        )
+        for assignment_id in ids
+    )
 
 
 def record_group_exposures(

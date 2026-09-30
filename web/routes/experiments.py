@@ -249,12 +249,18 @@ def record_exposure(experiment_id: int) -> ResponseReturnValue:
             experiment_id, error="Enter the customer's id (a UUID).", status=400
         )
     try:
-        service.record_exposure(get_connection(), experiment_id, customer_id)
+        recorded = service.record_exposure(get_connection(), experiment_id, customer_id)
     except service.ExperimentNotFound:
         abort(404)
     except service.ExposureRefused as refusal:
         return _render_exposure(experiment_id, error=str(refusal), status=409)
-    flash(f"Exposure recorded for customer {customer_id}.", "success")
+    if recorded:
+        flash(f"Exposure recorded for customer {customer_id}.", "success")
+    else:
+        flash(
+            f"Customer {customer_id} was exposed moments ago; nothing was added.",
+            "info",
+        )
     return redirect(url_for("experiments.exposure", experiment_id=experiment_id))
 
 

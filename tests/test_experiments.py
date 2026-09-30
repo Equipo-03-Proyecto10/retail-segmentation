@@ -338,7 +338,7 @@ def test_an_incomplete_experiment_blocks_its_campaigns_activation(
         "get_campaign",
         Mock(
             return_value=Campaign(
-                7, "Win-back", "AT_RISK", date(2026, 10, 1), date(2026, 10, 31), "DRAFT"
+                7, "Win-back", "AT_RISK", date(2026, 10, 1), date(2999, 12, 31), "DRAFT"
             )
         ),
     )
@@ -398,7 +398,7 @@ def test_cancelling_does_not_check_the_experiments(
         "get_campaign",
         Mock(
             return_value=Campaign(
-                7, "Win-back", "AT_RISK", date(2026, 10, 1), date(2026, 10, 31), "DRAFT"
+                7, "Win-back", "AT_RISK", date(2026, 10, 1), date(2999, 12, 31), "DRAFT"
             )
         ),
     )
@@ -507,6 +507,39 @@ def test_the_form_of_an_assigned_experiment_shows_the_rules_as_fixed(
 
     assert "Measurement rules fixed" in body
     assert 'name="conversion_window_days" value="14" readonly' in body
+
+
+def test_the_form_of_an_assigned_experiment_also_fixes_campaign_and_dates(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#357: the frame is locked with the measurement rules."""
+    _wire_pages(monkeypatch, _experiment(assignments=5))
+    client = app.test_client()
+    _sign_in(client, "MARKETING")
+
+    body = client.get("/experiments/3/edit").get_data(as_text=True)
+
+    assert "its campaign, dates, target metric and conversion window" in body
+    assert '<input type="hidden" name="campaign_id" value="7">' in body
+    assert 'name="starts_on" value="2026-10-01" required readonly' in body
+    assert 'name="ends_on" value="2026-10-31" readonly' in body
+    assert "<select" not in body.split('id="campaign_id"')[1].split("</div>")[0]
+
+
+def test_changing_an_assigned_experiments_start_date_is_a_409(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _wire_pages(monkeypatch, _experiment(assignments=5))
+    _wire_update(monkeypatch, _experiment(assignments=5))
+    client = app.test_client()
+    _sign_in(client, "MARKETING")
+
+    response = client.post(
+        "/experiments/3/edit", data={**EDIT, "starts_on": "2026-09-01"}
+    )
+
+    assert response.status_code == 409
+    assert "The start date is fixed" in response.get_data(as_text=True)
 
 
 def test_changing_an_assigned_experiments_window_is_a_409(

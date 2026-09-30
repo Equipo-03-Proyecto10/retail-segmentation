@@ -467,3 +467,63 @@ def test_the_current_label_shows_since_when_it_was_entered(
 
     current_label = re.search(r"<dt>Current label</dt>(.*?)</dd>", html).group(1)
     assert "since 2026-07-01" in current_label
+
+
+# ---------- #338: the timeline links each migration to its explanation ----------
+
+_EXPLANATION = f"/migration-explanation/?run_a=2&amp;run_b=3&amp;customer_id={_ID}"
+
+
+def test_a_label_change_on_the_timeline_links_to_its_explanation(
+    client: FlaskClient, page
+) -> None:
+    _sign_in(client)
+    timeline = _section(_text(client.get(_URL)), "timeline-title")
+
+    assert f'href="{_EXPLANATION}">Explanation</a>' in timeline
+    # Only the change links to one: unchanged reruns and the first assignment do not.
+    assert timeline.count("/migration-explanation/") == 1
+
+
+def test_the_current_and_previous_panel_links_to_its_explanation_and_summarises_it(
+    client: FlaskClient, page
+) -> None:
+    _sign_in(client)
+    comparison = _section(_text(client.get(_URL)), "comparison-title")
+
+    assert f'href="{_EXPLANATION}">Explanation</a>' in comparison
+    assert (
+        "Recency went from 1 to 12 days, frequency dropped from 5 to 2, "
+        "monetary fell from 1,234.50 to 480.00 MXN." in comparison
+    )
+
+
+def test_the_segment_change_page_reads_in_plain_language_and_links_to_the_explanation(
+    client: FlaskClient, page, sales
+) -> None:
+    _sign_in(client)
+    explanation = _section(
+        _text(client.get(f"{_URL}/segment-changes/3")), "explanation-title"
+    )
+
+    assert "Recency went from 1 to 12 days — changed" in explanation
+    assert "Frequency dropped from 5 to 2 purchases — changed." in explanation
+    assert f'href="{_EXPLANATION}">Migration explanation</a>' in explanation
+
+
+def test_an_unchanged_score_on_the_timeline_reads_stable_not_plus_zero(
+    client: FlaskClient, page
+) -> None:
+    page(
+        [
+            _row(2, "AT_RISK", _AUGUST, None, scores=(2, 3, 3)),
+            _row(1, "HIBERNATING", _JULY, _AUGUST, scores=(2, 2, 3)),
+        ]
+    )
+    _sign_in(client)
+    comparison = _section(_text(client.get(_URL)), "comparison-title")
+
+    assert "+0" not in comparison
+    assert '<td class="mq-table__cell--num">stable</td>' in comparison
+    # Every value stayed put and the label still moved: the rank moved it.
+    assert "other customers moved the quintile cut points" in comparison

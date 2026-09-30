@@ -6,6 +6,7 @@
 
 {% block content %}
   {% from "macros/ui.html" import empty_state, page_header, status_pill %}
+  {% from "macros/migration.html" import explanation_sentences, score_change %}
   {% macro money(value) %}{{ "{:,.2f}".format(value) }}{% endmacro %}
   {% macro day(moment) %}{{ moment.strftime("%Y-%m-%d") }}{% endmacro %}
   {% macro noun(n, singular) %}{{ singular if n == 1 else singular ~ "s" }}{% endmacro %}
@@ -84,7 +85,7 @@
               <td class="mq-table__cell--num">{{ score(before.r_score) }}</td>
               <td>{{ days(entry.recency_days) }}</td>
               <td class="mq-table__cell--num">{{ score(row.r_score) }}</td>
-              <td class="mq-table__cell--num">{{ "{:+d}".format(explanation.recency.score_delta) if explanation.recency.score_delta is not none else "—" }}</td>
+              <td class="mq-table__cell--num">{{ score_change(explanation.recency) }}</td>
             </tr>
             <tr>
               <td>Frequency</td>
@@ -92,7 +93,7 @@
               <td class="mq-table__cell--num">{{ score(before.f_score) }}</td>
               <td>{% if row.frequency_count is not none %}{{ row.frequency_count }} {{ noun(row.frequency_count, "purchase") }}{% else %}—{% endif %}</td>
               <td class="mq-table__cell--num">{{ score(row.f_score) }}</td>
-              <td class="mq-table__cell--num">{{ "{:+d}".format(explanation.frequency.score_delta) if explanation.frequency.score_delta is not none else "—" }}</td>
+              <td class="mq-table__cell--num">{{ score_change(explanation.frequency) }}</td>
             </tr>
             <tr>
               <td>Monetary</td>
@@ -100,14 +101,16 @@
               <td class="mq-table__cell--num">{{ score(before.m_score) }}</td>
               <td>{% if row.monetary_total is not none %}{{ money(row.monetary_total) }} MXN{% else %}—{% endif %}</td>
               <td class="mq-table__cell--num">{{ score(row.m_score) }}</td>
-              <td class="mq-table__cell--num">{{ "{:+d}".format(explanation.monetary.score_delta) if explanation.monetary.score_delta is not none else "—" }}</td>
+              <td class="mq-table__cell--num">{{ score_change(explanation.monetary) }}</td>
             </tr>
           </tbody>
         </table>
       </div>
-      {% if explanation.most_changed_caption %}
-        <div class="mq-panel__body"><p class="mq-caption">{{ explanation.most_changed_caption }}</p></div>
-      {% endif %}
+      <div class="mq-panel__body">
+        {{ explanation_sentences(change.narrative) }}
+        {% if explanation.most_changed_caption %}<p class="mq-caption">{{ explanation.most_changed_caption }}</p>{% endif %}
+        <p><a href="{{ url_for('migration_explanation.index', run_a=before.run_id, run_b=row.run_id, customer_id=customer.customer_id) }}">Migration explanation</a></p>
+      </div>
     </section>
 
     <section class="mq-panel" aria-labelledby="entered-title">

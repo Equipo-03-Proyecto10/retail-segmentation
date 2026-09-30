@@ -317,6 +317,41 @@ filters that result; the page remains read-only and gated on `segment.read`.
 unassigned states, direction, explanation links, invalid filters, authorization, and
 the scrollable table pattern used at narrow widths. · `F7-05`
 
+### RN-48 — A migration explanation judges the customer's own values, and says when only the rank moved
+A migration explanation states each measure as a sentence with its raw values from
+both runs — recency in whole days from the last purchase to the run that measured it,
+frequency in purchases, monetary in MXN — and judges it **changed** or **stable** on
+those raw values, never on the scores. A score is a quintile among every customer the
+run measured (`ntile` in RFM_RULES), so it moves when other customers move, and a
+K-means run stores values but no scores (ADR-0018). The raw values are the customer's
+own behaviour and exist for both methods.
+
+| Measure | Stable when | Why |
+|---|---|---|
+| Recency | it changed by **7 days or less** | Recency grows by itself between runs when the customer does not buy, a day per day; a week of drift is the same behaviour, while 18 → 72 days is not. |
+| Frequency | the purchase count is **unchanged** | A small whole count; one purchase more or less is a change. |
+| Monetary | it changed by **10% or less** of the earlier value | Spend is noisy; a relative band scales with how much the customer spends. An earlier value of zero is stable only if the later one is also zero. |
+
+When a measure's raw value is unchanged — for recency, the same last purchase within
+the 7-day drift — but its score moved, the explanation says the **rank** changed
+because other customers moved the quintile cut points, not the customer's behaviour.
+
+A customer **absent** from the earlier run is a **new customer**, and one absent from
+the later run is **not in the later run**. Neither is `Unassigned`, which means the
+run scored the customer and found no purchase to label (RN-21); a measure a run holds
+no value for is reported as not compared, with which of the two reasons applies.
+
+The explanation is reachable from every place a migration is shown: a customer in a
+migration matrix cell (RN-47) and each label change on a customer's segment timeline.
+
+**Enforced:** application — `describe_migration` in `web/services/segment_migration.py`,
+with the thresholds as the named constants `RECENCY_STABLE_DAYS`,
+`FREQUENCY_STABLE_PURCHASES` and `MONETARY_STABLE_RATIO`; the page states them from
+those constants. **Verified** — by `tests/test_migration_explanation.py` (each
+threshold's edge, the rank-only case, K-means rows without scores, absent versus
+unassigned), `tests/test_migration_explanation_route.py`, and
+`tests/test_customer_timeline_route.py` for the links. · `F7-08`
+
 ### RN-40 — A recommendation is in stock at the customer's usual store, matches a stated signal, and says why
 A product is recommended to a customer only when all of these hold:
 

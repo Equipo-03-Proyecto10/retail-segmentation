@@ -6,6 +6,7 @@
 
 {% block content %}
   {% from "macros/ui.html" import alert, empty_state, page_header, status_pill %}
+  {% from "macros/migration.html" import rank_only_move, score_change %}
   {% macro money(value) %}{{ "{:,.2f}".format(value) }}{% endmacro %}
   {% macro day(moment) %}{{ moment.strftime("%Y-%m-%d") }}{% endmacro %}
   {% macro noun(n, singular) %}{{ singular if n == 1 else singular ~ "s" }}{% endmacro %}
@@ -82,7 +83,7 @@
               <td class="mq-table__cell--num">{{ score(then_row.r_score) }}</td>
               <td>{{ days(timeline.current.recency_days) }}{% if now_row.last_purchase_at %} <span class="mq-caption">last purchase {{ day(now_row.last_purchase_at) }}</span>{% endif %}</td>
               <td class="mq-table__cell--num">{{ score(now_row.r_score) }}</td>
-              <td class="mq-table__cell--num">{{ "{:+d}".format(timeline.comparison.recency.score_delta) if timeline.comparison.recency.score_delta is not none else "—" }}</td>
+              <td class="mq-table__cell--num">{{ score_change(timeline.comparison.recency) }}</td>
             </tr>
             <tr>
               <td>Frequency</td>
@@ -90,7 +91,7 @@
               <td class="mq-table__cell--num">{{ score(then_row.f_score) }}</td>
               <td>{% if now_row.frequency_count is not none %}{{ now_row.frequency_count }} {{ noun(now_row.frequency_count, "purchase") }}{% else %}—{% endif %}</td>
               <td class="mq-table__cell--num">{{ score(now_row.f_score) }}</td>
-              <td class="mq-table__cell--num">{{ "{:+d}".format(timeline.comparison.frequency.score_delta) if timeline.comparison.frequency.score_delta is not none else "—" }}</td>
+              <td class="mq-table__cell--num">{{ score_change(timeline.comparison.frequency) }}</td>
             </tr>
             <tr>
               <td>Monetary</td>
@@ -98,14 +99,16 @@
               <td class="mq-table__cell--num">{{ score(then_row.m_score) }}</td>
               <td>{% if now_row.monetary_total is not none %}{{ money(now_row.monetary_total) }} MXN{% else %}—{% endif %}</td>
               <td class="mq-table__cell--num">{{ score(now_row.m_score) }}</td>
-              <td class="mq-table__cell--num">{{ "{:+d}".format(timeline.comparison.monetary.score_delta) if timeline.comparison.monetary.score_delta is not none else "—" }}</td>
+              <td class="mq-table__cell--num">{{ score_change(timeline.comparison.monetary) }}</td>
             </tr>
           </tbody>
         </table>
       </div>
       <div class="mq-panel__body">
+        <p>{{ timeline.narrative.summary }}</p>
+        {{ rank_only_move(timeline.narrative) }}
         <p class="mq-caption">Recency is the days from the last purchase to the run that measured it. {% if timeline.comparison.most_changed_caption %}{{ timeline.comparison.most_changed_caption }}{% endif %}</p>
-        <p><a href="{{ url_for('catalog.customer_segment_change', customer_id=customer.customer_id, run_id=now_row.run_id) }}">Sales between run #{{ then_row.run_id }} and run #{{ now_row.run_id }}</a></p>
+        <p><a href="{{ url_for('catalog.customer_segment_change', customer_id=customer.customer_id, run_id=now_row.run_id) }}">Sales between run #{{ then_row.run_id }} and run #{{ now_row.run_id }}</a> · <a href="{{ url_for('migration_explanation.index', run_a=then_row.run_id, run_b=now_row.run_id, customer_id=customer.customer_id) }}">Explanation</a></p>
       </div>
     </section>
   {% endif %}
@@ -177,7 +180,10 @@
                 <td class="mq-table__cell--num">{{ money(row.monetary_total) if row.monetary_total is not none else "—" }}</td>
                 <td>
                   {% if entry.changed %}
-                    <a href="{{ url_for('catalog.customer_segment_change', customer_id=customer.customer_id, run_id=row.run_id) }}">What changed</a>
+                    <span class="mq-stack">
+                      <a href="{{ url_for('catalog.customer_segment_change', customer_id=customer.customer_id, run_id=row.run_id) }}">What changed</a>
+                      <a href="{{ url_for('migration_explanation.index', run_a=entry.previous_run_id, run_b=row.run_id, customer_id=customer.customer_id) }}">Explanation</a>
+                    </span>
                   {% elif entry.is_first %}
                     <span class="mq-caption">First assignment</span>
                   {% else %}

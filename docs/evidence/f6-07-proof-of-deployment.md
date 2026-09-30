@@ -214,9 +214,10 @@ This closes finding 01 of [`instance-findings-fixes.md`](instance-findings-fixes
 which recorded the published demonstration credentials as pending operator
 input.
 
-**The address is deliberately not the operator's.** `[redacted team administrator address]`
-is a team address; the instance's SSH access is held by a personal Google
-account. Keeping them separate means compromising one does not reach the other.
+**The address is deliberately not the operator's.** It is a team address,
+redacted from this published evidence (#348, #360); the instance's SSH access
+is held by a personal Google account. Keeping them separate means compromising
+one does not reach the other.
 An earlier run of this procedure had used the SSH account itself, and was
 replaced for that reason.
 

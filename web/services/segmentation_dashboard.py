@@ -43,6 +43,7 @@ from decimal import Decimal
 from typing import Any
 
 from web.db import experiment_report as report_db
+from web.db.clock import current_date as business_date
 from web.db.experiments import Experiment
 from web.db.segmentation_dashboard import (
     LabelMeans,
@@ -337,24 +338,12 @@ def build_label_means(
 
 
 @dataclass(frozen=True)
-class ArmRate:
-    """One arm's intent-to-treat conversion (RN-48): customers with a qualifying
-    sale in their window over every customer assigned to the arm."""
-
-    group_id: int
-    kind: str
-    assigned: int
-    converted: int
-
-    @property
-    def rate(self) -> float | None:
-        return self.converted / self.assigned if self.assigned else None
-
-
-@dataclass(frozen=True)
 class ActiveExperiment:
     experiment: Experiment
-    arms: tuple[ArmRate, ...]
+    # Reuse the experiment report's final arm shape (#379, #370): it carries
+    # the user-facing name and both conversion definitions without a second,
+    # dashboard-only representation drifting from it.
+    arms: tuple[report_db.ReportGroup, ...]
 
     @property
     def label(self) -> str | None:
@@ -367,33 +356,20 @@ def build_active_experiments(
     """Experiments running today, each with its arms' intent-to-treat conversion
     rate (RN-48). Running means it has started, has not ended, and has assigned
     someone: an experiment with no assignments has no rate to show."""
-    found, _total = report_db.list_report_experiments(
+    found = report_db.list_active_report_experiments(
         connection,
-        campaign_id=None,
-        data_origin=None,
+        active_on=today,
         limit=ACTIVE_EXPERIMENT_LIMIT,
-        offset=0,
     )
-    running = [
-        e
-        for e in found
-        if e.starts_on <= today
-        and (e.ends_on is None or e.ends_on >= today)
-        and e.assignments > 0
-    ]
     groups = report_db.list_report_groups(
-        connection, [e.experiment_id for e in running], now
+        connection, [e.experiment_id for e in found], now
     )
     return tuple(
         ActiveExperiment(
             e,
-            tuple(
-                ArmRate(g.group_id, g.kind, g.assigned, g.converted)
-                for g in groups
-                if g.experiment_id == e.experiment_id
-            ),
+            tuple(g for g in groups if g.experiment_id == e.experiment_id),
         )
-        for e in running
+        for e in found
     )
 
 
@@ -474,10 +450,15 @@ class Kpis:
 
 
 def build_kpis(
-    connection: Any, run: SegmentationRun, today: date, now: datetime
+    connection: Any,
+    run: SegmentationRun,
+    now: datetime,
+    *,
+    today: date | None = None,
 ) -> Kpis:
     """Average R/F/M per label, running experiments with their conversion rate
     per arm, and the most recommended products with their stock, for one run."""
+    active_on = today if today is not None else business_date(connection)
     ordinals = get_label_ordinals(connection)
     means = list_run_label_means(connection, run.run_id, run.run_at)
     ids, total = list_run_labelled_customers(
@@ -485,7 +466,7 @@ def build_kpis(
     )
     return Kpis(
         label_means=build_label_means(means, ordinals),
-        active_experiments=build_active_experiments(connection, today, now),
+        active_experiments=build_active_experiments(connection, active_on, now),
         recommended=build_top_recommended(connection, ids, total),
         scored=any(m.mean_r is not None for m in means),
     )

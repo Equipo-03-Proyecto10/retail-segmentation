@@ -85,7 +85,7 @@ def test_a_run_without_quintile_scores_is_reported_as_not_scored(
         means=[LabelMeans("LOST", 3, None, None, None, Decimal("90"), 1, 5)],
     )
 
-    kpis = service.build_kpis(MagicMock(), _dashboard().run, TODAY, NOW)
+    kpis = service.build_kpis(MagicMock(), _dashboard().run, NOW, today=TODAY)
 
     assert kpis.scored is False
     assert kpis.label_means[2].mean_r is None
@@ -97,64 +97,53 @@ def test_a_run_without_quintile_scores_is_reported_as_not_scored(
 def _running(monkeypatch, experiments, groups) -> None:
     monkeypatch.setattr(
         report_db,
-        "list_report_experiments",
-        Mock(return_value=(experiments, len(experiments))),
+        "list_active_report_experiments",
+        Mock(return_value=experiments),
     )
     monkeypatch.setattr(report_db, "list_report_groups", Mock(return_value=groups))
 
 
-def test_only_experiments_running_today_with_assignments_are_active(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from datetime import timedelta
+def test_active_experiments_are_filtered_before_the_limit() -> None:
+    connection = MagicMock()
+    _cursor(connection).fetchall.return_value = []
 
-    started = _experiment(experiment_id=1, starts_on=TODAY, assignments=10)
-    open_ended = _experiment(
-        experiment_id=2, starts_on=TODAY - timedelta(days=9), assignments=10
-    )
-    finished = _experiment(
-        experiment_id=3,
-        starts_on=TODAY - timedelta(days=30),
-        ends_on=TODAY - timedelta(days=1),
-        assignments=10,
-    )
-    future = _experiment(
-        experiment_id=4, starts_on=TODAY + timedelta(days=1), assignments=10
-    )
-    empty = _experiment(experiment_id=5, starts_on=TODAY, assignments=0)
-    ends_today = _experiment(
-        experiment_id=6,
-        starts_on=TODAY - timedelta(days=5),
-        ends_on=TODAY,
-        assignments=10,
-    )
-    _running(
-        monkeypatch, [started, open_ended, finished, future, empty, ends_today], []
+    assert (
+        report_db.list_active_report_experiments(connection, active_on=TODAY, limit=5)
+        == []
     )
 
-    active = service.build_active_experiments(MagicMock(), TODAY, NOW)
+    statement, parameters = _cursor(connection).execute.call_args.args
+    assert "e.starts_on <= %(active_on)s" in statement
+    assert "e.ends_on >= %(active_on)s" in statement
+    assert "c.status NOT IN (%(finished)s, %(cancelled)s)" in statement
+    assert "EXISTS" in statement and "experiment_assignment" in statement
+    assert statement.index("WHERE") < statement.index("LIMIT")
+    assert parameters == {
+        "active_on": TODAY,
+        "finished": "FINISHED",
+        "cancelled": "CANCELLED",
+        "limit": 5,
+    }
 
-    assert [a.experiment.experiment_id for a in active] == [1, 2, 6]
 
-
-def test_each_arm_carries_its_intent_to_treat_rate(
+def test_each_arm_reuses_the_final_report_shape_and_intent_to_treat_rate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _running(
         monkeypatch,
         [_experiment(experiment_id=31, starts_on=TODAY, assignments=2000)],
         [
-            ReportGroup(31, 61, "CONTROL", 1000, 0, 100, 0),
-            ReportGroup(31, 62, "TREATMENT", 1000, 700, 150, 0),
-            ReportGroup(99, 90, "TREATMENT", 10, 5, 5, 0),
+            ReportGroup(31, 61, "CONTROL", 1000, 0, 100, 0, name="Holdout"),
+            ReportGroup(31, 62, "TREATMENT", 1000, 700, 150, 0, name="Offer A"),
+            ReportGroup(99, 90, "TREATMENT", 10, 5, 5, 0, name="Other"),
         ],
     )
 
     (active,) = service.build_active_experiments(MagicMock(), TODAY, NOW)
 
-    assert [(g.kind, g.rate) for g in active.arms] == [
-        ("CONTROL", 0.10),
-        ("TREATMENT", 0.15),
+    assert [(g.name, g.kind, g.conversion_rate) for g in active.arms] == [
+        ("Holdout", "CONTROL", 0.10),
+        ("Offer A", "TREATMENT", 0.15),
     ], "another experiment's arms are not shown under this one"
 
 
@@ -287,9 +276,24 @@ def _wire_kpis(monkeypatch, means=None, ids=None, total=0) -> None:
         service, "list_run_labelled_customers", lambda *_a: (ids or [], total)
     )
     monkeypatch.setattr(
-        report_db, "list_report_experiments", Mock(return_value=([], 0))
+        report_db, "list_active_report_experiments", Mock(return_value=[])
     )
     monkeypatch.setattr(report_db, "list_report_groups", Mock(return_value=[]))
+
+
+def test_kpis_use_the_database_business_date(monkeypatch: pytest.MonkeyPatch) -> None:
+    connection = MagicMock()
+    _wire_kpis(monkeypatch)
+    active = Mock(return_value=[])
+    monkeypatch.setattr(report_db, "list_active_report_experiments", active)
+    monkeypatch.setattr(service, "business_date", Mock(return_value=TODAY))
+
+    service.build_kpis(connection, _dashboard().run, NOW)
+
+    service.business_date.assert_called_once_with(connection)
+    active.assert_called_once_with(
+        connection, active_on=TODAY, limit=service.ACTIVE_EXPERIMENT_LIMIT
+    )
 
 
 @pytest.fixture
@@ -336,7 +340,18 @@ def test_the_page_prints_the_means_the_experiments_and_the_products(
 ) -> None:
     active = service.ActiveExperiment(
         _experiment(experiment_id=31, name="Win-back offer", data_origin="SEEDED"),
-        (service.ArmRate(62, "TREATMENT", 1000, 150),),
+        (
+            ReportGroup(
+                31,
+                62,
+                "TREATMENT",
+                1000,
+                700,
+                150,
+                0,
+                name="Free delivery",
+            ),
+        ),
     )
     kpis = service.Kpis(
         label_means=(
@@ -370,7 +385,7 @@ def test_the_page_prints_the_means_the_experiments_and_the_products(
     assert "Average R, F and M by label" in body
     assert "4.50" in body and "910.25" in body and "12.5" in body
     assert "Active experiments" in body and "1 running today" in body
-    assert "15.00%" in body and "Synthetic" in body
+    assert "Free delivery" in body and "15.00%" in body and "Synthetic" in body
     assert "Most recommended products" in body and "Milk" in body
     assert 'Centro: <span class="mq-num">8</span>' in body
     assert 'Norte: <span class="mq-num">20</span>' in body

@@ -8,7 +8,7 @@ report never derives one from another (ADR-0019).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 
 from psycopg import Connection
 
@@ -52,8 +52,7 @@ _FILTER = """
        AND (%(origin)s::text IS NULL OR e.data_origin = %(origin)s::text)
 """
 
-_LIST_EXPERIMENTS = (
-    """
+_EXPERIMENT_SELECT = """
     SELECT e.experiment_id, e.name, e.campaign_id, c.name, e.target_metric,
            e.starts_on, e.ends_on, e.conversion_window_days, e.data_origin,
            (SELECT count(*) FROM experiment_group AS g
@@ -64,11 +63,29 @@ _LIST_EXPERIMENTS = (
              WHERE a.experiment_id = e.experiment_id)
       FROM experiment AS e
       LEFT JOIN campaign AS c ON c.campaign_id = e.campaign_id
-    """
+"""
+
+_LIST_EXPERIMENTS = (
+    _EXPERIMENT_SELECT
     + _FILTER
     + " ORDER BY e.experiment_id DESC LIMIT %(limit)s OFFSET %(offset)s"
 )
 _COUNT_EXPERIMENTS = "SELECT count(*) FROM experiment AS e" + _FILTER
+
+_LIST_ACTIVE_EXPERIMENTS = (
+    _EXPERIMENT_SELECT
+    + """
+     WHERE e.starts_on <= %(active_on)s
+       AND (e.ends_on IS NULL OR e.ends_on >= %(active_on)s)
+       AND (c.status IS NULL OR c.status NOT IN (%(finished)s, %(cancelled)s))
+       AND EXISTS (
+           SELECT 1 FROM experiment_assignment AS a
+            WHERE a.experiment_id = e.experiment_id
+       )
+     ORDER BY e.experiment_id DESC
+     LIMIT %(limit)s
+    """
+)
 
 
 def list_report_experiments(
@@ -93,6 +110,28 @@ def list_report_experiments(
         cursor.execute(_COUNT_EXPERIMENTS, params)
         total = cursor.fetchone()[0]
     return [Experiment(*row) for row in rows], total
+
+
+def list_active_report_experiments(
+    connection: Connection, *, active_on: date, limit: int
+) -> list[Experiment]:
+    """The newest assigned experiments active on the canonical business date.
+
+    A finished or cancelled campaign makes its experiment inactive even while
+    the experiment's own date range still covers ``active_on`` (#340). The
+    database applies every predicate before ``limit``, so an excluded newer
+    experiment cannot hide an older active one.
+    """
+    params = {
+        "active_on": active_on,
+        "finished": "FINISHED",
+        "cancelled": "CANCELLED",
+        "limit": limit,
+    }
+    with connection.cursor() as cursor:
+        cursor.execute(_LIST_ACTIVE_EXPERIMENTS, params)
+        rows = cursor.fetchall()
+    return [Experiment(*row) for row in rows]
 
 
 _LIST_GROUPS = (

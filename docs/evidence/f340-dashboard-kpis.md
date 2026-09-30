@@ -18,14 +18,27 @@ SELECT label_code, count(*), avg(r_score), avg(f_score), avg(m_score),
  WHERE run_id = :run AND label_code IS NOT NULL
  GROUP BY label_code;
 
--- Intent-to-treat conversion per arm of an experiment running today.
-SELECT g.group_id, g.kind, count(a.assignment_id) AS assigned,
+-- Experiments active on the database's canonical business date. This filter
+-- runs before LIMIT; an over campaign cannot hide an older active experiment.
+SELECT e.experiment_id
+  FROM experiment e
+  LEFT JOIN campaign c ON c.campaign_id = e.campaign_id
+ WHERE e.starts_on <= CURRENT_DATE
+   AND (e.ends_on IS NULL OR e.ends_on >= CURRENT_DATE)
+   AND (c.status IS NULL OR c.status NOT IN ('FINISHED', 'CANCELLED'))
+   AND EXISTS (SELECT 1 FROM experiment_assignment a
+                WHERE a.experiment_id = e.experiment_id)
+ ORDER BY e.experiment_id DESC
+ LIMIT 5;
+
+-- Intent-to-treat conversion per named arm of one active experiment.
+SELECT g.group_id, g.kind, g.name, count(a.assignment_id) AS assigned,
        count(*) FILTER (WHERE EXISTS (SELECT 1 FROM experiment_conversion c
                                        WHERE c.assignment_id = a.assignment_id)) AS converted
   FROM experiment_group g
   LEFT JOIN experiment_assignment a ON a.group_id = g.group_id
  WHERE g.experiment_id = :experiment
- GROUP BY g.group_id, g.kind;
+ GROUP BY g.group_id, g.kind, g.name;
 ```
 
 The recommended products are not a single query: each customer's list comes from
@@ -35,9 +48,10 @@ recommendation pages and count.
 
 ## What was run
 
-`tests/test_dashboard_kpis.py` (15 tests) checks the statement text and parameters,
-the running-today rule and its boundaries, the ranking and tie-break, the per-store
-stock, the cap notice and the page.
+`tests/test_dashboard_kpis.py` (16 tests) checks the statement text and parameters,
+the canonical database date, campaign-status and assignment filters before the
+limit, reuse of the final named-arm report shape, the ranking and tie-break, the
+per-store stock, the cap notice and the page.
 
 **On a real PostgreSQL 16** (Docker; clean load of the three scripts from this branch,
 the application as `retail_app`, a fresh `RFM_RULES` run of the seeded customers, the page
@@ -52,6 +66,12 @@ driven in Chromium):
 
 The seed has no experiment running today, so two were moved to start five days ago with
 no end date in the scratch database before checking their arms.
+
+The review correction after #379, #370 and #383 keeps that report structure but now
+reads the arm's name, excludes experiments attached to `FINISHED` or `CANCELLED`
+campaigns in SQL before the limit, and obtains "today" through the same PostgreSQL
+business-date helper used by the experiment frame. Those regression cases are covered
+by the tests above; the existing captures predate the arm-name text change.
 
 Captures: `f340-dashboard-1440.png`, `f340-dashboard-375.png`,
 `f340-dashboard-kmeans-1440.png`.

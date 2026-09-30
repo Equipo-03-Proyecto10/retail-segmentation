@@ -15,7 +15,7 @@ they were vendored for the same reason.
 from __future__ import annotations
 
 import json
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -164,5 +164,5 @@ def index() -> Response | tuple[Response, int]:
         error=None,
         is_synthetic=config.data_is_synthetic,
         chart_data=_embed(payload),
-        kpis=build_kpis(connection, dashboard.run, date.today(), datetime.now(UTC)),
+        kpis=build_kpis(connection, dashboard.run, datetime.now(UTC)),
     )

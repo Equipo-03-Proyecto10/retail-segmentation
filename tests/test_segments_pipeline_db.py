@@ -57,8 +57,11 @@ def test_the_window_is_a_parameter_and_never_interpolated() -> None:
     assert "90" not in statement
 
 
-def test_every_quintile_is_ordered_deterministically() -> None:
-    """Ties broken by customer_id, or two runs could disagree and both be right."""
+def test_a_quintile_boundary_is_computed_once_per_distinct_value() -> None:
+    """#352: a boundary that depended on customer_id would split identical
+    values across different quintiles. Computing it from DISTINCT values (and
+    ordering only by the value itself) is what makes tied customers share a
+    score, deterministically -- no row-order tiebreak needed for that."""
     connection = MagicMock()
     cursor = _cursor(connection)
     cursor.fetchall.return_value = []
@@ -66,9 +69,16 @@ def test_every_quintile_is_ordered_deterministically() -> None:
     score_rfm_rules(connection, 180)
 
     statement, _ = cursor.execute.call_args.args
-    windows = [line for line in statement.splitlines() if "OVER (ORDER BY" in line]
+    windows = [
+        line
+        for line in statement.splitlines()
+        if "OVER (ORDER BY" in line and not line.strip().startswith("--")
+    ]
     assert len(windows) == 3
-    assert all(", customer_id)" in line for line in windows)
+    assert all("customer_id" not in line for line in windows)
+    assert "SELECT DISTINCT last_purchase FROM window_sales" in statement
+    assert "SELECT DISTINCT frequency FROM window_sales" in statement
+    assert "SELECT DISTINCT monetary FROM window_sales" in statement
 
 
 def test_the_adapter_read_returns_every_customer_including_those_without_sales() -> (

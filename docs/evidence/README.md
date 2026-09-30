@@ -81,6 +81,7 @@ right place for it, and which the team accepted on 2026-09-07.
 | Document | What it records |
 |---|---|
 | [F9-01](f9-01-rfm-rules-adapter.md) | The rule-based scoring as an adapter behind a method-agnostic pipeline: the new writes compared with the old single statement on the seeded database, the method domain enforced by the database, and a consumer that is never told the method |
+| [#352](f352-quintile-ties.md) | A quintile-scoring defect fixed: 30 customers tied on frequency used to split across five different scores by customer id; verified on the seed (all 30 now share one score) and on a mixed population, with an independent SQL cross-check that no two customers who tie ever disagree |
 | [F9-02](f9-02-kmeans-fit.md) | The K-means fit written in the application: checked against exact rational arithmetic and scikit-learn, its empty-cluster, non-convergence and tie behaviours on real rows, and the parameters and quality measures a run records |
 | [F9-03](f9-03-cluster-labels.md) | K-means clusters mapped to the stable labels by ADR-0018's deterministic order: checked against the stored rows, 500 renamings of a real partition, a refused k, and two runs that number the same partition differently |
 | [F9-04](f9-04-model-comparison.md) | The model comparison page at 375 px and 1440 px: per-label populations and per-customer agreement checked against independent SQL, a run whose labels are copied giving 100% agreement whatever its method, the empty and error states, and the refusal of a role without `segment.read` |

@@ -17,9 +17,10 @@ run that fails part way leaves neither the run row nor any assignment behind.
 
 Two things make a run repeatable, and both are in the adapter's read:
 
-* every `ntile` window is ordered by `customer_id` after its measure, so
-  customers who tie on recency, frequency or spend are always cut into the same
-  quintile rather than into whichever the planner happened to return first;
+* every quintile boundary is computed once per distinct value and every customer
+  joins back to their value's boundary (#352), so customers who tie on recency,
+  frequency or spend always share a score, and the split does not depend on
+  customer_id or on the order the planner happens to return rows in;
 * a triple that satisfies several rules takes the lowest `segment_id`. The
   seeded rule bands overlap heavily, so this is not a corner case; a real rule
   set would be disjoint, and until it is, the tie is broken the same way every
@@ -65,15 +66,34 @@ WITH window_sales AS (
     WHERE occurred_at >= now() - make_interval(days => %s)
     GROUP BY customer_id
 ),
+-- #352: a plain `ntile(5) OVER (ORDER BY measure, customer_id)` splits ties
+-- into different quintiles by customer_id, because ntile carves the *rows*
+-- into five equal-sized groups regardless of which rows share a value. The
+-- RFM convention is that equal measures get equal scores, so each quintile
+-- boundary is instead computed once per *distinct* value here, and every
+-- customer joins back to their value's boundary. Customers who tie now
+-- always share a score; customer_id no longer decides anyone's score, only
+-- the query's own repeatability if it ever needed one (it does not: a
+-- distinct value's boundary does not depend on which or how many customers
+-- hold it).
+r_bounds AS (
+    SELECT last_purchase, %s + 1 - ntile(%s) OVER (ORDER BY last_purchase DESC) AS r
+    FROM (SELECT DISTINCT last_purchase FROM window_sales) AS distinct_r
+),
+f_bounds AS (
+    SELECT frequency, %s + 1 - ntile(%s) OVER (ORDER BY frequency DESC) AS f
+    FROM (SELECT DISTINCT frequency FROM window_sales) AS distinct_f
+),
+m_bounds AS (
+    SELECT monetary, %s + 1 - ntile(%s) OVER (ORDER BY monetary DESC) AS m
+    FROM (SELECT DISTINCT monetary FROM window_sales) AS distinct_m
+),
 scored AS (
-    SELECT customer_id,
-           %s + 1 - ntile(%s)
-               OVER (ORDER BY last_purchase DESC, customer_id) AS r,
-           %s + 1 - ntile(%s)
-               OVER (ORDER BY frequency DESC, customer_id)     AS f,
-           %s + 1 - ntile(%s)
-               OVER (ORDER BY monetary DESC, customer_id)      AS m
-    FROM window_sales
+    SELECT w.customer_id, rb.r, fb.f, mb.m
+    FROM window_sales AS w
+    JOIN r_bounds AS rb ON rb.last_purchase = w.last_purchase
+    JOIN f_bounds AS fb ON fb.frequency = w.frequency
+    JOIN m_bounds AS mb ON mb.monetary = w.monetary
 )
 -- Every customer, not only those with sales: a customer absent from
 -- window_sales has no r/f/m and no matching segment, so every column but

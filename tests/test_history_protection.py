@@ -3,7 +3,7 @@ experiments, read from the schema text.
 
 There is no PostgreSQL in the unit suite, so these check that the statements are
 present and say what the decision says. That they do what they say is the job of
-the opt-in application-role self-test in `sql/01_schema.sql`, cases N32-N35 of
+the opt-in application-role self-test in `sql/01_schema.sql`, cases N33-N36 of
 `sql/verify_integrity.sql`, and CI's clean load of the three scripts.
 """
 
@@ -141,9 +141,9 @@ def test_the_application_role_self_test_expects_the_narrower_privileges() -> Non
 
 def test_the_integrity_script_exercises_each_new_guard_as_the_owner() -> None:
     for case, sqlstate in (
-        ("N32", "23514"),
-        ("N33", "23P01"),
-        ("N34", "23514"),
+        ("N33", "23514"),
+        ("N34", "23P01"),
         ("N35", "23514"),
+        ("N36", "23514"),
     ):
         assert re.search(rf"-- {case}: .*\[expect: {sqlstate} ", VERIFY), case

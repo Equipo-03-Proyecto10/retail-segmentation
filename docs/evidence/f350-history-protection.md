@@ -15,12 +15,12 @@ branch, the application role connecting as `retail_app`.
 
 | Case | Result |
 |---|---|
-| N32 score of 9 | `customer_segment_history_r_score_check` |
-| N33 overlapping interval | `ex_customer_segment_history_no_overlap` (23P01) |
-| N34 rewriting a closed row | "Segment history row 1 may only be closed, once" |
-| N35 changing a label | the same trigger, on an open row |
+| N33 score of 9 | `customer_segment_history_r_score_check` |
+| N34 overlapping interval | `ex_customer_segment_history_no_overlap` (23P01) |
+| N35 rewriting a closed row | "Segment history row 1 may only be closed, once" |
+| N36 changing a label | the same trigger, on an open row |
 
-N32 first failed for the wrong reason: it was an `UPDATE`, and the close-only trigger
+N33 first failed for the wrong reason: it was an `UPDATE`, and the close-only trigger
 refused it before the `CHECK` could. It is now an `INSERT` into a new run, and fails on
 the constraint the case names.
 
@@ -42,3 +42,6 @@ of #345 on a real database.
 ## Not done
 
 The instance database does not have any of this until it is rebuilt (#346, #360).
+
+Renumbered after merge: #379 had already taken the case name N32, so these four cases are
+N33 to N36 in `sql/verify_integrity.sql`. ADR-0029 is accepted and still says N32 to N35.

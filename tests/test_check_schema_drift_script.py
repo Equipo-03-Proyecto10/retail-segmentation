@@ -96,6 +96,13 @@ def test_privilege_dump_checks_effective_role_privileges() -> None:
     assert "grantee = :'role'" not in text
 
 
+def test_privilege_candidates_are_filtered_before_they_are_checked() -> None:
+    """Inlined, the CTE let has_table_privilege see pg_catalog rows and fail."""
+    text = SCRIPT.read_text()
+
+    assert "WITH candidate AS MATERIALIZED (" in text
+
+
 def test_the_repository_schema_carries_what_the_instance_lacked() -> None:
     """#346's diagnosis, so a reference build is the right thing to compare to."""
     schema = (ROOT / "sql/01_schema.sql").read_text()

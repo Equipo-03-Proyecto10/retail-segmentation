@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+
+{% block title %}{{ customer.name }} · Run #{{ change.entry.row.run_id }} · {{ application_name }}{% endblock %}
+{% block topbar_title %}Segment change{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Catalogs / Customers / {{ customer.name }} / Run #{{ change.entry.row.run_id }}{% endblock %}
+
+{% block content %}
+  {% from "macros/ui.html" import empty_state, page_header, status_pill %}
+  {% macro money(value) %}{{ "{:,.2f}".format(value) }}{% endmacro %}
+  {% macro day(moment) %}{{ moment.strftime("%Y-%m-%d") }}{% endmacro %}
+  {% macro noun(n, singular) %}{{ singular if n == 1 else singular ~ "s" }}{% endmacro %}
+  {% macro days(n) %}{% if n is none %}—{% else %}{{ n }} {{ noun(n, "day") }}{% endif %}{% endmacro %}
+  {% macro label_pill(row, tone="neutral") %}{% if row.label_code is none %}{{ status_pill("Unassigned") }}{% else %}{{ status_pill(row.label_name, tone) }}{% endif %}{% endmacro %}
+  {% macro score(value) %}{{ value if value is not none else "—" }}{% endmacro %}
+  {% macro sales_table(sales, total) %}
+    <div class="mq-table-wrap">
+      <table class="mq-table">
+        <thead>
+          <tr>
+            <th scope="col">Date</th>
+            <th scope="col">Transaction</th>
+            <th scope="col">Store</th>
+            <th scope="col">Channel</th>
+            <th class="mq-table__cell--num" scope="col">Units</th>
+            <th class="mq-table__cell--num" scope="col">Amount (MXN)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for sale in sales %}
+            <tr>
+              <td class="mq-mono">{{ sale.occurred_at.strftime("%Y-%m-%d %H:%M") }}</td>
+              <td class="mq-mono">{{ sale.source_transaction_id }}</td>
+              <td>{{ sale.store_name }}</td>
+              <td>{{ sale.channel_name }}</td>
+              <td class="mq-table__cell--num">{{ sale.units }}</td>
+              <td class="mq-table__cell--num">{{ money(sale.total) }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <th scope="row" colspan="5">{{ sales | length }} {{ noun(sales | length, "sale") }}</th>
+            <td class="mq-table__cell--num">{{ money(total) }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  {% endmacro %}
+
+  {% set entry = change.entry %}
+  {% set row = entry.row %}
+  {% call page_header(customer.name, "Run #" ~ row.run_id ~ " on " ~ day(row.run_at) ~ " against the assignment before it", "Segment change") %}
+    <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('catalog.customer_detail', customer_id=customer.customer_id) }}">Back to customer</a>
+  {% endcall %}
+
+  {% if change.previous is none %}
+    {{ empty_state("First assignment", "Run #" ~ row.run_id ~ " is the first run that scored this customer, so there is no earlier assignment to compare with.", "First") }}
+  {% else %}
+    {% set before = change.previous.row %}
+    {% set explanation = change.explanation %}
+    <section class="mq-panel" aria-labelledby="explanation-title">
+      <header class="mq-panel__header">
+        <h2 class="mq-panel__title" id="explanation-title">
+          {{ label_pill(before) }} → {{ label_pill(row, "info") }}
+        </h2>
+        <span class="mq-caption">{{ "Label changed" if explanation.label_changed else "Label unchanged" }} · run #{{ before.run_id }} → run #{{ row.run_id }}</span>
+      </header>
+      <div class="mq-table-wrap">
+        <table class="mq-table">
+          <thead>
+            <tr>
+              <th scope="col">Measure</th>
+              <th scope="col">Run #{{ before.run_id }}</th>
+              <th class="mq-table__cell--num" scope="col">Score</th>
+              <th scope="col">Run #{{ row.run_id }}</th>
+              <th class="mq-table__cell--num" scope="col">Score</th>
+              <th class="mq-table__cell--num" scope="col">Score change</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Recency</td>
+              <td>{{ days(change.previous.recency_days) }}</td>
+              <td class="mq-table__cell--num">{{ score(before.r_score) }}</td>
+              <td>{{ days(entry.recency_days) }}</td>
+              <td class="mq-table__cell--num">{{ score(row.r_score) }}</td>
+              <td class="mq-table__cell--num">{{ "{:+d}".format(explanation.recency.score_delta) if explanation.recency.score_delta is not none else "—" }}</td>
+            </tr>
+            <tr>
+              <td>Frequency</td>
+              <td>{% if before.frequency_count is not none %}{{ before.frequency_count }} {{ noun(before.frequency_count, "purchase") }}{% else %}—{% endif %}</td>
+              <td class="mq-table__cell--num">{{ score(before.f_score) }}</td>
+              <td>{% if row.frequency_count is not none %}{{ row.frequency_count }} {{ noun(row.frequency_count, "purchase") }}{% else %}—{% endif %}</td>
+              <td class="mq-table__cell--num">{{ score(row.f_score) }}</td>
+              <td class="mq-table__cell--num">{{ "{:+d}".format(explanation.frequency.score_delta) if explanation.frequency.score_delta is not none else "—" }}</td>
+            </tr>
+            <tr>
+              <td>Monetary</td>
+              <td>{% if before.monetary_total is not none %}{{ money(before.monetary_total) }} MXN{% else %}—{% endif %}</td>
+              <td class="mq-table__cell--num">{{ score(before.m_score) }}</td>
+              <td>{% if row.monetary_total is not none %}{{ money(row.monetary_total) }} MXN{% else %}—{% endif %}</td>
+              <td class="mq-table__cell--num">{{ score(row.m_score) }}</td>
+              <td class="mq-table__cell--num">{{ "{:+d}".format(explanation.monetary.score_delta) if explanation.monetary.score_delta is not none else "—" }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      {% if explanation.most_changed_caption %}
+        <div class="mq-panel__body"><p class="mq-caption">{{ explanation.most_changed_caption }}</p></div>
+      {% endif %}
+    </section>
+
+    <section class="mq-panel" aria-labelledby="entered-title">
+      <header class="mq-panel__header">
+        <h2 class="mq-panel__title" id="entered-title">Sales that entered the calculation</h2>
+        <span class="mq-caption">In run #{{ row.run_id }}'s window ({{ day(change.window.start) }} to {{ day(change.window.end) }}) and not in run #{{ before.run_id }}'s ({{ day(change.previous_window.start) }} to {{ day(change.previous_window.end) }})</span>
+      </header>
+      {% if change.entered %}
+        {{ sales_table(change.entered, change.entered_total) }}
+      {% else %}
+        <div class="mq-panel__body"><p class="mq-caption">No accepted sale entered run #{{ row.run_id }}'s window that run #{{ before.run_id }} had not already counted.</p></div>
+      {% endif %}
+    </section>
+
+    <section class="mq-panel" aria-labelledby="left-title">
+      <header class="mq-panel__header">
+        <h2 class="mq-panel__title" id="left-title">Sales that left the window</h2>
+        <span class="mq-caption">Counted by run #{{ before.run_id }} and too old for run #{{ row.run_id }}</span>
+      </header>
+      {% if change.left %}
+        {{ sales_table(change.left, change.left_total) }}
+      {% else %}
+        <div class="mq-panel__body"><p class="mq-caption">Every sale run #{{ before.run_id }} counted was still inside run #{{ row.run_id }}'s window.</p></div>
+      {% endif %}
+    </section>
+
+    <p class="mq-caption">Windows are rebuilt from each run's date and length. A sale imported after a run but dated before it appears here as if that run had counted it.</p>
+  {% endif %}
+{% endblock %}

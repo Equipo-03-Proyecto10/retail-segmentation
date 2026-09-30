@@ -384,6 +384,7 @@ the delivery date is the most common way this kind of project fails.
 | F7-04 | Detect each customer's label migration between any two completed runs, including the unassigned state | P0 | F7-02 |
 | F7-05 | Migration matrix for two selected runs | P0 | F7-03, F7-04 |
 | F7-06 | Per-customer migration explanation from the R, F and M measure and score deltas between two runs | P0 | F7-05 |
+| F7-07 | Customer segment timeline: every assignment with R/F/M, the assignment open as of a date, recency in days, the date a label was entered, and the sales that entered and left the calculation between two runs (#337) | P0 | F7-06 |
 
 **The label vocabulary starts here.** Assignment history needs a constrained
 label before it can store the first durable result. Putting the vocabulary in

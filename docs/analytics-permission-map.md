@@ -7,6 +7,7 @@ reuses an existing declaration, per ADR-0007.
 | Phase | Surface | Permission | Profiles |
 |---|---|---|---|
 | 7 | Segment assignment history / migration (read) | `segment.read` (existing) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
+| 7 | Customer segment timeline, as-of lookup and the sales behind a change (`/catalog/customers/<id>`, `/catalog/customers/<id>/segment-changes/<run>`, #337) | `segment.read` (existing) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | 7 | Run RFM_RULES / KMEANS | `segment_run.execute` (existing) | ADMIN |
 | 8 | Sales CSV ingestion | `sales_ingest.execute` (/admin/sales-import/) | ADMIN |
 | 8 | Consumption profile (read) | `segment.read` (existing) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |

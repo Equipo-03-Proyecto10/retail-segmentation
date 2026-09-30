@@ -64,6 +64,12 @@ ANALYTICS_ROUTES: tuple[tuple[str, str, str, str], ...] = (
         f"/catalog/customers/{USER_ID}/recommendations",
         SEGMENT_READ,
     ),
+    (
+        "catalog.customer_segment_change",
+        "GET",
+        f"/catalog/customers/{USER_ID}/segment-changes/1",
+        SEGMENT_READ,
+    ),
     ("run_history.index", "GET", "/run-history/", SEGMENT_READ),
     ("run_history.detail", "GET", "/run-history/1", SEGMENT_READ),
     ("migration_matrix.index", "GET", "/migration-matrix/", SEGMENT_READ),

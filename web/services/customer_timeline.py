@@ -53,7 +53,13 @@ from web.db.customer_timeline import (
     list_history_rows,
     list_sales_in_window_only,
 )
-from web.services.segment_migration import MigrationExplanation, explain_migration
+from web.services.segment_migration import (
+    MigrationExplanation,
+    MigrationNarrative,
+    describe_migration,
+    explain_migration,
+    recency_days,
+)
 
 
 class UnknownChange(LookupError):
@@ -75,6 +81,9 @@ class TimelineEntry:
     recency_days: int | None
     changed: bool
     is_first: bool
+    # The run of the assignment immediately before this one, which is the
+    # earlier run of this entry's migration explanation (#338).
+    previous_run_id: int | None = None
 
     @property
     def is_open(self) -> bool:
@@ -92,6 +101,8 @@ class Timeline:
     comparison: MigrationExplanation | None
     as_of: date | None = None
     as_of_entry: TimelineEntry | None = None
+    # The comparison in plain language (#338), None exactly when it is.
+    narrative: MigrationNarrative | None = None
 
 
 @dataclass(frozen=True)
@@ -116,6 +127,7 @@ class SegmentChange:
     previous_window: RunWindow | None
     entered: tuple[SaleRow, ...]
     left: tuple[SaleRow, ...]
+    narrative: MigrationNarrative | None = None
 
     @property
     def entered_total(self) -> Decimal:
@@ -127,14 +139,6 @@ class SegmentChange:
 
 
 # ---------- the rules, pure ----------
-
-
-def recency_days(last_purchase_at: datetime | None, run_at: datetime) -> int | None:
-    """Whole days from the last purchase to the run that measured it, or None
-    when the run found no purchase (an unassigned result, RN-21)."""
-    if last_purchase_at is None:
-        return None
-    return (run_at - last_purchase_at).days
 
 
 def _contiguous(earlier: HistoryRow, later: HistoryRow) -> bool:
@@ -160,6 +164,7 @@ def build_entries(rows: list[HistoryRow]) -> tuple[TimelineEntry, ...]:
                 recency_days=recency_days(row.last_purchase_at, row.run_at),
                 changed=before is not None and before.label_code != row.label_code,
                 is_first=before is None,
+                previous_run_id=before.run_id if before is not None else None,
             )
         )
     return tuple(reversed(entries))
@@ -190,6 +195,16 @@ def run_window(row: HistoryRow) -> RunWindow:
     return RunWindow(start=row.run_at - timedelta(days=row.window_days), end=row.run_at)
 
 
+def _narrate(
+    explanation: MigrationExplanation, previous: TimelineEntry, entry: TimelineEntry
+) -> MigrationNarrative:
+    return describe_migration(
+        explanation,
+        run_at_before=previous.row.run_at,
+        run_at_after=entry.row.run_at,
+    )
+
+
 def _neighbours(
     entries: tuple[TimelineEntry, ...], index: int
 ) -> tuple[TimelineEntry, TimelineEntry | None]:
@@ -208,11 +223,12 @@ def build_timeline(
     entries = build_entries(list_history_rows(connection, customer_id))
 
     current = previous = None
-    comparison = None
+    comparison = narrative = None
     if entries and entries[0].is_open:
         current, previous = _neighbours(entries, 0)
         if previous is not None:
             comparison = explain_migration(previous.row, current.row)
+            narrative = _narrate(comparison, previous, current)
 
     as_of_entry = None
     if as_of is not None:
@@ -225,6 +241,7 @@ def build_timeline(
         comparison=comparison,
         as_of=as_of,
         as_of_entry=as_of_entry,
+        narrative=narrative,
     )
 
 
@@ -266,12 +283,14 @@ def build_change(
         run_id=previous.row.run_id,
         excluding_run_id=entry.row.run_id,
     )
+    explanation = explain_migration(previous.row, entry.row)
     return SegmentChange(
         entry=entry,
         previous=previous,
-        explanation=explain_migration(previous.row, entry.row),
+        explanation=explanation,
         window=run_window(entry.row),
         previous_window=run_window(previous.row),
         entered=tuple(entered),
         left=tuple(left),
+        narrative=_narrate(explanation, previous, entry),
     )

@@ -61,6 +61,12 @@ developer machine, which
 [ADR-0015](../adr/0015-containers-are-a-development-path-only.md) settles as the
 right place for it, and which the team accepted on 2026-09-07.
 
+## Phase 7 — segmentation traceability
+
+| Document | What it records |
+|---|---|
+| [F7-08](f7-08-migration-explanation-links.md) | The migration explanation linked from the matrix and the customer timeline and stated in plain language: recency in days, RN-48's changed/stable thresholds, a label moved only by the quintile cut points, and a new customer shown as new, at 375 px and 1440 px |
+
 ## Phase 8 — sales ingestion and consumption profile
 
 | Document | What it records |

@@ -6,47 +6,73 @@
 
 {% block content %}
   {% from "macros/ui.html" import page_header %}
-  {{ page_header(customer_name, "Between run #" ~ earlier_run.run_id ~ " (" ~ earlier_run.run_at.strftime("%Y-%m-%d") ~ ") and run #" ~ later_run.run_id ~ " (" ~ later_run.run_at.strftime("%Y-%m-%d") ~ ").", "Migration explanation") }}
+  {% from "macros/migration.html" import explanation_sentences, migration_headline, score_change %}
+  {% macro money(value) %}{{ "{:,.2f}".format(value) }}{% endmacro %}
+  {% macro day(moment) %}{{ moment.strftime("%Y-%m-%d") }}{% endmacro %}
+  {% macro noun(n, singular) %}{{ singular if n == 1 else singular ~ "s" }}{% endmacro %}
+  {% macro recency(n, last_purchase_at) %}{{ n }} {{ noun(n, "day") }} <span class="mq-caption">last purchase {{ day(last_purchase_at) }}</span>{% endmacro %}
+  {% macro missing(in_run) %}<span class="mq-caption">{{ "Not measured" if in_run else "Not in this run" }}</span>{% endmacro %}
 
-  <section class="mq-panel">
+  {% call page_header(customer_name, "Between run #" ~ earlier_run.run_id ~ " (" ~ day(earlier_run.run_at) ~ ") and run #" ~ later_run.run_id ~ " (" ~ day(later_run.run_at) ~ ").", "Migration explanation") %}
+    <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('catalog.customer_detail', customer_id=customer_id) }}">Customer timeline</a>
+    <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('migration_matrix.index', run_a=earlier_run.run_id, run_b=later_run.run_id) }}">Migration matrix</a>
+  {% endcall %}
+
+  <section class="mq-panel" aria-labelledby="why-title">
+    <header class="mq-panel__header"><h2 class="mq-panel__title" id="why-title">Why</h2></header>
     <div class="mq-panel__body">
-      {% if explanation.label_changed %}
-        <p><strong>{{ explanation.label_before or "Unassigned" }}</strong> → <strong>{{ explanation.label_after or "Unassigned" }}</strong></p>
-      {% else %}
-        <p>The label did not change: stayed <strong>{{ explanation.label_before or "Unassigned" }}</strong>.</p>
-      {% endif %}
-      {% if explanation.most_changed_caption %}
-        <p class="mq-caption">{{ explanation.most_changed_caption }}</p>
-      {% endif %}
+      {{ migration_headline(explanation, narrative, earlier_run.run_id, later_run.run_id) }}
+      {{ explanation_sentences(narrative) }}
     </div>
   </section>
 
-  <section class="mq-panel mq-panel--table mq-density-compact">
+  <section class="mq-panel mq-panel--table mq-density-compact" aria-labelledby="scores-title">
+    <header class="mq-panel__header"><h2 class="mq-panel__title" id="scores-title">Values and scores</h2></header>
     <div class="mq-table-wrap">
       <table class="mq-table">
         <thead>
           <tr>
-            <th scope="col">Component</th>
-            <th scope="col">Raw before</th>
-            <th scope="col">Score before</th>
-            <th scope="col">Raw after</th>
-            <th scope="col">Score after</th>
-            <th scope="col">Score delta</th>
+            <th scope="col">Measure</th>
+            <th scope="col">Run #{{ earlier_run.run_id }}</th>
+            <th class="mq-table__cell--num" scope="col">Score</th>
+            <th scope="col">Run #{{ later_run.run_id }}</th>
+            <th class="mq-table__cell--num" scope="col">Score</th>
+            <th class="mq-table__cell--num" scope="col">Score change</th>
           </tr>
         </thead>
         <tbody>
-          {% for component in [explanation.recency, explanation.frequency, explanation.monetary] %}
-            <tr>
-              <td>{{ component.name }}</td>
-              <td class="mq-mono">{% if component.raw_before is none %}No scores for this run{% else %}{{ component.raw_before }}{% endif %}</td>
-              <td class="mq-num">{% if component.score_before is none %}—{% else %}{{ component.score_before }}{% endif %}</td>
-              <td class="mq-mono">{% if component.raw_after is none %}No scores for this run{% else %}{{ component.raw_after }}{% endif %}</td>
-              <td class="mq-num">{% if component.score_after is none %}—{% else %}{{ component.score_after }}{% endif %}</td>
-              <td class="mq-num mq-mono">{% if component.score_delta is none %}—{% else %}{{ "%+d"|format(component.score_delta) }}{% endif %}</td>
-            </tr>
-          {% endfor %}
+          {% set r = explanation.recency %}
+          {% set f = explanation.frequency %}
+          {% set m = explanation.monetary %}
+          <tr>
+            <td>Recency</td>
+            <td>{% if r.raw_before is none %}{{ missing(explanation.in_earlier) }}{% else %}{{ recency(narrative.recency_days_before, r.raw_before) }}{% endif %}</td>
+            <td class="mq-table__cell--num">{{ r.score_before if r.score_before is not none else "—" }}</td>
+            <td>{% if r.raw_after is none %}{{ missing(explanation.in_later) }}{% else %}{{ recency(narrative.recency_days_after, r.raw_after) }}{% endif %}</td>
+            <td class="mq-table__cell--num">{{ r.score_after if r.score_after is not none else "—" }}</td>
+            <td class="mq-table__cell--num">{{ score_change(r) }}</td>
+          </tr>
+          <tr>
+            <td>Frequency</td>
+            <td>{% if f.raw_before is none %}{{ missing(explanation.in_earlier) }}{% else %}{{ f.raw_before }} {{ noun(f.raw_before, "purchase") }}{% endif %}</td>
+            <td class="mq-table__cell--num">{{ f.score_before if f.score_before is not none else "—" }}</td>
+            <td>{% if f.raw_after is none %}{{ missing(explanation.in_later) }}{% else %}{{ f.raw_after }} {{ noun(f.raw_after, "purchase") }}{% endif %}</td>
+            <td class="mq-table__cell--num">{{ f.score_after if f.score_after is not none else "—" }}</td>
+            <td class="mq-table__cell--num">{{ score_change(f) }}</td>
+          </tr>
+          <tr>
+            <td>Monetary</td>
+            <td>{% if m.raw_before is none %}{{ missing(explanation.in_earlier) }}{% else %}{{ money(m.raw_before) }} MXN{% endif %}</td>
+            <td class="mq-table__cell--num">{{ m.score_before if m.score_before is not none else "—" }}</td>
+            <td>{% if m.raw_after is none %}{{ missing(explanation.in_later) }}{% else %}{{ money(m.raw_after) }} MXN{% endif %}</td>
+            <td class="mq-table__cell--num">{{ m.score_after if m.score_after is not none else "—" }}</td>
+            <td class="mq-table__cell--num">{{ score_change(m) }}</td>
+          </tr>
         </tbody>
       </table>
+    </div>
+    <div class="mq-panel__body">
+      <p class="mq-caption">Scores are quintiles among every customer a run measured, so they can move when other customers do. A K-means run stores values but no scores.</p>
     </div>
   </section>
 {% endblock %}

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -189,9 +190,20 @@ def _percent(rate: float | None) -> str:
     return "" if rate is None else f"{rate * 100:.2f}"
 
 
+# A plain number, negative included. The figures are formatted to strings before
+# they are written, so a negative uplift starts with "-" like a formula would;
+# it is a number, not text, and must stay one (#358).
+_NUMBER = re.compile(r"-?\d+(\.\d+)?")
+
+
 def _safe(value: object) -> object:
-    """Stop a spreadsheet reading a text cell as a formula."""
-    if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r"):
+    """Stop a spreadsheet reading a text cell as a formula. A number is left
+    alone: `-50.00` is a value, and quoting it would turn it into text."""
+    if (
+        isinstance(value, str)
+        and value[:1] in ("=", "+", "-", "@", "\t", "\r")
+        and _NUMBER.fullmatch(value) is None
+    ):
         return "'" + value
     return value
 

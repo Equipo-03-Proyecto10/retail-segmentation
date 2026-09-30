@@ -198,7 +198,7 @@ def test_the_filter_sql_is_parameterized_and_the_count_shares_it() -> None:
         connection, campaign_id=7, data_origin="SEEDED", limit=10, offset=0
     )
 
-    (page_call, count_call) = cursor.execute.call_args_list
+    page_call, count_call = cursor.execute.call_args_list
     for call in (page_call, count_call):
         assert "e.campaign_id = %(campaign)s::int" in call.args[0]
         assert "e.data_origin = %(origin)s::text" in call.args[0]

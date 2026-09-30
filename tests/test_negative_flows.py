@@ -50,6 +50,7 @@ READ_ROUTES = [
     "/campaigns/",
     "/experiments/",
     "/experiments/1/exposure",
+    "/experiments/1/groups/1",
     "/experiments/1/conversion",
     "/experiments/1/uplift",
     "/experiment-report/",
@@ -97,6 +98,7 @@ CAMPAIGN_WRITE_ROUTES = [
     ("GET", "/experiments/1/assign"),
     ("POST", "/experiments/1/assign"),
     ("POST", "/experiments/1/exposure"),
+    ("POST", "/experiments/1/groups/1"),
     ("POST", "/experiments/1/conversion"),
 ]
 PROTECTED_ROUTES = (

@@ -7,7 +7,7 @@ web/services/experiments.py, which owns the transaction (ADR-0014).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 
 from psycopg import Connection
 
@@ -49,6 +49,18 @@ class GroupCounts:
     name: str
     control_groups: int
     treatment_groups: int
+
+
+@dataclass(frozen=True)
+class ExperimentGroup:
+    """A fixed, user-facing experiment arm definition."""
+
+    group_id: int
+    experiment_id: int
+    kind: str
+    name: str
+    treatment_description: str
+    assigned: int = 0
 
 
 # One row per experiment with its group and assignment counts; the two reads
@@ -141,11 +153,32 @@ def create_experiment(
     conversion_window_days: int,
     data_origin: str,
     treatment_groups: int,
+    group_definitions: list[tuple[str, str]],
+    control_group: bool = True,
 ) -> int | None:
-    """Insert an experiment with one control and `treatment_groups` treatment
-    groups under the next free ids, and return its id; or None when one with
+    """Insert an experiment with optional control and treatment groups.
+
+    ``group_definitions`` is ordered control first (when present), followed by
+    treatment arms, and must contain a non-empty name and description for each
+    arm.
+    Return None when one with
     the same name, campaign and start date already exists (a resubmitted
     form, as #296 found for campaigns, not a second experiment)."""
+    if not control_group and treatment_groups != 2:
+        raise ValueError("a no-control experiment requires exactly two treatments")
+    if treatment_groups < 1:
+        raise ValueError("at least one treatment group is required")
+    if not group_definitions:
+        raise ValueError("one name and treatment description are required per arm")
+    kinds = ([CONTROL] if control_group else []) + [TREATMENT] * treatment_groups
+    definitions = group_definitions
+    if len(definitions) != len(kinds):
+        raise ValueError("one name and treatment description are required per arm")
+    if any(
+        not arm_name.strip() or not description.strip()
+        for arm_name, description in definitions
+    ):
+        raise ValueError("arm names and treatment descriptions cannot be blank")
     with connection.cursor() as cursor:
         cursor.execute("SELECT pg_advisory_xact_lock(%s)", (_CREATE_LOCK_KEY,))
         cursor.execute(
@@ -180,14 +213,17 @@ def create_experiment(
         experiment_id = cursor.fetchone()[0]
         cursor.execute("SELECT COALESCE(max(group_id), 0) FROM experiment_group")
         last_group = cursor.fetchone()[0]
-        kinds = [CONTROL] + [TREATMENT] * treatment_groups
+        rows = [
+            (last_group + offset, experiment_id, kind, *definition)
+            for offset, (kind, definition) in enumerate(
+                zip(kinds, definitions, strict=True), start=1
+            )
+        ]
         cursor.executemany(
-            "INSERT INTO experiment_group (group_id, experiment_id, kind) "
-            "VALUES (%s, %s, %s)",
-            [
-                (last_group + offset, experiment_id, kind)
-                for offset, kind in enumerate(kinds, start=1)
-            ],
+            "INSERT INTO experiment_group "
+            "(group_id, experiment_id, kind, name, treatment_description) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            rows,
         )
         return experiment_id
 
@@ -267,6 +303,83 @@ def list_groups(connection: Connection, experiment_id: int) -> list[tuple[int, s
         return [(group_id, kind) for group_id, kind in cursor.fetchall()]
 
 
+def list_group_definitions(
+    connection: Connection, experiment_id: int
+) -> list[ExperimentGroup]:
+    """Read arm labels and descriptions with assigned counts."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT g.group_id, g.experiment_id, g.kind, g.name,
+                   g.treatment_description, count(a.assignment_id)
+              FROM experiment_group AS g
+              LEFT JOIN experiment_assignment AS a ON a.group_id = g.group_id
+             WHERE g.experiment_id = %s
+             GROUP BY g.group_id, g.experiment_id, g.kind, g.name,
+                      g.treatment_description
+             ORDER BY g.kind <> 'CONTROL', g.group_id
+            """,
+            (experiment_id,),
+        )
+        return [ExperimentGroup(*row) for row in cursor.fetchall()]
+
+
+def list_assigned_customers(
+    connection: Connection, experiment_id: int, group_id: int
+) -> list[tuple[int, str, datetime, bool]]:
+    """Assigned customers for an arm and whether each has an exposure."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT a.assignment_id, a.customer_id::text, a.assigned_at,
+                   EXISTS (SELECT 1 FROM experiment_exposure AS x
+                            WHERE x.assignment_id = a.assignment_id)
+              FROM experiment_assignment AS a
+             WHERE a.experiment_id = %s AND a.group_id = %s
+             ORDER BY a.customer_id
+            """,
+            (experiment_id, group_id),
+        )
+        return [
+            (row[0], str(row[1]), row[2], bool(row[3])) for row in cursor.fetchall()
+        ]
+
+
+def list_assignment_ids(
+    connection: Connection,
+    experiment_id: int,
+    group_id: int,
+    customer_ids: list[str] | None = None,
+) -> list[int]:
+    """Return treatment assignment ids, optionally narrowed to selected IDs."""
+    with connection.cursor() as cursor:
+        if customer_ids:
+            cursor.execute(
+                """
+                SELECT a.assignment_id
+                  FROM experiment_assignment AS a
+                  JOIN experiment_group AS g ON g.group_id = a.group_id
+                 WHERE a.experiment_id = %s AND a.group_id = %s
+                   AND g.kind = 'TREATMENT' AND a.customer_id = ANY(%s::uuid[])
+                 ORDER BY a.assignment_id
+                """,
+                (experiment_id, group_id, customer_ids),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT a.assignment_id
+                  FROM experiment_assignment AS a
+                  JOIN experiment_group AS g ON g.group_id = a.group_id
+                 WHERE a.experiment_id = %s AND a.group_id = %s
+                   AND g.kind = 'TREATMENT'
+                 ORDER BY a.assignment_id
+                """,
+                (experiment_id, group_id),
+            )
+        return [row[0] for row in cursor.fetchall()]
+
+
 def read_target_population(connection: Connection, label_code: str) -> list[str]:
     """Every customer whose open segment assignment carries the label, in
     customer_id order: the population a campaign on that label targets now."""
@@ -315,6 +428,8 @@ class GroupExposure:
     kind: str
     assigned: int
     exposed: int
+    name: str = ""
+    treatment_description: str = ""
 
 
 def find_assignment(
@@ -356,11 +471,12 @@ def list_group_exposure(
             SELECT g.group_id, g.kind, count(a.assignment_id),
                    count(a.assignment_id) FILTER (
                        WHERE EXISTS (SELECT 1 FROM experiment_exposure AS x
-                                      WHERE x.assignment_id = a.assignment_id))
+                       WHERE x.assignment_id = a.assignment_id)),
+                   g.name, g.treatment_description
               FROM experiment_group AS g
               LEFT JOIN experiment_assignment AS a ON a.group_id = g.group_id
              WHERE g.experiment_id = %s
-             GROUP BY g.group_id, g.kind
+             GROUP BY g.group_id, g.kind, g.name, g.treatment_description
              ORDER BY g.kind <> 'CONTROL', g.group_id
             """,
             (experiment_id,),

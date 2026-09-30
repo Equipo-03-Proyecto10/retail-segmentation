@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ arm.name }} · {{ application_name }}{% endblock %}
+{% block topbar_title %}{{ arm.name }}{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Analysis / Campaigns / Experiments / Arm{% endblock %}
+{% block content %}
+  {% from "macros/ui.html" import alert, page_header, status_pill %}
+  {% set writable = arm.kind == "TREATMENT" and can("campaign.write") %}
+  {{ page_header(arm.name, "This arm definition is fixed once assignment begins. Assigned customers remain in the denominator whether exposed or not.", "Experiments") }}
+  {% if error %}{{ alert(error, "danger", "Exposure not recorded") }}{% endif %}
+  <section class="mq-panel">
+    <header class="mq-panel__header"><h2 class="mq-panel__title">{{ arm.name }} · {{ arm.kind.title() }}</h2>{% if arm.kind == "CONTROL" %}{{ status_pill("Control · never exposed", "neutral") }}{% endif %}</header>
+    <div class="mq-panel__body"><p>{{ arm.treatment_description or "No treatment description provided." }}</p>
+      {% if customers %}
+      {% if writable %}<form class="mq-form" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="mq-field"><span class="mq-field__label"><input type="checkbox" name="all_customers"> Record exposure for every assigned customer</span></label>
+      {% endif %}
+        <div class="mq-table-wrap"><table class="mq-table"><thead><tr>{% if writable %}<th scope="col">Select</th>{% endif %}<th scope="col">Customer</th><th scope="col">Assigned at</th><th scope="col">Exposure</th></tr></thead><tbody>
+          {% for assignment_id, customer_id, assigned_at, exposed in customers %}<tr>{% if writable %}<td>{% if not exposed %}<input type="checkbox" name="customer_id" value="{{ customer_id }}" aria-label="Select customer {{ customer_id }}">{% endif %}</td>{% endif %}<td class="mq-mono">{{ customer_id }}</td><td>{{ assigned_at.strftime("%Y-%m-%d %H:%M") }}</td><td>{% if exposed %}Recorded{% elif arm.kind == "CONTROL" %}Never exposed{% else %}Not exposed{% endif %}</td></tr>{% endfor %}
+        </tbody></table></div>
+        {% if writable %}<div class="mq-form__actions"><button class="mq-btn mq-btn--primary" type="submit">Record selected exposures</button></div></form>{% endif %}
+      {% else %}<p>No customers are assigned to this arm.</p>{% endif %}
+    </div>
+  </section>
+{% endblock %}

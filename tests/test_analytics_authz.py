@@ -92,6 +92,13 @@ ANALYTICS_ROUTES: tuple[tuple[str, str, str, str], ...] = (
     ("experiments.assign", "GET", "/experiments/1/assign", CAMPAIGN_WRITE),
     ("experiments.assign", "POST", "/experiments/1/assign", CAMPAIGN_WRITE),
     ("experiments.exposure", "GET", "/experiments/1/exposure", CAMPAIGN_READ),
+    ("experiments.group", "GET", "/experiments/1/groups/1", CAMPAIGN_READ),
+    (
+        "experiments.record_group_exposures",
+        "POST",
+        "/experiments/1/groups/1",
+        CAMPAIGN_WRITE,
+    ),
     ("experiments.record_exposure", "POST", "/experiments/1/exposure", CAMPAIGN_WRITE),
     ("experiments.conversion", "GET", "/experiments/1/conversion", CAMPAIGN_READ),
     (

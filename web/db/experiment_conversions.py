@@ -29,6 +29,8 @@ class GroupConversion:
     pending: int
     not_converted: int
     unrecorded: int
+    name: str = ""
+    treatment_description: str = ""
 
 
 @dataclass(frozen=True)
@@ -114,11 +116,12 @@ def list_group_conversion(
                    count(*) FILTER (WHERE o.converted),
                    count(*) FILTER (WHERE NOT o.converted AND o.open),
                    count(*) FILTER (WHERE NOT o.converted AND NOT o.open),
-                   count(*) FILTER (WHERE NOT o.converted AND o.qualifies)
+                   count(*) FILTER (WHERE NOT o.converted AND o.qualifies),
+                   g.name, g.treatment_description
               FROM experiment_group AS g
               LEFT JOIN outcome AS o ON o.group_id = g.group_id
              WHERE g.experiment_id = %s
-             GROUP BY g.group_id, g.kind
+             GROUP BY g.group_id, g.kind, g.name, g.treatment_description
              ORDER BY g.kind <> 'CONTROL', g.group_id
             """,
             (now, experiment_id, experiment_id),

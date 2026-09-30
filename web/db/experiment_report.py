@@ -27,6 +27,8 @@ class ReportGroup:
     converted: int
     pending: int
     unrecorded: int = 0
+    name: str = ""
+    treatment_description: str = ""
 
     @property
     def not_converted(self) -> int:
@@ -116,11 +118,13 @@ def list_report_groups(
                    count(*) FILTER (WHERE f.exposed),
                    count(*) FILTER (WHERE f.converted),
                    count(*) FILTER (WHERE NOT f.converted AND f.open),
-                   count(*) FILTER (WHERE NOT f.converted AND f.qualifies)
+                   count(*) FILTER (WHERE NOT f.converted AND f.qualifies),
+                   g.name, g.treatment_description
               FROM experiment_group AS g
               LEFT JOIN flags AS f ON f.group_id = g.group_id
              WHERE g.experiment_id = ANY(%s)
-             GROUP BY g.experiment_id, g.group_id, g.kind
+             GROUP BY g.experiment_id, g.group_id, g.kind,
+                      g.name, g.treatment_description
              ORDER BY g.experiment_id DESC, g.kind <> 'CONTROL', g.group_id
             """,
             (now, experiment_ids, experiment_ids),

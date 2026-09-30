@@ -586,12 +586,19 @@ them. They are runtime history and carry the same seed exemption as
 | `group_id` | `INT` | NN | PK | Group identifier |
 | `experiment_id` | `INT` | NN | FK → `experiment`, `CASCADE`; UQ with `group_id` | Its experiment |
 | `kind` | `VARCHAR(20)` | NN | `CHECK IN ('CONTROL','TREATMENT')` | Which arm |
+| `name` | `VARCHAR(120)` | NN | — | User-facing arm name, fixed once assigned |
+| `treatment_description` | `VARCHAR(500)` | NN | — | User-facing treatment description, fixed once assigned |
 
-At most one `CONTROL` row per experiment:
+At most one `CONTROL` row per experiment; zero is valid for the two-treatment
+no-control design (ADR-0028):
 `ux_experiment_one_control ON experiment_group (experiment_id) WHERE kind = 'CONTROL'`.
 `UNIQUE (group_id, experiment_id)` exists so `experiment_assignment`'s
 composite foreign key can pin an assignment to both its group and that
 group's experiment at once.
+
+`trg_experiment_group_definition_immutable` rejects a kind, name or treatment
+description change after the first assignment, preserving the arm definition
+used by every later exposure, conversion and export (ADR-0028).
 
 #### `experiment_assignment`
 

@@ -114,6 +114,8 @@ def compare_proportions(
 class ArmResult:
     group_id: int
     comparison: Comparison
+    name: str = ""
+    treatment_description: str = ""
 
 
 @dataclass(frozen=True)
@@ -139,8 +141,8 @@ def refusal_before_counts(
     """Why uplift cannot be measured from the experiment's setup alone, or None."""
     if control_groups < 1:
         return (
-            f"Experiment {experiment_id} has no control group. Uplift is measured "
-            "against the control, never against everyone else."
+            f"Experiment {experiment_id} has no control group. Control-relative "
+            "uplift cannot be computed; never against everyone else."
         )
     if target_metric != CONVERSION_METRIC:
         return (
@@ -189,6 +191,8 @@ def compare_arms(
             compare_proportions(
                 control.assigned, control.converted, g.assigned, g.converted
             ),
+            g.name,
+            g.treatment_description,
         )
         for g in treatments
     )

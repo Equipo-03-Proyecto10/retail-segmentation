@@ -20,7 +20,7 @@ changed, without calling each other over HTTP
 - a deactivation must end the user's sessions;
 - a purchase must become an activity.
 
-The web system stays out (#398). It has its own PostgreSQL sessions and gains
+The web system stays out (#398). The instructor confirmed on 2026-10-13 that the requirement applies to the services, not to the web system (Q-12 in [`../scope-delivery-2-distributed.md`](../scope-delivery-2-distributed.md)). It has its own PostgreSQL sessions and gains
 no dependency on Redis.
 
 The design in [`../datastores/redis-design.md`](../datastores/redis-design.md)

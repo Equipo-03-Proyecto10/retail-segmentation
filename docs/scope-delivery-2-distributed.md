@@ -192,7 +192,13 @@ The distributed stage is complete when all of these are checkable and pass:
 | Postfix SMTP for verification | Out of scope pending F13-10 | Not in our requirements, and port 25 is blocked on GCP |
 | Services for books, authors, orders and payments | Catalog, customers, sales, plus inventory, segments and activity | Our domain has no payments, and its distinctive data needs services (ADR-0034) |
 
-## 10. Open questions
+## 10. Answered by the instructor
+
+| ID | Answer |
+|---|---|
+| Q-12 | **ANSWERED (2026-10-13).** The course's Redis requirement says that every component consults Redis during authentication or authorization. That means the microservices, not the web system. The web system connects to no Redis and keeps its PostgreSQL sessions ([ADR-0022](adr/0022-sessions-are-resolved-server-side-on-every-request.md)). Only the services consult Redis ([ADR-0037](adr/0037-redis-holds-sessions-cache-limits-and-events-for-the-services-only.md)) |
+
+## 11. Open questions
 
 | ID | Question | Working assumption |
 |---|---|---|

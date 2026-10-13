@@ -728,4 +728,4 @@ no Redis and consumes no service.
 [adr-0018]: adr/0018-two-segmentation-strategies-behind-one-method-agnostic-pipeline.md
 [adr-0019]: adr/0019-experiment-measurement-separates-assignment-exposure-and-conversion.md
 [adr-0020]: adr/0020-csv-is-the-sole-sales-ingestion-entry-point-for-this-delivery.md
-[adr-0035]: adr/0035-integration-contracts-are-written-before-the-code-that-serves-or-consumes-them.md
+[adr-0035]: adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md

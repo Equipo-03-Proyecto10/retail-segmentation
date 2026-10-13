@@ -69,18 +69,23 @@ records (#251), and reached `main` the same way. Its owner accepted it on
 implemented and deployed exactly as decided, and this transition records that
 rather than backdating it. Its decision text is unchanged.
 
-ADR-0034 to ADR-0042 are the distributed-stage decision set that ADR-0016
-requires before any service, contract or client exists (#398). They are
-proposed together in one pull request, with the documents that rest on them:
-`AGENTS.md`, `docs/roadmap.md`, `docs/requirements.md` and
-`docs/scope-delivery-2-distributed.md`. **That pull request must not merge
-while any of the nine still reads `Proposed`.** Each is accepted or rejected in
-review (F13-01, #408), so that this set does not repeat what happened to 0014–0016.
+ADR-0034 to ADR-0046 are the distributed-stage decision set that ADR-0016
+requires before any service, contract or client exists (#398). ADR-0034 to
+ADR-0042 were first proposed for eight services. They were rewritten in place,
+still `Proposed`, for the fifteen single-rule services the instructor's
+requirements call for, and ADR-0043 to ADR-0046 were added. They are proposed
+together in one pull request, with the documents that rest on them:
+`AGENTS.md`, `docs/roadmap.md`, `docs/requirements.md`,
+`docs/datastores/README.md` and `docs/scope-delivery-2-distributed.md`.
+**That pull request must not merge while any of the thirteen still reads
+`Proposed`.** Each is accepted or rejected in review (F13-01, #408), so that
+this set does not repeat what happened to 0014–0016.
 
-Two status lines change only when their successor is accepted, in the same
+Three status lines change only when their successor is accepted, in the same
 pull request:
 - ADR-0015 becomes `Superseded by ADR-0040`.
-- ADR-0020 becomes `Partially superseded by ADR-0039 (sole entry point only)`.
+- ADR-0016 becomes `Partially superseded by ADR-0043 (service count only)`.
+- ADR-0020 becomes `Partially superseded by ADR-0039`.
 
 ADR-0026 and ADR-0030 to ADR-0033 are still `Proposed`, although their
 implementations have merged. AN-01 (#407) tracks their acceptance and the
@@ -123,15 +128,19 @@ record of this exception.
 | [0031](0031-sales-ingestion-decrements-inventory-atomically.md) | Accepted sales decrement inventory atomically | Proposed |
 | [0032](0032-server-side-sessions-have-idle-and-absolute-lifetimes.md) | Server-side sessions have idle and absolute lifetimes | Proposed |
 | [0033](0033-duplicate-transport-security-policy-at-application-and-proxy.md) | Keep the transport security policy at Flask and NGINX | Proposed |
-| [0034](0034-eight-services-share-one-postgresql-each-the-sole-service-writer-of-its-tables.md) | Eight services share one PostgreSQL database, each the only service that writes its tables | Proposed |
-| [0035](0035-integration-contracts-are-written-before-the-code-that-serves-or-consumes-them.md) | Integration contracts are written before the code that serves or consumes them | Proposed |
-| [0036](0036-auth-service-issues-rs256-tokens-that-every-service-verifies-and-redis-can-revoke.md) | auth-service issues RS256 tokens that every service verifies and Redis can revoke | Proposed |
-| [0037](0037-redis-holds-sessions-cache-limits-and-events-for-the-services-only.md) | Redis holds sessions, cache, limits and events, and only the services use it | Proposed |
-| [0038](0038-mongodb-holds-customer-activity-owned-by-activity-service-alone.md) | MongoDB holds customer activity, owned by activity-service alone | Proposed |
-| [0039](0039-sales-service-is-a-second-entry-point-over-the-same-row-level-ingestion-service.md) | sales-service is a second entry point over the same row-level ingestion service | Proposed |
-| [0040](0040-services-redis-and-mongodb-run-as-containers-on-the-instance.md) | Services, Redis and MongoDB run as containers on the instance, next to the unchanged web system | Proposed |
+| [0034](0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) | Fifteen single-rule services, each the only service that writes its data | Proposed |
+| [0035](0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md) | Each service publishes its own versioned contract, and no two services share a resource | Proposed |
+| [0036](0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md) | auth-service issues role-only RS256 tokens whose sessions live in Redis | Proposed |
+| [0037](0037-two-redis-instances-carry-sessions-caches-limits-and-inter-service-streams.md) | Two Redis instances carry sessions, caches, limits and the inter-service streams, for the services only | Proposed |
+| [0038](0038-mongodb-holds-in-store-engagement-owned-by-engagement-service-alone.md) | MongoDB holds in-store engagement, owned by engagement-service alone | Proposed |
+| [0039](0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) | sales-service records a sale all or nothing, consuming stock through the stock contract | Proposed |
+| [0040](0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md) | Each service is built in CI and runs as its own compose project on the instance | Proposed |
 | [0041](0041-android-and-electron-clients-run-different-processes-over-different-formats.md) | The Android and Electron clients run different processes over different formats | Proposed |
-| [0042](0042-flask-and-rust-are-compared-on-one-contract-under-one-load.md) | Flask and Rust are compared on one contract under one load | Proposed |
+| [0042](0042-a-bench-only-rust-build-of-the-products-reads-is-compared-under-one-load.md) | A bench-only Rust build of the products reads is compared with the Flask service under one load | Proposed |
+| [0043](0043-at-least-ten-microservices-each-implementing-one-business-rule.md) | The distributed stage has at least ten microservices, each implementing one business rule | Proposed |
+| [0044](0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) | Boundaries meet only through versioned database contracts and Redis Streams relayed from each owner's outbox | Proposed |
+| [0045](0045-services-never-import-the-web-system.md) | Services never import the web system | Proposed |
+| [0046](0046-service-owned-data-lives-in-service-schemas.md) | Service-owned data lives in service schemas | Proposed |
 
 ## Writing one
 

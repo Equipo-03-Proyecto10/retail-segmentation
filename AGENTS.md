@@ -5,7 +5,7 @@ PostgreSQL on the same machine. Course project, Team 03.
 
 There are four components:
 - **The web system:** a monolithic Flask application.
-- **Eight microservices:** Flask and Rust, with Redis and MongoDB.
+- **Fifteen microservices:** Flask and Rust, with Redis and MongoDB.
 - **An Android client** in Kotlin.
 - **An Electron desktop client.**
 
@@ -28,16 +28,34 @@ written is.
 server-rendered with Jinja2, and the browser receives HTML. It connects to no
 Redis and consumes no microservice. It reads and writes PostgreSQL directly.
 
-**Services live in `services/`, under ADR-0034 to ADR-0042, and only after those
+**Services live in `services/`, under ADR-0034 to ADR-0046, and only after those
 records are accepted.**
-- There are eight service boundaries, each a separate container. Adding a
-  ninth, or a deployable unit of any other kind, needs an ADR.
-- Services never call each other over HTTP. They share reads through
-  PostgreSQL grants and announce changes on Redis Streams.
-- Each service connects as its own `svc_*` role, and is the only service that
-  writes the tables ADR-0034 assigns it.
-- A service reuses the web's transport-free modules in `web/services/` and
-  `web/db/` instead of reimplementing a business rule.
+- There are at least ten microservices (ADR-0043), and fifteen are planned
+  (ADR-0034). Each implements exactly one business rule, never mixed, and is
+  registered in `contracts/registry.yaml` with that rule, its RN ids and its
+  top-level resources. A new service needs an ADR naming its single rule.
+  A deployable unit of any other kind needs an ADR too.
+- Never mix endpoints. Each top-level resource, the first path segment after
+  `/v1`, belongs to exactly one service. A foreign id appears only as a query
+  parameter or a body field. No service exposes, nests, proxies, duplicates or
+  re-serves another service's resource (ADR-0035).
+- Services never import or copy `web/`. A service's build context is its own
+  directory. A rule shared with the web is carried by the database, or by a
+  port pinned with golden fixtures (ADR-0045).
+- Services never touch another boundary's tables. Each connects as its own
+  `svc_*` role, which holds privileges on its own tables only, and reads
+  another boundary only through that producer's versioned
+  `api_<boundary>.*_v1` views and functions (ADR-0034, ADR-0044). New
+  service-owned tables go in service schemas, never in `public` (ADR-0046).
+  Services never call each other over HTTP.
+- Events between services travel only on Redis Streams, relayed by the owner
+  from its own transactional outbox. `pg_notify` is only an owner's private
+  wake-up for its relay; no service listens on another boundary's channel
+  (ADR-0044).
+- Each service builds, versions and deploys alone: its own lock file
+  (`uv.lock` or `Cargo.lock`), a semver `VERSION` file, no shared Cargo
+  workspace, and its own compose project `mosaiq-<name>` with no `depends_on`
+  on another service (ADR-0040).
 
 **Contracts come before code.** A service's OpenAPI, XSD and examples in
 `contracts/` merge before its implementation, and before any client story that
@@ -63,16 +81,19 @@ reach the minimum is the thing the exemption exists to prevent.
 application, and refused by a partial unique index in the schema. The
 application check alone is bypassed by a direct `INSERT`; the index alone
 surfaces as an unexplained database error. Both, or neither counts. This holds for
-users-service too: it reuses `web/services/users.py`, and maps the index's
+users-service too: it enforces never-two and never-zero in its own code, moves
+the role only through an explicit administrator transfer, and maps the index's
 refusal to a 409, never a 500.
 
 **Every SQL statement is parameterized.** No string interpolation into SQL, ever,
 including in scripts, one-off queries and Rust services.
 
-**Tokens are RS256, and only auth-service signs them.** Every other service
-verifies them with the public key, pins `RS256`, and checks that the session
-is live in Redis. When Redis is unreachable, authentication fails closed with a
-503 (ADR-0036, ADR-0037).
+**Tokens are RS256, and only auth-service signs them.** They carry the role
+code and no permissions; each service owns its own role-to-operation policy.
+Every other service verifies them with the public key, pins `RS256`, checks
+`iss`, `aud` and `exp`, and checks that the session's liveness key exists in
+Redis. When Redis is unreachable, authentication fails closed with a 503
+(ADR-0036, ADR-0037).
 
 **No secrets in source.** New configuration goes in `.env.example` with a safe
 default.

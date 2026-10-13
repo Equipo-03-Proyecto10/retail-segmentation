@@ -95,20 +95,24 @@ datastore does not enter through the monolith's short cycle. Each adds a new
 system boundary or operational dependency.
 
 [ADR-0016](adr/0016-the-second-delivery-reinstates-the-distributed-architecture.md)
-reinstated that architecture without choosing its shape. ADR-0034 to ADR-0042
+reinstated that architecture without choosing its shape. ADR-0034 to ADR-0046
 now choose it:
 
 | Decision | Record |
 |---|---|
-| Eight service boundaries over one PostgreSQL, per-service roles, no service-to-service HTTP | [ADR-0034](adr/0034-eight-services-share-one-postgresql-each-the-sole-service-writer-of-its-tables.md) |
-| Integration contracts before code: JSON and XML, OpenAPI, XSD, errors, pagination, health | [ADR-0035](adr/0035-integration-contracts-are-written-before-the-code-that-serves-or-consumes-them.md) |
-| RS256 JWT issued by auth-service, sessions live only while in Redis | [ADR-0036](adr/0036-auth-service-issues-rs256-tokens-that-every-service-verifies-and-redis-can-revoke.md) |
-| Redis for sessions, cache, limits, counters and streams, used by the services only | [ADR-0037](adr/0037-redis-holds-sessions-cache-limits-and-events-for-the-services-only.md) |
-| MongoDB for customer activity, owned by activity-service | [ADR-0038](adr/0038-mongodb-holds-customer-activity-owned-by-activity-service-alone.md) |
-| sales-service as a second entry point over the same ingestion rules | [ADR-0039](adr/0039-sales-service-is-a-second-entry-point-over-the-same-row-level-ingestion-service.md) |
-| Containers on the instance next to the unchanged web system | [ADR-0040](adr/0040-services-redis-and-mongodb-run-as-containers-on-the-instance.md) |
+| Fifteen single-rule service boundaries, each the only service writer of its data, with exact per-role grants | [ADR-0034](adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) |
+| Each service publishes its own versioned contract in JSON and XML, and every top-level resource has one owner | [ADR-0035](adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md) |
+| auth-service issues role-only RS256 tokens; every service checks that the session is live in Redis | [ADR-0036](adr/0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md) |
+| Two Redis instances, `redis-state` and `redis-cache`, used by the services only | [ADR-0037](adr/0037-two-redis-instances-carry-sessions-caches-limits-and-inter-service-streams.md) |
+| MongoDB holds in-store engagement, owned by engagement-service alone | [ADR-0038](adr/0038-mongodb-holds-in-store-engagement-owned-by-engagement-service-alone.md) |
+| sales-service records a sale all or nothing, consuming stock through `api_stock.consume_v1` | [ADR-0039](adr/0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) |
+| Each service is built in CI and runs as its own compose project, next to the unchanged web system | [ADR-0040](adr/0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md) |
 | Android (JSON) and Electron (XML) clients running different processes | [ADR-0041](adr/0041-android-and-electron-clients-run-different-processes-over-different-formats.md) |
-| Flask vs Rust compared on one contract under one load | [ADR-0042](adr/0042-flask-and-rust-are-compared-on-one-contract-under-one-load.md) |
+| A bench-only Rust build of the products reads is compared with the Flask service under one load | [ADR-0042](adr/0042-a-bench-only-rust-build-of-the-products-reads-is-compared-under-one-load.md) |
+| At least ten microservices, each implementing one business rule | [ADR-0043](adr/0043-at-least-ten-microservices-each-implementing-one-business-rule.md) |
+| Boundaries meet only through versioned `api_*` database contracts and Redis Streams relayed from each owner's outbox | [ADR-0044](adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) |
+| Services never import or copy the web system | [ADR-0045](adr/0045-services-never-import-the-web-system.md) |
+| Service-owned tables live in service schemas, never in `public` | [ADR-0046](adr/0046-service-owned-data-lives-in-service-schemas.md) |
 
 Distributed work starts only once that set is accepted (F13-01, #408). Each
 service then enters in two steps:
@@ -131,13 +135,13 @@ following:
 
 | Part | Requirement | Current position |
 |---|---|---|
-| Microservices | Six to ten, each with one responsibility, its own container, versioned routes, authentication, JSON **and** XML responses, a health endpoint and OpenAPI documentation | Planned: eight boundaries in ADR-0034, phases 13–15 (#400, #399, #401) |
+| Microservices | At least ten (instructor, superseding six to ten in ADR-0043), each implementing one business rule, with its own container, versioned routes, authentication, JSON **and** XML responses, a health endpoint and OpenAPI documentation | Planned: 15 services, each one business rule (ADR-0034, ADR-0043), phases 13–15 (#400, #399, #401) |
 | Android client | Consumes JSON only. At least four microservices, plus two device capabilities — camera, QR, GPS, notifications, local storage or sensors | Planned: ADR-0041, phase 17 (#403) |
 | Desktop client | Consumes XML only, validated against an XSD. At least four microservices, and a **different** process from the mobile one | Planned: Electron, ADR-0041, phase 16 (#402) |
-| MongoDB | Real storage, with insert, query, update, aggregation and indexing demonstrated | Planned: activity-service only, ADR-0038 |
-| Redis | Sessions, revoked tokens, cache, counters and rate limits. Every component consults it during authentication or authorization | Planned: ADR-0037. Every **service** consults it on every authenticated request. The web system keeps its PostgreSQL sessions (ADR-0022) and does not, which the instructor confirmed on 2026-10-13 |
-| Shared JWT | Issued and validated across components, with revocation enforced through Redis | Planned: RS256 from auth-service, ADR-0036 |
-| Integration contracts | Specified **before** the clients are built — JSON shapes, HTTP codes, pagination and versioning; XML elements, hierarchy, XSD and namespaces | Conventions in ADR-0035; per-service contracts are the first story of each service in phase 14 |
+| MongoDB | Real storage, with insert, query, update, aggregation and indexing demonstrated | Planned: engagement-service only, ADR-0038 |
+| Redis | Sessions, revoked tokens, cache, counters and rate limits. Every component consults it during authentication or authorization | Planned: ADR-0037, two instances (`redis-state` and `redis-cache`) that also carry the inter-service streams. Every **service** consults it on every authenticated request. The web system keeps its PostgreSQL sessions (ADR-0022) and does not, which the instructor confirmed on 2026-10-13 |
+| Shared JWT | Issued and validated across components, with revocation enforced through Redis | Planned: role-only RS256 tokens from auth-service, verified by every service against a liveness key in Redis, ADR-0036 |
+| Integration contracts | Specified **before** the clients are built — JSON shapes, HTTP codes, pagination and versioning; XML elements, hierarchy, XSD and namespaces | Each service versions its own contract under ADR-0035, registered in `contracts/registry.yaml`; database and stream contracts under ADR-0044. Each service's contract is its first story in phase 14 |
 | The web system | Keeps working independently, and grows: the five additional profiles already delivered, advanced administration, filters, pagination, reports, Highcharts, file upload, history and internal notifications | Phases 7–12 delivered most of it; the experiment dashboard and internal notifications are still missing (#405) |
 
 The end-to-end demonstration remains one process across components. The mobile
@@ -146,7 +150,7 @@ session is live, the data lands in PostgreSQL or MongoDB, the web system
 displays it, and the desktop client reads it back over XML.
 
 The distributed rows above are not deferred to a later delivery. They are
-planned parts of this delivery: decided in ADR-0034 to ADR-0042, scoped in
+planned parts of this delivery: decided in ADR-0034 to ADR-0046, scoped in
 [`scope-delivery-2-distributed.md`](scope-delivery-2-distributed.md), and
 broken into phases 13–18 in [`backlog.md`](backlog.md).
 

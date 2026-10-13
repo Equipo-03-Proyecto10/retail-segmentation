@@ -2,7 +2,8 @@
 
 Work across both deliveries, grouped by planning phase. Phases 0-6 record the
 completed first delivery. Phases 7-12 cover the monolith analytics part of the
-second delivery. Story identifiers are `F<phase>-<n>`.
+second delivery, and phases 13-18 its distributed stage. Story identifiers are
+`F<phase>-<n>`. The `AN-<n>` stories close gaps left in phases 7-12.
 
 Estimates are set by the team at Planning, not here. Sprint membership lives in
 the GitHub Projects `Sprint` field, not in this document — a backlog that
@@ -11,11 +12,12 @@ duplicates the board drifts from it within a week.
 Priority: **P0** the delivery fails without it · **P1** required, schedulable
 later · **P2** optional.
 
-**This is not the whole second-delivery backlog.** [ADR-0016][adr-0016]
-requires the distributed architecture, but each component is blocked on a
-decision that does not exist yet. Phases 7-12 plan only the monolith analytics
-work and create no microservice, client application, MongoDB or Redis
-implementation, or shared authentication scheme.
+**Phases 13–18 are the distributed stage of the second delivery.** They
+follow ADR-0034 to ADR-0042, scoped in
+[`scope-delivery-2-distributed.md`](scope-delivery-2-distributed.md). No story
+in them starts before F13-01 (#408) accepts that decision set. **The
+analytics phase is not finished.** The gaps found on 2026-10-13 are the
+`AN-*` stories at the end of this file (epic #405).
 
 ## Dependency graph
 
@@ -479,8 +481,251 @@ work, so the first delivery's C-1 and C-2 constraints do not govern it. The
 choice does not abolish those constraints generally or introduce an ingestion
 endpoint; ADR-0020 still makes CSV the only sales entry point for this phase.
 
+## Distributed stage — dependency graph
+
+Every phase 13–18 story with its blockers. Issue numbers are in each phase's
+table. GitHub shows the same blockers in each issue's **Dependencies** section,
+and every story is a sub-issue of its phase epic.
+
+```mermaid
+flowchart TD
+    F13-01
+    F13-01 --> F13-02
+    F13-01 --> F13-03
+    F13-02 --> F13-03
+    F13-05 --> F13-03
+    F13-01 --> F13-04
+    F13-02 --> F13-04
+    F13-05 --> F13-04
+    F13-01 --> F13-05
+    F13-01 --> F13-06
+    F13-01 --> F13-07
+    F13-05 --> F13-08
+    F13-06 --> F13-08
+    F13-02 --> F13-09
+    F13-03 --> F13-09
+    F13-04 --> F13-09
+    F13-08 --> F13-09
+    F13-10
+    F13-02 --> F14-01
+    F14-01 --> F14-02
+    F13-03 --> F14-02
+    F13-05 --> F14-02
+    F13-07 --> F14-02
+    F13-02 --> F14-03
+    F14-03 --> F14-04
+    F13-03 --> F14-04
+    F13-05 --> F14-04
+    F13-07 --> F14-04
+    F13-02 --> F14-05
+    F14-05 --> F14-06
+    F13-03 --> F14-06
+    F13-05 --> F14-06
+    F13-07 --> F14-06
+    F13-02 --> F14-07
+    F14-07 --> F14-08
+    F13-03 --> F14-08
+    F13-05 --> F14-08
+    F13-07 --> F14-08
+    F13-02 --> F14-09
+    F14-09 --> F14-10
+    F13-04 --> F14-10
+    F13-05 --> F14-10
+    F13-07 --> F14-10
+    F13-02 --> F14-11
+    F14-11 --> F14-12
+    F13-03 --> F14-12
+    F13-05 --> F14-12
+    F13-07 --> F14-12
+    F13-02 --> F14-13
+    F14-13 --> F14-14
+    F13-04 --> F14-14
+    F13-05 --> F14-14
+    F13-07 --> F14-14
+    F13-02 --> F14-15
+    F14-15 --> F14-16
+    F14-17 --> F14-16
+    F13-03 --> F14-16
+    F13-05 --> F14-16
+    F13-06 --> F14-16
+    F13-07 --> F14-16
+    F13-01 --> F14-17
+    F13-04 --> F15-01
+    F14-05 --> F15-01
+    F14-06 --> F15-01
+    F15-01 --> F15-02
+    F14-01 --> F16-01
+    F14-02 --> F16-01
+    F16-01 --> F16-02
+    F14-06 --> F16-02
+    F16-01 --> F16-03
+    F14-08 --> F16-03
+    F14-14 --> F16-03
+    F16-01 --> F16-04
+    F14-10 --> F16-04
+    F14-12 --> F16-04
+    F14-16 --> F16-04
+    F16-02 --> F16-05
+    F16-03 --> F16-05
+    F16-04 --> F16-05
+    F14-01 --> F17-01
+    F14-02 --> F17-01
+    F17-01 --> F17-02
+    F14-06 --> F17-02
+    F14-10 --> F17-02
+    F14-16 --> F17-02
+    F17-01 --> F17-03
+    F14-16 --> F17-03
+    F14-17 --> F17-03
+    F17-01 --> F17-04
+    F14-08 --> F17-04
+    F14-12 --> F17-04
+    F17-01 --> F17-05
+    F14-14 --> F17-05
+    F14-16 --> F17-05
+    F17-02 --> F17-06
+    F17-03 --> F17-06
+    F17-04 --> F17-06
+    F17-05 --> F17-06
+    F13-08 --> F18-01
+    F14-02 --> F18-01
+    F14-04 --> F18-01
+    F14-06 --> F18-01
+    F14-08 --> F18-01
+    F14-10 --> F18-01
+    F14-12 --> F18-01
+    F14-14 --> F18-01
+    F14-16 --> F18-01
+    F18-01 --> F18-02
+    F18-01 --> F18-03
+    F18-01 --> F18-04
+    F16-04 --> F18-05
+    F17-04 --> F18-05
+    F18-02 --> F18-05
+    F18-01 --> F18-06
+```
+
+## Phase 13 — Distributed foundation
+
+Epic #400.
+
+| ID | Issue | Story | Priority | Depends on |
+|---|---|---|---|---|
+| F13-01 | #408 | Review and accept the distributed-stage decision set (ADR-0034 to ADR-0042) | P0 | — |
+| F13-02 | #412 | Write the shared integration contract conventions and common XSD types | P0 | F13-01 |
+| F13-03 | #416 | Build the shared Python service kit for JWT, Redis session checks, content negotiation and health | P0 | F13-01, F13-02, F13-05 |
+| F13-04 | #420 | Build the shared Rust service crate with the same authentication, negotiation and health behaviour | P0 | F13-01, F13-02, F13-05 |
+| F13-05 | #424 | Add Redis to the development stack with one ACL user per service | P0 | F13-01 |
+| F13-06 | #428 | Add MongoDB to the development stack, owned by activity-service only | P0 | F13-01 |
+| F13-07 | #434 | Create one PostgreSQL role per service, granted only what ADR-0034 assigns it | P0 | F13-01 |
+| F13-08 | #438 | Add the Compose overlay that runs services, Redis and MongoDB next to the web system | P0 | F13-05, F13-06 |
+| F13-09 | #442 | Extend CI to lint and test services, Rust crates and contracts | P0 | F13-02, F13-03, F13-04, F13-08 |
+| F13-10 | #446 | Decide whether account email verification is required for this delivery | P2 | — |
+
+**F13-01 gates everything below.** ADR-0016 forbids any service skeleton,
+contract file or client before the record that specifies it is accepted.
+
+## Phase 14 — Microservices
+
+Epic #399. For each service, the contract story merges before its
+implementation story starts ([ADR-0035][adr-0035]).
+
+| ID | Issue | Story | Priority | Depends on |
+|---|---|---|---|---|
+| F14-01 | #409 | Write the auth-service contract (OpenAPI, XSD, examples) | P0 | F13-02 |
+| F14-02 | #413 | Implement auth-service: sign-in, refresh rotation, sign-out and session revocation in Redis | P0 | F14-01, F13-03, F13-05, F13-07 |
+| F14-03 | #418 | Write the users-service contract (OpenAPI, XSD, examples) | P0 | F13-02 |
+| F14-04 | #421 | Implement users-service with the single-administrator rule enforced twice | P0 | F14-03, F13-03, F13-05, F13-07 |
+| F14-05 | #425 | Write the catalog-service contract (OpenAPI, XSD, examples) | P0 | F13-02 |
+| F14-06 | #429 | Implement catalog-service with cache-aside reads and invalidation on write | P0 | F14-05, F13-03, F13-05, F13-07 |
+| F14-07 | #432 | Write the customers-service contract (OpenAPI, XSD, examples) | P0 | F13-02 |
+| F14-08 | #436 | Implement customers-service | P0 | F14-07, F13-03, F13-05, F13-07 |
+| F14-09 | #440 | Write the inventory-service contract (OpenAPI, XSD, examples) | P0 | F13-02 |
+| F14-10 | #444 | Implement inventory-service in Rust with a short availability cache invalidated by sales | P0 | F14-09, F13-04, F13-05, F13-07 |
+| F14-11 | #449 | Write the sales-service contract (OpenAPI, XSD, examples) | P0 | F13-02 |
+| F14-12 | #454 | Implement sales-service over the existing row-level ingestion service | P0 | F14-11, F13-03, F13-05, F13-07 |
+| F14-13 | #458 | Write the segments-service contract (OpenAPI, XSD, examples) | P0 | F13-02 |
+| F14-14 | #461 | Implement segments-service in Rust as a read-only view of assignments and recommendations | P0 | F14-13, F13-04, F13-05, F13-07 |
+| F14-15 | #464 | Write the activity-service contract (OpenAPI, XSD, examples) | P0 | F13-02 |
+| F14-16 | #466 | Implement activity-service on MongoDB with insert, query, update, aggregation and indexes | P0 | F14-15, F14-17, F13-03, F13-05, F13-06, F13-07 |
+| F14-17 | #468 | Give stores geographic coordinates for GPS check-in | P0 | F13-01 |
+
+## Phase 15 — Rust twin and benchmark
+
+Epic #401.
+
+| ID | Issue | Story | Priority | Depends on |
+|---|---|---|---|---|
+| F15-01 | #450 | Implement the catalog read contract in Rust as catalog-service-rs | P1 | F13-04, F14-05, F14-06 |
+| F15-02 | #455 | Benchmark catalog-service against catalog-service-rs and publish the comparison | P1 | F15-01 |
+
+## Phase 16 — Desktop client (Electron, XML)
+
+Epic #402.
+
+| ID | Issue | Story | Priority | Depends on |
+|---|---|---|---|---|
+| F16-01 | #406 | Scaffold the Electron desktop client with secure defaults, an XSD-validated XML layer and sign-in | P1 | F14-01, F14-02 |
+| F16-02 | #410 | Manage the product catalog from the desktop client | P1 | F16-01, F14-06 |
+| F16-03 | #414 | Review customers with their segment, history and recommendations from the desktop client | P1 | F16-01, F14-08, F14-14 |
+| F16-04 | #417 | Check stock per store and read back sales and activity from the desktop client | P1 | F16-01, F14-10, F14-12, F14-16 |
+| F16-05 | #422 | Package the desktop client and build it in CI | P1 | F16-02, F16-03, F16-04 |
+
+## Phase 17 — Android client (Kotlin, JSON)
+
+Epic #403.
+
+| ID | Issue | Story | Priority | Depends on |
+|---|---|---|---|---|
+| F17-01 | #426 | Scaffold the Android client in Kotlin with JSON networking and token refresh | P1 | F14-01, F14-02 |
+| F17-02 | #430 | Scan a product QR code with the camera and show its price and stock in my store | P1 | F17-01, F14-06, F14-10, F14-16 |
+| F17-03 | #433 | Check in to a store by GPS | P1 | F17-01, F14-16, F14-17 |
+| F17-04 | #437 | Register a sale for a customer, queued offline when there is no connection | P1 | F17-01, F14-08, F14-12 |
+| F17-05 | #441 | Show a customer's segment and recommendations on the phone | P1 | F17-01, F14-14, F14-16 |
+| F17-06 | #445 | Build, lint and test the Android client in CI | P1 | F17-02, F17-03, F17-04, F17-05 |
+
+## Phase 18 — Deployment and end-to-end demonstration
+
+Epic #404.
+
+| ID | Issue | Story | Priority | Depends on |
+|---|---|---|---|---|
+| F18-01 | #448 | Run the services, Redis and MongoDB as containers on the instance | P0 | F13-08, F14-02, F14-04, F14-06, F14-08, F14-10, F14-12, F14-14, F14-16 |
+| F18-02 | #452 | Route /api/{service}/ through NGINX on 443 | P0 | F18-01 |
+| F18-03 | #456 | Deploy the services from main with health checks and rollback | P1 | F18-01 |
+| F18-04 | #459 | Record negative-test evidence across the services | P0 | F18-01 |
+| F18-05 | #462 | Script and record the end-to-end demonstration across all components | P0 | F16-04, F17-04, F18-02 |
+| F18-06 | #465 | Redraw the architecture diagrams and update the README for the distributed system | P1 | F18-01 |
+
+## Closing the analytics phase
+
+Epic #405. Every F7–F12 issue was closed, but an audit on 2026-10-13 found
+these gaps. The web system receives these fixes and features. It still gets
+no Redis and consumes no service.
+
+| ID | Issue | Story | Priority | Depends on |
+|---|---|---|---|---|
+| AN-01 | #407 | Accept or reject ADR-0026, 0030, 0031, 0032 and 0033, whose implementations already merged | P0 | — |
+| AN-02 | #411 | Release develop to main and attach the second delivery's proof of deployment | P0 | AN-01 |
+| AN-03 | #415 | Show experiment results on a Highcharts dashboard | P1 | — |
+| AN-04 | #419 | Notify users inside the web system when analytics work they care about finishes | P1 | — |
+| AN-05 | #423 | Segmentation dashboard heatmap splits customers with tied measures across quintiles by customer id | P1 | — |
+| AN-06 | #427 | Seeded experiments are marked OBSERVED and show as real data | P1 | — |
+| AN-07 | #431 | Write the analytics requirements, user stories and traceability for the second delivery | P1 | — |
+| AN-08 | #435 | Bring the data model document in line with the schema and justify the analytics tables in 4NF | P1 | — |
+| AN-09 | #439 | Update the demonstration guide to the second delivery | P1 | AN-02 |
+| AN-10 | #443 | Attach the missing evidence for the analytics stories | P1 | AN-02 |
+| AN-11 | #447 | Run detail lists K-means quality measure names without their values | P2 | — |
+| AN-12 | #451 | Decide whether experiment conversions are append-only for the application role | P2 | — |
+| AN-13 | #453 | Run the integrity checks and the database-layer tests against a real PostgreSQL in CI | P2 | — |
+| AN-14 | #457 | Decide how data provenance is marked and what AVERAGE_TICKET measures | P2 | — |
+| AN-15 | #460 | Fix duplicate business-rule ids and stale counts, diagrams and index entries in the documentation | P2 | — |
+| AN-16 | #463 | Make the seed exercise K-means, varied purchase behaviour and coherent experiment dates | P2 | AN-06 |
+| AN-17 | #467 | Decide how STORE_MANAGER's "own store" scope is enforced, and finish the remaining dashboard and list gaps | P2 | — |
+
 [adr-0016]: adr/0016-the-second-delivery-reinstates-the-distributed-architecture.md
 [adr-0017]: adr/0017-segment-assignment-history-replaces-the-mutable-current-segment.md
 [adr-0018]: adr/0018-two-segmentation-strategies-behind-one-method-agnostic-pipeline.md
 [adr-0019]: adr/0019-experiment-measurement-separates-assignment-exposure-and-conversion.md
 [adr-0020]: adr/0020-csv-is-the-sole-sales-ingestion-entry-point-for-this-delivery.md
+[adr-0035]: adr/0035-integration-contracts-are-written-before-the-code-that-serves-or-consumes-them.md

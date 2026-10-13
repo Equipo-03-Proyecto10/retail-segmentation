@@ -1,11 +1,20 @@
 # Agent Instructions
 
-Retail segmentation platform. One monolithic Flask web application on a single
-GCP Compute Engine instance, backed by PostgreSQL on the same machine. Course
-project, Team 03.
+Retail segmentation platform on a single GCP Compute Engine instance, backed by
+PostgreSQL on the same machine. Course project, Team 03.
 
-Read [`docs/scope.md`](docs/scope.md) before starting anything. It is the
-boundary of the delivery.
+There are four components:
+- **The web system:** a monolithic Flask application.
+- **Eight microservices:** Flask and Rust, with Redis and MongoDB.
+- **An Android client** in Kotlin.
+- **An Electron desktop client.**
+
+Read the boundary of the work you are touching before starting:
+- [`docs/scope.md`](docs/scope.md): the first delivery, the web system.
+- [`docs/scope-delivery-2-analytics.md`](docs/scope-delivery-2-analytics.md):
+  the web system's analytics.
+- [`docs/scope-delivery-2-distributed.md`](docs/scope-delivery-2-distributed.md):
+  services and clients.
 
 ## Language
 
@@ -15,10 +24,25 @@ written is.
 
 ## Hard rules
 
-**One application.** No microservices, no external REST/GraphQL/SOAP APIs, and
-no JSON or XML exchanged between internal components. Pages are server-rendered
-with Jinja2; the browser receives HTML. Adding a second deployable unit is a
-scope change and needs an ADR.
+**The web system is one application, and stays one.** Its pages are
+server-rendered with Jinja2, and the browser receives HTML. It connects to no
+Redis and consumes no microservice. It reads and writes PostgreSQL directly.
+
+**Services live in `services/`, under ADR-0034 to ADR-0042, and only after those
+records are accepted.**
+- There are eight service boundaries, each a separate container. Adding a
+  ninth, or a deployable unit of any other kind, needs an ADR.
+- Services never call each other over HTTP. They share reads through
+  PostgreSQL grants and announce changes on Redis Streams.
+- Each service connects as its own `svc_*` role, and is the only service that
+  writes the tables ADR-0034 assigns it.
+- A service reuses the web's transport-free modules in `web/services/` and
+  `web/db/` instead of reimplementing a business rule.
+
+**Contracts come before code.** A service's OpenAPI, XSD and examples in
+`contracts/` merge before its implementation, and before any client story that
+consumes them (ADR-0035). Every service answers in JSON **and** XML. Android
+consumes JSON only. Electron consumes XML only, validated against the XSD.
 
 **Schema changes go in `sql/01_schema.sql`.** Never alter a table by hand on the
 server and never write DDL anywhere else. The three scripts —
@@ -38,10 +62,17 @@ reach the minimum is the thing the exemption exists to prevent.
 **There is exactly one administrator.** Enforced twice: refused by the
 application, and refused by a partial unique index in the schema. The
 application check alone is bypassed by a direct `INSERT`; the index alone
-surfaces as an unexplained database error. Both, or neither counts.
+surfaces as an unexplained database error. Both, or neither counts. This holds for
+users-service too: it reuses `web/services/users.py`, and maps the index's
+refusal to a 409, never a 500.
 
 **Every SQL statement is parameterized.** No string interpolation into SQL, ever,
-including in scripts and one-off queries.
+including in scripts, one-off queries and Rust services.
+
+**Tokens are RS256, and only auth-service signs them.** Every other service
+verifies them with the public key, pins `RS256`, and checks that the session
+is live in Redis. When Redis is unreachable, authentication fails closed with a
+503 (ADR-0036, ADR-0037).
 
 **No secrets in source.** New configuration goes in `.env.example` with a safe
 default.
@@ -52,6 +83,11 @@ are gitignored.
 ## Conventions
 
 - Python: PEP 8, `black`, `ruff`. Tables are snake_case and singular.
+- Rust: `cargo fmt`, and `cargo clippy --all-targets -- -D warnings`.
+  `Cargo.lock` is committed.
+- Kotlin (Android): ktlint. Versions are pinned in the Gradle version catalog.
+- TypeScript (Electron): ESLint and Prettier. Every `BrowserWindow` keeps
+  `contextIsolation: true`, `nodeIntegration: false` and `sandbox: true`.
 - Commits: Conventional Commits, `type(scope): subject (#issue)`.
   Example: `feat(auth): add password reset (#42)`
 - Branches: `feature/<issue-number>-kebab-slug`, also `fix/`, `chore/`, `docs/`.
@@ -62,6 +98,12 @@ are gitignored.
 
 1. `pytest` passes.
 2. `black --check .` and `ruff check .` pass.
+   - A Rust crate also needs `cargo fmt --check`, `cargo clippy --all-targets
+     -- -D warnings` and `cargo test` to pass.
+   - The Android client: `./gradlew ktlintCheck lint testDebugUnitTest`.
+   - The Electron client: its lint, type-check and tests.
+   - A contract: its OpenAPI validates and its XML examples validate against
+     their XSD.
 3. Any schema change is reflected in `sql/01_schema.sql`, and the three scripts
    still run clean in order from an empty database.
 4. New configuration is documented in `.env.example`.

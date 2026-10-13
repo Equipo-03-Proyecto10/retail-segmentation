@@ -50,8 +50,8 @@ Each states how it is checked. A quality nobody can verify is a wish.
 
 | Id | Requirement | How it is verified |
 |---|---|---|
-| RNF-01 | The browser receives server-rendered HTML. No JSON or XML is exchanged between internal components (`scope.md` C-2) | No serialization endpoint exists; every route returns a rendered template. Reviewed per pull request |
-| RNF-02 | One deployable unit. No microservices, no external REST, GraphQL or SOAP API (C-1, C-3, C-7) | One application package, one process. A second deployable unit needs an ADR |
+| RNF-01 | The web system's browser receives server-rendered HTML. The web system exchanges no JSON or XML with another component (`scope.md` C-2). The microservices of the second delivery are not bound by this, and answer in JSON and XML under ADR-0035 | No serialization endpoint exists in `web/`; every web route returns a rendered template. Reviewed per pull request |
+| RNF-02 | The web system is one deployable unit and exposes no REST, GraphQL or SOAP API (C-1, C-3, C-7). The second delivery adds eight microservices as separate containers, under ADR-0034 and ADR-0040; any further deployable unit needs an ADR | `web/` is one application package and one process, and consumes no service. Each service has its own container in `compose.services.yaml` |
 | RNF-03 | Every SQL statement is parameterized. No string interpolation into SQL anywhere, including scripts and one-off queries | `grep` for f-strings and concatenation in `web/db/`; reviewed per pull request |
 | RNF-04 | Passwords are hashed with argon2id. The database never hashes and never sees a plaintext password | `web/requirements.txt` pins `argon2-cffi`; seeded hashes are argon2id |
 | RNF-05 | Session cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` wherever the deployment terminates TLS. The secret key comes from the environment | Inspect response headers; `FLASK_SECRET_KEY` is absent from source |

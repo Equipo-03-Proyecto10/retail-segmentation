@@ -2,10 +2,13 @@
 
 | Document | Purpose |
 |---|---|
-| [Scope](scope.md) | What the delivery includes, the constraints, the phases, the deliverables |
+| [Scope](scope.md) | What the first delivery includes, the constraints, the phases, the deliverables |
+| [Scope — Delivery 2, analytics](scope-delivery-2-analytics.md) | The web system's analytics phase (phases 7–12) |
+| [Scope — Delivery 2, distributed](scope-delivery-2-distributed.md) | Microservices, Android and Electron clients, Redis, MongoDB and JWT (phases 13–18) |
+| [Analytics permission map](analytics-permission-map.md) | Which permission each analytics surface requires |
 | [Process](process.md) | How the team works: Scrum planning, XP engineering practices, Definition of Done |
 | [Backlog](backlog.md) | Ordered work, grouped by scope phase |
-| [Roadmap](roadmap.md) | What is deferred to later deliveries, and how it re-enters |
+| [Roadmap](roadmap.md) | What the second delivery requires, where each part stands, and how each kind of work enters |
 | [Infrastructure](infra.md) | Provisioned GCP resources, firewall policy, and SSH access |
 | [PostgreSQL access](../deploy/postgresql/README.md) | Loopback and SSH access, HBA rejection checks, and application-role verification |
 | [Logging](logging.md) | The application event log: what each event records, at which level, and what never reaches it |
@@ -15,7 +18,7 @@
 | [Architecture](architecture/) | Deployment and application views: the monolith, its layers and their MVC roles |
 | [System and demonstration guide](demo-system-guide.md) | End-to-end request journey, current capabilities, main process, architecture decisions, limitations, and rehearsal order. The deliverable of F6-08 (#110) |
 | [Data model](data-model.md) | The PostgreSQL model: conceptual, 4NF normalization with its justification, ER diagram, data dictionary |
-| [Datastore designs](datastores/) | MongoDB and Redis designs for later deliveries. Nothing in there is implemented |
+| [Datastore designs](datastores/) | MongoDB and Redis. Governed by ADR-0037 and ADR-0038, and rewritten as specifications by F13-05 and F13-06 |
 | [Wireframes](wireframes/) | Low-fidelity structure for every screen — what is on each page and how a role reaches it, decided before the visual design |
 | [Design system](design-system/) | MOSAIQ's tokens, components, and the two reference sheets to build screens from |
 | [Decisions](adr/) | Architecture Decision Records |

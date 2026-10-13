@@ -1,5 +1,16 @@
 # Datastore designs
 
+> **Decided, not yet built.** [ADR-0037](../adr/0037-redis-holds-sessions-cache-limits-and-events-for-the-services-only.md)
+> and [ADR-0038](../adr/0038-mongodb-holds-customer-activity-owned-by-activity-service-alone.md)
+> now govern Redis and MongoDB. Where those records and these designs
+> disagree, the records win. In particular:
+> - Redis key names follow ADR-0037's namespace.
+> - MongoDB holds only `customer_activity`; the six collections below
+>   duplicate PostgreSQL tables and are not built.
+>
+> F13-05 (#424) and F13-06 (#428) rewrite these documents as specifications
+> and remove the banner below.
+
 > **Nothing in this directory is implemented, and nothing in it runs.** The
 > delivery has one database engine, PostgreSQL, on one instance
 > ([ADR-0001](../adr/0001-flask-monolith-on-a-single-vm.md)). These documents

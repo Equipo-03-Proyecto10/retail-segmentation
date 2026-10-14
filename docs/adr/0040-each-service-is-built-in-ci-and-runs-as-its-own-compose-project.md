@@ -10,25 +10,22 @@
 
 ## Context
 
-ADR-0015 keeps containers off the instance, right for one Flask application; the course now requires each microservice in its own container, and
-ADR-0016 named ADR-0015 for supersession. Total independence (ADR-0043) rules out one Compose file for all services: one `up` re-evaluates all of
-them, and one bad change blocks every deploy. Fixed constraints:
+ADR-0015 keeps containers off the instance; the course requires each microservice in its own container, and ADR-0016 named ADR-0015 for supersession.
+Independence (ADR-0043) rules out one Compose file for all: one `up` re-evaluates every service, and one bad change blocks all deploys. Constraints:
 - **One e2-standard-2** (2 vCPU, 8 GB, a 50 GB disk; `docs/infra.md`): C-5 and C-6 allow no second machine, managed database or Kubernetes.
 - **Ingress is the GCP firewall only:** `tcp:22`, and `tcp:443` from Cloudflare's ranges.
 - **PostgreSQL listens on loopback only** (`listen_addresses = 'localhost'`), which a container's own `127.0.0.1` cannot reach.
 - **The web system is frozen** under `mosaiq.service`, deployed by `deploy/deploy.sh` from `main` (ADR-0011).
 - **SELinux is enforcing** on the CentOS Stream 10 instance (`deploy/postgresql/README.md`).
 
-Uncertain: memory figures are estimates until Phase 18 (epic #404) measures them, and whether SELinux lets a container use the host's socket is
-unverified.
+Uncertain: memory figures are estimates until Phase 18 (epic #404) measures them, and whether SELinux allows the socket mount is unverified.
 
 ## Decision
 
-Every service is its own deployable unit. CI builds `services/<name>/` into an immutable image `ghcr.io/<org>/mosaiq-<name>:<semver>`; the instance
-only pulls. There, each service runs as its own Compose project, `mosaiq-<name>`, under the systemd template `mosaiq-svc@<name>.service`, in a
-non-root container with no capabilities. Redis and MongoDB run in project `mosaiq-infra`; all projects share the external network `mosaiq`. Ports bind
-`127.0.0.1` only, behind NGINX. Services reach PostgreSQL through its mounted socket directory, so `listen_addresses` does not change. A per-service
-workflow deploys a merged `VERSION` bump and rolls back only that service. The web, its unit and `deploy/deploy.sh` are not touched.
+CI builds `services/<name>/` into an image `ghcr.io/<org>/mosaiq-<name>:<semver>`; the instance only pulls. Each service runs as its own Compose
+project, `mosaiq-<name>`, under the systemd template `mosaiq-svc@<name>.service`, in a non-root container with no capabilities. Redis and MongoDB run
+in project `mosaiq-infra`, on the external network `mosaiq`. Ports bind `127.0.0.1`, behind NGINX. Services use PostgreSQL's mounted socket, so
+`listen_addresses` stays. A merged `VERSION` bump deploys and rolls back that service alone; the web, its unit and `deploy/deploy.sh` are untouched.
 
 ### Build: what `services/<name>/` holds
 
@@ -39,7 +36,7 @@ workflow deploys a merged `VERSION` bump and rolls back only that service. The w
   no `depends_on`, and the hardening under Run.
 - `nginx/<name>.conf`: `location /api/<name>/` with `proxy_pass http://127.0.0.1:<port>/;`, `proxy_set_header X-Real-IP $remote_addr;`,
   `proxy_set_header X-Forwarded-For $remote_addr;` (overwritten, never appended; `cloudflare-real-ip.conf` restores `$remote_addr`) and
-  `client_max_body_size 64k;`. auth's adds a `limit_req` zone on `POST /api/auth/v1/sessions`, as the web limits `/login`.
+  `client_max_body_size 64k;`. auth's applies `limit_req` (zone declared in `deploy/nginx/mosaiq.conf`) to `POST /api/auth/v1/sessions`, as the web limits `/login`.
 - `redis/<name>.acl`: its ACL user line (ADR-0037).
 - `tests/`: unit, golden and conformance tests.
 
@@ -53,9 +50,8 @@ instance pulls with a classic `read:packages` token (`deploy/README.md`). Before
 
 - **Units.** `mosaiq-infra.service` runs `deploy/infra/compose.yaml` (Redis and MongoDB, pinned, publishing nothing). `mosaiq-svc@<name>.service` runs
   `docker compose -p mosaiq-%i up -d --no-deps` and only `Wants=` Docker, infrastructure and PostgreSQL. Secrets: `/etc/mosaiq/svc/<name>.env`.
-- **Hardening.** Each service container runs as `user: "10001:10001"`, a UID no host account uses, with `cap_drop: [ALL]`,
-  `security_opt: ["no-new-privileges:true"]` and `read_only: true` with a tmpfs `/tmp`. Peer authentication maps it to no host user, so it cannot
-  become `postgres`.
+- **Hardening.** Containers run with `cap_drop: [ALL]`, `security_opt: ["no-new-privileges:true"]`, `read_only: true` and a tmpfs `/tmp`, as
+  `user: "10001:10001"`, a UID no host account uses, so peer authentication maps them to no host user and none can become `postgres`.
 - **PostgreSQL.** Each container mounts `/run/postgresql` read-only and connects as `postgresql://svc_<suffix>@/retail?host=/run/postgresql`.
   `pg_hba.conf` gains `local retail svc_<suffix> scram-sha-256` per role **above** `local all all peer` (first match wins); no `host` line, no change
   to `listen_addresses` or `mosaiq.conf`, no line for `svc_products_bench`. SELinux refusal: a local policy module, never `:z`.
@@ -66,9 +62,9 @@ instance pulls with a classic `read:packages` token (`deploy/README.md`). Before
 
 ### Deploy and roll back
 
-`.github/workflows/deploy-service.yml` runs on a merged `services/*/VERSION` bump, on a matrix of the changed files, and calls
-`deploy/deploy-service.sh <name> <version>`. It installs the ACL line, runs `ACL LOAD` on both Redis instances, runs `up -d --no-deps`, polls
-`/health/ready` for 60 s, then installs the NGINX include and reloads after `nginx -t`, under a host `flock`. A failure rolls back only this service.
+On a merged `services/*/VERSION` bump, `.github/workflows/deploy-service.yml` calls `deploy/deploy-service.sh <name> <version>` per changed service.
+It loads the ACL line into both Redis instances, runs `up -d --no-deps`, polls `/health/ready` for 60 s, then installs the NGINX include and reloads
+after `nginx -t`, under a host `flock` on the shared `aclfile` and NGINX. A failure rolls back only this service.
 
 ### Schema changes: expand before deploy
 
@@ -126,9 +122,9 @@ CI fails a pull request whose `mem_limit`s sum above **3,000 MB**. The host take
 - **ADR-0015's compliance check now fails by design;** this record's check replaces it.
 
 **What must now be true elsewhere.**
-- Epic #404 adds `deploy/infra/compose.yaml`, both units, `deploy-service.sh` and `.yml`, and the CI matrix, release job and memory gate.
+- Epic #404 adds `deploy/infra/compose.yaml`, both units, `deploy/deploy-service.sh` and its workflow, and the CI matrix, release job and memory gate.
 - `deploy/nginx/mosaiq.conf` gains `include /etc/nginx/mosaiq-api.d/*.conf;` in its 443 block and, once, the sign-in `limit_req` zone in http.
-- `deploy/postgresql/README.md` documents the `svc_*` lines; `deploy/README.md` the process managers, GHCR token and key paths.
+- `deploy/postgresql/README.md` documents the `svc_*` lines; `deploy/README.md` covers the process managers, GHCR token and key paths.
 - `sql/01_schema.sql` keeps one marked, idempotent section per boundary; `/health/ready` answers `schema_not_ready`; the registry has every port.
 - `.env.example` has the socket-form `DATABASE_URL`; `.gitignore` lists `services/*/contracts/`; `docs/infra.md` has the measurements.
 - On acceptance, ADR-0015's status line becomes `Superseded by ADR-0040`, and the index in [`README.md`](README.md) follows.
@@ -154,7 +150,7 @@ total=0; for v in $(yq -r '.services[].mem_limit' deploy/infra/compose.yaml serv
 [ "$total" -le 3000 ] || echo "FAIL: mem_limit sums to ${total} MB, above 3,000 MB"
 grep -nE 'docker compose' .github/workflows/deploy-service.yml deploy/deploy-service.sh | grep -v -- '-p mosaiq-'
 grep -nE 'docker (compose .*)?build|--build' deploy/deploy-service.sh .github/workflows/deploy-service.yml
-grep -rnE 'mosaiq-(auth|users|products|categories|stores|stock|customers|customer-preferences|sales|segments|recommendations|engagement|check-ins|campaigns|audit-trail)\b' .github/ deploy/
+grep -rnE 'mosaiq-(auth|users|products|categories|stores|stock|customers|customer-preferences|sales|segments|recommendations|engagement|check-ins|campaigns|audit-trail)\b' .github/ deploy/ --exclude=check-services.sh
 grep -nE 'docker|ghcr|services/' deploy/deploy.sh .github/workflows/deploy.yml
 ```
 
@@ -163,7 +159,7 @@ On the instance, `deploy/check-services.sh` fails on any output. It checks that:
 - every container has a `mem_limit`, none was OOM-killed, and every image is `ghcr.io/equipo-03-proyecto10/mosaiq-*`, `redis:` or `mongo:`;
 - each `/opt/mosaiq/services/<name>` has an active `mosaiq-svc@<name>` and project `mosaiq-<name>`; `mosaiq` and `mosaiq-infra` are active;
 - every `mosaiq-*` service container runs as a non-root user with `CapDrop` `ALL`, and the `.pem` mount appears only in `mosaiq-auth`;
-- `pg_hba` has one `local retail scram-sha-256` line per LOGIN `svc_*` role above peer, none for the bench role; `listen_addresses` is `localhost`;
+- `pg_hba` has a `local retail svc_<suffix> scram-sha-256` line for each of the fifteen service roles, above peer, and none for `svc_products_bench`; `listen_addresses` is localhost;
 - a container run with the service user, `cap_drop: [ALL]` and the socket mount cannot connect as `postgres`.
 
 A rollback is rehearsed per service: a release failing `/health/ready` must leave the previous tag serving and other projects untouched (`docker ps`).

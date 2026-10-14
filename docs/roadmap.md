@@ -135,7 +135,7 @@ following:
 
 | Part | Requirement | Current position |
 |---|---|---|
-| Microservices | At least ten (instructor, superseding six to ten in ADR-0043), each implementing one business rule, with its own container, versioned routes, authentication, JSON **and** XML responses, a health endpoint and OpenAPI documentation | Planned: 15 services, each one business rule (ADR-0034, ADR-0043), phases 13–15 (#400, #399, #401) |
+| Microservices | At least ten (instructor; ADR-0043 supersedes ADR-0016's six to ten), each implementing one business rule, with its own container, versioned routes, authentication, JSON **and** XML responses, a health endpoint and OpenAPI documentation | Planned: 15 services, each one business rule (ADR-0034, ADR-0043), phases 13–15 (#400, #399, #401) |
 | Android client | Consumes JSON only. At least four microservices, plus two device capabilities — camera, QR, GPS, notifications, local storage or sensors | Planned: ADR-0041, phase 17 (#403) |
 | Desktop client | Consumes XML only, validated against an XSD. At least four microservices, and a **different** process from the mobile one | Planned: Electron, ADR-0041, phase 16 (#402) |
 | MongoDB | Real storage, with insert, query, update, aggregation and indexing demonstrated | Planned: engagement-service only, ADR-0038 |

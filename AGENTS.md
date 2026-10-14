@@ -49,7 +49,7 @@ records are accepted.**
 - Services never touch another boundary's tables. Each connects as its own
   `svc_*` role, which holds privileges on its own tables only, and reads
   another boundary only through that producer's versioned
-  `api_<boundary>.*_v1` views and functions (ADR-0034, ADR-0044). New
+  `api_<suffix>.*_v1` views and functions (`<suffix>` is the service's `svc_` role suffix) (ADR-0034, ADR-0044). New
   service-owned tables go in service schemas, never in `public` (ADR-0046).
   Services never call each other over HTTP.
 - Events between services travel only on Redis Streams, relayed by the owner

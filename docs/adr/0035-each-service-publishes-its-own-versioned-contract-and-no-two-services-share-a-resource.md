@@ -126,7 +126,7 @@ never changes; a shared-type change is `common/v2`, adopted in each service's ow
 
 **What must now be true elsewhere.**
 - ADR-0040 runs the contracts job, stages `contracts/<name>/` and `contracts/common/v1/` into each
-  build context, and generates NGINX includes from the registry.
+  build context, and checks each service's committed `nginx/<name>.conf` against its registry port.
 - ADR-0036 defines `x-mosaiq-roles` and the liveness key; ADR-0044 the `api_*` objects and streams.
 - [ADR-0041](0041-android-and-electron-clients-run-different-processes-over-different-formats.md): each client calls only registered services, and Electron validates by namespace.
 - Phase 14 stories (#399) wait for their contracts; client stories (#402, #403) for those they use.

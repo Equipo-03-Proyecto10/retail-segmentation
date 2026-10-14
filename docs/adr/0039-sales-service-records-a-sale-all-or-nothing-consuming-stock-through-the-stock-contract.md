@@ -64,14 +64,13 @@ cycle; the retry covers the rest.
 retries hash the same. Before step 1 the service looks up `source_transaction_id = 'svc-sales:' || key`, joined to
 `sales.sale_capture`: the same hash answers 200 with the original sale and `Idempotent-Replayed: true`; a different hash, 409
 `idempotency_key_reused`. A concurrent duplicate fails step 3 with 23505 before consuming stock, rolls back and looks up again.
-Only accepted sales are remembered; the phone retries only on a network error, a 503 or a timeout (ADR-0041). Redis plays no
-part.
+Only accepted sales are remembered; the phone retries on a network error, 503 or timeout (ADR-0041). Redis plays no part.
 
 ### The reserved namespace
 
 The prefix keeps the global `UNIQUE` on `source_transaction_id`, and the web's exact lookup with it. A convention alone would
 let a CSV row name `svc-sales:<uuid>` and append to a phone sale, so the sales section of `sql/01_schema.sql` adds two BEFORE
-INSERT triggers: on `transaction`, refusing a row whose `svc-sales:` prefix does not match a `session_user` of `svc_sales`; on
+INSERT triggers: on `transaction`, refusing a row unless it has the `svc-sales:` prefix exactly when `session_user` is `svc_sales`; on
 `transaction_line`, refusing a line whose header is in the namespace unless the session user is `svc_sales`. Both are SECURITY
 INVOKER and raise SQLSTATE 22023, a `DataError` that `ingest_row` already catches, so a CSV row in the namespace is rejected as
 a malformed row, with no web change.
@@ -123,7 +122,7 @@ idempotent. sales-service never runs `XADD` from its request path.
 - **The namespace guard is new web behaviour.** A `svc-sales:` CSV row is rejected as malformed; each line pays a header lookup.
 - **Only accepted sales are remembered.** A `stock_unavailable` sale may succeed on a retry with the same key, so the phone
   shows the refusal until someone acts.
-- A multi-line CSV sale raises one event per line; consumers are idempotent.
+- An N-line CSV sale raises N + 1 events (two for the row that creates the header, one per appended line); consumers dedupe by `event_id` and are idempotent.
 - **The phone's clock is trusted.** A clock running ahead gets `future_dated`, with no skew tolerance, as for CSV.
 
 **What must now be true elsewhere.**

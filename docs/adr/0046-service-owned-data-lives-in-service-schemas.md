@@ -148,7 +148,7 @@ As the database owner after the three scripts, every query returns zero rows:
 SELECT count(*) FROM pg_tables WHERE schemaname = 'public' HAVING count(*) <> 27;
 -- 2. api_* schemas hold no tables.
 SELECT schemaname, tablename FROM pg_tables WHERE schemaname LIKE 'api\_%';
--- 4. An audited table's name is unique across schemas, so audit_log.entity stays unambiguous.
+-- 3. An audited table's name is unique across schemas, so audit_log.entity stays unambiguous.
 SELECT c.relname FROM pg_class c
  WHERE c.relkind IN ('r', 'p')
    AND c.relname IN (SELECT tc.relname FROM pg_trigger t JOIN pg_class tc ON tc.oid = t.tgrelid

@@ -15,7 +15,7 @@
 | Redis ACL user | `svc_categories`, same user line on `redis-state` and `redis-cache` |
 | MongoDB | — |
 | Compose project / image | `mosaiq-categories` / `ghcr.io/equipo-03-proyecto10/mosaiq-categories` |
-| Used by | Electron: category maintenance (F16-02). |
+| Used by | Android: category names for the interest picker (F17-04). Electron: category maintenance (F16-02). |
 | Governing ADRs | [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md), [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) |
 
 ## Business rule
@@ -141,4 +141,4 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 ## Backlog
 
-F14-07 contract, F14-08 implementation; consumed by F16-02. Issue numbers live in [`docs/backlog.md`](../backlog.md).
+F14-07 contract, F14-08 implementation; consumed by F17-04, F16-02. Issue numbers live in [`docs/backlog.md`](../backlog.md).

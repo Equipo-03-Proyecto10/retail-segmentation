@@ -86,7 +86,7 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 ### E-11 — foreign keys cross service boundaries
 
-- **What:** Tables owned by different services reference each other (`customer.channel_id`, `transaction_line.product_id`, `checkins.store_check_in` to `store` and `app_user`).
+- **What:** Tables owned by different services reference each other (`customer.channel_id`, `transaction_line.product_id`, `campaign.label_code` to `segment_label`, `checkins.store_check_in` to `store` and `app_user`).
 - **Why it is acceptable:** They come from the legacy schema or protect it. The RI check runs as the parent's owner, so the child's service needs no privilege on the parent. Dropping them would weaken the model the web relies on.
 - **Guard:** A violation (23503) maps to a 422 by constraint name. No service holds DELETE on a master, so no cascade starts from a service. The category guard covers the remaining case.
 - **Decided in:** [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) (Consequences). Register: [E-11](./README.md#e-11--foreign-keys-cross-service-boundaries).

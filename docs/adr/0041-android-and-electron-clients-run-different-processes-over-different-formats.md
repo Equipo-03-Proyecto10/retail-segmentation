@@ -36,7 +36,7 @@ Four decisions are open:
 
 The two clients run different processes for different users.
 - **Android, the floor process.** It runs the store floor for `STORE_MANAGER` and `ADMIN`, in JSON,
-  against twelve services. Its device capabilities are camera/QR, GPS and Room.
+  against thirteen services. Its device capabilities are camera/QR, GPS and Room.
 - **Electron, the back-office process.** It runs maintenance, review and monitoring for the staff
   roles, in XML validated against each service's own XSD, against all fifteen services.
 
@@ -65,6 +65,7 @@ second sale, click or check-in. Each refreshes its tokens through one single-fli
 | stock | Availability at the checked-in store (`GET /v1/stock-levels/{store_id}/{product_id}`) |
 | engagement | `QR_SCAN` after each decoded scan. Exactly one `RECO_CLICK` per tap on a recommendation, with `label_code` and `rank` (`POST /v1/engagement-events`) |
 | customers | Search and register at the counter (`GET` and `POST /v1/customers`) |
+| categories | Category names for the interest picker (`GET /v1/categories`) |
 | customer-preferences | Interest capture (`PUT /v1/preference-profiles/{customer_id}/interest-categories`) |
 | sales | Channel list (`GET /v1/channels`), with `physical_store` preselected and `channel_id` sent. `POST /v1/sales` with a client UUID in `Idempotency-Key`. `GET /v1/sales/{sale_id}` for status |
 | segments | The current assignment (`GET /v1/segment-assignments/current?customer_id=`), with the `no_open_assignment` and `unassigned_result` states shown as they are |
@@ -120,7 +121,7 @@ second sale, click or check-in. Each refreshes its tokens through one single-fli
 **What this makes easy.**
 - **The end-to-end demonstration closes:** the phone records a sale in JSON and Electron reads it
   back in XML, as success criterion 8 of [`scope-delivery-2-distributed.md`](../scope-delivery-2-distributed.md) lists.
-- **Coverage:** every service has at least one client, twelve have both; floor writes retry safely.
+- **Coverage:** every service has at least one client, thirteen have both; floor writes retry safely.
 
 **What this makes hard.**
 - **Composition costs round trips:** one batch product lookup (`GET /v1/products?ids=`, at most 50

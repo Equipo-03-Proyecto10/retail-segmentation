@@ -1001,11 +1001,73 @@ action, and `retail_app` holds no `UPDATE` or `DELETE` on `audit_log`
 owns the schema keeps its privileges, so archiving remains possible.
 ADR-0024. · `RF-14`
 
+## Services of the distributed stage
+
+These rules are enforced by services that do not exist yet. Each names its
+service and the record that decides it, and until that service ships it also
+stands in "Where the gaps are" below.
+
+### RN-52 — A principal is authenticated only by a valid credential of an active account, and a token is usable only while its session is live
+A service accepts a request only with an RS256 access token that auth-service
+signed for an active account, and only while that session's liveness key exists
+in Redis. A session ends at sign-out, on refresh-token reuse, when the account
+is deactivated, changes role or changes password, and 12 hours after sign-in at
+the latest.
+
+**Enforced:** auth-service (planned), ADR-0036 — it alone signs tokens and
+keeps the liveness keys; every service verifies the token and checks the key
+through its pinned kit, failing closed with 503 when Redis is unreachable
+(ADR-0037). Related: RN-03, which keeps the password itself out of the clear.
+· #398
+
+### RN-53 — A store has at most one location, with valid coordinates and a 25–2000 m geofence, set by the administrator only
+A store's location is optional. When set, its latitude lies between −90 and
+90, its longitude between −180 and 180, and its geofence radius between 25 and
+2000 metres. Only `ADMIN` sets or clears it.
+
+**Enforced:** stores-service (planned), ADR-0034 and ADR-0046 —
+`stores.store_location` is keyed by `store_id` and its CHECK constraints bound
+the three values; the service accepts location writes from `ADMIN` only.
+· #398
+
+### RN-54 — Each of a customer's preference sets is replaced atomically, as a whole set
+A customer's preferred channels and interest categories are independent
+multivalued facts (the 4NF decomposition). Each is written only by replacing
+the whole set at once with existing channels or categories, so no reader sees
+half an update, and two concurrent replacements of one set leave exactly one of
+them.
+
+**Enforced:** customer-preferences-service (planned), ADR-0034 — each
+replacement runs in one transaction that takes
+`pg_advisory_xact_lock(290001, hashtext(customer_id::text))` before deleting
+and inserting the set; the foreign keys refuse an unknown channel or category.
+· #398
+
+### RN-55 — In-store engagement is recorded once per client event, attributed, voided rather than deleted, and summarized
+A `QR_SCAN` or `RECO_CLICK` from the floor is stored once per client event id,
+with the user who recorded it. A wrong event is voided with a reason and kept,
+and summaries count only events that are not voided.
+
+**Enforced:** engagement-service (planned), ADR-0038 — the unique
+`client_event_id` index and the `$jsonSchema` validator on `engagement_event`
+in MongoDB, and a void operation that never deletes. · #398
+
+### RN-56 — A staff check-in is verified only within the store's geofence at acceptable accuracy, and overrides are append-only reviews
+The server computes the distance from the reported position to the store's
+location. A check-in is verified only when that distance lies within the
+geofence and the reported accuracy is acceptable; otherwise its reason says
+why. An administrator overrides the verdict only by adding a review, which is
+never updated or deleted.
+
+**Enforced:** check-ins-service (planned), ADR-0034 and ADR-0046 —
+`checkins.store_check_in` keeps the computed reason, and
+`checkins.check_in_review` is insert-only for `svc_checkins`. · #398
+
 ---
 
 ## Where the gaps are
 
-Every rule in this document is now enforced somewhere. The four that were open
+Every rule up to RN-51 is now enforced somewhere. The four that were open
 were all application-side, and all four are closed: RN-01 by F4-02 (#70), RN-03
 by F3-03 (#63), RN-05 by F4-01 (#69) and RN-21 by F3-10 (#102). A rule added
 from here starts in this section until the story that enforces it lands.
@@ -1015,6 +1077,12 @@ one treatment group before activation) waits on F11-03, RN-25 (locking the
 conversion window before assignment) waits on F11-04, RN-26 (rendering the
 `Synthetic` label) waits on F11-07, and RN-27 (refusing exposure for the
 control group) waits on F11-05.
+
+RN-52 to RN-56 belong to the distributed stage (#398). Each waits on its
+service's implementation story in Phase 14 (epic #399): RN-52 on auth-service,
+RN-53 on stores-service, RN-54 on customer-preferences-service, RN-55 on
+engagement-service and RN-56 on check-ins-service. Their ids continue after
+RN-51; the duplicate RN-37, RN-47 and RN-50 headings are left to AN-15 (#460).
 
 RN-01 was the one to watch — a hard rule in `AGENTS.md` and a success criterion
 in [`scope.md`](scope.md) §7 that held only because the seed happened to contain

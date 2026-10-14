@@ -36,9 +36,13 @@ records are accepted.**
   top-level resources. A new service needs an ADR naming its single rule.
   A deployable unit of any other kind needs an ADR too.
 - Never mix endpoints. Each top-level resource, the first path segment after
-  `/v1`, belongs to exactly one service. A foreign id appears only as a query
-  parameter or a body field. No service exposes, nests, proxies, duplicates or
-  re-serves another service's resource (ADR-0035).
+  `/v1`, belongs to exactly one service. A path never contains another
+  service's registered resource name. Another boundary's id may key a resource
+  only when it is that resource's own identity
+  (`/v1/preference-profiles/{customer_id}`,
+  `/v1/stock-levels/{store_id}/{product_id}`); otherwise foreign ids are query
+  or body fields. No service exposes, nests, proxies, duplicates or re-serves
+  another service's resource (ADR-0035).
 - Services never import or copy `web/`. A service's build context is its own
   directory. A rule shared with the web is carried by the database, or by a
   port pinned with golden fixtures (ADR-0045).
@@ -66,7 +70,11 @@ consumes JSON only. Electron consumes XML only, validated against the XSD.
 server and never write DDL anywhere else. The three scripts —
 `00_create_database.sql`, `01_schema.sql`, `02_seed_30_per_table.sql` — must run
 clean in that order against an empty PostgreSQL. A change that breaks a clean
-run is a broken change, not a migration problem.
+run is a broken change, not a migration problem. Each service boundary's
+section of `sql/01_schema.sql` is idempotent (`IF NOT EXISTS`,
+`CREATE OR REPLACE`), so an operator applies that committed section to the live
+database before the service that needs it deploys (ADR-0040); nothing else is
+applied by hand.
 
 **The model is normalized to 4NF, and each normalization decision is written
 down.** The justification is a graded deliverable, not a comment.

@@ -10,72 +10,43 @@
 
 ## Context
 
-The first draft of the distributed decision set told services to reuse the
-web's transport-free modules in `web/services/` and `web/db/` instead of
-reimplementing a business rule. `AGENTS.md` still says so, and so does C-4 in
-[`scope-delivery-2-distributed.md`](../scope-delivery-2-distributed.md), which
-has users-service reuse `web/services/users.py`. The aim was sound: one
-implementation of each rule. It does not survive contact with the code or with
-the stage's requirements.
+The first draft of the distributed decision set, and the `AGENTS.md` and C-4 text it produced, told services to reuse the web's
+transport-free modules in `web/services/` and `web/db/`. The aim was sound: one implementation of each rule. It does not survive
+contact with the code or with the stage's requirements.
 
-**Independence.** The instructor requires each service to be built, versioned,
-deployed and rolled back on its own. A service that imports `web/` changes
-whenever the web changes. It cannot pin a version of the web, either, because
-the web has none: `pyproject.toml` has no `[project]` table ("The application
-is not packaged"), so `web/` is a directory, not a release.
+- **Independence.** Each service must be built, versioned, deployed and rolled back on its own. A service that imports `web/`
+  changes whenever the web changes, and cannot pin a version of it: `pyproject.toml` has no `[project]` table ("The application
+  is not packaged"), so `web/` is a directory, not a release.
+- **What an import pulls in.** `web/db/__init__.py` imports `flask` and `web.config` at package import, so
+  `from web.db.users import ...` brings Flask and the web's configuration into a service that uses neither. `web/services/users.py`
+  imports `web.db.sessions.revoke_user_sessions`; its `set_active` runs `UPDATE app_session`, a web-only table no `svc_*` role may
+  touch ([ADR-0036](0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md)), so reuse would mean
+  granting a service that table, or a runtime failure on the first deactivation.
+- **The web is frozen.** It cannot be refactored into a library first; it takes bug fixes and the analytics gaps of epic #405,
+  nothing that reshapes it for a second consumer.
+- **Language.** Six of the fifteen services are Rust
+  ([ADR-0034](0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md)); they could never import Python.
 
-**What an import actually pulls in.**
-- `web/db/__init__.py` imports `flask` and `web.config` at package import, so
-  `from web.db.users import ...` brings Flask and the web's configuration into
-  a service that uses neither.
-- `web/services/users.py` imports `web.services.auth` and
-  `web.db.sessions.revoke_user_sessions`. Its `set_active` calls that function,
-  which runs `UPDATE app_session`. `app_session` is a web-only table on which no
-  `svc_*` role holds any privilege
-  ([ADR-0036](0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md)).
-  Reusing the module would mean granting a service a web-only table, or a
-  runtime failure on the first deactivation.
-
-**The web is frozen.** It cannot be refactored into a library first. It may
-receive bug fixes and the analytics gaps of epic #405, nothing that reshapes it
-for a second consumer.
-
-**Language.** Six of the fifteen services are Rust: stores, stock,
-customer-preferences, segments, check-ins and audit-trail
-([ADR-0034](0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md)).
-They could never import Python, so for them the reuse rule offered nothing.
-
-Every service still needs the same mechanics: RS256 verification, the liveness
-check, Accept negotiation, JSON and XML, the error envelope, pagination and
-health. Fifteen hand-written copies of the token check would drift into fifteen
-security postures.
-
-The real uncertainty is the cost. Some rules the web already implements are
-ported rather than shared, and then two implementations exist. This record
-cannot make that cost go away. It can only make drift visible.
+Every service still needs the same mechanics: RS256 verification, the liveness check, Accept negotiation, JSON and XML, the
+error envelope, pagination and health. Fifteen hand-written copies of the token check would drift into fifteen security
+postures. The real uncertainty is the cost: rules the web already implements are ported, and then two implementations exist.
+This record cannot remove that cost; it can only make drift visible.
 
 ## Decision
 
-No service imports, copies or builds from `web/`. Each service is built from its
-own directory, with its own lock file and `VERSION`. A rule that services share
-with the web is carried either by the database, which both writers pass
-through, or by a port in the service, pinned to the web's behaviour by golden
-fixtures captured once from the web on the seed database. Mechanics common to
-all services come from two mechanism-only kits, released by tag and pinned per
-service. The tables below are the detail.
+No service imports, copies or builds from `web/`. Each service is built from its own directory, with its own lock file and
+`VERSION`. A rule that services share with the web is carried either by the database, which both writers pass through, or by
+a port in the service, pinned to the web's behaviour by golden fixtures captured once from the web on the seed database.
+Mechanics common to all services come from two mechanism-only kits, released by tag and pinned per service.
 
 ### How a shared rule is carried
 
-**By the database.** These need no port, because every writer, web or service,
-passes through them:
-- the CHECKs in `sql/01_schema.sql`;
+**By the database.** These need no port, because every writer, web or service, passes through them:
+- the CHECKs in `sql/01_schema.sql`, including `quantity_on_hand >= 0`;
 - `ux_app_user_single_administrator` and `ux_app_user_email_lower`;
-- `trg_role_code_immutable` and `trg_category_no_cycle`, plus
-  `trg_category_delete_guard`, which this stage adds;
+- `trg_role_code_immutable`, `trg_category_no_cycle`, and `trg_category_delete_guard`, which this stage adds;
 - the foreign keys with `ON DELETE RESTRICT`;
-- `quantity_on_hand >= 0`;
-- `api_stock.consume_v1`;
-- `fn_audit`.
+- `api_stock.consume_v1` and `fn_audit`.
 
 **By a port pinned with golden fixtures:**
 
@@ -86,64 +57,35 @@ passes through them:
 | Users outcomes | `create_user`, `update_user`, `change_role`, `set_active`, `transfer_administrator` and `validate_user` in `web/services/users.py` | The accept or refuse outcome for each scenario: a second administrator, removing the only one, a transfer, a case-variant duplicate email, a malformed email | users |
 | Campaign transitions | `TRANSITIONS`, `transition`, `update_draft` and `validate_campaign` in `web/services/campaigns.py` | Every (from, to) pair, the draft-only edit rule and the end-before-start refusal | campaigns |
 
-**How fixtures are captured and kept:**
-- A capture script runs the web code against a fresh database built by the
-  three scripts. It lives in `tests/golden/`, outside `services/`, `packages/`
-  and `bench/`, because it is the one place that may import `web/`.
-- It writes JSON under `services/<name>/tests/golden/`. Each file records the
-  web commit, the capture date, and the SHA-256 of `02_seed_30_per_table.sql`.
-- Service CI runs the port against the fixtures. It never runs web code.
-- Where a service deliberately differs from the web, the fixture records the
-  difference with its reason instead of hiding it. For example, the service
-  answers with an error code where the web has a message.
+**How fixtures are captured and kept.** The capture script lives in `tests/golden/`, the one place that may import `web/`.
+It writes JSON under `services/<name>/tests/golden/`, recording the web commit, the capture date and the seed hash. Service CI
+runs the port against the fixtures, never web code. Where a service deliberately differs from the web, the fixture records the
+difference with its reason.
 
 ### The kits
 
-| | `packages/kit-py` (`mosaiq-kit`) | `packages/kit-rs` |
-|---|---|---|
-| Packaging | Its own `pyproject.toml` with a `[project]` table and a semver version | Its own crate and `Cargo.lock` |
-| Released as | Tag `kit-py/vX.Y.Z`, with a changelog | Tag `kit-rs/vX.Y.Z`, with a changelog |
-| Pinned by a service as | A git dependency at an exact tag, locked in its `uv.lock` | `tag = "kit-rs/vX.Y.Z"` in its `Cargo.toml` |
-
-Both kits contain only:
-- RS256 verification with JWKS file reload;
-- the liveness check;
-- Accept negotiation;
-- JSON and XML rendering against an XSD the service supplies;
-- the error envelope;
-- pagination, with bounds the service supplies;
-- health handlers;
-- the correlation id;
-- a rate limiter;
-- the outbox relay and the stream consumer helpers;
-- the transaction-local audit-actor helper (`set_config('mosaiq.user_id', ...)`).
-
-They contain:
-- no role or permission names;
-- no error catalogue;
-- no business rule;
-- no Redis key except the published liveness family
-  `pub:auth:v1:live:{sid}` and the `stream:` naming convention.
-
-A service upgrades a kit in its own pull request, with its own `VERSION` bump.
-Path dependencies on `packages/` are rejected.
+`packages/kit-py` (`mosaiq-kit`) and `packages/kit-rs` are released by tag (`kit-py/vX.Y.Z`, `kit-rs/vX.Y.Z`, with a changelog).
+Each service pins an exact tag (a git dependency locked in `uv.lock`, or `tag = "kit-rs/vX.Y.Z"` in `Cargo.toml`); path dependencies are rejected.
+Both contain only: RS256 verification with JWKS reload, the liveness check, Accept negotiation, JSON and XML rendering against a
+service-supplied XSD, the error envelope, pagination, health, the correlation id, a rate limiter, the outbox relay and stream
+consumer helpers, and the audit-actor helper. They contain no role or permission names, no error catalogue, no business rule,
+and no Redis key except `pub:auth:v1:live:{sid}` and the `stream:` naming convention.
+A kit upgrade is the service's own pull request, with its own `VERSION` bump.
 
 ### One service, one build
 
-- Each `services/<name>/` has its own `VERSION` (semver) and its own lock file:
-  `uv.lock`, or `Cargo.lock`.
-- There is no Cargo workspace spanning services. A workspace would share one
-  `Cargo.lock` across them.
-- The Docker build context is `services/<name>/`. A Dockerfile never `COPY`s
-  or `ADD`s from `web/`, or from outside its directory.
-- Repository-wide `black`, `ruff` and `cargo fmt` remain the global style
-  gates. They read code; they do not link it.
+- Each `services/<name>/` has its own `VERSION` (semver) and its own lock file: `uv.lock`, or `Cargo.lock`.
+- There is no Cargo workspace spanning services; it would share one `Cargo.lock` across them.
+- The Docker build context is `services/<name>/`. A Dockerfile never `COPY`s or `ADD`s from `web/`, or from outside its directory.
+- CI stages `contracts/<name>/` and `contracts/common/v1/` into `services/<name>/contracts/` before the build
+  ([ADR-0040](0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md)); nothing else from outside the directory enters the image.
+- Repository-wide `black`, `ruff` and `cargo fmt` remain the global style gates. They read code; they do not link it.
 
 ## Alternatives considered
 
 | Alternative | Why it was rejected |
 |---|---|
-| Services import `web/services/` and `web/db/` (the earlier draft, and the current `AGENTS.md` rule) | It drags Flask and `web.config` into every service. It makes users-service write `app_session` through `set_active`. It ties every service's build and rollback to an unversioned web. And it offers nothing to the six Rust services |
+| Services import `web/services/` and `web/db/` (the earlier draft) | It drags Flask and `web.config` into every service. It makes users-service write `app_session` through `set_active`. It ties every service's build and rollback to an unversioned web. And it offers nothing to the six Rust services |
 | Extract a shared domain library under `packages/` that both the web and the services use | The web is frozen and cannot be rewired to depend on it. Rust could not use it either. A domain library shared by fifteen services is the release coupling the instructor ruled out, under another name |
 | Copy (vendor) the web modules into each service | The copies inherit the Flask imports and the `app_session` write. They then drift silently, because nothing records what they were copied from or checks them against it |
 | Move every shared rule into PostgreSQL functions and triggers | The database already carries the invariants that fit there. RN-40 ranking or the users workflow rewritten in plpgsql would still be a port, without a fixture to check it, and it would make the one shared DDL file the place every boundary's logic changes |
@@ -154,117 +96,65 @@ Path dependencies on `packages/` are rejected.
 ## Consequences
 
 **What this makes easy.**
-- Each service builds from one directory, versions on its own, and rolls back
-  to its previous tag without touching the web or another service.
-- A web bug fix cannot break a service build.
-- A service carries only its own dependencies: no Flask in a service that does
-  not use it, and no web configuration.
-- Python and Rust services stand on the same footing. Each owns its rule's
-  code.
+- Each service builds from one directory, versions on its own, and rolls back to its previous tag without touching the web or another service.
+- A web bug fix cannot break a service build, and no service carries Flask or the web's configuration unless it uses them.
+- Python and Rust services stand on the same footing; each owns its rule's code.
 - The token check is written twice, once per language, not fifteen times.
 
 **What this makes hard.**
-- **Ported rules have two implementations.** The web keeps its legacy code for
-  sales validation, RN-40, users and campaigns, and the service has its own.
-  They can diverge, and nothing prevents it. Three things catch it:
-  1. **Golden tests.** In service CI, they hold each port to the web's
-     behaviour *as of the capture date*.
-  2. **A drift job in the web's CI.** It runs nightly, and on any pull request
-     that touches a captured web file or `02_seed_30_per_table.sql`. It
-     re-runs the capture on a fresh database and diffs the result against the
-     committed fixtures. A difference fails the job until an issue is opened
-     to regenerate the fixtures and update the port. The regeneration is its
-     own pull request, because one pull request never changes `web/` and
-     `services/` together.
-  3. **Database invariants.** Where both writers meet the same constraint,
-     the database refuses whichever one is wrong.
+- **Ported rules have two implementations.** The web keeps its legacy code for sales validation, RN-40, users and campaigns, and
+  the service has its own. They can diverge, and nothing prevents it. Three things catch it:
+  1. **Golden tests** in service CI hold each port to the web's behaviour *as of the capture date*.
+  2. **A drift job in the web's CI**, nightly and on any pull request touching a captured web file or the seed script, re-runs the
+     capture and fails on a difference until an issue regenerates the fixtures and updates the port, in its own pull request,
+     because one pull request never changes `web/` and `services/` together.
+  3. **Database invariants.** Where both writers meet the same constraint, the database refuses whichever one is wrong.
 
-  What none of these catch is a difference on an input the fixtures do not
-  contain. Fixtures are built from the seed database and a fixed scenario set.
-  An edge case outside both can differ unnoticed. The fixtures are evidence of
-  parity, not proof of it.
-- **Recommendations is the largest port.** RN-40 rests on the RN-34 and RN-35
-  consumption profile, and the fixtures cover every seeded customer. A change
-  to the seed data makes them stale, and regenerating them is part of that
-  change.
-- **The kits are shared code.** A bug in a kit affects every service that
-  upgrades to it. Pinning by tag means it spreads one pull request at a time,
-  and each service can stay on, or roll back to, the previous tag.
-- **Builds fetch the kit from the repository at its tag.** If the repository
-  is private, CI passes a read-only token as a build secret. The image never
-  carries it.
-- **Fifteen lock files,** not one. A dependency upgrade, such as a PyJWT
-  security fix, is fifteen small pull requests, or two kit releases followed
-  by fifteen pins.
+  None of these catch a difference on an input the fixtures do not contain. The fixtures are evidence of parity, not proof.
+- **Recommendations is the largest port.** RN-40 rests on the RN-34 and RN-35 consumption profile; a seed change makes its
+  fixtures stale, and regenerating them is part of that change.
+- **The kits are shared code.** A kit bug spreads one pull request at a time; each service can stay on, or roll back to, the previous tag.
+- **Builds fetch the kit at its tag.** If the repository is private, CI passes a read-only build secret the image never carries.
+- **Fifteen lock files.** A dependency fix such as PyJWT is two kit releases followed by fifteen pins.
 
 **What must now be true elsewhere.**
-- `AGENTS.md` replaces "A service reuses the web's transport-free modules in
-  `web/services/` and `web/db/`" with this record. Its single-administrator
-  paragraph stops saying users-service reuses `web/services/users.py`.
-- C-4 in [`scope-delivery-2-distributed.md`](../scope-delivery-2-distributed.md)
-  says the same.
-- [ADR-0036](0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md):
-  the kits carry the verification steps and the liveness check, and no role
-  names.
-- [ADR-0044](0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md):
-  the kits carry the outbox relay and the stream consumer helpers, and each
-  owner supplies its own stream names.
-- [ADR-0040](0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md):
-  each image is built from `services/<name>/`. A changed `services/<name>/`
-  requires a bumped `VERSION`.
-- [ADR-0035](0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md):
-  the XSD a kit renders against is the service's own.
-- [ADR-0042](0042-a-bench-only-rust-build-of-the-products-reads-is-compared-under-one-load.md):
-  the bench twin follows the same rules, from `bench/products-service-rs/`.
-- sales, recommendations, users and campaigns ship `tests/golden/` before
-  their first release. `tests/golden/` holds the capture script, and the web's
-  CI holds the drift job.
+- `AGENTS.md` and C-4 in the scope doc state this rule (this pull request).
+- [ADR-0036](0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md): the kits carry the verification steps and the liveness check, and no role names.
+- [ADR-0044](0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md): the kits carry the relay and consumer helpers; each owner supplies its own stream names.
+- [ADR-0040](0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md): each image is built from `services/<name>/`, and a changed `services/<name>/` requires a bumped `VERSION`.
+- [ADR-0035](0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md): the XSD a kit renders against is the service's own.
+- [ADR-0042](0042-a-bench-only-rust-build-of-the-products-reads-is-compared-under-one-load.md): the bench twin follows the same rules, from `bench/products-service-rs/`.
+- sales, recommendations, users and campaigns ship `tests/golden/` before their first release; the web's CI holds the drift job.
 
 ## Compliance
 
 CI runs these from the repository root, and each must print nothing:
 
 ```bash
-# No service, kit or bench crate imports the web.
-grep -rnE '^\s*(from|import)\s+web(\.|\s|$)' services/ packages/ bench/
-
-# Dockerfile lint: no COPY or ADD from web/, or from outside the build context.
-grep -rniE '^\s*(COPY|ADD)\s.*(\bweb/|\.\./)' services/*/Dockerfile bench/*/Dockerfile
-
-# Every compose build context is the service's own directory.
-for f in services/*/compose.yaml; do
+grep -rnE '^\s*(from|import)\s+web(\.|\s|$)' services/ packages/ bench/            # no import of the web
+grep -rniE '^\s*(COPY|ADD)\s.*(\bweb/|\.\./)' services/*/Dockerfile bench/*/Dockerfile   # Dockerfile lint
+for f in services/*/compose.yaml; do                                               # build context is the service's own directory
   yq -r '.services[] | select(has("build")) | (.build.context // .build)' "$f" \
     | grep -vxE '\.|\./' | sed "s|^|$f: |"
 done
-
-# Kits are pinned by exact tag. No path dependency on packages/.
 grep -rnE 'path\s*=\s*"[^"]*packages/|file://|\.\./packages' \
-  services/*/pyproject.toml services/*/Cargo.toml bench/*/Cargo.toml
-grep -LE 'kit-(py|rs)/v[0-9]+\.[0-9]+\.[0-9]+' services/*/pyproject.toml services/*/Cargo.toml
-
-# No Cargo workspace spans services.
-grep -lE '^\[workspace\]' Cargo.toml services/*/Cargo.toml 2>/dev/null
-
-# Each service has its own VERSION and exactly one lock file.
-for d in services/*/; do
+  services/*/pyproject.toml services/*/Cargo.toml bench/*/Cargo.toml               # no path dependency on packages/
+grep -LE 'kit-(py|rs)/v[0-9]+\.[0-9]+\.[0-9]+' services/*/pyproject.toml services/*/Cargo.toml   # kits pinned by exact tag
+grep -lE '^\[workspace\]' Cargo.toml services/*/Cargo.toml 2>/dev/null            # no Cargo workspace
+for d in services/*/; do                                                           # own VERSION, exactly one lock file
   [ -f "$d/VERSION" ] || echo "$d: no VERSION"
   n=$(ls "$d"/uv.lock "$d"/Cargo.lock 2>/dev/null | wc -l)
   [ "$n" -eq 1 ] || echo "$d: $n lock files"
 done
-
 # The kits stay mechanism-only: no role codes, and no Redis keys but the two allowed families.
 grep -rnwE 'ADMIN|ANALYST|STORE_MANAGER|MARKETING|INVENTORY_PLANNER|AUDITOR|CUSTOMER' packages/
 grep -rnoE "[\"'][a-z_]+:[a-z_]+:[^\"']*" packages/ | grep -vE "pub:auth:v1:live:|[\"']stream:"
-
-# Ported rules ship their fixtures.
-for s in sales recommendations users campaigns; do
+for s in sales recommendations users campaigns; do                                 # ported rules ship their fixtures
   [ -d "services/$s" ] && ! ls "services/$s/tests/golden/"*.json >/dev/null 2>&1 \
     && echo "services/$s: no golden fixtures"
 done
 ```
 
-The drift job runs the capture in `tests/golden/` against a fresh database,
-into a scratch directory. It then compares each outcome with the committed
-fixture, ignoring the header fields (web commit, capture date, seed hash). Any
-difference fails the job, and the failure names the fixture, the case and the
-web commit the fixture was captured from.
+The drift job re-runs the capture in `tests/golden/` on a fresh database into a scratch directory and compares each outcome
+with the committed fixture, ignoring the header fields. Any difference fails the job, naming the fixture, the case and the
+web commit it was captured from.

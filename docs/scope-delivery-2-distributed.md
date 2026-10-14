@@ -1,75 +1,48 @@
 # Scope — Delivery 2, distributed stage
 
 This document scopes the distributed part of the second delivery: the
-microservices, the two client applications, Redis, MongoDB and shared JWT.
-[ADR-0016][adr-0016] reinstated this architecture. ADR-0034 to ADR-0046 decide
-its shape.
-
-The monolith's analytics phase has its own boundary in
+microservices, the two clients, Redis, MongoDB and shared JWT.
+[ADR-0016][adr-0016] reinstated this architecture; ADR-0034 to ADR-0046 decide
+its shape. The analytics phase keeps its own boundary in
 [`scope-delivery-2-analytics.md`](scope-delivery-2-analytics.md), and
-[`scope.md`](scope.md) remains the unchanged boundary of the first delivery.
-Nothing here edits either of them.
+[`scope.md`](scope.md) the first delivery's; nothing here edits either.
 
 ---
 
 ## 1. Objective
 
 Add fifteen containerised microservices, each implementing one business rule,
-plus an Android client and an Electron client, to the MOSAIQ platform. Redis
-and MongoDB run in real operation, and JWT is shared across the services. The
-web system stays as it is.
-
-The result is demonstrated as one process across every component. A sale
-recorded on the phone is validated by a service, lands in PostgreSQL, appears
-in the web system with no web change, and is read back by the desktop client.
-
-The shape follows the instructor's reference architecture: Flask microservices
-over one centralized PostgreSQL, Redis for sessions, revocation, cache and
-counters, and clients over JSON and XML. Section 10 records where it
-deliberately differs.
+plus an Android and an Electron client, to MOSAIQ. Redis and MongoDB run in
+real operation, JWT is shared across the services, and the web system stays as
+it is. One process is demonstrated end to end: a sale recorded on the phone is
+validated by a service, lands in PostgreSQL, appears in the web system with no
+web change, and is read back by the desktop client. The shape follows the
+instructor's reference architecture; section 10 records where it differs.
 
 ## 2. Binding requirements
 
-The instructor set these requirements for the stage, and the team confirmed
-them. They override any earlier text in this repository, including the
-six-to-ten count in [ADR-0016][adr-0016].
+The instructor set these and the team confirmed them. They override any earlier
+text, including the six-to-ten count in [ADR-0016][adr-0016].
 
-1. **Total independence.** The microservices are totally independent and
-   decoupled. Each one can grow, and be built, versioned, deployed, scaled and
-   rolled back, on its own.
-2. **Never mix endpoints.** No service exposes, duplicates, proxies or nests
-   another service's resources.
+1. **Total independence.** Each service is built, versioned, deployed, scaled and rolled back on its own.
+2. **Never mix endpoints.** No service exposes, duplicates, proxies or nests another service's resources.
 3. **One business rule per microservice,** never mixed.
-4. **At least ten microservices,** with no upper cap. The team plans fifteen:
-   thirteen core and two in a second wave. Every one is a real rule, not
-   filler ([ADR-0043][adr-0043]).
-5. **The web system is frozen.** It gets no Redis, consumes no service and is
-   never rewired. Only the services consult Redis (Q-12, section 11). The web
-   may still receive bug fixes and the analytics gaps tracked in #405: the
-   experiment dashboard and internal notifications.
+4. **At least ten microservices,** with no upper cap. The team plans fifteen: thirteen core and two in a second wave ([ADR-0043][adr-0043]).
+5. **The web system is frozen.** It gets no Redis, consumes no service and is never rewired (Q-12), apart from bug fixes and the analytics gaps in #405.
 
-Course requirements still in force:
+Course requirements still in force: each service has its own container,
+versioned routes, authentication, JSON **and** XML, health endpoints and an
+OpenAPI document. Android consumes JSON only and uses four or more services and
+two device capabilities; Electron consumes XML only, validated against an XSD,
+uses four or more services and runs a different process. MongoDB runs insert,
+query, update, aggregation and indexes. Redis holds sessions, revoked tokens,
+cache, counters and rate limits for the services only; JWT is shared and
+revoked through Redis. Contracts precede clients.
 
-- Each service has its own container, versioned routes, authentication, JSON
-  **and** XML responses, health endpoints and an OpenAPI document.
-- Android consumes JSON only, uses at least four services and two device
-  capabilities.
-- Electron consumes XML only, validated against an XSD, uses at least four
-  services, and runs a different process from Android.
-- MongoDB is in real operation: insert, query, update, aggregation and
-  indexes.
-- Redis holds sessions, revoked tokens, cache, counters and rate limits, and
-  only the services use it.
-- JWT is shared, with revocation enforced through Redis.
-- Contracts are specified before the clients that consume them.
-
-Repository rules still in force: all DDL lives in `sql/01_schema.sql` and the
-three scripts run clean from empty; the model is in 4NF with a written
-justification; every table has at least 30 seed rows or an entry in
-`sql/seed-exempt.txt`; there is exactly one administrator, refused by the
-application **and** by the partial unique index; every SQL statement is
-parameterized; no secrets live in source; everything runs on one e2-standard-2
-instance (8 GB), with no managed databases and no Kubernetes.
+Repository rules still in force: DDL only in `sql/01_schema.sql`, three scripts
+clean from empty, 4NF with a written justification, 30 seed rows or a
+`sql/seed-exempt.txt` entry, exactly one administrator (application **and**
+index), parameterized SQL, no secrets in source, one e2-standard-2 instance.
 
 ## 3. Components
 
@@ -84,23 +57,13 @@ flowchart LR
         W["Web system · Flask + Jinja2<br/>systemd · frozen · no Redis, no service calls"]
         subgraph Services["Fifteen services · one compose project each (ADR-0040)"]
             subgraph Core["Core (13)"]
-                AU["auth · Flask :5001"]
-                US["users · Flask :5002"]
-                PR["products · Flask :5003"]
-                CA["categories · Flask :5004"]
-                ST["stores · Rust :5005"]
-                SK["stock · Rust :5006"]
-                CU["customers · Flask :5007"]
-                CP["customer-preferences · Rust :5008"]
-                SA["sales · Flask :5009"]
-                SE["segments · Rust :5010"]
-                RE["recommendations · Flask :5011"]
-                EN["engagement · Flask :5012"]
-                CI["check-ins · Rust :5013"]
+                AU["auth"]
+                OT["users · products · categories · stores · stock<br/>customers · customer-preferences · sales<br/>segments · check-ins"]
+                RE["recommendations"]
+                EN["engagement"]
             end
             subgraph Wave2["Second wave (2)"]
-                CM["campaigns · Flask :5014"]
-                AT["audit-trail · Rust :5015"]
+                W2["campaigns · audit-trail"]
             end
         end
         subgraph Infra["mosaiq-infra"]
@@ -111,8 +74,8 @@ flowchart LR
         subgraph PG["PostgreSQL · database retail"]
             PUB[("public<br/>27 legacy tables")]
             SS[("service schemas<br/>stores · sales · checkins")]
-            OB[("&lt;boundary&gt;_events.outbox<br/>keys only")]
-            API[("api_&lt;boundary&gt; schemas<br/>versioned *_v1 views · consume_v1")]
+            OB[("eight outboxes<br/>&lt;suffix&gt;_events.outbox · keys only")]
+            API[("api_&lt;suffix&gt; schemas<br/>versioned *_v1 views · consume_v1")]
         end
     end
     A -->|"JSON · Bearer"| N
@@ -132,90 +95,48 @@ flowchart LR
     Services -->|"liveness EXISTS · rate limits"| RS
     Services -->|"cache, falls through to PostgreSQL"| RC
     EN -->|"engagement events and rollups"| M
-
     classDef wave2 stroke-dasharray: 5 5
-    class CM,AT wave2
+    class W2 wave2
 ```
 
-No arrow joins two services. Services never call each other over HTTP; they
-meet only through the producer's `api_*` objects and through Redis Streams
-([ADR-0044][adr-0044]). Products, categories, stores and segments also consume
-their own stream, to clear their own caches.
+No arrow joins two services: they meet only through the producer's `api_*`
+objects and Redis Streams ([ADR-0044][adr-0044]).
 
 ### Services
 
-| # | Service | Lang | Port | One rule (RN ids in [`business-rules.md`](business-rules.md)) | Governing ADRs |
-|---|---|---|---|---|---|
-| 1 | auth-service | Flask | 5001 | A principal is authenticated only by a valid credential of an active account, and every token stays usable only while its session is live (RN-03) | [0036][adr-0036], [0037][adr-0037] |
-| 2 | users-service | Flask | 5002 | Accounts exist under the single-administrator rule: never two, never zero, and moved only by an explicit transfer. Email is unique case-insensitively, and accounts are deactivated, never deleted (RN-01, RN-02, RN-04) | [0034][adr-0034], [0036][adr-0036] |
-| 3 | products-service | Flask | 5003 | Product master: unique SKU, price never negative, exactly one existing category, retired by deactivation (RN-10, RN-11) | [0034][adr-0034], [0042][adr-0042] |
-| 4 | categories-service | Flask | 5004 | The category tree has no cycles. A category with products, children or customer interests is never deleted through services (RN-33, RN-06, RN-07) | [0034][adr-0034] |
-| 5 | stores-service | Rust | 5005 | Each store has at most one location, with valid coordinates and a 25–2000 m geofence, set by ADMIN only | [0034][adr-0034], [0046][adr-0046] |
-| 6 | stock-service | Rust | 5006 | Stock is never negative and is consumed only by an accepted sale, atomically with it (RN-14, [ADR-0031][adr-0031]) | [0034][adr-0034], [0039][adr-0039] |
-| 7 | customers-service | Flask | 5007 | A customer is registered once, with a valid unique email when given, a known channel and a registration date not in the future, and is never deleted through services (RN-08) | [0034][adr-0034] |
-| 8 | customer-preferences-service | Rust | 5008 | Preferred channels and interest categories are two independent multivalued facts, each replaced atomically as a whole set | [0034][adr-0034] |
-| 9 | sales-service | Flask | 5009 | A sale is recorded exactly once, all or nothing, and consumes its stock in the same transaction. Lines are dated not in the future, on or after registration, for active products, with positive quantities and positive two-decimal prices (RN-11 to RN-13, RN-37 on accepted sales) | [0039][adr-0039], [0046][adr-0046] |
-| 10 | segments-service | Rust | 5010 | A customer has at most one current segment, named by its stable label code. Unassigned states are reported as they are (RN-20, RN-21, [ADR-0018][adr-0018]) | [0034][adr-0034], [0043][adr-0043] |
-| 11 | recommendations-service | Flask | 5011 | Recommend active, in-stock products not already bought, matching a stated signal, with reasons, or report why nothing qualifies (RN-40) | [0034][adr-0034], [0044][adr-0044] |
-| 12 | engagement-service | Flask + MongoDB | 5012 | In-store engagement (`QR_SCAN`, `RECO_CLICK`) is recorded once per client event, attributed, voided rather than deleted, and summarized | [0038][adr-0038] |
-| 13 | check-ins-service | Rust | 5013 | A staff check-in is verified only when the server-computed distance lies within the store's geofence at acceptable accuracy. Overrides are append-only reviews | [0034][adr-0034], [0046][adr-0046] |
-| 14 | campaigns-service *(second wave)* | Flask | 5014 | The campaign state machine: DRAFT→ACTIVE/CANCELLED, ACTIVE→FINISHED/CANCELLED. Edits only in DRAFT, and the end date never before the start (RN-15, RN-16, RN-22, RN-31, RN-32) | [0034][adr-0034], [0043][adr-0043] |
-| 15 | audit-trail-service *(second wave)* | Rust | 5015 | The audit trail is append-only, attributed, free of credentials, and readable by ADMIN and AUDITOR only (RN-28, RN-29, RN-30) | [0034][adr-0034], [0043][adr-0043] |
+Thirteen core services and two in a second wave, campaigns and audit-trail.
+The registry of [ADR-0034][adr-0034] gives each one's single rule with its RN
+ids, its language, port, PostgreSQL role and top-level resources. Every service
+is also bound by [ADR-0035][adr-0035] (its contract and resources),
+[ADR-0040][adr-0040] (its build and deployment), [ADR-0044][adr-0044] (how it
+meets other boundaries) and [ADR-0045][adr-0045] (it never imports the web).
 
-Every service is also bound by [ADR-0035][adr-0035] (its contract and
-resources), [ADR-0040][adr-0040] (its build and deployment),
-[ADR-0044][adr-0044] (how it meets other boundaries) and [ADR-0045][adr-0045]
-(it never imports the web). [ADR-0034][adr-0034] holds the full ownership and
-grant matrix.
+Every rule cites RN ids in [`business-rules.md`](business-rules.md). RN-52 to
+RN-56 were added for auth, stores, customer-preferences, engagement and
+check-ins. The duplicate RN-37, RN-47 and RN-50 headings are tracked by AN-15
+(#460), and the sales rule cites RN-37 (accepted sales). The Rust build of the
+products reads in `bench/products-service-rs/` is a benchmark artifact, not a
+service ([ADR-0042][adr-0042]).
 
-Four of these rules have no RN id yet: stores' location, customer-preferences'
-whole-set replace, engagement's once-per-event record and check-ins' geofence
-verification. RN-37 also names two different rules today (K-means runs and
-accepted sales). [ADR-0043][adr-0043] requires both fixed in
-`docs/business-rules.md` before the registry cites them.
+### Resources
 
-The Rust build of the products reads in `bench/products-service-rs/` is a
-benchmark artifact, not a service. It is never routed, never deployed and
-never counted ([ADR-0042][adr-0042]).
-
-### Resources registry
-
-Each top-level resource, the first path segment after `/v1`, belongs to
-exactly one service. `contracts/registry.yaml` records this, and CI fails on a
-duplicate or unregistered segment ([ADR-0035][adr-0035]).
-
-| Service | Resources |
-|---|---|
-| auth | `sessions`, `jwks.json` |
-| users | `users`, `roles`, `administrator-transfers` |
-| products | `products` |
-| categories | `categories` |
-| stores | `stores` |
-| stock | `stock-levels` |
-| customers | `customers` |
-| customer-preferences | `preference-profiles` |
-| sales | `sales`, `channels` |
-| segments | `segments`, `segment-assignments` |
-| recommendations | `recommendations` |
-| engagement | `engagement-events`, `engagement-summaries` |
-| check-ins | `check-ins` |
-| campaigns | `campaigns` |
-| audit-trail | `audit-entries` |
-
-A foreign id appears only as a query parameter or a body field, as in
-`/v1/stock-levels?product_id=` or `/v1/recommendations?customer_id=`. One fact
-has one write endpoint. The meta routes `/health/live`, `/health/ready`,
-`/openapi.yaml` and `/schema.xsd` sit outside `/v1` and outside the registry.
+Each top-level resource, the first path segment after `/v1`, belongs to exactly
+one service, recorded in `contracts/registry.yaml` and checked by CI
+([ADR-0035][adr-0035]). A path never contains another service's registered
+resource name. Another boundary's id may key a resource only when it is that
+resource's own identity (`/v1/preference-profiles/{customer_id}`,
+`/v1/stock-levels/{store_id}/{product_id}`); otherwise foreign ids are query or
+body fields. One fact has one write endpoint. The meta routes `/health/live`,
+`/health/ready`, `/openapi.yaml` and `/schema.xsd` sit outside `/v1` and the
+registry.
 
 ### The web system
 
-The web system keeps its server-side sessions, reads and writes PostgreSQL
-directly as `retail_app`, connects to no Redis and consumes no service. It sees
-what the services record because they write the same `public` tables it reads.
-Its own writes reach the services through capture triggers in
-`sql/01_schema.sql`, which fill the owner's outbox with no web code change.
-`retail_app` gets no privilege on any service schema
-([ADR-0046][adr-0046]).
+The web system keeps its server-side sessions, reads and writes PostgreSQL as
+`retail_app`, connects to no Redis and consumes no service. It sees what the
+services record in the `public` tables it reads, and its own writes reach them
+through capture triggers in `sql/01_schema.sql` that fill the owner's outbox.
+`retail_app` gets no privilege on any service schema ([ADR-0046][adr-0046]).
 
 ## 4. Constraints
 
@@ -232,38 +153,16 @@ Its own writes reach the services through capture triggers in
 
 ## 5. Rules every component follows
 
-- **Contracts come first.** A service's OpenAPI, XSD and examples merge before
-  its implementation, and before any client story that consumes them. Each
-  service versions its own contract ([ADR-0035][adr-0035]).
-- **One rule per service, and one owner per resource.** A service implements
-  exactly one business rule and is registered with it in
-  `contracts/registry.yaml`. It never exposes, nests, proxies or re-serves
-  another service's resource ([ADR-0043][adr-0043], [ADR-0035][adr-0035]).
-- **No web imports.** No service imports or copies `web/`. A rule shared with
-  the web is carried by the database, or by a port pinned with golden fixtures
-  ([ADR-0045][adr-0045]).
-- **Cross-boundary reads go through `api_*` contracts only.** A service holds
-  privileges on its own tables and reads another boundary only through that
-  producer's versioned `api_<boundary>.*_v1` views and functions. No
-  service-to-service HTTP ([ADR-0034][adr-0034], [ADR-0044][adr-0044]).
-- **Events travel on Redis Streams.** The owner relays its own transactional
-  outbox to `redis-state`. `pg_notify` is only an owner's private wake-up, and
-  no service listens on another boundary's channel ([ADR-0044][adr-0044]).
-- **Authentication.** RS256 tokens carrying the role code only are issued by
-  auth-service, and verified locally by every other service, which then checks
-  that the session's liveness key exists in `redis-state`
-  ([ADR-0036][adr-0036]).
-- **Fail closed.** When `redis-state` is unreachable, authentication fails with
-  503. When `redis-cache` is unreachable, reads fall through to PostgreSQL
-  ([ADR-0037][adr-0037]).
-- **Independent build and deployment.** Each service has its own lock file,
-  `VERSION`, image and compose project, and rolls back alone
-  ([ADR-0040][adr-0040]).
-- **Service-owned tables live in service schemas,** never in `public`
-  ([ADR-0046][adr-0046]).
-- **No secrets in source.** New configuration goes in `.env.example` with a
-  safe local default.
-- **Every SQL statement is parameterized,** in Python and in Rust.
+- **Contracts come first,** each versioned by its service ([ADR-0035][adr-0035]).
+- **One rule per service, one owner per resource** ([ADR-0043][adr-0043], [ADR-0035][adr-0035]).
+- **No web imports** ([ADR-0045][adr-0045]).
+- **Cross-boundary reads go through `api_*` contracts only,** never service-to-service HTTP ([ADR-0034][adr-0034], [ADR-0044][adr-0044]).
+- **Events travel on Redis Streams** from the owner's outbox ([ADR-0044][adr-0044]).
+- **Only auth-service signs tokens,** and every service checks session liveness ([ADR-0036][adr-0036]).
+- **Fail closed.** Authentication fails closed when Redis state is unreachable ([ADR-0036][adr-0036], [ADR-0037][adr-0037]).
+- **Independent build and deployment,** each service rolling back alone ([ADR-0040][adr-0040]).
+- **Service-owned tables live in service schemas,** never in `public` ([ADR-0046][adr-0046]).
+- **No secrets in source,** and **every SQL statement is parameterized,** in Python and in Rust.
 
 ## 6. Phases
 
@@ -276,9 +175,7 @@ Its own writes reach the services through capture triggers in
 | 17 | Android client | Kotlin floor app over JSON | #403 |
 | 18 | Deployment and demonstration | Per-service deployment on the instance, NGINX routes, negative tests, end-to-end demo, diagrams | #404 |
 
-Story ids and the dependency graph are in [`backlog.md`](backlog.md). Phase
-14's stories are being reissued for the fifteen-service design. Nothing in
-phases 14–18 starts before F13-01 (#408) accepts the decision set.
+Story ids and the dependency graph are in [`backlog.md`](backlog.md). Its phase 13–18 story tables predate the fifteen-service design and are being reissued; where they differ, ADR-0034 to ADR-0046 win. Nothing in phases 14–18 starts before F13-01 (#408) accepts the decision set.
 
 ## 7. Deliverables
 
@@ -293,56 +190,29 @@ phases 14–18 starts before F13-01 (#408) accepts the decision set.
 | 7 | Android and Electron clients | `clients/android/`, `clients/desktop/` |
 | 8 | Flask vs Rust benchmark of the products reads, and its report | `bench/products-service-rs/`, `bench/k6/`, `docs/evidence/` |
 | 9 | Deployment of the stack on the instance | `deploy/infra/`, `deploy/systemd/`, `.github/workflows/` |
-| 10 | Negative tests and end-to-end demonstration evidence | `docs/evidence/`, `docs/demo-distributed.md` |
-| 11 | Updated architecture diagrams and README | `docs/architecture/`, `README.md` |
-
-Directories are created by the story that produces their first file.
+| 10 | Negative tests, end-to-end demonstration evidence, and updated architecture diagrams and README | `docs/evidence/`, `docs/demo-distributed.md`, `docs/architecture/`, `README.md` |
 
 ## 8. Out of scope
 
 - **Kubernetes, managed databases, and any second VM** (C-5, C-6).
-- **Any Redis connection or service call from the web system.** This is the
-  boundary of #398.
+- **Any Redis connection or service call from the web system** (#398).
 - **Rebuilding the web system** or moving it into containers.
-- **Account email verification over SMTP.** It is in the reference
-  architecture but not in our requirements. Spike F13-10 (#446) decides it,
-  noting that GCP blocks outbound port 25 on Compute Engine.
-- **Push notifications** (they need Firebase). The Android device capabilities
-  are camera/QR, GPS and local storage.
-- **Stock receipts, transfers, counts and adjustments** (`inventory.write`).
-  They are still sequenced after the analytics phase in
-  [`roadmap.md`](roadmap.md). When built, they become further stock-owned
-  `api_stock` functions.
+- **Account email verification over SMTP,** pending spike F13-10 (#446); GCP blocks outbound port 25.
+- **Push notifications** (they need Firebase); Android uses camera/QR, GPS and local storage.
+- **Stock receipts, transfers, counts and adjustments** (`inventory.write`), sequenced after analytics in [`roadmap.md`](roadmap.md).
 
 ## 9. Success criteria
 
 The distributed stage is complete when all of these are checkable and pass:
 
-1. ADR-0034 to ADR-0046 are Accepted, and no implementation merged before its
-   record.
-2. At least ten services run, each in its own container and each implementing
-   exactly one registered business rule. Each has versioned routes, JSON and
-   XML responses, authentication, `/health/live`, `/health/ready` and an
-   OpenAPI document that CI validates.
-3. Every top-level resource belongs to exactly one service, and CI proves it
-   against `contracts/registry.yaml`. Every XML example and every desktop
-   response validates against its XSD.
-4. Each `svc_*` role holds exactly the privileges in
-   `contracts/db/grants.csv`, and CI proves it in both directions. No service
-   role holds a privilege on another boundary's base table. A second
-   administrator is refused by users-service and by the index.
-5. A revoked session is refused by every service on the very next request,
-   with no PostgreSQL query. With `redis-state` down, protected routes answer
-   503.
-6. MongoDB demonstrates insert, query (with index use), update, aggregation and
-   indexing on engagement recorded by the clients.
-7. The Android client uses at least four services and two device
-   capabilities. The Electron client uses at least four services, in a
-   different process.
-8. The end-to-end demonstration (F18-05) runs on the instance and is recorded:
-   Android sends JSON, a service validates the JWT, Redis confirms the session
-   is live, the data lands in PostgreSQL or MongoDB, the web system shows it,
-   and Electron reads it back in XML.
+1. ADR-0034 to ADR-0046 are Accepted, and no implementation merged before its record.
+2. At least ten services run, each in its own container and implementing exactly one registered rule, with versioned routes, JSON and XML, authentication, `/health/live`, `/health/ready` and an OpenAPI document that CI validates.
+3. CI proves every top-level resource belongs to exactly one service. Every XML example and desktop response validates against its XSD.
+4. Each `svc_*` role holds exactly the privileges in `contracts/db/grants.csv`, proved by CI both ways. A second administrator is refused by users-service and by the index.
+5. A revoked session is refused by every service on the next request, with no PostgreSQL query. With `redis-state` down, protected routes answer 503.
+6. MongoDB demonstrates insert, query (with index use), update, aggregation and indexing on engagement recorded by the clients.
+7. Android uses at least four services and two device capabilities; Electron uses at least four services, in a different process.
+8. The end-to-end demonstration (F18-05) runs on the instance and is recorded: Android sends JSON, a service validates the JWT, Redis confirms the session is live, the data lands in PostgreSQL or MongoDB, the web system shows a phone sale with no web change (in the reports index revenue summary and the stock consultation), and Electron reads it back in XML.
 9. The Flask vs Rust report is reproducible from the repository.
 10. The web system works unchanged, and its CI jobs still pass.
 
@@ -371,14 +241,10 @@ The distributed stage is complete when all of these are checkable and pass:
 | Q-13 | The instructor is asked to confirm in writing that (1) read-only boundaries, such as segments and audit-trail, count as services implementing one business rule, and (2) services that co-write legacy `public` tables with the frozen web, reading across boundaries only through versioned `api_*` views and exchanging events only on Redis Streams, satisfy "totally independent" | Yes to both. [ADR-0043][adr-0043] keeps the floor of ten even under the strict reading of (1) |
 
 [adr-0016]: adr/0016-the-second-delivery-reinstates-the-distributed-architecture.md
-[adr-0018]: adr/0018-two-segmentation-strategies-behind-one-method-agnostic-pipeline.md
-[adr-0031]: adr/0031-sales-ingestion-decrements-inventory-atomically.md
 [adr-0034]: adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md
 [adr-0035]: adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md
 [adr-0036]: adr/0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md
 [adr-0037]: adr/0037-two-redis-instances-carry-sessions-caches-limits-and-inter-service-streams.md
-[adr-0038]: adr/0038-mongodb-holds-in-store-engagement-owned-by-engagement-service-alone.md
-[adr-0039]: adr/0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md
 [adr-0040]: adr/0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md
 [adr-0041]: adr/0041-android-and-electron-clients-run-different-processes-over-different-formats.md
 [adr-0042]: adr/0042-a-bench-only-rust-build-of-the-products-reads-is-compared-under-one-load.md

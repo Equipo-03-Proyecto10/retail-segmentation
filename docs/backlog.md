@@ -13,7 +13,7 @@ Priority: **P0** the delivery fails without it · **P1** required, schedulable
 later · **P2** optional.
 
 **Phases 13–18 are the distributed stage of the second delivery.** They
-follow ADR-0034 to ADR-0042, scoped in
+follow ADR-0034 to ADR-0046, scoped in
 [`scope-delivery-2-distributed.md`](scope-delivery-2-distributed.md). No story
 in them starts before F13-01 (#408) accepts that decision set. **The
 analytics phase is not finished.** The gaps found on 2026-10-13 are the
@@ -611,7 +611,7 @@ Epic #400.
 
 | ID | Issue | Story | Priority | Depends on |
 |---|---|---|---|---|
-| F13-01 | #408 | Review and accept the distributed-stage decision set (ADR-0034 to ADR-0042) | P0 | — |
+| F13-01 | #408 | Review and accept the distributed-stage decision set (ADR-0034 to ADR-0046) | P0 | — |
 | F13-02 | #412 | Write the shared integration contract conventions and common XSD types | P0 | F13-01 |
 | F13-03 | #416 | Build the shared Python service kit for JWT, Redis session checks, content negotiation and health | P0 | F13-01, F13-02, F13-05 |
 | F13-04 | #420 | Build the shared Rust service crate with the same authentication, negotiation and health behaviour | P0 | F13-01, F13-02, F13-05 |

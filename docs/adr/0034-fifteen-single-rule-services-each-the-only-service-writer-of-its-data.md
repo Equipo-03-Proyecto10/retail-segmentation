@@ -93,14 +93,12 @@ the one declared read owner, while the web is the only writer. Unlisted tables g
 | campaigns | `campaign` **S+W**: SELECT, INSERT, UPDATE; no DELETE. It allocates `campaign_id` under the web's advisory lock key 221001 (`web/db/campaigns.py`) and retries on 23505 | — | — |
 | audit-trail | `audit_log` **R**: SELECT. Only `fn_audit` writes it, running as `definer_audit` | — | — |
 
-- **Consuming** is USAGE on the `api_<suffix>` schema plus SELECT on the view, or EXECUTE on
-  the function. Producers also hold SELECT on their own `api_*` views. EXECUTE on `consume_v1`
-  goes to `svc_sales` only.
-- **Outboxes.** The eight owners (users, products, categories, stores, stock,
-  customer-preferences, sales, segments) each own `<suffix>_events.outbox`, named in ADR-0044.
-  The `svc_*` role holds SELECT, UPDATE of `relayed_at`, and DELETE for the 7-day purge;
-  `definer_<suffix>` (`definer_stock` for stock) inserts through the capture trigger. Outboxes
-  are seed-exempt runtime state.
+- **Consuming** is USAGE on the `api_<suffix>` schema plus SELECT on the view, or EXECUTE on the
+  function. Producers also hold SELECT on their own `api_*` views. EXECUTE on `consume_v1` goes to `svc_sales` only.
+- **Outboxes.** users, products, categories, stores, stock, customer-preferences, sales and segments
+  each own `<suffix>_events.outbox` ([ADR-0044](0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md)
+  names them). The `svc_*` role holds SELECT, UPDATE of `relayed_at`, and DELETE for the 7-day purge;
+  `definer_<suffix>` (`definer_stock` for stock) inserts through the capture trigger. Seed-exempt runtime state.
 - **Web-only tables** get no `svc_*` privilege: `app_session`, `sales_load`, `sales_load_rejection`,
   `experiment`, `experiment_group`, `experiment_assignment`, `experiment_exposure`, `experiment_conversion`.
 - **No cascade from a service:** none deletes a master. A categories delete passes
@@ -155,7 +153,7 @@ the one declared read owner, while the web is the only writer. Unlisted tables g
 - `contracts/db/grants.csv` has the header `role,object,privilege`. An object is
   `schema.relation`, `schema.relation(column)`, `schema.function(argtypes)` as
   `regprocedure` prints it, or a bare schema name for USAGE outside `public`.
-- `sql/seed-exempt.txt` and the 30-row seeds follow ADR-0046.
+- `sql/seed-exempt.txt` and the 30-row seeds follow [ADR-0046](0046-service-owned-data-lives-in-service-schemas.md).
 - Every service write transaction sets `set_config('mosaiq.user_id', <sub>, true)`.
 - `contracts/db/` records the advisory lock keys 221001 and 290001.
 

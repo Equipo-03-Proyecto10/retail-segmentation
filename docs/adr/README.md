@@ -76,7 +76,8 @@ still `Proposed`, for the fifteen single-rule services the instructor's
 requirements call for, and ADR-0043 to ADR-0046 were added. They are proposed
 together in one pull request, with the documents that rest on them:
 `AGENTS.md`, `docs/roadmap.md`, `docs/requirements.md`,
-`docs/datastores/README.md` and `docs/scope-delivery-2-distributed.md`.
+`docs/business-rules.md`, `docs/datastores/README.md` and
+`docs/scope-delivery-2-distributed.md`.
 **That pull request must not merge while any of the thirteen still reads
 `Proposed`.** Each is accepted or rejected in review (F13-01, #408), so that
 this set does not repeat what happened to 0014–0016.

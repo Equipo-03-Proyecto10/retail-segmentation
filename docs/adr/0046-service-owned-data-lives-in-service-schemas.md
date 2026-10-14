@@ -105,8 +105,8 @@ leaving `retail_app` out needs no `REVOKE`. A table `fn_audit` audits has a name
   triggers, grants. The verification block stays last, gaining the USAGE assertion below and
   ADR-0039's namespace probe.
 - `sql/02_seed_30_per_table.sql` seeds the three tables with 30 schema-qualified rows each.
-  `sql/seed-exempt.txt` gains `sales.sale_capture` and the eight outboxes (`users_events.outbox` …
-  `segments_events.outbox`) as runtime state. `ci.yml`'s 30-row loop becomes the one below.
+  `sql/seed-exempt.txt` gains `sales.sale_capture` and the eight `<suffix>_events.outbox` lines, named
+  as in ADR-0044, as runtime state. `ci.yml`'s 30-row loop becomes the one below.
 - `docs/data-model.md` §2.4 records the full normalization notes (from this record and its full
   draft), the columns and the schemas; `contracts/db/grants.csv` lists the USAGE rows.
 

@@ -10,174 +10,78 @@
 
 ## Context
 
-The second delivery requires MongoDB in real operation: insert, query, update,
-aggregation and indexes, demonstrated on data the system actually uses.
-[ADR-0016](0016-the-second-delivery-reinstates-the-distributed-architecture.md)
-lifted ADR-0005's "design only" condition, but not the design itself.
-[`../datastores/mongodb-design.md`](../datastores/mongodb-design.md) still
-proposes six collections (`consumption_profile`, `rfm_snapshot`,
-`segment_migration`, `clustering_model`, `recommendation`, `experiment_event`).
-Every one of them now duplicates a fact that PostgreSQL holds and the web
-reads: segment history and runs
-([ADR-0017](0017-segment-assignment-history-replaces-the-mutable-current-segment.md)),
-experiment events
-([ADR-0019](0019-experiment-measurement-separates-assignment-exposure-and-conversion.md))
-and the RN-34 consumption profile, which is computed from accepted sales.
+The second delivery requires MongoDB in real operation: insert, query, update, aggregation and indexes, on data the system
+actually uses. [`../datastores/mongodb-design.md`](../datastores/mongodb-design.md) still proposes six collections, and each
+now duplicates a fact PostgreSQL holds and the web reads: segment history and runs (ADR-0017), experiment events (ADR-0019) and
+the RN-34 consumption profile. An earlier draft replaced them with one `customer_activity` collection of QR scans, GPS
+check-ins, recommendation clicks and purchases. Two of those four do not belong in MongoDB:
+- **Check-ins carry a rule that needs a join** with `stores.store_location`, and an override is an append-only review. They
+  live in the `checkins` schema of PostgreSQL ([ADR-0046](0046-service-owned-data-lives-in-service-schemas.md)), where the web can see them.
+- **Purchases are already `transaction` rows** ([ADR-0039](0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md)).
+  A `PURCHASE` document would be a second copy, kept in step by a consumer, and the two would eventually disagree.
 
-The earlier draft of this record replaced them with one `customer_activity`
-collection owned by an activity-service. It held four event types: QR scans,
-GPS check-ins, recommendation clicks and purchases. Two of those four do not
-belong in MongoDB:
-
-- **Check-ins carry a rule that needs a join.** A check-in is verified against
-  the store's location and geofence, and an override is an attributed,
-  append-only review. That is check-ins-service's rule, its data lives in the
-  `checkins` schema of PostgreSQL, next to `stores.store_location`
-  ([ADR-0046](0046-service-owned-data-lives-in-service-schemas.md)), and the
-  web can see it there.
-- **Purchases are already recorded.** A sale is a `transaction` row with its
-  `transaction_line` rows, written by the web's CSV path or by sales-service
-  ([ADR-0039](0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md)).
-  A `PURCHASE` document would be a second copy of it, kept in step by a
-  consumer, and the two would eventually disagree.
-
-What is left is genuinely new data that no table holds: a product QR scanned on
-the floor, and a tap on a recommendation shown to a customer. The Android client
-produces both ([ADR-0041](0041-android-and-electron-clients-run-different-processes-over-different-formats.md)).
-They are written far more often than they are read, read mostly as counts, never
-joined transactionally with a sale, and their shape differs by type: a click
-carries the label and the rank it was shown at, a scan does not.
-
-[ADR-0034](0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md)
-gives every fact one service writer.
-[ADR-0043](0043-at-least-ten-microservices-each-implementing-one-business-rule.md)
-gives every service one rule. A shared MongoDB database would break both.
-
-Three things are judgement calls rather than forced:
-
-- the MongoDB instance is a standalone `mongod`, so an event and its rollup
-  cannot be written in one transaction;
-- the built-in `readWrite` role is used rather than a custom role without
-  `remove`;
+What is left is new data no table holds: a product QR scanned on the floor and a tap on a shown recommendation, both from
+Android ([ADR-0041](0041-android-and-electron-clients-run-different-processes-over-different-formats.md)). They are written far
+more often than read, read mostly as counts, never joined with a sale, and shaped by type.
+[ADR-0034](0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) gives every fact one service writer
+and [ADR-0043](0043-at-least-ten-microservices-each-implementing-one-business-rule.md) every service one rule; a shared MongoDB
+database would break both. Three things are judgement calls, each costed below:
+- a standalone `mongod`, so an event and its rollup cannot be written in one transaction;
+- the built-in `readWrite` role, rather than a custom role without `remove`;
 - a "day" is a UTC calendar day.
-
-Each is stated below with its cost.
 
 ## Decision
 
-MongoDB holds exactly one application database, `engagement`. Only
-engagement-service reads or writes it, as the MongoDB user `svc_engagement`,
-defined in that database and holding `readWrite` on it and on nothing else. The
-database has two collections. `engagement_event` records each `QR_SCAN` or
-`RECO_CLICK` once per client event, under a `$jsonSchema` validator and a unique
-`client_event_id`. An event is voided with a reason, never deleted.
-`engagement_daily` is its rollup by store, day and type. Live counters in
-`redis-cache` are a cache of that rollup and are rebuilt from it. Before it
-writes, the service validates every identifier against three PostgreSQL contract
-views: `api_products.product_ref_v1`, `api_stores.store_directory_v1` and
-`api_customers.customer_ref_v1`. It holds no PostgreSQL table. Check-ins stay in
-PostgreSQL ([ADR-0046](0046-service-owned-data-lives-in-service-schemas.md)),
-and so do purchases.
+MongoDB holds exactly one application database, `engagement`. Only engagement-service reads or writes it, as the MongoDB user
+`svc_engagement`, defined in that database and holding `readWrite` on it and on nothing else. The database has two collections.
+`engagement_event` records each `QR_SCAN` or `RECO_CLICK` once per client event (RN-55), under a `$jsonSchema` validator and a
+unique `client_event_id`. An event is voided with a reason, never deleted. `engagement_daily` is its rollup by store, day and
+type; live counters in `redis-cache` cache that rollup and are rebuilt from it. Before it writes, the service validates every
+identifier against three PostgreSQL contract views: `api_products.product_ref_v1`, `api_stores.store_directory_v1` and
+`api_customers.customer_ref_v1`. It holds no PostgreSQL table. Check-ins and purchases stay in PostgreSQL.
 
-### `engagement_event`
+### The two collections
 
-| Field | BSON type | Content |
-|---|---|---|
-| `_id` | string | The server-assigned `event_id` (UUID). It is the `{event_id}` of the API |
-| `client_event_id` | string | A UUID generated on the device once per scan or tap. Unique |
-| `type` | string | `QR_SCAN` or `RECO_CLICK` |
-| `store_id` | int | `store.store_id`, checked in `api_stores.store_directory_v1` |
-| `product_id` | int | `product.product_id`, checked in `api_products.product_ref_v1`. The QR payload is this id |
-| `customer_id` | string, optional | `customer.customer_id` (UUID), checked in `api_customers.customer_ref_v1` |
-| `label_code` | string, `RECO_CLICK` only | The segment label the recommendation was shown under, at most 40 characters as in `segment_label.label_code` |
-| `rank` | int ≥ 1, `RECO_CLICK` only | The position the product was shown at |
-| `recorded_by` | string | The token's `sub`: the `app_user.user_id` that made the call |
-| `occurred_at` | date | The device's time of the scan or tap |
-| `recorded_at` | date | The server's time of the insert |
-| `voided` | bool | `false` on insert |
-| `history` | array | One entry per change after insert: `{action: "VOIDED", reason, by, at}` |
+`engagement_event` documents hold: `_id`, the server-assigned `event_id` (a UUID string, the API's `{event_id}`);
+`client_event_id`, a UUID generated on the device once per scan or tap, unique; `type`, `QR_SCAN` or `RECO_CLICK`; `store_id`
+and `product_id`, ints (the QR payload is the `product_id`); an optional `customer_id`, a UUID string; for `RECO_CLICK` only,
+`label_code` (at most 40 characters, as `segment_label.label_code`) and `rank` (an int ≥ 1, the position shown); `recorded_by`,
+the token's `sub`; `occurred_at`, the device's time; `recorded_at`, the server's time; `voided`, `false` on insert; and
+`history`, one `{action: "VOIDED", reason, by, at}` per change. The validator is a strict `$jsonSchema`, with validation action
+`error`, `additionalProperties: false` and a `oneOf` over the two shapes, so a scan never carries a label or rank, and names,
+emails and coordinates stay out. The indexes are `{client_event_id: 1}` unique (a retry hits `E11000` instead of inserting
+twice), `{store_id: 1, occurred_at: -1}`, `{type: 1, occurred_at: -1}` and `{customer_id: 1, occurred_at: -1}`.
 
-**Validation.** The collection is created with `validationLevel: "strict"`,
-`validationAction: "error"` and a `$jsonSchema` that:
-- requires every field above except `customer_id`, `label_code` and `rank`;
-- requires `label_code` and `rank` when `type` is `RECO_CLICK`, and forbids them
-  when it is `QR_SCAN` (a `oneOf` over the two shapes);
-- sets `additionalProperties: false`.
+`engagement_daily` holds one document per store, UTC day (`YYYY-MM-DD` of `occurred_at`) and type, under a unique index on
+`{store_id, day, type}`, with a `count` of the events not voided. An insert runs `findOneAndUpdate` with `{$inc: {count: 1}}`,
+`upsert: true` and `returnDocument: "after"`; a void runs it with `{$inc: {count: -1}}`. The rollup is rebuildable: a
+maintenance command (not an endpoint) runs `$match: {voided: false}` and `$group` by store, type and UTC day over
+`engagement_event`, and `$merge`s the result into `engagement_daily` for a day range.
 
-The last point keeps names, emails and coordinates out: an event carries
-identifiers only.
-
-**Indexes.**
-
-| Index | Serves |
-|---|---|
-| `{client_event_id: 1}`, unique | Once per client event: a retry hits `E11000` instead of inserting twice |
-| `{store_id: 1, occurred_at: -1}` | Events of one store, newest first |
-| `{type: 1, occurred_at: -1}` | Events of one type, newest first |
-| `{customer_id: 1, occurred_at: -1}` | Events of one customer, newest first |
-
-### `engagement_daily`
-
-One document per `{store_id, day, type}`, under a unique index on those three
-fields, with a `count` of the events that are not voided. `day` is the UTC date
-of `occurred_at`, as `YYYY-MM-DD`. An insert runs
-`findOneAndUpdate({store_id, day, type}, {$inc: {count: 1}}, {upsert: true, returnDocument: "after"})`.
-A void runs the same with `{$inc: {count: -1}}`.
-
-### Operations
+### Operations and live counters
 
 | Operation | Endpoint | MongoDB |
 |---|---|---|
-| Insert | `POST /v1/engagement-events` | `insertOne` into `engagement_event`, then the rollup `$inc`. On `E11000` for `client_event_id`, the service reads the stored event. If its `type`, `store_id` and `product_id` match the request, it answers 200 with the original event and writes nothing. If they differ, it answers 409 `client_event_conflict` |
-| Query | `GET /v1/engagement-events` (`type`, `store_id`, `customer_id`, `voided`, `from`, `to`, `page`, `size`) and `GET /v1/engagement-events/{event_id}` | `find` with a range on `occurred_at`, sorted by `occurred_at: -1`. Each filter combination is served by one of the indexes above, and `explain("executionStats")` shows an `IXSCAN` on it |
-| Update | `POST /v1/engagement-events/{event_id}/void`, ADMIN only, with a `reason` | `updateOne({_id, voided: false}, {$set: {voided: true}, $push: {history: {action: "VOIDED", reason, by, at}}})`, then the rollup `$inc: -1`. No match on an existing event means it is already voided: 409 `already_voided` |
-| Aggregation | `GET /v1/engagement-summaries` (`from`, `to`, `store_id`, `group_by=store\|day\|type`) | `$match` on `day` and `store_id`, `$group` by the requested key with `$sum: "$count"`, `$sort` by that key, over `engagement_daily` |
+| Insert | `POST /v1/engagement-events` | `insertOne`, then the rollup `$inc`. On `E11000`, a stored event with the same `type`, `store_id` and `product_id` answers 200 with the original and writes nothing; otherwise 409 `client_event_conflict` |
+| Query | `GET /v1/engagement-events` (`type`, `store_id`, `customer_id`, `voided`, `from`, `to`, `page`, `size`) and `GET /v1/engagement-events/{event_id}` | `find` with a range on `occurred_at`, sorted `occurred_at: -1`, each filter served by one index (`IXSCAN` in `explain`) |
+| Update | `POST /v1/engagement-events/{event_id}/void`, `ADMIN` only, with a `reason` | `updateOne({_id, voided: false}, {$set: {voided: true}, $push: {history: …}})`, then `$inc: -1`. Already voided: 409 `already_voided` |
+| Aggregation | `GET /v1/engagement-summaries` (`from`, `to`, `store_id`, `group_by=store\|day\|type`) | `$match` on `day` and `store_id`, `$group` with `$sum: "$count"`, `$sort`, over `engagement_daily` |
 
-The rollup is derived, so it is also rebuildable: a second pipeline over
-`engagement_event` (`$match: {voided: false}`, then `$group` by `store_id`, `type` and the UTC
-`$dateToString` of `occurred_at`) recomputes it, and a `$merge` into
-`engagement_daily` repairs it. The rebuild is a maintenance command of the
-service for a day range, not an endpoint, and the service's tests compare it
-against the incremental counts.
+Live counters, `engagement:live:{store_id}:{yyyymmdd}:{type}`, live in `redis-cache` with a 48 h TTL
+([ADR-0037](0037-two-redis-instances-carry-sessions-caches-limits-and-inter-service-streams.md)). After the rollup update the
+service runs `INCR` (or `DECR`); a result of 1 (or −1) means the key was missing, so it overwrites it with the count
+`findOneAndUpdate` returned. A one-store summary of the current UTC day reads the counter, and falls back to `engagement_daily`
+on a miss or when `redis-cache` is unreachable. Every other summary runs the pipeline.
 
-### Live counters
+### Write-time validation and who creates the shape
 
-`engagement:live:{store_id}:{yyyymmdd}:{type}` in `redis-cache`, TTL 48 h
-([ADR-0037](0037-two-redis-instances-carry-sessions-caches-limits-and-inter-service-streams.md)).
-After the rollup update, the service runs `INCR`, or `DECR` for a void. A result
-of 1, or −1, means the key was missing, possibly evicted. The service then
-overwrites it with the count that `findOneAndUpdate` returned, and sets the TTL.
-A summary whose window is the current UTC day for one store reads these
-counters. On a miss it reads `engagement_daily` and sets the key. Every other
-summary runs the pipeline. If `redis-cache` is unreachable, the same answer
-comes from `engagement_daily`, only slower.
-
-### Write-time validation through PostgreSQL
-
-`svc_engagement` holds SELECT on exactly three contract views and nothing else
-in PostgreSQL
-([ADR-0044](0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md)):
-
-| View | Check | Refusal |
-|---|---|---|
-| `api_stores.store_directory_v1` | The store exists and is active | 422 `unknown_store` |
-| `api_products.product_ref_v1` | The product exists | 422 `unknown_product` |
-| `api_customers.customer_ref_v1` | The customer exists, when `customer_id` is given | 422 `unknown_customer` |
-
-`occurred_at` later than the server clock plus five minutes is refused with 422
-`occurred_in_future`. `label_code` is checked against the pattern only.
-engagement-service does not consume `api_segments.current_label_v1`. It records
-which label the client showed, and does not decide whether it is current.
-
-### Who creates the shape
-
-The validator, the indexes and the `svc_engagement` user are created by
-`services/engagement/mongo/init.js`. That script is idempotent, run in mongosh
-with an administrator account, and applied before the service version that
-needs it, the same expand-before-deploy order as `sql/01_schema.sql`. The
-user's password comes from the instance's environment file, never from source. The
-service never runs `collMod` or `createUser`. Its `/health/ready` lists the
-collections and indexes and answers 503 `schema_not_ready` if one is missing.
+`svc_engagement` holds SELECT on exactly the three views and nothing else in PostgreSQL
+([ADR-0044](0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md)). The service refuses 422
+`unknown_store` (the store must exist and be active), `unknown_product` (it must exist), `unknown_customer` (when one is given)
+and `occurred_in_future` (beyond five minutes ahead). `label_code` is checked against its pattern only. The validator, indexes
+and user are created by `services/engagement/mongo/init.js`, idempotent and run in mongosh by an administrator before the
+service version that needs it (expand before deploy). The service never runs `collMod` or `createUser`, and its `/health/ready`
+answers 503 `schema_not_ready` while a collection or index is missing.
 
 ## Alternatives considered
 
@@ -193,147 +97,69 @@ collections and indexes and answers 503 `schema_not_ready` if one is missing.
 ## Consequences
 
 **What this makes easy.**
-- Every operation the course names is a real endpoint used in the
-  demonstration: an insert on every scan and tap from Android, queries and
-  voids from Electron, an aggregation on every summary.
-- No fact lives in two stores. Check-ins and purchases have one home each, in
-  PostgreSQL.
-- A retried tap or scan is one event. The unique index decides that, not the
-  client.
-- Losing `redis-cache` loses nothing. Losing or corrupting `engagement_daily`
-  loses nothing either: the rebuild pipeline recomputes it from the events.
+- Every operation the course names is a real endpoint in the demonstration: an insert on every scan and tap from Android,
+  queries and voids from Electron, an aggregation on every summary.
+- No fact lives in two stores, and a retried tap or scan is one event: the unique index decides that, not the client.
+- Losing `redis-cache` or `engagement_daily` loses nothing; the rebuild recomputes both from the events.
 
 **What this makes hard.**
-- **No transaction across the event and its rollup.** A standalone `mongod`
-  has no multi-document transactions. A crash between `insertOne` and the
-  `$inc` leaves the rollup one short until the rebuild runs. Running a
-  single-node replica set would fix that, at the cost of an oplog and a more
-  involved infrastructure container. The team prefers a rebuildable rollup.
-- **No referential integrity.** A product, store or customer is checked once,
-  at write time. If the web later deletes a store or product, the events keep
-  their ids. This service does not consume `stream:stores.v1.changed` or
-  `stream:products.v1.changed`, so nothing tidies them. Summaries can show an
-  id that no longer resolves, and Electron must render that as unknown, not
-  fail.
-- **`readWrite` can delete and drop.** The role includes `remove` and
-  `dropCollection`. "Never deleted" rests on the service's code, a CI grep and
-  review, not on the database.
-- **A day is a UTC day.** The seeded stores are in Mexico, from Mérida to
-  Tijuana, so an evening scan counts on the next UTC date. Store-local days
-  would need each store's time zone, which no table holds.
-- **The web cannot see any of this.** Engagement is service-only data. The
-  end-to-end demonstration's step 5 ("the web shows it with no web change")
-  must use a sale, not a scan. Engagement appears in Electron only.
-- **The 4NF argument does not apply here.** The data model must say why the
-  document shape is acceptable: one document per event, no repeating groups
-  except `history`, which is bounded and always read with its event.
-- **A new rule needs its RN id.** "Recorded once per client event, attributed,
-  voided rather than deleted, and summarized" has no RN id yet.
-  [ADR-0043](0043-at-least-ten-microservices-each-implementing-one-business-rule.md)
-  requires one in `docs/business-rules.md` before the registry line cites it.
-- **MongoDB costs memory.** It is the largest single infrastructure container
-  in the budget of
-  [ADR-0040](0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md),
-  for a service with two collections.
+- **No transaction across the event and its rollup.** A crash between `insertOne` and the `$inc` leaves the rollup one short
+  until the rebuild runs. A single-node replica set would fix that, at the cost of an oplog; the team prefers a rebuildable rollup.
+- **No referential integrity.** Ids are checked once, at write time, and no stream tidies them, so a store or product the web
+  later deletes keeps its events. Electron renders an id that no longer resolves as unknown instead of failing.
+- **`readWrite` can delete and drop.** "Never deleted" rests on the service's code, a CI grep and review, not on the database.
+- **A day is a UTC day.** The seeded stores run from Mérida to Tijuana, so an evening scan counts on the next UTC date.
+  Store-local days would need each store's time zone, which no table holds.
+- **The web cannot see any of this.** Engagement appears in Electron only, so the demonstration's step 5 uses a sale, not a scan.
+- **The 4NF argument does not apply here.** The data model must say why the document shape is acceptable: one document per
+  event, no repeating group except `history`, which is bounded and always read with its event.
+- **MongoDB costs memory:** the largest infrastructure container in the budget of ADR-0040, for two collections.
 
 **What must now be true elsewhere.**
-- [`../datastores/mongodb-design.md`](../datastores/mongodb-design.md) is
-  rewritten as this specification. Its six collections are withdrawn, with
-  this record as the reason.
-- `docs/data-model.md` documents the two collections, and the boundary that
-  keeps them out of the relational model, with the shape justification above.
-- `contracts/engagement/openapi.yaml` and `engagement.xsd` expose exactly the
-  operations in the table, with the error codes named here
-  ([ADR-0035](0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md)).
-- `deploy/infra/compose.yaml` runs MongoDB with authorization enabled, pinned
-  to an exact MongoDB 7 image, with no published port
-  ([ADR-0040](0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md)).
-  Only `services/engagement/compose.yaml` sets `MONGO_URI`, and `.env.example`
-  documents it with a local default.
-- `sql/01_schema.sql` grants `svc_engagement` SELECT on the three views and
-  nothing else. `contracts/db/grants.csv` lists exactly those three rows.
-- The `svc_engagement` Redis ACL allows `~engagement:live:*` on `redis-cache`
-  and the liveness selector on `redis-state`
-  ([ADR-0037](0037-two-redis-instances-carry-sessions-caches-limits-and-inter-service-streams.md)).
-- [ADR-0046](0046-service-owned-data-lives-in-service-schemas.md) holds the
-  check-in tables. [ADR-0041](0041-android-and-electron-clients-run-different-processes-over-different-formats.md)
-  sends exactly one `RECO_CLICK` per tap, with a fresh `client_event_id`.
-- `services/engagement/mongo/seed.js` loads at least 30 events per type,
-  referencing seeded stores, products and customers, so the query,
-  `explain()` and aggregation have data before the first phone write. Its
-  `client_event_id`s are fixed, so a second run inserts nothing, and it ends
-  with the rollup rebuild. Seeded events are ordinary events and are counted.
+- [`../datastores/mongodb-design.md`](../datastores/mongodb-design.md) is rewritten as this specification; its six collections
+  are withdrawn, with this record as the reason. `docs/data-model.md` documents the two collections, the boundary that keeps
+  them out of the relational model, and the shape justification.
+- `contracts/engagement/openapi.yaml` and `engagement.xsd` expose exactly the operations above, with these codes (ADR-0035).
+- `deploy/infra/compose.yaml` runs MongoDB 7 at a pinned image, with authorization on and no published port
+  ([ADR-0040](0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md)); only engagement's `compose.yaml` sets
+  `MONGO_URI`, which `.env.example` documents with a local default.
+- `sql/01_schema.sql` grants `svc_engagement` SELECT on the three views and nothing else; `contracts/db/grants.csv` lists
+  exactly those three rows. Its Redis ACL allows `~engagement:live:*` and the liveness selector (ADR-0037).
+- ADR-0046 holds the check-in tables, and ADR-0041's Android client sends one `RECO_CLICK` per tap, with a fresh `client_event_id`.
+- `services/engagement/mongo/seed.js` loads at least 30 events per type over seeded stores, products and customers, with fixed
+  `client_event_id`s so a second run inserts nothing, and ends with the rollup rebuild.
 
 ## Compliance
 
-In mongosh, connected as `svc_engagement` to the `engagement` database
-(`docker compose -p mosaiq-infra -f deploy/infra/compose.yaml exec mongodb mongosh "$MONGO_URI"`):
+In mongosh as `svc_engagement` (`docker compose -p mosaiq-infra -f deploy/infra/compose.yaml exec mongodb mongosh "$MONGO_URI"`):
 
 ```javascript
-// One owner, one database: readWrite on engagement and nothing else.
-db.runCommand({connectionStatus: 1, showPrivileges: true}).authInfo.authenticatedUserRoles
-// expected: [ { role: "readWrite", db: "engagement" } ]
-
-// Exactly the two collections, the validator and the indexes.
-db.getCollectionNames().sort()                       // [ "engagement_daily", "engagement_event" ]
-db.getCollectionInfos({name: "engagement_event"})[0].options.validator.$jsonSchema !== undefined
-db.engagement_event.getIndexes().map(i => [i.key, !!i.unique])
-// includes [{client_event_id:1}, true], [{store_id:1, occurred_at:-1}, false],
-//          [{type:1, occurred_at:-1}, false], [{customer_id:1, occurred_at:-1}, false]
-db.engagement_daily.getIndexes().some(i => i.unique && i.key.store_id === 1 && i.key.day === 1 && i.key.type === 1)
-
-// The validator refuses a QR_SCAN that carries a rank.
-db.engagement_event.insertOne({_id: "x", client_event_id: "y", type: "QR_SCAN", store_id: 1,
-  product_id: 1, rank: 1, recorded_by: "z", occurred_at: new Date(), recorded_at: new Date(),
-  voided: false, history: []})                       // expected: MongoServerError "Document failed validation"
-
-// The query uses its index.
-const p = db.engagement_event.find({store_id: 1, occurred_at: {$gte: ISODate("2026-10-01")}})
-  .sort({occurred_at: -1}).explain("executionStats")
-JSON.stringify(p.queryPlanner.winningPlan).includes('"indexName":"store_id_1_occurred_at_-1"')  // true
-p.executionStats.totalDocsExamined === p.executionStats.nReturned                              // true
-
-// The rollup agrees with the events.
-const rebuilt = db.engagement_event.aggregate([
-  {$match: {voided: false}},
-  {$group: {_id: {store_id: "$store_id", type: "$type",
-            day: {$dateToString: {format: "%Y-%m-%d", date: "$occurred_at", timezone: "UTC"}}},
-            count: {$sum: 1}}}]).toArray()
-rebuilt.filter(r => (db.engagement_daily.findOne({store_id: r._id.store_id, day: r._id.day,
-  type: r._id.type}) || {count: -1}).count !== r.count).length                               // 0
-db.engagement_daily.countDocuments({count: {$gt: 0}}) === rebuilt.length                       // true
+db.runCommand({connectionStatus: 1, showPrivileges: true}).authInfo.authenticatedUserRoles  // [ { role: "readWrite", db: "engagement" } ]
+db.getCollectionNames().sort()                                                              // [ "engagement_daily", "engagement_event" ]
+db.getCollectionInfos({name: "engagement_event"})[0].options.validator.$jsonSchema !== undefined   // true
+db.engagement_event.getIndexes().map(i => [i.key, !!i.unique])   // exactly the four indexes above, client_event_id unique
+db.engagement_event.insertOne({_id: "x", client_event_id: "y", type: "QR_SCAN", store_id: 1, product_id: 1, rank: 1,
+  recorded_by: "z", occurred_at: new Date(), recorded_at: new Date(), voided: false, history: []})  // "Document failed validation"
+const p = db.engagement_event.find({store_id: 1, occurred_at: {$gte: ISODate("2026-10-01")}}).sort({occurred_at: -1}).explain("executionStats")
+JSON.stringify(p.queryPlanner.winningPlan).includes('"indexName":"store_id_1_occurred_at_-1"')   // true
+const rebuilt = db.engagement_event.aggregate([{$match: {voided: false}}, {$group: {_id: {store_id: "$store_id", type: "$type",
+  day: {$dateToString: {format: "%Y-%m-%d", date: "$occurred_at", timezone: "UTC"}}}, count: {$sum: 1}}}]).toArray()
+[rebuilt.filter(r => (db.engagement_daily.findOne({store_id: r._id.store_id, day: r._id.day, type: r._id.type}) || {count: -1}).count !== r.count).length,
+ db.engagement_daily.countDocuments({count: {$gt: 0}}) - rebuilt.length]                   // [ 0, 0 ]
 ```
 
 CI runs these from the repository root, and each must print nothing:
 
 ```bash
-# Only engagement-service configures or drives MongoDB.
-grep -rlnE 'MONGO_URI|pymongo|motor|mongodb' services/ packages/ bench/ \
-  | grep -vE '^services/engagement/'
+grep -rlnE 'MONGO_URI|pymongo|motor|mongodb' services/ packages/ bench/ | grep -vE '^services/engagement/'
 grep -rnE '^\s*mongo(db)?:' services/*/compose.yaml
-
-# Events are voided, never deleted, and the service never changes the shape.
-grep -rnE '\b(delete_one|delete_many|find_one_and_delete|drop_collection|drop_database|collMod|createUser)\b|\.drop\(' \
-  services/engagement/src/
-
-# PostgreSQL: three views, SELECT only, and no table.
-psql -d retail -Atc "SELECT table_schema||'.'||table_name||':'||privilege_type
-  FROM information_schema.role_table_grants WHERE grantee = 'svc_engagement'
-  ORDER BY 1" \
+grep -rnE '\b(delete_one|delete_many|find_one_and_delete|drop_collection|drop_database|collMod|createUser)\b|\.drop\(' services/engagement/src/
+psql -d retail -Atc "SELECT table_schema||'.'||table_name||':'||privilege_type FROM information_schema.role_table_grants WHERE grantee = 'svc_engagement'" \
   | grep -vxE 'api_(products\.product_ref_v1|stores\.store_directory_v1|customers\.customer_ref_v1):SELECT'
-```
-
-```bash
-# Live counters: only engagement writes engagement:live:*, and only on redis-cache.
 rc() { docker compose -p mosaiq-infra -f deploy/infra/compose.yaml exec -T redis-cache redis-cli --no-auth-warning --user ops --pass "$REDIS_OPS_PASSWORD" "$@"; }
-[ "$(rc ACL DRYRUN svc_engagement INCR engagement:live:1:20261013:QR_SCAN)" = OK ] || echo "FAIL: engagement cannot count"
-for u in $(rc ACL USERS | grep '^svc_' | grep -vx svc_engagement); do
-  [ "$(rc ACL DRYRUN "$u" INCR engagement:live:1:20261013:QR_SCAN)" = OK ] && echo "FAIL: $u may write live counters"
-done
+k=engagement:live:1:20261013:QR_SCAN; [ "$(rc ACL DRYRUN svc_engagement INCR $k)" = OK ] || echo "FAIL: engagement cannot count"
+for u in $(rc ACL USERS | grep '^svc_' | grep -vx svc_engagement); do [ "$(rc ACL DRYRUN "$u" INCR $k)" = OK ] && echo "FAIL: $u writes live counters"; done
 ```
 
-The service's own tests insert the same `client_event_id` twice and assert one
-document and a 200 with the original. They void an event twice and assert 409
-`already_voided` and a single `history` entry. They delete the live counter
-between two inserts and assert that the counter afterwards equals
-`engagement_daily.count`.
+The service's tests insert one `client_event_id` twice (one document, 200 with the original), void an event twice (409
+`already_voided`, one `history` entry), and delete the live counter between two inserts (it then equals `engagement_daily.count`).

@@ -137,6 +137,10 @@ the one declared read owner, while the web is the only writer. Unlisted tables g
   kept in step by invariants and golden fixtures ([ADR-0045](0045-services-never-import-the-web-system.md)).
 - **Read owners cannot fix their own data.** A wrong store name or a missing
   segmentation run is fixed in the web, not through the service that publishes it.
+- **Foreign keys cross boundaries** (`customer.channel_id`, `transaction_line.product_id`, `checkins.store_check_in`
+  to `store` and `app_user`). Their RI checks run as the parent's owner, so a service needs no privilege on the parent,
+  and a violation (23503) maps to a 422 by constraint name. They stay because the legacy schema and the web rely on
+  them. No service path cascades: no DELETE on a master, and the category guard.
 - **The web still cascades.** A web category or store delete still removes interests,
   locations and stock rows; services learn of it only through streams.
 - **One PostgreSQL is a shared failure and a shared schema.** Each boundary section is

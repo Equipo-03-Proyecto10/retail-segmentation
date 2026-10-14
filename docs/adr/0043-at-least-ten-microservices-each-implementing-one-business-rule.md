@@ -37,7 +37,7 @@ governs what it may report and to whom. It is stated in one sentence and backed 
 several facts in the same way: customer-preferences replaces each of its two preference sets only as
 a whole. Facts governed by different invariants are different rules, and so different services:
 products and categories; customers and customer-preferences. A service may also serve, read-only, a
-vocabulary its own rule validates against, as sales serves `channels`. Read-only boundaries count,
+vocabulary its own rule validates against, as sales serves `channels` and users serves `roles`. Read-only boundaries count,
 pending Q-13. If memory runs short, the second wave is dropped first, and the count never goes below
 ten. Services are never merged to save memory, because a merge mixes rules.
 

@@ -21,6 +21,7 @@
 | [Datastore designs](datastores/) | MongoDB and Redis. Governed by ADR-0037 and ADR-0038, and rewritten as specifications by F13-05 and F13-06 |
 | [Wireframes](wireframes/) | Low-fidelity structure for every screen — what is on each page and how a role reaches it, decided before the visual design |
 | [Design system](design-system/) | MOSAIQ's tokens, components, and the two reference sheets to build screens from |
+| [Services](services/) | One sheet per microservice, all with the same structure, and the register of accepted exceptions |
 | [Decisions](adr/) | Architecture Decision Records |
 | [Evidence](evidence/) | Observed results per story: database access, integrity, screenshots, negative tests, review passes, deployment |
 | [Issue history](issue-history.md) | What the deleted `#1`–`#40` references in older commits pointed at |

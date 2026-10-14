@@ -494,100 +494,260 @@ flowchart TD
     F13-01 --> F13-03
     F13-02 --> F13-03
     F13-05 --> F13-03
+    F13-07 --> F13-03
     F13-01 --> F13-04
     F13-02 --> F13-04
+    F13-03 --> F13-04
     F13-05 --> F13-04
+    F13-07 --> F13-04
     F13-01 --> F13-05
+    F13-02 --> F13-05
     F13-01 --> F13-06
+    F13-05 --> F13-06
     F13-01 --> F13-07
+    F13-02 --> F13-07
+    F13-01 --> F13-08
+    F13-03 --> F13-08
     F13-05 --> F13-08
-    F13-06 --> F13-08
+    F13-01 --> F13-09
     F13-02 --> F13-09
     F13-03 --> F13-09
     F13-04 --> F13-09
+    F13-05 --> F13-09
+    F13-07 --> F13-09
     F13-08 --> F13-09
     F13-10
+    F13-01 --> F13-11
+    F13-07 --> F13-11
     F13-02 --> F14-01
     F14-01 --> F14-02
     F13-03 --> F14-02
     F13-05 --> F14-02
     F13-07 --> F14-02
+    F13-08 --> F14-02
+    F14-04 --> F14-02
     F13-02 --> F14-03
     F14-03 --> F14-04
     F13-03 --> F14-04
     F13-05 --> F14-04
     F13-07 --> F14-04
+    F13-08 --> F14-04
+    F13-11 --> F14-04
     F13-02 --> F14-05
     F14-05 --> F14-06
     F13-03 --> F14-06
     F13-05 --> F14-06
     F13-07 --> F14-06
+    F13-08 --> F14-06
     F13-02 --> F14-07
     F14-07 --> F14-08
     F13-03 --> F14-08
     F13-05 --> F14-08
     F13-07 --> F14-08
+    F13-08 --> F14-08
     F13-02 --> F14-09
     F14-09 --> F14-10
     F13-04 --> F14-10
     F13-05 --> F14-10
     F13-07 --> F14-10
+    F13-08 --> F14-10
     F13-02 --> F14-11
     F14-11 --> F14-12
-    F13-03 --> F14-12
+    F13-04 --> F14-12
     F13-05 --> F14-12
     F13-07 --> F14-12
+    F13-08 --> F14-12
     F13-02 --> F14-13
     F14-13 --> F14-14
-    F13-04 --> F14-14
+    F13-03 --> F14-14
     F13-05 --> F14-14
     F13-07 --> F14-14
+    F13-08 --> F14-14
     F13-02 --> F14-15
     F14-15 --> F14-16
-    F14-17 --> F14-16
-    F13-03 --> F14-16
+    F13-04 --> F14-16
     F13-05 --> F14-16
-    F13-06 --> F14-16
     F13-07 --> F14-16
-    F13-01 --> F14-17
+    F13-08 --> F14-16
+    F14-14 --> F14-16
+    F13-02 --> F14-17
+    F14-17 --> F14-18
+    F13-03 --> F14-18
+    F13-05 --> F14-18
+    F13-07 --> F14-18
+    F13-08 --> F14-18
+    F13-11 --> F14-18
+    F14-06 --> F14-18
+    F14-14 --> F14-18
+    F14-12 --> F14-18
+    F13-02 --> F14-19
+    F14-19 --> F14-20
+    F13-04 --> F14-20
+    F13-05 --> F14-20
+    F13-07 --> F14-20
+    F13-08 --> F14-20
+    F14-14 --> F14-20
+    F13-02 --> F14-21
+    F14-21 --> F14-22
+    F13-03 --> F14-22
+    F13-05 --> F14-22
+    F13-07 --> F14-22
+    F13-08 --> F14-22
+    F13-11 --> F14-22
+    F14-06 --> F14-22
+    F14-08 --> F14-22
+    F14-12 --> F14-22
+    F14-14 --> F14-22
+    F14-16 --> F14-22
+    F14-18 --> F14-22
+    F14-20 --> F14-22
+    F13-02 --> F14-23
+    F14-23 --> F14-24
+    F13-03 --> F14-24
+    F13-05 --> F14-24
+    F13-06 --> F14-24
+    F13-07 --> F14-24
+    F13-08 --> F14-24
+    F14-06 --> F14-24
+    F14-10 --> F14-24
+    F14-14 --> F14-24
+    F13-02 --> F14-25
+    F14-25 --> F14-26
+    F13-04 --> F14-26
+    F13-05 --> F14-26
+    F13-07 --> F14-26
+    F13-08 --> F14-26
+    F14-10 --> F14-26
+    F13-02 --> F14-27
+    F14-27 --> F14-28
+    F13-03 --> F14-28
+    F13-05 --> F14-28
+    F13-07 --> F14-28
+    F13-08 --> F14-28
+    F13-11 --> F14-28
+    F13-02 --> F14-29
+    F14-29 --> F14-30
+    F13-04 --> F14-30
+    F13-05 --> F14-30
+    F13-07 --> F14-30
+    F13-08 --> F14-30
+    F13-01 --> F15-01
     F13-04 --> F15-01
+    F13-07 --> F15-01
+    F13-09 --> F15-01
+    F14-02 --> F15-01
     F14-05 --> F15-01
     F14-06 --> F15-01
     F15-01 --> F15-02
+    F14-06 --> F15-02
+    F13-02 --> F16-01
     F14-01 --> F16-01
     F14-02 --> F16-01
     F16-01 --> F16-02
+    F14-05 --> F16-02
     F14-06 --> F16-02
+    F14-07 --> F16-02
+    F14-08 --> F16-02
     F16-01 --> F16-03
-    F14-08 --> F16-03
+    F14-13 --> F16-03
     F14-14 --> F16-03
+    F14-15 --> F16-03
+    F14-16 --> F16-03
+    F14-19 --> F16-03
+    F14-20 --> F16-03
+    F14-21 --> F16-03
+    F14-22 --> F16-03
+    F14-05 --> F16-03
+    F14-06 --> F16-03
+    F14-07 --> F16-03
+    F14-08 --> F16-03
+    F14-17 --> F16-03
+    F14-18 --> F16-03
     F16-01 --> F16-04
-    F14-10 --> F16-04
+    F14-11 --> F16-04
     F14-12 --> F16-04
-    F14-16 --> F16-04
+    F14-17 --> F16-04
+    F14-18 --> F16-04
+    F14-05 --> F16-04
+    F14-06 --> F16-04
+    F14-09 --> F16-04
+    F14-10 --> F16-04
+    F14-23 --> F16-04
+    F14-24 --> F16-04
+    F14-25 --> F16-04
+    F14-26 --> F16-04
+    F16-01 --> F16-05
     F16-02 --> F16-05
     F16-03 --> F16-05
     F16-04 --> F16-05
+    F16-06 --> F16-05
+    F16-07 --> F16-05
+    F16-01 --> F16-06
+    F14-03 --> F16-06
+    F14-04 --> F16-06
+    F16-01 --> F16-07
+    F14-09 --> F16-07
+    F14-10 --> F16-07
+    F16-01 --> F16-08
+    F14-27 --> F16-08
+    F14-28 --> F16-08
+    F14-19 --> F16-08
+    F14-20 --> F16-08
+    F16-01 --> F16-09
+    F14-29 --> F16-09
+    F14-30 --> F16-09
     F14-01 --> F17-01
     F14-02 --> F17-01
+    F14-03 --> F17-01
+    F14-04 --> F17-01
     F17-01 --> F17-02
+    F17-03 --> F17-02
+    F14-05 --> F17-02
     F14-06 --> F17-02
-    F14-10 --> F17-02
-    F14-16 --> F17-02
+    F14-11 --> F17-02
+    F14-12 --> F17-02
+    F14-23 --> F17-02
+    F14-24 --> F17-02
     F17-01 --> F17-03
-    F14-16 --> F17-03
-    F14-17 --> F17-03
+    F14-09 --> F17-03
+    F14-10 --> F17-03
+    F14-25 --> F17-03
+    F14-26 --> F17-03
     F17-01 --> F17-04
+    F17-02 --> F17-04
+    F17-03 --> F17-04
+    F14-05 --> F17-04
+    F14-06 --> F17-04
+    F14-07 --> F17-04
     F14-08 --> F17-04
-    F14-12 --> F17-04
+    F14-13 --> F17-04
+    F14-14 --> F17-04
+    F14-15 --> F17-04
+    F14-16 --> F17-04
+    F14-17 --> F17-04
+    F14-18 --> F17-04
     F17-01 --> F17-05
-    F14-14 --> F17-05
-    F14-16 --> F17-05
+    F17-02 --> F17-05
+    F17-03 --> F17-05
+    F17-04 --> F17-05
+    F14-05 --> F17-05
+    F14-06 --> F17-05
+    F14-19 --> F17-05
+    F14-20 --> F17-05
+    F14-21 --> F17-05
+    F14-22 --> F17-05
+    F14-23 --> F17-05
+    F14-24 --> F17-05
+    F17-01 --> F17-06
     F17-02 --> F17-06
     F17-03 --> F17-06
     F17-04 --> F17-06
     F17-05 --> F17-06
+    F13-05 --> F18-01
+    F13-06 --> F18-01
+    F13-07 --> F18-01
     F13-08 --> F18-01
+    F13-09 --> F18-01
     F14-02 --> F18-01
     F14-04 --> F18-01
     F14-06 --> F18-01
@@ -596,13 +756,32 @@ flowchart TD
     F14-12 --> F18-01
     F14-14 --> F18-01
     F14-16 --> F18-01
+    F14-18 --> F18-01
+    F14-20 --> F18-01
+    F14-22 --> F18-01
+    F14-24 --> F18-01
+    F14-26 --> F18-01
     F18-01 --> F18-02
+    F14-02 --> F18-02
     F18-01 --> F18-03
-    F18-01 --> F18-04
+    F18-02 --> F18-03
+    F13-05 --> F18-03
+    F13-09 --> F18-03
+    F18-02 --> F18-04
+    F18-03 --> F18-04
+    F18-03 --> F18-05
+    F18-04 --> F18-05
+    F16-01 --> F18-05
     F16-04 --> F18-05
+    F17-02 --> F18-05
+    F17-03 --> F18-05
     F17-04 --> F18-05
-    F18-02 --> F18-05
-    F18-01 --> F18-06
+    F17-05 --> F18-05
+    F18-03 --> F18-06
+    F18-05 --> F18-06
+    F15-02 --> F18-06
+    F16-05 --> F18-06
+    F17-06 --> F18-06
 ```
 
 ## Phase 13 — Distributed foundation
@@ -611,44 +790,81 @@ Epic #400.
 
 | ID | Issue | Story | Priority | Depends on |
 |---|---|---|---|---|
-| F13-01 | #408 | Review and accept the distributed-stage decision set (ADR-0034 to ADR-0046) | P0 | — |
-| F13-02 | #412 | Write the shared integration contract conventions and common XSD types | P0 | F13-01 |
-| F13-03 | #416 | Build the shared Python service kit for JWT, Redis session checks, content negotiation and health | P0 | F13-01, F13-02, F13-05 |
-| F13-04 | #420 | Build the shared Rust service crate with the same authentication, negotiation and health behaviour | P0 | F13-01, F13-02, F13-05 |
-| F13-05 | #424 | Add Redis to the development stack with one ACL user per service | P0 | F13-01 |
-| F13-06 | #428 | Add MongoDB to the development stack, owned by activity-service only | P0 | F13-01 |
-| F13-07 | #434 | Create one PostgreSQL role per service, granted only what ADR-0034 assigns it | P0 | F13-01 |
-| F13-08 | #438 | Add the Compose overlay that runs services, Redis and MongoDB next to the web system | P0 | F13-05, F13-06 |
-| F13-09 | #442 | Extend CI to lint and test services, Rust crates and contracts | P0 | F13-02, F13-03, F13-04, F13-08 |
-| F13-10 | #446 | Decide whether account email verification is required for this delivery | P2 | — |
+| F13-01 | #408 | Accept the distributed-stage decision set, ADR-0034 to ADR-0046 | P0 | — |
+| F13-02 | #412 | Set the contract conventions, common types and resource registry, with the contracts checks | P0 | F13-01 |
+| F13-03 | #416 | Release the Python kit mosaiq-kit, mechanism only and pinned by tag | P0 | F13-01, F13-02, F13-05, F13-07 |
+| F13-04 | #420 | Release the Rust kit kit-rs with the same behaviour as the Python kit | P0 | F13-01, F13-02, F13-03, F13-05, F13-07 |
+| F13-05 | #424 | Run redis-state and redis-cache with per-service ACL users and negative ACL tests | P0 | F13-01, F13-02 |
+| F13-06 | #428 | Run one authenticated MongoDB server for engagement only, within the memory budget | P0 | F13-01, F13-05 |
+| F13-07 | #434 | Create service and definer roles, the grant matrix check and the schema-section framework | P0 | F13-01, F13-02 |
+| F13-08 | #438 | Give each service its own compose project on the shared mosaiq network, runnable locally | P0 | F13-01, F13-03, F13-05 |
+| F13-09 | #442 | Build, test and release each service in CI with a path-filtered matrix and repository guards | P0 | F13-01, F13-02, F13-03, F13-04, F13-05, F13-07, F13-08 |
+| F13-10 | #446 | Spike: decide whether account email verification is part of the second delivery | P2 | — |
+| F13-11 | #470 | Capture golden fixtures from the web and fail CI when the web drifts from them | P0 | F13-01, F13-07 |
 
 **F13-01 gates everything below.** ADR-0016 forbids any service skeleton,
-contract file or client before the record that specifies it is accepted.
+contract file or client before the record that specifies it is accepted. F13-10
+is a decision spike and does not wait for it.
 
 ## Phase 14 — Microservices
 
-Epic #399. For each service, the contract story merges before its
-implementation story starts ([ADR-0035][adr-0035]).
+Epic #399. Each of the fifteen services has two stories: the **contract** (odd
+id) and the **implementation** (even id). The contract merges before its
+implementation starts and before any client story that consumes it
+([ADR-0035][adr-0035]). Each service's design is described in its sheet in
+[`services/`](services/README.md). campaigns and audit-trail are the second
+wave (P2), dropped first if memory runs short ([ADR-0040][adr-0040]).
 
 | ID | Issue | Story | Priority | Depends on |
 |---|---|---|---|---|
-| F14-01 | #409 | Write the auth-service contract (OpenAPI, XSD, examples) | P0 | F13-02 |
-| F14-02 | #413 | Implement auth-service: sign-in, refresh rotation, sign-out and session revocation in Redis | P0 | F14-01, F13-03, F13-05, F13-07 |
-| F14-03 | #418 | Write the users-service contract (OpenAPI, XSD, examples) | P0 | F13-02 |
-| F14-04 | #421 | Implement users-service with the single-administrator rule enforced twice | P0 | F14-03, F13-03, F13-05, F13-07 |
-| F14-05 | #425 | Write the catalog-service contract (OpenAPI, XSD, examples) | P0 | F13-02 |
-| F14-06 | #429 | Implement catalog-service with cache-aside reads and invalidation on write | P0 | F14-05, F13-03, F13-05, F13-07 |
-| F14-07 | #432 | Write the customers-service contract (OpenAPI, XSD, examples) | P0 | F13-02 |
-| F14-08 | #436 | Implement customers-service | P0 | F14-07, F13-03, F13-05, F13-07 |
-| F14-09 | #440 | Write the inventory-service contract (OpenAPI, XSD, examples) | P0 | F13-02 |
-| F14-10 | #444 | Implement inventory-service in Rust with a short availability cache invalidated by sales | P0 | F14-09, F13-04, F13-05, F13-07 |
-| F14-11 | #449 | Write the sales-service contract (OpenAPI, XSD, examples) | P0 | F13-02 |
-| F14-12 | #454 | Implement sales-service over the existing row-level ingestion service | P0 | F14-11, F13-03, F13-05, F13-07 |
-| F14-13 | #458 | Write the segments-service contract (OpenAPI, XSD, examples) | P0 | F13-02 |
-| F14-14 | #461 | Implement segments-service in Rust as a read-only view of assignments and recommendations | P0 | F14-13, F13-04, F13-05, F13-07 |
-| F14-15 | #464 | Write the activity-service contract (OpenAPI, XSD, examples) | P0 | F13-02 |
-| F14-16 | #466 | Implement activity-service on MongoDB with insert, query, update, aggregation and indexes | P0 | F14-15, F14-17, F13-03, F13-05, F13-06, F13-07 |
-| F14-17 | #468 | Give stores geographic coordinates for GPS check-in | P0 | F13-01 |
+| F14-01 | #409 | Write the auth-service contract: sessions, JWKS, token claims and the liveness key | P0 | F13-02 |
+| F14-02 | #413 | Implement auth-service: RS256 sign-in, 12-hour sessions, refresh rotation and revocation | P0 | F14-01, F13-03, F13-05, F13-07, F13-08, F14-04 |
+| F14-03 | #418 | Write the users-service contract: accounts, roles, passwords and administrator transfer | P0 | F13-02 |
+| F14-04 | #421 | Implement users-service with the single-administrator rule enforced in code and index | P0 | F14-03, F13-03, F13-05, F13-07, F13-08, F13-11 |
+| F14-05 | #425 | Write the products-service contract, including the batch read by product ids | P0 | F13-02 |
+| F14-06 | #429 | Implement products-service: unique SKU, non-negative price, deactivation and change stream | P0 | F14-05, F13-03, F13-05, F13-07, F13-08 |
+| F14-07 | #471 | Write the categories-service contract: tree reads, edits and the guarded delete | P0 | F13-02 |
+| F14-08 | #472 | Implement categories-service: acyclic tree and the delete guard for customer interests | P0 | F14-07, F13-03, F13-05, F13-07, F13-08 |
+| F14-09 | #473 | Write the stores-service contract: store directory and ADMIN-only geofenced locations | P0 | F13-02 |
+| F14-10 | #468 | Implement stores-service in Rust: store locations, directory view and change stream | P0 | F14-09, F13-04, F13-05, F13-07, F13-08 |
+| F14-11 | #440 | Write the stock-service contract: stock levels and the consume_v1 database function | P0 | F13-02 |
+| F14-12 | #444 | Implement stock-service in Rust: never-negative stock, consume_v1 for sales, uncached reads | P0 | F14-11, F13-04, F13-05, F13-07, F13-08 |
+| F14-13 | #432 | Write the customers-service contract: search, registration and correction of customers | P0 | F13-02 |
+| F14-14 | #436 | Implement customers-service: registered once with valid data, never deleted through services | P0 | F14-13, F13-03, F13-05, F13-07, F13-08 |
+| F14-15 | #474 | Write the customer-preferences contract: preference profiles and whole-set replaces | P0 | F13-02 |
+| F14-16 | #475 | Implement customer-preferences in Rust: atomic whole-set replace of channels and interests | P0 | F14-15, F13-04, F13-05, F13-07, F13-08, F14-14 |
+| F14-17 | #449 | Write the sales-service contract: idempotent sale recording, read-back and channels | P0 | F13-02 |
+| F14-18 | #454 | Implement sales-service: all-or-nothing sales that consume stock, with durable idempotency | P0 | F14-17, F13-03, F13-05, F13-07, F13-08, F13-11, F14-06, F14-14, F14-12 |
+| F14-19 | #458 | Write the segments-service contract: label vocabulary, current assignment and history | P0 | F13-02 |
+| F14-20 | #461 | Implement segments-service in Rust: one current segment by label code, unassigned as is | P0 | F14-19, F13-04, F13-05, F13-07, F13-08, F14-14 |
+| F14-21 | #476 | Write the recommendations-service contract: reasons, empty-result statuses and staleness | P0 | F13-02 |
+| F14-22 | #477 | Implement recommendations-service: RN-40 over seven published views, pinned by golden fixtures | P0 | F14-21, F13-03, F13-05, F13-07, F13-08, F13-11, F14-06, F14-08, F14-12, F14-14, F14-16, F14-18, F14-20 |
+| F14-23 | #464 | Write the engagement-service contract: QR scans, recommendation clicks, voids and summaries | P0 | F13-02 |
+| F14-24 | #466 | Implement engagement-service on MongoDB: once per client event, voids, rollup and live counters | P0 | F14-23, F13-03, F13-05, F13-06, F13-07, F13-08, F14-06, F14-10, F14-14 |
+| F14-25 | #478 | Write the check-ins-service contract: GPS check-ins, server-computed verdicts and reviews | P0 | F13-02 |
+| F14-26 | #479 | Implement check-ins-service in Rust: geofence verdicts and append-only reviews | P0 | F14-25, F13-04, F13-05, F13-07, F13-08, F14-10 |
+| F14-27 | #480 | Write the campaigns-service contract: drafts, draft-only edits and status transitions | P2 | F13-02 |
+| F14-28 | #481 | Implement campaigns-service: the campaign state machine, pinned to the web by golden fixtures | P2 | F14-27, F13-03, F13-05, F13-07, F13-08, F13-11 |
+| F14-29 | #482 | Write the audit-trail-service contract: read-only audit entries for ADMIN and AUDITOR | P2 | F13-02 |
+| F14-30 | #483 | Implement audit-trail-service in Rust: read-only, attributed and credential-free audit entries | P2 | F14-29, F13-04, F13-05, F13-07, F13-08 |
+
+| Service | Contract | Implementation |
+|---|---|---|
+| [auth](services/auth.md) | F14-01 (#409) | F14-02 (#413) |
+| [users](services/users.md) | F14-03 (#418) | F14-04 (#421) |
+| [products](services/products.md) | F14-05 (#425) | F14-06 (#429) |
+| [categories](services/categories.md) | F14-07 (#471) | F14-08 (#472) |
+| [stores](services/stores.md) | F14-09 (#473) | F14-10 (#468) |
+| [stock](services/stock.md) | F14-11 (#440) | F14-12 (#444) |
+| [customers](services/customers.md) | F14-13 (#432) | F14-14 (#436) |
+| [customer-preferences](services/customer-preferences.md) | F14-15 (#474) | F14-16 (#475) |
+| [sales](services/sales.md) | F14-17 (#449) | F14-18 (#454) |
+| [segments](services/segments.md) | F14-19 (#458) | F14-20 (#461) |
+| [recommendations](services/recommendations.md) | F14-21 (#476) | F14-22 (#477) |
+| [engagement](services/engagement.md) | F14-23 (#464) | F14-24 (#466) |
+| [check-ins](services/check-ins.md) | F14-25 (#478) | F14-26 (#479) |
+| [campaigns](services/campaigns.md) | F14-27 (#480) | F14-28 (#481) |
+| [audit-trail](services/audit-trail.md) | F14-29 (#482) | F14-30 (#483) |
 
 ## Phase 15 — Rust twin and benchmark
 
@@ -656,8 +872,8 @@ Epic #401.
 
 | ID | Issue | Story | Priority | Depends on |
 |---|---|---|---|---|
-| F15-01 | #450 | Implement the catalog read contract in Rust as catalog-service-rs | P1 | F13-04, F14-05, F14-06 |
-| F15-02 | #455 | Benchmark catalog-service against catalog-service-rs and publish the comparison | P1 | F15-01 |
+| F15-01 | #450 | Build the bench-only Rust products reads, never registered, routed, deployed or counted | P1 | F13-01, F13-04, F13-07, F13-09, F14-02, F14-05, F14-06 |
+| F15-02 | #455 | Benchmark the products reads in Flask and Rust under one load and publish the report | P1 | F15-01, F14-06 |
 
 ## Phase 16 — Desktop client (Electron, XML)
 
@@ -665,11 +881,15 @@ Epic #402.
 
 | ID | Issue | Story | Priority | Depends on |
 |---|---|---|---|---|
-| F16-01 | #406 | Scaffold the Electron desktop client with secure defaults, an XSD-validated XML layer and sign-in | P1 | F14-01, F14-02 |
-| F16-02 | #410 | Manage the product catalog from the desktop client | P1 | F16-01, F14-06 |
-| F16-03 | #414 | Review customers with their segment, history and recommendations from the desktop client | P1 | F16-01, F14-08, F14-14 |
-| F16-04 | #417 | Check stock per store and read back sales and activity from the desktop client | P1 | F16-01, F14-10, F14-12, F14-16 |
-| F16-05 | #422 | Package the desktop client and build it in CI | P1 | F16-02, F16-03, F16-04 |
+| F16-01 | #406 | Scaffold the Electron back office with secure defaults, per-service XSD validation and sign-in | P1 | F13-02, F14-01, F14-02 |
+| F16-02 | #410 | Maintain products and the category tree from the desktop client, ADMIN only | P1 | F16-01, F14-05, F14-06, F14-07, F14-08 |
+| F16-03 | #414 | Review customers, both preference sets, segment assignments and recommendations on the desktop | P1 | F16-01, F14-13, F14-14, F14-15, F14-16, F14-19, F14-20, F14-21, F14-22, F14-05, F14-06, F14-07, F14-08, F14-17, F14-18 |
+| F16-04 | #417 | Show stock below a threshold, sales read-back, engagement summaries and voids, check-in review | P1 | F16-01, F14-11, F14-12, F14-17, F14-18, F14-05, F14-06, F14-09, F14-10, F14-23, F14-24, F14-25, F14-26 |
+| F16-05 | #422 | Package the desktop client and build, lint and test it in CI | P1 | F16-01, F16-02, F16-03, F16-04, F16-06, F16-07 |
+| F16-06 | #484 | Administer users and transfer the administrator role from the desktop client | P1 | F16-01, F14-03, F14-04 |
+| F16-07 | #485 | Set and remove store locations and geofences from the desktop client | P1 | F16-01, F14-09, F14-10 |
+| F16-08 | #486 | Manage campaigns and their transitions from the desktop client (second wave) | P2 | F16-01, F14-27, F14-28, F14-19, F14-20 |
+| F16-09 | #487 | Browse the audit trail from the desktop client (second wave) | P2 | F16-01, F14-29, F14-30 |
 
 ## Phase 17 — Android client (Kotlin, JSON)
 
@@ -677,12 +897,12 @@ Epic #403.
 
 | ID | Issue | Story | Priority | Depends on |
 |---|---|---|---|---|
-| F17-01 | #426 | Scaffold the Android client in Kotlin with JSON networking and token refresh | P1 | F14-01, F14-02 |
-| F17-02 | #430 | Scan a product QR code with the camera and show its price and stock in my store | P1 | F17-01, F14-06, F14-10, F14-16 |
-| F17-03 | #433 | Check in to a store by GPS | P1 | F17-01, F14-16, F14-17 |
-| F17-04 | #437 | Register a sale for a customer, queued offline when there is no connection | P1 | F17-01, F14-08, F14-12 |
-| F17-05 | #441 | Show a customer's segment and recommendations on the phone | P1 | F17-01, F14-14, F14-16 |
-| F17-06 | #445 | Build, lint and test the Android client in CI | P1 | F17-02, F17-03, F17-04, F17-05 |
+| F17-01 | #426 | Scaffold the Android floor app with JSON networking, single-flight refresh and sign-in | P1 | F14-01, F14-02, F14-03, F14-04 |
+| F17-02 | #430 | Scan a product QR code and show the product and its stock at the checked-in store | P1 | F17-01, F17-03, F14-05, F14-06, F14-11, F14-12, F14-23, F14-24 |
+| F17-03 | #433 | Pick the store and check in by GPS, through a retry-safe floor-write queue | P1 | F17-01, F14-09, F14-10, F14-25, F14-26 |
+| F17-04 | #437 | Find or register a customer, capture interests and record a sale queued offline | P1 | F17-01, F17-02, F17-03, F14-05, F14-06, F14-07, F14-08, F14-13, F14-14, F14-15, F14-16, F14-17, F14-18 |
+| F17-05 | #441 | Show the customer's current segment and recommendations, one RECO_CLICK per tap | P1 | F17-01, F17-02, F17-03, F17-04, F14-05, F14-06, F14-19, F14-20, F14-21, F14-22, F14-23, F14-24 |
+| F17-06 | #445 | Build, lint and test the Android client in CI and publish the debug APK | P1 | F17-01, F17-02, F17-03, F17-04, F17-05 |
 
 ## Phase 18 — Deployment and end-to-end demonstration
 
@@ -690,12 +910,12 @@ Epic #404.
 
 | ID | Issue | Story | Priority | Depends on |
 |---|---|---|---|---|
-| F18-01 | #448 | Run the services, Redis and MongoDB as containers on the instance | P0 | F13-08, F14-02, F14-04, F14-06, F14-08, F14-10, F14-12, F14-14, F14-16 |
-| F18-02 | #452 | Route /api/{service}/ through NGINX on 443 | P0 | F18-01 |
-| F18-03 | #456 | Deploy the services from main with health checks and rollback | P1 | F18-01 |
-| F18-04 | #459 | Record negative-test evidence across the services | P0 | F18-01 |
-| F18-05 | #462 | Script and record the end-to-end demonstration across all components | P0 | F16-04, F17-04, F18-02 |
-| F18-06 | #465 | Redraw the architecture diagrams and update the README for the distributed system | P1 | F18-01 |
+| F18-01 | #448 | Run Docker Compose, the infrastructure project and one unit per service on the instance | P0 | F13-05, F13-06, F13-07, F13-08, F13-09, F14-02, F14-04, F14-06, F14-08, F14-10, F14-12, F14-14, F14-16, F14-18, F14-20, F14-22, F14-24, F14-26 |
+| F18-02 | #452 | Route each service through its own NGINX include under /api/{service}/ on 443 | P0 | F18-01, F14-02 |
+| F18-03 | #456 | Deploy and roll back one service at a time when its VERSION bump merges | P0 | F18-01, F18-02, F13-05, F13-09 |
+| F18-04 | #459 | Record negative-test evidence across every deployed service and boundary | P0 | F18-02, F18-03 |
+| F18-05 | #462 | Script and record the end-to-end demonstration across both clients, services and the web | P0 | F18-03, F18-04, F16-01, F16-04, F17-02, F17-03, F17-04, F17-05 |
+| F18-06 | #465 | Redraw the architecture diagrams and update the README for the fifteen services | P1 | F18-03, F18-05, F15-02, F16-05, F17-06 |
 
 ## Closing the analytics phase
 
@@ -729,3 +949,4 @@ no Redis and consumes no service.
 [adr-0019]: adr/0019-experiment-measurement-separates-assignment-exposure-and-conversion.md
 [adr-0020]: adr/0020-csv-is-the-sole-sales-ingestion-entry-point-for-this-delivery.md
 [adr-0035]: adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md
+[adr-0040]: adr/0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md

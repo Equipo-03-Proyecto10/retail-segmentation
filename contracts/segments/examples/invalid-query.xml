@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_query</code>
+  <message>Give exactly one of customer_id and label_code.</message>
+  <correlation_id>corr-invalid-query</correlation_id>
+  <details>
+    <field>customer_id</field>
+    <code>conflicting_filters</code>
+  </details>
+</Error>

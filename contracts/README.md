@@ -105,6 +105,55 @@ Each first path segment after `/vN` belongs to exactly one service in
 > `/v1/stock-levels/{store_id}/{product_id}`); otherwise foreign ids are query
 > or body fields.
 
+## Document structure
+
+Fifteen contracts are written by different people, so the shape of the
+documents is fixed here, not left to each author.
+
+**OpenAPI.**
+- `openapi: 3.1.0`, `info.title` `<name>-service`, and a semver `info.version`.
+- Security:
+  - `components.securitySchemes.bearer` is `type: http`, `scheme: bearer`,
+    `bearerFormat: JWT`, and the document has a root
+    `security: [{bearer: []}]`.
+  - A token-free operation says `security: []`. Every meta route does.
+- Every operation has a lowerCamelCase `operationId`.
+- Correlation ids:
+  - Every operation takes `X-Correlation-ID` through
+    `components.parameters.CorrelationId`.
+  - Every response returns it through `components.headers.CorrelationId`.
+  - A 429 also returns `Retry-After`.
+- Bodies:
+  - Request and response bodies list `application/json` and `application/xml`
+    against the same `components.schemas` entry.
+  - The XSD is authoritative for XML.
+  - The only JSON-only body is auth's JWK Set (E-04).
+- Errors:
+  - `components.schemas.Error` mirrors `common:Error`.
+  - Each error status is one response whose description names every code it
+    can carry.
+  - That response holds one named example per code, keyed by the code.
+
+**Meta routes.**
+- `GET /health/live` answers 204.
+- `GET /health/ready` answers 204, or 503 `schema_not_ready`.
+- Neither has a body to negotiate.
+- `GET /openapi.yaml` answers 200 `application/yaml`.
+- `GET /schema.xsd` answers 200 `application/xml`.
+
+**XML.**
+- A root element is the PascalCase name of its representation, as `Error` and
+  `PageInfo` are in `common/v1`.
+- A child element carries the JSON member's snake_case name.
+- An array is the member's element repeated, as `details` is.
+- A collection root is the plural (`Users`) holding singular items (`User`)
+  and one `common:PageInfo`.
+
+**Examples.**
+- Files are kebab-case and named after what they show: `sign-in.request.json`,
+  `sign-in.json`, `invalid-credentials.xml`.
+- An error example is named after its code.
+
 ## Versioning
 
 Any change under `contracts/<name>/` moves that contract's semantic

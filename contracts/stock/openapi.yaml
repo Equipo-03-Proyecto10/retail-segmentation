@@ -1,0 +1,527 @@
+openapi: 3.1.0
+info:
+  title: stock-service
+  version: 1.0.0
+  description: 'Publishes the quantity held for each store and product pair (RN-14).
+    A level carries ids and a quantity only: it has no product name, price or store
+    name, so clients fetch those from products and stores by id (ADR-0035, no composition).
+    The service never writes: the only write across the stock boundary is the database
+    function `api_stock.consume_v1`, called by sales inside its own transaction
+    (see contracts/db/api_stock.consume.v1.md). Receipts, transfers and adjustments
+    are deferred and have no operation.'
+security:
+- bearer: []
+tags:
+- name: Stock
+- name: Meta
+paths:
+  /v1/stock-levels:
+    get:
+      tags:
+      - Stock
+      summary: List stock levels
+      description: Returns a page of stock levels ordered by `store_id`, then `product_id`.
+        `below=N` returns the levels whose `quantity_on_hand` is less than N. A
+        level is read from PostgreSQL on every request and is never cached, so a
+        phone sale and a CSV sale both show on the next read.
+      operationId: listStockLevels
+      x-mosaiq-roles: &id002
+      - ADMIN
+      - ANALYST
+      - STORE_MANAGER
+      - MARKETING
+      - INVENTORY_PLANNER
+      - AUDITOR
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/StoreId'
+      - $ref: '#/components/parameters/ProductId'
+      - $ref: '#/components/parameters/Below'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of stock levels.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema: &id001
+                $ref: '#/components/schemas/StockLevelPage'
+              examples:
+                filtered_page:
+                  externalValue: ./examples/stock-levels-filtered.json
+            application/xml:
+              schema: *id001
+              examples:
+                filtered_page:
+                  externalValue: ./examples/stock-levels-filtered.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/InvalidQuery'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/stock-levels/{store_id}/{product_id}:
+    get:
+      tags:
+      - Stock
+      summary: Get one stock level
+      description: The store and product pair is the level's own identity (E-03).
+        A level is read from PostgreSQL on every request and is never cached. A
+        pair with no `inventory` row answers 404 `stock_level_not_found`.
+      operationId: getStockLevel
+      x-mosaiq-roles: *id002
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/StoreIdPath'
+      - $ref: '#/components/parameters/ProductIdPath'
+      responses:
+        '200':
+          description: The stock level.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema: &id003
+                $ref: '#/components/schemas/StockLevel'
+              examples:
+                stock_level:
+                  externalValue: ./examples/stock-level.json
+            application/xml:
+              schema: *id003
+              examples:
+                stock_level:
+                  externalValue: ./examples/stock-level.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /health/live:
+    get:
+      tags:
+      - Meta
+      summary: Check process liveness
+      operationId: getLiveness
+      security: []
+      parameters: &id004
+      - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The process is live.
+          headers: &id005
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+  /health/ready:
+    get:
+      tags:
+      - Meta
+      summary: Check schema readiness
+      operationId: getReadiness
+      security: []
+      parameters: *id004
+      responses:
+        '204':
+          description: The required schema is ready.
+          headers: *id005
+        '503':
+          $ref: '#/components/responses/SchemaNotReady'
+  /openapi.yaml:
+    get:
+      tags:
+      - Meta
+      summary: Get this OpenAPI document
+      operationId: getOpenApi
+      security: []
+      parameters: *id004
+      responses:
+        '200':
+          description: The OpenAPI document, served byte for byte.
+          headers: *id005
+          content:
+            application/yaml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+  /schema.xsd:
+    get:
+      tags:
+      - Meta
+      summary: Get the stock XML Schema
+      operationId: getSchema
+      security: []
+      parameters: *id004
+      responses:
+        '200':
+          description: The stock XSD, served byte for byte.
+          headers: *id005
+          content:
+            application/xml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      description: Caller-supplied correlation id. A missing or invalid value is
+        replaced by the service, and the effective value is returned on every response.
+      schema:
+        type: string
+        pattern: ^[0-9A-Za-z-]{1,64}$
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Size:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    StoreIdPath:
+      name: store_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+    ProductIdPath:
+      name: product_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+    StoreId:
+      name: store_id
+      in: query
+      required: false
+      description: Restrict the levels to this store. The service answers 422 `invalid_query`
+        when it is not a positive integer.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+    ProductId:
+      name: product_id
+      in: query
+      required: false
+      description: Restrict the levels to this product. The service answers 422
+        `invalid_query` when it is not a positive integer.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+    Below:
+      name: below
+      in: query
+      required: false
+      description: Return only the levels whose `quantity_on_hand` is less than
+        this number. The service answers 422 `invalid_query` when it is not a positive
+        integer.
+      schema:
+        type: integer
+        minimum: 1
+  headers:
+    CorrelationId:
+      description: The effective correlation id for this request.
+      required: true
+      schema:
+        type: string
+        pattern: ^[0-9A-Za-z-]{1,64}$
+    RetryAfter:
+      description: Seconds until the caller should retry.
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  schemas:
+    StockLevel:
+      type: object
+      additionalProperties: false
+      required:
+      - store_id
+      - product_id
+      - quantity_on_hand
+      - updated_at
+      properties:
+        store_id:
+          type: integer
+          format: int32
+        product_id:
+          type: integer
+          format: int32
+        quantity_on_hand:
+          type: integer
+          minimum: 0
+        updated_at:
+          type: string
+          format: date-time
+      xml:
+        name: StockLevel
+        namespace: https://mosaiq.maxthecoder.online/xml/stock/v1
+    StockLevelPage:
+      type: object
+      additionalProperties: false
+      required:
+      - stock_levels
+      - page_info
+      properties:
+        stock_levels:
+          type: array
+          items:
+            $ref: '#/components/schemas/StockLevel'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: StockLevels
+        namespace: https://mosaiq.maxthecoder.online/xml/stock/v1
+    PageInfo:
+      type: object
+      additionalProperties: false
+      required:
+      - page
+      - size
+      - total
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+      xml:
+        name: PageInfo
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required:
+      - field
+      - code
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+    Error:
+      type: object
+      additionalProperties: false
+      required:
+      - code
+      - message
+      - correlation_id
+      - details
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        correlation_id:
+          type: string
+          pattern: ^[0-9A-Za-z-]{1,64}$
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+      xml:
+        name: Error
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+  responses:
+    Unauthorized:
+      description: '`invalid_token` or `session_revoked`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              externalValue: ./examples/invalid-token.json
+            session_revoked:
+              externalValue: ./examples/session-revoked.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              externalValue: ./examples/invalid-token.xml
+            session_revoked:
+              externalValue: ./examples/session-revoked.xml
+    Forbidden:
+      description: '`forbidden_role`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.xml
+    NotAcceptable:
+      description: '`not_acceptable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              externalValue: ./examples/not-acceptable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              externalValue: ./examples/not-acceptable.xml
+    RateLimited:
+      description: '`rate_limited`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              externalValue: ./examples/rate-limited.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              externalValue: ./examples/rate-limited.xml
+    OperationUnavailable:
+      description: '`auth_unavailable` or `database_unavailable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.json
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.xml
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.xml
+    SchemaNotReady:
+      description: '`schema_not_ready`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              externalValue: ./examples/schema-not-ready.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              externalValue: ./examples/schema-not-ready.xml
+    NotFound:
+      description: '`stock_level_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            stock_level_not_found:
+              externalValue: ./examples/stock-level-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            stock_level_not_found:
+              externalValue: ./examples/stock-level-not-found.xml
+    InvalidQuery:
+      description: '`invalid_query` or `invalid_pagination`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.json
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.xml
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.xml

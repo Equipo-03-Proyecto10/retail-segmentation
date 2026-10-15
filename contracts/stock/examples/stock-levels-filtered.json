@@ -1,0 +1,27 @@
+{
+  "stock_levels": [
+    {
+      "store_id": 3,
+      "product_id": 120,
+      "quantity_on_hand": 14,
+      "updated_at": "2026-10-15T16:42:10Z"
+    },
+    {
+      "store_id": 3,
+      "product_id": 245,
+      "quantity_on_hand": 0,
+      "updated_at": "2026-10-15T15:03:55Z"
+    },
+    {
+      "store_id": 3,
+      "product_id": 311,
+      "quantity_on_hand": 4,
+      "updated_at": "2026-10-14T21:18:02Z"
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 3
+  }
+}

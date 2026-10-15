@@ -1,0 +1,11 @@
+{
+  "code": "invalid_query",
+  "message": "A query parameter is not a positive integer.",
+  "correlation_id": "corr-invalid-query",
+  "details": [
+    {
+      "field": "below",
+      "code": "not_a_positive_integer"
+    }
+  ]
+}

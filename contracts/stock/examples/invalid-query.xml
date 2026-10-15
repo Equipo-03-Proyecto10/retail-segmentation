@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_query</code>
+  <message>A query parameter is not a positive integer.</message>
+  <correlation_id>corr-invalid-query</correlation_id>
+  <details>
+    <field>below</field>
+    <code>not_a_positive_integer</code>
+  </details>
+</Error>

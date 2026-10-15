@@ -72,21 +72,20 @@ rather than backdating it. Its decision text is unchanged.
 ADR-0034 to ADR-0046 are the distributed-stage decision set that ADR-0016
 requires before any service, contract or client exists (#398). ADR-0034 to
 ADR-0042 were first proposed for eight services. They were rewritten in place,
-still `Proposed`, for the fifteen single-rule services the instructor's
+while still `Proposed`, for the fifteen single-rule services the instructor's
 requirements call for, and ADR-0043 to ADR-0046 were added. They are proposed
 together in one pull request, with the documents that rest on them:
 `AGENTS.md`, `docs/roadmap.md`, `docs/requirements.md`,
 `docs/business-rules.md`, `docs/datastores/README.md` and
 `docs/scope-delivery-2-distributed.md`.
-**That pull request must not merge while any of the thirteen still reads
-`Proposed`.** Each is accepted or rejected in review (F13-01, #408), so that
-this set does not repeat what happened to 0014–0016.
+**The team reviewed the thirteen and accepted all of them on **
+(F13-01, #408), before that pull request merged, so this set does not repeat
+what happened to 0014–0016.
 
-Three status lines change only when their successor is accepted, in the same
-pull request:
-- ADR-0015 becomes `Superseded by ADR-0040`.
-- ADR-0016 becomes `Partially superseded by ADR-0043 (service count only)`.
-- ADR-0020 becomes `Partially superseded by ADR-0039`.
+In the same pull request, three earlier records changed only their status lines:
+- ADR-0015 is `Superseded by ADR-0040`.
+- ADR-0016 is `Partially superseded by ADR-0043 (service count only)`.
+- ADR-0020 is `Partially superseded by ADR-0039`.
 
 ADR-0026 and ADR-0030 to ADR-0033 are still `Proposed`, although their
 implementations have merged. AN-01 (#407) tracks their acceptance and the
@@ -110,12 +109,12 @@ record of this exception.
 | [0012](0012-release-merges-preserve-ancestry.md) | `develop` and `main` are joined only by merge commits, never by squash or rebase | Accepted |
 | [0013](0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md) | MOSAIQ is published through Cloudflare with an origin certificate | Accepted |
 | [0014](0014-service-owned-transactions-and-typed-write-failures.md) | Services own transactions and translate typed write failures | Accepted |
-| [0015](0015-containers-are-a-development-path-only.md) | Docker Compose is a development path only, and is never run on the instance | Accepted |
-| [0016](0016-the-second-delivery-reinstates-the-distributed-architecture.md) | The second delivery reinstates the distributed architecture | Accepted |
+| [0015](0015-containers-are-a-development-path-only.md) | Docker Compose is a development path only, and is never run on the instance | Superseded by [0040](0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md) |
+| [0016](0016-the-second-delivery-reinstates-the-distributed-architecture.md) | The second delivery reinstates the distributed architecture | Partially superseded by [0043](0043-at-least-ten-microservices-each-implementing-one-business-rule.md) (service count only) |
 | [0017](0017-segment-assignment-history-replaces-the-mutable-current-segment.md) | Segment assignment history replaces the mutable current segment | Accepted |
 | [0018](0018-two-segmentation-strategies-behind-one-method-agnostic-pipeline.md) | Two segmentation strategies feed one label-based, method-agnostic pipeline | Superseded by [0030](0030-k-means-clusters-are-paired-with-labels-by-proportional-rank.md) |
 | [0019](0019-experiment-measurement-separates-assignment-exposure-and-conversion.md) | Experiment measurement separates assignment, exposure and conversion | Accepted |
-| [0020](0020-csv-is-the-sole-sales-ingestion-entry-point-for-this-delivery.md) | CSV is the sole sales ingestion entry point for this delivery | Accepted |
+| [0020](0020-csv-is-the-sole-sales-ingestion-entry-point-for-this-delivery.md) | CSV is the sole sales ingestion entry point for this delivery | Partially superseded by [0039](0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) |
 | [0021](0021-k-means-is-implemented-in-the-application-rather-than-taken-as-a-dependency.md) | K-means is implemented in the application rather than taken as a dependency | Accepted |
 | [0022](0022-sessions-are-resolved-server-side-on-every-request.md) | Sessions are resolved server-side on every request | Accepted |
 | [0023](0023-store-managers-read-segments-and-customers.md) | Store managers hold `segment.read`, and so read customers and segments | Accepted |
@@ -129,19 +128,19 @@ record of this exception.
 | [0031](0031-sales-ingestion-decrements-inventory-atomically.md) | Accepted sales decrement inventory atomically | Proposed |
 | [0032](0032-server-side-sessions-have-idle-and-absolute-lifetimes.md) | Server-side sessions have idle and absolute lifetimes | Proposed |
 | [0033](0033-duplicate-transport-security-policy-at-application-and-proxy.md) | Keep the transport security policy at Flask and NGINX | Proposed |
-| [0034](0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) | Fifteen single-rule services, each the only service that writes its data | Proposed |
-| [0035](0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md) | Each service publishes its own versioned contract, and no two services share a resource | Proposed |
-| [0036](0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md) | auth-service issues role-only RS256 tokens whose sessions live in Redis | Proposed |
-| [0037](0037-two-redis-instances-carry-sessions-caches-limits-and-inter-service-streams.md) | Two Redis instances carry sessions, caches, limits and the inter-service streams, for the services only | Proposed |
-| [0038](0038-mongodb-holds-in-store-engagement-owned-by-engagement-service-alone.md) | MongoDB holds in-store engagement, owned by engagement-service alone | Proposed |
-| [0039](0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) | sales-service records a sale all or nothing, consuming stock through the stock contract | Proposed |
-| [0040](0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md) | Each service is built in CI and runs as its own compose project on the instance | Proposed |
-| [0041](0041-android-and-electron-clients-run-different-processes-over-different-formats.md) | The Android and Electron clients run different processes over different formats | Proposed |
-| [0042](0042-a-bench-only-rust-build-of-the-products-reads-is-compared-under-one-load.md) | A bench-only Rust build of the products reads is compared with the Flask service under one load | Proposed |
-| [0043](0043-at-least-ten-microservices-each-implementing-one-business-rule.md) | The distributed stage has at least ten microservices, each implementing one business rule | Proposed |
-| [0044](0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) | Boundaries meet only through versioned database contracts and Redis Streams relayed from each owner's outbox | Proposed |
-| [0045](0045-services-never-import-the-web-system.md) | Services never import the web system | Proposed |
-| [0046](0046-service-owned-data-lives-in-service-schemas.md) | Service-owned data lives in service schemas | Proposed |
+| [0034](0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) | Fifteen single-rule services, each the only service that writes its data | Accepted |
+| [0035](0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md) | Each service publishes its own versioned contract, and no two services share a resource | Accepted |
+| [0036](0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md) | auth-service issues role-only RS256 tokens whose sessions live in Redis | Accepted |
+| [0037](0037-two-redis-instances-carry-sessions-caches-limits-and-inter-service-streams.md) | Two Redis instances carry sessions, caches, limits and the inter-service streams, for the services only | Accepted |
+| [0038](0038-mongodb-holds-in-store-engagement-owned-by-engagement-service-alone.md) | MongoDB holds in-store engagement, owned by engagement-service alone | Accepted |
+| [0039](0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) | sales-service records a sale all or nothing, consuming stock through the stock contract | Accepted |
+| [0040](0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md) | Each service is built in CI and runs as its own compose project on the instance | Accepted |
+| [0041](0041-android-and-electron-clients-run-different-processes-over-different-formats.md) | The Android and Electron clients run different processes over different formats | Accepted |
+| [0042](0042-a-bench-only-rust-build-of-the-products-reads-is-compared-under-one-load.md) | A bench-only Rust build of the products reads is compared with the Flask service under one load | Accepted |
+| [0043](0043-at-least-ten-microservices-each-implementing-one-business-rule.md) | The distributed stage has at least ten microservices, each implementing one business rule | Accepted |
+| [0044](0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) | Boundaries meet only through versioned database contracts and Redis Streams relayed from each owner's outbox | Accepted |
+| [0045](0045-services-never-import-the-web-system.md) | Services never import the web system | Accepted |
+| [0046](0046-service-owned-data-lives-in-service-schemas.md) | Service-owned data lives in service schemas | Accepted |
 
 ## Writing one
 

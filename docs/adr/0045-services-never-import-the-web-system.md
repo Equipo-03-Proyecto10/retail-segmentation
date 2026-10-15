@@ -1,6 +1,6 @@
 # ADR-0045 — Services never import the web system
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #398
 **Supersedes:** —

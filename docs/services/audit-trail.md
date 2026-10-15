@@ -1,6 +1,6 @@
 # audit-trail
 
-> **Status:** Planned (phase 14, second wave). Not built until ADR-0034 to ADR-0046 are accepted (F13-01, #408).
+> **Status:** Planned (phase 14, second wave). ADR-0034 to ADR-0046 accepted on  (F13-01, #408).
 > **One rule:** The audit trail is append-only, attributed, free of credentials, and readable by ADMIN and AUDITOR only (RN-28, RN-29, RN-30)
 
 ## Summary
@@ -71,7 +71,7 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 - **What:** Four services write no invariant of their own. They enforce a read rule: what they may report, and to whom.
 - **Why it is acceptable:** Counting them follows the instructor's wording (one business rule per service), and the domain does not offer more writers: segmentation runs belong to the web (RN-05), and the audit log is written by `fn_audit`.
-- **Guard:** Q-13 asks the instructor to confirm it in writing. If the answer is no, the floor still holds: ten core writers plus campaigns. ADR-0043 forbids cutting any core service.
+- **Guard:** The instructor confirmed that read-only boundaries count (Q-13, 2026-10-15). Even under the strict reading the floor would hold: ten core writers plus campaigns. ADR-0043 forbids cutting any core service.
 - **Decided in:** [ADR-0043](../adr/0043-at-least-ten-microservices-each-implementing-one-business-rule.md) (What counts, and the margin if Q-13 goes against it). Register: [E-08](./README.md#e-08--read-rule-services-count-as-one-rule-services).
 
 ### E-10 — read owners of tables only the web writes

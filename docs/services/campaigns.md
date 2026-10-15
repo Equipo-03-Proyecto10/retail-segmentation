@@ -1,6 +1,6 @@
 # campaigns
 
-> **Status:** Planned (phase 14, second wave). Not built until ADR-0034 to ADR-0046 are accepted (F13-01, #408).
+> **Status:** Planned (phase 14, second wave). ADR-0034 to ADR-0046 accepted on  (F13-01, #408).
 > **One rule:** A campaign moves only DRAFT→ACTIVE/CANCELLED and ACTIVE→FINISHED/CANCELLED, is edited only in DRAFT, never ends before it starts, and is activated only before it has ended and while every attached experiment is ready (RN-15, RN-16, RN-22, RN-24 (activation), RN-31, RN-32, RN-49 (activation))
 
 ## Summary

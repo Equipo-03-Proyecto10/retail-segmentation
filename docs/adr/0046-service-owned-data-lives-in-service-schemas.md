@@ -1,6 +1,6 @@
 # ADR-0046 — Service-owned data lives in service schemas
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #398
 **Supersedes:** —

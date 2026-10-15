@@ -176,7 +176,7 @@ through capture triggers in `sql/01_schema.sql` that fill the owner's outbox.
 | 17 | Android client | Kotlin floor app over JSON | #403 |
 | 18 | Deployment and demonstration | Per-service deployment on the instance, NGINX routes, negative tests, end-to-end demo, diagrams | #404 |
 
-Story ids and the dependency graph are in [`backlog.md`](backlog.md). Its phase 13–18 story tables predate the fifteen-service design and are being reissued; where they differ, ADR-0034 to ADR-0046 win. Nothing in phases 14–18 starts before F13-01 (#408) accepts the decision set.
+Story ids and the dependency graph are in [`backlog.md`](backlog.md). Its phase 13–18 tables follow the fifteen-service design; where they differ, ADR-0034 to ADR-0046 win. F13-01 (#408) accepted the decision set on .
 
 ## 7. Deliverables
 
@@ -233,14 +233,17 @@ The distributed stage is complete when all of these are checkable and pass:
 | ID | Answer |
 |---|---|
 | Q-12 | **ANSWERED (2026-10-13).** The course's Redis requirement says that every component consults Redis during authentication or authorization. That means the microservices, not the web system. The web system connects to no Redis and keeps its PostgreSQL sessions ([ADR-0022](adr/0022-sessions-are-resolved-server-side-on-every-request.md)). Only the services consult Redis ([ADR-0037][adr-0037]) |
+| Q-13 | **ANSWERED ().** Yes to both: (1) read-only boundaries, such as segments and audit-trail, count as services implementing one business rule, and (2) services that co-write legacy `public` tables with the frozen web, reading across boundaries only through versioned `api_*` views and exchanging events only on Redis Streams, satisfy "totally independent" ([ADR-0043][adr-0043], [ADR-0034][adr-0034]) |
+
+**Decided by the team.** Q-14 (): **No.** Only deactivations made in the web create AN-04's notification (#419). A deactivation through users-service (`POST /v1/users/{user_id}/deactivation`) creates none, and no trigger on `app_user` is added for it.
 
 ## 12. Open questions
+
+Q-13 and Q-14 are answered in §11.
 
 | ID | Question | Working assumption |
 |---|---|---|
 | Q-11 | Is account email verification part of the second delivery? | No, until F13-10 (#446) records the Product Owner's answer |
-| Q-13 | The instructor is asked to confirm in writing that (1) read-only boundaries, such as segments and audit-trail, count as services implementing one business rule, and (2) services that co-write legacy `public` tables with the frozen web, reading across boundaries only through versioned `api_*` views and exchanging events only on Redis Streams, satisfy "totally independent" | Yes to both. [ADR-0043][adr-0043] keeps the floor of ten even under the strict reading of (1) |
-| Q-14 | AN-04 (#419) notifies when an administrator deactivates a user, and its notifications are produced by the web's service layer. A deactivation made through users-service (`POST /v1/users/{user_id}/deactivation`) never passes through that layer. Must it notify too and, if so, through a definer trigger on `app_user` declared in `sql/01_schema.sql`? | No: only deactivations made in the web notify, until the team decides on #419 |
 
 [adr-0016]: adr/0016-the-second-delivery-reinstates-the-distributed-architecture.md
 [adr-0034]: adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md

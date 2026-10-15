@@ -1,6 +1,6 @@
 # ADR-0036 — auth-service issues role-only RS256 tokens whose sessions live in Redis
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #398
 **Supersedes:** —

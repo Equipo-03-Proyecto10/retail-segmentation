@@ -1,6 +1,6 @@
 # ADR-0039 — sales-service records a sale all or nothing, consuming stock through the stock contract
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #398
 **Supersedes:** [ADR-0020](0020-csv-is-the-sole-sales-ingestion-entry-point-for-this-delivery.md), in part: its "sole entry point" clause and its "one implementation of the rules" clause

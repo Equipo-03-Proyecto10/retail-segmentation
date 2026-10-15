@@ -2,7 +2,7 @@
 
 One sheet per microservice, all with the same structure. A sheet describes the decided design of one service in one place: its rule, endpoints, data, contracts, events, Redis keys, errors, accepted exceptions and failure behaviour. **Sheets are not code and never override an ADR.** When a sheet and an ADR disagree, the ADR wins and the sheet is wrong.
 
-The design is governed by ADR-0034 to ADR-0046. Every service implements exactly one business rule ([ADR-0043](../adr/0043-at-least-ten-microservices-each-implementing-one-business-rule.md)), owns its resources exclusively ([ADR-0035](../adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md)) and meets the others only through versioned database contracts and Redis Streams ([ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md)). Nothing here is built until those records are accepted (F13-01, #408).
+The design is governed by ADR-0034 to ADR-0046. Every service implements exactly one business rule ([ADR-0043](../adr/0043-at-least-ten-microservices-each-implementing-one-business-rule.md)), owns its resources exclusively ([ADR-0035](../adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md)) and meets the others only through versioned database contracts and Redis Streams ([ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md)). The team accepted those records on 2026-10-15 (F13-01, #408).
 
 ## Index
 
@@ -130,7 +130,7 @@ The design accepts a small number of deliberate deviations from the strict readi
 
 - **What:** Four services write no invariant of their own. They enforce a read rule: what they may report, and to whom.
 - **Why it is acceptable:** Counting them follows the instructor's wording (one business rule per service), and the domain does not offer more writers: segmentation runs belong to the web (RN-05), and the audit log is written by `fn_audit`.
-- **Guard:** Q-13 asks the instructor to confirm it in writing. If the answer is no, the floor still holds: ten core writers plus campaigns. ADR-0043 forbids cutting any core service.
+- **Guard:** The instructor confirmed that read-only boundaries count (Q-13, 2026-10-15). Even under the strict reading the floor would hold: ten core writers plus campaigns. ADR-0043 forbids cutting any core service.
 - **Services:** [stock](./stock.md), [segments](./segments.md), [recommendations](./recommendations.md), [audit-trail](./audit-trail.md)
 - **Decided in:** [ADR-0043](../adr/0043-at-least-ten-microservices-each-implementing-one-business-rule.md) (What counts, and the margin if Q-13 goes against it)
 
@@ -248,4 +248,4 @@ The design accepts a small number of deliberate deviations from the strict readi
 
 ### Adding or changing an exception
 
-A new exception needs an ADR change and an entry in this register **before** it is built. An exception with no guard is not acceptable: if it cannot be checked by a grant, a CI check, a contract rule or a review rule that fails visibly, it is a defect, not an exception. Q-13 in [`scope-delivery-2-distributed.md`](../scope-delivery-2-distributed.md) asks the instructor to confirm E-08 and the shared-database model in writing.
+A new exception needs an ADR change and an entry in this register **before** it is built. An exception with no guard is not acceptable: if it cannot be checked by a grant, a CI check, a contract rule or a review rule that fails visibly, it is a defect, not an exception. The instructor confirmed E-08 and the shared-database model (Q-13, answered in [`scope-delivery-2-distributed.md`](../scope-delivery-2-distributed.md) §11).

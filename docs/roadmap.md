@@ -114,7 +114,7 @@ now choose it:
 | Services never import or copy the web system | [ADR-0045](adr/0045-services-never-import-the-web-system.md) |
 | Service-owned tables live in service schemas, never in `public` | [ADR-0046](adr/0046-service-owned-data-lives-in-service-schemas.md) |
 
-Distributed work starts only once that set is accepted (F13-01, #408). Each
+That set was accepted on  (F13-01, #408), and distributed work may start. Each
 service then enters in two steps:
 
 1. **Its contract** merges and passes CI validation.

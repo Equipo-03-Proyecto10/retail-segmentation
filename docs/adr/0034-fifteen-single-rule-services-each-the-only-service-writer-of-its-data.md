@@ -1,6 +1,6 @@
 # ADR-0034 — Fifteen single-rule services, each the only service that writes its data
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #398
 **Supersedes:** —
@@ -24,7 +24,7 @@ write which data. Four facts constrain the answer:
 4. **One VM, one PostgreSQL, one DDL file.** Isolation comes from database roles.
 
 Judgement calls: a **read owner** of a table it never writes is a convention the grant
-checks enforce; whether a read-only boundary counts as a rule is open (Q-13, ADR-0043).
+checks enforce; the instructor confirmed that a read-only boundary counts as a rule (Q-13, ADR-0043).
 
 ## Decision
 
@@ -152,8 +152,8 @@ the one declared read owner, while the web is the only writer. Unlisted tables g
   locations and stock rows; services learn of it only through streams.
 - **One PostgreSQL is a shared failure and a shared schema.** Each boundary section is
   idempotent and ships expand-before-deploy ([ADR-0040](0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md)).
-- **Read-only boundaries carry a risk.** If Q-13 does not count them, the floor holds only
-  through the margin ADR-0043 records.
+- **Read-only boundaries carried a risk** until Q-13 was answered. The instructor confirmed that they
+  count; the margin ADR-0043 records stays as a defence.
 
 **What must now be true elsewhere.**
 - `sql/00_create_database.sql` creates the roles idempotently; `.env.example` documents

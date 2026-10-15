@@ -1,6 +1,6 @@
 # ADR-0038 — MongoDB holds in-store engagement, owned by engagement-service alone
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #398
 **Supersedes:** —

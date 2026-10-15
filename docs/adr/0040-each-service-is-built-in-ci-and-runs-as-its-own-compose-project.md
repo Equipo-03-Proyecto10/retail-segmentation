@@ -1,6 +1,6 @@
 # ADR-0040 — Each service is built in CI and runs as its own compose project on the instance
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #398
 **Supersedes:** [ADR-0015](0015-containers-are-a-development-path-only.md)

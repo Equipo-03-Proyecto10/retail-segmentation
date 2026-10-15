@@ -1,6 +1,6 @@
 # ADR-0042 — A bench-only Rust build of the products reads is compared with the Flask service under one load
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #398
 **Supersedes:** —

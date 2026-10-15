@@ -14,8 +14,8 @@ later · **P2** optional.
 
 **Phases 13–18 are the distributed stage of the second delivery.** They
 follow ADR-0034 to ADR-0046, scoped in
-[`scope-delivery-2-distributed.md`](scope-delivery-2-distributed.md). No story
-in them starts before F13-01 (#408) accepts that decision set. **The
+[`scope-delivery-2-distributed.md`](scope-delivery-2-distributed.md). F13-01 (#408)
+accepted that decision set on . **The
 analytics phase is not finished.** The gaps found on 2026-10-13 are the
 `AN-*` stories at the end of this file (epic #405).
 

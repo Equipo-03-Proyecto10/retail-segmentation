@@ -1,6 +1,6 @@
 # ADR-0044 — Boundaries meet only through versioned database contracts and Redis Streams relayed from each owner's outbox
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #398
 **Supersedes:** —

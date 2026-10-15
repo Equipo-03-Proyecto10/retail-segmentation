@@ -1,6 +1,6 @@
 # engagement
 
-> **Status:** Planned (phase 14, core). Not built until ADR-0034 to ADR-0046 are accepted (F13-01, #408).
+> **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on  (F13-01, #408).
 > **One rule:** In-store engagement (`QR_SCAN`, `RECO_CLICK`) is recorded once per client event, attributed, voided rather than deleted, and summarized (RN-55)
 
 ## Summary

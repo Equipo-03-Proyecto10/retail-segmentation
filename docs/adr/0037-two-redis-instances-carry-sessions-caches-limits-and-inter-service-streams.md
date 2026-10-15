@@ -1,6 +1,6 @@
 # ADR-0037 — Two Redis instances carry sessions, caches, limits and the inter-service streams, for the services only
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #398
 **Supersedes:** —

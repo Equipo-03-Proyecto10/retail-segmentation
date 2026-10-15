@@ -1,6 +1,6 @@
 # ADR-0043 — The distributed stage has at least ten microservices, each implementing one business rule
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #398
 **Supersedes:** [ADR-0016](0016-the-second-delivery-reinstates-the-distributed-architecture.md), in part. Only its count of six to ten services
@@ -22,8 +22,8 @@ since set four binding requirements, which the team confirmed:
 The fourth turns ten into a floor; the third makes the count follow the domain. None defines "one
 business rule". `docs/business-rules.md` gives every enforced invariant an RN id, but segments and
 audit-trail enforce no write invariant: they only read and report. Whether the instructor counts
-such a read-only boundary is the genuine uncertainty, open as **Q-13**; this record is built to
-survive either answer.
+such a read-only boundary was the genuine uncertainty, asked as **Q-13**; the instructor confirmed on
+ that it counts. This record still keeps a margin that survives either answer.
 
 ## Decision
 
@@ -38,7 +38,7 @@ several facts in the same way: customer-preferences replaces each of its two pre
 a whole. Facts governed by different invariants are different rules, and so different services:
 products and categories; customers and customer-preferences. A service may also serve, read-only, a
 vocabulary its own rule validates against, as sales serves `channels` and users serves `roles`. Read-only boundaries count,
-pending Q-13. If memory runs short, the second wave is dropped first, and the count never goes below
+as the instructor confirmed (Q-13). If memory runs short, the second wave is dropped first, and the count never goes below
 ten. Services are never merged to save memory, because a merge mixes rules.
 
 ### What counts, and the margin if Q-13 goes against it
@@ -98,16 +98,16 @@ its idempotent section of `sql/01_schema.sql`. It also adds lines to shared file
 - **Rules that span facts are coordinated through the database.** A sale consumes stock across two
   boundaries, through a versioned contract ([ADR-0039](0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md),
   [ADR-0044](0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md)).
-- **The definition depends on Q-13.** Until it is answered, no core service can be cut; under the
-  strict reading the core has exactly ten that count.
+- **The definition rested on Q-13,** which the instructor confirmed on . No core service is cut
+  anyway: under the strict reading the core has exactly ten that count, and the margin stays.
 
 **What must now be true elsewhere.**
 - [ADR-0016](0016-the-second-delivery-reinstates-the-distributed-architecture.md)'s status line
   becomes `Partially superseded by ADR-0043 (service count only)` on acceptance, in the same pull
   request; its decision text is unchanged. [`docs/adr/README.md`](README.md) records it with
   ADR-0015 and ADR-0020.
-- [`scope-delivery-2-distributed.md`](../scope-delivery-2-distributed.md) lists Q-13 in §12. Part
-  (1), whether a read-only boundary counts, is the part this record's margin depends on.
+- [`scope-delivery-2-distributed.md`](../scope-delivery-2-distributed.md) records Q-13's answer in §11:
+  a read-only boundary counts, and the shared-database model counts as independent.
 - `docs/business-rules.md` gains RN-52 (auth), RN-53 (stores), RN-54 (customer-preferences), RN-55
   (engagement) and RN-56 (check-ins) in this pull request. The duplicate RN-37, RN-47 and RN-50
   headings are left to AN-15 (#460). The registry cites the sales rule as RN-37 (accepted sales),

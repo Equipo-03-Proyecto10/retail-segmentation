@@ -1,6 +1,6 @@
 # ADR-0041 — The Android and Electron clients run different processes over different formats
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #398
 **Supersedes:** —

@@ -1,6 +1,6 @@
 # ADR-0035 — Each service publishes its own versioned contract, and no two services share a resource
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #398
 **Supersedes:** —

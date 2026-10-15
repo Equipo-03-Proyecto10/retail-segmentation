@@ -1,10 +1,10 @@
 # ADR-0016 — The second delivery reinstates the distributed architecture, and the monolith becomes one component of four
 
-**Status:** Accepted
+**Status:** Partially superseded by ADR-0043 (service count only)
 **Owner:** Marcelo
 **Issue:** —
 **Supersedes:** [ADR-0001](0001-flask-monolith-on-a-single-vm.md), [ADR-0005](0005-document-mongodb-and-redis-designs-without-implementing-them.md)
-**Superseded by:** —
+**Superseded by:** [ADR-0043](0043-at-least-ten-microservices-each-implementing-one-business-rule.md), in part (service count only)
 
 ---
 

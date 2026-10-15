@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>check_in_not_found</code>
+  <message>Check-in 7c1f9a52-3b0e-4d8e-9a64-5f2d1c0b8e77 was not found.</message>
+  <correlation_id>corr-check-in-not-found</correlation_id>
+</Error>

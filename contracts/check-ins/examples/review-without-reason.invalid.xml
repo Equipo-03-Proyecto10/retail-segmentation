@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CheckInDetail xmlns="https://mosaiq.maxthecoder.online/xml/check-ins/v1">
+  <check_in_id>7c1f9a52-3b0e-4d8e-9a64-5f2d1c0b8e72</check_in_id>
+  <client_check_in_id>0e6d5c4b-3a29-4817-96f5-a4b3c2d1e0f2</client_check_in_id>
+  <user_id>5b0c2f3e-8a41-4d6b-9c10-2e7a1f4d9b33</user_id>
+  <store_id>3</store_id>
+  <latitude>19.4369</latitude>
+  <longitude>-99.1401</longitude>
+  <accuracy_m>8.0</accuracy_m>
+  <distance_m>812.7</distance_m>
+  <reason>outside_geofence</reason>
+  <auto_verified>false</auto_verified>
+  <verified>true</verified>
+  <occurred_at>2026-10-15T14:02:00Z</occurred_at>
+  <recorded_at>2026-10-15T14:02:02Z</recorded_at>
+  <reviews>
+    <review_id>42</review_id>
+    <verified>true</verified>
+    <reviewed_by>9d4e7a10-52c3-4b8f-a1e6-0c3b5d7f9a21</reviewed_by>
+    <reviewed_at>2026-10-15T17:45:00Z</reviewed_at>
+  </reviews>
+</CheckInDetail>

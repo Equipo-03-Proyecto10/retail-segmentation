@@ -1,0 +1,1016 @@
+openapi: 3.1.0
+info:
+  title: check-ins-service
+  version: 1.0.0
+  description: 'Records staff GPS check-ins and computes their verdict on the server
+    (RN-56). The phone sends a fix and shows the answer; it never decides. Check-ins
+    are never updated or deleted, and an override is an append-only review. The
+    server decides the verdict, as one rule (RN-56). The distance is the haversine
+    distance on a sphere of radius 6,371,008.8 m from the fix to the store''s location
+    in `api_stores.store_directory_v1`, in metres with one decimal. The first matching
+    reason wins: `no_fix` (no fix sent), `store_location_unknown` (the store has
+    no location), `low_accuracy` (`accuracy_m` greater than the store''s `geofence_radius_m`),
+    `within_geofence` (distance at most `geofence_radius_m`), otherwise `outside_geofence`.
+    Each of the five is a 201 answer, not an error. The effective `verified` is
+    the latest review''s verdict when a review exists, else `auto_verified`. Reads
+    are limited to ADMIN, STORE_MANAGER and AUDITOR because they are staff location
+    data.'
+security:
+- bearer: []
+tags:
+- name: CheckIns
+- name: Meta
+paths:
+  /v1/check-ins:
+    post:
+      tags:
+      - CheckIns
+      summary: Record a check-in
+      description: 'The server decides the verdict, as one rule (RN-56). The distance
+        is the haversine distance on a sphere of radius 6,371,008.8 m from the fix
+        to the store''s location in `api_stores.store_directory_v1`, in metres with
+        one decimal. The first matching reason wins: `no_fix` (no fix sent), `store_location_unknown`
+        (the store has no location), `low_accuracy` (`accuracy_m` greater than the
+        store''s `geofence_radius_m`), `within_geofence` (distance at most `geofence_radius_m`),
+        otherwise `outside_geofence`. Each of the five is a 201 answer, not an error.
+        `auto_verified` is true exactly when the reason is `within_geofence`. The
+        user is the token''s `sub`. Replaying a `client_check_in_id` with the same
+        user, store, fix and `occurred_at` answers 200 with the original check-in
+        and writes nothing; the same id with any other value answers 409 `client_check_in_conflict`.
+        A phone retries a request refused with 503 under the same `client_check_in_id`.'
+      operationId: createCheckIn
+      x-mosaiq-roles:
+      - ADMIN
+      - STORE_MANAGER
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: &id001
+              $ref: '#/components/schemas/CheckInRequest'
+            examples:
+              with_fix:
+                externalValue: ./examples/check-in.request.json
+              no_fix:
+                externalValue: ./examples/check-in-no-fix.request.json
+          application/xml:
+            schema: *id001
+            examples:
+              with_fix:
+                externalValue: ./examples/check-in.request.xml
+              no_fix:
+                externalValue: ./examples/check-in-no-fix.request.xml
+      responses:
+        '200':
+          description: 'A replay: the original check-in, nothing written.'
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema: &id002
+                $ref: '#/components/schemas/CheckIn'
+              examples:
+                replay:
+                  externalValue: ./examples/check-in-replay.json
+            application/xml:
+              schema: *id002
+              examples:
+                replay:
+                  externalValue: ./examples/check-in-replay.xml
+        '201':
+          description: The check-in was recorded.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema: &id003
+                $ref: '#/components/schemas/CheckIn'
+              examples:
+                within_geofence:
+                  externalValue: ./examples/check-in-within-geofence.json
+                outside_geofence:
+                  externalValue: ./examples/check-in-outside-geofence.json
+                low_accuracy:
+                  externalValue: ./examples/check-in-low-accuracy.json
+                store_location_unknown:
+                  externalValue: ./examples/check-in-store-location-unknown.json
+                no_fix:
+                  externalValue: ./examples/check-in-no-fix.json
+            application/xml:
+              schema: *id003
+              examples:
+                within_geofence:
+                  externalValue: ./examples/check-in-within-geofence.xml
+                outside_geofence:
+                  externalValue: ./examples/check-in-outside-geofence.xml
+                low_accuracy:
+                  externalValue: ./examples/check-in-low-accuracy.xml
+                store_location_unknown:
+                  externalValue: ./examples/check-in-store-location-unknown.xml
+                no_fix:
+                  externalValue: ./examples/check-in-no-fix.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/CreateInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+    get:
+      tags:
+      - CheckIns
+      summary: List check-ins
+      description: Returns a page ordered by `occurred_at`, newest first. `verified`
+        filters on the effective value. `from` and `to` bound `occurred_at`.
+      operationId: listCheckIns
+      x-mosaiq-roles: &id005
+      - ADMIN
+      - STORE_MANAGER
+      - AUDITOR
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/StoreId'
+      - $ref: '#/components/parameters/UserId'
+      - $ref: '#/components/parameters/Verified'
+      - $ref: '#/components/parameters/From'
+      - $ref: '#/components/parameters/To'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of check-ins.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema: &id004
+                $ref: '#/components/schemas/CheckInPage'
+              examples:
+                page:
+                  externalValue: ./examples/check-ins-page.json
+            application/xml:
+              schema: *id004
+              examples:
+                page:
+                  externalValue: ./examples/check-ins-page.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/InvalidQuery'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/check-ins/{check_in_id}:
+    get:
+      tags:
+      - CheckIns
+      summary: Get one check-in with its reviews
+      description: Returns the check-in and its `reviews`, oldest first. `verified`
+        is the latest review's verdict when a review exists, else `auto_verified`.
+      operationId: getCheckIn
+      x-mosaiq-roles: *id005
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/CheckInId'
+      responses:
+        '200':
+          description: The check-in with its reviews.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema: &id006
+                $ref: '#/components/schemas/CheckInDetail'
+              examples:
+                with_reviews:
+                  externalValue: ./examples/check-in-with-reviews.json
+            application/xml:
+              schema: *id006
+              examples:
+                with_reviews:
+                  externalValue: ./examples/check-in-with-reviews.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/check-ins/{check_in_id}/reviews:
+    post:
+      tags:
+      - CheckIns
+      summary: Append a review
+      description: Appends a review. Reviews are never changed or deleted; the latest
+        one decides the effective `verified` (RN-56).
+      operationId: createCheckInReview
+      x-mosaiq-roles:
+      - ADMIN
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/CheckInId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: &id007
+              $ref: '#/components/schemas/ReviewRequest'
+            examples:
+              review:
+                externalValue: ./examples/review.request.json
+          application/xml:
+            schema: *id007
+            examples:
+              review:
+                externalValue: ./examples/review.request.xml
+      responses:
+        '201':
+          description: The review was appended.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema: &id008
+                $ref: '#/components/schemas/Review'
+              examples:
+                review:
+                  externalValue: ./examples/review.json
+            application/xml:
+              schema: *id008
+              examples:
+                review:
+                  externalValue: ./examples/review.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/InvalidBody'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /health/live:
+    get:
+      tags:
+      - Meta
+      summary: Check process liveness
+      operationId: getLiveness
+      security: []
+      parameters: &id009
+      - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The process is live.
+          headers: &id010
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+  /health/ready:
+    get:
+      tags:
+      - Meta
+      summary: Check schema readiness
+      operationId: getReadiness
+      security: []
+      parameters: *id009
+      responses:
+        '204':
+          description: The required schema is ready.
+          headers: *id010
+        '503':
+          $ref: '#/components/responses/SchemaNotReady'
+  /openapi.yaml:
+    get:
+      tags:
+      - Meta
+      summary: Get this OpenAPI document
+      operationId: getOpenApi
+      security: []
+      parameters: *id009
+      responses:
+        '200':
+          description: The OpenAPI document, served byte for byte.
+          headers: *id010
+          content:
+            application/yaml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+  /schema.xsd:
+    get:
+      tags:
+      - Meta
+      summary: Get the check-ins XML Schema
+      operationId: getSchema
+      security: []
+      parameters: *id009
+      responses:
+        '200':
+          description: The check-ins XSD, served byte for byte.
+          headers: *id010
+          content:
+            application/xml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      description: Caller-supplied correlation id. A missing or invalid value is
+        replaced by the service, and the effective value is returned on every response.
+      schema:
+        type: string
+        pattern: ^[0-9A-Za-z-]{1,64}$
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Size:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    CheckInId:
+      name: check_in_id
+      in: path
+      required: true
+      schema: &id011
+        type: string
+        format: uuid
+    StoreId:
+      name: store_id
+      in: query
+      required: false
+      description: Restrict to this store.
+      schema:
+        type: integer
+        format: int32
+    UserId:
+      name: user_id
+      in: query
+      required: false
+      description: Restrict to this staff member.
+      schema: *id011
+    Verified:
+      name: verified
+      in: query
+      required: false
+      description: 'Filter on the effective `verified`: the latest review''s verdict
+        when a review exists, else `auto_verified`.'
+      schema:
+        type: boolean
+    From:
+      name: from
+      in: query
+      required: false
+      description: Include check-ins whose `occurred_at` is at or after this RFC
+        3339 timestamp.
+      schema:
+        type: string
+        format: date-time
+    To:
+      name: to
+      in: query
+      required: false
+      description: Include check-ins whose `occurred_at` is at or before this RFC
+        3339 timestamp. A `to` before `from` answers 422 `invalid_query`.
+      schema:
+        type: string
+        format: date-time
+  headers:
+    CorrelationId:
+      description: The effective correlation id for this request.
+      required: true
+      schema:
+        type: string
+        pattern: ^[0-9A-Za-z-]{1,64}$
+    RetryAfter:
+      description: Seconds until the caller should retry.
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  schemas:
+    CheckInRequest:
+      type: object
+      additionalProperties: false
+      description: The user is the token's `sub`, never a body field. `latitude`,
+        `longitude` and `accuracy_m` are all present or all absent; a partial fix
+        answers 422 `invalid_body`.
+      required:
+      - client_check_in_id
+      - store_id
+      - occurred_at
+      properties:
+        client_check_in_id: *id011
+        store_id:
+          type: integer
+          format: int32
+        occurred_at:
+          type: string
+          format: date-time
+        latitude: &id012
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude: &id013
+          type: number
+          minimum: -180
+          maximum: 180
+        accuracy_m:
+          type: number
+          exclusiveMinimum: 0
+      dependentRequired:
+        latitude:
+        - longitude
+        - accuracy_m
+        longitude:
+        - latitude
+        - accuracy_m
+        accuracy_m:
+        - latitude
+        - longitude
+      xml:
+        name: CheckInRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/check-ins/v1
+    CheckIn:
+      type: object
+      additionalProperties: false
+      required: &id026
+      - check_in_id
+      - client_check_in_id
+      - user_id
+      - store_id
+      - latitude
+      - longitude
+      - accuracy_m
+      - distance_m
+      - reason
+      - auto_verified
+      - verified
+      - occurred_at
+      - recorded_at
+      properties: &id027
+        check_in_id: *id011
+        client_check_in_id: *id011
+        user_id: *id011
+        store_id: &id016
+          type: integer
+          format: int32
+        latitude: &id017
+          anyOf:
+          - *id012
+          - type: 'null'
+        longitude: &id018
+          anyOf:
+          - *id013
+          - type: 'null'
+        accuracy_m: &id019
+          anyOf:
+          - type: number
+            exclusiveMinimum: 0
+          - type: 'null'
+        distance_m: &id020
+          anyOf:
+          - type: number
+            minimum: 0
+          - type: 'null'
+          description: Haversine metres with one decimal; null with `no_fix` or
+            `store_location_unknown`.
+        reason: &id021
+          type: string
+          enum:
+          - no_fix
+          - store_location_unknown
+          - low_accuracy
+          - within_geofence
+          - outside_geofence
+        auto_verified: &id022
+          type: boolean
+          description: True exactly when `reason` is `within_geofence`.
+        verified: &id023
+          type: boolean
+          description: The latest review's verdict when a review exists, else `auto_verified`.
+        occurred_at: &id024
+          type: string
+          format: date-time
+        recorded_at: &id025
+          type: string
+          format: date-time
+      xml:
+        name: CheckIn
+        namespace: https://mosaiq.maxthecoder.online/xml/check-ins/v1
+    Review:
+      type: object
+      additionalProperties: false
+      required: &id014
+      - review_id
+      - verified
+      - reason
+      - reviewed_by
+      - reviewed_at
+      properties: &id015
+        review_id:
+          type: integer
+          format: int64
+        verified:
+          type: boolean
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+        reviewed_by: *id011
+        reviewed_at:
+          type: string
+          format: date-time
+      xml:
+        name: Review
+        namespace: https://mosaiq.maxthecoder.online/xml/check-ins/v1
+    ReviewRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - verified
+      - reason
+      properties:
+        verified:
+          type: boolean
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+      xml:
+        name: ReviewRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/check-ins/v1
+    ReviewItem:
+      type: object
+      additionalProperties: false
+      required: *id014
+      properties: *id015
+    CheckInDetail:
+      type: object
+      additionalProperties: false
+      required:
+      - check_in_id
+      - client_check_in_id
+      - user_id
+      - store_id
+      - latitude
+      - longitude
+      - accuracy_m
+      - distance_m
+      - reason
+      - auto_verified
+      - verified
+      - occurred_at
+      - recorded_at
+      - reviews
+      properties:
+        check_in_id: *id011
+        client_check_in_id: *id011
+        user_id: *id011
+        store_id: *id016
+        latitude: *id017
+        longitude: *id018
+        accuracy_m: *id019
+        distance_m: *id020
+        reason: *id021
+        auto_verified: *id022
+        verified: *id023
+        occurred_at: *id024
+        recorded_at: *id025
+        reviews:
+          type: array
+          description: Oldest first.
+          items:
+            $ref: '#/components/schemas/ReviewItem'
+      xml:
+        name: CheckInDetail
+        namespace: https://mosaiq.maxthecoder.online/xml/check-ins/v1
+    CheckInItem:
+      type: object
+      additionalProperties: false
+      required: *id026
+      properties: *id027
+    CheckInPage:
+      type: object
+      additionalProperties: false
+      required:
+      - check_ins
+      - page_info
+      properties:
+        check_ins:
+          type: array
+          items:
+            $ref: '#/components/schemas/CheckInItem'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: CheckIns
+        namespace: https://mosaiq.maxthecoder.online/xml/check-ins/v1
+    PageInfo:
+      type: object
+      additionalProperties: false
+      required:
+      - page
+      - size
+      - total
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+      xml:
+        name: PageInfo
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required:
+      - field
+      - code
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+    Error:
+      type: object
+      additionalProperties: false
+      required:
+      - code
+      - message
+      - correlation_id
+      - details
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        correlation_id:
+          type: string
+          pattern: ^[0-9A-Za-z-]{1,64}$
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+      xml:
+        name: Error
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+  responses:
+    Unauthorized:
+      description: '`invalid_token` or `session_revoked`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              externalValue: ./examples/invalid-token.json
+            session_revoked:
+              externalValue: ./examples/session-revoked.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              externalValue: ./examples/invalid-token.xml
+            session_revoked:
+              externalValue: ./examples/session-revoked.xml
+    Forbidden:
+      description: '`forbidden_role`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.xml
+    NotAcceptable:
+      description: '`not_acceptable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              externalValue: ./examples/not-acceptable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              externalValue: ./examples/not-acceptable.xml
+    RateLimited:
+      description: '`rate_limited`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              externalValue: ./examples/rate-limited.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              externalValue: ./examples/rate-limited.xml
+    OperationUnavailable:
+      description: '`auth_unavailable` or `database_unavailable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.json
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.xml
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.xml
+    SchemaNotReady:
+      description: '`schema_not_ready`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              externalValue: ./examples/schema-not-ready.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              externalValue: ./examples/schema-not-ready.xml
+    MalformedBody:
+      description: '`malformed_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            malformed_body:
+              externalValue: ./examples/malformed-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            malformed_body:
+              externalValue: ./examples/malformed-body.xml
+    PayloadTooLarge:
+      description: '`payload_too_large`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            payload_too_large:
+              externalValue: ./examples/payload-too-large.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            payload_too_large:
+              externalValue: ./examples/payload-too-large.xml
+    UnsupportedMediaType:
+      description: '`unsupported_media_type`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unsupported_media_type:
+              externalValue: ./examples/unsupported-media-type.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unsupported_media_type:
+              externalValue: ./examples/unsupported-media-type.xml
+    InvalidBody:
+      description: '`invalid_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-body.xml
+    InvalidPagination:
+      description: '`invalid_pagination`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.xml
+    CreateInvalid:
+      description: '`invalid_body` or `unknown_store` or `occurred_in_future`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-body.json
+            unknown_store:
+              externalValue: ./examples/unknown-store.json
+            occurred_in_future:
+              externalValue: ./examples/occurred-in-future.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-body.xml
+            unknown_store:
+              externalValue: ./examples/unknown-store.xml
+            occurred_in_future:
+              externalValue: ./examples/occurred-in-future.xml
+    Conflict:
+      description: '`client_check_in_conflict`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            client_check_in_conflict:
+              externalValue: ./examples/client-check-in-conflict.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            client_check_in_conflict:
+              externalValue: ./examples/client-check-in-conflict.xml
+    NotFound:
+      description: '`check_in_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            check_in_not_found:
+              externalValue: ./examples/check-in-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            check_in_not_found:
+              externalValue: ./examples/check-in-not-found.xml
+    InvalidQuery:
+      description: '`invalid_query` or `invalid_pagination`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.json
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.xml
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.xml

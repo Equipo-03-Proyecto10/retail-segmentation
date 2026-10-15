@@ -1,0 +1,11 @@
+{
+  "code": "unknown_store",
+  "message": "Store 9999 is missing or inactive.",
+  "correlation_id": "corr-unknown-store",
+  "details": [
+    {
+      "field": "store_id",
+      "code": "unknown_store"
+    }
+  ]
+}

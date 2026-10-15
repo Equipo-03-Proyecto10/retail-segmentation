@@ -1,0 +1,11 @@
+services:
+  - {name: alpha, port: 7001, rule: "Alpha owns its items", rn: [RN-01], wave: core, resources: [alpha-items, customers, preference-profiles]}
+  - {name: beta, port: 7002, rule: "Beta owns its items", rn: [RN-01], wave: core, resources: [beta-items, sales, categories, channels]}
+  - {name: gamma, port: 7003, rule: "Gamma owns its items", rn: [RN-01], wave: core, resources: [gamma-items]}
+  - {name: delta, port: 7004, rule: "Delta owns its items", rn: [RN-01], wave: core, resources: [delta-items]}
+  - {name: epsilon, port: 7005, rule: "Epsilon owns its items", rn: [RN-01], wave: core, resources: [epsilon-items]}
+  - {name: zeta, port: 7006, rule: "Zeta owns its items", rn: [RN-01], wave: core, resources: [zeta-items]}
+  - {name: eta, port: 7007, rule: "Eta owns its items", rn: [RN-01], wave: core, resources: [eta-items]}
+  - {name: theta, port: 7008, rule: "Theta owns its items", rn: [RN-01], wave: core, resources: [theta-items]}
+  - {name: iota, port: 7009, rule: "Iota owns its items", rn: [RN-01], wave: core, resources: [iota-items]}
+  - {name: kappa, port: 7010, rule: "Kappa owns its items", rn: [RN-01], wave: core, resources: [kappa-items]}

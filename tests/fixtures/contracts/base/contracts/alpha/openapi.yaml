@@ -1,0 +1,23 @@
+openapi: 3.1.0
+info:
+  title: Alpha fixture
+  version: 1.0.0
+paths:
+  /v1/alpha-items:
+    get:
+      security:
+        - BearerAuth: []
+      x-mosaiq-roles: [ADMIN]
+      responses:
+        "200":
+          description: One alpha item
+          content:
+            application/json:
+              schema:
+                type: object
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

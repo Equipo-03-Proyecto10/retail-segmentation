@@ -1,0 +1,3 @@
+# Contract validation tools shared by the contracts and quality CI jobs.
+yq==4.4.0
+openapi-spec-validator==0.9.0

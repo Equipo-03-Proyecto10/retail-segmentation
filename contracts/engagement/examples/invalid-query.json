@@ -1,0 +1,11 @@
+{
+  "code": "invalid_query",
+  "message": "to is before from.",
+  "correlation_id": "corr-invalid-query",
+  "details": [
+    {
+      "field": "to",
+      "code": "before_from"
+    }
+  ]
+}

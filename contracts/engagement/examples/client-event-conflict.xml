@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>client_event_conflict</code>
+  <message>This client_event_id was already used with a different type, store or product.</message>
+  <correlation_id>corr-client-event-conflict</correlation_id>
+</Error>

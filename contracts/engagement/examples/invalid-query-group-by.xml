@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_query</code>
+  <message>group_by must be store, day or type.</message>
+  <correlation_id>corr-invalid-query-group-by</correlation_id>
+  <details>
+    <field>group_by</field>
+    <code>unknown_group_by</code>
+  </details>
+</Error>

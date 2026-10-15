@@ -1,0 +1,15 @@
+{
+  "event_id": "66f1a2b3c4d5e6f7a8b9c0d1",
+  "client_event_id": "0e6d5c4b-3a29-4817-96f5-a4b3c2d1e0f1",
+  "type": "QR_SCAN",
+  "store_id": 3,
+  "product_id": 120,
+  "customer_id": "3f6c1d52-8e4a-4b7d-a0c9-5d2e7b1f4a68",
+  "label_code": null,
+  "rank": null,
+  "recorded_by": "5b0c2f3e-8a41-4d6b-9c10-2e7a1f4d9b33",
+  "occurred_at": "2026-10-15T15:20:00Z",
+  "recorded_at": "2026-10-15T15:20:03Z",
+  "voided": false,
+  "history": []
+}

@@ -1,0 +1,6 @@
+{
+  "code": "invalid_token",
+  "message": "The bearer token is invalid.",
+  "correlation_id": "corr-invalid-token",
+  "details": []
+}

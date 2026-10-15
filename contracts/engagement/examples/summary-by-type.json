@@ -1,0 +1,15 @@
+{
+  "from": "2026-10-13",
+  "to": "2026-10-15",
+  "group_by": "type",
+  "groups": [
+    {
+      "key": "QR_SCAN",
+      "count": 78
+    },
+    {
+      "key": "RECO_CLICK",
+      "count": 30
+    }
+  ]
+}

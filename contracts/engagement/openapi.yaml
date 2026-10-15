@@ -1,0 +1,1153 @@
+openapi: 3.1.0
+info:
+  title: engagement-service
+  version: 1.0.0
+  description: 'Records in-store engagement: QR scans and recommendation clicks
+    (RN-55). Events live in MongoDB, are recorded once per client event, attributed
+    to the caller, voided rather than deleted, and summarized. Only `POST /v1/engagement-events`
+    reads PostgreSQL, through the published store, product and customer views, to
+    check references. Every `/v1` operation answers 503 `database_unavailable` when
+    its database is unreachable, MongoDB included. XML events are polymorphic: the
+    root carries `xsi:type` `QrScanEvent` or `RecoClickEvent` (`QrScanRequest` or
+    `RecoClickRequest` for a request), so the schema allows `label_code` and `rank`
+    only on a `RECO_CLICK`.'
+security:
+- bearer: []
+tags:
+- name: Engagement
+- name: Meta
+paths:
+  /v1/engagement-events:
+    post:
+      tags:
+      - Engagement
+      summary: Record a QR scan or a recommendation click
+      description: 'Records the event once per `client_event_id`, attributed to
+        the token''s `sub` (`recorded_by`). The body has two shapes, `QR_SCAN` and
+        `RECO_CLICK`. Store, product and customer are checked against the published
+        store, product and customer views: the store must exist and be active. A
+        new event answers 201. The same `client_event_id` arriving again with the
+        same `type`, `store_id` and `product_id` answers 200 with the original event
+        and writes nothing; with any other type, store or product it answers 409
+        `client_event_conflict`. `occurred_at` more than five minutes ahead of the
+        server answers 422 `occurred_in_future`.'
+      operationId: createEngagementEvent
+      x-mosaiq-roles:
+      - ADMIN
+      - STORE_MANAGER
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: &id001
+              $ref: '#/components/schemas/EngagementEventRequest'
+            examples:
+              qr_scan:
+                externalValue: ./examples/qr-scan.request.json
+              reco_click:
+                externalValue: ./examples/reco-click.request.json
+          application/xml:
+            schema: *id001
+            examples:
+              qr_scan:
+                externalValue: ./examples/qr-scan.request.xml
+              reco_click:
+                externalValue: ./examples/reco-click.request.xml
+      responses:
+        '200':
+          description: 'A replay: the original event, nothing written.'
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema: &id002
+                $ref: '#/components/schemas/EngagementEvent'
+              examples:
+                replay:
+                  externalValue: ./examples/replay.json
+            application/xml:
+              schema: *id002
+              examples:
+                replay:
+                  externalValue: ./examples/replay.xml
+        '201':
+          description: The event was recorded.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema: &id003
+                $ref: '#/components/schemas/EngagementEvent'
+              examples:
+                qr_scan:
+                  externalValue: ./examples/qr-scan.json
+                reco_click:
+                  externalValue: ./examples/reco-click.json
+            application/xml:
+              schema: *id003
+              examples:
+                qr_scan:
+                  externalValue: ./examples/qr-scan.xml
+                reco_click:
+                  externalValue: ./examples/reco-click.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/CreateConflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/CreateInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+    get:
+      tags:
+      - Engagement
+      summary: List engagement events
+      description: Returns a page ordered by `occurred_at`, newest first. `from`
+        and `to` are RFC 3339 timestamps bounding `occurred_at`. Voided events are
+        listed unless `voided=false`.
+      operationId: listEngagementEvents
+      x-mosaiq-roles: &id005
+      - ADMIN
+      - ANALYST
+      - STORE_MANAGER
+      - MARKETING
+      - AUDITOR
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/Type'
+      - $ref: '#/components/parameters/StoreId'
+      - $ref: '#/components/parameters/CustomerId'
+      - $ref: '#/components/parameters/Voided'
+      - $ref: '#/components/parameters/From'
+      - $ref: '#/components/parameters/To'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of events.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema: &id004
+                $ref: '#/components/schemas/EngagementEventPage'
+              examples:
+                page:
+                  externalValue: ./examples/events-page.json
+            application/xml:
+              schema: *id004
+              examples:
+                page:
+                  externalValue: ./examples/events-page.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/InvalidQuery'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/engagement-events/{event_id}:
+    get:
+      tags:
+      - Engagement
+      summary: Get one engagement event
+      description: Returns the event with its `history`.
+      operationId: getEngagementEvent
+      x-mosaiq-roles: *id005
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: The event.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema: &id006
+                $ref: '#/components/schemas/EngagementEvent'
+              examples:
+                voided:
+                  externalValue: ./examples/voided-event.json
+            application/xml:
+              schema: *id006
+              examples:
+                voided:
+                  externalValue: ./examples/voided-event.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/engagement-events/{event_id}/void:
+    post:
+      tags:
+      - Engagement
+      summary: Void an engagement event
+      description: 'Voids the event: it is never deleted, a `VOIDED` entry is added
+        to its `history`, and summaries stop counting it.'
+      operationId: voidEngagementEvent
+      x-mosaiq-roles:
+      - ADMIN
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/EventId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: &id007
+              $ref: '#/components/schemas/VoidRequest'
+            examples:
+              void:
+                externalValue: ./examples/void.request.json
+          application/xml:
+            schema: *id007
+            examples:
+              void:
+                externalValue: ./examples/void.request.xml
+      responses:
+        '200':
+          description: The voided event.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema: &id008
+                $ref: '#/components/schemas/EngagementEvent'
+              examples:
+                voided:
+                  externalValue: ./examples/voided-event.json
+            application/xml:
+              schema: *id008
+              examples:
+                voided:
+                  externalValue: ./examples/voided-event.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/VoidConflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/InvalidBody'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/engagement-summaries:
+    get:
+      tags:
+      - Engagement
+      summary: Summarize engagement
+      description: Counts events that are not voided, grouped by `store`, `day`
+        or `type`. `from` and `to` are UTC dates (`YYYY-MM-DD`), both inclusive,
+        and a day is a UTC day.
+      operationId: getEngagementSummary
+      x-mosaiq-roles:
+      - ADMIN
+      - ANALYST
+      - STORE_MANAGER
+      - MARKETING
+      - INVENTORY_PLANNER
+      - AUDITOR
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/SummaryFrom'
+      - $ref: '#/components/parameters/SummaryTo'
+      - $ref: '#/components/parameters/SummaryStoreId'
+      - $ref: '#/components/parameters/GroupBy'
+      responses:
+        '200':
+          description: The counts.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema: &id009
+                $ref: '#/components/schemas/EngagementSummary'
+              examples:
+                by_store:
+                  externalValue: ./examples/summary-by-store.json
+                by_day:
+                  externalValue: ./examples/summary-by-day.json
+                by_type:
+                  externalValue: ./examples/summary-by-type.json
+            application/xml:
+              schema: *id009
+              examples:
+                by_store:
+                  externalValue: ./examples/summary-by-store.xml
+                by_day:
+                  externalValue: ./examples/summary-by-day.xml
+                by_type:
+                  externalValue: ./examples/summary-by-type.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/InvalidSummaryQuery'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /health/live:
+    get:
+      tags:
+      - Meta
+      summary: Check process liveness
+      operationId: getLiveness
+      security: []
+      parameters: &id010
+      - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The process is live.
+          headers: &id011
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+  /health/ready:
+    get:
+      tags:
+      - Meta
+      summary: Check schema readiness
+      operationId: getReadiness
+      security: []
+      parameters: *id010
+      responses:
+        '204':
+          description: The required schema is ready.
+          headers: *id011
+        '503':
+          $ref: '#/components/responses/SchemaNotReady'
+  /openapi.yaml:
+    get:
+      tags:
+      - Meta
+      summary: Get this OpenAPI document
+      operationId: getOpenApi
+      security: []
+      parameters: *id010
+      responses:
+        '200':
+          description: The OpenAPI document, served byte for byte.
+          headers: *id011
+          content:
+            application/yaml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+  /schema.xsd:
+    get:
+      tags:
+      - Meta
+      summary: Get the engagement XML Schema
+      operationId: getSchema
+      security: []
+      parameters: *id010
+      responses:
+        '200':
+          description: The engagement XSD, served byte for byte.
+          headers: *id011
+          content:
+            application/xml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      description: Caller-supplied correlation id. A missing or invalid value is
+        replaced by the service, and the effective value is returned on every response.
+      schema:
+        type: string
+        pattern: ^[0-9A-Za-z-]{1,64}$
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Size:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    EventId:
+      name: event_id
+      in: path
+      required: true
+      description: The event's MongoDB ObjectId as 24 lowercase hexadecimal characters.
+      schema: &id015
+        type: string
+        pattern: ^[0-9a-f]{24}$
+    Type:
+      name: type
+      in: query
+      required: false
+      schema:
+        type: string
+        enum:
+        - QR_SCAN
+        - RECO_CLICK
+    StoreId:
+      name: store_id
+      in: query
+      required: false
+      schema: &id013
+        type: integer
+        format: int32
+    CustomerId:
+      name: customer_id
+      in: query
+      required: false
+      schema: &id014
+        type: string
+        format: uuid
+    Voided:
+      name: voided
+      in: query
+      required: false
+      description: True lists only voided events, false only live ones.
+      schema:
+        type: boolean
+    From:
+      name: from
+      in: query
+      required: false
+      description: Include events whose `occurred_at` is at or after this RFC 3339
+        timestamp.
+      schema: &id012
+        type: string
+        format: date-time
+    To:
+      name: to
+      in: query
+      required: false
+      description: Include events whose `occurred_at` is at or before this RFC 3339
+        timestamp. A `to` before `from` answers 422 `invalid_query`.
+      schema: *id012
+    SummaryFrom:
+      name: from
+      in: query
+      required: false
+      description: First UTC day counted (`YYYY-MM-DD`, inclusive).
+      schema:
+        type: string
+        format: date
+    SummaryTo:
+      name: to
+      in: query
+      required: false
+      description: Last UTC day counted (`YYYY-MM-DD`, inclusive). A `to` before
+        `from` answers 422 `invalid_query`.
+      schema:
+        type: string
+        format: date
+    SummaryStoreId:
+      name: store_id
+      in: query
+      required: false
+      description: Count only this store's events.
+      schema: *id013
+    GroupBy:
+      name: group_by
+      in: query
+      required: true
+      description: How to group the counts. A missing or unknown value answers 422
+        `invalid_query`.
+      schema:
+        type: string
+        enum:
+        - store
+        - day
+        - type
+  headers:
+    CorrelationId:
+      description: The effective correlation id for this request.
+      required: true
+      schema:
+        type: string
+        pattern: ^[0-9A-Za-z-]{1,64}$
+    RetryAfter:
+      description: Seconds until the caller should retry.
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  schemas:
+    QrScanRequest:
+      type: object
+      additionalProperties: false
+      description: A QR scan. `label_code` and `rank` are forbidden.
+      required:
+      - client_event_id
+      - type
+      - store_id
+      - product_id
+      - occurred_at
+      properties:
+        client_event_id: *id014
+        type:
+          type: string
+          const: QR_SCAN
+        store_id: *id013
+        product_id: *id013
+        customer_id: *id014
+        occurred_at: *id012
+      xml:
+        name: EngagementEventRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/engagement/v1
+    RecoClickRequest:
+      type: object
+      additionalProperties: false
+      description: 'A tap on a recommendation: the QR scan fields plus the segment
+        label and the item''s position.'
+      required:
+      - client_event_id
+      - type
+      - store_id
+      - product_id
+      - label_code
+      - rank
+      - occurred_at
+      properties:
+        client_event_id: *id014
+        type:
+          type: string
+          const: RECO_CLICK
+        store_id: *id013
+        product_id: *id013
+        customer_id: *id014
+        label_code: &id016
+          type: string
+          pattern: ^[A-Z][A-Z0-9_]{0,39}$
+        rank:
+          type: integer
+          minimum: 1
+        occurred_at: *id012
+      xml:
+        name: EngagementEventRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/engagement/v1
+    EngagementEventRequest:
+      description: Two shapes, discriminated by `type`, mirroring ADR-0038's validator.
+        Any other property answers 422 `invalid_body`. In XML the root is `EngagementEventRequest`
+        carrying `xsi:type` `QrScanRequest` or `RecoClickRequest`.
+      oneOf:
+      - $ref: '#/components/schemas/QrScanRequest'
+      - $ref: '#/components/schemas/RecoClickRequest'
+      discriminator:
+        propertyName: type
+        mapping:
+          QR_SCAN: '#/components/schemas/QrScanRequest'
+          RECO_CLICK: '#/components/schemas/RecoClickRequest'
+    VoidRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - reason
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+      xml:
+        name: VoidRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/engagement/v1
+    HistoryEntry:
+      type: object
+      additionalProperties: false
+      required:
+      - action
+      - reason
+      - by
+      - at
+      properties:
+        action:
+          type: string
+          enum:
+          - VOIDED
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+        by: *id014
+        at: *id012
+    EngagementEventItem:
+      type: object
+      additionalProperties: false
+      required: &id017
+      - event_id
+      - client_event_id
+      - type
+      - store_id
+      - product_id
+      - customer_id
+      - label_code
+      - rank
+      - recorded_by
+      - occurred_at
+      - recorded_at
+      - voided
+      - history
+      properties: &id018
+        event_id: *id015
+        client_event_id: *id014
+        type:
+          type: string
+          enum:
+          - QR_SCAN
+          - RECO_CLICK
+        store_id: *id013
+        product_id: *id013
+        customer_id:
+          anyOf:
+          - *id014
+          - type: 'null'
+        label_code:
+          anyOf:
+          - *id016
+          - type: 'null'
+          description: Null for a QR_SCAN.
+        rank:
+          anyOf:
+          - type: integer
+            minimum: 1
+          - type: 'null'
+          description: Null for a QR_SCAN.
+        recorded_by:
+          type: string
+          format: uuid
+          description: The token's `sub` when the event was recorded.
+        occurred_at: *id012
+        recorded_at: *id012
+        voided:
+          type: boolean
+        history:
+          type: array
+          description: One `VOIDED` entry once the event is voided; empty before.
+          items:
+            $ref: '#/components/schemas/HistoryEntry'
+    EngagementEvent:
+      type: object
+      additionalProperties: false
+      required: *id017
+      properties: *id018
+      xml:
+        name: EngagementEvent
+        namespace: https://mosaiq.maxthecoder.online/xml/engagement/v1
+    EngagementEventPage:
+      type: object
+      additionalProperties: false
+      required:
+      - engagement_events
+      - page_info
+      properties:
+        engagement_events:
+          type: array
+          items:
+            $ref: '#/components/schemas/EngagementEventItem'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: EngagementEvents
+        namespace: https://mosaiq.maxthecoder.online/xml/engagement/v1
+    EngagementSummary:
+      type: object
+      additionalProperties: false
+      required:
+      - from
+      - to
+      - group_by
+      - groups
+      description: Counts only events that are not voided. A day is a UTC day.
+      properties:
+        from:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+        to:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+        group_by:
+          type: string
+          enum:
+          - store
+          - day
+          - type
+        groups:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - key
+            - count
+            properties:
+              key:
+                type: string
+                description: The store id, the UTC date, or the event type.
+              count:
+                type: integer
+                minimum: 0
+      xml:
+        name: EngagementSummary
+        namespace: https://mosaiq.maxthecoder.online/xml/engagement/v1
+    PageInfo:
+      type: object
+      additionalProperties: false
+      required:
+      - page
+      - size
+      - total
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+      xml:
+        name: PageInfo
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required:
+      - field
+      - code
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+    Error:
+      type: object
+      additionalProperties: false
+      required:
+      - code
+      - message
+      - correlation_id
+      - details
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        correlation_id:
+          type: string
+          pattern: ^[0-9A-Za-z-]{1,64}$
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+      xml:
+        name: Error
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+  responses:
+    Unauthorized:
+      description: '`invalid_token` or `session_revoked`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              externalValue: ./examples/invalid-token.json
+            session_revoked:
+              externalValue: ./examples/session-revoked.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              externalValue: ./examples/invalid-token.xml
+            session_revoked:
+              externalValue: ./examples/session-revoked.xml
+    Forbidden:
+      description: '`forbidden_role`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.xml
+    NotAcceptable:
+      description: '`not_acceptable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              externalValue: ./examples/not-acceptable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              externalValue: ./examples/not-acceptable.xml
+    RateLimited:
+      description: '`rate_limited`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              externalValue: ./examples/rate-limited.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              externalValue: ./examples/rate-limited.xml
+    OperationUnavailable:
+      description: '`auth_unavailable` or `database_unavailable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.json
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.xml
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.xml
+    SchemaNotReady:
+      description: '`schema_not_ready`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              externalValue: ./examples/schema-not-ready.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              externalValue: ./examples/schema-not-ready.xml
+    MalformedBody:
+      description: '`malformed_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            malformed_body:
+              externalValue: ./examples/malformed-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            malformed_body:
+              externalValue: ./examples/malformed-body.xml
+    PayloadTooLarge:
+      description: '`payload_too_large`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            payload_too_large:
+              externalValue: ./examples/payload-too-large.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            payload_too_large:
+              externalValue: ./examples/payload-too-large.xml
+    UnsupportedMediaType:
+      description: '`unsupported_media_type`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unsupported_media_type:
+              externalValue: ./examples/unsupported-media-type.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unsupported_media_type:
+              externalValue: ./examples/unsupported-media-type.xml
+    InvalidBody:
+      description: '`invalid_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-body.xml
+    InvalidPagination:
+      description: '`invalid_pagination`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.xml
+    CreateInvalid:
+      description: '`invalid_body` or `unknown_store` or `unknown_product` or `unknown_customer`
+        or `occurred_in_future`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-body.json
+            unknown_store:
+              externalValue: ./examples/unknown-store.json
+            unknown_product:
+              externalValue: ./examples/unknown-product.json
+            unknown_customer:
+              externalValue: ./examples/unknown-customer.json
+            occurred_in_future:
+              externalValue: ./examples/occurred-in-future.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-body.xml
+            unknown_store:
+              externalValue: ./examples/unknown-store.xml
+            unknown_product:
+              externalValue: ./examples/unknown-product.xml
+            unknown_customer:
+              externalValue: ./examples/unknown-customer.xml
+            occurred_in_future:
+              externalValue: ./examples/occurred-in-future.xml
+    CreateConflict:
+      description: '`client_event_conflict`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            client_event_conflict:
+              externalValue: ./examples/client-event-conflict.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            client_event_conflict:
+              externalValue: ./examples/client-event-conflict.xml
+    VoidConflict:
+      description: '`already_voided`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            already_voided:
+              externalValue: ./examples/already-voided.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            already_voided:
+              externalValue: ./examples/already-voided.xml
+    NotFound:
+      description: '`event_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            event_not_found:
+              externalValue: ./examples/event-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            event_not_found:
+              externalValue: ./examples/event-not-found.xml
+    InvalidQuery:
+      description: '`invalid_query` or `invalid_pagination`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.json
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.xml
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.xml
+    InvalidSummaryQuery:
+      description: '`invalid_query`: `to` before `from`, or a missing or unknown
+        `group_by`; `details` names the parameter.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query-group-by.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query-group-by.xml

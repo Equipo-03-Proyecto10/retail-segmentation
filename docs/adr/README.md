@@ -90,12 +90,17 @@ In the same pull request, three earlier records changed only their status lines:
 
 ADR-0026 and ADR-0030 to ADR-0033 were each merged while still `Proposed`, with
 their implementations: 0026 with `250608a` (#223), 0030 with `d7deb64` (#336),
-which also reached `main`, and 0031 to 0033 with `e40f159` (#353–#362). That is
-the order the rule above exists to prevent. The team accepted all five on
+and 0031 to 0033 with `e40f159` (#353–#362). 0026 and 0030 also reached `main`
+while `Proposed`, in the releases of 2026-09-29 (#331 and #390). That is the
+order the rule above exists to prevent. The team accepted all five on
 2026-10-15 (AN-01, #407), and this transition records that rather than
-backdating it. Their decision text is unchanged. In the same change, ADR-0019's
-status line records what ADR-0028 already stated: it is partially superseded by
-ADR-0028.
+backdating it. Their decision text is unchanged.
+
+ADR-0018's retirement takes effect from ADR-0030's acceptance on 2026-10-15,
+not from `d7deb64`, which marked it superseded on 2026-09-29. Until then it was
+marked superseded by a record that was not yet binding, as ADR-0001, ADR-0005
+and ADR-0006 were above. In the same change, ADR-0019's status line records what
+ADR-0028 already stated: it is partially superseded by ADR-0028.
 
 ## Index
 

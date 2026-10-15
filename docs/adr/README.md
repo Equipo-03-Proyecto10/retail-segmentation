@@ -88,9 +88,14 @@ In the same pull request, three earlier records changed only their status lines:
 - ADR-0016 is `Partially superseded by ADR-0043 (service count only)`.
 - ADR-0020 is `Partially superseded by ADR-0039`.
 
-ADR-0026 and ADR-0030 to ADR-0033 are still `Proposed`, although their
-implementations have merged. AN-01 (#407) tracks their acceptance and the
-record of this exception.
+ADR-0026 and ADR-0030 to ADR-0033 were each merged while still `Proposed`, with
+their implementations: 0026 with `250608a` (#223), 0030 with `d7deb64` (#336),
+which also reached `main`, and 0031 to 0033 with `e40f159` (#353–#362). That is
+the order the rule above exists to prevent. The team accepted all five on
+2026-10-15 (AN-01, #407), and this transition records that rather than
+backdating it. Their decision text is unchanged. In the same change, ADR-0019's
+status line records what ADR-0028 already stated: it is partially superseded by
+ADR-0028.
 
 ## Index
 
@@ -114,21 +119,21 @@ record of this exception.
 | [0016](0016-the-second-delivery-reinstates-the-distributed-architecture.md) | The second delivery reinstates the distributed architecture | Partially superseded by [0043](0043-at-least-ten-microservices-each-implementing-one-business-rule.md) (service count only) |
 | [0017](0017-segment-assignment-history-replaces-the-mutable-current-segment.md) | Segment assignment history replaces the mutable current segment | Accepted |
 | [0018](0018-two-segmentation-strategies-behind-one-method-agnostic-pipeline.md) | Two segmentation strategies feed one label-based, method-agnostic pipeline | Superseded by [0030](0030-k-means-clusters-are-paired-with-labels-by-proportional-rank.md) |
-| [0019](0019-experiment-measurement-separates-assignment-exposure-and-conversion.md) | Experiment measurement separates assignment, exposure and conversion | Accepted |
+| [0019](0019-experiment-measurement-separates-assignment-exposure-and-conversion.md) | Experiment measurement separates assignment, exposure and conversion | Partially superseded by [0028](0028-experiment-treatment-arms-may-omit-control.md) |
 | [0020](0020-csv-is-the-sole-sales-ingestion-entry-point-for-this-delivery.md) | CSV is the sole sales ingestion entry point for this delivery | Partially superseded by [0039](0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) |
 | [0021](0021-k-means-is-implemented-in-the-application-rather-than-taken-as-a-dependency.md) | K-means is implemented in the application rather than taken as a dependency | Accepted |
 | [0022](0022-sessions-are-resolved-server-side-on-every-request.md) | Sessions are resolved server-side on every request | Accepted |
 | [0023](0023-store-managers-read-segments-and-customers.md) | Store managers hold `segment.read`, and so read customers and segments | Accepted |
 | [0024](0024-the-application-role-cannot-update-or-delete-the-audit-log.md) | The application role cannot update or delete the audit log | Accepted |
 | [0025](0025-state-changing-requests-carry-a-synchroniser-csrf-token.md) | State-changing requests carry a synchroniser CSRF token | Accepted |
-| [0026](0026-experiment-assignments-are-append-only-for-the-application-role.md) | Experiment assignments are append-only for the application role | Proposed |
+| [0026](0026-experiment-assignments-are-append-only-for-the-application-role.md) | Experiment assignments are append-only for the application role | Accepted |
 | [0027](0027-experiment-exposures-are-treatment-only-and-append-only.md) | Experiment exposures are treatment-only and append-only | Accepted |
 | [0028](0028-experiment-treatment-arms-may-omit-control.md) | Experiment treatment arms may omit a control | Accepted |
 | [0029](0029-segment-history-runs-and-experiments-are-protected-from-the-application-role.md) | Segment history, runs and experiments are protected from the application role | Accepted |
-| [0030](0030-k-means-clusters-are-paired-with-labels-by-proportional-rank.md) | K-means clusters are paired with the stable labels by proportional rank, so k need not equal the vocabulary's size | Proposed |
-| [0031](0031-sales-ingestion-decrements-inventory-atomically.md) | Accepted sales decrement inventory atomically | Proposed |
-| [0032](0032-server-side-sessions-have-idle-and-absolute-lifetimes.md) | Server-side sessions have idle and absolute lifetimes | Proposed |
-| [0033](0033-duplicate-transport-security-policy-at-application-and-proxy.md) | Keep the transport security policy at Flask and NGINX | Proposed |
+| [0030](0030-k-means-clusters-are-paired-with-labels-by-proportional-rank.md) | K-means clusters are paired with the stable labels by proportional rank, so k need not equal the vocabulary's size | Accepted |
+| [0031](0031-sales-ingestion-decrements-inventory-atomically.md) | Accepted sales decrement inventory atomically | Accepted |
+| [0032](0032-server-side-sessions-have-idle-and-absolute-lifetimes.md) | Server-side sessions have idle and absolute lifetimes | Accepted |
+| [0033](0033-duplicate-transport-security-policy-at-application-and-proxy.md) | Keep the transport security policy at Flask and NGINX | Accepted |
 | [0034](0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) | Fifteen single-rule services, each the only service that writes its data | Accepted |
 | [0035](0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md) | Each service publishes its own versioned contract, and no two services share a resource | Accepted |
 | [0036](0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md) | auth-service issues role-only RS256 tokens whose sessions live in Redis | Accepted |

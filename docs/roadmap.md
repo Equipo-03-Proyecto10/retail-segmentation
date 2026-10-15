@@ -35,9 +35,10 @@ ingestion and RFM computation move into Phase 8. Batch clustering and segment
 migration move into Phase 9. Segment history moves into Phase 7. Dashboards
 move into Phase 12.
 
-**The governing analytics ADRs are still Proposed.** ADR-0017 through
-ADR-0020 state the decisions under review. They become binding when accepted,
-before the implementation that depends on them merges.
+**The governing analytics ADRs are accepted.** The team accepted ADR-0017 to
+ADR-0020 before the implementation that depends on them merged. ADR-0018 is now
+superseded by ADR-0030, ADR-0019 in part by ADR-0028, and ADR-0020 in part by
+ADR-0039.
 
 ## How work enters
 
@@ -168,8 +169,8 @@ Nothing in ADR-0016 brings them into scope.
 
 The earlier design exposed two failure modes before the analytics work began.
 They are now explicit second-delivery decisions rather than reminders for a
-later module. ADR-0017 and ADR-0018 are Proposed during planning and must be
-accepted before their dependent implementation merges.
+later module. ADR-0017 and ADR-0018 were accepted before their dependent implementation
+merged; ADR-0018 is now superseded by ADR-0030.
 
 **Segment assignments are never updated in place.**
 [ADR-0017](adr/0017-segment-assignment-history-replaces-the-mutable-current-segment.md)

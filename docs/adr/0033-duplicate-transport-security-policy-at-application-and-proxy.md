@@ -1,6 +1,6 @@
 # ADR-0033 — Keep the transport security policy at Flask and NGINX
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Team 03
 **Issue:** #359
 **Supersedes:** —

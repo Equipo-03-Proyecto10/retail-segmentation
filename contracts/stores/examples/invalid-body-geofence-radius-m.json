@@ -1,0 +1,11 @@
+{
+  "code": "invalid_body",
+  "message": "The location contains a value outside its allowed range.",
+  "correlation_id": "corr-invalid-geofence-radius-m",
+  "details": [
+    {
+      "field": "geofence_radius_m",
+      "code": "out_of_range"
+    }
+  ]
+}

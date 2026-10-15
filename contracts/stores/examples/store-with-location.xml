@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Store xmlns="https://mosaiq.maxthecoder.online/xml/stores/v1">
+  <store_id>1</store_id>
+  <name>Centro Historico</name>
+  <city>Mexico City</city>
+  <state>CDMX</state>
+  <is_active>true</is_active>
+  <location>
+    <latitude>19.432608</latitude>
+    <longitude>-99.133209</longitude>
+    <geofence_radius_m>150</geofence_radius_m>
+    <set_at>2026-10-15T18:20:00Z</set_at>
+  </location>
+</Store>

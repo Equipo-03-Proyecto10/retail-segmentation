@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_body</code>
+  <message>The location contains a value outside its allowed range.</message>
+  <correlation_id>corr-invalid-latitude</correlation_id>
+  <details>
+    <field>latitude</field>
+    <code>out_of_range</code>
+  </details>
+</Error>

@@ -1,0 +1,8 @@
+{
+  "store_id": 2,
+  "name": "Coyoacan",
+  "city": "Mexico City",
+  "state": "CDMX",
+  "is_active": true,
+  "location": null
+}

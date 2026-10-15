@@ -1,0 +1,6 @@
+{
+  "code": "schema_not_ready",
+  "message": "The required stores schema has not been applied.",
+  "correlation_id": "corr-schema-not-ready",
+  "details": []
+}

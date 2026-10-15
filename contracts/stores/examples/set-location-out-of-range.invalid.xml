@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LocationUpdate xmlns="https://mosaiq.maxthecoder.online/xml/stores/v1">
+  <latitude>91</latitude>
+  <longitude>-99.133209</longitude>
+  <geofence_radius_m>150</geofence_radius_m>
+</LocationUpdate>

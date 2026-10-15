@@ -1,0 +1,11 @@
+{
+  "code": "duplicate_product_line",
+  "message": "A product appears on more than one line.",
+  "correlation_id": "corr-duplicate-product-line",
+  "details": [
+    {
+      "field": "lines[2].product_id",
+      "code": "duplicate"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>no_lines</code>
+  <message>A sale needs at least one line.</message>
+  <correlation_id>corr-no-lines</correlation_id>
+  <details>
+    <field>lines</field>
+    <code>empty</code>
+  </details>
+</Error>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>unknown_customer</code>
+  <message>The customer does not exist.</message>
+  <correlation_id>corr-unknown-customer</correlation_id>
+  <details>
+    <field>customer_id</field>
+    <code>unknown</code>
+  </details>
+</Error>

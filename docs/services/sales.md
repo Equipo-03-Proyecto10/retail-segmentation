@@ -78,9 +78,12 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | 409 | `idempotency_key_reused` | The same key with a different request hash |
 | 409 | `stock_unavailable` | A line cannot be consumed; names the line |
 | 409 | `duplicate_product_line` | A `product_id` appears twice |
+| 422 | `no_lines` | The sale has no lines |
 | 422 | `no_stock_record` | No inventory row for the store and product |
 | 422 | `unknown_customer`, `unknown_store`, `unknown_channel`, `unknown_product` | A reference does not exist |
 | 422 | `inactive_product`, `before_registration`, `future_dated`, `invalid_price`, `invalid_quantity` | A sale rule is broken |
+| 404 | `sale_not_found` | `GET /v1/sales/{sale_id}` names no sale |
+| 422 | `invalid_query` | `GET /v1/sales` has a malformed `customer_id`, `store_id`, `from` or `to`, or `from` after `to` |
 
 ## Accepted exceptions
 

@@ -1,0 +1,24 @@
+{
+  "channels": [
+    {
+      "channel_id": 1,
+      "name": "mobile_app"
+    },
+    {
+      "channel_id": 2,
+      "name": "web"
+    },
+    {
+      "channel_id": 3,
+      "name": "physical_store"
+    },
+    {
+      "channel_id": 4,
+      "name": "marketplace"
+    },
+    {
+      "channel_id": 5,
+      "name": "call_center"
+    }
+  ]
+}

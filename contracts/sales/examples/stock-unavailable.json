@@ -1,0 +1,11 @@
+{
+  "code": "stock_unavailable",
+  "message": "The store does not hold enough stock for a line.",
+  "correlation_id": "corr-stock-unavailable",
+  "details": [
+    {
+      "field": "lines[1].quantity",
+      "code": "insufficient_stock"
+    }
+  ]
+}

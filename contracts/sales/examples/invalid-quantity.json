@@ -1,0 +1,11 @@
+{
+  "code": "invalid_quantity",
+  "message": "A quantity is not a positive whole number.",
+  "correlation_id": "corr-invalid-quantity",
+  "details": [
+    {
+      "field": "lines[2].quantity",
+      "code": "not_positive"
+    }
+  ]
+}

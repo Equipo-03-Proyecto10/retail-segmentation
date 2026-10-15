@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Channels xmlns="https://mosaiq.maxthecoder.online/xml/sales/v1"
+        xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <Channel>
+    <channel_id>1</channel_id>
+    <name>mobile_app</name>
+  </Channel>
+  <Channel>
+    <channel_id>2</channel_id>
+    <name>web</name>
+  </Channel>
+  <Channel>
+    <channel_id>3</channel_id>
+    <name>physical_store</name>
+  </Channel>
+  <Channel>
+    <channel_id>4</channel_id>
+    <name>marketplace</name>
+  </Channel>
+  <Channel>
+    <channel_id>5</channel_id>
+    <name>call_center</name>
+  </Channel>
+</Channels>

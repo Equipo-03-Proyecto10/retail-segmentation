@@ -1,0 +1,962 @@
+openapi: 3.1.0
+info:
+  title: sales-service
+  version: 1.0.0
+  description: >-
+    Records a sale exactly once, all or nothing, and reads sales and the channel
+    vocabulary back (RN-11 to RN-13, RN-37).
+security:
+  - bearer: []
+tags:
+  - name: Sales
+  - name: Channels
+  - name: Meta
+paths:
+  /v1/sales:
+    post:
+      tags: [Sales]
+      summary: Record a sale
+      description: >-
+        Records the whole sale in one transaction, or nothing: the header, every
+        line and the stock consumed by each line commit together. `occurred_at` must
+        carry an offset, must not be in the future and must not precede the
+        customer's registration. Every product must be active, every quantity
+        positive and every `unit_price` the price actually charged (RN-13), positive
+        with two decimals. Lines refuse an empty list (`no_lines`) and a product
+        twice (`duplicate_product_line`); a line-level refusal names the line in
+        `details`, with a zero-based index as in `lines[1].quantity`. The schema
+        does not cap or constrain these values, so that the service answers with its
+        own code.
+
+        Idempotency. The `Idempotency-Key` becomes `source_transaction_id =
+        'svc-sales:' || lowercase(key)`. The service hashes the caller's `sub`, the
+        ids, `occurred_at` in UTC and the lines sorted by `product_id` with
+        two-decimal prices, so a JSON retry and an XML retry hash the same. The same
+        key with the same hash is a replay: 200 with the original sale and
+        `Idempotent-Replayed: true`. The same key with a different hash is 409
+        `idempotency_key_reused`. Only accepted sales are remembered, so a refused
+        request may be retried with the same key.
+
+        A client retries only on a network error, a timeout or a 503, always with
+        the same key, and treats 409 and 422 as final. A 503 `database_unavailable`
+        is retried like any other 503.
+      operationId: recordSale
+      x-mosaiq-roles:
+        - ADMIN
+        - STORE_MANAGER
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaleRequest'
+            examples:
+              three_lines:
+                externalValue: ./examples/record-sale.request.json
+              no_lines:
+                externalValue: ./examples/empty-sale.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/SaleRequest'
+            examples:
+              three_lines:
+                externalValue: ./examples/record-sale.request.xml
+              no_lines:
+                externalValue: ./examples/empty-sale.request.xml
+      responses:
+        '200':
+          description: The key was already used by an identical request; the original sale is returned.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sale'
+              examples:
+                replayed:
+                  externalValue: ./examples/record-sale-replay.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Sale'
+              examples:
+                replayed:
+                  externalValue: ./examples/record-sale-replay.xml
+        '201':
+          description: The sale was recorded.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sale'
+              examples:
+                recorded:
+                  externalValue: ./examples/record-sale.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Sale'
+              examples:
+                recorded:
+                  externalValue: ./examples/record-sale.xml
+        '400':
+          $ref: '#/components/responses/SaleBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/SaleConflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/SaleRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+    get:
+      tags: [Sales]
+      summary: List sales
+      description: >-
+        Returns a page of sales, newest first by `occurred_at`, then by `sale_id`.
+        `customer_id` and `store_id` filter exactly; `from` (inclusive) and `to`
+        (exclusive) are RFC 3339 timestamps with an offset. A malformed filter, or
+        `from` after `to`, gets 422 `invalid_query`. A sale carries no product name
+        or price from products: clients fetch them with `GET /v1/products?ids=`.
+      operationId: listSales
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CustomerIdFilter'
+        - $ref: '#/components/parameters/StoreIdFilter'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of sales.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalePage'
+              examples:
+                sales_page:
+                  externalValue: ./examples/list-sales.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/SalePage'
+              examples:
+                sales_page:
+                  externalValue: ./examples/list-sales.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/InvalidSaleQuery'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/sales/{sale_id}:
+    get:
+      tags: [Sales]
+      summary: Get one sale
+      description: >-
+        Returns the sale with its lines. Used for the phone's status check and for
+        the desktop read-back.
+      operationId: getSale
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/SaleId'
+      responses:
+        '200':
+          description: The requested sale.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sale'
+              examples:
+                sale:
+                  externalValue: ./examples/get-sale.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Sale'
+              examples:
+                sale:
+                  externalValue: ./examples/get-sale.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/SaleNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/channels:
+    get:
+      tags: [Sales]
+      summary: List the sales channels
+      description: >-
+        Returns the whole channel vocabulary, five rows today. It is read only:
+        sales validates every sale's `channel_id` against it and the phone must
+        offer it (E-01). No resource of another service is served here, and there is
+        no write operation.
+      operationId: listChannels
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - INVENTORY_PLANNER
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The channels.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelList'
+              examples:
+                channels:
+                  externalValue: ./examples/list-channels.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/ChannelList'
+              examples:
+                channels:
+                  externalValue: ./examples/list-channels.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /health/live:
+    get:
+      tags: [Meta]
+      summary: Check process liveness
+      operationId: getLiveness
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The process is live.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+  /health/ready:
+    get:
+      tags: [Meta]
+      summary: Check schema readiness
+      operationId: getReadiness
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The required schema is ready.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '503':
+          $ref: '#/components/responses/SchemaNotReady'
+  /openapi.yaml:
+    get:
+      tags: [Meta]
+      summary: Get this OpenAPI document
+      operationId: getOpenApi
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The OpenAPI document, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/yaml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+  /schema.xsd:
+    get:
+      tags: [Meta]
+      summary: Get the sales XML Schema
+      operationId: getSchema
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The sales XSD, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/xml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      description: >-
+        Caller-supplied correlation id. A missing or invalid value is replaced
+        by the service, and the effective value is returned on every response.
+      schema:
+        type: string
+        pattern: '^[0-9A-Za-z-]{1,64}$'
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: >-
+        A UUID the client generates once, when the sale is created, and reuses
+        on every retry of that sale.
+      schema:
+        type: string
+        format: uuid
+    SaleId:
+      name: sale_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    CustomerIdFilter:
+      name: customer_id
+      in: query
+      required: false
+      description: Restrict the page to this customer.
+      schema:
+        type: string
+        format: uuid
+    StoreIdFilter:
+      name: store_id
+      in: query
+      required: false
+      description: Restrict the page to this store.
+      schema:
+        type: integer
+    From:
+      name: from
+      in: query
+      required: false
+      description: Inclusive lower bound on `occurred_at`, RFC 3339 with an offset.
+      schema:
+        type: string
+        format: date-time
+    To:
+      name: to
+      in: query
+      required: false
+      description: Exclusive upper bound on `occurred_at`, RFC 3339 with an offset.
+      schema:
+        type: string
+        format: date-time
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Size:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+  headers:
+    CorrelationId:
+      description: The effective correlation id for this request.
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9A-Za-z-]{1,64}$'
+    RetryAfter:
+      description: Seconds until the caller should retry.
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    Location:
+      description: The URL of the recorded sale, `/v1/sales/{sale_id}`.
+      required: true
+      schema:
+        type: string
+    IdempotentReplayed:
+      description: Always `true`; the answer is the original sale, not a new one.
+      required: true
+      schema:
+        type: string
+        enum: ['true']
+  schemas:
+    SaleLineInput:
+      type: object
+      additionalProperties: false
+      required:
+        - product_id
+        - quantity
+        - unit_price
+      properties:
+        product_id:
+          type: integer
+          format: int32
+        quantity:
+          type: integer
+          description: Must be positive; the service answers `invalid_quantity` otherwise.
+        unit_price:
+          type: string
+          pattern: '^-?[0-9]+(\.[0-9]+)?$'
+          description: >-
+            The price actually charged, a decimal string. The service requires
+            it positive with two decimals and answers `invalid_price`
+            otherwise.
+    SaleRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - customer_id
+        - store_id
+        - channel_id
+        - occurred_at
+      properties:
+        customer_id:
+          type: string
+          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+        store_id:
+          type: integer
+        channel_id:
+          type: integer
+        occurred_at:
+          type: string
+          format: date-time
+          description: RFC 3339 with an offset. Without one the body is `invalid_body`.
+        lines:
+          type: array
+          description: >-
+            Absent or empty gets 422 `no_lines`; the same product twice gets
+            409 `duplicate_product_line`.
+          items:
+            $ref: '#/components/schemas/SaleLineInput'
+      xml:
+        name: SaleRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/sales/v1
+    SaleLine:
+      type: object
+      additionalProperties: false
+      required:
+        - product_id
+        - quantity
+        - unit_price
+      properties:
+        product_id:
+          type: integer
+          format: int32
+        quantity:
+          type: integer
+          minimum: 1
+        unit_price:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+    Sale:
+      type: object
+      additionalProperties: false
+      required:
+        - sale_id
+        - customer_id
+        - store_id
+        - channel_id
+        - occurred_at
+        - total
+        - lines
+      properties:
+        sale_id:
+          type: integer
+          format: int64
+          description: The `transaction_id`.
+        customer_id:
+          type: string
+          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+        store_id:
+          type: integer
+        channel_id:
+          type: integer
+        occurred_at:
+          type: string
+          format: date-time
+        total:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+          description: The sum of quantity times unit price over the lines.
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/SaleLine'
+      xml:
+        name: Sale
+        namespace: https://mosaiq.maxthecoder.online/xml/sales/v1
+    SalePage:
+      type: object
+      additionalProperties: false
+      required:
+        - sales
+        - page_info
+      properties:
+        sales:
+          type: array
+          items:
+            $ref: '#/components/schemas/Sale'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: Sales
+        namespace: https://mosaiq.maxthecoder.online/xml/sales/v1
+    Channel:
+      type: object
+      additionalProperties: false
+      required:
+        - channel_id
+        - name
+      properties:
+        channel_id:
+          type: integer
+        name:
+          type: string
+    ChannelList:
+      type: object
+      additionalProperties: false
+      required:
+        - channels
+      properties:
+        channels:
+          type: array
+          items:
+            $ref: '#/components/schemas/Channel'
+      xml:
+        name: Channels
+        namespace: https://mosaiq.maxthecoder.online/xml/sales/v1
+    PageInfo:
+      type: object
+      additionalProperties: false
+      required:
+        - page
+        - size
+        - total
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+      xml:
+        name: PageInfo
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - field
+        - code
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+    Error:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+        - correlation_id
+        - details
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        correlation_id:
+          type: string
+          pattern: '^[0-9A-Za-z-]{1,64}$'
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+      xml:
+        name: Error
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+  responses:
+    Unauthorized:
+      description: '`invalid_token` or `session_revoked`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              externalValue: ./examples/invalid-token.json
+            session_revoked:
+              externalValue: ./examples/session-revoked.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              externalValue: ./examples/invalid-token.xml
+            session_revoked:
+              externalValue: ./examples/session-revoked.xml
+    Forbidden:
+      description: '`forbidden_role`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.xml
+    NotAcceptable:
+      description: '`not_acceptable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              externalValue: ./examples/not-acceptable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              externalValue: ./examples/not-acceptable.xml
+    PayloadTooLarge:
+      description: '`payload_too_large`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            payload_too_large:
+              externalValue: ./examples/payload-too-large.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            payload_too_large:
+              externalValue: ./examples/payload-too-large.xml
+    UnsupportedMediaType:
+      description: '`unsupported_media_type`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unsupported_media_type:
+              externalValue: ./examples/unsupported-media-type.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unsupported_media_type:
+              externalValue: ./examples/unsupported-media-type.xml
+    RateLimited:
+      description: '`rate_limited`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              externalValue: ./examples/rate-limited.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              externalValue: ./examples/rate-limited.xml
+    OperationUnavailable:
+      description: '`auth_unavailable` or `database_unavailable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.json
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.xml
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.xml
+    SchemaNotReady:
+      description: '`schema_not_ready`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              externalValue: ./examples/schema-not-ready.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              externalValue: ./examples/schema-not-ready.xml
+    SaleBadRequest:
+      description: '`idempotency_key_required` or `malformed_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            idempotency_key_required:
+              externalValue: ./examples/idempotency-key-required.json
+            malformed_body:
+              externalValue: ./examples/malformed-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            idempotency_key_required:
+              externalValue: ./examples/idempotency-key-required.xml
+            malformed_body:
+              externalValue: ./examples/malformed-body.xml
+    SaleConflict:
+      description: '`idempotency_key_reused`, `stock_unavailable` or `duplicate_product_line`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            idempotency_key_reused:
+              externalValue: ./examples/idempotency-key-reused.json
+            stock_unavailable:
+              externalValue: ./examples/stock-unavailable.json
+            duplicate_product_line:
+              externalValue: ./examples/duplicate-product-line.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            idempotency_key_reused:
+              externalValue: ./examples/idempotency-key-reused.xml
+            stock_unavailable:
+              externalValue: ./examples/stock-unavailable.xml
+            duplicate_product_line:
+              externalValue: ./examples/duplicate-product-line.xml
+    SaleRefused:
+      description: '`no_lines`, `no_stock_record`, `unknown_customer`, `unknown_store`, `unknown_channel`, `unknown_product`, `inactive_product`, `before_registration`, `future_dated`, `invalid_price`, `invalid_quantity` or `invalid_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            no_lines:
+              externalValue: ./examples/no-lines.json
+            no_stock_record:
+              externalValue: ./examples/no-stock-record.json
+            unknown_customer:
+              externalValue: ./examples/unknown-customer.json
+            unknown_store:
+              externalValue: ./examples/unknown-store.json
+            unknown_channel:
+              externalValue: ./examples/unknown-channel.json
+            unknown_product:
+              externalValue: ./examples/unknown-product.json
+            inactive_product:
+              externalValue: ./examples/inactive-product.json
+            before_registration:
+              externalValue: ./examples/before-registration.json
+            future_dated:
+              externalValue: ./examples/future-dated.json
+            invalid_price:
+              externalValue: ./examples/invalid-price.json
+            invalid_quantity:
+              externalValue: ./examples/invalid-quantity.json
+            invalid_body:
+              externalValue: ./examples/invalid-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            no_lines:
+              externalValue: ./examples/no-lines.xml
+            no_stock_record:
+              externalValue: ./examples/no-stock-record.xml
+            unknown_customer:
+              externalValue: ./examples/unknown-customer.xml
+            unknown_store:
+              externalValue: ./examples/unknown-store.xml
+            unknown_channel:
+              externalValue: ./examples/unknown-channel.xml
+            unknown_product:
+              externalValue: ./examples/unknown-product.xml
+            inactive_product:
+              externalValue: ./examples/inactive-product.xml
+            before_registration:
+              externalValue: ./examples/before-registration.xml
+            future_dated:
+              externalValue: ./examples/future-dated.xml
+            invalid_price:
+              externalValue: ./examples/invalid-price.xml
+            invalid_quantity:
+              externalValue: ./examples/invalid-quantity.xml
+            invalid_body:
+              externalValue: ./examples/invalid-body.xml
+    SaleNotFound:
+      description: '`sale_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            sale_not_found:
+              externalValue: ./examples/sale-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            sale_not_found:
+              externalValue: ./examples/sale-not-found.xml
+    InvalidSaleQuery:
+      description: '`invalid_query` or `invalid_pagination`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.json
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.xml
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.xml

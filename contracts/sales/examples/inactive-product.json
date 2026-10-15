@@ -1,0 +1,11 @@
+{
+  "code": "inactive_product",
+  "message": "A product is not active.",
+  "correlation_id": "corr-inactive-product",
+  "details": [
+    {
+      "field": "lines[1].product_id",
+      "code": "inactive"
+    }
+  ]
+}

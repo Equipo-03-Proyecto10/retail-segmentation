@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>before_registration</code>
+  <message>The sale is dated before the customer registered.</message>
+  <correlation_id>corr-before-registration</correlation_id>
+  <details>
+    <field>occurred_at</field>
+    <code>before_registration</code>
+  </details>
+</Error>

@@ -260,7 +260,9 @@ ticket" can still be chosen but is labelled as not measured yet.
 **Enforced:** `_update`, `_create`, `_record_exposure` and
 `_record_group_exposures` in `web/services/experiments.py`, `transition` in
 `web/services/campaigns.py`, `current_date` in `web/db/clock.py`, and the conditional
-insert in `web/db/experiments.py`. **Verified** — `tests/test_experiment_frame.py`.
+insert in `web/db/experiments.py`. campaigns-service (planned) also refuses
+activating an ended campaign, in its own code (ADR-0034, ADR-0045). **Verified** —
+`tests/test_experiment_frame.py`.
 
 ### RN-48 — Conversion is reported over the assigned and over the exposed, and the assigned rate decides
 Two rates sit side by side. The **intent-to-treat rate** is customers with a
@@ -687,7 +689,9 @@ half. The application enforces it: setup always writes the selected control
 (if any) with the treatment groups, and a campaign cannot be activated while
 an experiment attached to it lacks a treatment group or has a no-control
 design with anything other than exactly two treatment arms
-(`web/services/experiments.py` `activation_refusal`, F11-03).
+(`web/services/experiments.py` `activation_refusal`, F11-03). campaigns-service
+(planned) refuses the same activation through `trg_campaign_activation_guard`,
+which fires for `svc_campaigns` sessions only (ADR-0034, ADR-0045).
 
 ### RN-25 — An experiment's conversion window is a positive number of days
 **Enforced:** `experiment_conversion_window_days_check`. **Verified** — case

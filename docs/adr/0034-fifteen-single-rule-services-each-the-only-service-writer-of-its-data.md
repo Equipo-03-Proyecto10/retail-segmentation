@@ -90,7 +90,7 @@ the one declared read owner, while the web is the only writer. Unlisted tables g
 | recommendations | none | `api_products.product_ref_v1`, `api_categories.category_tree_v1`, `api_stock.stock_level_v1`, `api_customers.customer_ref_v1`, `api_preferences.interest_category_v1`, `api_sales.purchase_line_v1`, `api_segments.current_label_v1` | — |
 | engagement | none. Its data is the MongoDB database `engagement` ([ADR-0038](0038-mongodb-holds-in-store-engagement-owned-by-engagement-service-alone.md)) | `api_products.product_ref_v1`, `api_stores.store_directory_v1`, `api_customers.customer_ref_v1` | — |
 | check-ins | `checkins.store_check_in`, `checkins.check_in_review` **S** (new, 30 seed rows each): SELECT, INSERT. Reviews are append-only | `api_stores.store_directory_v1` | — |
-| campaigns | `campaign` **S+W**: SELECT, INSERT, UPDATE; no DELETE. It allocates `campaign_id` under the web's advisory lock key 221001 (`web/db/campaigns.py`) and retries on 23505. Every activation passes `trg_campaign_activation_guard` | — | — |
+| campaigns | `campaign` **S+W**: SELECT, INSERT, UPDATE; no DELETE. It allocates `campaign_id` under the web's advisory lock key 221001 (`web/db/campaigns.py`) and retries on 23505. Every activation by `svc_campaigns` passes `trg_campaign_activation_guard` | — | — |
 | audit-trail | `audit_log` **R**: SELECT. Only `fn_audit` writes it, running as `definer_audit` | — | — |
 
 - **Consuming** is USAGE on the `api_<suffix>` schema plus SELECT on the view, or EXECUTE on the
@@ -167,7 +167,8 @@ the one declared read owner, while the web is the only writer. Unlisted tables g
   `definer_*` roles' privileges as well as the `svc_*` roles', including an owner's EXECUTE on
   its own `api_*` function (`definer_stock` on `api_stock.consume_v1`).
 - `sql/seed-exempt.txt` and the 30-row seeds follow [ADR-0046](0046-service-owned-data-lives-in-service-schemas.md).
-- Every service write transaction sets `set_config('mosaiq.user_id', <sub>, true)`.
+- Every request-driven service write transaction sets `set_config('mosaiq.user_id', <sub>, true)`. A relay's
+  outbox bookkeeping (`relayed_at`, the 7-day purge) has no caller and carries no actor.
 - `contracts/db/` records the advisory lock keys 221001 and 290001.
 
 ## Compliance
@@ -191,7 +192,8 @@ GROUP BY 1
 HAVING count(DISTINCT replace(r.rolname, 'svc_products_bench', 'svc_products')) > 1;
 ```
 
-`contracts/db/check_grants.sh` (its SQL is this record's full draft) fails on any output:
+`contracts/db/check_grants.sh` (its SQL is this record's full draft, with the draft's `svc` CTE widened to
+`definer_*` roles so that item 1 covers them) fails on any output:
 1. every `svc_*` and `definer_*` privilege (table, column, EXECUTE on `api_*` functions, USAGE on non-`public` schemas) equals `contracts/db/grants.csv`, in both directions;
 2. the LOGIN `svc_*` roles are exactly the fifteen plus `svc_products_bench`;
 3. no `svc_*` privilege on a web-only table;

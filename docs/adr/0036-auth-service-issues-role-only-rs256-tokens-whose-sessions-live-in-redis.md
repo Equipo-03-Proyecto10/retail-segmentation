@@ -39,7 +39,7 @@ single-administrator rule twice, in its own code and through the existing partia
 | Access token | 10 minutes, and never past the session's absolute end |
 | Session | Absolute lifetime of 12 hours from sign-in (one shift), held as `expires_at` in `auth:session:{sid}`. Refresh never extends it; a refresh after it gets 401 `session_expired` |
 | Refresh token | Opaque 256-bit value that rotates on every use and never outlives its session. Stored only as `auth:refresh:{sha256}`, a HASH {`sid`, `state`: `current`\|`rotated`}, and indexed in `auth:refresh_family:{sid}`, a SET of those SHA-256 values, to which sign-in adds the first. Rotation `WATCH`es the old entry, then in one `MULTI`/`EXEC` marks it rotated, writes the new one and adds the new hash to the set; a concurrent rotation aborts the `EXEC`, and that request then finds the entry rotated. The refresh family is every `auth:refresh:{h}` for h in that set, plus the set. A rotated token presented again deletes the session: 401 `refresh_reused`. An unknown token gets 401 `invalid_refresh` and touches no session |
-| Refresh | Re-reads `api_users.credential_v1`. It refuses with 401 `session_revoked`, deleting the session, if the account is missing or inactive, the role differs, or the password hash differs from the session's SHA-256 fingerprint. The new access token always carries the session's role |
+| Refresh | Re-reads `api_users.credential_v1` first, and rotates the refresh token only after that read and its checks pass. It refuses with 401 `session_revoked`, deleting the session, if the account is missing or inactive, the role differs, or the password hash differs from the session's SHA-256 fingerprint. If PostgreSQL fails, it answers 503 `database_unavailable` and leaves the presented refresh entry `current`, so a retry with the same token succeeds once PostgreSQL is back and never trips the reuse detection. The new access token always carries the session's role |
 | Transport | `Authorization: Bearer` only. The web neither issues nor accepts these tokens |
 
 The claims contract is `contracts/auth/` (v1): adding a claim is non-breaking, removing or renaming one is a v2.
@@ -71,7 +71,7 @@ A revoked token is one whose `pub:auth:v1:live:{sid}` no longer exists; that is 
 | Sign-out (`DELETE /v1/sessions/current`) | auth | Directly | Deletes the liveness key, the session hash and the refresh family |
 | Refresh-token reuse | auth | Directly | Same as sign-out |
 | Deactivation, role change, administrator transfer, password change or reset, hard delete | users-service or the web | the `app_user` capture and `stream:users.v1.access_changed` ([ADR-0044](0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md)) | Same as sign-out, for every sid in `auth:user_sids:{user_id}`; the user signs in again |
-| Every 60 s, auth checks each live session against `api_users.credential_v1` as refresh does | — | The reconcile | Same as sign-out for each session that fails |
+| Every 60 s, auth checks each live session against `api_users.credential_v1` as refresh does | — | The reconcile | Same as sign-out for each session that fails; a pass that cannot read PostgreSQL deletes nothing and runs again on the next tick |
 
 After deleting, auth runs `WAITAOF 1 0 1000` before it answers or XACKs; if that fails, sign-out answers 503 `auth_unavailable` and the entry stays pending.
 Bounds: normally the relay's latency (5 s poll); 60 s when the stream is down; one access-token lifetime, 10 minutes, when auth is down.
@@ -160,7 +160,7 @@ SELECT indexdef FROM pg_indexes WHERE indexname = 'ux_app_user_single_administra
 
 The black-box suite asserts, against every image: 401 for no token, `alg: none`, HS256 keyed with the public key, a wrong `aud`, an expired
 token, a tampered payload and an unknown `kid`; 401 `session_revoked` after sign-out; 503 `auth_unavailable` with `redis-state` stopped; 403 `forbidden_role`.
-auth's tests: reuse of a rotated refresh token deletes the session; two concurrent refreshes of the same current token produce exactly one success; a deactivation made as `retail_app` removes the liveness keys within 60 s
+auth's tests: reuse of a rotated refresh token deletes the session; two concurrent refreshes of the same current token produce exactly one success; with PostgreSQL stopped, a refresh gets 503 `database_unavailable` and the same token refreshes once it is back, and a reconcile pass deletes no session; a deactivation made as `retail_app` removes the liveness keys within 60 s
 with the relay stopped; after an administrator transfer, the old `ADMIN`'s refresh returns 401; a refresh past 12 hours returns 401 `session_expired`.
 users-service's tests: a second `ADMIN` gets 409 `single_administrator`, never 500, including one written concurrently through the web role; deactivating the only
 `ADMIN` gets 409; a transfer to an inactive successor gets 409 `successor_inactive`; a transfer leaves exactly one `ADMIN`.

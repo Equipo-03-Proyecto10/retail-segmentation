@@ -156,7 +156,8 @@ database before the service that uses it ships. Nothing is contracted while a co
 
 ## Compliance
 
-As the database owner, `contracts/db/check_boundaries.sql` (the full draft's SQL) returns no rows: (1) outside
+As the database owner, `contracts/db/check_boundaries.sql` (the full draft's SQL, except that check 2's expected
+set is read from `grants.csv`'s `svc_*` rows on `api_*` objects, not the draft's hard-coded pairs) returns no rows: (1) outside
 `api_*` schemas, no relation is reachable by two boundaries; (2) cross-boundary access equals the published list in `grants.csv`,
 producers' SELECT on their own views excepted, and EXECUTE on `consume_v1` for `svc_sales` only; (3) every outbox
 has exactly the six columns; (4) a capture trigger names only its own boundary's streams. `contracts/streams/check_streams.sh` finds every captured stream's contract file.

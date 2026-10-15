@@ -514,6 +514,7 @@ flowchart TD
     F13-03 --> F13-09
     F13-04 --> F13-09
     F13-05 --> F13-09
+    F13-06 --> F13-09
     F13-07 --> F13-09
     F13-08 --> F13-09
     F13-10
@@ -525,6 +526,7 @@ flowchart TD
     F13-05 --> F14-02
     F13-07 --> F14-02
     F13-08 --> F14-02
+    F13-09 --> F14-02
     F14-04 --> F14-02
     F13-02 --> F14-03
     F14-03 --> F14-04
@@ -532,6 +534,7 @@ flowchart TD
     F13-05 --> F14-04
     F13-07 --> F14-04
     F13-08 --> F14-04
+    F13-09 --> F14-04
     F13-11 --> F14-04
     F13-02 --> F14-05
     F14-05 --> F14-06
@@ -539,36 +542,42 @@ flowchart TD
     F13-05 --> F14-06
     F13-07 --> F14-06
     F13-08 --> F14-06
+    F13-09 --> F14-06
     F13-02 --> F14-07
     F14-07 --> F14-08
     F13-03 --> F14-08
     F13-05 --> F14-08
     F13-07 --> F14-08
     F13-08 --> F14-08
+    F13-09 --> F14-08
     F13-02 --> F14-09
     F14-09 --> F14-10
     F13-04 --> F14-10
     F13-05 --> F14-10
     F13-07 --> F14-10
     F13-08 --> F14-10
+    F13-09 --> F14-10
     F13-02 --> F14-11
     F14-11 --> F14-12
     F13-04 --> F14-12
     F13-05 --> F14-12
     F13-07 --> F14-12
     F13-08 --> F14-12
+    F13-09 --> F14-12
     F13-02 --> F14-13
     F14-13 --> F14-14
     F13-03 --> F14-14
     F13-05 --> F14-14
     F13-07 --> F14-14
     F13-08 --> F14-14
+    F13-09 --> F14-14
     F13-02 --> F14-15
     F14-15 --> F14-16
     F13-04 --> F14-16
     F13-05 --> F14-16
     F13-07 --> F14-16
     F13-08 --> F14-16
+    F13-09 --> F14-16
     F14-14 --> F14-16
     F13-02 --> F14-17
     F14-17 --> F14-18
@@ -576,6 +585,7 @@ flowchart TD
     F13-05 --> F14-18
     F13-07 --> F14-18
     F13-08 --> F14-18
+    F13-09 --> F14-18
     F13-11 --> F14-18
     F14-06 --> F14-18
     F14-14 --> F14-18
@@ -586,6 +596,7 @@ flowchart TD
     F13-05 --> F14-20
     F13-07 --> F14-20
     F13-08 --> F14-20
+    F13-09 --> F14-20
     F14-14 --> F14-20
     F13-02 --> F14-21
     F14-21 --> F14-22
@@ -593,6 +604,7 @@ flowchart TD
     F13-05 --> F14-22
     F13-07 --> F14-22
     F13-08 --> F14-22
+    F13-09 --> F14-22
     F13-11 --> F14-22
     F14-06 --> F14-22
     F14-08 --> F14-22
@@ -608,6 +620,7 @@ flowchart TD
     F13-06 --> F14-24
     F13-07 --> F14-24
     F13-08 --> F14-24
+    F13-09 --> F14-24
     F14-06 --> F14-24
     F14-10 --> F14-24
     F14-14 --> F14-24
@@ -617,6 +630,7 @@ flowchart TD
     F13-05 --> F14-26
     F13-07 --> F14-26
     F13-08 --> F14-26
+    F13-09 --> F14-26
     F14-10 --> F14-26
     F13-02 --> F14-27
     F14-27 --> F14-28
@@ -624,6 +638,7 @@ flowchart TD
     F13-05 --> F14-28
     F13-07 --> F14-28
     F13-08 --> F14-28
+    F13-09 --> F14-28
     F13-11 --> F14-28
     F13-02 --> F14-29
     F14-29 --> F14-30
@@ -631,6 +646,7 @@ flowchart TD
     F13-05 --> F14-30
     F13-07 --> F14-30
     F13-08 --> F14-30
+    F13-09 --> F14-30
     F13-01 --> F15-01
     F13-04 --> F15-01
     F13-07 --> F15-01
@@ -798,7 +814,7 @@ Epic #400.
 | F13-06 | #428 | Run one authenticated MongoDB server for engagement only, within the memory budget | P0 | F13-01, F13-05 |
 | F13-07 | #434 | Create service and definer roles, the grant matrix check and the schema-section framework | P0 | F13-01, F13-02 |
 | F13-08 | #438 | Give each service its own compose project on the shared mosaiq network, runnable locally | P0 | F13-01, F13-03, F13-05 |
-| F13-09 | #442 | Build, test and release each service in CI with a path-filtered matrix and repository guards | P0 | F13-01, F13-02, F13-03, F13-04, F13-05, F13-07, F13-08 |
+| F13-09 | #442 | Build, test and release each service in CI with a path-filtered matrix and repository guards | P0 | F13-01, F13-02, F13-03, F13-04, F13-05, F13-06, F13-07, F13-08 |
 | F13-10 | #446 | Spike: decide whether account email verification is part of the second delivery | P2 | — |
 | F13-11 | #470 | Capture golden fixtures from the web and fail CI when the web drifts from them | P0 | F13-01, F13-07 |
 
@@ -818,35 +834,35 @@ wave (P2), dropped first if memory runs short ([ADR-0040][adr-0040]).
 | ID | Issue | Story | Priority | Depends on |
 |---|---|---|---|---|
 | F14-01 | #409 | Write the auth-service contract: sessions, JWKS, token claims and the liveness key | P0 | F13-02 |
-| F14-02 | #413 | Implement auth-service: RS256 sign-in, 12-hour sessions, refresh rotation and revocation | P0 | F14-01, F13-03, F13-05, F13-07, F13-08, F14-04 |
+| F14-02 | #413 | Implement auth-service: RS256 sign-in, 12-hour sessions, refresh rotation and revocation | P0 | F14-01, F13-03, F13-05, F13-07, F13-08, F13-09, F14-04 |
 | F14-03 | #418 | Write the users-service contract: accounts, roles, passwords and administrator transfer | P0 | F13-02 |
-| F14-04 | #421 | Implement users-service with the single-administrator rule enforced in code and index | P0 | F14-03, F13-03, F13-05, F13-07, F13-08, F13-11 |
+| F14-04 | #421 | Implement users-service with the single-administrator rule enforced in code and index | P0 | F14-03, F13-03, F13-05, F13-07, F13-08, F13-09, F13-11 |
 | F14-05 | #425 | Write the products-service contract, including the batch read by product ids | P0 | F13-02 |
-| F14-06 | #429 | Implement products-service: unique SKU, non-negative price, deactivation and change stream | P0 | F14-05, F13-03, F13-05, F13-07, F13-08 |
+| F14-06 | #429 | Implement products-service: unique SKU, non-negative price, deactivation and change stream | P0 | F14-05, F13-03, F13-05, F13-07, F13-08, F13-09 |
 | F14-07 | #471 | Write the categories-service contract: tree reads, edits and the guarded delete | P0 | F13-02 |
-| F14-08 | #472 | Implement categories-service: acyclic tree and the delete guard for customer interests | P0 | F14-07, F13-03, F13-05, F13-07, F13-08 |
+| F14-08 | #472 | Implement categories-service: acyclic tree and the delete guard for customer interests | P0 | F14-07, F13-03, F13-05, F13-07, F13-08, F13-09 |
 | F14-09 | #473 | Write the stores-service contract: store directory and ADMIN-only geofenced locations | P0 | F13-02 |
-| F14-10 | #468 | Implement stores-service in Rust: store locations, directory view and change stream | P0 | F14-09, F13-04, F13-05, F13-07, F13-08 |
+| F14-10 | #468 | Implement stores-service in Rust: store locations, directory view and change stream | P0 | F14-09, F13-04, F13-05, F13-07, F13-08, F13-09 |
 | F14-11 | #440 | Write the stock-service contract: stock levels and the consume_v1 database function | P0 | F13-02 |
-| F14-12 | #444 | Implement stock-service in Rust: never-negative stock, consume_v1 for sales, uncached reads | P0 | F14-11, F13-04, F13-05, F13-07, F13-08 |
+| F14-12 | #444 | Implement stock-service in Rust: never-negative stock, consume_v1 for sales, uncached reads | P0 | F14-11, F13-04, F13-05, F13-07, F13-08, F13-09 |
 | F14-13 | #432 | Write the customers-service contract: search, registration and correction of customers | P0 | F13-02 |
-| F14-14 | #436 | Implement customers-service: registered once with valid data, never deleted through services | P0 | F14-13, F13-03, F13-05, F13-07, F13-08 |
+| F14-14 | #436 | Implement customers-service: registered once with valid data, never deleted through services | P0 | F14-13, F13-03, F13-05, F13-07, F13-08, F13-09 |
 | F14-15 | #474 | Write the customer-preferences contract: preference profiles and whole-set replaces | P0 | F13-02 |
-| F14-16 | #475 | Implement customer-preferences in Rust: atomic whole-set replace of channels and interests | P0 | F14-15, F13-04, F13-05, F13-07, F13-08, F14-14 |
+| F14-16 | #475 | Implement customer-preferences in Rust: atomic whole-set replace of channels and interests | P0 | F14-15, F13-04, F13-05, F13-07, F13-08, F13-09, F14-14 |
 | F14-17 | #449 | Write the sales-service contract: idempotent sale recording, read-back and channels | P0 | F13-02 |
-| F14-18 | #454 | Implement sales-service: all-or-nothing sales that consume stock, with durable idempotency | P0 | F14-17, F13-03, F13-05, F13-07, F13-08, F13-11, F14-06, F14-14, F14-12 |
+| F14-18 | #454 | Implement sales-service: all-or-nothing sales that consume stock, with durable idempotency | P0 | F14-17, F13-03, F13-05, F13-07, F13-08, F13-09, F13-11, F14-06, F14-14, F14-12 |
 | F14-19 | #458 | Write the segments-service contract: label vocabulary, current assignment and history | P0 | F13-02 |
-| F14-20 | #461 | Implement segments-service in Rust: one current segment by label code, unassigned as is | P0 | F14-19, F13-04, F13-05, F13-07, F13-08, F14-14 |
+| F14-20 | #461 | Implement segments-service in Rust: one current segment by label code, unassigned as is | P0 | F14-19, F13-04, F13-05, F13-07, F13-08, F13-09, F14-14 |
 | F14-21 | #476 | Write the recommendations-service contract: reasons, empty-result statuses and staleness | P0 | F13-02 |
-| F14-22 | #477 | Implement recommendations-service: RN-40 over seven published views, pinned by golden fixtures | P0 | F14-21, F13-03, F13-05, F13-07, F13-08, F13-11, F14-06, F14-08, F14-12, F14-14, F14-16, F14-18, F14-20 |
+| F14-22 | #477 | Implement recommendations-service: RN-40 over seven published views, pinned by golden fixtures | P0 | F14-21, F13-03, F13-05, F13-07, F13-08, F13-09, F13-11, F14-06, F14-08, F14-12, F14-14, F14-16, F14-18, F14-20 |
 | F14-23 | #464 | Write the engagement-service contract: QR scans, recommendation clicks, voids and summaries | P0 | F13-02 |
-| F14-24 | #466 | Implement engagement-service on MongoDB: once per client event, voids, rollup and live counters | P0 | F14-23, F13-03, F13-05, F13-06, F13-07, F13-08, F14-06, F14-10, F14-14 |
+| F14-24 | #466 | Implement engagement-service on MongoDB: once per client event, voids, rollup and live counters | P0 | F14-23, F13-03, F13-05, F13-06, F13-07, F13-08, F13-09, F14-06, F14-10, F14-14 |
 | F14-25 | #478 | Write the check-ins-service contract: GPS check-ins, server-computed verdicts and reviews | P0 | F13-02 |
-| F14-26 | #479 | Implement check-ins-service in Rust: geofence verdicts and append-only reviews | P0 | F14-25, F13-04, F13-05, F13-07, F13-08, F14-10 |
+| F14-26 | #479 | Implement check-ins-service in Rust: geofence verdicts and append-only reviews | P0 | F14-25, F13-04, F13-05, F13-07, F13-08, F13-09, F14-10 |
 | F14-27 | #480 | Write the campaigns-service contract: drafts, draft-only edits and status transitions | P2 | F13-02 |
-| F14-28 | #481 | Implement campaigns-service: the campaign state machine, pinned to the web by golden fixtures | P2 | F14-27, F13-03, F13-05, F13-07, F13-08, F13-11 |
+| F14-28 | #481 | Implement campaigns-service: the campaign state machine, pinned to the web by golden fixtures | P2 | F14-27, F13-03, F13-05, F13-07, F13-08, F13-09, F13-11 |
 | F14-29 | #482 | Write the audit-trail-service contract: read-only audit entries for ADMIN and AUDITOR | P2 | F13-02 |
-| F14-30 | #483 | Implement audit-trail-service in Rust: read-only, attributed and credential-free audit entries | P2 | F14-29, F13-04, F13-05, F13-07, F13-08 |
+| F14-30 | #483 | Implement audit-trail-service in Rust: read-only, attributed and credential-free audit entries | P2 | F14-29, F13-04, F13-05, F13-07, F13-08, F13-09 |
 
 | Service | Contract | Implementation |
 |---|---|---|

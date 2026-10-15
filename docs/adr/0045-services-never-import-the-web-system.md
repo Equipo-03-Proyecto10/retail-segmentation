@@ -41,11 +41,12 @@ Mechanics common to all services come from two mechanism-only kits, released by 
 
 ### How a shared rule is carried
 
-**By the database.** These need no port, because every writer, web or service, passes through them:
+**By the database.** These need no port, because every writer they apply to passes through them:
 - the CHECKs in `sql/01_schema.sql`, including `quantity_on_hand >= 0`;
 - `ux_app_user_single_administrator` and `ux_app_user_email_lower`;
 - `trg_role_code_immutable`, `trg_category_no_cycle`, and `trg_category_delete_guard`, which this stage adds;
-- `trg_campaign_activation_guard`, which this stage adds for `svc_campaigns` sessions only: it carries the web's
+- `trg_campaign_activation_guard`, which this stage adds for `svc_campaigns` sessions only (the web refuses the same
+  move in its own code): it carries the web's
   `activation_refusal` test (RN-24), since `experiment` and `experiment_group` are web-only tables the service cannot read;
 - the foreign keys with `ON DELETE RESTRICT`;
 - `api_stock.consume_v1` and `fn_audit`.
@@ -69,9 +70,11 @@ difference with its reason.
 `packages/kit-py` (`mosaiq-kit`) and `packages/kit-rs` are released by tag (`kit-py/vX.Y.Z`, `kit-rs/vX.Y.Z`, with a changelog).
 Each service pins an exact tag (a git dependency locked in `uv.lock`, or `tag = "kit-rs/vX.Y.Z"` in `Cargo.toml`); path dependencies are rejected.
 Both contain only: RS256 verification with JWKS reload, the liveness check, Accept negotiation, JSON and XML rendering against a
-service-supplied XSD, the error envelope, pagination, health, the correlation id, a rate limiter, the outbox relay and stream
-consumer helpers, and the audit-actor helper. They contain no role or permission names, no error catalogue, no business rule,
-and no Redis key except `pub:auth:v1:live:{sid}` and the `stream:` naming convention.
+service-supplied XSD, the error envelope, pagination, health, the correlation id, a rate limiter, the PostgreSQL connection pool
+(at most 3 connections, over PostgreSQL's mounted Unix socket,
+[ADR-0040](0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md)), which maps a connection it cannot get or
+loses mid-request to 503 `database_unavailable`, the outbox relay and stream consumer helpers, and the audit-actor helper.
+They contain no role or permission names, no error catalogue, no business rule, and no Redis key except `pub:auth:v1:live:{sid}` and the `stream:` naming convention.
 A kit upgrade is the service's own pull request, with its own `VERSION` bump.
 
 ### One service, one build

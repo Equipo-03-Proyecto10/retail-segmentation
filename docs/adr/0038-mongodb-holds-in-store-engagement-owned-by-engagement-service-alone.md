@@ -122,7 +122,8 @@ answers 503 `schema_not_ready` while a collection or index is missing.
 - `contracts/engagement/openapi.yaml` and `engagement.xsd` expose exactly the operations above, with these codes (ADR-0035).
 - `deploy/infra/compose.yaml` runs MongoDB 7 at a pinned image, with authorization on and no published port
   ([ADR-0040](0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md)); only engagement's `compose.yaml` sets
-  `MONGO_URI`, which `.env.example` documents with a local default.
+  `MONGO_URI`, which `.env.example` documents with a local default, next to `MONGO_ENGAGEMENT_PASSWORD`, the `svc_engagement`
+  password `mongo/init.js` reads from the environment.
 - `sql/01_schema.sql` grants `svc_engagement` SELECT on the three views and nothing else; `contracts/db/grants.csv` lists
   exactly those three rows. Its Redis ACL allows `~engagement:live:*` and the liveness selector (ADR-0037).
 - ADR-0046 holds the check-in tables, and ADR-0041's Android client sends one `RECO_CLICK` per tap, with a fresh `client_event_id`.

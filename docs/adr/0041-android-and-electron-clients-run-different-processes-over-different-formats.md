@@ -79,7 +79,10 @@ second sale, click or check-in. Each refreshes its tokens through one single-fli
   the tap. A WorkManager job resends each row with the same id until a final answer arrives, so a
   tap produces exactly one `RECO_CLICK` and a sale replayed after a timeout returns the original
   ([ADR-0039](0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md)). A queued row is resent only under the session of the user who
-  created it, because the services scope a replay to the token's `sub`. A write finally refused, such as a sale with 409 `stock_unavailable`, stays visible
+  created it, because a write must be attributed to the user who acted, and each of the three services records that user from
+  the token's `sub`. Under another user's token, sales and check-ins also refuse a replay of a write that already landed: sales
+  answers 409 `idempotency_key_reused`, since its request hash includes the `sub` (ADR-0039), and the check-ins contract answers
+  409 `client_check_in_conflict`, since the `user_id` differs. A write finally refused, such as a sale with 409 `stock_unavailable`, stays visible
   in an outbox screen with its error code, never dropped. Reads are not queued.
 
 **Electron: the back-office process.**

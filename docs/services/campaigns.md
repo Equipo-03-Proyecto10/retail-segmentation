@@ -42,7 +42,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 | Object | Kind | Access | Notes |
 |---|---|---|---|
-| `campaign` | Table (`public`) | S+W: SELECT, INSERT, UPDATE; no DELETE (every activation passes the guard) | Audited (E-12); the web is a legacy co-writer (E-09) |
+| `campaign` | Table (`public`) | S+W: SELECT, INSERT, UPDATE; no DELETE (every service activation passes the guard) | Audited (E-12); the web is a legacy co-writer (E-09) |
 
 ## Database contracts
 

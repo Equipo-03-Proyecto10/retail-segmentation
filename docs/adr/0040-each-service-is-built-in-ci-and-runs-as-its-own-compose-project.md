@@ -36,7 +36,7 @@ in project `mosaiq-infra`, on the external network `mosaiq`. Ports bind `127.0.0
   no `depends_on`, and the hardening under Run.
 - `nginx/<name>.conf`: `location /api/<name>/` with `proxy_pass http://127.0.0.1:<port>/;`, `proxy_set_header X-Real-IP $remote_addr;`,
   `proxy_set_header X-Forwarded-For $remote_addr;` (overwritten, never appended; `cloudflare-real-ip.conf` restores `$remote_addr`) and
-  `client_max_body_size 64k;`. auth's applies `limit_req` (zone declared in `deploy/nginx/mosaiq.conf`) to `POST /api/auth/v1/sessions`, as the web limits `/login`.
+  `client_max_body_size 64k;`. auth's applies `limit_req zone=mosaiq_auth_signin burst=5 nodelay` with `limit_req_status 429` (zone declared in `deploy/nginx/mosaiq.conf`) to `POST /api/auth/v1/sessions`, as the web limits `/login`. NGINX's own 413 and 429 answer with the shared error envelope through `error_page` (ADR-0035).
 - `redis/<name>.acl`: its ACL user line (ADR-0037).
 - `tests/`: unit, golden and conformance tests.
 

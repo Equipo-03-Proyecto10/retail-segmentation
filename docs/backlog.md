@@ -897,10 +897,10 @@ Epic #402.
 
 | ID | Issue | Story | Priority | Depends on |
 |---|---|---|---|---|
-| F16-01 | #406 | Scaffold the Electron back office with secure defaults, per-service XSD validation and sign-in | P1 | F13-02, F14-01, F14-02 |
+| F16-01 | #406 | Scaffold the Electron back office with secure defaults, per-service XSD validation and sign-in | P0 | F13-02, F14-01, F14-02 |
 | F16-02 | #410 | Maintain products and the category tree from the desktop client, ADMIN only | P1 | F16-01, F14-05, F14-06, F14-07, F14-08 |
 | F16-03 | #414 | Review customers, both preference sets, segment assignments and recommendations on the desktop | P1 | F16-01, F14-13, F14-14, F14-15, F14-16, F14-19, F14-20, F14-21, F14-22, F14-05, F14-06, F14-07, F14-08, F14-17, F14-18 |
-| F16-04 | #417 | Show stock below a threshold, sales read-back, engagement summaries and voids, check-in review | P1 | F16-01, F14-11, F14-12, F14-17, F14-18, F14-05, F14-06, F14-09, F14-10, F14-23, F14-24, F14-25, F14-26 |
+| F16-04 | #417 | Show stock below a threshold, sales read-back, engagement summaries and voids, check-in review | P0 | F16-01, F14-11, F14-12, F14-17, F14-18, F14-05, F14-06, F14-09, F14-10, F14-23, F14-24, F14-25, F14-26 |
 | F16-05 | #422 | Package the desktop client and build, lint and test it in CI | P1 | F16-01, F16-02, F16-03, F16-04, F16-06, F16-07 |
 | F16-06 | #484 | Administer users and transfer the administrator role from the desktop client | P1 | F16-01, F14-03, F14-04 |
 | F16-07 | #485 | Set and remove store locations and geofences from the desktop client | P1 | F16-01, F14-09, F14-10 |
@@ -913,11 +913,11 @@ Epic #403.
 
 | ID | Issue | Story | Priority | Depends on |
 |---|---|---|---|---|
-| F17-01 | #426 | Scaffold the Android floor app with JSON networking, single-flight refresh and sign-in | P1 | F14-01, F14-02, F14-03, F14-04 |
-| F17-02 | #430 | Scan a product QR code and show the product and its stock at the checked-in store | P1 | F17-01, F17-03, F14-05, F14-06, F14-11, F14-12, F14-23, F14-24 |
-| F17-03 | #433 | Pick the store and check in by GPS, through a retry-safe floor-write queue | P1 | F17-01, F14-09, F14-10, F14-25, F14-26 |
-| F17-04 | #437 | Find or register a customer, capture interests and record a sale queued offline | P1 | F17-01, F17-02, F17-03, F14-05, F14-06, F14-07, F14-08, F14-13, F14-14, F14-15, F14-16, F14-17, F14-18 |
-| F17-05 | #441 | Show the customer's current segment and recommendations, one RECO_CLICK per tap | P1 | F17-01, F17-02, F17-03, F17-04, F14-05, F14-06, F14-19, F14-20, F14-21, F14-22, F14-23, F14-24 |
+| F17-01 | #426 | Scaffold the Android floor app with JSON networking, single-flight refresh and sign-in | P0 | F14-01, F14-02, F14-03, F14-04 |
+| F17-02 | #430 | Scan a product QR code and show the product and its stock at the checked-in store | P0 | F17-01, F17-03, F14-05, F14-06, F14-11, F14-12, F14-23, F14-24 |
+| F17-03 | #433 | Pick the store and check in by GPS, through a retry-safe floor-write queue | P0 | F17-01, F14-09, F14-10, F14-25, F14-26 |
+| F17-04 | #437 | Find or register a customer, capture interests and record a sale queued offline | P0 | F17-01, F17-02, F17-03, F14-05, F14-06, F14-07, F14-08, F14-13, F14-14, F14-15, F14-16, F14-17, F14-18 |
+| F17-05 | #441 | Show the customer's current segment and recommendations, one RECO_CLICK per tap | P0 | F17-01, F17-02, F17-03, F17-04, F14-05, F14-06, F14-19, F14-20, F14-21, F14-22, F14-23, F14-24 |
 | F17-06 | #445 | Build, lint and test the Android client in CI and publish the debug APK | P1 | F17-01, F17-02, F17-03, F17-04, F17-05 |
 
 ## Phase 18 — Deployment and end-to-end demonstration

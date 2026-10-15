@@ -1,0 +1,11 @@
+{
+  "code": "before_registration",
+  "message": "The sale is dated before the customer registered.",
+  "correlation_id": "corr-before-registration",
+  "details": [
+    {
+      "field": "occurred_at",
+      "code": "before_registration"
+    }
+  ]
+}

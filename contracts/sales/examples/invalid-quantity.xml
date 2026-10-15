@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_quantity</code>
+  <message>A quantity is not a positive whole number.</message>
+  <correlation_id>corr-invalid-quantity</correlation_id>
+  <details>
+    <field>lines[2].quantity</field>
+    <code>not_positive</code>
+  </details>
+</Error>

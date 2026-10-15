@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SaleRequest xmlns="https://mosaiq.maxthecoder.online/xml/sales/v1">
+  <customer_id>7b3ad781-c5de-4f40-ae50-1fa825ce2b25</customer_id>
+  <channel_id>3</channel_id>
+  <occurred_at>2026-10-15T14:32:10-06:00</occurred_at>
+  <lines>
+    <product_id>1051</product_id>
+    <quantity>2</quantity>
+    <unit_price>89.00</unit_price>
+  </lines>
+</SaleRequest>

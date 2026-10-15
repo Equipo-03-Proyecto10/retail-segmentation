@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>inactive_product</code>
+  <message>A product is not active.</message>
+  <correlation_id>corr-inactive-product</correlation_id>
+  <details>
+    <field>lines[1].product_id</field>
+    <code>inactive</code>
+  </details>
+</Error>

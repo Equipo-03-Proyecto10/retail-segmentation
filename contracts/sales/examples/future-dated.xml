@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>future_dated</code>
+  <message>The sale is dated in the future.</message>
+  <correlation_id>corr-future-dated</correlation_id>
+  <details>
+    <field>occurred_at</field>
+    <code>future</code>
+  </details>
+</Error>

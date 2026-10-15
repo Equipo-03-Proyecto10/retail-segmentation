@@ -1,0 +1,11 @@
+{
+  "code": "future_dated",
+  "message": "The sale is dated in the future.",
+  "correlation_id": "corr-future-dated",
+  "details": [
+    {
+      "field": "occurred_at",
+      "code": "future"
+    }
+  ]
+}

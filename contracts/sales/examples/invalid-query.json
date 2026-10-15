@@ -1,0 +1,11 @@
+{
+  "code": "invalid_query",
+  "message": "A filter is malformed or the range is reversed.",
+  "correlation_id": "corr-invalid-query",
+  "details": [
+    {
+      "field": "from",
+      "code": "after_to"
+    }
+  ]
+}

@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:auth="https://mosaiq.maxthecoder.online/xml/auth/v1"
+           xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1"
+           targetNamespace="https://mosaiq.maxthecoder.online/xml/auth/v1"
+           elementFormDefault="qualified">
+  <xs:import namespace="https://mosaiq.maxthecoder.online/xml/common/v1"
+             schemaLocation="../common/v1/common.xsd"/>
+
+  <xs:simpleType name="Email">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="3"/>
+      <xs:maxLength value="254"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Password">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:maxLength value="1024"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="DeviceLabel">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:maxLength value="100"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="RefreshToken">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:maxLength value="2048"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="BearerTokenType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="Bearer"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="AccessTokenLifetime">
+    <xs:restriction base="xs:positiveInteger">
+      <xs:enumeration value="600"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Subject">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[1-9][0-9]*"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Uuid">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="RoleCode">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="ADMIN"/>
+      <xs:enumeration value="ANALYST"/>
+      <xs:enumeration value="STORE_MANAGER"/>
+      <xs:enumeration value="MARKETING"/>
+      <xs:enumeration value="INVENTORY_PLANNER"/>
+      <xs:enumeration value="AUDITOR"/>
+      <xs:enumeration value="CUSTOMER"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="SignInRequest">
+    <xs:sequence>
+      <xs:element name="email" type="auth:Email"/>
+      <xs:element name="password" type="auth:Password"/>
+      <xs:element name="device_label" type="auth:DeviceLabel"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="RefreshRequest">
+    <xs:sequence>
+      <xs:element name="refresh_token" type="auth:RefreshToken"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="TokenResult">
+    <xs:sequence>
+      <xs:element name="access_token" type="xs:string"/>
+      <xs:element name="refresh_token" type="xs:string"/>
+      <xs:element name="token_type" type="auth:BearerTokenType"/>
+      <xs:element name="expires_in" type="auth:AccessTokenLifetime"/>
+      <xs:element name="expires_at" type="xs:dateTime"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SessionClaims">
+    <xs:sequence>
+      <xs:element name="sub" type="auth:Subject"/>
+      <xs:element name="sid" type="auth:Uuid"/>
+      <xs:element name="role" type="auth:RoleCode"/>
+      <xs:element name="issued_at" type="xs:dateTime"/>
+      <xs:element name="expires_at" type="xs:dateTime"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name="SignInRequest" type="auth:SignInRequest"/>
+  <xs:element name="RefreshRequest" type="auth:RefreshRequest"/>
+  <xs:element name="TokenResult" type="auth:TokenResult"/>
+  <xs:element name="SessionClaims" type="auth:SessionClaims"/>
+</xs:schema>

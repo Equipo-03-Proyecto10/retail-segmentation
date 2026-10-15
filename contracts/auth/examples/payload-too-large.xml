@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>payload_too_large</code>
+  <message>The request body exceeds 64 KiB.</message>
+  <correlation_id>auth-example-413</correlation_id>
+</Error>

@@ -1,0 +1,6 @@
+{
+  "code": "session_revoked",
+  "message": "The session is no longer live.",
+  "correlation_id": "auth-example-session-revoked",
+  "details": []
+}

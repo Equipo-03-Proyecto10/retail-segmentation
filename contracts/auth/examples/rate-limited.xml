@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>rate_limited</code>
+  <message>Too many sign-in attempts; retry later.</message>
+  <correlation_id>auth-example-429</correlation_id>
+</Error>

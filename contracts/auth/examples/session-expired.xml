@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>session_expired</code>
+  <message>The session reached its absolute end.</message>
+  <correlation_id>auth-example-session-expired</correlation_id>
+</Error>

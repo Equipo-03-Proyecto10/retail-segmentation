@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>unknown_category</code>
+  <message>A category id references no category.</message>
+  <correlation_id>corr-unknown-category</correlation_id>
+  <details>
+    <field>category_ids[1]</field>
+    <code>unknown</code>
+  </details>
+</Error>

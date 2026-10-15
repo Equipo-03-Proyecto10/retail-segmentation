@@ -140,7 +140,7 @@ Every service user has these rules:
 - [ADR-0044](0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) lists the streams, and these ACLs grant exactly its producers and consumers.
 - [ADR-0038](0038-mongodb-holds-in-store-engagement-owned-by-engagement-service-alone.md) keeps live counters under `engagement:live:*` on `redis-cache` and rebuilds them from MongoDB.
 - [ADR-0040](0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md) runs both instances, counts their 96 MB and 160 MB, and its deploy job installs `redis/<name>.acl`.
-- `.env.example` documents `REDIS_STATE_URL`, `REDIS_CACHE_URL`, one `REDIS_<SERVICE>_PASSWORD` per service and `REDIS_OPS_PASSWORD`.
+- `.env.example` documents `REDIS_STATE_URL`, `REDIS_CACHE_URL`, one `REDIS_<SUFFIX>_PASSWORD` per service (`<SUFFIX>` is its `svc_` role suffix, upper-cased) and `REDIS_OPS_PASSWORD`.
 - [`../datastores/redis-design.md`](../datastores/redis-design.md) is rewritten as this specification (F13-05).
 
 ## Compliance

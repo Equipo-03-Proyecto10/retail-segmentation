@@ -35,7 +35,7 @@ This record cannot remove that cost; it can only make drift visible.
 ## Decision
 
 No service imports, copies or builds from `web/`. Each service is built from its own directory, with its own lock file and
-`VERSION`. A rule that services share with the web is carried either by the database, which both writers pass through, or by
+`VERSION`. A rule that services share with the web is carried either by the database, for each writer its constraint or guard applies to, or by
 a port in the service, pinned to the web's behaviour by golden fixtures captured once from the web on the seed database.
 Mechanics common to all services come from two mechanism-only kits, released by tag and pinned per service.
 

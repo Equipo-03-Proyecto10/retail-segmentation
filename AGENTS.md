@@ -73,8 +73,8 @@ clean in that order against an empty PostgreSQL. A change that breaks a clean
 run is a broken change, not a migration problem. Each service boundary's
 section of `sql/01_schema.sql` is idempotent (`IF NOT EXISTS`,
 `CREATE OR REPLACE`), so an operator applies that committed section to the live
-database before the service that needs it deploys (ADR-0040); nothing else is
-applied by hand.
+database before the service that needs it deploys (ADR-0040); a service's committed
+`mongo/init.js` is applied the same way (ADR-0038); nothing else is applied by hand.
 
 **The model is normalized to 4NF, and each normalization decision is written
 down.** The justification is a graded deliverable, not a comment.

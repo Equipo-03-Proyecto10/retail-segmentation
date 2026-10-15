@@ -50,7 +50,7 @@ CSV, the rejection report, the reconciled load counts, and a total derived from 
 4. `INSERT INTO transaction_line`, one row per line.
 5. For each line, in ascending `product_id` order, `SELECT api_stock.consume_v1($1::smallint, $2, $3)`. The store id is cast,
    because the contract's first parameter is `smallint` (ADR-0044).
-6. `INSERT INTO sales.sale_capture (transaction_id, request_sha256, recorded_by)`.
+6. `INSERT INTO sales.sale_capture (transaction_id, request_sha256, recorded_by)`, with `recorded_by` the token's `sub`.
 7. `COMMIT`.
 
 A 40P01 or 40001 restarts the whole transaction from step 1, at most three times; nothing committed, so that is safe. Ascending

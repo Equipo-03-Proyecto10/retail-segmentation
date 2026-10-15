@@ -240,6 +240,7 @@ The distributed stage is complete when all of these are checkable and pass:
 |---|---|---|
 | Q-11 | Is account email verification part of the second delivery? | No, until F13-10 (#446) records the Product Owner's answer |
 | Q-13 | The instructor is asked to confirm in writing that (1) read-only boundaries, such as segments and audit-trail, count as services implementing one business rule, and (2) services that co-write legacy `public` tables with the frozen web, reading across boundaries only through versioned `api_*` views and exchanging events only on Redis Streams, satisfy "totally independent" | Yes to both. [ADR-0043][adr-0043] keeps the floor of ten even under the strict reading of (1) |
+| Q-14 | AN-04 (#419) notifies when an administrator deactivates a user, and its notifications are produced by the web's service layer. A deactivation made through users-service (`POST /v1/users/{user_id}/deactivation`) never passes through that layer. Must it notify too and, if so, through a definer trigger on `app_user` declared in `sql/01_schema.sql`? | No: only deactivations made in the web notify, until the team decides on #419 |
 
 [adr-0016]: adr/0016-the-second-delivery-reinstates-the-distributed-architecture.md
 [adr-0034]: adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md

@@ -35,7 +35,8 @@ schema per outbox owner (the eight listed in ADR-0044). `public` holds only web 
 tables, unchanged, plus any web-only table the analytics gaps of #405 add (AN-04's notification
 table). No `svc_*` role holds any privilege on a `public` table outside the legacy 27. `retail_app`
 gets no USAGE on any schema except `public`, so the web cannot even name a service table. All DDL
-stays in `sql/01_schema.sql`, one section per boundary, and all seed rows in `sql/02_seed_30_per_table.sql`. The 30-row rule applies to every schema; an exempt table is named in
+stays in `sql/01_schema.sql`, one section per boundary, and all seed rows in
+`sql/02_seed_30_per_table.sql`. The 30-row rule applies to every schema; an exempt table is named in
 `sql/seed-exempt.txt` by its schema-qualified name, with its reason.
 
 ### The tables

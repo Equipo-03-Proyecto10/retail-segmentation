@@ -1,6 +1,6 @@
 # check-ins
 
-> **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on  (F13-01, #408).
+> **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
 > **One rule:** A staff check-in is verified only when the server-computed distance lies within the store's geofence at acceptable accuracy, and overrides are append-only reviews (RN-56)
 
 ## Summary

@@ -1,6 +1,6 @@
 # stores
 
-> **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on  (F13-01, #408).
+> **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
 > **One rule:** Each store has at most one location, with valid coordinates and a 25–2000 m geofence, set by ADMIN only (RN-53)
 
 ## Summary

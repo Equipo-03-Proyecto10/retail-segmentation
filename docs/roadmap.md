@@ -114,7 +114,7 @@ now choose it:
 | Services never import or copy the web system | [ADR-0045](adr/0045-services-never-import-the-web-system.md) |
 | Service-owned tables live in service schemas, never in `public` | [ADR-0046](adr/0046-service-owned-data-lives-in-service-schemas.md) |
 
-That set was accepted on  (F13-01, #408), and distributed work may start. Each
+That set was accepted on 2026-10-15 (F13-01, #408), and distributed work may start. Each
 service then enters in two steps:
 
 1. **Its contract** merges and passes CI validation.
@@ -129,7 +129,7 @@ PostgreSQL directly, which is how it shows the sales the services record.
 ## The second delivery
 
 [ADR-0016](adr/0016-the-second-delivery-reinstates-the-distributed-architecture.md)
-is Accepted. It makes the monolith one component of the distributed second
+is accepted, and partially superseded by ADR-0043 for the service count only. It makes the monolith one component of the distributed second
 delivery; it does not replace it. The course scope requires all of the
 following:
 

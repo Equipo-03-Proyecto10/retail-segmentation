@@ -1,6 +1,6 @@
 # stock
 
-> **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on  (F13-01, #408).
+> **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
 > **One rule:** Stock is never negative and is consumed only by an accepted sale, atomically with it (RN-14, ADR-0031)
 
 ## Summary

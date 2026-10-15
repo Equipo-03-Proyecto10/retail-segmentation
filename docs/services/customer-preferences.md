@@ -1,6 +1,6 @@
 # customer-preferences
 
-> **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on  (F13-01, #408).
+> **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
 > **One rule:** A customer's preferred channels and interest categories are each replaced only atomically, as a whole set of existing references (RN-54)
 
 ## Summary

@@ -176,7 +176,7 @@ through capture triggers in `sql/01_schema.sql` that fill the owner's outbox.
 | 17 | Android client | Kotlin floor app over JSON | #403 |
 | 18 | Deployment and demonstration | Per-service deployment on the instance, NGINX routes, negative tests, end-to-end demo, diagrams | #404 |
 
-Story ids and the dependency graph are in [`backlog.md`](backlog.md). Its phase 13–18 tables follow the fifteen-service design; where they differ, ADR-0034 to ADR-0046 win. F13-01 (#408) accepted the decision set on .
+Story ids and the dependency graph are in [`backlog.md`](backlog.md). Its phase 13–18 tables follow the fifteen-service design; where they differ, ADR-0034 to ADR-0046 win. F13-01 (#408) accepted the decision set on 2026-10-15.
 
 ## 7. Deliverables
 
@@ -228,14 +228,14 @@ The distributed stage is complete when all of these are checkable and pass:
 | Postfix SMTP for verification | Out of scope pending F13-10 | Not in our requirements, and port 25 is blocked on GCP |
 | Services for books, authors, orders and payments | Fifteen single-rule services over our retail domain | Our domain has no payments, and the instructor requires one business rule per service ([ADR-0034][adr-0034], [ADR-0043][adr-0043]) |
 
-## 11. Answered by the instructor
+## 11. Answered questions
 
 | ID | Answer |
 |---|---|
 | Q-12 | **ANSWERED (2026-10-13).** The course's Redis requirement says that every component consults Redis during authentication or authorization. That means the microservices, not the web system. The web system connects to no Redis and keeps its PostgreSQL sessions ([ADR-0022](adr/0022-sessions-are-resolved-server-side-on-every-request.md)). Only the services consult Redis ([ADR-0037][adr-0037]) |
-| Q-13 | **ANSWERED ().** Yes to both: (1) read-only boundaries, such as segments and audit-trail, count as services implementing one business rule, and (2) services that co-write legacy `public` tables with the frozen web, reading across boundaries only through versioned `api_*` views and exchanging events only on Redis Streams, satisfy "totally independent" ([ADR-0043][adr-0043], [ADR-0034][adr-0034]) |
+| Q-13 | **ANSWERED by the instructor (2026-10-15).** Yes to both: (1) read-only boundaries, such as segments and audit-trail, count as services implementing one business rule, and (2) services that co-write legacy `public` tables with the frozen web, reading across boundaries only through versioned `api_*` views and exchanging events only on Redis Streams, satisfy "totally independent" ([ADR-0043][adr-0043], [ADR-0034][adr-0034]) |
 
-**Decided by the team.** Q-14 (): **No.** Only deactivations made in the web create AN-04's notification (#419). A deactivation through users-service (`POST /v1/users/{user_id}/deactivation`) creates none, and no trigger on `app_user` is added for it.
+**Decided by the team.** Q-14 (2026-10-15): **No.** Only deactivations made in the web create AN-04's notification (#419). A deactivation through users-service (`POST /v1/users/{user_id}/deactivation`) creates none, and no trigger on `app_user` is added for it.
 
 ## 12. Open questions
 

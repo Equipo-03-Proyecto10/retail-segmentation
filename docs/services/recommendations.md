@@ -1,6 +1,6 @@
 # recommendations
 
-> **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on  (F13-01, #408).
+> **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
 > **One rule:** Recommend active, in-stock products not already bought, matching a stated signal, with reasons, or report why nothing qualifies (RN-40)
 
 ## Summary

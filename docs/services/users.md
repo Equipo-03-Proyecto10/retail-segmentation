@@ -1,6 +1,6 @@
 # users
 
-> **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on  (F13-01, #408).
+> **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
 > **One rule:** Accounts obey the single-administrator rule (never two, never zero, moved only by an explicit transfer), have case-insensitively unique emails, and are deactivated, never deleted (RN-01, RN-02, RN-04)
 
 ## Summary

@@ -41,7 +41,7 @@ body:
     id: phase
     attributes:
       label: Scope phase
-      description: From `docs/scope.md` §4 (0–6), `docs/scope-delivery-2-analytics.md` §5 (7–12) and `docs/scope-delivery-2-distributed.md` §5 (13–18).
+      description: From `docs/scope.md` §4 (0–6), `docs/scope-delivery-2-analytics.md` §5 (7–12) and `docs/scope-delivery-2-distributed.md` §6 (13–18).
       options:
         - "0 — Preparation"
         - "1 — GCP infrastructure"

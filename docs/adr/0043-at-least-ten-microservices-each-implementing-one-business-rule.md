@@ -23,7 +23,7 @@ The fourth turns ten into a floor; the third makes the count follow the domain. 
 business rule". `docs/business-rules.md` gives every enforced invariant an RN id, but segments and
 audit-trail enforce no write invariant: they only read and report. Whether the instructor counts
 such a read-only boundary was the genuine uncertainty, asked as **Q-13**; the instructor confirmed on
- that it counts. This record still keeps a margin that survives either answer.
+2026-10-15 that it counts. This record still keeps a margin that survives either answer.
 
 ## Decision
 
@@ -79,7 +79,7 @@ its idempotent section of `sql/01_schema.sql`. It also adds lines to shared file
 | Keep ADR-0016's six to ten, with eight grouped boundaries | Grouped boundaries hold two or three rules each, for example products with categories, or customers with preferences. That breaks the one-rule requirement. Six is also below the instructor's floor |
 | Build exactly ten services | Ten leaves no slack. If even one boundary were judged not to be a rule, the stage would fail the minimum. It would also force merges of rules the domain keeps apart |
 | Split until every RN id is its own service (thirty or more) | Many RN ids are facets of one invariant. RN-06, RN-07 and RN-33 all protect the category tree. Splitting them would put one table under several writers, which ADR-0034 forbids, and would produce filler services that the instructor excluded |
-| Count only services that write, and add services until fifteen of them write | It would need writers for data the domain does not have, such as service-side segmentation runs, which the frozen web owns (RN-05). That is filler under another name. Waiting for Q-13 costs nothing, because the floor holds under the strict reading too |
+| Count only services that write, and add services until fifteen of them write | It would need writers for data the domain does not have, such as service-side segmentation runs, which the frozen web owns (RN-05). That is filler under another name. Q-13 has since confirmed that read-only boundaries count, and the floor holds under the strict reading too |
 | Replace ADR-0016 entirely | ADR-0016's reinstatement of the distributed architecture, its four components, and its rule that nothing is built before its record are all still right. Only the count is wrong |
 
 ## Consequences
@@ -98,7 +98,7 @@ its idempotent section of `sql/01_schema.sql`. It also adds lines to shared file
 - **Rules that span facts are coordinated through the database.** A sale consumes stock across two
   boundaries, through a versioned contract ([ADR-0039](0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md),
   [ADR-0044](0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md)).
-- **The definition rested on Q-13,** which the instructor confirmed on . No core service is cut
+- **The definition rested on Q-13,** which the instructor confirmed on 2026-10-15. No core service is cut
   anyway: under the strict reading the core has exactly ten that count, and the margin stays.
 
 **What must now be true elsewhere.**

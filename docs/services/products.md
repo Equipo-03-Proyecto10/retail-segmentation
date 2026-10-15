@@ -1,6 +1,6 @@
 # products
 
-> **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on  (F13-01, #408).
+> **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
 > **One rule:** A product has a unique SKU, a price that is never negative and exactly one existing category, and is retired by deactivation (RN-10, RN-11)
 
 ## Summary

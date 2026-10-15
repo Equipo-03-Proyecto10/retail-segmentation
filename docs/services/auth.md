@@ -1,6 +1,6 @@
 # auth
 
-> **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on  (F13-01, #408).
+> **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
 > **One rule:** A principal is authenticated only by a valid credential of an active account, and every token stays usable only while its session is live (RN-52; related RN-03)
 
 ## Summary

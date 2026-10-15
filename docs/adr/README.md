@@ -25,6 +25,7 @@ constraint other work must respect needs an ADR, or a reference to one.
 | `Accepted` | Binding, and immutable from this point |
 | `Rejected` | Considered and declined. Kept, because the reasoning is worth as much as an acceptance |
 | `Superseded by ADR-NNNN` | Replaced. The successor states what changed |
+| `Partially superseded by ADR-NNNN` | Replaced in part. The successor names the part it replaces; the rest stays binding |
 
 Acceptance is a status transition, not a forbidden edit to an accepted
 record: a proposal becomes immutable when it is accepted. The ADR owner
@@ -73,12 +74,12 @@ ADR-0034 to ADR-0046 are the distributed-stage decision set that ADR-0016
 requires before any service, contract or client exists (#398). ADR-0034 to
 ADR-0042 were first proposed for eight services. They were rewritten in place,
 while still `Proposed`, for the fifteen single-rule services the instructor's
-requirements call for, and ADR-0043 to ADR-0046 were added. They are proposed
+requirements call for, and ADR-0043 to ADR-0046 were added. They were proposed
 together in one pull request, with the documents that rest on them:
 `AGENTS.md`, `docs/roadmap.md`, `docs/requirements.md`,
 `docs/business-rules.md`, `docs/datastores/README.md` and
 `docs/scope-delivery-2-distributed.md`.
-**The team reviewed the thirteen and accepted all of them on **
+**The team reviewed the thirteen and accepted all of them on 2026-10-15**
 (F13-01, #408), before that pull request merged, so this set does not repeat
 what happened to 0014–0016.
 

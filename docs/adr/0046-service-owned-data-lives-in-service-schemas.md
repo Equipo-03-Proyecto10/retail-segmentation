@@ -23,17 +23,19 @@ reasons the repository already enforces:
   on any ordinary `public` table without web DML, except seven tables each exempted by an ADR.
 
 Also: the CI 30-row loop reads only `public`, and `sql/seed-exempt.txt` holds bare names; `fn_audit`
-records `TG_TABLE_NAME` without its schema; all 27 `public` tables are the web's. What is uncertain is
+records `TG_TABLE_NAME` without its schema; every `public` table is the web's, the 27 legacy ones and
+any the analytics gaps of #405 add, such as AN-04's notification table. What is uncertain is
 how a reviewer reads a model spanning schemas, as the graded 4NF argument now covers more relations.
 
 ## Decision
 
 Every table owned by a service that the first delivery did not already have lives in a schema named
 for its boundary, never in `public`: `stores`, `checkins` and `sales`, plus one `<suffix>_events`
-schema per outbox owner (the eight listed in ADR-0044). `public` keeps exactly the 27 legacy tables,
-unchanged. `retail_app` gets no USAGE on any schema except `public`, so the web cannot even name a
-service table. All DDL stays in `sql/01_schema.sql`, one section per boundary, and all seed rows in
-`sql/02_seed_30_per_table.sql`. The 30-row rule applies to every schema; an exempt table is named in
+schema per outbox owner (the eight listed in ADR-0044). `public` holds only web tables: the 27 legacy
+tables, unchanged, plus any web-only table the analytics gaps of #405 add (AN-04's notification
+table). No `svc_*` role holds any privilege on a `public` table outside the legacy 27. `retail_app`
+gets no USAGE on any schema except `public`, so the web cannot even name a service table. All DDL
+stays in `sql/01_schema.sql`, one section per boundary, and all seed rows in `sql/02_seed_30_per_table.sql`. The 30-row rule applies to every schema; an exempt table is named in
 `sql/seed-exempt.txt` by its schema-qualified name, with its reason.
 
 ### The tables
@@ -144,8 +146,22 @@ RAISE NOTICE 'PASS: no service schema is reachable by the application role';
 ```
 As the database owner after the three scripts, every query returns zero rows:
 ```sql
--- 1. public holds exactly the 27 legacy tables.
-SELECT count(*) FROM pg_tables WHERE schemaname = 'public' HAVING count(*) <> 27;
+-- 1. No svc_* role holds a privilege on a public table outside the 27 legacy tables.
+SELECT c.relname, r.rolname
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+CROSS JOIN pg_roles r
+WHERE n.nspname = 'public'
+  AND c.relkind IN ('r', 'p')
+  AND r.rolname LIKE 'svc\_%'
+  AND c.relname NOT IN ('role', 'channel', 'category', 'store', 'segment_rule', 'segment_label',
+        'segment', 'app_user', 'app_session', 'customer', 'customer_preferred_channel',
+        'customer_interest_category', 'segmentation_run', 'customer_segment_history', 'product',
+        'transaction', 'transaction_line', 'sales_load', 'sales_load_rejection', 'campaign',
+        'experiment', 'experiment_group', 'experiment_assignment', 'experiment_exposure',
+        'experiment_conversion', 'inventory', 'audit_log')
+  AND (has_table_privilege(r.oid, c.oid, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
+       OR has_any_column_privilege(r.oid, c.oid, 'SELECT, INSERT, UPDATE, REFERENCES'));
 -- 2. api_* schemas hold no tables.
 SELECT schemaname, tablename FROM pg_tables WHERE schemaname LIKE 'api\_%';
 -- 3. An audited table's name is unique across schemas, so audit_log.entity stays unambiguous.

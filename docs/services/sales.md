@@ -160,7 +160,7 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 | Dependency down | Effect |
 |---|---|
-| PostgreSQL unreachable | `/health/ready` reports not ready and operations that need the database fail (the contract fixes the code). `/health/live` stays 200 |
+| PostgreSQL unreachable | `/health/ready` reports not ready, and every operation that reads or writes PostgreSQL answers 503 `database_unavailable`, never 500 (ADR-0035). `/health/live` stays 200 |
 | `redis-state` down | Sales are refused with 503 `auth_unavailable` like any authenticated call. Idempotency does not depend on Redis, so a retry after recovery cannot create a second sale |
 | `redis-state` unreachable or over 200 ms | Every authenticated request returns 503 `auth_unavailable`; authentication fails closed and never falls back to the signature alone |
 | `redis-state` full or down | The relay cannot `XADD`; unrelayed outbox rows wait until there is room, and consumers' caches expire by TTL |

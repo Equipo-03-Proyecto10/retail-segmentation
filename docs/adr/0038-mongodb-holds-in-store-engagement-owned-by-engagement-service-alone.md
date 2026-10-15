@@ -16,7 +16,7 @@ now duplicates a fact PostgreSQL holds and the web reads: segment history and ru
 the RN-34 consumption profile. An earlier draft replaced them with one `customer_activity` collection of QR scans, GPS
 check-ins, recommendation clicks and purchases. Two of those four do not belong in MongoDB:
 - **Check-ins carry a rule that needs a join** with `stores.store_location`, and an override is an append-only review. They
-  live in the `checkins` schema of PostgreSQL ([ADR-0046](0046-service-owned-data-lives-in-service-schemas.md)), where the web can see them.
+  live in the `checkins` schema of PostgreSQL ([ADR-0046](0046-service-owned-data-lives-in-service-schemas.md)), next to the store locations they are checked against.
 - **Purchases are already `transaction` rows** ([ADR-0039](0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md)).
   A `PURCHASE` document would be a second copy, kept in step by a consumer, and the two would eventually disagree.
 

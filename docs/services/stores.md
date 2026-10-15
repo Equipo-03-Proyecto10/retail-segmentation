@@ -124,7 +124,7 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 | Dependency down | Effect |
 |---|---|
-| PostgreSQL unreachable | `/health/ready` reports not ready and operations that need the database fail (the contract fixes the code). `/health/live` stays 200 |
+| PostgreSQL unreachable | `/health/ready` reports not ready, and every operation that reads or writes PostgreSQL answers 503 `database_unavailable`, never 500 (ADR-0035). `/health/live` stays 200 |
 | `redis-cache` down | Reads fall through to PostgreSQL; same answer, slower |
 | `redis-state` unreachable or over 200 ms | Every authenticated request returns 503 `auth_unavailable`; authentication fails closed and never falls back to the signature alone |
 | `redis-state` full or down | The relay cannot `XADD`; unrelayed outbox rows wait until there is room, and consumers' caches expire by TTL |
@@ -132,7 +132,7 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 ## Compliance
 
-- [ADR-0046](../adr/0046-service-owned-data-lives-in-service-schemas.md) Compliance (schema-qualified 30-row seed, `public` holds exactly the 27 legacy tables).
+- [ADR-0046](../adr/0046-service-owned-data-lives-in-service-schemas.md) Compliance (schema-qualified 30-row seed, no `svc_*` privilege on a `public` table outside the 27 legacy tables).
 - [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) Compliance (`store` readable by `svc_stores` only; no DELETE on `store`).
 - Registry and grant checks: [ADR-0043](../adr/0043-at-least-ten-microservices-each-implementing-one-business-rule.md) (registry), [ADR-0035](../adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md) (resources are unique), [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) (grant matrix).
 

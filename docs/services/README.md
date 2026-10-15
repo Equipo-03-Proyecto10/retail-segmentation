@@ -21,7 +21,7 @@ The design is governed by ADR-0034 to ADR-0046. Every service implements exactly
 | [recommendations](./recommendations.md) | Flask | 5011 | core | Recommend active, in-stock, not-yet-bought products with reasons, or say why none | RN-40 |
 | [engagement](./engagement.md) | Flask + MongoDB | 5012 | core | QR scans and recommendation clicks recorded once, attributed, voided never deleted | RN-55 |
 | [check-ins](./check-ins.md) | Rust (axum) | 5013 | core | A check-in is verified only within the store's geofence; overrides are append-only reviews | RN-56 |
-| [campaigns](./campaigns.md) | Flask | 5014 | second | A campaign moves only along the allowed states, is edited only in DRAFT | RN-15, RN-16, RN-22, RN-31, RN-32 |
+| [campaigns](./campaigns.md) | Flask | 5014 | second | A campaign moves only along the allowed states, is edited only in DRAFT | RN-15, RN-16, RN-22, RN-24 (activation), RN-31, RN-32, RN-49 (activation) |
 | [audit-trail](./audit-trail.md) | Rust (axum) | 5015 | second | An append-only, attributed, credential-free audit readable by ADMIN and AUDITOR only | RN-28, RN-29, RN-30 |
 
 The full one-sentence rule of each service is in its sheet and in the registry of [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md).
@@ -59,7 +59,7 @@ The design accepts a small number of deliberate deviations from the strict readi
 | [E-10](#e-10--read-owners-of-tables-only-the-web-writes) | read owners of tables only the web writes | [users](./users.md), [stores](./stores.md), [stock](./stock.md), [sales](./sales.md), [segments](./segments.md), [audit-trail](./audit-trail.md) |
 | [E-11](#e-11--foreign-keys-cross-service-boundaries) | foreign keys cross service boundaries | [customers](./customers.md), [customer-preferences](./customer-preferences.md), [sales](./sales.md), [check-ins](./check-ins.md), [stores](./stores.md), [campaigns](./campaigns.md) |
 | [E-12](#e-12--audit_log-is-the-one-table-every-writer-shares) | audit_log is the one table every writer shares | [audit-trail](./audit-trail.md), [users](./users.md), [products](./products.md), [categories](./categories.md), [stores](./stores.md), [customers](./customers.md), [campaigns](./campaigns.md) |
-| [E-13](#e-13--a-categories-delete-looks-at-customer-interests) | a categories delete looks at customer interests | [categories](./categories.md) |
+| [E-13](#e-13--a-definer-guard-reads-rows-its-service-cannot-read) | a definer guard reads rows its service cannot read | [categories](./categories.md), [campaigns](./campaigns.md) |
 | [E-14](#e-14--campaigns-shares-the-webs-id-allocation-lock) | campaigns shares the web's id-allocation lock | [campaigns](./campaigns.md) |
 | [E-15](#e-15--the-credential-view-carries-the-password-hash) | the credential view carries the password hash | [auth](./auth.md), [users](./users.md) |
 | [E-16](#e-16--phone-sales-share-the-transaction-id-namespace-with-csv) | phone sales share the transaction id namespace with CSV | [sales](./sales.md) |
@@ -166,13 +166,13 @@ The design accepts a small number of deliberate deviations from the strict readi
 - **Services:** [audit-trail](./audit-trail.md), [users](./users.md), [products](./products.md), [categories](./categories.md), [stores](./stores.md), [customers](./customers.md), [campaigns](./campaigns.md)
 - **Decided in:** [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) (Compliance); [ADR-0046](../adr/0046-service-owned-data-lives-in-service-schemas.md) (The tables)
 
-### E-13 — a categories delete looks at customer interests
+### E-13 — a definer guard reads rows its service cannot read
 
-- **What:** Deleting a category is refused when customers name it as an interest, a fact owned by customer-preferences.
-- **Why it is acceptable:** `customer_interest_category` cascades on a category delete. Without the guard, a categories delete would remove another boundary's rows. The refusal protects customer-preferences' data without writing it.
-- **Guard:** `trg_category_delete_guard` reads with `definer_guard` (SELECT on that table only). It applies to `svc_*` sessions only, so the web's cascade is unchanged.
-- **Services:** [categories](./categories.md)
-- **Decided in:** [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) (Ownership and grants (no cascade))
+- **What:** Deleting a category is refused when customers name it as an interest, a fact owned by customer-preferences. Activating a campaign is refused while an attached experiment is not ready (RN-24), a fact held in the web-only `experiment` and `experiment_group` tables.
+- **Why it is acceptable:** `customer_interest_category` cascades on a category delete. Without the guard, a categories delete would remove another boundary's rows. The refusal protects customer-preferences' data without writing it. The web refuses to activate a campaign whose experiment has no treatment arm; without the guard, campaigns would activate it, because `svc_campaigns` may not read the experiment tables.
+- **Guard:** `trg_category_delete_guard` and `trg_campaign_activation_guard` read with `definer_guard` (SELECT on `customer_interest_category`, `experiment` and `experiment_group` only), and neither service gains a privilege on those tables. The delete guard applies to `svc_*` sessions and the activation guard to `svc_campaigns` sessions only, so the web's cascade and its own activation check are unchanged.
+- **Services:** [categories](./categories.md), [campaigns](./campaigns.md)
+- **Decided in:** [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) (Ownership and grants (no cascade, activation guard)); [ADR-0045](../adr/0045-services-never-import-the-web-system.md) (How a shared rule is carried)
 
 ### E-14 — campaigns shares the web's id-allocation lock
 

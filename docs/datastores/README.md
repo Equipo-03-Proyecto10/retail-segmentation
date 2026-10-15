@@ -6,6 +6,8 @@
 > disagree, the records win. In particular:
 > - Redis runs as two instances, `redis-state` and `redis-cache`, and key
 >   names follow ADR-0037's namespace.
+> - A revoked token is one whose `pub:auth:v1:live:{sid}` no longer exists
+>   (ADR-0036); the `token:revoked:{jti}` list below is not built.
 > - MongoDB holds only the engagement collections of engagement-service
 >   (`engagement_event` and `engagement_daily`, in the database
 >   `engagement`); the six collections below duplicate PostgreSQL tables and

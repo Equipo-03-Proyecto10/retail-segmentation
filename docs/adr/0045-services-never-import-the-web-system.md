@@ -45,6 +45,8 @@ Mechanics common to all services come from two mechanism-only kits, released by 
 - the CHECKs in `sql/01_schema.sql`, including `quantity_on_hand >= 0`;
 - `ux_app_user_single_administrator` and `ux_app_user_email_lower`;
 - `trg_role_code_immutable`, `trg_category_no_cycle`, and `trg_category_delete_guard`, which this stage adds;
+- `trg_campaign_activation_guard`, which this stage adds for `svc_campaigns` sessions only: it carries the web's
+  `activation_refusal` test (RN-24), since `experiment` and `experiment_group` are web-only tables the service cannot read;
 - the foreign keys with `ON DELETE RESTRICT`;
 - `api_stock.consume_v1` and `fn_audit`.
 
@@ -55,7 +57,7 @@ Mechanics common to all services come from two mechanism-only kits, released by 
 | Sales line rejection outcomes | `ingest_row` in `web/services/ingestion.py` | The outcome for each of a fixed set of lines: accepted, or the rejection reason. Covers future-dated, before registration, inactive product, non-positive quantity, non-positive price, more than two decimals, unknown references and insufficient stock | sales |
 | RN-40 recommendation lists | `recommend` in `web/services/recommendations.py`, with the `web/db/` and `web/services/consumption_profile.py` reads it uses | The status, items, nearest category and ordered reasons for **every seeded customer** | recommendations |
 | Users outcomes | `create_user`, `update_user`, `change_role`, `set_active`, `transfer_administrator` and `validate_user` in `web/services/users.py` | The accept or refuse outcome for each scenario: a second administrator, removing the only one, a transfer, a case-variant duplicate email, a malformed email | users |
-| Campaign transitions | `TRANSITIONS`, `transition`, `update_draft` and `validate_campaign` in `web/services/campaigns.py` | Every (from, to) pair, the draft-only edit rule and the end-before-start refusal | campaigns |
+| Campaign transitions | `TRANSITIONS`, `transition`, `update_draft` and `validate_campaign` in `web/services/campaigns.py` | Every (from, to) pair, the draft-only edit rule, the end-before-start refusal, and the two activation refusals: an ended campaign (RN-49) and an experiment not ready (RN-24) | campaigns |
 
 **How fixtures are captured and kept.** The capture script lives in `tests/golden/`, the one place that may import `web/`.
 It writes JSON under `services/<name>/tests/golden/`, recording the web commit, the capture date and the seed hash. Service CI

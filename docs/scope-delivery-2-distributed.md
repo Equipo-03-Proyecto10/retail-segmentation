@@ -37,7 +37,8 @@ two device capabilities; Electron consumes XML only, validated against an XSD,
 uses four or more services and runs a different process. MongoDB runs insert,
 query, update, aggregation and indexes. Redis holds sessions, revoked tokens,
 cache, counters and rate limits for the services only; JWT is shared and
-revoked through Redis. Contracts precede clients.
+revoked through Redis: a revoked token is one whose `pub:auth:v1:live:{sid}`
+no longer exists ([ADR-0036][adr-0036]). Contracts precede clients.
 
 Repository rules still in force: DDL only in `sql/01_schema.sql`, three scripts
 clean from empty, 4NF with a written justification, 30 seed rows or a

@@ -114,7 +114,7 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 | Dependency down | Effect |
 |---|---|
-| PostgreSQL unreachable | `/health/ready` reports not ready and operations that need the database fail (the contract fixes the code). `/health/live` stays 200 |
+| PostgreSQL unreachable | `/health/ready` reports not ready. `POST /v1/engagement-events` answers 503 `database_unavailable`, never 500, because it validates store, product and customer against the three published views; reads, voids and summaries use MongoDB only. `/health/live` stays 200 |
 | MongoDB down | Event operations and summaries fail; `/health/ready` is 503. Other services are unaffected |
 | `redis-cache` down | A one-store summary of today falls back to `engagement_daily` |
 | `redis-state` unreachable or over 200 ms | Every authenticated request returns 503 `auth_unavailable`; authentication fails closed and never falls back to the signature alone |

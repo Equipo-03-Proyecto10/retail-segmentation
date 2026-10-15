@@ -10,7 +10,8 @@
 
 ## Context
 
-The second delivery requires Redis "in real operation" for sessions, revoked tokens, cache, counters and rate limits, consulted during authentication. This set
+The second delivery requires Redis "in real operation" for sessions, revoked tokens, cache, counters and rate limits, consulted during authentication. A revoked token here is one whose session's
+`pub:auth:v1:live:{sid}` no longer exists. This set
 adds a liveness check on every request ([ADR-0036](0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md)) and Redis Streams relayed
 from each owner's outbox ([ADR-0044](0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md)).
 
@@ -58,7 +59,7 @@ Both instances run the same image: the 7.4 line, at an exact patch tag and diges
 | `auth:session:{sid}` | state | HASH (`user_id`, `role`, `expires_at`, password fingerprint) | remaining absolute session lifetime (≤ 12 h) | auth | auth |
 | `auth:user_sids:{user_id}` | state | SET of `sid` | remaining absolute lifetime of the user's newest session (≤ 12 h) | auth | auth |
 | `auth:refresh:{sha256}` | state | HASH (`sid`, `state`) | remaining absolute session lifetime (≤ 12 h) | auth | auth |
-| `auth:revoked:jti:{jti}` | state | STRING | until the revoked token's `exp` (≤ 10 min) | auth | auth |
+| `auth:refresh_family:{sid}` | state | SET of refresh-token SHA-256 values | remaining absolute session lifetime (≤ 12 h) | auth | auth |
 | `auth:rl:login:{ip}`, `auth:fail:{sha256(email)}:{ip}` | state | STRING `INCR` | the limit's window (15 min for failures) | auth | auth |
 | `pub:auth:v1:live:{sid}` | state | STRING | remaining absolute session lifetime (≤ 12 h), set at sign-in, never extended | auth | every service, `EXISTS` only |
 | `<service>:rl:*` (`users:rl:pwd:{user_id}` included) | state | STRING `INCR` | the limit's window | that service | that service |
@@ -91,7 +92,8 @@ Every service user has these rules:
 - **Producer:** `(~stream:<own streams> +xadd)`, plus `+waitaof`.
 - **Consumer:** `(~stream:<consumed streams> +xreadgroup +xack +xgroup|create +xpending +xclaim)`, with read-write key permission
   (`~`, not `%R~`), because XREADGROUP updates the pending entries list. A consumer never holds `+xadd` on a stream it does not own.
-- **auth also gets `+waitaof`,** for its revocations ([ADR-0036](0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md)).
+- **auth also gets `+waitaof`,** for its revocations, **and `+multi +exec +discard +watch +unwatch`,** for its WATCH/MULTI/EXEC refresh rotation ([ADR-0036](0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md)).
+  No other service gets a transaction command, and no service gets `@scripting`.
 
 ### Failure behaviour
 
@@ -156,7 +158,8 @@ grep -rniE '\bredis\b' web/ && echo "FAIL: the web system references Redis (Q-12
 ```
 
 `deploy/infra/check-redis.sh` runs the per-user checks, and prints nothing when they hold:
-- every non-auth user may only `EXISTS` the liveness family, and is denied `DEL` on it, `auth:*`, other services' prefixes, `SCAN`, `KEYS`, `RANDOMKEY` and `FLUSHALL`;
+- every non-auth user may only `EXISTS` the liveness family, and is denied `DEL` on it, `auth:*`, other services' prefixes, `SCAN`, `KEYS`, `RANDOMKEY`, `FLUSHALL` and `MULTI`;
+- `svc_auth` may run `MULTI`, and no user may run `EVAL`;
 - only a stream's producer may `XADD` to it, as named by `contracts/streams/<producer>.<event>.v1.md`;
 - every non-stream key on `redis-state` has a TTL, and no `*:cache:*` key lives there.
 

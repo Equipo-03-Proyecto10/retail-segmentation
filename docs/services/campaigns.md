@@ -1,7 +1,7 @@
 # campaigns
 
 > **Status:** Planned (phase 14, second wave). Not built until ADR-0034 to ADR-0046 are accepted (F13-01, #408).
-> **One rule:** A campaign moves only DRAFT→ACTIVE/CANCELLED and ACTIVE→FINISHED/CANCELLED, is edited only in DRAFT, and never ends before it starts (RN-15, RN-16, RN-22, RN-31, RN-32)
+> **One rule:** A campaign moves only DRAFT→ACTIVE/CANCELLED and ACTIVE→FINISHED/CANCELLED, is edited only in DRAFT, never ends before it starts, and is activated only before it has ended and while every attached experiment is ready (RN-15, RN-16, RN-22, RN-24 (activation), RN-31, RN-32, RN-49 (activation))
 
 ## Summary
 
@@ -16,12 +16,13 @@
 | MongoDB | — |
 | Compose project / image | `mosaiq-campaigns` / `ghcr.io/equipo-03-proyecto10/mosaiq-campaigns` |
 | Used by | Electron: campaigns (second wave, F16-08). |
-| Governing ADRs | [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md), [ADR-0043](../adr/0043-at-least-ten-microservices-each-implementing-one-business-rule.md) |
+| Governing ADRs | [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md), [ADR-0043](../adr/0043-at-least-ten-microservices-each-implementing-one-business-rule.md), [ADR-0045](../adr/0045-services-never-import-the-web-system.md) |
 
 ## Business rule
 
 - Each transition is conditional on the status that was read (`expected_status`), so two administrators cannot both move a campaign. Edits are allowed only in DRAFT, and the end date is never before the start.
 - `campaign_id` is allocated as max+1 under the web's advisory lock key 221001, with a retry on 23505 (E-14). A campaign targets a stable segment label code. No DELETE grant.
+- Activation is refused for a campaign whose `ends_on` is before PostgreSQL's `CURRENT_DATE`, checked by the service in the same transaction (RN-49), and by `trg_campaign_activation_guard` while an attached experiment has no treatment group, or has no control and other than two treatment groups (RN-24, E-13). The guard reads the web-only experiment tables as `definer_guard` and fires for `svc_campaigns` sessions only.
 
 ## Endpoints
 
@@ -41,7 +42,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 | Object | Kind | Access | Notes |
 |---|---|---|---|
-| `campaign` | Table (`public`) | S+W: SELECT, INSERT, UPDATE; no DELETE | Audited (E-12); the web is a legacy co-writer (E-09) |
+| `campaign` | Table (`public`) | S+W: SELECT, INSERT, UPDATE; no DELETE (every activation passes the guard) | Audited (E-12); the web is a legacy co-writer (E-09) |
 
 ## Database contracts
 
@@ -67,6 +68,8 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | 409 | `campaign_not_draft` | An edit outside DRAFT |
 | 409 | `illegal_transition` | A move the state machine does not allow |
 | 409 | `status_changed` | `expected_status` no longer matches |
+| 409 | `campaign_ended` | A move to ACTIVE after `ends_on` (RN-49) |
+| 409 | `experiment_not_ready` | A move to ACTIVE while an attached experiment is not ready, refused by `trg_campaign_activation_guard` (RN-24, E-13) |
 | 422 | Undecided; the contract story fixes the code | An end date before the start (F14-27 fixes the code) |
 
 ## Accepted exceptions
@@ -93,6 +96,13 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 - **Why it is acceptable:** The audit is a cross-cutting append-only record (RN-28 to RN-30). One writer function keeps it uniform and attributable, and services pass the actor with `set_config('mosaiq.user_id', <sub>, true)`.
 - **Guard:** `fn_audit` is SECURITY DEFINER, owned by `definer_audit`. No `svc_*` role writes the table, and only `svc_audit_trail` reads it.
 - **Decided in:** [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) (Compliance); [ADR-0046](../adr/0046-service-owned-data-lives-in-service-schemas.md) (The tables). Register: [E-12](./README.md#e-12--audit_log-is-the-one-table-every-writer-shares).
+
+### E-13 — a definer guard reads rows its service cannot read
+
+- **What:** Deleting a category is refused when customers name it as an interest, a fact owned by customer-preferences. Activating a campaign is refused while an attached experiment is not ready (RN-24), a fact held in the web-only `experiment` and `experiment_group` tables.
+- **Why it is acceptable:** `customer_interest_category` cascades on a category delete. Without the guard, a categories delete would remove another boundary's rows. The refusal protects customer-preferences' data without writing it. The web refuses to activate a campaign whose experiment has no treatment arm; without the guard, campaigns would activate it, because `svc_campaigns` may not read the experiment tables.
+- **Guard:** `trg_category_delete_guard` and `trg_campaign_activation_guard` read with `definer_guard` (SELECT on `customer_interest_category`, `experiment` and `experiment_group` only), and neither service gains a privilege on those tables. The delete guard applies to `svc_*` sessions and the activation guard to `svc_campaigns` sessions only, so the web's cascade and its own activation check are unchanged.
+- **Decided in:** [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) (Ownership and grants (no cascade, activation guard)); [ADR-0045](../adr/0045-services-never-import-the-web-system.md) (How a shared rule is carried). Register: [E-13](./README.md#e-13--a-definer-guard-reads-rows-its-service-cannot-read).
 
 ### E-14 — campaigns shares the web's id-allocation lock
 
@@ -133,14 +143,14 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 | Dependency down | Effect |
 |---|---|
-| PostgreSQL unreachable | `/health/ready` reports not ready and operations that need the database fail (the contract fixes the code). `/health/live` stays 200 |
+| PostgreSQL unreachable | `/health/ready` reports not ready, and every operation that reads or writes PostgreSQL answers 503 `database_unavailable`, never 500 (ADR-0035). `/health/live` stays 200 |
 | Second-wave service | If memory runs short it is dropped first (ADR-0043); nothing else depends on it |
 | `redis-state` unreachable or over 200 ms | Every authenticated request returns 503 `auth_unavailable`; authentication fails closed and never falls back to the signature alone |
 | Any other service down | No effect: services never call each other over HTTP |
 
 ## Compliance
 
-- [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) Compliance (no DELETE on `campaign`; at most one service role on the table).
+- [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) Compliance (no DELETE on `campaign`; at most one service role on the table; the activation guard holds for services only).
 - [ADR-0043](../adr/0043-at-least-ten-microservices-each-implementing-one-business-rule.md) Compliance (registry marks it `wave: second`).
 - Golden fixtures for campaign transitions ([ADR-0045](../adr/0045-services-never-import-the-web-system.md)).
 - Registry and grant checks: [ADR-0043](../adr/0043-at-least-ten-microservices-each-implementing-one-business-rule.md) (registry), [ADR-0035](../adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md) (resources are unique), [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) (grant matrix).

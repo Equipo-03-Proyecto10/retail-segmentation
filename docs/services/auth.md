@@ -12,7 +12,7 @@
 | Public path | `/api/auth/v1/` |
 | Wave | core |
 | PostgreSQL role | `svc_auth` (no table of its own) |
-| Redis ACL user | `svc_auth`, same user line on `redis-state` and `redis-cache` |
+| Redis ACL user | `svc_auth`, same user line on `redis-state` and `redis-cache`; it alone also holds `+multi +exec +discard +watch +unwatch`, for WATCH/MULTI/EXEC refresh rotation, besides `+waitaof` |
 | MongoDB | — |
 | Compose project / image | `mosaiq-auth` / `ghcr.io/equipo-03-proyecto10/mosaiq-auth` |
 | Used by | Android: sign-in, refresh and sign-out (F17-01). Electron: sign-in and session handling (F16-01). |
@@ -43,7 +43,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 | Object | Kind | Access | Notes |
 |---|---|---|---|
-| `auth:*` on `redis-state` | Redis | Private to auth | Session hash, user to sid set, refresh family, revoked jti, login counters |
+| `auth:*` on `redis-state` | Redis | Private to auth | Session hash, user to sid set, refresh family, login counters |
 | `pub:auth:v1:live:{sid}` | Redis | auth writes, every service `EXISTS` | The published liveness family |
 | PostgreSQL | — | No table | Reads `api_users.credential_v1` only |
 
@@ -65,8 +65,8 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 |---|---|---|---|
 | state | `auth:session:{sid}` | remaining absolute lifetime (≤ 12 h) | Session hash: user, role, expiry, password fingerprint |
 | state | `auth:user_sids:{user_id}` | remaining absolute lifetime of the newest session | All sessions of a user, for revocation |
-| state | `auth:refresh:{sha256}` | remaining absolute lifetime | Refresh family: `current` or `rotated` |
-| state | `auth:revoked:jti:{jti}` | until the token's `exp` (≤ 10 min) | Revoked access-token ids |
+| state | `auth:refresh:{sha256}` | remaining absolute lifetime | One refresh token: `current` or `rotated` |
+| state | `auth:refresh_family:{sid}` | remaining absolute lifetime | Refresh family: SET of the session's refresh-token SHA-256 values, so revocation deletes them without `SCAN` |
 | state | `auth:rl:login:{ip}`, `auth:fail:{sha256(email)}:{ip}` | limit window (15 min for failures) | Sign-in limits; 5 failures lock (email, IP) for 15 min |
 | state | `pub:auth:v1:live:{sid}` | remaining absolute lifetime, never extended | Liveness; the only family published to others |
 | state | `auth:rl:*` | the limit's window | Per-service request rate limit |
@@ -126,7 +126,7 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 | Dependency down | Effect |
 |---|---|
-| PostgreSQL unreachable | Sign-in cannot read the credential view, so it fails. Verification of existing tokens does not use PostgreSQL |
+| PostgreSQL unreachable | Sign-in and refresh read the credential view, so they answer 503 `database_unavailable`, never 500. Verification of existing tokens, `GET` and `DELETE /v1/sessions/current` and the JWKS do not use PostgreSQL |
 | auth-service down | Existing sessions and every other service keep working (tokens verify locally). No sign-in, refresh or sign-out. Revocations wait; the bound is one access-token lifetime, 10 min |
 | `redis-state` unreachable or over 200 ms | Every authenticated request returns 503 `auth_unavailable`; authentication fails closed and never falls back to the signature alone |
 | Any other service down | No effect: services never call each other over HTTP |
@@ -134,7 +134,7 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 ## Compliance
 
 - [ADR-0036](../adr/0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md) Compliance (token, liveness and revocation checks; `alg: none` and HS256 refused).
-- [ADR-0037](../adr/0037-two-redis-instances-carry-sessions-caches-limits-and-inter-service-streams.md) Compliance (ACL `DRYRUN` on `auth:*` and the liveness family).
+- [ADR-0037](../adr/0037-two-redis-instances-carry-sessions-caches-limits-and-inter-service-streams.md) Compliance (ACL `DRYRUN` on `auth:*`, the liveness family and `MULTI`).
 - Conformance suite: 401 without a token, 401 after sign-out (revoked `sid`), 503 with `redis-state` stopped.
 - Registry and grant checks: [ADR-0043](../adr/0043-at-least-ten-microservices-each-implementing-one-business-rule.md) (registry), [ADR-0035](../adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md) (resources are unique), [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) (grant matrix).
 

@@ -78,7 +78,8 @@ second sale, click or check-in. Each refreshes its tokens through one single-fli
   (`Idempotency-Key`, `client_event_id` or `client_check_in_id`), generated once, at the moment of
   the tap. A WorkManager job resends each row with the same id until a final answer arrives, so a
   tap produces exactly one `RECO_CLICK` and a sale replayed after a timeout returns the original
-  ([ADR-0039](0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md)). A write finally refused, such as a sale with 409 `stock_unavailable`, stays visible
+  ([ADR-0039](0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md)). A queued row is resent only under the session of the user who
+  created it, because the services scope a replay to the token's `sub`. A write finally refused, such as a sale with 409 `stock_unavailable`, stays visible
   in an outbox screen with its error code, never dropped. Reads are not queued.
 
 **Electron: the back-office process.**
@@ -89,9 +90,10 @@ second sale, click or check-in. Each refreshes its tokens through one single-fli
 - **Tokens** stay in the main process, encrypted with `safeStorage`, refreshed single-flight.
 - **XML both ways.** Requests send `Accept: application/xml` and XML bodies. The main process
   bundles the XSDs of `contracts/<service>/` and `contracts/common/v1/`, keyed by namespace. Before
-  parsing a response it checks that the root element's namespace is the called service's and that
-  the document validates (`xmllint-wasm`). Drifted XML is refused as a contract defect naming the
-  service, never rendered. Response types are frozen within a major (ADR-0035).
+  parsing a response it checks that the root element's namespace is the called service's, or
+  `common/v1` for a `common:Error` (ADR-0035), and that the document validates (`xmllint-wasm`).
+  Drifted XML is refused as a contract defect naming the service, never rendered. Response types
+  are frozen within a major (ADR-0035).
 - **Users.** The staff roles. Screens follow the bundled `x-mosaiq-roles`; the services still
   enforce every call, and a 403 is shown, not hidden.
 - **Services.** It uses all fifteen services: user administration and the administrator transfer;

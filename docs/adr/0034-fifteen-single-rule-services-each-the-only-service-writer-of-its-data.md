@@ -37,7 +37,7 @@ web is the sole writer (R). A boundary reads another's data only through the
 producer's versioned `api_*` objects
 ([ADR-0044](0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md)),
 never through a base-table grant. Writes that need elevated rights (consuming stock,
-writing the audit log, guarding a delete, filling an outbox) run in SECURITY DEFINER
+writing the audit log, guarding a delete or an activation, filling an outbox) run in SECURITY DEFINER
 functions owned by NOLOGIN `definer_*` roles; each pins `search_path` and has EXECUTE
 revoked from PUBLIC. No `svc_*` role owns a schema, relation or function, and none holds
 DELETE on `customer`, `product`, `app_user`, `campaign` or `store`. The matrix is committed as
@@ -60,7 +60,7 @@ DELETE on `customer`, `product`, `app_user`, `campaign` or `store`. The matrix i
 | 11 | recommendations | Flask | 5011 | `svc_recommendations` | Recommend active, in-stock products not already bought, matching a stated signal, with reasons, or report why nothing qualifies (RN-40) | `recommendations` |
 | 12 | engagement | Flask + MongoDB | 5012 | `svc_engagement` | In-store engagement (`QR_SCAN`, `RECO_CLICK`) is recorded once per client event, attributed, voided rather than deleted, and summarized (RN-55) | `engagement-events`, `engagement-summaries` |
 | 13 | check-ins | Rust | 5013 | `svc_checkins` | A staff check-in is verified only when the server-computed distance lies within the store's geofence at acceptable accuracy, and overrides are append-only reviews (RN-56) | `check-ins` |
-| 14 | campaigns *(second wave)* | Flask | 5014 | `svc_campaigns` | A campaign moves only DRAFT→ACTIVE/CANCELLED and ACTIVE→FINISHED/CANCELLED, is edited only in DRAFT, and never ends before it starts (RN-15, RN-16, RN-22, RN-31, RN-32) | `campaigns` |
+| 14 | campaigns *(second wave)* | Flask | 5014 | `svc_campaigns` | A campaign moves only DRAFT→ACTIVE/CANCELLED and ACTIVE→FINISHED/CANCELLED, is edited only in DRAFT, never ends before it starts, and is activated only before it has ended and while every attached experiment is ready (RN-15, RN-16, RN-22, RN-24 (activation), RN-31, RN-32, RN-49 (activation)) | `campaigns` |
 | 15 | audit-trail *(second wave)* | Rust | 5015 | `svc_audit_trail` | The audit trail is append-only, attributed, free of credentials, and readable by ADMIN and AUDITOR only (RN-28, RN-29, RN-30) | `audit-entries` |
 
 The registry is committed as `contracts/registry.yaml`; its format and checks belong
@@ -83,14 +83,14 @@ the one declared read owner, while the web is the only writer. Unlisted tables g
 | categories | `category` **S+W**: SELECT, INSERT, UPDATE, DELETE. Every delete passes `trg_category_delete_guard` | — | `api_categories.category_tree_v1` |
 | stores | `store` **R**: SELECT. `stores.store_location` **S** (new, 1:1 with `store`, 30 seed rows): SELECT, INSERT, UPDATE, DELETE | — | `api_stores.store_directory_v1` |
 | stock | `inventory` **R**: SELECT. The only service write is `api_stock.consume_v1`, which runs as `definer_stock`. The web's CSV path is **W** | — | `api_stock.stock_level_v1`; `api_stock.consume_v1(smallint, int, int)`, EXECUTE to `svc_sales` only |
-| customers | `customer` **S** (the web only reads it): SELECT, INSERT, UPDATE; no DELETE | — | `api_customers.customer_ref_v1` |
+| customers | `customer` **S** (the web only reads it): SELECT, INSERT, UPDATE of `name`, `email`, `phone`, `registration_channel_id`; no DELETE | — | `api_customers.customer_ref_v1` |
 | customer-preferences | `customer_preferred_channel`, `customer_interest_category` **S**: SELECT, INSERT, DELETE: a whole-set replace, serialized per customer by `pg_advisory_xact_lock(290001, hashtext(customer_id::text))` (RN-54) | `api_customers.customer_ref_v1` | `api_preferences.interest_category_v1` |
 | sales | `transaction`, `transaction_line` **S+W**: SELECT, INSERT. `sales.sale_capture` **S** (new, seed-exempt runtime state): SELECT, INSERT. `channel` **R**: SELECT | `api_products.product_ref_v1`, `api_customers.customer_ref_v1`, EXECUTE on `api_stock.consume_v1` | `api_sales.purchase_line_v1` |
 | segments | `segment_label`, `segment`, `segment_rule`, `segmentation_run`, `customer_segment_history` **R**: SELECT. The web's administrator run (RN-05) is their only writer | `api_customers.customer_ref_v1` | `api_segments.current_label_v1` |
 | recommendations | none | `api_products.product_ref_v1`, `api_categories.category_tree_v1`, `api_stock.stock_level_v1`, `api_customers.customer_ref_v1`, `api_preferences.interest_category_v1`, `api_sales.purchase_line_v1`, `api_segments.current_label_v1` | — |
 | engagement | none. Its data is the MongoDB database `engagement` ([ADR-0038](0038-mongodb-holds-in-store-engagement-owned-by-engagement-service-alone.md)) | `api_products.product_ref_v1`, `api_stores.store_directory_v1`, `api_customers.customer_ref_v1` | — |
 | check-ins | `checkins.store_check_in`, `checkins.check_in_review` **S** (new, 30 seed rows each): SELECT, INSERT. Reviews are append-only | `api_stores.store_directory_v1` | — |
-| campaigns | `campaign` **S+W**: SELECT, INSERT, UPDATE; no DELETE. It allocates `campaign_id` under the web's advisory lock key 221001 (`web/db/campaigns.py`) and retries on 23505 | — | — |
+| campaigns | `campaign` **S+W**: SELECT, INSERT, UPDATE; no DELETE. It allocates `campaign_id` under the web's advisory lock key 221001 (`web/db/campaigns.py`) and retries on 23505. Every activation passes `trg_campaign_activation_guard` | — | — |
 | audit-trail | `audit_log` **R**: SELECT. Only `fn_audit` writes it, running as `definer_audit` | — | — |
 
 - **Consuming** is USAGE on the `api_<suffix>` schema plus SELECT on the view, or EXECUTE on the
@@ -100,14 +100,21 @@ the one declared read owner, while the web is the only writer. Unlisted tables g
   names them). The `svc_*` role holds SELECT, UPDATE of `relayed_at`, and DELETE for the 7-day purge;
   `definer_<suffix>` (`definer_stock` for stock) inserts through the capture trigger. Seed-exempt runtime state.
 - **Web-only tables** get no `svc_*` privilege: `app_session`, `sales_load`, `sales_load_rejection`,
-  `experiment`, `experiment_group`, `experiment_assignment`, `experiment_exposure`, `experiment_conversion`.
+  `experiment`, `experiment_group`, `experiment_assignment`, `experiment_exposure`, `experiment_conversion`,
+  and any table the analytics gaps of #405 add to `public`, such as AN-04's notification table
+  ([ADR-0046](0046-service-owned-data-lives-in-service-schemas.md)'s compliance query 1 checks those).
 - **No cascade from a service:** none deletes a master. A categories delete passes
   `trg_category_delete_guard`, which refuses a category customers name as an interest
   (`category_has_customer_interest`); `ON DELETE RESTRICT` covers RN-06 and RN-07.
+- **Activation guard.** An UPDATE that sets `campaign.status` to `ACTIVE` with `session_user` `svc_campaigns`
+  passes `trg_campaign_activation_guard`, a BEFORE UPDATE OF `status` trigger. It refuses the move
+  (`experiment_not_ready`) while an experiment attached to the campaign has no treatment group, or has no
+  control group and other than exactly two treatment groups (RN-24, the web's `activation_refusal`). Its
+  function reads `experiment` and `experiment_group` as `definer_guard`, so they stay web-only for every `svc_*` role.
 - **Roles** (`sql/00_create_database.sql`): the 15 LOGIN roles, `svc_products_bench`, and ten NOLOGIN
   definers: `definer_stock` (SELECT on `inventory`, UPDATE of `quantity_on_hand` and `updated_at`,
   INSERT on `stock_events.outbox`), `definer_audit` (INSERT on `audit_log`), `definer_guard` (SELECT
-  on `customer_interest_category`), and `definer_users`, `definer_products`, `definer_categories`,
+  on `customer_interest_category`, `experiment` and `experiment_group`), and `definer_users`, `definer_products`, `definer_categories`,
   `definer_stores`, `definer_preferences`, `definer_sales`, `definer_segments` (INSERT on their outbox).
 
 ## Alternatives considered
@@ -156,7 +163,9 @@ the one declared read owner, while the web is the only writer. Unlisted tables g
   `api_*` objects, triggers, grants. `fn_audit` becomes SECURITY DEFINER, owned by `definer_audit`.
 - `contracts/db/grants.csv` has the header `role,object,privilege`. An object is
   `schema.relation`, `schema.relation(column)`, `schema.function(argtypes)` as
-  `regprocedure` prints it, or a bare schema name for USAGE outside `public`.
+  `regprocedure` prints it, or a bare schema name for USAGE outside `public`. It lists the
+  `definer_*` roles' privileges as well as the `svc_*` roles', including an owner's EXECUTE on
+  its own `api_*` function (`definer_stock` on `api_stock.consume_v1`).
 - `sql/seed-exempt.txt` and the 30-row seeds follow [ADR-0046](0046-service-owned-data-lives-in-service-schemas.md).
 - Every service write transaction sets `set_config('mosaiq.user_id', <sub>, true)`.
 - `contracts/db/` records the advisory lock keys 221001 and 290001.
@@ -183,7 +192,7 @@ HAVING count(DISTINCT replace(r.rolname, 'svc_products_bench', 'svc_products')) 
 ```
 
 `contracts/db/check_grants.sh` (its SQL is this record's full draft) fails on any output:
-1. every `svc_*` privilege (table, column, EXECUTE on `api_*` functions, USAGE on non-`public` schemas) equals `contracts/db/grants.csv`, in both directions;
+1. every `svc_*` and `definer_*` privilege (table, column, EXECUTE on `api_*` functions, USAGE on non-`public` schemas) equals `contracts/db/grants.csv`, in both directions;
 2. the LOGIN `svc_*` roles are exactly the fifteen plus `svc_products_bench`;
 3. no `svc_*` privilege on a web-only table;
 4. no `svc_*` DELETE or TRUNCATE on `customer`, `product`, `app_user`, `campaign` or `store`;
@@ -194,3 +203,7 @@ HAVING count(DISTINCT replace(r.rolname, 'svc_products_bench', 'svc_products')) 
 **The category guard holds for services only.** As `svc_categories`, deleting a category
 a customer names as an interest fails with `category_has_customer_interest`; as
 `retail_app`, in a rolled-back transaction, it still cascades as it does today.
+
+**The activation guard holds for services only.** As `svc_campaigns`, activating a draft whose attached
+experiment has a control group and no treatment group fails with `experiment_not_ready`; as `retail_app`,
+the trigger does not fire, and the web refuses the same move in its own code.

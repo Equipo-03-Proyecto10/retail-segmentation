@@ -40,7 +40,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 | Object | Kind | Access | Notes |
 |---|---|---|---|
-| `customer` | Table (`public`) | S: SELECT, INSERT, UPDATE; no DELETE | The web only reads it; audited (E-12) |
+| `customer` | Table (`public`) | S: SELECT, INSERT, UPDATE of `name`, `email`, `phone`, `registration_channel_id`; no DELETE | The web only reads it; audited (E-12) |
 
 ## Database contracts
 
@@ -112,7 +112,7 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 | Dependency down | Effect |
 |---|---|
-| PostgreSQL unreachable | `/health/ready` reports not ready and operations that need the database fail (the contract fixes the code). `/health/live` stays 200 |
+| PostgreSQL unreachable | `/health/ready` reports not ready, and every operation that reads or writes PostgreSQL answers 503 `database_unavailable`, never 500 (ADR-0035). `/health/live` stays 200 |
 | No cache | Customers are read from PostgreSQL every time; only PostgreSQL and `redis-state` matter |
 | `redis-state` unreachable or over 200 ms | Every authenticated request returns 503 `auth_unavailable`; authentication fails closed and never falls back to the signature alone |
 | Any other service down | No effect: services never call each other over HTTP |

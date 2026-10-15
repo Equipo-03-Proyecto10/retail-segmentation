@@ -21,7 +21,7 @@ from flask.testing import FlaskClient
 from web.app import create_app
 from web.config import Config
 from web.routes import admin
-from web.services.catalog import CatalogConflict
+from web.services.catalog import CatalogConflict, validate_role
 
 
 @pytest.fixture
@@ -279,6 +279,17 @@ def test_a_valid_role_is_created_and_redirects_to_the_list(
     create.assert_called_once_with(
         ANY, role_id=31, code="SUPPORT", description="Support desk"
     )
+
+
+@pytest.mark.parametrize("code", ["admin", "Admin", "ＡＤＭＩＮ", "ADM1N", "ADMLN"])
+def test_role_validation_refuses_lowercase_and_admin_lookalikes(code: str) -> None:
+    errors = validate_role(code=code, description="look-alike")
+
+    assert "code" in errors
+
+
+def test_role_validation_keeps_the_canonical_administrator_code() -> None:
+    assert validate_role(code="ADMIN", description="System administrator") == {}
 
 
 def test_a_valid_role_edit_is_saved_and_redirects_to_the_list(

@@ -77,6 +77,7 @@ def login() -> ResponseReturnValue:
     if account is not None:
         throttle.clear((account,))
     session.clear()
+    session.permanent = True
     session["sid"] = start_session(connection, result.user.user_id)
     session["user_id"] = str(result.user.user_id)
     session["role_id"] = result.user.role_id

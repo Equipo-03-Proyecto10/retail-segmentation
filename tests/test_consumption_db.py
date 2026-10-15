@@ -264,6 +264,19 @@ def test_history_is_one_limited_statement_that_never_reads_the_method() -> None:
     assert "cluster" not in statement.lower()
 
 
+def test_history_read_groups_unchanged_labels_into_a_streak() -> None:
+    connection = MagicMock()
+    _cursor(connection).fetchall.return_value = []
+
+    get_current_and_previous_history_rows(connection, _CUSTOMER)
+
+    statement, _ = _statement_and_params(connection)
+    assert "label_code IS DISTINCT FROM newer_label" in statement
+    assert "valid_to IS DISTINCT FROM newer_valid_from" in statement
+    assert "JOIN marked AS member ON member.streak = open_row.streak" in statement
+    assert "min(member.valid_from) AS streak_start" in statement
+
+
 def test_the_module_writes_nothing() -> None:
     """Read only: no statement that changes data, and no commit. The caller
     owns any transaction, and this module never opens one."""

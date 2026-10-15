@@ -19,7 +19,7 @@ from web.errors import register_error_handlers
 from web.log import configure_logging
 from web.middleware import register_middleware
 from web.routes import register_blueprints
-from web.security import configure_session
+from web.security import configure_security_headers, configure_session
 from web.services.login_throttle import LoginThrottle
 from web.services.status import APPLICATION_NAME
 
@@ -83,6 +83,7 @@ def create_app(
 
     configure_logging(app)
     configure_session(app)
+    configure_security_headers(app)
     _trust_forwarding_headers(app, config.trusted_proxy_hops)
     register_error_handlers(app)
     # After the error handlers: their `before_request` assigns the request id,

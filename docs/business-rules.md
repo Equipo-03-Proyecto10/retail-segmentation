@@ -50,7 +50,20 @@ No two accounts share an address, and an address without `@` is refused.
 
 **Enforced:** `ux_app_user_email_lower`, a unique index on `lower(email)` so
 letter case does not create a second account, and `app_user_email_check`; the
-application lower-cases the address. **Verified** — cases N3 and N7. · `RF-01`
+database and application both require a dotted domain (so `a@b` is refused),
+and the application lower-cases the address. **Verified** — cases N3 and N7,
+plus `tests/test_write_services.py`. · `RF-01`
+
+### RN-02a — Role codes are canonical permission keys
+Role codes are ASCII identifiers beginning with an uppercase letter. Lowercase,
+Unicode look-alike and `ADMIN`-look-alike codes are refused; only role 1 may
+carry the exact `ADMIN` code. This keeps a visually misleading role from being
+stored outside the single-administrator index or mistaken for a permission
+key.
+
+**Enforced:** `role_code_format`, `role_admin_code_bound_to_reserved_id` and
+`role_admin_lookalike` in `sql/01_schema.sql`, plus `validate_role` in
+`web/services/catalog.py`. · `RF-06`
 
 ### RN-03 — A password is never stored, logged or transmitted in the clear
 Only an argon2id hash is stored. The database never hashes and never receives a
@@ -135,7 +148,13 @@ through the product. The application must never populate it by copying the
 current list price at read time. Reviewed, not constrained. · `RF-10`
 
 ### RN-14 — Stock is never negative
-**Enforced:** `inventory_quantity_on_hand_check`. · `RF-11`
+Stock is consumed by an accepted sale for the same store, product and quantity.
+The decrement is in the sale's transaction: a missing inventory row or
+insufficient stock rejects the row and rolls back its header, line and any
+partial stock change. A duplicate line cannot consume stock twice.
+
+**Enforced:** the `inventory.quantity_on_hand >= 0` check and the conditional
+update in `web.db.inventory.decrement_stock`. · `RF-11`
 
 ## Campaigns, segments and experiments
 
@@ -241,7 +260,9 @@ ticket" can still be chosen but is labelled as not measured yet.
 **Enforced:** `_update`, `_create`, `_record_exposure` and
 `_record_group_exposures` in `web/services/experiments.py`, `transition` in
 `web/services/campaigns.py`, `current_date` in `web/db/clock.py`, and the conditional
-insert in `web/db/experiments.py`. **Verified** — `tests/test_experiment_frame.py`.
+insert in `web/db/experiments.py`. campaigns-service (planned) also refuses
+activating an ended campaign, in its own code (ADR-0034, ADR-0045). **Verified** —
+`tests/test_experiment_frame.py`.
 
 ### RN-48 — Conversion is reported over the assigned and over the exposed, and the assigned rate decides
 Two rates sit side by side. The **intent-to-treat rate** is customers with a
@@ -591,12 +612,13 @@ compute.
   customer did not shift in never matches a filter that is set. Every filter
   that is set must match; a filter left unset never excludes a row.
 * **The recommendation report** reuses F10-01's `recommend`, once per customer,
-  flattened to one row per recommended product. Store and channel narrow to the
-  customer's own usual store and dominant channel; category narrows the
-  recommended products themselves, since one customer's recommendations can
-  span several categories. A customer `recommend` did not actually recommend
-  anything to (no segment, no usual store, nothing in stock matched) contributes
-  no rows.
+  flattened to one row per recommended product. Every customer is consumed;
+  listing is batched only to bound memory and never caps the report. Store and
+  channel narrow to the customer's own usual store and dominant channel;
+  category narrows the recommended products themselves, since one customer's
+  recommendations can span several categories. A customer `recommend` did not
+  actually recommend anything to (no segment, no usual store, nothing in stock
+  matched) contributes no rows.
 * **A filter combination that matches nothing** is an empty report, reported
   independently for each of the two sections — one report can be empty while
   the other is not, since they are filtered separately over the same rows.
@@ -604,6 +626,10 @@ compute.
   fresh from `recommend` on every request: nothing here caches a result, so a
   product whose stock reaches zero is absent the next time the report runs
   (verified live in evidence, not merely inferred from F10-01's own guarantee).
+* **Both result tables are server-paginated** with the same 25-row page size.
+  Shift rows are filtered before pagination, and each table has its own page
+  parameter so moving through one preserves the other table's page and every
+  selected filter.
 
 **Enforced:** application — `web/services/consumption_reports.py` for the
 filters, `web/db/consumption_reports.py` for the one new read (bulk customer
@@ -663,7 +689,9 @@ half. The application enforces it: setup always writes the selected control
 (if any) with the treatment groups, and a campaign cannot be activated while
 an experiment attached to it lacks a treatment group or has a no-control
 design with anything other than exactly two treatment arms
-(`web/services/experiments.py` `activation_refusal`, F11-03).
+(`web/services/experiments.py` `activation_refusal`, F11-03). campaigns-service
+(planned) refuses the same activation through `trg_campaign_activation_guard`,
+which fires for `svc_campaigns` sessions only (ADR-0034, ADR-0045).
 
 ### RN-25 — An experiment's conversion window is a positive number of days
 **Enforced:** `experiment_conversion_window_days_check`. **Verified** — case
@@ -774,6 +802,27 @@ label by case N23; the allocation statement by case P7. Concurrent creates
 getting distinct ids is the advisory lock's job and is not a single-session
 case: it was reviewed against PostgreSQL 16 and 18 in PR #240, not scripted.
 
+### RN-37 — Accepted sales are dated, attributable and safe to reload
+The CSV adapter rejects a row with extra columns, a future `occurred_at`, a
+spreadsheet-formula-like source transaction id, a non-positive price, or a
+price that has more than two decimal places. A sale must be on or after the
+customer's `registered_on` date and its product must still be active. These
+checks happen before either header or line persistence, so a refused row
+cannot leave a partial transaction behind.
+
+Rows for one source transaction are serialized by locking the existing
+transaction header before appending a line. The header total is then derived
+from all committed lines, so two concurrent loads cannot overwrite it with a
+subtotal. A segmentation run also closes its sales window at the database's
+current timestamp; a future-dated row can therefore never improve recency.
+
+**Enforced:** application — `web/services/ingestion.py` and
+`web/services/sales_csv.py`; parameterized reads in `web/db/sales.py`; the
+header lock in `get_transaction_by_source_id`; and the upper bound in
+`web/db/segments.py`. **Verified** — by
+`tests/test_ingestion_service.py`, `tests/test_sales_csv.py`,
+`tests/test_sales_db.py` and `tests/test_segments_pipeline_db.py`. · #355 · #356
+
 ## Consumption profile
 
 ### RN-34 — A consumption profile is computed from accepted sales, over a stated window, and its sales measures are absent when there are none
@@ -791,18 +840,21 @@ the profile window. Zero purchases and zero spend are measurements; this case
 makes neither claim.
 
 The customer's R, F and M values and scores, and their current and previous
-segment, are read from assignment history (ADR-0017) — the open row, and the
-most recently closed row — and never from a mutable column. A customer who has
-held one assignment only has **no** previous segment; the profile reports that
-as absent instead of repeating the current one. A previous result of
-*unassigned* (RN-21) is kept distinct from an absent one, because a run did
-score that customer. No part of a profile names the method that produced a run
-(ADR-0018).
+segment, are read from assignment history (ADR-0017) and never from a mutable
+column. The current segment is the open row, but its `since` date is the first
+`valid_from` in the contiguous streak of that same label, so an unchanged
+rerun does not reset the date. The previous segment is the first row before
+that streak with a different label, not merely the immediately preceding run.
+Unassigned (RN-21) is a state like any label, so consecutive unassigned rows
+form one streak and a change to or from it is reported. A customer who has held
+one assignment only has **no** previous segment; the profile reports that as
+absent instead of repeating the current one. No part of a profile names the
+method that produced a run (ADR-0018).
 
-The open row and the most recently closed row are read by one statement, so a
-segment run committed between two `READ COMMITTED` reads cannot make the same
-history row appear as both current and previous. An id that is not a UUID, or
-that names no customer, raises `UnknownCustomer`; the page that shows the
+The current streak and its preceding different row are read by one statement,
+so a segment run committed between two `READ COMMITTED` reads cannot make the
+same history row appear as both current and previous. An id that is not a UUID,
+or that names no customer, raises `UnknownCustomer`; the page that shows the
 profile (F8-04) maps it to HTTP 404.
 
 **Enforced:** application — `web/services/consumption_profile.py` for the rules,
@@ -953,11 +1005,73 @@ action, and `retail_app` holds no `UPDATE` or `DELETE` on `audit_log`
 owns the schema keeps its privileges, so archiving remains possible.
 ADR-0024. · `RF-14`
 
+## Services of the distributed stage
+
+These rules are enforced by services that do not exist yet. Each names its
+service and the record that decides it, and until that service ships it also
+stands in "Where the gaps are" below.
+
+### RN-52 — A principal is authenticated only by a valid credential of an active account, and a token is usable only while its session is live
+A service accepts a request only with an RS256 access token that auth-service
+signed for an active account, and only while that session's liveness key exists
+in Redis. A session ends at sign-out, on refresh-token reuse, when the account
+is deactivated, changes role or changes password, and 12 hours after sign-in at
+the latest.
+
+**Enforced:** auth-service (planned), ADR-0036 — it alone signs tokens and
+keeps the liveness keys; every service verifies the token and checks the key
+through its pinned kit, failing closed with 503 when Redis is unreachable
+(ADR-0037). Related: RN-03, which keeps the password itself out of the clear.
+· #398
+
+### RN-53 — A store has at most one location, with valid coordinates and a 25–2000 m geofence, set by the administrator only
+A store's location is optional. When set, its latitude lies between −90 and
+90, its longitude between −180 and 180, and its geofence radius between 25 and
+2000 metres. Only `ADMIN` sets or clears it.
+
+**Enforced:** stores-service (planned), ADR-0034 and ADR-0046 —
+`stores.store_location` is keyed by `store_id` and its CHECK constraints bound
+the three values; the service accepts location writes from `ADMIN` only.
+· #398
+
+### RN-54 — Each of a customer's preference sets is replaced atomically, as a whole set
+A customer's preferred channels and interest categories are independent
+multivalued facts (the 4NF decomposition). Each is written only by replacing
+the whole set at once with existing channels or categories, so no reader sees
+half an update, and two concurrent replacements of one set leave exactly one of
+them.
+
+**Enforced:** customer-preferences-service (planned), ADR-0034 — each
+replacement runs in one transaction that takes
+`pg_advisory_xact_lock(290001, hashtext(customer_id::text))` before deleting
+and inserting the set; the foreign keys refuse an unknown channel or category.
+· #398
+
+### RN-55 — In-store engagement is recorded once per client event, attributed, voided rather than deleted, and summarized
+A `QR_SCAN` or `RECO_CLICK` from the floor is stored once per client event id,
+with the user who recorded it. A wrong event is voided with a reason and kept,
+and summaries count only events that are not voided.
+
+**Enforced:** engagement-service (planned), ADR-0038 — the unique
+`client_event_id` index and the `$jsonSchema` validator on `engagement_event`
+in MongoDB, and a void operation that never deletes. · #398
+
+### RN-56 — A staff check-in is verified only within the store's geofence at acceptable accuracy, and overrides are append-only reviews
+The server computes the distance from the reported position to the store's
+location. A check-in is verified only when that distance lies within the
+geofence and the reported accuracy is acceptable; otherwise its reason says
+why. An administrator overrides the verdict only by adding a review, which is
+never updated or deleted.
+
+**Enforced:** check-ins-service (planned), ADR-0034 and ADR-0046 —
+`checkins.store_check_in` keeps the computed reason, and
+`checkins.check_in_review` is insert-only for `svc_checkins`. · #398
+
 ---
 
 ## Where the gaps are
 
-Every rule in this document is now enforced somewhere. The four that were open
+Every rule up to RN-51 is now enforced somewhere. The four that were open
 were all application-side, and all four are closed: RN-01 by F4-02 (#70), RN-03
 by F3-03 (#63), RN-05 by F4-01 (#69) and RN-21 by F3-10 (#102). A rule added
 from here starts in this section until the story that enforces it lands.
@@ -967,6 +1081,12 @@ one treatment group before activation) waits on F11-03, RN-25 (locking the
 conversion window before assignment) waits on F11-04, RN-26 (rendering the
 `Synthetic` label) waits on F11-07, and RN-27 (refusing exposure for the
 control group) waits on F11-05.
+
+RN-52 to RN-56 belong to the distributed stage (#398). Each waits on its
+service's implementation story in Phase 14 (epic #399): RN-52 on auth-service,
+RN-53 on stores-service, RN-54 on customer-preferences-service, RN-55 on
+engagement-service and RN-56 on check-ins-service. Their ids continue after
+RN-51; the duplicate RN-37, RN-47 and RN-50 headings are left to AN-15 (#460).
 
 RN-01 was the one to watch — a hard rule in `AGENTS.md` and a success criterion
 in [`scope.md`](scope.md) §7 that held only because the seed happened to contain

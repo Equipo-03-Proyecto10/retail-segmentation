@@ -19,6 +19,11 @@ DEFAULT_ENVIRONMENT = "development"
 DEFAULT_PORT = 5000
 DEFAULT_LOG_LEVEL = "INFO"
 DEFAULT_SESSION_COOKIE_SECURE = False
+# Server-side sessions are invalid after either period.  The absolute limit
+# bounds a stolen cookie even when it is used continuously; the idle limit
+# bounds an abandoned browser session.
+DEFAULT_SESSION_IDLE_TIMEOUT_SECONDS = 30 * 60
+DEFAULT_SESSION_ABSOLUTE_TIMEOUT_SECONDS = 8 * 60 * 60
 DEFAULT_TRUSTED_PROXY_HOPS = 0
 DEFAULT_LOGIN_THROTTLE_MAX_ATTEMPTS = 5
 DEFAULT_LOGIN_THROTTLE_WINDOW_SECONDS = 900
@@ -106,6 +111,10 @@ class Config:
     front of the app (F6-01/F6-03), so the process itself sees plain HTTP and
     cannot infer whether the `Secure` flag should be set — the deployment says.
 
+    `session_idle_timeout_seconds` and `session_absolute_timeout_seconds` are
+    separate server-side limits: an abandoned browser expires quickly while
+    continuous use still reaches a hard maximum age.
+
     `trusted_proxy_hops` is the number of reverse proxies in front of the app
     whose `X-Forwarded-*` headers may be believed. `0` when the app is reached
     directly; `1` behind the single NGINX (F6-01). Trusting those headers with
@@ -129,6 +138,8 @@ class Config:
     log_level: str
     session_cookie_secure: bool
     database_url: str = field(repr=False)
+    session_idle_timeout_seconds: int = DEFAULT_SESSION_IDLE_TIMEOUT_SECONDS
+    session_absolute_timeout_seconds: int = DEFAULT_SESSION_ABSOLUTE_TIMEOUT_SECONDS
     # Last, and defaulted: `0` is the safe value the docstring above describes,
     # and it keeps every existing construction site valid. A caller that does
     # not know about reverse proxies gets the un-proxied behaviour rather than
@@ -179,6 +190,14 @@ class Config:
             session_cookie_secure=_bool_env(
                 env.get("SESSION_COOKIE_SECURE"),
                 default=DEFAULT_SESSION_COOKIE_SECURE,
+            ),
+            session_idle_timeout_seconds=_int_env(
+                env.get("SESSION_IDLE_TIMEOUT_SECONDS"),
+                default=DEFAULT_SESSION_IDLE_TIMEOUT_SECONDS,
+            ),
+            session_absolute_timeout_seconds=_int_env(
+                env.get("SESSION_ABSOLUTE_TIMEOUT_SECONDS"),
+                default=DEFAULT_SESSION_ABSOLUTE_TIMEOUT_SECONDS,
             ),
             trusted_proxy_hops=_proxy_hops_env(env.get("TRUSTED_PROXY_HOPS")),
             database_url=database_url,

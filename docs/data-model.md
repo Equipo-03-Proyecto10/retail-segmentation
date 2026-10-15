@@ -20,7 +20,7 @@ Stories: F2-01 (conceptual model), F2-02 (normalization), F2-03 (logical model).
 |---|---|
 | `role` | A permission profile. Seven exist; see the matrix below |
 | `app_user` | Someone who signs in. Exactly one holds the administrator role |
-| `app_session` | One sign-in, server-side: open until signed out or revoked (ADR-0022) |
+| `app_session` | One sign-in, server-side: open until signed out, revoked or the configured idle/absolute lifetime expires (ADR-0022, ADR-0032) |
 | `customer` | Someone the business sells to. Not every customer signs in |
 | `channel` | A route to market: mobile app, web, physical store, marketplace, call centre |
 | `category` | A product classification, self-referencing so a category can have a parent |
@@ -377,7 +377,7 @@ with labels deterministically without a tie; it is not a foreign key target.
 | `user_id` | `UUID` | NN | PK, default `gen_random_uuid()` | User identifier |
 | `role_id` | `SMALLINT` | NN | FK → `role`, `RESTRICT` | The one role the user holds |
 | `name` | `VARCHAR(120)` | NN | — | Display name |
-| `email` | `VARCHAR(160)` | NN | UQ, `CHECK ~ '@'` | Login identity |
+| `email` | `VARCHAR(160)` | NN | UQ, dotted-domain email check | Login identity |
 | `password_hash` | `VARCHAR(255)` | NN | — | argon2id hash. Never the password, never logged, excluded from the audit payload |
 | `is_active` | `BOOLEAN` | NN | default `TRUE` | Deactivation is how F3-06 removes access without deleting history |
 | `created_at` | `TIMESTAMPTZ` | NN | default `now()` | Account creation |
@@ -391,6 +391,7 @@ Named `app_user` because `user` is a reserved word in PostgreSQL.
 | `session_id` | `UUID` | NN | PK, default `gen_random_uuid()` | The only thing the signed cookie carries |
 | `user_id` | `UUID` | NN | FK → `app_user`, `CASCADE` | Who signed in |
 | `created_at` | `TIMESTAMPTZ` | NN | default `now()` | Sign-in |
+| `last_seen_at` | `TIMESTAMPTZ` | NN | default `now()`, `>= created_at` | Last request that renewed the idle lifetime |
 | `revoked_at` | `TIMESTAMPTZ` | yes | `CHECK >= created_at` (`app_session_revoked_after_created`) | Sign-out or revocation; `NULL` while open |
 
 ADR-0022 (#251). Every request resolves its session here, with the user's
@@ -410,7 +411,7 @@ business data: not audited, and exempt from the 30-row seed minimum
 | `customer_id` | `UUID` | NN | PK, default `gen_random_uuid()` | Customer identifier |
 | `user_id` | `UUID` | yes | UQ, FK → `app_user`, `SET NULL` | The account this customer signs in with, if any |
 | `name` | `VARCHAR(120)` | NN | — | Customer name |
-| `email` | `VARCHAR(160)` | yes | UQ, `CHECK ~ '@'` | Contact address |
+| `email` | `VARCHAR(160)` | yes | UQ, dotted-domain email check | Contact address |
 | `phone` | `VARCHAR(20)` | yes | — | Contact number |
 | `registration_channel_id` | `SMALLINT` | NN | FK → `channel`, `RESTRICT` | Where the customer was acquired |
 | `registered_on` | `DATE` | NN | default `CURRENT_DATE` | Registration date |
@@ -761,8 +762,9 @@ cost of the busiest table in the model. `experiment_group`,
 `experiment_assignment`, `experiment_exposure` and `experiment_conversion`
 are unaudited for the same reason: they are themselves append-only event
 records, not mutable rows a reviewer needs a before/after snapshot of.
-`app_session` is unaudited too: it is runtime state, written on every sign-in
-and sign-out, and `created_at`/`revoked_at` already are its history.
+`app_session` is unaudited too: it is runtime state, written on every sign-in,
+request renewal and sign-out, and its timestamps already describe that
+runtime history.
 
 Two details worth knowing:
 

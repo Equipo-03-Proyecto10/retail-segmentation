@@ -68,6 +68,8 @@ def _field(
 
 
 def _parse_row(raw: dict[str, str]) -> SalesRow:
+    if None in raw:
+        raise RowRejected("row has more columns than the header")
     if any(value is None for value in raw.values()):
         raise RowRejected("row has fewer columns than the header")
     occurred_at = _field(

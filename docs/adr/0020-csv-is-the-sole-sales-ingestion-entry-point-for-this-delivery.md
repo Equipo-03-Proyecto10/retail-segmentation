@@ -1,10 +1,10 @@
 # ADR-0020 — CSV is the sole sales ingestion entry point for this delivery
 
-**Status:** Accepted
+**Status:** Partially superseded by ADR-0039
 **Owner:** Marcelo
 **Issue:** —
 **Supersedes:** —
-**Superseded by:** —
+**Superseded by:** [ADR-0039](0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md), in part
 
 ---
 

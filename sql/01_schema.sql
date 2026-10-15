@@ -16,7 +16,16 @@
 CREATE TABLE role (
     role_id     SMALLINT PRIMARY KEY,
     code        VARCHAR(40)  NOT NULL UNIQUE,
-    description VARCHAR(160)
+    description VARCHAR(160),
+    -- Permission keys are deliberately ASCII and upper-case.  In particular,
+    -- a case variant or a Unicode look-alike must never sit beside ADMIN and
+    -- confuse operators while receiving no matrix permissions.
+    CONSTRAINT role_code_format CHECK (code ~ '^[A-Z][A-Z0-9_]*$'),
+    CONSTRAINT role_admin_code_bound_to_reserved_id
+        CHECK (code <> 'ADMIN' OR role_id = 1),
+    CONSTRAINT role_admin_lookalike CHECK (
+        code = 'ADMIN' OR code !~ '^ADM([1IL]N|N)$'
+    )
 );
 
 -- RN-01 (#252): a role's code never changes. The permission matrix in
@@ -148,7 +157,9 @@ CREATE TABLE app_user (
     password_hash VARCHAR(255) NOT NULL,
     is_active     BOOLEAN NOT NULL DEFAULT TRUE,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CHECK (email ~ '@')
+    CONSTRAINT app_user_email_check CHECK (
+        email ~ '^[^@[:space:]]+@[^@[:space:].]+(\.[^@[:space:].]+)+$'
+    )
 );
 
 -- Server-side sessions (ADR-0022, #251). The signed cookie carries only
@@ -160,7 +171,9 @@ CREATE TABLE app_session (
     session_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id    UUID NOT NULL REFERENCES app_user(user_id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     revoked_at TIMESTAMPTZ,
+    CONSTRAINT app_session_last_seen_after_created CHECK (last_seen_at >= created_at),
     CONSTRAINT app_session_revoked_after_created CHECK (revoked_at >= created_at)
 );
 
@@ -206,7 +219,10 @@ CREATE TABLE customer (
     phone                   VARCHAR(20),
     registration_channel_id SMALLINT NOT NULL REFERENCES channel(channel_id) ON DELETE RESTRICT,
     registered_on           DATE NOT NULL DEFAULT CURRENT_DATE,
-    CHECK (email IS NULL OR email ~ '@')
+    CONSTRAINT customer_email_check CHECK (
+        email IS NULL OR
+        email ~ '^[^@[:space:]]+@[^@[:space:].]+(\.[^@[:space:].]+)+$'
+    )
 );
 
 -- The two tables the 4NF decomposition produced. A customer's preferred

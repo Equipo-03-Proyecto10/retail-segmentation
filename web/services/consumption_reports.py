@@ -54,7 +54,7 @@ from web.services.recommendations import (
     recommend,
 )
 
-_CUSTOMER_CAP = 500
+_CUSTOMER_BATCH_SIZE = 500
 DEFAULT_PAGE_SIZE = 25
 
 
@@ -80,6 +80,20 @@ class FilteredShiftReport:
     # whose leader changed without a claimable shift (RN-50).
     absent: int = 0
     undecided: int = 0
+    # ``total`` is optional for compatibility with callers that construct a
+    # report-shaped value for the template; the service always fills it in.
+    total: int | None = None
+    page: int = 1
+    page_size: int = DEFAULT_PAGE_SIZE
+    page_count: int = 1
+
+    @property
+    def has_previous(self) -> bool:
+        return self.page > 1
+
+    @property
+    def has_next(self) -> bool:
+        return self.page < self.page_count
 
 
 def _touches(dimension, item_id: int | None) -> bool:
@@ -118,19 +132,29 @@ def build_shift_report(
     store_id: int | None = None,
     channel_id: int | None = None,
     category_id: int | None = None,
+    page: int = 1,
+    page_size: int = DEFAULT_PAGE_SIZE,
 ) -> FilteredShiftReport:
-    """The consumption shifts between the two periods `as_of`/`window_days`
-    imply, filtered by store, channel and category."""
+    """One page of shifts between the two periods `as_of`/`window_days` imply.
+
+    Filtering happens before pagination so the total and every page reflect
+    exactly the selected dimensions. Customer names are looked up only for the
+    rows on the requested page.
+    """
     earlier, later = consecutive_periods(as_of, window_days)
     report: ShiftReport = detect_shifts(connection, earlier, later)
 
     matched = filter_shift_rows(
         report.shifts, store_id=store_id, channel_id=channel_id, category_id=category_id
     )
-    names = list_customer_names(connection, [shift.customer_id for shift in matched])
+    total_pages = page_count(len(matched), page_size)
+    page = min(max(page, 1), total_pages)
+    start = (page - 1) * page_size
+    page_rows = matched[start : start + page_size]
+    names = list_customer_names(connection, [shift.customer_id for shift in page_rows])
     rows = tuple(
         ShiftRow(shift.customer_id, names.get(shift.customer_id, "—"), shift)
-        for shift in matched
+        for shift in page_rows
     )
 
     return FilteredShiftReport(
@@ -141,6 +165,10 @@ def build_shift_report(
         unchanged=report.unchanged,
         absent=len(report.absences),
         undecided=report.undecided,
+        total=len(matched),
+        page=page,
+        page_size=page_size,
+        page_count=total_pages,
     )
 
 
@@ -232,10 +260,26 @@ def build_recommendation_report(
     page_size: int = DEFAULT_PAGE_SIZE,
 ) -> RecommendationReportPage:
     """Recommendations for every customer, filtered and paged, computed fresh
-    from live stock on every call."""
-    customers, _total = list_customers(
-        connection, search=None, page=1, per_page=_CUSTOMER_CAP
+    from live stock on every call.
+
+    Customer listing is batched to bound each database result and query size;
+    every batch is consumed, so the report never silently drops customers
+    after an arbitrary cap. Recommendation rows are retained until filtering
+    and counting finish, which keeps page totals exact.
+    """
+    customers, total = list_customers(
+        connection, search=None, page=1, per_page=_CUSTOMER_BATCH_SIZE
     )
+    customer_pages = page_count(total, _CUSTOMER_BATCH_SIZE)
+    for customer_page in range(2, customer_pages + 1):
+        next_customers, _ = list_customers(
+            connection,
+            search=None,
+            page=customer_page,
+            per_page=_CUSTOMER_BATCH_SIZE,
+        )
+        customers.extend(next_customers)
+
     results = [
         recommend(
             connection,

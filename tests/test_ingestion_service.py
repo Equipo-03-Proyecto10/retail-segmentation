@@ -9,7 +9,7 @@ decides which question it asks next.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -90,6 +90,9 @@ class _Connection:
         store_ids: set[int] | None = None,
         channel_ids: set[int] | None = None,
         product_ids: set[int] | None = None,
+        inactive_product_ids: set[int] | None = None,
+        registered_on: date = date(2025, 1, 1),
+        inventory: dict[tuple[int, int], int] | None = None,
         headers: dict[str, dict] | None = None,
         simulate_concurrent_header: bool = False,
     ) -> None:
@@ -97,6 +100,9 @@ class _Connection:
         self.store_ids = store_ids or {1, 2}
         self.channel_ids = channel_ids or {1}
         self.product_ids = product_ids or {1, 2}
+        self.inactive_product_ids = inactive_product_ids or set()
+        self.registered_on = registered_on
+        self.inventory = {(1, 1): 10, (1, 2): 10} if inventory is None else inventory
         # source_transaction_id -> {transaction_id, customer_id, store_id,
         # channel_id, occurred_at, lines: {product_id: (qty, price)}}
         self.headers = headers or {}
@@ -109,16 +115,27 @@ class _Connection:
         # but undone on rollback -- matching what a real ROLLBACK does to an
         # uncommitted INSERT.
         self._uncommitted_headers: set[str] = set()
+        self._uncommitted_lines: list[tuple[dict, int]] = []
+        self._uncommitted_stock: list[tuple[tuple[int, int], int]] = []
+        self.statements: list[str] = []
 
     def commit(self) -> None:
         self.commits += 1
         self._uncommitted_headers.clear()
+        self._uncommitted_lines.clear()
+        self._uncommitted_stock.clear()
 
     def rollback(self) -> None:
         self.rollbacks += 1
         for source_transaction_id in self._uncommitted_headers:
             del self.headers[source_transaction_id]
+        for header, product_id in reversed(self._uncommitted_lines):
+            header["lines"].pop(product_id, None)
+        for inventory_key, quantity in reversed(self._uncommitted_stock):
+            self.inventory[inventory_key] = quantity
         self._uncommitted_headers.clear()
+        self._uncommitted_lines.clear()
+        self._uncommitted_stock.clear()
 
     def cursor(self) -> _Cursor:
         return _Cursor(self)
@@ -144,8 +161,24 @@ class _Cursor:
     def execute(self, statement: str, parameters: tuple = ()) -> None:
         c = self.connection
         text = " ".join(statement.split())
+        c.statements.append(text)
 
-        if "FROM transaction WHERE source_transaction_id" in text:
+        if text.startswith("SELECT c.registered_on"):
+            product_id, customer_id = parameters
+            self.row = (
+                None
+                if customer_id not in c.customer_ids
+                else (
+                    c.registered_on,
+                    (
+                        None
+                        if product_id not in c.product_ids
+                        and product_id != "OUT_OF_RANGE"
+                        else product_id not in c.inactive_product_ids
+                    ),
+                )
+            )
+        elif "FROM transaction WHERE source_transaction_id" in text:
             header = c.headers.get(parameters[0])
             self.row = (
                 None
@@ -173,6 +206,7 @@ class _Cursor:
             if product_id in header["lines"]:
                 raise _DuplicateLine()
             header["lines"][product_id] = (quantity, unit_price)
+            c._uncommitted_lines.append((header, product_id))
             self.row = None
         elif text.startswith("INSERT INTO transaction"):
             source_transaction_id, customer_id, store_id, channel_id, occurred_at = (
@@ -201,6 +235,21 @@ class _Cursor:
             }
             c._uncommitted_headers.add(source_transaction_id)
             self.row = (transaction_id,)
+        elif text.startswith("UPDATE inventory"):
+            quantity, store_id, product_id, minimum_quantity = parameters
+            assert quantity == minimum_quantity
+            inventory_key = (store_id, product_id)
+            available = c.inventory.get(inventory_key)
+            if available is not None and available >= quantity:
+                c._uncommitted_stock.append((inventory_key, available))
+                c.inventory[inventory_key] = available - quantity
+                self.row = (available - quantity,)
+            else:
+                self.row = None
+        elif text.startswith("SELECT quantity_on_hand"):
+            store_id, product_id = parameters
+            available = c.inventory.get((store_id, product_id))
+            self.row = None if available is None else (available,)
         elif text.startswith("UPDATE transaction SET total"):
             transaction_id = parameters[0]
             header = c._header_by_transaction_id(transaction_id)
@@ -226,8 +275,32 @@ def test_a_row_with_a_new_source_id_creates_a_transaction_and_a_line() -> None:
     header = connection.headers["TXN-1"]
     assert header["lines"][1] == (2, Decimal("9.99"))
     assert header["total"] == Decimal("19.98")
+    assert connection.inventory[(1, 1)] == 8
     assert connection.commits == 1
     assert connection.rollbacks == 0
+
+
+def test_header_lock_is_acquired_before_the_inventory_lock() -> None:
+    """Keep #355's header serialization ahead of the stock row lock.
+
+    Every ingestion call handles one line, so this order prevents a future
+    multi-line or retry path from taking the two shared locks in reverse order.
+    """
+    connection = _Connection()
+
+    ingest_row(connection, _row())
+
+    header_lock = next(
+        index
+        for index, statement in enumerate(connection.statements)
+        if "FROM transaction WHERE source_transaction_id" in statement
+    )
+    inventory_lock = next(
+        index
+        for index, statement in enumerate(connection.statements)
+        if statement.startswith("UPDATE inventory")
+    )
+    assert header_lock < inventory_lock
 
 
 def test_a_second_line_for_the_same_source_id_is_appended_and_total_recomputed() -> (
@@ -241,7 +314,51 @@ def test_a_second_line_for_the_same_source_id_is_appended_and_total_recomputed()
     header = connection.headers["TXN-1"]
     assert set(header["lines"]) == {1, 2}
     assert header["total"] == Decimal("24.98")
+    assert connection.inventory == {(1, 1): 8, (1, 2): 9}
     assert connection.commits == 2
+
+
+def test_insufficient_stock_rolls_back_the_new_header_and_line() -> None:
+    connection = _Connection(inventory={(1, 1): 1})
+
+    with pytest.raises(RowRejected, match="insufficient stock"):
+        ingest_row(connection, _row(quantity=2))
+
+    assert connection.headers == {}
+    assert connection.inventory == {(1, 1): 1}
+    assert connection.commits == 0
+    assert connection.rollbacks == 1
+
+
+def test_missing_stock_row_rolls_back_the_new_header_and_line() -> None:
+    connection = _Connection(inventory={(1, 2): 10})
+
+    with pytest.raises(RowRejected, match="no inventory"):
+        ingest_row(connection, _row())
+
+    assert connection.headers == {}
+    assert connection.inventory == {(1, 2): 10}
+    assert connection.commits == 0
+    assert connection.rollbacks == 1
+
+
+def test_a_failure_after_decrement_rolls_back_stock_header_and_line(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = _Connection()
+
+    def fail_recompute(*_args, **_kwargs) -> None:
+        raise RuntimeError("total update failed")
+
+    monkeypatch.setattr("web.services.ingestion.sales.recompute_total", fail_recompute)
+
+    with pytest.raises(RuntimeError, match="total update failed"):
+        ingest_row(connection, _row())
+
+    assert connection.headers == {}
+    assert connection.inventory[(1, 1)] == 10
+    assert connection.commits == 0
+    assert connection.rollbacks == 1
 
 
 # ---------- field-level rejections (no database call at all) ----------
@@ -272,6 +389,66 @@ def test_negative_unit_price_is_rejected() -> None:
 
     with pytest.raises(RowRejected, match="unit price"):
         ingest_row(connection, _row(unit_price=Decimal("-0.01")))
+
+    assert connection.headers == {}
+
+
+def test_zero_unit_price_is_rejected() -> None:
+    connection = _Connection()
+
+    with pytest.raises(RowRejected, match="positive"):
+        ingest_row(connection, _row(unit_price=Decimal("0.00")))
+
+    assert connection.headers == {}
+
+
+def test_a_unit_price_with_more_than_two_decimals_is_rejected() -> None:
+    connection = _Connection()
+
+    with pytest.raises(RowRejected, match="2 decimal"):
+        ingest_row(connection, _row(unit_price=Decimal("10.999")))
+
+    assert connection.headers == {}
+
+
+def test_a_future_sale_is_rejected() -> None:
+    connection = _Connection()
+
+    with pytest.raises(RowRejected, match="future"):
+        ingest_row(
+            connection,
+            _row(occurred_at=datetime.now(UTC) + timedelta(minutes=1)),
+        )
+
+    assert connection.headers == {}
+
+
+def test_a_sale_before_customer_registration_is_rejected() -> None:
+    connection = _Connection(registered_on=date(2026, 1, 16))
+
+    with pytest.raises(RowRejected, match="registration"):
+        ingest_row(connection, _row())
+
+    assert connection.headers == {}
+
+
+def test_a_sale_of_an_inactive_product_is_rejected() -> None:
+    connection = _Connection(inactive_product_ids={1})
+
+    with pytest.raises(RowRejected, match="inactive"):
+        ingest_row(connection, _row())
+
+    assert connection.headers == {}
+
+
+@pytest.mark.parametrize("source_id", ["=2+3", "+SUM(A1:A2)", "@cmd", "-1"])
+def test_a_spreadsheet_formula_like_transaction_id_is_rejected(
+    source_id: str,
+) -> None:
+    connection = _Connection()
+
+    with pytest.raises(RowRejected, match="spreadsheet formula"):
+        ingest_row(connection, _row(source_transaction_id=source_id))
 
     assert connection.headers == {}
 

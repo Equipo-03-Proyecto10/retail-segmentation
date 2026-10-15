@@ -9,6 +9,7 @@ from flask.testing import FlaskClient
 from web.app import create_app
 from web.config import Config
 from web.middleware import public
+from web.security import HSTS_VALUE, SECURITY_HEADERS
 
 
 def _client(*, session_cookie_secure: bool) -> FlaskClient:
@@ -82,3 +83,12 @@ def test_the_factory_applies_the_attributes_to_app_config(secure: bool) -> None:
     assert app.config["SESSION_COOKIE_HTTPONLY"] is True
     assert app.config["SESSION_COOKIE_SAMESITE"] == "Lax"
     assert app.config["SESSION_COOKIE_SECURE"] is secure
+
+
+def test_flask_sets_the_security_header_baseline() -> None:
+    app = _client(session_cookie_secure=False).application  # type: ignore[attr-defined]
+    response = app.test_client().get("/opens-a-session")
+
+    for name, value in SECURITY_HEADERS.items():
+        assert response.headers[name] == value
+    assert response.headers["Strict-Transport-Security"] == HSTS_VALUE

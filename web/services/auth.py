@@ -16,6 +16,10 @@ from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from psycopg import Connection
 
+from web.config import (
+    DEFAULT_SESSION_ABSOLUTE_TIMEOUT_SECONDS,
+    DEFAULT_SESSION_IDLE_TIMEOUT_SECONDS,
+)
 from web.db.sessions import (
     SessionPrincipal,
     load_principal,
@@ -94,14 +98,44 @@ def end_session(connection: Connection, session_id: str | None) -> None:
 
 
 def current_principal(
-    connection: Connection, session_id: str | None
+    connection: Connection,
+    session_id: str | None,
+    *,
+    idle_timeout_seconds: int = DEFAULT_SESSION_IDLE_TIMEOUT_SECONDS,
+    absolute_timeout_seconds: int = DEFAULT_SESSION_ABSOLUTE_TIMEOUT_SECONDS,
 ) -> SessionPrincipal | None:
     """Who the session belongs to right now, or None when it is unknown,
-    revoked, or its user has been deactivated (RF-09)."""
+    revoked, expired, or its user has been deactivated (RF-09).
+
+    Resolving a live session also touches its server-side activity timestamp,
+    so this read is a small committed unit of work rather than an uncommitted
+    write left for the request teardown to roll back.
+    """
     parsed = _session_uuid(session_id)
     if parsed is None:
         return None
-    return load_principal(connection, parsed)
+    return _load_current_principal(
+        connection,
+        parsed,
+        idle_timeout_seconds=idle_timeout_seconds,
+        absolute_timeout_seconds=absolute_timeout_seconds,
+    )
+
+
+@atomic
+def _load_current_principal(
+    connection: Connection,
+    session_id: UUID,
+    *,
+    idle_timeout_seconds: int,
+    absolute_timeout_seconds: int,
+) -> SessionPrincipal | None:
+    return load_principal(
+        connection,
+        session_id,
+        idle_timeout_seconds=idle_timeout_seconds,
+        absolute_timeout_seconds=absolute_timeout_seconds,
+    )
 
 
 def _session_uuid(session_id: str | None) -> UUID | None:

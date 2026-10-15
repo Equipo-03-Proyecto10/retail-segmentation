@@ -1,10 +1,10 @@
 # ADR-0019 — Experiment measurement separates assignment, exposure and conversion
 
-**Status:** Accepted
+**Status:** Partially superseded by ADR-0028
 **Owner:** Marcelo
 **Issue:** —
 **Supersedes:** —
-**Superseded by:** —
+**Superseded by:** [ADR-0028](0028-experiment-treatment-arms-may-omit-control.md), in part (the exactly-one-control and control-required assignment decisions)
 
 ---
 

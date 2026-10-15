@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 INSTANCE = ROOT / "deploy/nginx/mosaiq.conf"
 COMPOSE = ROOT / "deploy/nginx/mosaiq.compose.conf"
 _ADD_HEADER = re.compile(r'^\s*add_header\s+(\S+)\s+"([^"]*)"\s+always;', re.MULTILINE)
+_HIDE_HEADER = re.compile(r"^\s*proxy_hide_header\s+(\S+)\s*;", re.MULTILINE)
 EXPECTED = {
     "Strict-Transport-Security",
     "X-Content-Type-Options",
@@ -63,9 +64,28 @@ def _headers(path: Path, port: int | None = None) -> dict[str, str]:
     return dict(_ADD_HEADER.findall("\n".join(direct_lines)))
 
 
+def _hidden_headers(path: Path, port: int | None = None) -> set[str]:
+    block = _server_block(path, port)
+    direct_lines = []
+    depth = 0
+    for line in block.splitlines():
+        if depth == 0:
+            direct_lines.append(line)
+        depth += line.count("{") - line.count("}")
+    return set(_HIDE_HEADER.findall("\n".join(direct_lines)))
+
+
 @pytest.mark.parametrize("path", [INSTANCE, COMPOSE], ids=lambda p: p.name)
 def test_every_security_header_is_sent(path: Path) -> None:
     assert set(_headers(path, 443 if path == INSTANCE else None)) == EXPECTED
+
+
+@pytest.mark.parametrize("path", [INSTANCE, COMPOSE], ids=lambda p: p.name)
+def test_upstream_security_headers_are_hidden_before_proxy_headers_are_added(
+    path: Path,
+) -> None:
+    port = 443 if path == INSTANCE else None
+    assert _hidden_headers(path, port) == EXPECTED
 
 
 def test_permissions_policy_denies_what_the_application_does_not_use() -> None:

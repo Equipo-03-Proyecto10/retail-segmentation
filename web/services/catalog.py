@@ -8,6 +8,7 @@ transaction and raise CatalogConflict for expected database refusals.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from functools import wraps
@@ -165,6 +166,12 @@ def validate_role(*, code: str, description: str) -> dict[str, str]:
         errors["code"] = "Code is required."
     elif len(code) > 40:
         errors["code"] = "Code must be 40 characters or fewer."
+    elif not re.fullmatch(r"[A-Z][A-Z0-9_]*", code):
+        errors["code"] = (
+            "Code must use uppercase ASCII letters, digits and underscores."
+        )
+    elif code != "ADMIN" and re.fullmatch(r"ADM(?:[1IL]N|N)", code):
+        errors["code"] = "This role code is reserved as an ADMIN look-alike."
 
     if description and len(description) > 160:
         errors["description"] = "Description must be 160 characters or fewer."

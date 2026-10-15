@@ -17,7 +17,8 @@ ends, so the same statement is repeatable for a fixed `until` instead of
 depending on the clock of whichever connection ran it.
 
 The current and previous segment are read from `customer_segment_history`
-(ADR-0017): the open row, and the most recently closed one. One statement reads
+(ADR-0017): the open row, with its label streak's first `valid_from`, and the
+most recent row before that streak whose label differs. One statement reads
 both so a concurrent segment run cannot make two READ COMMITTED snapshots
 return the same row as current and previous. It never reads
 `segmentation_run.method` -- ADR-0018 says a consumer of assignments never
@@ -278,18 +279,90 @@ def get_discount_totals(
 def get_current_and_previous_history_rows(
     connection: Connection[Any], customer_id: Any
 ) -> tuple[HistoryRow | None, HistoryRow | None]:
-    """The open assignment and most recently closed assignment in one read."""
+    """The current label streak and the preceding different label in one read.
+
+    Every segmentation run closes the open row and inserts a successor, even
+    when its label is unchanged.  The profile must therefore walk over those
+    unchanged rows: the current row keeps the newest run's R/F/M values, while
+    its ``valid_from`` is replaced by the beginning of the contiguous streak.
+    The previous result is the first row before that streak whose label is
+    different, not merely the row from the preceding run.  ``IS DISTINCT
+    FROM`` makes an unassigned result (NULL) a real, comparable label.
+    """
     with connection.cursor() as cursor:
         cursor.execute(
             """
+            WITH ordered AS (
+                SELECT h.*,
+                       row_number() OVER (
+                           ORDER BY (h.valid_to IS NULL) DESC,
+                                    h.valid_from DESC,
+                                    h.history_id DESC
+                       ) AS row_position,
+                       lag(h.label_code) OVER (
+                           ORDER BY (h.valid_to IS NULL) DESC,
+                                    h.valid_from DESC,
+                                    h.history_id DESC
+                       ) AS newer_label,
+                       lag(h.valid_from) OVER (
+                           ORDER BY (h.valid_to IS NULL) DESC,
+                                    h.valid_from DESC,
+                                    h.history_id DESC
+                       ) AS newer_valid_from
+                FROM customer_segment_history AS h
+                WHERE h.customer_id = %(customer_id)s
+            ), marked AS (
+                SELECT ordered.*,
+                       sum(
+                           CASE
+                               WHEN row_position = 1
+                                 OR label_code IS DISTINCT FROM newer_label
+                                 OR valid_to IS DISTINCT FROM newer_valid_from
+                               THEN 1 ELSE 0
+                           END
+                       ) OVER (ORDER BY row_position) AS streak
+                FROM ordered
+            ), current_streak AS (
+                SELECT open_row.streak, min(member.valid_from) AS streak_start
+                FROM marked AS open_row
+                JOIN marked AS member ON member.streak = open_row.streak
+                WHERE open_row.valid_to IS NULL
+                GROUP BY open_row.streak
+            ), selected AS (
+                SELECT marked.*, current_streak.streak AS current_streak,
+                       current_streak.streak_start
+                FROM marked
+                LEFT JOIN current_streak ON TRUE
+                WHERE (
+                    current_streak.streak IS NOT NULL
+                    AND (
+                        (marked.streak = current_streak.streak
+                         AND marked.valid_to IS NULL)
+                        OR (
+                            marked.streak = current_streak.streak + 1
+                            AND marked.row_position = (
+                                SELECT min(previous.row_position)
+                                FROM marked AS previous
+                                WHERE previous.streak = current_streak.streak + 1
+                            )
+                        )
+                    )
+                )
+                OR (current_streak.streak IS NULL AND marked.row_position = 1)
+            )
             SELECT h.run_id, h.label_code, sl.name,
-                   h.recency_last_purchase_at, h.frequency_count,
-                   h.monetary_total, h.r_score, h.f_score, h.m_score,
-                   h.valid_from, h.valid_to, r.run_at, r.window_days
-            FROM customer_segment_history AS h
+                   h.recency_last_purchase_at,
+                   h.frequency_count, h.monetary_total,
+                   h.r_score, h.f_score, h.m_score,
+                   CASE
+                       WHEN h.valid_to IS NULL
+                       THEN h.streak_start
+                       ELSE h.valid_from
+                   END AS valid_from,
+                   h.valid_to, r.run_at, r.window_days
+            FROM selected AS h
             JOIN segmentation_run AS r ON r.run_id = h.run_id
             LEFT JOIN segment_label AS sl ON sl.label_code = h.label_code
-            WHERE h.customer_id = %(customer_id)s
             ORDER BY (h.valid_to IS NULL) DESC,
                      h.valid_to DESC,
                      h.history_id DESC

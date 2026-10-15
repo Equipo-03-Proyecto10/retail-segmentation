@@ -72,7 +72,7 @@
         <p class="mq-caption" id="shift-counts">{{ shifts.compared }} {{ "customer" if shifts.compared == 1 else "customers" }} compared: {{ shifts.compared - shifts.unchanged }} shifted, {{ shifts.unchanged }} without a shift ({{ shifts.undecided }} whose leader changed with too few purchases or a tie to claim it). {{ shifts.absent }} with sales in only one period. Shares are % of purchases; a shift needs {{ min_purchases }} or more purchases in each period and a clear leader (RN-50).</p>
       </div>
       {% if shifts.rows %}
-        <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(shifts.rows|length, "shift", "shifts") }}</span></div>
+        <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(shifts.total if shifts.total is not none else shifts.rows|length, "shift", "shifts") }}</span></div>
         <div class="mq-table-wrap">
           <table class="mq-table">
             <thead>
@@ -95,6 +95,13 @@
             </tbody>
           </table>
         </div>
+        {{ pagination(
+          shifts.page,
+          shifts.page_count,
+          "Page {} of {} · ".format(shifts.page, shifts.page_count) ~ count_label(shifts.total if shifts.total is not none else shifts.rows|length, "shift", "shifts"),
+          url_for('consumption_reports.index', store=store, channel=channel, category=category, as_of=as_of, window_days=window_days, page=recommendations.page if recommendations else none, shift_page=shifts.page - 1) if shifts.has_previous else none,
+          url_for('consumption_reports.index', store=store, channel=channel, category=category, as_of=as_of, window_days=window_days, page=recommendations.page if recommendations else none, shift_page=shifts.page + 1) if shifts.has_next else none
+        ) }}
       {% else %}
         <div class="mq-panel__body"><p class="mq-caption">No shifts match those filters.</p></div>
       {% endif %}
@@ -144,8 +151,8 @@
           recommendations.page,
           recommendations.page_count,
           "Page {} of {} · ".format(recommendations.page, recommendations.page_count) ~ count_label(recommendations.total, "recommendation", "recommendations"),
-          url_for('consumption_reports.index', store=store, channel=channel, category=category, as_of=as_of, window_days=window_days, page=recommendations.page - 1) if recommendations.has_previous else none,
-          url_for('consumption_reports.index', store=store, channel=channel, category=category, as_of=as_of, window_days=window_days, page=recommendations.page + 1) if recommendations.has_next else none
+          url_for('consumption_reports.index', store=store, channel=channel, category=category, as_of=as_of, window_days=window_days, page=recommendations.page - 1, shift_page=shifts.page if shifts else none) if recommendations.has_previous else none,
+          url_for('consumption_reports.index', store=store, channel=channel, category=category, as_of=as_of, window_days=window_days, page=recommendations.page + 1, shift_page=shifts.page if shifts else none) if recommendations.has_next else none
         ) }}
       {% else %}
         <div class="mq-panel__body"><p class="mq-caption">No recommendations match those filters.</p></div>

@@ -1,5 +1,21 @@
 # Datastore designs
 
+> **Decided, not yet built.** [ADR-0037](../adr/0037-two-redis-instances-carry-sessions-caches-limits-and-inter-service-streams.md)
+> and [ADR-0038](../adr/0038-mongodb-holds-in-store-engagement-owned-by-engagement-service-alone.md)
+> now govern Redis and MongoDB. Where those records and these designs
+> disagree, the records win. In particular:
+> - Redis runs as two instances, `redis-state` and `redis-cache`, and key
+>   names follow ADR-0037's namespace.
+> - A revoked token is one whose `pub:auth:v1:live:{sid}` no longer exists
+>   (ADR-0036); the `token:revoked:{jti}` list below is not built.
+> - MongoDB holds only the engagement collections of engagement-service
+>   (`engagement_event` and `engagement_daily`, in the database
+>   `engagement`); the six collections below duplicate PostgreSQL tables and
+>   are not built.
+>
+> F13-05 (#424) and F13-06 (#428) rewrite these documents as specifications
+> and remove the banner below.
+
 > **Nothing in this directory is implemented, and nothing in it runs.** The
 > delivery has one database engine, PostgreSQL, on one instance
 > ([ADR-0001](../adr/0001-flask-monolith-on-a-single-vm.md)). These documents

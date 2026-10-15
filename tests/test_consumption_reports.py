@@ -335,6 +335,51 @@ def test_the_recommendation_report_asks_every_customer(
     assert {call.args[1] for call in manager.recommend.call_args_list} == {"a", "b"}
 
 
+def test_the_recommendation_report_consumes_customers_after_the_first_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    customers = [
+        Customer(str(n), None, f"C{n}", None, None, 1, None) for n in range(501)
+    ]
+    results = [
+        _result(customer_id=str(n), recommendations=(_recommendation(n),))
+        for n in range(501)
+    ]
+    manager = _wire_recommend(monkeypatch, customers=customers, results=results)
+    manager.list_customers.side_effect = [
+        (customers[:500], 501),
+        (customers[500:], 501),
+    ]
+
+    report = build_recommendation_report(MagicMock(), as_of=_NOW, window_days=180)
+
+    assert report.total == 501
+    assert len(manager.recommend.call_args_list) == 501
+    assert [call.kwargs["page"] for call in manager.list_customers.call_args_list] == [
+        1,
+        2,
+    ]
+
+
+def test_the_shift_report_pages_after_filtering_and_names_only_that_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shifts = [_shift(str(n), store=_dim(1, 2)) for n in range(30)]
+    names = {str(n): f"Customer {n}" for n in range(30)}
+    manager = _wire_shifts(monkeypatch, shifts=shifts, names=names)
+
+    report = build_shift_report(
+        MagicMock(), as_of=_NOW, window_days=90, page=2, page_size=25
+    )
+
+    assert report.total == 30
+    assert report.page == 2
+    assert report.page_count == 2
+    assert [row.customer_id for row in report.rows] == [str(n) for n in range(25, 30)]
+    (looked_up,) = manager.list_customer_names.call_args.args[1:]
+    assert looked_up == [str(n) for n in range(25, 30)]
+
+
 def test_the_recommendation_report_passes_the_window_to_each_customer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

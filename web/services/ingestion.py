@@ -6,8 +6,8 @@ without touching validation or persistence."""
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
-from decimal import Decimal
+from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 
 from psycopg import Connection
 from psycopg.errors import (
@@ -20,6 +20,7 @@ from psycopg.errors import (
 )
 
 from web.db import sales
+from web.db.inventory import StockUnavailable, decrement_stock
 from web.db.transactions import atomic
 
 
@@ -70,6 +71,14 @@ _LINE_DATA_ERRORS: dict[type[DataError], str] = {
     NumericValueOutOfRange: "product_id, quantity or unit_price is out of range",
 }
 
+_CENT = Decimal("0.01")
+_FORMULA_PREFIXES = ("=", "+", "-", "@")
+
+
+def _is_spreadsheet_formula(value: str) -> bool:
+    """Recognize prefixes spreadsheet applications evaluate as formulas."""
+    return value.lstrip().startswith(_FORMULA_PREFIXES)
+
 
 def _malformed(error: DataError, reasons: dict[type[DataError], str]) -> RowRejected:
     for error_type, reason in reasons.items():
@@ -81,21 +90,53 @@ def _malformed(error: DataError, reasons: dict[type[DataError], str]) -> RowReje
 @atomic
 def ingest_row(connection: Connection, row: SalesRow) -> None:
     """Validate and persist one sales row, or raise RowRejected."""
-    if not row.source_transaction_id or not row.source_transaction_id.strip():
+    if not isinstance(row.source_transaction_id, str):
         raise RowRejected("source transaction id is required")
+    source_transaction_id = row.source_transaction_id.strip()
+    if not source_transaction_id:
+        raise RowRejected("source transaction id is required")
+    if _is_spreadsheet_formula(source_transaction_id):
+        raise RowRejected("source transaction id cannot be a spreadsheet formula")
+    if row.occurred_at.tzinfo is None:
+        raise RowRejected("occurred_at must include a UTC offset")
+    if row.occurred_at > datetime.now(UTC):
+        raise RowRejected("occurred_at cannot be in the future")
     if row.quantity <= 0:
         raise RowRejected("quantity must be positive")
     if not row.unit_price.is_finite():
         raise RowRejected("unit price must be a finite number")
-    if row.unit_price < 0:
-        raise RowRejected("unit price cannot be negative")
+    if row.unit_price <= 0:
+        raise RowRejected("unit price must be positive")
+    try:
+        has_more_than_two_decimals = row.unit_price.quantize(_CENT) != row.unit_price
+    except InvalidOperation as error:
+        raise RowRejected("unit price must have at most 2 decimal places") from error
+    if has_more_than_two_decimals:
+        raise RowRejected("unit price must have at most 2 decimal places")
 
-    header = sales.get_transaction_by_source_id(connection, row.source_transaction_id)
+    try:
+        references = sales.get_sale_references(
+            connection,
+            customer_id=row.customer_id,
+            product_id=row.product_id,
+        )
+    except DataError as error:
+        raise _malformed(error, _HEADER_DATA_ERRORS) from error
+    if references is None:
+        raise RowRejected("unknown customer")
+    if row.occurred_at.date() < references.registered_on:
+        raise RowRejected("sale occurred before customer registration")
+    if references.product_is_active is None:
+        raise RowRejected("unknown product")
+    if not references.product_is_active:
+        raise RowRejected("product is inactive")
+
+    header = sales.get_transaction_by_source_id(connection, source_transaction_id)
     if header is None:
         try:
             transaction_id = sales.insert_transaction(
                 connection,
-                source_transaction_id=row.source_transaction_id,
+                source_transaction_id=source_transaction_id,
                 customer_id=row.customer_id,
                 store_id=row.store_id,
                 channel_id=row.channel_id,
@@ -105,7 +146,7 @@ def ingest_row(connection: Connection, row: SalesRow) -> None:
             raise _unknown_reference(error) from error
         except UniqueViolation as error:
             raise RowRejected(
-                f"duplicate: {row.source_transaction_id} was created concurrently"
+                f"duplicate: {source_transaction_id} was created concurrently"
             ) from error
         except DataError as error:
             raise _malformed(error, _HEADER_DATA_ERRORS) from error
@@ -118,7 +159,7 @@ def ingest_row(connection: Connection, row: SalesRow) -> None:
         ):
             raise RowRejected(
                 f"row disagrees with the accepted header for "
-                f"{row.source_transaction_id}"
+                f"{source_transaction_id}"
             )
         transaction_id = header.transaction_id
 
@@ -132,12 +173,30 @@ def ingest_row(connection: Connection, row: SalesRow) -> None:
         )
     except UniqueViolation as error:
         raise RowRejected(
-            f"duplicate: {row.source_transaction_id} already has a line for "
+            f"duplicate: {source_transaction_id} already has a line for "
             f"product {row.product_id}"
         ) from error
     except ForeignKeyViolation as error:
         raise _unknown_reference(error) from error
     except DataError as error:
         raise _malformed(error, _LINE_DATA_ERRORS) from error
+
+    try:
+        decrement_stock(
+            connection,
+            store_id=row.store_id,
+            product_id=row.product_id,
+            quantity=row.quantity,
+        )
+    except StockUnavailable as error:
+        if error.available is None:
+            raise RowRejected(
+                f"no inventory for store {error.store_id} and product "
+                f"{error.product_id}"
+            ) from error
+        raise RowRejected(
+            f"insufficient stock for store {error.store_id} and product "
+            f"{error.product_id}: {error.available} available"
+        ) from error
 
     sales.recompute_total(connection, transaction_id)

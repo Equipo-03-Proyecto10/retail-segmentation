@@ -4,9 +4,10 @@ Evidence that a store can act on what changed rather than on the whole customer
 base: `/consumption-reports/` shows consumption shifts and product
 recommendations side by side, both filterable by store, channel, category and
 period, every recommendation row carries its stated reason and its store stock
-read fresh on every request, a filter combination with no rows says so per
-report rather than an empty table, and the page is refused by the default-deny
-gate to any profile without `segment.read`.
+read fresh on every request, both tables are server-paginated without dropping
+customers or shifts, a filter combination with no rows says so per report
+rather than an empty table, and the page is refused by the default-deny gate
+to any profile without `segment.read`.
 
 Covers the four acceptance criteria on F12-03 and business rule RN-44. Neither
 report recomputes anything: the shift report reuses F8-05's `detect_shifts`
@@ -77,6 +78,14 @@ unfiltered shift report rows == raw detect_shifts shifts: True (13, 13)
 recommendation report total: 107 (page showed 107)
 first page row count == page_size: True
 ```
+
+The report consumes the complete customer directory in 500-customer batches;
+the batch size is an implementation detail, not a result cap. Shift rows are
+filtered before pagination and use an independent `shift_page` parameter,
+while recommendation pages retain `page`. Moving either table keeps the other
+table's page and all store/channel/category/period filters. Focused regression
+tests exercise 501 customers, the second customer batch, a second shift page,
+and links that preserve both page parameters.
 
 Filtered to `store=8` (the injected shift's *later* store, also this customer's
 usual store):
@@ -177,26 +186,24 @@ built.
 
 ## Tests
 
-`tests/test_consumption_reports.py` (22), `tests/test_consumption_reports_db.py`
-(6) and `tests/test_consumption_reports_route.py` (23) are new — 51 tests, plus
+`tests/test_consumption_reports.py` (24), `tests/test_consumption_reports_db.py`
+(6) and `tests/test_consumption_reports_route.py` (25) are new — 55 tests, plus
 2 new tests in `tests/test_recommendations.py` for `channel_id`/`channel_name`.
 Two existing tests changed only because they enumerate what exists: the menu
 lists in `tests/test_authz.py` now include *Consumption reports*, and the
 negative-flow matrix now includes `/consumption-reports/`.
 
 ```
-$ pytest -q
-1796 passed         # 1741 on develop, plus 55
-$ black --check .   # All done
-$ ruff check .      # All checks passed!
+$ .venv/bin/pytest -q      # 2948 passed
+$ .venv/bin/black --check .  # 191 files unchanged
+$ .venv/bin/ruff check .   # All checks passed!
 ```
 
 ## Things to know
 
 * **The recommendation report calls `recommend` for every customer** on every
-  request (capped at 500 customers), fine at this delivery's scale and the
-  first thing to change for a much larger customer base — the same tradeoff
-  F12-01 and F12-02 already documented for their own unpaged or wide reads.
+  request. Customers are read in bounded batches, but coverage is complete;
+  recommendations themselves are paginated at 25 rows for the page.
 * **The period is one control for both reports**, `as_of` and `window_days`,
   rather than two independently chosen ranges: for the shift report it becomes
   the two consecutive periods `consecutive_periods` already builds; for the

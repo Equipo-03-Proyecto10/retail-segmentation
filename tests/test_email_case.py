@@ -70,3 +70,16 @@ def test_the_schema_enforces_one_account_per_mailbox_case_insensitively() -> Non
         "CREATE UNIQUE INDEX ux_app_user_email_lower ON app_user (lower(email));"
         in schema
     )
+
+
+def test_the_schema_rejects_a_domain_without_a_dot() -> None:
+    assert "CONSTRAINT app_user_email_check CHECK" in SCHEMA.read_text()
+    assert "[^@[:space:].]+(\\.[^@[:space:].]+)+" in SCHEMA.read_text()
+
+
+def test_the_schema_reserves_canonical_and_lookalike_admin_codes() -> None:
+    schema = SCHEMA.read_text()
+
+    assert "CONSTRAINT role_code_format CHECK" in schema
+    assert "role_admin_code_bound_to_reserved_id" in schema
+    assert "role_admin_lookalike" in schema

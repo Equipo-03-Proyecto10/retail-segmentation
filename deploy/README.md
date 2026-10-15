@@ -278,7 +278,7 @@ sudo openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
 ### 2. Install the config and reload
 
 `deploy/nginx/mosaiq.conf` already carries `server_name mosaiq.maxthecoder.online`,
-the Cloudflare `real_ip` include and the staged HSTS.
+the Cloudflare `real_ip` include and the one-year HSTS policy.
 
 ```sh
 sudo cp /opt/mosaiq/current/deploy/nginx/mosaiq.conf            /etc/nginx/conf.d/mosaiq.conf
@@ -363,9 +363,12 @@ holds the instance (none of it can be done from the repository):
 5. **Evaluate conversion** on each seeded experiment, so `/experiments/<id>/uplift`
    has recorded conversions to compare, and verify the dashboard names each
    final arm and excludes experiments attached to finished or cancelled campaigns.
-6. **Remove what does not belong**: the September 6 copy of repository files, the
-   `.env` and the two unused virtualenvs at the `/opt/mosaiq/` root, and
-   `mosaiq.conf.bak-*` in `/etc/nginx/conf.d/`.
+6. **Remove what does not belong**: the September 6 copy of repository files
+   (including its `.git/`), the `.env` and the unused `.venv/` at the
+   `/opt/mosaiq/` root, and `mosaiq.conf.bak-*` in `/etc/nginx/conf.d/`. Keep
+   `current/`, `docs/`, `.cache/` (pip's cache — `/opt/mosaiq` is the `mosaiq`
+   user's home) and `venv/`: `venv/` is not a leftover, `mosaiq.service` and
+   `deploy.sh` run from it.
 7. **Re-diff** the schema and grants against a clean build of `main` once more.
 
 The administrator's address is no longer published in `docs/evidence/` (#360).

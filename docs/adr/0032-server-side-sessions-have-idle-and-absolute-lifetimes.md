@@ -1,6 +1,6 @@
 # ADR-0032 — Server-side sessions have idle and absolute lifetimes
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Team 03
 **Issue:** #359
 **Supersedes:** —

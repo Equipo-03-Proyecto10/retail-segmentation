@@ -1,6 +1,6 @@
 # ADR-0030 — K-means clusters are paired with the stable labels by proportional rank, so k need not equal the vocabulary's size
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Raquel
 **Issue:** #336
 **Supersedes:** [ADR-0018](0018-two-segmentation-strategies-behind-one-method-agnostic-pipeline.md)

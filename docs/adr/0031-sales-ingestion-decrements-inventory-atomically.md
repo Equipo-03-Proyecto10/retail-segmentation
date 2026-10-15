@@ -1,6 +1,6 @@
 # ADR-0031 — Accepted sales decrement inventory atomically
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Team 03
 **Issue:** #362
 **Supersedes:** —

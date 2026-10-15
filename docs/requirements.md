@@ -50,8 +50,8 @@ Each states how it is checked. A quality nobody can verify is a wish.
 
 | Id | Requirement | How it is verified |
 |---|---|---|
-| RNF-01 | The browser receives server-rendered HTML. No JSON or XML is exchanged between internal components (`scope.md` C-2) | No serialization endpoint exists; every route returns a rendered template. Reviewed per pull request |
-| RNF-02 | One deployable unit. No microservices, no external REST, GraphQL or SOAP API (C-1, C-3, C-7) | One application package, one process. A second deployable unit needs an ADR |
+| RNF-01 | The web system's browser receives server-rendered HTML. The web system exchanges no JSON or XML with another component (`scope.md` C-2). The microservices of the second delivery are not bound by this, and answer in JSON and XML under ADR-0035 | No serialization endpoint exists in `web/`; every web route returns a rendered template. Reviewed per pull request |
+| RNF-02 | The web system is one deployable unit and exposes no REST, GraphQL or SOAP API (C-1, C-3, C-7). The second delivery adds at least ten microservices, fifteen planned, each implementing one business rule in its own container, under ADR-0034, ADR-0040 and ADR-0043; any further service or deployable unit needs an ADR | `web/` is one application package and one process, and consumes no service. Each service is registered in `contracts/registry.yaml` and runs as its own compose project from `services/<name>/compose.yaml` |
 | RNF-03 | Every SQL statement is parameterized. No string interpolation into SQL anywhere, including scripts and one-off queries | `grep` for f-strings and concatenation in `web/db/`; reviewed per pull request |
 | RNF-04 | Passwords are hashed with argon2id. The database never hashes and never sees a plaintext password | `web/requirements.txt` pins `argon2-cffi`; seeded hashes are argon2id |
 | RNF-05 | Session cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` wherever the deployment terminates TLS. The secret key comes from the environment | Inspect response headers; `FLASK_SECRET_KEY` is absent from source |
@@ -72,7 +72,10 @@ Each states how it is checked. A quality nobody can verify is a wish.
 
 ## 3. Permission matrix
 
-The canonical statement of who may do what. [`data-model.md`](data-model.md)
+The canonical statement of who may do what in the web system. The distributed
+stage's services follow the
+[service operation policy](#service-operation-policy-distributed-stage) below,
+and this matrix does not change for them. [`data-model.md`](data-model.md)
 links here rather than repeating it, because two copies of a matrix drift.
 
 `full` create, read, update and delete · `read` read only · `own` only their own
@@ -124,6 +127,46 @@ rather than row-level security (`app_user` has no store). `STORE_MANAGER` holds
 `segment.read` since F10-02, so a store manager can act on a customer's
 recommendations at the counter, and reads the whole directory:
 [ADR-0023](adr/0023-store-managers-read-segments-and-customers.md).
+
+### Service operation policy (distributed stage)
+
+The services of the distributed stage do not use the matrix above. Their tokens
+carry only the role code, and each service enforces this policy per operation,
+as `x-mosaiq-roles` in its own contract
+([ADR-0036](adr/0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md)).
+The web's matrix does not change.
+
+| Operations | `x-mosaiq-roles` | Basis |
+|---|---|---|
+| Reads of products (including `GET /v1/products?ids=`), categories, stores, stock levels and channels | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `INVENTORY_PLANNER`, `AUDITOR` | Catalogs: read. Stock follows the catalog (ADR-0010) |
+| Writes of products, categories and store locations | `ADMIN` | Catalogs: full for `ADMIN` only |
+| Reads of customers, preference profiles, segments, segment assignments and recommendations | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR` | Segments and rules: read. Customers follow `segment.read` (ADR-0010, ADR-0023) |
+| Reads of sales and engagement events (each row names a customer) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR` | Reports: read, narrowed to `segment.read` holders, which keeps `INVENTORY_PLANNER` out of customer data |
+| Engagement summaries (aggregates, no customer) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `INVENTORY_PLANNER`, `AUDITOR` | Reports: read |
+| Reads of check-ins (where a staff member was) | `ADMIN`, `STORE_MANAGER`, `AUDITOR` | New, and narrowed: staff location data |
+| Floor writes: `POST /v1/sales`; `POST /v1/customers` and `PATCH /v1/customers/{customer_id}`; `PUT /v1/preference-profiles/{customer_id}/preferred-channels` and `/interest-categories`; `POST /v1/check-ins`; `POST /v1/engagement-events` | `ADMIN`, `STORE_MANAGER` | New. `STORE_MANAGER` is the floor role (ADR-0041, following ADR-0023). The web still refuses these to `STORE_MANAGER` |
+| Check-in reviews and engagement voids | `ADMIN` | Administrative correction |
+| Reads of users and roles | `ADMIN`, `AUDITOR` | Users: full for `ADMIN`, read for `AUDITOR` |
+| Writes of users, password resets of another user, and `POST /v1/administrator-transfers` | `ADMIN` | Users: full |
+| `GET /v1/users/me`; `PUT /v1/users/{user_id}/password` for the caller's own id, with the current password | Every authenticated role, `CUSTOMER` included | Users: own |
+| `GET` and `DELETE /v1/sessions/current` | Every authenticated role | — |
+| Reads of campaigns | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Campaigns: read |
+| Writes and transitions of campaigns | `ADMIN`, `MARKETING` | Campaigns: full |
+| `GET /v1/audit-entries` | `ADMIN`, `AUDITOR` | Audit log: read |
+| `POST /v1/sessions`, `POST /v1/sessions/refresh`, `GET /v1/jwks.json`, meta routes | No token | — |
+
+- `CUSTOMER` reaches only sign-in, refresh, its own session, `GET /v1/users/me`
+  and its own password. The web's dormant `user.self` is unchanged.
+- The floor writes are new for `STORE_MANAGER`, the Android floor role
+  ([ADR-0041](adr/0041-android-and-electron-clients-run-different-processes-over-different-formats.md)).
+  The web still refuses them to that role.
+- Two reads are narrower than the Reports column above. Rows that name a
+  customer (sales and engagement events) follow `segment.read`, which keeps
+  `INVENTORY_PLANNER` out of customer data. Check-ins, which record where a
+  staff member was, are read by `ADMIN`, `STORE_MANAGER` and `AUDITOR` only.
+- No operation is narrowed to a store: `app_user` has no store (ADR-0010).
+- `INVENTORY_PLANNER`'s `inventory` write stays deferred
+  ([`roadmap.md`](roadmap.md)), and no operation lists it.
 
 ## 4. Traceability
 

@@ -1,12 +1,15 @@
 # Roadmap — second delivery work
 
-Phases 0–6 completed the first delivery. The second delivery is now underway
-through the monolith's analytics work, organized as phases 7–12. The
-distributed components required by the same delivery have not started.
+Phases 0–6 completed the first delivery. The second delivery continues through
+the monolith's analytics work (phases 7–12), whose remaining gaps are tracked in
+#405. Its distributed components are organized as phases 13–18. They are
+planned and specified, but not built.
 
 This file records what is underway, what has not started, and how each kind of
 work enters the repository. It is not a schedule. The analytics boundary is in
-[`scope-delivery-2-analytics.md`](scope-delivery-2-analytics.md), while
+[`scope-delivery-2-analytics.md`](scope-delivery-2-analytics.md), and the
+distributed boundary is in
+[`scope-delivery-2-distributed.md`](scope-delivery-2-distributed.md).
 [`scope.md`](scope.md) remains the unchanged first-delivery boundary.
 
 ---
@@ -32,9 +35,10 @@ ingestion and RFM computation move into Phase 8. Batch clustering and segment
 migration move into Phase 9. Segment history moves into Phase 7. Dashboards
 move into Phase 12.
 
-**The governing analytics ADRs are still Proposed.** ADR-0017 through
-ADR-0020 state the decisions under review. They become binding when accepted,
-before the implementation that depends on them merges.
+**The governing analytics ADRs are accepted.** The team accepted ADR-0017 to
+ADR-0020 before the implementation that depends on them merged. ADR-0018 is now
+superseded by ADR-0030, ADR-0019 in part by ADR-0028, and ADR-0020 in part by
+ADR-0039.
 
 ## How work enters
 
@@ -92,36 +96,54 @@ datastore does not enter through the monolith's short cycle. Each adds a new
 system boundary or operational dependency.
 
 [ADR-0016](adr/0016-the-second-delivery-reinstates-the-distributed-architecture.md)
-reinstates that architecture but deliberately does not choose its boundaries
-or contracts. Distributed work re-enters only after the integration-contracts
-ADR required by ADR-0016 exists and is accepted. Service boundaries, JWT,
-datastore ownership and deployment then need their own accepted decisions
-before their implementations begin.
+reinstated that architecture without choosing its shape. ADR-0034 to ADR-0046
+now choose it:
 
-Until those records exist, ADR-0016 remains checkable by absence. The
-repository contains no service skeleton, client application, second deployable
-unit, MongoDB or Redis connection, shared JWT implementation, or HTTP sales
-ingestion endpoint. Phase 8 uses CSV under
-[ADR-0020](adr/0020-csv-is-the-sole-sales-ingestion-entry-point-for-this-delivery.md)
-without pre-empting a later integration contract.
+| Decision | Record |
+|---|---|
+| Fifteen single-rule service boundaries, each the only service writer of its data, with exact per-role grants | [ADR-0034](adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) |
+| Each service publishes its own versioned contract in JSON and XML, and every top-level resource has one owner | [ADR-0035](adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md) |
+| auth-service issues role-only RS256 tokens; every service checks that the session is live in Redis | [ADR-0036](adr/0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md) |
+| Two Redis instances, `redis-state` and `redis-cache`, used by the services only | [ADR-0037](adr/0037-two-redis-instances-carry-sessions-caches-limits-and-inter-service-streams.md) |
+| MongoDB holds in-store engagement, owned by engagement-service alone | [ADR-0038](adr/0038-mongodb-holds-in-store-engagement-owned-by-engagement-service-alone.md) |
+| sales-service records a sale all or nothing, consuming stock through `api_stock.consume_v1` | [ADR-0039](adr/0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) |
+| Each service is built in CI and runs as its own compose project, next to the unchanged web system | [ADR-0040](adr/0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md) |
+| Android (JSON) and Electron (XML) clients running different processes | [ADR-0041](adr/0041-android-and-electron-clients-run-different-processes-over-different-formats.md) |
+| A bench-only Rust build of the products reads is compared with the Flask service under one load | [ADR-0042](adr/0042-a-bench-only-rust-build-of-the-products-reads-is-compared-under-one-load.md) |
+| At least ten microservices, each implementing one business rule | [ADR-0043](adr/0043-at-least-ten-microservices-each-implementing-one-business-rule.md) |
+| Boundaries meet only through versioned `api_*` database contracts and Redis Streams relayed from each owner's outbox | [ADR-0044](adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) |
+| Services never import or copy the web system | [ADR-0045](adr/0045-services-never-import-the-web-system.md) |
+| Service-owned tables live in service schemas, never in `public` | [ADR-0046](adr/0046-service-owned-data-lives-in-service-schemas.md) |
+
+That set was accepted on 2026-10-15 (F13-01, #408), and distributed work may start. Each
+service then enters in two steps:
+
+1. **Its contract** merges and passes CI validation.
+2. **Its implementation** follows.
+
+A client story starts only after the contracts it consumes have merged.
+
+The web system is not a distributed component, and does not become one. It
+connects to no Redis and consumes no service. It keeps reading and writing
+PostgreSQL directly, which is how it shows the sales the services record.
 
 ## The second delivery
 
 [ADR-0016](adr/0016-the-second-delivery-reinstates-the-distributed-architecture.md)
-is Accepted. It makes the monolith one component of the distributed second
+is accepted, and partially superseded by ADR-0043 for the service count only. It makes the monolith one component of the distributed second
 delivery; it does not replace it. The course scope requires all of the
 following:
 
 | Part | Requirement | Current position |
 |---|---|---|
-| Microservices | Six to ten, each with one responsibility, its own container, versioned routes, authentication, JSON **and** XML responses, a health endpoint and OpenAPI documentation | Not started; boundaries and contracts are undecided |
-| Android client | Consumes JSON only. At least four microservices, plus two device capabilities — camera, QR, GPS, notifications, local storage or sensors | Not started; it follows the contracts decision |
-| Desktop client | Consumes XML only, validated against an XSD. At least four microservices, and a **different** process from the mobile one | Not started; it follows the contracts decision |
-| MongoDB | Real storage, with insert, query, update, aggregation and indexing demonstrated | Not started; ownership and use are undecided |
-| Redis | Sessions, revoked tokens, cache, counters and rate limits. Every component consults it during authentication or authorization | Not started; ownership and failure behaviour are undecided |
-| Shared JWT | Issued and validated across components, with revocation enforced through Redis | Not started; issuance, signing and revocation are undecided |
-| Integration contracts | Specified **before** the clients are built — JSON shapes, HTTP codes, pagination and versioning; XML elements, hierarchy, XSD and namespaces | Not started; this is the first gate for distributed work |
-| The web system | Keeps working independently, and grows: the five additional profiles already delivered, advanced administration, filters, pagination, reports, Highcharts, file upload, history and internal notifications | Underway through phases 7–12 |
+| Microservices | At least ten (instructor; ADR-0043 supersedes ADR-0016's six to ten), each implementing one business rule, with its own container, versioned routes, authentication, JSON **and** XML responses, a health endpoint and OpenAPI documentation | Planned: 15 services, each one business rule (ADR-0034, ADR-0043), phases 13–15 (#400, #399, #401) |
+| Android client | Consumes JSON only. At least four microservices, plus two device capabilities — camera, QR, GPS, notifications, local storage or sensors | Planned: ADR-0041, phase 17 (#403) |
+| Desktop client | Consumes XML only, validated against an XSD. At least four microservices, and a **different** process from the mobile one | Planned: Electron, ADR-0041, phase 16 (#402) |
+| MongoDB | Real storage, with insert, query, update, aggregation and indexing demonstrated | Planned: engagement-service only, ADR-0038 |
+| Redis | Sessions, revoked tokens, cache, counters and rate limits. Every component consults it during authentication or authorization | Planned: ADR-0037, two instances (`redis-state` and `redis-cache`) that also carry the inter-service streams. Every **service** consults it on every authenticated request. The web system keeps its PostgreSQL sessions (ADR-0022) and does not, which the instructor confirmed on 2026-10-13 |
+| Shared JWT | Issued and validated across components, with revocation enforced through Redis | Planned: role-only RS256 tokens from auth-service, verified by every service against a liveness key in Redis, ADR-0036 |
+| Integration contracts | Specified **before** the clients are built — JSON shapes, HTTP codes, pagination and versioning; XML elements, hierarchy, XSD and namespaces | Each service versions its own contract under ADR-0035, registered in `contracts/registry.yaml`; database and stream contracts under ADR-0044. Each service's contract is its first story in phase 14 |
+| The web system | Keeps working independently, and grows: the five additional profiles already delivered, advanced administration, filters, pagination, reports, Highcharts, file upload, history and internal notifications | Phases 7–12 delivered most of it; the experiment dashboard and internal notifications are still missing (#405) |
 
 The end-to-end demonstration remains one process across components. The mobile
 client sends JSON, a microservice validates the JWT, Redis confirms that the
@@ -129,9 +151,9 @@ session is live, the data lands in PostgreSQL or MongoDB, the web system
 displays it, and the desktop client reads it back over XML.
 
 The distributed rows above are not deferred to a later delivery. They are
-unstarted parts of this delivery, blocked on the decisions that ADR-0016
-requires. The analytics phase can proceed because it grows the independent
-monolith without choosing any of those missing contracts.
+planned parts of this delivery: decided in ADR-0034 to ADR-0046, scoped in
+[`scope-delivery-2-distributed.md`](scope-delivery-2-distributed.md), and
+broken into phases 13–18 in [`backlog.md`](backlog.md).
 
 **ADR-0016 supersedes the former monolith-only boundary.** It reverses
 [ADR-0001](adr/0001-flask-monolith-on-a-single-vm.md) and
@@ -147,8 +169,8 @@ Nothing in ADR-0016 brings them into scope.
 
 The earlier design exposed two failure modes before the analytics work began.
 They are now explicit second-delivery decisions rather than reminders for a
-later module. ADR-0017 and ADR-0018 are Proposed during planning and must be
-accepted before their dependent implementation merges.
+later module. ADR-0017 and ADR-0018 were accepted before their dependent implementation
+merged; ADR-0018 is now superseded by ADR-0030.
 
 **Segment assignments are never updated in place.**
 [ADR-0017](adr/0017-segment-assignment-history-replaces-the-mutable-current-segment.md)

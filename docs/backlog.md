@@ -2,7 +2,8 @@
 
 Work across both deliveries, grouped by planning phase. Phases 0-6 record the
 completed first delivery. Phases 7-12 cover the monolith analytics part of the
-second delivery. Story identifiers are `F<phase>-<n>`.
+second delivery, and phases 13-18 its distributed stage. Story identifiers are
+`F<phase>-<n>`. The `AN-<n>` stories close gaps left in phases 7-12.
 
 Estimates are set by the team at Planning, not here. Sprint membership lives in
 the GitHub Projects `Sprint` field, not in this document — a backlog that
@@ -11,11 +12,12 @@ duplicates the board drifts from it within a week.
 Priority: **P0** the delivery fails without it · **P1** required, schedulable
 later · **P2** optional.
 
-**This is not the whole second-delivery backlog.** [ADR-0016][adr-0016]
-requires the distributed architecture, but each component is blocked on a
-decision that does not exist yet. Phases 7-12 plan only the monolith analytics
-work and create no microservice, client application, MongoDB or Redis
-implementation, or shared authentication scheme.
+**Phases 13–18 are the distributed stage of the second delivery.** They
+follow ADR-0034 to ADR-0046, scoped in
+[`scope-delivery-2-distributed.md`](scope-delivery-2-distributed.md). F13-01 (#408)
+accepted that decision set on 2026-10-15. **The
+analytics phase is not finished.** The gaps found on 2026-10-13 are the
+`AN-*` stories at the end of this file (epic #405).
 
 ## Dependency graph
 
@@ -479,8 +481,488 @@ work, so the first delivery's C-1 and C-2 constraints do not govern it. The
 choice does not abolish those constraints generally or introduce an ingestion
 endpoint; ADR-0020 still makes CSV the only sales entry point for this phase.
 
+## Distributed stage — dependency graph
+
+Every phase 13–18 story with its blockers. Issue numbers are in each phase's
+table. GitHub shows the same blockers in each issue's **Dependencies** section,
+and every story is a sub-issue of its phase epic.
+
+```mermaid
+flowchart TD
+    F13-01
+    F13-01 --> F13-02
+    F13-01 --> F13-03
+    F13-02 --> F13-03
+    F13-05 --> F13-03
+    F13-07 --> F13-03
+    F13-01 --> F13-04
+    F13-02 --> F13-04
+    F13-03 --> F13-04
+    F13-05 --> F13-04
+    F13-07 --> F13-04
+    F13-01 --> F13-05
+    F13-02 --> F13-05
+    F13-01 --> F13-06
+    F13-05 --> F13-06
+    F13-01 --> F13-07
+    F13-02 --> F13-07
+    F13-01 --> F13-08
+    F13-03 --> F13-08
+    F13-05 --> F13-08
+    F13-01 --> F13-09
+    F13-02 --> F13-09
+    F13-03 --> F13-09
+    F13-04 --> F13-09
+    F13-05 --> F13-09
+    F13-06 --> F13-09
+    F13-07 --> F13-09
+    F13-08 --> F13-09
+    F13-10
+    F13-01 --> F13-11
+    F13-07 --> F13-11
+    F13-02 --> F14-01
+    F14-01 --> F14-02
+    F13-03 --> F14-02
+    F13-05 --> F14-02
+    F13-07 --> F14-02
+    F13-08 --> F14-02
+    F13-09 --> F14-02
+    F14-04 --> F14-02
+    F13-02 --> F14-03
+    F14-03 --> F14-04
+    F13-03 --> F14-04
+    F13-05 --> F14-04
+    F13-07 --> F14-04
+    F13-08 --> F14-04
+    F13-09 --> F14-04
+    F13-11 --> F14-04
+    F13-02 --> F14-05
+    F14-05 --> F14-06
+    F13-03 --> F14-06
+    F13-05 --> F14-06
+    F13-07 --> F14-06
+    F13-08 --> F14-06
+    F13-09 --> F14-06
+    F13-02 --> F14-07
+    F14-07 --> F14-08
+    F13-03 --> F14-08
+    F13-05 --> F14-08
+    F13-07 --> F14-08
+    F13-08 --> F14-08
+    F13-09 --> F14-08
+    F13-02 --> F14-09
+    F14-09 --> F14-10
+    F13-04 --> F14-10
+    F13-05 --> F14-10
+    F13-07 --> F14-10
+    F13-08 --> F14-10
+    F13-09 --> F14-10
+    F13-02 --> F14-11
+    F14-11 --> F14-12
+    F13-04 --> F14-12
+    F13-05 --> F14-12
+    F13-07 --> F14-12
+    F13-08 --> F14-12
+    F13-09 --> F14-12
+    F13-02 --> F14-13
+    F14-13 --> F14-14
+    F13-03 --> F14-14
+    F13-05 --> F14-14
+    F13-07 --> F14-14
+    F13-08 --> F14-14
+    F13-09 --> F14-14
+    F13-02 --> F14-15
+    F14-15 --> F14-16
+    F13-04 --> F14-16
+    F13-05 --> F14-16
+    F13-07 --> F14-16
+    F13-08 --> F14-16
+    F13-09 --> F14-16
+    F14-14 --> F14-16
+    F13-02 --> F14-17
+    F14-17 --> F14-18
+    F13-03 --> F14-18
+    F13-05 --> F14-18
+    F13-07 --> F14-18
+    F13-08 --> F14-18
+    F13-09 --> F14-18
+    F13-11 --> F14-18
+    F14-06 --> F14-18
+    F14-14 --> F14-18
+    F14-12 --> F14-18
+    F13-02 --> F14-19
+    F14-19 --> F14-20
+    F13-04 --> F14-20
+    F13-05 --> F14-20
+    F13-07 --> F14-20
+    F13-08 --> F14-20
+    F13-09 --> F14-20
+    F14-14 --> F14-20
+    F13-02 --> F14-21
+    F14-21 --> F14-22
+    F13-03 --> F14-22
+    F13-05 --> F14-22
+    F13-07 --> F14-22
+    F13-08 --> F14-22
+    F13-09 --> F14-22
+    F13-11 --> F14-22
+    F14-06 --> F14-22
+    F14-08 --> F14-22
+    F14-12 --> F14-22
+    F14-14 --> F14-22
+    F14-16 --> F14-22
+    F14-18 --> F14-22
+    F14-20 --> F14-22
+    F13-02 --> F14-23
+    F14-23 --> F14-24
+    F13-03 --> F14-24
+    F13-05 --> F14-24
+    F13-06 --> F14-24
+    F13-07 --> F14-24
+    F13-08 --> F14-24
+    F13-09 --> F14-24
+    F14-06 --> F14-24
+    F14-10 --> F14-24
+    F14-14 --> F14-24
+    F13-02 --> F14-25
+    F14-25 --> F14-26
+    F13-04 --> F14-26
+    F13-05 --> F14-26
+    F13-07 --> F14-26
+    F13-08 --> F14-26
+    F13-09 --> F14-26
+    F14-10 --> F14-26
+    F13-02 --> F14-27
+    F14-27 --> F14-28
+    F13-03 --> F14-28
+    F13-05 --> F14-28
+    F13-07 --> F14-28
+    F13-08 --> F14-28
+    F13-09 --> F14-28
+    F13-11 --> F14-28
+    F13-02 --> F14-29
+    F14-29 --> F14-30
+    F13-04 --> F14-30
+    F13-05 --> F14-30
+    F13-07 --> F14-30
+    F13-08 --> F14-30
+    F13-09 --> F14-30
+    F13-01 --> F15-01
+    F13-04 --> F15-01
+    F13-07 --> F15-01
+    F13-09 --> F15-01
+    F14-02 --> F15-01
+    F14-05 --> F15-01
+    F14-06 --> F15-01
+    F15-01 --> F15-02
+    F14-06 --> F15-02
+    F13-02 --> F16-01
+    F14-01 --> F16-01
+    F14-02 --> F16-01
+    F16-01 --> F16-02
+    F14-05 --> F16-02
+    F14-06 --> F16-02
+    F14-07 --> F16-02
+    F14-08 --> F16-02
+    F16-01 --> F16-03
+    F14-13 --> F16-03
+    F14-14 --> F16-03
+    F14-15 --> F16-03
+    F14-16 --> F16-03
+    F14-19 --> F16-03
+    F14-20 --> F16-03
+    F14-21 --> F16-03
+    F14-22 --> F16-03
+    F14-05 --> F16-03
+    F14-06 --> F16-03
+    F14-07 --> F16-03
+    F14-08 --> F16-03
+    F14-17 --> F16-03
+    F14-18 --> F16-03
+    F16-01 --> F16-04
+    F14-11 --> F16-04
+    F14-12 --> F16-04
+    F14-17 --> F16-04
+    F14-18 --> F16-04
+    F14-05 --> F16-04
+    F14-06 --> F16-04
+    F14-09 --> F16-04
+    F14-10 --> F16-04
+    F14-23 --> F16-04
+    F14-24 --> F16-04
+    F14-25 --> F16-04
+    F14-26 --> F16-04
+    F16-01 --> F16-05
+    F16-02 --> F16-05
+    F16-03 --> F16-05
+    F16-04 --> F16-05
+    F16-06 --> F16-05
+    F16-07 --> F16-05
+    F16-01 --> F16-06
+    F14-03 --> F16-06
+    F14-04 --> F16-06
+    F16-01 --> F16-07
+    F14-09 --> F16-07
+    F14-10 --> F16-07
+    F16-01 --> F16-08
+    F14-27 --> F16-08
+    F14-28 --> F16-08
+    F14-19 --> F16-08
+    F14-20 --> F16-08
+    F16-01 --> F16-09
+    F14-29 --> F16-09
+    F14-30 --> F16-09
+    F14-01 --> F17-01
+    F14-02 --> F17-01
+    F14-03 --> F17-01
+    F14-04 --> F17-01
+    F17-01 --> F17-02
+    F17-03 --> F17-02
+    F14-05 --> F17-02
+    F14-06 --> F17-02
+    F14-11 --> F17-02
+    F14-12 --> F17-02
+    F14-23 --> F17-02
+    F14-24 --> F17-02
+    F17-01 --> F17-03
+    F14-09 --> F17-03
+    F14-10 --> F17-03
+    F14-25 --> F17-03
+    F14-26 --> F17-03
+    F17-01 --> F17-04
+    F17-02 --> F17-04
+    F17-03 --> F17-04
+    F14-05 --> F17-04
+    F14-06 --> F17-04
+    F14-07 --> F17-04
+    F14-08 --> F17-04
+    F14-13 --> F17-04
+    F14-14 --> F17-04
+    F14-15 --> F17-04
+    F14-16 --> F17-04
+    F14-17 --> F17-04
+    F14-18 --> F17-04
+    F17-01 --> F17-05
+    F17-02 --> F17-05
+    F17-03 --> F17-05
+    F17-04 --> F17-05
+    F14-05 --> F17-05
+    F14-06 --> F17-05
+    F14-19 --> F17-05
+    F14-20 --> F17-05
+    F14-21 --> F17-05
+    F14-22 --> F17-05
+    F14-23 --> F17-05
+    F14-24 --> F17-05
+    F17-01 --> F17-06
+    F17-02 --> F17-06
+    F17-03 --> F17-06
+    F17-04 --> F17-06
+    F17-05 --> F17-06
+    F13-05 --> F18-01
+    F13-06 --> F18-01
+    F13-07 --> F18-01
+    F13-08 --> F18-01
+    F13-09 --> F18-01
+    F14-02 --> F18-01
+    F14-04 --> F18-01
+    F14-06 --> F18-01
+    F14-08 --> F18-01
+    F14-10 --> F18-01
+    F14-12 --> F18-01
+    F14-14 --> F18-01
+    F14-16 --> F18-01
+    F14-18 --> F18-01
+    F14-20 --> F18-01
+    F14-22 --> F18-01
+    F14-24 --> F18-01
+    F14-26 --> F18-01
+    F18-01 --> F18-02
+    F14-02 --> F18-02
+    F18-01 --> F18-03
+    F18-02 --> F18-03
+    F13-05 --> F18-03
+    F13-09 --> F18-03
+    F18-02 --> F18-04
+    F18-03 --> F18-04
+    F18-03 --> F18-05
+    F18-04 --> F18-05
+    F16-01 --> F18-05
+    F16-04 --> F18-05
+    F17-02 --> F18-05
+    F17-03 --> F18-05
+    F17-04 --> F18-05
+    F17-05 --> F18-05
+    F18-03 --> F18-06
+    F18-05 --> F18-06
+    F15-02 --> F18-06
+    F16-05 --> F18-06
+    F17-06 --> F18-06
+```
+
+## Phase 13 — Distributed foundation
+
+Epic #400.
+
+| ID | Issue | Story | Priority | Depends on |
+|---|---|---|---|---|
+| F13-01 | #408 | Accept the distributed-stage decision set, ADR-0034 to ADR-0046 | P0 | — |
+| F13-02 | #412 | Set the contract conventions, common types and resource registry, with the contracts checks | P0 | F13-01 |
+| F13-03 | #416 | Release the Python kit mosaiq-kit, mechanism only and pinned by tag | P0 | F13-01, F13-02, F13-05, F13-07 |
+| F13-04 | #420 | Release the Rust kit kit-rs with the same behaviour as the Python kit | P0 | F13-01, F13-02, F13-03, F13-05, F13-07 |
+| F13-05 | #424 | Run redis-state and redis-cache with per-service ACL users and negative ACL tests | P0 | F13-01, F13-02 |
+| F13-06 | #428 | Run one authenticated MongoDB server for engagement only, within the memory budget | P0 | F13-01, F13-05 |
+| F13-07 | #434 | Create service and definer roles, the grant matrix check and the schema-section framework | P0 | F13-01, F13-02 |
+| F13-08 | #438 | Give each service its own compose project on the shared mosaiq network, runnable locally | P0 | F13-01, F13-03, F13-05 |
+| F13-09 | #442 | Build, test and release each service in CI with a path-filtered matrix and repository guards | P0 | F13-01, F13-02, F13-03, F13-04, F13-05, F13-06, F13-07, F13-08 |
+| F13-10 | #446 | Spike: decide whether account email verification is part of the second delivery | P2 | — |
+| F13-11 | #470 | Capture golden fixtures from the web and fail CI when the web drifts from them | P0 | F13-01, F13-07 |
+
+**F13-01 gates everything below.** ADR-0016 forbids any service skeleton,
+contract file or client before the record that specifies it is accepted. F13-10
+is a decision spike and does not wait for it.
+
+## Phase 14 — Microservices
+
+Epic #399. Each of the fifteen services has two stories: the **contract** (odd
+id) and the **implementation** (even id). The contract merges before its
+implementation starts and before any client story that consumes it
+([ADR-0035][adr-0035]). Each service's design is described in its sheet in
+[`services/`](services/README.md). campaigns and audit-trail are the second
+wave (P2), dropped first if memory runs short ([ADR-0040][adr-0040]).
+
+| ID | Issue | Story | Priority | Depends on |
+|---|---|---|---|---|
+| F14-01 | #409 | Write the auth-service contract: sessions, JWKS, token claims and the liveness key | P0 | F13-02 |
+| F14-02 | #413 | Implement auth-service: RS256 sign-in, 12-hour sessions, refresh rotation and revocation | P0 | F14-01, F13-03, F13-05, F13-07, F13-08, F13-09, F14-04 |
+| F14-03 | #418 | Write the users-service contract: accounts, roles, passwords and administrator transfer | P0 | F13-02 |
+| F14-04 | #421 | Implement users-service with the single-administrator rule enforced in code and index | P0 | F14-03, F13-03, F13-05, F13-07, F13-08, F13-09, F13-11 |
+| F14-05 | #425 | Write the products-service contract, including the batch read by product ids | P0 | F13-02 |
+| F14-06 | #429 | Implement products-service: unique SKU, non-negative price, deactivation and change stream | P0 | F14-05, F13-03, F13-05, F13-07, F13-08, F13-09 |
+| F14-07 | #471 | Write the categories-service contract: tree reads, edits and the guarded delete | P0 | F13-02 |
+| F14-08 | #472 | Implement categories-service: acyclic tree and the delete guard for customer interests | P0 | F14-07, F13-03, F13-05, F13-07, F13-08, F13-09 |
+| F14-09 | #473 | Write the stores-service contract: store directory and ADMIN-only geofenced locations | P0 | F13-02 |
+| F14-10 | #468 | Implement stores-service in Rust: store locations, directory view and change stream | P0 | F14-09, F13-04, F13-05, F13-07, F13-08, F13-09 |
+| F14-11 | #440 | Write the stock-service contract: stock levels and the consume_v1 database function | P0 | F13-02 |
+| F14-12 | #444 | Implement stock-service in Rust: never-negative stock, consume_v1 for sales, uncached reads | P0 | F14-11, F13-04, F13-05, F13-07, F13-08, F13-09 |
+| F14-13 | #432 | Write the customers-service contract: search, registration and correction of customers | P0 | F13-02 |
+| F14-14 | #436 | Implement customers-service: registered once with valid data, never deleted through services | P0 | F14-13, F13-03, F13-05, F13-07, F13-08, F13-09 |
+| F14-15 | #474 | Write the customer-preferences contract: preference profiles and whole-set replaces | P0 | F13-02 |
+| F14-16 | #475 | Implement customer-preferences in Rust: atomic whole-set replace of channels and interests | P0 | F14-15, F13-04, F13-05, F13-07, F13-08, F13-09, F14-14 |
+| F14-17 | #449 | Write the sales-service contract: idempotent sale recording, read-back and channels | P0 | F13-02 |
+| F14-18 | #454 | Implement sales-service: all-or-nothing sales that consume stock, with durable idempotency | P0 | F14-17, F13-03, F13-05, F13-07, F13-08, F13-09, F13-11, F14-06, F14-14, F14-12 |
+| F14-19 | #458 | Write the segments-service contract: label vocabulary, current assignment and history | P0 | F13-02 |
+| F14-20 | #461 | Implement segments-service in Rust: one current segment by label code, unassigned as is | P0 | F14-19, F13-04, F13-05, F13-07, F13-08, F13-09, F14-14 |
+| F14-21 | #476 | Write the recommendations-service contract: reasons, empty-result statuses and staleness | P0 | F13-02 |
+| F14-22 | #477 | Implement recommendations-service: RN-40 over seven published views, pinned by golden fixtures | P0 | F14-21, F13-03, F13-05, F13-07, F13-08, F13-09, F13-11, F14-06, F14-08, F14-12, F14-14, F14-16, F14-18, F14-20 |
+| F14-23 | #464 | Write the engagement-service contract: QR scans, recommendation clicks, voids and summaries | P0 | F13-02 |
+| F14-24 | #466 | Implement engagement-service on MongoDB: once per client event, voids, rollup and live counters | P0 | F14-23, F13-03, F13-05, F13-06, F13-07, F13-08, F13-09, F14-06, F14-10, F14-14 |
+| F14-25 | #478 | Write the check-ins-service contract: GPS check-ins, server-computed verdicts and reviews | P0 | F13-02 |
+| F14-26 | #479 | Implement check-ins-service in Rust: geofence verdicts and append-only reviews | P0 | F14-25, F13-04, F13-05, F13-07, F13-08, F13-09, F14-10 |
+| F14-27 | #480 | Write the campaigns-service contract: drafts, draft-only edits and status transitions | P2 | F13-02 |
+| F14-28 | #481 | Implement campaigns-service: the campaign state machine, pinned to the web by golden fixtures | P2 | F14-27, F13-03, F13-05, F13-07, F13-08, F13-09, F13-11 |
+| F14-29 | #482 | Write the audit-trail-service contract: read-only audit entries for ADMIN and AUDITOR | P2 | F13-02 |
+| F14-30 | #483 | Implement audit-trail-service in Rust: read-only, attributed and credential-free audit entries | P2 | F14-29, F13-04, F13-05, F13-07, F13-08, F13-09 |
+
+| Service | Contract | Implementation |
+|---|---|---|
+| [auth](services/auth.md) | F14-01 (#409) | F14-02 (#413) |
+| [users](services/users.md) | F14-03 (#418) | F14-04 (#421) |
+| [products](services/products.md) | F14-05 (#425) | F14-06 (#429) |
+| [categories](services/categories.md) | F14-07 (#471) | F14-08 (#472) |
+| [stores](services/stores.md) | F14-09 (#473) | F14-10 (#468) |
+| [stock](services/stock.md) | F14-11 (#440) | F14-12 (#444) |
+| [customers](services/customers.md) | F14-13 (#432) | F14-14 (#436) |
+| [customer-preferences](services/customer-preferences.md) | F14-15 (#474) | F14-16 (#475) |
+| [sales](services/sales.md) | F14-17 (#449) | F14-18 (#454) |
+| [segments](services/segments.md) | F14-19 (#458) | F14-20 (#461) |
+| [recommendations](services/recommendations.md) | F14-21 (#476) | F14-22 (#477) |
+| [engagement](services/engagement.md) | F14-23 (#464) | F14-24 (#466) |
+| [check-ins](services/check-ins.md) | F14-25 (#478) | F14-26 (#479) |
+| [campaigns](services/campaigns.md) | F14-27 (#480) | F14-28 (#481) |
+| [audit-trail](services/audit-trail.md) | F14-29 (#482) | F14-30 (#483) |
+
+## Phase 15 — Rust twin and benchmark
+
+Epic #401.
+
+| ID | Issue | Story | Priority | Depends on |
+|---|---|---|---|---|
+| F15-01 | #450 | Build the bench-only Rust products reads, never registered, routed, deployed or counted | P1 | F13-01, F13-04, F13-07, F13-09, F14-02, F14-05, F14-06 |
+| F15-02 | #455 | Benchmark the products reads in Flask and Rust under one load and publish the report | P1 | F15-01, F14-06 |
+
+## Phase 16 — Desktop client (Electron, XML)
+
+Epic #402.
+
+| ID | Issue | Story | Priority | Depends on |
+|---|---|---|---|---|
+| F16-01 | #406 | Scaffold the Electron back office with secure defaults, per-service XSD validation and sign-in | P1 | F13-02, F14-01, F14-02 |
+| F16-02 | #410 | Maintain products and the category tree from the desktop client, ADMIN only | P1 | F16-01, F14-05, F14-06, F14-07, F14-08 |
+| F16-03 | #414 | Review customers, both preference sets, segment assignments and recommendations on the desktop | P1 | F16-01, F14-13, F14-14, F14-15, F14-16, F14-19, F14-20, F14-21, F14-22, F14-05, F14-06, F14-07, F14-08, F14-17, F14-18 |
+| F16-04 | #417 | Show stock below a threshold, sales read-back, engagement summaries and voids, check-in review | P1 | F16-01, F14-11, F14-12, F14-17, F14-18, F14-05, F14-06, F14-09, F14-10, F14-23, F14-24, F14-25, F14-26 |
+| F16-05 | #422 | Package the desktop client and build, lint and test it in CI | P1 | F16-01, F16-02, F16-03, F16-04, F16-06, F16-07 |
+| F16-06 | #484 | Administer users and transfer the administrator role from the desktop client | P1 | F16-01, F14-03, F14-04 |
+| F16-07 | #485 | Set and remove store locations and geofences from the desktop client | P1 | F16-01, F14-09, F14-10 |
+| F16-08 | #486 | Manage campaigns and their transitions from the desktop client (second wave) | P2 | F16-01, F14-27, F14-28, F14-19, F14-20 |
+| F16-09 | #487 | Browse the audit trail from the desktop client (second wave) | P2 | F16-01, F14-29, F14-30 |
+
+## Phase 17 — Android client (Kotlin, JSON)
+
+Epic #403.
+
+| ID | Issue | Story | Priority | Depends on |
+|---|---|---|---|---|
+| F17-01 | #426 | Scaffold the Android floor app with JSON networking, single-flight refresh and sign-in | P1 | F14-01, F14-02, F14-03, F14-04 |
+| F17-02 | #430 | Scan a product QR code and show the product and its stock at the checked-in store | P1 | F17-01, F17-03, F14-05, F14-06, F14-11, F14-12, F14-23, F14-24 |
+| F17-03 | #433 | Pick the store and check in by GPS, through a retry-safe floor-write queue | P1 | F17-01, F14-09, F14-10, F14-25, F14-26 |
+| F17-04 | #437 | Find or register a customer, capture interests and record a sale queued offline | P1 | F17-01, F17-02, F17-03, F14-05, F14-06, F14-07, F14-08, F14-13, F14-14, F14-15, F14-16, F14-17, F14-18 |
+| F17-05 | #441 | Show the customer's current segment and recommendations, one RECO_CLICK per tap | P1 | F17-01, F17-02, F17-03, F17-04, F14-05, F14-06, F14-19, F14-20, F14-21, F14-22, F14-23, F14-24 |
+| F17-06 | #445 | Build, lint and test the Android client in CI and publish the debug APK | P1 | F17-01, F17-02, F17-03, F17-04, F17-05 |
+
+## Phase 18 — Deployment and end-to-end demonstration
+
+Epic #404.
+
+| ID | Issue | Story | Priority | Depends on |
+|---|---|---|---|---|
+| F18-01 | #448 | Run Docker Compose, the infrastructure project and one unit per service on the instance | P0 | F13-05, F13-06, F13-07, F13-08, F13-09, F14-02, F14-04, F14-06, F14-08, F14-10, F14-12, F14-14, F14-16, F14-18, F14-20, F14-22, F14-24, F14-26 |
+| F18-02 | #452 | Route each service through its own NGINX include under /api/{service}/ on 443 | P0 | F18-01, F14-02 |
+| F18-03 | #456 | Deploy and roll back one service at a time when its VERSION bump merges | P0 | F18-01, F18-02, F13-05, F13-09 |
+| F18-04 | #459 | Record negative-test evidence across every deployed service and boundary | P0 | F18-02, F18-03 |
+| F18-05 | #462 | Script and record the end-to-end demonstration across both clients, services and the web | P0 | F18-03, F18-04, F16-01, F16-04, F17-02, F17-03, F17-04, F17-05 |
+| F18-06 | #465 | Redraw the architecture diagrams and update the README for the fifteen services | P1 | F18-03, F18-05, F15-02, F16-05, F17-06 |
+
+## Closing the analytics phase
+
+Epic #405. Every F7–F12 issue was closed, but an audit on 2026-10-13 found
+these gaps. The web system receives these fixes and features. It still gets
+no Redis and consumes no service.
+
+| ID | Issue | Story | Priority | Depends on |
+|---|---|---|---|---|
+| AN-01 | #407 | Accept or reject ADR-0026, 0030, 0031, 0032 and 0033, whose implementations already merged | P0 | — |
+| AN-02 | #411 | Release develop to main and attach the second delivery's proof of deployment | P0 | AN-01 |
+| AN-03 | #415 | Show experiment results on a Highcharts dashboard | P1 | — |
+| AN-04 | #419 | Notify users inside the web system when analytics work they care about finishes | P1 | — |
+| AN-05 | #423 | Segmentation dashboard heatmap splits customers with tied measures across quintiles by customer id | P1 | — |
+| AN-06 | #427 | Seeded experiments are marked OBSERVED and show as real data | P1 | — |
+| AN-07 | #431 | Write the analytics requirements, user stories and traceability for the second delivery | P1 | — |
+| AN-08 | #435 | Bring the data model document in line with the schema and justify the analytics tables in 4NF | P1 | — |
+| AN-09 | #439 | Update the demonstration guide to the second delivery | P1 | AN-02 |
+| AN-10 | #443 | Attach the missing evidence for the analytics stories | P1 | AN-02 |
+| AN-11 | #447 | Run detail lists K-means quality measure names without their values | P2 | — |
+| AN-12 | #451 | Decide whether experiment conversions are append-only for the application role | P2 | — |
+| AN-13 | #453 | Run the integrity checks and the database-layer tests against a real PostgreSQL in CI | P2 | — |
+| AN-14 | #457 | Decide how data provenance is marked and what AVERAGE_TICKET measures | P2 | — |
+| AN-15 | #460 | Fix duplicate business-rule ids and stale counts, diagrams and index entries in the documentation | P2 | — |
+| AN-16 | #463 | Make the seed exercise K-means, varied purchase behaviour and coherent experiment dates | P2 | AN-06 |
+| AN-17 | #467 | Decide how STORE_MANAGER's "own store" scope is enforced, and finish the remaining dashboard and list gaps | P2 | — |
+
 [adr-0016]: adr/0016-the-second-delivery-reinstates-the-distributed-architecture.md
 [adr-0017]: adr/0017-segment-assignment-history-replaces-the-mutable-current-segment.md
 [adr-0018]: adr/0018-two-segmentation-strategies-behind-one-method-agnostic-pipeline.md
 [adr-0019]: adr/0019-experiment-measurement-separates-assignment-exposure-and-conversion.md
 [adr-0020]: adr/0020-csv-is-the-sole-sales-ingestion-entry-point-for-this-delivery.md
+[adr-0035]: adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md
+[adr-0040]: adr/0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md

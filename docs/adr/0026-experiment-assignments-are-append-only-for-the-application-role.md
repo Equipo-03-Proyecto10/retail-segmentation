@@ -1,6 +1,6 @@
 # ADR-0026 — Experiment assignments are append-only for the application role
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #223
 **Supersedes:** —

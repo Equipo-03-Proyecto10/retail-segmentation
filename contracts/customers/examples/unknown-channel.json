@@ -1,0 +1,11 @@
+{
+  "code": "unknown_channel",
+  "message": "The registration channel does not exist.",
+  "correlation_id": "corr-432-channel",
+  "details": [
+    {
+      "field": "registration_channel_id",
+      "code": "unknown_reference"
+    }
+  ]
+}

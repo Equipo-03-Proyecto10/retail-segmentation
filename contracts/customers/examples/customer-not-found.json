@@ -1,0 +1,11 @@
+{
+  "code": "customer_not_found",
+  "message": "The customer does not exist.",
+  "correlation_id": "corr-432-missing",
+  "details": [
+    {
+      "field": "customer_id",
+      "code": "not_found"
+    }
+  ]
+}

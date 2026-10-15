@@ -1,0 +1,6 @@
+{
+  "code": "database_unavailable",
+  "message": "The customer database is unavailable.",
+  "correlation_id": "corr-432-database",
+  "details": []
+}

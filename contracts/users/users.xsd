@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:users="https://mosaiq.maxthecoder.online/xml/users/v1"
+           xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1"
+           targetNamespace="https://mosaiq.maxthecoder.online/xml/users/v1"
+           elementFormDefault="qualified">
+  <xs:import namespace="https://mosaiq.maxthecoder.online/xml/common/v1"
+             schemaLocation="../common/v1/common.xsd"/>
+
+  <xs:simpleType name="Uuid">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Name">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:maxLength value="120"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Email">
+    <xs:restriction base="xs:string">
+      <xs:maxLength value="160"/>
+      <xs:pattern value="[^@\s]+@[^@\s.]+(\.[^@\s.]+)+"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="RoleCode">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="ADMIN"/>
+      <xs:enumeration value="ANALYST"/>
+      <xs:enumeration value="STORE_MANAGER"/>
+      <xs:enumeration value="MARKETING"/>
+      <xs:enumeration value="INVENTORY_PLANNER"/>
+      <xs:enumeration value="AUDITOR"/>
+      <xs:enumeration value="CUSTOMER"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="RoleCodeInput">
+    <xs:restriction base="xs:string">
+      <xs:maxLength value="40"/>
+      <xs:pattern value="[A-Z][A-Z0-9_]*"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Password">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="12"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="User">
+    <xs:sequence>
+      <xs:element name="user_id" type="users:Uuid"/>
+      <xs:element name="name" type="users:Name"/>
+      <xs:element name="email" type="users:Email"/>
+      <xs:element name="role_code" type="users:RoleCode"/>
+      <xs:element name="is_active" type="xs:boolean"/>
+      <xs:element name="created_at" type="xs:dateTime"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Users">
+    <xs:sequence>
+      <xs:element name="User" type="users:User" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Role">
+    <xs:sequence>
+      <xs:element name="role_code" type="users:RoleCode"/>
+      <xs:element name="description">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:minLength value="1"/>
+            <xs:maxLength value="160"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Roles">
+    <xs:sequence>
+      <xs:element name="Role" type="users:Role" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="CreateUserRequest">
+    <xs:sequence>
+      <xs:element name="name" type="users:Name"/>
+      <xs:element name="email" type="users:Email"/>
+      <xs:element name="role_code" type="users:RoleCodeInput"/>
+      <xs:element name="password" type="users:Password"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="UpdateUserRequest">
+    <xs:choice>
+      <xs:sequence>
+        <xs:element name="name" type="users:Name"/>
+        <xs:element name="email" type="users:Email" minOccurs="0"/>
+        <xs:element name="role_code" type="users:RoleCodeInput" minOccurs="0"/>
+      </xs:sequence>
+      <xs:sequence>
+        <xs:element name="email" type="users:Email"/>
+        <xs:element name="role_code" type="users:RoleCodeInput" minOccurs="0"/>
+      </xs:sequence>
+      <xs:element name="role_code" type="users:RoleCodeInput"/>
+    </xs:choice>
+  </xs:complexType>
+
+  <xs:complexType name="PasswordChangeRequest">
+    <xs:sequence>
+      <xs:element name="current_password" type="users:Password" minOccurs="0"/>
+      <xs:element name="new_password" type="users:Password"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="AdministratorTransferRequest">
+    <xs:sequence>
+      <xs:element name="successor_user_id" type="users:Uuid"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name="User" type="users:User"/>
+  <xs:element name="Users" type="users:Users"/>
+  <xs:element name="Role" type="users:Role"/>
+  <xs:element name="Roles" type="users:Roles"/>
+  <xs:element name="CreateUserRequest" type="users:CreateUserRequest"/>
+  <xs:element name="UpdateUserRequest" type="users:UpdateUserRequest"/>
+  <xs:element name="PasswordChangeRequest" type="users:PasswordChangeRequest"/>
+  <xs:element name="AdministratorTransferRequest"
+              type="users:AdministratorTransferRequest"/>
+</xs:schema>

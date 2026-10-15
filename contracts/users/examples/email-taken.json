@@ -1,0 +1,8 @@
+{
+  "code": "email_taken",
+  "message": "The email is already used by another user.",
+  "correlation_id": "corr-418",
+  "details": [
+    {"field": "email", "code": "not_unique"}
+  ]
+}

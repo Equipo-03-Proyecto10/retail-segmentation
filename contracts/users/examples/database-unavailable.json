@@ -1,0 +1,5 @@
+{
+  "code": "database_unavailable",
+  "message": "PostgreSQL is unavailable.",
+  "correlation_id": "corr-418"
+}

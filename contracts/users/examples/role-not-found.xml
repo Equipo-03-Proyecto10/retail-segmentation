@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<common:Error xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <common:code>role_not_found</common:code>
+  <common:message>The role does not exist.</common:message>
+  <common:correlation_id>corr-418</common:correlation_id>
+</common:Error>

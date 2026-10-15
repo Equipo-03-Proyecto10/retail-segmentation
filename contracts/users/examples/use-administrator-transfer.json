@@ -1,0 +1,5 @@
+{
+  "code": "use_administrator_transfer",
+  "message": "Use the administrator transfer operation to move the ADMIN role.",
+  "correlation_id": "corr-418"
+}

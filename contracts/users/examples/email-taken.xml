@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<common:Error xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <common:code>email_taken</common:code>
+  <common:message>The email is already used by another user.</common:message>
+  <common:correlation_id>corr-418</common:correlation_id>
+  <common:details>
+    <common:field>email</common:field>
+    <common:code>not_unique</common:code>
+  </common:details>
+</common:Error>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<UpdateUserRequest xmlns="https://mosaiq.maxthecoder.online/xml/users/v1">
+  <name>Alex Senior Analyst</name>
+  <email>alex.senior@example.com</email>
+  <role_code>ANALYST</role_code>
+</UpdateUserRequest>

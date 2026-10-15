@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<common:Error xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <common:code>invalid_body</common:code>
+  <common:message>The request body violates its schema.</common:message>
+  <common:correlation_id>corr-418</common:correlation_id>
+  <common:details>
+    <common:field>email</common:field>
+    <common:code>invalid_format</common:code>
+  </common:details>
+  <common:details>
+    <common:field>password</common:field>
+    <common:code>min_length</common:code>
+  </common:details>
+</common:Error>

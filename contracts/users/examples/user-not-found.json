@@ -1,0 +1,5 @@
+{
+  "code": "user_not_found",
+  "message": "The user does not exist.",
+  "correlation_id": "corr-418"
+}

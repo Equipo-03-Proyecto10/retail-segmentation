@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<common:Error xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <common:code>invalid_successor</common:code>
+  <common:message>The successor must exist and differ from the incumbent.</common:message>
+  <common:correlation_id>corr-418</common:correlation_id>
+  <common:details>
+    <common:field>successor_user_id</common:field>
+    <common:code>invalid</common:code>
+  </common:details>
+</common:Error>

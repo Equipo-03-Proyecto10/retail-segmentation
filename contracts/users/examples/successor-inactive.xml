@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<common:Error xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <common:code>successor_inactive</common:code>
+  <common:message>The successor must be active.</common:message>
+  <common:correlation_id>corr-418</common:correlation_id>
+  <common:details>
+    <common:field>successor_user_id</common:field>
+    <common:code>inactive</common:code>
+  </common:details>
+</common:Error>

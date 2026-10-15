@@ -1,0 +1,5 @@
+{
+  "code": "rate_limited",
+  "message": "Too many failed current-password checks.",
+  "correlation_id": "corr-418"
+}

@@ -83,6 +83,12 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | 409 | `administrator_required` | Deactivating the only `ADMIN` |
 | 409 | `email_taken` | Email already used (case-insensitively) |
 | 429 | `rate_limited` | More than 5 failed current-password checks in 15 min |
+| 404 | `user_not_found` | No user has the given `user_id`, or `/v1/users/me` names an account that no longer exists |
+| 404 | `role_not_found` | No role has the given `role_code` |
+| 422 | `unknown_role` | A create or edit names a role code that does not exist |
+| 422 | `invalid_current_password` | A caller changing its own password sends a wrong current password |
+| 409 | `successor_inactive` | The administrator transfer names an inactive successor |
+| 422 | `invalid_successor` | The administrator transfer has no successor, or names the incumbent |
 
 ## Accepted exceptions
 

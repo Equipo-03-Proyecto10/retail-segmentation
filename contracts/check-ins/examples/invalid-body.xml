@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_body</code>
+  <message>A fix needs latitude, longitude and accuracy_m together.</message>
+  <correlation_id>corr-invalid-body</correlation_id>
+  <details>
+    <field>accuracy_m</field>
+    <code>required_with_fix</code>
+  </details>
+</Error>

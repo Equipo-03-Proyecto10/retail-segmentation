@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>client_check_in_conflict</code>
+  <message>This client_check_in_id was already used with different values.</message>
+  <correlation_id>corr-client-check-in-conflict</correlation_id>
+</Error>

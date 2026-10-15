@@ -1,0 +1,11 @@
+{
+  "code": "occurred_in_future",
+  "message": "occurred_at is more than five minutes ahead of the server.",
+  "correlation_id": "corr-occurred-in-future",
+  "details": [
+    {
+      "field": "occurred_at",
+      "code": "in_future"
+    }
+  ]
+}

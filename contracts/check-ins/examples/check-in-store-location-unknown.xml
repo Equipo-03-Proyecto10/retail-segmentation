@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CheckIn xmlns="https://mosaiq.maxthecoder.online/xml/check-ins/v1">
+  <check_in_id>7c1f9a52-3b0e-4d8e-9a64-5f2d1c0b8e74</check_in_id>
+  <client_check_in_id>0e6d5c4b-3a29-4817-96f5-a4b3c2d1e0f4</client_check_in_id>
+  <user_id>5b0c2f3e-8a41-4d6b-9c10-2e7a1f4d9b33</user_id>
+  <store_id>7</store_id>
+  <latitude>19.432608</latitude>
+  <longitude>-99.133209</longitude>
+  <accuracy_m>10.0</accuracy_m>
+  <reason>store_location_unknown</reason>
+  <auto_verified>false</auto_verified>
+  <verified>false</verified>
+  <occurred_at>2026-10-15T14:04:00Z</occurred_at>
+  <recorded_at>2026-10-15T14:04:02Z</recorded_at>
+</CheckIn>

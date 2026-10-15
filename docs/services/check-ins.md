@@ -20,7 +20,8 @@
 
 ## Business rule
 
-- The server computes the distance from the reported fix to the store's location (`api_stores.store_directory_v1`) and records a `reason`: `within_geofence`, `outside_geofence`, `low_accuracy`, `store_location_unknown` or `no_fix`. A check-in is verified exactly when its reason is `within_geofence`, so `verified` is derived on read and never stored.
+- The server computes the distance from the reported fix to the store's location (`api_stores.store_directory_v1`) and records a `reason`: `within_geofence`, `outside_geofence`, `low_accuracy`, `store_location_unknown` or `no_fix`. A check-in is auto-verified exactly when its reason is `within_geofence`; a later review's verdict overrides it. `verified` is derived on read and never stored: the latest review's verdict when a review exists, else `auto_verified`.
+- The reason is decided by the first matching case, with the distance computed as the haversine distance on a sphere of radius 6,371,008.8 m from the fix to the store's location, in metres with one decimal: `no_fix` (no fix sent), `store_location_unknown` (the store has no location), `low_accuracy` (`accuracy_m` greater than the store's `geofence_radius_m`), `within_geofence` (distance at most `geofence_radius_m`), otherwise `outside_geofence`. Each is a 201 answer, not an error.
 - An override is a row in `checkins.check_in_review` (verified, a required reason, the reviewer). Reviews are append-only; a check-in is never updated or deleted.
 
 ## Endpoints
@@ -66,7 +67,16 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 
 | HTTP | Code | When |
 |---|---|---|
-| 409 / 200 | Undecided; the contract story fixes the code | A replayed `client_check_in_id` and an unknown store (F14-25 fixes the response and the codes). The five reasons are 201 answers, not errors |
+| 200 | n/a (not an error) | A replayed `client_check_in_id` with the same user, store, fix and `occurred_at`: the original check-in, nothing written |
+| 409 | `client_check_in_conflict` | The same `client_check_in_id` with any other value |
+| 422 | `unknown_store` | The store is missing or inactive in `api_stores.store_directory_v1` |
+| 422 | `occurred_in_future` | `occurred_at` is more than five minutes ahead of the server |
+| 422 | `invalid_body` | Among others, a partial fix: `latitude`, `longitude` and `accuracy_m` are all present or all absent |
+| 404 | `check_in_not_found` | An unknown `{check_in_id}` on a read or a review |
+| 422 | `invalid_query` | `to` before `from`, with `details` naming the parameter |
+| 503 | `database_unavailable` | Every `/v1` operation reads or writes PostgreSQL; the phone retries a refused check-in under the same `client_check_in_id` |
+
+The five reasons are 201 answers, not errors.
 
 ## Accepted exceptions
 

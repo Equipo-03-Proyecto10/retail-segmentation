@@ -1,0 +1,11 @@
+{
+  "code": "invalid_body",
+  "message": "A fix needs latitude, longitude and accuracy_m together.",
+  "correlation_id": "corr-invalid-body",
+  "details": [
+    {
+      "field": "accuracy_m",
+      "code": "required_with_fix"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "check_in_id": "7c1f9a52-3b0e-4d8e-9a64-5f2d1c0b8e72",
+  "client_check_in_id": "0e6d5c4b-3a29-4817-96f5-a4b3c2d1e0f2",
+  "user_id": "5b0c2f3e-8a41-4d6b-9c10-2e7a1f4d9b33",
+  "store_id": 3,
+  "latitude": 19.4369,
+  "longitude": -99.1401,
+  "accuracy_m": 8.0,
+  "distance_m": 812.7,
+  "reason": "outside_geofence",
+  "auto_verified": false,
+  "verified": false,
+  "occurred_at": "2026-10-15T14:02:00Z",
+  "recorded_at": "2026-10-15T14:02:02Z"
+}

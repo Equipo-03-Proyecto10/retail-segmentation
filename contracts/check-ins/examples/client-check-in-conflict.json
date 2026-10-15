@@ -1,0 +1,6 @@
+{
+  "code": "client_check_in_conflict",
+  "message": "This client_check_in_id was already used with different values.",
+  "correlation_id": "corr-client-check-in-conflict",
+  "details": []
+}

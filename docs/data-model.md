@@ -245,6 +245,15 @@ decompose. `experiment_assignment` (F11-01, replacing the composite-keyed
 `experiment_group_customer`) is not in this group: it carries a surrogate key
 for reasons of physical design, not normalization — see §4.
 
+Every boundary outbox, `<suffix>_events.outbox` (ADR-0044, ADR-0046), is in 4NF
+too. `event_id` determines every other column (`stream`, `event_type`,
+`entity_id`, `occurred_at`, `relayed_at`), and the relation carries no
+multivalued fact: one row is one captured change. An event names its entity by
+key only, never by copying its state, so there is nothing derived to drift.
+There is one outbox per owning boundary rather than one shared table, which
+keeps one writer per table: only that boundary's definer appends, and only its
+own relay marks and purges.
+
 ---
 
 ## 3. Logical model
@@ -511,7 +520,7 @@ These two are the 4NF decomposition from §2.4.
 | Column | Type | Null | Constraints | Meaning |
 |---|---|---|---|---|
 | `transaction_id` | `BIGINT` | NN | PK, `GENERATED ALWAYS AS IDENTITY` | Sale identifier |
-| `source_transaction_id` | `VARCHAR(64)` | NN | UQ | Identifier the sales contract supplies (ADR-0020); a file re-sent in full finds this row instead of duplicating it |
+| `source_transaction_id` | `VARCHAR(64)` | NN | UQ | Identifier the sales contract supplies (ADR-0020); a file re-sent in full finds this row instead of duplicating it. The prefix `svc-sales:` is reserved for sales-service (ADR-0039, §4) |
 | `customer_id` | `UUID` | NN | FK → `customer`, `RESTRICT` | Who bought |
 | `store_id` | `SMALLINT` | NN | FK → `store`, `RESTRICT` | Where |
 | `channel_id` | `SMALLINT` | NN | FK → `channel`, `RESTRICT` | Through which channel |
@@ -674,6 +683,21 @@ sale.
 | `data_after` | `JSONB` | yes | — | Row after, `NULL` on delete |
 | `executed_at` | `TIMESTAMPTZ` | NN | default `now()` | When |
 
+#### `<suffix>_events.outbox`
+
+One table per boundary that publishes a stream (§4 lists the eight), created
+from the outbox template in `sql/01_schema.sql`. Runtime events, not seed data,
+so each is exempt from the 30-row minimum by its schema-qualified name.
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `event_id` | `UUID` | NN | PK, default `gen_random_uuid()` | Event identifier; consumers deduplicate by it |
+| `stream` | `TEXT` | NN | — | `stream:<suffix>.v<n>.<event>`, the stream the relay appends to |
+| `event_type` | `TEXT` | NN | — | The captured operation, `INSERT`, `UPDATE` or `DELETE` |
+| `entity_id` | `TEXT` | NN | — | Key of the changed row, as text; never its state |
+| `occurred_at` | `TIMESTAMPTZ` | NN | default `now()` | When the change was captured |
+| `relayed_at` | `TIMESTAMPTZ` | yes | partial index on `occurred_at` where `NULL` | When the relay published it; `NULL` until then |
+
 ---
 
 ## 4. Physical model
@@ -699,6 +723,44 @@ per producer: ADR-0020 names CSV as the sole sales ingestion entry point for
 this delivery, so exactly one producer exists, and a global constraint and a
 per-producer one coincide. A later multi-producer contract would need a
 composite key over `(producer_id, source_transaction_id)` instead.
+
+Sales-service is that second producer, and it gets a reserved namespace
+instead (ADR-0039). Every identifier it writes starts with `svc-sales:`, and no
+other writer may use that prefix. Two SECURITY INVOKER triggers in the `sales`
+boundary section enforce it, both raising SQLSTATE 22023:
+- one on `transaction` refuses a prefixed identifier from any session user but
+  `svc_sales`, and refuses an unprefixed one from `svc_sales`;
+- one on `transaction_line` refuses a line on a prefixed header from anyone
+  but `svc_sales`.
+
+A CSV row can therefore never collide with a phone sale or append to one. The
+global `UNIQUE` still holds, because the two producers' identifiers can no
+longer overlap.
+
+**Service schemas.** Service-owned objects never go in `public`, which holds
+the legacy tables only (ADR-0046). With `<suffix>` the service's `svc_` role
+suffix:
+- a boundary's published contract objects, its versioned views and functions,
+  live in `api_<suffix>`;
+- its outbox lives in `<suffix>_events`;
+- any table of its own lives in a schema named for it.
+
+The eight outbox owners named by ADR-0044 therefore have both of these schemas:
+
+| Boundary | Contract schema | Outbox schema |
+|---|---|---|
+| users | `api_users` | `users_events` |
+| products | `api_products` | `products_events` |
+| categories | `api_categories` | `categories_events` |
+| stores | `api_stores` | `stores_events` |
+| stock | `api_stock` | `stock_events` |
+| customer-preferences | `api_preferences` | `preferences_events` |
+| sales | `api_sales` | `sales_events` |
+| segments | `api_segments` | `segments_events` |
+
+Each schema is created by its boundary's own section of `sql/01_schema.sql`;
+none exists until that boundary's story lands. `retail_app` has USAGE on
+`public` only, and the verification block asserts it.
 
 **Experiment assignment identifiers.** `experiment_assignment` (F11-01)
 carries a surrogate `assignment_id` rather than staying a pure

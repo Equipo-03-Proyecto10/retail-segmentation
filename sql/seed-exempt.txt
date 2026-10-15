@@ -2,6 +2,11 @@
 # name per line. CI matches these lines exactly, so a reason goes on its own
 # comment line above the name it explains.
 #
+# A table in public is named bare (`role`). A table in a service schema is
+# named schema-qualified, as CI counts it (ADR-0046): `<suffix>_events.outbox`
+# for a boundary's outbox, which holds runtime events and no seed, and
+# `sales.sale_capture`. CI refuses any other schema-qualified name here.
+#
 # Padding a catalog with filler rows to reach 30 is the alternative, and it
 # makes the seed misrepresent the business: a reader cannot tell which roles
 # the system actually has. The exemption is recorded here instead, where a

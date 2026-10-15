@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CreateProductRequest xmlns="https://mosaiq.maxthecoder.online/xml/products/v1">
+  <product_id>1051</product_id>
+  <sku>MOS-SCN-051</sku>
+  <name>Counter Scanner</name>
+  <category_id>12</category_id>
+  <list_price>89.00</list_price>
+</CreateProductRequest>

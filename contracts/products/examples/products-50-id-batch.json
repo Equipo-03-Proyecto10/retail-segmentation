@@ -1,0 +1,459 @@
+{
+  "products": [
+    {
+      "product_id": 2001,
+      "sku": "BATCH-01",
+      "name": "Batch Product 01",
+      "category_id": 7,
+      "list_price": "11.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2002,
+      "sku": "BATCH-02",
+      "name": "Batch Product 02",
+      "category_id": 7,
+      "list_price": "12.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2003,
+      "sku": "BATCH-03",
+      "name": "Batch Product 03",
+      "category_id": 7,
+      "list_price": "13.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2004,
+      "sku": "BATCH-04",
+      "name": "Batch Product 04",
+      "category_id": 7,
+      "list_price": "14.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2005,
+      "sku": "BATCH-05",
+      "name": "Batch Product 05",
+      "category_id": 7,
+      "list_price": "15.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2006,
+      "sku": "BATCH-06",
+      "name": "Batch Product 06",
+      "category_id": 7,
+      "list_price": "16.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2007,
+      "sku": "BATCH-07",
+      "name": "Batch Product 07",
+      "category_id": 7,
+      "list_price": "17.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2008,
+      "sku": "BATCH-08",
+      "name": "Batch Product 08",
+      "category_id": 7,
+      "list_price": "18.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2009,
+      "sku": "BATCH-09",
+      "name": "Batch Product 09",
+      "category_id": 7,
+      "list_price": "19.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2010,
+      "sku": "BATCH-10",
+      "name": "Batch Product 10",
+      "category_id": 7,
+      "list_price": "20.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2011,
+      "sku": "BATCH-11",
+      "name": "Batch Product 11",
+      "category_id": 7,
+      "list_price": "21.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2012,
+      "sku": "BATCH-12",
+      "name": "Batch Product 12",
+      "category_id": 7,
+      "list_price": "22.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2013,
+      "sku": "BATCH-13",
+      "name": "Batch Product 13",
+      "category_id": 7,
+      "list_price": "23.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2014,
+      "sku": "BATCH-14",
+      "name": "Batch Product 14",
+      "category_id": 7,
+      "list_price": "24.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2015,
+      "sku": "BATCH-15",
+      "name": "Batch Product 15",
+      "category_id": 7,
+      "list_price": "25.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2016,
+      "sku": "BATCH-16",
+      "name": "Batch Product 16",
+      "category_id": 7,
+      "list_price": "26.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2017,
+      "sku": "BATCH-17",
+      "name": "Batch Product 17",
+      "category_id": 7,
+      "list_price": "27.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2018,
+      "sku": "BATCH-18",
+      "name": "Batch Product 18",
+      "category_id": 7,
+      "list_price": "28.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2019,
+      "sku": "BATCH-19",
+      "name": "Batch Product 19",
+      "category_id": 7,
+      "list_price": "29.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2020,
+      "sku": "BATCH-20",
+      "name": "Batch Product 20",
+      "category_id": 7,
+      "list_price": "30.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2021,
+      "sku": "BATCH-21",
+      "name": "Batch Product 21",
+      "category_id": 7,
+      "list_price": "31.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2022,
+      "sku": "BATCH-22",
+      "name": "Batch Product 22",
+      "category_id": 7,
+      "list_price": "32.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2023,
+      "sku": "BATCH-23",
+      "name": "Batch Product 23",
+      "category_id": 7,
+      "list_price": "33.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2024,
+      "sku": "BATCH-24",
+      "name": "Batch Product 24",
+      "category_id": 7,
+      "list_price": "34.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2025,
+      "sku": "BATCH-25",
+      "name": "Batch Product 25",
+      "category_id": 7,
+      "list_price": "35.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2026,
+      "sku": "BATCH-26",
+      "name": "Batch Product 26",
+      "category_id": 7,
+      "list_price": "36.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2027,
+      "sku": "BATCH-27",
+      "name": "Batch Product 27",
+      "category_id": 7,
+      "list_price": "37.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2028,
+      "sku": "BATCH-28",
+      "name": "Batch Product 28",
+      "category_id": 7,
+      "list_price": "38.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2029,
+      "sku": "BATCH-29",
+      "name": "Batch Product 29",
+      "category_id": 7,
+      "list_price": "39.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2030,
+      "sku": "BATCH-30",
+      "name": "Batch Product 30",
+      "category_id": 7,
+      "list_price": "40.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2031,
+      "sku": "BATCH-31",
+      "name": "Batch Product 31",
+      "category_id": 7,
+      "list_price": "41.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2032,
+      "sku": "BATCH-32",
+      "name": "Batch Product 32",
+      "category_id": 7,
+      "list_price": "42.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2033,
+      "sku": "BATCH-33",
+      "name": "Batch Product 33",
+      "category_id": 7,
+      "list_price": "43.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2034,
+      "sku": "BATCH-34",
+      "name": "Batch Product 34",
+      "category_id": 7,
+      "list_price": "44.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2035,
+      "sku": "BATCH-35",
+      "name": "Batch Product 35",
+      "category_id": 7,
+      "list_price": "45.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2036,
+      "sku": "BATCH-36",
+      "name": "Batch Product 36",
+      "category_id": 7,
+      "list_price": "46.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2037,
+      "sku": "BATCH-37",
+      "name": "Batch Product 37",
+      "category_id": 7,
+      "list_price": "47.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2038,
+      "sku": "BATCH-38",
+      "name": "Batch Product 38",
+      "category_id": 7,
+      "list_price": "48.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2039,
+      "sku": "BATCH-39",
+      "name": "Batch Product 39",
+      "category_id": 7,
+      "list_price": "49.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2040,
+      "sku": "BATCH-40",
+      "name": "Batch Product 40",
+      "category_id": 7,
+      "list_price": "50.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2041,
+      "sku": "BATCH-41",
+      "name": "Batch Product 41",
+      "category_id": 7,
+      "list_price": "51.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2042,
+      "sku": "BATCH-42",
+      "name": "Batch Product 42",
+      "category_id": 7,
+      "list_price": "52.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2043,
+      "sku": "BATCH-43",
+      "name": "Batch Product 43",
+      "category_id": 7,
+      "list_price": "53.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2044,
+      "sku": "BATCH-44",
+      "name": "Batch Product 44",
+      "category_id": 7,
+      "list_price": "54.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2045,
+      "sku": "BATCH-45",
+      "name": "Batch Product 45",
+      "category_id": 7,
+      "list_price": "55.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2046,
+      "sku": "BATCH-46",
+      "name": "Batch Product 46",
+      "category_id": 7,
+      "list_price": "56.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2047,
+      "sku": "BATCH-47",
+      "name": "Batch Product 47",
+      "category_id": 7,
+      "list_price": "57.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2048,
+      "sku": "BATCH-48",
+      "name": "Batch Product 48",
+      "category_id": 7,
+      "list_price": "58.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2049,
+      "sku": "BATCH-49",
+      "name": "Batch Product 49",
+      "category_id": 7,
+      "list_price": "59.00",
+      "is_active": true,
+      "image_path": null
+    },
+    {
+      "product_id": 2050,
+      "sku": "BATCH-50",
+      "name": "Batch Product 50",
+      "category_id": 7,
+      "list_price": "60.00",
+      "is_active": true,
+      "image_path": null
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 50,
+    "total": 50
+  }
+}

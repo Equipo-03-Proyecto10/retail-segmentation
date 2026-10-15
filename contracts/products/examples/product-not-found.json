@@ -1,0 +1,6 @@
+{
+  "code": "product_not_found",
+  "message": "No product has the requested product_id.",
+  "correlation_id": "corr-product-404",
+  "details": []
+}

@@ -73,6 +73,9 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 |---|---|---|
 | 409 | `sku_taken` | The SKU already exists |
 | 422 | `unknown_category` | `category_id` references no category (23503) |
+| 404 | `product_not_found` | No product has the given `product_id` |
+| 409 | `product_id_taken` | A `POST` supplies a `product_id` that already exists, as the web's catalog form does |
+| 422 | `too_many_ids` | `ids` names more than 50 products |
 
 ## Accepted exceptions
 

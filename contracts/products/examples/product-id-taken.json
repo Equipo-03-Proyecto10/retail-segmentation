@@ -1,0 +1,11 @@
+{
+  "code": "product_id_taken",
+  "message": "The product_id is already assigned to a product.",
+  "correlation_id": "corr-create-409b",
+  "details": [
+    {
+      "field": "product_id",
+      "code": "duplicate"
+    }
+  ]
+}

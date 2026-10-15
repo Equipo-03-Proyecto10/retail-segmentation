@@ -34,15 +34,25 @@ jobs:
 
   quality:
     name: Format, lint and tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: web/requirements-dev.txt
-      - run: pip install -r web/requirements-dev.txt
+          cache-dependency-path: |
+            web/requirements-dev.txt
+            contracts/requirements.txt
+      - run: pip install -r web/requirements-dev.txt -r contracts/requirements.txt
+      - run: bash contracts/install-tools.sh
+      - name: Report contract tool versions
+        run: |
+          jq --version
+          yq --version
+          oasdiff --version
+          openapi-spec-validator --version
+          xmllint --version
       - run: black --check .
       - run: ruff check .
 
@@ -64,6 +74,42 @@ jobs:
           name: pytest-results
           path: test-results/pytest.xml
           if-no-files-found: ignore
+
+  contracts:
+    name: Contract conventions and stream registry
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: contracts/requirements.txt
+      - run: pip install -r contracts/requirements.txt
+      - run: bash contracts/install-tools.sh
+      - name: Report pinned tool versions
+        run: |
+          jq --version
+          yq --version
+          oasdiff --version
+          openapi-spec-validator --version
+          xmllint --version
+      - name: Contract checks stay silent
+        run: |
+          run_quiet() {
+            set +e
+            output="$("$@" 2>&1)"
+            status=$?
+            set -e
+            if [ "$status" -ne 0 ] || [ -n "$output" ]; then
+              printf '%s\n' "$output"
+              return 1
+            fi
+          }
+          run_quiet bash contracts/check.sh
+          run_quiet bash contracts/streams/check_streams.sh
 
   database:
     name: SQL scripts run clean from empty

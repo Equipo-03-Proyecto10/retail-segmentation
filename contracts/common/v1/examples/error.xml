@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_body</code>
+  <message>The request body is invalid.</message>
+  <correlation_id>request-7fd1</correlation_id>
+  <details>
+    <field>email</field>
+    <code>invalid_email</code>
+  </details>
+</Error>

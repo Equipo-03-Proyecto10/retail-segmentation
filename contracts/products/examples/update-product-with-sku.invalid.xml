@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<UpdateProductRequest xmlns="https://mosaiq.maxthecoder.online/xml/products/v1">
+  <sku>MOS-RENAMED-002</sku>
+</UpdateProductRequest>

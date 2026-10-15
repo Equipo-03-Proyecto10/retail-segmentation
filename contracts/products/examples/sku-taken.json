@@ -1,0 +1,11 @@
+{
+  "code": "sku_taken",
+  "message": "The SKU is already assigned to a product.",
+  "correlation_id": "corr-create-409a",
+  "details": [
+    {
+      "field": "sku",
+      "code": "duplicate"
+    }
+  ]
+}

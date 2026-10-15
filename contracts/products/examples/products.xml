@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Products xmlns="https://mosaiq.maxthecoder.online/xml/products/v1"
+          xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <Product>
+    <product_id>1001</product_id>
+    <sku>MOS-CAM-001</sku>
+    <name>Aisle Camera</name>
+    <category_id>12</category_id>
+    <list_price>129.90</list_price>
+    <is_active>true</is_active>
+    <image_path>products/1001-camera.webp</image_path>
+  </Product>
+  <Product>
+    <product_id>1002</product_id>
+    <sku>MOS-TAG-002</sku>
+    <name>Shelf Tag Pack</name>
+    <category_id>12</category_id>
+    <list_price>24.50</list_price>
+    <is_active>false</is_active>
+  </Product>
+  <common:PageInfo>
+    <common:page>1</common:page>
+    <common:size>20</common:size>
+    <common:total>2</common:total>
+  </common:PageInfo>
+</Products>

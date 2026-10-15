@@ -1,0 +1,11 @@
+{
+  "code": "too_many_ids",
+  "message": "At most 50 product ids may be requested.",
+  "correlation_id": "corr-list-002",
+  "details": [
+    {
+      "field": "ids",
+      "code": "max_items"
+    }
+  ]
+}

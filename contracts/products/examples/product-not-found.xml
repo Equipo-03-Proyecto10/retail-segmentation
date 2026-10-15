@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>product_not_found</code>
+  <message>No product has the requested product_id.</message>
+  <correlation_id>corr-product-404</correlation_id>
+</Error>

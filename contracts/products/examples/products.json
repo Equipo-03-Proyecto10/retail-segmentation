@@ -1,0 +1,27 @@
+{
+  "products": [
+    {
+      "product_id": 1001,
+      "sku": "MOS-CAM-001",
+      "name": "Aisle Camera",
+      "category_id": 12,
+      "list_price": "129.90",
+      "is_active": true,
+      "image_path": "products/1001-camera.webp"
+    },
+    {
+      "product_id": 1002,
+      "sku": "MOS-TAG-002",
+      "name": "Shelf Tag Pack",
+      "category_id": 12,
+      "list_price": "24.50",
+      "is_active": false,
+      "image_path": null
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 2
+  }
+}

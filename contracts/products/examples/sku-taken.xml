@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>sku_taken</code>
+  <message>The SKU is already assigned to a product.</message>
+  <correlation_id>corr-create-409a</correlation_id>
+  <details>
+    <field>sku</field>
+    <code>duplicate</code>
+  </details>
+</Error>

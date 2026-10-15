@@ -1,0 +1,53 @@
+{
+  "customer_id": "3f6c1d52-8e4a-4b7d-a0c9-5d2e7b1f4a68",
+  "status": "recommended",
+  "computed_at": "2026-10-15T16:42:10Z",
+  "window": {
+    "days": 180,
+    "start": "2026-04-18T00:00:00Z",
+    "end": "2026-10-15T00:00:00Z"
+  },
+  "label_code": "LOYAL_HIGH_VALUE",
+  "run_id": 41,
+  "usual_store_id": 3,
+  "items": [
+    {
+      "product_id": 245,
+      "category_id": 12,
+      "quantity_on_hand": 8,
+      "reasons": [
+        {
+          "signal": "segment",
+          "segment_buyers": 17,
+          "category_id": null,
+          "share": null
+        },
+        {
+          "signal": "preferred_category",
+          "segment_buyers": null,
+          "category_id": 10,
+          "share": null
+        },
+        {
+          "signal": "purchase_history",
+          "segment_buyers": null,
+          "category_id": 12,
+          "share": 0.4
+        }
+      ]
+    },
+    {
+      "product_id": 120,
+      "category_id": 7,
+      "quantity_on_hand": 14,
+      "reasons": [
+        {
+          "signal": "segment",
+          "segment_buyers": 9,
+          "category_id": null,
+          "share": null
+        }
+      ]
+    }
+  ]
+}

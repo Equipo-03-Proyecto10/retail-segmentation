@@ -21,6 +21,9 @@ web/uploads/
 # Never commit datasets
 data/
 *.csv
+# The grant manifest is a contract, not a dataset: CI compares it with the
+# database (contracts/db/README.md).
+!contracts/db/grants.csv
 
 # IDE and OS
 .idea/

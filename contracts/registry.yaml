@@ -1,91 +1,91 @@
 services:
   - name: auth
     port: 5001
-    rule: "A principal is authenticated only by a valid credential of an active account, and every token stays usable only while its session is live"
-    rn: [RN-52, RN-03]
+    rule: "A principal is authenticated only by a valid credential of an active account, and every token stays usable only while its session is live (RN-52; related RN-03)"
+    rn: [RN-52]
     wave: core
     resources: [sessions, jwks.json]
   - name: users
     port: 5002
-    rule: "Accounts obey the single-administrator rule (never two, never zero, moved only by an explicit transfer), have case-insensitively unique emails, and are deactivated, never deleted"
+    rule: "Accounts obey the single-administrator rule (never two, never zero, moved only by an explicit transfer), have case-insensitively unique emails, and are deactivated, never deleted (RN-01, RN-02, RN-04)"
     rn: [RN-01, RN-02, RN-04]
     wave: core
     resources: [users, roles, administrator-transfers]
   - name: products
     port: 5003
-    rule: "A product has a unique SKU, a price that is never negative and exactly one existing category, and is retired by deactivation"
+    rule: "A product has a unique SKU, a price that is never negative and exactly one existing category, and is retired by deactivation (RN-10, RN-11)"
     rn: [RN-10, RN-11]
     wave: core
     resources: [products]
   - name: categories
     port: 5004
-    rule: "The category tree has no cycles, and a category with products, children or customer interests is never deleted through services"
+    rule: "The category tree has no cycles, and a category with products, children or customer interests is never deleted through services (RN-33, RN-06, RN-07)"
     rn: [RN-33, RN-06, RN-07]
     wave: core
     resources: [categories]
   - name: stores
     port: 5005
-    rule: "Each store has at most one location, with valid coordinates and a 25–2000 m geofence, set by ADMIN only"
+    rule: "Each store has at most one location, with valid coordinates and a 25–2000 m geofence, set by ADMIN only (RN-53)"
     rn: [RN-53]
     wave: core
     resources: [stores]
   - name: stock
     port: 5006
-    rule: "Stock is never negative and is consumed only by an accepted sale, atomically with it"
+    rule: "Stock is never negative and is consumed only by an accepted sale, atomically with it (RN-14, ADR-0031)"
     rn: [RN-14]
     wave: core
     resources: [stock-levels]
   - name: customers
     port: 5007
-    rule: "A customer is registered once, with a valid unique email when given, a known channel and a registration date not in the future, and is never deleted through services"
+    rule: "A customer is registered once, with a valid unique email when given, a known channel and a registration date not in the future, and is never deleted through services (RN-08)"
     rn: [RN-08]
     wave: core
     resources: [customers]
   - name: customer-preferences
     port: 5008
-    rule: "A customer's preferred channels and interest categories are each replaced only atomically, as a whole set of existing references"
+    rule: "A customer's preferred channels and interest categories are each replaced only atomically, as a whole set of existing references (RN-54)"
     rn: [RN-54]
     wave: core
     resources: [preference-profiles]
   - name: sales
     port: 5009
-    rule: "A sale is recorded exactly once, all or nothing, consuming its stock in the same transaction, and only with lines dated not in the future and not before the customer's registration, for active products, with positive quantities and positive two-decimal prices"
+    rule: "A sale is recorded exactly once, all or nothing, consuming its stock in the same transaction, and only with lines dated not in the future and not before the customer's registration, for active products, with positive quantities and positive two-decimal prices (RN-11 to RN-13, RN-37 (accepted sales))"
     rn: [RN-11, RN-12, RN-13, RN-37]
     wave: core
     resources: [sales, channels]
   - name: segments
     port: 5010
-    rule: "A customer has at most one current segment, named by its stable label code, and unassigned states are reported as they are"
+    rule: "A customer has at most one current segment, named by its stable label code, and unassigned states are reported as they are (RN-20, RN-21)"
     rn: [RN-20, RN-21]
     wave: core
     resources: [segments, segment-assignments]
   - name: recommendations
     port: 5011
-    rule: "Recommend active, in-stock products not already bought, matching a stated signal, with reasons, or report why nothing qualifies"
+    rule: "Recommend active, in-stock products not already bought, matching a stated signal, with reasons, or report why nothing qualifies (RN-40)"
     rn: [RN-40]
     wave: core
     resources: [recommendations]
   - name: engagement
     port: 5012
-    rule: "In-store engagement (`QR_SCAN`, `RECO_CLICK`) is recorded once per client event, attributed, voided rather than deleted, and summarized"
+    rule: "In-store engagement (`QR_SCAN`, `RECO_CLICK`) is recorded once per client event, attributed, voided rather than deleted, and summarized (RN-55)"
     rn: [RN-55]
     wave: core
     resources: [engagement-events, engagement-summaries]
   - name: check-ins
     port: 5013
-    rule: "A staff check-in is verified only when the server-computed distance lies within the store's geofence at acceptable accuracy, and overrides are append-only reviews"
+    rule: "A staff check-in is verified only when the server-computed distance lies within the store's geofence at acceptable accuracy, and overrides are append-only reviews (RN-56)"
     rn: [RN-56]
     wave: core
     resources: [check-ins]
   - name: campaigns
     port: 5014
-    rule: "A campaign moves only DRAFT→ACTIVE/CANCELLED and ACTIVE→FINISHED/CANCELLED, is edited only in DRAFT, never ends before it starts, and is activated only before it has ended and while every attached experiment is ready"
+    rule: "A campaign moves only DRAFT→ACTIVE/CANCELLED and ACTIVE→FINISHED/CANCELLED, is edited only in DRAFT, never ends before it starts, and is activated only before it has ended and while every attached experiment is ready (RN-15, RN-16, RN-22, RN-24 (activation), RN-31, RN-32, RN-49 (activation))"
     rn: [RN-15, RN-16, RN-22, RN-24, RN-31, RN-32, RN-49]
     wave: second
     resources: [campaigns]
   - name: audit-trail
     port: 5015
-    rule: "The audit trail is append-only, attributed, free of credentials, and readable by ADMIN and AUDITOR only"
+    rule: "The audit trail is append-only, attributed, free of credentials, and readable by ADMIN and AUDITOR only (RN-28, RN-29, RN-30)"
     rn: [RN-28, RN-29, RN-30]
     wave: second
     resources: [audit-entries]

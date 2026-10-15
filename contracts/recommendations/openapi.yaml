@@ -1,0 +1,561 @@
+openapi: 3.1.0
+info:
+  title: recommendations-service
+  version: 1.0.0
+  description: 'Answers what to recommend to one customer, and why, or why nothing
+    qualifies (RN-40). The service owns no table. It reads seven published views
+    (E-07): `api_products.product_ref_v1`, `api_categories.category_tree_v1`, `api_stock.stock_level_v1`,
+    `api_customers.customer_ref_v1`, `api_preferences.interest_category_v1`, `api_sales.purchase_line_v1`
+    and `api_segments.current_label_v1`, and keeps a result cache. Staleness bound:
+    a result may be served from cache for at most 120 s after the facts behind it
+    change, and normally within the relay''s 5 s plus the consumer''s turn. Items
+    carry ids and figures only: clients fetch names with `GET /v1/products?ids=`.'
+security:
+- bearer: []
+tags:
+- name: Recommendations
+- name: Meta
+paths:
+  /v1/recommendations:
+    get:
+      tags:
+      - Recommendations
+      summary: Get a customer's recommendations
+      description: Recommends active products that are in stock at the customer's
+        usual store, not already bought in the window, and that match at least one
+        stated signal (segment peers, a preferred category, or purchase history),
+        each with its reasons. When nothing qualifies, `status` says why and `items`
+        is empty (RN-40). Items are ordered by the number of signals that match,
+        then by segment buyers, then by the category's share of the customer's buying,
+        then by product id. The status is `unassigned_result` or `no_open_assignment`
+        when the customer has no segment, and the segment is checked before the
+        usual store.
+      operationId: getRecommendations
+      x-mosaiq-roles:
+      - ADMIN
+      - ANALYST
+      - STORE_MANAGER
+      - MARKETING
+      - AUDITOR
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/CustomerId'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: 'The result: items, or the status that says why there are
+            none.'
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema: &id001
+                $ref: '#/components/schemas/Recommendation'
+              examples:
+                recommended:
+                  externalValue: ./examples/recommended.json
+                none_match:
+                  externalValue: ./examples/none-match.json
+                no_open_assignment:
+                  externalValue: ./examples/no-open-assignment.json
+                unassigned_result:
+                  externalValue: ./examples/unassigned-result.json
+                no_usual_store:
+                  externalValue: ./examples/no-usual-store.json
+            application/xml:
+              schema: *id001
+              examples:
+                recommended:
+                  externalValue: ./examples/recommended.xml
+                none_match:
+                  externalValue: ./examples/none-match.xml
+                no_open_assignment:
+                  externalValue: ./examples/no-open-assignment.xml
+                unassigned_result:
+                  externalValue: ./examples/unassigned-result.xml
+                no_usual_store:
+                  externalValue: ./examples/no-usual-store.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /health/live:
+    get:
+      tags:
+      - Meta
+      summary: Check process liveness
+      operationId: getLiveness
+      security: []
+      parameters: &id002
+      - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The process is live.
+          headers: &id003
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+  /health/ready:
+    get:
+      tags:
+      - Meta
+      summary: Check schema readiness
+      operationId: getReadiness
+      security: []
+      parameters: *id002
+      responses:
+        '204':
+          description: The required schema is ready.
+          headers: *id003
+        '503':
+          $ref: '#/components/responses/SchemaNotReady'
+  /openapi.yaml:
+    get:
+      tags:
+      - Meta
+      summary: Get this OpenAPI document
+      operationId: getOpenApi
+      security: []
+      parameters: *id002
+      responses:
+        '200':
+          description: The OpenAPI document, served byte for byte.
+          headers: *id003
+          content:
+            application/yaml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+  /schema.xsd:
+    get:
+      tags:
+      - Meta
+      summary: Get the recommendations XML Schema
+      operationId: getSchema
+      security: []
+      parameters: *id002
+      responses:
+        '200':
+          description: The recommendations XSD, served byte for byte.
+          headers: *id003
+          content:
+            application/xml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      description: Caller-supplied correlation id. A missing or invalid value is
+        replaced by the service, and the effective value is returned on every response.
+      schema:
+        type: string
+        pattern: ^[0-9A-Za-z-]{1,64}$
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Size:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    CustomerId:
+      name: customer_id
+      in: query
+      required: true
+      description: The customer to recommend to. A missing or malformed value answers
+        422 `invalid_query`; an unknown customer answers 422 `unknown_customer`.
+      schema: &id005
+        type: string
+        format: uuid
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: At most this many items. A value outside 1 to 50 answers 422
+        `invalid_query`.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 10
+  headers:
+    CorrelationId:
+      description: The effective correlation id for this request.
+      required: true
+      schema:
+        type: string
+        pattern: ^[0-9A-Za-z-]{1,64}$
+    RetryAfter:
+      description: Seconds until the caller should retry.
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  schemas:
+    Reason:
+      type: object
+      additionalProperties: false
+      required:
+      - signal
+      - segment_buyers
+      - category_id
+      - share
+      description: Why an item was chosen, with the figures behind it. A figure
+        that does not belong to the signal is null in JSON and omitted in XML.
+      properties:
+        signal:
+          type: string
+          enum:
+          - segment
+          - preferred_category
+          - purchase_history
+        segment_buyers:
+          anyOf:
+          - type: integer
+            minimum: 1
+          - type: 'null'
+          description: '`segment` only: other customers with the same open label
+            who bought the product in the window.'
+        category_id:
+          anyOf:
+          - type: integer
+            format: int32
+          - type: 'null'
+          description: '`preferred_category` and `purchase_history`: the nearest
+            category of that signal in the product''s lineage.'
+        share:
+          anyOf:
+          - type: number
+            minimum: 0
+            maximum: 1
+          - type: 'null'
+          description: '`purchase_history` only: the fraction of the customer''s
+            purchases in the window that were in `category_id`.'
+    RecommendationItem:
+      type: object
+      additionalProperties: false
+      description: 'Ids and figures only: no product name, SKU, price or category
+        name. Clients fetch names with `GET /v1/products?ids=`.'
+      required:
+      - product_id
+      - category_id
+      - quantity_on_hand
+      - reasons
+      properties:
+        product_id:
+          type: integer
+          format: int32
+        category_id:
+          type: integer
+          format: int32
+          description: The product's own category.
+        quantity_on_hand:
+          type: integer
+          minimum: 1
+          description: The stock held at the usual store, the figure the rule used
+            (E-06).
+        reasons:
+          type: array
+          minItems: 1
+          description: In the fixed order `segment`, `preferred_category`, `purchase_history`;
+            only the signals that matched.
+          items:
+            $ref: '#/components/schemas/Reason'
+    Window:
+      type: object
+      additionalProperties: false
+      required:
+      - days
+      - start
+      - end
+      properties:
+        days:
+          type: integer
+          enum:
+          - 180
+        start: &id004
+          type: string
+          format: date-time
+        end: *id004
+    Recommendation:
+      type: object
+      additionalProperties: false
+      required:
+      - customer_id
+      - status
+      - computed_at
+      - window
+      - label_code
+      - run_id
+      - usual_store_id
+      - items
+      description: '`items` is empty for every status but `recommended`. `label_code`,
+        `run_id` and `usual_store_id` are the figures the rule used to decide (E-06).'
+      properties:
+        customer_id: *id005
+        status:
+          type: string
+          enum:
+          - recommended
+          - none_match
+          - no_open_assignment
+          - unassigned_result
+          - no_usual_store
+          description: '`recommended`: at least one item. `none_match`: a segment
+            and a usual store are known, but nothing qualifies. `no_open_assignment`:
+            the customer has no open segment assignment. `unassigned_result`: the
+            latest assignment is the unassigned result (RN-21). `no_usual_store`:
+            no accepted sale in the window, so stock cannot be checked. The segment
+            is checked first.'
+        computed_at: *id004
+        window:
+          $ref: '#/components/schemas/Window'
+        label_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Null until a segment is known.
+        run_id:
+          anyOf:
+          - type: integer
+            format: int64
+          - type: 'null'
+          description: The segmentation run of the open assignment; null until a
+            segment is known.
+        usual_store_id:
+          anyOf:
+          - type: integer
+            format: int32
+          - type: 'null'
+          description: Null until a usual store is known.
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecommendationItem'
+      xml:
+        name: Recommendation
+        namespace: https://mosaiq.maxthecoder.online/xml/recommendations/v1
+    PageInfo:
+      type: object
+      additionalProperties: false
+      required:
+      - page
+      - size
+      - total
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+      xml:
+        name: PageInfo
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required:
+      - field
+      - code
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+    Error:
+      type: object
+      additionalProperties: false
+      required:
+      - code
+      - message
+      - correlation_id
+      - details
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        correlation_id:
+          type: string
+          pattern: ^[0-9A-Za-z-]{1,64}$
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+      xml:
+        name: Error
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+  responses:
+    Unauthorized:
+      description: '`invalid_token` or `session_revoked`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              externalValue: ./examples/invalid-token.json
+            session_revoked:
+              externalValue: ./examples/session-revoked.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              externalValue: ./examples/invalid-token.xml
+            session_revoked:
+              externalValue: ./examples/session-revoked.xml
+    Forbidden:
+      description: '`forbidden_role`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.xml
+    NotAcceptable:
+      description: '`not_acceptable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              externalValue: ./examples/not-acceptable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              externalValue: ./examples/not-acceptable.xml
+    RateLimited:
+      description: '`rate_limited`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              externalValue: ./examples/rate-limited.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              externalValue: ./examples/rate-limited.xml
+    OperationUnavailable:
+      description: '`auth_unavailable` or `database_unavailable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.json
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.xml
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.xml
+    SchemaNotReady:
+      description: '`schema_not_ready`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              externalValue: ./examples/schema-not-ready.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              externalValue: ./examples/schema-not-ready.xml
+    Unprocessable:
+      description: '`unknown_customer` or `invalid_query`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unknown_customer:
+              externalValue: ./examples/unknown-customer.json
+            invalid_query:
+              externalValue: ./examples/invalid-query.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unknown_customer:
+              externalValue: ./examples/unknown-customer.xml
+            invalid_query:
+              externalValue: ./examples/invalid-query.xml

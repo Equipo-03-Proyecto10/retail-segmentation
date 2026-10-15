@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_query</code>
+  <message>limit must be a whole number from 1 to 50.</message>
+  <correlation_id>corr-invalid-query</correlation_id>
+  <details>
+    <field>limit</field>
+    <code>out_of_range</code>
+  </details>
+</Error>

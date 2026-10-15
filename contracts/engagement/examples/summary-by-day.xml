@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<EngagementSummary xmlns="https://mosaiq.maxthecoder.online/xml/engagement/v1">
+  <from>2026-10-13</from>
+  <to>2026-10-15</to>
+  <group_by>day</group_by>
+  <groups>
+    <key>2026-10-13</key>
+    <count>31</count>
+  </groups>
+  <groups>
+    <key>2026-10-14</key>
+    <count>44</count>
+  </groups>
+  <groups>
+    <key>2026-10-15</key>
+    <count>33</count>
+  </groups>
+</EngagementSummary>

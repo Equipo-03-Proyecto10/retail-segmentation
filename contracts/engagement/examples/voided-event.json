@@ -1,0 +1,22 @@
+{
+  "event_id": "66f1a2b3c4d5e6f7a8b9c0d3",
+  "client_event_id": "0e6d5c4b-3a29-4817-96f5-a4b3c2d1e0f3",
+  "type": "QR_SCAN",
+  "store_id": 3,
+  "product_id": 311,
+  "customer_id": null,
+  "label_code": null,
+  "rank": null,
+  "recorded_by": "5b0c2f3e-8a41-4d6b-9c10-2e7a1f4d9b33",
+  "occurred_at": "2026-10-15T15:30:00Z",
+  "recorded_at": "2026-10-15T15:30:02Z",
+  "voided": true,
+  "history": [
+    {
+      "action": "VOIDED",
+      "reason": "Scanned the wrong shelf label.",
+      "by": "9d4e7a10-52c3-4b8f-a1e6-0c3b5d7f9a21",
+      "at": "2026-10-15T18:05:00Z"
+    }
+  ]
+}

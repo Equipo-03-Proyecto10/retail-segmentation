@@ -1,0 +1,11 @@
+{
+  "code": "invalid_body",
+  "message": "The category contains an invalid value.",
+  "correlation_id": "corr-invalid-body",
+  "details": [
+    {
+      "field": "name",
+      "code": "too_long"
+    }
+  ]
+}

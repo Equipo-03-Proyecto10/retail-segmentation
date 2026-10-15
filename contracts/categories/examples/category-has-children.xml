@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>category_has_children</code>
+  <message>The category still has subcategories.</message>
+  <correlation_id>corr-category-has-children</correlation_id>
+</Error>

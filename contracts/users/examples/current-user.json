@@ -1,0 +1,8 @@
+{
+  "user_id": "77777777-7777-4777-8777-777777777777",
+  "name": "Casey Customer",
+  "email": "casey.customer@example.com",
+  "role_code": "CUSTOMER",
+  "is_active": true,
+  "created_at": "2026-10-15T17:00:00Z"
+}

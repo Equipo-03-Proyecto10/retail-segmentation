@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SignInRequest xmlns="https://mosaiq.maxthecoder.online/xml/auth/v1">
+  <email>alex@example.test</email>
+  <password>placeholder-password</password>
+  <device_label>Android test device</device_label>
+</SignInRequest>

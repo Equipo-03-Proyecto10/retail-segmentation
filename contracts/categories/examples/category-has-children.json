@@ -1,0 +1,6 @@
+{
+  "code": "category_has_children",
+  "message": "The category still has subcategories.",
+  "correlation_id": "corr-category-has-children",
+  "details": []
+}

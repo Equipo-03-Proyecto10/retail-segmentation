@@ -1,0 +1,931 @@
+openapi: 3.1.0
+info:
+  title: categories-service
+  version: 1.0.0
+  description: >-
+    Reads the category tree and lets an administrator create, move, rename and
+    delete categories without a cycle and without orphaning products, children
+    or customer interests (RN-33, RN-06, RN-07).
+security:
+  - bearer: []
+tags:
+  - name: Categories
+  - name: Meta
+paths:
+  /v1/categories:
+    get:
+      tags: [Categories]
+      summary: List categories
+      description: >-
+        Returns a page of categories ordered by `category_id`. Without `parent_id`
+        it lists every category; with it, only the direct children of that category.
+        A `parent_id` that matches no category gives an empty page. Cache misses
+        read PostgreSQL, so a database failure stays visible even though successful
+        reads may be cached.
+      operationId: listCategories
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - INVENTORY_PLANNER
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ParentId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of categories.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryPage'
+              examples:
+                children_of_dairy:
+                  externalValue: ./examples/list-categories.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CategoryPage'
+              examples:
+                children_of_dairy:
+                  externalValue: ./examples/list-categories.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/InvalidPagination'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+    post:
+      tags: [Categories]
+      summary: Create a category
+      description: >-
+        Creates a category with the caller-supplied `category_id`, as the web's
+        catalog form does. `parent_category_id` is null or omitted for a root. The
+        name is unique.
+      operationId: createCategory
+      x-mosaiq-roles:
+        - ADMIN
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCategoryRequest'
+            examples:
+              category:
+                externalValue: ./examples/create-category.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/CreateCategoryRequest'
+            examples:
+              category:
+                externalValue: ./examples/create-category.request.xml
+      responses:
+        '201':
+          description: The category was created.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+              examples:
+                created_category:
+                  externalValue: ./examples/create-category.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Category'
+              examples:
+                created_category:
+                  externalValue: ./examples/create-category.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/CategoryCreateConflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/CategoryCreateRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/categories/{category_id}:
+    get:
+      tags: [Categories]
+      summary: Get one category
+      description: >-
+        Returns the category. `parent_category_id` is null at a root and omitted in
+        XML.
+      operationId: getCategory
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - INVENTORY_PLANNER
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CategoryId'
+      responses:
+        '200':
+          description: The requested category.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+              examples:
+                category:
+                  externalValue: ./examples/get-category.json
+                root_category:
+                  externalValue: ./examples/get-root-category.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Category'
+              examples:
+                category:
+                  externalValue: ./examples/get-category.xml
+                root_category:
+                  externalValue: ./examples/get-root-category.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CategoryNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+    patch:
+      tags: [Categories]
+      summary: Rename or move a category
+      description: >-
+        Changes the category's name, its parent, or both. A field left out
+        stays as it is, so a rename never moves the category. In JSON,
+        `"parent_category_id": null` makes the category a root; in XML,
+        `<parent_category_id xsi:nil="true"/>` does. A body that changes
+        nothing is 422 `invalid_body`. A move that would make the category its
+        own ancestor, or its own parent, is refused with 409 `category_cycle`:
+        the tree stays acyclic (RN-33). Hierarchy changes are serialized in
+        the database, so two concurrent moves cannot each pass against the
+        other's old state.
+      operationId: updateCategory
+      x-mosaiq-roles:
+        - ADMIN
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CategoryId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCategoryRequest'
+            examples:
+              rename_and_move:
+                externalValue: ./examples/update-category.request.json
+              make_root:
+                externalValue: ./examples/update-category-make-root.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/UpdateCategoryRequest'
+            examples:
+              rename_and_move:
+                externalValue: ./examples/update-category.request.xml
+              make_root:
+                externalValue: ./examples/update-category-make-root.request.xml
+      responses:
+        '200':
+          description: The updated category.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+              examples:
+                updated_category:
+                  externalValue: ./examples/update-category.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Category'
+              examples:
+                updated_category:
+                  externalValue: ./examples/update-category.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CategoryNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/CategoryUpdateConflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/CategoryCreateRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+    delete:
+      tags: [Categories]
+      summary: Delete a category
+      description: >-
+        Deletes a category with no products (RN-06), no subcategories (RN-07) and no
+        customer naming it as an interest (E-13). The last guard reads a fact owned
+        by customer-preferences in the database, so the delete never removes another
+        service's rows. A refused delete changes nothing.
+      operationId: deleteCategory
+      x-mosaiq-roles:
+        - ADMIN
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CategoryId'
+      responses:
+        '204':
+          description: The category is deleted.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CategoryNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/CategoryDeleteConflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/categories/{category_id}/descendants:
+    get:
+      tags: [Categories]
+      summary: List a category's subtree
+      description: >-
+        Returns a page of every category below this one at every depth, ordered by
+        `category_id`. The category itself is not included, and a leaf has an empty
+        page.
+      operationId: listCategoryDescendants
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - INVENTORY_PLANNER
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CategoryId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of descendants.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryPage'
+              examples:
+                dairy_subtree:
+                  externalValue: ./examples/list-descendants.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CategoryPage'
+              examples:
+                dairy_subtree:
+                  externalValue: ./examples/list-descendants.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CategoryNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/InvalidPagination'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /health/live:
+    get:
+      tags: [Meta]
+      summary: Check process liveness
+      operationId: getLiveness
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The process is live.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+  /health/ready:
+    get:
+      tags: [Meta]
+      summary: Check schema readiness
+      operationId: getReadiness
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The required schema is ready.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '503':
+          $ref: '#/components/responses/SchemaNotReady'
+  /openapi.yaml:
+    get:
+      tags: [Meta]
+      summary: Get this OpenAPI document
+      operationId: getOpenApi
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The OpenAPI document, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/yaml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+  /schema.xsd:
+    get:
+      tags: [Meta]
+      summary: Get the categories XML Schema
+      operationId: getSchema
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The categories XSD, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/xml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      description: >-
+        Caller-supplied correlation id. A missing or invalid value is replaced
+        by the service, and the effective value is returned on every response.
+      schema:
+        type: string
+        pattern: '^[0-9A-Za-z-]{1,64}$'
+    CategoryId:
+      name: category_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int32
+    ParentId:
+      name: parent_id
+      in: query
+      required: false
+      description: Restrict the page to the direct children of this category.
+      schema:
+        type: integer
+        format: int32
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Size:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+  headers:
+    CorrelationId:
+      description: The effective correlation id for this request.
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9A-Za-z-]{1,64}$'
+    RetryAfter:
+      description: Seconds until the caller should retry.
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    Location:
+      description: Canonical URI of the new resource.
+      required: true
+      schema:
+        type: string
+        format: uri-reference
+  schemas:
+    Category:
+      type: object
+      additionalProperties: false
+      required:
+        - category_id
+        - name
+        - parent_category_id
+      properties:
+        category_id:
+          type: integer
+          minimum: 1
+          maximum: 32767
+        name:
+          type: string
+        parent_category_id:
+          type:
+            - integer
+            - 'null'
+          description: Null at a root; omitted in XML.
+      xml:
+        name: Category
+        namespace: https://mosaiq.maxthecoder.online/xml/categories/v1
+    CategoryPage:
+      type: object
+      additionalProperties: false
+      required:
+        - categories
+        - page_info
+      properties:
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: Categories
+        namespace: https://mosaiq.maxthecoder.online/xml/categories/v1
+    CreateCategoryRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - category_id
+        - name
+      properties:
+        category_id:
+          type: integer
+          minimum: 1
+          maximum: 32767
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        parent_category_id:
+          type:
+            - integer
+            - 'null'
+          description: Omit or send null for a root.
+      xml:
+        name: CreateCategoryRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/categories/v1
+    UpdateCategoryRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        parent_category_id:
+          type:
+            - integer
+            - 'null'
+          description: >-
+            Left out, the parent stays as it is; null makes the category a
+            root.
+      xml:
+        name: UpdateCategoryRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/categories/v1
+    PageInfo:
+      type: object
+      additionalProperties: false
+      required:
+        - page
+        - size
+        - total
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+      xml:
+        name: PageInfo
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - field
+        - code
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+    Error:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+        - correlation_id
+        - details
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        correlation_id:
+          type: string
+          pattern: '^[0-9A-Za-z-]{1,64}$'
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+      xml:
+        name: Error
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+  responses:
+    Unauthorized:
+      description: '`invalid_token` or `session_revoked`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              externalValue: ./examples/invalid-token.json
+            session_revoked:
+              externalValue: ./examples/session-revoked.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              externalValue: ./examples/invalid-token.xml
+            session_revoked:
+              externalValue: ./examples/session-revoked.xml
+    Forbidden:
+      description: '`forbidden_role`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.xml
+    MalformedBody:
+      description: '`malformed_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            malformed_body:
+              externalValue: ./examples/malformed-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            malformed_body:
+              externalValue: ./examples/malformed-body.xml
+    NotAcceptable:
+      description: '`not_acceptable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              externalValue: ./examples/not-acceptable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              externalValue: ./examples/not-acceptable.xml
+    PayloadTooLarge:
+      description: '`payload_too_large`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            payload_too_large:
+              externalValue: ./examples/payload-too-large.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            payload_too_large:
+              externalValue: ./examples/payload-too-large.xml
+    UnsupportedMediaType:
+      description: '`unsupported_media_type`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unsupported_media_type:
+              externalValue: ./examples/unsupported-media-type.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unsupported_media_type:
+              externalValue: ./examples/unsupported-media-type.xml
+    InvalidPagination:
+      description: '`invalid_pagination`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.xml
+    RateLimited:
+      description: '`rate_limited`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              externalValue: ./examples/rate-limited.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              externalValue: ./examples/rate-limited.xml
+    OperationUnavailable:
+      description: '`auth_unavailable` or `database_unavailable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.json
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.xml
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.xml
+    SchemaNotReady:
+      description: '`schema_not_ready`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              externalValue: ./examples/schema-not-ready.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              externalValue: ./examples/schema-not-ready.xml
+    CategoryNotFound:
+      description: '`category_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            category_not_found:
+              externalValue: ./examples/category-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            category_not_found:
+              externalValue: ./examples/category-not-found.xml
+    CategoryCreateConflict:
+      description: '`category_id_taken` or `category_name_taken`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            category_id_taken:
+              externalValue: ./examples/category-id-taken.json
+            category_name_taken:
+              externalValue: ./examples/category-name-taken.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            category_id_taken:
+              externalValue: ./examples/category-id-taken.xml
+            category_name_taken:
+              externalValue: ./examples/category-name-taken.xml
+    CategoryCreateRefused:
+      description: '`unknown_parent_category` or `invalid_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unknown_parent_category:
+              externalValue: ./examples/unknown-parent-category.json
+            invalid_body:
+              externalValue: ./examples/invalid-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unknown_parent_category:
+              externalValue: ./examples/unknown-parent-category.xml
+            invalid_body:
+              externalValue: ./examples/invalid-body.xml
+    CategoryUpdateConflict:
+      description: '`category_cycle` or `category_name_taken`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            category_cycle:
+              externalValue: ./examples/category-cycle.json
+            category_name_taken:
+              externalValue: ./examples/category-name-taken.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            category_cycle:
+              externalValue: ./examples/category-cycle.xml
+            category_name_taken:
+              externalValue: ./examples/category-name-taken.xml
+    CategoryDeleteConflict:
+      description: '`category_has_products`, `category_has_children` or `category_has_customer_interest`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            category_has_products:
+              externalValue: ./examples/category-has-products.json
+            category_has_children:
+              externalValue: ./examples/category-has-children.json
+            category_has_customer_interest:
+              externalValue: ./examples/category-has-customer-interest.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            category_has_products:
+              externalValue: ./examples/category-has-products.xml
+            category_has_children:
+              externalValue: ./examples/category-has-children.xml
+            category_has_customer_interest:
+              externalValue: ./examples/category-has-customer-interest.xml

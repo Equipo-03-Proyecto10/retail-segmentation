@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<User xmlns="https://mosaiq.maxthecoder.online/xml/users/v1">
+  <user_id>77777777-7777-4777-8777-777777777777</user_id>
+  <name>Casey Customer</name>
+  <email>casey.customer@example.com</email>
+  <role_code>CUSTOMER</role_code>
+  <is_active>true</is_active>
+  <created_at>2026-10-15T17:00:00Z</created_at>
+</User>

@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:cus="https://mosaiq.maxthecoder.online/xml/customers/v1"
+           xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1"
+           targetNamespace="https://mosaiq.maxthecoder.online/xml/customers/v1"
+           elementFormDefault="qualified">
+  <xs:import namespace="https://mosaiq.maxthecoder.online/xml/common/v1"
+             schemaLocation="../common/v1/common.xsd"/>
+
+  <xs:simpleType name="Uuid">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Name">
+    <xs:restriction base="xs:string">
+      <xs:maxLength value="120"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Email">
+    <xs:restriction base="xs:string">
+      <xs:maxLength value="160"/>
+      <xs:pattern value="[^@\s]+@[^@\s.]+(\.[^@\s.]+)+"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Phone">
+    <xs:restriction base="xs:string">
+      <xs:maxLength value="20"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="ChannelId">
+    <xs:restriction base="xs:short"/>
+  </xs:simpleType>
+
+  <xs:complexType name="Customer">
+    <xs:sequence>
+      <xs:element name="customer_id" type="cus:Uuid"/>
+      <xs:element name="name" type="cus:Name"/>
+      <xs:element name="email" type="cus:Email" minOccurs="0"/>
+      <xs:element name="phone" type="cus:Phone" minOccurs="0"/>
+      <xs:element name="registration_channel_id" type="cus:ChannelId"/>
+      <xs:element name="registered_on" type="xs:date"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="RegisterCustomerRequest">
+    <xs:sequence>
+      <xs:element name="name" type="cus:Name"/>
+      <xs:element name="email" type="cus:Email" minOccurs="0"/>
+      <xs:element name="phone" type="cus:Phone" minOccurs="0"/>
+      <xs:element name="registration_channel_id" type="cus:ChannelId"/>
+      <xs:element name="registered_on" type="xs:date" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="CorrectCustomerRequest">
+    <xs:sequence>
+      <xs:element name="name" type="cus:Name" minOccurs="0"/>
+      <xs:element name="email" type="cus:Email" minOccurs="0"/>
+      <xs:element name="phone" type="cus:Phone" minOccurs="0"/>
+      <xs:element name="registration_channel_id" type="cus:ChannelId" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Customers">
+    <xs:sequence>
+      <xs:element name="Customer" type="cus:Customer" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name="Customer" type="cus:Customer"/>
+  <xs:element name="Customers" type="cus:Customers"/>
+  <xs:element name="RegisterCustomerRequest" type="cus:RegisterCustomerRequest"/>
+  <xs:element name="CorrectCustomerRequest" type="cus:CorrectCustomerRequest"/>
+</xs:schema>

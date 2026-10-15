@@ -1,0 +1,6 @@
+{
+  "code": "category_not_found",
+  "message": "Category 9999 was not found.",
+  "correlation_id": "corr-category-not-found",
+  "details": []
+}

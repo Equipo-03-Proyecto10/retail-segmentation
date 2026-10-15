@@ -1,0 +1,11 @@
+{
+  "code": "no_lines",
+  "message": "A sale needs at least one line.",
+  "correlation_id": "corr-no-lines",
+  "details": [
+    {
+      "field": "lines",
+      "code": "empty"
+    }
+  ]
+}

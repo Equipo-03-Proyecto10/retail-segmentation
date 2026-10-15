@@ -1,0 +1,11 @@
+{
+  "code": "invalid_query",
+  "message": "group_by must be store, day or type.",
+  "correlation_id": "corr-invalid-query-group-by",
+  "details": [
+    {
+      "field": "group_by",
+      "code": "unknown_group_by"
+    }
+  ]
+}

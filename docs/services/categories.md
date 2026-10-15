@@ -72,10 +72,14 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 
 | HTTP | Code | When |
 |---|---|---|
+| 404 | `category_not_found` | The category does not exist |
+| 409 | `category_id_taken` | The caller-supplied `category_id` is already used |
+| 409 | `category_name_taken` | `name` is unique and is already used |
 | 409 | `category_cycle` | The edit would make a category its own ancestor or parent |
 | 409 | `category_has_products` | Delete with products (RN-06) |
 | 409 | `category_has_children` | Delete with children (RN-07) |
 | 409 | `category_has_customer_interest` | Delete while a customer names it as an interest (E-13) |
+| 422 | `unknown_parent_category` | `parent_category_id` names no category |
 
 ## Accepted exceptions
 

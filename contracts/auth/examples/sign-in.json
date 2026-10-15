@@ -1,0 +1,7 @@
+{
+  "access_token": "placeholder.access.token",
+  "refresh_token": "placeholder-refresh-token",
+  "token_type": "Bearer",
+  "expires_in": 600,
+  "expires_at": "2026-10-15T20:00:00Z"
+}

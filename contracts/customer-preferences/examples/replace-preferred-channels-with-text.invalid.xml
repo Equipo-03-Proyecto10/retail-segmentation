@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ReplacePreferredChannelsRequest xmlns="https://mosaiq.maxthecoder.online/xml/customer-preferences/v1">
+  <channel_ids>mobile_app</channel_ids>
+</ReplacePreferredChannelsRequest>

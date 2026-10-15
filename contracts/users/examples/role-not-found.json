@@ -1,0 +1,5 @@
+{
+  "code": "role_not_found",
+  "message": "The role does not exist.",
+  "correlation_id": "corr-418"
+}

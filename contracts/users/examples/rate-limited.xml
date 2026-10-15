@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<common:Error xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <common:code>rate_limited</common:code>
+  <common:message>Too many failed current-password checks.</common:message>
+  <common:correlation_id>corr-418</common:correlation_id>
+</common:Error>

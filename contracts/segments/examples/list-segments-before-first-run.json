@@ -1,0 +1,49 @@
+{
+  "run_id": null,
+  "run_at": null,
+  "unassigned_count": 0,
+  "segments": [
+    {
+      "label_code": "CHAMPION",
+      "name": "Champion",
+      "description": "Highest recency, frequency and monetary value",
+      "ordinal_position": 1,
+      "size": 0
+    },
+    {
+      "label_code": "LOYAL",
+      "name": "Loyal",
+      "description": "Buys often and recently, consistent spend",
+      "ordinal_position": 2,
+      "size": 0
+    },
+    {
+      "label_code": "POTENTIAL",
+      "name": "Potential",
+      "description": "Recent customer with room to grow frequency",
+      "ordinal_position": 3,
+      "size": 0
+    },
+    {
+      "label_code": "AT_RISK",
+      "name": "At risk",
+      "description": "Used to buy often, recency has slipped",
+      "ordinal_position": 4,
+      "size": 0
+    },
+    {
+      "label_code": "HIBERNATING",
+      "name": "Hibernating",
+      "description": "Low recency, frequency and monetary value",
+      "ordinal_position": 5,
+      "size": 0
+    },
+    {
+      "label_code": "LOST",
+      "name": "Lost",
+      "description": "No recent activity across all three measures",
+      "ordinal_position": 6,
+      "size": 0
+    }
+  ]
+}

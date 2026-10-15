@@ -71,7 +71,9 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 
 | HTTP | Code | When |
 |---|---|---|
-| 404 | Undecided; the contract story fixes the code | An unknown customer (F14-19 fixes the code). The unassigned states are 200 answers, not errors |
+| 404 | `customer_not_found` | The customer is absent from `api_customers.customer_ref_v1`. The unassigned states are 200 answers, not errors |
+| 404 | `segment_not_found` | The `label_code` names no label |
+| 422 | `invalid_query` | `GET /v1/segment-assignments` is not given exactly one of `customer_id` and `label_code`, or `.../current` has no valid `customer_id` |
 
 ## Accepted exceptions
 

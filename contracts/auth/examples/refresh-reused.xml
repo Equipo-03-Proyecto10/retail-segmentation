@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>refresh_reused</code>
+  <message>The refresh token was already used; the session was revoked.</message>
+  <correlation_id>auth-example-refresh-reused</correlation_id>
+</Error>

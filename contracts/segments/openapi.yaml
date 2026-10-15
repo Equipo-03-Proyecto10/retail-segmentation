@@ -1,0 +1,858 @@
+openapi: 3.1.0
+info:
+  title: segments-service
+  version: 1.0.0
+  description: >-
+    Serves what the web's segmentation runs recorded: the label vocabulary, each
+    customer's current assignment and the history. It writes nothing (RN-20,
+    RN-21).
+security:
+  - bearer: []
+tags:
+  - name: Segments
+  - name: Assignments
+  - name: Meta
+paths:
+  /v1/segments:
+    get:
+      tags: [Segments]
+      summary: List the label vocabulary
+      description: >-
+        Returns every label in business order (`ordinal_position`), each with its
+        size in the latest run. The list also carries that run's `run_id` and
+        `run_at` and the number of customers it left unassigned. Before any run,
+        `run_id` and `run_at` are null (omitted in XML), every size is 0 and the
+        unassigned count is 0. A segment is named by its stable label code, never by
+        an id that belongs to one run. Cache misses read PostgreSQL, so a database
+        failure stays visible.
+      operationId: listSegments
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The labels.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SegmentList'
+              examples:
+                latest_run:
+                  externalValue: ./examples/list-segments.json
+                before_first_run:
+                  externalValue: ./examples/list-segments-before-first-run.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/SegmentList'
+              examples:
+                latest_run:
+                  externalValue: ./examples/list-segments.xml
+                before_first_run:
+                  externalValue: ./examples/list-segments-before-first-run.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/segments/{label_code}:
+    get:
+      tags: [Segments]
+      summary: Get one label
+      description: >-
+        Returns one label with its size in the latest run. A segment is named by its
+        stable label code, never by an id that belongs to one run.
+      operationId: getSegment
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/LabelCode'
+      responses:
+        '200':
+          description: The requested label.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Segment'
+              examples:
+                segment:
+                  externalValue: ./examples/get-segment.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Segment'
+              examples:
+                segment:
+                  externalValue: ./examples/get-segment.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/SegmentNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/segment-assignments/current:
+    get:
+      tags: [Segments]
+      summary: Get a customer's current assignment
+      description: >-
+        Returns the customer's current state, which is always a 200 answer.
+        `assigned` carries the label, the three scores, `since` (the open row's
+        `valid_from`) and `run_id`. `unassigned_result` means the latest run left
+        the customer without a label and carries `since` and `run_id` only.
+        `no_open_assignment` means the customer has no open row and carries nothing
+        more. The last two are answers, not errors, and they are never filled in
+        from another source. A customer absent from `api_customers.customer_ref_v1`
+        is 404 `customer_not_found`; a missing or malformed `customer_id` is 422
+        `invalid_query`.
+      operationId: getCurrentAssignment
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CurrentCustomerId'
+      responses:
+        '200':
+          description: The customer's current state.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentAssignment'
+              examples:
+                assigned:
+                  externalValue: ./examples/current-assigned.json
+                unassigned_result:
+                  externalValue: ./examples/current-unassigned-result.json
+                no_open_assignment:
+                  externalValue: ./examples/current-no-open-assignment.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CurrentAssignment'
+              examples:
+                assigned:
+                  externalValue: ./examples/current-assigned.xml
+                unassigned_result:
+                  externalValue: ./examples/current-unassigned-result.xml
+                no_open_assignment:
+                  externalValue: ./examples/current-no-open-assignment.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CustomerNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/CurrentInvalidQuery'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/segment-assignments:
+    get:
+      tags: [Segments]
+      summary: List a customer's history or a label's members
+      description: >-
+        Give exactly one of `customer_id` and `label_code`; anything else is 422
+        `invalid_query`. With `customer_id` it returns that customer's history,
+        newest first, and an unknown customer is 404 `customer_not_found`. With
+        `label_code` it returns the customers assigned that label, and an unknown
+        label is 404 `segment_not_found`. `open=true` keeps only open rows
+        (`valid_to` null): one row for a customer, the current members for a label.
+        A row with an unassigned result has a null `label_code` and null scores; it
+        is reported as recorded.
+      operationId: listSegmentAssignments
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/HistoryCustomerId'
+        - $ref: '#/components/parameters/LabelCodeFilter'
+        - $ref: '#/components/parameters/Open'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of assignments.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SegmentAssignmentPage'
+              examples:
+                customer_history:
+                  externalValue: ./examples/customer-history.json
+                label_open_members:
+                  externalValue: ./examples/label-open-members.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/SegmentAssignmentPage'
+              examples:
+                customer_history:
+                  externalValue: ./examples/customer-history.xml
+                label_open_members:
+                  externalValue: ./examples/label-open-members.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/AssignmentsNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/AssignmentsInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /health/live:
+    get:
+      tags: [Meta]
+      summary: Check process liveness
+      operationId: getLiveness
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The process is live.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+  /health/ready:
+    get:
+      tags: [Meta]
+      summary: Check schema readiness
+      operationId: getReadiness
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The required schema is ready.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '503':
+          $ref: '#/components/responses/SchemaNotReady'
+  /openapi.yaml:
+    get:
+      tags: [Meta]
+      summary: Get this OpenAPI document
+      operationId: getOpenApi
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The OpenAPI document, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/yaml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+  /schema.xsd:
+    get:
+      tags: [Meta]
+      summary: Get the segments XML Schema
+      operationId: getSchema
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The segments XSD, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/xml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      description: >-
+        Caller-supplied correlation id. A missing or invalid value is replaced
+        by the service, and the effective value is returned on every response.
+      schema:
+        type: string
+        pattern: '^[0-9A-Za-z-]{1,64}$'
+    LabelCode:
+      name: label_code
+      in: path
+      required: true
+      schema:
+        type: string
+    CurrentCustomerId:
+      name: customer_id
+      in: query
+      required: true
+      description: The customer whose current assignment is read.
+      schema:
+        type: string
+        format: uuid
+    HistoryCustomerId:
+      name: customer_id
+      in: query
+      required: false
+      description: One customer's history. Exclusive with `label_code`.
+      schema:
+        type: string
+        format: uuid
+    LabelCodeFilter:
+      name: label_code
+      in: query
+      required: false
+      description: One label's members. Exclusive with `customer_id`.
+      schema:
+        type: string
+    Open:
+      name: open
+      in: query
+      required: false
+      description: Keep only open rows, those whose `valid_to` is null.
+      schema:
+        type: boolean
+        default: false
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Size:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+  headers:
+    CorrelationId:
+      description: The effective correlation id for this request.
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9A-Za-z-]{1,64}$'
+    RetryAfter:
+      description: Seconds until the caller should retry.
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  schemas:
+    Segment:
+      type: object
+      additionalProperties: false
+      required:
+        - label_code
+        - name
+        - description
+        - ordinal_position
+        - size
+      properties:
+        label_code:
+          type: string
+        name:
+          type: string
+        description:
+          type:
+            - string
+            - 'null'
+        ordinal_position:
+          type: integer
+          minimum: 1
+        size:
+          type: integer
+          minimum: 0
+          description: Customers holding the label in the latest run.
+      xml:
+        name: Segment
+        namespace: https://mosaiq.maxthecoder.online/xml/segments/v1
+    SegmentList:
+      type: object
+      additionalProperties: false
+      required:
+        - run_id
+        - run_at
+        - unassigned_count
+        - segments
+      properties:
+        run_id:
+          type:
+            - integer
+            - 'null'
+          format: int64
+          description: The latest run; null before any run.
+        run_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        unassigned_count:
+          type: integer
+          minimum: 0
+          description: Customers the latest run left without a label.
+        segments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Segment'
+      xml:
+        name: Segments
+        namespace: https://mosaiq.maxthecoder.online/xml/segments/v1
+    CurrentAssignment:
+      type: object
+      additionalProperties: false
+      required:
+        - customer_id
+        - state
+        - label_code
+        - r_score
+        - f_score
+        - m_score
+        - since
+        - run_id
+      properties:
+        customer_id:
+          type: string
+          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+        state:
+          type: string
+          enum:
+            - assigned
+            - unassigned_result
+            - no_open_assignment
+        label_code:
+          type:
+            - string
+            - 'null'
+          description: Set only when `state` is `assigned`.
+        r_score:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+          maximum: 5
+        f_score:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+          maximum: 5
+        m_score:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+          maximum: 5
+        since:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: The open row's `valid_from`; null for `no_open_assignment`.
+        run_id:
+          type:
+            - integer
+            - 'null'
+          format: int64
+      xml:
+        name: CurrentAssignment
+        namespace: https://mosaiq.maxthecoder.online/xml/segments/v1
+    SegmentAssignment:
+      type: object
+      additionalProperties: false
+      required:
+        - customer_id
+        - run_id
+        - label_code
+        - r_score
+        - f_score
+        - m_score
+        - valid_from
+        - valid_to
+      properties:
+        customer_id:
+          type: string
+          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+        run_id:
+          type: integer
+          format: int64
+        label_code:
+          type:
+            - string
+            - 'null'
+          description: Null for an unassigned result.
+        r_score:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+          maximum: 5
+        f_score:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+          maximum: 5
+        m_score:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+          maximum: 5
+        valid_from:
+          type: string
+          format: date-time
+        valid_to:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: Null while the row is open.
+    SegmentAssignmentPage:
+      type: object
+      additionalProperties: false
+      required:
+        - assignments
+        - page_info
+      properties:
+        assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/SegmentAssignment'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: SegmentAssignments
+        namespace: https://mosaiq.maxthecoder.online/xml/segments/v1
+    PageInfo:
+      type: object
+      additionalProperties: false
+      required:
+        - page
+        - size
+        - total
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+      xml:
+        name: PageInfo
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - field
+        - code
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+    Error:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+        - correlation_id
+        - details
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        correlation_id:
+          type: string
+          pattern: '^[0-9A-Za-z-]{1,64}$'
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+      xml:
+        name: Error
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+  responses:
+    Unauthorized:
+      description: '`invalid_token` or `session_revoked`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              externalValue: ./examples/invalid-token.json
+            session_revoked:
+              externalValue: ./examples/session-revoked.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              externalValue: ./examples/invalid-token.xml
+            session_revoked:
+              externalValue: ./examples/session-revoked.xml
+    Forbidden:
+      description: '`forbidden_role`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.xml
+    NotAcceptable:
+      description: '`not_acceptable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              externalValue: ./examples/not-acceptable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              externalValue: ./examples/not-acceptable.xml
+    RateLimited:
+      description: '`rate_limited`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              externalValue: ./examples/rate-limited.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              externalValue: ./examples/rate-limited.xml
+    OperationUnavailable:
+      description: '`auth_unavailable` or `database_unavailable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.json
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.xml
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.xml
+    SchemaNotReady:
+      description: '`schema_not_ready`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              externalValue: ./examples/schema-not-ready.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              externalValue: ./examples/schema-not-ready.xml
+    CustomerNotFound:
+      description: '`customer_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            customer_not_found:
+              externalValue: ./examples/customer-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            customer_not_found:
+              externalValue: ./examples/customer-not-found.xml
+    SegmentNotFound:
+      description: '`segment_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            segment_not_found:
+              externalValue: ./examples/segment-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            segment_not_found:
+              externalValue: ./examples/segment-not-found.xml
+    CurrentInvalidQuery:
+      description: '`invalid_query`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.xml
+    AssignmentsNotFound:
+      description: '`customer_not_found` or `segment_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            customer_not_found:
+              externalValue: ./examples/customer-not-found.json
+            segment_not_found:
+              externalValue: ./examples/segment-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            customer_not_found:
+              externalValue: ./examples/customer-not-found.xml
+            segment_not_found:
+              externalValue: ./examples/segment-not-found.xml
+    AssignmentsInvalid:
+      description: '`invalid_query` or `invalid_pagination`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.json
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.xml
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.xml

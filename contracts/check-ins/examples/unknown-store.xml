@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>unknown_store</code>
+  <message>Store 9999 is missing or inactive.</message>
+  <correlation_id>corr-unknown-store</correlation_id>
+  <details>
+    <field>store_id</field>
+    <code>unknown_store</code>
+  </details>
+</Error>

@@ -1,0 +1,18 @@
+openapi: 3.1.0
+info:
+  title: Beta fixture
+  version: 1.0.0
+paths:
+  /v1/beta-items:
+    get:
+      security:
+        - BearerAuth: []
+      x-mosaiq-roles: [ADMIN]
+      responses:
+        "200":
+          description: One beta item
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer

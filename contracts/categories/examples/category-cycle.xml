@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>category_cycle</code>
+  <message>The change would make the category its own ancestor.</message>
+  <correlation_id>corr-category-cycle</correlation_id>
+  <details>
+    <field>parent_category_id</field>
+    <code>cycle</code>
+  </details>
+</Error>

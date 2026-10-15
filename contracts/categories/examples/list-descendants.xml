@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Categories xmlns="https://mosaiq.maxthecoder.online/xml/categories/v1"
+        xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <Category>
+    <category_id>11</category_id>
+    <name>Cheese</name>
+    <parent_category_id>1</parent_category_id>
+  </Category>
+  <Category>
+    <category_id>12</category_id>
+    <name>Yogurt</name>
+    <parent_category_id>1</parent_category_id>
+  </Category>
+  <Category>
+    <category_id>31</category_id>
+    <name>Aged cheese</name>
+    <parent_category_id>11</parent_category_id>
+  </Category>
+  <common:PageInfo>
+    <common:page>1</common:page>
+    <common:size>20</common:size>
+    <common:total>3</common:total>
+  </common:PageInfo>
+</Categories>

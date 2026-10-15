@@ -1,0 +1,6 @@
+{
+  "code": "category_has_customer_interest",
+  "message": "A customer still names the category as an interest.",
+  "correlation_id": "corr-category-has-customer-interest",
+  "details": []
+}

@@ -1,0 +1,930 @@
+openapi: 3.1.0
+info:
+  title: products-service
+  version: 1.0.0
+  description: >-
+    Owns the product catalog rule: a product has a unique SKU, a non-negative
+    two-decimal list price, exactly one existing category, and is retired by
+    deactivation. Reads may be cached, but a cache miss reads PostgreSQL. The
+    batch `ids` filter lets clients resolve as many as 50 product references in
+    one call; unknown ids are omitted rather than treated as errors.
+security:
+  - bearer: []
+paths:
+  /v1/products:
+    get:
+      operationId: listProducts
+      summary: List products
+      description: >-
+        Returns products ordered by `product_id`. Filters are combined. `q`
+        matches a case-insensitive substring of the product name or SKU. `sku`
+        is an exact match. `ids` is a comma-separated list of at most 50
+        positive product ids; ids with no matching product are omitted from the
+        page and are not errors. Pagination applies after filtering.
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - INVENTORY_PLANNER
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: q
+          in: query
+          description: Case-insensitive substring matched against name or SKU.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 150
+        - name: sku
+          in: query
+          description: Exact SKU.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 40
+        - name: category_id
+          in: query
+          description: Existing category identifier to filter by.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 32767
+        - name: active
+          in: query
+          description: Whether to return active or inactive products.
+          schema:
+            type: boolean
+        - name: ids
+          in: query
+          description: >-
+            Comma-separated list of one to 50 positive product ids. Unknown ids
+            are omitted. More than 50 ids returns 422 `too_many_ids`; the
+            pattern below leaves the count to the service so that refusal
+            carries its own code rather than a generic schema error.
+          example: 1001,1002,1003
+          schema:
+            type: string
+            pattern: '^[1-9][0-9]*(,[1-9][0-9]*)*$'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of products.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Products'
+              examples:
+                products:
+                  externalValue: ./examples/products.json
+                fifty_id_batch:
+                  externalValue: ./examples/products-50-id-batch.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Products'
+              examples:
+                products:
+                  externalValue: ./examples/products.xml
+                fifty_id_batch:
+                  externalValue: ./examples/products-50-id-batch.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/ProductListValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+    post:
+      operationId: createProduct
+      summary: Create a product
+      description: >-
+        Creates an active product with the caller-supplied `product_id`. The SKU
+        is immutable through this service, and `image_path` remains managed by
+        the web application.
+      x-mosaiq-roles:
+        - ADMIN
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProductRequest'
+            examples:
+              product:
+                externalValue: ./examples/create-product.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/CreateProductRequest'
+            examples:
+              product:
+                externalValue: ./examples/create-product.request.xml
+      responses:
+        '201':
+          description: Product created.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            Location:
+              description: Canonical URI of the new product.
+              required: true
+              schema:
+                type: string
+                format: uri-reference
+                example: /v1/products/1051
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+              examples:
+                created_product:
+                  externalValue: ./examples/create-product.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Product'
+              examples:
+                created_product:
+                  externalValue: ./examples/create-product.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/CreateProductConflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/CreateProductValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/products/{product_id}:
+    get:
+      operationId: getProduct
+      summary: Get a product
+      description: >-
+        Returns the product identified by the integer `product_id` carried in a
+        QR payload. The payload is the id itself, not a product representation.
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - INVENTORY_PLANNER
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The product.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+              examples:
+                product:
+                  externalValue: ./examples/product.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Product'
+              examples:
+                product:
+                  externalValue: ./examples/product.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/ProductNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+    patch:
+      operationId: updateProduct
+      summary: Edit or deactivate a product
+      description: >-
+        Changes one or more of `name`, `category_id`, `list_price` and
+        `is_active`. No other field is accepted. In particular, `sku` and
+        `image_path` return `invalid_body`; images remain web-managed. Setting
+        `is_active` to false retires the product without deleting it.
+      x-mosaiq-roles:
+        - ADMIN
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProductRequest'
+            examples:
+              product_update:
+                externalValue: ./examples/update-product.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/UpdateProductRequest'
+            examples:
+              product_update:
+                externalValue: ./examples/update-product.request.xml
+      responses:
+        '200':
+          description: Product updated or deactivated.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+              examples:
+                updated_product:
+                  externalValue: ./examples/update-product.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Product'
+              examples:
+                updated_product:
+                  externalValue: ./examples/update-product.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/ProductNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/UpdateProductValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /health/live:
+    get:
+      operationId: getLiveness
+      summary: Report process liveness
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The process is live.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+  /health/ready:
+    get:
+      operationId: getReadiness
+      summary: Report schema readiness
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The required schema is applied.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '503':
+          $ref: '#/components/responses/SchemaNotReady'
+  /openapi.yaml:
+    get:
+      operationId: getOpenApiDocument
+      summary: Download this OpenAPI document
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The OpenAPI document, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/yaml:
+              schema:
+                type: string
+  /schema.xsd:
+    get:
+      operationId: getXmlSchema
+      summary: Download the XML schema
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The products XSD, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/xml:
+              schema:
+                type: string
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      description: >-
+        Caller-supplied correlation id. A value that does not match the pattern
+        is ignored and replaced by a generated id.
+      schema:
+        type: string
+        pattern: '^[0-9A-Za-z-]{1,64}$'
+    ProductId:
+      name: product_id
+      in: path
+      required: true
+      description: Positive integer product identifier.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 2147483647
+    Page:
+      name: page
+      in: query
+      required: false
+      description: One-based page number.
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Size:
+      name: size
+      in: query
+      required: false
+      description: Number of products per page.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+  headers:
+    CorrelationId:
+      description: Correlation id used for this response.
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9A-Za-z-]{1,64}$'
+    RetryAfter:
+      description: Whole seconds until a retry is allowed.
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  schemas:
+    ProductId:
+      type: integer
+      minimum: 1
+      maximum: 2147483647
+    CategoryId:
+      type: integer
+      minimum: 1
+      maximum: 32767
+    Sku:
+      type: string
+      minLength: 1
+      maxLength: 40
+    ProductName:
+      type: string
+      minLength: 1
+      maxLength: 150
+    ListPrice:
+      type: string
+      description: Non-negative decimal string with exactly two fractional digits.
+      pattern: '^(0|[1-9][0-9]{0,7})\.[0-9]{2}$'
+      examples:
+        - '12.50'
+    Product:
+      type: object
+      additionalProperties: false
+      required:
+        - product_id
+        - sku
+        - name
+        - category_id
+        - list_price
+        - is_active
+        - image_path
+      properties:
+        product_id:
+          $ref: '#/components/schemas/ProductId'
+        sku:
+          $ref: '#/components/schemas/Sku'
+        name:
+          $ref: '#/components/schemas/ProductName'
+        category_id:
+          $ref: '#/components/schemas/CategoryId'
+        list_price:
+          $ref: '#/components/schemas/ListPrice'
+        is_active:
+          type: boolean
+        image_path:
+          description: Web-managed image path; null when the product has no image.
+          readOnly: true
+          type:
+            - string
+            - 'null'
+          maxLength: 255
+      xml:
+        name: Product
+        namespace: https://mosaiq.maxthecoder.online/xml/products/v1
+    Products:
+      type: object
+      additionalProperties: false
+      required:
+        - products
+        - page_info
+      properties:
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/Product'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: Products
+        namespace: https://mosaiq.maxthecoder.online/xml/products/v1
+    CreateProductRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - product_id
+        - sku
+        - name
+        - category_id
+        - list_price
+      properties:
+        product_id:
+          $ref: '#/components/schemas/ProductId'
+        sku:
+          $ref: '#/components/schemas/Sku'
+        name:
+          $ref: '#/components/schemas/ProductName'
+        category_id:
+          $ref: '#/components/schemas/CategoryId'
+        list_price:
+          $ref: '#/components/schemas/ListPrice'
+      xml:
+        name: CreateProductRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/products/v1
+    UpdateProductRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          $ref: '#/components/schemas/ProductName'
+        category_id:
+          $ref: '#/components/schemas/CategoryId'
+        list_price:
+          $ref: '#/components/schemas/ListPrice'
+        is_active:
+          type: boolean
+      xml:
+        name: UpdateProductRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/products/v1
+    PageInfo:
+      type: object
+      additionalProperties: false
+      required:
+        - page
+        - size
+        - total
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - field
+        - code
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+    Error:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+        - correlation_id
+        - details
+      properties:
+        code:
+          type: string
+          pattern: '^[a-z][a-z0-9_]*$'
+        message:
+          type: string
+        correlation_id:
+          type: string
+          pattern: '^[0-9A-Za-z-]{1,64}$'
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+  responses:
+    AuthenticationError:
+      description: '`invalid_token` or `session_revoked`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              value:
+                code: invalid_token
+                message: The bearer token is invalid.
+                correlation_id: corr-auth-001
+                details: []
+            session_revoked:
+              value:
+                code: session_revoked
+                message: The token session is no longer live.
+                correlation_id: corr-auth-002
+                details: []
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>invalid_token</code><message>The bearer token is invalid.</message><correlation_id>corr-auth-001</correlation_id></Error>
+            session_revoked:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>session_revoked</code><message>The token session is no longer live.</message><correlation_id>corr-auth-002</correlation_id></Error>
+    ForbiddenRole:
+      description: '`forbidden_role`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              value:
+                code: forbidden_role
+                message: The authenticated role cannot perform this operation.
+                correlation_id: corr-role-001
+                details: []
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>forbidden_role</code><message>The authenticated role cannot perform this operation.</message><correlation_id>corr-role-001</correlation_id></Error>
+    NotAcceptable:
+      description: '`not_acceptable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              value:
+                code: not_acceptable
+                message: The requested response format is unsupported.
+                correlation_id: corr-format-001
+                details: []
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>not_acceptable</code><message>The requested response format is unsupported.</message><correlation_id>corr-format-001</correlation_id></Error>
+    ProductListValidation:
+      description: '`invalid_pagination` or `too_many_ids`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              value:
+                code: invalid_pagination
+                message: Pagination values are outside their allowed ranges.
+                correlation_id: corr-list-001
+                details:
+                  - field: page
+                    code: minimum
+            too_many_ids:
+              externalValue: ./examples/too-many-ids.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>invalid_pagination</code><message>Pagination values are outside their allowed ranges.</message><correlation_id>corr-list-001</correlation_id><details><field>page</field><code>minimum</code></details></Error>
+            too_many_ids:
+              externalValue: ./examples/too-many-ids.xml
+    ProductNotFound:
+      description: '`product_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            product_not_found:
+              externalValue: ./examples/product-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            product_not_found:
+              externalValue: ./examples/product-not-found.xml
+    CreateProductConflict:
+      description: '`sku_taken` or `product_id_taken`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            sku_taken:
+              externalValue: ./examples/sku-taken.json
+            product_id_taken:
+              externalValue: ./examples/product-id-taken.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            sku_taken:
+              externalValue: ./examples/sku-taken.xml
+            product_id_taken:
+              externalValue: ./examples/product-id-taken.xml
+    CreateProductValidation:
+      description: '`invalid_body` or `unknown_category`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              value:
+                code: invalid_body
+                message: The request body violates the product schema.
+                correlation_id: corr-create-422a
+                details:
+                  - field: list_price
+                    code: pattern
+            unknown_category:
+              externalValue: ./examples/unknown-category.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>invalid_body</code><message>The request body violates the product schema.</message><correlation_id>corr-create-422a</correlation_id><details><field>list_price</field><code>pattern</code></details></Error>
+            unknown_category:
+              externalValue: ./examples/unknown-category.xml
+    UpdateProductValidation:
+      description: '`invalid_body` or `unknown_category`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              value:
+                code: invalid_body
+                message: The request body contains a forbidden or invalid field.
+                correlation_id: corr-update-422a
+                details:
+                  - field: sku
+                    code: additional_property
+            unknown_category:
+              externalValue: ./examples/unknown-category.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>invalid_body</code><message>The request body contains a forbidden or invalid field.</message><correlation_id>corr-update-422a</correlation_id><details><field>sku</field><code>additional_property</code></details></Error>
+            unknown_category:
+              externalValue: ./examples/unknown-category.xml
+    MalformedBody:
+      description: '`malformed_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            malformed_body:
+              value:
+                code: malformed_body
+                message: The request body cannot be parsed safely.
+                correlation_id: corr-body-400
+                details: []
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            malformed_body:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>malformed_body</code><message>The request body cannot be parsed safely.</message><correlation_id>corr-body-400</correlation_id></Error>
+    PayloadTooLarge:
+      description: '`payload_too_large`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            payload_too_large:
+              value:
+                code: payload_too_large
+                message: The request body exceeds 64 KiB.
+                correlation_id: corr-body-413
+                details: []
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            payload_too_large:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>payload_too_large</code><message>The request body exceeds 64 KiB.</message><correlation_id>corr-body-413</correlation_id></Error>
+    UnsupportedMediaType:
+      description: '`unsupported_media_type`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unsupported_media_type:
+              value:
+                code: unsupported_media_type
+                message: The request format is unsupported.
+                correlation_id: corr-body-415
+                details: []
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unsupported_media_type:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>unsupported_media_type</code><message>The request format is unsupported.</message><correlation_id>corr-body-415</correlation_id></Error>
+    RateLimited:
+      description: '`rate_limited`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              value:
+                code: rate_limited
+                message: The request limit was exceeded.
+                correlation_id: corr-rate-429
+                details: []
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>rate_limited</code><message>The request limit was exceeded.</message><correlation_id>corr-rate-429</correlation_id></Error>
+    ProtectedDatabaseUnavailable:
+      description: '`auth_unavailable` or `database_unavailable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              value:
+                code: auth_unavailable
+                message: Session state cannot be checked.
+                correlation_id: corr-dependency-503a
+                details: []
+            database_unavailable:
+              value:
+                code: database_unavailable
+                message: The product database is unavailable.
+                correlation_id: corr-dependency-503b
+                details: []
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>auth_unavailable</code><message>Session state cannot be checked.</message><correlation_id>corr-dependency-503a</correlation_id></Error>
+            database_unavailable:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>database_unavailable</code><message>The product database is unavailable.</message><correlation_id>corr-dependency-503b</correlation_id></Error>
+    SchemaNotReady:
+      description: '`schema_not_ready`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              value:
+                code: schema_not_ready
+                message: The required product schema has not been applied.
+                correlation_id: corr-ready-503
+                details: []
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>schema_not_ready</code><message>The required product schema has not been applied.</message><correlation_id>corr-ready-503</correlation_id></Error>

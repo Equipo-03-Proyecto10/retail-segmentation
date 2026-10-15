@@ -1,0 +1,39 @@
+{
+  "assignments": [
+    {
+      "customer_id": "7b3ad781-c5de-4f40-ae50-1fa825ce2b25",
+      "run_id": 42,
+      "label_code": "LOYAL",
+      "r_score": 4,
+      "f_score": 5,
+      "m_score": 4,
+      "valid_from": "2026-10-12T03:00:00Z",
+      "valid_to": null
+    },
+    {
+      "customer_id": "7b3ad781-c5de-4f40-ae50-1fa825ce2b25",
+      "run_id": 41,
+      "label_code": null,
+      "r_score": null,
+      "f_score": null,
+      "m_score": null,
+      "valid_from": "2026-09-14T03:00:00Z",
+      "valid_to": "2026-10-12T03:00:00Z"
+    },
+    {
+      "customer_id": "7b3ad781-c5de-4f40-ae50-1fa825ce2b25",
+      "run_id": 40,
+      "label_code": "AT_RISK",
+      "r_score": 2,
+      "f_score": 4,
+      "m_score": 3,
+      "valid_from": "2026-08-17T03:00:00Z",
+      "valid_to": "2026-09-14T03:00:00Z"
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 3
+  }
+}

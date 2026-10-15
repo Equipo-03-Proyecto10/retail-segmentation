@@ -1,0 +1,11 @@
+{
+  "code": "unknown_parent_category",
+  "message": "The parent category does not exist.",
+  "correlation_id": "corr-unknown-parent-category",
+  "details": [
+    {
+      "field": "parent_category_id",
+      "code": "unknown"
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>event_not_found</code>
+  <message>Event 66f1a2b3c4d5e6f7a8b9c0d1 was not found.</message>
+  <correlation_id>corr-event-not-found</correlation_id>
+</Error>

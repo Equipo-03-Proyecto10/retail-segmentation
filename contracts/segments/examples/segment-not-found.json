@@ -1,0 +1,6 @@
+{
+  "code": "segment_not_found",
+  "message": "Segment label CHAMPIONS was not found.",
+  "correlation_id": "corr-segment-not-found",
+  "details": []
+}

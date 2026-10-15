@@ -1,0 +1,6 @@
+{
+  "code": "invalid_refresh",
+  "message": "The refresh token is invalid.",
+  "correlation_id": "auth-example-invalid-refresh",
+  "details": []
+}

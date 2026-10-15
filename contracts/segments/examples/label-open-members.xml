@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SegmentAssignments xmlns="https://mosaiq.maxthecoder.online/xml/segments/v1"
+        xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <SegmentAssignment>
+    <customer_id>7b3ad781-c5de-4f40-ae50-1fa825ce2b25</customer_id>
+    <run_id>42</run_id>
+    <label_code>LOYAL</label_code>
+    <r_score>4</r_score>
+    <f_score>5</f_score>
+    <m_score>4</m_score>
+    <valid_from>2026-10-12T03:00:00Z</valid_from>
+  </SegmentAssignment>
+  <SegmentAssignment>
+    <customer_id>0c9f6a3e-5d2b-4c8e-9a41-7e3b2d1f8a66</customer_id>
+    <run_id>42</run_id>
+    <label_code>LOYAL</label_code>
+    <r_score>5</r_score>
+    <f_score>4</f_score>
+    <m_score>4</m_score>
+    <valid_from>2026-10-12T03:00:00Z</valid_from>
+  </SegmentAssignment>
+  <common:PageInfo>
+    <common:page>1</common:page>
+    <common:size>20</common:size>
+    <common:total>2</common:total>
+  </common:PageInfo>
+</SegmentAssignments>

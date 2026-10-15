@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:beta="https://mosaiq.maxthecoder.online/xml/beta/v1"
+           targetNamespace="https://mosaiq.maxthecoder.online/xml/beta/v1"
+           elementFormDefault="qualified">
+  <xs:import namespace="https://mosaiq.maxthecoder.online/xml/common/v1"
+             schemaLocation="../common/v1/common.xsd"/>
+  <xs:element name="beta-item" type="xs:string"/>
+</xs:schema>

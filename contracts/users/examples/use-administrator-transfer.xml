@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<common:Error xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <common:code>use_administrator_transfer</common:code>
+  <common:message>Use the administrator transfer operation to move the ADMIN role.</common:message>
+  <common:correlation_id>corr-418</common:correlation_id>
+</common:Error>

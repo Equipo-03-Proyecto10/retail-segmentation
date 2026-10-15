@@ -34,15 +34,25 @@ jobs:
 
   quality:
     name: Format, lint and tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: web/requirements-dev.txt
-      - run: pip install -r web/requirements-dev.txt
+          cache-dependency-path: |
+            web/requirements-dev.txt
+            contracts/requirements.txt
+      - run: pip install -r web/requirements-dev.txt -r contracts/requirements.txt
+      - run: bash contracts/install-tools.sh
+      - name: Report contract tool versions
+        run: |
+          jq --version
+          yq --version
+          oasdiff --version
+          openapi-spec-validator --version
+          xmllint --version
       - run: black --check .
       - run: ruff check .
 
@@ -65,9 +75,45 @@ jobs:
           path: test-results/pytest.xml
           if-no-files-found: ignore
 
+  contracts:
+    name: Contract conventions and stream registry
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: contracts/requirements.txt
+      - run: pip install -r contracts/requirements.txt
+      - run: bash contracts/install-tools.sh
+      - name: Report pinned tool versions
+        run: |
+          jq --version
+          yq --version
+          oasdiff --version
+          openapi-spec-validator --version
+          xmllint --version
+      - name: Contract checks stay silent
+        run: |
+          run_quiet() {
+            set +e
+            output="$("$@" 2>&1)"
+            status=$?
+            set -e
+            if [ "$status" -ne 0 ] || [ -n "$output" ]; then
+              printf '%s\n' "$output"
+              return 1
+            fi
+          }
+          run_quiet bash contracts/check.sh
+          run_quiet bash contracts/streams/check_streams.sh
+
   database:
     name: SQL scripts run clean from empty
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16
@@ -182,26 +228,125 @@ jobs:
       # Every table carries at least 30 seed rows, counted exactly — the
       # estimate in pg_stat_user_tables is still zero straight after a load.
       #
-      # A table that cannot sensibly hold 30 rows — `role` holds exactly two —
-      # goes in sql/seed-exempt.txt, one name per line, with a comment saying
-      # why. The exemption is then visible in review rather than hidden by a
-      # weakened check.
+      # A table that cannot sensibly hold 30 rows goes in sql/seed-exempt.txt,
+      # one name per line, with a comment saying why. The exemption is then
+      # visible in review rather than hidden by a weakened check. Service-schema
+      # tables are counted too and named schema-qualified (ADR-0046).
       - name: Every table has at least 30 rows
         run: |
-          if [ ! -f sql/02_seed_30_per_table.sql ]; then exit 0; fi
           q() { psql -v ON_ERROR_STOP=1 -d retail -tAc "$1"; }
           failed=0
-          while read -r tbl; do
-            [ -z "$tbl" ] && continue
-            if [ -f sql/seed-exempt.txt ] && grep -qxF "$tbl" sql/seed-exempt.txt; then
-              echo "$tbl: exempt"
-              continue
-            fi
-            n=$(q "SELECT count(*) FROM public.\"$tbl\";")
-            if [ "$n" -lt 30 ]; then
-              echo "$tbl has $n rows, below the 30-row minimum"
-              failed=1
-            fi
-          done < <(q "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY 1;")
-          if [ "$failed" -ne 0 ]; then exit 1; fi
-          echo "All tables carry at least 30 rows."
+          while IFS='|' read -r label rel; do
+            [ -z "$label" ] && continue
+            if grep -qxF "$label" sql/seed-exempt.txt; then echo "$label: exempt"; continue; fi
+            n=$(q "SELECT count(*) FROM $rel;")
+            if [ "$n" -lt 30 ]; then echo "$label has $n rows, below the 30-row minimum"; failed=1; fi
+          done < <(q "SELECT CASE WHEN schemaname = 'public' THEN tablename
+                                  ELSE schemaname || '.' || tablename END,
+                             format('%I.%I', schemaname, tablename)
+                        FROM pg_tables
+                       WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
+                       ORDER BY 1;")
+          [ "$failed" -eq 0 ]
+          if grep -vE '^\s*(#|$)' sql/seed-exempt.txt | grep -F . \
+               | grep -vxE 'sales\.sale_capture|[a-z]+_events\.outbox'; then
+            echo "seed-exempt.txt names a schema-qualified table it may not exempt"
+            exit 1
+          fi
+
+      # The boundary-section framework (F13-07, ADR-0040): markers name a
+      # registered service, pair up and stay above the verification block,
+      # and every section re-applies cleanly to the loaded database, the way
+      # an operator applies it to the live one before a service deploys.
+      - name: Boundary sections are well formed and re-runnable
+        run: |
+          names=$(sed -n 's/^  - name: //p' contracts/registry.yaml)
+          verify=$(grep -n '^-- BEGIN APPLICATION ROLE VERIFICATION' sql/01_schema.sql | cut -d: -f1)
+          problems=$(
+            awk -v names="$names" -v verify="$verify" '
+              BEGIN { n = split(names, a, "\n"); for (i = 1; i <= n; i++) known[a[i]] = 1 }
+              /^-- BEGIN BOUNDARY / {
+                if (!($4 in known)) print "FAIL: boundary " $4 " is not in contracts/registry.yaml"
+                if (open != "") print "FAIL: boundary " open " has no END before " $4
+                if (NR > verify) print "FAIL: boundary " $4 " is after the verification block"
+                open = $4
+              }
+              /^-- END BOUNDARY / {
+                if ($4 != open) print "FAIL: END BOUNDARY " $4 " without its BEGIN"
+                open = ""
+              }
+              END { if (open != "") print "FAIL: boundary " open " has no END" }
+            ' sql/01_schema.sql
+            for b in $(sed -n 's/^-- BEGIN BOUNDARY \(.*\)$/\1/p' sql/01_schema.sql); do
+              sed -n "/^-- BEGIN BOUNDARY $b\$/,/^-- END BOUNDARY $b\$/p" sql/01_schema.sql \
+                | psql -X -q -v ON_ERROR_STOP=1 -d retail >/dev/null || echo "FAIL: boundary section $b is not re-runnable"
+            done
+          )
+          if [ -n "$problems" ]; then printf '%s\n' "$problems"; exit 1; fi
+
+      # One service writer per table, enforced by the database (ADR-0034,
+      # ADR-0044, ADR-0046). Each check prints nothing when the grants match
+      # contracts/db/grants.csv and every boundary holds.
+      - name: Grants and boundaries match their contracts
+        run: |
+          problems=$(
+            contracts/db/check_grants.sh 2>&1
+            psql -X -v ON_ERROR_STOP=1 -d retail -f contracts/db/check_boundaries.sql 2>&1
+            psql -X -v ON_ERROR_STOP=1 -d retail -At 2>&1 <<'SQL'
+          -- ADR-0046 1. No svc_* role holds a privilege on a public table outside the 27 legacy tables.
+          SELECT 'ADR-0046: ' || r.rolname || ' reaches public.' || c.relname
+          FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          CROSS JOIN pg_roles r
+          WHERE n.nspname = 'public'
+            AND c.relkind IN ('r', 'p')
+            AND r.rolname LIKE 'svc\_%'
+            AND c.relname NOT IN ('role', 'channel', 'category', 'store', 'segment_rule', 'segment_label',
+                  'segment', 'app_user', 'app_session', 'customer', 'customer_preferred_channel',
+                  'customer_interest_category', 'segmentation_run', 'customer_segment_history', 'product',
+                  'transaction', 'transaction_line', 'sales_load', 'sales_load_rejection', 'campaign',
+                  'experiment', 'experiment_group', 'experiment_assignment', 'experiment_exposure',
+                  'experiment_conversion', 'inventory', 'audit_log')
+            AND (has_table_privilege(r.oid, c.oid, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
+                 OR has_any_column_privilege(r.oid, c.oid, 'SELECT, INSERT, UPDATE, REFERENCES'));
+          -- ADR-0046 2. api_* schemas hold no tables.
+          SELECT 'ADR-0046: table ' || schemaname || '.' || tablename || ' in an api schema'
+          FROM pg_tables WHERE schemaname LIKE 'api\_%';
+          -- ADR-0046 3. An audited table's name is unique across schemas, so audit_log.entity stays unambiguous.
+          SELECT 'ADR-0046: audited name ' || c.relname || ' repeats across schemas' FROM pg_class c
+           WHERE c.relkind IN ('r', 'p')
+             AND c.relname IN (SELECT tc.relname FROM pg_trigger t JOIN pg_class tc ON tc.oid = t.tgrelid
+                                 JOIN pg_proc p ON p.oid = t.tgfoid WHERE p.proname = 'fn_audit')
+           GROUP BY c.relname HAVING count(*) > 1;
+          SQL
+          )
+          if [ -n "$problems" ]; then printf '%s\n' "$problems"; exit 1; fi
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: web/requirements-dev.txt
+      - run: pip install -r web/requirements-dev.txt
+
+      # The tests that need a real PostgreSQL: they skip anywhere the database
+      # is absent, and MOSAIQ_REQUIRE_POSTGRES turns that skip into a failure
+      # here, so this job can never pass them silently. initdb comes from the
+      # runner's own PostgreSQL for the scratch cluster of the 00 test.
+      - name: Database-backed tests
+        env:
+          MOSAIQ_TEST_OWNER_URL: postgresql://postgres:postgres@localhost:5432/retail
+          MOSAIQ_TEST_APP_URL: postgresql://retail_app:retail_app@localhost:5432/retail
+          MOSAIQ_REQUIRE_POSTGRES: "1"
+        run: |
+          export PATH="$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1):$PATH"
+          initdb --version
+          pytest -m postgres -rs --junitxml=test-results/pytest-postgres.xml
+
+      - name: Capture database test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-postgres-results
+          path: test-results/pytest-postgres.xml
+          if-no-files-found: ignore

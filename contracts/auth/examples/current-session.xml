@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SessionClaims xmlns="https://mosaiq.maxthecoder.online/xml/auth/v1">
+  <sub>42</sub>
+  <sid>83d412c4-e4ab-45f7-9ef1-576cd4c32b89</sid>
+  <role>STORE_MANAGER</role>
+  <issued_at>2026-10-15T08:10:00Z</issued_at>
+  <expires_at>2026-10-15T08:20:00Z</expires_at>
+</SessionClaims>

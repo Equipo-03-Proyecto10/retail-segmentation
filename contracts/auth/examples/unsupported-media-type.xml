@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>unsupported_media_type</code>
+  <message>The request format is not supported.</message>
+  <correlation_id>auth-example-415</correlation_id>
+</Error>

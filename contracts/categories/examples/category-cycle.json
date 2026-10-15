@@ -1,0 +1,11 @@
+{
+  "code": "category_cycle",
+  "message": "The change would make the category its own ancestor.",
+  "correlation_id": "corr-category-cycle",
+  "details": [
+    {
+      "field": "parent_category_id",
+      "code": "cycle"
+    }
+  ]
+}

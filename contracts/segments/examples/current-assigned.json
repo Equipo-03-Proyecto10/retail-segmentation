@@ -1,0 +1,10 @@
+{
+  "customer_id": "7b3ad781-c5de-4f40-ae50-1fa825ce2b25",
+  "state": "assigned",
+  "label_code": "LOYAL",
+  "r_score": 4,
+  "f_score": 5,
+  "m_score": 4,
+  "since": "2026-10-12T03:00:00Z",
+  "run_id": 42
+}

@@ -1,0 +1,6 @@
+{
+  "code": "payload_too_large",
+  "message": "The request body exceeds 64 KiB.",
+  "correlation_id": "auth-example-413",
+  "details": []
+}

@@ -1,0 +1,11 @@
+{
+  "code": "category_name_taken",
+  "message": "The category name is already in use.",
+  "correlation_id": "corr-category-name-taken",
+  "details": [
+    {
+      "field": "name",
+      "code": "duplicate"
+    }
+  ]
+}

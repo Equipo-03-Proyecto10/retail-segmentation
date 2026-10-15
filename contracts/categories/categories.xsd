@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:categories="https://mosaiq.maxthecoder.online/xml/categories/v1"
+           xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1"
+           targetNamespace="https://mosaiq.maxthecoder.online/xml/categories/v1"
+           elementFormDefault="qualified">
+  <xs:import namespace="https://mosaiq.maxthecoder.online/xml/common/v1"
+             schemaLocation="../common/v1/common.xsd"/>
+
+  <xs:simpleType name="CategoryId">
+    <xs:restriction base="xs:integer">
+      <xs:minInclusive value="1"/>
+      <xs:maxInclusive value="32767"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="CategoryName">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:maxLength value="80"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="Category">
+    <xs:sequence>
+      <xs:element name="category_id" type="categories:CategoryId"/>
+      <xs:element name="name" type="xs:string"/>
+      <xs:element name="parent_category_id" type="xs:integer" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Categories">
+    <xs:sequence>
+      <xs:element name="Category" type="categories:Category"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="CreateCategoryRequest">
+    <xs:sequence>
+      <xs:element name="category_id" type="categories:CategoryId"/>
+      <xs:element name="name" type="categories:CategoryName"/>
+      <xs:element name="parent_category_id" type="xs:integer" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- A PATCH: an element left out leaves its field as it is.
+       parent_category_id with xsi:nil="true" makes the category a root. -->
+  <xs:complexType name="UpdateCategoryRequest">
+    <xs:sequence>
+      <xs:element name="name" type="categories:CategoryName" minOccurs="0"/>
+      <xs:element name="parent_category_id" type="xs:integer" minOccurs="0" nillable="true"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name="Category" type="categories:Category"/>
+  <xs:element name="Categories" type="categories:Categories"/>
+  <xs:element name="CreateCategoryRequest" type="categories:CreateCategoryRequest"/>
+  <xs:element name="UpdateCategoryRequest" type="categories:UpdateCategoryRequest"/>
+</xs:schema>

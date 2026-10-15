@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<EngagementEventRequest xmlns="https://mosaiq.maxthecoder.online/xml/engagement/v1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="RecoClickRequest">
+  <client_event_id>0e6d5c4b-3a29-4817-96f5-a4b3c2d1e0f2</client_event_id>
+  <type>RECO_CLICK</type>
+  <store_id>3</store_id>
+  <product_id>245</product_id>
+  <customer_id>3f6c1d52-8e4a-4b7d-a0c9-5d2e7b1f4a68</customer_id>
+  <label_code>LOYAL_HIGH_VALUE</label_code>
+  <rank>2</rank>
+  <occurred_at>2026-10-15T15:24:10Z</occurred_at>
+</EngagementEventRequest>

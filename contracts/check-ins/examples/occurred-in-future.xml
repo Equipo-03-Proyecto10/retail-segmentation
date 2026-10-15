@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>occurred_in_future</code>
+  <message>occurred_at is more than five minutes ahead of the server.</message>
+  <correlation_id>corr-occurred-in-future</correlation_id>
+  <details>
+    <field>occurred_at</field>
+    <code>in_future</code>
+  </details>
+</Error>

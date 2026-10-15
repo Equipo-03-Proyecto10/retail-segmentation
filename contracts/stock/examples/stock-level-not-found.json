@@ -1,0 +1,6 @@
+{
+  "code": "stock_level_not_found",
+  "message": "No stock level exists for store 3 and product 9999.",
+  "correlation_id": "corr-stock-level-not-found",
+  "details": []
+}

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>auth_unavailable</code>
+  <message>Session state cannot be checked.</message>
+  <correlation_id>corr-auth-unavailable</correlation_id>
+</Error>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>stock_unavailable</code>
+  <message>The store does not hold enough stock for a line.</message>
+  <correlation_id>corr-stock-unavailable</correlation_id>
+  <details>
+    <field>lines[1].quantity</field>
+    <code>insufficient_stock</code>
+  </details>
+</Error>

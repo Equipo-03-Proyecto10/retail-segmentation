@@ -1,0 +1,11 @@
+{
+  "code": "invalid_body",
+  "message": "The request body does not satisfy the schema.",
+  "correlation_id": "auth-example-422",
+  "details": [
+    {
+      "field": "password",
+      "code": "required"
+    }
+  ]
+}

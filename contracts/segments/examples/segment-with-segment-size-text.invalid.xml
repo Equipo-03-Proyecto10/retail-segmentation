@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Segment xmlns="https://mosaiq.maxthecoder.online/xml/segments/v1">
+  <label_code>CHAMPION</label_code>
+  <name>Champion</name>
+  <ordinal_position>1</ordinal_position>
+  <size>many</size>
+</Segment>

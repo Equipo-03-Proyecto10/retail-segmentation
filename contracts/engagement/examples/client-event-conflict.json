@@ -1,0 +1,6 @@
+{
+  "code": "client_event_conflict",
+  "message": "This client_event_id was already used with a different type, store or product.",
+  "correlation_id": "corr-client-event-conflict",
+  "details": []
+}

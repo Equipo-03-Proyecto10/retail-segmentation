@@ -1,0 +1,6 @@
+{
+  "code": "malformed_body",
+  "message": "The request body could not be parsed safely.",
+  "correlation_id": "corr-malformed-body",
+  "details": []
+}

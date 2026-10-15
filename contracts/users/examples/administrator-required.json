@@ -1,0 +1,5 @@
+{
+  "code": "administrator_required",
+  "message": "The only administrator cannot be deactivated.",
+  "correlation_id": "corr-418"
+}

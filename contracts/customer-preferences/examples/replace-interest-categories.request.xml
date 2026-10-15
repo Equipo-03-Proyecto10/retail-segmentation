@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ReplaceInterestCategoriesRequest xmlns="https://mosaiq.maxthecoder.online/xml/customer-preferences/v1">
+  <category_ids>12</category_ids>
+  <category_ids>2</category_ids>
+  <category_ids>11</category_ids>
+</ReplaceInterestCategoriesRequest>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TokenResult xmlns="https://mosaiq.maxthecoder.online/xml/auth/v1">
+  <access_token>placeholder.new.access.token</access_token>
+  <refresh_token>placeholder-new-refresh-token</refresh_token>
+  <token_type>Bearer</token_type>
+  <expires_in>600</expires_in>
+  <expires_at>2026-10-15T20:00:00Z</expires_at>
+</TokenResult>

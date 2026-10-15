@@ -1,0 +1,11 @@
+{
+  "code": "invalid_body",
+  "message": "The sale violates its schema.",
+  "correlation_id": "corr-invalid-body",
+  "details": [
+    {
+      "field": "occurred_at",
+      "code": "missing_offset"
+    }
+  ]
+}

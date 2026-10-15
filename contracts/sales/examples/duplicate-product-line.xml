@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>duplicate_product_line</code>
+  <message>A product appears on more than one line.</message>
+  <correlation_id>corr-duplicate-product-line</correlation_id>
+  <details>
+    <field>lines[2].product_id</field>
+    <code>duplicate</code>
+  </details>
+</Error>

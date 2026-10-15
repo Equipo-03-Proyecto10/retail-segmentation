@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_refresh</code>
+  <message>The refresh token is invalid.</message>
+  <correlation_id>auth-example-invalid-refresh</correlation_id>
+</Error>

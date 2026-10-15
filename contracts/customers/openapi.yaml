@@ -1,0 +1,926 @@
+openapi: 3.1.0
+info:
+  title: customers-service
+  version: 1.0.0
+  description: >-
+    Registers, searches, reads and corrects customers under RN-08. Customers
+    are never deleted through services; a mistaken registration is corrected
+    with PATCH.
+servers:
+  - url: /api/customers
+security:
+  - bearer: []
+tags:
+  - name: Customers
+  - name: Meta
+paths:
+  /v1/customers:
+    get:
+      tags: [Customers]
+      operationId: searchCustomers
+      summary: Search customers
+      description: >-
+        Searches the customer directory. q is matched case-insensitively as a
+        substring of name, email or phone; percent (%) and underscore (_) in q
+        match themselves literally and are not SQL wildcards. email is an
+        exact match. When both filters are present, both must match.
+      x-mosaiq-roles: [ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: q
+          in: query
+          description: >-
+            Case-insensitive literal substring matched over name, email or
+            phone. Percent and underscore are literal characters.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 160
+          example: '100% Club_'
+        - name: email
+          in: query
+          description: Exact customer email match.
+          schema:
+            type: string
+            maxLength: 160
+          example: ana@example.com
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of matching customers.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customers'
+              examples:
+                literal_percent_and_underscore:
+                  externalValue: ./examples/search-literal-percent.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Customers'
+              examples:
+                literal_percent_and_underscore:
+                  externalValue: ./examples/search-literal-percent.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/InvalidPagination'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+    post:
+      tags: [Customers]
+      operationId: registerCustomer
+      summary: Register a customer
+      description: >-
+        Registers one customer. registered_on is optional and defaults to the
+        server's current date. A date after the server's current date is
+        refused.
+      x-mosaiq-roles: [ADMIN, STORE_MANAGER]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterCustomerRequest'
+            examples:
+              registration:
+                externalValue: ./examples/register-customer.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/RegisterCustomerRequest'
+            examples:
+              registration:
+                externalValue: ./examples/register-customer.request.xml
+      responses:
+        '201':
+          description: Customer registered.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            Location:
+              description: URI of the registered customer.
+              required: true
+              schema:
+                type: string
+                format: uri-reference
+              example: /v1/customers/6b8c1d78-38d1-45ba-8805-ddaf3a6c62b4
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+              examples:
+                registered_customer:
+                  externalValue: ./examples/register-customer.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Customer'
+              examples:
+                registered_customer:
+                  externalValue: ./examples/register-customer.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/EmailTaken'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/RegisterValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/customers/{customer_id}:
+    get:
+      tags: [Customers]
+      operationId: getCustomer
+      summary: Get one customer
+      x-mosaiq-roles: [ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CustomerId'
+      responses:
+        '200':
+          description: The customer.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+              examples:
+                customer:
+                  externalValue: ./examples/get-customer.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Customer'
+              examples:
+                customer:
+                  externalValue: ./examples/get-customer.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CustomerNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+    patch:
+      tags: [Customers]
+      operationId: correctCustomer
+      summary: Correct a customer's data
+      description: >-
+        Corrects a mistaken registration. Only name, email, phone and
+        registration_channel_id are accepted. Any other field, including
+        registered_on, gets 422 invalid_body and a detail naming that field.
+      x-mosaiq-roles: [ADMIN, STORE_MANAGER]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CustomerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CorrectCustomerRequest'
+            examples:
+              correction:
+                externalValue: ./examples/correct-customer.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/CorrectCustomerRequest'
+            examples:
+              correction:
+                externalValue: ./examples/correct-customer.request.xml
+      responses:
+        '200':
+          description: Corrected customer.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+              examples:
+                corrected_customer:
+                  externalValue: ./examples/correct-customer.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Customer'
+              examples:
+                corrected_customer:
+                  externalValue: ./examples/correct-customer.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CustomerNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/EmailTaken'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/CorrectionValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /health/live:
+    get:
+      tags: [Meta]
+      operationId: getLiveness
+      summary: Report process liveness
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The process is live.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+  /health/ready:
+    get:
+      tags: [Meta]
+      operationId: getReadiness
+      summary: Report schema readiness
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The service is ready.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '503':
+          $ref: '#/components/responses/SchemaNotReady'
+  /openapi.yaml:
+    get:
+      tags: [Meta]
+      operationId: getOpenApiDocument
+      summary: Get this OpenAPI document
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: This contract, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/yaml:
+              schema:
+                type: string
+  /schema.xsd:
+    get:
+      tags: [Meta]
+      operationId: getXmlSchema
+      summary: Get the customers XML schema
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The customers XSD, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/xml:
+              schema:
+                type: string
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      description: >-
+        Caller correlation id. A value that does not match the schema is
+        ignored and replaced by the service.
+      schema:
+        type: string
+        pattern: '^[0-9A-Za-z-]{1,64}$'
+    CustomerId:
+      name: customer_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Size:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+  headers:
+    CorrelationId:
+      description: Correlation id used for this response.
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9A-Za-z-]{1,64}$'
+    RetryAfter:
+      description: Seconds until another request should be attempted.
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  schemas:
+    Customer:
+      type: object
+      additionalProperties: false
+      required:
+        - customer_id
+        - name
+        - email
+        - phone
+        - registration_channel_id
+        - registered_on
+      properties:
+        customer_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 120
+        email:
+          $ref: '#/components/schemas/NullableEmail'
+        phone:
+          type: [string, 'null']
+          maxLength: 20
+        registration_channel_id:
+          type: integer
+          minimum: -32768
+          maximum: 32767
+        registered_on:
+          type: string
+          format: date
+      xml:
+        name: Customer
+        namespace: https://mosaiq.maxthecoder.online/xml/customers/v1
+    Customers:
+      type: object
+      additionalProperties: false
+      required: [customers, page_info]
+      properties:
+        customers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Customer'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: Customers
+        namespace: https://mosaiq.maxthecoder.online/xml/customers/v1
+    RegisterCustomerRequest:
+      type: object
+      additionalProperties: false
+      required: [name, email, phone, registration_channel_id]
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        email:
+          $ref: '#/components/schemas/NullableEmail'
+        phone:
+          type: [string, 'null']
+          maxLength: 20
+        registration_channel_id:
+          type: integer
+          minimum: -32768
+          maximum: 32767
+        registered_on:
+          type: string
+          format: date
+          description: >-
+            Registration date. When omitted, the server uses its current date.
+      xml:
+        name: RegisterCustomerRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/customers/v1
+    CorrectCustomerRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: >-
+        A correction containing only fields that customers-service may update.
+        In particular, registered_on is not accepted.
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        email:
+          $ref: '#/components/schemas/NullableEmail'
+        phone:
+          type: [string, 'null']
+          maxLength: 20
+        registration_channel_id:
+          type: integer
+          minimum: -32768
+          maximum: 32767
+      xml:
+        name: CorrectCustomerRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/customers/v1
+    NullableEmail:
+      type: [string, 'null']
+      maxLength: 160
+      pattern: '^[^@\s]+@[^@\s.]+(?:\.[^@\s.]+)+$'
+      description: >-
+        Null or an address accepted by customer_email_check: non-whitespace
+        local and domain parts, one at-sign, and a dotted domain.
+    PageInfo:
+      type: object
+      additionalProperties: false
+      required: [page, size, total]
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required: [field, code]
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+    Error:
+      type: object
+      additionalProperties: false
+      required: [code, message, correlation_id, details]
+      properties:
+        code:
+          type: string
+          pattern: '^[a-z][a-z0-9_]*$'
+        message:
+          type: string
+        correlation_id:
+          type: string
+          pattern: '^[0-9A-Za-z-]{1,64}$'
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+  examples:
+    MalformedBody:
+      value:
+        code: malformed_body
+        message: The request body could not be parsed safely.
+        correlation_id: corr-432-malformed
+        details: []
+    InvalidToken:
+      value:
+        code: invalid_token
+        message: The bearer token is invalid.
+        correlation_id: corr-432-token
+        details: []
+    SessionRevoked:
+      value:
+        code: session_revoked
+        message: The token session is no longer live.
+        correlation_id: corr-432-session
+        details: []
+    ForbiddenRole:
+      value:
+        code: forbidden_role
+        message: The authenticated role cannot perform this operation.
+        correlation_id: corr-432-role
+        details: []
+    NotAcceptable:
+      value:
+        code: not_acceptable
+        message: The requested response format is unsupported.
+        correlation_id: corr-432-accept
+        details: []
+    PayloadTooLarge:
+      value:
+        code: payload_too_large
+        message: The request body exceeds 64 KiB.
+        correlation_id: corr-432-size
+        details: []
+    UnsupportedMediaType:
+      value:
+        code: unsupported_media_type
+        message: The request format is unsupported.
+        correlation_id: corr-432-media
+        details: []
+    InvalidPagination:
+      value:
+        code: invalid_pagination
+        message: The pagination values are outside their allowed ranges.
+        correlation_id: corr-432-page
+        details:
+          - field: size
+            code: out_of_range
+    RateLimited:
+      value:
+        code: rate_limited
+        message: The request limit was exceeded.
+        correlation_id: corr-432-rate
+        details: []
+    AuthUnavailable:
+      value:
+        code: auth_unavailable
+        message: Session state cannot be checked.
+        correlation_id: corr-432-auth
+        details: []
+    DatabaseUnavailable:
+      value:
+        code: database_unavailable
+        message: The customer database is unavailable.
+        correlation_id: corr-432-database
+        details: []
+    SchemaNotReady:
+      value:
+        code: schema_not_ready
+        message: The required database schema has not been applied.
+        correlation_id: corr-432-schema
+        details: []
+    EmailTaken:
+      value:
+        code: email_taken
+        message: The email already belongs to another customer.
+        correlation_id: corr-432-email
+        details:
+          - field: email
+            code: not_unique
+    UnknownChannel:
+      value:
+        code: unknown_channel
+        message: The registration channel does not exist.
+        correlation_id: corr-432-channel
+        details:
+          - field: registration_channel_id
+            code: unknown_reference
+    FutureRegistration:
+      value:
+        code: future_registration
+        message: The registration date cannot be in the future.
+        correlation_id: corr-432-future
+        details:
+          - field: registered_on
+            code: future_date
+    CustomerNotFound:
+      value:
+        code: customer_not_found
+        message: The customer does not exist.
+        correlation_id: corr-432-missing
+        details:
+          - field: customer_id
+            code: not_found
+    InvalidBody:
+      value:
+        code: invalid_body
+        message: The parsed body violates the request schema.
+        correlation_id: corr-432-body
+        details:
+          - field: registered_on
+            code: unexpected_field
+  responses:
+    MalformedBody:
+      description: malformed_body — the body cannot be parsed safely.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            malformed_body:
+              $ref: '#/components/examples/MalformedBody'
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            malformed_body:
+              $ref: '#/components/examples/MalformedBody'
+    Unauthorized:
+      description: >-
+        invalid_token — the bearer token is invalid; session_revoked — its
+        session is no longer live.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              $ref: '#/components/examples/InvalidToken'
+            session_revoked:
+              $ref: '#/components/examples/SessionRevoked'
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              $ref: '#/components/examples/InvalidToken'
+            session_revoked:
+              $ref: '#/components/examples/SessionRevoked'
+    Forbidden:
+      description: forbidden_role — the authenticated role is not allowed.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              $ref: '#/components/examples/ForbiddenRole'
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              $ref: '#/components/examples/ForbiddenRole'
+    NotAcceptable:
+      description: not_acceptable — the response format is unsupported.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              $ref: '#/components/examples/NotAcceptable'
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              $ref: '#/components/examples/NotAcceptable'
+    EmailTaken:
+      description: email_taken — the email already belongs to another customer.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            email_taken:
+              $ref: '#/components/examples/EmailTaken'
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            email_taken:
+              $ref: '#/components/examples/EmailTaken'
+    PayloadTooLarge:
+      description: payload_too_large — the body exceeds 64 KiB.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            payload_too_large:
+              $ref: '#/components/examples/PayloadTooLarge'
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            payload_too_large:
+              $ref: '#/components/examples/PayloadTooLarge'
+    UnsupportedMediaType:
+      description: unsupported_media_type — the request format is unsupported.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unsupported_media_type:
+              $ref: '#/components/examples/UnsupportedMediaType'
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unsupported_media_type:
+              $ref: '#/components/examples/UnsupportedMediaType'
+    InvalidPagination:
+      description: invalid_pagination — page or size is outside its allowed range.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              $ref: '#/components/examples/InvalidPagination'
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              $ref: '#/components/examples/InvalidPagination'
+    RateLimited:
+      description: rate_limited — the request limit was exceeded.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              $ref: '#/components/examples/RateLimited'
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              $ref: '#/components/examples/RateLimited'
+    ProtectedDatabaseUnavailable:
+      description: >-
+        auth_unavailable — session state cannot be checked;
+        database_unavailable — PostgreSQL cannot complete the operation.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              $ref: '#/components/examples/AuthUnavailable'
+            database_unavailable:
+              $ref: '#/components/examples/DatabaseUnavailable'
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              $ref: '#/components/examples/AuthUnavailable'
+            database_unavailable:
+              $ref: '#/components/examples/DatabaseUnavailable'
+    RegisterValidationFailed:
+      description: >-
+        invalid_body — the parsed body violates its schema, including an email
+        rejected by customer_email_check, a name over 120 characters, an email
+        over 160 characters, a phone over 20 characters, or an undeclared
+        field; unknown_channel — registration_channel_id is not known;
+        future_registration — registered_on is after the current date.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              $ref: '#/components/examples/InvalidBody'
+            unknown_channel:
+              $ref: '#/components/examples/UnknownChannel'
+            future_registration:
+              $ref: '#/components/examples/FutureRegistration'
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              $ref: '#/components/examples/InvalidBody'
+            unknown_channel:
+              $ref: '#/components/examples/UnknownChannel'
+            future_registration:
+              $ref: '#/components/examples/FutureRegistration'
+    CorrectionValidationFailed:
+      description: >-
+        invalid_body — the parsed body violates its schema, including an email
+        rejected by customer_email_check, a name over 120 characters, an email
+        over 160 characters, a phone over 20 characters, or any undeclared
+        field such as registered_on; details names every invalid field;
+        unknown_channel — registration_channel_id is not known.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              $ref: '#/components/examples/InvalidBody'
+            unknown_channel:
+              $ref: '#/components/examples/UnknownChannel'
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              $ref: '#/components/examples/InvalidBody'
+            unknown_channel:
+              $ref: '#/components/examples/UnknownChannel'
+    CustomerNotFound:
+      description: customer_not_found — the customer_id does not exist.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            customer_not_found:
+              $ref: '#/components/examples/CustomerNotFound'
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            customer_not_found:
+              $ref: '#/components/examples/CustomerNotFound'
+    SchemaNotReady:
+      description: schema_not_ready — the required schema has not been applied.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              $ref: '#/components/examples/SchemaNotReady'
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              $ref: '#/components/examples/SchemaNotReady'

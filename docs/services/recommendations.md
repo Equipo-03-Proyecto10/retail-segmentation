@@ -20,7 +20,7 @@
 
 ## Business rule
 
-- A product is recommended only when it is active, in stock at the customer's usual store, not already bought in the window, and matches at least one signal: segment peers, an interest category or a purchase-history category, matched over the category subtree. Each item carries `product_id`, the nearest matching category, ordered reasons with their figures and the quantity held (E-06).
+- A product is recommended only when it is active, in stock at the customer's usual store, not already bought in the window, and matches at least one signal: segment peers, an interest category or a purchase-history category, matched over the category subtree. Each item carries exactly `product_id`, `category_id` (the product's own category), `quantity_on_hand` (the stock held at the usual store, E-06) and `reasons`. Reasons come in the fixed order `segment`, `preferred_category`, `purchase_history`, each with its signal and figures: `segment_buyers`; the nearest matching category as `category_id`; that `category_id` and its `share`. A segment-only item has no category reason.
 - When nothing qualifies, the response says why: `no_open_assignment`, `unassigned_result` or `no_usual_store`. Items carry ids; clients fetch product names with `GET /v1/products?ids=`.
 - Owns no table. Its result cache lasts 120 s, and parity with the web's rule is proven by golden fixtures for all seeded customers (E-17). Read-rule service (E-08).
 
@@ -77,7 +77,8 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 
 | HTTP | Code | When |
 |---|---|---|
-| 422 | Undecided; the contract story fixes the code | `limit` outside 1 to 50 (F14-21 fixes the code) |
+| 422 | `unknown_customer` | `customer_id` is absent from `api_customers.customer_ref_v1` |
+| 422 | `invalid_query` | `customer_id` missing or malformed, or `limit` outside 1 to 50; `details` names the parameter |
 
 ## Accepted exceptions
 

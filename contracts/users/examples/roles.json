@@ -1,0 +1,16 @@
+{
+  "roles": [
+    {"role_code": "ADMIN", "description": "System administrator"},
+    {"role_code": "ANALYST", "description": "Commercial analyst"},
+    {"role_code": "STORE_MANAGER", "description": "Store manager"},
+    {"role_code": "MARKETING", "description": "Marketing"},
+    {"role_code": "INVENTORY_PLANNER", "description": "Inventory planner"},
+    {"role_code": "AUDITOR", "description": "Auditor"},
+    {"role_code": "CUSTOMER", "description": "Loyalty programme customer"}
+  ],
+  "page": {
+    "page": 1,
+    "size": 20,
+    "total": 7
+  }
+}

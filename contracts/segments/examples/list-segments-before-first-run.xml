@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Segments xmlns="https://mosaiq.maxthecoder.online/xml/segments/v1"
+        xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <unassigned_count>0</unassigned_count>
+  <Segment>
+    <label_code>CHAMPION</label_code>
+    <name>Champion</name>
+    <description>Highest recency, frequency and monetary value</description>
+    <ordinal_position>1</ordinal_position>
+    <size>0</size>
+  </Segment>
+  <Segment>
+    <label_code>LOYAL</label_code>
+    <name>Loyal</name>
+    <description>Buys often and recently, consistent spend</description>
+    <ordinal_position>2</ordinal_position>
+    <size>0</size>
+  </Segment>
+  <Segment>
+    <label_code>POTENTIAL</label_code>
+    <name>Potential</name>
+    <description>Recent customer with room to grow frequency</description>
+    <ordinal_position>3</ordinal_position>
+    <size>0</size>
+  </Segment>
+  <Segment>
+    <label_code>AT_RISK</label_code>
+    <name>At risk</name>
+    <description>Used to buy often, recency has slipped</description>
+    <ordinal_position>4</ordinal_position>
+    <size>0</size>
+  </Segment>
+  <Segment>
+    <label_code>HIBERNATING</label_code>
+    <name>Hibernating</name>
+    <description>Low recency, frequency and monetary value</description>
+    <ordinal_position>5</ordinal_position>
+    <size>0</size>
+  </Segment>
+  <Segment>
+    <label_code>LOST</label_code>
+    <name>Lost</name>
+    <description>No recent activity across all three measures</description>
+    <ordinal_position>6</ordinal_position>
+    <size>0</size>
+  </Segment>
+</Segments>

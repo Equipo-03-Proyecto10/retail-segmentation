@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_body</code>
+  <message>The request body does not satisfy the schema.</message>
+  <correlation_id>auth-example-422</correlation_id>
+  <details>
+    <field>password</field>
+    <code>required</code>
+  </details>
+</Error>

@@ -396,7 +396,10 @@ CREATE TABLE transaction (
     -- NOT NULL because a row whose identifier is absent is rejected for
     -- that reason, not defaulted. Global UNIQUE is enough while CSV is the
     -- sole producer (ADR-0020); docs/data-model.md §4 records what a later
-    -- multi-producer contract would need to change here.
+    -- multi-producer contract would need to change here. The prefix
+    -- `svc-sales:` is reserved for sales-service (ADR-0039): the guards in
+    -- BOUNDARY sales refuse it from any other session user, and refuse
+    -- anything else from svc_sales.
     source_transaction_id  VARCHAR(64) NOT NULL UNIQUE,
     customer_id            UUID NOT NULL REFERENCES customer(customer_id) ON DELETE RESTRICT,
     store_id               SMALLINT NOT NULL REFERENCES store(store_id) ON DELETE RESTRICT,
@@ -636,6 +639,17 @@ CREATE TABLE audit_log (
 -- audit trigger only INSERTs, so it is unaffected. ADR-0024.
 REVOKE UPDATE, DELETE ON audit_log FROM retail_app;
 
+-- Grants on legacy tables to the distributed stage's roles. Each is also a
+-- row of contracts/db/grants.csv, which contracts/db/check_grants.sh compares
+-- with the database in both directions (ADR-0034).
+--
+-- The bench-only Rust build of the products reads: SELECT on product, nothing
+-- else (ADR-0042).
+GRANT SELECT ON product TO svc_products_bench;
+-- fn_audit runs as definer_audit (AUDIT STRATEGY below), which may append to
+-- the audit log and do nothing else.
+GRANT INSERT ON audit_log TO definer_audit;
+
 -- =========================================================
 -- INDEXES
 -- =========================================================
@@ -689,7 +703,16 @@ BEGIN
     );
     RETURN COALESCE(NEW, OLD);
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql
+-- Runs as definer_audit, which may only append to audit_log, so an audited
+-- write is recorded whoever makes it: retail_app, or a svc_* role that holds
+-- no privilege on audit_log at all (ADR-0034, E-12). mosaiq.user_id is a
+-- session setting, so the actor still comes from the caller's connection.
+SECURITY DEFINER
+SET search_path = public, pg_temp;
+
+ALTER FUNCTION fn_audit() OWNER TO definer_audit;
+REVOKE EXECUTE ON FUNCTION fn_audit() FROM PUBLIC;
 
 CREATE TRIGGER trg_audit_segment
 AFTER INSERT OR UPDATE OR DELETE ON segment
@@ -747,6 +770,146 @@ FOR EACH ROW EXECUTE FUNCTION fn_audit('role_id');
 CREATE TRIGGER trg_audit_customer_segment_history
 AFTER INSERT OR UPDATE OR DELETE ON customer_segment_history
 FOR EACH ROW EXECUTE FUNCTION fn_audit('history_id');
+
+-- =========================================================
+-- BOUNDARY SECTIONS (ADR-0034, ADR-0040, ADR-0044, ADR-0046, F13-07)
+--
+-- Everything above is the legacy model and stays as it is. Everything a
+-- service boundary adds lives below, one section per boundary:
+--
+--   -- BEGIN BOUNDARY <name>
+--   ...
+--   -- END BOUNDARY <name>
+--
+-- <name> is a service name from contracts/registry.yaml. Sections sit after
+-- the legacy sections and before APPLICATION ROLE VERIFICATION, which stays
+-- last. Inside a section the order is: CREATE SCHEMA, tables, api_<suffix>
+-- objects, triggers, grants.
+--
+-- A section is applied by hand to the live database before the service that
+-- needs it deploys, and CI re-applies every section after the full run, so
+-- each one must be re-runnable:
+--   - IF NOT EXISTS for schemas, tables and indexes;
+--   - CREATE OR REPLACE for views, functions and triggers;
+--   - a constraint only inside a DO block that checks pg_constraint first;
+--   - GRANT, REVOKE and ALTER ... OWNER, which re-run as they are.
+-- CI also lints the markers: every name registered, every BEGIN with its END,
+-- and no section after the verification block.
+--
+-- Naming (ADR-0046): a boundary's contract objects go in api_<suffix>, its
+-- outbox in <suffix>_events, and its own tables in a schema named for it,
+-- <suffix> being its svc_ role suffix. Only legacy tables live in public.
+-- =========================================================
+
+-- BEGIN OUTBOX TEMPLATE
+-- The one copy of the outbox and capture pattern (ADR-0044). A boundary that
+-- publishes a stream copies this into its own section, replacing <suffix>
+-- (its svc_ role suffix), <table> (the schema-qualified captured table),
+-- <entity_column> and <event>. tests/test_outbox_template.py renders it from
+-- here, so this block must stay valid SQL once the leading "-- " is removed.
+--
+-- CREATE SCHEMA IF NOT EXISTS <suffix>_events;
+-- REVOKE ALL ON SCHEMA <suffix>_events FROM PUBLIC;
+--
+-- -- Keys only, never state: consumers re-read the producer's api_ view.
+-- CREATE TABLE IF NOT EXISTS <suffix>_events.outbox (
+--     event_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+--     stream      text NOT NULL,
+--     event_type  text NOT NULL,
+--     entity_id   text NOT NULL,
+--     occurred_at timestamptz NOT NULL DEFAULT now(),
+--     relayed_at  timestamptz
+-- );
+-- CREATE INDEX IF NOT EXISTS outbox_unrelayed
+--     ON <suffix>_events.outbox (occurred_at) WHERE relayed_at IS NULL;
+--
+-- -- Captures every writer, the web included, in the writer's transaction.
+-- CREATE OR REPLACE FUNCTION <suffix>_events.capture_<event>() RETURNS trigger
+-- LANGUAGE plpgsql
+-- SECURITY DEFINER
+-- SET search_path = pg_catalog, pg_temp
+-- AS $capture$
+-- DECLARE
+--     entity text;
+-- BEGIN
+--     IF TG_OP = 'DELETE' THEN
+--         entity := OLD.<entity_column>::text;
+--     ELSE
+--         entity := NEW.<entity_column>::text;
+--     END IF;
+--     INSERT INTO <suffix>_events.outbox (stream, event_type, entity_id)
+--     VALUES ('stream:<suffix>.v1.<event>', TG_OP, entity);
+--     -- An empty wake-up for the owner's relay; only that relay LISTENs.
+--     PERFORM pg_notify('<suffix>_outbox', '');
+--     RETURN NULL;
+-- END
+-- $capture$;
+-- ALTER FUNCTION <suffix>_events.capture_<event>() OWNER TO definer_<suffix>;
+-- REVOKE EXECUTE ON FUNCTION <suffix>_events.capture_<event>() FROM PUBLIC;
+--
+-- CREATE OR REPLACE TRIGGER trg_capture_<event>
+-- AFTER INSERT OR UPDATE OR DELETE ON <table>
+-- FOR EACH ROW EXECUTE FUNCTION <suffix>_events.capture_<event>();
+--
+-- GRANT USAGE ON SCHEMA <suffix>_events TO svc_<suffix>, definer_<suffix>;
+-- GRANT INSERT ON <suffix>_events.outbox TO definer_<suffix>;
+-- GRANT SELECT, DELETE, UPDATE (relayed_at) ON <suffix>_events.outbox TO svc_<suffix>;
+--
+-- -- And in sql/seed-exempt.txt, with its reason above it:
+-- --   <suffix>_events.outbox
+-- END OUTBOX TEMPLATE
+
+-- BEGIN BOUNDARY sales
+-- The `svc-sales:` namespace of transaction.source_transaction_id
+-- (ADR-0039). Only svc_sales may write into it, and svc_sales may write
+-- nothing else, so a CSV row can never collide with or append to a phone
+-- sale. Both guards are SECURITY INVOKER: they read session_user, the role
+-- that connected, which SET ROLE cannot change. SQLSTATE 22023 is a DataError
+-- that ingest_row already reports as a malformed row, so the web is unchanged.
+-- sales-service's own story (F14-18) extends this section and does not
+-- re-create these guards.
+
+CREATE OR REPLACE FUNCTION fn_sales_namespace_guard_transaction() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+    IF (NEW.source_transaction_id LIKE 'svc-sales:%')
+       IS DISTINCT FROM (session_user = 'svc_sales') THEN
+        RAISE EXCEPTION 'source_transaction_id is outside the namespace of %', session_user
+            USING ERRCODE = '22023';
+    END IF;
+    RETURN NEW;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION fn_sales_namespace_guard_line() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+    IF session_user <> 'svc_sales' AND EXISTS (
+        SELECT FROM public.transaction AS t
+        WHERE t.transaction_id = NEW.transaction_id
+          AND t.source_transaction_id LIKE 'svc-sales:%'
+    ) THEN
+        RAISE EXCEPTION 'transaction % belongs to the svc-sales: namespace', NEW.transaction_id
+            USING ERRCODE = '22023';
+    END IF;
+    RETURN NEW;
+END
+$$;
+
+CREATE OR REPLACE TRIGGER trg_sales_namespace_guard
+BEFORE INSERT ON public.transaction
+FOR EACH ROW EXECUTE FUNCTION fn_sales_namespace_guard_transaction();
+
+CREATE OR REPLACE TRIGGER trg_sales_namespace_guard
+BEFORE INSERT ON public.transaction_line
+FOR EACH ROW EXECUTE FUNCTION fn_sales_namespace_guard_line();
+-- END BOUNDARY sales
 
 -- BEGIN APPLICATION ROLE VERIFICATION
 -- F1-05 (#53). Opt-in acceptance checks, kept here because even a rejected
@@ -926,6 +1089,34 @@ BEGIN
         RAISE EXCEPTION 'FAIL: retail_app exposed a control-group assignment';
     EXCEPTION WHEN check_violation THEN
         RAISE NOTICE 'PASS: control-group exposure refused (SQLSTATE 23514)';
+    END;
+
+    -- ADR-0046: service-owned data lives in service schemas the web never
+    -- reaches.
+    IF EXISTS (
+        SELECT FROM pg_namespace
+        WHERE nspname NOT IN ('public', 'information_schema')
+          AND nspname NOT LIKE 'pg\_%'
+          AND has_schema_privilege(oid, 'USAGE')
+    ) THEN
+        RAISE EXCEPTION 'Application role can reach a schema other than public';
+    END IF;
+    RAISE NOTICE 'PASS: no service schema is reachable by the application role';
+
+    -- ADR-0039: `svc-sales:` belongs to sales-service. The web's insert is
+    -- refused by the BOUNDARY sales guard with 22023, which ingest_row
+    -- already reports as a malformed row; any other outcome fails.
+    BEGIN
+        INSERT INTO public.transaction
+            (source_transaction_id, customer_id, store_id, channel_id, occurred_at, total)
+        SELECT 'svc-sales:00000000-0000-0000-0000-000000000000',
+               (SELECT customer_id FROM public.customer ORDER BY customer_id LIMIT 1),
+               (SELECT store_id FROM public.store ORDER BY store_id LIMIT 1),
+               (SELECT channel_id FROM public.channel ORDER BY channel_id LIMIT 1),
+               now(), 0;
+        RAISE EXCEPTION 'FAIL: retail_app wrote into the svc-sales: namespace';
+    EXCEPTION WHEN invalid_parameter_value THEN
+        RAISE NOTICE 'PASS: svc-sales: namespace refused (SQLSTATE 22023)';
     END;
     RAISE NOTICE 'PASS: SELECT, INSERT, UPDATE, DELETE and audit sequence access';
 END;

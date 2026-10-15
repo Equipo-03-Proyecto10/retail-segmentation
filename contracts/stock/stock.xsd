@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:stock="https://mosaiq.maxthecoder.online/xml/stock/v1"
+           xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1"
+           targetNamespace="https://mosaiq.maxthecoder.online/xml/stock/v1"
+           elementFormDefault="qualified">
+  <xs:import namespace="https://mosaiq.maxthecoder.online/xml/common/v1"
+             schemaLocation="../common/v1/common.xsd"/>
+
+  <xs:complexType name="StockLevel">
+    <xs:sequence>
+      <xs:element name="store_id" type="xs:integer"/>
+      <xs:element name="product_id" type="xs:integer"/>
+      <xs:element name="quantity_on_hand" type="xs:nonNegativeInteger"/>
+      <xs:element name="updated_at" type="xs:dateTime"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="StockLevels">
+    <xs:sequence>
+      <xs:element name="StockLevel" type="stock:StockLevel"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name="StockLevel" type="stock:StockLevel"/>
+  <xs:element name="StockLevels" type="stock:StockLevels"/>
+</xs:schema>

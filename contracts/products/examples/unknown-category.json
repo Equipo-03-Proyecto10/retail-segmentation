@@ -1,0 +1,11 @@
+{
+  "code": "unknown_category",
+  "message": "The category_id does not identify an existing category.",
+  "correlation_id": "corr-category-422",
+  "details": [
+    {
+      "field": "category_id",
+      "code": "unknown"
+    }
+  ]
+}

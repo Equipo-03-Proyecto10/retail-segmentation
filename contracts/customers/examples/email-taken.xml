@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>email_taken</code>
+  <message>The email already belongs to another customer.</message>
+  <correlation_id>corr-432-email</correlation_id>
+  <details>
+    <field>email</field>
+    <code>not_unique</code>
+  </details>
+</Error>

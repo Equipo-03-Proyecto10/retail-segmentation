@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RegisterCustomerRequest xmlns="https://mosaiq.maxthecoder.online/xml/customers/v1">
+  <name>Ana Torres</name>
+  <email>ana.torres@example.com</email>
+  <phone>+52-55-5555-0142</phone>
+  <registration_channel_id>3</registration_channel_id>
+  <registered_on>2026-10-14</registered_on>
+</RegisterCustomerRequest>

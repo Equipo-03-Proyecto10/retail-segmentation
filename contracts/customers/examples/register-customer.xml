@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Customer xmlns="https://mosaiq.maxthecoder.online/xml/customers/v1">
+  <customer_id>6b8c1d78-38d1-45ba-8805-ddaf3a6c62b4</customer_id>
+  <name>Ana Torres</name>
+  <email>ana.torres@example.com</email>
+  <phone>+52-55-5555-0142</phone>
+  <registration_channel_id>3</registration_channel_id>
+  <registered_on>2026-10-14</registered_on>
+</Customer>

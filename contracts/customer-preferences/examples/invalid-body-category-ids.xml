@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_body</code>
+  <message>The list contains the same id twice.</message>
+  <correlation_id>corr-invalid-body-category-ids</correlation_id>
+  <details>
+    <field>category_ids</field>
+    <code>duplicate</code>
+  </details>
+</Error>

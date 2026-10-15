@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CheckInRequest xmlns="https://mosaiq.maxthecoder.online/xml/check-ins/v1">
+  <client_check_in_id>0e6d5c4b-3a29-4817-96f5-a4b3c2d1e0f1</client_check_in_id>
+  <store_id>3</store_id>
+  <occurred_at>2026-10-15T14:01:00Z</occurred_at>
+  <latitude>19.432608</latitude>
+  <longitude>-99.133209</longitude>
+  <accuracy_m>12.5</accuracy_m>
+</CheckInRequest>

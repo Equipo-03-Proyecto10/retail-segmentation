@@ -1,0 +1,6 @@
+{
+  "code": "auth_unavailable",
+  "message": "Session state is temporarily unavailable.",
+  "correlation_id": "auth-example-state",
+  "details": []
+}

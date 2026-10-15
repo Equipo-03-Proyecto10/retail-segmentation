@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1"
+           targetNamespace="https://mosaiq.maxthecoder.online/xml/common/v1"
+           elementFormDefault="qualified">
+  <xs:simpleType name="PageSize">
+    <xs:restriction base="xs:positiveInteger">
+      <xs:maxInclusive value="100"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="ErrorDetail">
+    <xs:sequence>
+      <xs:element name="field" type="xs:string"/>
+      <xs:element name="code" type="xs:string"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Error">
+    <xs:sequence>
+      <xs:element name="code" type="xs:string"/>
+      <xs:element name="message" type="xs:string"/>
+      <xs:element name="correlation_id" type="xs:string"/>
+      <xs:element name="details" type="common:ErrorDetail"
+                  minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="PageInfo">
+    <xs:sequence>
+      <xs:element name="page" type="xs:positiveInteger"/>
+      <xs:element name="size" type="common:PageSize"/>
+      <xs:element name="total" type="xs:nonNegativeInteger"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name="Error" type="common:Error"/>
+  <xs:element name="PageInfo" type="common:PageInfo"/>
+</xs:schema>

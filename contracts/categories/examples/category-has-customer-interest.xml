@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>category_has_customer_interest</code>
+  <message>A customer still names the category as an interest.</message>
+  <correlation_id>corr-category-has-customer-interest</correlation_id>
+</Error>

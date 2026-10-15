@@ -1,0 +1,11 @@
+{
+  "code": "invalid_body",
+  "message": "label_code and rank are allowed only on a RECO_CLICK.",
+  "correlation_id": "corr-invalid-body",
+  "details": [
+    {
+      "field": "rank",
+      "code": "not_allowed"
+    }
+  ]
+}

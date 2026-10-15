@@ -1,0 +1,8 @@
+{
+  "code": "successor_inactive",
+  "message": "The successor must be active.",
+  "correlation_id": "corr-418",
+  "details": [
+    {"field": "successor_user_id", "code": "inactive"}
+  ]
+}

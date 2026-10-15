@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>category_has_products</code>
+  <message>The category still has products.</message>
+  <correlation_id>corr-category-has-products</correlation_id>
+</Error>

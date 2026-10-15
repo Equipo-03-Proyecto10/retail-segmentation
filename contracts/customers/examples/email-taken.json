@@ -1,0 +1,11 @@
+{
+  "code": "email_taken",
+  "message": "The email already belongs to another customer.",
+  "correlation_id": "corr-432-email",
+  "details": [
+    {
+      "field": "email",
+      "code": "not_unique"
+    }
+  ]
+}

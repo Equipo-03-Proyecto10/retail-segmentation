@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:cp="https://mosaiq.maxthecoder.online/xml/customer-preferences/v1"
+           xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1"
+           targetNamespace="https://mosaiq.maxthecoder.online/xml/customer-preferences/v1"
+           elementFormDefault="qualified">
+  <xs:import namespace="https://mosaiq.maxthecoder.online/xml/common/v1"
+             schemaLocation="../common/v1/common.xsd"/>
+
+  <xs:simpleType name="Uuid">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- An empty set is no elements at all. -->
+  <xs:complexType name="PreferenceProfile">
+    <xs:sequence>
+      <xs:element name="customer_id" type="cp:Uuid"/>
+      <xs:element name="preferred_channel_ids" type="xs:integer"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="interest_category_ids" type="xs:integer"
+                  minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Uniqueness and existence are the service's: duplicate ids are
+       invalid_body and unknown ids are unknown_channel or unknown_category. -->
+  <xs:complexType name="ReplacePreferredChannelsRequest">
+    <xs:sequence>
+      <xs:element name="channel_ids" type="xs:integer"
+                  minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ReplaceInterestCategoriesRequest">
+    <xs:sequence>
+      <xs:element name="category_ids" type="xs:integer"
+                  minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name="PreferenceProfile" type="cp:PreferenceProfile"/>
+  <xs:element name="ReplacePreferredChannelsRequest"
+              type="cp:ReplacePreferredChannelsRequest"/>
+  <xs:element name="ReplaceInterestCategoriesRequest"
+              type="cp:ReplaceInterestCategoriesRequest"/>
+</xs:schema>

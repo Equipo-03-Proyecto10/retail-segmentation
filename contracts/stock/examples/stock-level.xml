@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<StockLevel xmlns="https://mosaiq.maxthecoder.online/xml/stock/v1">
+  <store_id>3</store_id>
+  <product_id>120</product_id>
+  <quantity_on_hand>14</quantity_on_hand>
+  <updated_at>2026-10-15T16:42:10Z</updated_at>
+</StockLevel>

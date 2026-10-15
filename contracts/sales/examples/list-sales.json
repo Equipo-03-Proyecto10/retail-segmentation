@@ -1,0 +1,49 @@
+{
+  "sales": [
+    {
+      "sale_id": 4812,
+      "customer_id": "7b3ad781-c5de-4f40-ae50-1fa825ce2b25",
+      "store_id": 3,
+      "channel_id": 3,
+      "occurred_at": "2026-10-15T20:32:10Z",
+      "total": "203.25",
+      "lines": [
+        {
+          "product_id": 1007,
+          "quantity": 1,
+          "unit_price": "12.50"
+        },
+        {
+          "product_id": 1020,
+          "quantity": 3,
+          "unit_price": "4.25"
+        },
+        {
+          "product_id": 1051,
+          "quantity": 2,
+          "unit_price": "89.00"
+        }
+      ]
+    },
+    {
+      "sale_id": 4811,
+      "customer_id": "7b3ad781-c5de-4f40-ae50-1fa825ce2b25",
+      "store_id": 1,
+      "channel_id": 1,
+      "occurred_at": "2026-10-14T09:05:00Z",
+      "total": "4.25",
+      "lines": [
+        {
+          "product_id": 1020,
+          "quantity": 1,
+          "unit_price": "4.25"
+        }
+      ]
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 2
+  }
+}

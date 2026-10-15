@@ -1,0 +1,6 @@
+{
+  "code": "check_in_not_found",
+  "message": "Check-in 7c1f9a52-3b0e-4d8e-9a64-5f2d1c0b8e77 was not found.",
+  "correlation_id": "corr-check-in-not-found",
+  "details": []
+}

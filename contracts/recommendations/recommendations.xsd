@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:rec="https://mosaiq.maxthecoder.online/xml/recommendations/v1"
+           xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1"
+           targetNamespace="https://mosaiq.maxthecoder.online/xml/recommendations/v1"
+           elementFormDefault="qualified">
+  <xs:import namespace="https://mosaiq.maxthecoder.online/xml/common/v1"
+             schemaLocation="../common/v1/common.xsd"/>
+
+  <xs:simpleType name="Status">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="recommended"/>
+      <xs:enumeration value="none_match"/>
+      <xs:enumeration value="no_open_assignment"/>
+      <xs:enumeration value="unassigned_result"/>
+      <xs:enumeration value="no_usual_store"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Signal">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="segment"/>
+      <xs:enumeration value="preferred_category"/>
+      <xs:enumeration value="purchase_history"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Share">
+    <xs:restriction base="xs:decimal">
+      <xs:minInclusive value="0"/>
+      <xs:maxInclusive value="1"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="Reason">
+    <xs:sequence>
+      <xs:element name="signal" type="rec:Signal"/>
+      <xs:element name="segment_buyers" type="xs:positiveInteger" minOccurs="0"/>
+      <xs:element name="category_id" type="xs:integer" minOccurs="0"/>
+      <xs:element name="share" type="rec:Share" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="RecommendationItem">
+    <xs:sequence>
+      <xs:element name="product_id" type="xs:integer"/>
+      <xs:element name="category_id" type="xs:integer"/>
+      <xs:element name="quantity_on_hand" type="xs:positiveInteger"/>
+      <xs:element name="reasons" type="rec:Reason"
+                  maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Window">
+    <xs:sequence>
+      <xs:element name="days" type="xs:positiveInteger"/>
+      <xs:element name="start" type="xs:dateTime"/>
+      <xs:element name="end" type="xs:dateTime"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Recommendation">
+    <xs:sequence>
+      <xs:element name="customer_id" type="xs:string"/>
+      <xs:element name="status" type="rec:Status"/>
+      <xs:element name="computed_at" type="xs:dateTime"/>
+      <xs:element name="window" type="rec:Window"/>
+      <xs:element name="label_code" type="xs:string" minOccurs="0"/>
+      <xs:element name="run_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="usual_store_id" type="xs:integer" minOccurs="0"/>
+      <xs:element name="items" type="rec:RecommendationItem"
+                  minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name="Recommendation" type="rec:Recommendation"/>
+</xs:schema>

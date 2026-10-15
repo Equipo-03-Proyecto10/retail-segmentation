@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CreateCategoryRequest xmlns="https://mosaiq.maxthecoder.online/xml/categories/v1">
+  <category_id>31</category_id>
+  <name>Aged cheese</name>
+  <parent_category_id>11</parent_category_id>
+</CreateCategoryRequest>

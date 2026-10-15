@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>too_many_ids</code>
+  <message>At most 50 product ids may be requested.</message>
+  <correlation_id>corr-list-002</correlation_id>
+  <details>
+    <field>ids</field>
+    <code>max_items</code>
+  </details>
+</Error>

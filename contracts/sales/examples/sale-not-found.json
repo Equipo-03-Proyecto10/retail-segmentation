@@ -1,0 +1,6 @@
+{
+  "code": "sale_not_found",
+  "message": "Sale 999999 was not found.",
+  "correlation_id": "corr-sale-not-found",
+  "details": []
+}

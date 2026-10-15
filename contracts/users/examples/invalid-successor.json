@@ -1,0 +1,8 @@
+{
+  "code": "invalid_successor",
+  "message": "The successor must exist and differ from the incumbent.",
+  "correlation_id": "corr-418",
+  "details": [
+    {"field": "successor_user_id", "code": "invalid"}
+  ]
+}

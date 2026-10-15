@@ -1,0 +1,29 @@
+{
+  "assignments": [
+    {
+      "customer_id": "7b3ad781-c5de-4f40-ae50-1fa825ce2b25",
+      "run_id": 42,
+      "label_code": "LOYAL",
+      "r_score": 4,
+      "f_score": 5,
+      "m_score": 4,
+      "valid_from": "2026-10-12T03:00:00Z",
+      "valid_to": null
+    },
+    {
+      "customer_id": "0c9f6a3e-5d2b-4c8e-9a41-7e3b2d1f8a66",
+      "run_id": 42,
+      "label_code": "LOYAL",
+      "r_score": 5,
+      "f_score": 4,
+      "m_score": 4,
+      "valid_from": "2026-10-12T03:00:00Z",
+      "valid_to": null
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 2
+  }
+}

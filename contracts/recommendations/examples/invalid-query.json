@@ -1,0 +1,11 @@
+{
+  "code": "invalid_query",
+  "message": "limit must be a whole number from 1 to 50.",
+  "correlation_id": "corr-invalid-query",
+  "details": [
+    {
+      "field": "limit",
+      "code": "out_of_range"
+    }
+  ]
+}

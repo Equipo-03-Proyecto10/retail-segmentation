@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ReplaceInterestCategoriesRequest xmlns="https://mosaiq.maxthecoder.online/xml/customer-preferences/v1">
+  <channel_ids>1</channel_ids>
+</ReplaceInterestCategoriesRequest>

@@ -1,0 +1,6 @@
+{
+  "code": "session_revoked",
+  "message": "The token session is no longer live.",
+  "correlation_id": "corr-session-revoked",
+  "details": []
+}

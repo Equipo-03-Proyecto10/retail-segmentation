@@ -1,0 +1,11 @@
+{
+  "code": "invalid_body",
+  "message": "The parsed body violates the request schema.",
+  "correlation_id": "corr-432-body",
+  "details": [
+    {
+      "field": "registered_on",
+      "code": "unexpected_field"
+    }
+  ]
+}

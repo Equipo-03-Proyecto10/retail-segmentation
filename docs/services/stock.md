@@ -71,7 +71,10 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | 422 | `invalid_quantity` | `consume_v1` raised SQLSTATE 22023 (NULL or ≤ 0), seen by sales |
 | 409 | `stock_unavailable` | `consume_v1` raised 23514: not enough stock, seen by sales |
 | 422 | `no_stock_record` | `consume_v1` raised 23514: no inventory row, seen by sales |
-| 404 | Undecided; the contract story fixes the code | An unknown store and product pair on the read endpoint (F14-11 fixes the code) |
+| 404 | `stock_level_not_found` | A store and product pair with no `inventory` row, on the read endpoint |
+| 422 | `invalid_query` | `below`, `store_id` or `product_id` is not a positive integer; `details` names the parameter |
+
+`invalid_quantity`, `stock_unavailable` and `no_stock_record` are database-contract outcomes of `consume_v1`: sales maps them to HTTP, and stock-service never answers them.
 
 ## Accepted exceptions
 

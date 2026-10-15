@@ -1,0 +1,6 @@
+{
+  "code": "schema_not_ready",
+  "message": "The required schema is not ready.",
+  "correlation_id": "corr-schema-not-ready",
+  "details": []
+}

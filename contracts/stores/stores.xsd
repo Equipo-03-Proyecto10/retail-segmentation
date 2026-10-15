@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:stores="https://mosaiq.maxthecoder.online/xml/stores/v1"
+           xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1"
+           targetNamespace="https://mosaiq.maxthecoder.online/xml/stores/v1"
+           elementFormDefault="qualified">
+  <xs:import namespace="https://mosaiq.maxthecoder.online/xml/common/v1"
+             schemaLocation="../common/v1/common.xsd"/>
+
+  <xs:simpleType name="Latitude">
+    <xs:restriction base="xs:decimal">
+      <xs:minInclusive value="-90"/>
+      <xs:maxInclusive value="90"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Longitude">
+    <xs:restriction base="xs:decimal">
+      <xs:minInclusive value="-180"/>
+      <xs:maxInclusive value="180"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="GeofenceRadiusM">
+    <xs:restriction base="xs:integer">
+      <xs:minInclusive value="25"/>
+      <xs:maxInclusive value="2000"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="Location">
+    <xs:sequence>
+      <xs:element name="latitude" type="stores:Latitude"/>
+      <xs:element name="longitude" type="stores:Longitude"/>
+      <xs:element name="geofence_radius_m" type="stores:GeofenceRadiusM"/>
+      <xs:element name="set_at" type="xs:dateTime"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="LocationUpdate">
+    <xs:sequence>
+      <xs:element name="latitude" type="stores:Latitude"/>
+      <xs:element name="longitude" type="stores:Longitude"/>
+      <xs:element name="geofence_radius_m" type="stores:GeofenceRadiusM"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Store">
+    <xs:sequence>
+      <xs:element name="store_id" type="xs:integer"/>
+      <xs:element name="name" type="xs:string"/>
+      <xs:element name="city" type="xs:string"/>
+      <xs:element name="state" type="xs:string"/>
+      <xs:element name="is_active" type="xs:boolean"/>
+      <xs:element name="location" type="stores:Location" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Stores">
+    <xs:sequence>
+      <xs:element name="Store" type="stores:Store"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name="LocationUpdate" type="stores:LocationUpdate"/>
+  <xs:element name="Store" type="stores:Store"/>
+  <xs:element name="Stores" type="stores:Stores"/>
+</xs:schema>

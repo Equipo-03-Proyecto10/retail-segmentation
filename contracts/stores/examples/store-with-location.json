@@ -1,0 +1,13 @@
+{
+  "store_id": 1,
+  "name": "Centro Historico",
+  "city": "Mexico City",
+  "state": "CDMX",
+  "is_active": true,
+  "location": {
+    "latitude": 19.432608,
+    "longitude": -99.133209,
+    "geofence_radius_m": 150,
+    "set_at": "2026-10-15T18:20:00Z"
+  }
+}

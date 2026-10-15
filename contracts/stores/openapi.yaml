@@ -1,0 +1,728 @@
+openapi: 3.1.0
+info:
+  title: stores-service
+  version: 1.0.0
+  description: >-
+    Publishes the store directory and lets an administrator set or clear the
+    one geofenced location that belongs to a store (RN-53).
+security:
+  - bearer: []
+tags:
+  - name: Stores
+  - name: Meta
+paths:
+  /v1/stores:
+    get:
+      tags: [Stores]
+      summary: List the store directory
+      description: >-
+        Returns a page of stores. Cache misses read PostgreSQL, so a database
+        failure remains visible even though successful reads may be cached.
+      operationId: listStores
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - INVENTORY_PLANNER
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/Active'
+        - $ref: '#/components/parameters/City'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of stores.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StorePage'
+              examples:
+                directory_page:
+                  externalValue: ./examples/directory-page.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/StorePage'
+              examples:
+                directory_page:
+                  externalValue: ./examples/directory-page.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/InvalidPagination'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/stores/{store_id}:
+    get:
+      tags: [Stores]
+      summary: Get one store
+      description: >-
+        Returns the store and its location when one is set. An unset location
+        is null in JSON and omitted in XML.
+      operationId: getStore
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - INVENTORY_PLANNER
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/StoreId'
+      responses:
+        '200':
+          description: The requested store.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Store'
+              examples:
+                store_with_location:
+                  externalValue: ./examples/store-with-location.json
+                store_without_location:
+                  externalValue: ./examples/store-without-location.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Store'
+              examples:
+                store_with_location:
+                  externalValue: ./examples/store-with-location.xml
+                store_without_location:
+                  externalValue: ./examples/store-without-location.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/StoreNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/stores/{store_id}/location:
+    put:
+      tags: [Stores]
+      summary: Set a store location
+      description: >-
+        Sets or replaces the store's single location. Only ADMIN may write
+        this fact. All three location fields are replaced together.
+      operationId: putStoreLocation
+      x-mosaiq-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/StoreId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocationUpdate'
+            examples:
+              set_location:
+                externalValue: ./examples/set-location.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/LocationUpdate'
+            examples:
+              set_location:
+                externalValue: ./examples/set-location.request.xml
+      responses:
+        '200':
+          description: The store with its newly set location.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Store'
+              examples:
+                set_location:
+                  externalValue: ./examples/set-location.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Store'
+              examples:
+                set_location:
+                  externalValue: ./examples/set-location.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/StoreNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/InvalidBody'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+    delete:
+      tags: [Stores]
+      summary: Clear a store location
+      description: >-
+        Clears the store's location. The operation is idempotent and returns
+        204 when the store exists even if it had no location.
+      operationId: deleteStoreLocation
+      x-mosaiq-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/StoreId'
+      responses:
+        '204':
+          description: The location is absent.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/StoreNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /health/live:
+    get:
+      tags: [Meta]
+      summary: Check process liveness
+      operationId: getLiveness
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The process is live.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+  /health/ready:
+    get:
+      tags: [Meta]
+      summary: Check schema readiness
+      operationId: getReadiness
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The required schema is ready.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '503':
+          $ref: '#/components/responses/SchemaNotReady'
+  /openapi.yaml:
+    get:
+      tags: [Meta]
+      summary: Get this OpenAPI document
+      operationId: getOpenApi
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The OpenAPI document, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/yaml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+  /schema.xsd:
+    get:
+      tags: [Meta]
+      summary: Get the stores XML Schema
+      operationId: getSchema
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The stores XSD, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/xml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      description: >-
+        Caller-supplied correlation id. A missing or invalid value is replaced
+        by the service, and the effective value is returned on every response.
+      schema:
+        type: string
+        pattern: '^[0-9A-Za-z-]{1,64}$'
+    StoreId:
+      name: store_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int32
+    Active:
+      name: active
+      in: query
+      required: false
+      description: Restrict the directory to active or inactive stores.
+      schema:
+        type: boolean
+    City:
+      name: city
+      in: query
+      required: false
+      description: Restrict the directory to this city.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 80
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Size:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+  headers:
+    CorrelationId:
+      description: The effective correlation id for this request.
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9A-Za-z-]{1,64}$'
+    RetryAfter:
+      description: Seconds until the caller should retry.
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  schemas:
+    Location:
+      type: object
+      additionalProperties: false
+      required:
+        - latitude
+        - longitude
+        - geofence_radius_m
+        - set_at
+      properties:
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        geofence_radius_m:
+          type: integer
+          minimum: 25
+          maximum: 2000
+        set_at:
+          type: string
+          format: date-time
+    LocationUpdate:
+      type: object
+      additionalProperties: false
+      required:
+        - latitude
+        - longitude
+        - geofence_radius_m
+      properties:
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        geofence_radius_m:
+          type: integer
+          minimum: 25
+          maximum: 2000
+      xml:
+        name: LocationUpdate
+        namespace: https://mosaiq.maxthecoder.online/xml/stores/v1
+    Store:
+      type: object
+      additionalProperties: false
+      required:
+        - store_id
+        - name
+        - city
+        - state
+        - is_active
+        - location
+      properties:
+        store_id:
+          type: integer
+          format: int32
+        name:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        is_active:
+          type: boolean
+        location:
+          anyOf:
+            - $ref: '#/components/schemas/Location'
+            - type: 'null'
+      xml:
+        name: Store
+        namespace: https://mosaiq.maxthecoder.online/xml/stores/v1
+    StorePage:
+      type: object
+      additionalProperties: false
+      required:
+        - stores
+        - page_info
+      properties:
+        stores:
+          type: array
+          items:
+            $ref: '#/components/schemas/Store'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: Stores
+        namespace: https://mosaiq.maxthecoder.online/xml/stores/v1
+    PageInfo:
+      type: object
+      additionalProperties: false
+      required:
+        - page
+        - size
+        - total
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+      xml:
+        name: PageInfo
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - field
+        - code
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+    Error:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+        - correlation_id
+        - details
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        correlation_id:
+          type: string
+          pattern: '^[0-9A-Za-z-]{1,64}$'
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+      xml:
+        name: Error
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+  responses:
+    Unauthorized:
+      description: '`invalid_token` or `session_revoked`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              externalValue: ./examples/invalid-token.json
+            session_revoked:
+              externalValue: ./examples/session-revoked.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              externalValue: ./examples/invalid-token.xml
+            session_revoked:
+              externalValue: ./examples/session-revoked.xml
+    Forbidden:
+      description: '`forbidden_role`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.xml
+    StoreNotFound:
+      description: '`store_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            store_not_found:
+              externalValue: ./examples/store-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            store_not_found:
+              externalValue: ./examples/store-not-found.xml
+    MalformedBody:
+      description: '`malformed_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            malformed_body:
+              externalValue: ./examples/malformed-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            malformed_body:
+              externalValue: ./examples/malformed-body.xml
+    NotAcceptable:
+      description: '`not_acceptable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              externalValue: ./examples/not-acceptable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              externalValue: ./examples/not-acceptable.xml
+    PayloadTooLarge:
+      description: '`payload_too_large`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            payload_too_large:
+              externalValue: ./examples/payload-too-large.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            payload_too_large:
+              externalValue: ./examples/payload-too-large.xml
+    UnsupportedMediaType:
+      description: '`unsupported_media_type`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unsupported_media_type:
+              externalValue: ./examples/unsupported-media-type.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unsupported_media_type:
+              externalValue: ./examples/unsupported-media-type.xml
+    InvalidBody:
+      description: '`invalid_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-body.xml
+    InvalidPagination:
+      description: '`invalid_pagination`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.xml
+    RateLimited:
+      description: '`rate_limited`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              externalValue: ./examples/rate-limited.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              externalValue: ./examples/rate-limited.xml
+    OperationUnavailable:
+      description: '`auth_unavailable` or `database_unavailable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.json
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.xml
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.xml
+    SchemaNotReady:
+      description: '`schema_not_ready`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              externalValue: ./examples/schema-not-ready.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              externalValue: ./examples/schema-not-ready.xml

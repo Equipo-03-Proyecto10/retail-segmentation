@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Store xmlns="https://mosaiq.maxthecoder.online/xml/stores/v1">
+  <store_id>2</store_id>
+  <name>Coyoacan</name>
+  <city>Mexico City</city>
+  <state>CDMX</state>
+  <is_active>true</is_active>
+</Store>

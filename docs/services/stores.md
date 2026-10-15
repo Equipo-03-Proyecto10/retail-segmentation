@@ -72,7 +72,7 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | HTTP | Code | When |
 |---|---|---|
 | 422 | `invalid_body` | A CHECK on latitude, longitude or radius fails; `details` name the field |
-| 404 | Undecided; the contract story fixes the code | An unknown `store_id` (F14-09 fixes the code) |
+| 404 | `store_not_found` | An unknown `store_id` on any operation |
 
 ## Accepted exceptions
 

@@ -1,0 +1,6 @@
+{
+  "code": "store_not_found",
+  "message": "Store 9999 was not found.",
+  "correlation_id": "corr-store-not-found",
+  "details": []
+}

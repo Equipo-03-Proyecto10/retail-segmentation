@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:ev="https://mosaiq.maxthecoder.online/xml/engagement/v1"
+           xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1"
+           targetNamespace="https://mosaiq.maxthecoder.online/xml/engagement/v1"
+           elementFormDefault="qualified">
+  <xs:import namespace="https://mosaiq.maxthecoder.online/xml/common/v1"
+             schemaLocation="../common/v1/common.xsd"/>
+
+  <xs:simpleType name="QrScanType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="QR_SCAN"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="RecoClickType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="RECO_CLICK"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="LabelCode">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[A-Z][A-Z0-9_]{0,39}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Reason">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:maxLength value="500"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="GroupBy">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="store"/>
+      <xs:enumeration value="day"/>
+      <xs:enumeration value="type"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Requests. The base is abstract: a request names its shape with
+       xsi:type, and only RecoClickRequest may carry label_code and rank. -->
+  <xs:complexType name="EngagementEventRequest" abstract="true">
+    <xs:sequence/>
+  </xs:complexType>
+
+  <xs:complexType name="QrScanRequest">
+    <xs:complexContent>
+      <xs:extension base="ev:EngagementEventRequest">
+        <xs:sequence>
+          <xs:element name="client_event_id" type="xs:string"/>
+          <xs:element name="type" type="ev:QrScanType"/>
+          <xs:element name="store_id" type="xs:integer"/>
+          <xs:element name="product_id" type="xs:integer"/>
+          <xs:element name="customer_id" type="xs:string" minOccurs="0"/>
+          <xs:element name="occurred_at" type="xs:dateTime"/>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+
+  <xs:complexType name="RecoClickRequest">
+    <xs:complexContent>
+      <xs:extension base="ev:EngagementEventRequest">
+        <xs:sequence>
+          <xs:element name="client_event_id" type="xs:string"/>
+          <xs:element name="type" type="ev:RecoClickType"/>
+          <xs:element name="store_id" type="xs:integer"/>
+          <xs:element name="product_id" type="xs:integer"/>
+          <xs:element name="customer_id" type="xs:string" minOccurs="0"/>
+          <xs:element name="label_code" type="ev:LabelCode"/>
+          <xs:element name="rank" type="xs:positiveInteger"/>
+          <xs:element name="occurred_at" type="xs:dateTime"/>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+
+  <xs:complexType name="VoidRequest">
+    <xs:sequence>
+      <xs:element name="reason" type="ev:Reason"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Events, with the same split. -->
+  <xs:complexType name="HistoryEntry">
+    <xs:sequence>
+      <xs:element name="action">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="VOIDED"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+      <xs:element name="reason" type="ev:Reason"/>
+      <xs:element name="by" type="xs:string"/>
+      <xs:element name="at" type="xs:dateTime"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="EngagementEvent" abstract="true">
+    <xs:sequence/>
+  </xs:complexType>
+
+  <xs:complexType name="QrScanEvent">
+    <xs:complexContent>
+      <xs:extension base="ev:EngagementEvent">
+        <xs:sequence>
+          <xs:element name="event_id" type="xs:string"/>
+          <xs:element name="client_event_id" type="xs:string"/>
+          <xs:element name="type" type="ev:QrScanType"/>
+          <xs:element name="store_id" type="xs:integer"/>
+          <xs:element name="product_id" type="xs:integer"/>
+          <xs:element name="customer_id" type="xs:string" minOccurs="0"/>
+          <xs:element name="recorded_by" type="xs:string"/>
+          <xs:element name="occurred_at" type="xs:dateTime"/>
+          <xs:element name="recorded_at" type="xs:dateTime"/>
+          <xs:element name="voided" type="xs:boolean"/>
+          <xs:element name="history" type="ev:HistoryEntry"
+                      minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+
+  <xs:complexType name="RecoClickEvent">
+    <xs:complexContent>
+      <xs:extension base="ev:EngagementEvent">
+        <xs:sequence>
+          <xs:element name="event_id" type="xs:string"/>
+          <xs:element name="client_event_id" type="xs:string"/>
+          <xs:element name="type" type="ev:RecoClickType"/>
+          <xs:element name="store_id" type="xs:integer"/>
+          <xs:element name="product_id" type="xs:integer"/>
+          <xs:element name="customer_id" type="xs:string" minOccurs="0"/>
+          <xs:element name="label_code" type="ev:LabelCode"/>
+          <xs:element name="rank" type="xs:positiveInteger"/>
+          <xs:element name="recorded_by" type="xs:string"/>
+          <xs:element name="occurred_at" type="xs:dateTime"/>
+          <xs:element name="recorded_at" type="xs:dateTime"/>
+          <xs:element name="voided" type="xs:boolean"/>
+          <xs:element name="history" type="ev:HistoryEntry"
+                      minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+
+  <xs:complexType name="EngagementEvents">
+    <xs:sequence>
+      <xs:element name="EngagementEvent" type="ev:EngagementEvent"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Group">
+    <xs:sequence>
+      <xs:element name="key" type="xs:string"/>
+      <xs:element name="count" type="xs:nonNegativeInteger"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="EngagementSummary">
+    <xs:sequence>
+      <xs:element name="from" type="xs:date" minOccurs="0"/>
+      <xs:element name="to" type="xs:date" minOccurs="0"/>
+      <xs:element name="group_by" type="ev:GroupBy"/>
+      <xs:element name="groups" type="ev:Group"
+                  minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name="EngagementEventRequest" type="ev:EngagementEventRequest"/>
+  <xs:element name="VoidRequest" type="ev:VoidRequest"/>
+  <xs:element name="EngagementEvent" type="ev:EngagementEvent"/>
+  <xs:element name="EngagementEvents" type="ev:EngagementEvents"/>
+  <xs:element name="EngagementSummary" type="ev:EngagementSummary"/>
+</xs:schema>

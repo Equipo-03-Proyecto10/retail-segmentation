@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<EngagementEvent xmlns="https://mosaiq.maxthecoder.online/xml/engagement/v1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="QrScanEvent">
+  <event_id>66f1a2b3c4d5e6f7a8b9c0d1</event_id>
+  <client_event_id>0e6d5c4b-3a29-4817-96f5-a4b3c2d1e0f1</client_event_id>
+  <type>QR_SCAN</type>
+  <store_id>3</store_id>
+  <product_id>120</product_id>
+  <customer_id>3f6c1d52-8e4a-4b7d-a0c9-5d2e7b1f4a68</customer_id>
+  <recorded_by>5b0c2f3e-8a41-4d6b-9c10-2e7a1f4d9b33</recorded_by>
+  <occurred_at>2026-10-15T15:20:00Z</occurred_at>
+  <recorded_at>2026-10-15T15:20:03Z</recorded_at>
+  <voided>false</voided>
+</EngagementEvent>

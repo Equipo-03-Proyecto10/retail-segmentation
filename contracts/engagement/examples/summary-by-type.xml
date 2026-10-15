@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<EngagementSummary xmlns="https://mosaiq.maxthecoder.online/xml/engagement/v1">
+  <from>2026-10-13</from>
+  <to>2026-10-15</to>
+  <group_by>type</group_by>
+  <groups>
+    <key>QR_SCAN</key>
+    <count>78</count>
+  </groups>
+  <groups>
+    <key>RECO_CLICK</key>
+    <count>30</count>
+  </groups>
+</EngagementSummary>

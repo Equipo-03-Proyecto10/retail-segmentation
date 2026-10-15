@@ -76,6 +76,8 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | 422 | `unknown_store` | The store must exist and be active |
 | 422 | `unknown_product`, `unknown_customer` | A reference does not exist |
 | 422 | `occurred_in_future` | More than five minutes ahead of the server |
+| 404 | `event_not_found` | An unknown `{event_id}` on a read or a void |
+| 422 | `invalid_query` | `to` before `from`, or an unknown `group_by`; `details` names the parameter |
 | 503 | `schema_not_ready` | `/health/ready` while a collection or index is missing |
 
 ## Accepted exceptions

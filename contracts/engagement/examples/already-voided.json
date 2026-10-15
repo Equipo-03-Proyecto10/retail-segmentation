@@ -1,0 +1,6 @@
+{
+  "code": "already_voided",
+  "message": "The event is already voided.",
+  "correlation_id": "corr-already-voided",
+  "details": []
+}

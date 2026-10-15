@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<VoidRequest xmlns="https://mosaiq.maxthecoder.online/xml/engagement/v1">
+  <reason>Scanned the wrong shelf label.</reason>
+</VoidRequest>

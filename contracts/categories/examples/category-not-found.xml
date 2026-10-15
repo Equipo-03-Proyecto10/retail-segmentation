@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>category_not_found</code>
+  <message>Category 9999 was not found.</message>
+  <correlation_id>corr-category-not-found</correlation_id>
+</Error>

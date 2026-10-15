@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>category_id_taken</code>
+  <message>The category id is already in use.</message>
+  <correlation_id>corr-category-id-taken</correlation_id>
+  <details>
+    <field>category_id</field>
+    <code>duplicate</code>
+  </details>
+</Error>

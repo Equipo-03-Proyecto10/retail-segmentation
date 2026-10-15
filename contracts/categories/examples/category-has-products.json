@@ -1,0 +1,6 @@
+{
+  "code": "category_has_products",
+  "message": "The category still has products.",
+  "correlation_id": "corr-category-has-products",
+  "details": []
+}

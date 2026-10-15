@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>unknown_parent_category</code>
+  <message>The parent category does not exist.</message>
+  <correlation_id>corr-unknown-parent-category</correlation_id>
+  <details>
+    <field>parent_category_id</field>
+    <code>unknown</code>
+  </details>
+</Error>

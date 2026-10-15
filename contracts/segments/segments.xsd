@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:segments="https://mosaiq.maxthecoder.online/xml/segments/v1"
+           xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1"
+           targetNamespace="https://mosaiq.maxthecoder.online/xml/segments/v1"
+           elementFormDefault="qualified">
+  <xs:import namespace="https://mosaiq.maxthecoder.online/xml/common/v1"
+             schemaLocation="../common/v1/common.xsd"/>
+
+  <xs:simpleType name="Uuid">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Score">
+    <xs:restriction base="xs:integer">
+      <xs:minInclusive value="1"/>
+      <xs:maxInclusive value="5"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="AssignmentState">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="assigned"/>
+      <xs:enumeration value="unassigned_result"/>
+      <xs:enumeration value="no_open_assignment"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- description is omitted when the label has none. -->
+  <xs:complexType name="Segment">
+    <xs:sequence>
+      <xs:element name="label_code" type="xs:string"/>
+      <xs:element name="name" type="xs:string"/>
+      <xs:element name="description" type="xs:string" minOccurs="0"/>
+      <xs:element name="ordinal_position" type="xs:positiveInteger"/>
+      <xs:element name="size" type="xs:nonNegativeInteger"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- run_id and run_at are omitted before any run. -->
+  <xs:complexType name="Segments">
+    <xs:sequence>
+      <xs:element name="run_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="run_at" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="unassigned_count" type="xs:nonNegativeInteger"/>
+      <xs:element name="Segment" type="segments:Segment"
+                  minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Only an assigned customer has a label and scores; only a customer with
+       an open row or an unassigned result has since and run_id. -->
+  <xs:complexType name="CurrentAssignment">
+    <xs:sequence>
+      <xs:element name="customer_id" type="segments:Uuid"/>
+      <xs:element name="state" type="segments:AssignmentState"/>
+      <xs:element name="label_code" type="xs:string" minOccurs="0"/>
+      <xs:element name="r_score" type="segments:Score" minOccurs="0"/>
+      <xs:element name="f_score" type="segments:Score" minOccurs="0"/>
+      <xs:element name="m_score" type="segments:Score" minOccurs="0"/>
+      <xs:element name="since" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="run_id" type="xs:long" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SegmentAssignment">
+    <xs:sequence>
+      <xs:element name="customer_id" type="segments:Uuid"/>
+      <xs:element name="run_id" type="xs:long"/>
+      <xs:element name="label_code" type="xs:string" minOccurs="0"/>
+      <xs:element name="r_score" type="segments:Score" minOccurs="0"/>
+      <xs:element name="f_score" type="segments:Score" minOccurs="0"/>
+      <xs:element name="m_score" type="segments:Score" minOccurs="0"/>
+      <xs:element name="valid_from" type="xs:dateTime"/>
+      <xs:element name="valid_to" type="xs:dateTime" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SegmentAssignments">
+    <xs:sequence>
+      <xs:element name="SegmentAssignment" type="segments:SegmentAssignment"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name="Segment" type="segments:Segment"/>
+  <xs:element name="Segments" type="segments:Segments"/>
+  <xs:element name="CurrentAssignment" type="segments:CurrentAssignment"/>
+  <xs:element name="SegmentAssignments" type="segments:SegmentAssignments"/>
+</xs:schema>

@@ -1,0 +1,11 @@
+{
+  "code": "invalid_query",
+  "message": "Give exactly one of customer_id and label_code.",
+  "correlation_id": "corr-invalid-query",
+  "details": [
+    {
+      "field": "customer_id",
+      "code": "conflicting_filters"
+    }
+  ]
+}

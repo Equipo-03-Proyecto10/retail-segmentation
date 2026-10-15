@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>schema_not_ready</code>
+  <message>The required customer-preferences schema has not been applied.</message>
+  <correlation_id>corr-schema-not-ready</correlation_id>
+</Error>

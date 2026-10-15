@@ -69,7 +69,7 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 
 | HTTP | Code | When |
 |---|---|---|
-| 404 | Undecided; the contract story fixes the code | The customer does not exist in `api_customers.customer_ref_v1` (F14-15 fixes the code) |
+| 404 | `customer_not_found` | The customer does not exist in `api_customers.customer_ref_v1` |
 | 422 | `unknown_channel` | A channel id references no channel (23503) |
 | 422 | `unknown_category` | A category id references no category (23503) |
 

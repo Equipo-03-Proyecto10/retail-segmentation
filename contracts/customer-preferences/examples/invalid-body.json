@@ -1,0 +1,11 @@
+{
+  "code": "invalid_body",
+  "message": "The list contains the same id twice.",
+  "correlation_id": "corr-invalid-body",
+  "details": [
+    {
+      "field": "channel_ids",
+      "code": "duplicate"
+    }
+  ]
+}

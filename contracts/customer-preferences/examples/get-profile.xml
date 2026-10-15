@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PreferenceProfile xmlns="https://mosaiq.maxthecoder.online/xml/customer-preferences/v1">
+  <customer_id>7b3ad781-c5de-4f40-ae50-1fa825ce2b25</customer_id>
+  <preferred_channel_ids>1</preferred_channel_ids>
+  <preferred_channel_ids>3</preferred_channel_ids>
+  <interest_category_ids>2</interest_category_ids>
+  <interest_category_ids>11</interest_category_ids>
+  <interest_category_ids>12</interest_category_ids>
+</PreferenceProfile>

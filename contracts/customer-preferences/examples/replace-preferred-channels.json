@@ -1,0 +1,13 @@
+{
+  "customer_id": "7b3ad781-c5de-4f40-ae50-1fa825ce2b25",
+  "preferred_channel_ids": [
+    1,
+    3,
+    5
+  ],
+  "interest_category_ids": [
+    2,
+    11,
+    12
+  ]
+}

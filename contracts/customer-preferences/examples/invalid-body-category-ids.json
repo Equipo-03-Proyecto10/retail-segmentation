@@ -1,0 +1,11 @@
+{
+  "code": "invalid_body",
+  "message": "The list contains the same id twice.",
+  "correlation_id": "corr-invalid-body-category-ids",
+  "details": [
+    {
+      "field": "category_ids",
+      "code": "duplicate"
+    }
+  ]
+}

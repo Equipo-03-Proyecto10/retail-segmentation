@@ -1,0 +1,11 @@
+{
+  "code": "unknown_category",
+  "message": "A category id references no category.",
+  "correlation_id": "corr-unknown-category",
+  "details": [
+    {
+      "field": "category_ids[1]",
+      "code": "unknown"
+    }
+  ]
+}

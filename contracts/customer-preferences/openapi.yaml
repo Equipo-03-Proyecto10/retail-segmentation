@@ -1,0 +1,667 @@
+openapi: 3.1.0
+info:
+  title: customer-preferences-service
+  version: 1.0.0
+  description: >-
+    Reads a customer's preference profile and replaces each of its two sets,
+    preferred channels and interest categories, only as a whole (RN-54).
+security:
+  - bearer: []
+tags:
+  - name: Preferences
+  - name: Meta
+paths:
+  /v1/preference-profiles/{customer_id}:
+    get:
+      tags: [Preferences]
+      summary: Get a customer's preference profile
+      description: >-
+        Returns the customer's preferred channels and interest categories. A
+        customer with no preferences gets a profile with two empty lists, not a 404;
+        only a customer absent from `api_customers.customer_ref_v1` is 404
+        `customer_not_found`.
+      operationId: getPreferenceProfile
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CustomerId'
+      responses:
+        '200':
+          description: The preference profile.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferenceProfile'
+              examples:
+                profile:
+                  externalValue: ./examples/get-profile.json
+                empty_profile:
+                  externalValue: ./examples/get-empty-profile.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/PreferenceProfile'
+              examples:
+                profile:
+                  externalValue: ./examples/get-profile.xml
+                empty_profile:
+                  externalValue: ./examples/get-empty-profile.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CustomerNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/preference-profiles/{customer_id}/preferred-channels:
+    put:
+      tags: [Preferences]
+      summary: Replace the preferred channels
+      description: >-
+        A PUT replaces the whole set: ids not in the list are removed, ids in it are
+        added, and an empty list clears the set (in XML, a request element with no
+        ids). Ids are sorted in the answer. The delete and the insert run in one
+        transaction under a per-customer advisory lock, so two concurrent replaces
+        leave exactly one of the two submitted sets, never a mixture. A duplicate id
+        in the list is 422 `invalid_body`, with `details` naming the field. The
+        schema does not check that ids exist, so that the service answers
+        ``unknown_channel`` with its own code. The other set is untouched. Answers
+        200 with the whole profile after the replace.
+      operationId: replacePreferredChannels
+      x-mosaiq-roles:
+        - ADMIN
+        - STORE_MANAGER
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CustomerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplacePreferredChannelsRequest'
+            examples:
+              replace:
+                externalValue: ./examples/replace-preferred-channels.request.json
+              clear:
+                externalValue: ./examples/clear-preferred-channels.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/ReplacePreferredChannelsRequest'
+            examples:
+              replace:
+                externalValue: ./examples/replace-preferred-channels.request.xml
+              clear:
+                externalValue: ./examples/clear-preferred-channels.request.xml
+      responses:
+        '200':
+          description: The profile after the replace.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferenceProfile'
+              examples:
+                replaced:
+                  externalValue: ./examples/replace-preferred-channels.json
+                cleared:
+                  externalValue: ./examples/clear-preferred-channels.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/PreferenceProfile'
+              examples:
+                replaced:
+                  externalValue: ./examples/replace-preferred-channels.xml
+                cleared:
+                  externalValue: ./examples/clear-preferred-channels.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CustomerNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ChannelsRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/preference-profiles/{customer_id}/interest-categories:
+    put:
+      tags: [Preferences]
+      summary: Replace the interest categories
+      description: >-
+        A PUT replaces the whole set: ids not in the list are removed, ids in it are
+        added, and an empty list clears the set (in XML, a request element with no
+        ids). Ids are sorted in the answer. The delete and the insert run in one
+        transaction under a per-customer advisory lock, so two concurrent replaces
+        leave exactly one of the two submitted sets, never a mixture. A duplicate id
+        in the list is 422 `invalid_body`, with `details` naming the field. The
+        schema does not check that ids exist, so that the service answers
+        ``unknown_category`` with its own code. The other set is untouched. Answers
+        200 with the whole profile after the replace.
+      operationId: replaceInterestCategories
+      x-mosaiq-roles:
+        - ADMIN
+        - STORE_MANAGER
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CustomerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplaceInterestCategoriesRequest'
+            examples:
+              replace:
+                externalValue: ./examples/replace-interest-categories.request.json
+              clear:
+                externalValue: ./examples/clear-interest-categories.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/ReplaceInterestCategoriesRequest'
+            examples:
+              replace:
+                externalValue: ./examples/replace-interest-categories.request.xml
+              clear:
+                externalValue: ./examples/clear-interest-categories.request.xml
+      responses:
+        '200':
+          description: The profile after the replace.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferenceProfile'
+              examples:
+                replaced:
+                  externalValue: ./examples/replace-interest-categories.json
+                cleared:
+                  externalValue: ./examples/clear-interest-categories.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/PreferenceProfile'
+              examples:
+                replaced:
+                  externalValue: ./examples/replace-interest-categories.xml
+                cleared:
+                  externalValue: ./examples/clear-interest-categories.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CustomerNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/CategoriesRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /health/live:
+    get:
+      tags: [Meta]
+      summary: Check process liveness
+      operationId: getLiveness
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The process is live.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+  /health/ready:
+    get:
+      tags: [Meta]
+      summary: Check schema readiness
+      operationId: getReadiness
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The required schema is ready.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '503':
+          $ref: '#/components/responses/SchemaNotReady'
+  /openapi.yaml:
+    get:
+      tags: [Meta]
+      summary: Get this OpenAPI document
+      operationId: getOpenApi
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The OpenAPI document, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/yaml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+  /schema.xsd:
+    get:
+      tags: [Meta]
+      summary: Get the customer-preferences XML Schema
+      operationId: getSchema
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The customer-preferences XSD, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/xml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      description: >-
+        Caller-supplied correlation id. A missing or invalid value is replaced
+        by the service, and the effective value is returned on every response.
+      schema:
+        type: string
+        pattern: '^[0-9A-Za-z-]{1,64}$'
+    CustomerId:
+      name: customer_id
+      in: path
+      required: true
+      description: The customer whose profile this is; the id is the profile's own identity.
+      schema:
+        type: string
+        format: uuid
+  headers:
+    CorrelationId:
+      description: The effective correlation id for this request.
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9A-Za-z-]{1,64}$'
+    RetryAfter:
+      description: Seconds until the caller should retry.
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  schemas:
+    PreferenceProfile:
+      type: object
+      additionalProperties: false
+      required:
+        - customer_id
+        - preferred_channel_ids
+        - interest_category_ids
+      properties:
+        customer_id:
+          type: string
+          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+        preferred_channel_ids:
+          type: array
+          items:
+            type: integer
+            format: int32
+          description: Sorted ascending; empty when the customer has none.
+        interest_category_ids:
+          type: array
+          items:
+            type: integer
+            format: int32
+          description: Sorted ascending; empty when the customer has none.
+      xml:
+        name: PreferenceProfile
+        namespace: https://mosaiq.maxthecoder.online/xml/customer-preferences/v1
+    ReplacePreferredChannelsRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - channel_ids
+      properties:
+        channel_ids:
+          type: array
+          items:
+            type: integer
+            format: int32
+          description: The complete new set. An empty list clears it.
+      xml:
+        name: ReplacePreferredChannelsRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/customer-preferences/v1
+    ReplaceInterestCategoriesRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - category_ids
+      properties:
+        category_ids:
+          type: array
+          items:
+            type: integer
+            format: int32
+          description: The complete new set. An empty list clears it.
+      xml:
+        name: ReplaceInterestCategoriesRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/customer-preferences/v1
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - field
+        - code
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+    Error:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+        - correlation_id
+        - details
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        correlation_id:
+          type: string
+          pattern: '^[0-9A-Za-z-]{1,64}$'
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+      xml:
+        name: Error
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+  responses:
+    Unauthorized:
+      description: '`invalid_token` or `session_revoked`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              externalValue: ./examples/invalid-token.json
+            session_revoked:
+              externalValue: ./examples/session-revoked.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              externalValue: ./examples/invalid-token.xml
+            session_revoked:
+              externalValue: ./examples/session-revoked.xml
+    Forbidden:
+      description: '`forbidden_role`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.xml
+    MalformedBody:
+      description: '`malformed_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            malformed_body:
+              externalValue: ./examples/malformed-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            malformed_body:
+              externalValue: ./examples/malformed-body.xml
+    NotAcceptable:
+      description: '`not_acceptable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              externalValue: ./examples/not-acceptable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              externalValue: ./examples/not-acceptable.xml
+    PayloadTooLarge:
+      description: '`payload_too_large`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            payload_too_large:
+              externalValue: ./examples/payload-too-large.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            payload_too_large:
+              externalValue: ./examples/payload-too-large.xml
+    UnsupportedMediaType:
+      description: '`unsupported_media_type`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unsupported_media_type:
+              externalValue: ./examples/unsupported-media-type.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unsupported_media_type:
+              externalValue: ./examples/unsupported-media-type.xml
+    RateLimited:
+      description: '`rate_limited`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              externalValue: ./examples/rate-limited.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              externalValue: ./examples/rate-limited.xml
+    OperationUnavailable:
+      description: '`auth_unavailable` or `database_unavailable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.json
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.xml
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.xml
+    SchemaNotReady:
+      description: '`schema_not_ready`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              externalValue: ./examples/schema-not-ready.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              externalValue: ./examples/schema-not-ready.xml
+    CustomerNotFound:
+      description: '`customer_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            customer_not_found:
+              externalValue: ./examples/customer-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            customer_not_found:
+              externalValue: ./examples/customer-not-found.xml
+    ChannelsRefused:
+      description: '`unknown_channel` or `invalid_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unknown_channel:
+              externalValue: ./examples/unknown-channel.json
+            invalid_body:
+              externalValue: ./examples/invalid-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unknown_channel:
+              externalValue: ./examples/unknown-channel.xml
+            invalid_body:
+              externalValue: ./examples/invalid-body.xml
+    CategoriesRefused:
+      description: '`unknown_category` or `invalid_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unknown_category:
+              externalValue: ./examples/unknown-category.json
+            invalid_body:
+              externalValue: ./examples/invalid-body-category-ids.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unknown_category:
+              externalValue: ./examples/unknown-category.xml
+            invalid_body:
+              externalValue: ./examples/invalid-body-category-ids.xml

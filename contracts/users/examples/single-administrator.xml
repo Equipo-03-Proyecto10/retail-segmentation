@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<common:Error xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <common:code>single_administrator</common:code>
+  <common:message>The system must have exactly one administrator.</common:message>
+  <common:correlation_id>corr-418</common:correlation_id>
+</common:Error>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<common:Error xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <common:code>unknown_role</common:code>
+  <common:message>The role code is not in the role vocabulary.</common:message>
+  <common:correlation_id>corr-418</common:correlation_id>
+  <common:details>
+    <common:field>role_code</common:field>
+    <common:code>unknown</common:code>
+  </common:details>
+</common:Error>

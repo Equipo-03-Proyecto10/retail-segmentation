@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Roles xmlns="https://mosaiq.maxthecoder.online/xml/users/v1"
+       xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <Role>
+    <role_code>ADMIN</role_code>
+    <description>System administrator</description>
+  </Role>
+  <Role>
+    <role_code>ANALYST</role_code>
+    <description>Commercial analyst</description>
+  </Role>
+  <Role>
+    <role_code>STORE_MANAGER</role_code>
+    <description>Store manager</description>
+  </Role>
+  <Role>
+    <role_code>MARKETING</role_code>
+    <description>Marketing</description>
+  </Role>
+  <Role>
+    <role_code>INVENTORY_PLANNER</role_code>
+    <description>Inventory planner</description>
+  </Role>
+  <Role>
+    <role_code>AUDITOR</role_code>
+    <description>Auditor</description>
+  </Role>
+  <Role>
+    <role_code>CUSTOMER</role_code>
+    <description>Loyalty programme customer</description>
+  </Role>
+  <common:PageInfo>
+    <common:page>1</common:page>
+    <common:size>20</common:size>
+    <common:total>7</common:total>
+  </common:PageInfo>
+</Roles>

@@ -1,0 +1,9 @@
+{
+  "code": "invalid_body",
+  "message": "The request body violates its schema.",
+  "correlation_id": "corr-418",
+  "details": [
+    {"field": "email", "code": "invalid_format"},
+    {"field": "password", "code": "min_length"}
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "code": "single_administrator",
+  "message": "The system must have exactly one administrator.",
+  "correlation_id": "corr-418"
+}

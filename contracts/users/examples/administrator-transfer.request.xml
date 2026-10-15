@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<AdministratorTransferRequest xmlns="https://mosaiq.maxthecoder.online/xml/users/v1">
+  <successor_user_id>22222222-2222-4222-8222-222222222222</successor_user_id>
+</AdministratorTransferRequest>

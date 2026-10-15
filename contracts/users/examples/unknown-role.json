@@ -1,0 +1,8 @@
+{
+  "code": "unknown_role",
+  "message": "The role code is not in the role vocabulary.",
+  "correlation_id": "corr-418",
+  "details": [
+    {"field": "role_code", "code": "unknown"}
+  ]
+}

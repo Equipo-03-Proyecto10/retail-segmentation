@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>schema_not_ready</code>
+  <message>The required database schema has not been applied.</message>
+  <correlation_id>auth-example-schema</correlation_id>
+</Error>

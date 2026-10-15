@@ -1,0 +1,6 @@
+{
+  "code": "refresh_reused",
+  "message": "The refresh token was already used; the session was revoked.",
+  "correlation_id": "auth-example-refresh-reused",
+  "details": []
+}

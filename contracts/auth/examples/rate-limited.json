@@ -1,0 +1,6 @@
+{
+  "code": "rate_limited",
+  "message": "Too many sign-in attempts; retry later.",
+  "correlation_id": "auth-example-429",
+  "details": []
+}

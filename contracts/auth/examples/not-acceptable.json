@@ -1,0 +1,6 @@
+{
+  "code": "not_acceptable",
+  "message": "The requested response format is not supported.",
+  "correlation_id": "auth-example-406",
+  "details": []
+}

@@ -1,0 +1,6 @@
+{
+  "code": "database_unavailable",
+  "message": "The credential store is temporarily unavailable.",
+  "correlation_id": "auth-example-database",
+  "details": []
+}

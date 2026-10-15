@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>database_unavailable</code>
+  <message>The credential store is temporarily unavailable.</message>
+  <correlation_id>auth-example-database</correlation_id>
+</Error>

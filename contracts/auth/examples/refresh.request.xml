@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RefreshRequest xmlns="https://mosaiq.maxthecoder.online/xml/auth/v1">
+  <refresh_token>placeholder-refresh-token</refresh_token>
+</RefreshRequest>

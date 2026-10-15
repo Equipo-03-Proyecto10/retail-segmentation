@@ -1,0 +1,6 @@
+{
+  "code": "unsupported_media_type",
+  "message": "The request format is not supported.",
+  "correlation_id": "auth-example-415",
+  "details": []
+}

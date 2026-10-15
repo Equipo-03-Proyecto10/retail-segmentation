@@ -1,0 +1,6 @@
+{
+  "code": "session_expired",
+  "message": "The session reached its absolute end.",
+  "correlation_id": "auth-example-session-expired",
+  "details": []
+}

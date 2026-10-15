@@ -1,0 +1,11 @@
+{
+  "code": "future_registration",
+  "message": "The registration date cannot be in the future.",
+  "correlation_id": "corr-432-future",
+  "details": [
+    {
+      "field": "registered_on",
+      "code": "future_date"
+    }
+  ]
+}

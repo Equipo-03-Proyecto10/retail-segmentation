@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_body</code>
+  <message>The parsed body violates the request schema.</message>
+  <correlation_id>corr-432-body</correlation_id>
+  <details>
+    <field>registered_on</field>
+    <code>unexpected_field</code>
+  </details>
+</Error>

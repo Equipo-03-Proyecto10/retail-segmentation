@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>customer_not_found</code>
+  <message>The customer does not exist.</message>
+  <correlation_id>corr-432-missing</correlation_id>
+  <details>
+    <field>customer_id</field>
+    <code>not_found</code>
+  </details>
+</Error>

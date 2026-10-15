@@ -20,7 +20,7 @@
 
 ## Business rule
 
-- Email is unique when given (409 `email_taken`), `channel_id` references a known channel (FK; 23503 maps to 422 `unknown_channel`) and `registered_on` is not in the future.
+- Email is unique when given (409 `email_taken`), `registration_channel_id` references a known channel (FK; 23503 maps to 422 `unknown_channel`) and `registered_on` is not in the future.
 - No DELETE grant: sales and segment history hang on the record (RN-08), so a mistaken registration is corrected with PATCH. `q` search matches `%` and `_` literally.
 
 ## Endpoints
@@ -66,8 +66,9 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | HTTP | Code | When |
 |---|---|---|
 | 409 | `email_taken` | The email already belongs to another customer |
-| 422 | `unknown_channel` | `channel_id` references no channel (23503) |
-| 422 | Undecided; the contract story fixes the code | A future `registered_on` (F14-13 fixes the code) |
+| 422 | `unknown_channel` | `registration_channel_id` references no channel (23503) |
+| 422 | `future_registration` | A `POST` gives a `registered_on` after the current date |
+| 404 | `customer_not_found` | No customer has the given `customer_id` |
 
 ## Accepted exceptions
 
@@ -75,7 +76,7 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 ### E-11 — foreign keys cross service boundaries
 
-- **What:** Tables owned by different services reference each other (`customer.channel_id`, `transaction_line.product_id`, `campaign.label_code` to `segment_label`, `checkins.store_check_in` to `store` and `app_user`).
+- **What:** Tables owned by different services reference each other (`customer.registration_channel_id`, `transaction_line.product_id`, `campaign.label_code` to `segment_label`, `checkins.store_check_in` to `store` and `app_user`).
 - **Why it is acceptable:** They come from the legacy schema or protect it. The RI check runs as the parent's owner, so the child's service needs no privilege on the parent. Dropping them would weaken the model the web relies on.
 - **Guard:** A violation (23503) maps to a 422 by constraint name. No service holds DELETE on a master, so no cascade starts from a service. The category guard covers the remaining case.
 - **Decided in:** [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) (Consequences). Register: [E-11](./README.md#e-11--foreign-keys-cross-service-boundaries).

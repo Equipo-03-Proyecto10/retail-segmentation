@@ -1,0 +1,17 @@
+{
+  "customers": [
+    {
+      "customer_id": "1fdd85d2-f48d-4f19-a2fd-5505e4b8ea10",
+      "name": "100% Club_member",
+      "email": "club.member@example.com",
+      "phone": "+52-55-5555-0198",
+      "registration_channel_id": 3,
+      "registered_on": "2025-11-08"
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 1
+  }
+}

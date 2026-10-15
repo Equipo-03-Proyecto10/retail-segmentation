@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Customers xmlns="https://mosaiq.maxthecoder.online/xml/customers/v1"
+           xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <Customer>
+    <customer_id>1fdd85d2-f48d-4f19-a2fd-5505e4b8ea10</customer_id>
+    <name>100% Club_member</name>
+    <email>club.member@example.com</email>
+    <phone>+52-55-5555-0198</phone>
+    <registration_channel_id>3</registration_channel_id>
+    <registered_on>2025-11-08</registered_on>
+  </Customer>
+  <common:PageInfo>
+    <common:page>1</common:page>
+    <common:size>20</common:size>
+    <common:total>1</common:total>
+  </common:PageInfo>
+</Customers>

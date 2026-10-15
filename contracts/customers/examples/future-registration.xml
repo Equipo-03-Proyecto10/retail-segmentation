@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>future_registration</code>
+  <message>The registration date cannot be in the future.</message>
+  <correlation_id>corr-432-future</correlation_id>
+  <details>
+    <field>registered_on</field>
+    <code>future_date</code>
+  </details>
+</Error>

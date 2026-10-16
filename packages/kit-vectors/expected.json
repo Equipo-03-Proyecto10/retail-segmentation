@@ -1,0 +1,58 @@
+{
+  "no_token": {
+    "status": 401,
+    "code": "invalid_token"
+  },
+  "alg_none": {
+    "status": 401,
+    "code": "invalid_token"
+  },
+  "hmac_with_public_key": {
+    "status": 401,
+    "code": "invalid_token"
+  },
+  "wrong_aud": {
+    "status": 401,
+    "code": "invalid_token"
+  },
+  "wrong_iss": {
+    "status": 401,
+    "code": "invalid_token"
+  },
+  "expired": {
+    "status": 401,
+    "code": "invalid_token"
+  },
+  "tampered_payload": {
+    "status": 401,
+    "code": "invalid_token"
+  },
+  "unknown_kid": {
+    "status": 401,
+    "code": "invalid_token"
+  },
+  "revoked_session": {
+    "status": 401,
+    "code": "session_revoked"
+  },
+  "auth_unavailable": {
+    "status": 503,
+    "code": "auth_unavailable"
+  },
+  "forbidden_role": {
+    "status": 403,
+    "code": "forbidden_role"
+  },
+  "database_unavailable": {
+    "status": 503,
+    "code": "database_unavailable"
+  },
+  "valid_reader": {
+    "status": 200,
+    "code": null
+  },
+  "valid_writer": {
+    "status": 200,
+    "code": null
+  }
+}

@@ -1,0 +1,198 @@
+openapi: 3.1.0
+info:
+  title: kit-example-service
+  version: 1.0.0
+  description: Exercises the Python kit without owning a database table.
+security:
+  - bearer: []
+paths:
+  /v1/notes:
+    get:
+      operationId: listNotes
+      x-mosaiq-roles: [ROLE_READER, ROLE_WRITER]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of notes.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Notes'}
+            application/xml:
+              schema: {$ref: '#/components/schemas/Notes'}
+        '401': {$ref: '#/components/responses/AuthenticationError'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '422': {$ref: '#/components/responses/InvalidPagination'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+    post:
+      operationId: createNote
+      x-mosaiq-roles: [ROLE_WRITER]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateNoteRequest'}
+          application/xml:
+            schema: {$ref: '#/components/schemas/CreateNoteRequest'}
+      responses:
+        '201':
+          description: The note-shaped value was created.
+          headers:
+            Location:
+              schema: {type: string}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Note'}
+            application/xml:
+              schema: {$ref: '#/components/schemas/Note'}
+        '400': {$ref: '#/components/responses/MalformedBody'}
+        '401': {$ref: '#/components/responses/AuthenticationError'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '415': {$ref: '#/components/responses/UnsupportedMediaType'}
+        '422': {$ref: '#/components/responses/InvalidBody'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /v1/notes/{note_id}:
+    get:
+      operationId: getNote
+      x-mosaiq-roles: [ROLE_READER, ROLE_WRITER]
+      parameters:
+        - name: note_id
+          in: path
+          required: true
+          schema: {type: integer, minimum: 1, maximum: 2147483647}
+      responses:
+        '200':
+          description: One note.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Note'}
+            application/xml:
+              schema: {$ref: '#/components/schemas/Note'}
+        '401': {$ref: '#/components/responses/AuthenticationError'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '406': {$ref: '#/components/responses/NotAcceptable'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /health/live:
+    get:
+      operationId: getLiveness
+      security: []
+      responses:
+        '204': {description: The process is live.}
+  /health/ready:
+    get:
+      operationId: getReadiness
+      security: []
+      responses:
+        '204': {description: The database is ready.}
+        '503': {$ref: '#/components/responses/SchemaNotReady'}
+  /openapi.yaml:
+    get:
+      operationId: getOpenApiDocument
+      security: []
+      responses:
+        '200':
+          description: This document, byte for byte.
+          content:
+            application/yaml:
+              schema: {type: string}
+  /schema.xsd:
+    get:
+      operationId: getXmlSchema
+      security: []
+      responses:
+        '200':
+          description: The XML Schema, byte for byte.
+          content:
+            application/xml:
+              schema: {type: string}
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema: {type: integer, minimum: 1, default: 1}
+    Size:
+      name: size
+      in: query
+      schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+  schemas:
+    Note:
+      type: object
+      additionalProperties: false
+      required: [note_id, title, amount, created_by, created_at]
+      properties:
+        note_id: {type: integer, minimum: 1}
+        title: {type: string, minLength: 1, maxLength: 120}
+        amount: {type: string, pattern: '^(0|[1-9][0-9]{0,7})\.[0-9]{2}$'}
+        created_by: {type: [string, 'null'], format: uuid}
+        created_at: {type: string, format: date-time}
+      xml:
+        name: Note
+        namespace: https://mosaiq.maxthecoder.online/xml/kit-example/v1
+    Notes:
+      type: object
+      properties:
+        notes: {type: array, items: {$ref: '#/components/schemas/Note'}}
+        page_info: {$ref: '#/components/schemas/PageInfo'}
+      xml:
+        name: Notes
+        namespace: https://mosaiq.maxthecoder.online/xml/kit-example/v1
+    CreateNoteRequest:
+      type: object
+      additionalProperties: false
+      required: [title, amount]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 120}
+        amount: {type: string, pattern: '^(0|[1-9][0-9]{0,7})\.[0-9]{2}$'}
+      xml:
+        name: CreateNoteRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/kit-example/v1
+    PageInfo:
+      type: object
+      required: [page, size, total]
+      properties:
+        page: {type: integer, minimum: 1}
+        size: {type: integer, minimum: 1, maximum: 100}
+        total: {type: integer, minimum: 0}
+    Error:
+      type: object
+      required: [code, message, correlation_id, details]
+      properties:
+        code: {type: string}
+        message: {type: string}
+        correlation_id: {type: string}
+        details: {type: array, items: {type: object}}
+  responses:
+    AuthenticationError: {$ref: '#/components/responses/ErrorResponse'}
+    Forbidden: {$ref: '#/components/responses/ErrorResponse'}
+    NotAcceptable: {$ref: '#/components/responses/ErrorResponse'}
+    InvalidPagination: {$ref: '#/components/responses/ErrorResponse'}
+    RateLimited: {$ref: '#/components/responses/ErrorResponse'}
+    Unavailable: {$ref: '#/components/responses/ErrorResponse'}
+    MalformedBody: {$ref: '#/components/responses/ErrorResponse'}
+    PayloadTooLarge: {$ref: '#/components/responses/ErrorResponse'}
+    UnsupportedMediaType: {$ref: '#/components/responses/ErrorResponse'}
+    InvalidBody: {$ref: '#/components/responses/ErrorResponse'}
+    NotFound: {$ref: '#/components/responses/ErrorResponse'}
+    SchemaNotReady: {$ref: '#/components/responses/ErrorResponse'}
+    ErrorResponse:
+      description: A common error envelope.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+        application/xml:
+          schema: {$ref: '#/components/schemas/Error'}
+

@@ -40,7 +40,8 @@ class OutboxRelay:
         self.streams = frozenset(streams)
         self.redis = redis
         self._connection: psycopg.Connection | None = None
-        self._last_purge = 0.0
+        # None purges on the first pass; monotonic time starts near zero at boot.
+        self._last_purge: float | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -111,7 +112,7 @@ class OutboxRelay:
         except redis.RedisError:
             LOGGER.exception("Outbox delivery failed; rows remain unrelayed")
             return 0
-        if time.monotonic() - self._last_purge >= 3600:
+        if self._last_purge is None or time.monotonic() - self._last_purge >= 3600:
             with connection.transaction():
                 connection.execute(
                     sql.SQL(

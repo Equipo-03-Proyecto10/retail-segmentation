@@ -10,17 +10,17 @@
 `redis-state` and `redis-cache` in [`deploy/infra/`](../../deploy/infra/README.md).
 Only the services connect to them, and none does yet.
 
-> **The MongoDB document is still a design, and nothing in it runs.** MongoDB
-> will hold only engagement-service's collections (`engagement_event` and
-> `engagement_daily`, in the database `engagement`); the six collections the
-> document lists duplicate PostgreSQL tables and are not built. F13-06 (#428)
-> rewrites it as a specification. Why it was documented before it was built:
-> [ADR-0005](../adr/0005-document-mongodb-and-redis-designs-without-implementing-them.md).
+**MongoDB is specified and its server is built.** F13-06 (#428) rewrote
+[`mongodb-design.md`](mongodb-design.md) as ADR-0038's specification and added
+the server to the same project. It holds no application database until
+engagement-service's own story, F14-24 (#466), creates `engagement`; only that
+service will connect.
 
 | Document | What it covers |
 |---|---|
-| [MongoDB](mongodb-design.md) | A design, pending F13-06: collections for consumption profiles, RFM snapshots, segment migrations, clustering runs, recommendations and experiment events |
+| [MongoDB](mongodb-design.md) | The server and its accounts, the one database `engagement` and its two collections, the operations, live counters, failure behaviour and checks |
 | [Redis](redis-design.md) | The two instances, every key family with its type and TTL, the per-service ACL rules, the failure behaviour and the checks |
 
-The PostgreSQL model — the one that exists — is
-[`docs/data-model.md`](../data-model.md).
+The PostgreSQL model is [`docs/data-model.md`](../data-model.md). Its §7 also
+records the two MongoDB collections, and why they sit outside the relational
+model.

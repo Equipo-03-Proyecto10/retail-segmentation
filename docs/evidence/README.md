@@ -117,6 +117,7 @@ right place for it, and which the team accepted on 2026-09-07.
 | [F12-02](f12-02-segment-history-report.md) | The filtered segment history and migration report: 1,020 rows across every run checked against SQL, filters that combine and are reflected back into the form, an expanded row's R/F/M explanation checked against a real customer's actual label change, the no-rows state, and the refusal of a role without `segment.read` |
 | [F12-03](f12-03-consumption-reports.md) | The filtered consumption-shift and recommendation reports: a real cross-store shift and its filter checked end to end, a product's stock taken to zero in Postgres and the report regenerated to show it gone, independent empty states per report, and the refusal of a role without `segment.read` |
 | [F12-04](f12-04-experiment-report.md) | The campaign and experiment report: its parameterized CTE/array query run on PostgreSQL 18.6, distinct assignment/exposure/conversion counts and intent-to-treat uplift, combined filters and labelled CSV export, a valid but unoffered campaign refused, and the filtered result shown at 375 px and 1440 px |
+| [AN-02](an-02-proof-of-deployment.md) | **Proof of deployment for the second delivery.** Releases #489 and #506 merged with their ancestry, the SQL applied by hand with no drift against `main`, the commit served and `systemctl status mosaiq`, and every analytics page through the published host |
 
 ## Review passes
 

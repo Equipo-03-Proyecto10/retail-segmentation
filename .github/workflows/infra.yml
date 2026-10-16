@@ -79,11 +79,21 @@ jobs:
             [ "$reply" = PONG ] || { echo "FAIL: $i did not answer"; exit 1; }
           done
 
+      # Compose v2 prints ":0" for a port that is not published, so that and
+      # nothing both count as unpublished. The container's own port bindings
+      # are the second witness.
       - name: Neither instance publishes a port
         run: |
           for i in redis-state redis-cache; do
             published=$($COMPOSE port "$i" 6379 2>/dev/null || true)
-            if [ -n "$published" ]; then echo "FAIL: $i publishes $published"; exit 1; fi
+            if [ -n "$published" ] && [ "$published" != ":0" ]; then
+              echo "FAIL: $i publishes $published"; exit 1
+            fi
+            bindings=$(docker inspect -f '{{json .HostConfig.PortBindings}}' "$($COMPOSE ps -q "$i")")
+            case $bindings in
+              '{}' | null) ;;
+              *) echo "FAIL: $i has port bindings $bindings"; exit 1 ;;
+            esac
           done
 
       - name: ACL LOAD with no restart, then the per-user checks

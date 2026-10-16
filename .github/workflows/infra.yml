@@ -112,9 +112,15 @@ jobs:
           set -uo pipefail
           ACL_SOURCES="$ACL_SOURCES deploy/infra/tests/acl/over-broad/*.acl" \
             bash deploy/infra/redis/assemble-acl.sh || exit 1
+          export REDISCLI_AUTH=$REDIS_OPS_PASSWORD
+          echo "--- diagnostics: users, and two DRYRUNs through stdin"
+          $COMPOSE exec -T -e REDISCLI_AUTH redis-state redis-cli --no-auth-warning --user ops ACL USERS
+          printf 'ACL DRYRUN svc_fixture_c DEL pub:auth:v1:live:x\nACL DRYRUN svc_fixture_a DEL pub:auth:v1:live:x\n' \
+            | $COMPOSE exec -T -e REDISCLI_AUTH redis-state redis-cli --no-auth-warning --user ops
+          echo "--- check-redis.sh"
           out=$(bash deploy/infra/check-redis.sh)
           printf '%s\n' "$out"
-          printf '%s\n' "$out" | grep -q '^FAIL: svc_fixture_c' \
+          grep -q '^FAIL: svc_fixture_c' <<<"$out" \
             || { echo "FAIL: check-redis.sh passed an over-broad ACL line"; exit 1; }
           bash deploy/infra/redis/assemble-acl.sh
 

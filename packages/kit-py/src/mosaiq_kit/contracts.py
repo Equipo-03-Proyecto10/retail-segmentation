@@ -6,7 +6,6 @@ import json
 import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
-from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -236,16 +235,17 @@ class Contract:
             huge_tree=False,
         )
         try:
-            document = etree.parse(BytesIO(raw), parser)
+            # fromstring: the body is bytes, never a path or a URL to open.
+            root = etree.fromstring(raw, parser)
         except (etree.XMLSyntaxError, ValueError):
             raise ApiError(
                 400, "malformed_body", "The request body cannot be parsed safely."
             ) from None
-        if document.docinfo.doctype or document.docinfo.internalDTD is not None:
+        docinfo = root.getroottree().docinfo
+        if docinfo.doctype or docinfo.internalDTD is not None:
             raise ApiError(
                 400, "malformed_body", "The request body cannot be parsed safely."
             )
-        root = document.getroot()
         if any(isinstance(node, etree._Entity) for node in root.iter()):
             raise ApiError(
                 400, "malformed_body", "The request body cannot be parsed safely."

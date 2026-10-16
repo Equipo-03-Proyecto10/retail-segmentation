@@ -35,7 +35,7 @@ def _require_postgres(what: str) -> None:
     pytest.skip(f"{what} is missing; this test needs a real PostgreSQL")
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def postgres_binaries() -> dict[str, str]:
     """initdb, pg_ctl and psql, for tests that need a scratch cluster."""
     paths = {}
@@ -47,7 +47,7 @@ def postgres_binaries() -> dict[str, str]:
     return paths
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def owner_url() -> str:
     """The database owner's URL for a database loaded with the three scripts."""
     url = os.environ.get("MOSAIQ_TEST_OWNER_URL")
@@ -56,7 +56,7 @@ def owner_url() -> str:
     return url
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def app_url() -> str:
     """retail_app's URL for the same database."""
     url = os.environ.get("MOSAIQ_TEST_APP_URL")

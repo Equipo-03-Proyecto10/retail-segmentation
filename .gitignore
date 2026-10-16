@@ -7,6 +7,9 @@ venv/
 test-results/
 .ruff_cache/
 *.egg-info/
+packages/kit-py/example/contracts/common/
+packages/kit-py/example/wheels/
+packages/kit-py/dist/
 
 # Environment and secrets
 .env

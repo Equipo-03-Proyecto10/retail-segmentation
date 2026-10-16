@@ -350,3 +350,117 @@ jobs:
           name: pytest-postgres-results
           path: test-results/pytest-postgres.xml
           if-no-files-found: ignore
+
+  kit-py:
+    name: Python kit
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Decide whether the kit changed
+        id: changes
+        shell: bash
+        run: |
+          changed=false
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          elif [[ "${{ github.event.before }}" =~ ^0+$ ]]; then
+            changed=true
+            files=""
+          else
+            files=$(git diff --name-only "${{ github.event.before }}..${{ github.sha }}")
+          fi
+          if grep -qE '^(packages/kit-py/|packages/kit-vectors/|tests/kit_vectors/|\.github/workflows/ci\.yml$)' <<<"$files"; then
+            changed=true
+          fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-python@v6
+        if: steps.changes.outputs.changed == 'true'
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        if: steps.changes.outputs.changed == 'true'
+        run: pip install uv==0.12.3
+
+      - name: Load PostgreSQL scripts
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          psql -v ON_ERROR_STOP=1 -f sql/00_create_database.sql
+          psql -v ON_ERROR_STOP=1 -d retail -f sql/01_schema.sql
+          psql -v ON_ERROR_STOP=1 -d retail -f sql/02_seed_30_per_table.sql
+
+      - name: Start digest-pinned Redis with AOF
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          image=$(sed -n 's/^[[:space:]]*image: \(redis:[^[:space:]]*@sha256:[[:xdigit:]]*\)$/\1/p' deploy/infra/compose.yaml | head -1)
+          password=$(openssl rand -hex 24)
+          echo "::add-mask::$password"
+          redis_config="$RUNNER_TEMP/kit-redis.conf"
+          printf 'appendonly yes\nrequirepass %s\n' "$password" > "$redis_config"
+          chmod 0444 "$redis_config"
+          docker run -d --name kit-redis --publish 127.0.0.1:6379:6379 \
+            --mount "type=bind,src=$redis_config,dst=/usr/local/etc/redis/redis.conf,readonly" \
+            "$image" redis-server /usr/local/etc/redis/redis.conf
+          echo "KIT_TEST_REDIS_URL=redis://:$password@127.0.0.1:6379/0" >> "$GITHUB_ENV"
+          for attempt in $(seq 1 30); do
+            if docker exec -e REDISCLI_AUTH="$password" kit-redis redis-cli ping | grep -q PONG; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs kit-redis
+          exit 1
+
+      - name: Sync the locked environment
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: packages/kit-py
+        run: uv sync --frozen
+
+      - name: Black
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: packages/kit-py
+        run: uv run black --check .
+
+      - name: Ruff
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: packages/kit-py
+        run: uv run ruff check .
+
+      - name: Pytest
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: packages/kit-py
+        env:
+          KIT_REQUIRE_SERVICES: "1"
+          KIT_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/retail
+        run: uv run pytest
+
+      - name: Build the isolated example as UID 10001
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: packages/kit-py
+        run: |
+          uv build --wheel
+          mkdir -p example/wheels example/contracts/common
+          cp dist/*.whl example/wheels/
+          cp -R ../../contracts/common/v1 example/contracts/common/
+          docker build -t mosaiq-kit-example example
+          test "$(docker run --rm --entrypoint id mosaiq-kit-example -u)" = "10001"

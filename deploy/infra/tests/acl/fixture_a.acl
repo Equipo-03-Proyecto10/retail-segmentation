@@ -1,0 +1,1 @@
+user svc_fixture_a on {{password}} resetchannels -@all +@connection +@read +@write -@dangerous -scan -randomkey ~fixture_a:rl:* ~fixture_a:cache:* +waitaof (%R~pub:auth:v1:live:* +exists) (~stream:fixture_a.v1.changed +xadd)

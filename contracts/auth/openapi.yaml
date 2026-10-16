@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: auth-service
-  version: 1.0.0
+  version: 1.0.1
   description: >-
     Authenticates active accounts, issues RS256 access tokens, rotates refresh
     tokens, and owns session liveness under RN-52. Sign-in and refresh read the
@@ -520,8 +520,8 @@ components:
       properties:
         sub:
           type: string
-          pattern: "^[1-9][0-9]*$"
-          description: The decimal app_user.user_id encoded by the JWT sub claim.
+          format: uuid
+          description: The app_user.user_id, a UUID, carried by the JWT sub claim.
         sid:
           type: string
           format: uuid

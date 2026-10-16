@@ -16,7 +16,7 @@ enforcing its own operation-to-role policy.
 |---|---|
 | `iss` | The exact configured auth-service issuer; consumers compare it exactly. |
 | `aud` | Exactly `mosaiq-api`. |
-| `sub` | The authenticated `app_user.user_id`, encoded as a decimal string. |
+| `sub` | The authenticated `app_user.user_id`, a UUID string. |
 | `sid` | The UUID of the session whose liveness key must exist. |
 | `role` | One immutable role code: `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `INVENTORY_PLANNER`, `AUDITOR`, or `CUSTOMER`. |
 | `jti` | A unique identifier for this access token. |

@@ -47,12 +47,6 @@
     </xs:restriction>
   </xs:simpleType>
 
-  <xs:simpleType name="Subject">
-    <xs:restriction base="xs:string">
-      <xs:pattern value="[1-9][0-9]*"/>
-    </xs:restriction>
-  </xs:simpleType>
-
   <xs:simpleType name="Uuid">
     <xs:restriction base="xs:string">
       <xs:pattern value="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"/>
@@ -97,7 +91,7 @@
 
   <xs:complexType name="SessionClaims">
     <xs:sequence>
-      <xs:element name="sub" type="auth:Subject"/>
+      <xs:element name="sub" type="auth:Uuid"/>
       <xs:element name="sid" type="auth:Uuid"/>
       <xs:element name="role" type="auth:RoleCode"/>
       <xs:element name="issued_at" type="xs:dateTime"/>

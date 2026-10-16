@@ -1,0 +1,168 @@
+name: Infrastructure
+
+# The Redis instances of ADR-0037 and their per-service ACLs (F13-05). Runs on
+# any change under deploy/infra/: it starts both instances from the real
+# compose file, loads the fixture lines, and checks them the way
+# deploy/infra/check-redis.sh checks the instance.
+on:
+  pull_request:
+    paths:
+      - deploy/infra/**
+      - .github/workflows/infra.yml
+  push:
+    branches: [develop, main]
+    paths:
+      - deploy/infra/**
+      - .github/workflows/infra.yml
+
+permissions:
+  contents: read
+
+# Steps run under `bash -e`. check-redis.sh exits 1 when it finds a problem,
+# so each call is `|| true` and the step judges its printed FAIL lines.
+
+jobs:
+  redis:
+    name: Redis instances and per-service ACLs
+    runs-on: ubuntu-24.04
+    env:
+      COMPOSE: docker compose -p mosaiq-infra -f deploy/infra/compose.yaml
+      STREAMS_DIR: deploy/infra/tests/acl/streams
+      ACL_SOURCES: deploy/infra/tests/acl/*.acl
+    steps:
+      - uses: actions/checkout@v5
+
+      # Every password is generated here and masked. None is committed, and
+      # none reaches an argv: the scripts pass them in REDISCLI_AUTH.
+      - name: Generate the passwords and the per-service env files
+        run: |
+          set -euo pipefail
+          rand() { head -c 24 /dev/urandom | base64 | tr -d '/+='; }
+          base="$RUNNER_TEMP/redis"
+          mkdir -p "$base/svc" "$base/acl"
+          ops=$(rand)
+          echo "::add-mask::$ops"
+          {
+            echo "REDIS_OPS_PASSWORD=$ops"
+            echo "SVC_ENV_DIR=$base/svc"
+            echo "ACL_FILE=$base/acl/users.acl"
+            echo "MOSAIQ_REDIS_ACL_DIR=$base/acl"
+          } >> "$GITHUB_ENV"
+          for pair in auth:AUTH fixture_a:FIXTURE_A fixture_b:FIXTURE_B fixture_c:FIXTURE_C fixture_bad:FIXTURE_BAD; do
+            pw=$(rand)
+            echo "::add-mask::$pw"
+            printf 'REDIS_%s_PASSWORD=%s\n' "${pair#*:}" "$pw" > "$base/svc/${pair%%:*}.env"
+          done
+
+      - name: Static checks
+        run: |
+          problems=$(
+            n=$(grep -cE 'image: redis:7\.4\.[0-9]+(-[a-z]+)?@sha256:[0-9a-f]{64}' deploy/infra/compose.yaml)
+            [ "$n" = 2 ] || echo "FAIL: $n redis images pinned to an exact 7.4 patch and digest, expected 2"
+            grep -rniE '\bredis\b' web/ && echo "FAIL: the web system references Redis (Q-12)"
+            grep -lE 'image: *redis' services/*/compose.yaml 2>/dev/null && echo "FAIL: a service runs its own Redis"
+            bash -n deploy/infra/redis/assemble-acl.sh deploy/infra/check-redis.sh 2>&1
+          )
+          if [ -n "$problems" ]; then printf '%s\n' "$problems"; exit 1; fi
+
+      - name: Start both instances on the external network
+        run: |
+          set -euo pipefail
+          docker network create mosaiq
+          # The aclfile must exist before either instance boots.
+          bash deploy/infra/redis/assemble-acl.sh --write-only
+          $COMPOSE up -d
+          export REDISCLI_AUTH=$REDIS_OPS_PASSWORD
+          for i in redis-state redis-cache; do
+            for _ in $(seq 1 30); do
+              reply=$($COMPOSE exec -T -e REDISCLI_AUTH "$i" redis-cli --no-auth-warning --user ops PING 2>/dev/null || true)
+              [ "$reply" = PONG ] && break
+              sleep 1
+            done
+            [ "$reply" = PONG ] || { echo "FAIL: $i did not answer"; exit 1; }
+          done
+
+      # Compose v2 prints ":0" for a port that is not published, so that and
+      # nothing both count as unpublished. The container's own port bindings
+      # are the second witness.
+      - name: Neither instance publishes a port
+        run: |
+          for i in redis-state redis-cache; do
+            published=$($COMPOSE port "$i" 6379 2>/dev/null || true)
+            if [ -n "$published" ] && [ "$published" != ":0" ]; then
+              echo "FAIL: $i publishes $published"; exit 1
+            fi
+            bindings=$(docker inspect -f '{{json .HostConfig.PortBindings}}' "$($COMPOSE ps -q "$i")")
+            case $bindings in
+              '{}' | null) ;;
+              *) echo "FAIL: $i has port bindings $bindings"; exit 1 ;;
+            esac
+          done
+
+      - name: ACL LOAD with no restart, then the per-user checks
+        run: |
+          set -uo pipefail
+          started=$(docker inspect -f '{{.State.StartedAt}}' "$($COMPOSE ps -q redis-state)")
+          bash deploy/infra/redis/assemble-acl.sh || exit 1
+          [ "$(docker inspect -f '{{.State.StartedAt}}' "$($COMPOSE ps -q redis-state)")" = "$started" ] \
+            || { echo "FAIL: loading the ACLs restarted redis-state"; exit 1; }
+          out=$(bash deploy/infra/check-redis.sh) || true
+          if [ -n "$out" ]; then printf '%s\n' "$out"; exit 1; fi
+
+      # The check is not vacuous: a line with ~* must fail it.
+      - name: An over-broad line fails the checks
+        run: |
+          set -uo pipefail
+          ACL_SOURCES="$ACL_SOURCES deploy/infra/tests/acl/over-broad/*.acl" \
+            bash deploy/infra/redis/assemble-acl.sh || exit 1
+          out=$(bash deploy/infra/check-redis.sh) || true
+          printf '%s\n' "$out"
+          grep -q '^FAIL: svc_fixture_c' <<<"$out" \
+            || { echo "FAIL: check-redis.sh passed an over-broad ACL line"; exit 1; }
+          bash deploy/infra/redis/assemble-acl.sh
+
+      - name: An invalid line changes nothing
+        run: |
+          set -uo pipefail
+          export REDISCLI_AUTH=$REDIS_OPS_PASSWORD
+          users() { $COMPOSE exec -T -e REDISCLI_AUTH "$1" redis-cli --no-auth-warning --user ops ACL LIST | sha256sum; }
+          state_before=$(users redis-state)
+          cache_before=$(users redis-cache)
+          file_before=$(sha256sum < "$ACL_FILE")
+          if ACL_SOURCES="$ACL_SOURCES deploy/infra/tests/acl/invalid/*.acl" \
+               bash deploy/infra/redis/assemble-acl.sh; then
+            echo "FAIL: assemble-acl.sh accepted an invalid line"; exit 1
+          fi
+          [ "$(users redis-state)" = "$state_before" ] || { echo "FAIL: redis-state lost its users"; exit 1; }
+          [ "$(users redis-cache)" = "$cache_before" ] || { echo "FAIL: redis-cache lost its users"; exit 1; }
+          [ "$(sha256sum < "$ACL_FILE")" = "$file_before" ] || { echo "FAIL: the aclfile was not restored"; exit 1; }
+
+      - name: A key confirmed with WAITAOF survives a restart
+        run: |
+          set -euo pipefail
+          REDISCLI_AUTH=$(sed -n 's/^REDIS_FIXTURE_A_PASSWORD=//p' "$SVC_ENV_DIR/fixture_a.env")
+          export REDISCLI_AUTH
+          a() { $COMPOSE exec -T -e REDISCLI_AUTH redis-state redis-cli --no-auth-warning --user svc_fixture_a "$@"; }
+          a SET fixture_a:rl:probe 1 EX 3600
+          [ "$(a WAITAOF 1 0 1000 | head -1)" = 1 ] || { echo "FAIL: WAITAOF did not confirm the local fsync"; exit 1; }
+          $COMPOSE restart redis-state
+          # PONG only once the AOF is loaded; until then replies are LOADING.
+          for _ in $(seq 1 30); do
+            reply=$(REDISCLI_AUTH=$REDIS_OPS_PASSWORD $COMPOSE exec -T -e REDISCLI_AUTH redis-state \
+              redis-cli --no-auth-warning --user ops PING 2>/dev/null || true)
+            [ "$reply" = PONG ] && break
+            sleep 1
+          done
+          value=$(a GET fixture_a:rl:probe)
+          [ "$value" = 1 ] || { echo "FAIL: the key did not survive the restart (got '$value')"; exit 1; }
+          a DEL fixture_a:rl:probe
+          out=$(bash deploy/infra/check-redis.sh) || true
+          if [ -n "$out" ]; then printf '%s\n' "$out"; exit 1; fi
+
+      - name: Container logs
+        if: always()
+        run: $COMPOSE logs --no-color
+
+      - name: Stop both instances
+        if: always()
+        run: $COMPOSE down --volumes

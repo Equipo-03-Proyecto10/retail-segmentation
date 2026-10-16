@@ -28,7 +28,7 @@ class JwksStore:
 
     def __init__(self, path: str | Path):
         self.path = Path(path)
-        self._keys: dict[str, Any] = {}
+        self._keys: dict[str, jwt.PyJWK] = {}
         self._lock = threading.Lock()
         self._reload_requested = True
         self._unknown_reload_at: float | None = None
@@ -47,15 +47,15 @@ class JwksStore:
 
     def _reload(self) -> None:
         document = json.loads(self.path.read_text(encoding="utf-8"))
-        keys: dict[str, Any] = {}
+        keys: dict[str, jwt.PyJWK] = {}
         for item in document.get("keys", []):
             kid = item.get("kid")
             if isinstance(kid, str):
-                keys[kid] = jwt.PyJWK.from_dict(item).key
+                keys[kid] = jwt.PyJWK.from_dict(item)
         self._keys = keys
         self._reload_requested = False
 
-    def key(self, kid: str) -> Any:
+    def key(self, kid: str) -> jwt.PyJWK:
         with self._lock:
             reloaded = False
             if self._reload_requested:

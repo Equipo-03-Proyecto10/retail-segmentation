@@ -72,9 +72,7 @@ _LIST_EXPERIMENTS = (
 )
 _COUNT_EXPERIMENTS = "SELECT count(*) FROM experiment AS e" + _FILTER
 
-_LIST_ACTIVE_EXPERIMENTS = (
-    _EXPERIMENT_SELECT
-    + """
+_LIST_ACTIVE_EXPERIMENTS = _EXPERIMENT_SELECT + """
      WHERE e.starts_on <= %(active_on)s
        AND (e.ends_on IS NULL OR e.ends_on >= %(active_on)s)
        AND (c.status IS NULL OR c.status NOT IN (%(finished)s, %(cancelled)s))
@@ -85,7 +83,6 @@ _LIST_ACTIVE_EXPERIMENTS = (
      ORDER BY e.experiment_id DESC
      LIMIT %(limit)s
     """
-)
 
 
 def list_report_experiments(

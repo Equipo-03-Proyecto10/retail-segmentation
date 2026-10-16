@@ -52,7 +52,7 @@ def test_explicit_reload_is_always_honored(
     monkeypatch.setattr(store, "_reload", counted_reload)
     store.request_reload()
     second = store.key("kit-vector-key")
-    assert first.public_numbers() == second.public_numbers()
+    assert first.key.public_numbers() == second.key.public_numbers()
     assert len(reloads) == 1
 
 
@@ -77,9 +77,9 @@ def test_secure_xml_parser_options_are_explicit() -> None:
     assert "huge_tree=False" in source
 
 
-def test_project_version_matches_the_first_release() -> None:
+def test_project_version_matches_the_current_release() -> None:
     pyproject = (REPOSITORY / "packages/kit-py/pyproject.toml").read_text()
     readme = (REPOSITORY / "packages/kit-py/README.md").read_text()
     assert 'name = "mosaiq-kit"' in pyproject
-    assert 'version = "0.1.0"' in pyproject
-    assert "kit-py/v0.1.0" in readme
+    assert 'version = "0.1.1"' in pyproject
+    assert "kit-py/v0.1.1" in readme

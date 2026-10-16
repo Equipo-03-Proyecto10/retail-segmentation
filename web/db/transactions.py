@@ -16,7 +16,7 @@ _owners: ContextVar[tuple[Connection, ...]] = ContextVar(
 
 
 def atomic(
-    function: Callable[Concatenate[Connection, _P], _R]
+    function: Callable[Concatenate[Connection, _P], _R],
 ) -> Callable[Concatenate[Connection, _P], _R]:
     """Commit one service operation; nested services join the same owner."""
 

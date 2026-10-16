@@ -280,13 +280,11 @@ def read_open_assignments(
     """Each customer's open assignment, as (segment_id, label_code), before a
     run replaces it. A customer with no history is simply absent."""
     with connection.cursor() as cursor:
-        cursor.execute(
-            """
+        cursor.execute("""
             SELECT customer_id, segment_id, label_code
             FROM customer_segment_history
             WHERE valid_to IS NULL
-            """
-        )
+            """)
         rows = cursor.fetchall()
 
     return {

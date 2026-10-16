@@ -301,7 +301,7 @@ def test_evaluating_redirects_with_the_count(
 
     assert response.status_code == 302
     with client.session_transaction() as flask_session:
-        (_, message) = flask_session["_flashes"][0]
+        _, message = flask_session["_flashes"][0]
     assert "3 new conversions recorded" in message
 
 

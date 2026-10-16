@@ -75,13 +75,11 @@ def list_all_stores(connection: Connection) -> list[Store]:
     """Return every store, unpaginated. Used to populate the store filter on
     the stock consultation view (F3-05)."""
     with connection.cursor() as cursor:
-        cursor.execute(
-            """
+        cursor.execute("""
             SELECT store_id, name, city, state, is_active
             FROM store
             ORDER BY name
-            """
-        )
+            """)
         rows = cursor.fetchall()
 
     return [Store(*row) for row in rows]

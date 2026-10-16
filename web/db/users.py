@@ -329,12 +329,10 @@ def update_password_hash(
 def list_accounts_with_roles(connection: Connection) -> list[tuple[str, str, bool]]:
     """Return the account report without password hashes."""
     with connection.cursor() as cursor:
-        cursor.execute(
-            """
+        cursor.execute("""
             SELECT r.code, u.email, u.is_active
             FROM app_user AS u
             JOIN role AS r ON r.role_id = u.role_id
             ORDER BY r.role_id, u.email
-            """
-        )
+            """)
         return list(cursor.fetchall())

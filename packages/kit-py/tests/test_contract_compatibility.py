@@ -99,8 +99,7 @@ def _stage_probe(tmp_path: Path) -> Path:
         },
     }
     (service / "openapi.yaml").write_text(yaml.safe_dump(document, sort_keys=False))
-    (service / "kit-probe.xsd").write_text(
-        f"""<?xml version="1.0" encoding="UTF-8"?>
+    (service / "kit-probe.xsd").write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
            xmlns:probe="{PROBE_NAMESPACE}"
            targetNamespace="{PROBE_NAMESPACE}"
@@ -139,8 +138,7 @@ def _stage_probe(tmp_path: Path) -> Path:
   </xs:complexType>
   <xs:element name="FacetRequest" type="probe:FacetRequestType"/>
 </xs:schema>
-"""
-    )
+""")
     return contracts
 
 

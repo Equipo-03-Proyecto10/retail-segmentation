@@ -129,10 +129,11 @@ jobs:
         run: |
           set -uo pipefail
           image=$(sed -nE 's/^ *image: (mongo:[^ ]+)$/\1/p' deploy/infra/compose.yaml)
+          # mongosh exits non-zero on the refusal, which bash -e would end the step on.
+          status=0
           out=$(docker run --rm --network mosaiq --user 999:999 --read-only --tmpfs /tmp -e HOME=/tmp \
                   "$image" mongosh --quiet --norc mongodb://mongodb:27017/admin \
-                  --eval 'printjson(db.adminCommand({listDatabases: 1}))' 2>&1)
-          status=$?
+                  --eval 'printjson(db.adminCommand({listDatabases: 1}))' 2>&1) || status=$?
           printf '%s\n' "$out"
           if [ "$status" -eq 0 ] || ! grep -q 'requires authentication' <<<"$out"; then
             echo "FAIL: an unauthenticated listDatabases was not refused"; exit 1
@@ -142,7 +143,7 @@ jobs:
             const opts = db.adminCommand({getCmdLineOpts: 1}).parsed;
             const others = db.adminCommand({listDatabases: 1, nameOnly: true}).databases
               .map(d => d.name).filter(n => !["admin", "config", "local"].includes(n));
-            print([opts.security.authorization, opts.storage.wiredTiger.engineConfig.cacheSizeGB, others.length].join(" "))')
+            print([opts.security.authorization, opts.storage.wiredTiger.engineConfig.cacheSizeGB, others.length].join(" "))') || true
           [ "$state" = "enabled 0.25 0" ] \
             || { echo "FAIL: expected 'enabled 0.25 0' (authorization, cache GB, other databases), got '$state'"; exit 1; }
 

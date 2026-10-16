@@ -18,6 +18,9 @@ on:
 permissions:
   contents: read
 
+# Steps run under `bash -e`. check-redis.sh exits 1 when it finds a problem,
+# so each call is `|| true` and the step judges its printed FAIL lines.
+
 jobs:
   redis:
     name: Redis instances and per-service ACLs
@@ -103,7 +106,7 @@ jobs:
           bash deploy/infra/redis/assemble-acl.sh || exit 1
           [ "$(docker inspect -f '{{.State.StartedAt}}' "$($COMPOSE ps -q redis-state)")" = "$started" ] \
             || { echo "FAIL: loading the ACLs restarted redis-state"; exit 1; }
-          out=$(bash deploy/infra/check-redis.sh)
+          out=$(bash deploy/infra/check-redis.sh) || true
           if [ -n "$out" ]; then printf '%s\n' "$out"; exit 1; fi
 
       # The check is not vacuous: a line with ~* must fail it.
@@ -112,13 +115,7 @@ jobs:
           set -uo pipefail
           ACL_SOURCES="$ACL_SOURCES deploy/infra/tests/acl/over-broad/*.acl" \
             bash deploy/infra/redis/assemble-acl.sh || exit 1
-          export REDISCLI_AUTH=$REDIS_OPS_PASSWORD
-          echo "--- diagnostics: users, and two DRYRUNs through stdin"
-          $COMPOSE exec -T -e REDISCLI_AUTH redis-state redis-cli --no-auth-warning --user ops ACL USERS
-          printf 'ACL DRYRUN svc_fixture_c DEL pub:auth:v1:live:x\nACL DRYRUN svc_fixture_a DEL pub:auth:v1:live:x\n' \
-            | $COMPOSE exec -T -e REDISCLI_AUTH redis-state redis-cli --no-auth-warning --user ops
-          echo "--- check-redis.sh"
-          out=$(bash deploy/infra/check-redis.sh)
+          out=$(bash deploy/infra/check-redis.sh) || true
           printf '%s\n' "$out"
           grep -q '^FAIL: svc_fixture_c' <<<"$out" \
             || { echo "FAIL: check-redis.sh passed an over-broad ACL line"; exit 1; }
@@ -159,7 +156,7 @@ jobs:
           value=$(a GET fixture_a:rl:probe)
           [ "$value" = 1 ] || { echo "FAIL: the key did not survive the restart (got '$value')"; exit 1; }
           a DEL fixture_a:rl:probe
-          out=$(bash deploy/infra/check-redis.sh)
+          out=$(bash deploy/infra/check-redis.sh) || true
           if [ -n "$out" ]; then printf '%s\n' "$out"; exit 1; fi
 
       - name: Container logs

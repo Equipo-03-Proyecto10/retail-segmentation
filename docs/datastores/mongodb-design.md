@@ -58,7 +58,7 @@ One document per `QR_SCAN` or `RECO_CLICK`, recorded once per client event
 
 | Field | Type | Meaning |
 |---|---|---|
-| `_id` | string | The server-assigned `event_id`, the API's `{event_id}` (see the open question below) |
+| `_id` | string, UUID | The server-assigned `event_id`, the API's `{event_id}` |
 | `client_event_id` | string, UUID | Generated on the device once per scan or tap. Unique |
 | `type` | string | `QR_SCAN` or `RECO_CLICK` |
 | `store_id` | int | The store where it happened |
@@ -85,13 +85,6 @@ go.
 | `{customer_id: 1, occurred_at: -1}` | Events about one customer, newest first |
 
 An event is voided with a reason, never deleted.
-
-**Open question.** ADR-0038 makes `event_id` a UUID string. The engagement
-contract merged with F14-23 (#464), `contracts/engagement/openapi.yaml`
-v1.0.0, makes it a 24-character hexadecimal ObjectId. The validator's type for
-`_id` follows whichever the team settles before F14-24 writes `init.js`.
-Working assumption until then: the UUID string of ADR-0038, which this
-directory's README makes authoritative over these documents.
 
 ### `engagement_daily`
 

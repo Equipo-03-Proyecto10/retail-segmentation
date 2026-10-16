@@ -876,7 +876,7 @@ specification: validator, indexes, operations and checks.
 
 | Field | Type | Null | Meaning |
 |---|---|---|---|
-| `_id` | UUID string | NN | The server-assigned `event_id`. The engagement contract makes it an ObjectId instead; the specification records that open question |
+| `_id` | string, UUID | NN | The server-assigned `event_id` |
 | `client_event_id` | string, UUID | NN | Generated on the device once per scan or tap; unique |
 | `type` | string | NN | `QR_SCAN` or `RECO_CLICK` |
 | `store_id` | int | NN | Logical reference to `store.store_id` |

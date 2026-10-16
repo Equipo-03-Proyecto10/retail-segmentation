@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: engagement-service
-  version: 1.0.0
+  version: 1.0.1
   description: 'Records in-store engagement: QR scans and recommendation clicks
     (RN-55). Events live in MongoDB, are recorded once per client event, attributed
     to the caller, voided rather than deleted, and summarized. Only `POST /v1/engagement-events`
@@ -438,10 +438,10 @@ components:
       name: event_id
       in: path
       required: true
-      description: The event's MongoDB ObjectId as 24 lowercase hexadecimal characters.
+      description: The server-assigned event id, a UUID string (ADR-0038).
       schema: &id015
         type: string
-        pattern: ^[0-9a-f]{24}$
+        format: uuid
     Type:
       name: type
       in: query

@@ -1,9 +1,9 @@
 name: Infrastructure
 
-# The Redis instances of ADR-0037 and their per-service ACLs (F13-05). Runs on
-# any change under deploy/infra/: it starts both instances from the real
-# compose file, loads the fixture lines, and checks them the way
-# deploy/infra/check-redis.sh checks the instance.
+# The Redis instances of ADR-0037 and their per-service ACLs (F13-05), and the
+# MongoDB server of ADR-0038 (F13-06). Runs on any change under deploy/infra/:
+# it starts the project from the real compose file, loads the fixture lines,
+# and checks them the way deploy/infra/check-redis.sh checks the instance.
 on:
   pull_request:
     paths:
@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   redis:
-    name: Redis instances and per-service ACLs
+    name: Redis instances, per-service ACLs and MongoDB
     runs-on: ubuntu-24.04
     env:
       COMPOSE: docker compose -p mosaiq-infra -f deploy/infra/compose.yaml
@@ -53,19 +53,28 @@ jobs:
             echo "::add-mask::$pw"
             printf 'REDIS_%s_PASSWORD=%s\n' "${pair#*:}" "$pw" > "$base/svc/${pair%%:*}.env"
           done
+          # MongoDB's root account, read by compose from outside the checkout.
+          mkdir -p "$base/mongodb"
+          root=$(rand)
+          echo "::add-mask::$root"
+          printf 'MONGO_INITDB_ROOT_USERNAME=root\nMONGO_INITDB_ROOT_PASSWORD=%s\n' "$root" > "$base/mongodb/root.env"
+          echo "MOSAIQ_MONGO_ROOT_ENV=$base/mongodb/root.env" >> "$GITHUB_ENV"
 
       - name: Static checks
         run: |
           problems=$(
             n=$(grep -cE 'image: redis:7\.4\.[0-9]+(-[a-z]+)?@sha256:[0-9a-f]{64}' deploy/infra/compose.yaml)
             [ "$n" = 2 ] || echo "FAIL: $n redis images pinned to an exact 7.4 patch and digest, expected 2"
+            n=$(grep -cE 'image: mongo:7\.0\.[0-9]+@sha256:[0-9a-f]{64}' deploy/infra/compose.yaml)
+            [ "$n" = 1 ] || echo "FAIL: $n mongo images pinned to an exact 7.0 patch and digest, expected 1"
             grep -rniE '\bredis\b' web/ && echo "FAIL: the web system references Redis (Q-12)"
             grep -lE 'image: *redis' services/*/compose.yaml 2>/dev/null && echo "FAIL: a service runs its own Redis"
+            grep -lE 'image: *mongo' services/*/compose.yaml 2>/dev/null && echo "FAIL: a service runs its own MongoDB"
             bash -n deploy/infra/redis/assemble-acl.sh deploy/infra/check-redis.sh 2>&1
           )
           if [ -n "$problems" ]; then printf '%s\n' "$problems"; exit 1; fi
 
-      - name: Start both instances on the external network
+      - name: Start the project on the external network
         run: |
           set -euo pipefail
           docker network create mosaiq
@@ -81,14 +90,27 @@ jobs:
             done
             [ "$reply" = PONG ] || { echo "FAIL: $i did not answer"; exit 1; }
           done
+          # The first start creates the root user on a server without --auth
+          # that listens only inside the container, and the real server
+          # follows. Ready means root signs in and authorization is on. The
+          # password stays in the container's environment, never in an argv.
+          for _ in $(seq 1 60); do
+            auth=$($COMPOSE exec -T -e HOME=/tmp mongodb mongosh --quiet --norc --eval '
+              db.getSiblingDB("admin").auth(process.env.MONGO_INITDB_ROOT_USERNAME, process.env.MONGO_INITDB_ROOT_PASSWORD);
+              print(db.adminCommand({getCmdLineOpts: 1}).parsed.security?.authorization)' 2>/dev/null || true)
+            [ "$auth" = enabled ] && break
+            sleep 2
+          done
+          [ "$auth" = enabled ] || { echo "FAIL: mongodb did not come up with authorization on"; exit 1; }
 
       # Compose v2 prints ":0" for a port that is not published, so that and
       # nothing both count as unpublished. The container's own port bindings
       # are the second witness.
-      - name: Neither instance publishes a port
+      - name: No instance publishes a port
         run: |
-          for i in redis-state redis-cache; do
-            published=$($COMPOSE port "$i" 6379 2>/dev/null || true)
+          for pair in redis-state:6379 redis-cache:6379 mongodb:27017; do
+            i=${pair%%:*}
+            published=$($COMPOSE port "$i" "${pair#*:}" 2>/dev/null || true)
             if [ -n "$published" ] && [ "$published" != ":0" ]; then
               echo "FAIL: $i publishes $published"; exit 1
             fi
@@ -98,6 +120,31 @@ jobs:
               *) echo "FAIL: $i has port bindings $bindings"; exit 1 ;;
             esac
           done
+
+      # Reached the way a service reaches it, by name on the mosaiq network:
+      # with no credentials, listDatabases is refused. As root it answers, so
+      # the refusal is not a dead server, and the running server holds no
+      # database beyond MongoDB's own (engagement's comes with F14-24).
+      - name: MongoDB refuses an unauthenticated client
+        run: |
+          set -uo pipefail
+          image=$(sed -nE 's/^ *image: (mongo:[^ ]+)$/\1/p' deploy/infra/compose.yaml)
+          out=$(docker run --rm --network mosaiq --user 999:999 --read-only --tmpfs /tmp -e HOME=/tmp \
+                  "$image" mongosh --quiet --norc mongodb://mongodb:27017/admin \
+                  --eval 'printjson(db.adminCommand({listDatabases: 1}))' 2>&1)
+          status=$?
+          printf '%s\n' "$out"
+          if [ "$status" -eq 0 ] || ! grep -q 'requires authentication' <<<"$out"; then
+            echo "FAIL: an unauthenticated listDatabases was not refused"; exit 1
+          fi
+          state=$($COMPOSE exec -T -e HOME=/tmp mongodb mongosh --quiet --norc --eval '
+            db.getSiblingDB("admin").auth(process.env.MONGO_INITDB_ROOT_USERNAME, process.env.MONGO_INITDB_ROOT_PASSWORD);
+            const opts = db.adminCommand({getCmdLineOpts: 1}).parsed;
+            const others = db.adminCommand({listDatabases: 1, nameOnly: true}).databases
+              .map(d => d.name).filter(n => !["admin", "config", "local"].includes(n));
+            print([opts.security.authorization, opts.storage.wiredTiger.engineConfig.cacheSizeGB, others.length].join(" "))')
+          [ "$state" = "enabled 0.25 0" ] \
+            || { echo "FAIL: expected 'enabled 0.25 0' (authorization, cache GB, other databases), got '$state'"; exit 1; }
 
       - name: ACL LOAD with no restart, then the per-user checks
         run: |
@@ -163,6 +210,6 @@ jobs:
         if: always()
         run: $COMPOSE logs --no-color
 
-      - name: Stop both instances
+      - name: Stop the project
         if: always()
         run: $COMPOSE down --volumes

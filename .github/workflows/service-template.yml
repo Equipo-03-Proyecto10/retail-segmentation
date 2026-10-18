@@ -45,6 +45,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r contracts/requirements.txt
+      # The pinned jq and xmllint the contract jobs use; the 413 check
+      # validates the XML envelope against common.xsd with xmllint.
+      - run: bash contracts/install-tools.sh
 
       # A rendered project passes; a depends_on, a 0.0.0.0 port, user root
       # and a missing cap_drop each make the loop print a FAIL line.

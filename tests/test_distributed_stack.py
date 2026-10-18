@@ -10,7 +10,11 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-import yaml
+import pytest
+
+# The SQL job installs only the web's requirements; its `pytest -m postgres`
+# still collects this module, so it skips there rather than failing to import.
+yaml = pytest.importorskip("yaml")
 
 ROOT = Path(__file__).resolve().parents[1]
 GATEWAY = ROOT / "docker/distributed/gateway"

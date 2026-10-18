@@ -332,6 +332,13 @@ NAVIGATION: tuple[MenuEntry, ...] = (
         "⇵",
     ),
     MenuEntry(
+        "Experiment dashboard",
+        "experiment_dashboard.index",
+        CAMPAIGN_READ,
+        "Analysis",
+        "◩",
+    ),
+    MenuEntry(
         "Experiment report", "experiment_report.index", CAMPAIGN_READ, "Analysis", "◫"
     ),
     MenuEntry("Reports", "reports.index", REPORT_READ, "Analysis", "∷"),

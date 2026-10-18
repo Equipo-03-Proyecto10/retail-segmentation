@@ -53,6 +53,7 @@ READ_ROUTES = [
     "/experiments/1/groups/1",
     "/experiments/1/conversion",
     "/experiments/1/uplift",
+    "/experiment-dashboard/",
     "/experiment-report/",
     "/experiment-report/export.csv",
     "/reports/",

@@ -411,6 +411,7 @@ def test_the_menu_is_driven_by_permissions_rather_than_by_role() -> None:
         "Segmentation dashboard",
         "Segment history report",
         "Consumption reports",
+        "Experiment dashboard",
         "Experiment report",
         "Reports",
         "Audit log",
@@ -426,6 +427,7 @@ def test_the_menu_is_driven_by_permissions_rather_than_by_role() -> None:
         "Segmentation dashboard",
         "Segment history report",
         "Consumption reports",
+        "Experiment dashboard",
         "Experiment report",
         "Reports",
     ]

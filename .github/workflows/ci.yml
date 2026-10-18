@@ -464,3 +464,73 @@ jobs:
           cp -R ../../contracts/common/v1 example/contracts/common/
           docker build -t mosaiq-kit-example example
           test "$(docker run --rm --entrypoint id mosaiq-kit-example -u)" = "10001"
+
+  kit-rs:
+    name: Rust kit
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: packages/kit-rs
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # Its tests stage kit-py's example contract and the common schema, so a
+      # change to either runs them too.
+      - name: Decide whether the kit changed
+        id: changes
+        shell: bash
+        working-directory: .
+        run: |
+          changed=false
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          elif [[ "${{ github.event.before }}" =~ ^0+$ ]]; then
+            changed=true
+            files=""
+          else
+            files=$(git diff --name-only "${{ github.event.before }}..${{ github.sha }}")
+          fi
+          if grep -qE '^(packages/kit-rs/|packages/kit-vectors/|packages/kit-py/example/contracts/|contracts/common/|\.github/workflows/ci\.yml$)' <<<"$files"; then
+            changed=true
+          fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+
+      # rust-toolchain.toml pins the toolchain; rustup on the runner installs
+      # it on the first cargo call.
+      - uses: actions/cache@v4
+        if: steps.changes.outputs.changed == 'true'
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            packages/kit-rs/target
+          key: kit-rs-${{ runner.os }}-${{ hashFiles('packages/kit-rs/Cargo.lock', 'packages/kit-rs/rust-toolchain.toml') }}
+
+      - name: Format
+        if: steps.changes.outputs.changed == 'true'
+        run: cargo fmt --check
+
+      - name: Clippy
+        if: steps.changes.outputs.changed == 'true'
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Tests
+        if: steps.changes.outputs.changed == 'true'
+        run: cargo test --locked
+
+      # F13-04's guards: RS256 only, no signing key, and ADR-0045's two kit
+      # greps (no role code, no Redis key but the two allowed families).
+      - name: Mechanism-only guards stay silent
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: .
+        run: |
+          problems=$(
+            grep -rn 'Validation::new(' packages/kit-rs --exclude-dir=target | grep -v 'Algorithm::RS256'
+            grep -rn 'EncodingKey::from' packages/kit-rs --exclude-dir=target
+            grep -rnE '^\[workspace\]' packages/kit-rs/Cargo.toml
+            grep -rnwE 'ADMIN|ANALYST|STORE_MANAGER|MARKETING|INVENTORY_PLANNER|AUDITOR|CUSTOMER' packages/kit-rs --exclude-dir=target
+            grep -rnoE "[\"'][a-z_]+:[a-z_]+:[^\"']*" packages/kit-rs --exclude-dir=target | grep -vE "pub:auth:v1:live:|[\"']stream:"
+          ) || true
+          if [ -n "$problems" ]; then printf '%s\n' "$problems"; exit 1; fi

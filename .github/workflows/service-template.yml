@@ -1,0 +1,256 @@
+name: Service template
+
+# The per-service compose project, NGINX include and images of ADR-0040, and
+# the local distributed stack (F13-08). The static checks run in the CI
+# quality job (tests/test_service_template.py); this workflow runs them in
+# Docker: ADR-0040's loop against rendered projects, `nginx -t`, the gateway's
+# 413 envelope, and the kit example as a real project on the mosaiq network.
+on:
+  pull_request:
+    paths:
+      - deploy/templates/**
+      - deploy/nginx/**
+      - deploy/infra/**
+      - docker/distributed/**
+      - compose.distributed.yaml
+      - contracts/registry.yaml
+      - contracts/common/**
+      - packages/kit-py/**
+      - .github/workflows/service-template.yml
+  push:
+    branches: [develop, main]
+    paths:
+      - deploy/templates/**
+      - deploy/nginx/**
+      - deploy/infra/**
+      - docker/distributed/**
+      - compose.distributed.yaml
+      - contracts/registry.yaml
+      - contracts/common/**
+      - packages/kit-py/**
+      - .github/workflows/service-template.yml
+
+permissions:
+  contents: read
+
+jobs:
+  template:
+    name: ADR-0040 loop, nginx -t and the gateway's 413
+    runs-on: ubuntu-24.04
+    env:
+      TPL: deploy/templates/service
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -r contracts/requirements.txt
+
+      # A rendered project passes; a depends_on, a 0.0.0.0 port, user root
+      # and a missing cap_drop each make the loop print a FAIL line.
+      - name: ADR-0040's loop on rendered projects
+        run: |
+          set -euo pipefail
+          base="$RUNNER_TEMP/render"
+          printf 'services:\n  - name: probe\n    port: 5090\n  - name: auth\n    port: 5001\n' > "$base.registry.yaml"
+          export REGISTRY="$base.registry.yaml"
+          python3 "$TPL/render.py" probe 5090 python "$base/ok/probe"
+          python3 "$TPL/render.py" auth 5001 rust "$base/ok/auth" --mem-limit 384m
+          out=$(bash "$TPL/check.sh" "$base/ok")
+          if [ -n "$out" ]; then printf '%s\n' "$out"; exit 1; fi
+          variant() {
+            mkdir -p "$base/$1"
+            cp -R "$base/ok/probe" "$base/$1/probe"
+            yq -y "$2" "$base/ok/probe/compose.yaml" > "$base/$1/probe/compose.yaml"
+            out=$(bash "$TPL/check.sh" "$base/$1")
+            printf '%s\n' "$out"
+            grep -q "^FAIL: .*$3" <<<"$out" || { echo "FAIL: the $1 variant passed"; exit 1; }
+          }
+          variant depends '.services.probe.depends_on = ["x"]' 'has depends_on'
+          variant wildcard '.services.probe.ports = ["0.0.0.0:5090:5090"]' 'publishes 0.0.0.0'
+          variant root '.services.probe.user = "root"' 'is not hardened'
+          variant nocap 'del(.services.probe.cap_drop)' 'is not hardened'
+
+      # The instance file with the rendered includes in its 443 block, as the
+      # deploy installs them, and a throwaway certificate at its paths.
+      - name: nginx -t with the instance file and both includes
+        run: |
+          set -euo pipefail
+          etc="$RUNNER_TEMP/nginx"
+          mkdir -p "$etc/conf.d" "$etc/tls" "$etc/mosaiq-api.d"
+          cp deploy/nginx/cloudflare-real-ip.conf "$etc/conf.d/"
+          sed 's|^\(\s*\)location /docs/ {|\1include /etc/nginx/mosaiq-api.d/*.conf;\n\n&|' \
+            deploy/nginx/mosaiq.conf > "$etc/mosaiq.conf"
+          grep -q 'include /etc/nginx/mosaiq-api.d/\*.conf;' "$etc/mosaiq.conf"
+          cp "$RUNNER_TEMP"/render/ok/probe/nginx/probe.conf "$RUNNER_TEMP"/render/ok/auth/nginx/auth.conf "$etc/mosaiq-api.d/"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=ci \
+            -keyout "$etc/tls/mosaiq.key" -out "$etc/tls/mosaiq.crt" 2>/dev/null
+          printf 'events {}\nhttp {\n  include /etc/nginx/mime.types;\n  include /etc/nginx/mosaiq.conf;\n}\n' > "$etc/nginx.conf"
+          docker run --rm \
+            -v "$etc/nginx.conf:/etc/nginx/nginx.conf:ro" \
+            -v "$etc/mosaiq.conf:/etc/nginx/mosaiq.conf:ro" \
+            -v "$etc/conf.d:/etc/nginx/conf.d:ro" \
+            -v "$etc/tls:/etc/nginx/tls:ro" \
+            -v "$etc/mosaiq-api.d:/etc/nginx/mosaiq-api.d:ro" \
+            nginx:1.27-alpine nginx -t
+
+      - name: The gateway's configuration is generated from the registry
+        run: |
+          pip install -r web/requirements-dev.txt
+          python3 docker/distributed/gateway/generate.py --check
+
+      # No service runs: the gateway still starts, refuses a 65 KiB body with
+      # the envelope in both formats, and answers 502 for the absent upstream.
+      - name: Gateway refuses a 65 KiB body with the shared envelope
+        run: |
+          set -euo pipefail
+          docker network create mosaiq
+          docker compose -f compose.distributed.yaml up -d --no-deps gateway
+          url=http://127.0.0.1:8080/api/products/v1/products
+          for _ in $(seq 1 30); do curl -s -o /dev/null "$url" && break; sleep 1; done
+          # curl may see the connection close while it still sends; NGINX has
+          # answered by then, and the checks below read what it answered.
+          head -c 66560 /dev/zero | tr '\0' a > "$RUNNER_TEMP/body"
+          check() {
+            local accept=$1 type=$2
+            curl -s -D "$RUNNER_TEMP/headers" -o "$RUNNER_TEMP/out" -w '%{http_code}' \
+              -H "Accept: $accept" -H 'X-Correlation-ID: ci-413-probe' \
+              -H 'Content-Type: application/json' --data-binary @"$RUNNER_TEMP/body" "$url" > "$RUNNER_TEMP/status" || true
+            cat "$RUNNER_TEMP/headers" "$RUNNER_TEMP/out"; echo
+            [ "$(cat "$RUNNER_TEMP/status")" = 413 ] || { echo "FAIL: $accept: status $(cat "$RUNNER_TEMP/status")"; exit 1; }
+            grep -qi "^content-type: $type" "$RUNNER_TEMP/headers" || { echo "FAIL: $accept: not $type"; exit 1; }
+            grep -q payload_too_large "$RUNNER_TEMP/out" || { echo "FAIL: $accept: no payload_too_large"; exit 1; }
+            header=$(sed -n 's/^[Xx]-[Cc]orrelation-[Ii][Dd]: *\([^\r]*\)\r*$/\1/p' "$RUNNER_TEMP/headers")
+            [ "$header" = ci-413-probe ] || { echo "FAIL: $accept: X-Correlation-ID '$header'"; exit 1; }
+          }
+          check application/xml application/xml
+          xmllint --noout --nonet --schema contracts/common/v1/common.xsd "$RUNNER_TEMP/out"
+          [ "$(xmllint --xpath 'string(//*[local-name()="correlation_id"])' "$RUNNER_TEMP/out")" = ci-413-probe ] \
+            || { echo "FAIL: XML correlation_id differs from the header"; exit 1; }
+          check application/json application/json
+          [ "$(jq -r .correlation_id "$RUNNER_TEMP/out")" = ci-413-probe ] \
+            || { echo "FAIL: JSON correlation_id differs from the header"; exit 1; }
+          # A header that is not a plain token never reaches a body.
+          curl -s -o "$RUNNER_TEMP/out" -H 'X-Correlation-ID: "><x/>' \
+            --data-binary @"$RUNNER_TEMP/body" "$url" >/dev/null || true
+          jq -e '.correlation_id | test("^[0-9a-f]{32}$")' "$RUNNER_TEMP/out" >/dev/null \
+            || { echo "FAIL: an unchecked correlation id was echoed"; cat "$RUNNER_TEMP/out"; exit 1; }
+          status=$(curl -s -o /dev/null -w '%{http_code}' "$url")
+          [ "$status" = 502 ] || { echo "FAIL: an absent service answered $status, not 502"; exit 1; }
+
+      - name: Gateway logs
+        if: always()
+        run: docker compose -f compose.distributed.yaml logs --no-color gateway || true
+
+  smoke:
+    name: Kit example as its own project on mosaiq
+    runs-on: ubuntu-24.04
+    env:
+      TPL: deploy/templates/service
+      INFRA: docker compose -p mosaiq-infra -f deploy/infra/compose.yaml
+      IMAGE_TAG: ci
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install uv==0.12.3
+
+      - name: Build the kit example image
+        working-directory: packages/kit-py
+        run: |
+          uv build --wheel
+          mkdir -p example/wheels example/contracts/common
+          cp dist/*.whl example/wheels/
+          cp -R ../../contracts/common/v1 example/contracts/common/
+          docker build -t ghcr.io/equipo-03-proyecto10/mosaiq-kit-example:ci example
+          # A second project from the same image, for the independence check.
+          docker tag ghcr.io/equipo-03-proyecto10/mosaiq-kit-example:ci \
+            ghcr.io/equipo-03-proyecto10/mosaiq-kit-example-b:ci
+
+      # The example listens on 8000, so its project is rendered for 8000.
+      - name: Render two projects and their env files
+        run: |
+          set -euo pipefail
+          rand() { head -c 24 /dev/urandom | base64 | tr -d '/+='; }
+          base="$RUNNER_TEMP/svc"
+          mkdir -p "$base/env" "$base/acl-src" "$base/acl" "$RUNNER_TEMP/pgsock" "$RUNNER_TEMP/mongodb"
+          python3 "$TPL/render.py" kit-example 8000 python "$base/kit-example"
+          python3 "$TPL/render.py" kit-example-b 8001 python "$base/kit-example-b"
+          ops=$(rand); redis=$(rand); root=$(rand)
+          echo "::add-mask::$ops"; echo "::add-mask::$redis"; echo "::add-mask::$root"
+          {
+            echo "DATABASE_URL=postgresql://svc_kit_example@/retail?host=/run/postgresql"
+            echo "REDIS_STATE_URL=redis://redis-state:6379/0"
+            echo "REDIS_KIT_EXAMPLE_PASSWORD=$redis"
+            echo "AUTH_JWKS_PATH=/run/mosaiq/jwks.json"
+            echo "MOSAIQ_SERVICE_NAME=kit-example"
+          } > "$base/env/kit-example.env"
+          cp "$base/env/kit-example.env" "$base/env/kit-example-b.env"
+          echo 'user svc_kit_example on {{password}} ~kit_example:* resetchannels -@all +ping' > "$base/acl-src/kit-example.acl"
+          printf 'MONGO_INITDB_ROOT_USERNAME=root\nMONGO_INITDB_ROOT_PASSWORD=%s\n' "$root" > "$RUNNER_TEMP/mongodb/root.env"
+          {
+            echo "REDIS_OPS_PASSWORD=$ops"
+            echo "ACL_SOURCES=$base/acl-src/*.acl"
+            echo "SVC_ENV_DIR=$base/env"
+            echo "ACL_FILE=$base/acl/users.acl"
+            echo "MOSAIQ_REDIS_ACL_DIR=$base/acl"
+            echo "MOSAIQ_MONGO_ROOT_ENV=$RUNNER_TEMP/mongodb/root.env"
+            echo "MOSAIQ_SVC_ENV_DIR=$base/env"
+            echo "MOSAIQ_PG_SOCKET=$RUNNER_TEMP/pgsock"
+            echo "MOSAIQ_JWKS_FILE=$GITHUB_WORKSPACE/docker/distributed/jwks.dev.json"
+          } >> "$GITHUB_ENV"
+
+      - name: Start the network, the infrastructure and PostgreSQL's socket
+        run: |
+          set -euo pipefail
+          docker network create mosaiq
+          bash deploy/infra/redis/assemble-acl.sh --write-only
+          $INFRA up -d
+          docker run -d --name ci-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=retail \
+            -v "$RUNNER_TEMP/pgsock:/var/run/postgresql" postgres:16
+          for _ in $(seq 1 60); do docker exec ci-postgres pg_isready -q && break; sleep 1; done
+          # A test role, reached through the socket as a service reaches its own.
+          docker exec ci-postgres psql -U postgres -d retail -v ON_ERROR_STOP=1 \
+            -c 'CREATE ROLE svc_kit_example LOGIN'
+
+      - name: The rendered project joins mosaiq and is ready
+        run: |
+          set -euo pipefail
+          project() { docker compose -p "mosaiq-$1" -f "$RUNNER_TEMP/svc/$1/compose.yaml" "${@:2}"; }
+          project kit-example up -d --no-deps
+          status=000
+          for _ in $(seq 1 60); do
+            status=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/health/ready || true)
+            case $status in 2??) break ;; esac
+            sleep 1
+          done
+          # The kit answers 204 No Content when every ready check passes.
+          case $status in 2??) ;; *) echo "FAIL: /health/ready answered $status"; project kit-example logs; exit 1 ;; esac
+          project kit-example exec -T kit-example python -c \
+            "import os; from mosaiq_kit.auth import service_redis; assert service_redis(os.environ['REDIS_STATE_URL'], 'kit_example').ping()"
+          [ "$(docker inspect -f '{{.Config.User}}' "$(project kit-example ps -q kit-example)")" = 10001:10001 ]
+
+      - name: Recreating one project leaves the other untouched
+        run: |
+          set -euo pipefail
+          project() { docker compose -p "mosaiq-$1" -f "$RUNNER_TEMP/svc/$1/compose.yaml" "${@:2}"; }
+          project kit-example-b up -d --no-deps
+          other=$(project kit-example-b ps -aq kit-example-b)
+          before=$(project kit-example ps -q kit-example)
+          project kit-example up -d --no-deps --force-recreate
+          [ "$(project kit-example ps -q kit-example)" != "$before" ] || { echo "FAIL: kit-example was not recreated"; exit 1; }
+          [ "$(project kit-example-b ps -aq kit-example-b)" = "$other" ] || { echo "FAIL: kit-example-b was recreated"; exit 1; }
+
+      - name: Taking a project down keeps the infrastructure and the network
+        run: |
+          set -euo pipefail
+          docker compose -p mosaiq-kit-example -f "$RUNNER_TEMP/svc/kit-example/compose.yaml" down
+          [ "$($INFRA ps --status running -q | wc -l)" = 3 ] || { echo "FAIL: mosaiq-infra lost a container"; exit 1; }
+          docker network inspect mosaiq >/dev/null
+
+      - name: Logs
+        if: always()
+        run: |
+          docker compose -p mosaiq-kit-example -f "$RUNNER_TEMP/svc/kit-example/compose.yaml" logs --no-color || true
+          $INFRA logs --no-color || true

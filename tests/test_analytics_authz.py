@@ -112,6 +112,7 @@ ANALYTICS_ROUTES: tuple[tuple[str, str, str, str], ...] = (
     ("segmentation_dashboard.index", "GET", "/segmentation-dashboard/", SEGMENT_READ),
     ("segment_history_report.index", "GET", "/segment-history-report/", SEGMENT_READ),
     ("consumption_reports.index", "GET", "/consumption-reports/", SEGMENT_READ),
+    ("experiment_dashboard.index", "GET", "/experiment-dashboard/", CAMPAIGN_READ),
     ("experiment_report.index", "GET", "/experiment-report/", CAMPAIGN_READ),
     ("experiment_report.export", "GET", "/experiment-report/export.csv", CAMPAIGN_READ),
     ("reports.index", "GET", "/reports/", REPORT_READ),

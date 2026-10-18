@@ -767,6 +767,40 @@ CSV export applies the same filters and repeats `data_origin` and the
 `Synthetic` label on every line, so provenance is in the file and not only on
 the screen; text cells that would read as spreadsheet formulas are defused.
 
+### RN-57 — The experiment dashboard charts the figures the uplift page already holds, against a named baseline, and marks every chart Synthetic
+The experiment dashboard (`/experiment-dashboard/`, `campaign.read`) draws three
+charts for one experiment from counts the uplift page and the experiment report
+already read, so a chart cannot disagree with a table: the conversion rate per
+arm over every assigned customer (intent to treat, the rate that decides) and
+over the customers exposed (RN-48, secondary; the control, never exposed, has no
+exposed rate rather than a zero); the difference in the intent-to-treat rate
+from the baseline with its 95% interval (F11-07's `compare_proportions`); and,
+by day since each customer's own assignment inside the conversion window, the
+share of an arm's assigned customers whose first recorded conversion had
+happened. That last series only rises, and its last point is the arm's
+intent-to-treat rate.
+
+The baseline is the control. An experiment with no control (ADR-0028) has no
+uplift, and the uplift page still refuses it; the dashboard instead sets each
+arm against a **reference arm**, the treatment arm defined first (lowest
+group id), and names it a *difference*, never an uplift: a positive value means
+the arm converted more than that arm, not more than no treatment. Whatever
+uplift refuses, the dashboard refuses in the same words (a metric other than
+conversion, no assignments, an empty arm, a qualifying sale not yet recorded);
+the rates are still drawn.
+
+When the experiment's `data_origin` is not `OBSERVED`, every chart carries
+`Synthetic` in its header, in its own subtitle and in its accessible name. The
+data is computed on the server and embedded as inert JSON; there is no JSON
+endpoint, and Highcharts is served from the application.
+
+**Enforced:** application — `web/services/experiment_dashboard.py` and
+`web/routes/experiment_dashboard.py`; the read is `web/db/experiment_dashboard.py`.
+**Verified** — `tests/test_experiment_dashboard.py`,
+`tests/test_experiment_dashboard_route.py` and the route's row in
+`tests/test_analytics_authz.py`; against PostgreSQL and a real browser in
+[`docs/evidence/an-03-experiment-dashboard.md`](evidence/an-03-experiment-dashboard.md). · #415
+
 ### RN-31 — A campaign moves only along fixed transitions, and two states are final
 `DRAFT` → `ACTIVE` or `CANCELLED`; `ACTIVE` → `FINISHED` or `CANCELLED`.
 `FINISHED` and `CANCELLED` permit nothing further. An illegal move is refused

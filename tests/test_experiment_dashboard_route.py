@@ -80,15 +80,10 @@ def _dashboard(
     )
 
 
-def _wire(monkeypatch, dashboard=None, options=None, found=True, error=None):
+def _wire(monkeypatch, dashboard=None, options=None, error=None):
     options = [_experiment(assignments=2000)] if options is None else options
     monkeypatch.setattr(
         route, "list_report_experiments", Mock(return_value=(list(options), 1))
-    )
-    monkeypatch.setattr(
-        route,
-        "get_experiment",
-        Mock(return_value=options[0] if options and found else None),
     )
     if error is not None:
         monkeypatch.setattr(route.service, "build_dashboard", Mock(side_effect=error))
@@ -258,21 +253,30 @@ def test_a_choice_that_is_not_a_number_is_a_400(app, monkeypatch) -> None:
 
     response = _get(app, "?experiment=abc")
 
+    html = response.get_data(as_text=True)
     assert response.status_code == 400
-    assert "Choose an experiment from the list." in response.get_data(as_text=True)
+    assert "Choose an experiment from the list." in html
+    # The list it points at is on the page, with nothing preselected.
+    assert '<select class="mq-input" id="experiment"' in html
+    assert '<option value="31" >' in html
     route.service.build_dashboard.assert_not_called()
 
 
 def test_an_experiment_that_does_not_exist_is_a_404(app, monkeypatch) -> None:
-    _wire(monkeypatch, _dashboard(), found=False)
+    _wire(monkeypatch, error=ExperimentNotFound(999))
 
     assert _get(app, "?experiment=999").status_code == 404
 
 
-def test_an_experiment_removed_after_the_check_is_a_404(app, monkeypatch) -> None:
-    _wire(monkeypatch, error=ExperimentNotFound(31))
+def test_an_experiment_older_than_the_picker_list_stays_selected(
+    app, monkeypatch
+) -> None:
+    _wire(monkeypatch, _dashboard(), [_experiment(experiment_id=40)])
 
-    assert _get(app, "?experiment=31").status_code == 404
+    html = _get(app, "?experiment=31").get_data(as_text=True)
+
+    assert '<option value="40" >' in html
+    assert '<option value="31" selected>' in html
 
 
 def test_the_newest_experiment_with_assignments_is_the_default(
@@ -318,3 +322,21 @@ def test_an_experiment_with_no_assignments_says_so_and_charts_nothing(
 
     assert "No assignments yet" in html
     assert 'class="mq-chart"' not in html
+
+
+@pytest.mark.parametrize(
+    "pending,words",
+    [
+        (1, "1 assigned customer has not converted yet and their window is still"),
+        (2, "2 assigned customers have not converted yet and their windows are still"),
+    ],
+)
+def test_the_preliminary_alert_counts_customers_in_the_right_number(
+    app, monkeypatch, pending: int, words: str
+) -> None:
+    _wire(
+        monkeypatch,
+        service.ExperimentDashboard(**{**_dashboard().__dict__, "pending": pending}),
+    )
+
+    assert words in _get(app).get_data(as_text=True)

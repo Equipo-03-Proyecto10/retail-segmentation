@@ -17,19 +17,16 @@
 
   {% if error %}{{ alert(error) }}{% endif %}
 
-  {% if not dashboard %}
-    {% if not error %}
-      {{ empty_state("No experiment yet", "Set one up under Campaigns; the dashboard needs an experiment with assigned customers.", "No experiments") }}
-    {% endif %}
-  {% else %}
-    {% set e = dashboard.experiment %}
-    {% if dashboard.label %}
-      <div class="mq-alert mq-alert--warning" role="status">
-        <span class="mq-pill mq-pill--warning">{{ dashboard.label }}</span>
-        Every figure here is derived from {{ e.data_origin.lower() }} data, not an observed business result.
-      </div>
-    {% endif %}
+  {% set e = dashboard.experiment if dashboard else none %}
+  {% if dashboard and dashboard.label %}
+    <div class="mq-alert mq-alert--warning" role="status">
+      <span class="mq-pill mq-pill--warning">{{ dashboard.label }}</span>
+      Every figure here is derived from {{ e.data_origin.lower() }} data, not an observed business result.
+    </div>
+  {% endif %}
 
+  {# Shown on a refused choice too, so "choose from the list" has a list. #}
+  {% if experiments %}
     <section class="mq-panel">
       <div class="mq-panel__body">
         <form class="mq-filterbar" method="get" action="{{ url_for('experiment_dashboard.index') }}">
@@ -38,7 +35,7 @@
               <label class="mq-field__label" for="experiment">Experiment</label>
               <select class="mq-input" id="experiment" name="experiment">
                 {% for x in experiments %}
-                  <option value="{{ x.experiment_id }}" {% if x.experiment_id == e.experiment_id %}selected{% endif %}>#{{ x.experiment_id }} — {{ x.name }} · {{ x.data_origin.title() }} · {{ x.assignments }} assigned</option>
+                  <option value="{{ x.experiment_id }}" {% if e and x.experiment_id == e.experiment_id %}selected{% endif %}>#{{ x.experiment_id }} — {{ x.name }} · {{ x.data_origin.title() }} · {{ x.assignments }} assigned</option>
                 {% endfor %}
               </select>
             </div>
@@ -49,7 +46,13 @@
         </form>
       </div>
     </section>
+  {% endif %}
 
+  {% if not dashboard %}
+    {% if not error %}
+      {{ empty_state("No experiment yet", "Set one up under Campaigns; the dashboard needs an experiment with assigned customers.", "No experiments") }}
+    {% endif %}
+  {% else %}
     <div class="mq-grid mq-grid--3">
       <article class="mq-metric">
         <span class="mq-metric__label">Experiment</span>
@@ -74,7 +77,7 @@
       {% if dashboard.unrecorded %}
         {{ alert(dashboard.unrecorded ~ " assigned " ~ ("customer has" if dashboard.unrecorded == 1 else "customers have") ~ " a qualifying sale that is not recorded as a conversion yet, so the rates below understate conversion. Evaluate conversion on the experiment's conversion page.", "warning", "Conversion not fully evaluated") }}
       {% elif dashboard.pending %}
-        {{ alert(dashboard.pending ~ " assigned customers have not converted yet and their window is still open, so every figure can still change.", "warning", "Preliminary") }}
+        {{ alert(dashboard.pending ~ " assigned " ~ ("customer has not converted yet and their window is" if dashboard.pending == 1 else "customers have not converted yet and their windows are") ~ " still open, so every figure can still change.", "warning", "Preliminary") }}
       {% endif %}
 
       <div class="mq-grid mq-grid--2">

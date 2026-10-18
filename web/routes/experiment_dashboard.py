@@ -19,7 +19,6 @@ from flask import Blueprint, abort, render_template, request
 
 from web.db import get_connection
 from web.db.experiment_report import list_report_experiments
-from web.db.experiments import get_experiment
 from web.middleware.authz import CAMPAIGN_READ, requires
 from web.parsing import INT_MAX, whole_number
 from web.services import experiment_dashboard as service
@@ -100,14 +99,10 @@ def _points_list(rates) -> list[float | None]:
     return [_points(rate) for rate in rates]
 
 
-def _picker(connection, selected_id: int | None):
+def _picker(connection):
     found, _total = list_report_experiments(
         connection, campaign_id=None, data_origin=None, limit=_PICKER_OPTIONS, offset=0
     )
-    if selected_id is not None and selected_id not in {e.experiment_id for e in found}:
-        chosen = get_experiment(connection, selected_id)
-        if chosen is not None:
-            found.append(chosen)
     return found
 
 
@@ -128,15 +123,13 @@ def index():
                 render_template(
                     "experiment_dashboard/index.html",
                     dashboard=None,
-                    experiments=_picker(connection, None),
+                    experiments=_picker(connection),
                     error="Choose an experiment from the list.",
                 ),
                 400,
             )
-        if get_experiment(connection, selected) is None:
-            abort(404)
 
-    options = _picker(connection, selected)
+    options = _picker(connection)
     if selected is None and options:
         selected = next((e.experiment_id for e in options if e.assignments), None)
         if selected is None:
@@ -153,6 +146,8 @@ def index():
         dashboard = service.build_dashboard(connection, selected)
     except ExperimentNotFound:
         abort(404)
+    if dashboard.experiment.experiment_id not in {e.experiment_id for e in options}:
+        options.append(dashboard.experiment)
     return render_template(
         "experiment_dashboard/index.html",
         dashboard=dashboard,

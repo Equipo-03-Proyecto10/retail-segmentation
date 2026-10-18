@@ -226,7 +226,9 @@ tell them apart by, and a single shared value naturally falls first in its own
 ordering.
 
 **Enforced:** `web.db.segments.score_rfm_rules`'s `r_bounds`, `f_bounds` and
-`m_bounds`. **Verified** — `tests/test_segments_pipeline_db.py` pins that no
+`m_bounds`; the segmentation dashboard's heatmap bins raw recency and
+frequency by the same rule, in `web.services.segmentation_dashboard.quintile_bins`
+(#423). **Verified** — `tests/test_segments_pipeline_db.py` pins that no
 quintile's ordering names `customer_id`, and against the seeded PostgreSQL, where
 every one of the 30 customers ties on frequency, by
 [`evidence/f352-quintile-ties.md`](evidence/f352-quintile-ties.md).

@@ -63,6 +63,22 @@
       });
     }
 
+    // A select with data-mq-reveals shows the element of that id only while
+    // its value is data-mq-reveals-when. It is wired here, not with onchange=,
+    // because the CSP's script-src refuses inline handlers (#519). Syncing once
+    // on load also covers a value the browser restored on back navigation.
+    document.querySelectorAll("select[data-mq-reveals]").forEach(function (select) {
+      var target = document.getElementById(select.getAttribute("data-mq-reveals"));
+      if (!target) {
+        return;
+      }
+      var sync = function () {
+        target.hidden = select.value !== select.getAttribute("data-mq-reveals-when");
+      };
+      select.addEventListener("change", sync);
+      sync();
+    });
+
     var activeNavigationItem = document.querySelector(".mq-nav__item--active");
     if (activeNavigationItem && window.matchMedia("(max-width: 720px)").matches) {
       activeNavigationItem.scrollIntoView({ block: "nearest", inline: "center" });

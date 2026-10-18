@@ -1,5 +1,7 @@
 """Session cookies carry the RNF-05 attributes (#72, F4-04)."""
 
+import re
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -92,3 +94,21 @@ def test_flask_sets_the_security_header_baseline() -> None:
     for name, value in SECURITY_HEADERS.items():
         assert response.headers[name] == value
     assert response.headers["Strict-Transport-Security"] == HSTS_VALUE
+
+
+# An attribute named on<event> inside a tag, wherever the tag sits in a template.
+_INLINE_HANDLER = re.compile(r"<[a-zA-Z][^<>]*?\s(on[a-z]+)\s*=", re.DOTALL)
+
+
+def test_no_template_carries_an_inline_event_handler() -> None:
+    """script-src 'self' refuses onchange= and onclick= as inline script, so
+    such a handler never runs in a browser while every test client still
+    renders it (#519). Behaviour belongs in a same-origin file under static/."""
+    templates = Path(__file__).resolve().parent.parent / "web" / "templates"
+    found = [
+        f"{path.relative_to(templates)}: {match.group(1)}"
+        for path in sorted(templates.rglob("*.html"))
+        for match in _INLINE_HANDLER.finditer(path.read_text(encoding="utf-8"))
+    ]
+
+    assert found == []

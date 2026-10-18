@@ -104,6 +104,10 @@ jobs:
       - name: Gateway refuses a 65 KiB body with the shared envelope
         run: |
           set -euo pipefail
+          # Failures surface as annotations, which the checks API shows
+          # without signing in; the step log needs a GitHub session.
+          fail() { echo "::error title=Gateway 413::$*"; exit 1; }
+          trap 'echo "::error title=Gateway 413::line $LINENO exited $?: $BASH_COMMAND"' ERR
           docker network create mosaiq
           docker compose -f compose.distributed.yaml up -d --no-deps gateway
           url=http://127.0.0.1:8080/api/products/v1/products
@@ -117,31 +121,35 @@ jobs:
               -H "Accept: $accept" -H 'X-Correlation-ID: ci-413-probe' \
               -H 'Content-Type: application/json' --data-binary @"$RUNNER_TEMP/body" "$url" > "$RUNNER_TEMP/status" || true
             cat "$RUNNER_TEMP/headers" "$RUNNER_TEMP/out"; echo
-            [ "$(cat "$RUNNER_TEMP/status")" = 413 ] || { echo "FAIL: $accept: status $(cat "$RUNNER_TEMP/status")"; exit 1; }
-            grep -qi "^content-type: $type" "$RUNNER_TEMP/headers" || { echo "FAIL: $accept: not $type"; exit 1; }
-            grep -q payload_too_large "$RUNNER_TEMP/out" || { echo "FAIL: $accept: no payload_too_large"; exit 1; }
+            [ "$(cat "$RUNNER_TEMP/status")" = 413 ] || fail "$accept: status $(cat "$RUNNER_TEMP/status")"
+            grep -qi "^content-type: $type" "$RUNNER_TEMP/headers" || fail "$accept: not $type"
+            grep -q payload_too_large "$RUNNER_TEMP/out" || fail "$accept: no payload_too_large"
             # Header lines end in CRLF; drop the CR before matching.
             header=$(tr -d '\r' < "$RUNNER_TEMP/headers" | sed -n 's/^[Xx]-[Cc]orrelation-[Ii][Dd]: *//p')
-            [ "$header" = ci-413-probe ] || { echo "FAIL: $accept: X-Correlation-ID '$header'"; exit 1; }
+            [ "$header" = ci-413-probe ] || fail "$accept: X-Correlation-ID '$header'"
           }
           check application/xml application/xml
           xmllint --noout --nonet --schema contracts/common/v1/common.xsd "$RUNNER_TEMP/out"
           [ "$(xmllint --xpath 'string(//*[local-name()="correlation_id"])' "$RUNNER_TEMP/out")" = ci-413-probe ] \
-            || { echo "FAIL: XML correlation_id differs from the header"; exit 1; }
+            || fail "XML correlation_id differs from the header"
           check application/json application/json
           [ "$(jq -r .correlation_id "$RUNNER_TEMP/out")" = ci-413-probe ] \
-            || { echo "FAIL: JSON correlation_id differs from the header"; exit 1; }
+            || fail "JSON correlation_id differs from the header"
           # A header that is not a plain token never reaches a body.
           curl -s -o "$RUNNER_TEMP/out" -H 'X-Correlation-ID: "><x/>' \
             --data-binary @"$RUNNER_TEMP/body" "$url" >/dev/null || true
           jq -e '.correlation_id | test("^[0-9a-f]{32}$")' "$RUNNER_TEMP/out" >/dev/null \
-            || { echo "FAIL: an unchecked correlation id was echoed"; cat "$RUNNER_TEMP/out"; exit 1; }
+            || fail "an unchecked correlation id was echoed: $(cat "$RUNNER_TEMP/out")"
           status=$(curl -s -o /dev/null -w '%{http_code}' "$url")
-          [ "$status" = 502 ] || { echo "FAIL: an absent service answered $status, not 502"; exit 1; }
+          [ "$status" = 502 ] || fail "an absent service answered $status, not 502"
 
       - name: Gateway logs
         if: always()
-        run: docker compose -f compose.distributed.yaml logs --no-color gateway || true
+        run: |
+          logs=$(docker compose -f compose.distributed.yaml logs --no-color gateway 2>&1 | tail -20 || true)
+          printf '%s\n' "$logs"
+          # One annotation, newlines encoded, so the tail is readable signed out.
+          echo "::notice title=Gateway logs::$(printf '%s' "$logs" | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g')"
 
   smoke:
     name: Kit example as its own project on mosaiq

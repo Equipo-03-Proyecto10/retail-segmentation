@@ -397,6 +397,7 @@ def uplift(experiment_id: int) -> ResponseReturnValue:
                 experiment=get_experiment(get_connection(), experiment_id),
                 groups=list_group_definitions(get_connection(), experiment_id),
                 error=str(refusal),
+                is_synthetic=service.is_synthetic,
             ),
             409,
         )

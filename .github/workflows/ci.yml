@@ -209,13 +209,17 @@ jobs:
           JOIN transaction AS t ON t.customer_id = c.customer_id
           GROUP BY c.customer_id, c.registered_on
           HAVING min(t.occurred_at::date) < c.registered_on;
+
+          SELECT 'ADR-0019 seeded experiment marked OBSERVED', e.experiment_id
+          FROM experiment AS e
+          WHERE e.data_origin = 'OBSERVED';
           SQL
           )"
           if [ -n "$violations" ]; then
             printf '%s\n' "$violations"
             exit 1
           fi
-          echo "Seed satisfies ADR-0017, ADR-0018 and ADR-0020."
+          echo "Seed satisfies ADR-0017, ADR-0018, ADR-0019 and ADR-0020."
 
       - name: Application role can write data but cannot drop a table
         env:

@@ -335,13 +335,16 @@ SELECT n, 'Campaign ' || n,
 FROM generate_series(1,30) n;
 
 -- ---------- experiment (30) ----------
+-- Every seeded experiment is synthetic (ADR-0019): none may claim OBSERVED,
+-- which would show its figures as real results without the Synthetic label
+-- (#427). Two in three are A/A validation, one in three injected uplift.
 INSERT INTO experiment (experiment_id, name, campaign_id, target_metric, starts_on, ends_on,
                          conversion_window_days, data_origin)
 SELECT n, 'Experiment ' || n, n,
        (ARRAY['CONVERSION','AVERAGE_TICKET'])[1+((n-1)%2)],
        DATE '2026-02-01', DATE '2026-03-01',
        7 + ((n-1) % 4) * 7,
-       (ARRAY['OBSERVED','SEEDED','INJECTED'])[1+((n-1)%3)]
+       CASE WHEN n % 3 = 0 THEN 'INJECTED' ELSE 'SEEDED' END
 FROM generate_series(1,30) n;
 
 -- ---------- experiment_group (2 per experiment = 60) ----------

@@ -23,6 +23,7 @@ from web.db import experiments as db
 from web.db.campaigns import Campaign
 from web.db.experiments import Experiment, GroupCounts
 from web.services import campaigns as campaign_service
+from web.services import experiment_uplift as uplift_service
 from web.services import experiments as service
 
 USER_ID = "11111111-1111-1111-1111-000000000001"
@@ -446,6 +447,29 @@ def test_an_observed_experiment_is_not_labelled_synthetic(
     _sign_in(client, "ANALYST")
 
     assert "Synthetic" not in client.get("/experiments/").get_data(as_text=True)
+
+
+@pytest.mark.parametrize("origin", ["SEEDED", "INJECTED"])
+def test_a_refused_uplift_still_labels_a_synthetic_experiment(
+    app: Flask, monkeypatch: pytest.MonkeyPatch, origin: str
+) -> None:
+    """The refusal page names the experiment, so it carries the label too (#427)."""
+    _wire_pages(monkeypatch, _experiment(origin=origin))
+    monkeypatch.setattr(
+        "web.services.experiment_uplift.measure_uplift",
+        Mock(side_effect=uplift_service.UpliftRefused("No control group.")),
+    )
+    monkeypatch.setattr(
+        "web.routes.experiments.list_group_definitions",
+        Mock(return_value=[Mock(treatment_description="Ten percent discount.")]),
+    )
+    client = app.test_client()
+    _sign_in(client, "ANALYST")
+
+    response = client.get("/experiments/3/uplift")
+
+    assert response.status_code == 409
+    assert "Synthetic" in response.get_data(as_text=True)
 
 
 def test_a_read_only_profile_sees_the_list_but_no_setup_controls(

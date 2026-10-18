@@ -120,7 +120,8 @@ jobs:
             [ "$(cat "$RUNNER_TEMP/status")" = 413 ] || { echo "FAIL: $accept: status $(cat "$RUNNER_TEMP/status")"; exit 1; }
             grep -qi "^content-type: $type" "$RUNNER_TEMP/headers" || { echo "FAIL: $accept: not $type"; exit 1; }
             grep -q payload_too_large "$RUNNER_TEMP/out" || { echo "FAIL: $accept: no payload_too_large"; exit 1; }
-            header=$(sed -n 's/^[Xx]-[Cc]orrelation-[Ii][Dd]: *\([^\r]*\)\r*$/\1/p' "$RUNNER_TEMP/headers")
+            # Header lines end in CRLF; drop the CR before matching.
+            header=$(tr -d '\r' < "$RUNNER_TEMP/headers" | sed -n 's/^[Xx]-[Cc]orrelation-[Ii][Dd]: *//p')
             [ "$header" = ci-413-probe ] || { echo "FAIL: $accept: X-Correlation-ID '$header'"; exit 1; }
           }
           check application/xml application/xml

@@ -79,26 +79,25 @@ class NoRuns(ValueError):
 def quintile_bins(pairs: list[tuple[str, float]]) -> dict[str, int]:
     """Bin (id, value) pairs into 1..5, 5 the highest value.
 
-    Ties are broken by the id, ascending, so binning is deterministic and does
-    not depend on the order pairs arrive in. The split is PostgreSQL's own
-    `ntile(5)`: the first `n // 5` buckets absorb one extra row each when `n`
-    is not a multiple of 5, filled in ranked order. With fewer than 5 items
-    some buckets are empty and the extremes are not both reached — the same
-    behaviour the quintile scoring the pipeline itself writes already has, so
-    a screen showing few customers reads the same way there and here.
+    Equal values always share a bin, by the same rule as the quintile scoring
+    in web.db.segments (RN-51, #352): the split is PostgreSQL's `ntile(5)` over
+    the *distinct* values, best first, and each id takes its value's bin. The
+    first `k // 5` buckets absorb one extra value each when the `k` distinct
+    values are not a multiple of 5. With fewer than 5 distinct values some
+    buckets are empty and the extremes are not both reached, as in the scoring,
+    so a screen showing few customers reads the same way there and here. The
+    id decides nothing, so binning does not depend on the order pairs arrive in.
     """
-    ordered = sorted(pairs, key=lambda pair: (-pair[1], pair[0]))
-    n = len(ordered)
-    base, extra = divmod(n, QUINTILES)
-    bins: dict[str, int] = {}
+    distinct = sorted({value for _id, value in pairs}, reverse=True)
+    base, extra = divmod(len(distinct), QUINTILES)
+    bin_of: dict[float, int] = {}
     position = 0
     for bucket in range(1, QUINTILES + 1):
         size = base + (1 if bucket <= extra else 0)
-        for _ in range(size):
-            item_id, _value = ordered[position]
-            bins[item_id] = QUINTILES + 1 - bucket
-            position += 1
-    return bins
+        for value in distinct[position : position + size]:
+            bin_of[value] = QUINTILES + 1 - bucket
+        position += size
+    return {item_id: bin_of[value] for item_id, value in pairs}
 
 
 # ---------- segment sizes ----------

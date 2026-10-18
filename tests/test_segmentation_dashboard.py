@@ -82,13 +82,37 @@ def test_five_equal_groups_are_split_evenly_best_first() -> None:
     assert bins["c1"] == 1 and bins["c0"] == 1
 
 
-def test_ties_are_broken_by_the_lower_id_so_binning_is_deterministic() -> None:
+def test_tied_values_share_one_bin_whatever_their_ids() -> None:
     pairs = [("b", 1.0), ("a", 1.0), ("c", 1.0)]
 
     bins = quintile_bins(pairs)
 
-    # all tied on value; split by id order, so "a" ranks first (best bin)
-    assert bins["a"] >= bins["b"] >= bins["c"]
+    # RN-51: equal measures, equal bin; the id decides nothing (#423)
+    assert bins["a"] == bins["b"] == bins["c"]
+
+
+def test_ties_never_straddle_a_bin_boundary() -> None:
+    """Ten customers on five distinct values: a row-wise split would put the
+    boundary inside the ties; the distinct-value split never does (#423)."""
+    values = [9.0, 9.0, 9.0, 7.0, 5.0, 5.0, 3.0, 1.0, 1.0, 1.0]
+    pairs = [(f"c{n}", value) for n, value in enumerate(values)]
+
+    bins = quintile_bins(pairs)
+
+    assert {bins[i] for i, v in pairs if v == 9.0} == {5}
+    assert {bins[i] for i, v in pairs if v == 5.0} == {3}
+    assert {bins[i] for i, v in pairs if v == 1.0} == {1}
+
+
+def test_binning_matches_the_scoring_ntile_over_distinct_values() -> None:
+    """Seven distinct values: ntile(5) gives the first two buckets two values
+    each, as web.db.segments' f_bounds does for the same values."""
+    pairs = [(f"c{n}", float(n)) for n in range(7)] + [("dup", 6.0)]
+
+    bins = quintile_bins(pairs)
+
+    assert [bins[f"c{n}"] for n in range(6, -1, -1)] == [5, 5, 4, 4, 3, 2, 1]
+    assert bins["dup"] == bins["c6"]
 
 
 def test_the_result_does_not_depend_on_input_order() -> None:
@@ -225,6 +249,18 @@ def test_with_fewer_scored_customers_than_bins_the_extremes_are_not_both_reached
 
     assert sum(cell.count for cell in heatmap if cell.recency_bin == 1) == 0
     assert sum(cell.count for cell in heatmap if cell.recency_bin == 5) == 1
+
+
+def test_customers_with_the_same_purchase_count_share_a_frequency_bin() -> None:
+    """The seed gives every customer 10 purchases; they spread across all five
+    frequency bins until ties stopped being split by customer id (#423)."""
+    rows = [_rfm(f"c{n:02d}", "LOYAL", days_ago=n + 1, freq=10) for n in range(30)]
+
+    heatmap = build_rfm_heatmap(rows)
+
+    occupied = {cell.frequency_bin for cell in heatmap if cell.count}
+    assert occupied == {5}
+    assert sum(cell.count for cell in heatmap) == 30
 
 
 def test_no_scored_customers_is_25_empty_cells_not_an_error() -> None:

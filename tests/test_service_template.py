@@ -183,7 +183,8 @@ def test_instance_http_context_declares_the_maps_once() -> None:
     )
     zone = "limit_req_zone $mosaiq_auth_signin_key zone=mosaiq_auth_signin:10m"
     assert text.count(zone + " rate=6r/m;") == 1
-    assert "~^[0-9A-Za-z-]{1,64}$ $http_x_correlation_id;" in text
+    # Quoted: unquoted, NGINX reads the regex's braces as a block.
+    assert '"~^[0-9A-Za-z-]{1,64}$" $http_x_correlation_id;' in text
 
 
 def test_infrastructure_network_is_external() -> None:

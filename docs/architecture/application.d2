@@ -46,7 +46,7 @@ mono: "THE MONOLITH — one deployable unit, one process (ADR-0001)" {
 
   ctl: "CONTROLLER — web/routes" {
     class: layer
-    r: "core blueprints\nhome · auth · admin · audit · catalog" {
+    r: "core blueprints\nhome · auth · admin · audit · catalog\nnotifications" {
       class: appnode
     }
     a: "analytics blueprints\nsegment_run · run_history · migration_matrix\nmigration_explanation · model_comparison\nconsumption_reports · segment_history_report\nexperiment_report · segmentation_dashboard\nexperiment_dashboard · campaigns · sales_import\nexperiments · reports" {

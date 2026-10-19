@@ -1010,6 +1010,25 @@ tie that spend used to flip, shares over 100 %, odd and one-day windows),
 `tests/test_consumption_shift_db.py`, `tests/test_consumption_profile_shifts_route.py`
 and `tests/test_consumption_reports_route.py`. · `F8-06`
 
+## Notifications
+
+### RN-63 — The inbox is newest first and twenty to a page, and the badge counts what is unread up to 99
+A user's inbox lists the notifications written for them that their role may
+still read, newest first, twenty to a page; a page past the last redirects to
+the last. Every signed-in page shows the unread count in the navigation: nothing
+when there is none, the number up to 99, and `99+` beyond that. A count that
+cannot be read hides the badge and logs the failure; the page it sits on is
+still served, because a page must not be lost to a counter.
+
+**Enforced:** application — `web/services/notifications.py` (`PAGE_SIZE`,
+`BADGE_CAP`, and `visible_kinds`, which filters by the reader's current role),
+`web/db/notifications.py` (the reader's own rows only, ordered by the identity
+that follows creation order, served by `idx_notification_recipient_inbox`) and
+`web/routes/notifications.py` (the failing-soft context processor).
+**Verified** — by `tests/test_notification_service.py`,
+`tests/test_notification_routes.py` and, against PostgreSQL,
+`tests/test_notification_reads_db.py`. · #419 · ADR-0047
+
 ## Audit
 
 ### RN-28 — Every change to a catalog or a business rule is recorded

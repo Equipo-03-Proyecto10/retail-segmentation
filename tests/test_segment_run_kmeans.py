@@ -6,6 +6,7 @@ field, and a forged POST with method=KMEANS still silently ran RFM_RULES.
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, Mock
 
 import pytest
@@ -56,6 +57,41 @@ def test_the_form_offers_both_methods(app: Flask) -> None:
     assert 'value="KMEANS"' in body
     assert 'name="k"' in body
     assert 'name="seed"' in body
+
+
+def test_the_kmeans_fields_start_hidden_and_are_revealed_without_inline_script(
+    app: Flask,
+) -> None:
+    """The CSP refuses inline handlers, so the select names what it reveals and
+    app.js does the revealing (#519)."""
+    client = app.test_client()
+    _sign_in(client, "ADMIN")
+
+    body = client.get("/segment-run/").get_data(as_text=True)
+
+    assert 'data-mq-reveals="kmeans-fields" data-mq-reveals-when="KMEANS"' in body
+    assert '<div id="kmeans-fields" hidden>' in body
+    assert "onchange" not in body
+
+
+def test_a_refused_kmeans_submission_shows_its_fields(app: Flask) -> None:
+    client = app.test_client()
+    _sign_in(client, "ADMIN")
+
+    body = client.post(
+        "/segment-run/", data={"method": "KMEANS", "window": "180", "seed": "1"}
+    ).get_data(as_text=True)
+
+    assert '<div id="kmeans-fields">' in body
+
+
+def test_app_js_reveals_on_the_data_attributes_the_form_uses() -> None:
+    script = (
+        Path(__file__).resolve().parent.parent / "web" / "static" / "js" / "app.js"
+    ).read_text(encoding="utf-8")
+
+    assert "select[data-mq-reveals]" in script
+    assert '"data-mq-reveals-when"' in script
 
 
 # ---------- AC 2: a KMEANS submission records method, params, executed_by ----------

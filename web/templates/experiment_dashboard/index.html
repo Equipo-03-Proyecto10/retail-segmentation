@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block title %}Experiment dashboard · {{ application_name }}{% endblock %}
+{% block topbar_title %}Experiment dashboard{% endblock %}
+{% block breadcrumbs %}{{ application_name }} / Analysis / Experiment dashboard{% endblock %}
+
+{% block content %}
+  {% from "macros/ui.html" import alert, empty_state, page_header, status_pill %}
+  {% macro pct(rate) %}{% if rate is none %}–{% else %}{{ "%.2f" | format(rate * 100) }}%{% endif %}{% endmacro %}
+  {% macro mark() %}{% if dashboard and dashboard.label %}{{ status_pill(dashboard.label, "warning") }}{% endif %}{% endmacro %}
+
+  {{ page_header(
+    "Experiment dashboard",
+    "Conversion per arm, the difference from the baseline arm with its 95% interval, and conversions over time within the conversion window.",
+    "Analysis"
+  ) }}
+
+  {% if error %}{{ alert(error) }}{% endif %}
+
+  {% set e = dashboard.experiment if dashboard else none %}
+  {% if dashboard and dashboard.label %}
+    <div class="mq-alert mq-alert--warning" role="status">
+      <span class="mq-pill mq-pill--warning">{{ dashboard.label }}</span>
+      Every figure here is derived from {{ e.data_origin.lower() }} data, not an observed business result.
+    </div>
+  {% endif %}
+
+  {# Shown on a refused choice too, so "choose from the list" has a list. #}
+  {% if experiments %}
+    <section class="mq-panel">
+      <div class="mq-panel__body">
+        <form class="mq-filterbar" method="get" action="{{ url_for('experiment_dashboard.index') }}">
+          <div class="mq-filterbar__row">
+            <div class="mq-filterbar__group">
+              <label class="mq-field__label" for="experiment">Experiment</label>
+              <select class="mq-input" id="experiment" name="experiment">
+                {% for x in experiments %}
+                  <option value="{{ x.experiment_id }}" {% if e and x.experiment_id == e.experiment_id %}selected{% endif %}>#{{ x.experiment_id }} — {{ x.name }} · {{ x.data_origin.title() }} · {{ x.assignments }} assigned</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="mq-filterbar__actions">
+              <button class="mq-btn mq-btn--primary mq-btn--sm" type="submit">Show</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </section>
+  {% endif %}
+
+  {% if not dashboard %}
+    {% if not error %}
+      {{ empty_state("No experiment yet", "Set one up under Campaigns; the dashboard needs an experiment with assigned customers.", "No experiments") }}
+    {% endif %}
+  {% else %}
+    <div class="mq-grid mq-grid--3">
+      <article class="mq-metric">
+        <span class="mq-metric__label">Experiment</span>
+        <span class="mq-metric__value">#{{ e.experiment_id }}</span>
+        <div class="mq-metric__footer"><span>{{ e.name }}{% if e.campaign_name %} · {{ e.campaign_name }}{% endif %}</span></div>
+      </article>
+      <article class="mq-metric">
+        <span class="mq-metric__label">Conversion window</span>
+        <span class="mq-metric__value">{{ e.conversion_window_days }} days</span>
+        <div class="mq-metric__footer"><span>Fixed with the first assignment</span></div>
+      </article>
+      <article class="mq-metric">
+        <span class="mq-metric__label">Data origin</span>
+        <span class="mq-metric__value">{{ e.data_origin.title() }}</span>
+        <div class="mq-metric__footer"><span>{% if dashboard.label %}{{ dashboard.label }}{% else %}Observed{% endif %}</span></div>
+      </article>
+    </div>
+
+    {% if not e.assignments %}
+      {{ empty_state("No assignments yet", "Nothing is charted until customers are assigned to the experiment's arms.", "No data") }}
+    {% else %}
+      {% if dashboard.unrecorded %}
+        {{ alert(dashboard.unrecorded ~ " assigned " ~ ("customer has" if dashboard.unrecorded == 1 else "customers have") ~ " a qualifying sale that is not recorded as a conversion yet, so the rates below understate conversion. Evaluate conversion on the experiment's conversion page.", "warning", "Conversion not fully evaluated") }}
+      {% elif dashboard.pending %}
+        {{ alert(dashboard.pending ~ " assigned " ~ ("customer has not converted yet and their window is" if dashboard.pending == 1 else "customers have not converted yet and their windows are") ~ " still open, so every figure can still change.", "warning", "Preliminary") }}
+      {% endif %}
+
+      <div class="mq-grid mq-grid--2">
+        <section class="mq-panel">
+          <header class="mq-panel__header">
+            <h2 class="mq-panel__title">Conversion rate per arm</h2>
+            {{ mark() }}
+            <span class="mq-caption mq-mono">column · by arm</span>
+          </header>
+          <div class="mq-panel__body">
+            <div id="mq-chart-rates" class="mq-chart" role="img" aria-label="{% if dashboard.label %}Synthetic. {% endif %}Conversion rate per arm, over every assigned customer and over the customers exposed"></div>
+            <p class="mq-caption">Assigned is intent to treat: customers with a qualifying sale in their window over every customer assigned to the arm, and it is the rate that decides. Exposed is secondary: customers who bought within the window counted from their first exposure, over customers exposed. The control is never exposed.</p>
+          </div>
+        </section>
+
+        <section class="mq-panel">
+          <header class="mq-panel__header">
+            <h2 class="mq-panel__title">{% if dashboard.baseline and dashboard.baseline.kind == "reference" %}Difference from the reference arm{% else %}Uplift against the control{% endif %}</h2>
+            {{ mark() }}
+            <span class="mq-caption mq-mono">points · 95% interval</span>
+          </header>
+          <div class="mq-panel__body">
+            {% if dashboard.baseline %}
+              <div id="mq-chart-difference" class="mq-chart" role="img" aria-label="{% if dashboard.label %}Synthetic. {% endif %}Difference in conversion rate from {{ dashboard.baseline.name }}, in percentage points, with its 95% interval"></div>
+              {% if dashboard.baseline.kind == "reference" %}
+                <p class="mq-caption">This experiment has no control, so there is no uplift over no treatment (ADR-0028). Each arm is set against <strong>{{ dashboard.baseline.name }}</strong>, the treatment arm defined first; a positive difference means the arm converted more than that one, not more than doing nothing.</p>
+              {% else %}
+                <p class="mq-caption">Intent-to-treat difference in conversion rate from <strong>{{ dashboard.baseline.name }}</strong> (the control), in percentage points. An interval that includes 0 does not exclude chance.</p>
+              {% endif %}
+            {% else %}
+              {{ alert(dashboard.refusal, "warning", "Not measured") }}
+            {% endif %}
+          </div>
+        </section>
+      </div>
+
+      <section class="mq-panel">
+        <header class="mq-panel__header">
+          <h2 class="mq-panel__title">Conversions over time</h2>
+          {{ mark() }}
+          <span class="mq-caption mq-mono">line · days since assignment</span>
+        </header>
+        <div class="mq-panel__body">
+          <div id="mq-chart-over-time" class="mq-chart" role="img" aria-label="{% if dashboard.label %}Synthetic. {% endif %}Share of each arm's assigned customers who had converted, by day since their assignment, within the {{ e.conversion_window_days }}-day window"></div>
+          <p class="mq-caption">Share of an arm's assigned customers whose first qualifying sale had happened by that day after their own assignment, within the {{ e.conversion_window_days }}-day conversion window. It only rises, and its last point is the arm's intent-to-treat rate.{% if dashboard.over_time and dashboard.over_time.truncated %} Only the first {{ dashboard.over_time.drawn_days }} of {{ dashboard.over_time.window_days }} days are drawn.{% endif %}</p>
+        </div>
+      </section>
+
+      <section class="mq-panel mq-panel--table mq-density-compact">
+        <header class="mq-panel__header"><h2 class="mq-panel__title">Arms</h2>{{ mark() }}</header>
+        <div class="mq-table-wrap"><table class="mq-table"><thead><tr><th scope="col">Arm</th><th scope="col" class="mq-num">Assigned</th><th scope="col" class="mq-num">Converted</th><th scope="col" class="mq-num">Rate (assigned)</th><th scope="col" class="mq-num">Exposed</th><th scope="col" class="mq-num">Rate (exposed)</th></tr></thead><tbody>
+          {% for a in dashboard.arms %}<tr><td>{{ a.name }} <span class="mq-caption">{{ a.kind.title() }} · <span class="mq-mono">{{ a.group_id }}</span></span></td><td class="mq-num">{{ a.assigned }}</td><td class="mq-num">{{ a.converted }}</td><td class="mq-num">{{ pct(a.rate_assigned) }}</td><td class="mq-num">{% if a.kind == "CONTROL" %}<span class="mq-caption">Never exposed</span>{% else %}{{ a.exposed }}{% endif %}</td><td class="mq-num">{% if a.kind == "CONTROL" %}–{% else %}{{ pct(a.rate_exposed) }}{% endif %}</td></tr>{% endfor %}
+        </tbody></table></div>
+      </section>
+
+      {% if dashboard.differences %}
+        <section class="mq-panel mq-panel--table mq-density-compact">
+          <header class="mq-panel__header"><h2 class="mq-panel__title">{% if dashboard.baseline.kind == "reference" %}Difference from {{ dashboard.baseline.name }}{% else %}Uplift against {{ dashboard.baseline.name }}{% endif %}</h2>{{ mark() }}</header>
+          <div class="mq-table-wrap"><table class="mq-table"><thead><tr><th scope="col">Arm</th><th scope="col" class="mq-num">Points</th><th scope="col" class="mq-num">95% interval</th><th scope="col" class="mq-num">p-value</th></tr></thead><tbody>
+            {% for d in dashboard.differences %}<tr><td>{{ d.name }}</td><td class="mq-num">{{ "%+.2f" | format(d.comparison.uplift * 100) }}</td><td class="mq-num">{{ "%+.2f" | format(d.comparison.ci_low * 100) }} to {{ "%+.2f" | format(d.comparison.ci_high * 100) }}</td><td class="mq-num">{{ "%.4f" | format(d.comparison.p_value) }}</td></tr>{% endfor %}
+          </tbody></table></div>
+          <p class="mq-caption">The same intent-to-treat figures as the <a href="{{ url_for('experiments.uplift', experiment_id=e.experiment_id) }}">uplift page</a> and the <a href="{{ url_for('experiment_report.index') }}">experiment report</a>.</p>
+        </section>
+      {% endif %}
+
+      <script type="application/json" id="mq-dashboard-data">{{ chart_data | safe }}</script>
+      <script src="{{ url_for('static', filename='vendor/highcharts/highcharts.js') }}"></script>
+      <script src="{{ url_for('static', filename='vendor/highcharts/highcharts-more.js') }}"></script>
+      <script src="{{ url_for('static', filename='css/mosaiq/charts/mosaiq-highcharts-theme.js') }}"></script>
+      <script src="{{ url_for('static', filename='js/experiment-dashboard.js') }}" defer></script>
+    {% endif %}
+  {% endif %}
+{% endblock %}

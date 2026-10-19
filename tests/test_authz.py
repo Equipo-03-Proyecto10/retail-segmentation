@@ -399,6 +399,7 @@ def test_the_menu_is_driven_by_permissions_rather_than_by_role() -> None:
     # The real registered destinations follow each visitor's permissions.
     assert _menu_labels(administrator) == [
         "Home",
+        "Notifications",
         "Catalogs",
         "Users",
         "Sales import",
@@ -411,12 +412,14 @@ def test_the_menu_is_driven_by_permissions_rather_than_by_role() -> None:
         "Segmentation dashboard",
         "Segment history report",
         "Consumption reports",
+        "Experiment dashboard",
         "Experiment report",
         "Reports",
         "Audit log",
     ]
     assert _menu_labels(analyst) == [
         "Home",
+        "Notifications",
         "Catalogs",
         "Segments",
         "Campaigns",
@@ -426,6 +429,7 @@ def test_the_menu_is_driven_by_permissions_rather_than_by_role() -> None:
         "Segmentation dashboard",
         "Segment history report",
         "Consumption reports",
+        "Experiment dashboard",
         "Experiment report",
         "Reports",
     ]
@@ -438,6 +442,7 @@ def test_a_store_managers_menu_offers_the_segment_surfaces_and_nothing_to_run() 
 
     assert _menu_labels(store_manager) == [
         "Home",
+        "Notifications",
         "Catalogs",
         "Segments",
         "Run history",

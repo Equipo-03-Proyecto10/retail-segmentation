@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<UpdateCampaignRequest xmlns="https://mosaiq.maxthecoder.online/xml/campaigns/v1">
+  <name>Holiday Loyalty Launch</name>
+  <ends_on>2027-01-15</ends_on>
+</UpdateCampaignRequest>

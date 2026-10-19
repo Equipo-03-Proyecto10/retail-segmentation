@@ -7,7 +7,7 @@
 {% block content %}
   {% from "macros/ui.html" import alert, page_header, status_pill %}
   {{ page_header("Uplift", "Each treatment arm against the control, over every assigned customer whether or not they were exposed.", "Experiments") }}
-  {% if error %}{{ alert(error, "danger", "Not measured") }}{% if experiment and groups %}<section class="mq-panel"><header class="mq-panel__header"><h2 class="mq-panel__title">Experiment {{ experiment.experiment_id }} · {{ experiment.name }}</h2></header><div class="mq-panel__body">{% for group in groups %}<p><strong>{{ group.name }}</strong>: {{ group.treatment_description }}</p>{% endfor %}</div></section>{% endif %}
+  {% if error %}{{ alert(error, "danger", "Not measured") }}{% if experiment and groups %}<section class="mq-panel"><header class="mq-panel__header"><h2 class="mq-panel__title">Experiment {{ experiment.experiment_id }} · {{ experiment.name }}</h2>{% if is_synthetic(experiment.data_origin) %}{{ status_pill("Synthetic", "warning") }}{% endif %}</header><div class="mq-panel__body">{% for group in groups %}<p><strong>{{ group.name }}</strong>: {{ group.treatment_description }}</p>{% endfor %}</div></section>{% endif %}
     <div class="mq-form__actions"><a class="mq-btn mq-btn--secondary" href="{{ url_for('experiments.index') }}">Back to experiments</a></div>
   {% elif needs_evaluation %}
     {% set pending_experiment = experiment %}

@@ -19,7 +19,17 @@
         <dt>Customers scored</dt><dd class="mq-mono">{{ run.customer_count }}</dd>
         <dt>Executed by</dt><dd>{{ run.executed_by_name or "System" }}</dd>
         <dt>Run at</dt><dd class="mq-mono">{{ run.run_at.strftime("%Y-%m-%d %H:%M:%S") }}</dd>
-        <dt>Parameters</dt><dd class="mq-mono">{% for key, value in run.parameters.items() if key != "label_mapping" %}{{ key }}: {% if value is sameas true %}yes{% elif value is sameas false %}no{% elif value is none %}—{% elif value is iterable and value is not string %}{{ value|join(", ") }}{% else %}{{ value }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</dd>
+        {# One format for every recorded value: a dict nested in the parameters is
+           listed key by key with its values, never joined into its keys (#447).
+           Only the quality measures are rounded: a parameter is shown as entered,
+           so a tolerance of 1e-05 still reads as the value that reproduces the run. #}
+        {% macro scalar(value, places=none) %}{% if value is sameas true %}yes{% elif value is sameas false %}no{% elif value is none %}—{% elif value is float and places is not none %}{{ ("%." ~ places ~ "f")|format(value) }}{% elif value is iterable and value is not string %}{{ value|join(", ") }}{% else %}{{ value }}{% endif %}{% endmacro %}
+        <dt>Parameters</dt><dd class="mq-mono">{% for key, value in run.parameters.items() if key not in ("label_mapping", "quality") %}{{ key }}: {{ scalar(value) }}{% if not loop.last %}, {% endif %}{% endfor %}</dd>
+        {% set quality = run.parameters.get("quality") %}
+        {% if quality is mapping %}
+          <dt>Quality</dt>
+          <dd id="quality-measures" class="mq-mono">{% for key, value in quality.items() %}{{ key|replace("_", " ") }}: {{ scalar(value, 4) }}{% if not loop.last %}, {% endif %}{% endfor %}</dd>
+        {% endif %}
         {% set mapping = run.parameters.get("label_mapping") %}
         {% if mapping %}
           {# ADR-0030: how the clusters were paired with labels, by label code only. #}

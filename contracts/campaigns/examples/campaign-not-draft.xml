@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>campaign_not_draft</code>
+  <message>Only a DRAFT campaign may be edited.</message>
+  <correlation_id>corr-campaign-409</correlation_id>
+</Error>

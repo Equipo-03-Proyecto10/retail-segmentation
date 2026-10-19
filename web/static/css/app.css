@@ -509,6 +509,103 @@ body.mq-app {
   border-top: 1px solid var(--mq-border-subtle);
 }
 
+/* Notifications (AN-04): the unread badge in the navigation, and the inbox. */
+
+.mq-nav__badge {
+  margin-left: auto;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 var(--mq-space-1);
+  border-radius: 8px;
+  background: var(--mq-accent-bold);
+  color: var(--mq-accent-bold-on);
+  font-family: var(--mq-font-mono);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: var(--mq-weight-semibold);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.mq-nav--collapsed .mq-nav__item {
+  position: relative;
+}
+
+.mq-nav--collapsed .mq-nav__badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  min-width: 14px;
+  height: 14px;
+  font-size: 9px;
+  line-height: 14px;
+  padding: 0 3px;
+}
+
+.mq-notice__toolbar-end {
+  display: flex;
+  align-items: center;
+  gap: var(--mq-space-3);
+}
+
+.mq-notice-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mq-notice {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--mq-space-3);
+  padding: var(--mq-space-3);
+  border-bottom: 1px solid var(--mq-border-subtle);
+}
+
+.mq-notice:last-child {
+  border-bottom: 0;
+}
+
+.mq-notice--unread {
+  background: var(--mq-accent-subtle);
+  box-shadow: inset 2px 0 0 var(--mq-accent-bold);
+}
+
+.mq-notice__main {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.mq-notice__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--mq-space-2);
+}
+
+.mq-notice__state {
+  font-size: var(--mq-size-12);
+  font-weight: var(--mq-weight-semibold);
+  color: var(--mq-text-primary);
+}
+
+.mq-notice__text {
+  margin: var(--mq-space-1) 0 0;
+  overflow-wrap: anywhere;
+}
+
+.mq-notice--unread .mq-notice__text {
+  font-weight: var(--mq-weight-medium);
+}
+
+.mq-notice__actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--mq-space-1);
+}
+
 @media (max-width: 1024px) {
   .mq-grid--4,
   .mq-grid--3,
@@ -573,6 +670,25 @@ body.mq-app {
 
   .mq-nav__item--active {
     border-bottom-color: var(--mq-accent-bold);
+  }
+
+  .mq-nav__badge,
+  .mq-nav--collapsed .mq-nav__badge {
+    position: static;
+    margin-left: var(--mq-space-1);
+    min-width: 18px;
+    height: 16px;
+    font-size: 11px;
+    line-height: 16px;
+    padding: 0 var(--mq-space-1);
+  }
+
+  .mq-notice {
+    flex-direction: column;
+  }
+
+  .mq-notice__actions {
+    flex-wrap: wrap;
   }
 
   .mq-nav--collapsed .mq-nav__label {

@@ -344,12 +344,13 @@ The instance has to show what the delivery claims. In this order, by whoever
 holds the instance (none of it can be done from the repository):
 
 1. **Back up, then re-provision the database** from the three scripts at the
-   deployed commit. The final schema has 27 tables and also depends on
+   deployed commit. The final schema has 29 tables and also depends on
    `btree_gist` from `00_create_database.sql`: it includes the complete exposure
    and conversion event chain, named treatment arms with immutable definitions,
    non-overlapping close-only segment history, insert-only segmentation runs,
-   protected experiments, the final grants/revokes, and seed bands that reach
-   every label (#345, #346, #350, #357). Do not patch the old database by hand.
+   protected experiments, the in-app notification tables, the final
+   grants/revokes, and seed bands that reach every label (#345, #346, #350,
+   #357, #419). Do not patch the old database by hand.
 2. **Run `sql/verify_integrity.sql`, then `check-schema-drift.sh`** against a clean
    build of the same commit. Every probe must pass and the schema, privileges and
    role memberships must show no drift.
@@ -372,6 +373,24 @@ holds the instance (none of it can be done from the repository):
 7. **Re-diff** the schema and grants against a clean build of `main` once more.
 
 The administrator's address is no longer published in `docs/evidence/` (#360).
+
+### Correcting the seeded experiments' origin (#427)
+
+Seeds before #427 marked experiments 1, 4, 7, … 28 `OBSERVED`, so they showed
+as real results with no Synthetic label. A database rebuilt from the scripts
+after #427 needs nothing. A database loaded before it is corrected with one
+statement, a data fix rather than DDL, to the value the seed now gives those
+rows:
+
+```sh
+sudo -u postgres psql -v ON_ERROR_STOP=1 -d retail -c \
+  "UPDATE experiment SET data_origin = 'SEEDED'
+    WHERE experiment_id BETWEEN 1 AND 30 AND data_origin = 'OBSERVED';"
+```
+
+It reports `UPDATE 10` the first time and `UPDATE 0` after. Only the thirty
+seeded ids are touched, so an experiment created through the application keeps
+the origin it was given.
 
 ### Checking the database has kept up with the code
 

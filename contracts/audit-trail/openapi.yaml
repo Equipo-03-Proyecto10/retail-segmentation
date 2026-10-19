@@ -1,0 +1,691 @@
+openapi: 3.1.0
+info:
+  title: audit-trail-service
+  version: 1.0.0
+  description: >-
+    Reads the audit trail: the append-only entries `fn_audit` writes for every
+    insert, update and delete on an audited table (RN-28, RN-30). An entry is
+    attributed to the actor the writer's connection identified in
+    `mosaiq.user_id`; `user_id` is null when none was known, as for the seed or
+    a maintenance script. An entry never carries a credential: `password_hash`
+    is stripped from both payloads before the entry is written, and the service
+    strips it again (RN-29). The service has no write operation, because
+    `fn_audit` is the only writer of an entry (ADR-0035). Only ADMIN and
+    AUDITOR read it.
+security:
+  - bearer: []
+paths:
+  /v1/audit-entries:
+    get:
+      summary: List audit entries
+      description: >-
+        Returns the entries that match every filter given, ordered by
+        `executed_at` and then `audit_id`, both descending, so the newest entry
+        is first and entries written in one transaction (which share an
+        `executed_at`) keep a stable order. Pagination applies after
+        filtering. `entity` is one of the audited table names and `action` one
+        of INSERT, UPDATE and DELETE; an unknown value of either, or a `to`
+        before `from`, is 422 `invalid_query` and `details` names the rejected
+        parameter (`entity`, `action` or `to`).
+      operationId: listAuditEntries
+      x-mosaiq-roles:
+        - ADMIN
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/Entity'
+        - $ref: '#/components/parameters/EntityPk'
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/Action'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of audit entries, newest first.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEntries'
+              examples:
+                page:
+                  externalValue: ./examples/audit-entries.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/AuditEntries'
+              examples:
+                page:
+                  externalValue: ./examples/audit-entries.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/AuditQueryValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/audit-entries/{audit_id}:
+    get:
+      summary: Get one audit entry
+      description: >-
+        Returns the entry identified by `audit_id`, with its payloads. An entry
+        is never changed once written, so the representation of an existing
+        `audit_id` is stable. An unknown `audit_id` is 404
+        `audit_entry_not_found`.
+      operationId: getAuditEntry
+      x-mosaiq-roles:
+        - ADMIN
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/AuditId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The requested audit entry.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEntry'
+              examples:
+                insert:
+                  externalValue: ./examples/audit-entry-insert.json
+                update:
+                  externalValue: ./examples/audit-entry-update.json
+                delete:
+                  externalValue: ./examples/audit-entry-delete.json
+                app_user_update:
+                  externalValue: ./examples/audit-entry-app-user-update.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/AuditEntry'
+              examples:
+                insert:
+                  externalValue: ./examples/audit-entry-insert.xml
+                update:
+                  externalValue: ./examples/audit-entry-update.xml
+                delete:
+                  externalValue: ./examples/audit-entry-delete.xml
+                app_user_update:
+                  externalValue: ./examples/audit-entry-app-user-update.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/AuditEntryNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /health/live:
+    get:
+      summary: Report process liveness
+      operationId: getLiveness
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The process is live.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+  /health/ready:
+    get:
+      summary: Report schema readiness
+      operationId: getReadiness
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The required schema is applied.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '503':
+          $ref: '#/components/responses/SchemaNotReady'
+  /openapi.yaml:
+    get:
+      summary: Download this OpenAPI document
+      operationId: getOpenApiDocument
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The OpenAPI document, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/yaml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+  /schema.xsd:
+    get:
+      summary: Download the audit-trail XML Schema
+      operationId: getXmlSchema
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The audit-trail XSD, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/xml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      description: >-
+        Caller-supplied correlation id. A value that does not match the pattern
+        is ignored and replaced by a generated id.
+      schema:
+        type: string
+        pattern: '^[0-9A-Za-z-]{1,64}$'
+    AuditId:
+      name: audit_id
+      in: path
+      required: true
+      description: Positive integer audit entry identifier.
+      schema:
+        $ref: '#/components/schemas/AuditId'
+    Entity:
+      name: entity
+      in: query
+      required: false
+      description: >-
+        Exact name of an audited table. An unknown name is 422
+        `invalid_query`.
+      schema:
+        $ref: '#/components/schemas/AuditedEntity'
+    EntityPk:
+      name: entity_pk
+      in: query
+      required: false
+      description: >-
+        Exact primary key of the audited row, as text: the value `fn_audit`
+        recorded in `entity_pk`.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 80
+    UserId:
+      name: user_id
+      in: query
+      required: false
+      description: Exact identifier of the actor the entry is attributed to.
+      schema:
+        type: string
+        format: uuid
+    Action:
+      name: action
+      in: query
+      required: false
+      description: >-
+        The action that produced the entry. An unknown value is 422
+        `invalid_query`.
+      schema:
+        $ref: '#/components/schemas/AuditAction'
+    From:
+      name: from
+      in: query
+      required: false
+      description: >-
+        Inclusive lower bound on `executed_at`, an RFC 3339 timestamp with an
+        offset. Write the offset as `Z`, or percent-encode a `+`.
+      schema:
+        type: string
+        format: date-time
+    To:
+      name: to
+      in: query
+      required: false
+      description: >-
+        Inclusive upper bound on `executed_at`, an RFC 3339 timestamp with an
+        offset. A `to` before `from` is 422 `invalid_query`.
+      schema:
+        type: string
+        format: date-time
+    Page:
+      name: page
+      in: query
+      required: false
+      description: One-based page number.
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Size:
+      name: size
+      in: query
+      required: false
+      description: Number of audit entries per page.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+  headers:
+    CorrelationId:
+      description: Correlation id used for this response.
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9A-Za-z-]{1,64}$'
+    RetryAfter:
+      description: Whole seconds until a retry is allowed.
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  schemas:
+    AuditId:
+      type: integer
+      format: int64
+      minimum: 1
+      maximum: 9223372036854775807
+    AuditedEntity:
+      type: string
+      description: >-
+        The name of an audited table, as `fn_audit` records it in `entity`. A
+        table's name is unique across schemas (ADR-0046), so it identifies the
+        table without a schema. `store_location` is the stores service's table
+        (`stores.store_location`).
+      enum:
+        - category
+        - product
+        - store
+        - customer
+        - app_user
+        - segment
+        - segment_rule
+        - campaign
+        - experiment
+        - channel
+        - role
+        - customer_segment_history
+        - store_location
+    AuditAction:
+      type: string
+      enum:
+        - INSERT
+        - UPDATE
+        - DELETE
+    AuditPayload:
+      type:
+        - object
+        - 'null'
+      description: >-
+        The audited row as `fn_audit` captured it, one member per column of the
+        audited table, so its members depend on `entity`. It never carries
+        `password_hash`. In JSON it is an object, or null where the action has
+        no such row. In XML it is a string element holding the object's JSON
+        text, and the element is omitted where the JSON member is null.
+      additionalProperties: true
+      propertyNames:
+        not:
+          const: password_hash
+    AuditEntry:
+      type: object
+      additionalProperties: false
+      required:
+        - audit_id
+        - user_id
+        - entity
+        - entity_pk
+        - action
+        - data_before
+        - data_after
+        - executed_at
+      properties:
+        audit_id:
+          $ref: '#/components/schemas/AuditId'
+        user_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          description: >-
+            The actor the writer's connection identified, or null when none was
+            known (the seed, a maintenance script). Omitted in XML when null.
+        entity:
+          $ref: '#/components/schemas/AuditedEntity'
+        entity_pk:
+          type: string
+          minLength: 1
+          maxLength: 80
+          description: >-
+            The audited row's primary key as text: `25` for a product or
+            category, a UUID for a customer or an app_user.
+        action:
+          $ref: '#/components/schemas/AuditAction'
+        data_before:
+          description: >-
+            The row before the change. An object for UPDATE and DELETE, null
+            for INSERT. Never carries `password_hash`.
+          allOf:
+            - $ref: '#/components/schemas/AuditPayload'
+        data_after:
+          description: >-
+            The row after the change. An object for INSERT and UPDATE, null for
+            DELETE. Never carries `password_hash`.
+          allOf:
+            - $ref: '#/components/schemas/AuditPayload'
+        executed_at:
+          type: string
+          format: date-time
+      xml:
+        name: AuditEntry
+        namespace: https://mosaiq.maxthecoder.online/xml/audit-trail/v1
+    AuditEntries:
+      type: object
+      additionalProperties: false
+      required:
+        - audit_entries
+        - page_info
+      properties:
+        audit_entries:
+          type: array
+          description: >-
+            Entries ordered by `executed_at` descending, then `audit_id`
+            descending.
+          items:
+            $ref: '#/components/schemas/AuditEntry'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: AuditEntries
+        namespace: https://mosaiq.maxthecoder.online/xml/audit-trail/v1
+    PageInfo:
+      type: object
+      additionalProperties: false
+      required:
+        - page
+        - size
+        - total
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+      xml:
+        name: PageInfo
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - field
+        - code
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+    Error:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+        - correlation_id
+        - details
+      properties:
+        code:
+          type: string
+          pattern: '^[a-z][a-z0-9_]*$'
+        message:
+          type: string
+        correlation_id:
+          type: string
+          pattern: '^[0-9A-Za-z-]{1,64}$'
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+      xml:
+        name: Error
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+  responses:
+    AuthenticationError:
+      description: '`invalid_token` or `session_revoked`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              value:
+                code: invalid_token
+                message: The bearer token is invalid.
+                correlation_id: corr-auth-001
+                details: []
+            session_revoked:
+              value:
+                code: session_revoked
+                message: The token session is no longer live.
+                correlation_id: corr-auth-002
+                details: []
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>invalid_token</code><message>The bearer token is invalid.</message><correlation_id>corr-auth-001</correlation_id></Error>
+            session_revoked:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>session_revoked</code><message>The token session is no longer live.</message><correlation_id>corr-auth-002</correlation_id></Error>
+    ForbiddenRole:
+      description: '`forbidden_role`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              value:
+                code: forbidden_role
+                message: The authenticated role cannot perform this operation.
+                correlation_id: corr-role-001
+                details: []
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>forbidden_role</code><message>The authenticated role cannot perform this operation.</message><correlation_id>corr-role-001</correlation_id></Error>
+    NotAcceptable:
+      description: '`not_acceptable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              value:
+                code: not_acceptable
+                message: The requested response format is unsupported.
+                correlation_id: corr-format-001
+                details: []
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>not_acceptable</code><message>The requested response format is unsupported.</message><correlation_id>corr-format-001</correlation_id></Error>
+    AuditEntryNotFound:
+      description: '`audit_entry_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            audit_entry_not_found:
+              externalValue: ./examples/audit-entry-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            audit_entry_not_found:
+              externalValue: ./examples/audit-entry-not-found.xml
+    AuditQueryValidation:
+      description: '`invalid_query` or `invalid_pagination`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.json
+            invalid_pagination:
+              value:
+                code: invalid_pagination
+                message: Pagination values are outside their allowed ranges.
+                correlation_id: corr-list-001
+                details:
+                  - field: page
+                    code: minimum
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.xml
+            invalid_pagination:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>invalid_pagination</code><message>Pagination values are outside their allowed ranges.</message><correlation_id>corr-list-001</correlation_id><details><field>page</field><code>minimum</code></details></Error>
+    RateLimited:
+      description: '`rate_limited`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              value:
+                code: rate_limited
+                message: The request limit was exceeded.
+                correlation_id: corr-rate-429
+                details: []
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>rate_limited</code><message>The request limit was exceeded.</message><correlation_id>corr-rate-429</correlation_id></Error>
+    ProtectedDatabaseUnavailable:
+      description: '`auth_unavailable` or `database_unavailable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              value:
+                code: auth_unavailable
+                message: Session state cannot be checked.
+                correlation_id: corr-dependency-503a
+                details: []
+            database_unavailable:
+              value:
+                code: database_unavailable
+                message: The audit database is unavailable.
+                correlation_id: corr-dependency-503b
+                details: []
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>auth_unavailable</code><message>Session state cannot be checked.</message><correlation_id>corr-dependency-503a</correlation_id></Error>
+            database_unavailable:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>database_unavailable</code><message>The audit database is unavailable.</message><correlation_id>corr-dependency-503b</correlation_id></Error>
+    SchemaNotReady:
+      description: '`schema_not_ready`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              value:
+                code: schema_not_ready
+                message: The required database schema is not applied.
+                correlation_id: corr-ready-503
+                details: []
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>schema_not_ready</code><message>The required database schema is not applied.</message><correlation_id>corr-ready-503</correlation_id></Error>

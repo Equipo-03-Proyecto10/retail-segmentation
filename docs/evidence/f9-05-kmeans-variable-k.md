@@ -45,7 +45,7 @@ customer list and the consumption reports.
 |---|---|---|
 | `f9-05-form-k5-{375,1440}.png` | 1 | The K-means form with K = 5 and its hint: 2 or more, paired with the labels by rank (ADR-0030). |
 | `f9-05-confirm-k5-{375,1440}.png` | 1 | K = 5 accepted and asking for confirmation, where it used to be refused. |
-| `f9-05-run-detail-k8-shared-labels-{375,1440}.png` | 2 | Run #32: *8 clusters over 6 labels, paired by rank (ADR-0030)*, the label of each position, and *Shared: LOYAL (2 clusters), HIBERNATING (2 clusters)*. Every customer row carries a label code. |
+| `f9-05-run-detail-k8-shared-labels-{375,1440}.png` | 2 | Run #34 (k 8, seed 42; recaptured for #447): *8 clusters over 6 labels, paired by rank (ADR-0030)*, the label of each position, and *Shared: LOYAL (2 clusters), HIBERNATING (2 clusters)*. The Quality line lists every measure with its value (inertia 0.3681, silhouette 0.3650, cluster sizes 7, 6, 5, 4, 4, 2, 1, 1, converged yes). Every customer row carries a label code. |
 | `f9-05-dashboard-k5-unused-label-{375,1440}.png` | 1, 2 | Run #31 on the segmentation dashboard: POTENTIAL at 0 customers, not omitted (RN-41). Its migration flow against the previous run (#30, RFM_RULES) also shows the cost ADR-0030 records: labels from a different model move customers who did not change. |
 | `f9-05-matrix-k5-to-k8-{375,1440}.png` | 2 | The migration matrix from run #31 to run #32, keyed only by label, including POTENTIAL, which #31 left empty. |
 

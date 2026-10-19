@@ -53,6 +53,7 @@ READ_ROUTES = [
     "/experiments/1/groups/1",
     "/experiments/1/conversion",
     "/experiments/1/uplift",
+    "/experiment-dashboard/",
     "/experiment-report/",
     "/experiment-report/export.csv",
     "/reports/",
@@ -104,6 +105,15 @@ CAMPAIGN_WRITE_ROUTES = [
 PROTECTED_ROUTES = (
     [("GET", path) for path in READ_ROUTES] + ADMIN_ROUTES + CAMPAIGN_WRITE_ROUTES
 )
+# Routes any signed-in user reaches, whatever their role (`@requires()`): refused
+# to the anonymous, but not to a CUSTOMER, so they are not PROTECTED_ROUTES.
+SIGNED_IN_ROUTES = [
+    ("GET", "/notifications/"),
+    ("GET", "/notifications/1"),
+    ("POST", "/notifications/1/read"),
+    ("POST", "/notifications/read-all"),
+]
+ANONYMOUS_REFUSED_ROUTES = PROTECTED_ROUTES + SIGNED_IN_ROUTES + [("POST", "/logout")]
 PRODUCT = dict(
     product_id="1", sku="TEST", name="Product", category_id="1", list_price="10"
 )
@@ -172,7 +182,7 @@ def test_refusal_matrix_covers_every_protected_route(app):
     adapter = app.url_map.bind("localhost")
     covered = {
         (adapter.match(path, method=method)[0], method)
-        for method, path in PROTECTED_ROUTES + [("POST", "/logout")]
+        for method, path in ANONYMOUS_REFUSED_ROUTES
     }
     registered = {
         (rule.endpoint, method)
@@ -184,7 +194,7 @@ def test_refusal_matrix_covers_every_protected_route(app):
     assert covered == registered
 
 
-@pytest.mark.parametrize("method,path", PROTECTED_ROUTES + [("POST", "/logout")])
+@pytest.mark.parametrize("method,path", ANONYMOUS_REFUSED_ROUTES)
 def test_anonymous_access(app, method, path):
     response = app.test_client().open(path, method=method)
     if method == "GET":

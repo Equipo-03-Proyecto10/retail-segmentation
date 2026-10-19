@@ -29,7 +29,7 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="mq-field">
           <label class="mq-field__label mq-field__label--required" for="method">Method</label>
-          <select class="mq-select" id="method" name="method" onchange="document.getElementById('kmeans-fields').style.display = this.value === 'KMEANS' ? 'block' : 'none';">
+          <select class="mq-select" id="method" name="method" data-mq-reveals="kmeans-fields" data-mq-reveals-when="KMEANS">
             <option value="RFM_RULES" {% if method != "KMEANS" %}selected{% endif %}>RFM rules</option>
             <option value="KMEANS" {% if method == "KMEANS" %}selected{% endif %}>K-means</option>
           </select>
@@ -39,7 +39,9 @@
           <input class="mq-input mq-input--num" type="number" id="window" name="window" value="{{ window }}" min="1" max="3650" required>
           <span class="mq-field__hint">Enter a whole number between 1 and 3650 days.</span>
         </div>
-        <div id="kmeans-fields" style="display: {% if method == 'KMEANS' %}block{% else %}none{% endif %};">
+        {# Shown and hidden by app.js from the select's data-mq-reveals: the CSP
+           refuses inline handlers, so an onchange= here never ran (#519). #}
+        <div id="kmeans-fields"{% if method != "KMEANS" %} hidden{% endif %}>
           <div class="mq-field">
             <label class="mq-field__label mq-field__label--required" for="k">K (number of clusters)</label>
             <input class="mq-input mq-input--num" type="number" id="k" name="k" value="{{ (form_values or {}).get('k', '') }}" min="2">

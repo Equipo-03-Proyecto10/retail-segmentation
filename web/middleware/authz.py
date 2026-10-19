@@ -147,6 +147,17 @@ def permissions_for(role_code: str | None) -> frozenset[str]:
     return PERMISSIONS.get(role_code, frozenset())
 
 
+def roles_holding(permission: str) -> list[str]:
+    """The codes of the roles whose permissions include `permission`.
+
+    The matrix lives in code, not in a table (ADR-0007), so "who may read
+    this" cannot be a join. A service that must address the holders of a
+    permission, as AN-04's notifications do (ADR-0047), asks here and hands the
+    codes to a query. Sorted, so the answer is the same on every call.
+    """
+    return sorted(code for code, held in PERMISSIONS.items() if permission in held)
+
+
 # ---------- what a route declares ----------
 
 AUTHZ_ATTRIBUTE = "__authz_requirement__"
@@ -289,6 +300,9 @@ class MenuItem:
 # the detail views, both gated on catalog.write.
 NAVIGATION: tuple[MenuEntry, ...] = (
     MenuEntry("Home", "home.index", None, "Workspace", "◇"),
+    # Every signed-in role: what a notification says is gated on its own
+    # permission when it is read (ADR-0047), not on the page that lists them.
+    MenuEntry("Notifications", "notifications.index", None, "Workspace", "◉"),
     MenuEntry("Catalogs", "catalog.index", CATALOG_READ, "Workspace", "▦"),
     MenuEntry("Users", "admin.list_users_view", USER_READ, "Workspace", "○"),
     MenuEntry(
@@ -332,6 +346,13 @@ NAVIGATION: tuple[MenuEntry, ...] = (
         "⇵",
     ),
     MenuEntry(
+        "Experiment dashboard",
+        "experiment_dashboard.index",
+        CAMPAIGN_READ,
+        "Analysis",
+        "◩",
+    ),
+    MenuEntry(
         "Experiment report", "experiment_report.index", CAMPAIGN_READ, "Analysis", "◫"
     ),
     MenuEntry("Reports", "reports.index", REPORT_READ, "Analysis", "∷"),
@@ -360,6 +381,8 @@ def menu() -> list[MenuItem]:
         )
     elif endpoint in {"catalog.segments", "catalog.segment_detail"}:
         active_endpoint = "catalog.segments"
+    elif endpoint and endpoint.startswith("notifications."):
+        active_endpoint = "notifications.index"
     elif endpoint and endpoint.startswith("catalog."):
         active_endpoint = "catalog.index"
     else:

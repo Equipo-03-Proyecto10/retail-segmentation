@@ -2,6 +2,13 @@
 # name per line. CI matches these lines exactly, so a reason goes on its own
 # comment line above the name it explains.
 #
+# Only a domain that really is that small is named bare here: roles, channels
+# and labels. app_session, sales_load and sales_load_rejection hold runtime
+# history, which is not a small domain, so they are not exempt: the seed gives
+# each of them 30 or more rows (sign-ins that ended, the uploads that brought
+# the sales in), and an exemption reappearing here needs a reason of the same
+# kind as the three below (#463).
+#
 # A table in public is named bare (`role`). A table in a service schema is
 # named schema-qualified, as CI counts it (ADR-0046): `<suffix>_events.outbox`
 # for a boundary's outbox, which holds runtime events and no seed, and
@@ -26,13 +33,3 @@ channel
 # data; padding this table would misrepresent the vocabulary as larger than
 # it is.
 segment_label
-
-# Server-side sessions (ADR-0022). Runtime state written by signing in, not
-# business data: seeding rows would record sign-ins that never happened.
-app_session
-
-# Sales CSV upload attempts and their rejection details (#334). Runtime
-# state written by an administrator's upload, not business data to seed --
-# same reasoning as app_session above.
-sales_load
-sales_load_rejection

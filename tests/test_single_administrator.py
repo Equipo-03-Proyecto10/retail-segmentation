@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 from uuid import UUID, uuid4
 
 import pytest
@@ -258,7 +259,11 @@ def test_deactivating_the_only_administrator_is_refused() -> None:
     assert connection.writes == []
 
 
-def test_deactivating_anybody_else_is_ordinary_work() -> None:
+def test_deactivating_anybody_else_is_ordinary_work(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notify = Mock()
+    monkeypatch.setattr("web.services.users.notify_user_deactivated", notify)
     connection = _Connection(administrators=1)
 
     set_active(connection, _ANALYST_ID, False)
@@ -268,6 +273,9 @@ def test_deactivating_anybody_else_is_ordinary_work() -> None:
     assert connection.writes[0][1] == (False, str(_ANALYST_ID))
     assert connection.writes[1][0].startswith("UPDATE app_session SET revoked_at")
     assert connection.writes[1][1] == (str(_ANALYST_ID),)
+    # And the holders of user.write are told (AN-04); what that writes is
+    # tests/test_notification_producers.py's.
+    notify.assert_called_once_with(connection, _ANALYST_ID)
 
 
 def test_reactivating_the_administrator_is_not_refused() -> None:

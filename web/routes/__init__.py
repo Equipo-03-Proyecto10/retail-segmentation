@@ -12,12 +12,14 @@ from web.routes.auth import bp as auth_bp
 from web.routes.campaigns import bp as campaigns_bp
 from web.routes.catalog import bp as catalog_bp
 from web.routes.consumption_reports import bp as consumption_reports_bp
+from web.routes.experiment_dashboard import bp as experiment_dashboard_bp
 from web.routes.experiment_report import bp as experiment_report_bp
 from web.routes.experiments import bp as experiments_bp
 from web.routes.home import bp as home_bp
 from web.routes.migration_explanation import bp as migration_explanation_bp
 from web.routes.migration_matrix import bp as migration_matrix_bp
 from web.routes.model_comparison import bp as model_comparison_bp
+from web.routes.notifications import bp as notifications_bp
 from web.routes.reports import reports_bp
 from web.routes.run_history import bp as run_history_bp
 from web.routes.sales_import import bp as sales_import_bp
@@ -42,7 +44,9 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(segment_history_report_bp)
     app.register_blueprint(experiment_report_bp)
     app.register_blueprint(segmentation_dashboard_bp)
+    app.register_blueprint(experiment_dashboard_bp)
     app.register_blueprint(campaigns_bp)
     app.register_blueprint(sales_import_bp)
     app.register_blueprint(experiments_bp)
     app.register_blueprint(reports_bp)
+    app.register_blueprint(notifications_bp)

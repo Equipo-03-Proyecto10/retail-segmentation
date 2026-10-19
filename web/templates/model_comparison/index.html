@@ -55,7 +55,11 @@
       {{ empty_state("No rule-based run has been recorded yet", "Start one from Segment run; a comparison needs one run of each kind.", "No runs") }}
     {% endif %}
     {% if not kmeans %}
-      {{ empty_state("No K-means run has been recorded yet", "K-means runs cannot be started from a screen in this release, so there is nothing to compare yet.", "No runs") }}
+      {% if can("segment_run.execute") %}
+        {{ empty_state("No K-means run has been recorded yet", "Start one from Segment run by choosing K-means as the method; a comparison needs one run of each kind.", "No runs") }}
+      {% else %}
+        {{ empty_state("No K-means run has been recorded yet", "The administrator starts K-means runs from Segment run; a comparison appears here once one run of each kind is recorded.", "No runs") }}
+      {% endif %}
     {% endif %}
   {% endif %}
 

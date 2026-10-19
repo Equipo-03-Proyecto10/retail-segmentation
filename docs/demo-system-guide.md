@@ -1089,16 +1089,13 @@ future intent separately.
 7. The permission matrix includes inventory writes and customer self-service,
    but there are no workflows for those capabilities. A store manager reads every
    store's reports, as the matrix says (ADR-0048).
-8. The Model comparison page says *K-means runs cannot be started from a screen
-   in this release* when no K-means run exists. That sentence is out of date:
-   K-means is started from **Segment run** by choosing *K-means*.
-9. A campaign targets a label and an experiment is attached to a campaign.
+8. A campaign targets a label and an experiment is attached to a campaign.
    Assignment needs the campaign active; the seeded campaigns and experiments
    carry early-2026 dates, so exposing customers needs a campaign and experiment
    created with current dates.
-10. The distributed stage (microservices, Android, Electron, JWT, Redis,
-    MongoDB, OpenAPI, XML/XSD) does not run inside the web system and is not
-    described here. Its demonstration is F18-05 (#462).
+9. The distributed stage (microservices, Android, Electron, JWT, Redis,
+   MongoDB, OpenAPI, XML/XSD) does not run inside the web system and is not
+   described here. Its demonstration is F18-05 (#462).
 
 ---
 

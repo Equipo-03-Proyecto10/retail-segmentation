@@ -362,6 +362,34 @@ def test_with_no_kmeans_run_it_says_so_and_offers_no_comparison(
     world.read.assert_not_called()
 
 
+def test_with_no_kmeans_run_the_administrator_is_sent_to_segment_run(
+    app, monkeypatch
+) -> None:
+    world = _World()
+    world.runs = {k: v for k, v in world.runs.items() if v.method == "RFM_RULES"}
+    _world(monkeypatch, world)
+
+    body = _body(_open(app, role="ADMIN"))
+
+    assert "Start one from Segment run by choosing K-means" in body
+    assert "cannot be started from a screen" not in body
+
+
+@pytest.mark.parametrize("role", ["ANALYST", "STORE_MANAGER", "MARKETING", "AUDITOR"])
+def test_with_no_kmeans_run_a_reader_learns_who_starts_one(
+    app, monkeypatch, role
+) -> None:
+    world = _World()
+    world.runs = {k: v for k, v in world.runs.items() if v.method == "RFM_RULES"}
+    _world(monkeypatch, world)
+
+    body = _body(_open(app, role=role))
+
+    assert "The administrator starts K-means runs from Segment run" in body
+    assert "Start one from Segment run by choosing K-means" not in body
+    assert "cannot be started from a screen" not in body
+
+
 def test_with_no_rule_based_run_it_says_so(app, monkeypatch) -> None:
     world = _World()
     world.runs = {k: v for k, v in world.runs.items() if v.method == "KMEANS"}

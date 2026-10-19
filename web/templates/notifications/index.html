@@ -12,7 +12,15 @@
     <section class="mq-panel mq-notice-panel">
       <div class="mq-table__toolbar">
         <span class="mq-table__count">{{ count_label(inbox.total, "notification") }}</span>
-        <span class="mq-caption">{{ inbox.unread }} unread</span>
+        <div class="mq-notice__toolbar-end">
+          <span class="mq-caption">{{ inbox.unread }} unread</span>
+          {% if inbox.unread %}
+            <form class="mq-inline-form" method="post" action="{{ url_for('notifications.read_all') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="mq-btn mq-btn--secondary mq-btn--sm" type="submit">Mark all read</button>
+            </form>
+          {% endif %}
+        </div>
       </div>
       <ul class="mq-notice-list">
         {% for item in inbox.items %}
@@ -23,10 +31,17 @@
                 {% if item.is_unread %}<span class="mq-notice__state">Unread</span>{% endif %}
                 <time class="mq-caption mq-mono" datetime="{{ item.created_at.isoformat() }}">{{ item.created_at.strftime("%Y-%m-%d %H:%M") }}</time>
               </div>
-              <p class="mq-notice__text">{{ item.message }}</p>
+              <p class="mq-notice__text"><a class="mq-table__link" href="{{ url_for('notifications.detail', notification_id=item.notification_id) }}">{{ item.message }}</a></p>
             </div>
             <div class="mq-notice__actions">
-              <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for(item.link_endpoint, **item.link_arguments) }}">{{ item.link_text }}</a>
+              <a class="mq-btn mq-btn--tertiary mq-btn--sm" href="{{ url_for(item.link_endpoint, **item.link_arguments) }}">{{ item.link_text }}</a>
+              {% if item.is_unread %}
+                <form class="mq-inline-form" method="post" action="{{ url_for('notifications.read', notification_id=item.notification_id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="next" value="{{ url_for('notifications.index', page=inbox.page) }}">
+                  <button class="mq-btn mq-btn--secondary mq-btn--sm" type="submit">Mark read</button>
+                </form>
+              {% endif %}
             </div>
           </li>
         {% endfor %}

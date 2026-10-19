@@ -37,7 +37,10 @@ from web.services.notifications import (
     USER_DEACTIVATED,
     badge_text,
     describe,
+    mark_all_notifications_read,
+    mark_notification_read,
     read_inbox,
+    read_notification,
     unread_count,
     visible_kinds,
 )
@@ -381,3 +384,139 @@ def test_a_role_that_is_sent_nothing_is_told_so(
     inbox = read_inbox(MagicMock(), user_id=USER_ID, role_code=role, page=1)
 
     assert inbox.receives_any is receives
+
+
+# ---------- one notification, and marking it read ----------
+
+
+@pytest.fixture
+def state(monkeypatch: pytest.MonkeyPatch) -> dict[str, Mock]:
+    fakes = {
+        "get_notification": Mock(return_value=row(SEGMENT_RUN_COMPLETED)),
+        "mark_read": Mock(return_value=True),
+        "mark_all_read": Mock(return_value=5),
+    }
+    for name, fake in fakes.items():
+        monkeypatch.setattr(notifications, name, fake)
+    return fakes
+
+
+def test_one_notification_is_read_only_among_the_kinds_the_role_may_read(
+    state: dict[str, Mock],
+) -> None:
+    connection = MagicMock()
+
+    item = read_notification(
+        connection, user_id=USER_ID, role_code="STORE_MANAGER", notification_id=9
+    )
+
+    assert item is not None and item.notification_id == 1
+    state["get_notification"].assert_called_once_with(
+        connection,
+        user_id=USER_ID,
+        notification_id=9,
+        kinds=[SEGMENT_RUN_COMPLETED],
+    )
+
+
+def test_a_notification_that_is_not_the_users_to_read_is_none_whatever_the_reason(
+    state: dict[str, Mock],
+) -> None:
+    """Missing, written for somebody else, or of a kind the role lost: the data
+    layer answers None to all three, and so does the service."""
+    state["get_notification"].return_value = None
+
+    assert (
+        read_notification(
+            MagicMock(), user_id=USER_ID, role_code="ANALYST", notification_id=9
+        )
+        is None
+    )
+
+
+def test_reading_a_notification_does_not_mark_it_read(state: dict[str, Mock]) -> None:
+    read_notification(
+        MagicMock(), user_id=USER_ID, role_code="ANALYST", notification_id=9
+    )
+
+    state["mark_read"].assert_not_called()
+    state["mark_all_read"].assert_not_called()
+
+
+def test_marking_one_read_is_one_committed_operation_for_the_users_own_kinds(
+    state: dict[str, Mock],
+) -> None:
+    connection = MagicMock()
+
+    found = mark_notification_read(
+        connection, user_id=USER_ID, role_code="ANALYST", notification_id=9
+    )
+
+    assert found is True
+    state["mark_read"].assert_called_once_with(
+        connection,
+        user_id=USER_ID,
+        notification_id=9,
+        kinds=[EXPERIMENT_ENDED, SEGMENT_RUN_COMPLETED],
+    )
+    connection.commit.assert_called_once()
+
+
+def test_marking_one_that_is_not_the_users_is_false_and_commits_nothing_more(
+    state: dict[str, Mock],
+) -> None:
+    state["mark_read"].return_value = False
+    connection = MagicMock()
+
+    found = mark_notification_read(
+        connection, user_id=USER_ID, role_code="ANALYST", notification_id=9
+    )
+
+    assert found is False
+
+
+def test_a_failed_mark_rolls_back_and_raises(state: dict[str, Mock]) -> None:
+    state["mark_read"].side_effect = RuntimeError("database down")
+    connection = MagicMock()
+
+    with pytest.raises(RuntimeError):
+        mark_notification_read(
+            connection, user_id=USER_ID, role_code="ANALYST", notification_id=9
+        )
+
+    connection.rollback.assert_called_once()
+    connection.commit.assert_not_called()
+
+
+def test_marking_all_read_covers_only_what_the_role_may_read(
+    state: dict[str, Mock],
+) -> None:
+    connection = MagicMock()
+
+    marked = mark_all_notifications_read(
+        connection, user_id=USER_ID, role_code="STORE_MANAGER"
+    )
+
+    assert marked == 5
+    state["mark_all_read"].assert_called_once_with(
+        connection, user_id=USER_ID, kinds=[SEGMENT_RUN_COMPLETED]
+    )
+    connection.commit.assert_called_once()
+
+
+def test_the_detail_carries_the_facts_beside_the_sentence() -> None:
+    assert describe(row(SALES_LOAD_FINISHED)).details == (
+        ("File", "september.csv"),
+        ("Rows accepted", "1240"),
+        ("Rows rejected", "3"),
+    )
+    assert describe(row(SEGMENT_RUN_COMPLETED)).details == (
+        ("Run", "#12"),
+        ("Method", "RFM_RULES"),
+        ("Customers", "30"),
+    )
+    assert describe(row(EXPERIMENT_ENDED)).details == (
+        ("Experiment", "Free shipping"),
+        ("Ended on", "2026-10-14"),
+    )
+    assert describe(row(USER_DEACTIVATED)).details == (("User", "Demo User 9"),)

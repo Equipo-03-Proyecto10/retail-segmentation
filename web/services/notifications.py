@@ -10,7 +10,7 @@ its holders recipients in the first place. It is checked again every time a
 notification is read, against the reader's current role, so a role that lost the
 permission stops seeing the notification in the inbox and the count, and a
 request for it by id is a 404. A notification the reader was never written for
-is the same 404.
+is the same 404 (RN-62).
 """
 
 from __future__ import annotations
@@ -26,8 +26,12 @@ from web.db.notifications import (
     NotificationRow,
     count_notifications,
     count_unread,
+    get_notification,
     list_notifications,
+    mark_all_read,
+    mark_read,
 )
+from web.db.transactions import atomic
 from web.middleware.authz import (
     CAMPAIGN_READ,
     SALES_INGEST_EXECUTE,
@@ -99,6 +103,7 @@ class InboxItem:
     link_endpoint: str
     link_arguments: dict[str, Any]
     link_text: str
+    details: tuple[tuple[str, str], ...] = ()
 
     @property
     def is_unread(self) -> bool:
@@ -150,6 +155,11 @@ def describe(row: NotificationRow) -> InboxItem:
             {"load_id": row.sales_load_id},
             "Open the import report",
         )
+        details = (
+            ("File", str(row.sales_load_filename)),
+            ("Rows accepted", str(row.sales_load_accepted)),
+            ("Rows rejected", str(row.sales_load_rejected)),
+        )
     elif row.kind == SEGMENT_RUN_COMPLETED:
         message = (
             f"Segmentation run #{row.run_id} ({row.run_method}) completed for "
@@ -159,6 +169,11 @@ def describe(row: NotificationRow) -> InboxItem:
             "run_history.detail",
             {"run_id": row.run_id},
             "Open the run",
+        )
+        details = (
+            ("Run", f"#{row.run_id}"),
+            ("Method", str(row.run_method)),
+            ("Customers", str(row.run_customer_count)),
         )
     elif row.kind == EXPERIMENT_ENDED:
         ended = row.experiment_ends_on.isoformat() if row.experiment_ends_on else "?"
@@ -170,6 +185,7 @@ def describe(row: NotificationRow) -> InboxItem:
             {"experiment_id": row.experiment_id},
             "Open the results",
         )
+        details = (("Experiment", str(row.experiment_name)), ("Ended on", ended))
     elif row.kind == USER_DEACTIVATED:
         message = f"{row.subject_user_name} was deactivated."
         endpoint, arguments, text = (
@@ -177,6 +193,7 @@ def describe(row: NotificationRow) -> InboxItem:
             {"user_id": row.subject_user_id},
             "Open the account",
         )
+        details = (("User", str(row.subject_user_name)),)
     else:
         raise ValueError(f"Unknown notification kind {row.kind!r}.")
 
@@ -190,6 +207,7 @@ def describe(row: NotificationRow) -> InboxItem:
         link_endpoint=endpoint,
         link_arguments=arguments,
         link_text=text,
+        details=details,
     )
 
 
@@ -230,3 +248,54 @@ def read_inbox(
         page_count=page_count(total, PAGE_SIZE),
         receives_any=bool(kinds),
     )
+
+
+def read_notification(
+    connection: Connection[Any],
+    *,
+    user_id: UUID | str,
+    role_code: str | None,
+    notification_id: int,
+) -> InboxItem | None:
+    """One notification in words, or None.
+
+    None is the single answer for a notification that does not exist, that was
+    written for another user, or that the reader's role may no longer read
+    (RN-62): the route answers 404 to all three, never 403, so asking by id
+    reveals nothing about which of them it was.
+    """
+    row = get_notification(
+        connection,
+        user_id=user_id,
+        notification_id=notification_id,
+        kinds=visible_kinds(role_code),
+    )
+    return describe(row) if row else None
+
+
+@atomic
+def mark_notification_read(
+    connection: Connection[Any],
+    *,
+    user_id: UUID | str,
+    role_code: str | None,
+    notification_id: int,
+) -> bool:
+    """Mark one notification read; False when it is not the user's to read.
+
+    Marking one that is already read changes nothing and answers True.
+    """
+    return mark_read(
+        connection,
+        user_id=user_id,
+        notification_id=notification_id,
+        kinds=visible_kinds(role_code),
+    )
+
+
+@atomic
+def mark_all_notifications_read(
+    connection: Connection[Any], *, user_id: UUID | str, role_code: str | None
+) -> int:
+    """Mark everything the user may read as read; how many were unread."""
+    return mark_all_read(connection, user_id=user_id, kinds=visible_kinds(role_code))

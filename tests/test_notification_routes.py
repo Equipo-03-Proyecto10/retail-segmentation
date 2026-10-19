@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import replace
 from unittest.mock import MagicMock, Mock
 from urllib.parse import parse_qs, urlsplit
 
@@ -17,7 +18,7 @@ import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 
-from tests.test_notification_service import USER_ID, row
+from tests.test_notification_service import USER_ID, WHEN, row
 from web.app import create_app
 from web.config import Config
 from web.middleware.authz import PERMISSIONS
@@ -384,3 +385,305 @@ def test_by_default_the_count_is_stubbed_so_a_page_opens_no_connection(
     _sign_in(app).get("/no-such-page")
 
     app.extensions["database_connector"].assert_not_called()
+
+
+# ---------- one notification ----------
+
+
+@pytest.fixture
+def state(monkeypatch: pytest.MonkeyPatch) -> dict[str, Mock]:
+    fakes = {
+        "get_notification": Mock(return_value=row(SEGMENT_RUN_COMPLETED)),
+        "mark_read": Mock(return_value=True),
+        "mark_all_read": Mock(return_value=3),
+    }
+    for name, fake in fakes.items():
+        monkeypatch.setattr(notifications, name, fake)
+    return fakes
+
+
+def test_the_detail_page_says_what_happened_and_where_to_go_next(
+    app: Flask, state: dict[str, Mock]
+) -> None:
+    response = _sign_in(app).get("/notifications/9")
+    body = _body(response)
+
+    assert response.status_code == 200
+    assert "Segmentation run completed" in body
+    assert "Segmentation run #12 (RFM_RULES) completed for 30 customers." in body
+    assert "<dt>Method</dt><dd>RFM_RULES</dd>" in body
+    assert 'href="/run-history/12"' in body
+    assert "Unread" in body
+    assert 'action="/notifications/1/read"' in body
+
+
+def test_a_read_notification_offers_no_mark_read_button(
+    app: Flask, state: dict[str, Mock]
+) -> None:
+    state["get_notification"].return_value = replace(
+        row(SEGMENT_RUN_COMPLETED), read_at=WHEN
+    )
+
+    body = _body(_sign_in(app).get("/notifications/9"))
+
+    assert "Mark read" not in body
+    assert "Read 2026-10-15 09:30" in body
+
+
+def test_opening_a_notification_does_not_mark_it_read(
+    app: Flask, state: dict[str, Mock]
+) -> None:
+    client = _sign_in(app)
+    client.get("/notifications/9")
+    client.head("/notifications/9")
+
+    state["mark_read"].assert_not_called()
+    state["mark_all_read"].assert_not_called()
+
+
+def test_the_detail_asks_only_for_the_users_own_row_among_their_kinds(
+    app: Flask, state: dict[str, Mock]
+) -> None:
+    _sign_in(app, "STORE_MANAGER").get("/notifications/9")
+
+    kwargs = state["get_notification"].call_args.kwargs
+    assert kwargs == {
+        "user_id": USER_ID,
+        "notification_id": 9,
+        "kinds": [SEGMENT_RUN_COMPLETED],
+    }
+
+
+def test_a_notification_that_is_not_theirs_is_a_404_never_a_403(
+    app: Flask, state: dict[str, Mock]
+) -> None:
+    state["get_notification"].return_value = None
+
+    response = _sign_in(app).get("/notifications/9")
+
+    assert response.status_code == 404
+    assert "Not Found" in _body(response)
+    assert "Forbidden" not in _body(response)
+
+
+def test_an_id_that_is_no_notification_at_all_looks_the_same_as_a_foreign_one(
+    app: Flask, state: dict[str, Mock]
+) -> None:
+    """Missing and somebody else's cannot be told apart from outside."""
+    state["get_notification"].return_value = None
+    client = _sign_in(app)
+
+    foreign = client.get("/notifications/9")
+    missing = client.get("/notifications/123456")
+
+    assert (foreign.status_code, missing.status_code) == (404, 404)
+    assert _strip_reference(_body(foreign)) == _strip_reference(_body(missing))
+
+
+def _strip_reference(body: str) -> str:
+    return re.sub(r"Reference[^<]*<[^>]*>[^<]*", "", re.sub(r"[0-9a-f]{8}", "", body))
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/notifications/0",
+        "/notifications/-1",
+        "/notifications/abc",
+        "/notifications/9223372036854775808",
+        "/notifications/99999999999999999999999",
+    ],
+)
+def test_an_id_the_column_cannot_hold_is_a_404_and_reaches_no_query(
+    app: Flask, state: dict[str, Mock], path: str
+) -> None:
+    response = _sign_in(app).get(path)
+
+    assert response.status_code == 404
+    state["get_notification"].assert_not_called()
+
+
+def test_the_largest_id_the_column_holds_is_looked_up(
+    app: Flask, state: dict[str, Mock]
+) -> None:
+    state["get_notification"].return_value = None
+
+    response = _sign_in(app).get("/notifications/9223372036854775807")
+
+    assert response.status_code == 404
+    state["get_notification"].assert_called_once()
+
+
+def test_an_anonymous_visitor_is_sent_to_sign_in_from_the_detail(
+    app: Flask, state: dict[str, Mock]
+) -> None:
+    response = app.test_client().get("/notifications/9")
+
+    assert response.status_code == 302
+    assert urlsplit(response.location).path == "/login"
+    state["get_notification"].assert_not_called()
+
+
+# ---------- marking read ----------
+
+
+def test_marking_one_read_goes_back_to_the_inbox_page_it_came_from(
+    app: Flask, state: dict[str, Mock]
+) -> None:
+    response = _sign_in(app).post(
+        "/notifications/9/read", data={"next": "/notifications/?page=2"}
+    )
+
+    assert response.status_code == 303
+    assert response.headers["Location"] == "/notifications/?page=2"
+    state["mark_read"].assert_called_once()
+    kwargs = state["mark_read"].call_args.kwargs
+    assert kwargs["user_id"] == USER_ID and kwargs["notification_id"] == 9
+    assert kwargs["kinds"] == [EXPERIMENT_ENDED, SEGMENT_RUN_COMPLETED]
+
+
+def test_marking_one_read_without_a_return_address_goes_to_the_inbox(
+    app: Flask, state: dict[str, Mock]
+) -> None:
+    response = _sign_in(app).post("/notifications/9/read")
+
+    assert response.status_code == 303
+    assert response.headers["Location"] == "/notifications/"
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "https://evil.example/",
+        "//evil.example/",
+        "/\\evil.example",
+        "javascript:alert(1)",
+        "notifications/9",
+    ],
+)
+def test_the_return_address_is_never_followed_off_the_site(
+    app: Flask, state: dict[str, Mock], target: str
+) -> None:
+    response = _sign_in(app).post("/notifications/9/read", data={"next": target})
+
+    assert response.status_code == 303
+    assert response.headers["Location"] == "/notifications/"
+
+
+def test_marking_one_that_is_not_theirs_is_a_404_not_a_403(
+    app: Flask, state: dict[str, Mock]
+) -> None:
+    state["mark_read"].return_value = False
+
+    response = _sign_in(app).post("/notifications/9/read")
+
+    assert response.status_code == 404
+    assert "Forbidden" not in _body(response)
+
+
+def test_marking_read_is_a_post_only(app: Flask, state: dict[str, Mock]) -> None:
+    client = _sign_in(app)
+
+    assert client.get("/notifications/9/read").status_code == 405
+    assert client.get("/notifications/read-all").status_code == 405
+    state["mark_read"].assert_not_called()
+
+
+def test_an_anonymous_post_is_refused_and_marks_nothing(
+    app: Flask, state: dict[str, Mock]
+) -> None:
+    client = app.test_client()
+
+    assert client.post("/notifications/9/read").status_code == 403
+    assert client.post("/notifications/read-all").status_code == 403
+    state["mark_read"].assert_not_called()
+    state["mark_all_read"].assert_not_called()
+
+
+def test_mark_all_read_says_how_many_it_marked(
+    app: Flask, state: dict[str, Mock]
+) -> None:
+    client = _sign_in(app)
+
+    response = client.post("/notifications/read-all")
+    page = _body(client.get(response.headers["Location"]))
+
+    assert response.status_code == 303
+    assert response.headers["Location"] == "/notifications/"
+    assert "3 notifications marked read." in page
+    assert state["mark_all_read"].call_args.kwargs["kinds"] == [
+        EXPERIMENT_ENDED,
+        SEGMENT_RUN_COMPLETED,
+    ]
+
+
+@pytest.mark.parametrize(
+    ("marked", "message"),
+    [(0, "No unread notifications."), (1, "1 notification marked read.")],
+)
+def test_mark_all_read_reads_correctly_for_none_and_for_one(
+    app: Flask, state: dict[str, Mock], marked: int, message: str
+) -> None:
+    state["mark_all_read"].return_value = marked
+    client = _sign_in(app)
+
+    client.post("/notifications/read-all")
+
+    assert message in _body(client.get(_URL))
+
+
+# ---------- the inbox offers the state changes ----------
+
+
+def test_an_unread_row_offers_mark_read_and_the_page_offers_mark_all(
+    app: Flask, reads: dict[str, Mock]
+) -> None:
+    body = _body(_sign_in(app).get(_URL + "?page=1"))
+
+    assert 'action="/notifications/read-all"' in body
+    assert 'action="/notifications/9/read"' in body
+    assert 'name="next" value="/notifications/?page=1"' in body
+    assert 'href="/notifications/9"' in body
+
+
+def test_with_nothing_unread_there_is_nothing_to_mark(
+    app: Flask, reads: dict[str, Mock]
+) -> None:
+    reads["count_unread"].return_value = 0
+    reads["list_notifications"].return_value = [
+        replace(row(SEGMENT_RUN_COMPLETED, notification_id=9), read_at=WHEN)
+    ]
+
+    body = _body(_sign_in(app).get(_URL))
+
+    assert "Mark all read" not in body
+    assert "Mark read" not in body
+    assert "mq-notice--unread" not in body
+
+
+# ---------- the real CSRF check ----------
+
+
+@pytest.mark.real_csrf
+@pytest.mark.parametrize("path", ["/notifications/9/read", "/notifications/read-all"])
+def test_a_state_change_without_the_csrf_token_is_refused_and_marks_nothing(
+    app: Flask, state: dict[str, Mock], path: str
+) -> None:
+    response = _sign_in(app).post(path)
+
+    assert response.status_code == 403
+    state["mark_read"].assert_not_called()
+    state["mark_all_read"].assert_not_called()
+
+
+@pytest.mark.real_csrf
+def test_the_forms_carry_the_token_the_session_expects(
+    app: Flask, reads: dict[str, Mock]
+) -> None:
+    client = _sign_in(app)
+
+    body = _body(client.get(_URL))
+
+    with client.session_transaction() as flask_session:
+        token = flask_session["csrf_token"]
+    assert body.count(f'name="csrf_token" value="{token}"') >= 2

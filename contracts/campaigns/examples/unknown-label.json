@@ -1,0 +1,11 @@
+{
+  "code": "unknown_label",
+  "message": "label_code is absent from the segment label vocabulary.",
+  "correlation_id": "corr-campaign-422c",
+  "details": [
+    {
+      "field": "label_code",
+      "code": "unknown"
+    }
+  ]
+}

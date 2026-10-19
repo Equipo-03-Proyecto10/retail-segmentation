@@ -381,6 +381,35 @@ def test_with_no_runs_at_all_it_says_both(app, monkeypatch) -> None:
     assert "No K-means run has been recorded yet" in body
 
 
+def test_a_visitor_who_may_run_segmentation_is_told_to_start_a_kmeans_run(
+    app, monkeypatch
+) -> None:
+    world = _World()
+    world.runs = {k: v for k, v in world.runs.items() if v.method == "RFM_RULES"}
+    _world(monkeypatch, world)
+
+    body = _body(_open(app, role="ADMIN"))
+
+    assert "Start one from Segment run with the K-means method" in body
+    assert "cannot be started from a screen" not in body
+
+
+def test_a_reader_who_may_not_run_segmentation_is_told_who_can(
+    app, monkeypatch
+) -> None:
+    world = _World()
+    world.runs = {k: v for k, v in world.runs.items() if v.method == "RFM_RULES"}
+    _world(monkeypatch, world)
+
+    body = _body(_open(app, role="ANALYST"))
+
+    assert (
+        "A user who may run segmentation starts one from Segment run "
+        "with the K-means method" in body
+    )
+    assert "cannot be started from a screen" not in body
+
+
 # ---------- reaching it ----------
 
 

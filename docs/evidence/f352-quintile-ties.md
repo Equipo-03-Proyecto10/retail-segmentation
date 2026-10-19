@@ -124,7 +124,7 @@ grouped view above: zero pairs disagree.
 `explain_migration` (#338) already reads whatever `r_score`/`f_score`/`m_score`
 were stored for a run and explains, in words, when a score moved because "other
 customers moved the quintile cut points" rather than the customer's own
-behaviour (RN-50). It does not compute or duplicate the quintile mechanism
+behaviour (RN-60). It does not compute or duplicate the quintile mechanism
 itself, so this fix changes nothing about it — if anything, its explanations are
 now more trustworthy, since a score can no longer move for the wrong reason
 (a different customer id breaking a tie differently) alongside the reasons it
@@ -157,6 +157,11 @@ evidence — out of scope for #352. Flagged here for the team to fix in its own
 change, the same way this document flags rather than silently fixes anything
 outside its own bug.
 
+**Resolved by AN-15 (#460)**, which also found RN-37 duplicated. RN-37 stays on
+accepted sales, RN-47 on assignment-history protection and RN-50 on consumption
+shifts; the K-means rule became RN-58, the migration matrix RN-59 and the
+migration explanation RN-60. The line numbers above are those of the time.
+
 ## Things to know
 
 * **Only the worst-scored-first ordering changes; every downstream reader is
@@ -166,4 +171,4 @@ outside its own bug.
 * **With fewer distinct values than five, a run's worst scores go unused** for
   that measure, rather than being manufactured to fill all five — the same
   honest "some buckets can be empty" principle this project already applies to
-  K-means's own quintile-shaped heatmap (RN-37) and label mapping (RN-38).
+  K-means's own quintile-shaped heatmap (RN-58) and label mapping (RN-38).

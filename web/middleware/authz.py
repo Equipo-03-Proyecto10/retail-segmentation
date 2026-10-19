@@ -13,11 +13,11 @@ deploys, not data an administrator edits at runtime; the reasoning, and the
 alternative that was rejected, are in
 `docs/adr/0007-permissions-in-code-with-a-default-deny-middleware.md`.
 
-**What this module does not do.** The matrix qualifies two cells with `own`
-(a customer reaches their own row) and `read, own store` (a store manager reads
-their own store's reports). Those are row scoping, not route gating, and the
-gate here cannot express them: it decides whether a request reaches a view, not
-which rows the view then selects. `CUSTOMER` therefore holds `user.self` rather
+**What this module does not do.** The matrix qualifies one cell with `own`
+(a customer reaches their own row). That is row scoping, not route gating, and
+the gate here cannot express it: it decides whether a request reaches a view,
+not which rows the view then selects. Store managers read every store's
+reports (ADR-0048). `CUSTOMER` therefore holds `user.self` rather
 than `user.read`, and narrowing the query behind it belongs to the story that
 writes the query — F3-05 (#65) and F3-11 (#103). A gate that appeared to filter
 rows and did not would be worse than one that says plainly that it does not.
@@ -145,6 +145,17 @@ def permissions_for(role_code: str | None) -> frozenset[str]:
     if role_code is None:
         return frozenset()
     return PERMISSIONS.get(role_code, frozenset())
+
+
+def roles_holding(permission: str) -> list[str]:
+    """The codes of the roles whose permissions include `permission`.
+
+    The matrix lives in code, not in a table (ADR-0007), so "who may read
+    this" cannot be a join. A service that must address the holders of a
+    permission, as AN-04's notifications do (ADR-0047), asks here and hands the
+    codes to a query. Sorted, so the answer is the same on every call.
+    """
+    return sorted(code for code, held in PERMISSIONS.items() if permission in held)
 
 
 # ---------- what a route declares ----------
@@ -280,15 +291,20 @@ class MenuItem:
     glyph: str
 
 
-# One entry per section of the matrix in docs/requirements.md §3. Destinations
-# without a current-delivery workflow still register a permission-gated status
-# page, so the design-system navigation never contains a broken destination.
+# Every entry leads to an implemented page and names the permission that page
+# requires. `menu()` keeps only the entries whose endpoint is registered and
+# whose permission the visitor holds, so nobody is offered a page they would be
+# refused or one that does not exist. Home and Notifications require none and
+# reach every signed-in role.
 #
 # "Catalogs" points at the read-only consultation hub (F3-05, #65). The
 # administrator reaches the CRUD hub from a link on that page and edits from
 # the detail views, both gated on catalog.write.
 NAVIGATION: tuple[MenuEntry, ...] = (
     MenuEntry("Home", "home.index", None, "Workspace", "◇"),
+    # Every signed-in role: what a notification says is gated on its own
+    # permission when it is read (ADR-0047), not on the page that lists them.
+    MenuEntry("Notifications", "notifications.index", None, "Workspace", "◉"),
     MenuEntry("Catalogs", "catalog.index", CATALOG_READ, "Workspace", "▦"),
     MenuEntry("Users", "admin.list_users_view", USER_READ, "Workspace", "○"),
     MenuEntry(
@@ -367,6 +383,8 @@ def menu() -> list[MenuItem]:
         )
     elif endpoint in {"catalog.segments", "catalog.segment_detail"}:
         active_endpoint = "catalog.segments"
+    elif endpoint and endpoint.startswith("notifications."):
+        active_endpoint = "notifications.index"
     elif endpoint and endpoint.startswith("catalog."):
         active_endpoint = "catalog.index"
     else:

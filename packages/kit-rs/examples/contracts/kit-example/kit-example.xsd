@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:notes="https://mosaiq.maxthecoder.online/xml/kit-example/v1"
+           xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1"
+           targetNamespace="https://mosaiq.maxthecoder.online/xml/kit-example/v1"
+           elementFormDefault="qualified">
+  <xs:import namespace="https://mosaiq.maxthecoder.online/xml/common/v1"
+             schemaLocation="../common/v1/common.xsd"/>
+
+  <xs:simpleType name="Amount">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="(0|[1-9][0-9]{0,7})\.[0-9]{2}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Title">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:maxLength value="120"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="NoteType">
+    <xs:sequence>
+      <xs:element name="note_id" type="xs:positiveInteger"/>
+      <xs:element name="title" type="notes:Title"/>
+      <xs:element name="amount" type="notes:Amount"/>
+      <xs:element name="created_by" type="xs:string" minOccurs="0"/>
+      <xs:element name="created_at" type="xs:dateTime"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="NotesType">
+    <xs:sequence>
+      <xs:element name="Note" type="notes:NoteType"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="CreateNoteRequestType">
+    <xs:sequence>
+      <xs:element name="title" type="notes:Title"/>
+      <xs:element name="amount" type="notes:Amount"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name="Note" type="notes:NoteType"/>
+  <xs:element name="Notes" type="notes:NotesType"/>
+  <xs:element name="CreateNoteRequest" type="notes:CreateNoteRequestType"/>
+</xs:schema>

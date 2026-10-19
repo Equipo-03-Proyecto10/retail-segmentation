@@ -252,8 +252,8 @@ def test_with_fewer_scored_customers_than_bins_the_extremes_are_not_both_reached
 
 
 def test_customers_with_the_same_purchase_count_share_a_frequency_bin() -> None:
-    """The seed gives every customer 10 purchases; they spread across all five
-    frequency bins until ties stopped being split by customer id (#423)."""
+    """The seed once gave every customer 10 purchases; they spread across all
+    five frequency bins until ties stopped being split by customer id (#423)."""
     rows = [_rfm(f"c{n:02d}", "LOYAL", days_ago=n + 1, freq=10) for n in range(30)]
 
     heatmap = build_rfm_heatmap(rows)

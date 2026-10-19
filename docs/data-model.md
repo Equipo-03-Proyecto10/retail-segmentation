@@ -17,45 +17,62 @@ Stories: F2-01 (conceptual model), F2-02 (normalization), F2-03 (logical model).
 
 ### Entities
 
+This list is the 29-table `public` schema. Service-owned tables live in their
+own schemas under ADR-0046 and are deliberately outside this list and diagram.
+
 | Entity | What it is |
 |---|---|
 | `role` | A permission profile. Seven exist; see the matrix below |
+| `channel` | A route to market: mobile app, web, physical store, marketplace, call centre |
+| `category` | A product classification, self-referencing so a category can have a parent |
+| `store` | A physical location that registers sales and holds inventory |
+| `segment_rule` | The RFM bands that define a segment |
+| `segment_label` | The stable, ordered vocabulary every segmentation run's assignments draw from |
+| `segment` | A named RFM band, valid over a period, defined by one rule and carrying one stable label |
 | `app_user` | Someone who signs in. Exactly one holds the administrator role |
 | `app_session` | One sign-in, server-side: open until signed out, revoked or the configured idle/absolute lifetime expires (ADR-0022, ADR-0032) |
 | `customer` | Someone the business sells to. Not every customer signs in |
-| `channel` | A route to market: mobile app, web, physical store, marketplace, call centre |
-| `category` | A product classification, self-referencing so a category can have a parent |
+| `customer_preferred_channel` | One preferred channel of a customer; one half of the independent-preferences 4NF decomposition |
+| `customer_interest_category` | One category of interest of a customer; the other half of that decomposition |
+| `segmentation_run` | One completed RFM-rules or K-means calculation, with its parameters and provenance |
+| `customer_segment_history` | One customer's durable result in one segmentation run and its validity interval |
 | `product` | Something sold, priced, and classified into one category |
-| `store` | A physical location that registers sales and holds inventory |
 | `transaction` | One sale: a customer, at a store, through a channel, at a time |
 | `transaction_line` | One product within one sale, with its quantity and the price actually paid |
 | `sales_load` | One administrator CSV upload attempt and its reconciled outcome |
 | `sales_load_rejection` | One rejected file line and the business reason it was refused |
-| `inventory` | Stock of one product at one store |
-| `segment_rule` | The RFM bands that define a segment |
-| `segment_label` | The stable, ordered vocabulary every segmentation run's assignments draw from |
-| `segment` | A named group of customers, valid over a period, defined by one rule |
 | `campaign` | Marketing action aimed at one stable segment label, over a date range, in a status |
 | `experiment` | An A/B test, optionally attached to a campaign, with a fixed conversion window and a data origin |
 | `experiment_group` | A control or treatment arm of an experiment |
 | `experiment_assignment` | One customer's durable assignment to one arm of an experiment, before any outcome is known |
 | `experiment_exposure` | One exposure event for an assigned customer, recorded separately from assignment |
 | `experiment_conversion` | A qualifying sale linked back to an assignment, inside its experiment's conversion window |
+| `inventory` | Stock of one product at one store |
+| `notification` | One thing that happened that somebody should be told about: a sales load, a segmentation run, an experiment's end or a user's deactivation (ADR-0047). The event, kept once |
+| `notification_recipient` | One user an event was written for, and when they read it |
 | `audit_log` | Who changed which business rule or catalog row, when, and to what |
 
 ### Relationships
 
 - `app_user` (N) — has — (1) `role`
+- `app_user` (0..1) — signs in as — (0..1) `customer`
 - `app_user` (1) — opens — (N) `app_session`
+- `app_user` (0..1) — performs — (N) `audit_log` entries
+- `app_user` (0..1) — executes — (N) `segmentation_run` rows
+- `channel` (1) — registers — (N) `customer`
 - `customer` (1) — makes — (N) `transaction`
 - `store` (1) — registers — (N) `transaction`
 - `transaction` (1) — contains — (N) `transaction_line` (N) — references — (1) `product`
-- `app_user` (1) — submits — (N) `sales_load`; the user is optional so deleting an account does not delete import history
+- `app_user` (0..1) — submits — (N) `sales_load`; the user is optional so deleting an account does not delete import history
 - `sales_load` (1) — records — (N) `sales_load_rejection`
 - `product` (N) — belongs to — (1) `category`
 - `category` (N) — is a child of — (0..1) `category`
-- `customer` (N) — currently belongs to — (0..1) `segment`
 - `segment` (N) — is defined by — (1) `segment_rule`
+- `segment` (N) — carries — (1) `segment_label`
+- `segmentation_run` (1) — produces — (N) `customer_segment_history` rows
+- `customer` (1) — has — (N) `customer_segment_history` rows
+- `customer_segment_history` (N) — optionally records — (0..1) `segment`
+- `customer_segment_history` (N) — optionally carries — (0..1) `segment_label`
 - `campaign` (N) — targets — (1) `segment_label`
 - `experiment` (1) — has — (N) `experiment_group`
 - `experiment_group` (1) — has — (N) `experiment_assignment` — assigns — (1) `customer`
@@ -63,9 +80,12 @@ Stories: F2-01 (conceptual model), F2-02 (normalization), F2-03 (logical model).
 - `experiment_assignment` (1) — has — (N) `experiment_conversion`
 - `transaction` (1) — qualifies — (N) `experiment_conversion`
 - `inventory` (N) — is stock of — (1) `product` at (1) `store`
-- `customer` (1) — prefers — (N) `channel`
-- `customer` (1) — is interested in — (N) `category`
-- `audit_log` records events over any audited entity
+- `sales_load` (0..1) — is announced by — (0..1) `notification`; likewise `segmentation_run` and `experiment`, and a `notification` names exactly one of those three or a user
+- `app_user` (0..1) — is the subject of — (N) `notification`, one per deactivation
+- `notification` (1) — is written for — (N) `notification_recipient` (N) — belongs to — (1) `app_user`
+- `customer` (1) — has — (N) `customer_preferred_channel` rows (N) — reference — (1) `channel`
+- `customer` (1) — has — (N) `customer_interest_category` rows (N) — reference — (1) `category`
+- `audit_log` names any audited entity as text; only its optional actor is a foreign key
 
 ### Permission matrix
 
@@ -239,6 +259,92 @@ its rejected file lines and their reasons. Every non-key attribute in either
 relation depends on its own key, and neither relation contains a second
 independent multivalued dependency, so the decomposition is in 4NF.
 
+Three analytics dependencies deserve explicit decisions because their column
+names can otherwise make the decomposition look unfinished:
+
+- **`segment_id → label_code`.** In `segment`, this dependency has the primary
+  key as its determinant and is therefore harmless. In
+  `customer_segment_history` it is conditional, not a functional dependency
+  over the whole relation: K-means assignments have a `NULL segment_id` and a
+  label, and deleting a retired RFM band sets only `segment_id` to `NULL` while
+  preserving that row's label. Rows with no segment can consequently carry
+  different labels. When a segment is present, the composite foreign key to
+  `segment (segment_id, label_code)` enforces that the two values agree; the
+  separate foreign key to `segment_label` constrains the durable label when
+  the composite `MATCH SIMPLE` check is skipped. The label is the assignment
+  fact consumed by the K-means pipeline (RN-58), migration matrix (RN-59) and
+  migration explanation (RN-60); the nullable segment is optional RFM-band
+  provenance. ADR-0018 and ADR-0030 require that separation, so no label is
+  derived from a nullable segment during a history read.
+- **`group_id → experiment_id`.** This dependency holds because `group_id` is
+  the primary key of `experiment_group`. In `experiment_assignment`, however,
+  `experiment_id` is a prime attribute of the candidate key
+  `UNIQUE (experiment_id, customer_id)`, not a descriptive fact transitively
+  copied through the group. That candidate key is RN-23's database guarantee
+  that one customer cannot enter two arms of the same experiment. The
+  composite foreign key `(group_id, experiment_id)` then proves that the arm
+  belongs to that same experiment and prevents the repeated key component
+  from varying independently. The row still represents one assignment and
+  contains no second multivalued fact; this is the declarative-key design
+  chosen by ADR-0019, not an unguarded duplicate of experiment data.
+- **Exposure and conversion are separate relations.** From an assignment,
+  `assignment_id ↠ exposure_id` and `assignment_id ↠ conversion_id` are
+  independent multivalued facts: an assignment may have several exposures and
+  several qualifying sales, and no exposure is paired with a particular
+  conversion. Putting both in one row would manufacture the Cartesian product
+  of those events, repeat each timestamp, and require null placeholders for an
+  assigned-but-unexposed or non-converting customer. ADR-0019 therefore puts
+  each event in its own relation. Their join through `assignment_id` is
+  lossless for assignment-level reporting without inventing an
+  exposure-to-sale relationship.
+
+The other analytics relations were checked by the same test. `segment_label`,
+`segment`, `campaign`, `experiment`, and `experiment_group` each store one fact
+whose attributes depend on a declared key. `segmentation_run` stores one run;
+`customer_segment_history` stores one customer result in that run;
+`experiment_assignment` stores one assigned customer; and each exposure and
+conversion row stores one event. Apart from the guarded key dependencies just
+explained, none carries two independent multivalued facts, so no further 4NF
+decomposition is needed.
+
+`notification` and `notification_recipient` (AN-04, ADR-0047) split an event from
+the people it was written for, for the same reason `segmentation_run` and
+`customer_segment_history` do. One relation holding the event beside each
+recipient's read state would repeat the event's subject and `created_at` once per
+recipient: a run announced to the 21 users who may read segments would be 21
+copies of the same two facts, free to disagree, and an event nobody could be told
+about (no active holder of the permission) would have no row to exist in. The
+event is keyed by `notification_id`; the recipient relation is keyed by
+`(notification_id, user_id)` and carries the one fact that differs per recipient,
+`read_at`. Which users an event reaches, and which events a user has, are the two
+multivalued facts, and each has its own side of the key. Neither relation carries
+a second one, so both are in 4NF. Three decisions the column names can make look
+unfinished:
+
+- **The exclusive arc.** `notification` has four nullable foreign keys,
+  `sales_load_id`, `run_id`, `experiment_id` and `subject_user_id`, of which
+  exactly one is set (`notification_one_subject`). Every attribute still depends on
+  `notification_id` alone, and no multivalued fact is hiding in the columns, so
+  the nulls are a physical-design choice and not a normal-form failure. The
+  alternative is one subtype table per kind of subject, with the supertype row
+  holding only the key. That puts the "exactly one subtype row" rule where no
+  declarative constraint can state it (it needs circular, deferrable references),
+  and adds four tables where the arc adds three nullable columns. A polymorphic
+  `(subject_type, subject_id)` pair was rejected outright: it cannot be a foreign
+  key, so it permits orphans and unknown types.
+- **`kind` is derived.** It is a function of which subject is set, so a purist
+  would not store it. It is a `STORED` generated column, which the database
+  computes and no writer can set, so it cannot drift from the subject. It is kept
+  because the read-time permission check filters the inbox and the unread count by
+  `kind`, and the arc has no single column to filter on.
+- **`subject_user_id` is not `UNIQUE`; the other three subjects are.** A run, a
+  load and an experiment are announced once, which is the guard the lazy
+  announcer's `ON CONFLICT` relies on. A user can be deactivated, reactivated and
+  deactivated again, and each deactivation is its own event.
+
+No message text is stored. The sentence is a function of the subject row, so
+storing it would be a second copy of facts the subject already holds.
+
 Every other relation in the model is already in 4NF. The remaining composite-key
 tables — `transaction_line`, `inventory` — each carry a single multivalued
 fact plus attributes that depend on the whole key, so there is nothing to
@@ -267,6 +373,7 @@ erDiagram
     app_user                   |o--o| customer                   : "signs in as"
     app_user                   |o--o{ audit_log                  : "performs"
     app_user                   ||--o{ app_session                : "opens"
+    app_user                   |o--o{ segmentation_run           : "executes"
     channel                    ||--o{ customer                   : "registers"
     channel                    ||--o{ transaction                : "carries"
     channel                    ||--o{ customer_preferred_channel : "preferred by"
@@ -277,14 +384,18 @@ erDiagram
     category                   |o--o{ category                   : "parent of"
     customer                   ||--o{ transaction                : "makes"
     store                      ||--o{ transaction                : "registers"
-    transaction                ||--|{ transaction_line           : "contains"
+    transaction                ||--o{ transaction_line           : "contains"
     product                    ||--o{ transaction_line           : "is sold as"
     app_user                   |o--o{ sales_load                 : "submits"
     sales_load                 ||--o{ sales_load_rejection       : "records"
     store                      ||--o{ inventory                  : "holds"
     product                    ||--o{ inventory                  : "is stocked as"
     segment_rule               ||--o{ segment                    : "defines"
-    segment                    |o--o{ customer                   : "currently groups"
+    segment_label              ||--o{ segment                    : "labels"
+    segmentation_run           ||--o{ customer_segment_history  : "produces"
+    customer                   ||--o{ customer_segment_history  : "has history"
+    segment                    |o--o{ customer_segment_history  : "matched as"
+    segment_label              |o--o{ customer_segment_history  : "assigned as"
     segment_label              ||--o{ campaign                   : "is targeted by"
     campaign                   |o--o{ experiment                 : "originates"
     experiment                 ||--o{ experiment_group           : "has"
@@ -293,6 +404,12 @@ erDiagram
     experiment_assignment      ||--o{ experiment_exposure        : "is exposed via"
     experiment_assignment      ||--o{ experiment_conversion      : "converts via"
     transaction                ||--o{ experiment_conversion      : "qualifies"
+    sales_load                 |o--o| notification               : "is announced by"
+    segmentation_run           |o--o| notification               : "is announced by"
+    experiment                 |o--o| notification               : "is announced by"
+    app_user                   |o--o{ notification               : "is the subject of"
+    notification               ||--o{ notification_recipient     : "is written for"
+    app_user                   ||--o{ notification_recipient     : "is told"
 ```
 
 ### Data dictionary
@@ -305,8 +422,13 @@ Nullability is stated for every column. `PK` primary key, `FK` foreign key,
 | Column | Type | Null | Constraints | Meaning |
 |---|---|---|---|---|
 | `role_id` | `SMALLINT` | NN | PK | Role identifier |
-| `code` | `VARCHAR(40)` | NN | UQ | Stable code the middleware matches on, e.g. `ADMIN` |
+| `code` | `VARCHAR(40)` | NN | UQ; uppercase-ASCII format and administrator-id checks | Stable code the middleware matches on, e.g. `ADMIN` |
 | `description` | `VARCHAR(160)` | yes | — | Human-readable purpose |
+
+`role_code_format` permits only `[A-Z][A-Z0-9_]*`;
+`role_admin_code_bound_to_reserved_id` binds `ADMIN` to `role_id = 1`, and
+`role_admin_lookalike` refuses the configured ASCII lookalikes. The
+`trg_role_code_immutable` trigger prevents a code from changing after insert.
 
 #### `channel`
 
@@ -363,13 +485,16 @@ The seeded bands partition the 125 (R, F, M) triples, five bands per label (RN-4
 | `valid_from` | `DATE` | NN | — | First day the definition applies |
 | `valid_to` | `DATE` | yes | `CHECK >= valid_from` | Last day; `NULL` while current |
 
+`UNIQUE (segment_id, label_code)` is the target of history's composite foreign
+key; it lets the database verify that a recorded RFM band carries its own
+stable label.
 
 #### `segment_label`
 
 | Column | Type | Null | Constraints | Meaning |
 |---|---|---|---|---|
 | `label_code` | `VARCHAR(40)` | NN | PK | Stable code an assignment carries, e.g. `CHAMPION` |
-| `ordinal_position` | `SMALLINT` | NN | UQ, `CHECK > 0` | Declared best-to-worst business order — ADR-0018 |
+| `ordinal_position` | `SMALLINT` | NN | UQ, `CHECK > 0` | Declared best-to-worst business order — ADR-0018, ADR-0030 |
 | `name` | `VARCHAR(80)` | NN | — | Display name |
 | `description` | `VARCHAR(255)` | yes | — | What the label means commercially |
 
@@ -377,8 +502,9 @@ Single-column primary key rather than a surrogate id: `label_code` is what
 every downstream consumer — assignment history, migration, dashboards,
 recommendations — reads and compares, per ADR-0018, so it is the natural key
 rather than an internal one a join would have to resolve back to it anyway.
-`ordinal_position` is unique on its own so K-means centroids can be paired
-with labels deterministically without a tie; it is not a foreign key target.
+`ordinal_position` is unique on its own so K-means centroids can be paired by
+proportional rank deterministically without a tie (ADR-0030); it is not a
+foreign key target.
 
 #### `app_user`
 
@@ -387,7 +513,7 @@ with labels deterministically without a tie; it is not a foreign key target.
 | `user_id` | `UUID` | NN | PK, default `gen_random_uuid()` | User identifier |
 | `role_id` | `SMALLINT` | NN | FK → `role`, `RESTRICT` | The one role the user holds |
 | `name` | `VARCHAR(120)` | NN | — | Display name |
-| `email` | `VARCHAR(160)` | NN | UQ, dotted-domain email check | Login identity |
+| `email` | `VARCHAR(160)` | NN | UQ index on `lower(email)`; dotted-domain email check | Case-insensitive login identity |
 | `password_hash` | `VARCHAR(255)` | NN | — | argon2id hash. Never the password, never logged, excluded from the audit payload |
 | `is_active` | `BOOLEAN` | NN | default `TRUE` | Deactivation is how F3-06 removes access without deleting history |
 | `created_at` | `TIMESTAMPTZ` | NN | default `now()` | Account creation |
@@ -411,8 +537,9 @@ change take effect on the next request. Every non-key column depends on
 partial index `idx_app_session_open_by_user` serves deactivation, which revokes
 every open session of one user. `CASCADE` from `app_user` is safe because
 users are deactivated, never deleted (RN-04). It is runtime state, not
-business data: not audited, and exempt from the 30-row seed minimum
-(`sql/seed-exempt.txt`), since seeding it would invent sign-ins.
+business data: not audited. The seed gives it 30 rows, one finished sign-in
+per demonstration account, every one revoked so none can authenticate a
+request, and it is not in `sql/seed-exempt.txt`.
 
 #### `customer`
 
@@ -437,10 +564,10 @@ replacement; ADR-0017 fulfils that prediction with `segmentation_run` and
 
 | Column | Type | Null | Constraints | Meaning |
 |---|---|---|---|---|
-| `run_id` | `BIGINT` | NN | PK, identity | Run identifier |
-| `method` | `VARCHAR(20)` | NN | `CHECK IN ('RFM_RULES','KMEANS')` | The strategy that produced this run — ADR-0018 |
+| `run_id` | `BIGINT` | NN | PK, `GENERATED ALWAYS AS IDENTITY` | Run identifier |
+| `method` | `VARCHAR(20)` | NN | `CHECK IN ('RFM_RULES','KMEANS')` | The implemented strategy that produced this run — ADR-0018, RN-58 |
 | `window_days` | `INT` | NN | `CHECK > 0` | Sales window scored |
-| `parameters` | `JSONB` | NN | default `{}` | Parameter snapshot (e.g. `{"window_days": N}`; a future `KMEANS` run's `k` and feature list) — ADR-0017 |
+| `parameters` | `JSONB` | NN | default `'{}'::jsonb` | Reproducible parameter and quality snapshot; K-means records `k`, seed, iteration limit, tolerance, feature window, label mapping and quality measures (RN-58, ADR-0030) |
 | `customer_count` | `INT` | NN | default `0` | Customers this run scored |
 | `executed_by` | `UUID` | yes | FK → `app_user`, `SET NULL` | Who ran it; `NULL` for a seed or maintenance run, the same reasoning `audit_log.user_id` uses |
 | `run_at` | `TIMESTAMPTZ` | NN | default `now()` | When the run executed |
@@ -449,11 +576,11 @@ replacement; ADR-0017 fulfils that prediction with `segmentation_run` and
 
 | Column | Type | Null | Constraints | Meaning |
 |---|---|---|---|---|
-| `history_id` | `BIGINT` | NN | PK, identity | Row identifier |
+| `history_id` | `BIGINT` | NN | PK, `GENERATED ALWAYS AS IDENTITY` | Row identifier |
 | `customer_id` | `UUID` | NN | FK → `customer`, `CASCADE`; `UNIQUE` with `run_id` | The customer |
 | `run_id` | `BIGINT` | NN | FK → `segmentation_run`, `CASCADE`; first in `UNIQUE (run_id, customer_id)` | The run that produced this result |
 | `segment_id` | `INT` | yes | Composite FK with `label_code` → `segment (segment_id, label_code)`, `SET NULL (segment_id)` | The matched RFM band, `NULL` if unassigned (RN-21) or if the referenced band is retired |
-| `label_code` | `VARCHAR(40)` | yes | Composite FK with `segment_id` → `segment (segment_id, label_code)`; FK → `segment_label`, `RESTRICT` | The stable label, preserved if its matched RFM band is retired; ADR-0018's downstream consumers (migration, dashboards, recommendations) read it without joining through that segment row |
+| `label_code` | `VARCHAR(40)` | yes | Composite FK with `segment_id` → `segment (segment_id, label_code)`; FK → `segment_label`, `RESTRICT` | The stable label, preserved if its matched RFM band is retired; RN-59 and RN-60 read it without joining through that segment row |
 | `recency_last_purchase_at` | `TIMESTAMPTZ` | yes | — | Raw recency input |
 | `frequency_count` | `INT` | yes | `CHECK >= 0` | Raw frequency input |
 | `monetary_total` | `NUMERIC(12,2)` | yes | `CHECK >= 0` | Raw monetary input |
@@ -552,8 +679,8 @@ These two are the 4NF decomposition from §2.4.
 
 The table-level check `received_count = accepted_count + rejected_count`
 keeps the stored report reconciled. This is runtime history rather than
-reference data, so it is exempt from the 30-row seed minimum in
-`sql/seed-exempt.txt`.
+reference data. The seed gives it 30 reconciled uploads by the administrator,
+so it is not in `sql/seed-exempt.txt`.
 
 #### `sales_load_rejection`
 
@@ -565,8 +692,9 @@ reference data, so it is exempt from the 30-row seed minimum in
 | `reason` | `VARCHAR(255)` | NN | — | Business wording safe to show to the administrator |
 
 Rejections have no meaning without their load, so deleting a load cascades to
-them. They are runtime history and carry the same seed exemption as
-`sales_load`.
+them. They are runtime history; the seed gives them 60 rows, the refused
+lines of the 30 seeded uploads, so they are not in `sql/seed-exempt.txt`
+either.
 
 #### `campaign`
 
@@ -599,8 +727,8 @@ them. They are runtime history and carry the same seed exemption as
 | `group_id` | `INT` | NN | PK | Group identifier |
 | `experiment_id` | `INT` | NN | FK → `experiment`, `CASCADE`; UQ with `group_id` | Its experiment |
 | `kind` | `VARCHAR(20)` | NN | `CHECK IN ('CONTROL','TREATMENT')` | Which arm |
-| `name` | `VARCHAR(120)` | NN | — | User-facing arm name, fixed once assigned |
-| `treatment_description` | `VARCHAR(500)` | NN | — | User-facing treatment description, fixed once assigned |
+| `name` | `VARCHAR(120)` | NN | `CHECK btrim(name) <> ''` | User-facing arm name, fixed once assigned |
+| `treatment_description` | `VARCHAR(500)` | NN | `CHECK btrim(treatment_description) <> ''` | User-facing treatment description, fixed once assigned |
 
 At most one `CONTROL` row per experiment; zero is valid for the two-treatment
 no-control design (ADR-0028):
@@ -661,6 +789,8 @@ stops the same sale being recorded as a conversion twice for the same
 assignment; it does not limit an assignment to one conversion, since an
 `AVERAGE_TICKET` metric can legitimately draw on more than one qualifying
 sale.
+`retail_app` can select and insert conversions but cannot update or delete
+them (ADR-0050).
 
 #### `inventory`
 
@@ -670,6 +800,48 @@ sale.
 | `product_id` | `INT` | NN | PK, FK → `product`, `CASCADE` | The product |
 | `quantity_on_hand` | `INT` | NN | `CHECK >= 0` | Units in stock |
 | `updated_at` | `TIMESTAMPTZ` | NN | default `now()` | Last stock update |
+
+#### `notification`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `notification_id` | `BIGINT` | NN | PK, `GENERATED ALWAYS AS IDENTITY` | Event identifier; also the inbox's ordering key, since it follows creation order |
+| `sales_load_id` | `BIGINT` | yes | UQ; FK → `sales_load`, `CASCADE` | The load, for a finished sales load |
+| `run_id` | `BIGINT` | yes | UQ; FK → `segmentation_run`, `CASCADE` | The run, for a completed segmentation run |
+| `experiment_id` | `INT` | yes | UQ; FK → `experiment`, `CASCADE` | The experiment, for one that has ended |
+| `subject_user_id` | `UUID` | yes | FK → `app_user`, `CASCADE` | The user, for a deactivation made in the web |
+| `kind` | `VARCHAR(30)` | NN | `GENERATED ALWAYS ... STORED` from whichever subject is set | `SALES_LOAD_FINISHED`, `SEGMENT_RUN_COMPLETED`, `EXPERIMENT_ENDED` or `USER_DEACTIVATED` |
+| `created_at` | `TIMESTAMPTZ` | NN | default `now()` | When the event happened |
+
+`notification_one_subject` requires `num_nonnulls(sales_load_id, run_id,
+experiment_id, subject_user_id) = 1`. With no subject, `kind` has nothing to be
+derived from and its `NOT NULL` refuses the row first. The three `UNIQUE`
+subjects make an event announced once; `subject_user_id` is not unique (§2.4).
+There is no message column: the sentence is built from the subject row when it
+is read. `CASCADE` is the schema owner's: the application never deletes a load,
+a run, an experiment or a user (RN-04). Runtime state, so it is not audited (§5),
+and its 54 seeded events exceed the 30-row minimum: one for each of the 31
+seeded runs and 23 ended experiments. The seven running experiments have no
+event. These examples cover runs and experiment ends; seeded sales loads have
+no notification example, and every seeded account is active. Events from both
+kinds are inserted together in creation order. The lazy announcer does not
+announce a seeded experiment twice, including within its 14-day lookback.
+
+#### `notification_recipient`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `notification_id` | `BIGINT` | NN | PK with `user_id`; FK → `notification`, `CASCADE` | The event |
+| `user_id` | `UUID` | NN | PK with `notification_id`; FK → `app_user`, `CASCADE` | The user it was written for |
+| `read_at` | `TIMESTAMPTZ` | yes | — | When the user marked it read; `NULL` while unread |
+
+The recipients are the active users whose role held the event's delivery
+permission when it happened, the user who caused it included, and the list is a
+snapshot (ADR-0047): a later role change neither adds nor removes a row. The
+permission is checked again against the reader's current role when the row is
+read. The seed derives its 1019 rows (23 × 16 readers of ended experiments,
+31 × 21 of segments) from the seeded users and marks events older than seven
+days read.
 
 #### `audit_log`
 
@@ -783,22 +955,33 @@ down through `experiment_group`, `experiment_assignment`,
 meaning without its parent. `SET NULL` where the reference is optional
 context rather than structure: `customer_segment_history.segment_id` (that
 column only, so the row keeps its `label_code`), `segmentation_run.executed_by`,
-`audit_log.user_id`.
+`audit_log.user_id`. `CASCADE` also carries a notification away with the load,
+run, experiment or user it names, and a recipient row away with its event or its
+user: a notification means nothing without them, and only the schema owner ever
+deletes any of the four.
 
 **Indexes.**
 
 | Index | Columns | Query it serves |
 |---|---|---|
+| `idx_app_session_open_by_user` | `app_session (user_id) WHERE revoked_at IS NULL` | Open sessions revoked when a user is deactivated |
+| `ux_app_user_single_administrator` | `app_user (role_id) WHERE role_id = 1` | At most one administrator (RN-01) |
+| `ux_app_user_email_lower` | `app_user (lower(email))` | Case-insensitive login identity uniqueness |
 | `idx_transaction_customer_date` | `transaction (customer_id, occurred_at)` | A customer's purchase history; the RFM window later |
 | `idx_transaction_store_date` | `transaction (store_id, occurred_at)` | Sales by store over a period |
 | `idx_transaction_line_product` | `transaction_line (product_id)` | Units sold of one product |
 | `ux_customer_segment_history_open` | `customer_segment_history (customer_id) WHERE valid_to IS NULL` | A customer's current segment; also RN-20's constraint |
 | `idx_customer_segment_history_customer` | `customer_segment_history (customer_id, valid_from)` | A customer's segment history over time |
+| `idx_sales_load_rejection_load` | `sales_load_rejection (load_id)` | Rejected rows for one upload attempt |
 | `idx_product_category` | `product (category_id)` | Catalog browsing by category |
 | `idx_campaign_label` | `campaign (label_code)` | Campaigns aimed at a segment label |
+| `ux_experiment_one_control` | `experiment_group (experiment_id) WHERE kind = 'CONTROL'` | At most one control arm per experiment (ADR-0028) |
 | `idx_experiment_assignment_customer` | `experiment_assignment (customer_id)` | Experiments a customer is in |
 | `idx_experiment_exposure_assignment` | `experiment_exposure (assignment_id)` | Whether an assignment was exposed |
 | `idx_audit_log_entity` | `audit_log (entity, entity_pk)` | The history of one row |
+| `idx_notification_recipient_inbox` | `notification_recipient (user_id, notification_id DESC)` | One user's inbox, newest first, paginated |
+| `idx_notification_recipient_unread` | `notification_recipient (user_id) WHERE read_at IS NULL` | The unread count on every page, and "mark all read" |
+| `notification_{sales_load,run,experiment}_id_key` | `notification (sales_load_id)`, `(run_id)`, `(experiment_id)`, each `UNIQUE` | An event is announced once; the arbiter of the announcer's `ON CONFLICT` |
 
 **Partitioning is not implemented.** `transaction` is the fastest-growing table
 and range partitioning by date is the obvious eventual move, but at 300 seed
@@ -812,12 +995,13 @@ revisited when transaction ingestion lands ([`roadmap.md`](roadmap.md)).
 
 One trigger function, `fn_audit()`, takes the audited table's primary key
 column as its argument and writes to `audit_log` after every insert, update and
-delete. Two groups of tables carry it:
+delete. Three groups of tables carry it:
 
 | Group | Tables | Why |
 |---|---|---|
 | Business rules | `segment`, `segment_rule`, `campaign`, `experiment` | Changing a rule silently changes what every report means |
 | Catalogs | `category`, `product`, `store`, `channel`, `role`, `customer`, `app_user` | These are what the administrator module edits, so this is what the demonstration's audit trail shows |
+| Segment assignment history | `customer_segment_history` | Each inserted successor and each closure replaces the audit signal formerly produced by changing `customer.current_segment_id` (ADR-0017) |
 
 Individual sales are **not** audited. Their volume and history already live in
 `transaction` and `transaction_line`, and auditing them would double the write
@@ -827,7 +1011,16 @@ are unaudited for the same reason: they are themselves append-only event
 records, not mutable rows a reviewer needs a before/after snapshot of.
 `app_session` is unaudited too: it is runtime state, written on every sign-in,
 request renewal and sign-out, and its timestamps already describe that
-runtime history.
+runtime history. So are `notification` and `notification_recipient`: an event
+is itself the record that something happened, and `read_at` is the only thing
+that changes afterwards.
+
+`trg_audit_customer_segment_history` runs after insert, update or delete and
+passes `history_id` to `fn_audit()`. It is separate from
+`trg_customer_segment_history_close_only`: the before-update trigger enforces
+that a history row may only be closed once (or have its segment reference
+cleared by the foreign key), while the after trigger records the accepted
+change.
 
 Two details worth knowing:
 

@@ -1,0 +1,9 @@
+{
+  "campaign_id": 302,
+  "name": "October Retention",
+  "label_code": "AT_RISK",
+  "starts_on": "2026-10-01",
+  "ends_on": "2026-10-31",
+  "status": "FINISHED",
+  "allowed_transitions": []
+}

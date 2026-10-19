@@ -38,6 +38,7 @@ here is a gap, not an omission from this index.
 | [F4-06](f4-06-real-administrator.md) | An administrator provisioned on the instance without a published password |
 | [#348](login-throttling.md) | Repeated sign-in failures are throttled per account and client, with a retryable HTML response |
 | [#359](f359-security-hardening.md) | Session lifetimes, strict email and role-code validation, and defense-in-depth security headers |
+| [F4-07 and F4-08](f4-07-f4-08-analytics-authorization.md) | The analytics permission map read off the code and the requirements matrix cell by cell, and every analytics route requested live as every profile (340 cells, no mismatch), an undeclared or widened route failing the suite on a copy, and the second administrator and a renamed role code refused by the application and by the database |
 
 ## Phase 5 — tests and review
 
@@ -67,7 +68,11 @@ right place for it, and which the team accepted on 2026-09-07.
 
 | Document | What it records |
 |---|---|
-| [F7-08](f7-08-migration-explanation-links.md) | The migration explanation linked from the matrix and the customer timeline and stated in plain language: recency in days, RN-50's changed/stable thresholds, a label moved only by the quintile cut points, and a new customer shown as new, at 375 px and 1440 px |
+| [F7-01 and F7-02](f7-01-f7-02-segment-history-model.md) | The ordered label vocabulary and the segment history, on PostgreSQL: a label outside the vocabulary refused by the database, one open row per customer, two concurrent writers refused after waiting for the first, a forced failure leaving no run behind, and unassigned customers recorded |
+| [F7-03](f7-03-run-history.md) | The run history list and a run's detail at 375 px and 1440 px: method, window, K and seed, executor, counts, scores and values, a run's unassigned customers listed, and the refusal of a role without `segment.read` |
+| [F7-04 and F7-05](f7-04-f7-05-migration-and-matrix.md) | Migration between two runs, including across methods, checked against an independent SQL classification, and the migration matrix with reconciled totals and its unassigned row and column, at 375 px and 1440 px (this retakes `f7-05-migration-matrix-*`) |
+| [F7-06 and F7-07](f7-06-f7-07-migration-explanation-and-timeline.md) | The migration explanation for a customer who moved, who did not, and who was unassigned, and the customer timeline: every assignment, the assignment open on a date, recency in days, the sales between two runs and the date a label was entered, with the explanation page's missing *moved the most* sentence recorded as a finding |
+| [F7-08](f7-08-migration-explanation-links.md) | The migration explanation linked from the matrix and the customer timeline and stated in plain language: recency in days, RN-60's changed/stable thresholds, a label moved only by the quintile cut points, and a new customer shown as new, at 375 px and 1440 px |
 
 ## Phase 8 — sales ingestion and consumption profile
 
@@ -77,6 +82,7 @@ right place for it, and which the team accepted on 2026-09-07.
 | [F8-04](f8-04-consumption-profile-view.md) | The consumption profile page at 375 px and 1440 px: every measure with its unit and window, the no-purchase-history case, and the refusal of a role without `segment.read` |
 | [F8-05](f8-05-consumption-shifts.md) | Channel, store and category shifts between two stated periods, cross-checked against an independent recomputation on the seeded database, with absence, ties and the shared boundary instant reproduced |
 | [F8-06](f8-06-profile-shifts.md) | Before and now on the consumption profile: dominant channel and store and top categories with shares of purchases, a shift claimed only with enough purchases and a clear leader (RN-50), the reason when it is not, and the shift report's reconciled counts, at 375 px and 1440 px |
+| [F8-01 and F8-02](f8-01-f8-02-sales-import.md) | The sales source identifier and the CSV import with its reconciled rejection report, including #334's page: four loads, a re-sent file rejected as duplicates, thirteen business-worded rejection reasons with file line numbers, the stored report and its CSV download, every other role refused, and four refused files, at 375 px and 1440 px |
 | [#355 and #356](f355-f356-sales-ingestion-guards.md) | Concurrent transaction totals and sales-ingestion/RFM boundary guards, verified by focused regression tests |
 
 ## Phase 9 — segmentation modelling
@@ -89,6 +95,7 @@ right place for it, and which the team accepted on 2026-09-07.
 | [F9-03](f9-03-cluster-labels.md) | K-means clusters mapped to the stable labels by ADR-0018's deterministic order: checked against the stored rows, 500 renamings of a real partition, a refused k, and two runs that number the same partition differently |
 | [F9-04](f9-04-model-comparison.md) | The model comparison page at 375 px and 1440 px: per-label populations and per-customer agreement checked against independent SQL, a run whose labels are copied giving 100% agreement whatever its method, the empty and error states, and the refusal of a role without `segment.read` |
 | [F9-05](f9-05-kmeans-variable-k.md) | K-means with k = 5 and k = 8 on the seeded database, paired with the stable labels by ADR-0030's proportional rank: the pairing and the shared and unused labels each run records, ADR-0030's database checks at zero, every downstream page reading only labels, at 375 px and 1440 px |
+| [#335](f335-kmeans-from-segment-run.md) | K-means chosen on the Segment run page: the form with K, seed, iteration limit and tolerance, an invalid K refused, the confirmation and result pages, the stored run with its executor and quality measures, seven forged requests refused with the run table unchanged, and K and seed as run-history columns (this gives `an-18-segment-run-kmeans-*` its reference) |
 
 ## Phase 10 — recommendations
 
@@ -103,6 +110,7 @@ right place for it, and which the team accepted on 2026-09-07.
 
 | Document | What it records |
 |---|---|
+| [F11-01 and F11-02](f11-01-f11-02-campaigns.md) | The experiment schema refusing an unsound experiment (one customer in two arms, two controls, no window or origin), the activation rule as ADR-0028 now states it run on PostgreSQL, and the campaign workflow at 375 px and 1440 px: draft, activation, completion, cancellation, every invalid move refused with a message, the audit rows, and the profiles refused |
 | [F11-03](f11-03-experiment-setup.md) | Experiment setup on a real database: one control and the treatment groups written together, the conversion window and target metric locked after the first assignment, a campaign refused activation while an attached experiment lacks a group, the data origin fixed and labelled `Synthetic`, at 375 px and 1440 px |
 | [F11-04](f11-04-group-assignment.md) | Group assignment as `retail_app` on a real database: the campaign's population split into balanced arms in one transaction, a second attempt refused, `UPDATE` and `DELETE` refused by the schema (42501) as well as by the application, the preview and a refusal at 375 px and 1440 px |
 | [F11-05](f11-05-experiment-exposure.md) | Exposure as a separate durable event on a real database: assigned/unexposed customers remain in the denominator, control is refused by the service and schema, exposure rows are append-only for `retail_app`, and the diagnostic and refusal are shown at 375 px and 1440 px |
@@ -119,6 +127,8 @@ right place for it, and which the team accepted on 2026-09-07.
 | [F12-04](f12-04-experiment-report.md) | The campaign and experiment report: its parameterized CTE/array query run on PostgreSQL 18.6, distinct assignment/exposure/conversion counts and intent-to-treat uplift, combined filters and labelled CSV export, a valid but unoffered campaign refused, and the filtered result shown at 375 px and 1440 px |
 | [AN-02](an-02-proof-of-deployment.md) | **Proof of deployment for the second delivery.** Releases #489 and #506 merged with their ancestry, the SQL applied by hand with no drift against `main`, the commit served and `systemctl status mosaiq`, and every analytics page through the published host |
 | [AN-03](an-03-experiment-dashboard.md) | The experiment dashboard: conversion per arm (intent to treat and among the exposed), the difference from the control or from a named reference arm with its 95% interval, and conversions over time, checked against independent SQL on PostgreSQL and in a real browser at 375 px and 1440 px, `Synthetic` on every chart of a non-observed experiment, and the refusal of a role without `campaign.read` |
+| [#344](f344-reports-index.md) | The analytics reports index that replaced the Reports placeholder: the revenue summary checked against a query over the transaction lines, each profile offered only the reports it can open (and no link that answers 403), and the refusal of a role without `report.read`, at 375 px and 1440 px |
+| [AN-04](an-04-notifications.md) | In-app notifications (ADR-0047): the inbox, the unread badge capped at `99+` and the privacy of each notification, checked against PostgreSQL and a test client, with the 375 px and 1440 px captures still to take |
 
 ## Review passes
 

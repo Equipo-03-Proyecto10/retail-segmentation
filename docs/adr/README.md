@@ -102,6 +102,26 @@ marked superseded by a record that was not yet binding, as ADR-0001, ADR-0005
 and ADR-0006 were above. In the same change, ADR-0019's status line records what
 ADR-0028 already stated: it is partially superseded by ADR-0028.
 
+The team accepted ADR-0047 on 2026-10-19, before the notification storage and
+implementation merged. Its decision text is unchanged.
+
+The team accepted ADR-0048 on 2026-10-19, before the change it records merged
+(#536). Its decision text is unchanged.
+
+The team accepted ADR-0049 on 2026-10-19, before kit-rs merged (#526). The
+record was proposed as a second 0047 and renumbered before acceptance, since a
+number is never reused. Its decision text is unchanged.
+
+The team accepted ADR-0050 on 2026-10-19, before the revoke it records merged
+(#535). It was proposed as a second 0047 and renumbered before acceptance.
+Its decision text is unchanged.
+
+The team accepted ADR-0051 on 2026-10-19, in the pull request that introduced
+it. It records a change the seed had already made in #534 (#463): ADR-0022
+still called `app_session` seed-exempt. Only ADR-0022's status lines changed.
+The same review kept ADR-0046's exemption of outboxes and `sales.sale_capture`
+unchanged: seeding an outbox would publish invented events once its relay starts.
+
 ## Index
 
 | ADR | Title | Status |
@@ -127,7 +147,7 @@ ADR-0028 already stated: it is partially superseded by ADR-0028.
 | [0019](0019-experiment-measurement-separates-assignment-exposure-and-conversion.md) | Experiment measurement separates assignment, exposure and conversion | Partially superseded by [0028](0028-experiment-treatment-arms-may-omit-control.md) |
 | [0020](0020-csv-is-the-sole-sales-ingestion-entry-point-for-this-delivery.md) | CSV is the sole sales ingestion entry point for this delivery | Partially superseded by [0039](0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) |
 | [0021](0021-k-means-is-implemented-in-the-application-rather-than-taken-as-a-dependency.md) | K-means is implemented in the application rather than taken as a dependency | Accepted |
-| [0022](0022-sessions-are-resolved-server-side-on-every-request.md) | Sessions are resolved server-side on every request | Accepted |
+| [0022](0022-sessions-are-resolved-server-side-on-every-request.md) | Sessions are resolved server-side on every request | Partially superseded by [0051](0051-app-session-is-seeded-as-runtime-history.md) (seed exemption of `app_session` only) |
 | [0023](0023-store-managers-read-segments-and-customers.md) | Store managers hold `segment.read`, and so read customers and segments | Accepted |
 | [0024](0024-the-application-role-cannot-update-or-delete-the-audit-log.md) | The application role cannot update or delete the audit log | Accepted |
 | [0025](0025-state-changing-requests-carry-a-synchroniser-csrf-token.md) | State-changing requests carry a synchroniser CSRF token | Accepted |
@@ -152,6 +172,11 @@ ADR-0028 already stated: it is partially superseded by ADR-0028.
 | [0044](0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) | Boundaries meet only through versioned database contracts and Redis Streams relayed from each owner's outbox | Accepted |
 | [0045](0045-services-never-import-the-web-system.md) | Services never import the web system | Accepted |
 | [0046](0046-service-owned-data-lives-in-service-schemas.md) | Service-owned data lives in service schemas | Accepted |
+| [0047](0047-notifications-are-pulled-from-postgresql-and-an-experiments-end-is-announced-by-the-next-page-read.md) | Notifications are pulled from PostgreSQL, and an experiment's end is announced by the next signed-in page read | Accepted |
+| [0048](0048-store-managers-read-every-stores-reports.md) | Store managers read every store's reports | Accepted |
+| [0049](0049-kit-rs-validates-xml-request-bodies-with-libxml2.md) | kit-rs validates XML request bodies with libxml2, after a quick-xml screen | Accepted |
+| [0050](0050-experiment-conversions-are-append-only-for-the-application-role.md) | Experiment conversions are append-only for the application role | Accepted |
+| [0051](0051-app-session-is-seeded-as-runtime-history.md) | `app_session` is seeded as runtime history, not exempted | Accepted |
 
 ## Writing one
 

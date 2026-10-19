@@ -91,6 +91,7 @@ def _wire(
         "create_run",
         "close_open_assignments",
         "insert_assignments",
+        "notify_segment_run",
     ):
         monkeypatch.setattr(segmentation, name, getattr(manager, name))
     return manager
@@ -314,6 +315,7 @@ def test_the_run_reads_what_was_open_then_records_the_run_then_closes_then_opens
         "create_run",
         "close_open_assignments",
         "insert_assignments",
+        "notify_segment_run",
     ]
 
 
@@ -380,7 +382,12 @@ def test_the_run_commits_once_after_every_write() -> None:
     monkey = pytest.MonkeyPatch()
     try:
         manager = _wire(monkey)
-        for name in ("create_run", "close_open_assignments", "insert_assignments"):
+        for name in (
+            "create_run",
+            "close_open_assignments",
+            "insert_assignments",
+            "notify_segment_run",
+        ):
             getattr(manager, name).side_effect = (
                 lambda *a, _n=name, **k: order.append(_n) or 7
             )
@@ -394,6 +401,7 @@ def test_the_run_commits_once_after_every_write() -> None:
         "create_run",
         "close_open_assignments",
         "insert_assignments",
+        "notify_segment_run",
         "commit",
     ]
     connection.commit.assert_called_once_with()

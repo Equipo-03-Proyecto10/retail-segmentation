@@ -216,6 +216,22 @@ def test_no_module_rewrites_a_conversion() -> None:
     ] == []
 
 
+def test_the_schema_makes_conversions_append_only_for_the_application_role() -> None:
+    schema = (ROOT / "sql/01_schema.sql").read_text()
+    revoke = "REVOKE UPDATE, DELETE ON experiment_conversion FROM retail_app;"
+
+    assert schema.index("CREATE TABLE experiment_conversion") < schema.index(revoke)
+    assert re.search(r"c\.relname NOT IN \([^)]*'experiment_conversion'", schema)
+
+
+def test_the_self_test_proves_both_conversion_refusals() -> None:
+    schema = (ROOT / "sql/01_schema.sql").read_text()
+
+    assert "PASS: experiment_conversion is append-only" in schema
+    assert "PASS: UPDATE experiment_conversion refused" in schema
+    assert "PASS: DELETE experiment_conversion refused" in schema
+
+
 # ---------- the summary ----------
 
 

@@ -81,6 +81,7 @@ def test_segment_completion_is_logged_only_after_commit(caplog, monkeypatch):
         "create_run": Mock(return_value=9),
         "close_open_assignments": Mock(),
         "insert_assignments": Mock(),
+        "notify_segment_run": Mock(),
     }.items():
         monkeypatch.setattr(f"web.services.segmentation.{name}", value)
     connection = MagicMock()

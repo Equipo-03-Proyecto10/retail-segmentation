@@ -1,0 +1,18 @@
+{
+  "audit_id": 1193,
+  "user_id": "11111111-1111-1111-1111-000000000001",
+  "entity": "product",
+  "entity_pk": "41",
+  "action": "INSERT",
+  "data_before": null,
+  "data_after": {
+    "category_id": 1,
+    "image_path": null,
+    "is_active": true,
+    "list_price": 3.49,
+    "name": "Oat Milk 1 L",
+    "product_id": 41,
+    "sku": "SKU-00041"
+  },
+  "executed_at": "2026-10-16T14:20:03.118Z"
+}

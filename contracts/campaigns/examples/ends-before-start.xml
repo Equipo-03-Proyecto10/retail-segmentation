@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>ends_before_start</code>
+  <message>ends_on cannot be before starts_on.</message>
+  <correlation_id>corr-campaign-422b</correlation_id>
+  <details>
+    <field>ends_on</field>
+    <code>before_start</code>
+  </details>
+</Error>

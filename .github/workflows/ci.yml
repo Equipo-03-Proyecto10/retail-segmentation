@@ -333,6 +333,19 @@ jobs:
           cache-dependency-path: web/requirements-dev.txt
       - run: pip install -r web/requirements-dev.txt
 
+      # verify_integrity.sql deliberately keeps ON_ERROR_STOP off because its
+      # negative probes must error. This test matches each probe to its declared
+      # SQLSTATE, so a positive error, a negative success or a wrong refusal
+      # still fails the job while the SQL remains directly runnable with psql.
+      - name: Integrity script has every declared outcome
+        env:
+          MOSAIQ_TEST_OWNER_URL: postgresql://postgres:postgres@localhost:5432/retail
+          MOSAIQ_REQUIRE_POSTGRES: "1"
+        run: |
+          export PATH="$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1):$PATH"
+          pytest tests/test_verify_integrity_script.py -m postgres -rs \
+            --junitxml=test-results/pytest-integrity.xml
+
       # The tests that need a real PostgreSQL: they skip anywhere the database
       # is absent, and MOSAIQ_REQUIRE_POSTGRES turns that skip into a failure
       # here, so this job can never pass them silently. initdb comes from the
@@ -345,14 +358,15 @@ jobs:
         run: |
           export PATH="$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1):$PATH"
           initdb --version
-          pytest -m postgres -rs --junitxml=test-results/pytest-postgres.xml
+          pytest -m postgres -rs --ignore=tests/test_verify_integrity_script.py \
+            --junitxml=test-results/pytest-postgres.xml
 
       - name: Capture database test evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: pytest-postgres-results
-          path: test-results/pytest-postgres.xml
+          path: test-results/pytest-*.xml
           if-no-files-found: ignore
 
   kit-py:
@@ -468,3 +482,116 @@ jobs:
           cp -R ../../contracts/common/v1 example/contracts/common/
           docker build -t mosaiq-kit-example example
           test "$(docker run --rm --entrypoint id mosaiq-kit-example -u)" = "10001"
+
+  kit-rs:
+    name: Rust kit
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Decide whether the kit changed
+        id: changes
+        shell: bash
+        run: |
+          changed=false
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          elif [[ "${{ github.event.before }}" =~ ^0+$ ]]; then
+            changed=true
+            files=""
+          else
+            files=$(git diff --name-only "${{ github.event.before }}..${{ github.sha }}")
+          fi
+          if grep -qE '^(packages/kit-rs/|packages/kit-vectors/|tests/kit_vectors/|\.github/workflows/ci\.yml$)' <<<"$files"; then
+            changed=true
+          fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+
+      - name: Install libxml2 and libclang
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libclang-dev libxml2-dev pkg-config
+
+      - name: Install the pinned toolchain
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: packages/kit-rs
+        run: |
+          channel=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
+          rustup toolchain install "$channel" --profile minimal --component clippy,rustfmt
+          cargo --version
+
+      - name: Load PostgreSQL scripts
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          psql -v ON_ERROR_STOP=1 -f sql/00_create_database.sql
+          psql -v ON_ERROR_STOP=1 -d retail -f sql/01_schema.sql
+          psql -v ON_ERROR_STOP=1 -d retail -f sql/02_seed_30_per_table.sql
+
+      - name: Start digest-pinned Redis with AOF
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          image=$(sed -n 's/^[[:space:]]*image: \(redis:[^[:space:]]*@sha256:[[:xdigit:]]*\)$/\1/p' deploy/infra/compose.yaml | head -1)
+          password=$(openssl rand -hex 24)
+          echo "::add-mask::$password"
+          redis_config="$RUNNER_TEMP/kit-rs-redis.conf"
+          printf 'appendonly yes\nrequirepass %s\n' "$password" > "$redis_config"
+          chmod 0444 "$redis_config"
+          docker run -d --name kit-rs-redis --publish 127.0.0.1:6379:6379 \
+            --mount "type=bind,src=$redis_config,dst=/usr/local/etc/redis/redis.conf,readonly" \
+            "$image" redis-server /usr/local/etc/redis/redis.conf
+          echo "KIT_TEST_REDIS_URL=redis://:$password@127.0.0.1:6379/0" >> "$GITHUB_ENV"
+          for attempt in $(seq 1 30); do
+            if docker exec -e REDISCLI_AUTH="$password" kit-rs-redis redis-cli ping | grep -q PONG; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs kit-rs-redis
+          exit 1
+
+      - name: cargo fmt
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: packages/kit-rs
+        run: cargo fmt --check
+
+      - name: cargo clippy
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: packages/kit-rs
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: cargo test
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: packages/kit-rs
+        env:
+          KIT_REQUIRE_SERVICES: "1"
+          KIT_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/retail
+        run: cargo test --locked
+
+      - name: Build the example as UID 10001
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: packages/kit-rs
+        run: |
+          mkdir -p examples/contracts/common
+          cp -R ../../contracts/common/v1 examples/contracts/common/
+          docker build -f examples/Dockerfile -t mosaiq-kit-rs-example .
+          test "$(docker run --rm --entrypoint id mosaiq-kit-rs-example -u)" = "10001"

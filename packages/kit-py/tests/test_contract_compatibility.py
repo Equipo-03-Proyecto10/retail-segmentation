@@ -357,7 +357,12 @@ def test_kit_loads_every_merged_service_contract(
     service_directories = sorted(
         path.parent for path in (REPOSITORY / "contracts").glob("*/openapi.yaml")
     )
-    assert len(service_directories) == 13
+    # Every registered service publishes a contract, so this tracks the registry
+    # rather than a count that each newly merged contract would invalidate.
+    registry = yaml.safe_load((REPOSITORY / "contracts/registry.yaml").read_text())
+    assert [path.name for path in service_directories] == sorted(
+        service["name"] for service in registry["services"]
+    )
     incompatibilities = []
     for source in service_directories:
         shutil.copytree(source, staged / source.name)

@@ -154,6 +154,32 @@ jobs:
           # One annotation, newlines encoded, so the tail is readable signed out.
           echo "::notice title=Gateway logs::$(printf '%s' "$logs" | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g')"
 
+      # The command compose.distributed.yaml documents, whole: every one-shot
+      # step must complete and every container come up (#522 missed
+      # mongo-init's network because the step above starts the gateway alone).
+      - name: The documented command brings the whole stack up
+        run: |
+          set -uo pipefail
+          compose="docker compose -f compose.distributed.yaml"
+          if ! $compose up --wait --wait-timeout 300; then
+            $compose ps -a
+            for step in redis-acl mongo-init; do
+              logs=$($compose logs --no-color "$step" 2>&1 | tail -15)
+              printf '%s\n' "$logs"
+              echo "::error title=Local stack::$step: $(printf '%s' "$logs" | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g')"
+            done
+            exit 1
+          fi
+          for step in redis-acl mongo-init; do
+            code=$(docker inspect -f '{{.State.ExitCode}}' "$($compose ps -aq "$step")")
+            [ "$code" = 0 ] || { echo "::error title=Local stack::$step exited $code"; exit 1; }
+          done
+          $compose ps
+
+      - name: Stop the local stack
+        if: always()
+        run: docker compose -f compose.distributed.yaml down --volumes || true
+
   smoke:
     name: Kit example as its own project on mosaiq
     runs-on: ubuntu-24.04

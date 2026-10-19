@@ -69,3 +69,11 @@ def test_the_instance_never_reads_the_local_stack() -> None:
     for path in paths:
         assert "compose.distributed" not in path.read_text(errors="ignore"), path
     assert not any("gateway" in p.parts for p in (ROOT / "deploy").rglob("*"))
+
+
+def test_steps_that_reach_the_infrastructure_by_name_are_on_mosaiq() -> None:
+    # mongodb and the services live only on the external network; a local
+    # service left on the project's default network cannot resolve them (#522).
+    local = yaml.safe_load((ROOT / "compose.distributed.yaml").read_text())
+    for name in ("mongo-init", "gateway"):
+        assert "mosaiq" in local["services"][name].get("networks", []), name

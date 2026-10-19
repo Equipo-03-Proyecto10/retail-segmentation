@@ -85,6 +85,9 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+    # mongodb is only on mosaiq; without this the step lands on the project's
+    # default network and cannot resolve it.
+    networks: [mosaiq]
     restart: "no"
 
   # One base URL for both clients and the negative suite. Its configuration is

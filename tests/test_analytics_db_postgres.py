@@ -93,4 +93,10 @@ def test_experiment_queries_execute_against_the_seed(
     assert experiment is not None
     assert (experiment.control_groups, experiment.treatment_groups) == (1, 1)
     assert experiment.assignments == 4
-    assert [(row.group_id, row.day, row.customers) for row in days] == [(2, 0, 1)]
+    # Experiment 1 (#463): customer 1 (control) first converts two days after
+    # assignment and customer 3 (treatment) six days after; customers 2 and 4
+    # have no sale in their 7-day window.
+    assert [(row.group_id, row.day, row.customers) for row in days] == [
+        (1, 2, 1),
+        (2, 6, 1),
+    ]

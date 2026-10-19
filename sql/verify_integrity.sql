@@ -50,8 +50,9 @@ ROLLBACK;
 
 \echo ''
 \echo '-- P4: deleting a transaction cascades to its lines'
--- Transaction 300 is not any customer's first sale, so no seeded conversion
--- references it; one that is referenced is N26's refusal instead.
+-- Transaction 300 is customer 30's oldest sale and falls in none of their
+-- experiments' conversion windows, so no seeded conversion references it; one
+-- that is referenced is N26's refusal instead.
 BEGIN;
 SELECT 'P4 lines before: ' || count(*)::text FROM transaction_line WHERE transaction_id = 300;
 DELETE FROM transaction WHERE transaction_id = 300;

@@ -11,6 +11,8 @@ from datetime import date, datetime
 
 from psycopg import Connection
 
+from web.db.search import ilike_pattern
+
 # Takes a transaction-scoped advisory lock, so two concurrent creates cannot
 # both read the same max(experiment_id) or max(group_id): neither column has an
 # identity (F11-01 kept the seeded ids), the same reason campaigns lock.
@@ -63,9 +65,19 @@ class ExperimentGroup:
     assigned: int = 0
 
 
+# Each filter is optional: a NULL parameter switches its condition off, so one
+# statement serves every combination (#538). The search matches the
+# experiment's name or its campaign's.
+_EXPERIMENT_FILTER = """
+     WHERE (%(search)s::text IS NULL
+            OR e.name ILIKE %(search)s OR c.name ILIKE %(search)s)
+       AND (%(target_metric)s::text IS NULL OR e.target_metric = %(target_metric)s)
+"""
+
 # One row per experiment with its group and assignment counts; the two reads
-# differ only in their last clause.
-_LIST_EXPERIMENTS = """
+# differ only in their last clauses.
+_LIST_EXPERIMENTS = (
+    """
     SELECT e.experiment_id, e.name, e.campaign_id, c.name, e.target_metric,
            e.starts_on, e.ends_on, e.conversion_window_days, e.data_origin,
            (SELECT count(*) FROM experiment_group AS g
@@ -76,9 +88,19 @@ _LIST_EXPERIMENTS = """
              WHERE a.experiment_id = e.experiment_id)
       FROM experiment AS e
       LEFT JOIN campaign AS c ON c.campaign_id = e.campaign_id
-     ORDER BY e.experiment_id DESC
-     LIMIT %s OFFSET %s
 """
+    + _EXPERIMENT_FILTER
+    + """
+     ORDER BY e.experiment_id DESC
+     LIMIT %(limit)s OFFSET %(offset)s
+"""
+)
+
+_COUNT_EXPERIMENTS = """
+    SELECT count(*)
+      FROM experiment AS e
+      LEFT JOIN campaign AS c ON c.campaign_id = e.campaign_id
+""" + _EXPERIMENT_FILTER
 
 _GET_EXPERIMENT = """
     SELECT e.experiment_id, e.name, e.campaign_id, c.name, e.target_metric,
@@ -96,14 +118,29 @@ _GET_EXPERIMENT = """
 
 
 def list_experiments(
-    connection: Connection, *, page: int, per_page: int
+    connection: Connection,
+    *,
+    page: int,
+    per_page: int,
+    search: str | None = None,
+    target_metric: str | None = None,
 ) -> tuple[list[Experiment], int]:
-    """Return one page of experiments, newest first, and the total row count."""
+    """Return one page of experiments, newest first, and the total row count.
+
+    `search` matches the experiment's or its campaign's name, literally and
+    case-insensitively; `target_metric` keeps one metric. Either may be None.
+    """
+    parameters = {
+        "search": ilike_pattern(search) if search else None,
+        "target_metric": target_metric,
+    }
     offset = (page - 1) * per_page
     with connection.cursor() as cursor:
-        cursor.execute(_LIST_EXPERIMENTS, (per_page, offset))
+        cursor.execute(
+            _LIST_EXPERIMENTS, parameters | {"limit": per_page, "offset": offset}
+        )
         rows = cursor.fetchall()
-        cursor.execute("SELECT count(*) FROM experiment")
+        cursor.execute(_COUNT_EXPERIMENTS, parameters)
         total = cursor.fetchone()[0]
     return [Experiment(*row) for row in rows], total
 

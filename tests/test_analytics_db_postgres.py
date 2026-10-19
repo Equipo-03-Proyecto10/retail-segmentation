@@ -16,6 +16,7 @@ import pytest
 from psycopg import Connection
 
 from web.db import (
+    campaigns,
     experiment_dashboard,
     experiments,
     sales,
@@ -100,3 +101,110 @@ def test_experiment_queries_execute_against_the_seed(
         (1, 2, 1),
         (2, 6, 1),
     ]
+
+
+# ---------- list filters (#538): `%` and `_` match literally ----------
+
+
+def _rename(connection: Connection[Any], table: str, ident: int, name: str) -> None:
+    """Rename one seeded row inside the test's rolled-back transaction."""
+    statements = {
+        "campaign": "UPDATE campaign SET name = %s WHERE campaign_id = %s",
+        "experiment": "UPDATE experiment SET name = %s WHERE experiment_id = %s",
+    }
+    with connection.cursor() as cursor:
+        cursor.execute(statements[table], (name, ident))
+        assert cursor.rowcount == 1, f"{table} {ident} is not seeded"
+
+
+def test_campaign_filters_match_wildcards_literally(
+    app_connection: Connection[Any],
+) -> None:
+    _rename(app_connection, "campaign", 1, "100% loyal")
+    _rename(app_connection, "campaign", 2, "spring_sale")
+
+    percent, percent_total = campaigns.list_campaigns(
+        app_connection, page=1, per_page=50, search="%"
+    )
+    underscore, underscore_total = campaigns.list_campaigns(
+        app_connection, page=1, per_page=50, search="_"
+    )
+    _all, everything = campaigns.list_campaigns(app_connection, page=1, per_page=50)
+
+    assert everything >= 30
+    assert [c.campaign_id for c in percent] == [1] and percent_total == 1
+    assert [c.campaign_id for c in underscore] == [2] and underscore_total == 1
+
+
+def test_campaign_status_and_search_combine(app_connection: Connection[Any]) -> None:
+    _rename(app_connection, "campaign", 1, "100% loyal")
+    status = campaigns.get_campaign(app_connection, 1).status
+    other = next(s for s in ("DRAFT", "ACTIVE", "FINISHED", "CANCELLED") if s != status)
+
+    same, same_total = campaigns.list_campaigns(
+        app_connection, page=1, per_page=50, search="100%", status=status
+    )
+    different, different_total = campaigns.list_campaigns(
+        app_connection, page=1, per_page=50, search="100%", status=other
+    )
+
+    assert [c.campaign_id for c in same] == [1] and same_total == 1
+    assert different == [] and different_total == 0
+
+
+def test_experiment_filters_match_wildcards_literally(
+    app_connection: Connection[Any],
+) -> None:
+    _rename(app_connection, "experiment", 1, "50% holdout")
+    _rename(app_connection, "experiment", 2, "arm_b test")
+    metric = experiments.get_experiment(app_connection, 1).target_metric
+
+    percent, percent_total = experiments.list_experiments(
+        app_connection, page=1, per_page=50, search="%"
+    )
+    underscore, underscore_total = experiments.list_experiments(
+        app_connection, page=1, per_page=50, search="_"
+    )
+    by_metric, by_metric_total = experiments.list_experiments(
+        app_connection, page=1, per_page=50, search="50%", target_metric=metric
+    )
+
+    # Campaign names count too, so a match may come from either name.
+    assert {e.experiment_id for e in percent} == {1} and percent_total == 1
+    assert {e.experiment_id for e in underscore} == {2} and underscore_total == 1
+    assert [e.experiment_id for e in by_metric] == [1] and by_metric_total == 1
+
+
+def test_run_filters_match_wildcards_literally(
+    app_connection: Connection[Any],
+) -> None:
+    with app_connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT user_id FROM app_user WHERE email = %s",
+            ("admin@mosaiq-demo.com",),
+        )
+        admin_id = cursor.fetchone()[0]
+        cursor.execute(
+            "UPDATE app_user SET name = %s WHERE user_id = %s",
+            ("Ana_100%", admin_id),
+        )
+        cursor.execute(
+            "INSERT INTO segmentation_run (method, window_days, customer_count,"
+            " executed_by) VALUES (%s, %s, %s, %s) RETURNING run_id",
+            ("KMEANS", 180, 0, admin_id),
+        )
+        run_id = cursor.fetchone()[0]
+
+    named, named_total = segments.list_runs(
+        app_connection, page=1, per_page=50, search="_100%"
+    )
+    wrong_method, wrong_total = segments.list_runs(
+        app_connection, page=1, per_page=50, search="_100%", method="RFM_RULES"
+    )
+    _rows, kmeans_total = segments.list_runs(
+        app_connection, page=1, per_page=50, method="KMEANS"
+    )
+
+    assert [r.run_id for r in named] == [run_id] and named_total == 1
+    assert wrong_method == [] and wrong_total == 0
+    assert kmeans_total >= 1

@@ -22,7 +22,12 @@ from flask.typing import ResponseReturnValue
 from web.db import get_connection
 from web.db.campaigns import get_campaign, list_campaigns, list_labels
 from web.middleware.authz import CAMPAIGN_READ, CAMPAIGN_WRITE, requires
-from web.routes.pagination import redirect_last_page
+from web.routes.pagination import (
+    active_filters,
+    choice_filter,
+    redirect_last_page,
+    text_filter,
+)
 from web.services import campaigns as service
 from web.services.catalog import parse_pagination
 from web.services.pagination import page_count
@@ -36,11 +41,23 @@ def _page() -> int:
     return parse_pagination(request.args.get("page"))
 
 
+def _filters() -> dict[str, str]:
+    """The list's filters, carried by every link and form back to it."""
+    return active_filters(
+        q=text_filter(), status=choice_filter("status", service.TRANSITIONS)
+    )
+
+
 def _render_index(
     *, page: int, error: str | None = None, status: int = 200
 ) -> ResponseReturnValue:
+    filters = _filters()
     campaign_page, total = list_campaigns(
-        get_connection(), page=page, per_page=_PER_PAGE
+        get_connection(),
+        page=page,
+        per_page=_PER_PAGE,
+        search=filters.get("q"),
+        status=filters.get("status"),
     )
     total_pages = page_count(total, _PER_PAGE)
     # A refusal answers a POST, and redirect_last_page would answer it with a
@@ -55,6 +72,9 @@ def _render_index(
             page=page,
             total_pages=total_pages,
             transitions=service.TRANSITIONS,
+            statuses=list(service.TRANSITIONS),
+            filters=filters,
+            total=total,
             error=error,
         ),
         status,
@@ -112,6 +132,7 @@ def create() -> ResponseReturnValue:
 @requires(CAMPAIGN_WRITE)
 def edit(campaign_id: int) -> ResponseReturnValue:
     page = _page()
+    filters = _filters()
     campaign = get_campaign(get_connection(), campaign_id)
     if campaign is None:
         abort(404)
@@ -122,7 +143,7 @@ def edit(campaign_id: int) -> ResponseReturnValue:
         message = service.not_a_draft(campaign_id, campaign.status)
         if request.method in ("GET", "HEAD"):
             flash(message, "danger")
-            return redirect(url_for("campaigns.index", page=page))
+            return redirect(url_for("campaigns.index", page=page, **filters))
         return _render_index(page=page, error=message, status=409)
 
     if request.method in ("GET", "HEAD"):
@@ -141,7 +162,7 @@ def edit(campaign_id: int) -> ResponseReturnValue:
     except service.CampaignRefused as refusal:
         return _render_form(values, {refusal.field: str(refusal)}, 409)
     flash("Campaign updated.", "success")
-    return redirect(url_for("campaigns.index", page=page))
+    return redirect(url_for("campaigns.index", page=page, **filters))
 
 
 @bp.post("/<int:campaign_id>/<action>")
@@ -150,6 +171,7 @@ def change_status(campaign_id: int, action: str) -> ResponseReturnValue:
     if action not in service.ACTIONS:
         abort(404)
     page = _page()
+    filters = _filters()
     try:
         status = service.transition(get_connection(), campaign_id, action)
     except service.CampaignNotFound:
@@ -157,4 +179,4 @@ def change_status(campaign_id: int, action: str) -> ResponseReturnValue:
     except service.InvalidTransition as refusal:
         return _render_index(page=page, error=str(refusal), status=409)
     flash(f"Campaign {campaign_id} is now {status.lower()}.", "success")
-    return redirect(url_for("campaigns.index", page=page))
+    return redirect(url_for("campaigns.index", page=page, **filters))

@@ -381,13 +381,17 @@ def test_a_signed_in_get_announces_and_a_head_a_post_or_a_visitor_does_not(
         )
     )
     application.config["PROPAGATE_EXCEPTIONS"] = False
+    client = application.test_client()
+    existing_sessions = owner_autocommit.execute(
+        "SELECT session_id FROM app_session WHERE user_id = %s ORDER BY session_id",
+        (ADMIN,),
+    ).fetchall()
     try:
         visitor = application.test_client()
         visitor.get("/login")
         visitor.get("/notifications/")  # redirected to sign in
         assert _event_count(owner_autocommit, 9203) == 0
 
-        client = application.test_client()
         page = client.get("/login").get_data(as_text=True)
         token = re.search(r'name="csrf_token" value="([^"]+)"', page).group(1)
         signed_in = client.post(
@@ -423,4 +427,15 @@ def test_a_signed_in_get_announces_and_a_head_a_post_or_a_visitor_does_not(
         assert _recipient_count(owner_autocommit, 9203) == 16
     finally:
         owner_autocommit.execute("DELETE FROM experiment WHERE experiment_id = 9203")
-        owner_autocommit.execute("DELETE FROM app_session WHERE user_id = %s", (ADMIN,))
+        with client.session_transaction() as flask_session:
+            session_id = flask_session.get("sid")
+        owner_autocommit.execute(
+            "DELETE FROM app_session WHERE session_id = %s", (session_id,)
+        )
+    assert (
+        owner_autocommit.execute(
+            "SELECT session_id FROM app_session WHERE user_id = %s ORDER BY session_id",
+            (ADMIN,),
+        ).fetchall()
+        == existing_sessions
+    )

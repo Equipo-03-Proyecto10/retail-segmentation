@@ -742,9 +742,9 @@ naming the assignment and the sale; evaluating again adds nothing
 closed. Those outcomes count recorded conversions; a customer with a qualifying
 sale that no evaluation has recorded yet is flagged on the page instead of being
 shown silently as pending or not converted. `transaction` carries no experiment
-column. The application only ever adds conversions; unlike exposures
-(ADR-0027), `retail_app` still holds `UPDATE` and `DELETE` on
-`experiment_conversion`, so the database does not yet enforce that.
+column. The application only ever adds conversions, and the database enforces
+it: as for exposures (ADR-0027), `retail_app` holds no `UPDATE` or `DELETE`
+privilege on `experiment_conversion` (ADR-0050).
 
 **Uplift (F11-07).** The result is intent to treat: each treatment arm's
 conversion rate minus the control's, over every assigned customer whether or not

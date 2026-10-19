@@ -609,6 +609,10 @@ CREATE TABLE experiment_conversion (
     converted_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (assignment_id, transaction_id)
 );
+-- A conversion is a durable event too (ADR-0019, ADR-0050): evaluating again
+-- only adds. The owner retains maintenance privileges and foreign-key cascades
+-- still run as the owner; the application role can only read and append.
+REVOKE UPDATE, DELETE ON experiment_conversion FROM retail_app;
 
 -- ---------- INVENTORY ----------
 
@@ -1019,7 +1023,7 @@ BEGIN
         WHERE n.nspname = 'public' AND c.relkind = 'r'
           AND c.relname NOT IN (
               'audit_log', 'experiment_assignment', 'experiment_exposure',
-              'experiment', 'experiment_group', 'segmentation_run',
+              'experiment_conversion', 'experiment', 'experiment_group', 'segmentation_run',
               'customer_segment_history'
           )
           AND (NOT has_table_privilege(c.oid, 'SELECT')
@@ -1058,6 +1062,15 @@ BEGIN
         RAISE EXCEPTION 'experiment_exposure must be append-only for the application role (RN-27)';
     END IF;
     RAISE NOTICE 'PASS: experiment_exposure is append-only for the application role';
+
+    IF NOT has_table_privilege('public.experiment_conversion', 'SELECT')
+       OR NOT has_table_privilege('public.experiment_conversion', 'INSERT')
+       OR has_table_privilege('public.experiment_conversion', 'UPDATE')
+       OR has_table_privilege('public.experiment_conversion', 'DELETE')
+       OR has_table_privilege('public.experiment_conversion', 'TRUNCATE') THEN
+        RAISE EXCEPTION 'experiment_conversion must be append-only for the application role (RN-27)';
+    END IF;
+    RAISE NOTICE 'PASS: experiment_conversion is append-only for the application role';
 
     IF NOT has_table_privilege('public.experiment', 'UPDATE')
        OR has_table_privilege('public.experiment', 'DELETE')
@@ -1139,6 +1152,19 @@ BEGIN
         RAISE EXCEPTION 'FAIL: retail_app was allowed to DELETE experiment_exposure';
     EXCEPTION WHEN insufficient_privilege THEN
         RAISE NOTICE 'PASS: DELETE experiment_exposure refused (SQLSTATE 42501)';
+    END;
+    BEGIN
+        UPDATE public.experiment_conversion SET converted_at = converted_at
+         WHERE conversion_id = -1;
+        RAISE EXCEPTION 'FAIL: retail_app was allowed to UPDATE experiment_conversion';
+    EXCEPTION WHEN insufficient_privilege THEN
+        RAISE NOTICE 'PASS: UPDATE experiment_conversion refused (SQLSTATE 42501)';
+    END;
+    BEGIN
+        DELETE FROM public.experiment_conversion WHERE conversion_id = -1;
+        RAISE EXCEPTION 'FAIL: retail_app was allowed to DELETE experiment_conversion';
+    EXCEPTION WHEN insufficient_privilege THEN
+        RAISE NOTICE 'PASS: DELETE experiment_conversion refused (SQLSTATE 42501)';
     END;
     BEGIN
         INSERT INTO public.experiment_exposure (assignment_id)

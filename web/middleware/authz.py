@@ -13,11 +13,11 @@ deploys, not data an administrator edits at runtime; the reasoning, and the
 alternative that was rejected, are in
 `docs/adr/0007-permissions-in-code-with-a-default-deny-middleware.md`.
 
-**What this module does not do.** The matrix qualifies two cells with `own`
-(a customer reaches their own row) and `read, own store` (a store manager reads
-their own store's reports). Those are row scoping, not route gating, and the
-gate here cannot express them: it decides whether a request reaches a view, not
-which rows the view then selects. `CUSTOMER` therefore holds `user.self` rather
+**What this module does not do.** The matrix qualifies one cell with `own`
+(a customer reaches their own row). That is row scoping, not route gating, and
+the gate here cannot express it: it decides whether a request reaches a view,
+not which rows the view then selects. Store managers read every store's
+reports (ADR-0048). `CUSTOMER` therefore holds `user.self` rather
 than `user.read`, and narrowing the query behind it belongs to the story that
 writes the query — F3-05 (#65) and F3-11 (#103). A gate that appeared to filter
 rows and did not would be worse than one that says plainly that it does not.

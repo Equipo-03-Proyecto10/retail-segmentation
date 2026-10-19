@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<AuditEntry xmlns="https://mosaiq.maxthecoder.online/xml/audit-trail/v1">
+  <audit_id>1196</audit_id>
+  <entity>category</entity>
+  <entity_pk>31</entity_pk>
+  <action>DELETE</action>
+  <data_before>{"category_id":31,"name":"Seasonal","parent_category_id":null}</data_before>
+  <executed_at>2026-10-16T14:26:02.774Z</executed_at>
+</AuditEntry>

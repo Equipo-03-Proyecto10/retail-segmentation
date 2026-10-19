@@ -1,0 +1,6 @@
+{
+  "code": "audit_entry_not_found",
+  "message": "No audit entry has this identifier.",
+  "correlation_id": "corr-audit-404",
+  "details": []
+}

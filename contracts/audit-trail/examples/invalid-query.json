@@ -1,0 +1,11 @@
+{
+  "code": "invalid_query",
+  "message": "A query parameter is not an allowed value.",
+  "correlation_id": "corr-audit-422",
+  "details": [
+    {
+      "field": "entity",
+      "code": "enum"
+    }
+  ]
+}

@@ -245,13 +245,15 @@ def test_mark_all_read_leaves_unread_what_the_role_can_no_longer_see(owner) -> N
         (ANALYST,),
     )
     runs_unread = count_unread(owner, user_id=ANALYST, kinds=[SEGMENT_RUN_COMPLETED])
+    experiments_unread = count_unread(owner, user_id=ANALYST, kinds=[EXPERIMENT_ENDED])
 
     marked = mark_all_read(owner, user_id=ANALYST, kinds=[SEGMENT_RUN_COMPLETED])
 
     assert marked == runs_unread
-    # The four experiment events stay unread: hidden, so not "all", and back the
-    # day the permission returns.
-    assert count_unread(owner, user_id=ANALYST, kinds=BOTH) == 4
+    # All unread experiment events survive, including recent seeded ends.
+    # They are hidden by the role change and return with the permission.
+    assert experiments_unread >= 4
+    assert count_unread(owner, user_id=ANALYST, kinds=BOTH) == experiments_unread
 
 
 def test_a_read_notification_leaves_the_unread_count_but_not_the_inbox(owner) -> None:

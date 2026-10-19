@@ -1,5 +1,4 @@
--- =========================================================
--- 02_seed_30_per_table.sql
+-- ==================================================-- 02_seed_30_per_table.sql
 -- MOSAIQ — demonstration data: at least 30 rows per table.
 --
 -- Runs against the schema created by 01_schema.sql.
@@ -36,8 +35,7 @@
 --    thirty rule-based runs and one K-means run are recorded as the application
 --    records them; and every experiment is assigned, exposed and measured
 --    inside its own dates and conversion window.
--- =========================================================
-
+-- ==================================================
 BEGIN;
 
 -- ---------- role (7) ----------
@@ -642,6 +640,54 @@ SELECT l.load_id,
 FROM sales_load AS l
 CROSS JOIN LATERAL generate_series(0, l.rejected_count - 1) AS k
 ORDER BY l.load_id, k;
+-- ---------- notification (23 experiment ends + 31 run completions = 54) ----------
+-- AN-04 (#419, ADR-0047). Announce every completed run and only experiments
+-- whose end date has passed. The other seven experiments are still running.
+-- These historical examples cover those two event kinds; seeded sales loads
+-- have no notification example, and every seeded account is active.
+-- The lazy announcer leaves these experiment events alone, including those
+-- within its 14-day lookback, because experiment_id is unique.
+--
+-- Merge both event kinds before ordering: their dates now overlap. Identity
+-- order must follow creation time across kinds, not just inside each kind.
+INSERT INTO notification (experiment_id, run_id, created_at)
+SELECT experiment_id, run_id, created_at
+FROM (
+    SELECT experiment_id, NULL::bigint AS run_id,
+           (ends_on + 1)::timestamptz AS created_at
+    FROM experiment
+    WHERE ends_on < CURRENT_DATE
+    UNION ALL
+    SELECT NULL::integer AS experiment_id, run_id, run_at AS created_at
+    FROM segmentation_run
+) AS events
+ORDER BY created_at, experiment_id NULLS LAST, run_id;
+
+-- ---------- notification_recipient (23 x 16 + 31 x 21 = 1019) ----------
+-- Every active user whose role holds the event's delivery permission, the
+-- snapshot web/services/notifications.py takes when it writes an event:
+--   EXPERIMENT_ENDED       campaign.read  ADMIN, ANALYST, MARKETING, AUDITOR
+--   SEGMENT_RUN_COMPLETED  segment.read   ADMIN, ANALYST, STORE_MANAGER,
+--                                         MARKETING, AUDITOR
+-- The roles are the matrix in web/middleware/authz.py, written out because
+-- SQL cannot read it; tests/test_notification_schema.py compares the two, so
+-- a change to the matrix fails the build instead of leaving the seed stale.
+-- An event more than seven days old is read, so the inbox opens with both
+-- read and unread rows.
+INSERT INTO notification_recipient (notification_id, user_id, read_at)
+SELECT n.notification_id,
+       u.user_id,
+       CASE WHEN n.created_at < now() - interval '7 days'
+            THEN n.created_at + interval '1 hour'
+       END
+FROM notification AS n
+JOIN role AS r
+  ON r.code = ANY (
+       CASE n.kind
+         WHEN 'EXPERIMENT_ENDED'      THEN ARRAY['ADMIN','ANALYST','MARKETING','AUDITOR']
+         WHEN 'SEGMENT_RUN_COMPLETED' THEN ARRAY['ADMIN','ANALYST','STORE_MANAGER','MARKETING','AUDITOR']
+       END)
+JOIN app_user AS u ON u.role_id = r.role_id AND u.is_active;
 
 -- ---------- audit_log ----------
 -- Filled by the triggers as the statements above ran: segment, segment_rule,

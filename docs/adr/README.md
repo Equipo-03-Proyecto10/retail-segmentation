@@ -116,6 +116,12 @@ The team accepted ADR-0050 on 2026-10-19, before the revoke it records merged
 (#535). It was proposed as a second 0047 and renumbered before acceptance.
 Its decision text is unchanged.
 
+The team accepted ADR-0051 on 2026-10-19, in the pull request that introduced
+it. It records a change the seed had already made in #534 (#463): ADR-0022
+still called `app_session` seed-exempt. Only ADR-0022's status lines changed.
+The same review kept ADR-0046's exemption of outboxes and `sales.sale_capture`
+unchanged: seeding an outbox would publish invented events once its relay starts.
+
 ## Index
 
 | ADR | Title | Status |
@@ -141,7 +147,7 @@ Its decision text is unchanged.
 | [0019](0019-experiment-measurement-separates-assignment-exposure-and-conversion.md) | Experiment measurement separates assignment, exposure and conversion | Partially superseded by [0028](0028-experiment-treatment-arms-may-omit-control.md) |
 | [0020](0020-csv-is-the-sole-sales-ingestion-entry-point-for-this-delivery.md) | CSV is the sole sales ingestion entry point for this delivery | Partially superseded by [0039](0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) |
 | [0021](0021-k-means-is-implemented-in-the-application-rather-than-taken-as-a-dependency.md) | K-means is implemented in the application rather than taken as a dependency | Accepted |
-| [0022](0022-sessions-are-resolved-server-side-on-every-request.md) | Sessions are resolved server-side on every request | Accepted |
+| [0022](0022-sessions-are-resolved-server-side-on-every-request.md) | Sessions are resolved server-side on every request | Partially superseded by [0051](0051-app-session-is-seeded-as-runtime-history.md) (seed exemption of `app_session` only) |
 | [0023](0023-store-managers-read-segments-and-customers.md) | Store managers hold `segment.read`, and so read customers and segments | Accepted |
 | [0024](0024-the-application-role-cannot-update-or-delete-the-audit-log.md) | The application role cannot update or delete the audit log | Accepted |
 | [0025](0025-state-changing-requests-carry-a-synchroniser-csrf-token.md) | State-changing requests carry a synchroniser CSRF token | Accepted |
@@ -170,6 +176,7 @@ Its decision text is unchanged.
 | [0048](0048-store-managers-read-every-stores-reports.md) | Store managers read every store's reports | Accepted |
 | [0049](0049-kit-rs-validates-xml-request-bodies-with-libxml2.md) | kit-rs validates XML request bodies with libxml2, after a quick-xml screen | Accepted |
 | [0050](0050-experiment-conversions-are-append-only-for-the-application-role.md) | Experiment conversions are append-only for the application role | Accepted |
+| [0051](0051-app-session-is-seeded-as-runtime-history.md) | `app_session` is seeded as runtime history, not exempted | Accepted |
 
 ## Writing one
 

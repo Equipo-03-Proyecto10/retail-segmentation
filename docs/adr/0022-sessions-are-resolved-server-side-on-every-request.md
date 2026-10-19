@@ -1,10 +1,10 @@
 # ADR-0022 — Sessions are resolved server-side on every request
 
-**Status:** Accepted
+**Status:** Partially superseded by ADR-0051 (seed exemption of `app_session` only)
 **Owner:** Marcelo
 **Issue:** #251
 **Supersedes:** ADR-0007, in part — only its consequence that "the session's `role_code` is trusted until sign-out"
-**Superseded by:** —
+**Superseded by:** [ADR-0051](0051-app-session-is-seeded-as-runtime-history.md), in part (seed exemption of `app_session` only)
 
 ---
 

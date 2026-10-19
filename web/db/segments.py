@@ -569,27 +569,59 @@ class SegmentationRun:
     run_at: datetime
 
 
-def list_runs(
-    connection: Connection[Any], *, page: int, per_page: int
-) -> tuple[list[SegmentationRun], int]:
-    """Return a page of completed runs, most recent first, and the total."""
-    offset = (page - 1) * per_page
+# Each filter is optional: a NULL parameter switches its condition off, so one
+# statement serves every combination (#538). A run with no executing user is a
+# seeded or system run, and a search by name never matches it.
+_RUN_FILTER = """
+            WHERE (%(method)s::text IS NULL OR r.method = %(method)s)
+              AND (%(search)s::text IS NULL OR u.name ILIKE %(search)s)
+"""
 
-    with connection.cursor() as cursor:
-        cursor.execute(
-            """
+_LIST_RUNS = (
+    """
             SELECT r.run_id, r.method, r.window_days, r.parameters,
                    r.customer_count, r.executed_by, u.name, r.run_at
             FROM segmentation_run AS r
             LEFT JOIN app_user AS u ON u.user_id = r.executed_by
+"""
+    + _RUN_FILTER
+    + """
             ORDER BY r.run_at DESC, r.run_id DESC
-            LIMIT %s OFFSET %s
-            """,
-            (per_page, offset),
-        )
+            LIMIT %(limit)s OFFSET %(offset)s
+"""
+)
+
+_COUNT_RUNS = """
+            SELECT count(*)
+            FROM segmentation_run AS r
+            LEFT JOIN app_user AS u ON u.user_id = r.executed_by
+""" + _RUN_FILTER
+
+
+def list_runs(
+    connection: Connection[Any],
+    *,
+    page: int,
+    per_page: int,
+    method: str | None = None,
+    search: str | None = None,
+) -> tuple[list[SegmentationRun], int]:
+    """Return a page of completed runs, most recent first, and the total.
+
+    `method` keeps one segmentation method; `search` matches the executing
+    user's name, literally and case-insensitively. Either may be None.
+    """
+    parameters = {
+        "method": method,
+        "search": ilike_pattern(search) if search else None,
+    }
+    offset = (page - 1) * per_page
+
+    with connection.cursor() as cursor:
+        cursor.execute(_LIST_RUNS, parameters | {"limit": per_page, "offset": offset})
         rows = cursor.fetchall()
 
-        cursor.execute("SELECT count(*) FROM segmentation_run")
+        cursor.execute(_COUNT_RUNS, parameters)
         total = cursor.fetchone()[0]
 
     return [SegmentationRun(*row) for row in rows], total

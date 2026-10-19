@@ -21,7 +21,12 @@ from web.db.experiments import (
     list_group_definitions,
 )
 from web.middleware.authz import CAMPAIGN_READ, CAMPAIGN_WRITE, requires
-from web.routes.pagination import redirect_last_page
+from web.routes.pagination import (
+    active_filters,
+    choice_filter,
+    redirect_last_page,
+    text_filter,
+)
 from web.services import experiment_conversions as conversion_service
 from web.services import experiment_uplift as uplift_service
 from web.services import experiments as service
@@ -108,8 +113,15 @@ def _form_values(*, creating: bool) -> dict[str, str]:
 @requires(CAMPAIGN_READ)
 def index() -> ResponseReturnValue:
     page = parse_pagination(request.args.get("page"))
+    filters = active_filters(
+        q=text_filter(), metric=choice_filter("metric", service.TARGET_METRICS)
+    )
     experiment_page, total = list_experiments(
-        get_connection(), page=page, per_page=_PER_PAGE
+        get_connection(),
+        page=page,
+        per_page=_PER_PAGE,
+        search=filters.get("q"),
+        target_metric=filters.get("metric"),
     )
     total_pages = page_count(total, _PER_PAGE)
     if response := redirect_last_page(page, total_pages):
@@ -125,6 +137,8 @@ def index() -> ResponseReturnValue:
         },
         page=page,
         total_pages=total_pages,
+        total=total,
+        filters=filters,
         target_metrics=service.TARGET_METRICS,
         is_synthetic=service.is_synthetic,
     )

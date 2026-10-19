@@ -12,6 +12,8 @@ from datetime import date
 
 from psycopg import Connection
 
+from web.db.search import ilike_pattern
+
 # Takes a transaction-scoped advisory lock, so two concurrent creates cannot
 # both read the same max(campaign_id). Advisory rather than LOCK TABLE: it
 # serializes creators without blocking status updates on existing campaigns.
@@ -35,19 +37,47 @@ class SegmentLabel:
     name: str
 
 
+# Each filter is optional: a NULL parameter switches its condition off, so one
+# statement serves every combination (#538).
+_CAMPAIGN_FILTER = """
+     WHERE (%(search)s::text IS NULL OR name ILIKE %(search)s)
+       AND (%(status)s::text IS NULL OR status = %(status)s)
+"""
+
+_LIST_CAMPAIGNS = (
+    "SELECT campaign_id, name, label_code, starts_on, ends_on, status "
+    "FROM campaign"
+    + _CAMPAIGN_FILTER
+    + "ORDER BY campaign_id DESC LIMIT %(limit)s OFFSET %(offset)s"
+)
+
+_COUNT_CAMPAIGNS = "SELECT count(*) FROM campaign" + _CAMPAIGN_FILTER
+
+
 def list_campaigns(
-    connection: Connection, *, page: int, per_page: int
+    connection: Connection,
+    *,
+    page: int,
+    per_page: int,
+    search: str | None = None,
+    status: str | None = None,
 ) -> tuple[list[Campaign], int]:
-    """Return one page of campaigns, newest first, and the total row count."""
+    """Return one page of campaigns, newest first, and the total row count.
+
+    `search` matches the campaign name, literally and case-insensitively;
+    `status` keeps one lifecycle status. Either may be None.
+    """
+    parameters = {
+        "search": ilike_pattern(search) if search else None,
+        "status": status,
+    }
     offset = (page - 1) * per_page
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT campaign_id, name, label_code, starts_on, ends_on, status "
-            "FROM campaign ORDER BY campaign_id DESC LIMIT %s OFFSET %s",
-            (per_page, offset),
+            _LIST_CAMPAIGNS, parameters | {"limit": per_page, "offset": offset}
         )
         rows = cursor.fetchall()
-        cursor.execute("SELECT count(*) FROM campaign")
+        cursor.execute(_COUNT_CAMPAIGNS, parameters)
         total = cursor.fetchone()[0]
     return [Campaign(*row) for row in rows], total
 

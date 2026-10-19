@@ -1,4 +1,4 @@
-# ADR-0047 — kit-rs validates XML request bodies with libxml2, after a quick-xml screen
+# ADR-0049 — kit-rs validates XML request bodies with libxml2, after a quick-xml screen
 
 **Status:** Proposed
 **Owner:** Max

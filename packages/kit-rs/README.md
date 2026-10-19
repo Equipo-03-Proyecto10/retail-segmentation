@@ -31,7 +31,7 @@ matching this crate's version.
 
 XML request bodies are validated against the service XSD by libxml2, the
 engine lxml uses in kit-py, so both kits report the same `details`
-(ADR-0047). Building needs `libxml2-dev` and `pkg-config`; the runtime image
+(ADR-0049). Building needs `libxml2-dev` and `pkg-config`; the runtime image
 needs `libxml2`. Before libxml2 sees a body, quick-xml has refused any DOCTYPE,
 entity declaration, undeclared entity reference or NUL byte, and libxml2 then
 parses with network access off and recovery off.

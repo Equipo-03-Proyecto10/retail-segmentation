@@ -11,6 +11,18 @@ per-session token and, when present, the `Origin` header. Route tests post
 plain `data={...}` dicts with no token, so by default the check is stubbed
 off the same way; tests of the check itself opt out with
 `@pytest.mark.real_csrf`.
+
+Notifications (#419, ADR-0047): every signed-in page asks the database for the
+navigation's unread count. Route tests run against a mocked connection, and a
+count read through it would be a `MagicMock` drawn as a badge on every page, and
+would open a connection that tests of a refused request assert was never
+opened. So by default the count is stubbed to none; tests of the badge itself
+opt out with `@pytest.mark.real_notification_count`.
+
+The same page read announces any experiment that has ended (ADR-0047), a write
+and a commit through the same mocked connection, which tests that assert on the
+statements a route ran would count. So by default that is stubbed to announce
+nothing; tests of the announcer opt out with `@pytest.mark.real_experiment_announcer`.
 """
 
 from __future__ import annotations
@@ -88,3 +100,23 @@ def _stub_csrf(request: pytest.FixtureRequest, monkeypatch) -> None:
     if request.node.get_closest_marker("real_csrf"):
         return
     monkeypatch.setattr("web.middleware.csrf.verify_csrf", lambda: None)
+
+
+@pytest.fixture(autouse=True)
+def _stub_notification_count(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if request.node.get_closest_marker("real_notification_count"):
+        return
+    monkeypatch.setattr("web.routes.notifications._unread_for_this_page", lambda: None)
+
+
+@pytest.fixture(autouse=True)
+def _stub_experiment_announcer(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if request.node.get_closest_marker("real_experiment_announcer"):
+        return
+    monkeypatch.setattr(
+        "web.routes.notifications.announce_experiment_ends", lambda connection: 0
+    )

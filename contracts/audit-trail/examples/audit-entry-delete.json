@@ -1,0 +1,14 @@
+{
+  "audit_id": 1196,
+  "user_id": null,
+  "entity": "category",
+  "entity_pk": "31",
+  "action": "DELETE",
+  "data_before": {
+    "category_id": 31,
+    "name": "Seasonal",
+    "parent_category_id": null
+  },
+  "data_after": null,
+  "executed_at": "2026-10-16T14:26:02.774Z"
+}

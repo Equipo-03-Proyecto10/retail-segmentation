@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>campaign_ended</code>
+  <message>A campaign whose ends_on date has passed cannot move to ACTIVE.</message>
+  <correlation_id>corr-transition-409c</correlation_id>
+</Error>

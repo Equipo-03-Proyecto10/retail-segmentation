@@ -81,7 +81,8 @@ Removing access must not remove the record of what that person did.
 to an unattributed entry rather than destroying the entry. · `RF-09`
 
 ### RN-05 — Only the administrator runs the segment recalculation
-It rewrites a column on every customer, so it is not an analyst's button.
+It writes durable assignment history that determines customers' current segments
+and every dependent report, so it is not an analyst's button.
 
 **Enforced:** the authorization middleware, F4-01 (#69) — `SEGMENT_RUN_EXECUTE`
 is held by `ADMIN` alone, and `web/routes/segment_run.py` declares it on both
@@ -282,7 +283,7 @@ the evaluation, not a 409.
 by the uplift page and the report, and `ConversionNotEvaluated` in
 `web/services/experiment_uplift.py`. **Verified** — `tests/test_exposed_conversion.py`.
 
-### RN-37 — A K-means run is reproducible from what it records, and each of its numerical hazards has a defined behaviour
+### RN-58 — A K-means run is reproducible from what it records, and each of its numerical hazards has a defined behaviour
 The fit is fixed by the seed, k, the iteration limit, the tolerance and the feature
 window, and all five are stored on the run with its quality measures, so a run can
 be reproduced from the database alone. Customers are sorted by id before anything
@@ -322,7 +323,7 @@ it 1, and a report comparing them would claim a migration when nobody moved. Eve
 cluster therefore takes its label from its contents, by one rule:
 
 1. Clusters are ordered by the descending sum of their centroid's R, F and M, each
-   normalised so that higher is better (RN-37).
+   normalised so that higher is better (RN-58).
 2. A tie is broken by the higher R, then the higher F, then the higher M.
 3. A tie between identical centroids is broken by the lexicographically smallest
    customer id among the cluster's members.
@@ -403,7 +404,7 @@ assignment reader does not select the method), and the page gated on `segment.re
 that faults seeded into each rule above fail a test, and against the seeded PostgreSQL
 by [`evidence/f9-04-model-comparison.md`](evidence/f9-04-model-comparison.md). · `F9-04`
 
-### RN-47 — A migration matrix cell is a filtered, traceable customer list
+### RN-59 — A migration matrix cell is a filtered, traceable customer list
 Migration is directional: the earlier run is the **before** state and the later run
 is the **after** state, regardless of the order in which the two run ids were
 selected. Every matrix cell links to the customers counted in that exact before /
@@ -426,7 +427,7 @@ filters that result; the page remains read-only and gated on `segment.read`.
 unassigned states, direction, explanation links, invalid filters, authorization, and
 the scrollable table pattern used at narrow widths. · `F7-05`
 
-### RN-50 — A migration explanation judges the customer's own values, and says when only the rank moved
+### RN-60 — A migration explanation judges the customer's own values, and says when only the rank moved
 A migration explanation states each measure as a sentence with its raw values from
 both runs — recency in whole days from the last purchase to the run that measured it,
 frequency in purchases, monetary in MXN — and judges it **changed** or **stable** on
@@ -451,7 +452,7 @@ run scored the customer and found no purchase to label (RN-21); a measure a run 
 no value for is reported as not compared, with which of the two reasons applies.
 
 The explanation is reachable from every place a migration is shown: a customer in a
-migration matrix cell (RN-47) and each label change on a customer's segment timeline.
+migration matrix cell (RN-59) and each label change on a customer's segment timeline.
 
 **Enforced:** application — `describe_migration` in `web/services/segment_migration.py`,
 with the thresholds as the named constants `RECENCY_STABLE_DAYS`,
@@ -1009,6 +1010,102 @@ tie that spend used to flip, shares over 100 %, odd and one-day windows),
 `tests/test_consumption_shift_db.py`, `tests/test_consumption_profile_shifts_route.py`
 and `tests/test_consumption_reports_route.py`. · `F8-06`
 
+## Notifications
+
+### RN-61 — A notification is written in the same transaction as the event it announces
+A finished sales load, a completed segmentation run and a deactivation made in
+the web each write their notification in the transaction of the service that
+causes them, so the operation and its notification commit together or not at
+all. A notification that cannot be written rolls the operation back with it: no
+sales-load record (its rows had already committed one at a time), no run, no
+deactivation. The recipients are the active users whose role holds the event's
+delivery permission when it happens, the user who caused it among them: for a
+load `sales_ingest.execute`, for a run `segment.read`, for a deactivation
+`user.write`. The list is a snapshot, and writing to nobody is still an event.
+Nothing is announced by a file the adapter refuses, a run that fails, a
+deactivation the single-administrator rule refuses, deactivating an account that
+is already inactive, an activation, the command line's bulk deactivation of
+demonstration accounts, or users-service (Q-14); no trigger on `app_user` writes
+one.
+
+**Enforced:** application — `notify_sales_load`, `notify_segment_run` and
+`notify_user_deactivated` in `web/services/notifications.py` are `@atomic`, so
+they join the caller's transaction and never commit alone (ADR-0014), and are
+called from `_record_load` in `web/services/sales_csv.py`, `_record` in
+`web/services/segmentation.py` and `set_active` in `web/services/users.py`;
+recipients are chosen by `roles_holding`, from the permission matrix.
+**Verified** — by `tests/test_notification_producers.py` for the order, the
+commit and the rollback of each, and, as `retail_app` against PostgreSQL with the
+failing notification forced, by `tests/test_notification_producers_db.py`. · #419
+· ADR-0047, ADR-0014
+
+### RN-62 — A notification is private: anyone else's request for it is a 404
+A notification is read, and marked read, only by a user it was written for and
+only while that user's role still holds the permission that delivered it. A
+request for any other notification by id, whether it does not exist, was written
+for somebody else or is of a kind the reader's role no longer holds the
+permission for, is answered `404`, never `403`, so asking by id reveals nothing
+about which of the three it was; the three cannot be told apart from outside.
+Opening a notification does not mark it read: that is an explicit `POST`, with a
+CSRF token, and marking one that is already read keeps its first reading time.
+"Mark all read" marks what the user may read and leaves what their role cannot
+see as it is.
+
+**Enforced:** application — the three statements in `web/db/notifications.py`
+filter by the reader's own user id and by the kinds their role reads, so a row
+that is not theirs matches nothing; `web/routes/notifications.py` answers 404
+for a `None` and bounds the id to what the column holds. The recipient rows are
+the schema's half: `(notification_id, user_id)` is the key, and a row exists only
+for a user an event was written for. **Verified** — against PostgreSQL by
+`tests/test_notification_state_db.py`, and end to end (real sign-in, CSRF and
+sessions) by the transcript in
+[`evidence/an-04-notifications.md`](evidence/an-04-notifications.md). · #419 · ADR-0047
+
+### RN-63 — The inbox is newest first and twenty to a page, and the badge counts what is unread up to 99
+A user's inbox lists the notifications written for them that their role may
+still read, newest first, twenty to a page; a page past the last redirects to
+the last. Every signed-in page shows the unread count in the navigation: nothing
+when there is none, the number up to 99, and `99+` beyond that. A count that
+cannot be read hides the badge and logs the failure; the page it sits on is
+still served, because a page must not be lost to a counter.
+
+**Enforced:** application — `web/services/notifications.py` (`PAGE_SIZE`,
+`BADGE_CAP`, and `visible_kinds`, which filters by the reader's current role),
+`web/db/notifications.py` (the reader's own rows only, ordered by the identity
+that follows creation order, served by `idx_notification_recipient_inbox`) and
+`web/routes/notifications.py` (the failing-soft context processor).
+**Verified** — by `tests/test_notification_service.py`,
+`tests/test_notification_routes.py` and, against PostgreSQL,
+`tests/test_notification_reads_db.py`. · #419 · ADR-0047
+
+### RN-64 — An experiment's end is announced lazily, once, to the active holders of campaign.read
+No request causes a date to arrive, and nothing runs between requests, so an
+experiment that has ended is announced by the next signed-in `GET`, before the
+page is built, and never by a `HEAD`, a `POST`, an anonymous visit or a request
+the authorization gate refused. **Ended** means `ends_on < CURRENT_DATE`: an
+experiment is still running on its end date, and one with no end date is never
+announced. Only an experiment that ended within the last **14 days** is
+considered, so a restored database does not announce every experiment it ever
+held; an experiment nobody read a page about within 14 days of its end is never
+announced. Each experiment is announced **once** to the active users whose role
+holds `campaign.read` at that moment, and an end date edited afterwards neither
+repeats nor retracts it. Two workers racing on the same experiment leave one
+event and one set of recipients. A failure to announce is logged and the page is
+served; nothing was committed, so the next read tries again.
+
+**Enforced:** application and schema — one statement,
+`announce_ended_experiments` in `web/db/notifications.py`, with `NOT EXISTS` and
+`ON CONFLICT (experiment_id) DO NOTHING` on the `UNIQUE` subject
+`notification_experiment_id_key`, which is the schema's half: a second event for
+the same experiment cannot be written whatever runs it. The hook is
+`announce_experiment_end` in `web/routes/notifications.py`, registered after the
+gate. **Verified** — against PostgreSQL by
+`tests/test_notification_announcer_db.py`, which runs the rules on real dates,
+makes two sessions race deterministically (one holds its insert uncommitted until
+the other is blocked behind it) and drives the real application through the real
+sign-in; and without a database by `tests/test_notification_announcer.py`. · #419
+· ADR-0047
+
 ## Audit
 
 ### RN-28 — Every change to a catalog or a business rule is recorded
@@ -1121,8 +1218,9 @@ control group) waits on F11-05.
 RN-52 to RN-56 belong to the distributed stage (#398). Each waits on its
 service's implementation story in Phase 14 (epic #399): RN-52 on auth-service,
 RN-53 on stores-service, RN-54 on customer-preferences-service, RN-55 on
-engagement-service and RN-56 on check-ins-service. Their ids continue after
-RN-51; the duplicate RN-37, RN-47 and RN-50 headings are left to AN-15 (#460).
+engagement-service and RN-56 on check-ins-service. RN-57 belongs to the
+experiment dashboard; RN-58 to RN-60 uniquely identify the K-means,
+migration-matrix and migration-explanation rules.
 
 RN-01 was the one to watch — a hard rule in `AGENTS.md` and a success criterion
 in [`scope.md`](scope.md) §7 that held only because the seed happened to contain

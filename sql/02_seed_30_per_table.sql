@@ -1,5 +1,4 @@
--- =========================================================
--- 02_seed_30_per_table.sql
+-- ==================================================-- 02_seed_30_per_table.sql
 -- MOSAIQ — demonstration data: at least 30 rows per table.
 --
 -- Runs against the schema created by 01_schema.sql.
@@ -13,14 +12,30 @@
 -- 2) role, channel and segment_label hold fewer than 30 rows. Their domains
 --    are seven roles, five sales channels and six ordered business labels;
 --    padding them with filler to reach the minimum would make the seed
---    misrepresent the business. All three are listed in sql/seed-exempt.txt
---    with the reason, which is the mechanism CI reads.
+--    misrepresent the business. Those three, and only those, are listed in
+--    sql/seed-exempt.txt with the reason, which is the mechanism CI reads.
+--    Every other table holds at least 30 rows, including the runtime tables
+--    app_session, sales_load and sales_load_rejection: their rows record the
+--    demonstration history the rest of the seed implies (sign-ins that ended,
+--    the CSV uploads that brought the sales in), none of them still open.
 --
 -- 3) audit_log is not inserted into by hand. The triggers in 01_schema.sql
 --    fill it as this script loads the audited tables, which is also what
 --    demonstrates the audit trail without a single manual row.
--- =========================================================
-
+--
+-- 4) Everything dated is dated relative to the moment the script runs (now(),
+--    CURRENT_DATE), so the sales, the segmentation runs, the experiments and the
+--    sessions always agree about when things happened, whenever the seed is
+--    loaded. Nothing uses random(): variety comes from generate_series and
+--    modular arithmetic, so a reload gives the same relative history. Campaign
+--    dates are the exception and stay absolute (see the campaign block).
+--
+-- 5) The analytics are exercised end to end (#463): customers buy a different
+--    number of times, so every quintile and every segment band is reached;
+--    thirty rule-based runs and one K-means run are recorded as the application
+--    records them; and every experiment is assigned, exposed and measured
+--    inside its own dates and conversion window.
+-- ==================================================
 BEGIN;
 
 -- ---------- role (7) ----------
@@ -148,6 +163,24 @@ SELECT ('11111111-1111-1111-1111-' || lpad(n::text,12,'0'))::uuid,
        now() - (n || ' days')::interval
 FROM generate_series(1,30) n;
 
+-- ---------- app_session (30, one finished sign-in per user) ----------
+-- Server-side sessions (ADR-0022): the history of each demonstration account's
+-- last sign-in. Every session has ended (revoked_at is set), so none can
+-- authenticate a request: load_principal() requires revoked_at IS NULL. The
+-- session ids are fixed so a reload gives the same rows. User n signed in n
+-- days before the load, a few hours after the account was created, stayed
+-- 25 to 100 minutes and signed out one minute after the last request.
+INSERT INTO app_session (session_id, user_id, created_at, last_seen_at, revoked_at)
+SELECT ('22222222-2222-2222-2222-' || lpad(n::text,12,'0'))::uuid,
+       ('11111111-1111-1111-1111-' || lpad(n::text,12,'0'))::uuid,
+       s.created_at,
+       s.created_at + make_interval(mins => 25 + (n * 7) % 76),
+       s.created_at + make_interval(mins => 26 + (n * 7) % 76)
+FROM generate_series(1,30) n
+CROSS JOIN LATERAL (
+    SELECT now() - make_interval(days => n) + make_interval(hours => 2 + n % 6) AS created_at
+) AS s;
+
 -- ---------- customer (30) ----------
 -- user_id stays NULL: a customer record and an application account are
 -- separate things. A future customer self-service story must define how a
@@ -171,6 +204,76 @@ INSERT INTO segmentation_run (method, window_days, parameters, customer_count, r
 SELECT 'RFM_RULES', 180, '{"window_days": 180}'::jsonb, 30,
        now() - (n || ' days')::interval
 FROM generate_series(29, 1, -1) n;
+
+-- One completed K-means run (F9-02 to F9-05, ADR-0018, ADR-0021, ADR-0030),
+-- twelve hours before the last RFM_RULES run, so the model comparison, the
+-- cluster labels and the run history have a second method to show, while the
+-- newest run, and so every customer's current assignment, stays rule-based.
+--
+-- Its parameters are shaped exactly as web/services/kmeans.py records them
+-- (recorded_parameters plus the label mapping and unassigned count that
+-- web/services/segmentation.py adds): k, seed, iteration limit, tolerance,
+-- window, the stated policies, the label mapping and the quality measures.
+-- They are not invented. The fit is the application's own, k = 4 and seed 463
+-- over the raw recency, frequency and monetary values that this run's history
+-- rows carry (computed below from the seeded sales), and the label of each
+-- customer in the kmeans_label list further down is what that fit assigned,
+-- paired with the vocabulary by web/services/cluster_labels.py. A K-means row
+-- has a label and its raw values but no segment and no quintile scores
+-- (ADR-0018). tests/test_seed_analytics_postgres.py refits the seeded run and
+-- fails if this record and the seed's sales ever disagree.
+INSERT INTO segmentation_run (method, window_days, parameters, customer_count, run_at)
+VALUES ('KMEANS', 180, '{
+  "empty_cluster_policy": "an emptied cluster takes the customer farthest from their own cluster''s centre, from a cluster holding at least two; lowest customer id on a tie",
+  "initialisation": "k-means++, seeded",
+  "k": 4,
+  "label_mapping": {
+    "clusters_per_label": {
+      "AT_RISK": 1,
+      "CHAMPION": 1,
+      "HIBERNATING": 0,
+      "LOST": 1,
+      "LOYAL": 0,
+      "POTENTIAL": 1
+    },
+    "labels_by_rank": [
+      "CHAMPION",
+      "POTENTIAL",
+      "AT_RISK",
+      "LOST"
+    ],
+    "labels_without_cluster": [
+      "LOYAL",
+      "HIBERNATING"
+    ],
+    "rule": "rank_proportional_endpoints_anchored",
+    "shared_labels": [],
+    "vocabulary_size": 6
+  },
+  "max_iterations": 100,
+  "normalisation": "min-max to [0, 1] across the run; recency reversed so higher is better; a constant feature is 0",
+  "quality": {
+    "cluster_sizes": [
+      12,
+      7,
+      7,
+      4
+    ],
+    "converged": true,
+    "customers_clustered": 30,
+    "customers_unassigned": 0,
+    "empty_cluster_events": 0,
+    "final_shift": 0.0,
+    "inertia": 2.813246,
+    "iterations": 3,
+    "silhouette": 0.236376,
+    "stopped_on": "tolerance"
+  },
+  "seed": 463,
+  "tie_break": "a customer equidistant from two clusters goes to the lower-numbered one",
+  "tolerance": 0.0001,
+  "window_days": 180
+}'::jsonb, 30, now() - interval '12 hours');
 
 INSERT INTO segmentation_run (method, window_days, parameters, customer_count, run_at)
 VALUES ('RFM_RULES', 180, '{"window_days": 180}'::jsonb, 30, now());
@@ -201,27 +304,72 @@ SELECT n, 'SKU-' || lpad(n::text,5,'0'), 'Demo Product ' || n,
        TRUE
 FROM generate_series(1,40) n;
 
--- ---------- transaction (300, spread over roughly six months) ----------
--- Six months of history is what makes the deferred RFM work meaningful later:
--- recency and frequency need a window to be measured over.
+-- ---------- transaction (300, varied by customer, within the last 180 days) ----------
+-- Customers do not behave alike. Each one has a purchase count, a day of last
+-- purchase and a spacing between purchases, all derived from the customer
+-- number by modular arithmetic (no random(), so a reload gives the same
+-- relative history):
+--
+--   purchases  3 + p/2, where p = (7c mod 30) runs over 0..29, so counts run
+--              3..17 in pairs and add up to exactly 300
+--   last_days  4 * ((23p + 4) mod 30), 0..116 days before the load, a second
+--              permutation that leaves recency only loosely tied to frequency
+--   spacing    the days between purchases: the rest of the 180-day window
+--              shared out, at most 45, so a frequent customer buys every few
+--              days and an occasional one every month or two. Customer 30 is
+--              new: three purchases three days apart, all in the last three
+--              weeks, so the older runs find no sale in its window and record
+--              it as unassigned (RN-21)
+--
+-- That spreads recency, frequency and spend across the whole range, which is
+-- what lets every quintile and every segment band be reached (#463): a frequent
+-- customer whose last purchase is old is AT_RISK, an infrequent recent one is
+-- POTENTIAL, and so on. With every customer at exactly 10 purchases the
+-- frequency quintile came only from the customer-id tie-break.
 --
 -- source_transaction_id mirrors the sales contract's identifier (F8-01): a
--- deterministic, unique string per row, in the same spirit as product.sku.
+-- deterministic, unique string per row, in the same spirit as product.sku, and
+-- numbered customer by customer so TXN-00000001 is customer 1's latest sale.
+-- Every sale is at most 180 days old. Offsets are counted in hours, 24 a day, so
+-- they are elapsed time under any TimeZone: the raw recency, frequency and spend
+-- of a customer, and so the K-means run recorded below, do not depend on where
+-- the script is run.
 INSERT INTO transaction (source_transaction_id, customer_id, store_id, channel_id, occurred_at, total)
+WITH profile AS (
+    SELECT c,
+           3 + ((c*7) % 30) / 2 AS purchases,
+           4 * ((23 * ((c*7) % 30) + 4) % 30) AS last_days
+    FROM generate_series(1,30) c
+),
+sale AS (
+    SELECT p.c, j, p.last_days,
+           CASE WHEN p.c = 30 THEN 3
+                ELSE LEAST(45, (179 - p.last_days) / p.purchases)
+           END AS spacing_days,
+           row_number() OVER (ORDER BY p.c, j) AS n
+    FROM profile AS p
+    CROSS JOIN LATERAL generate_series(1, p.purchases) j
+)
 SELECT 'TXN-' || lpad(n::text,8,'0'),
-       ('00000000-0000-0000-0000-' || lpad((1+((n-1)%30))::text,12,'0'))::uuid,
+       ('00000000-0000-0000-0000-' || lpad(c::text,12,'0'))::uuid,
        1 + ((n*7) % 30),
        1 + ((n*3) % 5),
-       now() - ((n % 180) || ' days')::interval,
+       now() - make_interval(hours => 24 * (last_days + (j-1) * spacing_days)
+                                       + (c*5 + j*7) % 24),
        round((50 + (n % 20) * 37.5)::numeric,2)
-FROM generate_series(1,300) n;
+FROM sale
+ORDER BY n;
 
 -- ---------- transaction_line (2 lines per transaction = 600) ----------
+-- A customer's unit prices are scaled by a customer factor of 1.0 to 3.0 (the
+-- customer number is the last twelve digits of the seeded customer id), so two
+-- customers with the same purchase count do not spend the same.
 INSERT INTO transaction_line (transaction_id, product_id, quantity, unit_price)
 SELECT t.transaction_id,
        1 + ((t.transaction_id + d) % 40),
        1 + ((t.transaction_id + d) % 3),
-       round((20 + ((t.transaction_id + d) % 15) * 5.25)::numeric,2)
+       round(((10 + ((t.transaction_id + d) % 15) * 3.5)
+              * (1 + ((right(t.customer_id::text, 12)::int * 13) % 5) * 0.5))::numeric, 2)
 FROM transaction t
 CROSS JOIN generate_series(0,1) d;
 
@@ -244,12 +392,18 @@ WHERE l.transaction_id = t.transaction_id;
 -- quintile/rule procedure as web/db/segments.py.  Keeping this after the
 -- transaction lines (and their reconciled headers) means the current profile,
 -- run history and sales block all describe the same accepted sales.
+--
+-- The K-means run is recorded the way the application records one: the same
+-- raw values from its own window, the label its fit gave the customer, and NULL
+-- for the segment and the three scores. A customer with no sale in a run's
+-- window gets the unassigned row (no label, no values) in both methods.
 INSERT INTO customer_segment_history
     (customer_id, run_id, segment_id, label_code,
      recency_last_purchase_at, frequency_count, monetary_total,
      r_score, f_score, m_score, valid_from, valid_to)
 WITH ordered_runs AS (
     SELECT run_id,
+           method,
            run_at,
            window_days,
            lead(run_at) OVER (ORDER BY run_at, run_id) AS next_run_at
@@ -284,28 +438,47 @@ scored AS (
                    ORDER BY ws.monetary DESC, ws.customer_id
                ) AS m_score
     FROM window_sales AS ws
+),
+-- What the K-means fit assigned each customer, by customer number, 1 to 30.
+kmeans_label AS (
+    SELECT ('00000000-0000-0000-0000-' || lpad(k.n::text,12,'0'))::uuid AS customer_id,
+           k.label_code
+    FROM unnest(ARRAY[
+        'LOST', 'AT_RISK', 'CHAMPION', 'POTENTIAL', 'LOST',
+        'CHAMPION', 'AT_RISK', 'CHAMPION', 'LOST', 'LOST',
+        'CHAMPION', 'POTENTIAL', 'LOST', 'LOST', 'AT_RISK',
+        'CHAMPION', 'POTENTIAL', 'LOST', 'CHAMPION', 'AT_RISK',
+        'POTENTIAL', 'LOST', 'LOST', 'AT_RISK', 'AT_RISK',
+        'LOST', 'LOST', 'CHAMPION', 'AT_RISK', 'LOST'
+    ]) WITH ORDINALITY AS k(label_code, n)
 )
 SELECT c.customer_id,
        r.run_id,
-       COALESCE(matched.segment_id, fallback.segment_id),
-       COALESCE(matched.label_code, fallback.label_code),
+       CASE WHEN r.method = 'RFM_RULES'
+            THEN COALESCE(matched.segment_id, fallback.segment_id) END,
+       CASE WHEN r.method = 'RFM_RULES'
+            THEN COALESCE(matched.label_code, fallback.label_code)
+            WHEN s.customer_id IS NOT NULL
+            THEN km.label_code END,
        s.last_purchase,
        s.frequency::int,
        s.monetary,
-       s.r_score,
-       s.f_score,
-       s.m_score,
+       CASE WHEN r.method = 'RFM_RULES' THEN s.r_score END,
+       CASE WHEN r.method = 'RFM_RULES' THEN s.f_score END,
+       CASE WHEN r.method = 'RFM_RULES' THEN s.m_score END,
        r.run_at,
        r.next_run_at
 FROM ordered_runs AS r
 CROSS JOIN customer AS c
 LEFT JOIN scored AS s
        ON s.run_id = r.run_id AND s.customer_id = c.customer_id
+LEFT JOIN kmeans_label AS km ON km.customer_id = c.customer_id
 LEFT JOIN LATERAL (
     SELECT seg.segment_id, seg.label_code
     FROM segment AS seg
     JOIN segment_rule AS sr ON sr.rule_id = seg.rule_id
-    WHERE s.r_score BETWEEN sr.r_min AND sr.r_max
+    WHERE r.method = 'RFM_RULES'
+      AND s.r_score BETWEEN sr.r_min AND sr.r_max
       AND s.f_score BETWEEN sr.f_min AND sr.f_max
       AND s.m_score BETWEEN sr.m_min AND sr.m_max
       AND seg.valid_from <= CURRENT_DATE
@@ -317,7 +490,8 @@ LEFT JOIN LATERAL (
     SELECT seg.segment_id, seg.label_code
     FROM segment AS seg
     JOIN segment_label AS sl ON sl.label_code = seg.label_code
-    WHERE s.customer_id IS NOT NULL
+    WHERE r.method = 'RFM_RULES'
+      AND s.customer_id IS NOT NULL
       AND matched.segment_id IS NULL
       AND seg.valid_from <= CURRENT_DATE
       AND (seg.valid_to IS NULL OR seg.valid_to >= CURRENT_DATE)
@@ -326,6 +500,9 @@ LEFT JOIN LATERAL (
 ) AS fallback ON true;
 
 -- ---------- campaign (30) ----------
+-- Campaign dates are absolute, not relative to the load: a campaign's lifecycle
+-- is judged against fixed business dates (RN-49, tests/golden/cases/campaigns.py),
+-- so the sales, runs and experiments move with the load and the campaigns do not.
 INSERT INTO campaign (campaign_id, name, label_code, starts_on, ends_on, status)
 SELECT n, 'Campaign ' || n,
        (ARRAY['CHAMPION','LOYAL','POTENTIAL','AT_RISK','HIBERNATING','LOST'])[1+((n-1)%6)],
@@ -338,11 +515,21 @@ FROM generate_series(1,30) n;
 -- Every seeded experiment is synthetic (ADR-0019): none may claim OBSERVED,
 -- which would show its figures as real results without the Synthetic label
 -- (#427). Two in three are A/A validation, one in three injected uplift.
+--
+-- An experiment is dated relative to the load, like the sales it is measured
+-- against, and runs for 42 days: it starts between 8 and 153 days ago, in steps
+-- of five. The seven that started within 42 days are still running, and their
+-- later conversion windows are still open; the rest are finished. Assignments
+-- fall in an experiment's first ten days and conversion windows are 7 to 28
+-- days, so everything an experiment records falls inside its own dates. (The
+-- campaign dates are absolute, so an experiment's dates no longer coincide with
+-- its campaign's.)
 INSERT INTO experiment (experiment_id, name, campaign_id, target_metric, starts_on, ends_on,
                          conversion_window_days, data_origin)
 SELECT n, 'Experiment ' || n, n,
        (ARRAY['CONVERSION','AVERAGE_TICKET'])[1+((n-1)%2)],
-       DATE '2026-02-01', DATE '2026-03-01',
+       CURRENT_DATE - (8 + ((n*11) % 30) * 5),
+       CURRENT_DATE - (8 + ((n*11) % 30) * 5) + 42,
        7 + ((n-1) % 4) * 7,
        CASE WHEN n % 3 = 0 THEN 'INJECTED' ELSE 'SEEDED' END
 FROM generate_series(1,30) n;
@@ -357,53 +544,150 @@ SELECT (n-1)*2 + 2, n, 'TREATMENT', 'Offer ' || n, 'Personalized offer for exper
 -- k 0-1 go to the control group, 2-3 to treatment. The customer offset is
 -- scoped to the experiment (base (n-1)*4, span 4 < 30) so no customer
 -- repeats within one experiment, satisfying UNIQUE (experiment_id, customer_id).
--- assigned_at sits half a day before customer c's sale of c days ago (the
--- transaction seed gives customer c a sale every 30 days starting c days ago),
--- so every assignee has a sale inside even the shortest (7-day) window and
--- the seeded conversions below satisfy the F11-06 rule. Windows of 7-28 days
--- against assignments 1.5-30.5 days old leave some open and some closed.
+-- Assignee k is assigned 3k days after the experiment starts (the last one on
+-- day 9, and never later than a day before the load for an experiment that
+-- started recently) plus 0 to 7 hours. The moment is counted back from now(),
+-- like every sale, so the gap between an assignment and a customer's sales does
+-- not depend on the time of day the seed is loaded; it is always inside the
+-- experiment's dates and never in the future.
 INSERT INTO experiment_assignment (experiment_id, group_id, customer_id, assigned_at)
 SELECT n,
        (n-1)*2 + 1 + (k/2),
        ('00000000-0000-0000-0000-' || lpad(c::text,12,'0'))::uuid,
-       now() - (c || ' days')::interval - interval '12 hours'
+       now() - make_interval(hours => 24 * GREATEST(CURRENT_DATE - e.starts_on - k*3, 1)
+                                       - (n + k*5) % 8)
 FROM generate_series(1,30) n
 CROSS JOIN generate_series(0,3) k
-CROSS JOIN LATERAL (SELECT 1+(((n-1)*4+k) % 30) AS c) AS customer_index;
+CROSS JOIN LATERAL (SELECT 1+(((n-1)*4+k) % 30) AS c) AS customer_index
+JOIN experiment AS e ON e.experiment_id = n
+ORDER BY n, k;
 
 -- ---------- experiment_exposure (one treatment assignee per experiment = 30) ----------
 -- Picks the first treatment assignment per experiment by assignment_id,
 -- derived structurally from experiment_assignment/experiment_group rather
 -- than re-deriving the customer offset formula above, so the two inserts
--- cannot drift apart if that formula changes.
-INSERT INTO experiment_exposure (assignment_id)
-SELECT assignment_id FROM (
-    SELECT a.assignment_id,
+-- cannot drift apart if that formula changes. The customer is reached two to
+-- seven hours after being assigned, so the exposure is after the assignment and
+-- inside the experiment's dates; the other treatment assignee stays unexposed
+-- (ADR-0019), and a control assignee is never exposed.
+INSERT INTO experiment_exposure (assignment_id, exposed_at)
+SELECT assignment_id, assigned_at + make_interval(hours => 2 + experiment_id % 6)
+FROM (
+    SELECT a.assignment_id, a.experiment_id, a.assigned_at,
            ROW_NUMBER() OVER (PARTITION BY a.experiment_id ORDER BY a.assignment_id) AS rn
     FROM experiment_assignment a
     JOIN experiment_group g ON g.group_id = a.group_id
     WHERE g.kind = 'TREATMENT'
 ) ranked
-WHERE rn = 1;
+WHERE rn = 1
+ORDER BY assignment_id;
 
--- ---------- experiment_conversion (one qualifying sale per exposure = 30) ----------
--- Qualifying means what F11-06 evaluates: the assignee's own sale in
--- [assigned_at, assigned_at + conversion_window_days).
-INSERT INTO experiment_conversion (assignment_id, transaction_id)
-SELECT e.assignment_id,
-       (SELECT MIN(t.transaction_id) FROM transaction t
-         WHERE t.customer_id = a.customer_id
-           AND t.occurred_at >= a.assigned_at
-           AND t.occurred_at < a.assigned_at + make_interval(days => x.conversion_window_days))
-FROM experiment_exposure e
-JOIN experiment_assignment a ON a.assignment_id = e.assignment_id
-JOIN experiment x ON x.experiment_id = a.experiment_id;
+-- ---------- experiment_conversion (every qualifying sale of every assignee) ----------
+-- What F11-06 evaluates, as web/db/experiment_conversions.py evaluates it: an
+-- assignee's own sale in [assigned_at, assigned_at + conversion_window_days),
+-- in either arm (the uplift is measured from every assigned customer). A
+-- customer with no such sale has no row, and one whose window is still open may
+-- convert later. converted_at is the moment of the sale, so a conversion is
+-- inside the window it was judged against and inside the experiment's dates.
+INSERT INTO experiment_conversion (assignment_id, transaction_id, converted_at)
+SELECT a.assignment_id, t.transaction_id, t.occurred_at
+FROM experiment_assignment a
+JOIN experiment x ON x.experiment_id = a.experiment_id
+JOIN transaction t
+  ON t.customer_id = a.customer_id
+ AND t.occurred_at >= a.assigned_at
+ AND t.occurred_at < a.assigned_at + make_interval(days => x.conversion_window_days)
+ORDER BY a.assignment_id, t.occurred_at, t.transaction_id;
 
 -- ---------- inventory (30 stores x 5 products = 150) ----------
 INSERT INTO inventory (store_id, product_id, quantity_on_hand)
 SELECT s, p, 10 + ((s+p) % 90)
 FROM generate_series(1,30) s
 CROSS JOIN generate_series(1,5) p;
+
+-- ---------- sales_load (30 uploads of 10 accepted sales each) ----------
+-- Sales CSV uploads by the administrator (F8-01, #334): one a day for the last
+-- thirty days, version 1 of the contract. Each accepted ten sales, 300 in all,
+-- the number of seeded sales (the history was backfilled by file, whatever the
+-- dates of the sales themselves), and refused 0 to 4 lines. A load is
+-- reconciled: received = accepted + rejected.
+INSERT INTO sales_load (filename, contract_version, received_count, accepted_count,
+                        rejected_count, loaded_by, loaded_at)
+SELECT 'sales-' || to_char((now() - make_interval(days => 31 - n))::date, 'YYYY-MM-DD') || '.csv',
+       1,
+       10 + n % 5,
+       10,
+       n % 5,
+       '11111111-1111-1111-1111-000000000001',
+       now() - make_interval(days => 31 - n) + interval '11 hours'
+FROM generate_series(1,30) n
+ORDER BY n;
+
+-- ---------- sales_load_rejection (one row per refused line = 60) ----------
+-- The refused lines of those loads, numbered as the file numbers them (the
+-- header is line 1, so the first data row is line 2), with the reasons the
+-- ingestion rules in web/services/ingestion.py give.
+INSERT INTO sales_load_rejection (load_id, line_number, reason)
+SELECT l.load_id,
+       2 + k * 2,
+       (ARRAY['unknown customer',
+              'unknown product',
+              'product is inactive',
+              'quantity must be positive',
+              'unit price must have at most 2 decimal places',
+              'occurred_at cannot be in the future',
+              'sale occurred before customer registration'])[1 + (l.load_id + k) % 7]
+FROM sales_load AS l
+CROSS JOIN LATERAL generate_series(0, l.rejected_count - 1) AS k
+ORDER BY l.load_id, k;
+-- ---------- notification (23 experiment ends + 31 run completions = 54) ----------
+-- AN-04 (#419, ADR-0047). Announce every completed run and only experiments
+-- whose end date has passed. The other seven experiments are still running.
+-- These historical examples cover those two event kinds; seeded sales loads
+-- have no notification example, and every seeded account is active.
+-- The lazy announcer leaves these experiment events alone, including those
+-- within its 14-day lookback, because experiment_id is unique.
+--
+-- Merge both event kinds before ordering: their dates now overlap. Identity
+-- order must follow creation time across kinds, not just inside each kind.
+INSERT INTO notification (experiment_id, run_id, created_at)
+SELECT experiment_id, run_id, created_at
+FROM (
+    SELECT experiment_id, NULL::bigint AS run_id,
+           (ends_on + 1)::timestamptz AS created_at
+    FROM experiment
+    WHERE ends_on < CURRENT_DATE
+    UNION ALL
+    SELECT NULL::integer AS experiment_id, run_id, run_at AS created_at
+    FROM segmentation_run
+) AS events
+ORDER BY created_at, experiment_id NULLS LAST, run_id;
+
+-- ---------- notification_recipient (23 x 16 + 31 x 21 = 1019) ----------
+-- Every active user whose role holds the event's delivery permission, the
+-- snapshot web/services/notifications.py takes when it writes an event:
+--   EXPERIMENT_ENDED       campaign.read  ADMIN, ANALYST, MARKETING, AUDITOR
+--   SEGMENT_RUN_COMPLETED  segment.read   ADMIN, ANALYST, STORE_MANAGER,
+--                                         MARKETING, AUDITOR
+-- The roles are the matrix in web/middleware/authz.py, written out because
+-- SQL cannot read it; tests/test_notification_schema.py compares the two, so
+-- a change to the matrix fails the build instead of leaving the seed stale.
+-- An event more than seven days old is read, so the inbox opens with both
+-- read and unread rows.
+INSERT INTO notification_recipient (notification_id, user_id, read_at)
+SELECT n.notification_id,
+       u.user_id,
+       CASE WHEN n.created_at < now() - interval '7 days'
+            THEN n.created_at + interval '1 hour'
+       END
+FROM notification AS n
+JOIN role AS r
+  ON r.code = ANY (
+       CASE n.kind
+         WHEN 'EXPERIMENT_ENDED'      THEN ARRAY['ADMIN','ANALYST','MARKETING','AUDITOR']
+         WHEN 'SEGMENT_RUN_COMPLETED' THEN ARRAY['ADMIN','ANALYST','STORE_MANAGER','MARKETING','AUDITOR']
+       END)
+JOIN app_user AS u ON u.role_id = r.role_id AND u.is_active;
 
 -- ---------- audit_log ----------
 -- Filled by the triggers as the statements above ran: segment, segment_rule,

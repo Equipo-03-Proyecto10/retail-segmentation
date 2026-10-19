@@ -1,0 +1,6 @@
+{
+  "code": "campaign_not_found",
+  "message": "No campaign has the requested campaign_id.",
+  "correlation_id": "corr-campaign-404",
+  "details": []
+}

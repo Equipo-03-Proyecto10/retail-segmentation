@@ -130,8 +130,12 @@ ANALYTICS_ROUTES: tuple[tuple[str, str, str, str], ...] = (
 
 # Blueprints that are not analytics. A blueprint absent from both this set and
 # the table above fails the completeness test, so a new surface has to be
-# classified by whoever adds it.
-NOT_ANALYTICS_BLUEPRINTS = frozenset({"admin", "audit", "auth", "home"})
+# classified by whoever adds it. `notifications` is any signed-in user's own
+# inbox (`@requires()`); what each notification says is gated on its own
+# delivery permission when it is read (ADR-0047), not on the route.
+NOT_ANALYTICS_BLUEPRINTS = frozenset(
+    {"admin", "audit", "auth", "home", "notifications"}
+)
 ANALYTICS_PERMISSIONS = frozenset(
     {
         SEGMENT_READ,

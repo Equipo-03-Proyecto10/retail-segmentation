@@ -1,0 +1,11 @@
+{
+  "code": "ends_before_start",
+  "message": "ends_on cannot be before starts_on.",
+  "correlation_id": "corr-campaign-422b",
+  "details": [
+    {
+      "field": "ends_on",
+      "code": "before_start"
+    }
+  ]
+}

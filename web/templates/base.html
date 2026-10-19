@@ -44,6 +44,9 @@
                     >
                       <span class="mq-nav__icon" aria-hidden="true">{{ entry.glyph }}</span>
                       <span class="mq-nav__label">{{ entry.label }}</span>
+                      {% if entry.endpoint == "notifications.index" and unread_badge_text %}
+                        <span class="mq-nav__badge">{{ unread_badge_text }}<span class="mq-visually-hidden"> unread</span></span>
+                      {% endif %}
                     </a>
                   {% endfor %}
                 </div>

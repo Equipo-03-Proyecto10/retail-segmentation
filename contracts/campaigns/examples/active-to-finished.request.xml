@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TransitionCampaignRequest xmlns="https://mosaiq.maxthecoder.online/xml/campaigns/v1">
+  <to>FINISHED</to>
+  <expected_status>ACTIVE</expected_status>
+</TransitionCampaignRequest>

@@ -123,3 +123,94 @@ def list_notifications(
             (str(user_id), list(kinds), limit, offset),
         )
         return [NotificationRow(*row) for row in cursor.fetchall()]
+
+
+def get_notification(
+    connection: Connection[Any],
+    *,
+    user_id: UUID | str,
+    notification_id: int,
+    kinds: Sequence[str],
+) -> NotificationRow | None:
+    """One of this user's notifications, or None.
+
+    None is the answer for an id that does not exist, for one that was written
+    for somebody else and for one of a kind the reader's role no longer holds the
+    permission for. The three are indistinguishable on purpose (RN-62): the
+    caller answers 404 to all of them and so reveals nothing about the others.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT n.notification_id, n.kind, n.created_at, r.read_at,
+                   n.sales_load_id, sl.filename, sl.accepted_count,
+                   sl.rejected_count,
+                   n.run_id, sr.method, sr.customer_count,
+                   n.experiment_id, ex.name, ex.ends_on,
+                   n.subject_user_id, su.name
+            FROM notification_recipient AS r
+            JOIN notification AS n ON n.notification_id = r.notification_id
+            LEFT JOIN sales_load AS sl ON sl.load_id = n.sales_load_id
+            LEFT JOIN segmentation_run AS sr ON sr.run_id = n.run_id
+            LEFT JOIN experiment AS ex ON ex.experiment_id = n.experiment_id
+            LEFT JOIN app_user AS su ON su.user_id = n.subject_user_id
+            WHERE r.user_id = %s AND r.notification_id = %s
+              AND n.kind = ANY(%s::text[])
+            """,
+            (str(user_id), notification_id, list(kinds)),
+        )
+        row = cursor.fetchone()
+    return NotificationRow(*row) if row else None
+
+
+def mark_read(
+    connection: Connection[Any],
+    *,
+    user_id: UUID | str,
+    notification_id: int,
+    kinds: Sequence[str],
+) -> bool:
+    """Mark one of this user's notifications read; False when it is not theirs.
+
+    The first reading time is kept: marking a notification that is already read
+    changes nothing and still answers True, so a second click or a replayed
+    request is harmless. A row that does not exist, belongs to another user or
+    is of a kind the reader may no longer read matches nothing and answers False.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            UPDATE notification_recipient AS r
+               SET read_at = COALESCE(r.read_at, now())
+              FROM notification AS n
+             WHERE n.notification_id = r.notification_id
+               AND r.user_id = %s AND r.notification_id = %s
+               AND n.kind = ANY(%s::text[])
+            """,
+            (str(user_id), notification_id, list(kinds)),
+        )
+        return cursor.rowcount > 0
+
+
+def mark_all_read(
+    connection: Connection[Any], *, user_id: UUID | str, kinds: Sequence[str]
+) -> int:
+    """Mark every unread notification this user may read as read; how many.
+
+    Notifications of a kind the reader's role no longer holds the permission for
+    are left as they are: they are not shown, so they are not "all", and they
+    are unread again if the permission returns.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            UPDATE notification_recipient AS r
+               SET read_at = now()
+              FROM notification AS n
+             WHERE n.notification_id = r.notification_id
+               AND r.user_id = %s AND r.read_at IS NULL
+               AND n.kind = ANY(%s::text[])
+            """,
+            (str(user_id), list(kinds)),
+        )
+        return cursor.rowcount

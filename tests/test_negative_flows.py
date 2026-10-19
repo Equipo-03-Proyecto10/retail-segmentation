@@ -107,7 +107,12 @@ PROTECTED_ROUTES = (
 )
 # Routes any signed-in user reaches, whatever their role (`@requires()`): refused
 # to the anonymous, but not to a CUSTOMER, so they are not PROTECTED_ROUTES.
-SIGNED_IN_ROUTES = [("GET", "/notifications/")]
+SIGNED_IN_ROUTES = [
+    ("GET", "/notifications/"),
+    ("GET", "/notifications/1"),
+    ("POST", "/notifications/1/read"),
+    ("POST", "/notifications/read-all"),
+]
 ANONYMOUS_REFUSED_ROUTES = PROTECTED_ROUTES + SIGNED_IN_ROUTES + [("POST", "/logout")]
 PRODUCT = dict(
     product_id="1", sku="TEST", name="Product", category_id="1", list_price="10"

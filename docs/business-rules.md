@@ -1012,6 +1012,28 @@ and `tests/test_consumption_reports_route.py`. · `F8-06`
 
 ## Notifications
 
+### RN-62 — A notification is private: anyone else's request for it is a 404
+A notification is read, and marked read, only by a user it was written for and
+only while that user's role still holds the permission that delivered it. A
+request for any other notification by id, whether it does not exist, was written
+for somebody else or is of a kind the reader's role no longer holds the
+permission for, is answered `404`, never `403`, so asking by id reveals nothing
+about which of the three it was; the three cannot be told apart from outside.
+Opening a notification does not mark it read: that is an explicit `POST`, with a
+CSRF token, and marking one that is already read keeps its first reading time.
+"Mark all read" marks what the user may read and leaves what their role cannot
+see as it is.
+
+**Enforced:** application — the three statements in `web/db/notifications.py`
+filter by the reader's own user id and by the kinds their role reads, so a row
+that is not theirs matches nothing; `web/routes/notifications.py` answers 404
+for a `None` and bounds the id to what the column holds. The recipient rows are
+the schema's half: `(notification_id, user_id)` is the key, and a row exists only
+for a user an event was written for. **Verified** — against PostgreSQL by
+`tests/test_notification_state_db.py`, and end to end (real sign-in, CSRF and
+sessions) by the transcript in
+[`evidence/an-04-notifications.md`](evidence/an-04-notifications.md). · #419 · ADR-0047
+
 ### RN-63 — The inbox is newest first and twenty to a page, and the badge counts what is unread up to 99
 A user's inbox lists the notifications written for them that their role may
 still read, newest first, twenty to a page; a page past the last redirects to

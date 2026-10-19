@@ -542,6 +542,12 @@ body.mq-app {
   padding: 0 3px;
 }
 
+.mq-notice__toolbar-end {
+  display: flex;
+  align-items: center;
+  gap: var(--mq-space-3);
+}
+
 .mq-notice-list {
   list-style: none;
   margin: 0;
@@ -679,6 +685,10 @@ body.mq-app {
 
   .mq-notice {
     flex-direction: column;
+  }
+
+  .mq-notice__actions {
+    flex-wrap: wrap;
   }
 
   .mq-nav--collapsed .mq-nav__label {

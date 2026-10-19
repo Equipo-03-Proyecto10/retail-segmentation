@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<AuditEntry xmlns="https://mosaiq.maxthecoder.online/xml/audit-trail/v1">
+  <audit_id>1194</audit_id>
+  <user_id>11111111-1111-1111-1111-000000000001</user_id>
+  <entity>product</entity>
+  <entity_pk>41</entity_pk>
+  <action>TRUNCATE</action>
+  <data_before>{"category_id":1,"image_path":null,"is_active":true,"list_price":3.49,"name":"Oat Milk 1 L","product_id":41,"sku":"SKU-00041"}</data_before>
+  <data_after>{"category_id":1,"image_path":null,"is_active":true,"list_price":3.99,"name":"Oat Milk 1 L","product_id":41,"sku":"SKU-00041"}</data_after>
+  <executed_at>2026-10-16T14:22:47.906Z</executed_at>
+</AuditEntry>

@@ -291,9 +291,10 @@ class MenuItem:
     glyph: str
 
 
-# One entry per section of the matrix in docs/requirements.md §3. Destinations
-# without a current-delivery workflow still register a permission-gated status
-# page, so the design-system navigation never contains a broken destination.
+# One entry per destination a signed-in user can open from anywhere. Each entry
+# is gated by the permission its landing route requires, and `menu()` drops an
+# entry whose endpoint is not registered, so the navigation never offers a
+# destination the visitor would be refused or that does not exist.
 #
 # "Catalogs" points at the read-only consultation hub (F3-05, #65). The
 # administrator reaches the CRUD hub from a link on that page and edits from

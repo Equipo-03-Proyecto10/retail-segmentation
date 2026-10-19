@@ -104,8 +104,6 @@ Deliberately not built in the web system, so do not present it as built:
 - Editing the label vocabulary or the segment rule catalogue (`segment.write` has
   no screen); the bands change only in the database.
 - A customer self-service view (`user.self` has no screen).
-- Notifications when analytics work finishes (#419).
-- Narrowing a store manager's pages to their own store (#467).
 - A measurement for the *Average ticket* target metric: it can be chosen and is
   labelled as not measured yet (#457).
 - An HTTP ingestion endpoint: CSV through the Sales import page is the web
@@ -528,7 +526,7 @@ canonical permission matrix. It follows `web/middleware/authz.py`.
 |---|---|
 | `ADMIN` | Everything below, plus full CRUD for category, product, store, channel and role; users (create, edit, activate, deactivate); Sales import; Segment run; campaign and experiment writes; Audit log |
 | `ANALYST` | Product and stock consultation; customers, segments, run history, migration matrix, model comparison, both dashboards, the segment history and consumption reports, the experiment report; campaign and experiment lists, uplift and conversion pages (read only); Reports |
-| `STORE_MANAGER` | Product and stock consultation; customers, segments, consumption profiles, recommendations and every `segment.read` page above, for all stores (ADR-0023; own-store narrowing is #467); Reports. No campaign or experiment pages |
+| `STORE_MANAGER` | Product and stock consultation; customers, segments, consumption profiles, recommendations and every `segment.read` page above, for all stores (ADR-0023); Reports for every store (ADR-0048). No campaign or experiment pages |
 | `MARKETING` | The analyst's access, plus campaign and experiment writes (create, edit draft, activate, complete, cancel, assign, record exposure, evaluate conversion) |
 | `INVENTORY_PLANNER` | Product and stock consultation; Reports (revenue only, since no analytics report is offered); no inventory-write screen yet; no customer data |
 | `AUDITOR` | The analyst's access, plus the Users list (read only) and the Audit log. Cannot write anywhere |
@@ -1089,8 +1087,8 @@ future intent separately.
 6. *Average ticket* can be chosen as an experiment's target metric but nothing
    measures it; uplift refuses it. Only *Conversion rate* is measured (#457).
 7. The permission matrix includes inventory writes and customer self-service,
-   but there are no workflows for those capabilities. A store manager's cell says
-   "own store", but the pages show every store (#467).
+   but there are no workflows for those capabilities. A store manager reads every
+   store's reports, as the matrix says (ADR-0048).
 8. The Model comparison page says *K-means runs cannot be started from a screen
    in this release* when no K-means run exists. That sentence is out of date:
    K-means is started from **Segment run** by choosing *K-means*.

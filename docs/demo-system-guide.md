@@ -576,9 +576,11 @@ does not own the schema and cannot drop its tables. Dynamic values in every SQL
 statement are parameterised. Table and column names that cannot be parameters
 are fixed in source or selected from an explicit whitelist.
 
-Every table has at least 30 seed rows except `role` and `channel`, whose real
-domains contain seven and five entries respectively. Their reasons are recorded
-in `sql/seed-exempt.txt` rather than padded with fictional values.
+Every table has at least 30 seed rows except `role`, `channel` and
+`segment_label`, whose real domains contain seven, five and six entries
+respectively. Their reasons are recorded in `sql/seed-exempt.txt` rather than
+padded with fictional values. The runtime tables (`app_session`, `sales_load`
+and `sales_load_rejection`) are seeded, not exempt.
 
 ---
 

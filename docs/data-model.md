@@ -411,8 +411,9 @@ change take effect on the next request. Every non-key column depends on
 partial index `idx_app_session_open_by_user` serves deactivation, which revokes
 every open session of one user. `CASCADE` from `app_user` is safe because
 users are deactivated, never deleted (RN-04). It is runtime state, not
-business data: not audited, and exempt from the 30-row seed minimum
-(`sql/seed-exempt.txt`), since seeding it would invent sign-ins.
+business data: not audited. The seed gives it 30 rows, one finished sign-in
+per demonstration account, every one revoked so none can authenticate a
+request, and it is not in `sql/seed-exempt.txt`.
 
 #### `customer`
 
@@ -552,8 +553,8 @@ These two are the 4NF decomposition from §2.4.
 
 The table-level check `received_count = accepted_count + rejected_count`
 keeps the stored report reconciled. This is runtime history rather than
-reference data, so it is exempt from the 30-row seed minimum in
-`sql/seed-exempt.txt`.
+reference data. The seed gives it 30 reconciled uploads by the administrator,
+so it is not in `sql/seed-exempt.txt`.
 
 #### `sales_load_rejection`
 
@@ -565,8 +566,9 @@ reference data, so it is exempt from the 30-row seed minimum in
 | `reason` | `VARCHAR(255)` | NN | — | Business wording safe to show to the administrator |
 
 Rejections have no meaning without their load, so deleting a load cascades to
-them. They are runtime history and carry the same seed exemption as
-`sales_load`.
+them. They are runtime history; the seed gives them 60 rows, the refused
+lines of the 30 seeded uploads, so they are not in `sql/seed-exempt.txt`
+either.
 
 #### `campaign`
 

@@ -424,6 +424,17 @@ forbids altering a table by hand on the server. That drops the database, so it
 is a decision for whoever owns the instance (the instance holds demonstration
 data only), and it should be taken together with the demonstration reset in #360.
 
+**A privilege-only change** is the one exception: it alters no table, so an
+operator applies it as `postgres` without a rebuild, when the ADR that makes it
+names the statement. Each statement is idempotent; a rebuild reaches the same
+state. Run `check-schema-drift.sh` afterwards.
+
+```sh
+# ADR-0047 (#451): conversions are append-only for the application role.
+sudo -u postgres psql -d retail -v ON_ERROR_STOP=1 \
+  -c 'REVOKE UPDATE, DELETE ON experiment_conversion FROM retail_app;'
+```
+
 ### The NGINX config is applied by hand, on purpose
 
 The deploy does not install `deploy/nginx/*.conf`. It runs under `sudo` and

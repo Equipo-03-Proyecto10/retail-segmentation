@@ -2,7 +2,7 @@
 
 The service tests replace these functions; this runs them, so a join that names
 a column wrongly or a filter that leaks another user's row fails here. The
-seeded events (one per seeded run and experiment, written for the holders of the
+seeded events (one per seeded run and ended experiment, written for the holders of the
 delivery permission) are what is read, and anything a test adds is rolled back.
 """
 
@@ -57,7 +57,7 @@ def test_a_user_reads_every_kind_their_role_holds_and_nothing_else(owner) -> Non
     kinds = visible_kinds("STORE_MANAGER")
 
     assert kinds == [SEGMENT_RUN_COMPLETED]
-    assert count_notifications(owner, user_id=STORE_MANAGER, kinds=kinds) == 30
+    assert count_notifications(owner, user_id=STORE_MANAGER, kinds=kinds) == 31
     assert {r.kind for r in _page(owner, STORE_MANAGER, kinds, limit=100)} == {
         SEGMENT_RUN_COMPLETED
     }
@@ -66,7 +66,7 @@ def test_a_user_reads_every_kind_their_role_holds_and_nothing_else(owner) -> Non
 def test_the_administrator_reads_runs_and_experiments(owner) -> None:
     kinds = visible_kinds("ADMIN")
 
-    assert count_notifications(owner, user_id=ADMIN, kinds=kinds) == 60
+    assert count_notifications(owner, user_id=ADMIN, kinds=kinds) == 54
     assert {r.kind for r in _page(owner, ADMIN, kinds, limit=100)} == {
         SEGMENT_RUN_COMPLETED,
         EXPERIMENT_ENDED,
@@ -131,7 +131,13 @@ def test_the_unread_count_is_the_unread_rows_the_role_may_read(owner) -> None:
 def test_a_demoted_role_stops_counting_what_it_no_longer_holds(owner) -> None:
     both = visible_kinds("ANALYST")
     only_runs = [SEGMENT_RUN_COMPLETED]
-    # The seed reads every experiment event, so leave one unread.
+    # Establish one unread experiment independently of the seed's read state.
+    owner.execute(
+        "UPDATE notification_recipient SET read_at = now()"
+        " WHERE user_id = %s AND notification_id IN ("
+        "   SELECT notification_id FROM notification WHERE kind = 'EXPERIMENT_ENDED')",
+        (ANALYST,),
+    )
     owner.execute(
         "UPDATE notification_recipient SET read_at = NULL"
         " WHERE user_id = %s AND notification_id = ("
@@ -140,8 +146,8 @@ def test_a_demoted_role_stops_counting_what_it_no_longer_holds(owner) -> None:
         (ANALYST,),
     )
 
-    assert count_notifications(owner, user_id=ANALYST, kinds=both) == 60
-    assert count_notifications(owner, user_id=ANALYST, kinds=only_runs) == 30
+    assert count_notifications(owner, user_id=ANALYST, kinds=both) == 54
+    assert count_notifications(owner, user_id=ANALYST, kinds=only_runs) == 31
     assert (
         count_unread(owner, user_id=ANALYST, kinds=both)
         == count_unread(owner, user_id=ANALYST, kinds=only_runs) + 1

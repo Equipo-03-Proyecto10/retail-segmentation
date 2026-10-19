@@ -29,10 +29,19 @@ def _fixture(
     *,
     rules: str = "### RN-01 — One\n### RN-02 — Two\n",
     documented_count: int = 2,
+    model_tables: tuple[str, ...] = ("first_table", "second_table"),
 ) -> None:
     (root / "docs/architecture").mkdir(parents=True)
     (root / "sql").mkdir()
     (root / "docs/business-rules.md").write_text(rules, encoding="utf-8")
+    (root / "docs/data-model.md").write_text(
+        "### Entities\n\n"
+        "| Entity | What it is |\n"
+        "|---|---|\n"
+        + "".join(f"| `{table}` | Fixture table |\n" for table in model_tables)
+        + "\n### Relationships\n",
+        encoding="utf-8",
+    )
     (root / "sql/01_schema.sql").write_text(
         "CREATE TABLE first_table (id integer);\n"
         "-- CREATE TABLE example_only (id integer);\n"
@@ -52,6 +61,7 @@ def test_repository_documentation_is_consistent() -> None:
     assert result.returncode == 0, result.stdout + result.stderr
     assert "Business-rule ids:" in result.stdout
     assert "Schema tables:" in result.stdout
+    assert "Data-model entity tables:" in result.stdout
     assert "Documented table counts:" in result.stdout
 
 
@@ -72,5 +82,23 @@ def test_duplicate_ids_and_stale_table_counts_are_both_reported(
     assert "docs/business-rules.md:3" in result.stderr
     assert (
         "docs/user-stories.md:1 states 3 tables; sql/01_schema.sql creates 2"
+        in result.stderr
+    )
+
+
+def test_missing_and_extra_data_model_tables_are_both_reported(
+    tmp_path: Path,
+) -> None:
+    _fixture(tmp_path, model_tables=("first_table", "extra_table"))
+
+    result = _run(tmp_path)
+
+    assert result.returncode == 1
+    assert (
+        "docs/data-model.md entity list is missing public schema tables: second_table"
+        in result.stderr
+    )
+    assert (
+        "docs/data-model.md entity list names tables not created in public: extra_table"
         in result.stderr
     )

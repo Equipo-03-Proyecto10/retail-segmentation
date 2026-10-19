@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BUSINESS_RULES = Path("docs/business-rules.md")
+DATA_MODEL = Path("docs/data-model.md")
 SCHEMA = Path("sql/01_schema.sql")
 TABLE_COUNT_DOCUMENTS = (
     Path("docs/user-stories.md"),
@@ -19,6 +20,12 @@ TABLE_COUNT_DOCUMENTS = (
 
 _RULE_HEADING = re.compile(r"^### (?P<rule>RN-\d+[a-z]?)\s+—", re.MULTILINE)
 _TABLE_COUNT = re.compile(r"(?<!\d)(?P<count>\d+)[ \t]+tables\b", re.IGNORECASE)
+_ENTITY_SECTION = re.compile(
+    r"^### Entities[ \t]*\n(?P<body>.*?)(?=^### )", re.MULTILINE | re.DOTALL
+)
+_ENTITY_TABLE = re.compile(
+    r"^\|[ \t]*`(?P<table>[A-Za-z_][A-Za-z0-9_]*)`[ \t]*\|", re.MULTILINE
+)
 _SQL_COMMENTS = re.compile(r"/\*.*?\*/|--[^\n]*", re.DOTALL)
 _IDENTIFIER = r'(?:"(?:[^"]|"")+"|[A-Za-z_][A-Za-z0-9_$]*)'
 _CREATE_TABLE = re.compile(
@@ -60,6 +67,22 @@ def _schema_tables(schema: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(tables))
 
 
+def _data_model_tables(data_model: str, errors: list[str]) -> tuple[str, ...]:
+    match = _ENTITY_SECTION.search(data_model)
+    if not match:
+        errors.append(f"{DATA_MODEL} has no '### Entities' section")
+        return ()
+    tables = [
+        table.group("table") for table in _ENTITY_TABLE.finditer(match.group("body"))
+    ]
+    duplicates = sorted({table for table in tables if tables.count(table) > 1})
+    if duplicates:
+        errors.append(
+            f"{DATA_MODEL} entity list repeats tables: {', '.join(duplicates)}"
+        )
+    return tuple(dict.fromkeys(tables))
+
+
 def check(root: Path) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     report: list[str] = []
@@ -81,6 +104,22 @@ def check(root: Path) -> tuple[list[str], list[str]]:
     tables = _schema_tables(schema_text)
     schema_count = len(tables)
     report.append(f"Schema tables: {schema_count}")
+
+    data_model_text = _read(root, DATA_MODEL, errors)
+    model_tables = _data_model_tables(data_model_text, errors)
+    missing_tables = sorted(set(tables) - set(model_tables))
+    extra_tables = sorted(set(model_tables) - set(tables))
+    if missing_tables:
+        errors.append(
+            f"{DATA_MODEL} entity list is missing public schema tables: "
+            f"{', '.join(missing_tables)}"
+        )
+    if extra_tables:
+        errors.append(
+            f"{DATA_MODEL} entity list names tables not created in public: "
+            f"{', '.join(extra_tables)}"
+        )
+    report.append(f"Data-model entity tables: {len(model_tables)}")
 
     stated_counts = []
     for path in TABLE_COUNT_DOCUMENTS:

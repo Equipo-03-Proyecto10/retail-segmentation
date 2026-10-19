@@ -261,11 +261,15 @@ filtered to `customer_segment_history`.
 
 ### 3.5 What the seed holds
 
-The seed holds 30 customers, 300 transactions spread over 180 days, and **30
-RFM-rules runs** (#1 to #30, one per day, the last at load time), each with one
-history row per customer derived from the sales that existed at its timestamp.
-It holds no K-means run, so a K-means run is made live. The published instance's
-capture of run #30 shows CHAMPION 11, LOYAL 6, POTENTIAL 1, AT_RISK 1,
+The seed holds 30 customers, 300 transactions spread over 180 days, and **31
+runs**: 30 RFM-rules runs (#1 to #30, one per day, the last at load time), plus
+K-means run #31 (K = 4, seed 463, twelve hours before the newest RFM run).
+Each run has one history row per customer derived from the sales that existed
+at its timestamp. The current assignments remain rule-based. Customers have
+3 to 17 purchases each, and the newest RFM run reaches all six labels.
+
+The published instance's capture from the earlier seed shows run #30 with
+CHAMPION 11, LOYAL 6, POTENTIAL 1, AT_RISK 1,
 HIBERNATING 9 and LOST 2 customers
 ([`evidence/an-02-segmentation-dashboard-1440.png`](evidence/an-02-segmentation-dashboard-1440.png)).
 Counts of a later run depend on the day it is made, because the oldest seeded

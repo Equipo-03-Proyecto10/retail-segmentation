@@ -335,3 +335,15 @@ def test_a_rule_based_run_has_no_quality_line(
 
     assert "window_days: 180, quintiles: 5" in body
     assert "quality-measures" not in body
+
+
+def test_a_small_tolerance_keeps_its_value_on_the_parameters_line(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    quality = {"inertia": 0.896812}
+
+    body = _detail(app, monkeypatch, {"k": 4, "tolerance": 1e-05, "quality": quality})
+
+    assert "tolerance: 1e-05" in body
+    assert "tolerance: 0.0000" not in body
+    assert "inertia: 0.8968" in body

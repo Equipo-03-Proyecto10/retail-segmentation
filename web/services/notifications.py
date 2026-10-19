@@ -2,8 +2,16 @@
 (AN-04, #419; ADR-0047).
 
 An event is stored once, as a subject and a kind, with no text. This module
-decides which kinds a user may read, turns a stored event into a sentence and a
-link when it is read, and counts what is unread.
+writes the events a request causes, decides which kinds a user may read, turns a
+stored event into a sentence and a link when it is read, and counts what is
+unread.
+
+**Writing.** `notify_sales_load`, `notify_segment_run` and `notify_user_deactivated`
+are called by the service that causes the event, from inside its own transaction
+(ADR-0014): they join it, never commit on their own, and a failure propagates, so
+the operation is rolled back with its notification (RN-61). The recipients are the
+active users whose role holds the kind's delivery permission, the user who caused
+the event among them, as they are at that moment.
 
 **Who may read what.** Each kind has a delivery permission, the one that made
 its holders recipients in the first place. It is checked again every time a
@@ -15,6 +23,7 @@ is the same 404 (RN-62).
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -27,6 +36,8 @@ from web.db.notifications import (
     count_notifications,
     count_unread,
     get_notification,
+    insert_notification,
+    insert_recipients,
     list_notifications,
     mark_all_read,
     mark_read,
@@ -38,6 +49,7 @@ from web.middleware.authz import (
     SEGMENT_READ,
     USER_WRITE,
     permissions_for,
+    roles_holding,
 )
 from web.services.pagination import page_count
 
@@ -299,3 +311,62 @@ def mark_all_notifications_read(
 ) -> int:
     """Mark everything the user may read as read; how many were unread."""
     return mark_all_read(connection, user_id=user_id, kinds=visible_kinds(role_code))
+
+
+# ---------- writing the events a request causes ----------
+
+
+def _write(
+    connection: Connection[Any],
+    kind: str,
+    *,
+    sales_load_id: int | None = None,
+    run_id: int | None = None,
+    subject_user_id: UUID | str | None = None,
+) -> int:
+    """Write one event and its recipients; how many users it was written for.
+
+    Joins the caller's transaction. A failure here is not caught: the caller's
+    operation fails with it and is rolled back (ADR-0014, RN-61).
+    """
+    notification_id = insert_notification(
+        connection,
+        sales_load_id=sales_load_id,
+        run_id=run_id,
+        subject_user_id=subject_user_id,
+    )
+    recipients = insert_recipients(
+        connection,
+        notification_id=notification_id,
+        role_codes=roles_holding(DELIVERY_PERMISSION[kind]),
+    )
+    logging.getLogger(__name__).info(
+        "notification_written kind=%s notification=%s recipients=%s",
+        kind,
+        notification_id,
+        recipients,
+    )
+    return recipients
+
+
+@atomic
+def notify_sales_load(connection: Connection[Any], load_id: int) -> int:
+    """Announce a recorded sales load to the holders of `sales_ingest.execute`."""
+    return _write(connection, SALES_LOAD_FINISHED, sales_load_id=load_id)
+
+
+@atomic
+def notify_segment_run(connection: Connection[Any], run_id: int) -> int:
+    """Announce a recorded segmentation run to the holders of `segment.read`."""
+    return _write(connection, SEGMENT_RUN_COMPLETED, run_id=run_id)
+
+
+@atomic
+def notify_user_deactivated(connection: Connection[Any], user_id: UUID | str) -> int:
+    """Announce a deactivation made in the web to the holders of `user.write`.
+
+    Only the web's own service layer calls this (Q-14): a deactivation through
+    users-service, and the command line's bulk deactivation of demonstration
+    accounts, create no notification.
+    """
+    return _write(connection, USER_DEACTIVATED, subject_user_id=user_id)

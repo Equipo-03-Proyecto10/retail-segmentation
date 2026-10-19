@@ -54,6 +54,7 @@ from web.services.kmeans import (
     fit_customers,
     recorded_parameters,
 )
+from web.services.notifications import notify_segment_run
 
 # The seed covers 180 days of sales, so the default window sees all of it.
 # Per-run rather than per-deployment: the operator chooses the window on the
@@ -453,6 +454,10 @@ def _record(
     insert_assignments(
         connection, run_id, [a.as_row() for a in assignments], at=recorded_at
     )
+    # The holders of segment.read are told in the run's own transaction (AN-04,
+    # RN-61): a run that cannot be announced is rolled back, and a failed run,
+    # which raises before this line, announces nothing.
+    notify_segment_run(connection, run_id)
 
     counts = summarise(assignments, prior)
     return RunResult(

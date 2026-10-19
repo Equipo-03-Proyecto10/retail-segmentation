@@ -11,7 +11,7 @@ tests/test_ingestion_service.py).
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 
@@ -304,9 +304,12 @@ def test_a_load_is_recorded_with_its_counts_and_every_rejection(
         return 7
 
     monkeypatch.setattr("web.services.sales_csv.insert_sales_load", _insert)
+    notify = Mock()
+    monkeypatch.setattr("web.services.sales_csv.notify_sales_load", notify)
+    connection = MagicMock()
 
     report, load_id = load_and_record_sales_csv(
-        object(),
+        connection,
         path,
         filename="sales.csv",
         contract_version=CONTRACT_VERSION,
@@ -315,6 +318,8 @@ def test_a_load_is_recorded_with_its_counts_and_every_rejection(
     )
 
     assert load_id == 7
+    notify.assert_called_once_with(connection, 7)
+    connection.commit.assert_called_once_with()
     assert (report.received, report.accepted, report.rejected) == (3, 2, 1)
     assert recorded == {
         "filename": "sales.csv",

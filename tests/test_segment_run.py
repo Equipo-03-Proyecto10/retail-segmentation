@@ -267,6 +267,7 @@ def test_the_run_commits_so_the_audit_entries_survive(monkeypatch) -> None:
         "create_run": Mock(return_value=1),
         "close_open_assignments": Mock(),
         "insert_assignments": Mock(),
+        "notify_segment_run": Mock(),
     }.items():
         monkeypatch.setattr(f"web.services.segmentation.{name}", value)
     connection = MagicMock()

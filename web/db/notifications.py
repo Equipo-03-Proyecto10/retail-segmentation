@@ -11,7 +11,7 @@ works out from the reader's current role which kinds that is and the query
 filters by them: a user whose role lost a permission stops reading what it
 delivered, without a row being touched (ADR-0047). An empty list reads nothing.
 
-Writes leave transaction ownership to services (ADR-0014).
+Writes leave transaction ownership to services (ADR-0014): nothing here commits.
 """
 
 from __future__ import annotations
@@ -212,5 +212,62 @@ def mark_all_read(
                AND n.kind = ANY(%s::text[])
             """,
             (str(user_id), list(kinds)),
+        )
+        return cursor.rowcount
+
+
+def insert_notification(
+    connection: Connection[Any],
+    *,
+    sales_load_id: int | None = None,
+    run_id: int | None = None,
+    experiment_id: int | None = None,
+    subject_user_id: UUID | str | None = None,
+) -> int:
+    """Write one event and return its id.
+
+    Exactly one subject is given; the schema's CHECK refuses none or several, and
+    `kind` is derived from it by the database. A subject announced twice is a
+    unique violation, which here is a defect to surface: the three events a
+    request causes happen once each.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO notification
+                (sales_load_id, run_id, experiment_id, subject_user_id)
+            VALUES (%s, %s, %s, %s)
+            RETURNING notification_id
+            """,
+            (
+                sales_load_id,
+                run_id,
+                experiment_id,
+                None if subject_user_id is None else str(subject_user_id),
+            ),
+        )
+        return int(cursor.fetchone()[0])
+
+
+def insert_recipients(
+    connection: Connection[Any], *, notification_id: int, role_codes: Sequence[str]
+) -> int:
+    """Write the event to every active user whose role is in `role_codes`.
+
+    The snapshot ADR-0047 describes: who is active and what role they hold is
+    read now, and a later change to either neither adds nor removes a row. The
+    caller works out the role codes from the permission matrix, which is code.
+    Returns how many users it was written for, which may be none.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO notification_recipient (notification_id, user_id)
+            SELECT %s, u.user_id
+            FROM app_user AS u
+            JOIN role AS r ON r.role_id = u.role_id
+            WHERE u.is_active AND r.code = ANY(%s::text[])
+            """,
+            (notification_id, list(role_codes)),
         )
         return cursor.rowcount

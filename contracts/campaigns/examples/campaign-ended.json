@@ -1,0 +1,6 @@
+{
+  "code": "campaign_ended",
+  "message": "A campaign whose ends_on date has passed cannot move to ACTIVE.",
+  "correlation_id": "corr-transition-409c",
+  "details": []
+}

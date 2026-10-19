@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Campaign xmlns="https://mosaiq.maxthecoder.online/xml/campaigns/v1">
+  <campaign_id>303</campaign_id>
+  <name>Dormant Customer Trial</name>
+  <label_code>DORMANT</label_code>
+  <starts_on>2026-11-15</starts_on>
+  <ends_on>2026-12-15</ends_on>
+  <status>CANCELLED</status>
+</Campaign>

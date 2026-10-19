@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>experiment_not_ready</code>
+  <message>Every attached experiment must have a valid treatment design before activation.</message>
+  <correlation_id>corr-transition-409d</correlation_id>
+</Error>

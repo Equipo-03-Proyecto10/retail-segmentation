@@ -1,0 +1,27 @@
+{
+  "campaigns": [
+    {
+      "campaign_id": 301,
+      "name": "Holiday Loyalty Preview",
+      "label_code": "LOYAL",
+      "starts_on": "2026-11-01",
+      "ends_on": "2026-12-31",
+      "status": "DRAFT",
+      "allowed_transitions": ["ACTIVE", "CANCELLED"]
+    },
+    {
+      "campaign_id": 302,
+      "name": "October Retention",
+      "label_code": "AT_RISK",
+      "starts_on": "2026-10-01",
+      "ends_on": "2026-10-31",
+      "status": "ACTIVE",
+      "allowed_transitions": ["FINISHED", "CANCELLED"]
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 2
+  }
+}

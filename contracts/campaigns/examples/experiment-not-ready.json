@@ -1,0 +1,6 @@
+{
+  "code": "experiment_not_ready",
+  "message": "Every attached experiment must have a valid treatment design before activation.",
+  "correlation_id": "corr-transition-409d",
+  "details": []
+}

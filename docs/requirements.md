@@ -73,8 +73,8 @@ ordering remains in [`roadmap.md`](roadmap.md). ADR-0017 through ADR-0021
 govern the later implementation of the work ADR-0004 originally deferred.
 
 **Not claimed above, because it is not built.** Measuring the average-ticket
-target metric (what it measures is the open
-decision #457), an HTTP sales-ingestion endpoint in the web system (ADR-0020),
+target metric (what it measures is the open decision #457), an HTTP
+sales-ingestion endpoint in the web system (ADR-0020),
 stock receipts, transfers and adjustments (`inventory.write`), editing the label
 vocabulary or the rule catalog (`segment.write`) and a customer self-service
 view (`user.self`) are open decisions or deferred work in

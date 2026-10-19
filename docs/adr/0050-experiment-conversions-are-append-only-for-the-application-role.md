@@ -1,6 +1,6 @@
 # ADR-0050 — Experiment conversions are append-only for the application role
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Raquel
 **Issue:** #451
 **Supersedes:** —

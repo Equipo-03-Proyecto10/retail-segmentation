@@ -921,7 +921,7 @@ report*.
 
 ## 9. PostgreSQL domain model
 
-The schema has 27 tables.
+The schema has 29 tables.
 
 | Domain | Tables | Definition in this project |
 |---|---|---|
@@ -930,6 +930,7 @@ The schema has 27 tables.
 | Catalogue and sales | `channel`, `category`, `store`, `product`, `transaction`, `transaction_line`, `sales_load`, `sales_load_rejection`, `inventory` | What was sold, to whom, where and through which channel; ingestion outcomes; and current product/store stock |
 | Segmentation | `segment_rule`, `segment_label`, `segment`, `segmentation_run`, `customer_segment_history` | Configurable RFM bands, stable labels, reproducible runs and durable assignment history |
 | Marketing model | `campaign`, `experiment`, `experiment_group`, `experiment_assignment`, `experiment_exposure`, `experiment_conversion` | Campaign targeting and separate experiment assignment, exposure and conversion events |
+| Notifications | `notification`, `notification_recipient` | In-app events (a finished sales load, a completed run, an experiment's end, a deactivation) and each recipient's read state |
 | Governance | `audit_log` | Actor, entity, operation, before/after data and execution time |
 
 A customer has no `current_segment_id`. That column was retired by ADR-0017; the

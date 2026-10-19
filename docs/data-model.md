@@ -17,7 +17,7 @@ Stories: F2-01 (conceptual model), F2-02 (normalization), F2-03 (logical model).
 
 ### Entities
 
-This list is the 27-table `public` schema. Service-owned tables live in their
+This list is the 29-table `public` schema. Service-owned tables live in their
 own schemas under ADR-0046 and are deliberately outside this list and diagram.
 
 | Entity | What it is |
@@ -48,6 +48,8 @@ own schemas under ADR-0046 and are deliberately outside this list and diagram.
 | `experiment_exposure` | One exposure event for an assigned customer, recorded separately from assignment |
 | `experiment_conversion` | A qualifying sale linked back to an assignment, inside its experiment's conversion window |
 | `inventory` | Stock of one product at one store |
+| `notification` | One thing that happened that somebody should be told about: a sales load, a segmentation run, an experiment's end or a user's deactivation (ADR-0047). The event, kept once |
+| `notification_recipient` | One user an event was written for, and when they read it |
 | `audit_log` | Who changed which business rule or catalog row, when, and to what |
 
 ### Relationships
@@ -78,6 +80,9 @@ own schemas under ADR-0046 and are deliberately outside this list and diagram.
 - `experiment_assignment` (1) — has — (N) `experiment_conversion`
 - `transaction` (1) — qualifies — (N) `experiment_conversion`
 - `inventory` (N) — is stock of — (1) `product` at (1) `store`
+- `sales_load` (0..1) — is announced by — (0..1) `notification`; likewise `segmentation_run` and `experiment`, and a `notification` names exactly one of those three or a user
+- `app_user` (0..1) — is the subject of — (N) `notification`, one per deactivation
+- `notification` (1) — is written for — (N) `notification_recipient` (N) — belongs to — (1) `app_user`
 - `customer` (1) — has — (N) `customer_preferred_channel` rows (N) — reference — (1) `channel`
 - `customer` (1) — has — (N) `customer_interest_category` rows (N) — reference — (1) `category`
 - `audit_log` names any audited entity as text; only its optional actor is a foreign key
@@ -302,6 +307,44 @@ conversion row stores one event. Apart from the guarded key dependencies just
 explained, none carries two independent multivalued facts, so no further 4NF
 decomposition is needed.
 
+`notification` and `notification_recipient` (AN-04, ADR-0047) split an event from
+the people it was written for, for the same reason `segmentation_run` and
+`customer_segment_history` do. One relation holding the event beside each
+recipient's read state would repeat the event's subject and `created_at` once per
+recipient: a run announced to the 21 users who may read segments would be 21
+copies of the same two facts, free to disagree, and an event nobody could be told
+about (no active holder of the permission) would have no row to exist in. The
+event is keyed by `notification_id`; the recipient relation is keyed by
+`(notification_id, user_id)` and carries the one fact that differs per recipient,
+`read_at`. Which users an event reaches, and which events a user has, are the two
+multivalued facts, and each has its own side of the key. Neither relation carries
+a second one, so both are in 4NF. Three decisions the column names can make look
+unfinished:
+
+- **The exclusive arc.** `notification` has four nullable foreign keys,
+  `sales_load_id`, `run_id`, `experiment_id` and `subject_user_id`, of which
+  exactly one is set (`notification_one_subject`). Every attribute still depends on
+  `notification_id` alone, and no multivalued fact is hiding in the columns, so
+  the nulls are a physical-design choice and not a normal-form failure. The
+  alternative is one subtype table per kind of subject, with the supertype row
+  holding only the key. That puts the "exactly one subtype row" rule where no
+  declarative constraint can state it (it needs circular, deferrable references),
+  and adds four tables where the arc adds three nullable columns. A polymorphic
+  `(subject_type, subject_id)` pair was rejected outright: it cannot be a foreign
+  key, so it permits orphans and unknown types.
+- **`kind` is derived.** It is a function of which subject is set, so a purist
+  would not store it. It is a `STORED` generated column, which the database
+  computes and no writer can set, so it cannot drift from the subject. It is kept
+  because the read-time permission check filters the inbox and the unread count by
+  `kind`, and the arc has no single column to filter on.
+- **`subject_user_id` is not `UNIQUE`; the other three subjects are.** A run, a
+  load and an experiment are announced once, which is the guard the lazy
+  announcer's `ON CONFLICT` relies on. A user can be deactivated, reactivated and
+  deactivated again, and each deactivation is its own event.
+
+No message text is stored. The sentence is a function of the subject row, so
+storing it would be a second copy of facts the subject already holds.
+
 Every other relation in the model is already in 4NF. The remaining composite-key
 tables — `transaction_line`, `inventory` — each carry a single multivalued
 fact plus attributes that depend on the whole key, so there is nothing to
@@ -361,6 +404,12 @@ erDiagram
     experiment_assignment      ||--o{ experiment_exposure        : "is exposed via"
     experiment_assignment      ||--o{ experiment_conversion      : "converts via"
     transaction                ||--o{ experiment_conversion      : "qualifies"
+    sales_load                 |o--o| notification               : "is announced by"
+    segmentation_run           |o--o| notification               : "is announced by"
+    experiment                 |o--o| notification               : "is announced by"
+    app_user                   |o--o{ notification               : "is the subject of"
+    notification               ||--o{ notification_recipient     : "is written for"
+    app_user                   ||--o{ notification_recipient     : "is told"
 ```
 
 ### Data dictionary
@@ -750,6 +799,48 @@ sale.
 | `quantity_on_hand` | `INT` | NN | `CHECK >= 0` | Units in stock |
 | `updated_at` | `TIMESTAMPTZ` | NN | default `now()` | Last stock update |
 
+#### `notification`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `notification_id` | `BIGINT` | NN | PK, `GENERATED ALWAYS AS IDENTITY` | Event identifier; also the inbox's ordering key, since it follows creation order |
+| `sales_load_id` | `BIGINT` | yes | UQ; FK → `sales_load`, `CASCADE` | The load, for a finished sales load |
+| `run_id` | `BIGINT` | yes | UQ; FK → `segmentation_run`, `CASCADE` | The run, for a completed segmentation run |
+| `experiment_id` | `INT` | yes | UQ; FK → `experiment`, `CASCADE` | The experiment, for one that has ended |
+| `subject_user_id` | `UUID` | yes | FK → `app_user`, `CASCADE` | The user, for a deactivation made in the web |
+| `kind` | `VARCHAR(30)` | NN | `GENERATED ALWAYS ... STORED` from whichever subject is set | `SALES_LOAD_FINISHED`, `SEGMENT_RUN_COMPLETED`, `EXPERIMENT_ENDED` or `USER_DEACTIVATED` |
+| `created_at` | `TIMESTAMPTZ` | NN | default `now()` | When the event happened |
+
+`notification_one_subject` requires `num_nonnulls(sales_load_id, run_id,
+experiment_id, subject_user_id) = 1`. With no subject, `kind` has nothing to be
+derived from and its `NOT NULL` refuses the row first. The three `UNIQUE`
+subjects make an event announced once; `subject_user_id` is not unique (§2.4).
+There is no message column: the sentence is built from the subject row when it
+is read. `CASCADE` is the schema owner's: the application never deletes a load,
+a run, an experiment or a user (RN-04). Runtime state, so it is not audited (§5),
+and its 54 seeded events exceed the 30-row minimum: one for each of the 31
+seeded runs and 23 ended experiments. The seven running experiments have no
+event. These examples cover runs and experiment ends; seeded sales loads have
+no notification example, and every seeded account is active. Events from both
+kinds are inserted together in creation order. The lazy announcer does not
+announce a seeded experiment twice, including within its 14-day lookback.
+
+#### `notification_recipient`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `notification_id` | `BIGINT` | NN | PK with `user_id`; FK → `notification`, `CASCADE` | The event |
+| `user_id` | `UUID` | NN | PK with `notification_id`; FK → `app_user`, `CASCADE` | The user it was written for |
+| `read_at` | `TIMESTAMPTZ` | yes | — | When the user marked it read; `NULL` while unread |
+
+The recipients are the active users whose role held the event's delivery
+permission when it happened, the user who caused it included, and the list is a
+snapshot (ADR-0047): a later role change neither adds nor removes a row. The
+permission is checked again against the reader's current role when the row is
+read. The seed derives its 1019 rows (23 × 16 readers of ended experiments,
+31 × 21 of segments) from the seeded users and marks events older than seven
+days read.
+
 #### `audit_log`
 
 | Column | Type | Null | Constraints | Meaning |
@@ -862,7 +953,10 @@ down through `experiment_group`, `experiment_assignment`,
 meaning without its parent. `SET NULL` where the reference is optional
 context rather than structure: `customer_segment_history.segment_id` (that
 column only, so the row keeps its `label_code`), `segmentation_run.executed_by`,
-`audit_log.user_id`.
+`audit_log.user_id`. `CASCADE` also carries a notification away with the load,
+run, experiment or user it names, and a recipient row away with its event or its
+user: a notification means nothing without them, and only the schema owner ever
+deletes any of the four.
 
 **Indexes.**
 
@@ -883,6 +977,9 @@ column only, so the row keeps its `label_code`), `segmentation_run.executed_by`,
 | `idx_experiment_assignment_customer` | `experiment_assignment (customer_id)` | Experiments a customer is in |
 | `idx_experiment_exposure_assignment` | `experiment_exposure (assignment_id)` | Whether an assignment was exposed |
 | `idx_audit_log_entity` | `audit_log (entity, entity_pk)` | The history of one row |
+| `idx_notification_recipient_inbox` | `notification_recipient (user_id, notification_id DESC)` | One user's inbox, newest first, paginated |
+| `idx_notification_recipient_unread` | `notification_recipient (user_id) WHERE read_at IS NULL` | The unread count on every page, and "mark all read" |
+| `notification_{sales_load,run,experiment}_id_key` | `notification (sales_load_id)`, `(run_id)`, `(experiment_id)`, each `UNIQUE` | An event is announced once; the arbiter of the announcer's `ON CONFLICT` |
 
 **Partitioning is not implemented.** `transaction` is the fastest-growing table
 and range partitioning by date is the obvious eventual move, but at 300 seed
@@ -912,7 +1009,9 @@ are unaudited for the same reason: they are themselves append-only event
 records, not mutable rows a reviewer needs a before/after snapshot of.
 `app_session` is unaudited too: it is runtime state, written on every sign-in,
 request renewal and sign-out, and its timestamps already describe that
-runtime history.
+runtime history. So are `notification` and `notification_recipient`: an event
+is itself the record that something happened, and `read_at` is the only thing
+that changes afterwards.
 
 `trg_audit_customer_segment_history` runs after insert, update or delete and
 passes `history_id` to `fn_audit()`. It is separate from

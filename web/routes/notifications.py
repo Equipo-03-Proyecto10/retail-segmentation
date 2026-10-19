@@ -14,6 +14,11 @@ prefetch, a `HEAD` or a link preview cannot change what the user has seen.
 The unread count shown in the navigation of every page is a context processor
 of this blueprint. It fails soft: a counter that cannot be read hides the badge
 and logs the failure, and the page it sits on is still served.
+
+An experiment's end is caused by no request, and the instance has nothing that
+runs between requests, so it is announced by a hook of this blueprint on the next
+signed-in `GET` (ADR-0047, RN-64). It never runs on `HEAD`, which must not write,
+or on `POST`, which has its own business operation, and it never fails the page.
 """
 
 from __future__ import annotations
@@ -39,6 +44,7 @@ from web.middleware.authz import current_role_code, is_signed_in, requires, safe
 from web.parsing import BIGINT_MAX, page_number
 from web.routes.pagination import redirect_last_page
 from web.services.notifications import (
+    announce_experiment_ends,
     badge_text,
     mark_all_notifications_read,
     mark_notification_read,
@@ -72,6 +78,28 @@ def _unread_for_this_page() -> int | None:
             "notification_count_failed reason=%s", type(error).__name__
         )
         return None
+
+
+@bp.before_app_request
+def announce_experiment_end() -> None:
+    """Announce the experiments that have ended, before the page is built.
+
+    Registered after the authorization gate, so a request that was refused or
+    redirected never gets here, and checked again: only a signed-in `GET`
+    announces. A failure is logged and the page is served; the next read tries
+    again, because nothing was committed. Run before the view, so an end that is
+    announced now is already in the inbox and the badge this request renders.
+    """
+    if request.method != "GET" or not is_signed_in():
+        return
+    if request.endpoint in (None, "static"):
+        return
+    try:
+        announce_experiment_ends(get_connection())
+    except psycopg.Error as error:
+        current_app.logger.warning(
+            "experiment_end_announcement_failed reason=%s", type(error).__name__
+        )
 
 
 @bp.app_context_processor

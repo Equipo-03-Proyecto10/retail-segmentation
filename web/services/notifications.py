@@ -6,6 +6,10 @@ writes the events a request causes, decides which kinds a user may read, turns a
 stored event into a sentence and a link when it is read, and counts what is
 unread.
 
+**Time-based.** An experiment's end is caused by no request, so it is announced
+lazily, by `announce_experiment_ends`, which the notifications blueprint runs on
+signed-in `GET` requests (ADR-0047, RN-64).
+
 **Writing.** `notify_sales_load`, `notify_segment_run` and `notify_user_deactivated`
 are called by the service that causes the event, from inside its own transaction
 (ADR-0014): they join it, never commit on their own, and a failure propagates, so
@@ -33,6 +37,7 @@ from psycopg import Connection
 
 from web.db.notifications import (
     NotificationRow,
+    announce_ended_experiments,
     count_notifications,
     count_unread,
     get_notification,
@@ -370,3 +375,32 @@ def notify_user_deactivated(connection: Connection[Any], user_id: UUID | str) ->
     accounts, create no notification.
     """
     return _write(connection, USER_DEACTIVATED, subject_user_id=user_id)
+
+
+# RN-64: only an experiment that ended within this many days is announced.
+EXPERIMENT_END_LOOKBACK_DAYS = 14
+
+
+@atomic
+def announce_experiment_ends(connection: Connection[Any]) -> int:
+    """Announce every experiment that has ended and has not been announced.
+
+    Returns how many experiments were announced by this call, usually none. It
+    is called on signed-in `GET` requests only, by the blueprint's hook, and is
+    safe to call from every request and every worker (see
+    `web.db.notifications.announce_ended_experiments`). The recipients are the
+    active holders of `campaign.read`, as they are now.
+    """
+    events, recipients = announce_ended_experiments(
+        connection,
+        role_codes=roles_holding(DELIVERY_PERMISSION[EXPERIMENT_ENDED]),
+        lookback_days=EXPERIMENT_END_LOOKBACK_DAYS,
+    )
+    if events:
+        logging.getLogger(__name__).info(
+            "notification_written kind=%s experiments=%s recipients=%s",
+            EXPERIMENT_ENDED,
+            events,
+            recipients,
+        )
+    return events

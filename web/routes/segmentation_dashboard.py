@@ -69,7 +69,10 @@ def _chart_payload(dashboard: Dashboard) -> dict:
     """Every chart's data, in the shape docs/design-system/charts/index.html's
     worked examples already use: a column chart's [{name, y}], a heatmap's
     [x, y, value] triples over quintile categories, a sankey's keyed
-    [from, to, weight] rows with distinct before/after node ids."""
+    [from, to, weight] rows with distinct before/after node ids. The spend
+    heatmap's points are objects so its tooltip can carry the cell's customers
+    and total beside the mean it is coloured by; an empty cell's mean is null,
+    which the chart draws as "no customers", not as a spend of zero."""
     sizes = [
         {"name": size.label or "Unassigned", "y": size.count}
         for size in dashboard.sizes
@@ -79,6 +82,20 @@ def _chart_payload(dashboard: Dashboard) -> dict:
     ]
     heatmap = [
         [cell.frequency_bin - 1, cell.recency_bin - 1, cell.count]
+        for cell in dashboard.heatmap
+    ]
+    rfm_spend = [
+        {
+            "x": cell.frequency_bin - 1,
+            "y": cell.recency_bin - 1,
+            "value": (
+                None
+                if cell.mean_monetary is None
+                else float(round(cell.mean_monetary, 2))
+            ),
+            "customers": cell.count,
+            "total": float(cell.monetary_total),
+        }
         for cell in dashboard.heatmap
     ]
 
@@ -102,6 +119,7 @@ def _chart_payload(dashboard: Dashboard) -> dict:
         "sizes": sizes,
         "revenue": revenue,
         "heatmap": heatmap,
+        "rfm_spend": rfm_spend,
         "migration": migration,
     }
 

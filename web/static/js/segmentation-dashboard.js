@@ -1,4 +1,4 @@
-/* The segmentation dashboard's four charts (F12-01).
+/* The segmentation dashboard's five charts (F12-01, #537).
  *
  * Reads the JSON a same-origin <script type="application/json"> block carries
  * -- inert data, never executed -- and calls Highcharts against it. Nothing
@@ -74,6 +74,55 @@
         name: "Customers",
         data: data.heatmap,
         dataLabels: { enabled: true, format: "{point.value}" },
+      },
+    ],
+  });
+
+  // Monetary on the same grid: coloured by mean spend per customer, with the
+  // cell's customers and total in the tooltip. An empty cell is null, drawn as
+  // the null colour with a dash, never as a spend of zero.
+  function compact(value) {
+    if (value >= 1e6) return (value / 1e6).toFixed(1) + "M";
+    if (value >= 1e4) return Math.round(value / 1e3) + "k";
+    if (value >= 1e3) return (value / 1e3).toFixed(1) + "k";
+    return String(Math.round(value));
+  }
+  Highcharts.chart("mq-chart-rfm-spend", {
+    chart: { type: "heatmap", spacing: [8, 8, 4, 4] },
+    xAxis: { categories: quintile, title: { text: "Frequency quintile" }, gridLineWidth: 0, tickLength: 0 },
+    yAxis: { categories: quintile, title: { text: "Recency quintile" }, gridLineWidth: 0, reversed: true },
+    colorAxis: { stops: sequentialStops, min: 0, labels: { format: "{value:,.0f}" } },
+    legend: {
+      align: "right",
+      layout: "vertical",
+      verticalAlign: "middle",
+      symbolHeight: 160,
+      margin: 8,
+      title: { text: "MXN" },
+    },
+    tooltip: {
+      formatter: function () {
+        var p = this.point;
+        var where = "R " + quintile[p.y] + " \u00b7 F " + quintile[p.x];
+        if (p.value === null) return where + "<br>No customers";
+        return (
+          where +
+          "<br>Mean spend: <b>" + Highcharts.numberFormat(p.value, 2) + " MXN</b>" +
+          "<br>" + p.customers + " customers, " + Highcharts.numberFormat(p.total, 2) + " MXN in total"
+        );
+      },
+    },
+    series: [
+      {
+        name: "Mean spend (MXN)",
+        data: data.rfm_spend,
+        nullColor: "transparent",
+        dataLabels: {
+          enabled: true,
+          formatter: function () {
+            return this.point.value === null ? "\u2013" : compact(this.point.value);
+          },
+        },
       },
     ],
   });

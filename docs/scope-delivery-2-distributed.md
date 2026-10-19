@@ -114,10 +114,10 @@ meets other boundaries) and [ADR-0045][adr-0045] (it never imports the web).
 
 Every rule cites RN ids in [`business-rules.md`](business-rules.md). RN-52 to
 RN-56 were added for auth, stores, customer-preferences, engagement and
-check-ins. The duplicate RN-37, RN-47 and RN-50 headings are tracked by AN-15
-(#460), and the sales rule cites RN-37 (accepted sales). The Rust build of the
-products reads in `bench/products-service-rs/` is a benchmark artifact, not a
-service ([ADR-0042][adr-0042]).
+check-ins. RN-58 to RN-60 resolve the former duplicate headings for K-means,
+migration matrices and migration explanations; the sales rule remains RN-37.
+The Rust build of the products reads in `bench/products-service-rs/` is a
+benchmark artifact, not a service ([ADR-0042][adr-0042]).
 
 ### Resources
 

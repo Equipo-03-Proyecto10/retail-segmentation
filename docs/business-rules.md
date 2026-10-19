@@ -81,7 +81,8 @@ Removing access must not remove the record of what that person did.
 to an unattributed entry rather than destroying the entry. · `RF-09`
 
 ### RN-05 — Only the administrator runs the segment recalculation
-It rewrites a column on every customer, so it is not an analyst's button.
+It writes durable assignment history that determines customers' current segments
+and every dependent report, so it is not an analyst's button.
 
 **Enforced:** the authorization middleware, F4-01 (#69) — `SEGMENT_RUN_EXECUTE`
 is held by `ADMIN` alone, and `web/routes/segment_run.py` declares it on both
@@ -282,7 +283,7 @@ the evaluation, not a 409.
 by the uplift page and the report, and `ConversionNotEvaluated` in
 `web/services/experiment_uplift.py`. **Verified** — `tests/test_exposed_conversion.py`.
 
-### RN-37 — A K-means run is reproducible from what it records, and each of its numerical hazards has a defined behaviour
+### RN-58 — A K-means run is reproducible from what it records, and each of its numerical hazards has a defined behaviour
 The fit is fixed by the seed, k, the iteration limit, the tolerance and the feature
 window, and all five are stored on the run with its quality measures, so a run can
 be reproduced from the database alone. Customers are sorted by id before anything
@@ -322,7 +323,7 @@ it 1, and a report comparing them would claim a migration when nobody moved. Eve
 cluster therefore takes its label from its contents, by one rule:
 
 1. Clusters are ordered by the descending sum of their centroid's R, F and M, each
-   normalised so that higher is better (RN-37).
+   normalised so that higher is better (RN-58).
 2. A tie is broken by the higher R, then the higher F, then the higher M.
 3. A tie between identical centroids is broken by the lexicographically smallest
    customer id among the cluster's members.
@@ -403,7 +404,7 @@ assignment reader does not select the method), and the page gated on `segment.re
 that faults seeded into each rule above fail a test, and against the seeded PostgreSQL
 by [`evidence/f9-04-model-comparison.md`](evidence/f9-04-model-comparison.md). · `F9-04`
 
-### RN-47 — A migration matrix cell is a filtered, traceable customer list
+### RN-59 — A migration matrix cell is a filtered, traceable customer list
 Migration is directional: the earlier run is the **before** state and the later run
 is the **after** state, regardless of the order in which the two run ids were
 selected. Every matrix cell links to the customers counted in that exact before /
@@ -426,7 +427,7 @@ filters that result; the page remains read-only and gated on `segment.read`.
 unassigned states, direction, explanation links, invalid filters, authorization, and
 the scrollable table pattern used at narrow widths. · `F7-05`
 
-### RN-50 — A migration explanation judges the customer's own values, and says when only the rank moved
+### RN-60 — A migration explanation judges the customer's own values, and says when only the rank moved
 A migration explanation states each measure as a sentence with its raw values from
 both runs — recency in whole days from the last purchase to the run that measured it,
 frequency in purchases, monetary in MXN — and judges it **changed** or **stable** on
@@ -451,7 +452,7 @@ run scored the customer and found no purchase to label (RN-21); a measure a run 
 no value for is reported as not compared, with which of the two reasons applies.
 
 The explanation is reachable from every place a migration is shown: a customer in a
-migration matrix cell (RN-47) and each label change on a customer's segment timeline.
+migration matrix cell (RN-59) and each label change on a customer's segment timeline.
 
 **Enforced:** application — `describe_migration` in `web/services/segment_migration.py`,
 with the thresholds as the named constants `RECENCY_STABLE_DAYS`,
@@ -1121,8 +1122,9 @@ control group) waits on F11-05.
 RN-52 to RN-56 belong to the distributed stage (#398). Each waits on its
 service's implementation story in Phase 14 (epic #399): RN-52 on auth-service,
 RN-53 on stores-service, RN-54 on customer-preferences-service, RN-55 on
-engagement-service and RN-56 on check-ins-service. Their ids continue after
-RN-51; the duplicate RN-37, RN-47 and RN-50 headings are left to AN-15 (#460).
+engagement-service and RN-56 on check-ins-service. RN-57 belongs to the
+experiment dashboard; RN-58 to RN-60 uniquely identify the K-means,
+migration-matrix and migration-explanation rules.
 
 RN-01 was the one to watch — a hard rule in `AGENTS.md` and a success criterion
 in [`scope.md`](scope.md) §7 that held only because the seed happened to contain

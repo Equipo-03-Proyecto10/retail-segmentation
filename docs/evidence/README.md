@@ -72,7 +72,7 @@ right place for it, and which the team accepted on 2026-09-07.
 | [F7-03](f7-03-run-history.md) | The run history list and a run's detail at 375 px and 1440 px: method, window, K and seed, executor, counts, scores and values, a run's unassigned customers listed, and the refusal of a role without `segment.read` |
 | [F7-04 and F7-05](f7-04-f7-05-migration-and-matrix.md) | Migration between two runs, including across methods, checked against an independent SQL classification, and the migration matrix with reconciled totals and its unassigned row and column, at 375 px and 1440 px (this retakes `f7-05-migration-matrix-*`) |
 | [F7-06 and F7-07](f7-06-f7-07-migration-explanation-and-timeline.md) | The migration explanation for a customer who moved, who did not, and who was unassigned, and the customer timeline: every assignment, the assignment open on a date, recency in days, the sales between two runs and the date a label was entered, with the explanation page's missing *moved the most* sentence recorded as a finding |
-| [F7-08](f7-08-migration-explanation-links.md) | The migration explanation linked from the matrix and the customer timeline and stated in plain language: recency in days, RN-50's changed/stable thresholds, a label moved only by the quintile cut points, and a new customer shown as new, at 375 px and 1440 px |
+| [F7-08](f7-08-migration-explanation-links.md) | The migration explanation linked from the matrix and the customer timeline and stated in plain language: recency in days, RN-60's changed/stable thresholds, a label moved only by the quintile cut points, and a new customer shown as new, at 375 px and 1440 px |
 
 ## Phase 8 — sales ingestion and consumption profile
 

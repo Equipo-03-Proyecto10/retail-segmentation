@@ -1,0 +1,9 @@
+{
+  "campaign_id": 301,
+  "name": "Holiday Loyalty Preview",
+  "label_code": "LOYAL",
+  "starts_on": "2026-11-01",
+  "ends_on": "2026-12-31",
+  "status": "DRAFT",
+  "allowed_transitions": ["ACTIVE", "CANCELLED"]
+}

@@ -70,7 +70,9 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | 409 | `status_changed` | `expected_status` no longer matches |
 | 409 | `campaign_ended` | A move to ACTIVE after `ends_on` (RN-49) |
 | 409 | `experiment_not_ready` | A move to ACTIVE while an attached experiment is not ready, refused by `trg_campaign_activation_guard` (RN-24, E-13) |
-| 422 | Undecided; the contract story fixes the code | An end date before the start (F14-27 fixes the code) |
+| 422 | `ends_before_start` | An end date before the start |
+| 422 | `unknown_label` | A `label_code` absent from the segment label vocabulary |
+| 404 | `campaign_not_found` | No campaign has the requested `campaign_id` |
 
 ## Accepted exceptions
 

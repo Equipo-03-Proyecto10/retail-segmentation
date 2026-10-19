@@ -333,6 +333,19 @@ jobs:
           cache-dependency-path: web/requirements-dev.txt
       - run: pip install -r web/requirements-dev.txt
 
+      # verify_integrity.sql deliberately keeps ON_ERROR_STOP off because its
+      # negative probes must error. This test matches each probe to its declared
+      # SQLSTATE, so a positive error, a negative success or a wrong refusal
+      # still fails the job while the SQL remains directly runnable with psql.
+      - name: Integrity script has every declared outcome
+        env:
+          MOSAIQ_TEST_OWNER_URL: postgresql://postgres:postgres@localhost:5432/retail
+          MOSAIQ_REQUIRE_POSTGRES: "1"
+        run: |
+          export PATH="$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1):$PATH"
+          pytest tests/test_verify_integrity_script.py -m postgres -rs \
+            --junitxml=test-results/pytest-integrity.xml
+
       # The tests that need a real PostgreSQL: they skip anywhere the database
       # is absent, and MOSAIQ_REQUIRE_POSTGRES turns that skip into a failure
       # here, so this job can never pass them silently. initdb comes from the
@@ -345,14 +358,15 @@ jobs:
         run: |
           export PATH="$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1):$PATH"
           initdb --version
-          pytest -m postgres -rs --junitxml=test-results/pytest-postgres.xml
+          pytest -m postgres -rs --ignore=tests/test_verify_integrity_script.py \
+            --junitxml=test-results/pytest-postgres.xml
 
       - name: Capture database test evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: pytest-postgres-results
-          path: test-results/pytest-postgres.xml
+          path: test-results/pytest-*.xml
           if-no-files-found: ignore
 
   kit-py:

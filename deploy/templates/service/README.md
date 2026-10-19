@@ -24,20 +24,27 @@ python3 deploy/templates/service/render.py products 5003 python services/product
 ```
 
 `--mem-limit` sets a line of ADR-0040's memory table that is not the kind's
-default (Flask 160 MB at 0.5 CPU, Rust 48 MB at 0.25). Then run
-`bash deploy/templates/service/check.sh` and expect no output.
+default (Flask 160 MB at 0.5 CPU, Rust 48 MB at 0.25). Then, in the same pull
+request:
+1. append the service's line to `include` in the local stack file at the
+   repository root;
+2. commit `docker/distributed/svc/<name>.env` with safe local values (see its
+   README);
+3. run `bash deploy/templates/service/check.sh` and expect no output.
 
 ## Where each mount points
 
-| Variable | Instance (default) |
-|---|---|
-| `IMAGE_TAG` | the service's `VERSION`, set by its unit |
-| `MOSAIQ_SVC_ENV_DIR` | `/etc/mosaiq/svc` |
-| `MOSAIQ_PG_SOCKET` | `/run/postgresql` |
-| `MOSAIQ_JWKS_FILE` | `/etc/mosaiq/keys/jwks.json` |
-| `MOSAIQ_AUTH_KEY_DIR` (auth) | `/etc/mosaiq/keys` |
+| Variable | Instance (default) | Local stack |
+|---|---|---|
+| `IMAGE_TAG` | the service's `VERSION`, set by its unit | `local` |
+| `MOSAIQ_SVC_ENV_DIR` | `/etc/mosaiq/svc` | `docker/distributed/svc` |
+| `MOSAIQ_PG_SOCKET` | `/run/postgresql` | named volume `mosaiq-pgsocket` |
+| `MOSAIQ_JWKS_FILE` | `/etc/mosaiq/keys/jwks.json` | `docker/distributed/jwks.dev.json` |
+| `MOSAIQ_AUTH_KEY_DIR` (auth) | `/etc/mosaiq/keys` | set by auth's story |
 
-Each variable exists so a local stack can point the mount at a stand-in.
+`jwks.dev.json` holds a public key whose private half was discarded: it lets a
+service start and refuse every token. auth-service's story (F14-01) brings the
+local key pair that signs tokens it accepts.
 
 The units, `deploy/deploy-service.sh` and the NGINX include directory on the
 instance belong to F18-01 to F18-03.

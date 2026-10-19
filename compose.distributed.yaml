@@ -1,0 +1,121 @@
+# MOSAIQ — the distributed stage on a laptop, in one command (F13-08):
+#
+#   docker network create mosaiq        # once
+#   docker compose -f compose.distributed.yaml up --build --wait
+#
+# Run from the repository root: docker/distributed/local.env resolves its
+# paths from ${PWD}. Every service is then reachable through one base URL,
+# http://127.0.0.1:${MOSAIQ_GATEWAY_PORT:-8080}/api/<name>/, as clients reach
+# https://<host>/api/<name>/ on the instance (the Android emulator uses
+# http://10.0.2.2:8080).
+#
+# It is NOT how anything is deployed. On the instance each service is its own
+# project under its own unit, and the infrastructure is project mosaiq-infra
+# (ADR-0040); nothing under deploy/ or the deploy workflow reads this file.
+# The web keeps its own compose.yaml and never joins this network (Q-12).
+name: mosaiq-local
+
+include:
+  - path: [deploy/infra/compose.yaml, docker/distributed/infra.local.yaml]
+    env_file: docker/distributed/local.env
+  # One line per service, appended by its implementation story; CI fails when
+  # this list differs from services/*/compose.yaml:
+  #   - path: [services/<name>/compose.yaml, docker/distributed/service.local.yaml]
+  #     env_file: docker/distributed/local.env
+
+services:
+  # The development PostgreSQL of compose.yaml, with its socket directory on a
+  # named volume that every service mounts at /run/postgresql, so a service
+  # uses the same socket-form DATABASE_URL here as on the instance. It
+  # publishes no port: compose.yaml's own db may already hold 5432.
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+      APP_DB_PASSWORD: retail_app
+    volumes:
+      - ./sql:/opt/sql:ro
+      - ./docker/initdb.sh:/docker-entrypoint-initdb.d/initdb.sh:ro
+      - mosaiq-distributed-pgdata:/var/lib/postgresql/data
+      - mosaiq-pgsocket:/var/run/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "psql -U postgres -d retail -tAc 'SELECT 1 FROM app_user LIMIT 1' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 10s
+    restart: unless-stopped
+
+  # The aclfile both Redis instances load at boot, assembled by the instance's
+  # own script from services/*/redis/*.acl and each service's local env file.
+  # The image is mongodb's, pinned in deploy/infra/compose.yaml, for its bash.
+  redis-acl:
+    image: mongo:7.0.41@sha256:b096b4cb9269f3ebcf363be63f1c50920f786879d03a1890347a3bf33f1f0df0
+    entrypoint: ["bash", "/repo/deploy/infra/redis/assemble-acl.sh", "--write-only"]
+    environment:
+      REDIS_OPS_PASSWORD: ${REDIS_OPS_PASSWORD:-local-ops-only}
+      ACL_SOURCES: /repo/services/*/redis/*.acl
+      SVC_ENV_DIR: /repo/docker/distributed/svc
+      ACL_FILE: /acl/users.acl
+    volumes:
+      - .:/repo:ro
+      - mosaiq-redis-acl:/acl
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: "no"
+
+  # Each services/*/mongo/init.js, once per version of the file, as root, with
+  # the MONGO_<SUFFIX>_PASSWORD values of .env (ADR-0038). Never a `mongo`
+  # service in a services/*/compose.yaml.
+  mongo-init:
+    image: mongo:7.0.41@sha256:b096b4cb9269f3ebcf363be63f1c50920f786879d03a1890347a3bf33f1f0df0
+    entrypoint: ["bash", "/repo/docker/distributed/mongo-init.sh"]
+    depends_on: [mongodb]
+    env_file:
+      - path: .env
+        required: false
+      - ./docker/distributed/mongodb-root.env
+    environment:
+      HOME: /tmp
+    volumes:
+      - .:/repo:ro
+      - mosaiq-mongo-init:/state
+    tmpfs: [/tmp]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # mongodb is only on mosaiq; without this the step lands on the project's
+    # default network and cannot resolve it.
+    networks: [mosaiq]
+    restart: "no"
+
+  # One base URL for both clients and the negative suite. Its configuration is
+  # generated from contracts/registry.yaml by docker/distributed/gateway/
+  # generate.py; upstreams resolve per request, so it starts with any service
+  # down and only that prefix answers 502.
+  gateway:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./docker/distributed/gateway/default.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "127.0.0.1:${MOSAIQ_GATEWAY_PORT:-8080}:8080"
+    networks: [mosaiq]
+    # Not for the services: `up --wait` only accepts a one-shot that exits
+    # when something waits for it.
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  mosaiq-distributed-pgdata:
+  mosaiq-pgsocket:
+    name: mosaiq-pgsocket
+  mosaiq-redis-acl:
+    name: mosaiq-redis-acl
+  mosaiq-mongo-init:
+
+networks:
+  mosaiq:
+    external: true

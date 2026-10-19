@@ -789,6 +789,8 @@ stops the same sale being recorded as a conversion twice for the same
 assignment; it does not limit an assignment to one conversion, since an
 `AVERAGE_TICKET` metric can legitimately draw on more than one qualifying
 sale.
+`retail_app` can select and insert conversions but cannot update or delete
+them (ADR-0050).
 
 #### `inventory`
 

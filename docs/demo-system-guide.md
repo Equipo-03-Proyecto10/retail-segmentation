@@ -524,15 +524,15 @@ repository.
 
 ## 9. PostgreSQL domain model
 
-The schema has 19 tables.
+The schema has 27 tables.
 
 | Domain | Tables | Definition in this project |
 |---|---|---|
-| Identity | `role`, `app_user` | Permission-profile names and accounts that sign in |
-| Customers | `customer`, `customer_preferred_channel`, `customer_interest_category` | Customer identity, optional login link, acquisition channel, current segment and independent preferences |
-| Catalogue and sales | `channel`, `category`, `store`, `product`, `transaction`, `transaction_line`, `inventory` | What was sold, to whom, where, through which channel, at which actual price, and current product/store stock |
-| Segmentation | `segment_rule`, `segment` | Configurable RFM bands and the named valid segment definitions that use them |
-| Marketing model | `campaign`, `experiment`, `experiment_group`, `experiment_group_customer` | Future campaign targeting and control/treatment assignment |
+| Identity | `role`, `app_user`, `app_session` | Permission-profile names, accounts and server-side sessions |
+| Customers | `customer`, `customer_preferred_channel`, `customer_interest_category` | Customer identity, optional login link, acquisition channel and independent preferences |
+| Catalogue and sales | `channel`, `category`, `store`, `product`, `transaction`, `transaction_line`, `sales_load`, `sales_load_rejection`, `inventory` | What was sold, to whom, where and through which channel; ingestion outcomes; and current product/store stock |
+| Segmentation | `segment_rule`, `segment_label`, `segment`, `segmentation_run`, `customer_segment_history` | Configurable RFM bands, stable labels, reproducible runs and durable assignment history |
+| Marketing model | `campaign`, `experiment`, `experiment_group`, `experiment_assignment`, `experiment_exposure`, `experiment_conversion` | Campaign targeting and separate experiment assignment, exposure and conversion events |
 | Governance | `audit_log` | Actor, entity, operation, before/after data and execution time |
 
 ### 9.1 Fourth-normal-form rationale

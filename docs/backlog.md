@@ -448,9 +448,9 @@ the consumer boundary.
 
 | ID | Story | Priority | Depends on |
 |---|---|---|---|
-| F11-01 | Revise the campaign and experiment schema, seed and 4NF model for stable-label targeting, exactly one control group, at least one treatment group, one arm per customer, a fixed conversion window, data origin, exposures and conversions | P0 | F2-05, F7-01 |
+| F11-01 | Revise the campaign and experiment schema, seed and 4NF model for stable-label targeting, zero or one control group, at least one treatment group, one arm per customer, a fixed conversion window, data origin, exposures and conversions | P0 | F2-05, F7-01 |
 | F11-02 | Campaign workflow from draft through activation, completion or cancellation, targeting a stable segment label | P0 | F11-01, F4-07 |
-| F11-03 | Experiment setup with a mandatory control, treatment groups, target metric, conversion window and data origin fixed before the first assignment | P0 | F11-01, F11-02, F4-07 |
+| F11-03 | Experiment setup with an optional control, treatment groups, target metric, conversion window and data origin fixed before the first assignment | P0 | F11-01, F11-02, F4-07 |
 | F11-04 | Record group assignment as a durable event before exposure or outcome is known | P0 | F11-03 |
 | F11-05 | Record treatment exposure as a separate event and refuse exposure for the control group | P0 | F11-04 |
 | F11-06 | Record conversion separately by linking an assignment to a qualifying sale inside the fixed window | P0 | F11-04, F8-02 |

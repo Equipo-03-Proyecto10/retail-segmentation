@@ -291,9 +291,11 @@ class MenuItem:
     glyph: str
 
 
-# One entry per section of the matrix in docs/requirements.md §3. Destinations
-# without a current-delivery workflow still register a permission-gated status
-# page, so the design-system navigation never contains a broken destination.
+# Every entry leads to an implemented page and names the permission that page
+# requires. `menu()` keeps only the entries whose endpoint is registered and
+# whose permission the visitor holds, so nobody is offered a page they would be
+# refused or one that does not exist. Home and Notifications require none and
+# reach every signed-in role.
 #
 # "Catalogs" points at the read-only consultation hub (F3-05, #65). The
 # administrator reaches the CRUD hub from a link on that page and edits from

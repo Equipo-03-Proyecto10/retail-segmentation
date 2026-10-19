@@ -1,0 +1,7 @@
+# Merged into each services/<name>/compose.yaml that compose.distributed.yaml
+# includes. local.env points MOSAIQ_PG_SOCKET at this named volume, which the
+# local PostgreSQL writes its socket into; the instance mounts the host's
+# /run/postgresql instead. It names no service, so every include shares it.
+volumes:
+  mosaiq-pgsocket:
+    name: mosaiq-pgsocket

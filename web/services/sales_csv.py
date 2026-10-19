@@ -15,7 +15,9 @@ from typing import TypeVar
 from psycopg import Connection
 
 from web.db.sales_loads import insert_sales_load
+from web.db.transactions import atomic
 from web.services.ingestion import RowRejected, SalesRow, ingest_row
+from web.services.notifications import notify_sales_load
 
 CONTRACT_VERSION = 1
 
@@ -157,6 +159,36 @@ def load_sales_csv(
     )
 
 
+@atomic
+def _record_load(
+    connection: Connection,
+    report: LoadReport,
+    *,
+    filename: str,
+    contract_version: int,
+    loaded_by: str | None,
+) -> int:
+    """Record the attempt, its rejections and its notification as one unit.
+
+    The load row, one row per rejected line and the notification that tells the
+    holders of `sales_ingest.execute` commit together or not at all (RN-61): a
+    load nobody is told about, or a notification for a load that was never
+    recorded, cannot exist. The sales rows are not part of it.
+    """
+    load_id = insert_sales_load(
+        connection,
+        filename=filename,
+        contract_version=contract_version,
+        received_count=report.received,
+        accepted_count=report.accepted,
+        rejected_count=report.rejected,
+        loaded_by=loaded_by,
+        rejections=[(r.line_number, r.reason) for r in report.rejections],
+    )
+    notify_sales_load(connection, load_id)
+    return load_id
+
+
 def load_and_record_sales_csv(
     connection: Connection,
     path: Path,
@@ -171,22 +203,24 @@ def load_and_record_sales_csv(
 
     Returns the report and the new load_id. Each sales row has already
     committed or rolled back on its own inside ingest_row by the time the
-    load is recorded; the load and its rejection rows then commit together
-    in one transaction of their own. Wrapping the whole call in an outer
-    transaction would break that: the first statement a rejected row makes
-    fail would leave the shared transaction aborted for every row after it.
+    load is recorded; the load, its rejection rows and the notification that
+    announces it (AN-04) then commit together in one transaction of their own.
+    Wrapping the whole call in an outer transaction would break that: the first
+    statement a rejected row makes fail would leave the shared transaction
+    aborted for every row after it.
+
+    A file the adapter refuses (an unsupported contract version, a header that
+    does not match, bytes that are not UTF-8) raises before any load is recorded,
+    so it announces nothing.
     """
     report = load_sales_csv(
         connection, path, contract_version=contract_version, ingest=ingest
     )
-    load_id = insert_sales_load(
+    load_id = _record_load(
         connection,
+        report,
         filename=filename,
         contract_version=contract_version,
-        received_count=report.received,
-        accepted_count=report.accepted,
-        rejected_count=report.rejected,
         loaded_by=loaded_by,
-        rejections=[(r.line_number, r.reason) for r in report.rejections],
     )
     return report, load_id

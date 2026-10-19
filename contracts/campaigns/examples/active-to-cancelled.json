@@ -1,0 +1,9 @@
+{
+  "campaign_id": 304,
+  "name": "At-Risk Winback",
+  "label_code": "AT_RISK",
+  "starts_on": "2026-09-01",
+  "ends_on": "2026-11-30",
+  "status": "CANCELLED",
+  "allowed_transitions": []
+}

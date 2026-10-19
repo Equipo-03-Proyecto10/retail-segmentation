@@ -1,0 +1,1034 @@
+openapi: 3.1.0
+info:
+  title: campaigns-service
+  version: 1.0.0
+  description: >-
+    Owns the campaign lifecycle rule. A campaign is created as DRAFT, may be
+    edited only while it remains DRAFT, and moves only DRAFT to ACTIVE or
+    CANCELLED and ACTIVE to FINISHED or CANCELLED. FINISHED and CANCELLED are
+    terminal. Activation is refused after the campaign has ended or while any
+    attached experiment is not ready. `label_code` is the stable segment label
+    vocabulary key; segment ids are never accepted or returned.
+security:
+  - bearer: []
+paths:
+  /v1/campaigns:
+    get:
+      operationId: listCampaigns
+      summary: List campaigns
+      description: >-
+        Returns campaigns ordered by `campaign_id`. `status` and `label_code`
+        are optional filters and pagination applies after filtering.
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - MARKETING
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: status
+          in: query
+          required: false
+          description: Exact lifecycle status to return.
+          schema:
+            $ref: '#/components/schemas/CampaignStatus'
+        - name: label_code
+          in: query
+          required: false
+          description: Exact stable segment label code to return.
+          schema:
+            $ref: '#/components/schemas/LabelCode'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of campaigns.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Campaigns'
+              examples:
+                campaigns:
+                  externalValue: ./examples/campaigns.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Campaigns'
+              examples:
+                campaigns:
+                  externalValue: ./examples/campaigns.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/ListValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+    post:
+      operationId: createCampaign
+      summary: Create a draft campaign
+      description: >-
+        Creates a campaign in DRAFT. The server allocates `campaign_id`;
+        `campaign_id` and `status` are forbidden in the body and return 422
+        `invalid_body`. The end date must not precede the start date, and
+        `label_code` must exist in the stable segment label vocabulary.
+      x-mosaiq-roles:
+        - ADMIN
+        - MARKETING
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCampaignRequest'
+            examples:
+              draft:
+                externalValue: ./examples/create-campaign.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/CreateCampaignRequest'
+            examples:
+              draft:
+                externalValue: ./examples/create-campaign.request.xml
+      responses:
+        '201':
+          description: Draft campaign created.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            Location:
+              description: Canonical URI of the new campaign.
+              required: true
+              schema:
+                type: string
+                format: uri-reference
+                example: /v1/campaigns/301
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Campaign'
+              examples:
+                draft:
+                  externalValue: ./examples/campaign.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Campaign'
+              examples:
+                draft:
+                  externalValue: ./examples/campaign.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/CampaignValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/campaigns/{campaign_id}:
+    get:
+      operationId: getCampaign
+      summary: Get a campaign
+      description: Returns one campaign and the transitions currently allowed.
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - MARKETING
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The campaign.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Campaign'
+              examples:
+                draft:
+                  externalValue: ./examples/campaign.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Campaign'
+              examples:
+                draft:
+                  externalValue: ./examples/campaign.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/CampaignNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+    patch:
+      operationId: updateCampaign
+      summary: Edit a draft campaign
+      description: >-
+        Changes at least one of `name`, `label_code`, `starts_on` and
+        `ends_on`, only while the campaign is DRAFT. No other field is
+        accepted. In particular, `campaign_id` and `status` return 422
+        `invalid_body` rather than changing identity or lifecycle state.
+      x-mosaiq-roles:
+        - ADMIN
+        - MARKETING
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCampaignRequest'
+            examples:
+              campaign_update:
+                externalValue: ./examples/update-campaign.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/UpdateCampaignRequest'
+            examples:
+              campaign_update:
+                externalValue: ./examples/update-campaign.request.xml
+      responses:
+        '200':
+          description: Draft campaign updated.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Campaign'
+              examples:
+                campaign:
+                  externalValue: ./examples/campaign.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Campaign'
+              examples:
+                campaign:
+                  externalValue: ./examples/campaign.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/CampaignNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/CampaignNotDraft'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/CampaignValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/campaigns/{campaign_id}/transitions:
+    post:
+      operationId: transitionCampaign
+      summary: Move a campaign to another status
+      description: >-
+        Applies one conditional state transition. `expected_status` must equal
+        the stored status or the request returns `status_changed`. The only
+        legal moves are DRAFT to ACTIVE or CANCELLED and ACTIVE to FINISHED or
+        CANCELLED. FINISHED and CANCELLED are terminal. A move to ACTIVE is
+        additionally refused after `ends_on`, or while any attached experiment
+        has no treatment group, or has no control group and other than exactly
+        two treatment groups.
+      x-mosaiq-roles:
+        - ADMIN
+        - MARKETING
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransitionCampaignRequest'
+            examples:
+              draft_to_active:
+                externalValue: ./examples/draft-to-active.request.json
+              draft_to_cancelled:
+                externalValue: ./examples/draft-to-cancelled.request.json
+              active_to_finished:
+                externalValue: ./examples/active-to-finished.request.json
+              active_to_cancelled:
+                externalValue: ./examples/active-to-cancelled.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/TransitionCampaignRequest'
+            examples:
+              draft_to_active:
+                externalValue: ./examples/draft-to-active.request.xml
+              draft_to_cancelled:
+                externalValue: ./examples/draft-to-cancelled.request.xml
+              active_to_finished:
+                externalValue: ./examples/active-to-finished.request.xml
+              active_to_cancelled:
+                externalValue: ./examples/active-to-cancelled.request.xml
+      responses:
+        '200':
+          description: Campaign transitioned.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Campaign'
+              examples:
+                draft_to_active:
+                  externalValue: ./examples/draft-to-active.json
+                draft_to_cancelled:
+                  externalValue: ./examples/draft-to-cancelled.json
+                active_to_finished:
+                  externalValue: ./examples/active-to-finished.json
+                active_to_cancelled:
+                  externalValue: ./examples/active-to-cancelled.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Campaign'
+              examples:
+                draft_to_active:
+                  externalValue: ./examples/draft-to-active.xml
+                draft_to_cancelled:
+                  externalValue: ./examples/draft-to-cancelled.xml
+                active_to_finished:
+                  externalValue: ./examples/active-to-finished.xml
+                active_to_cancelled:
+                  externalValue: ./examples/active-to-cancelled.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/CampaignNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/TransitionConflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/TransitionValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /health/live:
+    get:
+      operationId: getLiveness
+      summary: Report process liveness
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The process is live.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+  /health/ready:
+    get:
+      operationId: getReadiness
+      summary: Report schema readiness
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The required schema is applied.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '503':
+          $ref: '#/components/responses/SchemaNotReady'
+  /openapi.yaml:
+    get:
+      operationId: getOpenApiDocument
+      summary: Download this OpenAPI document
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The OpenAPI document, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/yaml:
+              schema:
+                type: string
+  /schema.xsd:
+    get:
+      operationId: getXmlSchema
+      summary: Download the XML schema
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The campaigns XSD, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/xml:
+              schema:
+                type: string
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      description: >-
+        Caller-supplied correlation id. A value that does not match the pattern
+        is ignored and replaced by a generated id.
+      schema:
+        type: string
+        pattern: '^[0-9A-Za-z-]{1,64}$'
+    CampaignId:
+      name: campaign_id
+      in: path
+      required: true
+      description: Positive integer campaign identifier allocated by the server.
+      schema:
+        $ref: '#/components/schemas/CampaignId'
+    Page:
+      name: page
+      in: query
+      required: false
+      description: One-based page number.
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Size:
+      name: size
+      in: query
+      required: false
+      description: Number of campaigns per page.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+  headers:
+    CorrelationId:
+      description: Correlation id used for this response.
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9A-Za-z-]{1,64}$'
+    RetryAfter:
+      description: Whole seconds until a retry is allowed.
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  schemas:
+    CampaignId:
+      type: integer
+      minimum: 1
+      maximum: 2147483647
+      readOnly: true
+    CampaignName:
+      type: string
+      minLength: 1
+      maxLength: 120
+    LabelCode:
+      type: string
+      description: Stable segment label code; never a segment id.
+      minLength: 1
+      maxLength: 40
+    CampaignStatus:
+      type: string
+      enum:
+        - DRAFT
+        - ACTIVE
+        - FINISHED
+        - CANCELLED
+    Campaign:
+      type: object
+      additionalProperties: false
+      required:
+        - campaign_id
+        - name
+        - label_code
+        - starts_on
+        - ends_on
+        - status
+        - allowed_transitions
+      properties:
+        campaign_id:
+          $ref: '#/components/schemas/CampaignId'
+        name:
+          $ref: '#/components/schemas/CampaignName'
+        label_code:
+          $ref: '#/components/schemas/LabelCode'
+        starts_on:
+          type: string
+          format: date
+        ends_on:
+          type: string
+          format: date
+        status:
+          $ref: '#/components/schemas/CampaignStatus'
+        allowed_transitions:
+          type: array
+          description: >-
+            Statuses reachable from the current status: ACTIVE and CANCELLED
+            from DRAFT; FINISHED and CANCELLED from ACTIVE; empty from either
+            terminal status.
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/CampaignStatus'
+      xml:
+        name: Campaign
+        namespace: https://mosaiq.maxthecoder.online/xml/campaigns/v1
+    Campaigns:
+      type: object
+      additionalProperties: false
+      required:
+        - campaigns
+        - page_info
+      properties:
+        campaigns:
+          type: array
+          items:
+            $ref: '#/components/schemas/Campaign'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: Campaigns
+        namespace: https://mosaiq.maxthecoder.online/xml/campaigns/v1
+    CreateCampaignRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - label_code
+        - starts_on
+        - ends_on
+      properties:
+        name:
+          $ref: '#/components/schemas/CampaignName'
+        label_code:
+          $ref: '#/components/schemas/LabelCode'
+        starts_on:
+          type: string
+          format: date
+        ends_on:
+          type: string
+          format: date
+      xml:
+        name: CreateCampaignRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/campaigns/v1
+    UpdateCampaignRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          $ref: '#/components/schemas/CampaignName'
+        label_code:
+          $ref: '#/components/schemas/LabelCode'
+        starts_on:
+          type: string
+          format: date
+        ends_on:
+          type: string
+          format: date
+      xml:
+        name: UpdateCampaignRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/campaigns/v1
+    TransitionCampaignRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - to
+        - expected_status
+      properties:
+        to:
+          $ref: '#/components/schemas/CampaignStatus'
+        expected_status:
+          $ref: '#/components/schemas/CampaignStatus'
+      xml:
+        name: TransitionCampaignRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/campaigns/v1
+    PageInfo:
+      type: object
+      additionalProperties: false
+      required:
+        - page
+        - size
+        - total
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - field
+        - code
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+    Error:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+        - correlation_id
+        - details
+      properties:
+        code:
+          type: string
+          pattern: '^[a-z][a-z0-9_]*$'
+        message:
+          type: string
+        correlation_id:
+          type: string
+          pattern: '^[0-9A-Za-z-]{1,64}$'
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+  responses:
+    AuthenticationError:
+      description: '`invalid_token` or `session_revoked`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              value:
+                code: invalid_token
+                message: The bearer token is invalid.
+                correlation_id: corr-auth-001
+                details: []
+            session_revoked:
+              value:
+                code: session_revoked
+                message: The token session is no longer live.
+                correlation_id: corr-auth-002
+                details: []
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>invalid_token</code><message>The bearer token is invalid.</message><correlation_id>corr-auth-001</correlation_id></Error>
+            session_revoked:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>session_revoked</code><message>The token session is no longer live.</message><correlation_id>corr-auth-002</correlation_id></Error>
+    ForbiddenRole:
+      description: '`forbidden_role`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              value:
+                code: forbidden_role
+                message: The authenticated role cannot perform this operation.
+                correlation_id: corr-role-001
+                details: []
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>forbidden_role</code><message>The authenticated role cannot perform this operation.</message><correlation_id>corr-role-001</correlation_id></Error>
+    NotAcceptable:
+      description: '`not_acceptable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              value:
+                code: not_acceptable
+                message: The requested response format is unsupported.
+                correlation_id: corr-format-001
+                details: []
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>not_acceptable</code><message>The requested response format is unsupported.</message><correlation_id>corr-format-001</correlation_id></Error>
+    ListValidation:
+      description: '`invalid_pagination`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              value:
+                code: invalid_pagination
+                message: Pagination values are outside their allowed ranges.
+                correlation_id: corr-list-422
+                details:
+                  - field: page
+                    code: minimum
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>invalid_pagination</code><message>Pagination values are outside their allowed ranges.</message><correlation_id>corr-list-422</correlation_id><details><field>page</field><code>minimum</code></details></Error>
+    CampaignNotFound:
+      description: '`campaign_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            campaign_not_found:
+              externalValue: ./examples/campaign-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            campaign_not_found:
+              externalValue: ./examples/campaign-not-found.xml
+    CampaignNotDraft:
+      description: '`campaign_not_draft`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            campaign_not_draft:
+              externalValue: ./examples/campaign-not-draft.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            campaign_not_draft:
+              externalValue: ./examples/campaign-not-draft.xml
+    TransitionConflict:
+      description: >-
+        `illegal_transition`, `status_changed`, `campaign_ended` or
+        `experiment_not_ready`.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            illegal_transition:
+              externalValue: ./examples/illegal-transition.json
+            status_changed:
+              externalValue: ./examples/status-changed.json
+            campaign_ended:
+              externalValue: ./examples/campaign-ended.json
+            experiment_not_ready:
+              externalValue: ./examples/experiment-not-ready.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            illegal_transition:
+              externalValue: ./examples/illegal-transition.xml
+            status_changed:
+              externalValue: ./examples/status-changed.xml
+            campaign_ended:
+              externalValue: ./examples/campaign-ended.xml
+            experiment_not_ready:
+              externalValue: ./examples/experiment-not-ready.xml
+    CampaignValidation:
+      description: '`invalid_body`, `ends_before_start` or `unknown_label`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              value:
+                code: invalid_body
+                message: The request body contains a forbidden or invalid field.
+                correlation_id: corr-campaign-422a
+                details:
+                  - field: status
+                    code: additional_property
+            ends_before_start:
+              externalValue: ./examples/ends-before-start.json
+            unknown_label:
+              externalValue: ./examples/unknown-label.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>invalid_body</code><message>The request body contains a forbidden or invalid field.</message><correlation_id>corr-campaign-422a</correlation_id><details><field>status</field><code>additional_property</code></details></Error>
+            ends_before_start:
+              externalValue: ./examples/ends-before-start.xml
+            unknown_label:
+              externalValue: ./examples/unknown-label.xml
+    TransitionValidation:
+      description: '`invalid_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              value:
+                code: invalid_body
+                message: The transition body violates its schema.
+                correlation_id: corr-transition-422
+                details:
+                  - field: to
+                    code: enum
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>invalid_body</code><message>The transition body violates its schema.</message><correlation_id>corr-transition-422</correlation_id><details><field>to</field><code>enum</code></details></Error>
+    MalformedBody:
+      description: '`malformed_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            malformed_body:
+              value:
+                code: malformed_body
+                message: The request body cannot be parsed safely.
+                correlation_id: corr-body-400
+                details: []
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            malformed_body:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>malformed_body</code><message>The request body cannot be parsed safely.</message><correlation_id>corr-body-400</correlation_id></Error>
+    PayloadTooLarge:
+      description: '`payload_too_large`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            payload_too_large:
+              value:
+                code: payload_too_large
+                message: The request body exceeds 64 KiB.
+                correlation_id: corr-body-413
+                details: []
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            payload_too_large:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>payload_too_large</code><message>The request body exceeds 64 KiB.</message><correlation_id>corr-body-413</correlation_id></Error>
+    UnsupportedMediaType:
+      description: '`unsupported_media_type`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unsupported_media_type:
+              value:
+                code: unsupported_media_type
+                message: The request format is unsupported.
+                correlation_id: corr-body-415
+                details: []
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unsupported_media_type:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>unsupported_media_type</code><message>The request format is unsupported.</message><correlation_id>corr-body-415</correlation_id></Error>
+    RateLimited:
+      description: '`rate_limited`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              value:
+                code: rate_limited
+                message: The request limit was exceeded.
+                correlation_id: corr-rate-429
+                details: []
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>rate_limited</code><message>The request limit was exceeded.</message><correlation_id>corr-rate-429</correlation_id></Error>
+    ProtectedDatabaseUnavailable:
+      description: '`auth_unavailable` or `database_unavailable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              value:
+                code: auth_unavailable
+                message: Session state cannot be checked.
+                correlation_id: corr-dependency-503a
+                details: []
+            database_unavailable:
+              value:
+                code: database_unavailable
+                message: The campaign database is unavailable.
+                correlation_id: corr-dependency-503b
+                details: []
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>auth_unavailable</code><message>Session state cannot be checked.</message><correlation_id>corr-dependency-503a</correlation_id></Error>
+            database_unavailable:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>database_unavailable</code><message>The campaign database is unavailable.</message><correlation_id>corr-dependency-503b</correlation_id></Error>
+    SchemaNotReady:
+      description: '`schema_not_ready`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              value:
+                code: schema_not_ready
+                message: The required campaign schema has not been applied.
+                correlation_id: corr-ready-503
+                details: []
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>schema_not_ready</code><message>The required campaign schema has not been applied.</message><correlation_id>corr-ready-503</correlation_id></Error>

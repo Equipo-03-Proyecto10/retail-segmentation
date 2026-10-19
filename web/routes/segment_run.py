@@ -1,8 +1,8 @@
 """Running the segment recalculation (F3-10).
 
-Only the administrator reaches this: RN-05, because a run rewrites a column on
-every customer and an analyst who can trigger it can change what every report
-says. The refusal is the authorization middleware's, not this module's.
+Only the administrator reaches this: RN-05, because a run writes durable
+assignment history that determines customers' current segments and dependent
+reports. The refusal is the authorization middleware's, not this module's.
 """
 
 from __future__ import annotations

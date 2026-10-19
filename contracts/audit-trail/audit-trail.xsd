@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:audit="https://mosaiq.maxthecoder.online/xml/audit-trail/v1"
+           xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1"
+           targetNamespace="https://mosaiq.maxthecoder.online/xml/audit-trail/v1"
+           elementFormDefault="qualified">
+  <xs:import namespace="https://mosaiq.maxthecoder.online/xml/common/v1"
+             schemaLocation="../common/v1/common.xsd"/>
+
+  <xs:simpleType name="AuditId">
+    <xs:restriction base="xs:positiveInteger">
+      <xs:maxInclusive value="9223372036854775807"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Any UUID: the seeded accounts carry UUIDs that are not RFC 4122
+       version 4, and audit_log.user_id is a plain uuid column. -->
+  <xs:simpleType name="Uuid">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- The audited tables, named as fn_audit records them in entity. -->
+  <xs:simpleType name="AuditedEntity">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="category"/>
+      <xs:enumeration value="product"/>
+      <xs:enumeration value="store"/>
+      <xs:enumeration value="customer"/>
+      <xs:enumeration value="app_user"/>
+      <xs:enumeration value="segment"/>
+      <xs:enumeration value="segment_rule"/>
+      <xs:enumeration value="campaign"/>
+      <xs:enumeration value="experiment"/>
+      <xs:enumeration value="channel"/>
+      <xs:enumeration value="role"/>
+      <xs:enumeration value="customer_segment_history"/>
+      <xs:enumeration value="store_location"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="EntityPk">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:maxLength value="80"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="AuditAction">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="INSERT"/>
+      <xs:enumeration value="UPDATE"/>
+      <xs:enumeration value="DELETE"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- The text of the JSON object fn_audit captured: one member per column of
+       the audited table, so the schema does not model each table. A payload
+       never carries password_hash (RN-29); XSD 1.0 cannot express "does not
+       contain", so the guarantee is the service's and the database's. -->
+  <xs:simpleType name="PayloadJson">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="\s*\{[\s\S]*\}\s*"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- user_id, data_before and data_after are omitted when the JSON member is
+       null: user_id when no actor was known, data_before for an INSERT and
+       data_after for a DELETE. -->
+  <xs:complexType name="AuditEntryType">
+    <xs:sequence>
+      <xs:element name="audit_id" type="audit:AuditId"/>
+      <xs:element name="user_id" type="audit:Uuid" minOccurs="0"/>
+      <xs:element name="entity" type="audit:AuditedEntity"/>
+      <xs:element name="entity_pk" type="audit:EntityPk"/>
+      <xs:element name="action" type="audit:AuditAction"/>
+      <xs:element name="data_before" type="audit:PayloadJson" minOccurs="0"/>
+      <xs:element name="data_after" type="audit:PayloadJson" minOccurs="0"/>
+      <xs:element name="executed_at" type="xs:dateTime"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="AuditEntriesType">
+    <xs:sequence>
+      <xs:element name="AuditEntry" type="audit:AuditEntryType"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name="AuditEntry" type="audit:AuditEntryType"/>
+  <xs:element name="AuditEntries" type="audit:AuditEntriesType"/>
+</xs:schema>

@@ -40,7 +40,7 @@ their diffs and descriptions intact.
 | #31 | Planning documents contradict on commitment and owners | Retired with the documents |
 | #32 | verify_m1_schema.sql is not run by CI | `.github/workflows/ci.yml`, now checking the `sql/` scripts |
 | #33 | Charter Appendix C references a template that does not exist | Retired with the charter |
-| #40 | Deterministic cluster-to-label mapping rule | Deferred. `docs/roadmap.md` carries the rule that matters |
+| #40 | Deterministic cluster-to-label mapping rule | F9-03 (#336), RN-38 and ADR-0030 |
 
 The scope change itself is recorded in
 [ADR-0001](adr/0001-flask-monolith-on-a-single-vm.md).

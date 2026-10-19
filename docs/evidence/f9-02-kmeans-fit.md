@@ -9,7 +9,7 @@ The stored partition is assigned once more after the last centroid update, so it
 labels and quality measures use the nearest final centroids rather than the centres
 from the preceding iteration.
 
-Covers the acceptance criteria on F9-02 and business rule RN-37. It builds on F9-01's
+Covers the acceptance criteria on F9-02 and business rule RN-58. It builds on F9-01's
 pipeline. No schema change, no new dependency, no new permission, and no page: how a
 person starts a K-means run is not part of this story.
 

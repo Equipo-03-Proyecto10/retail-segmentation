@@ -1,0 +1,6 @@
+{
+  "code": "illegal_transition",
+  "message": "An ACTIVE campaign cannot move to DRAFT; it may move only to FINISHED or CANCELLED.",
+  "correlation_id": "corr-transition-409a",
+  "details": []
+}

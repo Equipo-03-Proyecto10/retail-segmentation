@@ -100,7 +100,7 @@ if wanted 3; then
 SELECT 'assertion 3: ' || r.rolname || ' reaches web-only ' || t FROM pg_roles r
 CROSS JOIN unnest(ARRAY['app_session','sales_load','sales_load_rejection','experiment',
   'experiment_group','experiment_assignment','experiment_exposure',
-  'experiment_conversion']) AS t
+  'experiment_conversion','notification','notification_recipient']) AS t
 WHERE r.rolname LIKE 'svc\_%'
   AND (has_table_privilege(r.oid, ('public.' || t)::regclass,
          'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')

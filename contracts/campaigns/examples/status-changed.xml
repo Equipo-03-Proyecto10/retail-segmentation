@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>status_changed</code>
+  <message>The campaign status no longer matches expected_status; reload it before retrying.</message>
+  <correlation_id>corr-transition-409b</correlation_id>
+</Error>

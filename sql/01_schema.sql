@@ -609,7 +609,7 @@ CREATE TABLE experiment_conversion (
     converted_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (assignment_id, transaction_id)
 );
--- A conversion is a durable event too (ADR-0019, ADR-0047): evaluating again
+-- A conversion is a durable event too (ADR-0019, ADR-0050): evaluating again
 -- only adds. The owner retains maintenance privileges and foreign-key cascades
 -- still run as the owner; the application role can only read and append.
 REVOKE UPDATE, DELETE ON experiment_conversion FROM retail_app;
@@ -623,6 +623,70 @@ CREATE TABLE inventory (
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (store_id, product_id)
 );
+
+-- ---------- NOTIFICATIONS (AN-04, #419, ADR-0047) ----------
+
+-- One row per thing that happened that somebody should be told about: the
+-- event, kept once however many people it reaches.
+--
+-- The subject is an exclusive arc, exactly one of four foreign keys. A
+-- polymorphic (subject_type, subject_id) pair could not be a foreign key, so a
+-- deleted load or run would leave an orphan and nothing would stop an unknown
+-- type. The first three subjects are UNIQUE: an event is announced once, and
+-- the lazy announcer for an experiment's end (ADR-0047) relies on
+-- ON CONFLICT (experiment_id) DO NOTHING as the guard that two racing workers
+-- cannot both pass. subject_user_id is not UNIQUE, because a user can be
+-- deactivated, reactivated and deactivated again, and each deactivation is
+-- its own event.
+--
+-- kind is derived from whichever subject is set, so it cannot disagree with
+-- it. No message text is stored: the sentence is built from the subject row
+-- when it is read, so a corrected fact is never contradicted by an old
+-- sentence. Runtime state, like app_session: not audited, and it carries the
+-- default DML grant. ON DELETE CASCADE is the owner's, since the application
+-- never deletes a load, a run, an experiment or a user.
+CREATE TABLE notification (
+    notification_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    sales_load_id   BIGINT UNIQUE REFERENCES sales_load(load_id) ON DELETE CASCADE,
+    run_id          BIGINT UNIQUE REFERENCES segmentation_run(run_id) ON DELETE CASCADE,
+    experiment_id   INT    UNIQUE REFERENCES experiment(experiment_id) ON DELETE CASCADE,
+    subject_user_id UUID   REFERENCES app_user(user_id) ON DELETE CASCADE,
+    kind            VARCHAR(30) GENERATED ALWAYS AS (
+                        CASE
+                            WHEN sales_load_id   IS NOT NULL THEN 'SALES_LOAD_FINISHED'
+                            WHEN run_id          IS NOT NULL THEN 'SEGMENT_RUN_COMPLETED'
+                            WHEN experiment_id   IS NOT NULL THEN 'EXPERIMENT_ENDED'
+                            WHEN subject_user_id IS NOT NULL THEN 'USER_DEACTIVATED'
+                        END
+                    ) STORED NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT notification_one_subject CHECK (
+        num_nonnulls(sales_load_id, run_id, experiment_id, subject_user_id) = 1
+    )
+);
+
+-- Who the event was written for, and whether they have read it. The recipients
+-- are the active users whose role held the delivery permission when the event
+-- happened, a snapshot: a later role change neither adds nor removes a row
+-- (the permission is checked again when the row is read). read_at is the only
+-- fact that differs per recipient, which is why it lives here and not on the
+-- event. A user's notifications go with the user, as app_session does.
+CREATE TABLE notification_recipient (
+    notification_id BIGINT NOT NULL REFERENCES notification(notification_id) ON DELETE CASCADE,
+    user_id         UUID   NOT NULL REFERENCES app_user(user_id) ON DELETE CASCADE,
+    read_at         TIMESTAMPTZ,
+    PRIMARY KEY (notification_id, user_id)
+);
+
+-- The inbox, newest first: one user's rows by descending identity, which is
+-- creation order. The primary key above serves the join back to the event and
+-- the cascade from it.
+CREATE INDEX idx_notification_recipient_inbox
+    ON notification_recipient (user_id, notification_id DESC);
+
+-- The unread count shown on every page, and "mark all read".
+CREATE INDEX idx_notification_recipient_unread
+    ON notification_recipient (user_id) WHERE read_at IS NULL;
 
 -- ---------- AUDIT ----------
 

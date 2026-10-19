@@ -1,4 +1,4 @@
-# ADR-0047 — Experiment conversions are append-only for the application role
+# ADR-0050 — Experiment conversions are append-only for the application role
 
 **Status:** Proposed
 **Owner:** Raquel
@@ -56,10 +56,9 @@ schema owner. That is deliberate maintenance, not an application workflow.
 - The application-role self-test in `sql/01_schema.sql` excepts the table from
   the all-DML policy, checks the narrower privileges, and attempts both
   rewrites.
-- The instance database receives the revoke without a rebuild. It changes only a
-  privilege, no table's shape, so it is the one idempotent statement
-  `deploy/README.md` documents, run as `postgres`. A rebuild from the three
-  scripts reaches the same state.
+- The instance database receives these privileges through the canonical three-script
+  rebuild documented in `deploy/README.md`, before the release reaches `main`.
+  No standalone permission statement or new deployment exception is introduced.
 
 ## Compliance
 

@@ -21,6 +21,7 @@ reuses an existing declaration, per ADR-0007.
 | 12 | Experiment dashboard (`/experiment-dashboard/`, #415) | `campaign.read` (existing) | same as campaigns today |
 | 12 | Experiment report and its CSV export (`/experiment-report/`) | `campaign.read` (existing) | same as campaigns today |
 | 12 | Consumption-shift and recommendation reports (`/consumption-reports/`) | `segment.read` (existing) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
+| 12 | In-app notifications: the inbox, one notification, mark read and mark all read (`/notifications/`, #419) | signed in only, `@requires()`; no new permission. Each notification is gated on its own delivery permission when it is read: `sales_ingest.execute`, `segment.read`, `campaign.read` or `user.write` ([ADR-0047](adr/0047-notifications-are-pulled-from-postgresql-and-an-experiments-end-is-announced-by-the-next-page-read.md)) | every profile reaches the pages; ADMIN reads all four kinds, ANALYST, MARKETING and AUDITOR the runs and experiments, STORE_MANAGER the runs, INVENTORY_PLANNER and CUSTOMER none |
 
 `ADMIN` remains the only administrative profile. No new profile is created.
 

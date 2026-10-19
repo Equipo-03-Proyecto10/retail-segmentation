@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>audit_entry_not_found</code>
+  <message>No audit entry has this identifier.</message>
+  <correlation_id>corr-audit-404</correlation_id>
+</Error>

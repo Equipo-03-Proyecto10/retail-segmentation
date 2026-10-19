@@ -344,12 +344,13 @@ The instance has to show what the delivery claims. In this order, by whoever
 holds the instance (none of it can be done from the repository):
 
 1. **Back up, then re-provision the database** from the three scripts at the
-   deployed commit. The final schema has 27 tables and also depends on
+   deployed commit. The final schema has 29 tables and also depends on
    `btree_gist` from `00_create_database.sql`: it includes the complete exposure
    and conversion event chain, named treatment arms with immutable definitions,
    non-overlapping close-only segment history, insert-only segmentation runs,
-   protected experiments, the final grants/revokes, and seed bands that reach
-   every label (#345, #346, #350, #357). Do not patch the old database by hand.
+   protected experiments, the in-app notification tables, the final
+   grants/revokes, and seed bands that reach every label (#345, #346, #350,
+   #357, #419). Do not patch the old database by hand.
 2. **Run `sql/verify_integrity.sql`, then `check-schema-drift.sh`** against a clean
    build of the same commit. Every probe must pass and the schema, privileges and
    role memberships must show no drift.
@@ -423,17 +424,6 @@ three scripts, not to patch it: AGENTS.md keeps DDL in `sql/01_schema.sql` and
 forbids altering a table by hand on the server. That drops the database, so it
 is a decision for whoever owns the instance (the instance holds demonstration
 data only), and it should be taken together with the demonstration reset in #360.
-
-**A privilege-only change** is the one exception: it alters no table, so an
-operator applies it as `postgres` without a rebuild, when the ADR that makes it
-names the statement. Each statement is idempotent; a rebuild reaches the same
-state. Run `check-schema-drift.sh` afterwards.
-
-```sh
-# ADR-0047 (#451): conversions are append-only for the application role.
-sudo -u postgres psql -d retail -v ON_ERROR_STOP=1 \
-  -c 'REVOKE UPDATE, DELETE ON experiment_conversion FROM retail_app;'
-```
 
 ### The NGINX config is applied by hand, on purpose
 

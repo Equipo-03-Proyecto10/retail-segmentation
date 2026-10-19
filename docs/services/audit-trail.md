@@ -32,6 +32,8 @@
 
 Roles follow the [service operation policy](../requirements.md#service-operation-policy-distributed-stage). Meta routes (no token): `GET /health/live`, `GET /health/ready`, `GET /openapi.yaml`, `GET /schema.xsd`.
 
+`entity` is one of the twelve tables RN-28 lists, or `store_location`, which [ADR-0046](../adr/0046-service-owned-data-lives-in-service-schemas.md) audits once the stores boundary exists. Entries are ordered by `executed_at` and then `audit_id`, newest first. The contract is [`contracts/audit-trail/`](../../contracts/audit-trail/openapi.yaml).
+
 ## Data it owns
 
 S = only service writer, W = the frozen web also writes, R = read-only through its declared read owner.
@@ -61,7 +63,8 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 
 | HTTP | Code | When |
 |---|---|---|
-| 404 | Undecided; the contract story fixes the code | An unknown `audit_id` (F14-29 fixes the code) |
+| 404 | `audit_entry_not_found` | No entry has the requested `audit_id` |
+| 422 | `invalid_query` | `entity` or `action` is unknown, or `to` is before `from`; `details` names the rejected parameter |
 
 ## Accepted exceptions
 

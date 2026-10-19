@@ -196,7 +196,7 @@ One fault in the service, `quintile_bins` failing to reach bin 1 with fewer than
 customers, was found by the tests themselves rather than seeded: PostgreSQL's own
 `ntile(5)` behaves the same way (the first `n` buckets each take one row and the rest
 stay empty), and the fix was to match that exactly rather than invent a spread that
-always reaches both extremes — recorded in RN-37 already, and pinned again here by a
+always reaches both extremes — recorded in RN-58 already, and pinned again here by a
 test that reproduces it with 3 scored customers.
 
 ## Tests

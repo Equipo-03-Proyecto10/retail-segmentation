@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Campaigns xmlns="https://mosaiq.maxthecoder.online/xml/campaigns/v1"
+           xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <Campaign>
+    <campaign_id>301</campaign_id>
+    <name>Holiday Loyalty Preview</name>
+    <label_code>LOYAL</label_code>
+    <starts_on>2026-11-01</starts_on>
+    <ends_on>2026-12-31</ends_on>
+    <status>DRAFT</status>
+    <allowed_transitions>ACTIVE</allowed_transitions>
+    <allowed_transitions>CANCELLED</allowed_transitions>
+  </Campaign>
+  <Campaign>
+    <campaign_id>302</campaign_id>
+    <name>October Retention</name>
+    <label_code>AT_RISK</label_code>
+    <starts_on>2026-10-01</starts_on>
+    <ends_on>2026-10-31</ends_on>
+    <status>ACTIVE</status>
+    <allowed_transitions>FINISHED</allowed_transitions>
+    <allowed_transitions>CANCELLED</allowed_transitions>
+  </Campaign>
+  <common:PageInfo>
+    <common:page>1</common:page>
+    <common:size>20</common:size>
+    <common:total>2</common:total>
+  </common:PageInfo>
+</Campaigns>

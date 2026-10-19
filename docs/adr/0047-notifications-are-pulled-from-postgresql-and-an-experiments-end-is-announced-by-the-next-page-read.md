@@ -1,6 +1,6 @@
 # ADR-0047 — Notifications are pulled from PostgreSQL, and an experiment's end is announced by the next signed-in page read
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Marcelo
 **Issue:** #419
 **Supersedes:** —

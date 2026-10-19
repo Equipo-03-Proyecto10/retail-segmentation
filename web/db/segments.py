@@ -21,10 +21,12 @@ Two things make a run repeatable, and both are in the adapter's read:
   joins back to their value's boundary (#352), so customers who tie on recency,
   frequency or spend always share a score, and the split does not depend on
   customer_id or on the order the planner happens to return rows in;
-* a triple that satisfies several rules takes the lowest `segment_id`. The
-  seeded rule bands overlap heavily, so this is not a corner case; a real rule
-  set would be disjoint, and until it is, the tie is broken the same way every
-  time.
+* a triple that satisfies several rules takes the lowest `segment_id`, so a tie
+  is broken the same way every time. The seeded bands partition all 125 triples
+  with no overlap (RN-46), so a seeded run never reaches the tie; it matters
+  only once an administrator retunes the bands into overlap. A scored triple
+  that matches no band takes the worst-ranked label and is flagged
+  `via_fallback`, which a seeded run never needs either.
 
 ADR-0017: every run writes one `customer_segment_history` row per customer, and
 closes the previously open row even when the result is unchanged. Closing and

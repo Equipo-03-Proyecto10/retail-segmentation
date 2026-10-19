@@ -1,0 +1,41 @@
+[package]
+name = "mosaiq-kit"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.90"
+description = "Shared transport and infrastructure mechanisms for MOSAIQ Rust services"
+license = "UNLICENSED"
+publish = false
+readme = "README.md"
+
+[lib]
+name = "mosaiq_kit"
+
+[dependencies]
+axum = { version = "0.8.4", default-features = false, features = ["http1", "tokio", "query"] }
+bytes = "1.10.1"
+chrono = { version = "0.4.41", default-features = false, features = ["clock", "std"] }
+deadpool-postgres = "0.14.1"
+form_urlencoded = "1.2.1"
+http-body-util = "0.1.3"
+indexmap = "2.10.0"
+jsonschema = { version = "0.30.0", default-features = false }
+jsonwebtoken = { version = "9.3.1", default-features = false }
+libxml = "0.3.22"
+percent-encoding = "2.3.1"
+quick-xml = "0.38.0"
+redis = { version = "0.32.4", default-features = false, features = ["aio", "streams", "tokio-comp"] }
+regex = "1.11.1"
+rust_decimal = { version = "1.37.2", features = ["db-tokio-postgres"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = { version = "1.0.140", features = ["arbitrary_precision", "preserve_order"] }
+serde_yaml = "0.9.34"
+tokio = { version = "1.47.1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-postgres = { version = "0.7.13", features = ["with-chrono-0_4", "with-uuid-1"] }
+tower = { version = "0.5.2", features = ["util"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["fmt"] }
+uuid = { version = "1.17.0", features = ["v4"] }
+
+[dev-dependencies]
+tokio = { version = "1.47.1", features = ["full"] }

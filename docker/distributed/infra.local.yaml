@@ -1,0 +1,17 @@
+# Merged into deploy/infra/compose.yaml by compose.distributed.yaml. On a
+# laptop the aclfile lives in a named volume that compose.distributed.yaml's
+# redis-acl step writes before either Redis instance boots; the instance
+# writes /etc/mosaiq/redis/users.acl with assemble-acl.sh instead.
+services:
+  redis-state:
+    depends_on:
+      redis-acl:
+        condition: service_completed_successfully
+  redis-cache:
+    depends_on:
+      redis-acl:
+        condition: service_completed_successfully
+
+volumes:
+  mosaiq-redis-acl:
+    name: mosaiq-redis-acl

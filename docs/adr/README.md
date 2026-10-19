@@ -105,6 +105,10 @@ ADR-0028 already stated: it is partially superseded by ADR-0028.
 The team accepted ADR-0047 on 2026-10-19, before the notification storage and
 implementation merged. Its decision text is unchanged.
 
+The team accepted ADR-0049 on 2026-10-19, before kit-rs merged (#526). The
+record was proposed as a second 0047 and renumbered before acceptance, since a
+number is never reused. Its decision text is unchanged.
+
 The team accepted ADR-0050 on 2026-10-19, before the revoke it records merged
 (#535). It was proposed as a second 0047 and renumbered before acceptance.
 Its decision text is unchanged.
@@ -160,6 +164,7 @@ Its decision text is unchanged.
 | [0045](0045-services-never-import-the-web-system.md) | Services never import the web system | Accepted |
 | [0046](0046-service-owned-data-lives-in-service-schemas.md) | Service-owned data lives in service schemas | Accepted |
 | [0047](0047-notifications-are-pulled-from-postgresql-and-an-experiments-end-is-announced-by-the-next-page-read.md) | Notifications are pulled from PostgreSQL, and an experiment's end is announced by the next signed-in page read | Accepted |
+| [0049](0049-kit-rs-validates-xml-request-bodies-with-libxml2.md) | kit-rs validates XML request bodies with libxml2, after a quick-xml screen | Accepted |
 | [0050](0050-experiment-conversions-are-append-only-for-the-application-role.md) | Experiment conversions are append-only for the application role | Accepted |
 
 ## Writing one

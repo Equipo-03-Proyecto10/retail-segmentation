@@ -185,7 +185,7 @@ environment, **so that** my first day is not spent installing PostgreSQL and
 ordering scripts by hand.
 
 - Given a clean clone and a copied `.env`, when I run `docker compose up`, then the database is created, schemad, seeded, and the application answers
-- Given the stack is up, when I query the database, then all 19 tables exist and exactly one administrator does
+- Given the stack is up, when I query the database, then all 27 tables exist and exactly one administrator does
 - Given I bring it down and up again, when it starts, then it reaches the same state with no manual step
 
 `RNF-13`, `RNF-15` · F3-09 (#89)

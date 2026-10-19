@@ -187,7 +187,7 @@ psql -d retail -f sql/02_seed_30_per_table.sql
 | Extensions | `pg_trgm` |
 | Application role | `retail_app`, `LOGIN`, password generated on the instance |
 | Its privileges | `SELECT, INSERT, UPDATE, DELETE` only — verified against `information_schema.table_privileges`. No `CREATE`, no `ALTER`, no ownership |
-| Seed | 19 tables loaded; `transaction_line` 600, `transaction` 300, `inventory` 150 rows |
+| Seed | 27 tables loaded; `transaction_line` 600, `transaction` 300, `inventory` 150 rows |
 
 ### Access policy and the application role
 

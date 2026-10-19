@@ -34,3 +34,6 @@ Documents that do not exist yet are produced by the story that needs them:
 
 Everything is written in English — code, comments, commits, issues,
 documentation. Spoken meetings are in Spanish.
+
+Run `python docs/check.py` to verify that business-rule ids are unique and that
+current table-count statements agree with `sql/01_schema.sql`.

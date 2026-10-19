@@ -14,8 +14,8 @@ heading.
 | 1 | ADR-0047 |
 | 2 | The two tables, their seed, the 4NF argument, table count 27 to 29 |
 | 3 | The inbox, the navigation entry and its unread badge |
-| 4 | The detail page, mark one and mark all read, the 404 rule (this version of the record) |
-| 5 | The three events a request causes, written in their own transaction |
+| 4 | The detail page, mark one and mark all read, the 404 rule |
+| 5 | The three events a request causes, written in their own transaction (this version of the record) |
 | 6 | An experiment's end, announced when a page is next read |
 
 TODO: the 375 px and 1440 px captures of the inbox, and the others listed under
@@ -170,23 +170,63 @@ every other form gets; it is not a notification being refused. The statement-lev
 checks, including a kind the role lost while its recipient row remains, are
 `tests/test_notification_state_db.py`.
 
+## The three events a request causes (RN-61)
+
+The three producers were run as `retail_app` against the same database, with the
+real services, a real connection and the administrator as the acting user. The
+connection's `commit()` was switched off so that the script could roll everything
+back, which leaves a `rollback()` the service itself asks for reaching the
+database. A three-row CSV (one row malformed) was loaded with the real adapter,
+the rows themselves stubbed so that no sale was written:
+
+```text
+events written in this transaction:
+   SALES_LOAD_FINISHED    1 recipient
+   SEGMENT_RUN_COMPLETED  21 recipients
+   USER_DEACTIVATED       1 recipient
+ADMIN: total=63 unread=11
+   - Demo User 2 was deactivated.
+   - Segmentation run #52 (RFM_RULES) completed for 30 customers.
+   - The sales load “may.csv” finished: 2 rows accepted, 1 rejected.
+STORE_MANAGER: total=31 unread=9
+   - Segmentation run #52 (RFM_RULES) completed for 30 customers.
+   - Segmentation run #30 (RFM_RULES) completed for 30 customers.
+   - Segmentation run #29 (RFM_RULES) completed for 30 customers.
+INVENTORY_PLANNER: total=0 unread=0
+run with failing notification -> boom
+segmentation_run rows after the failed run and its rollback: 30
+```
+
+The load goes to the one account that holds `sales_ingest.execute`; the run to the
+21 active users whose role holds `segment.read`, the administrator who ran it
+among them; the deactivation to the administrator alone. The store manager reads
+the run and neither of the other two. An account that is already inactive when
+the event happens is not written to: `tests/test_notification_producers_db.py` runs
+the same run after deactivating one analyst and counts 20. When the notification's
+own insert is made to fail, the run is rolled back with it (30 runs, the seeded
+thirty, remain; the rollback also took this script's earlier run, which shared
+its transaction).
+
 ## Tests
 
 | File | Covers |
 |---|---|
 | `tests/test_notification_schema.py` | PostgreSQL: the arc CHECK, the three `UNIQUE` subjects, the cascades, the application role's privileges, no service role, the seed's recipients against the permission matrix |
 | `tests/test_notification_reads_db.py` | PostgreSQL: the read queries, per role, newest first, pages that do not overlap, the unread count, a demoted role, the four kinds' facts |
+| `tests/test_notification_producers.py` | The statements, who is told of each event, the order and the commit, the rollback when a notification fails, and what announces nothing: a refused file, a failed run, a refused or repeated deactivation, an activation, the bulk command-line deactivation, and any trigger on `app_user` |
+| `tests/test_notification_producers_db.py` | PostgreSQL, as `retail_app`: each producer's event, recipients and sentence; the actor included; an inactive account excluded; the snapshot; and the operation rolled back when its notification fails |
 | `tests/test_notification_state_db.py` | PostgreSQL: one notification found only by its recipient and only among the kinds the role reads, marking one (idempotent, keeps the first time, never another user's), marking all (counts what it marked, leaves hidden kinds) |
 | `tests/test_notification_service.py` | The kinds a role reads, `roles_holding`, the badge cap, the four sentences and links, the inbox's paging, one notification and marking read as one committed operation |
 | `tests/test_notification_routes.py` | The inbox, the navigation entry, the badge and its fail-soft behaviour; the detail page, the 404 for missing, foreign and out-of-range ids, the three `POST`s, the return address, and the real CSRF check |
 | `tests/conftest.py`, `pyproject.toml` | The unread count is stubbed to none for every other route test, with the `real_notification_count` marker to opt out |
+| `tests/test_segmentation_pipeline.py`, `tests/test_kmeans_run.py`, `tests/test_kmeans_adapter.py`, `tests/test_segment_run.py`, `tests/test_event_logging.py`, `tests/test_sales_csv.py`, `tests/test_single_administrator.py` | Their patch lists gain the notification call, and the two ordering assertions state that it is the last write before the commit |
 | `tests/test_analytics_authz.py`, `tests/test_authz.py`, `tests/test_negative_flows.py` | The `notifications` blueprint is classified as not analytics; every role's menu gains the entry; the anonymous refusal matrix covers the four routes |
 
-The full suite on this branch: 3,234 passed, 1 skipped, and 2 failed, all with
+The full suite on this branch: 3,274 passed, 1 skipped, and 2 failed, all with
 PostgreSQL available. The 2 are `tests/test_create_database_script.py`'s two
 scratch-cluster tests, which fail here only because the portable `initdb` this
 machine offers has no `pg_trgm`; they fail the same way on `develop`. Without a
-database, 3,178 pass and 59 skip, none fail.
+database, 3,207 pass and 70 skip, none fail.
 
 ## Captures still to take
 

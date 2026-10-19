@@ -1012,6 +1012,33 @@ and `tests/test_consumption_reports_route.py`. · `F8-06`
 
 ## Notifications
 
+### RN-61 — A notification is written in the same transaction as the event it announces
+A finished sales load, a completed segmentation run and a deactivation made in
+the web each write their notification in the transaction of the service that
+causes them, so the operation and its notification commit together or not at
+all. A notification that cannot be written rolls the operation back with it: no
+sales-load record (its rows had already committed one at a time), no run, no
+deactivation. The recipients are the active users whose role holds the event's
+delivery permission when it happens, the user who caused it among them: for a
+load `sales_ingest.execute`, for a run `segment.read`, for a deactivation
+`user.write`. The list is a snapshot, and writing to nobody is still an event.
+Nothing is announced by a file the adapter refuses, a run that fails, a
+deactivation the single-administrator rule refuses, deactivating an account that
+is already inactive, an activation, the command line's bulk deactivation of
+demonstration accounts, or users-service (Q-14); no trigger on `app_user` writes
+one.
+
+**Enforced:** application — `notify_sales_load`, `notify_segment_run` and
+`notify_user_deactivated` in `web/services/notifications.py` are `@atomic`, so
+they join the caller's transaction and never commit alone (ADR-0014), and are
+called from `_record_load` in `web/services/sales_csv.py`, `_record` in
+`web/services/segmentation.py` and `set_active` in `web/services/users.py`;
+recipients are chosen by `roles_holding`, from the permission matrix.
+**Verified** — by `tests/test_notification_producers.py` for the order, the
+commit and the rollback of each, and, as `retail_app` against PostgreSQL with the
+failing notification forced, by `tests/test_notification_producers_db.py`. · #419
+· ADR-0047, ADR-0014
+
 ### RN-62 — A notification is private: anyone else's request for it is a 404
 A notification is read, and marked read, only by a user it was written for and
 only while that user's role still holds the permission that delivered it. A

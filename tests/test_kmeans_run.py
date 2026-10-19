@@ -69,6 +69,7 @@ def _wire(monkeypatch: pytest.MonkeyPatch, ordinals=None, rows=None) -> Mock:
         "create_run",
         "close_open_assignments",
         "insert_assignments",
+        "notify_segment_run",
     ):
         monkeypatch.setattr(segmentation, name, getattr(manager, name))
     return manager

@@ -42,6 +42,7 @@ from web.db.users import (
     update_role,
 )
 from web.services.auth import hash_password
+from web.services.notifications import notify_user_deactivated
 
 SECOND_ADMINISTRATOR = (
     "This system has exactly one administrator, and the role is already taken. "
@@ -224,6 +225,13 @@ def set_active(connection: Connection, user_id: UUID | str, is_active: bool) -> 
     if not is_active:
         # RF-09 on the very next request, not at the next sign-in (#251).
         revoke_user_sessions(connection, user.user_id)
+        if user.is_active:
+            # The holders of user.write are told, in this transaction (AN-04,
+            # RN-61). Only a deactivation that changes something is an event:
+            # deactivating an account that is already inactive says nothing
+            # new. Only this web path calls it (Q-14): users-service and the
+            # command line's bulk deactivation never do.
+            notify_user_deactivated(connection, user.user_id)
 
 
 @atomic

@@ -18,18 +18,15 @@ heading.
 | 5 | The three events a request causes, written in their own transaction |
 | 6 | An experiment's end, announced when a page is next read (the closing version of this record) |
 
-TODO: the 375 px and 1440 px captures of the inbox, and the others listed under
-"Captures still to take" below, are not in this record yet. They need a browser
-session and a signed-in account on a running instance; the files will be added as
-`an-04-*.png` and linked from this record, and none is referenced before it
-exists.
+The screens, at 375 px and 1440 px, are under [Captures](#captures) at the end.
 
 ## How it was checked
 
 PostgreSQL 16.14 (`postgres:16`, a container with a Unix socket and no published
 port), built from the three scripts in order, with `psql -v ON_ERROR_STOP=1`.
 The test client of the Flask application runs the pages, and the real application
-is driven through it where a section says so; no browser was used for this record.
+is driven through it where a section says so. The screens were then checked in a
+browser, behind NGINX, as [Captures](#captures) records.
 
 ## The scripts run clean, in order, from empty
 
@@ -271,29 +268,30 @@ scratch-cluster tests, which fail here only because the portable `initdb` this
 machine offers has no `pg_trgm`; they fail the same way on `develop`. Without a
 database, 3,230 pass and 89 skip, none fail.
 
-## Captures still to take
+## Captures
 
-None of these exists yet. Each is for a browser session; the file name is the one
-the finished record will link.
+Taken from the tip of the last branch (`feature/419-notification-experiment-end`),
+run with `docker compose -f compose.yaml -f compose.proxy.yaml up --build`:
+PostgreSQL 16 built from the three scripts, NGINX with the production CSP, and
+Chromium through Playwright. Every account signed in through the real form.
+Full-page captures are exactly 375 or 1440 CSS px wide (no horizontal scroll). The
+browser console showed no CSP violation, and only the two deliberate 404s as errors.
 
-TODO: capture these, signed in as the account named, at both widths, and link them
-here.
-
-| Page | Account | State | Files |
+| Page | Account | What it shows | Captures |
 |---|---|---|---|
-| `/notifications/` | `admin@mosaiq-demo.com` | the seeded inbox: unread and read rows, the badge `8`, page 1 of 3 | `an-04-inbox-1440.png`, `an-04-inbox-375.png` |
-| `/notifications/?page=3` | `admin@mosaiq-demo.com` | the last page, previous link only | `an-04-inbox-last-page-1440.png` |
-| `/notifications/` | `user3@mosaiq-demo.com` (store manager) | runs only, 30 rows, 2 pages | `an-04-inbox-store-manager-375.png` |
-| `/notifications/` | `user5@mosaiq-demo.com` (inventory planner) | "Nothing is sent to your role" | `an-04-inbox-no-delivery-375.png` |
-| Any page | `admin@mosaiq-demo.com` | the badge with the navigation collapsed, and in the 375 px tab bar | `an-04-badge-collapsed-1440.png`, `an-04-badge-375.png` |
-| `/notifications/<id>` | `user2@mosaiq-demo.com` (analyst) | an unread notification, with "Mark read" | `an-04-detail-unread-1440.png`, `an-04-detail-unread-375.png` |
-| `/notifications/<id>` | `user2@mosaiq-demo.com` | after marking it read | `an-04-detail-read-1440.png` |
-| `/notifications/<id>` | `user5@mosaiq-demo.com` (inventory planner) | the 404 for a notification not written for them | `an-04-not-found-1440.png`, `an-04-not-found-375.png` |
-| `/notifications/` | `user2@mosaiq-demo.com` | after "Mark all read", with the confirmation and no badge | `an-04-mark-all-read-1440.png` |
+| `/notifications/` | `admin@mosaiq-demo.com` | The seeded inbox, newest first. The 8 unread rows are tinted and labelled "Unread", with "Mark read". The badge reads 8, and the list is page 1 of 3 | [1440](an-04-inbox-1440.png) · [375](an-04-inbox-375.png) |
+| `/notifications/?page=3` | `admin@mosaiq-demo.com` | The last page: the experiments that ended | [1440](an-04-inbox-last-page-1440.png) |
+| `/notifications/` | `admin@mosaiq-demo.com` | The badge with the navigation collapsed, and in the 375 px tab bar | [1440, collapsed](an-04-badge-collapsed-1440.png) · [375](an-04-badge-375.png) |
+| `/notifications/` | `user3@mosaiq-demo.com` (store manager) | Runs only, 30 notifications. `segment.read` and not `campaign.read`, so no experiment-ended rows | [375](an-04-inbox-store-manager-375.png) |
+| `/notifications/` | `user5@mosaiq-demo.com` (inventory planner) | "Nothing is sent to your role", and no badge | [375](an-04-inbox-no-delivery-375.png) |
+| `/notifications/60` | `user5@mosaiq-demo.com` (inventory planner) | 404 for a notification not written for them, never 403 (RN-62) | [1440](an-04-not-found-1440.png) · [375](an-04-not-found-375.png) |
+| `/notifications/60` | `user2@mosaiq-demo.com` (analyst) | An unread notification, with "Open the run" and "Mark read" | [1440](an-04-detail-unread-1440.png) · [375](an-04-detail-unread-375.png) |
+| `/notifications/60` | `user2@mosaiq-demo.com` | After "Mark read": "Read" with its time, and the badge down from 8 to 7 | [1440](an-04-detail-read-1440.png) |
+| `/notifications/` | `user2@mosaiq-demo.com` | After "Mark all read": "7 notifications marked read.", no badge, and no "Mark all read" button | [1440](an-04-mark-all-read-1440.png) |
 
 ## What was not run
 
-Nothing was run on the Compute Engine instance, and no browser was used. The
-seed's recipients are those of the seeded users only. The instance database must
-be rebuilt from the three scripts before the release that contains the inbox,
-because the page reads tables the old database does not have.
+Nothing was run on the Compute Engine instance. The seed's recipients are those of
+the seeded users only. The instance database must be rebuilt from the three
+scripts before the release that contains the inbox, because the page reads tables
+the old database does not have.

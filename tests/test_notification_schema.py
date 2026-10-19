@@ -425,18 +425,27 @@ def test_every_seeded_run_and_every_ended_seeded_experiment_has_one_event(
 def test_running_experiments_have_no_notification_and_no_event_is_in_the_future(
     owner: psycopg.Connection,
 ) -> None:
-    assert _one(
-        owner,
-        "SELECT count(*) FROM notification n JOIN experiment e USING (experiment_id)"
-        " WHERE e.ends_on IS NULL OR e.ends_on >= CURRENT_DATE",
-    ) == 0
-    assert _one(owner, "SELECT count(*) FROM notification WHERE created_at > now()") == 0
-    assert _one(
-        owner,
-        "SELECT count(*) FROM notification_recipient nr"
-        " JOIN notification n USING (notification_id)"
-        " WHERE nr.read_at < n.created_at OR nr.read_at > now()",
-    ) == 0
+    assert (
+        _one(
+            owner,
+            "SELECT count(*) FROM notification n"
+            " JOIN experiment e USING (experiment_id)"
+            " WHERE e.ends_on IS NULL OR e.ends_on >= CURRENT_DATE",
+        )
+        == 0
+    )
+    assert (
+        _one(owner, "SELECT count(*) FROM notification WHERE created_at > now()") == 0
+    )
+    assert (
+        _one(
+            owner,
+            "SELECT count(*) FROM notification_recipient nr"
+            " JOIN notification n USING (notification_id)"
+            " WHERE nr.read_at < n.created_at OR nr.read_at > now()",
+        )
+        == 0
+    )
 
 
 @pytest.mark.parametrize(("kind", "permission"), sorted(SEEDED_DELIVERY.items()))

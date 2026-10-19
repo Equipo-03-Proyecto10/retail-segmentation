@@ -818,10 +818,12 @@ subjects make an event announced once; `subject_user_id` is not unique (§2.4).
 There is no message column: the sentence is built from the subject row when it
 is read. `CASCADE` is the schema owner's: the application never deletes a load,
 a run, an experiment or a user (RN-04). Runtime state, so it is not audited (§5),
-and it has the 30 seed rows the minimum requires: one event for each of the
-thirty seeded runs and thirty seeded experiments, and none for a load or a
-deactivation, since `sales_load` is exempt from seeding and every seeded
-account is active.
+and its 54 seeded events exceed the 30-row minimum: one for each of the 31
+seeded runs and 23 ended experiments. The seven running experiments have no
+event. These examples cover runs and experiment ends; seeded sales loads have
+no notification example, and every seeded account is active. Events from both
+kinds are inserted together in creation order. The lazy announcer does not
+announce a seeded experiment twice, including within its 14-day lookback.
 
 #### `notification_recipient`
 
@@ -835,8 +837,9 @@ The recipients are the active users whose role held the event's delivery
 permission when it happened, the user who caused it included, and the list is a
 snapshot (ADR-0047): a later role change neither adds nor removes a row. The
 permission is checked again against the reader's current role when the row is
-read. The seed derives its 1019 rows (23 × 16 readers of ended experiments, 31 × 21 of
-segments) from the seeded users and marks events older than seven days read.
+read. The seed derives its 1019 rows (23 × 16 readers of ended experiments,
+31 × 21 of segments) from the seeded users and marks events older than seven
+days read.
 
 #### `audit_log`
 

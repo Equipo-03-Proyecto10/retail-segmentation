@@ -224,11 +224,26 @@ def test_experiments_announced_together_are_listed_most_recently_ended_first(
 
 
 def test_the_seeded_experiments_are_not_announced_again(app_connection) -> None:
-    """Every seeded experiment ended in March and already has its event."""
+    """The relative-date seed already announced even the recent experiment ends."""
+    assert (
+        _one(
+            app_connection,
+            "SELECT count(*) FROM experiment WHERE ends_on < CURRENT_DATE"
+            " AND ends_on >= CURRENT_DATE - %s",
+            (EXPERIMENT_END_LOOKBACK_DAYS,),
+        )
+        > 0
+    )
     before = _one(app_connection, "SELECT count(*) FROM notification")
+    recipients = _one(app_connection, "SELECT count(*) FROM notification_recipient")
 
     assert _announce(app_connection) == (0, 0)
+    assert _announce(app_connection) == (0, 0)
     assert _one(app_connection, "SELECT count(*) FROM notification") == before
+    assert (
+        _one(app_connection, "SELECT count(*) FROM notification_recipient")
+        == recipients
+    )
 
 
 def test_an_experiment_whose_end_date_is_edited_after_it_was_announced_keeps_one_event(

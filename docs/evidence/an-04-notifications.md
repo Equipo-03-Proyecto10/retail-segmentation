@@ -5,6 +5,30 @@ a signed-in user is told, inside the web system, when something that concerns
 their role happens. Delivery is by pull from PostgreSQL; the web connects to no
 Redis and calls no service.
 
+## 2026-10-19 seed reconciliation after #534
+
+The original captures and execution transcripts below were taken before the
+analytics seed changed. They remain historical evidence: their notification ids,
+60 events, 1110 recipients and eight-unread badge are not the counts of a fresh
+combined seed.
+
+The combined seed has **54 events**: 31 run completions (including K-means) and
+23 ended experiments, with **1019 recipient rows**. Seven experiments are still
+running and receive no event. Both kinds are inserted together in chronological
+order because their dates now overlap. Read timestamps remain one hour after
+creation for events older than seven days; newer events are unread. No event or
+read timestamp is in the future.
+
+Recently ended seeded experiments already have their unique event. The regression
+in `test_the_seeded_experiments_are_not_announced_again` verifies that the seed
+contains experiment ends within the 14-day lookback and that two announcer calls
+insert neither an event nor a recipient. The seed does not rely on those events
+being outside the lookback anymore.
+
+Validation uses PostgreSQL 16.15 loaded from the three scripts, with XML support
+for the integrity script. The storage regression suite has 27 passing cases.
+The original browser captures below have not been retaken for the new counts.
+
 The work is six stacked pull requests, each of which passes the suite on its own.
 This record is extended by each one; what a section covers is named in its
 heading.
@@ -55,9 +79,9 @@ Data-model entity tables: 29
 Documented table counts: docs/user-stories.md:188=29, docs/infra.md:190=29, docs/demo-system-guide.md:527=29, docs/architecture/application.d2:78=29
 ```
 
-## The seeded database, read through the real queries
+## The original seeded database, read through the real queries
 
-The seed writes one event for each of the thirty runs and thirty experiments, to
+The seed used for the original captures wrote one event for each of the thirty runs and thirty experiments, to
 the active users whose role holds the delivery permission (1110 rows), and marks
 what is older than seven days read. The inbox was then read as `retail_app`, the
 application's own role, through `web.services.notifications.read_inbox`, for the

@@ -19,6 +19,7 @@ follow the configured `TRUSTED_PROXY_HOPS`, as other request handling does.
 | Catalog constraint refusal | INFO | Entity, operation and exception class; no SQL or database error text |
 | Segment run started/completed | INFO | Window; completed counts and elapsed seconds after commit |
 | Upload refused | INFO | Validation reason |
+| Navigation unread count unreadable | WARNING | `notification_count_failed` and the exception class; the page is served without the badge (RN-63) |
 | HTTP refusal | INFO | Status, method, path and reference shared with the error page |
 | Unexpected HTTP failure | ERROR | Existing error-handler traceback and request reference |
 

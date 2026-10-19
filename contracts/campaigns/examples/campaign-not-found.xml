@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>campaign_not_found</code>
+  <message>No campaign has the requested campaign_id.</message>
+  <correlation_id>corr-campaign-404</correlation_id>
+</Error>

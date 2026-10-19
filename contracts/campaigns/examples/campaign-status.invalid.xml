@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Campaign xmlns="https://mosaiq.maxthecoder.online/xml/campaigns/v1">
+  <campaign_id>301</campaign_id>
+  <name>Holiday Loyalty Preview</name>
+  <label_code>LOYAL</label_code>
+  <starts_on>2026-11-01</starts_on>
+  <ends_on>2026-12-31</ends_on>
+  <status>PAUSED</status>
+</Campaign>

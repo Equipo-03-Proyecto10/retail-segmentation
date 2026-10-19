@@ -1,0 +1,6 @@
+{
+  "code": "status_changed",
+  "message": "The campaign status no longer matches expected_status; reload it before retrying.",
+  "correlation_id": "corr-transition-409b",
+  "details": []
+}

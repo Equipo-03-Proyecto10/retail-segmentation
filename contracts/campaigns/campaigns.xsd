@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:campaigns="https://mosaiq.maxthecoder.online/xml/campaigns/v1"
+           xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1"
+           targetNamespace="https://mosaiq.maxthecoder.online/xml/campaigns/v1"
+           elementFormDefault="qualified">
+  <xs:import namespace="https://mosaiq.maxthecoder.online/xml/common/v1"
+             schemaLocation="../common/v1/common.xsd"/>
+
+  <xs:simpleType name="CampaignId">
+    <xs:restriction base="xs:positiveInteger">
+      <xs:maxInclusive value="2147483647"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="CampaignName">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:maxLength value="120"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="LabelCode">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:maxLength value="40"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="CampaignStatus">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="DRAFT"/>
+      <xs:enumeration value="ACTIVE"/>
+      <xs:enumeration value="FINISHED"/>
+      <xs:enumeration value="CANCELLED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="CampaignType">
+    <xs:sequence>
+      <xs:element name="campaign_id" type="campaigns:CampaignId"/>
+      <xs:element name="name" type="campaigns:CampaignName"/>
+      <xs:element name="label_code" type="campaigns:LabelCode"/>
+      <xs:element name="starts_on" type="xs:date"/>
+      <xs:element name="ends_on" type="xs:date"/>
+      <xs:element name="status" type="campaigns:CampaignStatus"/>
+      <xs:element name="allowed_transitions"
+                  type="campaigns:CampaignStatus"
+                  minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="CampaignsType">
+    <xs:sequence>
+      <xs:element name="Campaign" type="campaigns:CampaignType"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="CreateCampaignRequestType">
+    <xs:sequence>
+      <xs:element name="name" type="campaigns:CampaignName"/>
+      <xs:element name="label_code" type="campaigns:LabelCode"/>
+      <xs:element name="starts_on" type="xs:date"/>
+      <xs:element name="ends_on" type="xs:date"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="UpdateCampaignRequestType">
+    <xs:choice>
+      <xs:sequence>
+        <xs:element name="name" type="campaigns:CampaignName"/>
+        <xs:element name="label_code" type="campaigns:LabelCode"
+                    minOccurs="0"/>
+        <xs:element name="starts_on" type="xs:date" minOccurs="0"/>
+        <xs:element name="ends_on" type="xs:date" minOccurs="0"/>
+      </xs:sequence>
+      <xs:sequence>
+        <xs:element name="label_code" type="campaigns:LabelCode"/>
+        <xs:element name="starts_on" type="xs:date" minOccurs="0"/>
+        <xs:element name="ends_on" type="xs:date" minOccurs="0"/>
+      </xs:sequence>
+      <xs:sequence>
+        <xs:element name="starts_on" type="xs:date"/>
+        <xs:element name="ends_on" type="xs:date" minOccurs="0"/>
+      </xs:sequence>
+      <xs:element name="ends_on" type="xs:date"/>
+    </xs:choice>
+  </xs:complexType>
+
+  <xs:complexType name="TransitionCampaignRequestType">
+    <xs:sequence>
+      <xs:element name="to" type="campaigns:CampaignStatus"/>
+      <xs:element name="expected_status" type="campaigns:CampaignStatus"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name="Campaign" type="campaigns:CampaignType"/>
+  <xs:element name="Campaigns" type="campaigns:CampaignsType"/>
+  <xs:element name="CreateCampaignRequest"
+              type="campaigns:CreateCampaignRequestType"/>
+  <xs:element name="UpdateCampaignRequest"
+              type="campaigns:UpdateCampaignRequestType"/>
+  <xs:element name="TransitionCampaignRequest"
+              type="campaigns:TransitionCampaignRequestType"/>
+</xs:schema>

@@ -1,0 +1,6 @@
+{
+  "code": "campaign_not_draft",
+  "message": "Only a DRAFT campaign may be edited.",
+  "correlation_id": "corr-campaign-409",
+  "details": []
+}

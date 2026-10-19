@@ -1,0 +1,9 @@
+{
+  "campaign_id": 303,
+  "name": "Dormant Customer Trial",
+  "label_code": "DORMANT",
+  "starts_on": "2026-11-15",
+  "ends_on": "2026-12-15",
+  "status": "CANCELLED",
+  "allowed_transitions": []
+}

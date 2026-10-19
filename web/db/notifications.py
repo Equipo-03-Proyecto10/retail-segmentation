@@ -271,3 +271,65 @@ def insert_recipients(
             (notification_id, list(role_codes)),
         )
         return cursor.rowcount
+
+
+def announce_ended_experiments(
+    connection: Connection[Any], *, role_codes: Sequence[str], lookback_days: int
+) -> tuple[int, int]:
+    """Announce every experiment that has ended and has no notification yet.
+
+    The one statement behind ADR-0047's lazy announcement, as (events written,
+    recipients written). It is safe to run as often as it likes and from any
+    number of sessions at once:
+
+    * **Ended** is `ends_on < CURRENT_DATE`: an experiment is still running on its
+      end date. A NULL `ends_on` compares as unknown and is never announced.
+    * **Lookback.** Only an experiment that ended within the last `lookback_days`
+      is considered, so a database restored from an old backup does not announce
+      every experiment it ever held.
+    * **Idempotent.** `NOT EXISTS` skips an experiment that already has its event,
+      so a quiet read does no insert at all.
+    * **Conflict-safe.** Two sessions can both pass `NOT EXISTS` before either
+      commits. `ON CONFLICT (experiment_id) DO NOTHING` on the unique subject
+      makes the second wait for the first and then insert nothing, and the
+      recipients are written from the rows the statement actually inserted, so
+      the experiment ends up with one event and one set of recipients.
+
+    The recipients are the active users whose role is in `role_codes`, as they are
+    now. Events announced together are written in the order their experiments
+    ended, so the inbox, which is newest first by identity, lists the one that
+    ended last first. Nothing here commits.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            WITH due AS (
+                SELECT e.experiment_id, e.ends_on
+                FROM experiment AS e
+                WHERE e.ends_on < CURRENT_DATE
+                  AND e.ends_on >= CURRENT_DATE - %s::int
+                  AND NOT EXISTS (
+                      SELECT 1 FROM notification AS n
+                      WHERE n.experiment_id = e.experiment_id
+                  )
+            ), announced AS (
+                INSERT INTO notification (experiment_id)
+                SELECT experiment_id FROM due
+                ORDER BY ends_on, experiment_id
+                ON CONFLICT (experiment_id) DO NOTHING
+                RETURNING notification_id
+            ), told AS (
+                INSERT INTO notification_recipient (notification_id, user_id)
+                SELECT a.notification_id, u.user_id
+                FROM announced AS a
+                CROSS JOIN app_user AS u
+                JOIN role AS r ON r.role_id = u.role_id
+                WHERE u.is_active AND r.code = ANY(%s::text[])
+                RETURNING notification_id
+            )
+            SELECT (SELECT count(*) FROM announced), (SELECT count(*) FROM told)
+            """,
+            (lookback_days, list(role_codes)),
+        )
+        events, recipients = cursor.fetchone()
+    return int(events), int(recipients)

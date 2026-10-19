@@ -1078,6 +1078,34 @@ that follows creation order, served by `idx_notification_recipient_inbox`) and
 `tests/test_notification_routes.py` and, against PostgreSQL,
 `tests/test_notification_reads_db.py`. · #419 · ADR-0047
 
+### RN-64 — An experiment's end is announced lazily, once, to the active holders of campaign.read
+No request causes a date to arrive, and nothing runs between requests, so an
+experiment that has ended is announced by the next signed-in `GET`, before the
+page is built, and never by a `HEAD`, a `POST`, an anonymous visit or a request
+the authorization gate refused. **Ended** means `ends_on < CURRENT_DATE`: an
+experiment is still running on its end date, and one with no end date is never
+announced. Only an experiment that ended within the last **14 days** is
+considered, so a restored database does not announce every experiment it ever
+held; an experiment nobody read a page about within 14 days of its end is never
+announced. Each experiment is announced **once** to the active users whose role
+holds `campaign.read` at that moment, and an end date edited afterwards neither
+repeats nor retracts it. Two workers racing on the same experiment leave one
+event and one set of recipients. A failure to announce is logged and the page is
+served; nothing was committed, so the next read tries again.
+
+**Enforced:** application and schema — one statement,
+`announce_ended_experiments` in `web/db/notifications.py`, with `NOT EXISTS` and
+`ON CONFLICT (experiment_id) DO NOTHING` on the `UNIQUE` subject
+`notification_experiment_id_key`, which is the schema's half: a second event for
+the same experiment cannot be written whatever runs it. The hook is
+`announce_experiment_end` in `web/routes/notifications.py`, registered after the
+gate. **Verified** — against PostgreSQL by
+`tests/test_notification_announcer_db.py`, which runs the rules on real dates,
+makes two sessions race deterministically (one holds its insert uncommitted until
+the other is blocked behind it) and drives the real application through the real
+sign-in; and without a database by `tests/test_notification_announcer.py`. · #419
+· ADR-0047
+
 ## Audit
 
 ### RN-28 — Every change to a catalog or a business rule is recorded

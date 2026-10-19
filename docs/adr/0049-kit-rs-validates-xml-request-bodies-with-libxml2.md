@@ -1,6 +1,6 @@
 # ADR-0049 — kit-rs validates XML request bodies with libxml2, after a quick-xml screen
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Max
 **Issue:** #420
 **Supersedes:** —

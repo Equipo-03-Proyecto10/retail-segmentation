@@ -560,12 +560,19 @@ show.
 - Unknown users, inactive users, wrong passwords and unusable hashes receive the
   same public error, *Invalid email or password.*
 - A dummy Argon2 hash spends comparable work for a missing or inactive account.
-- **Throttling.** After five failed attempts within fifteen minutes (settings
-  `LOGIN_THROTTLE_MAX_ATTEMPTS` and `LOGIN_THROTTLE_WINDOW_SECONDS`) for an
-  account or from a client address, the next attempt answers 429 with *Too many
-  sign-in attempts. Try again later.* and a `Retry-After` header, even if the
-  password is right. A successful sign-in clears only that account's failures.
-  NGINX adds a shared per-client limit on `POST /login`. Evidence:
+- **Throttling.** Each Gunicorn worker counts failed attempts for an account
+  and for a client address over fifteen minutes (settings
+  `LOGIN_THROTTLE_MAX_ATTEMPTS` and `LOGIN_THROTTLE_WINDOW_SECONDS`). After five
+  failures in the same worker, that worker answers the next attempt with 429,
+  *Too many sign-in attempts. Try again later.* and a `Retry-After` header, even
+  if the password is right. A successful sign-in clears only that account's
+  failures, in the worker that served it. The instance runs two workers that
+  share requests, so the first 429 comes between the sixth and the eleventh
+  failed attempt, and the other worker can still answer *Invalid email or
+  password.* until it has counted five of its own. NGINX adds a limit both
+  workers share: six `POST /login` per client address per minute, with a burst
+  of five, so a seventh attempt within about ten seconds gets NGINX's own 429
+  and never reaches Flask. Evidence:
   [`evidence/login-throttling.md`](evidence/login-throttling.md).
 - Successful login stores an opaque session id in the signed cookie and a row in
   `app_session`. The session is resolved from the database on **every** request
@@ -1217,9 +1224,15 @@ can see the menu entry.
     application dependencies and environment contract.
 24. **Show login throttling, last.** Use a throwaway account or captured
     evidence ([`evidence/login-throttling.md`](evidence/login-throttling.md)).
-    Five wrong passwords make the next attempt answer *Too many sign-in attempts.
-    Try again later.* The limit also applies to the client address, so the
-    presenter's own address cannot sign in again for up to fifteen minutes.
+    Enter wrong passwords about ten seconds apart until the page answers *Too
+    many sign-in attempts. Try again later.* Do not promise the sixth attempt:
+    each of the instance's two workers counts its own five failures, so it comes
+    between the sixth and the eleventh, and the next attempt may still say
+    *Invalid email or password.* if the other worker answers it (section 8.1).
+    Submitting faster is refused by NGINX instead, with its plain 429 page, from
+    the seventh attempt in about ten seconds. The limit also counts the client
+    address, so the presenter's own address may be refused sign-in for up to
+    fifteen minutes.
 25. **Close with the boundary.** Name what the web system does not do (section 2).
     Say that the distributed second delivery (services, Android, Electron) is a
     separate demonstration, scripted by F18-05 (#462), and that the web system

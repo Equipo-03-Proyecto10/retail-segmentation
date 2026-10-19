@@ -104,8 +104,6 @@ Deliberately not built in the web system, so do not present it as built:
 - Editing the label vocabulary or the segment rule catalogue (`segment.write` has
   no screen); the bands change only in the database.
 - A customer self-service view (`user.self` has no screen).
-- Notifications when analytics work finishes (#419).
-- Narrowing a store manager's pages to their own store (#467).
 - A measurement for the *Average ticket* target metric: it can be chosen and is
   labelled as not measured yet (#457).
 - An HTTP ingestion endpoint: CSV through the Sales import page is the web
@@ -528,7 +526,7 @@ canonical permission matrix. It follows `web/middleware/authz.py`.
 |---|---|
 | `ADMIN` | Everything below, plus full CRUD for category, product, store, channel and role; users (create, edit, activate, deactivate); Sales import; Segment run; campaign and experiment writes; Audit log |
 | `ANALYST` | Product and stock consultation; customers, segments, run history, migration matrix, model comparison, both dashboards, the segment history and consumption reports, the experiment report; campaign and experiment lists, uplift and conversion pages (read only); Reports |
-| `STORE_MANAGER` | Product and stock consultation; customers, segments, consumption profiles, recommendations and every `segment.read` page above, for all stores (ADR-0023; own-store narrowing is #467); Reports. No campaign or experiment pages |
+| `STORE_MANAGER` | Product and stock consultation; customers, segments, consumption profiles, recommendations and every `segment.read` page above, for all stores (ADR-0023); Reports for every store (ADR-0048). No campaign or experiment pages |
 | `MARKETING` | The analyst's access, plus campaign and experiment writes (create, edit draft, activate, complete, cancel, assign, record exposure, evaluate conversion) |
 | `INVENTORY_PLANNER` | Product and stock consultation; Reports (revenue only, since no analytics report is offered); no inventory-write screen yet; no customer data |
 | `AUDITOR` | The analyst's access, plus the Users list (read only) and the Audit log. Cannot write anywhere |
@@ -560,12 +558,19 @@ show.
 - Unknown users, inactive users, wrong passwords and unusable hashes receive the
   same public error, *Invalid email or password.*
 - A dummy Argon2 hash spends comparable work for a missing or inactive account.
-- **Throttling.** After five failed attempts within fifteen minutes (settings
-  `LOGIN_THROTTLE_MAX_ATTEMPTS` and `LOGIN_THROTTLE_WINDOW_SECONDS`) for an
-  account or from a client address, the next attempt answers 429 with *Too many
-  sign-in attempts. Try again later.* and a `Retry-After` header, even if the
-  password is right. A successful sign-in clears only that account's failures.
-  NGINX adds a shared per-client limit on `POST /login`. Evidence:
+- **Throttling.** Each Gunicorn worker counts failed attempts for an account
+  and for a client address over fifteen minutes (settings
+  `LOGIN_THROTTLE_MAX_ATTEMPTS` and `LOGIN_THROTTLE_WINDOW_SECONDS`). After five
+  failures in the same worker, that worker answers the next attempt with 429,
+  *Too many sign-in attempts. Try again later.* and a `Retry-After` header, even
+  if the password is right. A successful sign-in clears only that account's
+  failures, in the worker that served it. The instance runs two workers that
+  share requests, so the first 429 comes between the sixth and the eleventh
+  failed attempt, and the other worker can still answer *Invalid email or
+  password.* until it has counted five of its own. NGINX adds a limit both
+  workers share: six `POST /login` per client address per minute, with a burst
+  of five, so a seventh attempt within about ten seconds gets NGINX's own 429
+  and never reaches Flask. Evidence:
   [`evidence/login-throttling.md`](evidence/login-throttling.md).
 - Successful login stores an opaque session id in the signed cookie and a row in
   `app_session`. The session is resolved from the database on **every** request
@@ -878,7 +883,9 @@ experiments* is empty until a current experiment has assignments.
 **Segmentation dashboard** (`/segmentation-dashboard/`, `segment.read`). Choose a
 *Run* and press **Show**. The page shows the run and its *Previous run*; *Average
 R, F and M by label*; the charts *Segment sizes*, *Revenue by label* (over the
-run's own window), *RFM distribution* (a recency by frequency heatmap) and
+run's own window), *RFM distribution* (a recency by frequency heatmap of customers), *Spend by RFM
+cell* (the same grid, coloured by mean spend in MXN, with *The 25 cells as a
+table* beneath it) and
 *Migration flow* from the previous run (with *New to the population* and *Left
 the population* counted beside it); then *Active experiments* (those running
 today, with each arm's assigned, converted and conversion rate) and *Most
@@ -1089,18 +1096,15 @@ future intent separately.
 6. *Average ticket* can be chosen as an experiment's target metric but nothing
    measures it; uplift refuses it. Only *Conversion rate* is measured (#457).
 7. The permission matrix includes inventory writes and customer self-service,
-   but there are no workflows for those capabilities. A store manager's cell says
-   "own store", but the pages show every store (#467).
-8. The Model comparison page says *K-means runs cannot be started from a screen
-   in this release* when no K-means run exists. That sentence is out of date:
-   K-means is started from **Segment run** by choosing *K-means*.
-9. A campaign targets a label and an experiment is attached to a campaign.
+   but there are no workflows for those capabilities. A store manager reads every
+   store's reports, as the matrix says (ADR-0048).
+8. A campaign targets a label and an experiment is attached to a campaign.
    Assignment needs the campaign active; the seeded campaigns and experiments
    carry early-2026 dates, so exposing customers needs a campaign and experiment
    created with current dates.
-10. The distributed stage (microservices, Android, Electron, JWT, Redis,
-    MongoDB, OpenAPI, XML/XSD) does not run inside the web system and is not
-    described here. Its demonstration is F18-05 (#462).
+9. The distributed stage (microservices, Android, Electron, JWT, Redis,
+   MongoDB, OpenAPI, XML/XSD) does not run inside the web system and is not
+   described here. Its demonstration is F18-05 (#462).
 
 ---
 
@@ -1177,7 +1181,7 @@ can see the menu entry.
     per label*; note that it never says which method is better.
 15. **Show the dashboard.** Open **Segmentation dashboard**, choose the run and
     press **Show**. Walk *Average R, F and M by label*, *Segment sizes*, *Revenue
-    by label*, *RFM distribution* and *Migration flow*. State that the data is
+    by label*, *RFM distribution*, *Spend by RFM cell* and *Migration flow*. State that the data is
     embedded in the HTML and Highcharts is served locally, and that the
     **Synthetic** banner reflects demonstration data.
 16. **Show a customer's behaviour.** From a customer's page press **Consumption
@@ -1220,9 +1224,15 @@ can see the menu entry.
     application dependencies and environment contract.
 24. **Show login throttling, last.** Use a throwaway account or captured
     evidence ([`evidence/login-throttling.md`](evidence/login-throttling.md)).
-    Five wrong passwords make the next attempt answer *Too many sign-in attempts.
-    Try again later.* The limit also applies to the client address, so the
-    presenter's own address cannot sign in again for up to fifteen minutes.
+    Enter wrong passwords about ten seconds apart until the page answers *Too
+    many sign-in attempts. Try again later.* Do not promise the sixth attempt:
+    each of the instance's two workers counts its own five failures, so it comes
+    between the sixth and the eleventh, and the next attempt may still say
+    *Invalid email or password.* if the other worker answers it (section 8.1).
+    Submitting faster is refused by NGINX instead, with its plain 429 page, from
+    the seventh attempt in about ten seconds. The limit also counts the client
+    address, so the presenter's own address may be refused sign-in for up to
+    fifteen minutes.
 25. **Close with the boundary.** Name what the web system does not do (section 2).
     Say that the distributed second delivery (services, Android, Electron) is a
     separate demonstration, scripted by F18-05 (#462), and that the web system

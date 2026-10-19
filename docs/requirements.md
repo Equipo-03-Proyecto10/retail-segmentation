@@ -72,10 +72,9 @@ success criteria are in
 ordering remains in [`roadmap.md`](roadmap.md). ADR-0017 through ADR-0021
 govern the later implementation of the work ADR-0004 originally deferred.
 
-**Not claimed above, because it is not built.** Notifying a user when analytics
-work finishes (#419), narrowing `STORE_MANAGER` to their own store (#467),
-measuring the average-ticket target metric (what it measures is the open
-decision #457), an HTTP sales-ingestion endpoint in the web system (ADR-0020),
+**Not claimed above, because it is not built.** Measuring the average-ticket
+target metric (what it measures is the open decision #457), an HTTP
+sales-ingestion endpoint in the web system (ADR-0020),
 stock receipts, transfers and adjustments (`inventory.write`), editing the label
 vocabulary or the rule catalog (`segment.write`) and a customer self-service
 view (`user.self`) are open decisions or deferred work in
@@ -122,7 +121,7 @@ row · `—` no access.
 |---|---|---|---|---|---|---|---|---|
 | `ADMIN` | full | full | full | full | run | ingest | read | read |
 | `ANALYST` | read | — | read | read | — | — | read | — |
-| `STORE_MANAGER` | read | — | read | — | — | — | read, own store | — |
+| `STORE_MANAGER` | read | — | read | — | — | — | read | — |
 | `MARKETING` | read | — | read | full | — | — | read | — |
 | `INVENTORY_PLANNER` | read, `inventory` write | — | — | — | — | — | read | — |
 | `AUDITOR` | read | read | read | read | — | — | read | read |
@@ -147,9 +146,11 @@ route that declares nothing. A matrix cell does not invent a route: the
 dormant `inventory.write`, `segment.write` and `user.self` declarations and
 their prerequisites are accounted for in
 [`analytics-permission-map.md`](analytics-permission-map.md). Where a cell
-says `own` or `own store`, the gate decides that the page may be reached at
-all; narrowing a query to the caller's own rows belongs to the surface that
-eventually claims that permission. Why the matrix is code rather than two more tables:
+says `own`, the gate decides that the page may be reached at all; narrowing a
+query to the caller's own rows belongs to the surface that eventually claims
+that permission. `STORE_MANAGER` reads every store's reports, with no
+per-store narrowing
+([ADR-0048](adr/0048-store-managers-read-every-stores-reports.md)). Why the matrix is code rather than two more tables:
 [ADR-0007](adr/0007-permissions-in-code-with-a-default-deny-middleware.md).
 
 **Customers and stock are not columns above.** The consultation module (F3-05,
@@ -159,8 +160,7 @@ and segment membership — customer data is the substrate of segmentation, so it
 follows `segment.read` rather than `catalog.read`. This keeps
 `INVENTORY_PLANNER` out of the customer directory.
 [ADR-0010](adr/0010-the-consultation-module-is-a-separate-read-only-blueprint.md)
-records why, and why `STORE_MANAGER`'s "own store" scoping is a query filter
-rather than row-level security (`app_user` has no store). `STORE_MANAGER` holds
+records why. `STORE_MANAGER` holds
 `segment.read` since F10-02, so a store manager can act on a customer's
 recommendations at the counter, and reads the whole directory:
 [ADR-0023](adr/0023-store-managers-read-segments-and-customers.md).

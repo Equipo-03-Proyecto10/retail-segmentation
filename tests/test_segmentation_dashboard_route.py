@@ -82,7 +82,12 @@ def _run(run_id: int, method: str = "RFM_RULES", **overrides) -> SegmentationRun
 
 def _heatmap() -> tuple[HeatmapCell, ...]:
     return tuple(
-        HeatmapCell(r, f, 1 if (r, f) == (5, 5) else 0)
+        HeatmapCell(
+            r,
+            f,
+            2 if (r, f) == (5, 5) else 0,
+            Decimal("1234.50") if (r, f) == (5, 5) else Decimal("0"),
+        )
         for r in range(1, 6)
         for f in range(1, 6)
     )
@@ -219,9 +224,78 @@ def test_the_chart_data_is_embedded_as_inert_json_not_a_script(
         "LOST": 10.0,
     }
     assert len(payload["heatmap"]) == 25
+    assert len(payload["rfm_spend"]) == 25
     assert payload["migration"]["data"] == [
         ["CHAMPION (before)", "CHAMPION (after)", 2]
     ]
+
+
+def _payload(body: str) -> dict:
+    match = re.search(
+        r'<script type="application/json" id="mq-dashboard-data">(.*?)</script>',
+        body,
+        re.DOTALL,
+    )
+    assert match is not None
+    return json.loads(match.group(1))
+
+
+def test_the_spend_chart_carries_each_cells_mean_customers_and_total(
+    app, monkeypatch
+) -> None:
+    """Monetary, the third RFM dimension (#537): the best cell, R5 x F5, sits at
+    the same [x, y] the count heatmap draws it at."""
+    spend = _payload(_body(_open(app, monkeypatch)[0]))["rfm_spend"]
+
+    best = next(p for p in spend if (p["x"], p["y"]) == (4, 4))
+    assert best == {
+        "x": 4,
+        "y": 4,
+        "value": 617.25,
+        "customers": 2,
+        "total": 1234.5,
+    }
+
+
+def test_an_empty_cell_is_null_on_the_spend_chart_not_zero(app, monkeypatch) -> None:
+    spend = _payload(_body(_open(app, monkeypatch)[0]))["rfm_spend"]
+
+    empty = [p for p in spend if p["customers"] == 0]
+    assert len(empty) == 24
+    assert all(p["value"] is None and p["total"] == 0 for p in empty)
+
+
+def test_the_table_behind_the_rfm_charts_includes_monetary_in_mxn(
+    app, monkeypatch
+) -> None:
+    body = _body(_open(app, monkeypatch)[0])
+
+    assert "Total spend (MXN)" in body
+    assert "Mean spend (MXN)" in body
+    row = re.search(r"<tr><td>Q5</td><td>Q5</td>(.*?)</tr>", body)
+    assert row is not None
+    assert re.findall(r'<td class="mq-num">([^<]*)</td>', row.group(1)) == [
+        "2",
+        "1,234.50",
+        "617.25",
+    ]
+    assert len(re.findall(r"<tr><td>Q\d</td><td>Q\d</td>", body)) == 25
+
+
+def test_the_rfm_charts_are_marked_synthetic_like_the_page(app, monkeypatch) -> None:
+    app.config["APP_CONFIG"] = Config(
+        secret_key="test",
+        environment="testing",
+        port=5000,
+        log_level="INFO",
+        session_cookie_secure=False,
+        database_url="unused-by-test",
+        data_is_synthetic=True,
+    )
+    body = _body(_open(app, monkeypatch)[0])
+
+    assert 'aria-label="Synthetic. Mean spend per customer in MXN' in body
+    assert 'aria-label="Synthetic. Customers by recency and frequency' in body
 
 
 def test_highcharts_and_the_page_script_are_loaded_same_origin_only(

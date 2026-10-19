@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: audit-trail-service
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     Reads the audit trail: the append-only entries `fn_audit` writes for every
     insert, update and delete on an audited table (RN-28, RN-30). An entry is
@@ -26,7 +26,12 @@ paths:
         filtering. `entity` is one of the audited table names and `action` one
         of INSERT, UPDATE and DELETE; an unknown value of either, or a `to`
         before `from`, is 422 `invalid_query` and `details` names the rejected
-        parameter (`entity`, `action` or `to`).
+        parameter (`entity`, `action` or `to`). A `user_id` that is not a UUID,
+        or a `from` or `to` that is not an RFC 3339 timestamp with an offset,
+        is also 422 `invalid_query`, with `details` code `invalid_format`; an
+        `entity_pk` without `entity` is 422 `invalid_query` with `details` code
+        `requires_entity`, because one key value can name rows of several
+        tables (#533).
       operationId: listAuditEntries
       x-mosaiq-roles:
         - ADMIN
@@ -79,7 +84,8 @@ paths:
         Returns the entry identified by `audit_id`, with its payloads. An entry
         is never changed once written, so the representation of an existing
         `audit_id` is stable. An unknown `audit_id` is 404
-        `audit_entry_not_found`.
+        `audit_entry_not_found`. A path segment that is not a positive integer
+        matches no route and is the kit's 404 `not_found` (#533).
       operationId: getAuditEntry
       x-mosaiq-roles:
         - ADMIN
@@ -235,7 +241,8 @@ components:
       required: false
       description: >-
         Exact primary key of the audited row, as text: the value `fn_audit`
-        recorded in `entity_pk`.
+        recorded in `entity_pk`. Only valid together with `entity`; alone it
+        is 422 `invalid_query` (`requires_entity`).
       schema:
         type: string
         minLength: 1
@@ -244,7 +251,9 @@ components:
       name: user_id
       in: query
       required: false
-      description: Exact identifier of the actor the entry is attributed to.
+      description: >-
+        Exact identifier of the actor the entry is attributed to. A value that
+        is not a UUID is 422 `invalid_query` (`invalid_format`).
       schema:
         type: string
         format: uuid
@@ -263,7 +272,8 @@ components:
       required: false
       description: >-
         Inclusive lower bound on `executed_at`, an RFC 3339 timestamp with an
-        offset. Write the offset as `Z`, or percent-encode a `+`.
+        offset. Write the offset as `Z`, or percent-encode a `+`. Any other
+        value is 422 `invalid_query` (`invalid_format`).
       schema:
         type: string
         format: date-time
@@ -273,7 +283,9 @@ components:
       required: false
       description: >-
         Inclusive upper bound on `executed_at`, an RFC 3339 timestamp with an
-        offset. A `to` before `from` is 422 `invalid_query`.
+        offset, so `to` equal to `from` returns the entries of that instant. A
+        `to` before `from` is 422 `invalid_query`; a value that is not such a
+        timestamp is 422 `invalid_query` (`invalid_format`).
       schema:
         type: string
         format: date-time
@@ -563,7 +575,7 @@ components:
               value: |-
                 <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>not_acceptable</code><message>The requested response format is unsupported.</message><correlation_id>corr-format-001</correlation_id></Error>
     AuditEntryNotFound:
-      description: '`audit_entry_not_found`.'
+      description: '`audit_entry_not_found`, or the kit''s `not_found` for an `audit_id` that is not a positive integer.'
       headers:
         X-Correlation-ID:
           $ref: '#/components/headers/CorrelationId'

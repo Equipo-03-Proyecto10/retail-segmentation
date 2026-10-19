@@ -1,4 +1,4 @@
-"""The segmentation dashboard's four charts, assembled from plain rows (F12-01).
+"""The segmentation dashboard's five charts, assembled from plain rows (F12-01).
 
 Each chart is a pure function of rows a test controls directly, so what a chart
 shows for given data is stated here rather than read off a screenshot. The
@@ -268,6 +268,38 @@ def test_no_scored_customers_is_25_empty_cells_not_an_error() -> None:
 
     assert len(heatmap) == 25
     assert all(cell.count == 0 for cell in heatmap)
+
+
+def test_each_cell_sums_its_customers_spend_and_averages_it() -> None:
+    """Monetary rides on the recency x frequency grid (#537): two customers who
+    share a cell share its total, and the mean is per customer."""
+    rows = [
+        _rfm("a", "LOYAL", days_ago=1, freq=10, spend="300.00"),
+        _rfm("b", "LOYAL", days_ago=1, freq=10, spend="100.50"),
+        _rfm("c", "LOST", days_ago=400, freq=1, spend="20.00"),
+    ]
+
+    heatmap = build_rfm_heatmap(rows)
+
+    shared = next(cell for cell in heatmap if cell.count == 2)
+    assert shared.monetary_total == Decimal("400.50")
+    assert shared.mean_monetary == Decimal("200.25")
+    assert sum(cell.monetary_total for cell in heatmap) == Decimal("420.50")
+
+
+def test_an_empty_cell_has_no_mean_spend_rather_than_zero() -> None:
+    heatmap = build_rfm_heatmap([_rfm("a", "LOYAL")])
+
+    empty = [cell for cell in heatmap if cell.count == 0]
+    assert len(empty) == 24
+    assert all(cell.monetary_total == 0 for cell in empty)
+    assert all(cell.mean_monetary is None for cell in empty)
+
+
+def test_unassigned_customers_add_no_spend_to_any_cell() -> None:
+    heatmap = build_rfm_heatmap([_rfm("a", "LOYAL", spend="50.00"), _rfm("b", None)])
+
+    assert sum(cell.monetary_total for cell in heatmap) == Decimal("50.00")
 
 
 # ---------- migration flow ----------

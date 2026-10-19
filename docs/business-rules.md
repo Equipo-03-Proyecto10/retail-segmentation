@@ -526,7 +526,10 @@ run.
   five quintiles each, recomputed here rather than read from `r_score`/`f_score`,
   which are stored for only one of the two segmentation methods (F9-02) and would
   make the chart mean something different depending on which one produced the run.
-  An unassigned customer has neither value and is excluded.
+  An unassigned customer has neither value and is excluded. Monetary, the third
+  dimension, is carried on the same 25 cells rather than binned a third time: each
+  cell shows its customers' mean spend in the run's window, in MXN, as a second
+  heatmap beside the count, with the 25 cells also listed as a table (#537).
 * **Migration flow** is the previous run, by `run_at`, compared to this one on
   label code (RN-39), whichever methods produced either run. A customer only one of
   the two runs scored is a change in population, not a move between labels, and is
@@ -742,9 +745,9 @@ naming the assignment and the sale; evaluating again adds nothing
 closed. Those outcomes count recorded conversions; a customer with a qualifying
 sale that no evaluation has recorded yet is flagged on the page instead of being
 shown silently as pending or not converted. `transaction` carries no experiment
-column. The application only ever adds conversions; unlike exposures
-(ADR-0027), `retail_app` still holds `UPDATE` and `DELETE` on
-`experiment_conversion`, so the database does not yet enforce that.
+column. The application only ever adds conversions, and the database enforces
+it: as for exposures (ADR-0027), `retail_app` holds no `UPDATE` or `DELETE`
+privilege on `experiment_conversion` (ADR-0050).
 
 **Uplift (F11-07).** The result is intent to treat: each treatment arm's
 conversion rate minus the control's, over every assigned customer whether or not

@@ -152,6 +152,7 @@ ADR-0028 already stated: it is partially superseded by ADR-0028.
 | [0044](0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) | Boundaries meet only through versioned database contracts and Redis Streams relayed from each owner's outbox | Accepted |
 | [0045](0045-services-never-import-the-web-system.md) | Services never import the web system | Accepted |
 | [0046](0046-service-owned-data-lives-in-service-schemas.md) | Service-owned data lives in service schemas | Accepted |
+| [0047](0047-kit-rs-validates-xml-request-bodies-with-libxml2.md) | kit-rs validates XML request bodies with libxml2, after a quick-xml screen | Proposed |
 
 ## Writing one
 

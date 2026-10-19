@@ -6,11 +6,13 @@
 
 {% block content %}
   {% from "macros/ui.html" import alert, empty_state, page_header, status_pill %}
+  {% macro mark() %}{% if is_synthetic %}{{ status_pill("Synthetic", "warning") }}{% endif %}{% endmacro %}
+  {% macro money(value) %}{{ "{:,.2f}".format(value) }}{% endmacro %}
   {% macro when(run) %}{{ run.run_at.strftime("%Y-%m-%d %H:%M") }}{% endmacro %}
 
   {{ page_header(
     "Segmentation dashboard",
-    "Segment sizes, the RFM distribution, migration against the previous run, and revenue by label, for one run.",
+    "Segment sizes, the RFM distribution and spend, migration against the previous run, and revenue by label, for one run.",
     "Segmentation modelling"
   ) }}
 
@@ -106,31 +108,50 @@
       <section class="mq-panel">
         <header class="mq-panel__header">
           <h2 class="mq-panel__title">RFM distribution</h2>
+          {{ mark() }}
           <span class="mq-caption mq-mono">heatmap · sequential</span>
         </header>
         <div class="mq-panel__body">
-          <div id="mq-chart-rfm" class="mq-chart" role="img" aria-label="Customers by recency and frequency quintile"></div>
+          <div id="mq-chart-rfm" class="mq-chart" role="img" aria-label="{% if is_synthetic %}Synthetic. {% endif %}Customers by recency and frequency quintile"></div>
         </div>
       </section>
 
       <section class="mq-panel">
         <header class="mq-panel__header">
-          <h2 class="mq-panel__title">Migration flow</h2>
-          <span class="mq-caption mq-mono">sankey · categorical</span>
+          <h2 class="mq-panel__title">Spend by RFM cell</h2>
+          {{ mark() }}
+          <span class="mq-caption mq-mono">heatmap · sequential · MXN</span>
         </header>
         <div class="mq-panel__body">
-          {% if dashboard.migration %}
-            <div id="mq-chart-migration" class="mq-chart" role="img" aria-label="Customers moving between labels since the previous run"></div>
-            <dl class="mq-description-list">
-              <dt>New to the population</dt><dd>{{ dashboard.migration.new_to_population }}</dd>
-              <dt>Left the population</dt><dd>{{ dashboard.migration.left_the_population }}</dd>
-            </dl>
-          {% else %}
-            <p class="mq-caption">There is no earlier run to compare this one against.</p>
-          {% endif %}
+          <div id="mq-chart-rfm-spend" class="mq-chart" role="img" aria-label="{% if is_synthetic %}Synthetic. {% endif %}Mean spend per customer in MXN, by recency and frequency quintile"></div>
+          <p class="mq-caption">Monetary, the third RFM dimension: each customer's spend over the run's {{ dashboard.run.window_days }}-day window, averaged over the customers in the cell, in MXN. A cell with no customers has no mean and shows a dash.</p>
+          <details>
+            <summary class="mq-caption">The 25 cells as a table</summary>
+            <div class="mq-table-wrap"><table class="mq-table mq-density-compact"><caption class="mq-visually-hidden">{% if is_synthetic %}Synthetic. {% endif %}Customers and spend by recency and frequency quintile</caption><thead><tr><th scope="col">Recency</th><th scope="col">Frequency</th><th scope="col" class="mq-num">Customers</th><th scope="col" class="mq-num">Total spend (MXN)</th><th scope="col" class="mq-num">Mean spend (MXN)</th></tr></thead><tbody>
+              {% for cell in dashboard.heatmap | sort(attribute="frequency_bin", reverse=true) | sort(attribute="recency_bin", reverse=true) %}<tr><td>Q{{ cell.recency_bin }}</td><td>Q{{ cell.frequency_bin }}</td><td class="mq-num">{{ cell.count }}</td><td class="mq-num">{{ money(cell.monetary_total) }}</td><td class="mq-num">{% if cell.mean_monetary is none %}–{% else %}{{ money(cell.mean_monetary) }}{% endif %}</td></tr>{% endfor %}
+            </tbody></table></div>
+          </details>
         </div>
       </section>
     </div>
+
+    <section class="mq-panel">
+      <header class="mq-panel__header">
+        <h2 class="mq-panel__title">Migration flow</h2>
+        <span class="mq-caption mq-mono">sankey · categorical</span>
+      </header>
+      <div class="mq-panel__body">
+        {% if dashboard.migration %}
+          <div id="mq-chart-migration" class="mq-chart" role="img" aria-label="Customers moving between labels since the previous run"></div>
+          <dl class="mq-description-list">
+            <dt>New to the population</dt><dd>{{ dashboard.migration.new_to_population }}</dd>
+            <dt>Left the population</dt><dd>{{ dashboard.migration.left_the_population }}</dd>
+          </dl>
+        {% else %}
+          <p class="mq-caption">There is no earlier run to compare this one against.</p>
+        {% endif %}
+      </div>
+    </section>
 
     <script type="application/json" id="mq-dashboard-data">{{ chart_data | safe }}</script>
     <script src="{{ url_for('static', filename='vendor/highcharts/highcharts.js') }}"></script>

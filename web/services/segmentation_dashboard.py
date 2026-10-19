@@ -22,6 +22,13 @@ method-agnostic. An unassigned customer has no recency or frequency to bin and
 is excluded; the heatmap's cell counts sum to the run's *scored* customers, not
 its full customer_count.
 
+**Monetary** is the third RFM dimension, carried on the same 25 cells rather than
+binned a third time (#537): each cell sums its customers' raw monetary_total, so
+the page can show the mean spend per customer in each recency x frequency cell
+beside the count. A third quintile axis would turn a 5x5 grid into 125 cells no
+screen reads; the mean is what a cell's spend means independently of how many
+customers it holds, which the count already shows.
+
 **Migration flow** is a set of weighted links between an earlier run's labels
 and a later run's, reusing F7's compute_migration/build_migration_matrix (the
 label comparison itself is fully specified and tested there; this only reshapes
@@ -151,12 +158,21 @@ class HeatmapCell:
     recency_bin: int
     frequency_bin: int
     count: int
+    # The cell's customers' raw monetary, summed over the run's window (#537).
+    monetary_total: Decimal = Decimal("0")
+
+    @property
+    def mean_monetary(self) -> Decimal | None:
+        """Mean spend per customer in the cell; None for an empty cell, which
+        has no customer to average over rather than a mean of zero."""
+        return self.monetary_total / self.count if self.count else None
 
 
 def build_rfm_heatmap(rows: list[RunRfmRow]) -> tuple[HeatmapCell, ...]:
     """Every scored customer, binned by raw recency and frequency into a 5x5
-    grid, all 25 cells always present. An unassigned customer has neither
-    value and is excluded, so the cells sum to the run's scored customers."""
+    grid, all 25 cells always present, each with its customers' summed
+    monetary. An unassigned customer has none of the three values and is
+    excluded, so the cells sum to the run's scored customers."""
     scored = [row for row in rows if row.label_code is not None]
     recency = quintile_bins(
         [(row.customer_id, row.last_purchase_at.timestamp()) for row in scored]
@@ -166,12 +182,14 @@ def build_rfm_heatmap(rows: list[RunRfmRow]) -> tuple[HeatmapCell, ...]:
     )
 
     counts: dict[tuple[int, int], int] = {}
+    monetary: dict[tuple[int, int], Decimal] = {}
     for row in scored:
         key = (recency[row.customer_id], frequency[row.customer_id])
         counts[key] = counts.get(key, 0) + 1
+        monetary[key] = monetary.get(key, Decimal("0")) + row.monetary
 
     return tuple(
-        HeatmapCell(r, f, counts.get((r, f), 0))
+        HeatmapCell(r, f, counts.get((r, f), 0), monetary.get((r, f), Decimal("0")))
         for r in range(1, QUINTILES + 1)
         for f in range(1, QUINTILES + 1)
     )

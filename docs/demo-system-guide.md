@@ -883,7 +883,9 @@ experiments* is empty until a current experiment has assignments.
 **Segmentation dashboard** (`/segmentation-dashboard/`, `segment.read`). Choose a
 *Run* and press **Show**. The page shows the run and its *Previous run*; *Average
 R, F and M by label*; the charts *Segment sizes*, *Revenue by label* (over the
-run's own window), *RFM distribution* (a recency by frequency heatmap) and
+run's own window), *RFM distribution* (a recency by frequency heatmap of customers), *Spend by RFM
+cell* (the same grid, coloured by mean spend in MXN, with *The 25 cells as a
+table* beneath it) and
 *Migration flow* from the previous run (with *New to the population* and *Left
 the population* counted beside it); then *Active experiments* (those running
 today, with each arm's assigned, converted and conversion rate) and *Most
@@ -1179,7 +1181,7 @@ can see the menu entry.
     per label*; note that it never says which method is better.
 15. **Show the dashboard.** Open **Segmentation dashboard**, choose the run and
     press **Show**. Walk *Average R, F and M by label*, *Segment sizes*, *Revenue
-    by label*, *RFM distribution* and *Migration flow*. State that the data is
+    by label*, *RFM distribution*, *Spend by RFM cell* and *Migration flow*. State that the data is
     embedded in the HTML and Highcharts is served locally, and that the
     **Synthetic** banner reflects demonstration data.
 16. **Show a customer's behaviour.** From a customer's page press **Consumption

@@ -10,6 +10,8 @@ test-results/
 packages/kit-py/example/contracts/common/
 packages/kit-py/example/wheels/
 packages/kit-py/dist/
+packages/kit-rs/target/
+packages/kit-rs/examples/contracts/common/
 # CI copies each service's contracts into its build context (ADR-0040).
 services/*/contracts/
 

@@ -312,6 +312,7 @@ NAVIGATION: tuple[MenuEntry, ...] = (
     ),
     MenuEntry("Segments", "catalog.segments", SEGMENT_READ, "Analysis", "▪"),
     MenuEntry("Campaigns", "campaigns.index", CAMPAIGN_READ, "Analysis", "≡"),
+    MenuEntry("Experiments", "experiments.index", CAMPAIGN_READ, "Analysis", "◐"),
     MenuEntry(
         "Segment run",
         "segment_run.index",
@@ -369,7 +370,7 @@ def menu() -> list[MenuItem]:
     user management and the catalog CRUD screens, so its URL sections are
     distinguished explicitly: an /admin/users* path lights "Users", every other
     /admin* path lights "Catalogs" (whose entry now points at the consultation
-    hub, catalog.index).
+    hub, catalog.index). Every experiments.* page lights "Experiments".
     """
     granted = current_permissions()
     registered = current_app.view_functions
@@ -387,6 +388,8 @@ def menu() -> list[MenuItem]:
         active_endpoint = "notifications.index"
     elif endpoint and endpoint.startswith("catalog."):
         active_endpoint = "catalog.index"
+    elif endpoint and endpoint.startswith("experiments."):
+        active_endpoint = "experiments.index"
     else:
         active_endpoint = endpoint
 

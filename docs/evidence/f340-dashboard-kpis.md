@@ -76,6 +76,12 @@ by the tests above; the existing captures predate the arm-name text change.
 Captures: `f340-dashboard-1440.png`, `f340-dashboard-375.png`,
 `f340-dashboard-kmeans-1440.png`.
 
+`f340-dashboard-1440.png` and `f340-dashboard-375.png` were recaptured for #423
+on a clean load of the three scripts (PostgreSQL 16, the seed's run #30, no
+experiment moved, so none is running). Every seeded customer has 10 purchases,
+and the heatmap now puts all 30 in one frequency quintile, Q5, as the RN-51
+scoring does; the earlier capture spread them across all five by customer id.
+
 ## Found while checking
 
 The stock column listed every store a product was recommended from: 22 stores for the top

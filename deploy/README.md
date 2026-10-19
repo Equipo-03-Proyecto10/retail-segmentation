@@ -373,6 +373,24 @@ holds the instance (none of it can be done from the repository):
 
 The administrator's address is no longer published in `docs/evidence/` (#360).
 
+### Correcting the seeded experiments' origin (#427)
+
+Seeds before #427 marked experiments 1, 4, 7, … 28 `OBSERVED`, so they showed
+as real results with no Synthetic label. A database rebuilt from the scripts
+after #427 needs nothing. A database loaded before it is corrected with one
+statement, a data fix rather than DDL, to the value the seed now gives those
+rows:
+
+```sh
+sudo -u postgres psql -v ON_ERROR_STOP=1 -d retail -c \
+  "UPDATE experiment SET data_origin = 'SEEDED'
+    WHERE experiment_id BETWEEN 1 AND 30 AND data_origin = 'OBSERVED';"
+```
+
+It reports `UPDATE 10` the first time and `UPDATE 0` after. Only the thirty
+seeded ids are touched, so an experiment created through the application keeps
+the origin it was given.
+
 ### Checking the database has kept up with the code
 
 Because the deploy never runs SQL, a database can fall behind the commit it

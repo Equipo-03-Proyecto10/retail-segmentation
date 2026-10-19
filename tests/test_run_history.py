@@ -274,3 +274,76 @@ def test_a_run_recorded_before_the_mapping_existed_shows_no_mapping_line(
     body = _detail(app, monkeypatch, {"k": 6})
 
     assert 'id="label-mapping"' not in body
+
+
+# ---------- #447: a K-means run shows its quality measures with their values ----------
+
+
+def test_a_kmeans_run_shows_each_quality_measure_with_its_value(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    quality = {
+        "inertia": 12.345678,
+        "silhouette": 0.41,
+        "cluster_sizes": [12, 10, 8],
+        "iterations": 6,
+        "converged": True,
+        "stopped_on": "tolerance",
+        "final_shift": 0.0,
+    }
+
+    body = _detail(app, monkeypatch, {"k": 3, "quality": quality})
+
+    assert "inertia: 12.3457" in body
+    assert "silhouette: 0.4100" in body
+    assert "cluster sizes: 12, 10, 8" in body
+    assert "iterations: 6" in body
+    assert "converged: yes" in body
+    assert "final shift: 0.0000" in body
+    # the measures are not repeated as bare keys in the parameter list
+    assert "quality: inertia" not in body
+
+
+def test_a_skipped_silhouette_shows_a_dash_and_the_reason(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    quality = {
+        "silhouette": None,
+        "silhouette_skipped": "a single cluster has no silhouette",
+    }
+
+    body = _detail(app, monkeypatch, {"k": 1, "quality": quality})
+
+    assert "silhouette: —" in body
+    assert "silhouette skipped: a single cluster has no silhouette" in body
+
+
+def test_a_rule_based_run_has_no_quality_line(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "web.routes.run_history.get_run",
+        lambda _c, _id: _run(run_id=3, parameters={"window_days": 180, "quintiles": 5}),
+    )
+    monkeypatch.setattr(
+        "web.routes.run_history.list_run_assignments", lambda *a, **k: ([], 0)
+    )
+    client = app.test_client()
+    _sign_in(client, "ANALYST")
+
+    body = client.get("/run-history/3").get_data(as_text=True)
+
+    assert "window_days: 180, quintiles: 5" in body
+    assert "quality-measures" not in body
+
+
+def test_a_small_tolerance_keeps_its_value_on_the_parameters_line(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    quality = {"inertia": 0.896812}
+
+    body = _detail(app, monkeypatch, {"k": 4, "tolerance": 1e-05, "quality": quality})
+
+    assert "tolerance: 1e-05" in body
+    assert "tolerance: 0.0000" not in body
+    assert "inertia: 0.8968" in body

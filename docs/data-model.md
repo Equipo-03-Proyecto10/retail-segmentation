@@ -2,7 +2,8 @@
 
 The PostgreSQL model for MOSAIQ: the conceptual model, the normalization to
 fourth normal form with the reason for each step, and the logical model as an
-ER diagram and a data dictionary.
+ER diagram and a data dictionary. §7 records the two MongoDB collections that
+sit outside it, and why their shape needs no 4NF argument.
 
 The model is implemented by [`sql/01_schema.sql`](../sql/01_schema.sql). Where
 this document and that script disagree, the script is right and this document
@@ -859,3 +860,70 @@ implementation differ from what that document says, each deliberately:
 Identifiers are in English throughout, per `AGENTS.md`; the delivery document
 uses Spanish names for the same tables. The mapping is direct — `cliente` is
 `customer`, `detalle_transaccion` is `transaction_line`, and so on.
+
+---
+
+## 7. Engagement documents outside the relational model
+
+In-store engagement lives in MongoDB, in the one database `engagement`, owned by
+engagement-service alone ([ADR-0038](adr/0038-mongodb-holds-in-store-engagement-owned-by-engagement-service-alone.md)).
+[`datastores/mongodb-design.md`](datastores/mongodb-design.md) is the full
+specification: validator, indexes, operations and checks.
+
+### The two collections
+
+`engagement_event` holds one document per event:
+
+| Field | Type | Null | Meaning |
+|---|---|---|---|
+| `_id` | string, UUID | NN | The server-assigned `event_id` |
+| `client_event_id` | string, UUID | NN | Generated on the device once per scan or tap; unique |
+| `type` | string | NN | `QR_SCAN` or `RECO_CLICK` |
+| `store_id` | int | NN | Logical reference to `store.store_id` |
+| `product_id` | int | NN | Logical reference to `product.product_id`; a QR payload is this id |
+| `customer_id` | string, UUID | absent | Logical reference to `customer.customer_id` |
+| `label_code` | string, ≤ 40 | absent | `RECO_CLICK` only; a `segment_label.label_code` |
+| `rank` | int ≥ 1 | absent | `RECO_CLICK` only; the position shown |
+| `recorded_by` | string | NN | The token's `sub` |
+| `occurred_at` | date | NN | The device's time |
+| `recorded_at` | date | NN | The server's time |
+| `voided` | bool | NN | `false` on insert |
+| `history` | array | NN | One `{action: "VOIDED", reason, by, at}` per change; empty on insert |
+
+`engagement_daily` holds one document per `(store_id, day, type)`, unique,
+where `day` is the UTC date of `occurred_at` and `count` is the number of
+events of that key that are not voided.
+
+### The boundary that keeps them out
+
+They are not tables of this model, and no table refers to them:
+- **The facts are new.** A QR scan and a recommendation tap exist in no table.
+  The two candidates that do, check-ins and purchases, stay here: a check-in is
+  verified against `stores.store_location` and reviewed append-only, and a
+  purchase is already a `transaction` row (ADR-0039).
+- **One writer, one reader.** Only engagement-service touches them, so nothing
+  in this model joins with them, and the web does not show them.
+- **References are logical.** `store_id`, `product_id` and `customer_id` are
+  checked once, at write time, against `api_stores.store_directory_v1`,
+  `api_products.product_ref_v1` and `api_customers.customer_ref_v1`. No
+  foreign key holds them afterwards: a store or product deleted later keeps its
+  events, and a client shows the id as unknown.
+
+### Why the document shape needs no 4NF argument
+
+Normalization removes the anomalies of facts stored more than once. Here no
+fact is stored twice:
+- **One document per event.** Every field but `history` is a single value of
+  that one event, determined by its `_id`. A scan and a click differ in shape,
+  and the validator's `oneOf` keeps a scan from carrying a label or a rank, as
+  a nullable column could not.
+- **`history` is the only repeating group, and it is bounded and owned.** It
+  holds the event's own changes and nothing else, so it has no independent
+  multivalued fact beside it: the case 4NF exists for (§2.4) cannot arise. A
+  void is the only change, and a second void is refused (409 `already_voided`),
+  so it holds at most one entry. It is always read with its event and never
+  queried alone.
+- **`engagement_daily` is derived, not a second source.** It is a rollup of
+  `engagement_event`, kept by `$inc` and rebuilt from the events by a
+  maintenance `$merge`. When the two disagree, the events win and the rebuild
+  corrects the rollup.

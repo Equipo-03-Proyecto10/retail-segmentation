@@ -1,0 +1,1 @@
+user svc_auth on {{password}} resetchannels -@all +@connection +@read +@write -@dangerous -scan -randomkey ~auth:* ~pub:auth:v1:live:* +waitaof +multi +exec +discard +watch +unwatch (~stream:users.v1.access_changed +xreadgroup +xack +xgroup|create +xpending +xclaim)

@@ -1,0 +1,90 @@
+# The infrastructure project (ADR-0040): the two Redis instances of ADR-0037
+# and the MongoDB server of ADR-0038, for the services only. The web never
+# connects to any of them (Q-12).
+#
+# None publishes a port. All three join the external network `mosaiq`, which
+# every service's own project joins too; it is created once with
+# `docker network create mosaiq` (deploy/infra/README.md).
+#
+# Each image is official and pinned to an exact patch tag and its
+# multi-architecture digest. Changing one is a pull request of its own. Each
+# container runs as its image's own user from the start, with no capabilities
+# and a read-only root filesystem.
+name: mosaiq-infra
+
+services:
+  # Both Redis instances run the 7.4 line as the image's `redis` user (999:1000).
+  redis-state:
+    image: redis:7.4.11-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    user: "999:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # 64 MB of data plus headroom for the AOF rewrite's fork.
+    mem_limit: 96m
+    restart: unless-stopped
+    volumes:
+      - ./redis/redis-state.conf:/usr/local/etc/redis/redis.conf:ro
+      - ${MOSAIQ_REDIS_ACL_DIR:-/etc/mosaiq/redis}:/etc/redis/acl:ro
+      # The AOF survives a restart and a container replacement.
+      - redis-state-data:/data
+    networks: [mosaiq]
+
+  redis-cache:
+    image: redis:7.4.11-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    user: "999:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 160m
+    restart: unless-stopped
+    volumes:
+      - ./redis/redis-cache.conf:/usr/local/etc/redis/redis.conf:ro
+      - ${MOSAIQ_REDIS_ACL_DIR:-/etc/mosaiq/redis}:/etc/redis/acl:ro
+    # Nothing is persisted; /data only has to exist and be writable.
+    tmpfs:
+      - /data:uid=999,gid=1000,mode=0700
+    networks: [mosaiq]
+
+  # One standalone server on the 7.0 line, for engagement-service alone
+  # (ADR-0038). It holds one application database, `engagement`, which
+  # services/engagement/mongo/init.js creates with its own user (F14-24); this
+  # project creates neither.
+  mongodb:
+    image: mongo:7.0.41@sha256:b096b4cb9269f3ebcf363be63f1c50920f786879d03a1890347a3bf33f1f0df0
+    # A 256 MB WiredTiger cache leaves the rest of mem_limit for connections
+    # and an administrator's mongosh.
+    command: ["mongod", "--auth", "--wiredTigerCacheSizeGB", "0.25"]
+    # The image's `mongodb` user, which owns /data/db in the image and so in a
+    # new volume.
+    user: "999:999"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 512m
+    restart: unless-stopped
+    # MONGO_INITDB_ROOT_USERNAME and MONGO_INITDB_ROOT_PASSWORD, kept on the
+    # host and never in the repository. The entrypoint creates that root user
+    # on the first start into an empty volume, from a server that listens only
+    # inside the container. Administrators use it; no service does.
+    env_file:
+      - ${MOSAIQ_MONGO_ROOT_ENV:-/etc/mosaiq/mongodb/root.env}
+    volumes:
+      - mongodb-data:/data/db
+    # /tmp holds the entrypoint's files and mongod's socket. A standalone
+    # server never uses /data/configdb; the tmpfs keeps that image volume from
+    # becoming an anonymous one.
+    tmpfs:
+      - /tmp:uid=999,gid=999,mode=0700
+      - /data/configdb:uid=999,gid=999,mode=0700
+    networks: [mosaiq]
+
+volumes:
+  redis-state-data:
+  mongodb-data:
+
+networks:
+  mosaiq:
+    external: true

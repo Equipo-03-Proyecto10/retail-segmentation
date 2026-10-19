@@ -1,0 +1,1 @@
+user svc_fixture_c on {{password}} resetchannels -@all +@connection +@read +@write -@dangerous -scan -randomkey ~* (%R~pub:auth:v1:live:* +exists)

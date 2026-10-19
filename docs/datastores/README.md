@@ -1,34 +1,26 @@
 # Datastore designs
 
-> **Decided, not yet built.** [ADR-0037](../adr/0037-two-redis-instances-carry-sessions-caches-limits-and-inter-service-streams.md)
+> [ADR-0037](../adr/0037-two-redis-instances-carry-sessions-caches-limits-and-inter-service-streams.md)
 > and [ADR-0038](../adr/0038-mongodb-holds-in-store-engagement-owned-by-engagement-service-alone.md)
-> now govern Redis and MongoDB. Where those records and these designs
-> disagree, the records win. In particular:
-> - Redis runs as two instances, `redis-state` and `redis-cache`, and key
->   names follow ADR-0037's namespace.
-> - A revoked token is one whose `pub:auth:v1:live:{sid}` no longer exists
->   (ADR-0036); the `token:revoked:{jti}` list below is not built.
-> - MongoDB holds only the engagement collections of engagement-service
->   (`engagement_event` and `engagement_daily`, in the database
->   `engagement`); the six collections below duplicate PostgreSQL tables and
->   are not built.
->
-> F13-05 (#424) and F13-06 (#428) rewrite these documents as specifications
-> and remove the banner below.
+> govern Redis and MongoDB. Where those records and these documents disagree,
+> the records win.
 
-> **Nothing in this directory is implemented, and nothing in it runs.** The
-> delivery has one database engine, PostgreSQL, on one instance
-> ([ADR-0001](../adr/0001-flask-monolith-on-a-single-vm.md)). These documents
-> record designs that belong to later deliveries, so that the work already done
-> on them is not redone from scratch — and so that a reader does not mistake a
-> design for a component.
->
-> Why they are documented but not built: [ADR-0005](../adr/0005-document-mongodb-and-redis-designs-without-implementing-them.md).
+**Redis is specified and its instances are built.** F13-05 (#424) rewrote
+[`redis-design.md`](redis-design.md) as ADR-0037's specification and built
+`redis-state` and `redis-cache` in [`deploy/infra/`](../../deploy/infra/README.md).
+Only the services connect to them, and none does yet.
 
-| Document | What it designs |
+**MongoDB is specified and its server is built.** F13-06 (#428) rewrote
+[`mongodb-design.md`](mongodb-design.md) as ADR-0038's specification and added
+the server to the same project. It holds no application database until
+engagement-service's own story, F14-24 (#466), creates `engagement`; only that
+service will connect.
+
+| Document | What it covers |
 |---|---|
-| [MongoDB](mongodb-design.md) | Collections for consumption profiles, RFM snapshots, segment migrations, clustering runs, recommendations and experiment events |
-| [Redis](redis-design.md) | Keys and TTLs for sessions, caching, counters, distributed locks and temporary data |
+| [MongoDB](mongodb-design.md) | The server and its accounts, the one database `engagement` and its two collections, the operations, live counters, failure behaviour and checks |
+| [Redis](redis-design.md) | The two instances, every key family with its type and TTL, the per-service ACL rules, the failure behaviour and the checks |
 
-The PostgreSQL model — the one that exists — is
-[`docs/data-model.md`](../data-model.md).
+The PostgreSQL model is [`docs/data-model.md`](../data-model.md). Its §7 also
+records the two MongoDB collections, and why they sit outside the relational
+model.

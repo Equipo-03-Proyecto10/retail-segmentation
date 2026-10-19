@@ -194,7 +194,7 @@ def test_the_parameters_are_stored_in_a_stable_key_order() -> None:
         run_at=_AT,
     )
 
-    (_, parameters) = _cursor(connection).execute.call_args.args
+    _, parameters = _cursor(connection).execute.call_args.args
     assert parameters[2] == '{"quintiles": 5, "window_days": 180}'
 
 

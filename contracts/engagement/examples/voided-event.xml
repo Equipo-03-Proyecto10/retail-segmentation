@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <EngagementEvent xmlns="https://mosaiq.maxthecoder.online/xml/engagement/v1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="QrScanEvent">
-  <event_id>66f1a2b3c4d5e6f7a8b9c0d3</event_id>
+  <event_id>a3c1f7e2-5b48-4d0e-9f6a-1c2b3d4e5f63</event_id>
   <client_event_id>0e6d5c4b-3a29-4817-96f5-a4b3c2d1e0f3</client_event_id>
   <type>QR_SCAN</type>
   <store_id>3</store_id>

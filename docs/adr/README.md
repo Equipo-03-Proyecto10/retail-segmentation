@@ -105,6 +105,9 @@ ADR-0028 already stated: it is partially superseded by ADR-0028.
 The team accepted ADR-0047 on 2026-10-19, before the notification storage and
 implementation merged. Its decision text is unchanged.
 
+The team accepted ADR-0048 on 2026-10-19, before the change it records merged
+(#536). Its decision text is unchanged.
+
 ## Index
 
 | ADR | Title | Status |
@@ -156,7 +159,7 @@ implementation merged. Its decision text is unchanged.
 | [0045](0045-services-never-import-the-web-system.md) | Services never import the web system | Accepted |
 | [0046](0046-service-owned-data-lives-in-service-schemas.md) | Service-owned data lives in service schemas | Accepted |
 | [0047](0047-notifications-are-pulled-from-postgresql-and-an-experiments-end-is-announced-by-the-next-page-read.md) | Notifications are pulled from PostgreSQL, and an experiment's end is announced by the next signed-in page read | Accepted |
-| [0048](0048-store-managers-read-every-stores-reports.md) | Store managers read every store's reports | Proposed |
+| [0048](0048-store-managers-read-every-stores-reports.md) | Store managers read every store's reports | Accepted |
 
 ## Writing one
 

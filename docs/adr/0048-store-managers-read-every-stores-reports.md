@@ -1,6 +1,6 @@
 # ADR-0048 — Store managers read every store's reports
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Raquel
 **Issue:** #467
 **Supersedes:** —

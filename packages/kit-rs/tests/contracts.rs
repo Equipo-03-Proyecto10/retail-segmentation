@@ -390,7 +390,24 @@ fn kit_loads_every_merged_service_contract() {
         .filter(|path| path.join("openapi.yaml").is_file())
         .collect();
     services.sort();
-    assert_eq!(services.len(), 13);
+    // Every registered service publishes a contract, so this tracks the registry
+    // rather than a count that each newly merged contract would invalidate.
+    let registry: serde_yaml::Value = serde_yaml::from_str(
+        &std::fs::read_to_string(repository().join("contracts/registry.yaml")).unwrap(),
+    )
+    .unwrap();
+    let mut registered: Vec<_> = registry["services"]
+        .as_sequence()
+        .unwrap()
+        .iter()
+        .map(|service| service["name"].as_str().unwrap().to_owned())
+        .collect();
+    registered.sort();
+    let published: Vec<_> = services
+        .iter()
+        .map(|path| path.file_name().unwrap().to_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(published, registered);
     let mut incompatibilities = Vec::new();
     for source in services {
         let name = source.file_name().unwrap().to_str().unwrap().to_owned();

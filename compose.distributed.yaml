@@ -28,6 +28,8 @@ include:
   #     env_file: docker/distributed/local.env
   - path: [services/products/compose.yaml, docker/distributed/service.local.yaml]
     env_file: docker/distributed/local.env
+  - path: [services/customers/compose.yaml, docker/distributed/service.local.yaml]
+    env_file: docker/distributed/local.env
 
 services:
   # The development PostgreSQL of compose.yaml, with its socket directory on a

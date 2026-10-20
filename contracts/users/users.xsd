@@ -7,9 +7,12 @@
   <xs:import namespace="https://mosaiq.maxthecoder.online/xml/common/v1"
              schemaLocation="../common/v1/common.xsd"/>
 
+  <!-- Any UUID: the seeded accounts carry UUIDs that are not RFC 4122
+       (11111111-1111-1111-1111-000000000001), and app_user.user_id is a plain
+       uuid column. The same type as audit-trail.xsd's. -->
   <xs:simpleType name="Uuid">
     <xs:restriction base="xs:string">
-      <xs:pattern value="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}"/>
+      <xs:pattern value="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"/>
     </xs:restriction>
   </xs:simpleType>
 

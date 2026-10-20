@@ -1054,6 +1054,40 @@ GRANT SELECT ON api_products.product_ref_v1
     TO svc_products, svc_sales, svc_recommendations, svc_engagement;
 -- END BOUNDARY products
 
+-- BEGIN BOUNDARY customers
+-- customers-service (F14-14) owns the registration rule of RN-08: email unique
+-- when given (customer_email_key), a known channel
+-- (customer_registration_channel_id_fkey), a registration date not in the
+-- future (checked by the service) and no deletion. The table stays in public
+-- as legacy, and the web only reads it. The boundary publishes no stream, so it
+-- has no outbox and no capture trigger.
+
+CREATE SCHEMA IF NOT EXISTS api_customers;
+REVOKE ALL ON SCHEMA api_customers FROM PUBLIC;
+
+-- The published customer reference: identity and registration date, and no
+-- personal data. security_invoker = off, so a consumer needs no privilege on
+-- public.customer.
+CREATE OR REPLACE VIEW api_customers.customer_ref_v1
+WITH (security_invoker = off) AS
+SELECT customer_id, registered_on
+FROM public.customer;
+REVOKE ALL ON api_customers.customer_ref_v1 FROM PUBLIC;
+
+-- The only service writer of customer: no DELETE, and registered_on and
+-- user_id can be set at registration but never corrected.
+GRANT SELECT, INSERT ON public.customer TO svc_customers;
+GRANT UPDATE (name, email, phone, registration_channel_id)
+    ON public.customer TO svc_customers;
+
+GRANT USAGE ON SCHEMA api_customers
+    TO svc_customers, svc_sales, svc_preferences, svc_segments,
+       svc_recommendations, svc_engagement;
+GRANT SELECT ON api_customers.customer_ref_v1
+    TO svc_customers, svc_sales, svc_preferences, svc_segments,
+       svc_recommendations, svc_engagement;
+-- END BOUNDARY customers
+
 -- BEGIN APPLICATION ROLE VERIFICATION
 -- F1-05 (#53). Opt-in acceptance checks, kept here because even a rejected
 -- DROP belongs in the only file allowed to contain table DDL. Normal schema

@@ -932,6 +932,12 @@ The eight outbox owners named by ADR-0044 therefore have both of these schemas:
 | sales | `api_sales` | `sales_events` |
 | segments | `api_segments` | `segments_events` |
 
+customers is a ninth boundary with a contract schema and no outbox: `api_customers`
+holds `customer_ref_v1` (`customer_id`, `registered_on`, over `customer`,
+`security_invoker = off`), read by sales, customer-preferences, segments,
+recommendations and engagement. It publishes no stream, so it has no
+`customers_events`.
+
 Each schema is created by its boundary's own section of `sql/01_schema.sql`;
 none exists until that boundary's story lands. `retail_app` has USAGE on
 `public` only, and the verification block asserts it.

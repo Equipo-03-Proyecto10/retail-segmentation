@@ -1,0 +1,1 @@
+user svc_customers on {{password}} resetchannels -@all +@connection +@read +@write -@dangerous -scan -randomkey ~customers:rl:* (%R~pub:auth:v1:live:* +exists)

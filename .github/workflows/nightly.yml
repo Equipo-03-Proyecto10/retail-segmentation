@@ -36,6 +36,7 @@ jobs:
       - name: Bring the local stack up from scratch
         run: |
           docker network create mosaiq
+          bash .github/scripts/stage-contracts.sh --all
           $COMPOSE up --build --wait --wait-timeout 600
 
       - name: Re-apply every boundary section

@@ -1,7 +1,11 @@
 # MOSAIQ — the distributed stage on a laptop, in one command (F13-08):
 #
-#   docker network create mosaiq        # once
+#   docker network create mosaiq                   # once
+#   bash .github/scripts/stage-contracts.sh --all  # each service's contracts
 #   docker compose -f compose.distributed.yaml up --build --wait
+#
+# A service's Dockerfile copies its contracts from inside its own build
+# context, where they are git-ignored (ADR-0040), so they are staged first.
 #
 # Run from the repository root: docker/distributed/local.env resolves its
 # paths from ${PWD}. Every service is then reachable through one base URL,

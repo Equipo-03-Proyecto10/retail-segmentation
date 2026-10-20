@@ -10,7 +10,7 @@ fn kit_is_pinned_and_service_has_no_workspace() {
 
 #[test]
 fn sql_uses_bound_parameters() {
-    let source = fs::read_to_string("src/main.rs").expect("service source");
+    let source = fs::read_to_string("src/lib.rs").expect("service source");
     for statement in ["SELECT", "INSERT", "UPDATE", "DELETE"] {
         assert!(
             !source.contains(&format!("format!(\"{statement}")),

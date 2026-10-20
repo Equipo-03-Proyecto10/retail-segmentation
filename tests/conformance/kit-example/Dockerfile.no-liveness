@@ -1,0 +1,6 @@
+# The kit-py example image with the liveness check switched off (no_liveness.py).
+# Built only by CI, from this directory, to show the suite fails against it.
+ARG BASE=mosaiq-kit-example
+FROM ${BASE}
+COPY no_liveness.py ./no_liveness.py
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "1", "--threads", "4", "no_liveness:app"]

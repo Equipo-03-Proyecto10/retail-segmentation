@@ -69,12 +69,16 @@ ADR-0046 on every pull request.
 | `IMAGE_TAG` | the service's `VERSION`, set by its unit | `local` |
 | `MOSAIQ_SVC_ENV_DIR` | `/etc/mosaiq/svc` | `docker/distributed/svc` |
 | `MOSAIQ_PG_SOCKET` | `/run/postgresql` | named volume `mosaiq-pgsocket` |
-| `MOSAIQ_JWKS_FILE` | `/etc/mosaiq/keys/jwks.json` | `docker/distributed/jwks.dev.json` |
-| `MOSAIQ_AUTH_KEY_DIR` (auth) | `/etc/mosaiq/keys` | set by auth's story |
+| `MOSAIQ_JWKS_FILE` | `/etc/mosaiq/keys/jwks.json` | `docker/distributed/keys/jwks.json`, made by `docker/distributed/auth-keys.sh` |
+| `MOSAIQ_AUTH_KEY_DIR` (auth) | `/etc/mosaiq/keys` | `docker/distributed/keys` |
+| `AUTH_KID` (auth) | the unit's, from `/etc/mosaiq/svc/auth.env` | `local-dev` |
 
 `jwks.dev.json` holds a public key whose private half was discarded: it lets a
-service start and refuse every token. auth-service's story (F14-01) brings the
-local key pair that signs tokens it accepts.
+service start and refuse every token. CI's template job still mounts it. The
+local stack uses auth-service's own throwaway pair instead
+(`docker/distributed/auth-keys.sh`, git-ignored), so the tokens auth signs are
+the ones the other services accept. The rotation runbook is
+[`deploy/auth-keys.md`](../../auth-keys.md).
 
 The units, `deploy/deploy-service.sh` and the NGINX include directory on the
 instance belong to F18-01 to F18-03.

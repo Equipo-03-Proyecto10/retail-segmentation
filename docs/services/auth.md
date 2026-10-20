@@ -1,6 +1,6 @@
 # auth
 
-> **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
+> **Status:** Implemented (phase 14, core; F14-02, #413). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
 > **One rule:** A principal is authenticated only by a valid credential of an active account, and every token stays usable only while its session is live (RN-52; related RN-03)
 
 ## Summary
@@ -24,6 +24,7 @@
 - Issues RS256 role-only access tokens (10 min) and rotating refresh tokens inside a session of at most 12 hours. A session is live exactly while `pub:auth:v1:live:{sid}` exists in `redis-state`.
 - Revokes on sign-out, refresh-token reuse and every access change (deactivation, role change, administrator transfer, password change or reset, delete), through `stream:users.v1.access_changed` and a 60 s reconcile.
 - Enforced in service code and Redis. auth owns no PostgreSQL table.
+- Signs with the one private key mounted read-only in its container; the public JWK Set at `/run/mosaiq/jwks.json` is what every service verifies with. The key is never in the repository; creation and rotation are in [`deploy/auth-keys.md`](../../deploy/auth-keys.md).
 
 ## Endpoints
 
@@ -65,8 +66,9 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 |---|---|---|---|
 | state | `auth:session:{sid}` | remaining absolute lifetime (≤ 12 h) | Session hash: user, role, expiry, password fingerprint |
 | state | `auth:user_sids:{user_id}` | remaining absolute lifetime of the newest session | All sessions of a user, for revocation |
-| state | `auth:refresh:{sha256}` | remaining absolute lifetime | One refresh token: `current` or `rotated` |
-| state | `auth:refresh_family:{sid}` | remaining absolute lifetime | Refresh family: SET of the session's refresh-token SHA-256 values, so revocation deletes them without `SCAN` |
+| state | `auth:refresh:{sha256}` | remaining absolute lifetime + 24 h | One refresh token: `current` or `rotated`. It outlives the session by a day so a refresh after the absolute end answers `session_expired`, not `invalid_refresh` |
+| state | `auth:refresh_family:{sid}` | remaining absolute lifetime + 24 h | Refresh family: SET of the session's refresh-token SHA-256 values, so revocation deletes them without `SCAN` |
+| state | `auth:session_users` | remaining absolute lifetime of the newest session | SET of the users with sessions, so the 60 s reconcile finds every live session without `SCAN` |
 | state | `auth:rl:login:{ip}`, `auth:fail:{sha256(email)}:{ip}` | limit window (15 min for failures) | Sign-in limits; 5 failures lock (email, IP) for 15 min |
 | state | `pub:auth:v1:live:{sid}` | remaining absolute lifetime, never extended | Liveness; the only family published to others |
 | state | `auth:rl:*` | the limit's window | Per-service request rate limit |

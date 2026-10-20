@@ -1,6 +1,6 @@
 # ADR-0053 — Experiments are measured on conversion only; `AVERAGE_TICKET` is removed
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Max
 **Issue:** #457
 **Supersedes:** —

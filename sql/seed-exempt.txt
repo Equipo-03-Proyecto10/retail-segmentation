@@ -33,3 +33,9 @@ channel
 # data; padding this table would misrepresent the vocabulary as larger than
 # it is.
 segment_label
+
+# The products outbox is runtime state, not a catalog: a row exists only
+# between a committed product change and its relay to Redis, and the relay
+# purges relayed rows after seven days. Seeding it would invent events that
+# never happened (ADR-0044).
+products_events.outbox

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: users-service
-  version: 1.0.0
+  version: 1.0.1
   description: >-
     Owns user accounts, password changes, deactivation, the read-only role
     vocabulary, and the atomic administrator transfer. Responses never expose

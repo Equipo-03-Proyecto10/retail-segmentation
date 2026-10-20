@@ -2,7 +2,7 @@
 
 What the people who use MOSAIQ need from it, in their words.
 
-**These are not the stories on the board.** [`backlog.md`](backlog.md) holds the
+**These are not the stories in the issues.** [`backlog.md`](backlog.md) holds the
 *delivery* stories — engineering work like "install PostgreSQL on the instance"
 — because that is what the team schedules and estimates. The stories here are
 *product* stories: what a role wants the application to do for them. The two

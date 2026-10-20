@@ -1,6 +1,7 @@
 # MOSAIQ — the distributed stage on a laptop, in one command (F13-08):
 #
 #   docker network create mosaiq                   # once
+#   bash docker/distributed/auth-keys.sh           # once: auth's local key pair
 #   bash .github/scripts/stage-contracts.sh --all  # each service's contracts
 #   docker compose -f compose.distributed.yaml up --build --wait
 #
@@ -37,6 +38,8 @@ include:
   - path: [services/stores/compose.yaml, docker/distributed/service.local.yaml]
     env_file: docker/distributed/local.env
   - path: [services/users/compose.yaml, docker/distributed/service.local.yaml]
+    env_file: docker/distributed/local.env
+  - path: [services/auth/compose.yaml, docker/distributed/service.local.yaml]
     env_file: docker/distributed/local.env
 
 services:

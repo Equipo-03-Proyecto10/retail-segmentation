@@ -162,6 +162,9 @@ jobs:
           set -uo pipefail
           compose="docker compose -f compose.distributed.yaml"
           bash .github/scripts/stage-contracts.sh --all
+          # auth signs locally: its throwaway key pair and the JWK Set every
+          # service mounts come from this script, never from the repository.
+          bash docker/distributed/auth-keys.sh
           if ! $compose up --build --wait --wait-timeout 300; then
             $compose ps -a
             for step in redis-acl mongo-init; do

@@ -714,7 +714,7 @@ either.
 | `experiment_id` | `INT` | NN | PK | Experiment identifier |
 | `name` | `VARCHAR(120)` | NN | — | Experiment name |
 | `campaign_id` | `INT` | yes | FK → `campaign`, `SET NULL` | Campaign it belongs to, if any |
-| `target_metric` | `VARCHAR(60)` | NN | — | Metric measured, e.g. `CONVERSION` |
+| `target_metric` | `VARCHAR(60)` | NN | — | Metric measured; the service accepts only `CONVERSION` (ADR-0053) |
 | `starts_on` | `DATE` | NN | — | Start |
 | `ends_on` | `DATE` | yes | `CHECK >= starts_on` | End; `NULL` while running |
 | `conversion_window_days` | `SMALLINT` | NN | `CHECK > 0` | Fixed before the run starts, immutable after the first assignment (ADR-0019) |
@@ -786,9 +786,10 @@ cannot update or delete them (ADR-0027).
 Links an assignment to a qualifying sale rather than adding an experiment
 column to `transaction` (ADR-0019). `UNIQUE (assignment_id, transaction_id)`
 stops the same sale being recorded as a conversion twice for the same
-assignment; it does not limit an assignment to one conversion, since an
-`AVERAGE_TICKET` metric can legitimately draw on more than one qualifying
-sale.
+assignment; it does not limit an assignment to one conversion. Conversion
+counts a customer once however many sales qualify, but every qualifying sale is
+kept, so the same records can serve a later revenue metric without a schema
+change (ADR-0053).
 `retail_app` can select and insert conversions but cannot update or delete
 them (ADR-0050).
 

@@ -213,13 +213,17 @@ jobs:
           SELECT 'ADR-0019 seeded experiment marked OBSERVED', e.experiment_id
           FROM experiment AS e
           WHERE e.data_origin = 'OBSERVED';
+
+          SELECT 'ADR-0053 experiment measured on a metric other than CONVERSION', e.experiment_id
+          FROM experiment AS e
+          WHERE e.target_metric <> 'CONVERSION';
           SQL
           )"
           if [ -n "$violations" ]; then
             printf '%s\n' "$violations"
             exit 1
           fi
-          echo "Seed satisfies ADR-0017, ADR-0018, ADR-0019 and ADR-0020."
+          echo "Seed satisfies ADR-0017, ADR-0018, ADR-0019, ADR-0020 and ADR-0053."
 
       - name: Application role can write data but cannot drop a table
         env:

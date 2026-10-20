@@ -156,7 +156,7 @@ def refusal_before_counts(
     if target_metric != CONVERSION_METRIC:
         return (
             f"Experiment {experiment_id} is measured on {target_metric}. "
-            "Only the conversion rate is measured so far."
+            "Only the conversion rate is measured (ADR-0053)."
         )
     if not assignments:
         return (

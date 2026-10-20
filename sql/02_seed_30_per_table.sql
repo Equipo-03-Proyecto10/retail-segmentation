@@ -514,7 +514,8 @@ FROM generate_series(1,30) n;
 -- ---------- experiment (30) ----------
 -- Every seeded experiment is synthetic (ADR-0019): none may claim OBSERVED,
 -- which would show its figures as real results without the Synthetic label
--- (#427). Two in three are A/A validation, one in three injected uplift.
+-- (#427). Two in three are A/A validation, one in three injected uplift. All
+-- are measured on CONVERSION, the only target metric (ADR-0053).
 --
 -- An experiment is dated relative to the load, like the sales it is measured
 -- against, and runs for 42 days: it starts between 8 and 153 days ago, in steps
@@ -527,7 +528,7 @@ FROM generate_series(1,30) n;
 INSERT INTO experiment (experiment_id, name, campaign_id, target_metric, starts_on, ends_on,
                          conversion_window_days, data_origin)
 SELECT n, 'Experiment ' || n, n,
-       (ARRAY['CONVERSION','AVERAGE_TICKET'])[1+((n-1)%2)],
+       'CONVERSION',
        CURRENT_DATE - (8 + ((n*11) % 30) * 5),
        CURRENT_DATE - (8 + ((n*11) % 30) * 5) + 42,
        7 + ((n-1) % 4) * 7,

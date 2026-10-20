@@ -66,7 +66,10 @@ def test_children_and_descendants(client, admin_headers, tree):
     ).get_json()
     assert [c["category_id"] for c in children["categories"]] == [mid]
     below = client.get(f"/v1/categories/{root}/descendants", headers=admin_headers)
-    assert [c["category_id"] for c in below.get_json()["categories"]] == [mid, leaf]
+    # The contract orders descendants by category_id, not by depth.
+    assert [c["category_id"] for c in below.get_json()["categories"]] == sorted(
+        [mid, leaf]
+    )
     none = client.get(f"/v1/categories/{leaf}/descendants", headers=admin_headers)
     assert none.get_json()["categories"] == []
     assert none.get_json()["page_info"]["total"] == 0

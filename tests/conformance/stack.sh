@@ -42,7 +42,9 @@ case ${1:-} in
     infra_env
     docker ps -aq --filter "label=$label" | xargs -r docker rm -f >/dev/null
     [[ -f $MOSAIQ_MONGO_ROOT_ENV ]] && "${infra[@]}" down --volumes >/dev/null 2>&1
-    rm -rf "$work"
+    # PostgreSQL's entrypoint made the socket directory sticky and its own, so
+    # what it left there stays until the runner is discarded.
+    rm -rf "$work" 2>/dev/null || true
     exit 0
     ;;
   logs)
@@ -68,7 +70,7 @@ suffix=$(sed -n 's/^user svc_\([a-z][a-z0-9_]*\) .*/\1/p' "$acl")
 [[ -n $suffix ]] || die "$acl has no 'user svc_<suffix>' line"
 SUFFIX=${suffix^^}
 
-rm -rf "$work"
+[[ ! -e $work ]] || die "$work already exists; run '$0 down' first, or set CONFORMANCE_WORK"
 mkdir -p "$work/env" "$work/acl" "$work/keys" "$work/pgsock"
 infra_env
 docker network inspect mosaiq >/dev/null 2>&1 || docker network create mosaiq >/dev/null

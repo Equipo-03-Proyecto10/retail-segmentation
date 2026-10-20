@@ -134,12 +134,14 @@ class Contract:
         return item
 
 
-def load_contract() -> Contract:
+def contract_dir() -> Path:
     directory = Path(
         os.environ.get("CONFORMANCE_CONTRACT_DIR") or ROOT / "contracts" / SERVICE
     )
-    if not directory.is_absolute():
-        directory = ROOT / directory
+    return directory if directory.is_absolute() else ROOT / directory
+
+
+def load_contract(directory: Path) -> Contract:
     # Imported here: the database job's pytest collects this package without
     # PyYAML, and only a run against an image reads a contract.
     import yaml
@@ -237,9 +239,10 @@ class Client:
         accept: str | None = "application/json",
         content_type: str | None = None,
         body: bytes | None = None,
+        headers: dict[str, str] | None = None,
     ) -> Reply:
         correlation = "conformance-" + uuid.uuid4().hex[:16]
-        headers = {"X-Correlation-ID": correlation}
+        headers = {"X-Correlation-ID": correlation} | (headers or {})
         if token is not None:
             headers["Authorization"] = "Bearer " + token
         if accept is not None:

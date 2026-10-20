@@ -1,0 +1,71 @@
+name: Nightly
+
+# The demonstration chain against develop (F13-09): the local distributed
+# stack of compose.distributed.yaml from scratch, the three scripts plus every
+# boundary section re-applied as an operator applies them, then tests/e2e/.
+# A scenario whose services do not exist yet is skipped and listed in the job
+# summary. A failure marks the run red and uploads the stack's compose logs.
+on:
+  schedule:
+    # 01:30 in Monterrey (UTC-6).
+    - cron: "30 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-24.04
+    env:
+      COMPOSE: docker compose -f compose.distributed.yaml
+      E2E_BASE_URL: http://127.0.0.1:8080
+      E2E_COMPOSE: compose.distributed.yaml
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: develop
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install the suite's tools
+        run: |
+          pip install -r web/requirements-dev.txt -r contracts/requirements.txt
+          bash contracts/install-tools.sh
+
+      - name: Bring the local stack up from scratch
+        run: |
+          docker network create mosaiq
+          $COMPOSE up --build --wait --wait-timeout 600
+
+      - name: Re-apply every boundary section
+        run: |
+          set -euo pipefail
+          for b in $(sed -n 's/^-- BEGIN BOUNDARY \(.*\)$/\1/p' sql/01_schema.sql); do
+            sed -n "/^-- BEGIN BOUNDARY $b\$/,/^-- END BOUNDARY $b\$/p" sql/01_schema.sql \
+              | $COMPOSE exec -T db psql -X -q -v ON_ERROR_STOP=1 -U postgres -d retail >/dev/null
+          done
+
+      - name: The demonstration chain
+        run: python3 -m pytest tests/e2e -rs --junitxml=test-results/e2e.xml
+
+      - name: Collect the stack's compose logs
+        if: failure()
+        run: |
+          mkdir -p e2e-logs
+          $COMPOSE ps -a > e2e-logs/ps.txt 2>&1 || true
+          $COMPOSE logs --no-color --timestamps > e2e-logs/compose.log 2>&1 || true
+
+      - name: Upload the logs and the report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-e2e
+          path: |
+            e2e-logs/
+            test-results/
+          if-no-files-found: ignore
+
+      - name: Take the stack down
+        if: always()
+        run: $COMPOSE down --volumes || true

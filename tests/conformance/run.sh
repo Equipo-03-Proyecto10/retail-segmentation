@@ -16,7 +16,10 @@ set -euo pipefail
 }
 name=$(basename "${2%/}")
 expected=${4:-}
-export CONFORMANCE_ENV=${RUNNER_TEMP:-/tmp}/conformance-$name.env
+# A fresh directory per run: the previous one may keep PostgreSQL's socket.
+CONFORMANCE_WORK=$(mktemp -d "${RUNNER_TEMP:-/tmp}/conformance-$name.XXXXXX")
+rmdir "$CONFORMANCE_WORK"
+export CONFORMANCE_WORK CONFORMANCE_ENV=$CONFORMANCE_WORK.env
 report=test-results/conformance-$name${expected:+-negative}.xml
 mkdir -p test-results
 

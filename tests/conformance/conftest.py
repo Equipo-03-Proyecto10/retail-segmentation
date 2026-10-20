@@ -14,6 +14,7 @@ from tests.conformance.harness import (
     Contract,
     Sessions,
     Signer,
+    contract_dir,
     load_contract,
 )
 
@@ -29,7 +30,7 @@ def pytest_collection_modifyitems(config, items) -> None:
 
 @pytest.fixture(scope="session")
 def contract() -> Contract:
-    return load_contract()
+    return load_contract(contract_dir())
 
 
 @pytest.fixture(scope="session")

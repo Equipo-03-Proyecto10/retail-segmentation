@@ -1,0 +1,191 @@
+{
+  "cases": [
+    {
+      "id": "create-second-administrator",
+      "input": {
+        "call": "create_user",
+        "email": "second-admin@example.com",
+        "role_code": "ADMIN"
+      },
+      "outcome": {
+        "error": "SingleAdministratorError",
+        "outcome": "refused",
+        "reason": "This system has exactly one administrator, and the role is already taken. Move the current administrator to another role first, or choose a different role for this user."
+      }
+    },
+    {
+      "id": "promote-to-second-administrator",
+      "input": {
+        "call": "change_role",
+        "role_code": "ADMIN",
+        "user_id": "11111111-1111-1111-1111-000000000014"
+      },
+      "outcome": {
+        "error": "SingleAdministratorError",
+        "outcome": "refused",
+        "reason": "This system has exactly one administrator, and the role is already taken. Move the current administrator to another role first, or choose a different role for this user."
+      }
+    },
+    {
+      "id": "edit-into-second-administrator",
+      "input": {
+        "call": "update_user",
+        "email": "user14@mosaiq-demo.com",
+        "name": "Demo User 14",
+        "role_code": "ADMIN",
+        "user_id": "11111111-1111-1111-1111-000000000014"
+      },
+      "outcome": {
+        "error": "SingleAdministratorError",
+        "outcome": "refused",
+        "reason": "This system has exactly one administrator, and the role is already taken. Move the current administrator to another role first, or choose a different role for this user."
+      }
+    },
+    {
+      "id": "demote-only-administrator",
+      "input": {
+        "call": "change_role",
+        "role_code": "ANALYST",
+        "user_id": "11111111-1111-1111-1111-000000000001"
+      },
+      "outcome": {
+        "error": "SingleAdministratorError",
+        "outcome": "refused",
+        "reason": "This is the only administrator, and the system may not be left without one. Appoint another administrator first."
+      }
+    },
+    {
+      "id": "deactivate-only-administrator",
+      "input": {
+        "call": "set_active",
+        "is_active": false,
+        "user_id": "11111111-1111-1111-1111-000000000001"
+      },
+      "outcome": {
+        "error": "SingleAdministratorError",
+        "outcome": "refused",
+        "reason": "This is the only administrator, and the system may not be left without one. Appoint another administrator first."
+      }
+    },
+    {
+      "id": "transfer-administrator",
+      "input": {
+        "call": "transfer_administrator",
+        "from_user_id": "11111111-1111-1111-1111-000000000001",
+        "to_user_id": "11111111-1111-1111-1111-000000000014"
+      },
+      "outcome": {
+        "observed": {
+          "from_role": "ANALYST",
+          "to_role": "ADMIN"
+        },
+        "outcome": "accepted"
+      }
+    },
+    {
+      "id": "transfer-from-non-administrator",
+      "input": {
+        "call": "transfer_administrator",
+        "from_user_id": "11111111-1111-1111-1111-000000000014",
+        "to_user_id": "11111111-1111-1111-1111-000000000003"
+      },
+      "outcome": {
+        "error": "SingleAdministratorError",
+        "outcome": "refused",
+        "reason": "user14@mosaiq-demo.com is not the administrator, so there is nothing to transfer."
+      }
+    },
+    {
+      "id": "create-case-variant-duplicate-email",
+      "input": {
+        "call": "create_user",
+        "email": "User14@Mosaiq-Demo.COM",
+        "role_code": "ANALYST"
+      },
+      "outcome": {
+        "error": "DuplicateEmailError",
+        "outcome": "refused",
+        "reason": "A user with that email already exists."
+      }
+    },
+    {
+      "id": "edit-into-case-variant-duplicate-email",
+      "input": {
+        "call": "update_user",
+        "email": "USER14@mosaiq-demo.com",
+        "name": "Demo User 3",
+        "role_code": "STORE_MANAGER",
+        "user_id": "11111111-1111-1111-1111-000000000003"
+      },
+      "outcome": {
+        "error": "DuplicateEmailError",
+        "outcome": "refused",
+        "reason": "A user with that email already exists."
+      }
+    },
+    {
+      "id": "validate-malformed-email",
+      "input": {
+        "call": "validate_user",
+        "email": "not-an-email",
+        "role_code": "ANALYST"
+      },
+      "outcome": {
+        "errors": {
+          "email": "A valid email is required."
+        },
+        "outcome": "refused"
+      }
+    },
+    {
+      "id": "create-malformed-email",
+      "input": {
+        "call": "create_user",
+        "email": "no-domain@",
+        "role_code": "ANALYST"
+      },
+      "outcome": {
+        "constraint": "app_user_email_check",
+        "error": "CheckViolation",
+        "outcome": "refused",
+        "reason": "new row for relation \"app_user\" violates check constraint \"app_user_email_check\"",
+        "sqlstate": "23514"
+      }
+    },
+    {
+      "id": "create-analyst",
+      "input": {
+        "call": "create_user",
+        "email": "golden-analyst@example.com",
+        "role_code": "ANALYST"
+      },
+      "outcome": {
+        "observed": {
+          "role": "ANALYST"
+        },
+        "outcome": "accepted"
+      }
+    },
+    {
+      "id": "deactivate-analyst",
+      "input": {
+        "call": "set_active",
+        "is_active": false,
+        "user_id": "11111111-1111-1111-1111-000000000014"
+      },
+      "outcome": {
+        "observed": {
+          "is_active": false
+        },
+        "outcome": "accepted"
+      }
+    }
+  ],
+  "header": {
+    "as_of": null,
+    "captured_on": "2026-10-20",
+    "port": "users",
+    "seed_sha256": "aec233e1be59efbccc23305cef55279c692355df753c148effd71a247bf7eddc",
+    "web_commit": "5521daca4a38c8276e494a97dfdb4ed098354024"
+  }
+}

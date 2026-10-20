@@ -1,0 +1,46 @@
+[project]
+name = "users-service"
+version = "0.1.0"
+description = "MOSAIQ users-service: the single-administrator rule, case-insensitive emails, deactivation never deletion (RN-01, RN-02, RN-04)"
+requires-python = ">=3.12"
+dependencies = [
+    "mosaiq-kit @ git+https://github.com/Equipo-03-Proyecto10/retail-segmentation@kit-py/v0.1.2#subdirectory=packages/kit-py",
+    # The web's version, so a hash either writer makes verifies in the other.
+    "argon2-cffi==23.1.0",
+    "gunicorn==23.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "black==26.5.1",
+    "pytest==9.1.1",
+    "ruff==0.8.4",
+]
+
+[tool.uv]
+package = false
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+extend-exclude = "contracts"
+
+[tool.ruff]
+extend = "../../pyproject.toml"
+extend-exclude = ["contracts"]
+
+[tool.ruff.lint]
+extend-select = ["S608"]
+
+[tool.ruff.lint.isort]
+# redis/ holds the ACL line; the import is the client library.
+known-first-party = ["app", "tests"]
+known-third-party = ["redis"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "postgres: needs TEST_DATABASE_URL, the owner's URL to a database built by the three scripts (CI's services job sets it)",
+    "redis: needs USERS_TEST_REDIS_URL, an administrator's URL to a disposable Redis 8; skipped without it",
+]

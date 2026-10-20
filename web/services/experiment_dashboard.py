@@ -134,7 +134,7 @@ def _differences(
             (
                 f"Experiment {experiment.experiment_id} is measured on "
                 f"{experiment.target_metric}. "
-                "Only the conversion rate is measured so far."
+                "Only the conversion rate is measured (ADR-0053)."
             ),
         )
     if not experiment.assignments:

@@ -177,6 +177,8 @@ unchanged: seeding an outbox would publish invented events once its relay starts
 | [0049](0049-kit-rs-validates-xml-request-bodies-with-libxml2.md) | kit-rs validates XML request bodies with libxml2, after a quick-xml screen | Accepted |
 | [0050](0050-experiment-conversions-are-append-only-for-the-application-role.md) | Experiment conversions are append-only for the application role | Accepted |
 | [0051](0051-app-session-is-seeded-as-runtime-history.md) | `app_session` is seeded as runtime history, not exempted | Accepted |
+| [0052](0052-data-provenance-is-recorded-per-sale-and-per-segmentation-run.md) | Data provenance is recorded per sale and per segmentation run, not per instance | Proposed |
+| [0053](0053-experiments-are-measured-on-conversion-only.md) | Experiments are measured on conversion only; `AVERAGE_TICKET` is removed | Proposed |
 
 ## Writing one
 

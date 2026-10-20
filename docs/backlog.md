@@ -959,6 +959,8 @@ no Redis and consumes no service.
 | AN-16 | #463 | Make the seed exercise K-means, varied purchase behaviour and coherent experiment dates | P2 | AN-06 |
 | AN-17 | #467 | Decide how STORE_MANAGER's "own store" scope is enforced, and finish the remaining dashboard and list gaps | P2 | — |
 | AN-18 | #519 | Segment run form never shows the K-means fields: the CSP blocks its inline onchange | P1 | — |
+| AN-19 | #559 | Record the data origin of every sale and segmentation run | P2 | AN-14 |
+| AN-20 | #560 | Mark every analytics page Synthetic from the rows it reads, and retire DATA_IS_SYNTHETIC | P2 | AN-19 |
 
 [adr-0016]: adr/0016-the-second-delivery-reinstates-the-distributed-architecture.md
 [adr-0017]: adr/0017-segment-assignment-history-replaces-the-mutable-current-segment.md

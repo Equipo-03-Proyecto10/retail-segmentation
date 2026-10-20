@@ -9,6 +9,7 @@ control or a treatment group, and that the default-deny gate holds.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 from itertools import chain, repeat
 from unittest.mock import MagicMock, Mock
@@ -140,6 +141,8 @@ def test_a_complete_setup_validates() -> None:
         ("conversion_window_days", "0"),
         ("conversion_window_days", "-3"),
         ("conversion_window_days", "7.5"),
+        # ADR-0053: removed, so a stale form or crafted post is refused.
+        ("target_metric", "AVERAGE_TICKET"),
         ("data_origin", ""),
         ("data_origin", "REAL"),
         ("treatment_groups", "0"),
@@ -246,8 +249,11 @@ def test_the_window_cannot_change_once_anyone_is_assigned(
 def test_the_target_metric_cannot_change_once_anyone_is_assigned(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    update = _wire_update(monkeypatch, _experiment(assignments=1))
-    data, _ = service.validate_experiment(**{**EDIT, "target_metric": "AVERAGE_TICKET"})
+    # Conversion is the only metric a form can submit (ADR-0053), so the
+    # stored one is what differs: a row that predates the metric's removal.
+    stored = replace(_experiment(assignments=1), target_metric="AVERAGE_TICKET")
+    update = _wire_update(monkeypatch, stored)
+    data, _ = service.validate_experiment(**EDIT)
 
     with pytest.raises(service.ExperimentRefused) as refusal:
         service.update_experiment(MagicMock(), 3, data)

@@ -392,6 +392,23 @@ It reports `UPDATE 10` the first time and `UPDATE 0` after. Only the thirty
 seeded ids are touched, so an experiment created through the application keeps
 the origin it was given.
 
+### Correcting the seeded experiments' target metric (#457)
+
+Seeds before #457 gave the even-numbered experiments `AVERAGE_TICKET`, a metric
+that is no longer offered or measured (ADR-0053). Such an experiment opens with a
+refusal where its uplift should be, and cannot be renamed, because the edit form
+refuses the stored metric. A database rebuilt from the scripts after #457 needs
+nothing. A database loaded before it is corrected with one data fix:
+
+```sh
+sudo -u postgres psql -v ON_ERROR_STOP=1 -d retail -c \
+  "UPDATE experiment SET target_metric = 'CONVERSION'
+    WHERE experiment_id BETWEEN 1 AND 30 AND target_metric = 'AVERAGE_TICKET';"
+```
+
+It reports `UPDATE 15` the first time and `UPDATE 0` after. As above, only the
+thirty seeded ids are touched.
+
 ### Checking the database has kept up with the code
 
 Because the deploy never runs SQL, a database can fall behind the commit it

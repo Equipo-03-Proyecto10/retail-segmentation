@@ -321,11 +321,11 @@ design later.
 
 - Given an experiment setup, when I save it, then it has at most one optional control, named treatment arms, a target metric, a positive conversion window and a data origin
 - Given a no-control design, when I save it, then it has exactly two treatment arms
-- Given the target metric Average ticket, when I choose it, then it is labelled as not measured yet
+- Given an experiment setup, when I choose its target metric, then Conversion rate is the only choice (ADR-0053)
 - Given the first assignment exists, when I try to change the campaign, dates, target metric, conversion window or arm definitions, then the change is refused; only the name may change
 - Given a `SEEDED` or `INJECTED` experiment, when any setup or result surface shows it, then that surface says `Synthetic`
 
-`RF-23` · F11-01, F11-03, #342, #427
+`RF-23` · F11-01, F11-03, #342, #427, #457
 
 ### HU-25 — Keep assignment, exposure and conversion separate
 **As a** marketing user, **I want** experiment participation recorded as

@@ -161,7 +161,8 @@ jobs:
         run: |
           set -uo pipefail
           compose="docker compose -f compose.distributed.yaml"
-          if ! $compose up --wait --wait-timeout 300; then
+          bash .github/scripts/stage-contracts.sh --all
+          if ! $compose up --build --wait --wait-timeout 300; then
             $compose ps -a
             for step in redis-acl mongo-init; do
               logs=$($compose logs --no-color "$step" 2>&1 | tail -15)

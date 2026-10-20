@@ -50,3 +50,7 @@ stock_events.outbox
 
 # Runtime delivery state; rows are created only by committed store changes.
 stores_events.outbox
+
+# users-service relays access changes from here and purges them after seven
+# days: runtime state, empty in a fresh database, never seed data (F14-04).
+users_events.outbox

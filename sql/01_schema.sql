@@ -1411,6 +1411,84 @@ GRANT USAGE ON SCHEMA api_stores TO svc_stores, svc_checkins, svc_engagement;
 GRANT SELECT ON api_stores.store_directory_v1 TO svc_stores, svc_checkins, svc_engagement;
 -- END BOUNDARY stores
 
+-- BEGIN BOUNDARY users
+-- users-service (F14-04, ADR-0034, ADR-0036, ADR-0044): the single writer of
+-- accounts besides the frozen web (E-09). It publishes the credential view
+-- auth reads (E-15) and captures every access change, the web's included, so
+-- auth can end the user's sessions. Idempotent: an operator re-applies it.
+
+CREATE SCHEMA IF NOT EXISTS api_users;
+CREATE SCHEMA IF NOT EXISTS users_events;
+REVOKE ALL ON SCHEMA api_users FROM PUBLIC;
+REVOKE ALL ON SCHEMA users_events FROM PUBLIC;
+
+-- Keys only, never state: consumers re-read the credential view.
+CREATE TABLE IF NOT EXISTS users_events.outbox (
+    event_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    stream      text NOT NULL,
+    event_type  text NOT NULL,
+    entity_id   text NOT NULL,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    relayed_at  timestamptz
+);
+CREATE INDEX IF NOT EXISTS outbox_unrelayed
+    ON users_events.outbox (occurred_at) WHERE relayed_at IS NULL;
+
+-- The only cross-boundary contract that carries a credential
+-- (contracts/db/api_users.credential.v1.md). It runs as its owner, so auth
+-- reads it without any privilege on app_user or role.
+CREATE OR REPLACE VIEW api_users.credential_v1
+WITH (security_invoker = off) AS
+SELECT u.user_id,
+       lower(u.email) AS email_lower,
+       u.password_hash,
+       u.is_active,
+       r.code AS role_code
+  FROM public.app_user AS u
+  JOIN public.role AS r ON r.role_id = u.role_id;
+
+-- One outbox row per access change, whichever role made it, in the writer's
+-- transaction. A change of name or email alone is not an access change.
+CREATE OR REPLACE FUNCTION users_events.capture_access_changed() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+DECLARE
+    entity text;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        entity := OLD.user_id::text;
+    ELSE
+        entity := NEW.user_id::text;
+    END IF;
+    INSERT INTO users_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:users.v1.access_changed', TG_OP, entity);
+    -- An empty wake-up for the users relay; only that relay LISTENs.
+    PERFORM pg_notify('users_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION users_events.capture_access_changed() OWNER TO definer_users;
+REVOKE EXECUTE ON FUNCTION users_events.capture_access_changed() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_users_capture_access_changed
+AFTER UPDATE OF is_active, role_id, password_hash OR DELETE ON public.app_user
+FOR EACH ROW EXECUTE FUNCTION users_events.capture_access_changed();
+
+-- svc_users writes accounts and never deletes one (RN-04).
+GRANT SELECT, INSERT ON public.app_user TO svc_users;
+GRANT UPDATE (name, email, role_id, is_active, password_hash) ON public.app_user TO svc_users;
+GRANT SELECT ON public.role TO svc_users;
+
+GRANT USAGE ON SCHEMA users_events TO svc_users, definer_users;
+GRANT INSERT ON users_events.outbox TO definer_users;
+GRANT SELECT, DELETE, UPDATE (relayed_at) ON users_events.outbox TO svc_users;
+
+GRANT USAGE ON SCHEMA api_users TO svc_users, svc_auth;
+GRANT SELECT ON api_users.credential_v1 TO svc_users, svc_auth;
+-- END BOUNDARY users
+
 -- BEGIN APPLICATION ROLE VERIFICATION
 -- F1-05 (#53). Opt-in acceptance checks, kept here because even a rejected
 -- DROP belongs in the only file allowed to contain table DDL. Normal schema

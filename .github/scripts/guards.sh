@@ -51,8 +51,12 @@ problems=$(
     fi
   done
 
-  # ADR-0036: only auth signs, RS256 only, a role and no permissions.
+  # ADR-0036: only auth signs, RS256 only, a role and no permissions. A
+  # service's own tests sign with a throwaway key, as the conformance suite
+  # does: the kit cannot ship real role codes (ADR-0045), so no pre-signed
+  # vector carries one. Those tests never reach an image.
   git grep -nE 'jwt\.encode|EncodingKey::from' -- services/ packages/ bench/ \
+    ':(exclude)services/*/tests/*' ':(exclude)bench/*/tests/*' \
     | grep -v '^services/auth/' | found "ADR-0036 signing outside auth"
   git grep -nE 'HS256|HS384|HS512|JWT_SECRET' -- services/ packages/ bench/ contracts/ .env.example \
     | found ADR-0036

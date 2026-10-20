@@ -155,6 +155,12 @@ def test_each_broken_rule_is_named(
     assert record in result.stdout, result.stdout
 
 
+def test_a_services_tests_may_sign_throwaway_tokens(repo: Path) -> None:
+    write(repo, "services/products/tests/conftest.py", "jwt.encode(claims, key)\n")
+    result = guards(repo)
+    assert (result.returncode, result.stdout) == (0, "")
+
+
 def test_a_compose_project_with_depends_on_is_named(repo: Path) -> None:
     compose = repo / "services/products/compose.yaml"
     compose.write_text(

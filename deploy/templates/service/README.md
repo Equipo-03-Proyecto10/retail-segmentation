@@ -32,6 +32,36 @@ request:
    README);
 3. run `bash deploy/templates/service/check.sh` and expect no output.
 
+## What CI runs on it
+
+`.github/workflows/services.yml` (F13-09) builds the service once its
+`Dockerfile` exists. It runs on any change under `services/<name>/` or
+`contracts/<name>/`, and on any change to `contracts/common/v1/` or
+`tests/conformance/`:
+1. `VERSION` is semver, and a pull request that changes `services/<name>/`
+   bumps it.
+2. With `uv.lock`: `uv sync --frozen`, `black --check`, `ruff check` and
+   `pytest`. With `Cargo.lock`: `cargo fmt --check`, `cargo clippy
+   --all-targets -- -D warnings` and `cargo test`. The toolchain is the
+   Dockerfile's `rust:` tag, or `rust-toolchain.toml`. Tests may read the
+   seeded database as its owner through `TEST_DATABASE_URL`.
+3. The contracts are staged by `.github/scripts/stage-contracts.sh <name>`,
+   the image is built from `services/<name>/`, and the shared conformance
+   suite runs against it:
+
+   ```bash
+   bash tests/conformance/run.sh mosaiq-<name>:ci services/<name> <port>
+   ```
+
+   The suite needs `redis/<name>.acl`. When `mongo/init.js` exists, it also
+   starts MongoDB and passes `MONGO_URI`.
+
+A merge to `main` that changes `VERSION` builds the image once, runs the
+suite against it and pushes
+`ghcr.io/equipo-03-proyecto10/mosaiq-<name>:<VERSION>`. It never overwrites a
+tag. `.github/scripts/guards.sh` checks the repository rules of ADR-0035 to
+ADR-0046 on every pull request.
+
 ## Where each mount points
 
 | Variable | Instance (default) | Local stack |

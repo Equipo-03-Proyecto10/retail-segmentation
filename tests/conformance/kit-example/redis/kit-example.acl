@@ -1,0 +1,1 @@
+user svc_kit_example on {{password}} resetchannels -@all +@connection +@read +@write -@dangerous -scan -randomkey ~kit_example:rl:* ~kit_example:cache:* (%R~pub:auth:v1:live:* +exists)

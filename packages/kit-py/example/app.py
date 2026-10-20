@@ -33,7 +33,8 @@ def create_app() -> Flask:
         with kit.db.connection() as connection:
             rows = connection.execute(
                 "SELECT value, %s || value::text, (value::numeric / %s), "
-                "NULL::text, now() FROM generate_series(%s, %s) AS value "
+                "NULL::text, now() "
+                "FROM generate_series(%s::integer, %s::integer) AS value "
                 "ORDER BY value LIMIT %s OFFSET %s",
                 ("Note ", 100, 1, 45, kit.size, offset),
             ).fetchall()

@@ -1,0 +1,323 @@
+name: Services
+
+# Each service is built, tested and released alone (ADR-0040, F13-09). The
+# matrix comes from the changed paths through .github/scripts/service-matrix.sh;
+# nothing here lists a service. A pull request builds and tests each changed
+# image and pushes nothing. A push to main that changes services/<name>/VERSION
+# builds that image once, runs the conformance suite on it and pushes
+# ghcr.io/equipo-03-proyecto10/mosaiq-<name>:<VERSION>, never over a tag.
+on:
+  pull_request:
+  push:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.derive.outputs.matrix }}
+      kits: ${{ steps.derive.outputs.kits }}
+      release: ${{ steps.derive.outputs.release }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Derive the matrices from the changed paths
+        id: derive
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = pull_request ]; then
+            files=$(git diff --name-only "origin/$BASE_REF...HEAD")
+          elif [[ "$BEFORE" =~ ^0+$ ]]; then
+            # A new branch has no "before": test every built service and both kits.
+            files=tests/conformance/
+          else
+            files=$(git diff --name-only "$BEFORE..$SHA")
+          fi
+          matrix=$(bash .github/scripts/service-matrix.sh <<<"$files")
+          kits=false
+          if grep -qE '^(tests/conformance/|packages/kit-(py|rs)/|contracts/common/|deploy/infra/|\.github/scripts/|\.github/workflows/services\.yml$)' <<<"$files"; then
+            kits=true
+          fi
+          release='[]'
+          if [ "$EVENT" = push ] && [ "$REF" = refs/heads/main ]; then
+            release=$({ grep -E '^services/[^/]+/VERSION$' <<<"$files" || true; } | bash .github/scripts/service-matrix.sh)
+          fi
+          echo "matrix=$matrix kits=$kits release=$release"
+          {
+            echo "matrix=$matrix"
+            echo "kits=$kits"
+            echo "release=$release"
+          } >> "$GITHUB_OUTPUT"
+
+  service:
+    name: service (${{ matrix.service }})
+    needs: changes
+    if: needs.changes.outputs.matrix != '[]'
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.changes.outputs.matrix) }}
+    # The seeded database a service's unit and golden tests may read, as the
+    # owner: TEST_DATABASE_URL. The conformance stack runs its own.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      NAME: ${{ matrix.service }}
+      DIR: services/${{ matrix.service }}
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/retail
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: VERSION is semver and bumped with the service
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          grep -qxE '(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)' "$DIR/VERSION" \
+            || { echo "::error::$DIR/VERSION is not semver"; exit 1; }
+          if [ "$EVENT" = pull_request ]; then
+            changed=$(git diff --name-only "origin/$BASE_REF...HEAD" -- "$DIR/")
+            if [ -n "$changed" ] && ! grep -qx "$DIR/VERSION" <<<"$changed"; then
+              echo "::error::$DIR changed without a VERSION bump"
+              exit 1
+            fi
+          fi
+
+      - name: Detect the kind from the lock file
+        id: kind
+        run: |
+          if [ -f "$DIR/uv.lock" ] && [ ! -f "$DIR/Cargo.lock" ]; then kind=python
+          elif [ -f "$DIR/Cargo.lock" ] && [ ! -f "$DIR/uv.lock" ]; then kind=rust
+          else echo "::error::$DIR needs exactly one of uv.lock and Cargo.lock"; exit 1
+          fi
+          echo "kind=$kind" >> "$GITHUB_OUTPUT"
+
+      - name: Load PostgreSQL scripts
+        run: |
+          psql -v ON_ERROR_STOP=1 -f sql/00_create_database.sql
+          psql -v ON_ERROR_STOP=1 -d retail -f sql/01_schema.sql
+          psql -v ON_ERROR_STOP=1 -d retail -f sql/02_seed_30_per_table.sql
+
+      - name: Stage the contracts into the build context
+        run: bash .github/scripts/stage-contracts.sh "$NAME"
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Python service — uv sync, black, ruff, pytest
+        if: steps.kind.outputs.kind == 'python'
+        working-directory: ${{ env.DIR }}
+        run: |
+          pip install uv==0.12.3
+          uv sync --frozen
+          uv run black --check .
+          uv run ruff check .
+          uv run pytest
+
+      - name: Rust service — fmt, clippy, test
+        if: steps.kind.outputs.kind == 'rust'
+        working-directory: ${{ env.DIR }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libclang-dev libxml2-dev pkg-config
+          # The toolchain the image builds with.
+          if [ -f rust-toolchain.toml ]; then
+            channel=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
+          else
+            channel=$(sed -n 's/^FROM rust:\([0-9.]*\)-.*/\1/p' Dockerfile | head -1)
+          fi
+          rustup toolchain install "$channel" --profile minimal --component clippy,rustfmt
+          export RUSTUP_TOOLCHAIN=$channel
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+
+      - name: Build the image from its own directory
+        run: docker build -t "mosaiq-$NAME:ci" "$DIR"
+
+      - name: Install the suite's tools
+        run: |
+          pip install -r web/requirements-dev.txt -r contracts/requirements.txt
+          bash contracts/install-tools.sh
+
+      - name: Conformance suite against the image
+        run: |
+          port=$(yq -r --arg n "$NAME" '.services[] | select(.name == $n) | .port' contracts/registry.yaml)
+          bash tests/conformance/run.sh "mosaiq-$NAME:ci" "$DIR" "$port"
+
+      - name: Capture the conformance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-${{ matrix.service }}
+          path: test-results/
+          if-no-files-found: ignore
+
+  kits:
+    name: kit-${{ matrix.kit }} example conformance
+    needs: changes
+    if: needs.changes.outputs.kits == 'true'
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        kit: [py, rs]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install the suite's tools
+        run: |
+          pip install -r web/requirements-dev.txt -r contracts/requirements.txt
+          bash contracts/install-tools.sh
+
+      - name: Build kit-py's example
+        if: matrix.kit == 'py'
+        working-directory: packages/kit-py
+        run: |
+          pip install uv==0.12.3
+          uv build --wheel
+          mkdir -p example/wheels example/contracts/common
+          cp dist/*.whl example/wheels/
+          cp -R ../../contracts/common/v1 example/contracts/common/
+          docker build -t mosaiq-kit-example example
+          echo "IMAGE=mosaiq-kit-example" >> "$GITHUB_ENV"
+          echo "CONFORMANCE_CONTRACT_DIR=packages/kit-py/example/contracts/kit-example" >> "$GITHUB_ENV"
+
+      - name: Build kit-rs' example
+        if: matrix.kit == 'rs'
+        working-directory: packages/kit-rs
+        run: |
+          mkdir -p examples/contracts/common
+          cp -R ../../contracts/common/v1 examples/contracts/common/
+          docker build -f examples/Dockerfile -t mosaiq-kit-rs-example .
+          echo "IMAGE=mosaiq-kit-rs-example" >> "$GITHUB_ENV"
+          echo "CONFORMANCE_CONTRACT_DIR=packages/kit-rs/examples/contracts/kit-example" >> "$GITHUB_ENV"
+
+      - name: Conformance suite against the example
+        run: bash tests/conformance/run.sh "$IMAGE" tests/conformance/kit-example 8000
+
+      # The same example with the liveness check switched off must fail the
+      # redis-state case, or the suite is vacuous.
+      - name: The suite fails an example without the liveness check
+        if: matrix.kit == 'py'
+        run: |
+          docker build --build-arg BASE=mosaiq-kit-example -t mosaiq-kit-example-no-liveness \
+            -f tests/conformance/kit-example/Dockerfile.no-liveness tests/conformance/kit-example
+          bash tests/conformance/run.sh mosaiq-kit-example-no-liveness tests/conformance/kit-example 8000 \
+            test_authentication_fails_closed_with_redis_state_stopped
+
+      - name: Capture the conformance reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-kit-${{ matrix.kit }}
+          path: test-results/
+          if-no-files-found: ignore
+
+  # The required check: green when nothing was built or every entry passed.
+  services:
+    needs: [changes, service, kits]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - env:
+          CHANGES: ${{ needs.changes.result }}
+          MATRIX: ${{ needs.changes.outputs.matrix }}
+          SERVICE: ${{ needs.service.result }}
+          KITS: ${{ needs.kits.result }}
+        run: |
+          [ "$CHANGES" = success ] || { echo "the changes job finished as '$CHANGES'"; exit 1; }
+          bash .github/scripts/service-matrix.sh summary "$MATRIX" "$SERVICE"
+          case $KITS in
+            success | skipped) ;;
+            *) echo "kit example conformance finished as '$KITS'"; exit 1 ;;
+          esac
+
+  release:
+    name: release (${{ matrix.service }})
+    needs: changes
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.release != '[]'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.changes.outputs.release) }}
+    env:
+      NAME: ${{ matrix.service }}
+      DIR: services/${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Refuse a tag that already exists
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version=$(cat "$DIR/VERSION")
+          grep -qxE '(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)' <<<"$version"
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/mosaiq-$NAME:$version"
+          echo "IMAGE=$image" >> "$GITHUB_ENV"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          if docker manifest inspect "$image" >/dev/null 2>&1; then
+            echo "::error::$image already exists; a release never overwrites a tag"
+            exit 1
+          fi
+
+      - name: Build the image once
+        run: |
+          bash .github/scripts/stage-contracts.sh "$NAME"
+          docker build \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.version=$VERSION" \
+            -t "$IMAGE" "$DIR"
+
+      - name: Conformance suite against that image
+        run: |
+          pip install -r web/requirements-dev.txt -r contracts/requirements.txt
+          bash contracts/install-tools.sh
+          port=$(yq -r --arg n "$NAME" '.services[] | select(.name == $n) | .port' contracts/registry.yaml)
+          bash tests/conformance/run.sh "$IMAGE" "$DIR" "$port"
+
+      - name: Push the tested image
+        run: docker push "$IMAGE"

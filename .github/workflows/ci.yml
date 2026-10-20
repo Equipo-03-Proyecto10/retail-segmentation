@@ -111,6 +111,24 @@ jobs:
           run_quiet bash contracts/check.sh
           run_quiet bash contracts/streams/check_streams.sh
 
+  # The repository rules of the distributed stage, as greps over tracked
+  # files, and ADR-0040's memory gate (F13-09). guards.sh prints nothing when
+  # every rule holds; the gate prints the mem_limit total.
+  guards:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: contracts/requirements.txt
+      - run: pip install -r contracts/requirements.txt
+      - name: Repository guards stay silent
+        run: bash .github/scripts/guards.sh
+      - name: Every mem_limit sums to at most 3,000 MB
+        run: python3 .github/scripts/memory_gate.py
+
   database:
     name: SQL scripts run clean from empty
     runs-on: ubuntu-24.04

@@ -513,4 +513,13 @@ def test_only_the_web_services_deactivation_writes_a_notification() -> None:
         r"[^;]*?ON (?:public\.)?app_user\b",
         schema,
     )
-    assert triggers_on_app_user == ["trg_audit_app_user"]
+    # users-service's capture (#421) records access changes in its outbox for
+    # auth-service; it writes no notification.
+    assert triggers_on_app_user == [
+        "trg_audit_app_user",
+        "trg_users_capture_access_changed",
+    ]
+    capture = schema.split(
+        "CREATE OR REPLACE FUNCTION users_events.capture_access_changed()", 1
+    )[1].split("$capture$;", 1)[0]
+    assert "notification" not in capture.lower()

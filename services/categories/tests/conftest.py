@@ -182,7 +182,7 @@ def token(key: rsa.RSAPrivateKey, actor: str):
             "iat": now,
             "exp": now + 600,
         }
-        # Not jwt.encode: the repository guard keeps that call to auth-service.
+        # Only auth-service may sign (guards.sh); tests sign with their own key.
         signer = jwt.PyJWT()
         encoded = signer.encode(claims, key, algorithm="RS256", headers={"kid": KID})
         return {"Authorization": "Bearer " + encoded}

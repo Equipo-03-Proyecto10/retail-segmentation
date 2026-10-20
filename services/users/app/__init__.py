@@ -52,7 +52,7 @@ def relay_redis(url: str) -> redis.Redis:
     """svc_users on redis-state, with time for WAITAOF's two seconds.
 
     The kit's request client gives up after 0.2 s, which suits a liveness
-    lookup but would fail every durable XADD.
+    lookup but would fail every durable stream write.
     """
     parsed = urlsplit(url)
     hostname = parsed.hostname or ""

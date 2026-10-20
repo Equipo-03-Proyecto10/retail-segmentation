@@ -25,10 +25,10 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlsplit, urlunsplit
 
-import jwt
 import psycopg
 import pytest
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from flask.testing import FlaskClient
 from psycopg import sql
 
@@ -43,9 +43,30 @@ _PRIVATE_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 _copies = itertools.count()
 
 
-def _b64url(number: int) -> str:
-    raw = number.to_bytes((number.bit_length() + 7) // 8, "big")
+def _b64url_bytes(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+
+def _b64url(number: int) -> str:
+    return _b64url_bytes(number.to_bytes((number.bit_length() + 7) // 8, "big"))
+
+
+def _sign_rs256(claims: dict[str, Any]) -> str:
+    """A compact RS256 JWS by hand, as tests/conformance/tokens.py makes them.
+
+    Only auth-service signs with a JWT library (ADR-0036); this throwaway key
+    exists for these tests alone.
+    """
+    header = {"alg": "RS256", "typ": "JWT", "kid": KID}
+    signing_input = (
+        _b64url_bytes(json.dumps(header).encode())
+        + "."
+        + _b64url_bytes(json.dumps(claims).encode())
+    )
+    signature = _PRIVATE_KEY.sign(
+        signing_input.encode("ascii"), padding.PKCS1v15(), hashes.SHA256()
+    )
+    return signing_input + "." + _b64url_bytes(signature)
 
 
 def _missing(variable: str) -> None:
@@ -166,7 +187,7 @@ def token() -> Callable[..., str]:
             "iat": now,
             "exp": now + 300,
         }
-        return jwt.encode(claims, _PRIVATE_KEY, algorithm="RS256", headers={"kid": KID})
+        return _sign_rs256(claims)
 
     return sign
 

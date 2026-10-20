@@ -979,6 +979,81 @@ BEFORE INSERT ON public.transaction_line
 FOR EACH ROW EXECUTE FUNCTION fn_sales_namespace_guard_line();
 -- END BOUNDARY sales
 
+-- BEGIN BOUNDARY products
+-- products-service (F14-06, ADR-0034, ADR-0044). Its contract view, its
+-- outbox for stream:products.v1.changed and the grants of svc_products. The
+-- capture trigger fires for every writer of public.product, the frozen web
+-- and a hard delete included, so no change is invisible to the cache
+-- invalidation of products and of recommendations.
+
+CREATE SCHEMA IF NOT EXISTS api_products;
+REVOKE ALL ON SCHEMA api_products FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS products_events;
+REVOKE ALL ON SCHEMA products_events FROM PUBLIC;
+
+-- Keys only, never state: consumers re-read the producer's api_ view.
+CREATE TABLE IF NOT EXISTS products_events.outbox (
+    event_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    stream      text NOT NULL,
+    event_type  text NOT NULL,
+    entity_id   text NOT NULL,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    relayed_at  timestamptz
+);
+CREATE INDEX IF NOT EXISTS outbox_unrelayed
+    ON products_events.outbox (occurred_at) WHERE relayed_at IS NULL;
+
+-- contracts/db/api_products.product_ref.v1.md. Definer rights
+-- (security_invoker = off): a consumer reads these columns and nothing else of
+-- public.product. image_path stays web-managed and is not published.
+CREATE OR REPLACE VIEW api_products.product_ref_v1
+WITH (security_invoker = off) AS
+SELECT product_id, sku, name, category_id, list_price, is_active
+FROM public.product;
+
+-- Captures every writer, the web included, in the writer's transaction.
+CREATE OR REPLACE FUNCTION products_events.capture_changed() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+DECLARE
+    entity text;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        entity := OLD.product_id::text;
+    ELSE
+        entity := NEW.product_id::text;
+    END IF;
+    INSERT INTO products_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:products.v1.changed', TG_OP, entity);
+    -- An empty wake-up for the owner's relay; only that relay LISTENs.
+    PERFORM pg_notify('products_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION products_events.capture_changed() OWNER TO definer_products;
+REVOKE EXECUTE ON FUNCTION products_events.capture_changed() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_capture_changed
+AFTER INSERT OR UPDATE OR DELETE ON public.product
+FOR EACH ROW EXECUTE FUNCTION products_events.capture_changed();
+
+-- svc_products writes the catalog but never deletes from it, and never
+-- touches image_path (web-managed). Each is a row of contracts/db/grants.csv.
+GRANT SELECT, INSERT ON public.product TO svc_products;
+GRANT UPDATE (name, category_id, list_price, is_active) ON public.product TO svc_products;
+
+GRANT USAGE ON SCHEMA products_events TO svc_products, definer_products;
+GRANT INSERT ON products_events.outbox TO definer_products;
+GRANT SELECT, DELETE, UPDATE (relayed_at) ON products_events.outbox TO svc_products;
+
+GRANT USAGE ON SCHEMA api_products
+    TO svc_products, svc_sales, svc_recommendations, svc_engagement;
+GRANT SELECT ON api_products.product_ref_v1
+    TO svc_products, svc_sales, svc_recommendations, svc_engagement;
+-- END BOUNDARY products
+
 -- BEGIN APPLICATION ROLE VERIFICATION
 -- F1-05 (#53). Opt-in acceptance checks, kept here because even a rejected
 -- DROP belongs in the only file allowed to contain table DDL. Normal schema

@@ -170,3 +170,24 @@ def test_no_content_is_204() -> None:
     assert response.status_code == 204
     assert response.data == b""
     assert "Content-Type" not in response.headers
+
+
+def test_a_page_names_its_json_info_member_and_keeps_its_xml() -> None:
+    app = Flask("render-page-key")
+    namespace = "https://example.invalid/value"
+    value = Page("Values", "Value", "values", [{"id": 1}], page=1, size=20, total=1)
+    with app.app_context():
+        default = render_representation(value, "json", namespace)
+        value.info_key = "page"
+        renamed = render_representation(value, "json", namespace)
+        xml = render_representation(value, "xml", namespace)
+    assert default.json == {
+        "values": [{"id": 1}],
+        "page_info": {"page": 1, "size": 20, "total": 1},
+    }
+    assert renamed.json == {
+        "values": [{"id": 1}],
+        "page": {"page": 1, "size": 20, "total": 1},
+    }
+    common = "{https://mosaiq.maxthecoder.online/xml/common/v1}PageInfo"
+    assert etree.fromstring(xml.data).find(common) is not None

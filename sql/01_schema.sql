@@ -1088,6 +1088,110 @@ GRANT SELECT ON api_customers.customer_ref_v1
        svc_recommendations, svc_engagement;
 -- END BOUNDARY customers
 
+-- BEGIN BOUNDARY categories
+-- categories-service (F14-08) owns the category tree: no cycle (RN-33,
+-- trg_category_no_cycle), and no service delete of a category that has
+-- products (RN-06) or children (RN-07), both ON DELETE RESTRICT, or that a
+-- customer names as an interest (E-13, trg_category_delete_guard below). The
+-- table stays in public; the web remains a legacy co-writer (E-09), so the
+-- capture trigger below sees its edits and hard deletes too.
+
+CREATE SCHEMA IF NOT EXISTS api_categories;
+REVOKE ALL ON SCHEMA api_categories FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS categories_events;
+REVOKE ALL ON SCHEMA categories_events FROM PUBLIC;
+
+-- Keys only, never state: consumers re-read the producer's api_ view.
+CREATE TABLE IF NOT EXISTS categories_events.outbox (
+    event_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    stream      text NOT NULL,
+    event_type  text NOT NULL,
+    entity_id   text NOT NULL,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    relayed_at  timestamptz
+);
+CREATE INDEX IF NOT EXISTS outbox_unrelayed
+    ON categories_events.outbox (occurred_at) WHERE relayed_at IS NULL;
+
+-- The published tree: one row per category, with no privilege needed on the
+-- base table. security_invoker = off.
+CREATE OR REPLACE VIEW api_categories.category_tree_v1
+WITH (security_invoker = off) AS
+SELECT category_id, parent_category_id, name
+FROM public.category;
+REVOKE ALL ON api_categories.category_tree_v1 FROM PUBLIC;
+
+-- Captures every writer, the web included, in the writer's transaction.
+CREATE OR REPLACE FUNCTION categories_events.capture_changed() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+DECLARE
+    entity text;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        entity := OLD.category_id::text;
+    ELSE
+        entity := NEW.category_id::text;
+    END IF;
+    INSERT INTO categories_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:categories.v1.changed', TG_OP, entity);
+    -- An empty wake-up for the owner's relay; only that relay LISTENs.
+    PERFORM pg_notify('categories_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION categories_events.capture_changed() OWNER TO definer_categories;
+REVOKE EXECUTE ON FUNCTION categories_events.capture_changed() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_capture_changed
+AFTER INSERT OR UPDATE OR DELETE ON public.category
+FOR EACH ROW EXECUTE FUNCTION categories_events.capture_changed();
+
+-- E-13: customer_interest_category cascades on a category delete, and that
+-- table belongs to customer-preferences. A service session (session_user is a
+-- svc_* role, which SET ROLE cannot change) may not delete a category a
+-- customer names; the web's own cascade is untouched. The function runs as
+-- definer_guard, whose only privilege is SELECT on that one table, so no
+-- service gains a privilege on it. The refusal is a foreign-key-class error
+-- under its own constraint name, which the service maps to 409.
+CREATE OR REPLACE FUNCTION fn_category_delete_guard() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $guard$
+BEGIN
+    IF session_user LIKE 'svc\_%' AND EXISTS (
+        SELECT FROM public.customer_interest_category AS i
+        WHERE i.category_id = OLD.category_id
+    ) THEN
+        RAISE EXCEPTION 'category % is named as a customer interest', OLD.category_id
+            USING ERRCODE = 'foreign_key_violation',
+                  CONSTRAINT = 'category_has_customer_interest';
+    END IF;
+    RETURN OLD;
+END
+$guard$;
+ALTER FUNCTION fn_category_delete_guard() OWNER TO definer_guard;
+REVOKE EXECUTE ON FUNCTION fn_category_delete_guard() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_category_delete_guard
+BEFORE DELETE ON public.category
+FOR EACH ROW EXECUTE FUNCTION fn_category_delete_guard();
+
+GRANT SELECT ON public.customer_interest_category TO definer_guard;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.category TO svc_categories;
+
+GRANT USAGE ON SCHEMA categories_events TO svc_categories, definer_categories;
+GRANT INSERT ON categories_events.outbox TO definer_categories;
+GRANT SELECT, DELETE, UPDATE (relayed_at) ON categories_events.outbox TO svc_categories;
+
+GRANT USAGE ON SCHEMA api_categories TO svc_categories, svc_recommendations;
+GRANT SELECT ON api_categories.category_tree_v1 TO svc_categories, svc_recommendations;
+-- END BOUNDARY categories
+
 -- BEGIN APPLICATION ROLE VERIFICATION
 -- F1-05 (#53). Opt-in acceptance checks, kept here because even a rejected
 -- DROP belongs in the only file allowed to contain table DDL. Normal schema

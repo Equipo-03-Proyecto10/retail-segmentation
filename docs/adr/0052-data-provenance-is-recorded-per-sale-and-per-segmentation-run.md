@@ -1,6 +1,6 @@
 # ADR-0052 — Data provenance is recorded per sale and per segmentation run, not per instance
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Max
 **Issue:** #457
 **Supersedes:** —

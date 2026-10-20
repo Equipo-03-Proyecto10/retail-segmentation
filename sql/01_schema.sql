@@ -1192,6 +1192,118 @@ GRANT USAGE ON SCHEMA api_categories TO svc_categories, svc_recommendations;
 GRANT SELECT ON api_categories.category_tree_v1 TO svc_categories, svc_recommendations;
 -- END BOUNDARY categories
 
+-- BEGIN BOUNDARY stock
+CREATE SCHEMA IF NOT EXISTS api_stock;
+REVOKE ALL ON SCHEMA api_stock FROM PUBLIC;
+
+CREATE SCHEMA IF NOT EXISTS stock_events;
+REVOKE ALL ON SCHEMA stock_events FROM PUBLIC;
+
+-- Keys only, never state: consumers re-read api_stock.stock_level_v1.
+CREATE TABLE IF NOT EXISTS stock_events.outbox (
+    event_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    stream      text NOT NULL,
+    event_type  text NOT NULL,
+    entity_id   text NOT NULL,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    relayed_at  timestamptz
+);
+CREATE INDEX IF NOT EXISTS outbox_unrelayed
+    ON stock_events.outbox (occurred_at) WHERE relayed_at IS NULL;
+
+CREATE OR REPLACE VIEW api_stock.stock_level_v1
+WITH (security_invoker = false)
+AS
+SELECT store_id, product_id, quantity_on_hand, updated_at
+FROM public.inventory;
+
+CREATE OR REPLACE FUNCTION api_stock.consume_v1(
+    requested_store_id smallint,
+    requested_product_id integer,
+    requested_quantity integer
+) RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $consume$
+DECLARE
+    remaining integer;
+BEGIN
+    IF $3 IS NULL OR $3 <= 0 THEN
+        RAISE EXCEPTION 'quantity must be greater than zero'
+            USING ERRCODE = '22023';
+    END IF;
+
+    UPDATE inventory
+       SET quantity_on_hand = quantity_on_hand - $3,
+           updated_at = now()
+     WHERE store_id = $1
+       AND product_id = $2
+       AND quantity_on_hand >= $3
+     RETURNING quantity_on_hand INTO remaining;
+
+    IF FOUND THEN
+        RETURN remaining;
+    END IF;
+
+    SELECT quantity_on_hand
+      INTO remaining
+      FROM inventory
+     WHERE store_id = $1 AND product_id = $2
+       FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'no stock record for store % and product %', $1, $2
+            USING ERRCODE = '23514', CONSTRAINT = 'no_stock_record';
+    END IF;
+
+    RAISE EXCEPTION 'only % units are available', remaining
+        USING ERRCODE = '23514', CONSTRAINT = 'stock_unavailable';
+END
+$consume$;
+ALTER FUNCTION api_stock.consume_v1(smallint, integer, integer) OWNER TO definer_stock;
+REVOKE EXECUTE ON FUNCTION api_stock.consume_v1(smallint, integer, integer) FROM PUBLIC;
+
+-- Captures every inventory writer, including the frozen web, in its transaction.
+CREATE OR REPLACE FUNCTION stock_events.capture_changed() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+DECLARE
+    entity text;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        entity := OLD.store_id::text || ':' || OLD.product_id::text;
+    ELSE
+        entity := NEW.store_id::text || ':' || NEW.product_id::text;
+    END IF;
+    INSERT INTO stock_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:stock.v1.changed', TG_OP, entity);
+    PERFORM pg_notify('stock_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION stock_events.capture_changed() OWNER TO definer_stock;
+REVOKE EXECUTE ON FUNCTION stock_events.capture_changed() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_capture_changed
+AFTER INSERT OR UPDATE OR DELETE ON public.inventory
+FOR EACH ROW EXECUTE FUNCTION stock_events.capture_changed();
+
+GRANT SELECT ON public.inventory TO svc_stock, definer_stock;
+GRANT UPDATE (quantity_on_hand, updated_at) ON public.inventory TO definer_stock;
+
+GRANT USAGE ON SCHEMA stock_events TO svc_stock, definer_stock;
+GRANT INSERT ON stock_events.outbox TO definer_stock;
+GRANT SELECT, DELETE ON stock_events.outbox TO svc_stock;
+GRANT UPDATE (relayed_at) ON stock_events.outbox TO svc_stock;
+
+GRANT USAGE ON SCHEMA api_stock TO svc_stock, svc_recommendations, svc_sales;
+GRANT SELECT ON api_stock.stock_level_v1 TO svc_stock, svc_recommendations;
+GRANT EXECUTE ON FUNCTION api_stock.consume_v1(smallint, integer, integer) TO svc_sales;
+-- END BOUNDARY stock
+
 -- BEGIN APPLICATION ROLE VERIFICATION
 -- F1-05 (#53). Opt-in acceptance checks, kept here because even a rejected
 -- DROP belongs in the only file allowed to contain table DDL. Normal schema

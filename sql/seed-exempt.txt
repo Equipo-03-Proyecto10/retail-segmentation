@@ -44,3 +44,6 @@ products_events.outbox
 # while a category change waits to be relayed or replayed within seven days,
 # and the seed makes no such change.
 categories_events.outbox
+
+# The stock outbox is runtime relay state, not a business catalog to pad.
+stock_events.outbox

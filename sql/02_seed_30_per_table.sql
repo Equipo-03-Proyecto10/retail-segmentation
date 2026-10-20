@@ -213,9 +213,12 @@ SELECT ('00000000-0000-0000-0000-' || lpad(n::text,12,'0'))::uuid,
 FROM generate_series(1,30) n;
 
 -- ---------- segmentation runs (F7-02) ----------
-INSERT INTO segmentation_run (method, window_days, parameters, customer_count, run_at)
+-- Every seeded run is SEEDED (ADR-0052): it scored the seeded sales below.
+-- The origin guard on segmentation_run checks OBSERVED runs only, so these
+-- load before the sales they describe.
+INSERT INTO segmentation_run (method, window_days, parameters, customer_count, run_at, data_origin)
 SELECT 'RFM_RULES', 180, '{"window_days": 180}'::jsonb, 30,
-       now() - (n || ' days')::interval
+       now() - (n || ' days')::interval, 'SEEDED'
 FROM generate_series(29, 1, -1) n;
 
 -- One completed K-means run (F9-02 to F9-05, ADR-0018, ADR-0021, ADR-0030),
@@ -235,7 +238,7 @@ FROM generate_series(29, 1, -1) n;
 -- has a label and its raw values but no segment and no quintile scores
 -- (ADR-0018). tests/test_seed_analytics_postgres.py refits the seeded run and
 -- fails if this record and the seed's sales ever disagree.
-INSERT INTO segmentation_run (method, window_days, parameters, customer_count, run_at)
+INSERT INTO segmentation_run (method, window_days, parameters, customer_count, run_at, data_origin)
 VALUES ('KMEANS', 180, '{
   "empty_cluster_policy": "an emptied cluster takes the customer farthest from their own cluster''s centre, from a cluster holding at least two; lowest customer id on a tie",
   "initialisation": "k-means++, seeded",
@@ -286,10 +289,10 @@ VALUES ('KMEANS', 180, '{
   "tie_break": "a customer equidistant from two clusters goes to the lower-numbered one",
   "tolerance": 0.0001,
   "window_days": 180
-}'::jsonb, 30, now() - interval '12 hours');
+}'::jsonb, 30, now() - interval '12 hours', 'SEEDED');
 
-INSERT INTO segmentation_run (method, window_days, parameters, customer_count, run_at)
-VALUES ('RFM_RULES', 180, '{"window_days": 180}'::jsonb, 30, now());
+INSERT INTO segmentation_run (method, window_days, parameters, customer_count, run_at, data_origin)
+VALUES ('RFM_RULES', 180, '{"window_days": 180}'::jsonb, 30, now(), 'SEEDED');
 
 -- ---------- customer_preferred_channel (30 customers x 2 channels = 60) ----------
 INSERT INTO customer_preferred_channel (customer_id, channel_id)
@@ -347,7 +350,12 @@ FROM generate_series(1,40) n;
 -- they are elapsed time under any TimeZone: the raw recency, frequency and spend
 -- of a customer, and so the K-means run recorded below, do not depend on where
 -- the script is run.
-INSERT INTO transaction (source_transaction_id, customer_id, store_id, channel_id, occurred_at, total)
+--
+-- Every seeded sale is SEEDED (ADR-0052), which is what marks the figures
+-- derived from it Synthetic; only the CSV import and sales-service write
+-- OBSERVED.
+INSERT INTO transaction (source_transaction_id, customer_id, store_id, channel_id, occurred_at, total,
+                         data_origin)
 WITH profile AS (
     SELECT c,
            3 + ((c*7) % 30) / 2 AS purchases,
@@ -369,7 +377,8 @@ SELECT 'TXN-' || lpad(n::text,8,'0'),
        1 + ((n*3) % 5),
        now() - make_interval(hours => 24 * (last_days + (j-1) * spacing_days)
                                        + (c*5 + j*7) % 24),
-       round((50 + (n % 20) * 37.5)::numeric,2)
+       round((50 + (n % 20) * 37.5)::numeric,2),
+       'SEEDED'
 FROM sale
 ORDER BY n;
 

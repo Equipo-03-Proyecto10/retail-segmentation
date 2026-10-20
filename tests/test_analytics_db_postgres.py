@@ -190,8 +190,9 @@ def test_run_filters_match_wildcards_literally(
         )
         cursor.execute(
             "INSERT INTO segmentation_run (method, window_days, customer_count,"
-            " executed_by) VALUES (%s, %s, %s, %s) RETURNING run_id",
-            ("KMEANS", 180, 0, admin_id),
+            " executed_by, data_origin) VALUES (%s, %s, %s, %s, %s)"
+            " RETURNING run_id",
+            ("KMEANS", 180, 0, admin_id, "SEEDED"),
         )
         run_id = cursor.fetchone()[0]
 

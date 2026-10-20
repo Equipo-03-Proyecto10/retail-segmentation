@@ -34,12 +34,11 @@ from web.db.transactions import atomic
 from web.parsing import iso_date, whole_number
 
 # What F11-07 measures. The schema stores free text; the vocabulary is this
-# service's, and matches the values the seed already uses.
+# service's, and matches the values the seed uses. Conversion is the only
+# metric: average ticket conditions on who bought, which intent to treat
+# forbids, so it was removed rather than measured (ADR-0053).
 TARGET_METRICS: dict[str, str] = {
     "CONVERSION": "Conversion rate",
-    # Selectable so the experiments already using it stay editable, but no
-    # measurement exists for it: uplift refuses it (#357).
-    "AVERAGE_TICKET": "Average ticket (not measured yet)",
 }
 
 # experiment_data_origin_check's values (RN-26). SEEDED is ADR-0019's A/A

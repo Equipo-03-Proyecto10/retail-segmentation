@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2 - 2026-10-19
+
+- Add `Page.info_key`, the JSON member that holds page, size and total. It
+  defaults to `page_info`, so every existing page renders as before; the users
+  contract, whose v1 froze `page`, sets it (#421).
+
 ## 0.1.1 - 2026-10-16
 
 - Upgrade PyJWT, lxml and Flask to patched releases in response to dependency

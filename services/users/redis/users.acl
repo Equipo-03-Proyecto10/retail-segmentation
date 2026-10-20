@@ -1,0 +1,1 @@
+user svc_users on {{password}} resetchannels -@all +@connection +@read +@write -@dangerous -scan -randomkey ~users:rl:* ~users:cache:* (%R~pub:auth:v1:live:* +exists) +waitaof (~stream:users.v1.access_changed +xadd)

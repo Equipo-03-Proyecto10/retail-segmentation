@@ -59,6 +59,10 @@ class Page:
     size: int | None = None
     status: int = 200
     headers: dict[str, str] | None = None
+    # The JSON member holding page, size and total. Contracts say `page_info`;
+    # one whose v1 froze another name (users: `page`) sets it. XML is always
+    # common:PageInfo.
+    info_key: str = "page_info"
 
 
 @dataclass(slots=True)

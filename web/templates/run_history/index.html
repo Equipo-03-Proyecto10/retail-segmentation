@@ -8,6 +8,26 @@
   {% from "macros/ui.html" import count_label, empty_state, page_header, pagination %}
   {{ page_header("Run history", "Every completed segmentation run, traced back to its method, parameters and the person who ran it.", "Segmentation traceability") }}
 
+  <form class="mq-filterbar" method="get" action="{{ url_for('run_history.index') }}">
+    <div class="mq-filterbar__row">
+      <div class="mq-filterbar__group">
+        <label class="mq-field__label" for="method">Method</label>
+        <select class="mq-select" id="method" name="method">
+          <option value="">All methods</option>
+          {% for code in methods %}<option value="{{ code }}" {{ 'selected' if filters.method == code }}>{{ code }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="mq-filterbar__group mq-filterbar__group--search">
+        <label class="mq-field__label" for="q">Executed by</label>
+        <input class="mq-input" type="search" id="q" name="q" value="{{ filters.q }}" placeholder="Name of the person who ran it">
+      </div>
+      <div class="mq-filterbar__actions">
+        {% if filters %}<a class="mq-btn mq-btn--tertiary mq-btn--sm" href="{{ url_for('run_history.index') }}">Clear</a>{% endif %}
+        <button class="mq-btn mq-btn--primary mq-btn--sm" type="submit">Filter</button>
+      </div>
+    </div>
+  </form>
+
   {% if runs %}
     <section class="mq-panel mq-panel--table mq-density-compact">
       <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(total, "run") }}</span><span class="mq-caption">Most recent first</span></div>
@@ -34,10 +54,15 @@
         page,
         total_pages,
         "Page {} of {} · ".format(page, total_pages) ~ count_label(total, "run"),
-        url_for('run_history.index', page=page - 1) if page > 1 else none,
-        url_for('run_history.index', page=page + 1) if page < total_pages else none
+        url_for('run_history.index', page=page - 1, **filters) if page > 1 else none,
+        url_for('run_history.index', page=page + 1, **filters) if page < total_pages else none
       ) }}
     </section>
+  {% elif filters %}
+    {{ empty_state(
+      "No runs match these filters.",
+      "Change or clear the filters to see every run. A seeded run has no executing user, so a name never matches it."
+    ) }}
   {% else %}
     {{ empty_state(
       "No segmentation runs yet",

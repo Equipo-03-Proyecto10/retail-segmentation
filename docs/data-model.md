@@ -459,6 +459,35 @@ the new parent and refuses a longer cycle as `category_no_cycle`.
 | `state` | `VARCHAR(80)` | NN | — | State |
 | `is_active` | `BOOLEAN` | NN | default `TRUE` | Whether the store trades today |
 
+#### `stores.store_location`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `store_id` | `SMALLINT` | NN | PK; FK → `public.store`, `ON DELETE CASCADE` | The store whose one location this is |
+| `latitude` | `NUMERIC` | NN | CHECK −90 to 90 | Latitude in decimal degrees |
+| `longitude` | `NUMERIC` | NN | CHECK −180 to 180 | Longitude in decimal degrees |
+| `geofence_radius_m` | `INTEGER` | NN | CHECK 25 to 2000 | Accepted check-in radius in metres |
+| `set_by` | `UUID` | NN | FK → `public.app_user` | Administrator who last set the location |
+| `set_at` | `TIMESTAMPTZ` | NN | default `now()` | Time the complete location was last replaced |
+
+This is a 1:1 vertical split of `store`: `store_id` is both its key and its
+determinant, and determines every location attribute. It contains no
+independent multivalued facts, so the relation is in 4NF.
+
+#### `stores_events.outbox`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `event_id` | `UUID` | NN | PK; generated | Delivery and deduplication identity |
+| `stream` | `TEXT` | NN | — | Versioned Redis stream name |
+| `event_type` | `TEXT` | NN | — | Source operation |
+| `entity_id` | `TEXT` | NN | — | Store identifier encoded as text |
+| `occurred_at` | `TIMESTAMPTZ` | NN | default `now()` | Commit-side capture time |
+| `relayed_at` | `TIMESTAMPTZ` | yes | — | Successful relay time |
+
+The outbox stores one event identity and its delivery state, with no repeating
+groups or copied store state; its key determines all columns, so it is in 4NF.
+
 #### `segment_rule`
 
 | Column | Type | Null | Constraints | Meaning |
@@ -714,7 +743,7 @@ either.
 | `experiment_id` | `INT` | NN | PK | Experiment identifier |
 | `name` | `VARCHAR(120)` | NN | — | Experiment name |
 | `campaign_id` | `INT` | yes | FK → `campaign`, `SET NULL` | Campaign it belongs to, if any |
-| `target_metric` | `VARCHAR(60)` | NN | — | Metric measured, e.g. `CONVERSION` |
+| `target_metric` | `VARCHAR(60)` | NN | — | Metric measured; the service accepts only `CONVERSION` (ADR-0053) |
 | `starts_on` | `DATE` | NN | — | Start |
 | `ends_on` | `DATE` | yes | `CHECK >= starts_on` | End; `NULL` while running |
 | `conversion_window_days` | `SMALLINT` | NN | `CHECK > 0` | Fixed before the run starts, immutable after the first assignment (ADR-0019) |
@@ -786,9 +815,10 @@ cannot update or delete them (ADR-0027).
 Links an assignment to a qualifying sale rather than adding an experiment
 column to `transaction` (ADR-0019). `UNIQUE (assignment_id, transaction_id)`
 stops the same sale being recorded as a conversion twice for the same
-assignment; it does not limit an assignment to one conversion, since an
-`AVERAGE_TICKET` metric can legitimately draw on more than one qualifying
-sale.
+assignment; it does not limit an assignment to one conversion. Conversion
+counts a customer once however many sales qualify, but every qualifying sale is
+kept, so the same records can serve a later revenue metric without a schema
+change (ADR-0053).
 `retail_app` can select and insert conversions but cannot update or delete
 them (ADR-0050).
 
@@ -918,6 +948,9 @@ suffix:
 - its outbox lives in `<suffix>_events`;
 - any table of its own lives in a schema named for it.
 
+The stores boundary therefore owns `stores` for `store_location`, publishes
+through `api_stores`, and keeps relay state in `stores_events`.
+
 The eight outbox owners named by ADR-0044 therefore have both of these schemas:
 
 | Boundary | Contract schema | Outbox schema |
@@ -930,6 +963,12 @@ The eight outbox owners named by ADR-0044 therefore have both of these schemas:
 | customer-preferences | `api_preferences` | `preferences_events` |
 | sales | `api_sales` | `sales_events` |
 | segments | `api_segments` | `segments_events` |
+
+customers is a ninth boundary with a contract schema and no outbox: `api_customers`
+holds `customer_ref_v1` (`customer_id`, `registered_on`, over `customer`,
+`security_invoker = off`), read by sales, customer-preferences, segments,
+recommendations and engagement. It publishes no stream, so it has no
+`customers_events`.
 
 Each schema is created by its boundary's own section of `sql/01_schema.sql`;
 none exists until that boundary's story lands. `retail_app` has USAGE on

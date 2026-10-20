@@ -33,3 +33,24 @@ channel
 # data; padding this table would misrepresent the vocabulary as larger than
 # it is.
 segment_label
+
+# The products outbox is runtime state, not a catalog: a row exists only
+# between a committed product change and its relay to Redis, and the relay
+# purges relayed rows after seven days. Seeding it would invent events that
+# never happened (ADR-0044).
+products_events.outbox
+
+# Runtime state of categories-service's outbox (ADR-0044): rows exist only
+# while a category change waits to be relayed or replayed within seven days,
+# and the seed makes no such change.
+categories_events.outbox
+
+# The stock outbox is runtime relay state, not a business catalog to pad.
+stock_events.outbox
+
+# Runtime delivery state; rows are created only by committed store changes.
+stores_events.outbox
+
+# users-service relays access changes from here and purges them after seven
+# days: runtime state, empty in a fresh database, never seed data (F14-04).
+users_events.outbox

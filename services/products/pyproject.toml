@@ -1,0 +1,33 @@
+[project]
+name = "products-service"
+version = "0.1.0"
+description = "MOSAIQ products-service: the product catalog rule (RN-10, RN-11)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "mosaiq-kit @ git+https://github.com/Equipo-03-Proyecto10/retail-segmentation@kit-py/v0.1.1#subdirectory=packages/kit-py",
+    "gunicorn==23.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "black==26.5.1",
+    "pytest==9.1.1",
+    "ruff==0.8.4",
+]
+
+[tool.uv]
+package = false
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
+[tool.ruff]
+extend = "../../pyproject.toml"
+
+[tool.ruff.lint]
+extend-select = ["S608"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

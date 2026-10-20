@@ -104,8 +104,8 @@ Deliberately not built in the web system, so do not present it as built:
 - Editing the label vocabulary or the segment rule catalogue (`segment.write` has
   no screen); the bands change only in the database.
 - A customer self-service view (`user.self` has no screen).
-- A measurement for the *Average ticket* target metric: it can be chosen and is
-  labelled as not measured yet (#457).
+- Any target metric other than *Conversion rate*. *Average ticket* was removed
+  rather than measured, because it counts only customers who bought (ADR-0053).
 - An HTTP ingestion endpoint: CSV through the Sales import page is the web
   system's only way to ingest sales (ADR-0020).
 
@@ -827,8 +827,8 @@ label, never one run's segment, so a recalculation does not change its meaning.
   draft needs new dates before it can be activated.
 
 **Experiments** (**Experiments** button on Campaigns, `/experiments/`). **New
-experiment** takes a *Name*, *Campaign*, *Target metric* (*Conversion rate*, or
-*Average ticket (not measured yet)*), *Conversion window (days)*, *Start date*,
+experiment** takes a *Name*, *Campaign*, *Target metric* (*Conversion rate*, the only
+one), *Conversion window (days)*, *Start date*,
 *End date*, *Data origin* (*Observed*, *Seeded (A/A validation)*, *Injected
 (synthetic uplift)*), *Treatment groups* and *Control arm* (*Include one
 control* or *No control (use two treatment arms)*), then a *name* and *treatment
@@ -865,16 +865,15 @@ once there are assignments, **Exposure**, **Conversion** and **Uplift**.
    interval*, *p-value* and *Significant at 0.05* or *Not significant*. *Conversion
    among exposed customers* sits beside it as a secondary figure. *Preliminary*
    warns that windows are still open. An experiment with no control, an empty arm,
-   an *Average ticket* target or unrecorded qualifying sales is refused with the
-   reason, or asks you to go to **Conversion** first. A non-observed experiment
+   a target metric other than *Conversion rate* or unrecorded qualifying sales is
+   refused with the reason, or asks you to go to **Conversion** first. A non-observed experiment
    shows **Synthetic**. The calculation is trusted because an A/A split and a
    fixed 10,000-per-arm injected uplift are tested to behave as expected
    (RN-27, RN-48).
 
 The seeded experiments are all `SEEDED` or `INJECTED`, so every figure on them is
-labelled **Synthetic**; none claims to be observed (#427). Odd-numbered seeded
-experiments measure *Conversion rate*; even-numbered ones measure *Average
-ticket*, which uplift refuses. They ran from 1 February to 1 March 2026, so
+labelled **Synthetic**; none claims to be observed (#427). Every one measures
+*Conversion rate* (#457). They ran from 1 February to 1 March 2026, so
 nothing can be exposed on them now and the segmentation dashboard's *Active
 experiments* is empty until a current experiment has assignments.
 
@@ -883,7 +882,9 @@ experiments* is empty until a current experiment has assignments.
 **Segmentation dashboard** (`/segmentation-dashboard/`, `segment.read`). Choose a
 *Run* and press **Show**. The page shows the run and its *Previous run*; *Average
 R, F and M by label*; the charts *Segment sizes*, *Revenue by label* (over the
-run's own window), *RFM distribution* (a recency by frequency heatmap) and
+run's own window), *RFM distribution* (a recency by frequency heatmap of customers), *Spend by RFM
+cell* (the same grid, coloured by mean spend in MXN, with *The 25 cells as a
+table* beneath it) and
 *Migration flow* from the previous run (with *New to the population* and *Left
 the population* counted beside it); then *Active experiments* (those running
 today, with each arm's assigned, converted and conversion rate) and *Most
@@ -1091,8 +1092,8 @@ future intent separately.
    real `data_origin`, and every seeded experiment is `SEEDED` or `INJECTED`, so
    its results are labelled Synthetic. Do not present a seeded uplift as a
    business result.
-6. *Average ticket* can be chosen as an experiment's target metric but nothing
-   measures it; uplift refuses it. Only *Conversion rate* is measured (#457).
+6. *Conversion rate* is the only experiment metric. There is no revenue or
+   average-ticket comparison (ADR-0053).
 7. The permission matrix includes inventory writes and customer self-service,
    but there are no workflows for those capabilities. A store manager reads every
    store's reports, as the matrix says (ADR-0048).
@@ -1179,7 +1180,7 @@ can see the menu entry.
     per label*; note that it never says which method is better.
 15. **Show the dashboard.** Open **Segmentation dashboard**, choose the run and
     press **Show**. Walk *Average R, F and M by label*, *Segment sizes*, *Revenue
-    by label*, *RFM distribution* and *Migration flow*. State that the data is
+    by label*, *RFM distribution*, *Spend by RFM cell* and *Migration flow*. State that the data is
     embedded in the HTML and Highcharts is served locally, and that the
     **Synthetic** banner reflects demonstration data.
 16. **Show a customer's behaviour.** From a customer's page press **Consumption

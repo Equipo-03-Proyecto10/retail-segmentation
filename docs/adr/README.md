@@ -122,6 +122,14 @@ still called `app_session` seed-exempt. Only ADR-0022's status lines changed.
 The same review kept ADR-0046's exemption of outboxes and `sales.sale_capture`
 unchanged: seeding an outbox would publish invented events once its relay starts.
 
+ADR-0052 and ADR-0053 merged into `develop` while still `Proposed` (#457), and
+ADR-0053 merged with the change it records: `AVERAGE_TICKET` left the
+experiment vocabulary and the seed. That is the order the rule above exists to
+prevent. The team accepted both on 2026-10-20, before the release that takes
+them to `main`, and this transition records that rather than backdating it.
+ADR-0052 is accepted ahead of its implementation (#559, #560). Their decision
+text is unchanged.
+
 ## Index
 
 | ADR | Title | Status |
@@ -177,6 +185,8 @@ unchanged: seeding an outbox would publish invented events once its relay starts
 | [0049](0049-kit-rs-validates-xml-request-bodies-with-libxml2.md) | kit-rs validates XML request bodies with libxml2, after a quick-xml screen | Accepted |
 | [0050](0050-experiment-conversions-are-append-only-for-the-application-role.md) | Experiment conversions are append-only for the application role | Accepted |
 | [0051](0051-app-session-is-seeded-as-runtime-history.md) | `app_session` is seeded as runtime history, not exempted | Accepted |
+| [0052](0052-data-provenance-is-recorded-per-sale-and-per-segmentation-run.md) | Data provenance is recorded per sale and per segmentation run, not per instance | Accepted |
+| [0053](0053-experiments-are-measured-on-conversion-only.md) | Experiments are measured on conversion only; `AVERAGE_TICKET` is removed | Accepted |
 
 ## Writing one
 

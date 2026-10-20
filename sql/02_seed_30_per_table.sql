@@ -163,6 +163,19 @@ SELECT ('11111111-1111-1111-1111-' || lpad(n::text,12,'0'))::uuid,
        now() - (n || ' days')::interval
 FROM generate_series(1,30) n;
 
+-- ---------- stores.store_location (30, one per seeded store) ----------
+-- Coordinates cycle through plausible city centres in the same order as the
+-- seeded store cities. The sole administrator is the source of every value.
+INSERT INTO stores.store_location
+    (store_id, latitude, longitude, geofence_radius_m, set_by, set_at)
+SELECT n,
+       (ARRAY[25.6866,25.6776,25.7417,25.7816,20.6597,19.4326,19.0414,20.5888,32.5149,20.9674]::numeric[])[1+((n-1)%10)],
+       (ARRAY[-100.3161,-100.2597,-100.3022,-100.1887,-103.3496,-99.1332,-98.2063,-100.3899,-117.0382,-89.5926]::numeric[])[1+((n-1)%10)],
+       100 + (n * 10),
+       '11111111-1111-1111-1111-000000000001'::uuid,
+       now() - (n || ' hours')::interval
+FROM generate_series(1,30) n;
+
 -- ---------- app_session (30, one finished sign-in per user) ----------
 -- Server-side sessions (ADR-0022): the history of each demonstration account's
 -- last sign-in. Every session has ended (revoked_at is set), so none can
@@ -514,7 +527,8 @@ FROM generate_series(1,30) n;
 -- ---------- experiment (30) ----------
 -- Every seeded experiment is synthetic (ADR-0019): none may claim OBSERVED,
 -- which would show its figures as real results without the Synthetic label
--- (#427). Two in three are A/A validation, one in three injected uplift.
+-- (#427). Two in three are A/A validation, one in three injected uplift. All
+-- are measured on CONVERSION, the only target metric (ADR-0053).
 --
 -- An experiment is dated relative to the load, like the sales it is measured
 -- against, and runs for 42 days: it starts between 8 and 153 days ago, in steps
@@ -527,7 +541,7 @@ FROM generate_series(1,30) n;
 INSERT INTO experiment (experiment_id, name, campaign_id, target_metric, starts_on, ends_on,
                          conversion_window_days, data_origin)
 SELECT n, 'Experiment ' || n, n,
-       (ARRAY['CONVERSION','AVERAGE_TICKET'])[1+((n-1)%2)],
+       'CONVERSION',
        CURRENT_DATE - (8 + ((n*11) % 30) * 5),
        CURRENT_DATE - (8 + ((n*11) % 30) * 5) + 42,
        7 + ((n-1) % 4) * 7,

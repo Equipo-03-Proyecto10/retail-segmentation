@@ -979,6 +979,516 @@ BEFORE INSERT ON public.transaction_line
 FOR EACH ROW EXECUTE FUNCTION fn_sales_namespace_guard_line();
 -- END BOUNDARY sales
 
+-- BEGIN BOUNDARY products
+-- products-service (F14-06, ADR-0034, ADR-0044). Its contract view, its
+-- outbox for stream:products.v1.changed and the grants of svc_products. The
+-- capture trigger fires for every writer of public.product, the frozen web
+-- and a hard delete included, so no change is invisible to the cache
+-- invalidation of products and of recommendations.
+
+CREATE SCHEMA IF NOT EXISTS api_products;
+REVOKE ALL ON SCHEMA api_products FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS products_events;
+REVOKE ALL ON SCHEMA products_events FROM PUBLIC;
+
+-- Keys only, never state: consumers re-read the producer's api_ view.
+CREATE TABLE IF NOT EXISTS products_events.outbox (
+    event_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    stream      text NOT NULL,
+    event_type  text NOT NULL,
+    entity_id   text NOT NULL,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    relayed_at  timestamptz
+);
+CREATE INDEX IF NOT EXISTS outbox_unrelayed
+    ON products_events.outbox (occurred_at) WHERE relayed_at IS NULL;
+
+-- contracts/db/api_products.product_ref.v1.md. Definer rights
+-- (security_invoker = off): a consumer reads these columns and nothing else of
+-- public.product. image_path stays web-managed and is not published.
+CREATE OR REPLACE VIEW api_products.product_ref_v1
+WITH (security_invoker = off) AS
+SELECT product_id, sku, name, category_id, list_price, is_active
+FROM public.product;
+
+-- Captures every writer, the web included, in the writer's transaction.
+CREATE OR REPLACE FUNCTION products_events.capture_changed() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+DECLARE
+    entity text;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        entity := OLD.product_id::text;
+    ELSE
+        entity := NEW.product_id::text;
+    END IF;
+    INSERT INTO products_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:products.v1.changed', TG_OP, entity);
+    -- An empty wake-up for the owner's relay; only that relay LISTENs.
+    PERFORM pg_notify('products_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION products_events.capture_changed() OWNER TO definer_products;
+REVOKE EXECUTE ON FUNCTION products_events.capture_changed() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_capture_changed
+AFTER INSERT OR UPDATE OR DELETE ON public.product
+FOR EACH ROW EXECUTE FUNCTION products_events.capture_changed();
+
+-- svc_products writes the catalog but never deletes from it, and never
+-- touches image_path (web-managed). Each is a row of contracts/db/grants.csv.
+GRANT SELECT, INSERT ON public.product TO svc_products;
+GRANT UPDATE (name, category_id, list_price, is_active) ON public.product TO svc_products;
+
+GRANT USAGE ON SCHEMA products_events TO svc_products, definer_products;
+GRANT INSERT ON products_events.outbox TO definer_products;
+GRANT SELECT, DELETE, UPDATE (relayed_at) ON products_events.outbox TO svc_products;
+
+GRANT USAGE ON SCHEMA api_products
+    TO svc_products, svc_sales, svc_recommendations, svc_engagement;
+GRANT SELECT ON api_products.product_ref_v1
+    TO svc_products, svc_sales, svc_recommendations, svc_engagement;
+-- END BOUNDARY products
+
+-- BEGIN BOUNDARY customers
+-- customers-service (F14-14) owns the registration rule of RN-08: email unique
+-- when given (customer_email_key), a known channel
+-- (customer_registration_channel_id_fkey), a registration date not in the
+-- future (checked by the service) and no deletion. The table stays in public
+-- as legacy, and the web only reads it. The boundary publishes no stream, so it
+-- has no outbox and no capture trigger.
+
+CREATE SCHEMA IF NOT EXISTS api_customers;
+REVOKE ALL ON SCHEMA api_customers FROM PUBLIC;
+
+-- The published customer reference: identity and registration date, and no
+-- personal data. security_invoker = off, so a consumer needs no privilege on
+-- public.customer.
+CREATE OR REPLACE VIEW api_customers.customer_ref_v1
+WITH (security_invoker = off) AS
+SELECT customer_id, registered_on
+FROM public.customer;
+REVOKE ALL ON api_customers.customer_ref_v1 FROM PUBLIC;
+
+-- The only service writer of customer: no DELETE, and registered_on and
+-- user_id can be set at registration but never corrected.
+GRANT SELECT, INSERT ON public.customer TO svc_customers;
+GRANT UPDATE (name, email, phone, registration_channel_id)
+    ON public.customer TO svc_customers;
+
+GRANT USAGE ON SCHEMA api_customers
+    TO svc_customers, svc_sales, svc_preferences, svc_segments,
+       svc_recommendations, svc_engagement;
+GRANT SELECT ON api_customers.customer_ref_v1
+    TO svc_customers, svc_sales, svc_preferences, svc_segments,
+       svc_recommendations, svc_engagement;
+-- END BOUNDARY customers
+
+-- BEGIN BOUNDARY categories
+-- categories-service (F14-08) owns the category tree: no cycle (RN-33,
+-- trg_category_no_cycle), and no service delete of a category that has
+-- products (RN-06) or children (RN-07), both ON DELETE RESTRICT, or that a
+-- customer names as an interest (E-13, trg_category_delete_guard below). The
+-- table stays in public; the web remains a legacy co-writer (E-09), so the
+-- capture trigger below sees its edits and hard deletes too.
+
+CREATE SCHEMA IF NOT EXISTS api_categories;
+REVOKE ALL ON SCHEMA api_categories FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS categories_events;
+REVOKE ALL ON SCHEMA categories_events FROM PUBLIC;
+
+-- Keys only, never state: consumers re-read the producer's api_ view.
+CREATE TABLE IF NOT EXISTS categories_events.outbox (
+    event_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    stream      text NOT NULL,
+    event_type  text NOT NULL,
+    entity_id   text NOT NULL,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    relayed_at  timestamptz
+);
+CREATE INDEX IF NOT EXISTS outbox_unrelayed
+    ON categories_events.outbox (occurred_at) WHERE relayed_at IS NULL;
+
+-- The published tree: one row per category, with no privilege needed on the
+-- base table. security_invoker = off.
+CREATE OR REPLACE VIEW api_categories.category_tree_v1
+WITH (security_invoker = off) AS
+SELECT category_id, parent_category_id, name
+FROM public.category;
+REVOKE ALL ON api_categories.category_tree_v1 FROM PUBLIC;
+
+-- Captures every writer, the web included, in the writer's transaction.
+CREATE OR REPLACE FUNCTION categories_events.capture_changed() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+DECLARE
+    entity text;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        entity := OLD.category_id::text;
+    ELSE
+        entity := NEW.category_id::text;
+    END IF;
+    INSERT INTO categories_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:categories.v1.changed', TG_OP, entity);
+    -- An empty wake-up for the owner's relay; only that relay LISTENs.
+    PERFORM pg_notify('categories_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION categories_events.capture_changed() OWNER TO definer_categories;
+REVOKE EXECUTE ON FUNCTION categories_events.capture_changed() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_capture_changed
+AFTER INSERT OR UPDATE OR DELETE ON public.category
+FOR EACH ROW EXECUTE FUNCTION categories_events.capture_changed();
+
+-- E-13: customer_interest_category cascades on a category delete, and that
+-- table belongs to customer-preferences. A service session (session_user is a
+-- svc_* role, which SET ROLE cannot change) may not delete a category a
+-- customer names; the web's own cascade is untouched. The function runs as
+-- definer_guard, whose only privilege is SELECT on that one table, so no
+-- service gains a privilege on it. The refusal is a foreign-key-class error
+-- under its own constraint name, which the service maps to 409.
+CREATE OR REPLACE FUNCTION fn_category_delete_guard() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $guard$
+BEGIN
+    IF session_user LIKE 'svc\_%' AND EXISTS (
+        SELECT FROM public.customer_interest_category AS i
+        WHERE i.category_id = OLD.category_id
+    ) THEN
+        RAISE EXCEPTION 'category % is named as a customer interest', OLD.category_id
+            USING ERRCODE = 'foreign_key_violation',
+                  CONSTRAINT = 'category_has_customer_interest';
+    END IF;
+    RETURN OLD;
+END
+$guard$;
+ALTER FUNCTION fn_category_delete_guard() OWNER TO definer_guard;
+REVOKE EXECUTE ON FUNCTION fn_category_delete_guard() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_category_delete_guard
+BEFORE DELETE ON public.category
+FOR EACH ROW EXECUTE FUNCTION fn_category_delete_guard();
+
+GRANT SELECT ON public.customer_interest_category TO definer_guard;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.category TO svc_categories;
+
+GRANT USAGE ON SCHEMA categories_events TO svc_categories, definer_categories;
+GRANT INSERT ON categories_events.outbox TO definer_categories;
+GRANT SELECT, DELETE, UPDATE (relayed_at) ON categories_events.outbox TO svc_categories;
+
+GRANT USAGE ON SCHEMA api_categories TO svc_categories, svc_recommendations;
+GRANT SELECT ON api_categories.category_tree_v1 TO svc_categories, svc_recommendations;
+-- END BOUNDARY categories
+
+-- BEGIN BOUNDARY stock
+CREATE SCHEMA IF NOT EXISTS api_stock;
+REVOKE ALL ON SCHEMA api_stock FROM PUBLIC;
+
+CREATE SCHEMA IF NOT EXISTS stock_events;
+REVOKE ALL ON SCHEMA stock_events FROM PUBLIC;
+
+-- Keys only, never state: consumers re-read api_stock.stock_level_v1.
+CREATE TABLE IF NOT EXISTS stock_events.outbox (
+    event_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    stream      text NOT NULL,
+    event_type  text NOT NULL,
+    entity_id   text NOT NULL,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    relayed_at  timestamptz
+);
+CREATE INDEX IF NOT EXISTS outbox_unrelayed
+    ON stock_events.outbox (occurred_at) WHERE relayed_at IS NULL;
+
+CREATE OR REPLACE VIEW api_stock.stock_level_v1
+WITH (security_invoker = false)
+AS
+SELECT store_id, product_id, quantity_on_hand, updated_at
+FROM public.inventory;
+
+CREATE OR REPLACE FUNCTION api_stock.consume_v1(
+    requested_store_id smallint,
+    requested_product_id integer,
+    requested_quantity integer
+) RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $consume$
+DECLARE
+    remaining integer;
+BEGIN
+    IF $3 IS NULL OR $3 <= 0 THEN
+        RAISE EXCEPTION 'quantity must be greater than zero'
+            USING ERRCODE = '22023';
+    END IF;
+
+    UPDATE inventory
+       SET quantity_on_hand = quantity_on_hand - $3,
+           updated_at = now()
+     WHERE store_id = $1
+       AND product_id = $2
+       AND quantity_on_hand >= $3
+     RETURNING quantity_on_hand INTO remaining;
+
+    IF FOUND THEN
+        RETURN remaining;
+    END IF;
+
+    SELECT quantity_on_hand
+      INTO remaining
+      FROM inventory
+     WHERE store_id = $1 AND product_id = $2
+       FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'no stock record for store % and product %', $1, $2
+            USING ERRCODE = '23514', CONSTRAINT = 'no_stock_record';
+    END IF;
+
+    RAISE EXCEPTION 'only % units are available', remaining
+        USING ERRCODE = '23514', CONSTRAINT = 'stock_unavailable';
+END
+$consume$;
+ALTER FUNCTION api_stock.consume_v1(smallint, integer, integer) OWNER TO definer_stock;
+REVOKE EXECUTE ON FUNCTION api_stock.consume_v1(smallint, integer, integer) FROM PUBLIC;
+
+-- Captures every inventory writer, including the frozen web, in its transaction.
+CREATE OR REPLACE FUNCTION stock_events.capture_changed() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+DECLARE
+    entity text;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        entity := OLD.store_id::text || ':' || OLD.product_id::text;
+    ELSE
+        entity := NEW.store_id::text || ':' || NEW.product_id::text;
+    END IF;
+    INSERT INTO stock_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:stock.v1.changed', TG_OP, entity);
+    PERFORM pg_notify('stock_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION stock_events.capture_changed() OWNER TO definer_stock;
+REVOKE EXECUTE ON FUNCTION stock_events.capture_changed() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_capture_changed
+AFTER INSERT OR UPDATE OR DELETE ON public.inventory
+FOR EACH ROW EXECUTE FUNCTION stock_events.capture_changed();
+
+GRANT SELECT ON public.inventory TO svc_stock, definer_stock;
+GRANT UPDATE (quantity_on_hand, updated_at) ON public.inventory TO definer_stock;
+
+GRANT USAGE ON SCHEMA stock_events TO svc_stock, definer_stock;
+GRANT INSERT ON stock_events.outbox TO definer_stock;
+GRANT SELECT, DELETE ON stock_events.outbox TO svc_stock;
+GRANT UPDATE (relayed_at) ON stock_events.outbox TO svc_stock;
+
+GRANT USAGE ON SCHEMA api_stock TO svc_stock, svc_recommendations, svc_sales;
+GRANT SELECT ON api_stock.stock_level_v1 TO svc_stock, svc_recommendations;
+GRANT EXECUTE ON FUNCTION api_stock.consume_v1(smallint, integer, integer) TO svc_sales;
+-- END BOUNDARY stock
+
+-- BEGIN BOUNDARY stores
+CREATE SCHEMA IF NOT EXISTS stores;
+CREATE SCHEMA IF NOT EXISTS api_stores;
+CREATE SCHEMA IF NOT EXISTS stores_events;
+REVOKE ALL ON SCHEMA stores, api_stores, stores_events FROM PUBLIC;
+
+CREATE TABLE IF NOT EXISTS stores.store_location (
+    store_id SMALLINT NOT NULL,
+    latitude NUMERIC NOT NULL,
+    longitude NUMERIC NOT NULL,
+    geofence_radius_m INTEGER NOT NULL,
+    set_by UUID NOT NULL,
+    set_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Every named constraint is added separately so this boundary is safe to
+-- re-apply to a database that already contains the table.
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
+      AND conname = 'store_location_pkey'
+) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_pkey
+        PRIMARY KEY (store_id); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
+      AND conname = 'store_location_store_id_fkey'
+) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_store_id_fkey
+        FOREIGN KEY (store_id) REFERENCES public.store(store_id) ON DELETE CASCADE; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
+      AND conname = 'store_location_latitude_check'
+) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_latitude_check
+        CHECK (latitude BETWEEN -90 AND 90); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
+      AND conname = 'store_location_longitude_check'
+) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_longitude_check
+        CHECK (longitude BETWEEN -180 AND 180); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
+      AND conname = 'store_location_geofence_radius_m_check'
+) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_geofence_radius_m_check
+        CHECK (geofence_radius_m BETWEEN 25 AND 2000); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
+      AND conname = 'store_location_set_by_fkey'
+) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_set_by_fkey
+        FOREIGN KEY (set_by) REFERENCES public.app_user(user_id) ON DELETE RESTRICT; END IF; END $$;
+
+CREATE TABLE IF NOT EXISTS stores_events.outbox (
+    event_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    stream TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    occurred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    relayed_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS outbox_unrelayed
+    ON stores_events.outbox (occurred_at) WHERE relayed_at IS NULL;
+
+CREATE OR REPLACE VIEW api_stores.store_directory_v1
+WITH (security_invoker = false) AS
+SELECT s.store_id, s.name, s.city, s.state, s.is_active,
+       l.latitude, l.longitude, l.geofence_radius_m
+FROM public.store AS s
+LEFT JOIN stores.store_location AS l USING (store_id);
+
+CREATE OR REPLACE FUNCTION stores_events.capture_changed() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+DECLARE
+    entity text;
+BEGIN
+    IF TG_OP = 'DELETE' THEN entity := OLD.store_id::text;
+    ELSE entity := NEW.store_id::text;
+    END IF;
+    INSERT INTO stores_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:stores.v1.changed', TG_OP, entity);
+    PERFORM pg_notify('stores_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION stores_events.capture_changed() OWNER TO definer_stores;
+REVOKE EXECUTE ON FUNCTION stores_events.capture_changed() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_capture_stores_changed
+AFTER INSERT OR UPDATE OR DELETE ON public.store
+FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_capture_store_location_changed
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_location
+FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_audit_store_location
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_location
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('store_id');
+
+GRANT USAGE ON SCHEMA stores TO svc_stores;
+GRANT SELECT, INSERT, UPDATE, DELETE ON stores.store_location TO svc_stores;
+GRANT SELECT ON public.store TO svc_stores;
+GRANT USAGE ON SCHEMA stores_events TO svc_stores, definer_stores;
+GRANT INSERT ON stores_events.outbox TO definer_stores;
+GRANT SELECT, DELETE ON stores_events.outbox TO svc_stores;
+GRANT UPDATE (relayed_at) ON stores_events.outbox TO svc_stores;
+GRANT USAGE ON SCHEMA api_stores TO svc_stores, svc_checkins, svc_engagement;
+GRANT SELECT ON api_stores.store_directory_v1 TO svc_stores, svc_checkins, svc_engagement;
+-- END BOUNDARY stores
+
+-- BEGIN BOUNDARY users
+-- users-service (F14-04, ADR-0034, ADR-0036, ADR-0044): the single writer of
+-- accounts besides the frozen web (E-09). It publishes the credential view
+-- auth reads (E-15) and captures every access change, the web's included, so
+-- auth can end the user's sessions. Idempotent: an operator re-applies it.
+
+CREATE SCHEMA IF NOT EXISTS api_users;
+CREATE SCHEMA IF NOT EXISTS users_events;
+REVOKE ALL ON SCHEMA api_users FROM PUBLIC;
+REVOKE ALL ON SCHEMA users_events FROM PUBLIC;
+
+-- Keys only, never state: consumers re-read the credential view.
+CREATE TABLE IF NOT EXISTS users_events.outbox (
+    event_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    stream      text NOT NULL,
+    event_type  text NOT NULL,
+    entity_id   text NOT NULL,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    relayed_at  timestamptz
+);
+CREATE INDEX IF NOT EXISTS outbox_unrelayed
+    ON users_events.outbox (occurred_at) WHERE relayed_at IS NULL;
+
+-- The only cross-boundary contract that carries a credential
+-- (contracts/db/api_users.credential.v1.md). It runs as its owner, so auth
+-- reads it without any privilege on app_user or role.
+CREATE OR REPLACE VIEW api_users.credential_v1
+WITH (security_invoker = off) AS
+SELECT u.user_id,
+       lower(u.email) AS email_lower,
+       u.password_hash,
+       u.is_active,
+       r.code AS role_code
+  FROM public.app_user AS u
+  JOIN public.role AS r ON r.role_id = u.role_id;
+
+-- One outbox row per access change, whichever role made it, in the writer's
+-- transaction. A change of name or email alone is not an access change.
+CREATE OR REPLACE FUNCTION users_events.capture_access_changed() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+DECLARE
+    entity text;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        entity := OLD.user_id::text;
+    ELSE
+        entity := NEW.user_id::text;
+    END IF;
+    INSERT INTO users_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:users.v1.access_changed', TG_OP, entity);
+    -- An empty wake-up for the users relay; only that relay LISTENs.
+    PERFORM pg_notify('users_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION users_events.capture_access_changed() OWNER TO definer_users;
+REVOKE EXECUTE ON FUNCTION users_events.capture_access_changed() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_users_capture_access_changed
+AFTER UPDATE OF is_active, role_id, password_hash OR DELETE ON public.app_user
+FOR EACH ROW EXECUTE FUNCTION users_events.capture_access_changed();
+
+-- svc_users writes accounts and never deletes one (RN-04).
+GRANT SELECT, INSERT ON public.app_user TO svc_users;
+GRANT UPDATE (name, email, role_id, is_active, password_hash) ON public.app_user TO svc_users;
+GRANT SELECT ON public.role TO svc_users;
+
+GRANT USAGE ON SCHEMA users_events TO svc_users, definer_users;
+GRANT INSERT ON users_events.outbox TO definer_users;
+GRANT SELECT, DELETE, UPDATE (relayed_at) ON users_events.outbox TO svc_users;
+
+GRANT USAGE ON SCHEMA api_users TO svc_users, svc_auth;
+GRANT SELECT ON api_users.credential_v1 TO svc_users, svc_auth;
+-- END BOUNDARY users
+
 -- BEGIN APPLICATION ROLE VERIFICATION
 -- F1-05 (#53). Opt-in acceptance checks, kept here because even a rejected
 -- DROP belongs in the only file allowed to contain table DDL. Normal schema

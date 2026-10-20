@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, Mock
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
-from flask import Flask
+from flask import Flask, session
 from flask.testing import FlaskClient
 
 from web.app import create_app
@@ -24,6 +24,7 @@ from web.middleware.authz import (
     ALL_PERMISSIONS,
     NAVIGATION,
     PERMISSIONS,
+    menu,
     permissions_for,
     public,
     requirement_of,
@@ -405,6 +406,7 @@ def test_the_menu_is_driven_by_permissions_rather_than_by_role() -> None:
         "Sales import",
         "Segments",
         "Campaigns",
+        "Experiments",
         "Segment run",
         "Run history",
         "Migration matrix",
@@ -423,6 +425,7 @@ def test_the_menu_is_driven_by_permissions_rather_than_by_role() -> None:
         "Catalogs",
         "Segments",
         "Campaigns",
+        "Experiments",
         "Run history",
         "Migration matrix",
         "Model comparison",
@@ -453,6 +456,50 @@ def test_a_store_managers_menu_offers_the_segment_surfaces_and_nothing_to_run() 
         "Consumption reports",
         "Reports",
     ]
+
+
+@pytest.mark.parametrize("role", ["ADMIN", "ANALYST", "MARKETING", "AUDITOR"])
+def test_a_campaign_reader_is_offered_experiments(role: str) -> None:
+    client = _app().test_client()
+    _sign_in(client, role)
+
+    assert "Experiments" in _menu_labels(client)
+
+
+@pytest.mark.parametrize("role", ["STORE_MANAGER", "INVENTORY_PLANNER", "CUSTOMER"])
+def test_experiments_is_absent_without_campaign_read(role: str) -> None:
+    client = _app().test_client()
+    _sign_in(client, role)
+
+    assert "Experiments" not in _menu_labels(client)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/experiments/",
+        "/experiments/new",
+        "/experiments/31/edit",
+        "/experiments/31/exposure",
+        "/experiments/31/groups/2",
+    ],
+)
+def test_every_experiment_page_marks_experiments_current(path: str) -> None:
+    with _app().test_request_context(path):
+        session["user_id"] = "u-1"
+        session["role_code"] = "MARKETING"
+        current = [item.label for item in menu() if item.is_current]
+
+    assert current == ["Experiments"]
+
+
+def test_the_experiment_dashboard_does_not_light_experiments() -> None:
+    with _app().test_request_context("/experiment-dashboard/"):
+        session["user_id"] = "u-1"
+        session["role_code"] = "MARKETING"
+        current = [item.label for item in menu() if item.is_current]
+
+    assert current == ["Experiment dashboard"]
 
 
 def test_the_signed_in_name_and_sign_out_replace_the_sign_in_link() -> None:

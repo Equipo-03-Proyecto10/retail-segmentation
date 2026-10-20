@@ -526,7 +526,10 @@ run.
   five quintiles each, recomputed here rather than read from `r_score`/`f_score`,
   which are stored for only one of the two segmentation methods (F9-02) and would
   make the chart mean something different depending on which one produced the run.
-  An unassigned customer has neither value and is excluded.
+  An unassigned customer has neither value and is excluded. Monetary, the third
+  dimension, is carried on the same 25 cells rather than binned a third time: each
+  cell shows its customers' mean spend in the run's window, in MXN, as a second
+  heatmap beside the count, with the 25 cells also listed as a table (#537).
 * **Migration flow** is the previous run, by `run_at`, compared to this one on
   label code (RN-39), whichever methods produced either run. A customer only one of
   the two runs scored is a change in population, not a move between labels, and is

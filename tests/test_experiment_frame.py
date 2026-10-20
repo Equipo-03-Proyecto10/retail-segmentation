@@ -480,6 +480,6 @@ def test_a_later_exposure_is_still_recorded() -> None:
 # ---------- the metric ----------
 
 
-def test_average_ticket_says_it_is_not_measured_yet_and_stays_selectable() -> None:
-    assert "AVERAGE_TICKET" in service.TARGET_METRICS
-    assert "not measured yet" in service.TARGET_METRICS["AVERAGE_TICKET"]
+def test_conversion_is_the_only_target_metric() -> None:
+    """ADR-0053: average ticket is removed, not offered as unmeasured."""
+    assert set(service.TARGET_METRICS) == {"CONVERSION"}

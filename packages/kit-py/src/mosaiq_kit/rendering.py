@@ -119,7 +119,7 @@ def render_representation(
         size = value.size if value.size is not None else request_size
         json_data = {
             value.key: wire_value(value.items),
-            "page_info": {"page": value.page, "size": size, "total": value.total},
+            value.info_key: {"page": value.page, "size": size, "total": value.total},
         }
     else:
         json_data = {value.key: wire_value(value.items)}

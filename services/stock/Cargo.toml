@@ -1,0 +1,20 @@
+[package]
+name = "stock"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.90"
+publish = false
+
+[dependencies]
+axum = { version = "0.8.4", default-features = false, features = ["http1", "tokio"] }
+chrono = { version = "0.4.41", default-features = false, features = ["clock", "std"] }
+form_urlencoded = "1.2.1"
+indexmap = "2.10.0"
+mosaiq-kit = { git = "https://github.com/Equipo-03-Proyecto10/retail-segmentation", tag = "kit-rs/v0.1.0" }
+redis = { version = "0.32.4", default-features = false, features = ["aio", "tokio-comp"] }
+tokio = { version = "1.47.1", features = ["macros", "net", "rt-multi-thread", "time"] }
+tokio-postgres = { version = "0.7.13", features = ["with-chrono-0_4"] }
+tracing = "0.1.41"
+
+[dev-dependencies]
+tokio = { version = "1.47.1", features = ["full"] }

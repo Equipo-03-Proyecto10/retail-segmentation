@@ -13,9 +13,15 @@ from flask import Blueprint, Response, abort, render_template, request
 from web.db import get_connection
 from web.db.segments import get_run, list_run_assignments, list_runs
 from web.middleware.authz import SEGMENT_READ, requires
-from web.routes.pagination import redirect_last_page
+from web.routes.pagination import (
+    active_filters,
+    choice_filter,
+    redirect_last_page,
+    text_filter,
+)
 from web.services.catalog import parse_pagination
 from web.services.pagination import page_count
+from web.services.segmentation import METHODS
 
 bp = Blueprint("run_history", __name__, url_prefix="/run-history")
 
@@ -25,9 +31,17 @@ _PER_PAGE = 20
 @bp.get("/")
 @requires(SEGMENT_READ)
 def index() -> str | Response:
-    """List completed runs, most recent first."""
+    """List completed runs, most recent first, optionally filtered by method
+    and by the executing user's name."""
     page = parse_pagination(request.args.get("page"))
-    rows, total = list_runs(get_connection(), page=page, per_page=_PER_PAGE)
+    filters = active_filters(method=choice_filter("method", METHODS), q=text_filter())
+    rows, total = list_runs(
+        get_connection(),
+        page=page,
+        per_page=_PER_PAGE,
+        method=filters.get("method"),
+        search=filters.get("q"),
+    )
     if response := redirect_last_page(page, page_count(total, _PER_PAGE)):
         return response
     return render_template(
@@ -36,6 +50,8 @@ def index() -> str | Response:
         page=page,
         total_pages=page_count(total, _PER_PAGE),
         total=total,
+        filters=filters,
+        methods=METHODS,
     )
 
 

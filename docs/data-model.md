@@ -459,6 +459,35 @@ the new parent and refuses a longer cycle as `category_no_cycle`.
 | `state` | `VARCHAR(80)` | NN | — | State |
 | `is_active` | `BOOLEAN` | NN | default `TRUE` | Whether the store trades today |
 
+#### `stores.store_location`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `store_id` | `SMALLINT` | NN | PK; FK → `public.store`, `ON DELETE CASCADE` | The store whose one location this is |
+| `latitude` | `NUMERIC` | NN | CHECK −90 to 90 | Latitude in decimal degrees |
+| `longitude` | `NUMERIC` | NN | CHECK −180 to 180 | Longitude in decimal degrees |
+| `geofence_radius_m` | `INTEGER` | NN | CHECK 25 to 2000 | Accepted check-in radius in metres |
+| `set_by` | `UUID` | NN | FK → `public.app_user` | Administrator who last set the location |
+| `set_at` | `TIMESTAMPTZ` | NN | default `now()` | Time the complete location was last replaced |
+
+This is a 1:1 vertical split of `store`: `store_id` is both its key and its
+determinant, and determines every location attribute. It contains no
+independent multivalued facts, so the relation is in 4NF.
+
+#### `stores_events.outbox`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `event_id` | `UUID` | NN | PK; generated | Delivery and deduplication identity |
+| `stream` | `TEXT` | NN | — | Versioned Redis stream name |
+| `event_type` | `TEXT` | NN | — | Source operation |
+| `entity_id` | `TEXT` | NN | — | Store identifier encoded as text |
+| `occurred_at` | `TIMESTAMPTZ` | NN | default `now()` | Commit-side capture time |
+| `relayed_at` | `TIMESTAMPTZ` | yes | — | Successful relay time |
+
+The outbox stores one event identity and its delivery state, with no repeating
+groups or copied store state; its key determines all columns, so it is in 4NF.
+
 #### `segment_rule`
 
 | Column | Type | Null | Constraints | Meaning |
@@ -918,6 +947,9 @@ suffix:
   live in `api_<suffix>`;
 - its outbox lives in `<suffix>_events`;
 - any table of its own lives in a schema named for it.
+
+The stores boundary therefore owns `stores` for `store_location`, publishes
+through `api_stores`, and keeps relay state in `stores_events`.
 
 The eight outbox owners named by ADR-0044 therefore have both of these schemas:
 

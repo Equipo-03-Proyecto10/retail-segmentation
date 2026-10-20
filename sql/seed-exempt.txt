@@ -47,3 +47,6 @@ categories_events.outbox
 
 # The stock outbox is runtime relay state, not a business catalog to pad.
 stock_events.outbox
+
+# Runtime delivery state; rows are created only by committed store changes.
+stores_events.outbox

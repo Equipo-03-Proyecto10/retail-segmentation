@@ -1,0 +1,1 @@
+user svc_stores on {{password}} resetchannels -@all +@connection +@read +@write -@dangerous -scan -keys -randomkey ~stores:rl:* ~stores:cache:* +waitaof (%R~pub:auth:v1:live:* +exists) (~stream:stores.v1.changed +xadd) (~stream:stores.v1.changed +xreadgroup +xack +xgroup|create +xpending +xclaim)

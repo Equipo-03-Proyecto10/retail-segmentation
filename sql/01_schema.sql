@@ -1304,6 +1304,113 @@ GRANT SELECT ON api_stock.stock_level_v1 TO svc_stock, svc_recommendations;
 GRANT EXECUTE ON FUNCTION api_stock.consume_v1(smallint, integer, integer) TO svc_sales;
 -- END BOUNDARY stock
 
+-- BEGIN BOUNDARY stores
+CREATE SCHEMA IF NOT EXISTS stores;
+CREATE SCHEMA IF NOT EXISTS api_stores;
+CREATE SCHEMA IF NOT EXISTS stores_events;
+REVOKE ALL ON SCHEMA stores, api_stores, stores_events FROM PUBLIC;
+
+CREATE TABLE IF NOT EXISTS stores.store_location (
+    store_id SMALLINT NOT NULL,
+    latitude NUMERIC NOT NULL,
+    longitude NUMERIC NOT NULL,
+    geofence_radius_m INTEGER NOT NULL,
+    set_by UUID NOT NULL,
+    set_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Every named constraint is added separately so this boundary is safe to
+-- re-apply to a database that already contains the table.
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
+      AND conname = 'store_location_pkey'
+) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_pkey
+        PRIMARY KEY (store_id); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
+      AND conname = 'store_location_store_id_fkey'
+) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_store_id_fkey
+        FOREIGN KEY (store_id) REFERENCES public.store(store_id) ON DELETE CASCADE; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
+      AND conname = 'store_location_latitude_check'
+) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_latitude_check
+        CHECK (latitude BETWEEN -90 AND 90); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
+      AND conname = 'store_location_longitude_check'
+) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_longitude_check
+        CHECK (longitude BETWEEN -180 AND 180); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
+      AND conname = 'store_location_geofence_radius_m_check'
+) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_geofence_radius_m_check
+        CHECK (geofence_radius_m BETWEEN 25 AND 2000); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
+      AND conname = 'store_location_set_by_fkey'
+) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_set_by_fkey
+        FOREIGN KEY (set_by) REFERENCES public.app_user(user_id) ON DELETE RESTRICT; END IF; END $$;
+
+CREATE TABLE IF NOT EXISTS stores_events.outbox (
+    event_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    stream TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    occurred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    relayed_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS outbox_unrelayed
+    ON stores_events.outbox (occurred_at) WHERE relayed_at IS NULL;
+
+CREATE OR REPLACE VIEW api_stores.store_directory_v1
+WITH (security_invoker = false) AS
+SELECT s.store_id, s.name, s.city, s.state, s.is_active,
+       l.latitude, l.longitude, l.geofence_radius_m
+FROM public.store AS s
+LEFT JOIN stores.store_location AS l USING (store_id);
+
+CREATE OR REPLACE FUNCTION stores_events.capture_changed() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+DECLARE
+    entity text;
+BEGIN
+    IF TG_OP = 'DELETE' THEN entity := OLD.store_id::text;
+    ELSE entity := NEW.store_id::text;
+    END IF;
+    INSERT INTO stores_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:stores.v1.changed', TG_OP, entity);
+    PERFORM pg_notify('stores_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION stores_events.capture_changed() OWNER TO definer_stores;
+REVOKE EXECUTE ON FUNCTION stores_events.capture_changed() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_capture_stores_changed
+AFTER INSERT OR UPDATE OR DELETE ON public.store
+FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_capture_store_location_changed
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_location
+FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_audit_store_location
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_location
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('store_id');
+
+GRANT USAGE ON SCHEMA stores TO svc_stores;
+GRANT SELECT, INSERT, UPDATE, DELETE ON stores.store_location TO svc_stores;
+GRANT SELECT ON public.store TO svc_stores;
+GRANT USAGE ON SCHEMA stores_events TO svc_stores, definer_stores;
+GRANT INSERT ON stores_events.outbox TO definer_stores;
+GRANT SELECT, DELETE ON stores_events.outbox TO svc_stores;
+GRANT UPDATE (relayed_at) ON stores_events.outbox TO svc_stores;
+GRANT USAGE ON SCHEMA api_stores TO svc_stores, svc_checkins, svc_engagement;
+GRANT SELECT ON api_stores.store_directory_v1 TO svc_stores, svc_checkins, svc_engagement;
+-- END BOUNDARY stores
+
 -- BEGIN APPLICATION ROLE VERIFICATION
 -- F1-05 (#53). Opt-in acceptance checks, kept here because even a rejected
 -- DROP belongs in the only file allowed to contain table DDL. Normal schema

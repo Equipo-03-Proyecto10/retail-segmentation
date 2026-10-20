@@ -39,6 +39,9 @@ BASE_URL = os.environ.get("CONFORMANCE_BASE_URL", "")
 SERVICE = os.environ.get("CONFORMANCE_SERVICE", "")
 ISSUER = os.environ.get("CONFORMANCE_ISSUER", "https://auth.invalid/")
 AUDIENCE = "mosaiq-api"
+# Every token names a seeded account, so an operation that answers for its
+# caller (users' GET /v1/users/me) finds one: each stack loads the seed.
+SUBJECT = "11111111-1111-1111-1111-000000000001"
 # The seven role codes of contracts/auth/token-claims.v1.md.
 ROLE_CODES = (
     "ADMIN",
@@ -331,7 +334,7 @@ class Signer:
         return {
             "iss": ISSUER,
             "aud": AUDIENCE,
-            "sub": str(uuid.uuid4()),
+            "sub": SUBJECT,
             "sid": sid,
             "role": role,
             "jti": str(uuid.uuid4()),

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import uuid
 from typing import Any
 
@@ -50,12 +51,41 @@ def test_users_service_or_web_deactivation_event_revokes_before_xack(
     assert redis_admin.xpending(ACCESS_CHANGED_STREAM, "auth")["pending"] == 0
 
 
+def test_a_burst_of_access_changes_is_revoked_behind_one_durability_wait(
+    app: Any, redis_admin: redis.Redis, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = app.extensions["auth_service"]
+    emails = [f"user{n}@mosaiq-demo.com" for n in range(2, 7)]
+    sids = [_sid(service.sign_in(email, "Password123!")) for email in emails]
+    waits: list[int] = []
+    revoke_sessions = service.store.revoke_sessions
+
+    def counted(*args: Any, **kwargs: Any) -> None:
+        waits.append(1)
+        revoke_sessions(*args, **kwargs)
+
+    monkeypatch.setattr(service.store, "revoke_sessions", counted)
+    workers = BackgroundWorkers(service, redis_admin, interval=60)
+    workers.consumer.run_once(block_ms=1)
+    users = {service.credential_by_email(email)["user_id"] for email in emails}
+    for user_id in users:
+        redis_admin.xadd(ACCESS_CHANGED_STREAM, _event(user_id))
+    started = time.monotonic()
+    assert workers.consumer.run_once(block_ms=10) == len(users)
+    elapsed = time.monotonic() - started
+    assert all(not redis_admin.exists("pub:auth:v1:live:" + sid) for sid in sids)
+    assert redis_admin.xpending(ACCESS_CHANGED_STREAM, "auth")["pending"] == 0
+    # One revocation, so one WAITAOF pair however many entries the read held.
+    assert waits == [1]
+    assert elapsed < 3
+
+
 def test_consumer_is_idempotent_by_event_id(
     app: Any, redis_admin: redis.Redis, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     service = app.extensions["auth_service"]
     calls: list[str] = []
-    monkeypatch.setattr(service.store, "revoke_user", calls.append)
+    monkeypatch.setattr(service.store, "revoke_users", calls.extend)
     workers = BackgroundWorkers(service, redis_admin, interval=60)
     workers.consumer.run_once(block_ms=1)
     event_id = str(uuid.uuid4())
@@ -70,7 +100,7 @@ def test_consumer_recovers_own_pending_and_claims_entries_idle_over_sixty_second
 ) -> None:
     service = app.extensions["auth_service"]
     calls: list[str] = []
-    monkeypatch.setattr(service.store, "revoke_user", calls.append)
+    monkeypatch.setattr(service.store, "revoke_users", calls.extend)
     workers = BackgroundWorkers(service, redis_admin, interval=60)
     workers.consumer._ensure_group()
     own_id = redis_admin.xadd(ACCESS_CHANGED_STREAM, _event("own-pending"))
@@ -100,10 +130,10 @@ def test_fifth_failed_stream_delivery_is_acknowledged(
 ) -> None:
     service = app.extensions["auth_service"]
 
-    def fail(_user_id: str) -> None:
+    def fail(_user_ids: list[str]) -> None:
         raise RuntimeError("expected handler failure")
 
-    monkeypatch.setattr(service.store, "revoke_user", fail)
+    monkeypatch.setattr(service.store, "revoke_users", fail)
     workers = BackgroundWorkers(service, redis_admin, interval=60)
     workers.consumer._ensure_group()
     message_id = redis_admin.xadd(ACCESS_CHANGED_STREAM, _event(USER_ID))

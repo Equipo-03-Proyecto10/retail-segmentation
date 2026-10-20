@@ -9,6 +9,7 @@ from typing import Any
 from mosaiq_kit import ApiError, StreamConsumer
 
 from app.service import AuthService
+from app.store import SessionStore
 
 LOGGER = logging.getLogger(__name__)
 ACCESS_CHANGED_STREAM = "stream:users.v1.access_changed"
@@ -74,25 +75,80 @@ class Reconciler:
             self._thread.join(timeout=1)
 
 
+class AccessChangedConsumer(StreamConsumer):
+    """Revoke a whole read of access changes behind one durability wait.
+
+    The kit hands entries to a handler one at a time, and every revocation
+    waits for the append-only file, up to a second under appendfsync everysec,
+    so a burst of N changes would take about N seconds. Here the entries of one
+    XREADGROUP read are revoked together and acknowledged after a single wait.
+    Duplicates by event_id and the five-delivery rule keep the kit's meaning.
+    """
+
+    def __init__(self, redis: Any, store: SessionStore):
+        super().__init__(redis, ACCESS_CHANGED_STREAM, self._one)
+        self.store = store
+
+    def _one(self, fields: dict[str, str]) -> None:
+        self.store.revoke_users(
+            [fields["entity_id"]] if fields.get("entity_id") else []
+        )
+
+    def _handle_entries(self, entries: list[tuple[Any, Any]]) -> int:
+        acknowledged: list[str] = []
+        batch: list[tuple[str, str]] = []
+        users: list[str] = []
+        seen: set[str] = set()
+        for raw_id, raw_fields in entries:
+            message_id = str(self._decode(raw_id))
+            if raw_fields is None:
+                acknowledged.append(message_id)
+                continue
+            fields = self._decode(raw_fields)
+            event_id = str(fields.get("event_id", ""))
+            if event_id and (event_id in self._handled or event_id in seen):
+                acknowledged.append(message_id)
+                continue
+            if event_id:
+                seen.add(event_id)
+            batch.append((message_id, event_id))
+            if fields.get("entity_id"):
+                users.append(str(fields["entity_id"]))
+        if batch:
+            try:
+                # WAITAOF runs inside, so the XACK below follows durability.
+                self.store.revoke_users(users)
+            except Exception:
+                for message_id, _event_id in batch:
+                    deliveries = self._delivery_count(message_id)
+                    if deliveries >= 5:
+                        LOGGER.exception(
+                            "Access change %s exhausted five deliveries", message_id
+                        )
+                        acknowledged.append(message_id)
+                    else:
+                        LOGGER.warning(
+                            "Access change %s failed on delivery %d",
+                            message_id,
+                            deliveries,
+                        )
+            else:
+                for message_id, event_id in batch:
+                    if event_id:
+                        self._remember(event_id)
+                    acknowledged.append(message_id)
+        if acknowledged:
+            self.redis.xack(self.stream, self.group, *acknowledged)
+        return len(acknowledged)
+
+
 class BackgroundWorkers:
     """Start and stop auth's stream consumer and reconcile thread together."""
 
     def __init__(self, service: AuthService, stream_redis: Any, interval: float = 60):
         self.service = service
-        self.consumer = StreamConsumer(
-            stream_redis,
-            ACCESS_CHANGED_STREAM,
-            self._access_changed,
-        )
+        self.consumer = AccessChangedConsumer(stream_redis, service.store)
         self.reconciler = Reconciler(service, interval)
-
-    def _access_changed(self, fields: dict[str, str]) -> None:
-        user_id = fields.get("entity_id")
-        if not user_id:
-            return
-        # revoke_user performs WAITAOF before returning. StreamConsumer XACKs
-        # only after this handler returns successfully.
-        self.service.store.revoke_user(user_id)
 
     def start(self) -> None:
         self.consumer.start()

@@ -224,11 +224,23 @@ class SessionStore:
             raise auth_unavailable() from None
 
     def revoke_user(self, user_id: str) -> None:
+        self.revoke_users([user_id])
+
+    def revoke_users(self, user_ids: Iterable[str]) -> None:
+        """End every session of these users behind one durability wait."""
+
+        users = tuple(dict.fromkeys(str(user) for user in user_ids))
+        if not users:
+            return
         try:
-            sids = self.redis.smembers(self.user_key(user_id))
+            sids = [
+                sid
+                for user in users
+                for sid in self.redis.smembers(self.user_key(user))
+            ]
         except redis.RedisError:
             raise auth_unavailable() from None
-        self.revoke_sessions(sids, delete_user_sets=[user_id])
+        self.revoke_sessions(sids, delete_user_sets=users)
 
     def session_snapshot(self) -> dict[str, dict[str, str]]:
         """Read indexed live sessions for reconciliation without Redis SCAN."""

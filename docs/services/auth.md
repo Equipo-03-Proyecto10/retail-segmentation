@@ -24,6 +24,8 @@
 - Issues RS256 role-only access tokens (10 min) and rotating refresh tokens inside a session of at most 12 hours. A session is live exactly while `pub:auth:v1:live:{sid}` exists in `redis-state`.
 - Revokes on sign-out, refresh-token reuse and every access change (deactivation, role change, administrator transfer, password change or reset, delete), through `stream:users.v1.access_changed` and a 60 s reconcile.
 - Enforced in service code and Redis. auth owns no PostgreSQL table.
+- A client refreshes one token at a time. Two concurrent refreshes of the same token give one success and one `refresh_reused`, and the reuse ends the whole session, including the winner's new tokens: reuse detection cannot tell a double submit from a stolen token.
+- The consumer revokes every entry of one `XREADGROUP` read together, behind a single `WAITAOF`, so a burst of access changes ends within about a second rather than one second per change.
 - Signs with the one private key mounted read-only in its container; the public JWK Set at `/run/mosaiq/jwks.json` is what every service verifies with. The key is never in the repository; creation and rotation are in [`deploy/auth-keys.md`](../../deploy/auth-keys.md).
 
 ## Endpoints

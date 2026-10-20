@@ -39,3 +39,8 @@ segment_label
 # purges relayed rows after seven days. Seeding it would invent events that
 # never happened (ADR-0044).
 products_events.outbox
+
+# Runtime state of categories-service's outbox (ADR-0044): rows exist only
+# while a category change waits to be relayed or replayed within seven days,
+# and the seed makes no such change.
+categories_events.outbox

@@ -1,0 +1,53 @@
+# The compose project of one service (ADR-0040), rendered by render.py into
+# services/categories/compose.yaml. Lines marked `#auth# ` are auth's alone.
+#
+# On the instance, mosaiq-svc@categories.service runs
+# `docker compose -p mosaiq-categories up -d --no-deps` on this file with
+# IMAGE_TAG set to the service's VERSION; the image comes from GHCR, built and
+# tested in CI, and is never built there. Every path below defaults to the
+# instance's; the local stack at the repository root points them at local
+# stand-ins.
+#
+# One container, no depends_on: the service starts, restarts and rolls back as
+# its own project, and reaches Redis, MongoDB and PostgreSQL by name or socket.
+name: mosaiq-categories
+
+services:
+  categories:
+    image: ghcr.io/equipo-03-proyecto10/mosaiq-categories:${IMAGE_TAG}
+    # The service's own directory and nothing above it (ADR-0045).
+    build:
+      context: .
+    # A UID no host account uses, so PostgreSQL's peer authentication maps it
+    # to no host user and it can never become `postgres`.
+    user: "10001:10001"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,mode=0700
+    mem_limit: 160m
+    cpus: 0.5
+    restart: unless-stopped
+    # Loopback only; NGINX is the one way in (nginx/categories.conf).
+    ports:
+      - "127.0.0.1:5004:5004"
+    # DATABASE_URL (socket form), REDIS_<SUFFIX>_PASSWORD and the rest of the
+    # service's secrets, kept on the host and never in the repository.
+    env_file:
+      - ${MOSAIQ_SVC_ENV_DIR:-/etc/mosaiq/svc}/categories.env
+    volumes:
+      # The socket directory, so PostgreSQL keeps listening on localhost only:
+      #   postgresql://svc_<suffix>@/retail?host=/run/postgresql
+      # No `:z` relabel; an SELinux refusal gets a local policy module.
+      - ${MOSAIQ_PG_SOCKET:-/run/postgresql}:/run/postgresql:ro
+      # The public keys every service verifies tokens with (ADR-0036).
+      - ${MOSAIQ_JWKS_FILE:-/etc/mosaiq/keys/jwks.json}:/run/mosaiq/jwks.json:ro
+      # auth alone signs, so auth alone sees a private key: 0400, UID 10001.
+    networks: [mosaiq]
+
+# Created once with `docker network create mosaiq` (deploy/infra/README.md);
+# external, so no project's `down` removes it.
+networks:
+  mosaiq:
+    external: true

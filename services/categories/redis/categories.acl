@@ -1,0 +1,1 @@
+user svc_categories on {{password}} resetchannels -@all +@connection +@read +@write -@dangerous -scan -randomkey ~categories:rl:* ~categories:cache:* +waitaof (%R~pub:auth:v1:live:* +exists) (~stream:categories.v1.changed +xadd) (~stream:categories.v1.changed +xreadgroup +xack +xgroup|create +xpending +xclaim)

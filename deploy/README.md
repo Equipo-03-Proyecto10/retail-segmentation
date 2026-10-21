@@ -541,6 +541,26 @@ writes, and the old code names it in none, so neither can run against the
 other's schema. Apply (b) or (c) right after the deploy that ships #559, and
 run no CSV load and no segmentation in between.
 
+### Retiring `DATA_IS_SYNTHETIC` (#560)
+
+#560 marks every analytics page Synthetic from the `data_origin` of the rows it
+reads (ADR-0052), and the instance flag is gone from the code. Two things
+follow on the instance:
+
+1. **#559's step above must be done first.** The pages read `data_origin` on
+   sales and runs; against a database without those columns they fail. Deploy
+   #560 only after (b) or (c) of the previous section has been applied and
+   verified.
+2. **Delete the stale line from the environment file.** The application no
+   longer reads it, so it is harmless, but an operator reading the file would
+   believe it still governs the marker:
+
+   ```bash
+   sudo sed -i '/^DATA_IS_SYNTHETIC=/d' /etc/mosaiq/mosaiq.env
+   sudo grep -c '^DATA_IS_SYNTHETIC=' /etc/mosaiq/mosaiq.env   # prints 0
+   sudo systemctl restart mosaiq
+   ```
+
 ### Checking the database has kept up with the code
 
 Because the deploy never runs SQL, a database can fall behind the commit it

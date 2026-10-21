@@ -80,8 +80,10 @@ roles reach which page is in
 | `/campaigns/`, `/experiments/`, `/experiment-report/` | Campaigns, and experiments with separate assignment, exposure and conversion | [ADR-0019](docs/adr/0019-experiment-measurement-separates-assignment-exposure-and-conversion.md) |
 | `/segmentation-dashboard/` | Segment sizes, RFM distribution, migration and revenue by segment | — |
 
-While `DATA_IS_SYNTHETIC=true`, the default, the dashboard labels its figures
-Synthetic: the seed is demonstration data.
+Every analytics page labels a figure Synthetic when the rows behind it are
+seeded: each sale and segmentation run records its `data_origin`
+([ADR-0052](docs/adr/0052-data-provenance-is-recorded-per-sale-and-per-segmentation-run.md)).
+No setting turns the label on or off.
 
 ## Running it
 

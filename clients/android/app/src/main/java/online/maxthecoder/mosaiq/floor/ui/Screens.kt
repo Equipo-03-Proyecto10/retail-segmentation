@@ -27,6 +27,8 @@ import online.maxthecoder.mosaiq.floor.net.ApiError
 
 @Composable
 fun FloorApp(state: SessionState, onSignIn: (String, String) -> Unit, onRetry: () -> Unit, onSignOut: () -> Unit) {
+    // Kept here, above the screens, so a refused sign-in does not clear what was typed.
+    var email by rememberSaveable { mutableStateOf("") }
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
             Column(
@@ -35,7 +37,7 @@ fun FloorApp(state: SessionState, onSignIn: (String, String) -> Unit, onRetry: (
             ) {
                 Text("MOSAIQ Floor", style = MaterialTheme.typography.headlineMedium)
                 when (state) {
-                    is SessionState.SignIn -> SignInForm(state, onSignIn)
+                    is SessionState.SignIn -> SignInForm(state, email, { email = it }, onSignIn)
                     SessionState.Loading -> CircularProgressIndicator()
                     is SessionState.SignedIn -> SignedInPanel(state, onSignOut)
                     is SessionState.Failed -> {
@@ -50,15 +52,19 @@ fun FloorApp(state: SessionState, onSignIn: (String, String) -> Unit, onRetry: (
 }
 
 @Composable
-private fun SignInForm(state: SessionState.SignIn, onSignIn: (String, String) -> Unit) {
-    var email by rememberSaveable { mutableStateOf("") }
+private fun SignInForm(
+    state: SessionState.SignIn,
+    email: String,
+    onEmail: (String) -> Unit,
+    onSignIn: (String, String) -> Unit
+) {
     // A password is never saved across process death.
     var password by remember { mutableStateOf("") }
     state.notice?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
     state.error?.let { ErrorPanel(it) }
     OutlinedTextField(
         value = email,
-        onValueChange = { email = it },
+        onValueChange = onEmail,
         label = { Text("Email") },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),

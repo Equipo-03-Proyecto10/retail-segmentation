@@ -118,6 +118,36 @@ def _refuse_undecodable(path: Path) -> None:
         ) from error
 
 
+def _refuse_unparsable(path: Path) -> None:
+    """Parse the whole file once, a record at a time, before any row is ingested.
+
+    The csv module raises instead of returning a record when a line cannot be
+    parsed, for example a field longer than its field limit (131,072
+    characters). Raised mid-load, that error would escape after the rows before
+    it had committed, with no load recorded and no report (#584). Like the
+    decode pass above, this holds one record at a time, never the whole file,
+    and refuses the file before anything is written.
+    """
+    with path.open(newline="", encoding=_ENCODING) as handle:
+        reader = csv.reader(handle)
+        try:
+            for _record in reader:
+                pass
+        except csv.Error as error:
+            # reader.line_num counts physical lines read, which is the file
+            # line the administrator can find, as the rejection report's
+            # numbers are.
+            if "field larger than field limit" in str(error):
+                raise UnsupportedContractVersion(
+                    f"line {reader.line_num} has a field longer than "
+                    f"{csv.field_size_limit():,} characters, which no column of "
+                    "the contract allows"
+                ) from error
+            raise UnsupportedContractVersion(
+                f"line {reader.line_num} cannot be read as CSV"
+            ) from error
+
+
 def load_sales_csv(
     connection: Connection,
     path: Path,
@@ -132,6 +162,7 @@ def load_sales_csv(
             f"adapter understands version {CONTRACT_VERSION}"
         )
     _refuse_undecodable(path)
+    _refuse_unparsable(path)
 
     received = 0
     rejections: list[RowRejection] = []
@@ -210,8 +241,8 @@ def load_and_record_sales_csv(
     aborted for every row after it.
 
     A file the adapter refuses (an unsupported contract version, a header that
-    does not match, bytes that are not UTF-8) raises before any load is recorded,
-    so it announces nothing.
+    does not match, bytes that are not UTF-8, a line the csv module cannot
+    parse) raises before any load is recorded, so it announces nothing.
     """
     report = load_sales_csv(
         connection, path, contract_version=contract_version, ingest=ingest

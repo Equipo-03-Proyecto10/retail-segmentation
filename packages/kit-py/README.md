@@ -16,13 +16,13 @@ Each service pins the annotated kit tag as a git dependency and commits its own
 
 ```toml
 dependencies = [
-  "mosaiq-kit @ git+https://github.com/Equipo-03-Proyecto10/retail-segmentation@kit-py/v0.1.2#subdirectory=packages/kit-py",
+  "mosaiq-kit @ git+https://github.com/Equipo-03-Proyecto10/retail-segmentation@kit-py/v0.1.3#subdirectory=packages/kit-py",
 ]
 ```
 
 Path dependencies on `packages/` are rejected. A kit upgrade is a service pull
 request with an exact new tag, a refreshed lock and that service's own
-`VERSION` bump. The current release is `kit-py/v0.1.2`, matching this package's
+`VERSION` bump. The current release is `kit-py/v0.1.3`, matching this package's
 version.
 
 ## Staged contracts

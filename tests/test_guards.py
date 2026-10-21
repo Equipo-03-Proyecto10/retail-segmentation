@@ -60,6 +60,7 @@ def repo(tmp_path: Path) -> Path:
     (service / "pyproject.toml").write_text(
         'dependencies = ["mosaiq-kit @ git+https://github.com/x/y'
         '@kit-py/v0.1.1#subdirectory=packages/kit-py"]\n'
+        '[tool.ruff.lint]\nextend-select = ["S608"]\n'
     )
     (service / "redis").mkdir()
     (service / "redis/products.acl").write_text(
@@ -140,6 +141,52 @@ def test_a_rendered_service_passes(repo: Path) -> None:
         ),
         ("web/cache.py", "import redis\n", "ADR-0037 the web names Redis"),
         (
+            "services/products/app/rules.py",
+            'cursor.execute(f"SELECT count(*) FROM {USER_FROM}{where}")\n',
+            "AGENTS.md SQL: services/products/app/rules.py:1",
+        ),
+        (
+            "services/products/app/rules.py",
+            'where = (" WHERE " + " AND ".join(conditions))\n',
+            "AGENTS.md SQL: services/products/app/rules.py:1",
+        ),
+        (
+            "services/products/app/rules.py",
+            'connection.execute(\n    "SELECT "\n    + COLUMNS\n    + " FROM x"\n)\n',
+            "AGENTS.md SQL: services/products/app/rules.py:2",
+        ),
+        (
+            "services/products/app/rules.py",
+            'query = "SELECT {} FROM x".format(columns)\n',
+            "AGENTS.md SQL",
+        ),
+        (
+            "services/products/app/rules.py",
+            'query = "DELETE FROM x WHERE id = %s" % key\n',
+            "AGENTS.md SQL",
+        ),
+        (
+            "services/products/app/rules.py",
+            "rows = cursor.execute(QUERY)  # noqa: S608\n",
+            "AGENTS.md SQL",
+        ),
+        (
+            "services/products/pyproject.toml",
+            'dependencies = ["mosaiq-kit @ git+https://github.com/x/y'
+            '@kit-py/v0.1.1#subdirectory=packages/kit-py"]\n',
+            "AGENTS.md SQL: services/products/pyproject.toml does not select",
+        ),
+        (
+            "packages/kit-rs/src/streams.rs",
+            'let update = format!(\n    "UPDATE {table} SET relayed_at = now()"\n);\n',
+            "AGENTS.md SQL: packages/kit-rs/src/streams.rs:1",
+        ),
+        (
+            "services/stores/src/store.rs",
+            'client.batch_execute(&format!("LISTEN {channel}")).await?;\n',
+            "AGENTS.md SQL: services/stores/src/store.rs:1",
+        ),
+        (
             "services/products/nginx/products.conf",
             "location /api/products/ {}\n",
             "ADR-0035",
@@ -157,6 +204,28 @@ def test_each_broken_rule_is_named(
 
 def test_a_services_tests_may_sign_throwaway_tokens(repo: Path) -> None:
     write(repo, "services/products/tests/conftest.py", "jwt.encode(claims, key)\n")
+    result = guards(repo)
+    assert (result.returncode, result.stdout) == (0, "")
+
+
+def test_sql_composed_with_quoting_helpers_passes(repo: Path) -> None:
+    write(
+        repo,
+        "services/products/app/store.py",
+        "query = sql.SQL(\n"
+        '    "SELECT {columns} FROM public.product{where}"\n'
+        '    " ORDER BY product_id LIMIT %s OFFSET %s"\n'
+        ").format(columns=COLUMNS, where=where)\n"
+        'where = sql.SQL(" WHERE {}").format(sql.SQL(" AND ").join(conditions))\n'
+        'key = f"list:{page}"\n',
+    )
+    write(
+        repo,
+        "packages/kit-rs/src/streams.rs",
+        'const LISTEN: &str = "LISTEN {identifier}";\n'
+        "let listen = with_identifier(LISTEN, &name);\n"
+        'let message = format!("Invalid service suffix {suffix:?}.");\n',
+    )
     result = guards(repo)
     assert (result.returncode, result.stdout) == (0, "")
 

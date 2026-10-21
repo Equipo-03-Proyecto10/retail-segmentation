@@ -348,3 +348,39 @@ def test_a_small_tolerance_keeps_its_value_on_the_parameters_line(
     assert "tolerance: 1e-05" in body
     assert "tolerance: 0.0000" not in body
     assert "inertia: 0.8968" in body
+
+
+# ---------- #560: a SEEDED run is Synthetic, an OBSERVED one is not ----------
+
+
+def _pages(app: Flask, monkeypatch: pytest.MonkeyPatch, origin: str) -> list[str]:
+    run = _run(run_id=7, data_origin=origin)
+    monkeypatch.setattr("web.routes.run_history.list_runs", lambda *a, **k: ([run], 1))
+    monkeypatch.setattr("web.routes.run_history.get_run", lambda *a, **k: run)
+    monkeypatch.setattr(
+        "web.routes.run_history.list_run_assignments",
+        lambda *a, **k: ([_assignment()], 1),
+    )
+    client = app.test_client()
+    _sign_in(client, "ANALYST")
+    return [
+        client.get(url).get_data(as_text=True)
+        for url in ("/run-history/", "/run-history/7")
+    ]
+
+
+def test_a_seeded_run_is_marked_synthetic_in_the_list_and_on_its_page(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    listed, detail = _pages(app, monkeypatch, "SEEDED")
+
+    assert "Synthetic" in listed
+    assert "Synthetic" in detail
+    assert 'class="mq-alert mq-alert--warning" role="status"' in detail
+
+
+def test_an_observed_run_is_not_marked_synthetic(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for body in _pages(app, monkeypatch, "OBSERVED"):
+        assert "Synthetic" not in body

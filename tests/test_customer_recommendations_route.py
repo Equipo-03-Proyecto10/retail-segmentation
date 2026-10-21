@@ -431,3 +431,15 @@ def test_the_customer_page_links_to_the_recommendations(app, monkeypatch) -> Non
     body = _body(client.get(f"/catalog/customers/{_ID}"))
 
     assert f'href="{_URL}"' in body
+
+
+# ---------- #560: Synthetic when built from seeded data ----------
+
+
+@pytest.mark.parametrize("synthetic", [True, False])
+def test_the_page_is_marked_exactly_when_the_result_is_synthetic(
+    app: Flask, monkeypatch: pytest.MonkeyPatch, synthetic: bool
+) -> None:
+    response, _ = _open(app, monkeypatch, _result(synthetic=synthetic))
+
+    assert ("Synthetic" in _body(response)) is synthetic

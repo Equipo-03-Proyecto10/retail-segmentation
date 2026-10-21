@@ -48,6 +48,7 @@ def _row(
     monetary: str | None = "1200.00",
     scores: tuple[int | None, int | None, int | None] = (3, 3, 3),
     window_days: int = 180,
+    data_origin: str = "OBSERVED",
 ) -> HistoryRow:
     unassigned = label is None
     return HistoryRow(
@@ -66,6 +67,7 @@ def _row(
         valid_to=valid_to,
         run_at=valid_from,
         window_days=window_days,
+        data_origin=data_origin,
     )
 
 

@@ -420,3 +420,29 @@ def test_the_menu_offers_it_to_a_visitor_who_may_read_segments(
     _world(monkeypatch)
 
     assert "Model comparison" in _body(_open(app))
+
+
+# ---------- #560: Synthetic when either run is SEEDED ----------
+
+
+@pytest.mark.parametrize(
+    ("rules", "kmeans", "marked"),
+    [
+        ("SEEDED", "OBSERVED", True),
+        ("OBSERVED", "SEEDED", True),
+        ("OBSERVED", "OBSERVED", False),
+    ],
+)
+def test_the_comparison_is_synthetic_when_either_run_is_seeded(
+    app: Flask, monkeypatch: pytest.MonkeyPatch, rules, kmeans, marked
+) -> None:
+    world = _World()
+    world.runs = {
+        9: _run(9, "RFM_RULES", data_origin=rules),
+        12: _run(12, "KMEANS", data_origin=kmeans),
+    }
+    _world(monkeypatch, world)
+
+    body = _body(_open(app, f"{_URL}?rules_run=9&kmeans_run=12"))
+
+    assert ("Synthetic" in body) is marked

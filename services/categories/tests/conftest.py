@@ -202,7 +202,12 @@ def unique() -> str:
 
 @pytest.fixture
 def new_id(owner: psycopg.Connection):
-    """Allocate category ids in the test range, unused at the time of the call."""
+    """Allocate category ids in the test range, unused at the time of the call.
+
+    The cleanup deletes a test's categories but not their outbox rows, so an id
+    an earlier test used is still taken: drawing it again would let that test's
+    events leak into this one's outbox assertions (#600).
+    """
 
     taken = {
         row[0]
@@ -211,6 +216,15 @@ def new_id(owner: psycopg.Connection):
             (TEST_ID_FLOOR,),
         )
     }
+    # entity_id is text and other tests write non-numeric ones, so convert here
+    # rather than cast in SQL.
+    taken.update(
+        int(row[0])
+        for row in owner.execute(
+            "SELECT DISTINCT entity_id FROM categories_events.outbox"
+        )
+        if row[0].isdigit() and int(row[0]) >= TEST_ID_FLOOR
+    )
 
     def allocate() -> int:
         while True:

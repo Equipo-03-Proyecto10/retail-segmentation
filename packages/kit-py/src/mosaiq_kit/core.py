@@ -340,8 +340,10 @@ class Kit:
         self.app.add_url_rule(
             "/openapi.yaml",
             endpoint="mosaiq_openapi",
-            view_func=lambda: Response(
-                self.contract.openapi_bytes, content_type="application/yaml"
+            view_func=lambda: self._document(
+                self.contract.openapi_bytes,
+                "application/yaml",
+                ("application/yaml", "application/x-yaml", "text/yaml"),
             ),
             methods=["GET"],
             provide_automatic_options=False,
@@ -349,8 +351,10 @@ class Kit:
         self.app.add_url_rule(
             "/schema.xsd",
             endpoint="mosaiq_schema",
-            view_func=lambda: Response(
-                self.contract.xsd_bytes, content_type="application/xml"
+            view_func=lambda: self._document(
+                self.contract.xsd_bytes,
+                "application/xml",
+                ("application/xml", "text/xml"),
             ),
             methods=["GET"],
             provide_automatic_options=False,
@@ -366,6 +370,23 @@ class Kit:
                 methods=["GET"],
                 provide_automatic_options=False,
             )
+
+    @staticmethod
+    def _document(
+        payload: bytes, content_type: str, offered: tuple[str, ...]
+    ) -> Response:
+        """Serve a contract document, or 406 when Accept excludes every type."""
+
+        accept = request.headers.get("Accept")
+        if accept and accept.strip():
+            best = request.accept_mimetypes.best_match(offered)
+            if best is None or request.accept_mimetypes[best] == 0:
+                raise ApiError(
+                    406,
+                    "not_acceptable",
+                    "The requested response format is unsupported.",
+                )
+        return Response(payload, content_type=content_type)
 
     @staticmethod
     def _file_view(path: Path) -> Callable[[], Response]:

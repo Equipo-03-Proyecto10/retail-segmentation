@@ -18,6 +18,9 @@ from .types import ApiError
 _FORBIDDEN_XML = re.compile(rb"<!\s*(?:DOCTYPE|ENTITY)\b", re.IGNORECASE)
 
 
+_XSI_NIL = "{http://www.w3.org/2001/XMLSchema-instance}nil"
+
+
 def _strict_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key, value in pairs:
@@ -328,7 +331,28 @@ class Contract:
                     return branch_type
         return None
 
+    def _nullable(self, schema: dict[str, Any]) -> bool:
+        schema_type = schema.get("type")
+        if schema_type == "null" or (
+            isinstance(schema_type, list) and "null" in schema_type
+        ):
+            return True
+        return any(
+            self._nullable(branch)
+            for keyword in ("oneOf", "anyOf")
+            for branch in schema.get(keyword, [])
+        )
+
+    def _required_names(self, schema: dict[str, Any]) -> set[str]:
+        names = set(schema.get("required", []))
+        for branch in schema.get("allOf", []):
+            names |= self._required_names(branch)
+        return names
+
     def _element_to_value(self, element: etree._Element, schema: dict[str, Any]) -> Any:
+        # xsi:nil="true" is the XML spelling of JSON null.
+        if element.get(_XSI_NIL) in {"true", "1"}:
+            return None
         schema_type = self._schema_type(schema)
         if schema_type == "object" or len(element):
             properties = self._merged_properties(schema)
@@ -345,6 +369,11 @@ class Contract:
                     ]
                 else:
                     result[name] = self._element_to_value(children[0], child_schema)
+            # "An absent value is omitted in XML and is null in JSON": a member
+            # that is required and nullable, and omitted, reads as null.
+            for name in self._required_names(schema):
+                if name not in result and self._nullable(properties.get(name, {})):
+                    result[name] = None
             return result
         text = element.text or ""
         if schema_type == "integer":

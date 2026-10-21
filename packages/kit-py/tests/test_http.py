@@ -11,6 +11,7 @@ from flask import Flask
 from lxml import etree
 
 from mosaiq_kit import Kit, Representation, configure_logging
+from mosaiq_kit.types import ApiError
 
 
 def _assert_common_xml(response, contracts_dir: Path, code: str) -> None:
@@ -456,3 +457,91 @@ def test_vector_files_have_public_material_only() -> None:
     jwks = json.loads((vector_root / "jwks.json").read_text())
     assert set(jwks["keys"][0]) == {"kty", "use", "alg", "kid", "n", "e"}
     assert not list(vector_root.glob("*.pem"))
+
+
+@pytest.mark.parametrize("path", ["/openapi.yaml", "/schema.xsd"])
+@pytest.mark.parametrize("accept", ["image/png", "text/html", "application/json"])
+def test_contract_documents_refuse_an_unsupported_accept(
+    client, path: str, accept: str
+) -> None:
+    response = client.get(path, headers={"Accept": accept})
+    assert response.status_code == 406
+    assert response.json["code"] == "not_acceptable"
+
+
+@pytest.mark.parametrize(
+    "path,accept",
+    [
+        ("/openapi.yaml", None),
+        ("/openapi.yaml", "*/*"),
+        ("/openapi.yaml", "application/yaml"),
+        ("/openapi.yaml", "application/*"),
+        ("/schema.xsd", None),
+        ("/schema.xsd", "application/xml"),
+        ("/schema.xsd", "text/xml, */*;q=0.1"),
+    ],
+)
+def test_contract_documents_serve_a_supported_accept(
+    client, path: str, accept: str | None
+) -> None:
+    headers = {"Accept": accept} if accept else {}
+    assert client.get(path, headers=headers).status_code == 200
+
+
+_NIL_SCHEMA = {
+    "type": "object",
+    "required": ["name", "email", "phone", "note"],
+    "properties": {
+        "name": {"type": "string"},
+        "email": {"type": ["string", "null"]},
+        "phone": {"oneOf": [{"type": "string"}, {"type": "null"}]},
+        "note": {"type": "string"},
+        "parent": {"type": ["integer", "null"]},
+    },
+}
+
+
+def _read_xml(contracts_dir: Path, body: str):
+    from mosaiq_kit.contracts import Contract
+
+    contract = Contract(contracts_dir, "kit-example")
+    root = etree.fromstring(
+        f'<R xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">{body}</R>'
+    )
+    return contract, contract._element_to_value(root, _NIL_SCHEMA)
+
+
+def test_xml_omitted_required_nullable_members_read_as_null(
+    contracts_dir: Path,
+) -> None:
+    contract, value = _read_xml(contracts_dir, "<name>A</name>")
+    assert value == {"name": "A", "email": None, "phone": None}
+    # A required member that is not nullable still fails validation.
+    with pytest.raises(ApiError) as error:
+        contract.validate(value, _NIL_SCHEMA)
+    assert error.value.details == [{"field": "note", "code": "required"}]
+
+
+def test_xml_xsi_nil_reads_as_null(contracts_dir: Path) -> None:
+    _, value = _read_xml(
+        contracts_dir,
+        '<name>A</name><email xsi:nil="true"/><parent xsi:nil="true"/>'
+        "<phone>1</phone>",
+    )
+    assert value["email"] is None
+    assert value["parent"] is None
+    assert value["phone"] == "1"
+
+
+def test_categories_own_nil_example_reads_as_null() -> None:
+    from mosaiq_kit.contracts import Contract
+
+    root = Path(__file__).resolve().parents[3] / "contracts"
+    contract = Contract(root, "categories")
+    operation = contract.operation("updateCategory")
+    raw = (
+        root / "categories/examples/update-category-make-root.request.xml"
+    ).read_bytes()
+    value = contract.parse_xml(raw, operation)
+    assert value == {"parent_category_id": None}
+    contract.validate(value, operation.request_schema)

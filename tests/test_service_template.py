@@ -133,6 +133,15 @@ def test_dockerfile_builds_from_its_own_directory(rendered) -> None:
     assert re.search(r"^USER 10001:10001$", text, re.M)
 
 
+def test_rust_dockerfile_installs_libxml2(tmp_path: Path) -> None:
+    # kit-rs validates XML with libxml2: the build needs its headers and
+    # pkg-config, and the runtime image needs the shared library.
+    render.render("probe", 5090, "rust", tmp_path, None)
+    build, runtime = (tmp_path / "Dockerfile").read_text().split("\nFROM ")[1:]
+    assert "libclang-dev libxml2-dev pkg-config" in build
+    assert re.search(r"--no-install-recommends libxml2 ", runtime)
+
+
 def test_render_refuses_a_bad_name_or_port(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         render.render("Products", 5003, "python", tmp_path, None)

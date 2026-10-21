@@ -157,3 +157,41 @@ def test_non_positive_login_throttle_values_use_safe_defaults(value: str) -> Non
 
     assert config.login_throttle_max_attempts == DEFAULT_LOGIN_THROTTLE_MAX_ATTEMPTS
     assert config.login_throttle_window_seconds == DEFAULT_LOGIN_THROTTLE_WINDOW_SECONDS
+
+
+# ---------- #560: the instance flag is gone (ADR-0052) ----------
+
+# Spelt in two halves so this file does not match its own search.
+_RETIRED = ("DATA_IS_" + "SYNTHETIC", "data_is_" + "synthetic")
+# ADRs are immutable and evidence is historical (decision 8 on #560); the
+# backlog row is the issue's title; deploy/README.md tells the operator to
+# delete the stale line from the instance's environment file.
+_MAY_NAME_IT = ("docs/adr/", "docs/evidence/", "docs/backlog.md", "deploy/README.md")
+
+
+def test_no_tracked_file_names_the_retired_synthetic_flag() -> None:
+    import subprocess
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    tracked = (
+        subprocess.run(
+            ["git", "ls-files", "-z"], cwd=root, capture_output=True, check=True
+        )
+        .stdout.decode()
+        .split("\0")
+    )
+    offenders = []
+    for name in filter(None, tracked):
+        if name.startswith(_MAY_NAME_IT):
+            continue
+        path = root / name
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        offenders += [name for flag in _RETIRED if flag in text]
+
+    assert offenders == []

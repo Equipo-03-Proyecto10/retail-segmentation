@@ -209,3 +209,64 @@ def test_run_filters_match_wildcards_literally(
     assert [r.run_id for r in named] == [run_id] and named_total == 1
     assert wrong_method == [] and wrong_total == 0
     assert kmeans_total >= 1
+
+
+# ---------- #560: every read behind a Synthetic marker, on the seed ----------
+
+
+def test_every_marker_read_executes_and_finds_the_seed_seeded(
+    app_connection: Connection[Any],
+) -> None:
+    """ADR-0052: the seed is SEEDED throughout, so each flag a page marks itself
+    by must come back true from PostgreSQL, as retail_app."""
+    from datetime import date
+
+    from web.db import (
+        consumption,
+        consumption_shift,
+        customer_timeline,
+        experiment_report,
+        revenue_summary,
+        segment_history_report,
+    )
+
+    with app_connection.cursor() as cursor:
+        cursor.execute("SELECT min(occurred_at), max(occurred_at) FROM transaction")
+        first, last = cursor.fetchone()
+    since, until = first - timedelta(days=1), last + timedelta(days=1)
+
+    totals = consumption.get_sales_totals(app_connection, _CUSTOMER_1, since, until)
+    assert totals.purchases > 0 and totals.seeded and totals.window_seeded
+
+    current, _previous = consumption.get_current_and_previous_history_rows(
+        app_connection, _CUSTOMER_1
+    )
+    assert current is not None and current.data_origin == "SEEDED"
+    history = customer_timeline.list_history_rows(app_connection, _CUSTOMER_1)
+    assert history and {row.data_origin for row in history} == {"SEEDED"}
+
+    entries = segment_history_report.list_history_entries(
+        app_connection, page=1, per_page=25
+    )
+    assert entries and {entry.data_origin for entry in entries} == {"SEEDED"}
+
+    assert revenue_summary.read_revenue_summary(app_connection, 90).seeded is True
+
+    middle = first + (last - first) / 2
+    *_totals, shift_seeded = consumption_shift.list_totals_for_periods(
+        app_connection, since, middle, middle, until
+    )
+    assert shift_seeded is True
+
+    listed, _total = experiments.list_experiments(app_connection, page=1, per_page=50)
+    assert any(e.seeded_conversion for e in listed)
+    marked = next(e for e in listed if e.seeded_conversion)
+    fetched = experiments.get_experiment(app_connection, marked.experiment_id)
+    assert fetched is not None and fetched.seeded_conversion is True
+    reported, _ = experiment_report.list_report_experiments(
+        app_connection, campaign_id=None, data_origin=None, limit=50, offset=0
+    )
+    assert any(e.seeded_conversion for e in reported)
+    experiment_report.list_active_report_experiments(
+        app_connection, active_on=date.today(), limit=50
+    )

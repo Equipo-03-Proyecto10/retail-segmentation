@@ -779,6 +779,12 @@ and *Where they agree*, a cross-tabulation. A customer scored by only one run is
 counted separately and is neither an agreement nor a disagreement. The comparison
 has no direction and never says one method is better (RN-39).
 
+Every page in this section says **Synthetic** when a run it shows is `SEEDED`:
+a run's row and page by that run; the matrix, an explanation, the comparison and
+a segment-change page by either of their two runs; a segment-history row by its
+run or the run its explanation compares with; the timeline row by its run
+(ADR-0052).
+
 ### 8.9 Consumption profile and recommendations
 
 From a customer's page:
@@ -809,6 +815,12 @@ recommendations of every customer under one filter bar (*Store*, *Channel*,
 panels, *Consumption shifts* and *Recommendations*, filters what the profile and
 recommendation rules already compute, paginates on its own and shows its own
 empty state.
+
+**Synthetic** on these pages comes from the data: the profile's sales measures
+and *Before and now* when one of the customer's sales in the window is seeded,
+*Segment and R/F/M* when its run is; a recommendation when the window holds any
+seeded sale or the customer's segment comes from a seeded run; the shift report
+when either period holds a seeded sale (ADR-0052).
 
 ### 8.10 Campaigns and experiments
 
@@ -892,9 +904,11 @@ recommended products* with the stock at the stores they are recommended from.
 Everything is keyed on the stable label and none of it knows which method made the
 run. Tied customers sit in the same quintile bin. Chart data is embedded in the
 HTML and Highcharts is served by the application itself, never fetched from an
-external host or a JSON endpoint. A **Synthetic** banner says the figures are
-demonstration data; it is set by the deployment (`Config.data_is_synthetic`,
-true by default), not checked row by row.
+external host or a JSON endpoint. Each panel says **Synthetic** when the rows
+behind it are seeded: the run's panels by the run, the migration flow by either
+run, an experiment by RN-26 and the recommended products by RN-40. A marked
+chart says it in its subtitle and its screen-reader label, and a warning banner
+heads the page when any panel is marked (ADR-0052).
 
 **Segment history report** (`/segment-history-report/`). Filter every history row
 by *Run*, *Label* (or *Unassigned*) and *Run from* / *Run to* dates; the filters
@@ -915,11 +929,12 @@ report already hold: conversion per arm over the assigned and over the exposed;
 the difference from the baseline arm with its 95% interval (the control, or when
 there is none the first treatment arm, called a *difference* and never an uplift);
 and the cumulative share of customers who had converted, by day since assignment.
-Each chart of a non-observed experiment says **Synthetic**.
+Each chart says **Synthetic** when the experiment is not observed or a
+conversion it records links a seeded sale.
 
 **Reports** (`/reports/`, `report.read`) shows the revenue and sales count of the
 latest 90 days of sales, split by channel and by store, with the **Synthetic**
-banner, and then lists only the reports the role may open, *Segmentation
+banner when any sale in that window is seeded, and then lists only the reports the role may open, *Segmentation
 dashboard*, *Segment history report*, *Consumption reports* and *Experiment
 report*.
 
@@ -1086,11 +1101,15 @@ future intent separately.
    over R, F and M, not a library and not a service. Its labels are relative
    positions that depend on K, so a migration between runs with different K can
    reflect the model change.
-5. Everything seeded is demonstration data. The dashboards and the Reports page
-   show a **Synthetic** banner because the deployment declares it
-   (`data_is_synthetic`), not because each row is checked. Experiments carry a
-   real `data_origin`, and every seeded experiment is `SEEDED` or `INJECTED`, so
-   its results are labelled Synthetic. Do not present a seeded uplift as a
+5. Everything seeded is demonstration data, and every page says so row by row:
+   each sale and each segmentation run records `data_origin`, and a figure is
+   **Synthetic** when a row it reads is `SEEDED` (ADR-0052). On the seeded
+   instance that is every analytics page; a page built only from CSV-loaded
+   sales and the runs over them carries no mark. Experiments carry their own
+   `data_origin`, and every seeded experiment is `SEEDED` or `INJECTED`, so
+   its results are labelled Synthetic; so is an observed experiment whose
+   conversions link seeded sales. The per-exposure rate counts sales directly
+   and is not checked against them (RN-26). Do not present a seeded uplift as a
    business result.
 6. *Conversion rate* is the only experiment metric. There is no revenue or
    average-ticket comparison (ADR-0053).
@@ -1182,7 +1201,8 @@ can see the menu entry.
     press **Show**. Walk *Average R, F and M by label*, *Segment sizes*, *Revenue
     by label*, *RFM distribution*, *Spend by RFM cell* and *Migration flow*. State that the data is
     embedded in the HTML and Highcharts is served locally, and that the
-    **Synthetic** banner reflects demonstration data.
+    **Synthetic** marks and banner come from the run's own `data_origin`, not
+    from a setting.
 16. **Show a customer's behaviour.** From a customer's page press **Consumption
     profile** and read the figures, *Before and now* and the reason a shift is or
     is not claimed. Then **Recommendations**: every product is in stock at the

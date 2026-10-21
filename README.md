@@ -56,6 +56,7 @@ so `web/requirements.txt` has not grown.
 
 | Directory | Contents |
 |---|---|
+| `clients/desktop/` | The Electron back-office client, XML only ([`clients/desktop/README.md`](clients/desktop/README.md)) |
 | `deploy/` | Instance deployment: systemd unit, NGINX configuration, scripts ([`deploy/README.md`](deploy/README.md)) |
 | `docker/` | The init script that runs the three SQL scripts in the Compose database |
 | `docs/` | Documentation, decisions, evidence |

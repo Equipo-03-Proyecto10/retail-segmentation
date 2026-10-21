@@ -462,6 +462,49 @@ UPDATE customer_segment_history SET label_code = 'LOST'
 ROLLBACK;
 
 \echo ''
+\echo '-- N42: a sale total that drifts from its lines  [expect: 23514 check_violation]'
+-- RN-37. The rule is deferred to COMMIT; SET CONSTRAINTS runs it now.
+BEGIN;
+UPDATE transaction SET total = total + 0.01 WHERE transaction_id = 1;
+SET CONSTRAINTS ALL IMMEDIATE;
+ROLLBACK;
+
+\echo ''
+\echo '-- N43: a customer registered in the future      [expect: 23514 check_violation]'
+BEGIN;
+INSERT INTO customer (name, registration_channel_id, registered_on)
+VALUES ('Future customer', 1, CURRENT_DATE + 1);
+ROLLBACK;
+
+\echo ''
+\echo '-- N44: a sale dated in the future               [expect: 23514 check_violation]'
+BEGIN;
+INSERT INTO transaction (source_transaction_id, customer_id, store_id, channel_id, occurred_at, total)
+VALUES ('VERIFY-N44', '00000000-0000-0000-0000-000000000001', 1, 1, now() + interval '1 day', 0);
+ROLLBACK;
+
+\echo ''
+\echo '-- N45: a line with a zero unit price            [expect: 23514 check_violation]'
+BEGIN;
+INSERT INTO transaction_line (transaction_id, product_id, quantity, unit_price)
+VALUES (1, 40, 1, 0);
+ROLLBACK;
+
+\echo ''
+\echo '-- N46: a run with a negative customer count     [expect: 23514 check_violation]'
+BEGIN;
+INSERT INTO segmentation_run (method, window_days, customer_count)
+VALUES ('RFM_RULES', 90, -1);
+ROLLBACK;
+
+\echo ''
+\echo '-- N47: run parameters that are not an object    [expect: 23514 check_violation]'
+BEGIN;
+INSERT INTO segmentation_run (method, window_days, parameters)
+VALUES ('RFM_RULES', 90, '[]'::jsonb);
+ROLLBACK;
+
+\echo ''
 \echo '=============================================='
 \echo 'Volume check — at least 30 rows per table'
 \echo 'role and channel are exempt: see sql/seed-exempt.txt'

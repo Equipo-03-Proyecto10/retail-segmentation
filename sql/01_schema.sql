@@ -412,7 +412,7 @@ CREATE TABLE transaction_line (
     transaction_id BIGINT NOT NULL REFERENCES transaction(transaction_id) ON DELETE CASCADE,
     product_id     INT NOT NULL REFERENCES product(product_id) ON DELETE RESTRICT,
     quantity       INT NOT NULL CHECK (quantity > 0),
-    unit_price     NUMERIC(10,2) NOT NULL CHECK (unit_price >= 0),
+    unit_price     NUMERIC(10,2) NOT NULL CHECK (unit_price > 0),
     PRIMARY KEY (transaction_id, product_id)
 );
 
@@ -444,6 +444,70 @@ CREATE TABLE sales_load_rejection (
 );
 
 CREATE INDEX idx_sales_load_rejection_load ON sales_load_rejection (load_id);
+
+-- ---------- DOMAIN CHECKS THE TABLES ABOVE CANNOT STATE INLINE (#591) ----------
+--
+-- The application and the services already refuse these; these constraints make
+-- the database refuse them from any writer. Dates compare with the clock, which
+-- a CHECK may read: a row that passed once can never fail later, because time
+-- only moves forward, so a restore or a re-check of an old row stays valid.
+-- clock_timestamp() rather than now() so a sale stamped just after the
+-- transaction began is not called future.
+ALTER TABLE customer
+    ADD CONSTRAINT customer_registered_not_future CHECK (registered_on <= CURRENT_DATE);
+ALTER TABLE transaction
+    ADD CONSTRAINT transaction_not_future CHECK (occurred_at <= clock_timestamp());
+ALTER TABLE segmentation_run
+    ADD CONSTRAINT segmentation_run_customer_count_check CHECK (customer_count >= 0),
+    ADD CONSTRAINT segmentation_run_parameters_object
+        CHECK (jsonb_typeof(parameters) = 'object');
+
+-- RN-37: a header total is derived from its lines. A row CHECK cannot see the
+-- other table, and the header is written before its lines, so the comparison
+-- is a deferred constraint trigger: it runs at COMMIT, once the header, its
+-- lines and the recompute are all in. A header with no lines must total 0.
+-- Statement order inside a transaction is free; only the committed state is
+-- held to the rule. SQLSTATE 23514 and the constraint name let a caller
+-- translate it like any other CHECK.
+CREATE OR REPLACE FUNCTION fn_transaction_total_matches_lines() RETURNS TRIGGER AS $$
+DECLARE
+    sale_id BIGINT;
+BEGIN
+    IF TG_TABLE_NAME = 'transaction' THEN
+        sale_id := NEW.transaction_id;
+    ELSIF TG_OP = 'DELETE' THEN
+        sale_id := OLD.transaction_id;
+    ELSE
+        sale_id := NEW.transaction_id;
+    END IF;
+    -- A cascade can delete the header before this runs; nothing is left to check.
+    IF EXISTS (
+        SELECT 1
+        FROM transaction AS t
+        WHERE t.transaction_id = sale_id
+          AND t.total IS DISTINCT FROM (
+              SELECT COALESCE(SUM(l.quantity * l.unit_price), 0)
+              FROM transaction_line AS l
+              WHERE l.transaction_id = t.transaction_id
+          )
+    ) THEN
+        RAISE EXCEPTION 'transaction % total differs from the sum of its lines', sale_id
+            USING ERRCODE = 'check_violation',
+                  CONSTRAINT = 'transaction_total_matches_lines';
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE CONSTRAINT TRIGGER trg_transaction_total_matches_lines
+    AFTER INSERT OR UPDATE OF total ON transaction
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION fn_transaction_total_matches_lines();
+
+CREATE CONSTRAINT TRIGGER trg_transaction_line_total_matches_lines
+    AFTER INSERT OR UPDATE OR DELETE ON transaction_line
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION fn_transaction_total_matches_lines();
 
 -- ---------- CAMPAIGNS AND EXPERIMENTS ----------
 

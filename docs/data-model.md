@@ -580,7 +580,7 @@ request, and it is not in `sql/seed-exempt.txt`.
 | `email` | `VARCHAR(160)` | yes | UQ, dotted-domain email check | Contact address |
 | `phone` | `VARCHAR(20)` | yes | — | Contact number |
 | `registration_channel_id` | `SMALLINT` | NN | FK → `channel`, `RESTRICT` | Where the customer was acquired |
-| `registered_on` | `DATE` | NN | default `CURRENT_DATE` | Registration date |
+| `registered_on` | `DATE` | NN | default `CURRENT_DATE`; `CHECK <= CURRENT_DATE` (`customer_registered_not_future`) | Registration date |
 
 There is no `current_segment_id` column. ADR-0004 called the mutable column
 the first delivery briefly carried a known limitation and predicted its
@@ -596,8 +596,8 @@ replacement; ADR-0017 fulfils that prediction with `segmentation_run` and
 | `run_id` | `BIGINT` | NN | PK, `GENERATED ALWAYS AS IDENTITY` | Run identifier |
 | `method` | `VARCHAR(20)` | NN | `CHECK IN ('RFM_RULES','KMEANS')` | The implemented strategy that produced this run — ADR-0018, RN-58 |
 | `window_days` | `INT` | NN | `CHECK > 0` | Sales window scored |
-| `parameters` | `JSONB` | NN | default `'{}'::jsonb` | Reproducible parameter and quality snapshot; K-means records `k`, seed, iteration limit, tolerance, feature window, label mapping and quality measures (RN-58, ADR-0030) |
-| `customer_count` | `INT` | NN | default `0` | Customers this run scored |
+| `parameters` | `JSONB` | NN | default `'{}'::jsonb`; `CHECK jsonb_typeof = 'object'` (`segmentation_run_parameters_object`) | Reproducible parameter and quality snapshot; K-means records `k`, seed, iteration limit, tolerance, feature window, label mapping and quality measures (RN-58, ADR-0030) |
+| `customer_count` | `INT` | NN | default `0`; `CHECK >= 0` (`segmentation_run_customer_count_check`) | Customers this run scored |
 | `executed_by` | `UUID` | yes | FK → `app_user`, `SET NULL` | Who ran it; `NULL` for a seed or maintenance run, the same reasoning `audit_log.user_id` uses |
 | `run_at` | `TIMESTAMPTZ` | NN | default `now()` | When the run executed |
 
@@ -681,8 +681,8 @@ These two are the 4NF decomposition from §2.4.
 | `customer_id` | `UUID` | NN | FK → `customer`, `RESTRICT` | Who bought |
 | `store_id` | `SMALLINT` | NN | FK → `store`, `RESTRICT` | Where |
 | `channel_id` | `SMALLINT` | NN | FK → `channel`, `RESTRICT` | Through which channel |
-| `occurred_at` | `TIMESTAMPTZ` | NN | — | When the sale happened |
-| `total` | `NUMERIC(12,2)` | NN | `CHECK >= 0` | Sale total |
+| `occurred_at` | `TIMESTAMPTZ` | NN | `CHECK <= clock_timestamp()` (`transaction_not_future`) | When the sale happened |
+| `total` | `NUMERIC(12,2)` | NN | `CHECK >= 0`; deferred trigger: equals the sum of its lines (RN-37, `transaction_total_matches_lines`) | Sale total |
 
 #### `transaction_line`
 
@@ -691,7 +691,33 @@ These two are the 4NF decomposition from §2.4.
 | `transaction_id` | `BIGINT` | NN | PK, FK → `transaction`, `CASCADE` | The sale |
 | `product_id` | `INT` | NN | PK, FK → `product`, `RESTRICT` | The product |
 | `quantity` | `INT` | NN | `CHECK > 0` | Units sold |
-| `unit_price` | `NUMERIC(10,2)` | NN | `CHECK >= 0` | Price actually charged, not the product's list price |
+| `unit_price` | `NUMERIC(10,2)` | NN | `CHECK > 0` | Price actually charged, not the product's list price |
+
+**Domain rules the database holds (#591).** The checks above are in
+`sql/01_schema.sql` so that no writer, whatever its role, can store a value the
+domain forbids.
+
+- *Header total equals the sum of its lines (RN-37).* A row CHECK cannot see
+  another table, and the header is written before its lines, so the rule is a
+  deferred constraint trigger on both tables, evaluated at `COMMIT`. A header
+  with no lines must total 0, which is what the ingestion writes first.
+  Statements may come in any order inside a transaction; only the committed
+  state is held to the rule. The `total` column stays: it is a stored
+  derivation kept for reads, and the trigger is what guarantees it cannot
+  drift. Removing the column would change every report query; it is not a
+  normalization defect once the database proves the equality.
+- *No future registration or sale.* A CHECK that reads the clock is unusual,
+  but safe here: a row valid when written can never turn invalid, since time
+  only moves forward, so a restore or a re-check of an old row passes.
+  `registered_on` compares with `CURRENT_DATE`, which follows the session time
+  zone; `occurred_at` compares with `clock_timestamp()`, not `now()`, so a sale
+  stamped after its transaction began is not called future.
+- *Positive unit price.* `unit_price > 0`. A product with `list_price = 0` is
+  allowed in the catalog, but a sale line cannot be recorded for it at zero;
+  a free item would need its own rule.
+- *Run values.* `customer_count >= 0`, and `parameters` is a JSON object (the
+  column is documented as one; an array or scalar breaks every reader that
+  looks a key up).
 
 #### `sales_load`
 

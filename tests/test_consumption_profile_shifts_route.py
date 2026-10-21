@@ -71,7 +71,7 @@ _SHIFTED = (
 
 
 def _page(app: Flask, monkeypatch: pytest.MonkeyPatch, halves) -> tuple[int, str]:
-    read = Mock(return_value=halves)
+    read = Mock(return_value=(*halves, False))
     monkeypatch.setattr("web.services.consumption_shift.list_totals_for_periods", read)
     response, _ = _open(app, monkeypatch, _profile())
     return response.status_code, " ".join(response.get_data(as_text=True).split())

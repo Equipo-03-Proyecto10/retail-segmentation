@@ -116,6 +116,7 @@ def _row(**overrides) -> ReportRow:
             valid_to=None,
             label_name="Loyal",
             assignment=_assignment(),
+            data_origin="OBSERVED",
         ),
     )
     explanation = overrides.pop("explanation", _explanation())
@@ -380,6 +381,7 @@ def test_names_are_escaped(app, monkeypatch) -> None:
                     valid_to=None,
                     label_name="Loyal",
                     assignment=_assignment(customer_name="<script>alert(1)</script>"),
+                    data_origin="OBSERVED",
                 )
             ),
         )

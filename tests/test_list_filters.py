@@ -90,6 +90,7 @@ def _experiment(experiment_id: int = 31) -> Experiment:
         1,
         1,
         0,
+        False,
     )
 
 

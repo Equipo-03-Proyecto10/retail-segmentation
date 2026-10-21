@@ -84,6 +84,7 @@ def _row(
     frequency: int = 4,
     monetary: str = "1234.50",
     scores: tuple[int, int, int] = (3, 3, 3),
+    data_origin: str = "OBSERVED",
 ) -> HistoryRow:
     unassigned = label is None
     return HistoryRow(
@@ -100,6 +101,7 @@ def _row(
         valid_to=valid_to,
         run_at=valid_from,
         window_days=180,
+        data_origin=data_origin,
     )
 
 

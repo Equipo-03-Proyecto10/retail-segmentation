@@ -53,6 +53,7 @@ def _entry(**overrides) -> HistoryEntry:
         valid_to=None,
         label_name="Loyal",
         assignment=_assignment(),
+        data_origin="OBSERVED",
     )
     return HistoryEntry(**{**defaults, **overrides})
 

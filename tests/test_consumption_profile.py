@@ -192,6 +192,7 @@ def _history(
     *,
     scores: tuple[int, int, int] | None = (2, 3, 4),
     valid_to: datetime | None = None,
+    data_origin: str = "OBSERVED",
 ) -> HistoryRow:
     r, f, m = scores if scores else (None, None, None)
     return HistoryRow(
@@ -208,6 +209,7 @@ def _history(
         valid_to=valid_to,
         run_at=_AS_OF - timedelta(days=1),
         window_days=180,
+        data_origin=data_origin,
     )
 
 
@@ -217,6 +219,8 @@ def _wire(
     purchases: int = 10,
     open_row: HistoryRow | None = None,
     previous_row: HistoryRow | None = None,
+    seeded: bool = False,
+    window_seeded: bool = False,
 ) -> dict[str, Mock]:
     """Replace every web.db read the service uses. Returns the fakes so a test
     can assert on the arguments they were called with."""
@@ -227,6 +231,8 @@ def _wire(
                 purchases=purchases,
                 spend=Decimal("1000.00") if purchases else None,
                 last_purchase_at=_LAST_PURCHASE if purchases else None,
+                seeded=seeded,
+                window_seeded=window_seeded,
             )
         ),
         "list_channel_totals": Mock(

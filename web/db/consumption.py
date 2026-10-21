@@ -46,11 +46,18 @@ class SalesTotals:
     through CSV the header total is derived from the lines (ADR-0020), so it
     equals the sum of quantity times unit price. `spend` and `last_purchase_at`
     are None, not zero, when there are no purchases.
+
+    `seeded` says whether any of these sales is SEEDED, so the figures built
+    from them are Synthetic (ADR-0052). `window_seeded` says whether the
+    window holds a SEEDED sale of anyone's: a recommendation also reads other
+    customers' sales in the same window (#560).
     """
 
     purchases: int
     spend: Decimal | None
     last_purchase_at: datetime | None
+    seeded: bool
+    window_seeded: bool
 
 
 @dataclass(frozen=True)
@@ -120,6 +127,8 @@ class HistoryRow:
     valid_to: datetime | None
     run_at: datetime
     window_days: int
+    # The run's origin (ADR-0052): what marks this assignment Synthetic.
+    data_origin: str
 
     @property
     def recency_last_purchase_at(self) -> datetime | None:
@@ -129,25 +138,43 @@ class HistoryRow:
         return self.last_purchase_at
 
 
+# Anyone's SEEDED sales in the window are found through the partial index
+# idx_transaction_seeded_date, so the check stays cheap however many OBSERVED
+# sales the window holds.
+_SALES_TOTALS = """
+    SELECT count(*), sum(total), max(occurred_at),
+           coalesce(bool_or(data_origin = 'SEEDED'), false),
+           EXISTS (
+               SELECT 1 FROM transaction AS seeded
+               WHERE seeded.data_origin = 'SEEDED'
+                 AND seeded.occurred_at >= %(since)s
+                 AND seeded.occurred_at <= %(until)s
+           )
+    FROM transaction
+    WHERE customer_id = %(customer_id)s
+      AND occurred_at >= %(since)s
+      AND occurred_at <= %(until)s
+"""
+
+
 def get_sales_totals(
     connection: Connection[Any], customer_id: Any, since: datetime, until: datetime
 ) -> SalesTotals:
-    """Count and sum a customer's accepted sales inside the window."""
+    """Count and sum a customer's accepted sales inside the window, and say
+    whether they, or the window, hold a SEEDED sale."""
     with connection.cursor() as cursor:
         cursor.execute(
-            """
-            SELECT count(*), sum(total), max(occurred_at)
-            FROM transaction
-            WHERE customer_id = %(customer_id)s
-              AND occurred_at >= %(since)s
-              AND occurred_at <= %(until)s
-            """,
+            _SALES_TOTALS,
             {"customer_id": str(customer_id), "since": since, "until": until},
         )
-        purchases, spend, last_purchase_at = cursor.fetchone()
+        purchases, spend, last_purchase_at, seeded, window_seeded = cursor.fetchone()
 
     return SalesTotals(
-        purchases=purchases, spend=spend, last_purchase_at=last_purchase_at
+        purchases=purchases,
+        spend=spend,
+        last_purchase_at=last_purchase_at,
+        seeded=seeded,
+        window_seeded=window_seeded,
     )
 
 
@@ -359,7 +386,7 @@ def get_current_and_previous_history_rows(
                        THEN h.streak_start
                        ELSE h.valid_from
                    END AS valid_from,
-                   h.valid_to, r.run_at, r.window_days
+                   h.valid_to, r.run_at, r.window_days, r.data_origin
             FROM selected AS h
             JOIN segmentation_run AS r ON r.run_id = h.run_id
             LEFT JOIN segment_label AS sl ON sl.label_code = h.label_code

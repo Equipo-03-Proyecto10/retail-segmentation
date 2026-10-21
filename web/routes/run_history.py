@@ -4,6 +4,9 @@ Every completed segmentation run, and what it produced. Read-only, gated on
 segment.read the same as the rest of the segmentation surface (ADR-0010): a
 run's result is exactly the substrate segment.read already covers, just
 traced back to the run that produced it rather than read as "current".
+
+A run of SEEDED origin is marked Synthetic, on its row in the list and on
+its own page (ADR-0052).
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ from web.routes.pagination import (
 )
 from web.services.catalog import parse_pagination
 from web.services.pagination import page_count
+from web.services.provenance import runs_synthetic
 from web.services.segmentation import METHODS
 
 bp = Blueprint("run_history", __name__, url_prefix="/run-history")
@@ -52,6 +56,8 @@ def index() -> str | Response:
         total=total,
         filters=filters,
         methods=METHODS,
+        runs_synthetic=runs_synthetic,
+        synthetic=runs_synthetic(*rows),
     )
 
 
@@ -74,6 +80,7 @@ def detail(run_id: int) -> str | Response:
     return render_template(
         "run_history/detail.html",
         run=run,
+        synthetic=runs_synthetic(run),
         assignments=assignments,
         page=page,
         total_pages=page_count(total, _PER_PAGE),

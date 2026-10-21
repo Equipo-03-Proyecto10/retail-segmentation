@@ -46,6 +46,12 @@ would look plausible and be wrong:
 
 Ties are broken by the rules above and by nothing else, so the same sales give
 the same profile whatever order the database returns its rows in.
+
+**Synthetic** (ADR-0052, #560). The sales measures are marked when any of the
+customer's sales in the window is SEEDED (`seeded_sales`). The segment and
+R/F/M are marked apart, by the runs that recorded them (`segment_synthetic`):
+they are not measured over this window. `window_seeded` says whether the
+window holds anyone's SEEDED sale, which a recommendation reads.
 """
 
 from __future__ import annotations
@@ -72,6 +78,7 @@ from web.db.consumption import (
     list_store_totals,
 )
 from web.db.customers import get_customer
+from web.services.provenance import is_seeded
 from web.services.segmentation import (
     DEFAULT_WINDOW_DAYS,
     MAX_WINDOW_DAYS,
@@ -111,6 +118,8 @@ class SegmentState:
     label_name: str | None
     valid_from: datetime
     valid_to: datetime | None
+    # The origin of the run that recorded it (ADR-0052).
+    data_origin: str | None = None
 
 
 @dataclass(frozen=True)
@@ -128,6 +137,8 @@ class RfmSnapshot:
     r_score: int | None
     f_score: int | None
     m_score: int | None
+    # The origin of the run that measured them (ADR-0052).
+    data_origin: str | None = None
 
 
 @dataclass(frozen=True)
@@ -159,6 +170,19 @@ class ConsumptionProfile:
     rfm: RfmSnapshot | None = None
     current_segment: SegmentState | None = None
     previous_segment: SegmentState | None = None
+    # ADR-0052: whether the customer's sales in the window hold a SEEDED one,
+    # and whether anyone's in the same window do.
+    seeded_sales: bool = False
+    window_seeded: bool = False
+
+    @property
+    def segment_synthetic(self) -> bool:
+        """Whether the segment and R/F/M panel is Synthetic: a run it shows
+        is not OBSERVED."""
+        return any(
+            shown is not None and is_seeded(shown.data_origin)
+            for shown in (self.rfm, self.current_segment, self.previous_segment)
+        )
 
 
 # ---------- ranking: every tie-break is stated and total ----------
@@ -226,6 +250,7 @@ def _segment_state(row: HistoryRow) -> SegmentState:
         label_name=row.label_name,
         valid_from=row.valid_from,
         valid_to=row.valid_to,
+        data_origin=row.data_origin,
     )
 
 
@@ -258,6 +283,7 @@ def _rfm_snapshot(row: HistoryRow | None) -> RfmSnapshot | None:
         r_score=row.r_score,
         f_score=row.f_score,
         m_score=row.m_score,
+        data_origin=row.data_origin,
     )
 
 
@@ -309,6 +335,7 @@ def build_profile(
             rfm=_rfm_snapshot(open_row),
             current_segment=_segment_state(open_row) if open_row else None,
             previous_segment=_segment_state(previous_row) if previous_row else None,
+            window_seeded=totals.window_seeded,
         )
 
     discount = get_discount_totals(connection, customer_key, since, until)
@@ -340,4 +367,6 @@ def build_profile(
         rfm=_rfm_snapshot(open_row),
         current_segment=_segment_state(open_row) if open_row else None,
         previous_segment=_segment_state(previous_row) if previous_row else None,
+        seeded_sales=totals.seeded,
+        window_seeded=totals.window_seeded,
     )

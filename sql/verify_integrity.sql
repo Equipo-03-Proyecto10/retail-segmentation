@@ -97,6 +97,20 @@ SELECT 'P7 allocated: ' || (max(campaign_id) - 30)::text || ' above the seeded 3
   FROM campaign;
 ROLLBACK;
 
+\echo ''
+\echo '-- P8: a run over OBSERVED sales only is recorded OBSERVED'
+-- ADR-0052 (#559): the origin guard refuses an OBSERVED run only while a
+-- SEEDED sale is in its window. With every sale relabelled OBSERVED by the
+-- owner, inside this rolled-back transaction, the same insert is accepted
+-- and fn_segmentation_window_origin agrees.
+BEGIN;
+UPDATE transaction SET data_origin = 'OBSERVED';
+INSERT INTO segmentation_run (method, window_days, data_origin)
+VALUES ('RFM_RULES', 180, fn_segmentation_window_origin(180));
+SELECT 'P8 recorded: ' || data_origin FROM segmentation_run
+ WHERE run_id = (SELECT max(run_id) FROM segmentation_run);
+ROLLBACK;
+
 \echo '=============================================='
 \echo 'NEGATIVE CASES — every one of these must be refused'
 \echo '=============================================='
@@ -133,8 +147,9 @@ ROLLBACK;
 BEGIN;
 -- source_transaction_id is NOT NULL since #209: without one the row fails that
 -- check first and the foreign key is never reached (#262).
-INSERT INTO transaction (source_transaction_id, customer_id, store_id, channel_id, occurred_at, total)
-VALUES ('VERIFY-N5', '99999999-9999-9999-9999-999999999999', 1, 1, now(), 100.00);
+INSERT INTO transaction (source_transaction_id, customer_id, store_id, channel_id, occurred_at, total,
+                         data_origin)
+VALUES ('VERIFY-N5', '99999999-9999-9999-9999-999999999999', 1, 1, now(), 100.00, 'OBSERVED');
 ROLLBACK;
 
 \echo ''
@@ -255,8 +270,9 @@ ROLLBACK;
 -- A file re-sent in full must be rejected as a duplicate, not inserted again
 -- (F8-01). transaction_id 1 seeds source_transaction_id 'TXN-00000001'.
 BEGIN;
-INSERT INTO transaction (source_transaction_id, customer_id, store_id, channel_id, occurred_at, total)
-VALUES ('TXN-00000001', '00000000-0000-0000-0000-000000000001', 1, 1, now(), 100.00);
+INSERT INTO transaction (source_transaction_id, customer_id, store_id, channel_id, occurred_at, total,
+                         data_origin)
+VALUES ('TXN-00000001', '00000000-0000-0000-0000-000000000001', 1, 1, now(), 100.00, 'OBSERVED');
 ROLLBACK;
 
 \echo ''
@@ -270,8 +286,9 @@ ROLLBACK;
 -- NOT NULL itself. tests/test_sales_namespace_guard.py covers the guard.
 BEGIN;
 SET LOCAL session_replication_role = replica;
-INSERT INTO transaction (source_transaction_id, customer_id, store_id, channel_id, occurred_at, total)
-VALUES (NULL, '00000000-0000-0000-0000-000000000001', 1, 1, now(), 100.00);
+INSERT INTO transaction (source_transaction_id, customer_id, store_id, channel_id, occurred_at, total,
+                         data_origin)
+VALUES (NULL, '00000000-0000-0000-0000-000000000001', 1, 1, now(), 100.00, 'OBSERVED');
 ROLLBACK;
 
 \echo ''
@@ -418,7 +435,7 @@ ROLLBACK;
 -- #350: nothing bounded the scores a run could record. An INSERT, not an UPDATE:
 -- the close-only trigger would refuse an UPDATE first, for a different reason.
 BEGIN;
-INSERT INTO segmentation_run (method, window_days) VALUES ('RFM_RULES', 180);
+INSERT INTO segmentation_run (method, window_days, data_origin) VALUES ('RFM_RULES', 180, 'SEEDED');
 INSERT INTO customer_segment_history
     (customer_id, run_id, r_score, valid_from, valid_to)
 SELECT customer_id, (SELECT max(run_id) FROM segmentation_run), 9,
@@ -433,7 +450,7 @@ ROLLBACK;
 -- #350: the open-row index guarded only the present. A closed interval that runs
 -- across the customer's current one is refused by the exclusion constraint.
 BEGIN;
-INSERT INTO segmentation_run (method, window_days) VALUES ('RFM_RULES', 180);
+INSERT INTO segmentation_run (method, window_days, data_origin) VALUES ('RFM_RULES', 180, 'SEEDED');
 INSERT INTO customer_segment_history (customer_id, run_id, valid_from, valid_to)
 SELECT h.customer_id, (SELECT max(run_id) FROM segmentation_run),
        h.valid_from - interval '30 days', h.valid_from + interval '1 hour'
@@ -459,6 +476,46 @@ BEGIN;
 UPDATE customer_segment_history SET label_code = 'LOST'
  WHERE history_id = (SELECT min(history_id) FROM customer_segment_history
                       WHERE valid_to IS NULL AND label_code IS DISTINCT FROM 'LOST');
+ROLLBACK;
+
+\echo ''
+\echo '-- N37: CHECK, a sale of unknown origin          [expect: 23514 check_violation]'
+-- ADR-0052 (#559): a sale is OBSERVED or SEEDED, nothing else.
+BEGIN;
+INSERT INTO transaction (source_transaction_id, customer_id, store_id, channel_id, occurred_at, total,
+                         data_origin)
+VALUES ('VERIFY-N37', '00000000-0000-0000-0000-000000000001', 1, 1, now(), 100.00, 'INJECTED');
+ROLLBACK;
+
+\echo ''
+\echo '-- N38: NOT NULL, a sale that states no origin   [expect: 23502 not_null_violation]'
+-- No default either: a writer that does not state the origin is refused,
+-- never guessed for.
+BEGIN;
+INSERT INTO transaction (source_transaction_id, customer_id, store_id, channel_id, occurred_at, total,
+                         data_origin)
+VALUES ('VERIFY-N38', '00000000-0000-0000-0000-000000000001', 1, 1, now(), 100.00, NULL);
+ROLLBACK;
+
+\echo ''
+\echo '-- N39: CHECK, a run of unknown origin           [expect: 23514 check_violation]'
+BEGIN;
+INSERT INTO segmentation_run (method, window_days, data_origin) VALUES ('RFM_RULES', 180, 'INJECTED');
+ROLLBACK;
+
+\echo ''
+\echo '-- N40: NOT NULL, a run that states no origin    [expect: 23502 not_null_violation]'
+BEGIN;
+INSERT INTO segmentation_run (method, window_days, data_origin) VALUES ('RFM_RULES', 180, NULL);
+ROLLBACK;
+
+\echo ''
+\echo '-- N41: an OBSERVED run over seeded sales        [expect: 23514 check_violation]'
+-- ADR-0052 (#559): every seeded sale is within 180 days, so a run over that
+-- window read a SEEDED sale and cannot be recorded OBSERVED. The guard is a
+-- trigger and reports constraint segmentation_run_origin_observed_only.
+BEGIN;
+INSERT INTO segmentation_run (method, window_days, data_origin) VALUES ('RFM_RULES', 180, 'OBSERVED');
 ROLLBACK;
 
 \echo ''

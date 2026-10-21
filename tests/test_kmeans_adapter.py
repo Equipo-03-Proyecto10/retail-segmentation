@@ -74,7 +74,7 @@ def _mapper(labels=("BEST", "MIDDLE", "WORST")):
 def _wire(monkeypatch: pytest.MonkeyPatch, rows=None) -> Mock:
     manager = Mock()
     manager.read_open_assignments.return_value = {}
-    manager.create_run.return_value = 3
+    manager.create_run.return_value = (3, "OBSERVED")
     manager.read_rfm_inputs.return_value = _sales() if rows is None else rows
     for name in (
         "read_rfm_inputs",

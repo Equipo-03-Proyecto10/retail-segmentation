@@ -97,6 +97,25 @@ CREATE TRIGGER trg_category_no_cycle
     BEFORE INSERT OR UPDATE OF parent_category_id ON category
     FOR EACH ROW EXECUTE FUNCTION fn_category_no_cycle();
 
+-- #586: the row trigger above takes the advisory lock after the statement has
+-- already locked its row, so two opposite moves (A under B, B under A) each
+-- held one row and waited on the other's row lock behind the advisory lock: a
+-- deadlock, answered as 503. A BEFORE STATEMENT trigger runs before any row is
+-- touched, so every hierarchy writer takes the lock first and the loser waits
+-- with nothing held, then fails the walk with category_no_cycle (409). The
+-- lock is reentrant within the transaction, so the row trigger's own call
+-- stays as a no-op safety net.
+CREATE OR REPLACE FUNCTION fn_category_hierarchy_lock() RETURNS TRIGGER AS $$
+BEGIN
+    PERFORM pg_advisory_xact_lock(hashtext('category_hierarchy'));
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_category_hierarchy_lock
+    BEFORE INSERT OR UPDATE OF parent_category_id ON category
+    FOR EACH STATEMENT EXECUTE FUNCTION fn_category_hierarchy_lock();
+
 CREATE TABLE store (
     store_id  SMALLINT PRIMARY KEY,
     name      VARCHAR(100) NOT NULL,
@@ -257,7 +276,15 @@ CREATE TABLE segmentation_run (
     parameters     JSONB NOT NULL DEFAULT '{}'::jsonb,
     customer_count INT NOT NULL DEFAULT 0,
     executed_by    UUID REFERENCES app_user(user_id) ON DELETE SET NULL,
-    run_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+    run_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- ADR-0052: SEEDED if any sale the run scored is SEEDED, else OBSERVED,
+    -- recorded when the run executes. A later backdated CSV load adds sales
+    -- to an old window, so it is a historical fact, not derivable afterwards.
+    -- No default: every writer states it. create_run takes it from
+    -- fn_segmentation_window_origin, and trg_segmentation_run_origin_guard
+    -- (DATA ORIGIN below) refuses an OBSERVED run over a SEEDED sale. Last
+    -- column, so an instance that gained it by ADD COLUMN dumps the same.
+    data_origin    VARCHAR(20) NOT NULL CHECK (data_origin IN ('OBSERVED', 'SEEDED'))
 );
 
 -- A run is a record of what was computed and how, and the application only
@@ -398,14 +425,23 @@ CREATE TABLE transaction (
     -- sole producer (ADR-0020); docs/data-model.md §4 records what a later
     -- multi-producer contract would need to change here. The prefix
     -- `svc-sales:` is reserved for sales-service (ADR-0039): the guards in
-    -- BOUNDARY sales refuse it from any other session user, and refuse
-    -- anything else from svc_sales.
+    -- BOUNDARY sales refuse it from any other session user, refuse
+    -- anything else from svc_sales, and refuse a svc_sales row whose
+    -- data_origin is not OBSERVED (ADR-0052).
     source_transaction_id  VARCHAR(64) NOT NULL UNIQUE,
     customer_id            UUID NOT NULL REFERENCES customer(customer_id) ON DELETE RESTRICT,
     store_id               SMALLINT NOT NULL REFERENCES store(store_id) ON DELETE RESTRICT,
     channel_id             SMALLINT NOT NULL REFERENCES channel(channel_id) ON DELETE RESTRICT,
     occurred_at            TIMESTAMPTZ NOT NULL,
-    total                  NUMERIC(12,2) NOT NULL CHECK (total >= 0)
+    total                  NUMERIC(12,2) NOT NULL CHECK (total >= 0),
+    -- ADR-0052: where the sale came from. The seed writes SEEDED; the CSV
+    -- import (ADR-0020) and sales-service (ADR-0039) write OBSERVED, and the
+    -- guard in BOUNDARY sales refuses anything else from svc_sales. No
+    -- default, so a writer that forgets it fails rather than guessing. On the
+    -- header, not the lines: a line belongs to one sale, and the CSV import
+    -- refuses a line onto a SEEDED sale. Last column, so an instance that
+    -- gained it by ADD COLUMN dumps the same.
+    data_origin            VARCHAR(20) NOT NULL CHECK (data_origin IN ('OBSERVED', 'SEEDED'))
 );
 
 CREATE TABLE transaction_line (
@@ -415,6 +451,82 @@ CREATE TABLE transaction_line (
     unit_price     NUMERIC(10,2) NOT NULL CHECK (unit_price >= 0),
     PRIMARY KEY (transaction_id, product_id)
 );
+
+-- BEGIN DATA ORIGIN COLUMNS (ADR-0052, #559)
+-- A no-op on a clean build, where CREATE TABLE above already has both
+-- columns. On a database loaded before #559 it adds them nullable, so the
+-- operator's backfill (deploy/README.md) can fill them before the block
+-- below makes them NOT NULL. DDL stays in this file (AGENTS.md, ADR-0046).
+ALTER TABLE transaction ADD COLUMN IF NOT EXISTS data_origin VARCHAR(20);
+ALTER TABLE segmentation_run ADD COLUMN IF NOT EXISTS data_origin VARCHAR(20);
+-- END DATA ORIGIN COLUMNS
+
+-- BEGIN DATA ORIGIN (ADR-0052, #559)
+-- Re-runnable, so an operator can apply it to a database that gained the
+-- columns from the block above (deploy/README.md). There, SET NOT NULL
+-- refuses to finish while any row is left unfilled, and each CHECK is added
+-- under the name CREATE TABLE gives it on a clean build, so the two dump the
+-- same (deploy/check-schema-drift.sh). On a clean build all four are no-ops.
+ALTER TABLE transaction ALTER COLUMN data_origin SET NOT NULL;
+ALTER TABLE segmentation_run ALTER COLUMN data_origin SET NOT NULL;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'public.transaction'::regclass
+      AND conname = 'transaction_data_origin_check'
+) THEN ALTER TABLE public.transaction ADD CONSTRAINT transaction_data_origin_check
+        CHECK (data_origin IN ('OBSERVED', 'SEEDED')); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'public.segmentation_run'::regclass
+      AND conname = 'segmentation_run_data_origin_check'
+) THEN ALTER TABLE public.segmentation_run ADD CONSTRAINT segmentation_run_data_origin_check
+        CHECK (data_origin IN ('OBSERVED', 'SEEDED')); END IF; END $$;
+
+-- A segmentation run records whether any sale it scored was SEEDED. The
+-- window is the one the scoring reads (web/db/segments.py): occurred_at in
+-- [now() - window_days, now()], now() being the run transaction's start, so
+-- the run's INSERT and the scoring see the same sales.
+CREATE OR REPLACE FUNCTION fn_segmentation_window_origin(window_days INT)
+RETURNS VARCHAR(20)
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT CASE WHEN EXISTS (
+        SELECT FROM public.transaction AS t
+         WHERE t.data_origin = 'SEEDED'
+           AND t.occurred_at >= now() - make_interval(days => window_days)
+           AND t.occurred_at <= now()
+    ) THEN 'SEEDED' ELSE 'OBSERVED' END::VARCHAR(20)
+$$;
+
+REVOKE EXECUTE ON FUNCTION fn_segmentation_window_origin(INT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION fn_segmentation_window_origin(INT) TO retail_app;
+
+-- The schema, not only create_run, keeps a run that read a SEEDED sale from
+-- being recorded OBSERVED. One direction only, on INSERT only: a SEEDED run
+-- over OBSERVED sales over-marks, which is the safe error, and the seed's
+-- SEEDED runs load whatever order the sales arrive in.
+CREATE OR REPLACE FUNCTION fn_segmentation_run_origin_guard()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.data_origin = 'OBSERVED' THEN
+        IF fn_segmentation_window_origin(NEW.window_days) = 'SEEDED' THEN
+            RAISE EXCEPTION 'Run over a window holding a SEEDED sale cannot be OBSERVED'
+                USING ERRCODE = '23514',
+                      CONSTRAINT = 'segmentation_run_origin_observed_only';
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER trg_segmentation_run_origin_guard
+BEFORE INSERT ON segmentation_run
+FOR EACH ROW EXECUTE FUNCTION fn_segmentation_run_origin_guard();
+
+-- Serves fn_segmentation_window_origin: SEEDED sales are a small, fixed set,
+-- so the partial index stays small however many OBSERVED sales arrive.
+CREATE INDEX IF NOT EXISTS idx_transaction_seeded_date
+    ON transaction (occurred_at) WHERE data_origin = 'SEEDED';
+-- END DATA ORIGIN
 
 -- ---------- SALES CSV IMPORT (F8-01, #334) ----------
 --
@@ -731,6 +843,27 @@ CREATE INDEX idx_experiment_assignment_customer   ON experiment_assignment (cust
 CREATE INDEX idx_experiment_exposure_assignment   ON experiment_exposure (assignment_id);
 CREATE INDEX idx_audit_log_entity                 ON audit_log (entity, entity_pk);
 
+-- Foreign keys whose child grows and whose parent is deleted by some code path
+-- (the ON DELETE check would otherwise scan the child) or whose child is read
+-- by that key (#596). docs/data-model.md §4 names the keys left unindexed and
+-- why.
+-- role is deletable; users are also listed and counted by role.
+CREATE INDEX idx_app_user_role                    ON app_user (role_id);
+-- channel is deletable: RESTRICT from customer and transaction, CASCADE from
+-- customer_preferred_channel.
+CREATE INDEX idx_customer_registration_channel    ON customer (registration_channel_id);
+CREATE INDEX idx_customer_preferred_channel_channel ON customer_preferred_channel (channel_id);
+CREATE INDEX idx_transaction_channel              ON transaction (channel_id);
+-- category is deletable; children and subtrees are read by parent.
+CREATE INDEX idx_category_parent                  ON category (parent_category_id);
+CREATE INDEX idx_customer_interest_category_category ON customer_interest_category (category_id);
+-- product is deletable (CASCADE); stock is read per product.
+CREATE INDEX idx_inventory_product                ON inventory (product_id);
+-- A campaign's experiments, an experiment's arms, and an arm's assignments.
+CREATE INDEX idx_experiment_campaign              ON experiment (campaign_id);
+CREATE INDEX idx_experiment_group_experiment      ON experiment_group (experiment_id);
+CREATE INDEX idx_experiment_assignment_group      ON experiment_assignment (group_id, experiment_id);
+
 -- =========================================================
 -- AUDIT STRATEGY
 --
@@ -934,8 +1067,10 @@ FOR EACH ROW EXECUTE FUNCTION fn_audit('history_id');
 -- sale. Both guards are SECURITY INVOKER: they read session_user, the role
 -- that connected, which SET ROLE cannot change. SQLSTATE 22023 is a DataError
 -- that ingest_row already reports as a malformed row, so the web is unchanged.
--- sales-service's own story (F14-18) extends this section and does not
--- re-create these guards.
+-- The transaction guard also requires data_origin = 'OBSERVED' from svc_sales
+-- (ADR-0052, #559): a phone sale is never seeded, and a 22023 from that
+-- check is a sales-service defect. sales-service's own story (F14-18) extends
+-- this section and does not re-create these guards.
 
 CREATE OR REPLACE FUNCTION fn_sales_namespace_guard_transaction() RETURNS trigger
 LANGUAGE plpgsql
@@ -946,6 +1081,10 @@ BEGIN
     IF (NEW.source_transaction_id LIKE 'svc-sales:%')
        IS DISTINCT FROM (session_user = 'svc_sales') THEN
         RAISE EXCEPTION 'source_transaction_id is outside the namespace of %', session_user
+            USING ERRCODE = '22023';
+    END IF;
+    IF session_user = 'svc_sales' AND NEW.data_origin IS DISTINCT FROM 'OBSERVED' THEN
+        RAISE EXCEPTION 'svc_sales records OBSERVED sales only (ADR-0052)'
             USING ERRCODE = '22023';
     END IF;
     RETURN NEW;
@@ -1087,6 +1226,89 @@ GRANT SELECT ON api_customers.customer_ref_v1
     TO svc_customers, svc_sales, svc_preferences, svc_segments,
        svc_recommendations, svc_engagement;
 -- END BOUNDARY customers
+
+-- BEGIN BOUNDARY customer-preferences
+-- customer-preferences-service (F14-16, RN-54, ADR-0034, ADR-0044). The two
+-- 4NF tables stay in public as legacy; the service is their only service
+-- writer, and the web only reads them. A replace is a DELETE and an INSERT
+-- under pg_advisory_xact_lock(290001, hashtext(customer_id::text))
+-- (contracts/db/advisory-locks.md), so the role gets no UPDATE. The capture
+-- trigger fires for every writer, so the web's cascades from a customer,
+-- channel or category delete are announced too. The tables carry no audit
+-- trigger, and this section adds none.
+
+CREATE SCHEMA IF NOT EXISTS api_preferences;
+REVOKE ALL ON SCHEMA api_preferences FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS preferences_events;
+REVOKE ALL ON SCHEMA preferences_events FROM PUBLIC;
+
+-- Keys only, never state: consumers re-read api_preferences.interest_category_v1.
+CREATE TABLE IF NOT EXISTS preferences_events.outbox (
+    event_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    stream      text NOT NULL,
+    event_type  text NOT NULL,
+    entity_id   text NOT NULL,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    relayed_at  timestamptz
+);
+CREATE INDEX IF NOT EXISTS outbox_unrelayed
+    ON preferences_events.outbox (occurred_at) WHERE relayed_at IS NULL;
+
+-- contracts/db/api_preferences.interest_category.v1.md. Definer rights
+-- (security_invoker = off): recommendations reads these two columns and needs
+-- no privilege on the base table.
+CREATE OR REPLACE VIEW api_preferences.interest_category_v1
+WITH (security_invoker = off) AS
+SELECT customer_id, category_id
+FROM public.customer_interest_category;
+REVOKE ALL ON api_preferences.interest_category_v1 FROM PUBLIC;
+
+-- Captures every writer of either set, the web included, in the writer's
+-- transaction. entity_id is the customer whose profile changed (ADR-0044).
+CREATE OR REPLACE FUNCTION preferences_events.capture_changed() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+DECLARE
+    entity text;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        entity := OLD.customer_id::text;
+    ELSE
+        entity := NEW.customer_id::text;
+    END IF;
+    INSERT INTO preferences_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:preferences.v1.changed', TG_OP, entity);
+    -- An empty wake-up for the owner's relay; only that relay LISTENs.
+    PERFORM pg_notify('preferences_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION preferences_events.capture_changed() OWNER TO definer_preferences;
+REVOKE EXECUTE ON FUNCTION preferences_events.capture_changed() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_capture_preferred_channel_changed
+AFTER INSERT OR DELETE ON public.customer_preferred_channel
+FOR EACH ROW EXECUTE FUNCTION preferences_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_capture_interest_category_changed
+AFTER INSERT OR DELETE ON public.customer_interest_category
+FOR EACH ROW EXECUTE FUNCTION preferences_events.capture_changed();
+
+-- Whole-set replace: SELECT, INSERT and DELETE, never UPDATE. The customer is
+-- checked through api_customers.customer_ref_v1 (granted in the customers
+-- section), and channels and categories by foreign key, which needs no
+-- privilege on the parent (E-11).
+GRANT SELECT, INSERT, DELETE ON public.customer_preferred_channel TO svc_preferences;
+GRANT SELECT, INSERT, DELETE ON public.customer_interest_category TO svc_preferences;
+
+GRANT USAGE ON SCHEMA preferences_events TO svc_preferences, definer_preferences;
+GRANT INSERT ON preferences_events.outbox TO definer_preferences;
+GRANT SELECT, DELETE, UPDATE (relayed_at) ON preferences_events.outbox TO svc_preferences;
+
+GRANT USAGE ON SCHEMA api_preferences TO svc_preferences, svc_recommendations;
+GRANT SELECT ON api_preferences.interest_category_v1 TO svc_preferences, svc_recommendations;
+-- END BOUNDARY customer-preferences
 
 -- BEGIN BOUNDARY categories
 -- categories-service (F14-08) owns the category tree: no cycle (RN-33,
@@ -1489,6 +1711,131 @@ GRANT USAGE ON SCHEMA api_users TO svc_users, svc_auth;
 GRANT SELECT ON api_users.credential_v1 TO svc_users, svc_auth;
 -- END BOUNDARY users
 
+-- BEGIN BOUNDARY check-ins
+-- check-ins-service (F14-26, ADR-0046): GPS check-ins whose verdict the server
+-- decides (RN-56), and the append-only reviews that override it. No outbox:
+-- nothing consumes these. The web has no privilege here; a store or user with
+-- check-ins can no longer be deleted (E-11).
+CREATE SCHEMA IF NOT EXISTS checkins;
+REVOKE ALL ON SCHEMA checkins FROM PUBLIC;
+
+-- No verified column: it would depend on reason, or on the latest review.
+-- distance_m and reason are fixed at recorded_at against the location then.
+CREATE TABLE IF NOT EXISTS checkins.store_check_in (
+    check_in_id UUID NOT NULL DEFAULT gen_random_uuid(),
+    client_check_in_id UUID NOT NULL,
+    user_id UUID NOT NULL,
+    store_id SMALLINT NOT NULL,
+    latitude NUMERIC,
+    longitude NUMERIC,
+    accuracy_m NUMERIC,
+    distance_m NUMERIC,
+    reason TEXT NOT NULL,
+    occurred_at TIMESTAMPTZ NOT NULL,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Every named constraint is added separately so this boundary is safe to
+-- re-apply to a database that already contains the table.
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.store_check_in'::regclass
+      AND conname = 'store_check_in_pkey'
+) THEN ALTER TABLE checkins.store_check_in ADD CONSTRAINT store_check_in_pkey
+        PRIMARY KEY (check_in_id); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.store_check_in'::regclass
+      AND conname = 'store_check_in_client_check_in_id_key'
+) THEN ALTER TABLE checkins.store_check_in ADD CONSTRAINT store_check_in_client_check_in_id_key
+        UNIQUE (client_check_in_id); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.store_check_in'::regclass
+      AND conname = 'store_check_in_user_id_fkey'
+) THEN ALTER TABLE checkins.store_check_in ADD CONSTRAINT store_check_in_user_id_fkey
+        FOREIGN KEY (user_id) REFERENCES public.app_user(user_id) ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.store_check_in'::regclass
+      AND conname = 'store_check_in_store_id_fkey'
+) THEN ALTER TABLE checkins.store_check_in ADD CONSTRAINT store_check_in_store_id_fkey
+        FOREIGN KEY (store_id) REFERENCES public.store(store_id) ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.store_check_in'::regclass
+      AND conname = 'store_check_in_reason_check'
+) THEN ALTER TABLE checkins.store_check_in ADD CONSTRAINT store_check_in_reason_check
+        CHECK (reason IN ('within_geofence', 'outside_geofence', 'low_accuracy',
+                          'store_location_unknown', 'no_fix')); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.store_check_in'::regclass
+      AND conname = 'store_check_in_latitude_check'
+) THEN ALTER TABLE checkins.store_check_in ADD CONSTRAINT store_check_in_latitude_check
+        CHECK (latitude BETWEEN -90 AND 90); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.store_check_in'::regclass
+      AND conname = 'store_check_in_longitude_check'
+) THEN ALTER TABLE checkins.store_check_in ADD CONSTRAINT store_check_in_longitude_check
+        CHECK (longitude BETWEEN -180 AND 180); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.store_check_in'::regclass
+      AND conname = 'store_check_in_accuracy_m_check'
+) THEN ALTER TABLE checkins.store_check_in ADD CONSTRAINT store_check_in_accuracy_m_check
+        CHECK (accuracy_m > 0); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.store_check_in'::regclass
+      AND conname = 'store_check_in_fix_check'
+) THEN ALTER TABLE checkins.store_check_in ADD CONSTRAINT store_check_in_fix_check
+        CHECK (CASE WHEN reason = 'no_fix'
+               THEN num_nulls(latitude, longitude, accuracy_m) = 3
+               ELSE num_nulls(latitude, longitude, accuracy_m) = 0 END); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.store_check_in'::regclass
+      AND conname = 'store_check_in_distance_check'
+) THEN ALTER TABLE checkins.store_check_in ADD CONSTRAINT store_check_in_distance_check
+        CHECK ((distance_m IS NULL) = (reason IN ('no_fix', 'store_location_unknown'))); END IF; END $$;
+
+-- review_id is a number because the v1 contract publishes it as int64.
+CREATE TABLE IF NOT EXISTS checkins.check_in_review (
+    review_id BIGINT GENERATED ALWAYS AS IDENTITY,
+    check_in_id UUID NOT NULL,
+    verified BOOLEAN NOT NULL,
+    reason TEXT NOT NULL,
+    reviewed_by UUID NOT NULL,
+    reviewed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.check_in_review'::regclass
+      AND conname = 'check_in_review_pkey'
+) THEN ALTER TABLE checkins.check_in_review ADD CONSTRAINT check_in_review_pkey
+        PRIMARY KEY (review_id); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.check_in_review'::regclass
+      AND conname = 'check_in_review_check_in_id_fkey'
+) THEN ALTER TABLE checkins.check_in_review ADD CONSTRAINT check_in_review_check_in_id_fkey
+        FOREIGN KEY (check_in_id) REFERENCES checkins.store_check_in(check_in_id)
+        ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.check_in_review'::regclass
+      AND conname = 'check_in_review_reviewed_by_fkey'
+) THEN ALTER TABLE checkins.check_in_review ADD CONSTRAINT check_in_review_reviewed_by_fkey
+        FOREIGN KEY (reviewed_by) REFERENCES public.app_user(user_id) ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.check_in_review'::regclass
+      AND conname = 'check_in_review_reason_check'
+) THEN ALTER TABLE checkins.check_in_review ADD CONSTRAINT check_in_review_reason_check
+        CHECK (btrim(reason) <> ''); END IF; END $$;
+
+CREATE INDEX IF NOT EXISTS store_check_in_store_occurred
+    ON checkins.store_check_in (store_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS store_check_in_user_occurred
+    ON checkins.store_check_in (user_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS check_in_review_check_in_reviewed
+    ON checkins.check_in_review (check_in_id, reviewed_at);
+
+-- Append-only: SELECT and INSERT, never UPDATE or DELETE (RN-56). The store
+-- locations come from api_stores.store_directory_v1, granted in the stores
+-- section.
+GRANT USAGE ON SCHEMA checkins TO svc_checkins;
+GRANT SELECT, INSERT ON checkins.store_check_in, checkins.check_in_review TO svc_checkins;
+-- END BOUNDARY check-ins
+
 -- BEGIN APPLICATION ROLE VERIFICATION
 -- F1-05 (#53). Opt-in acceptance checks, kept here because even a rejected
 -- DROP belongs in the only file allowed to contain table DDL. Normal schema
@@ -1708,12 +2055,13 @@ BEGIN
     -- already reports as a malformed row; any other outcome fails.
     BEGIN
         INSERT INTO public.transaction
-            (source_transaction_id, customer_id, store_id, channel_id, occurred_at, total)
+            (source_transaction_id, customer_id, store_id, channel_id, occurred_at, total,
+             data_origin)
         SELECT 'svc-sales:00000000-0000-0000-0000-000000000000',
                (SELECT customer_id FROM public.customer ORDER BY customer_id LIMIT 1),
                (SELECT store_id FROM public.store ORDER BY store_id LIMIT 1),
                (SELECT channel_id FROM public.channel ORDER BY channel_id LIMIT 1),
-               now(), 0;
+               now(), 0, 'OBSERVED';
         RAISE EXCEPTION 'FAIL: retail_app wrote into the svc-sales: namespace';
     EXCEPTION WHEN invalid_parameter_value THEN
         RAISE NOTICE 'PASS: svc-sales: namespace refused (SQLSTATE 22023)';

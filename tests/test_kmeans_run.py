@@ -61,7 +61,7 @@ def _wire(monkeypatch: pytest.MonkeyPatch, ordinals=None, rows=None) -> Mock:
     )
     manager.read_rfm_inputs.return_value = _sales() if rows is None else rows
     manager.read_open_assignments.return_value = {}
-    manager.create_run.return_value = 5
+    manager.create_run.return_value = (5, "OBSERVED")
     for name in (
         "get_label_ordinals",
         "read_rfm_inputs",

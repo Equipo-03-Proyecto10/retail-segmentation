@@ -55,6 +55,7 @@ from web.services.kmeans import (
     recorded_parameters,
 )
 from web.services.notifications import notify_segment_run
+from web.services.provenance import is_seeded
 
 # The seed covers 180 days of sales, so the default window sees all of it.
 # Per-run rather than per-deployment: the operator chooses the window on the
@@ -83,11 +84,19 @@ class RunResult:
     run_id: int | None = None
     method: str = "RFM_RULES"
     fallback: int = 0
+    # The origin the database recorded for the run (ADR-0052): SEEDED when
+    # its window held a SEEDED sale, so the result is Synthetic.
+    data_origin: str | None = None
 
     @property
     def no_segment_changed(self) -> bool:
         """True when no customer's segment assignment changed in the run."""
         return self.reassigned == 0 and self.cleared == 0
+
+    @property
+    def synthetic(self) -> bool:
+        """Whether the run's result is Synthetic (ADR-0052)."""
+        return is_seeded(self.data_origin)
 
 
 def parse_window(raw: str | None) -> int:
@@ -440,7 +449,7 @@ def _record(
     assignments = _validated(output)
 
     prior = read_open_assignments(connection)
-    run_id = create_run(
+    run_id, data_origin = create_run(
         connection,
         method,
         window_days,
@@ -471,6 +480,7 @@ def _record(
         seconds=time.perf_counter() - started,
         run_id=run_id,
         method=method,
+        data_origin=data_origin,
     )
 
 

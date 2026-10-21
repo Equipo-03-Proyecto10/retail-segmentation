@@ -5,7 +5,7 @@
 {% block breadcrumbs %}{{ application_name }} / Analysis / Migration matrix{% endblock %}
 
 {% block content %}
-  {% from "macros/ui.html" import page_header %}
+  {% from "macros/ui.html" import page_header, synthetic_banner, synthetic_pill %}
   {% macro before_label(migration) -%}
     {%- if migration.category.value == "absent_from_earlier" -%}NEW
     {%- elif migration.label_before is none -%}Unassigned
@@ -57,13 +57,14 @@
       <div class="mq-panel__body"><p class="mq-caption">{{ filter_error }}</p></div>
     </section>
   {% elif matrix %}
+    {{ synthetic_banner(synthetic, "At least one of these runs scored demonstration data, so the matrix is Synthetic.") }}
     {% if filter_error %}
       <section class="mq-panel">
         <div class="mq-panel__body"><p class="mq-caption">{{ filter_error }}</p></div>
       </section>
     {% endif %}
     <section class="mq-panel mq-panel--table mq-density-compact">
-      <div class="mq-table__toolbar"><span class="mq-caption">Rows: before label · Columns: after label · NEW means absent from the earlier run; Unassigned means that run scored the customer without a label.</span></div>
+      <div class="mq-table__toolbar"><span class="mq-caption">Rows: before label · Columns: after label · NEW means absent from the earlier run; Unassigned means that run scored the customer without a label.</span>{{ synthetic_pill(synthetic) }}</div>
       <div class="mq-table-wrap">
         <table class="mq-table">
           <thead>

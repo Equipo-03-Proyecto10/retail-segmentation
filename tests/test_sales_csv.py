@@ -113,6 +113,59 @@ def test_a_bad_byte_deep_in_the_file_refuses_it_before_any_row_is_ingested(
     assert ingested == []
 
 
+def _oversized_field_csv(tmp_path: Path) -> Path:
+    """#584's file: two valid rows, then a customer_id of 200,000 digits, which
+    is past the csv module's 131,072-character field limit."""
+    return _write_csv(
+        tmp_path,
+        [
+            "TXN-1,cust-1,1,1,2026-01-15T10:00:00+00:00,1,2,9.99",
+            "TXN-2,cust-1,1,1,2026-01-15T10:00:00+00:00,1,2,9.99",
+            "TXN-3," + "9" * 200_000 + ",1,1,2026-01-15T10:00:00+00:00,1,2,9.99",
+        ],
+    )
+
+
+def test_a_field_past_the_csv_limit_refuses_the_file_before_any_row(
+    tmp_path: Path,
+) -> None:
+    """#584: the csv module raised from the middle of the load, after the rows
+    before the bad line had committed, and the request answered 500."""
+    ingested = []
+
+    with pytest.raises(UnsupportedContractVersion) as refusal:
+        load_sales_csv(
+            object(),
+            _oversized_field_csv(tmp_path),
+            contract_version=CONTRACT_VERSION,
+            ingest=lambda _connection, sale: ingested.append(sale),
+        )
+
+    assert ingested == []
+    assert str(refusal.value) == (
+        "line 4 has a field longer than 131,072 characters, which no column of "
+        "the contract allows"
+    )
+
+
+def test_a_file_with_an_oversized_field_records_no_load(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    insert = Mock()
+    monkeypatch.setattr("web.services.sales_csv.insert_sales_load", insert)
+
+    with pytest.raises(UnsupportedContractVersion):
+        load_and_record_sales_csv(
+            object(),
+            _oversized_field_csv(tmp_path),
+            filename="sales.csv",
+            contract_version=CONTRACT_VERSION,
+            loaded_by=None,
+        )
+
+    insert.assert_not_called()
+
+
 def test_four_rows_two_valid_two_invalid_report_4_2_2(tmp_path: Path) -> None:
     path = _write_csv(
         tmp_path,

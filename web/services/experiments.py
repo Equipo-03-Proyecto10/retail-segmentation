@@ -32,6 +32,7 @@ from web.db.campaigns import get_campaign
 from web.db.clock import current_date as business_date
 from web.db.transactions import atomic
 from web.parsing import iso_date, whole_number
+from web.services.provenance import experiment_synthetic
 
 # What F11-07 measures. The schema stores free text; the vocabulary is this
 # service's, and matches the values the seed uses. Conversion is the only
@@ -89,9 +90,12 @@ class ExperimentInput:
     group_definitions: tuple[tuple[str, str], ...] = ()
 
 
-def is_synthetic(data_origin: str) -> bool:
-    """Whether figures from an experiment of this origin carry `Synthetic`."""
-    return data_origin in SYNTHETIC_ORIGINS
+def is_synthetic(experiment: experiments.Experiment) -> bool:
+    """Whether an experiment's figures carry `Synthetic` (ADR-0052): its origin
+    is SEEDED or INJECTED, or a conversion it records links a SEEDED sale.
+    The setup pages (form, assign) read `data_origin` alone: they show no
+    figure (decision 6 on #560)."""
+    return experiment_synthetic(experiment)
 
 
 def _parse_date(raw: str, label: str) -> tuple[date | None, str | None]:

@@ -115,16 +115,18 @@ def test_category_counts_each_purchase_once_and_preserves_units_and_spend() -> N
 def test_tagged_rows_are_mapped_to_their_period_and_dimension() -> None:
     connection = MagicMock()
     _cursor(connection).fetchall.return_value = [
-        ("earlier", "channel", _ADA, 1, "web", 3, None, Decimal("30.00")),
-        ("earlier", "store", _ADA, 4, "North", 3, None, Decimal("30.00")),
-        ("earlier", "category", _ADA, 7, "Dairy", 2, 5, Decimal("12.50")),
-        ("later", "channel", _BOB, 2, "app", 1, None, Decimal("8.00")),
-        ("later", "store", _BOB, 5, "South", 1, None, Decimal("8.00")),
-        ("later", "category", _BOB, 8, "Snacks", 1, 2, Decimal("8.00")),
-        ("earlier", "lined", _ADA, 0, "", 2, None, None),
+        ("earlier", "channel", _ADA, 1, "web", 3, None, Decimal("30.00"), False),
+        ("earlier", "store", _ADA, 4, "North", 3, None, Decimal("30.00"), False),
+        ("earlier", "category", _ADA, 7, "Dairy", 2, 5, Decimal("12.50"), True),
+        ("later", "channel", _BOB, 2, "app", 1, None, Decimal("8.00"), False),
+        ("later", "store", _BOB, 5, "South", 1, None, Decimal("8.00"), False),
+        ("later", "category", _BOB, 8, "Snacks", 1, 2, Decimal("8.00"), False),
+        ("earlier", "lined", _ADA, 0, "", 2, None, None, False),
     ]
 
-    earlier, later = _read(connection)
+    earlier, later, seeded = _read(connection)
+
+    assert seeded is True
 
     assert earlier == (
         {_ADA: [GroupTotal(1, "web", 3, Decimal("30.00"))]},
@@ -144,7 +146,7 @@ def test_no_rows_returns_empty_inputs_for_both_periods() -> None:
     connection = MagicMock()
     _cursor(connection).fetchall.return_value = []
 
-    assert _read(connection) == (({}, {}, {}, {}), ({}, {}, {}, {}))
+    assert _read(connection) == (({}, {}, {}, {}), ({}, {}, {}, {}), False)
 
 
 def test_a_customer_id_that_is_a_uuid_object_is_keyed_as_text() -> None:
@@ -152,10 +154,10 @@ def test_a_customer_id_that_is_a_uuid_object_is_keyed_as_text() -> None:
 
     connection = MagicMock()
     _cursor(connection).fetchall.return_value = [
-        ("earlier", "channel", UUID(_ADA), 1, "web", 3, None, Decimal("30.00"))
+        ("earlier", "channel", UUID(_ADA), 1, "web", 3, None, Decimal("30.00"), False)
     ]
 
-    earlier, _ = _read(connection)
+    earlier, _, _ = _read(connection)
 
     assert list(earlier[0]) == [_ADA]
 

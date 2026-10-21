@@ -70,8 +70,8 @@ _ADD_CUSTOMER = (
 )
 _ADD_RUN = (
     "INSERT INTO segmentation_run"
-    " (method, window_days, parameters, customer_count, run_at)"
-    " VALUES ('RFM_RULES', 180, '{\"window_days\": 180}'::jsonb, 1, %s)"
+    " (method, window_days, parameters, customer_count, run_at, data_origin)"
+    " VALUES ('RFM_RULES', 180, '{\"window_days\": 180}'::jsonb, 1, %s, 'SEEDED')"
     " RETURNING run_id"
 )
 _ADD_ROW = (

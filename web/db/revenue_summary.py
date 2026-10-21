@@ -34,6 +34,9 @@ class RevenueSummary:
     revenue: Decimal
     by_channel: tuple[RevenueRow, ...]
     by_store: tuple[RevenueRow, ...]
+    # Whether any sale in the window is SEEDED (ADR-0052). The splits read the
+    # same window, so one flag marks every figure on the page.
+    seeded: bool
 
 
 _WINDOW = """
@@ -41,7 +44,8 @@ _WINDOW = """
                     - make_interval(days => %s)
 """
 _TOTALS = (
-    "SELECT max(t.occurred_at), count(*), coalesce(sum(t.total), 0) "
+    "SELECT max(t.occurred_at), count(*), coalesce(sum(t.total), 0), "
+    "coalesce(bool_or(t.data_origin = 'SEEDED'), false) "
     "FROM transaction AS t WHERE " + _WINDOW
 )
 _BY_CHANNEL = (
@@ -64,11 +68,11 @@ def read_revenue_summary(
     """Accepted sales in the `window_days` ending at the newest sale."""
     with connection.cursor() as cursor:
         cursor.execute(_TOTALS, (window_days,))
-        until, transactions, revenue = cursor.fetchone()
+        until, transactions, revenue, seeded = cursor.fetchone()
         cursor.execute(_BY_CHANNEL, (window_days,))
         by_channel = tuple(RevenueRow(*row) for row in cursor.fetchall())
         cursor.execute(_BY_STORE, (window_days,))
         by_store = tuple(RevenueRow(*row) for row in cursor.fetchall())
     return RevenueSummary(
-        window_days, until, transactions, revenue, by_channel, by_store
+        window_days, until, transactions, revenue, by_channel, by_store, seeded
     )

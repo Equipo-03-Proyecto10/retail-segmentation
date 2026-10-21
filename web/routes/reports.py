@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from flask import Blueprint, current_app, render_template
+from flask import Blueprint, render_template
 
 from web.db import get_connection
 from web.db.revenue_summary import read_revenue_summary
@@ -87,10 +87,10 @@ def reports_for_current_user() -> list[tuple[str, list[ReportLink]]]:
 @reports_bp.get("/", endpoint="index")
 @requires(REPORT_READ)
 def reports_index() -> str:
-    config = current_app.config["APP_CONFIG"]
     return render_template(
         "reports/index.html",
         groups=reports_for_current_user(),
+        # Marked Synthetic by the sales it sums (ADR-0052): the read says
+        # whether any sale in the window is SEEDED.
         revenue=read_revenue_summary(get_connection(), REVENUE_WINDOW_DAYS),
-        is_synthetic=config.data_is_synthetic,
     )

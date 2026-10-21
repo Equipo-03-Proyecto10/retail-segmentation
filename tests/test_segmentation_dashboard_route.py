@@ -140,13 +140,15 @@ def _open(
     url: str = _URL,
     side_effect=None,
     runs: list | None = None,
+    kpis: Kpis | None = None,
 ):
     fake = Mock(return_value=dashboard if dashboard is not None else _dashboard())
     if side_effect is not None:
         fake = Mock(side_effect=side_effect)
     monkeypatch.setattr("web.routes.segmentation_dashboard.build_dashboard", fake)
     monkeypatch.setattr(
-        "web.routes.segmentation_dashboard.build_kpis", Mock(return_value=_kpis())
+        "web.routes.segmentation_dashboard.build_kpis",
+        Mock(return_value=kpis or _kpis()),
     )
     monkeypatch.setattr(
         "web.routes.segmentation_dashboard.list_runs",
@@ -323,6 +325,25 @@ def test_an_observed_run_against_an_observed_run_carries_no_synthetic_mark(
     payload = _payload(body)
     assert not any(payload["synthetic"].values())
     assert payload["label"] is None
+
+
+def test_seeded_recommendations_mark_their_panel_and_the_page(app, monkeypatch) -> None:
+    """#560, decision 2: the panel is marked by the recommendations it tallies,
+    even when the run's own charts are not."""
+    dashboard = _dashboard(run=_observed(31), previous_run=_observed(30))
+    kpis = Kpis(
+        label_means=(MeansRow("CHAMPION", 2),),
+        active_experiments=(),
+        recommended=TopRecommended((), 0, 0, synthetic=True),
+        scored=True,
+    )
+
+    body = _body(_open(app, monkeypatch, dashboard, runs=[_observed(31)], kpis=kpis)[0])
+
+    panel = body[body.index(">Most recommended products</h2>") :]
+    assert "Synthetic" in panel.split("</header>")[0]
+    assert 'class="mq-alert mq-alert--warning" role="status"' in body
+    assert 'aria-label="Customers per label"' in body
 
 
 def test_the_migration_flow_is_marked_by_a_seeded_previous_run(

@@ -28,6 +28,10 @@ nothing is an empty report, not an error.
 fresh for every customer on every load, exactly as the customer-facing page
 (F10-02) already does, so a product whose stock reaches zero is absent the
 next time the report runs -- there is nothing cached here that could go stale.
+
+**Synthetic** (ADR-0052). The shift report is marked when either period holds
+a SEEDED sale; the recommendation report when any recommendation it lists was
+built from seeded data (`RecommendationResult.synthetic`).
 """
 
 from __future__ import annotations
@@ -86,6 +90,8 @@ class FilteredShiftReport:
     page: int = 1
     page_size: int = DEFAULT_PAGE_SIZE
     page_count: int = 1
+    # ADR-0052: either period holds a SEEDED sale.
+    seeded: bool = False
 
     @property
     def has_previous(self) -> bool:
@@ -169,6 +175,7 @@ def build_shift_report(
         page=page,
         page_size=page_size,
         page_count=total_pages,
+        seeded=report.seeded,
     )
 
 
@@ -189,6 +196,8 @@ class RecommendationRow:
     category_name: str
     in_stock: int
     reasons: tuple[Reason, ...]
+    # ADR-0052: the customer's recommendation was built from seeded data.
+    synthetic: bool = False
 
 
 @dataclass(frozen=True)
@@ -198,6 +207,8 @@ class RecommendationReportPage:
     page: int
     page_size: int
     page_count: int
+    # Whether any row the filters matched, on any page, is Synthetic.
+    synthetic: bool = False
 
     @property
     def has_previous(self) -> bool:
@@ -242,6 +253,7 @@ def filter_recommendation_rows(
                     category_name=item.category_name,
                     in_stock=item.in_stock,
                     reasons=item.reasons,
+                    synthetic=result.synthetic,
                 )
             )
     return tuple(rows)
@@ -304,4 +316,5 @@ def build_recommendation_report(
         page=page,
         page_size=page_size,
         page_count=total_pages,
+        synthetic=any(row.synthetic for row in rows),
     )

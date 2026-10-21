@@ -37,6 +37,11 @@ result says that too. Nothing is guessed in either case.
 
 Only the stable label is read (ADR-0018). Nothing here is told, or reads, how a run
 was produced.
+
+**Synthetic** (ADR-0052, decision 2 on #560). A result is marked when the profile
+window holds a SEEDED sale of anyone's, since the segment signal reads other
+customers' sales in it, or when the run behind the customer's open label is
+SEEDED. Both come from reads the profile already makes.
 """
 
 from __future__ import annotations
@@ -61,6 +66,7 @@ from web.services.consumption_profile import (
     DEFAULT_PROFILE_WINDOW_DAYS,
     build_profile,
 )
+from web.services.provenance import is_seeded
 
 DEFAULT_LIMIT = 10
 MAX_LIMIT = 50
@@ -126,6 +132,8 @@ class RecommendationResult:
     channel_id: int | None = None
     channel_name: str | None = None
     recommendations: tuple[Recommendation, ...] = ()
+    # ADR-0052: built from a SEEDED sale or a SEEDED run's label.
+    synthetic: bool = False
 
 
 # ---------- ranking: a pure function of plain rows ----------
@@ -290,6 +298,11 @@ def recommend(
         window_days=profile.window_days,
         window_start=profile.window_start,
         window_end=profile.window_end,
+        synthetic=profile.window_seeded
+        or (
+            profile.current_segment is not None
+            and is_seeded(profile.current_segment.data_origin)
+        ),
     )
 
     segment = profile.current_segment

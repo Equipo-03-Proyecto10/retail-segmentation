@@ -435,6 +435,7 @@ def test_the_rfm_values_and_scores_come_from_the_open_history_row(monkeypatch) -
         r_score=2,
         f_score=3,
         m_score=4,
+        data_origin="OBSERVED",
     )
 
 
@@ -518,6 +519,7 @@ def test_an_unassigned_open_row_is_a_current_segment_with_no_label_and_no_rfm(
         label_name=None,
         valid_from=_AS_OF - timedelta(days=1),
         valid_to=None,
+        data_origin="OBSERVED",
     )
     assert profile.rfm is None
 
@@ -541,3 +543,59 @@ def test_nothing_the_profile_carries_names_a_segmentation_method_or_cluster() ->
         for field in fields(model):
             assert "method" not in field.name, (model.__name__, field.name)
             assert "cluster" not in field.name, (model.__name__, field.name)
+
+
+# ---------- #560: what marks a profile Synthetic ----------
+
+
+def test_the_sales_measures_are_marked_by_the_customers_seeded_sales(
+    monkeypatch,
+) -> None:
+    _wire(monkeypatch, open_row=_history(), seeded=True, window_seeded=True)
+
+    profile = build_profile(Mock(), _CUSTOMER, as_of=_AS_OF)
+
+    assert profile.seeded_sales and profile.window_seeded
+    assert not profile.segment_synthetic
+
+
+def test_the_segment_panel_is_marked_by_its_run_not_by_the_window(
+    monkeypatch,
+) -> None:
+    _wire(monkeypatch, open_row=_history(data_origin="SEEDED"))
+
+    profile = build_profile(Mock(), _CUSTOMER, as_of=_AS_OF)
+
+    assert profile.segment_synthetic
+    assert not profile.seeded_sales
+
+
+def test_a_seeded_previous_segment_marks_the_segment_panel(monkeypatch) -> None:
+    _wire(
+        monkeypatch,
+        open_row=_history(30, "LOYAL"),
+        previous_row=_history(
+            29, "LOST", valid_to=_AS_OF, data_origin="SEEDED", scores=None
+        ),
+    )
+
+    assert build_profile(Mock(), _CUSTOMER, as_of=_AS_OF).segment_synthetic
+
+
+def test_an_observed_profile_is_not_synthetic(monkeypatch) -> None:
+    _wire(monkeypatch, open_row=_history())
+
+    profile = build_profile(Mock(), _CUSTOMER, as_of=_AS_OF)
+
+    assert not (profile.seeded_sales or profile.window_seeded)
+    assert not profile.segment_synthetic
+
+
+def test_an_empty_window_still_says_whether_anyones_sales_in_it_are_seeded(
+    monkeypatch,
+) -> None:
+    _wire(monkeypatch, purchases=0, open_row=_history(), window_seeded=True)
+
+    profile = build_profile(Mock(), _CUSTOMER, as_of=_AS_OF)
+
+    assert profile.window_seeded and not profile.seeded_sales

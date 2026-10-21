@@ -77,6 +77,19 @@ def test_the_revenue_summary_shows_totals_and_both_splits() -> None:
         assert text in body
 
 
+@pytest.mark.parametrize("seeded", [True, False])
+def test_the_revenue_is_marked_synthetic_exactly_when_the_window_holds_a_seeded_sale(
+    seeded: bool,
+) -> None:
+    """#560, ADR-0052: marked by the sales it sums, never by a setting."""
+    body = (
+        _client(_connection(seeded=seeded), "ANALYST").get(_URL).get_data(as_text=True)
+    )
+
+    assert ("Synthetic" in body) is seeded
+    assert ('class="mq-alert mq-alert--warning" role="status"' in body) is seeded
+
+
 def test_no_sales_says_so_instead_of_showing_zeroes() -> None:
     body = _client(_connection(False), "ANALYST").get(_URL).get_data(as_text=True)
 

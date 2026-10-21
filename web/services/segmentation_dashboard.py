@@ -421,6 +421,8 @@ class TopRecommended:
     products: tuple[RecommendedProduct, ...]
     considered: int
     total: int
+    # ADR-0052: a tallied recommendation was built from seeded data.
+    synthetic: bool = False
 
     @property
     def capped(self) -> bool:
@@ -445,11 +447,13 @@ def build_top_recommended(
     customers: dict[int, int] = {}
     named: dict[int, tuple[str, str]] = {}
     stock: dict[int, dict[int, tuple[str, int]]] = {}
+    synthetic = False
     for customer_id in customer_ids:
         try:
             result = recommend(connection, customer_id)
         except UnknownCustomer:
             continue
+        synthetic = synthetic or (result.synthetic and bool(result.recommendations))
         for item in result.recommendations:
             customers[item.product_id] = customers.get(item.product_id, 0) + 1
             named[item.product_id] = (item.name, item.category_name)
@@ -471,7 +475,7 @@ def build_top_recommended(
         )
         for product_id in ranked[:limit]
     )
-    return TopRecommended(products, len(customer_ids), total)
+    return TopRecommended(products, len(customer_ids), total, synthetic)
 
 
 @dataclass(frozen=True)
@@ -511,5 +515,6 @@ def page_synthetic(dashboard: Dashboard, kpis: Kpis) -> bool:
     return (
         dashboard.run_synthetic
         or dashboard.migration_synthetic
+        or kpis.recommended.synthetic
         or any(active.label for active in kpis.active_experiments)
     )

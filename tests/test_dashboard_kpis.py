@@ -197,6 +197,25 @@ def test_products_are_ranked_by_how_many_customers_they_are_recommended_to(
     assert [(p.product_id, p.customers) for p in top.products] == [(10, 3), (11, 2)]
 
 
+def test_the_tally_is_synthetic_when_a_counted_recommendation_is(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#560, decision 2: a seeded window or a seeded label marks a counted
+    recommendation; a customer with nothing recommended counts for nothing."""
+    from dataclasses import replace
+
+    answers = {
+        "a": _result(1, "Centro", (10, "Milk", 8)),
+        "b": replace(_result(1, "Centro"), synthetic=True),
+    }
+    monkeypatch.setattr(service, "recommend", lambda _c, cid: answers[cid])
+
+    assert not service.build_top_recommended(MagicMock(), ["a", "b"], 2).synthetic
+
+    answers["a"] = replace(answers["a"], synthetic=True)
+    assert service.build_top_recommended(MagicMock(), ["a", "b"], 2).synthetic
+
+
 def test_stock_is_listed_per_store_once_however_many_customers_share_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

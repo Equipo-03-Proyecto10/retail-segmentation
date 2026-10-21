@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: products-service
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     Owns the product catalog rule: a product has a unique SKU, a non-negative
     two-decimal list price, exactly one existing category, and is retired by
@@ -20,7 +20,9 @@ paths:
         matches a case-insensitive substring of the product name or SKU. `sku`
         is an exact match. `ids` is a comma-separated list of at most 50
         positive product ids; ids with no matching product are omitted from the
-        page and are not errors. Pagination applies after filtering.
+        page and are not errors. Pagination applies after filtering. A filter
+        value outside its schema returns 422 `invalid_query`, naming the
+        parameter in `details`.
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -653,7 +655,7 @@ components:
               value: |-
                 <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>not_acceptable</code><message>The requested response format is unsupported.</message><correlation_id>corr-format-001</correlation_id></Error>
     ProductListValidation:
-      description: '`invalid_pagination` or `too_many_ids`.'
+      description: '`invalid_pagination`, `too_many_ids` or `invalid_query`.'
       headers:
         X-Correlation-ID:
           $ref: '#/components/headers/CorrelationId'
@@ -672,6 +674,8 @@ components:
                     code: minimum
             too_many_ids:
               externalValue: ./examples/too-many-ids.json
+            invalid_query:
+              externalValue: ./examples/invalid-query.json
         application/xml:
           schema:
             $ref: '#/components/schemas/Error'
@@ -681,6 +685,8 @@ components:
                 <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>invalid_pagination</code><message>Pagination values are outside their allowed ranges.</message><correlation_id>corr-list-001</correlation_id><details><field>page</field><code>minimum</code></details></Error>
             too_many_ids:
               externalValue: ./examples/too-many-ids.xml
+            invalid_query:
+              externalValue: ./examples/invalid-query.xml
     ProductNotFound:
       description: '`product_not_found`.'
       headers:

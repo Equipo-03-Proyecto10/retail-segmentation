@@ -843,6 +843,27 @@ CREATE INDEX idx_experiment_assignment_customer   ON experiment_assignment (cust
 CREATE INDEX idx_experiment_exposure_assignment   ON experiment_exposure (assignment_id);
 CREATE INDEX idx_audit_log_entity                 ON audit_log (entity, entity_pk);
 
+-- Foreign keys whose child grows and whose parent is deleted by some code path
+-- (the ON DELETE check would otherwise scan the child) or whose child is read
+-- by that key (#596). docs/data-model.md §4 names the keys left unindexed and
+-- why.
+-- role is deletable; users are also listed and counted by role.
+CREATE INDEX idx_app_user_role                    ON app_user (role_id);
+-- channel is deletable: RESTRICT from customer and transaction, CASCADE from
+-- customer_preferred_channel.
+CREATE INDEX idx_customer_registration_channel    ON customer (registration_channel_id);
+CREATE INDEX idx_customer_preferred_channel_channel ON customer_preferred_channel (channel_id);
+CREATE INDEX idx_transaction_channel              ON transaction (channel_id);
+-- category is deletable; children and subtrees are read by parent.
+CREATE INDEX idx_category_parent                  ON category (parent_category_id);
+CREATE INDEX idx_customer_interest_category_category ON customer_interest_category (category_id);
+-- product is deletable (CASCADE); stock is read per product.
+CREATE INDEX idx_inventory_product                ON inventory (product_id);
+-- A campaign's experiments, an experiment's arms, and an arm's assignments.
+CREATE INDEX idx_experiment_campaign              ON experiment (campaign_id);
+CREATE INDEX idx_experiment_group_experiment      ON experiment_group (experiment_id);
+CREATE INDEX idx_experiment_assignment_group      ON experiment_assignment (group_id, experiment_id);
+
 -- =========================================================
 -- AUDIT STRATEGY
 --

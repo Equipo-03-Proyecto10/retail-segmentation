@@ -1248,6 +1248,43 @@ deletes any of the four.
 | `idx_notification_recipient_inbox` | `notification_recipient (user_id, notification_id DESC)` | One user's inbox, newest first, paginated |
 | `idx_notification_recipient_unread` | `notification_recipient (user_id) WHERE read_at IS NULL` | The unread count on every page, and "mark all read" |
 | `notification_{sales_load,run,experiment}_id_key` | `notification (sales_load_id)`, `(run_id)`, `(experiment_id)`, each `UNIQUE` | An event is announced once; the arbiter of the announcer's `ON CONFLICT` |
+| `idx_app_user_role` | `app_user (role_id)` | Users listed and counted by role; the `RESTRICT` check when a role is deleted |
+| `idx_customer_registration_channel` | `customer (registration_channel_id)` | The `RESTRICT` check when a channel is deleted |
+| `idx_customer_preferred_channel_channel` | `customer_preferred_channel (channel_id)` | The `CASCADE` when a channel is deleted (the primary key leads with `customer_id`) |
+| `idx_transaction_channel` | `transaction (channel_id)` | The `RESTRICT` check when a channel is deleted, which would otherwise scan every sale |
+| `idx_category_parent` | `category (parent_category_id)` | A category's children and subtree; the `RESTRICT` check when a category is deleted |
+| `idx_customer_interest_category_category` | `customer_interest_category (category_id)` | The `CASCADE` when a category is deleted (the primary key leads with `customer_id`) |
+| `idx_inventory_product` | `inventory (product_id)` | Stock of one product across stores; the `CASCADE` when a product is deleted (the primary key leads with `store_id`) |
+| `idx_experiment_campaign` | `experiment (campaign_id)` | A campaign's experiments |
+| `idx_experiment_group_experiment` | `experiment_group (experiment_id)` | An experiment's arms (`ux_experiment_one_control` covers only the control) |
+| `idx_experiment_assignment_group` | `experiment_assignment (group_id, experiment_id)` | Assignments per arm, for the dashboard and the conversion measures; the composite foreign key to `experiment_group` |
+
+**Foreign keys without an index.** A foreign key is indexed when its child
+table grows and either some code path deletes the parent, so the `ON DELETE`
+check scans the child, or a query reads the child by that key (#596). These
+twelve meet neither condition:
+
+- *The parent is `app_user`, which is never deleted (deactivation removes
+  access, F3-06), and no query reads the child by the user:*
+  `app_session (user_id)`, `audit_log (user_id)`,
+  `notification (subject_user_id)`, `sales_load (loaded_by)`,
+  `segmentation_run (executed_by)`, `stores.store_location (set_by)` and
+  `checkins.check_in_review (reviewed_by)`.
+  Revoking a deactivated user's open sessions is served by the partial
+  `idx_app_session_open_by_user`; revoked sessions are history and nothing
+  looks them up by user.
+- *The parent is a fixed catalog that no code deletes:*
+  `segment (label_code)` and `customer_segment_history (label_code)` reference
+  the six-label vocabulary, and `segment (rule_id)` references the RFM bands.
+  `segment` itself holds about thirty rows, so reading it by rule is a scan of
+  a page.
+- *No code deletes the parent, and the child is read through another key:*
+  `customer_segment_history (segment_id, label_code)` is read by run and by
+  customer, through `idx_customer_segment_history_customer` and the open-row
+  index; an operator retiring an RFM band is a one-off maintenance step for
+  which a scan is acceptable. `experiment_conversion (transaction_id)` is read
+  through `UNIQUE (assignment_id, transaction_id)`, and a sale is never
+  deleted.
 
 **Partitioning is not implemented.** `transaction` is the fastest-growing table
 and range partitioning by date is the obvious eventual move, but at 300 seed

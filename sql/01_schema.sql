@@ -469,32 +469,40 @@ ALTER TABLE segmentation_run
 -- Statement order inside a transaction is free; only the committed state is
 -- held to the rule. SQLSTATE 23514 and the constraint name let a caller
 -- translate it like any other CHECK.
+-- Moving a line between sales changes both sums, so an UPDATE that changes
+-- transaction_id checks both the source and destination headers.
 CREATE OR REPLACE FUNCTION fn_transaction_total_matches_lines() RETURNS TRIGGER AS $$
 DECLARE
     sale_id BIGINT;
+    sale_ids BIGINT[];
 BEGIN
     IF TG_TABLE_NAME = 'transaction' THEN
-        sale_id := NEW.transaction_id;
+        sale_ids := ARRAY[NEW.transaction_id];
     ELSIF TG_OP = 'DELETE' THEN
-        sale_id := OLD.transaction_id;
+        sale_ids := ARRAY[OLD.transaction_id];
+    ELSIF TG_OP = 'UPDATE'
+          AND OLD.transaction_id IS DISTINCT FROM NEW.transaction_id THEN
+        sale_ids := ARRAY[OLD.transaction_id, NEW.transaction_id];
     ELSE
-        sale_id := NEW.transaction_id;
+        sale_ids := ARRAY[NEW.transaction_id];
     END IF;
-    -- A cascade can delete the header before this runs; nothing is left to check.
-    IF EXISTS (
-        SELECT 1
-        FROM transaction AS t
-        WHERE t.transaction_id = sale_id
-          AND t.total IS DISTINCT FROM (
-              SELECT COALESCE(SUM(l.quantity * l.unit_price), 0)
-              FROM transaction_line AS l
-              WHERE l.transaction_id = t.transaction_id
-          )
-    ) THEN
-        RAISE EXCEPTION 'transaction % total differs from the sum of its lines', sale_id
-            USING ERRCODE = 'check_violation',
-                  CONSTRAINT = 'transaction_total_matches_lines';
-    END IF;
+    FOREACH sale_id IN ARRAY sale_ids LOOP
+        -- A cascade can delete the header before this runs; nothing is left to check.
+        IF EXISTS (
+            SELECT 1
+            FROM transaction AS t
+            WHERE t.transaction_id = sale_id
+              AND t.total IS DISTINCT FROM (
+                  SELECT COALESCE(SUM(l.quantity * l.unit_price), 0)
+                  FROM transaction_line AS l
+                  WHERE l.transaction_id = t.transaction_id
+              )
+        ) THEN
+            RAISE EXCEPTION 'transaction % total differs from the sum of its lines', sale_id
+                USING ERRCODE = 'check_violation',
+                      CONSTRAINT = 'transaction_total_matches_lines';
+        END IF;
+    END LOOP;
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;

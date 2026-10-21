@@ -505,6 +505,23 @@ VALUES ('RFM_RULES', 90, '[]'::jsonb);
 ROLLBACK;
 
 \echo ''
+\echo '-- N48: moving a line leaves its source total stale [expect: 23514 check_violation]'
+-- RN-37. Correcting only the destination must not hide the source mismatch.
+BEGIN;
+WITH moved AS (
+    UPDATE transaction_line SET transaction_id = 2
+     WHERE ctid = (SELECT ctid FROM transaction_line WHERE transaction_id = 1
+                    AND product_id NOT IN (SELECT product_id FROM transaction_line
+                                            WHERE transaction_id = 2)
+                    LIMIT 1)
+    RETURNING quantity * unit_price AS amount
+)
+UPDATE transaction SET total = total + (SELECT amount FROM moved)
+ WHERE transaction_id = 2;
+SET CONSTRAINTS ALL IMMEDIATE;
+ROLLBACK;
+
+\echo ''
 \echo '=============================================='
 \echo 'Volume check — at least 30 rows per table'
 \echo 'role and channel are exempt: see sql/seed-exempt.txt'

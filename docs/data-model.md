@@ -701,6 +701,7 @@ domain forbids.
   another table, and the header is written before its lines, so the rule is a
   deferred constraint trigger on both tables, evaluated at `COMMIT`. A header
   with no lines must total 0, which is what the ingestion writes first.
+  Moving a line between sales checks both its source and destination headers.
   Statements may come in any order inside a transaction; only the committed
   state is held to the rule. The `total` column stays: it is a stored
   derivation kept for reads, and the trigger is what guarantees it cannot

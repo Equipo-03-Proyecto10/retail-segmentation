@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: customers-service
-  version: 1.0.1
+  version: 1.1.0
   description: >-
     Registers, searches, reads and corrects customers under RN-08. Customers
     are never deleted through services; a mistaken registration is corrected
@@ -432,6 +432,9 @@ components:
         name:
           type: string
           maxLength: 120
+          description: >-
+            Refused with 422 invalid_body when it is empty or only
+            whitespace.
         email:
           $ref: '#/components/schemas/NullableEmail'
         phone:
@@ -460,6 +463,9 @@ components:
         name:
           type: string
           maxLength: 120
+          description: >-
+            Refused with 422 invalid_body when it is empty or only
+            whitespace.
         email:
           $ref: '#/components/schemas/NullableEmail'
         phone:
@@ -833,10 +839,11 @@ components:
     RegisterValidationFailed:
       description: >-
         invalid_body — the parsed body violates its schema, including an email
-        rejected by customer_email_check, a name over 120 characters, an email
-        over 160 characters, a phone over 20 characters, or an undeclared
-        field; unknown_channel — registration_channel_id is not known;
-        future_registration — registered_on is after the current date.
+        rejected by customer_email_check, a name that is empty or only
+        whitespace, a name over 120 characters, an email over 160 characters,
+        a phone over 20 characters, or an undeclared field; unknown_channel —
+        registration_channel_id is not known; future_registration —
+        registered_on is after the current date.
       headers:
         X-Correlation-ID:
           $ref: '#/components/headers/CorrelationId'
@@ -864,9 +871,10 @@ components:
     CorrectionValidationFailed:
       description: >-
         invalid_body — the parsed body violates its schema, including an email
-        rejected by customer_email_check, a name over 120 characters, an email
-        over 160 characters, a phone over 20 characters, or any undeclared
-        field such as registered_on; details names every invalid field;
+        rejected by customer_email_check, a name that is empty or only
+        whitespace, a name over 120 characters, an email over 160 characters,
+        a phone over 20 characters, or any undeclared field such as
+        registered_on; details names every invalid field;
         unknown_channel — registration_channel_id is not known.
       headers:
         X-Correlation-ID:

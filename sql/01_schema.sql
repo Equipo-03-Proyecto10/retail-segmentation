@@ -97,6 +97,25 @@ CREATE TRIGGER trg_category_no_cycle
     BEFORE INSERT OR UPDATE OF parent_category_id ON category
     FOR EACH ROW EXECUTE FUNCTION fn_category_no_cycle();
 
+-- #586: the row trigger above takes the advisory lock after the statement has
+-- already locked its row, so two opposite moves (A under B, B under A) each
+-- held one row and waited on the other's row lock behind the advisory lock: a
+-- deadlock, answered as 503. A BEFORE STATEMENT trigger runs before any row is
+-- touched, so every hierarchy writer takes the lock first and the loser waits
+-- with nothing held, then fails the walk with category_no_cycle (409). The
+-- lock is reentrant within the transaction, so the row trigger's own call
+-- stays as a no-op safety net.
+CREATE OR REPLACE FUNCTION fn_category_hierarchy_lock() RETURNS TRIGGER AS $$
+BEGIN
+    PERFORM pg_advisory_xact_lock(hashtext('category_hierarchy'));
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_category_hierarchy_lock
+    BEFORE INSERT OR UPDATE OF parent_category_id ON category
+    FOR EACH STATEMENT EXECUTE FUNCTION fn_category_hierarchy_lock();
+
 CREATE TABLE store (
     store_id  SMALLINT PRIMARY KEY,
     name      VARCHAR(100) NOT NULL,

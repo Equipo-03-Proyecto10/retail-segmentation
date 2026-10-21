@@ -5,7 +5,7 @@
 **It is a benchmark artifact, not a service** (accepted exception E-22):
 - It is never registered in `contracts/registry.yaml`, never routed by NGINX, never deployed, and never counted toward ADR-0043's services.
 - Its image is never pushed.
-- It registers no write, so `POST`, `PATCH`, `PUT` and `DELETE` answer 405.
+- It implements no write. The contract's two writes go through the kit's usual checks (token, role, media type, size, body) and then answer 405; any other method is the router's 405.
 - It connects as `svc_products_bench`, which may read `public.product` and nothing else.
 - Its Redis user (`redis/products-bench.acl`) may only `EXISTS` a session's liveness key.
 - Like products-service in the bench, it has no cache and no rate limiter. Like every service, it verifies the RS256 token and the session's liveness on every request, and signs nothing.

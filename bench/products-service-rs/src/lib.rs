@@ -2,8 +2,9 @@
 //!
 //! It answers `GET /v1/products` and `GET /v1/products/{product_id}` exactly
 //! as products-service does: the same filters and refusals, the same JSON and
-//! XML, the same envelope. It registers no write, so every write method is a
-//! 405. Like products-service in the benchmark it has no cache and no rate
+//! XML, the same envelope. It implements no write: the contract's two writes
+//! pass the kit's checks like any request and then answer 405, and any other
+//! method is the router's 405. Like products-service in the benchmark it has no cache and no rate
 //! limiter, and like every service it verifies the token and the session's
 //! liveness on each request. It connects as `svc_products_bench`, which may
 //! read `public.product` and nothing else.
@@ -288,6 +289,20 @@ async fn detail(ctx: Ctx) -> Result<Reply, ApiError> {
     Ok(Representation::new("Product", get_product(ctx.db(), id).await?).into())
 }
 
+/// `createProduct` and `updateProduct`. The twin implements no write
+/// (ADR-0042): a write reaches this only after the kit's own checks, the same
+/// ones products-service makes (token, role, media type, size, body), and is
+/// then refused with 405 without touching the database. Methods the contract
+/// does not declare at all get the router's 405.
+async fn no_write(_ctx: Ctx) -> Result<Reply, ApiError> {
+    Err(ApiError::new(
+        405,
+        "method_not_allowed",
+        "The bench twin serves the products reads only.",
+    )
+    .with_header("Allow", "GET"))
+}
+
 async fn database_ready(db: Arc<Database>) -> bool {
     let Ok(connection) = db.connection().await else {
         return false;
@@ -323,6 +338,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         let router = kit
             .operation("listProducts", list)?
             .operation("getProduct", detail)?
+            .operation("createProduct", no_write)?
+            .operation("updateProduct", no_write)?
             .ready_check(database_ready)
             .into_router()
             .layer(middleware::from_fn(capture_query));

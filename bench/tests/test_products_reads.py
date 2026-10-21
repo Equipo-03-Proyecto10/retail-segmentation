@@ -106,18 +106,30 @@ def test_xml_answers_validate(client: Client, token: str, path: str) -> None:
     os.environ.get("BENCH_TWIN") != "1", reason="the twin's own promise"
 )
 @pytest.mark.parametrize(
-    ("method", "path"),
+    ("method", "path", "body"),
     [
-        ("POST", "/v1/products"),
-        ("PATCH", "/v1/products/3"),
-        ("PUT", "/v1/products/3"),
-        ("DELETE", "/v1/products/3"),
+        (
+            "POST",
+            "/v1/products",
+            b'{"product_id": 900001, "sku": "BENCH-X", "name": "Never written",'
+            b' "category_id": 1, "list_price": "1.00"}',
+        ),
+        ("PATCH", "/v1/products/3", b'{"name": "Never written"}'),
+        ("PUT", "/v1/products/3", b"{}"),
+        ("DELETE", "/v1/products/3", None),
     ],
 )
 def test_the_twin_serves_no_write(
-    client: Client, token: str, method: str, path: str
+    client: Client, signer: Signer, sessions: Sessions, method: str, path: str, body
 ) -> None:
+    # An ADMIN with a valid body: everything products-service would accept.
+    admin = signer.sign(signer.claims("ADMIN", sessions.open()))
     reply = client.call(
-        method, path, token=token, content_type="application/json", body=b"{}"
+        method,
+        path,
+        token=admin,
+        content_type="application/json" if body else None,
+        body=body,
     )
     assert (reply.status, reply.code()) == (405, "method_not_allowed")
+    assert get(client, admin, "/v1/products/3").json()["name"] == "Demo Product 3"

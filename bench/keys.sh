@@ -14,6 +14,8 @@ if [[ ! -f $private ]]; then
   (umask 077 && openssl genrsa -out "$private" 2048 2>/dev/null)
   chmod 0444 "$private"
 fi
-python3 "$dir/../../tests/conformance/tokens.py" jwks "$private" "$kid" >"$dir/jwks.json"
-chmod 0444 "$dir/jwks.json"
+# Replaced, not rewritten: the previous copy is read-only.
+python3 "$dir/../../tests/conformance/tokens.py" jwks "$private" "$kid" >"$dir/jwks.json.tmp"
+chmod 0444 "$dir/jwks.json.tmp"
+mv -f "$dir/jwks.json.tmp" "$dir/jwks.json"
 echo "bench-keys: $dir/jwks.json holds kid $kid"

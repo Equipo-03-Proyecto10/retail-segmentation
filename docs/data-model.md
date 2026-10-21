@@ -1092,13 +1092,14 @@ deletes any of the four.
 **Foreign keys without an index.** A foreign key is indexed when its child
 table grows and either some code path deletes the parent, so the `ON DELETE`
 check scans the child, or a query reads the child by that key (#596). These
-eleven meet neither condition:
+twelve meet neither condition:
 
 - *The parent is `app_user`, which is never deleted (deactivation removes
   access, F3-06), and no query reads the child by the user:*
   `app_session (user_id)`, `audit_log (user_id)`,
   `notification (subject_user_id)`, `sales_load (loaded_by)`,
-  `segmentation_run (executed_by)` and `stores.store_location (set_by)`.
+  `segmentation_run (executed_by)`, `stores.store_location (set_by)` and
+  `checkins.check_in_review (reviewed_by)`.
   Revoking a deactivated user's open sessions is served by the partial
   `idx_app_session_open_by_user`; revoked sessions are history and nothing
   looks them up by user.

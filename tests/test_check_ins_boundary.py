@@ -166,19 +166,34 @@ def test_every_seeded_verdict_agrees_with_its_fix_and_store(owner_url: str) -> N
 
 @pytest.mark.postgres
 def test_the_web_cannot_delete_a_store_with_check_ins(owner_url: str) -> None:
+    # A store of its own with no sales, so its check-in is the only row that can
+    # refuse the delete. PostgreSQL 16 reports RESTRICT as 23503 and 18 as
+    # 23001, so the constraint name is what is asserted.
     with psycopg.connect(owner_url) as conn:
         try:
             with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO store (store_id, name, city, state)"
+                    " SELECT max(store_id) + 1, 'Check-in probe', 'Monterrey',"
+                    "        'Nuevo León' FROM store"
+                    " RETURNING store_id"
+                )
+                store_id = cur.fetchone()[0]
+                cur.execute(
+                    "INSERT INTO checkins.store_check_in"
+                    " (client_check_in_id, user_id, store_id, reason, occurred_at)"
+                    " SELECT gen_random_uuid(), user_id, %s, 'no_fix', now()"
+                    "   FROM app_user WHERE role_id = 1",
+                    (store_id,),
+                )
                 cur.execute("SET ROLE retail_app")
-                with pytest.raises(psycopg.errors.ForeignKeyViolation):
-                    cur.execute("DELETE FROM store WHERE store_id = 1")
+                with pytest.raises(psycopg.errors.IntegrityError) as refused:
+                    cur.execute("DELETE FROM store WHERE store_id = %s", (store_id,))
+                assert (
+                    refused.value.diag.constraint_name == "store_check_in_store_id_fkey"
+                )
         finally:
             conn.rollback()
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT count(*) FROM checkins.store_check_in WHERE store_id = 1"
-            )
-            assert cur.fetchone()[0] >= 1
 
 
 @pytest.mark.postgres

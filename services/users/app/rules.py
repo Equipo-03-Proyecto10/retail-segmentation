@@ -44,6 +44,23 @@ def single_administrator() -> ApiError:
     )
 
 
+def clean_name(name: str) -> str:
+    """The name as stored: trimmed, and refused when nothing is left.
+
+    The schema's minLength counts the untrimmed value, so "   " passes it and
+    would be stored as "" (#587). The web refuses the same name.
+    """
+    cleaned = name.strip()
+    if not cleaned:
+        raise ApiError(
+            422,
+            "invalid_body",
+            "The request body violates its schema.",
+            [{"field": "name", "code": "too_short"}],
+        )
+    return cleaned
+
+
 def user_not_found() -> ApiError:
     return ApiError(404, "user_not_found", "The user does not exist.")
 
@@ -141,6 +158,7 @@ def create_user(
     role_code: str,
 ) -> dict[str, Any]:
     """Create an account; an ADMIN is never created here, only transferred."""
+    name = clean_name(name)
     if role_code == ADMIN:
         raise single_administrator()
     new_role = role_id(connection, role_code)
@@ -149,7 +167,7 @@ def create_user(
             cursor.execute(
                 "INSERT INTO app_user (role_id, name, email, password_hash)"
                 " VALUES (%s, %s, %s, %s) RETURNING user_id",
-                (new_role, name.strip(), normalize_email(email), password_hash),
+                (new_role, name, normalize_email(email), password_hash),
             )
             user_id = cursor.fetchone()[0]
     except UniqueViolation as error:
@@ -166,6 +184,8 @@ def update_user(
     role_code: str | None = None,
 ) -> dict[str, Any]:
     """Edit name, email or a non-ADMIN role; the ADMIN role only transfers."""
+    if name is not None:
+        name = clean_name(name)
     user = get_user(connection, user_id, lock=True)
     if user is None:
         raise user_not_found()
@@ -183,7 +203,7 @@ def update_user(
             cursor.execute(
                 "UPDATE app_user SET name = %s, email = %s WHERE user_id = %s",
                 (
-                    user["name"] if name is None else name.strip(),
+                    user["name"] if name is None else name,
                     user["email"] if email is None else normalize_email(email),
                     str(user["user_id"]),
                 ),

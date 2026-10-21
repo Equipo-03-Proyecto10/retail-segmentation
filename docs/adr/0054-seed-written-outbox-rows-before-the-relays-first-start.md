@@ -3,7 +3,7 @@
 **Status:** Proposed
 **Owner:** Max
 **Issue:** #597
-**Supersedes:** — *(if accepted with option B or C below, ADR-0046's consequence "The outboxes hold the seed's own events" in part)*
+**Supersedes:** — *(once accepted with any option below, ADR-0046's consequence "The outboxes hold the seed's own events" in part)*
 **Superseded by:** —
 
 ---
@@ -60,7 +60,7 @@ populated at first start. Nothing in ADR-0044 says so, and no story asks for it.
 
 | Option | What it is | For | Against |
 |---|---|---|---|
-| A. Keep the events | No change. Relays publish the seed events on first start. Rewrite ADR-0046's consequence to say so deliberately | Nothing to build. Consumers that start first get a populated stream | The "populated stream" is not reliably delivered (groups start at `$`). Publishes events about changes nobody made; grows with every new outbox (about 600 more for sales). Whether the users stream is safe depends on seed order. Contradicts the reason the outboxes are exempt |
+| A. Keep the events | No change. Relays publish the seed events on first start. This record states that as a deliberate choice, superseding ADR-0046's consequence in part | Nothing to build. Consumers that start first get a populated stream | The "populated stream" is not reliably delivered (groups start at `$`). Publishes events about changes nobody made; grows with every new outbox (about 600 more for sales). Whether the users stream is safe depends on seed order. Contradicts the reason the outboxes are exempt |
 | B1. The seed ends by deleting the rows its own load captured | The last statements of `02_seed_30_per_table.sql` run `DELETE FROM <suffix>_events.outbox` for each outbox, one explicit statement per outbox, parameter-free | The three scripts leave every outbox empty, so the exemption means what it says. No relay or consumer change. No DDL, no superuser, no trigger toggling. A boundary adds its own line with its own outbox. The rule is checkable with one query | The seed knows each outbox by name; a new outbox that forgets its line is caught only by the check below. The live instance still holds its 280 rows until rebuilt or cleaned once |
 | B2. The seed marks the rows relayed | Same place, `UPDATE ... SET relayed_at = now()` instead of `DELETE` | Keeps the rows as an apparent replay log | Records a publication that never happened. The hourly purge deletes them after 7 days anyway. Replay of a stream would hand a consumer events the relay never sent |
 | B3. Load with the capture disabled | `SET session_replication_role = replica`, or `ALTER TABLE ... DISABLE TRIGGER` around the seed | Events are never written | Replica mode needs a superuser and also switches off every other trigger the seed relies on (guards, history, stock). `ALTER TABLE` is DDL outside `sql/01_schema.sql`, which AGENTS.md forbids |
@@ -89,8 +89,9 @@ forbid, so it needs the team's explicit approval in the issue.
 - The CI step that runs the three scripts gains the query below.
 - Each later boundary that adds an outbox adds its line and keeps the check green.
 
-*If option A is accepted,* ADR-0046's sentence is replaced by the choice made
-on purpose, and ADR-0044 states that a first start publishes the seed.
+*If option A is accepted,* this record states the choice made on purpose and
+that a first start publishes the seed. ADR-0046 and ADR-0044 are accepted and
+stay as written (AGENTS.md): only ADR-0046's status line changes, as under B1.
 
 ## Compliance
 

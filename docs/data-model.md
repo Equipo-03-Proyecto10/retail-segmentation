@@ -117,7 +117,8 @@ and [`business-rules.md`](business-rules.md) RN-01 explains the split.
 
 **Functional.** Each surrogate key determines every non-key attribute of its
 row: `product_id → sku, name, category_id, list_price, image_path, is_active`,
-and equivalently for the other entities. Three candidate keys carry a
+and equivalently for the other entities; §2.4 states each base relation's keys
+and dependencies one by one. Three candidate keys carry a
 functional dependency of their own and are therefore `UNIQUE`: `sku →
 product_id`, `email → user_id`, and `source_transaction_id → transaction_id` —
 the identifier the sales contract supplies determines the row the database
@@ -380,12 +381,137 @@ unfinished:
 No message text is stored. The sentence is a function of the subject row, so
 storing it would be a second copy of facts the subject already holds.
 
-Every other relation in the model is already in 4NF. The remaining composite-key
-tables — `transaction_line`, `inventory` — each carry a single multivalued
-fact plus attributes that depend on the whole key, so there is nothing to
-decompose. `experiment_assignment` (F11-01, replacing the composite-keyed
-`experiment_group_customer`) is not in this group: it carries a surrogate key
-for reasons of physical design, not normalization — see §4.
+The remaining composite-key tables — `transaction_line`, `inventory` — each
+carry a single multivalued fact plus attributes that depend on the whole key,
+so there is nothing to decompose. `experiment_assignment` (F11-01, replacing
+the composite-keyed `experiment_group_customer`) is not in this group: it
+carries a surrogate key for reasons of physical design, not normalization —
+see §4.
+
+**The eight base relations.** `role`, `channel`, `store`, `segment_rule`,
+`app_user`, `customer`, `transaction` and `audit_log` came out of the
+decomposition above unchanged, so no step names them. Each one is argued here
+the same way: its keys, its functional dependencies, and why it has no partial,
+transitive or multivalued dependency. A single-attribute key cannot have a
+partial dependency, so for these relations 2NF follows from the key and the
+argument is about 3NF (BCNF where every determinant is a key) and 4NF.
+
+- **`role`.**
+  - *Keys:* `role_id`, and `code`, which is `UNIQUE` and cannot change after
+    insert (`trg_role_code_immutable`).
+  - *Dependencies:* `role_id → code, description` and
+    `code → role_id, description`.
+  - *Why it is in 4NF:* both determinants are keys, so the relation is in BCNF.
+    `description` describes the role and nothing else. The permissions a role
+    grants are not columns here: the matrix lives with the requirements (§1)
+    and each service owns its own role policy (ADR-0036), so a role row holds
+    no repeating or multivalued fact.
+- **`channel`.**
+  - *Keys:* `channel_id` and `name` (`UNIQUE`).
+  - *Dependencies:* `channel_id → name` and `name → channel_id`.
+  - *Why it is in 4NF:* the relation has two attributes and both are keys, so
+    there is no non-key attribute that could depend on anything. It is BCNF
+    with no multivalued fact.
+- **`store`.**
+  - *Key:* `store_id`. `name` is not a key; nothing makes it unique.
+  - *Dependencies:* `store_id → name, city, state, is_active`.
+  - *Why there is no transitive dependency:* `city → state` would be one, but it
+    does not hold in the domain. Municipality names repeat across Mexican
+    states (Guadalupe is in both Nuevo León and Zacatecas), so a city name does
+    not determine its state. The seeded stores happen to place each city in one
+    state; that is a property of the data, not a rule the schema could rely on.
+    A state name repeated across stores is a repeated value, not a repeated
+    fact: changing one store's state never requires changing another's.
+  - *Why it is in 4NF:* one row is one store with single-valued attributes. Its
+    geofence is not here; `stores.store_location` holds it under the stores
+    boundary (§3).
+- **`segment_rule`.**
+  - *Keys:* `rule_id`, and `rule_code` (`UNIQUE`).
+  - *Dependencies:* `rule_id → rule_code, r_min, r_max, f_min, f_max, m_min,
+    m_max`.
+  - *Why there is no dependency among the bounds:* each bound is an independent
+    fact. The table `CHECK` constrains them (each minimum is at most its
+    maximum) but determines none of them. The six bounds are separate atomic
+    columns, not one array, so each carries its own `CHECK BETWEEN 1 AND 5`.
+  - *Why the label is not here:* `segment` maps a rule to a label, with its own
+    validity dates, and `segment.rule_id` is not unique. A label is therefore
+    not a function of the rule, and storing one on the rule would be wrong
+    rather than merely redundant.
+  - *Why it is in 4NF:* one row is one band, with single-valued attributes
+    and no multivalued fact.
+- **`app_user`.**
+  - *Keys:* `user_id`, and `lower(email)` through the unique index
+    `ux_app_user_email_lower`, so the email determines the row
+    case-insensitively.
+  - *Dependencies:* `user_id → role_id, name, email, password_hash, is_active,
+    created_at`.
+  - *Why there is no transitive dependency:* only `role_id` is stored; the
+    role's `code` and `description` stay in `role`. `password_hash` is a fact
+    of the user's current password, not of any other attribute.
+  - *Why it is in 4NF:* a user holds exactly one role, so `role_id` is
+    single-valued, not a multivalued fact needing its own relation. The
+    single-administrator partial index (§1) limits how many rows hold
+    `role_id = 1`; it is a constraint on rows, not a dependency between
+    columns.
+- **`customer`.**
+  - *Keys:* `customer_id`. `email` and `user_id` are `UNIQUE` and nullable, so
+    each is a key on the rows where it is present.
+  - *Dependencies:* `customer_id → user_id, name, email, phone,
+    registration_channel_id, registered_on`. `phone` determines nothing: it is
+    not unique, and two customers may share a number.
+  - *Why there is no transitive dependency:* `registration_channel_id` stores
+    the channel the customer was acquired through, and the channel's name stays
+    in `channel`. It is not the channel of any sale; that is
+    `transaction.channel_id`, a different fact. The customer's `name` and
+    `email` are contact data, not copies of the linked account's login
+    identity, so `user_id → app_user.email` copies nothing into this row.
+  - *Why it is in 4NF:* the preferences are the two relations split off above,
+    and there is no current-segment column (§3), so no multivalued fact is
+    left in the row.
+- **`transaction`.**
+  - *Keys:* `transaction_id`, and `source_transaction_id` (`UNIQUE`).
+  - *Dependencies:* `transaction_id → source_transaction_id, customer_id,
+    store_id, channel_id, occurred_at, total`.
+  - *Why there is no transitive dependency:* neither `customer_id` nor
+    `store_id` determines `channel_id`. One customer buys through different
+    channels, and one store records sales from more than one. The sale's
+    channel is therefore a fact of the sale.
+  - *Why it is in 4NF:* its lines are the separate relation from §2.2, so the
+    header holds one sale with single-valued attributes.
+  - *The deliberate exception, `total`:* `total` equals the sum of
+    `quantity × unit_price` over the sale's lines (ADR-0020, RN-37). That is a
+    dependency on another relation, not a functional dependency inside
+    `transaction`, so it breaks no normal form. It is still a stored derived
+    value, and so a redundancy that can drift. It is kept on purpose, for two
+    reasons. First, the analytics read it directly: spend, the consumption
+    profile and the experiment conversions sum `transaction.total`
+    (`web/db/consumption.py`, `web/db/consumption_shift.py`,
+    `web/db/experiment_conversions.py`). Second, `stream:sales.v1.recorded` is
+    captured by a trigger on `INSERT OR UPDATE OF total` (ADR-0039), so the
+    update of `total` is what announces a CSV line appended to an existing
+    sale. The writers keep it equal to its lines. The web recomputes it from
+    the committed lines after every accepted CSV row, under the header lock
+    (`recompute_total`, RN-37), and sales-service computes it once and never
+    updates it (ADR-0039). The database does not yet refuse a `total` that
+    disagrees with its lines; #591 tracks that.
+- **`audit_log`.**
+  - *Key:* `audit_id`.
+  - *Dependencies:* `audit_id → user_id, entity, entity_pk, action,
+    data_before, data_after, executed_at`.
+  - *Why `(entity, entity_pk)` is not a key:* it names the changed row, which
+    changes many times. There is no foreign key to that row, on purpose: one
+    log covers many tables, and an entry must outlive the deletion it records
+    (§5).
+  - *Why the JSONB columns satisfy 1NF:* `data_before` and `data_after` are
+    snapshots of a whole row, written once by `fn_audit()` and read back whole.
+    The audit trail (`web/services/audit.py`) pairs their fields only to
+    display a change. No query filters or joins on their members, and their
+    shape follows whichever table was audited. Only the integrity checks look
+    inside them in SQL: `sql/verify_integrity.sql` proves `password_hash` is
+    absent and reads a campaign's recorded status transition. Splitting the
+    snapshots would need one row per column per change, or one audit table per
+    audited table.
+  - *Why it is in 4NF:* one row is one change, with no multivalued fact.
 
 Every boundary outbox, `<suffix>_events.outbox` (ADR-0044, ADR-0046), is in 4NF
 too. `event_id` determines every other column (`stream`, `event_type`,

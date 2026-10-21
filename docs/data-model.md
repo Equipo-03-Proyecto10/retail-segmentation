@@ -522,6 +522,25 @@ There is one outbox per owning boundary rather than one shared table, which
 keeps one writer per table: only that boundary's definer appends, and only its
 own relay marks and purges.
 
+The check-ins boundary (ADR-0046, F14-26) adds two relations, both in 4NF:
+- **`checkins.store_check_in`** has two candidate keys: `check_in_id` and the
+  phone's `client_check_in_id`. Each determines every other column.
+  - There is no `verified` column. The automatic verdict depends on `reason`
+    alone, so storing it would be a transitive dependency; the effective verdict
+    depends on the latest review, a fact of another relation.
+  - `distance_m` and `reason` look derivable from the fix and the store's
+    location, but they are fixed at `recorded_at` against the location *then*.
+    A later change to the store's location must not rewrite past verdicts, so
+    they are facts of the check-in, not functions of current data.
+  - There is no current-status column either, which would turn an append-only
+    history into an updated one.
+- **`checkins.check_in_review`** is the multivalued fact "this check-in was
+  reviewed, by whom, with what verdict", which can occur any number of times
+  per check-in. It is therefore its own relation: `review_id` determines a
+  review, and `check_in_id` relates it to its check-in. Keeping reviews in the
+  check-in row would need either repeating columns (not 1NF) or updating that
+  row, which RN-56 forbids.
+
 ---
 
 ## 3. Logical model
@@ -651,6 +670,40 @@ independent multivalued facts, so the relation is in 4NF.
 
 The outbox stores one event identity and its delivery state, with no repeating
 groups or copied store state; its key determines all columns, so it is in 4NF.
+
+#### `checkins.store_check_in`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `check_in_id` | `UUID` | NN | PK; default `gen_random_uuid()` | Check-in identifier |
+| `client_check_in_id` | `UUID` | NN | UNIQUE | The phone's identifier, which makes a retried post a replay |
+| `user_id` | `UUID` | NN | FK → `public.app_user`, `ON DELETE RESTRICT` | The staff member checking in: the token's `sub` |
+| `store_id` | `SMALLINT` | NN | FK → `public.store`, `ON DELETE RESTRICT` | The store checked into |
+| `latitude` | `NUMERIC` | yes | CHECK −90 to 90 | Reported latitude; null with no fix |
+| `longitude` | `NUMERIC` | yes | CHECK −180 to 180 | Reported longitude; null with no fix |
+| `accuracy_m` | `NUMERIC` | yes | CHECK `> 0` | Reported accuracy radius in metres; null with no fix |
+| `distance_m` | `NUMERIC` | yes | null exactly when the reason is `no_fix` or `store_location_unknown` | Server-computed haversine distance to the store, one decimal |
+| `reason` | `TEXT` | NN | one of `within_geofence`, `outside_geofence`, `low_accuracy`, `store_location_unknown`, `no_fix`; the fix is all null exactly when `no_fix` | The server's verdict (RN-56) |
+| `occurred_at` | `TIMESTAMPTZ` | NN | — | When the phone took the check-in |
+| `recorded_at` | `TIMESTAMPTZ` | NN | default `now()` | When the server recorded it |
+
+Append-only: `svc_checkins` holds SELECT and INSERT only, and the web has no
+privilege on `checkins`. `auto_verified` (reason is `within_geofence`) and the
+effective `verified` are computed on read.
+
+#### `checkins.check_in_review`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `review_id` | `BIGINT` | NN | PK; generated always as identity | Review identifier, a number because the v1 contract publishes it as `int64` |
+| `check_in_id` | `UUID` | NN | FK → `checkins.store_check_in`, `ON DELETE RESTRICT` | The check-in reviewed |
+| `verified` | `BOOLEAN` | NN | — | The reviewer's verdict |
+| `reason` | `TEXT` | NN | CHECK not blank | Why the reviewer decided so |
+| `reviewed_by` | `UUID` | NN | FK → `public.app_user`, `ON DELETE RESTRICT` | The administrator who reviewed |
+| `reviewed_at` | `TIMESTAMPTZ` | NN | default `now()` | When the review was appended |
+
+A check-in's effective verdict is its latest review's `verified`, by
+`reviewed_at`. Reviews are appended and never changed.
 
 #### `segment_rule`
 
@@ -1119,6 +1172,10 @@ suffix:
 
 The stores boundary therefore owns `stores` for `store_location`, publishes
 through `api_stores`, and keeps relay state in `stores_events`.
+The check-ins boundary owns `checkins` for `store_check_in` and
+`check_in_review`. It has no contract schema and no outbox, because nothing
+reads or consumes check-ins but its own service. It reads store locations
+through `api_stores.store_directory_v1`.
 
 The eight outbox owners named by ADR-0044 therefore have both of these schemas:
 

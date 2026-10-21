@@ -41,6 +41,11 @@ button {
   border: 1px solid GrayText;
   margin: 1rem 0;
 }
+.warning {
+  padding: 0.75rem;
+  border: 2px solid #8a6d00;
+  margin: 1rem 0;
+}
 .error {
   padding: 0.75rem;
   border: 2px solid #b00020;

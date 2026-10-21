@@ -145,3 +145,15 @@ test('an error envelope shows code, message, correlation id and field details', 
   await expect(page.getByTestId('detail-password')).toHaveText('password: required');
   await app.close();
 });
+
+test('warns on every screen exactly when there is no OS keyring', async () => {
+  role = 'MARKETING';
+  const { app, page } = await launch();
+  const storage = await page.evaluate(async () => (await window.mosaiq.getState()).storage);
+  const warning = page.getByTestId('storage-warning');
+  await expect(warning).toHaveCount(storage === 'memory_only' ? 1 : 0);
+  await signIn(page, 'a@b.c');
+  await expect(page.getByTestId('role')).toBeVisible();
+  await expect(warning).toHaveCount(storage === 'memory_only' ? 1 : 0);
+  await app.close();
+});

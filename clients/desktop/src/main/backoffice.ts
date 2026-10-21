@@ -2,17 +2,23 @@ import type { ActionResult, AppState, ErrorView, ProbeResult } from '../shared/a
 import { servicesForRole, type Bundle } from './bundle';
 import { ContractDefect, defectView, type CallOptions, type CallResult, type Transport } from './transport';
 
-export interface Tokens {
-  access: string;
-  refresh: string;
+/** Tokens as they are held: sealed bytes, opened only to build a request. */
+export interface SealedTokens {
+  access: Buffer;
+  refresh: Buffer;
   /** Epoch milliseconds. */
   expiresAt: number;
 }
 
-/** Where tokens rest. The real implementation encrypts with safeStorage. */
+export type Protection = 'os_keyring' | 'memory_only';
+
+/** Seals tokens and keeps them. The real implementation is SafeStorageVault. */
 export interface TokenVault {
-  load(): Tokens | null;
-  save(tokens: Tokens): void;
+  readonly protection: Protection;
+  seal(plain: string): Buffer;
+  open(sealed: Buffer): string;
+  load(): SealedTokens | null;
+  save(tokens: SealedTokens): void;
   clear(): void;
 }
 
@@ -55,7 +61,9 @@ class CallFailed extends Error {
 }
 
 export class Backoffice {
-  private tokens: Tokens | null;
+  private tokens: SealedTokens | null;
+  /** Bumped on every new token pair, so a waiting call can tell a refresh already happened. */
+  private generation = 0;
   private role: string | null = null;
   private notice: string | undefined;
   private refreshing: Promise<void> | undefined;
@@ -77,8 +85,15 @@ export class Backoffice {
   }
 
   state(): AppState {
-    if (this.tokens === null || this.role === null) return { status: 'signed_out', notice: this.notice };
-    return { status: 'signed_in', role: this.role, services: servicesForRole(this.bundle, this.role) };
+    const storage = this.vault.protection;
+    if (this.tokens === null || this.role === null)
+      return { status: 'signed_out', storage, notice: this.notice };
+    return {
+      status: 'signed_in',
+      storage,
+      role: this.role,
+      services: servicesForRole(this.bundle, this.role),
+    };
   }
 
   private publish(): void {
@@ -134,8 +149,7 @@ export class Backoffice {
         },
       });
       if (!res.ok) return { ok: false, error: plain(res.error), state: this.state() };
-      this.tokens = tokensFrom(res, this.now());
-      this.vault.save(this.tokens);
+      this.replaceTokens(res);
       try {
         await this.loadRole();
       } catch (e) {
@@ -164,7 +178,7 @@ export class Backoffice {
       await this.transport.call({
         method: 'DELETE',
         path: '/v1/sessions/current',
-        bearer: this.tokens.access,
+        bearer: this.vault.open(this.tokens.access),
       });
     } catch {
       // The tokens are erased either way; the session ends on its own lifetime.
@@ -204,19 +218,36 @@ export class Backoffice {
   /** An authenticated call: refreshes ahead of expiry and retries once after invalid_token. */
   async authed(options: Omit<CallOptions, 'bearer'>): Promise<CallResult> {
     if (this.tokens === null) throw new SessionEnded(localError('signed_out', 'You are signed out.'));
-    if (this.tokens.expiresAt - this.now() < REFRESH_SKEW_MS) await this.refresh(this.tokens.access);
-    const used = this.tokens as Tokens;
-    const first = await this.transport.call({ ...options, bearer: used.access });
+    if (this.tokens.expiresAt - this.now() < REFRESH_SKEW_MS) await this.refresh(this.generation);
+    const used = this.generation;
+    const first = await this.send(options);
     if (first.ok || first.status !== 401 || first.error.code !== 'invalid_token') return first;
-    await this.refresh(used.access);
-    return this.transport.call({ ...options, bearer: (this.tokens as Tokens).access });
+    await this.refresh(used);
+    return this.send(options);
+  }
+
+  /** Opens the access token only to build this request. */
+  private send(options: Omit<CallOptions, 'bearer'>): Promise<CallResult> {
+    if (this.tokens === null) throw new SessionEnded(localError('signed_out', 'You are signed out.'));
+    return this.transport.call({ ...options, bearer: this.vault.open(this.tokens.access) });
+  }
+
+  private replaceTokens(res: CallResult): void {
+    const t = tokensFrom(res, this.now());
+    this.tokens = {
+      access: this.vault.seal(t.access),
+      refresh: this.vault.seal(t.refresh),
+      expiresAt: t.expiresAt,
+    };
+    this.generation += 1;
+    this.vault.save(this.tokens);
   }
 
   /** Single-flight: one refresh serves every waiting call. */
-  private refresh(stale: string): Promise<void> {
+  private refresh(seen: number): Promise<void> {
     if (this.tokens === null)
       return Promise.reject(new SessionEnded(localError('signed_out', 'You are signed out.')));
-    if (this.tokens.access !== stale) return Promise.resolve(); // already rotated
+    if (this.generation !== seen) return Promise.resolve(); // already rotated
     this.refreshing ??= this.doRefresh().finally(() => {
       this.refreshing = undefined;
     });
@@ -224,15 +255,14 @@ export class Backoffice {
   }
 
   private async doRefresh(): Promise<void> {
-    const current = this.tokens as Tokens;
+    const current = this.tokens as SealedTokens;
     const res = await this.transport.call({
       method: 'POST',
       path: '/v1/sessions/refresh',
-      body: { root: 'RefreshRequest', fields: { refresh_token: current.refresh } },
+      body: { root: 'RefreshRequest', fields: { refresh_token: this.vault.open(current.refresh) } },
     });
     if (res.ok) {
-      this.tokens = tokensFrom(res, this.now());
-      this.vault.save(this.tokens);
+      this.replaceTokens(res);
       return;
     }
     const reason = TERMINAL_REFRESH[res.error.code];
@@ -244,7 +274,7 @@ export class Backoffice {
   }
 }
 
-function tokensFrom(res: CallResult, now: number): Tokens {
+function tokensFrom(res: CallResult, now: number): { access: string; refresh: string; expiresAt: number } {
   if (!res.ok || res.data === undefined) throw new Error('token result expected');
   const t = res.data.TokenResult as { access_token: string; refresh_token: string; expires_at: string };
   const at = Date.parse(t.expires_at);

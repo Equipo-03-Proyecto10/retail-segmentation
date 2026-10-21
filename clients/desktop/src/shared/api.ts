@@ -19,8 +19,12 @@ export interface ServiceView {
   resources: string[];
 }
 
+/** os_keyring: tokens sealed by the OS keyring and kept across restarts. memory_only: no keyring. */
+export type Storage = 'os_keyring' | 'memory_only';
+
 export type AppState =
-  { status: 'signed_out'; notice?: string } | { status: 'signed_in'; role: string; services: ServiceView[] };
+  | { status: 'signed_out'; storage: Storage; notice?: string }
+  | { status: 'signed_in'; storage: Storage; role: string; services: ServiceView[] };
 
 export type ActionResult = { ok: true; state: AppState } | { ok: false; error: ErrorView; state: AppState };
 

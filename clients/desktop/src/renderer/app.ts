@@ -62,6 +62,18 @@ function field(
   return { wrap, input };
 }
 
+const NO_KEYRING =
+  'This computer has no secure keyring. Your session is kept in memory only and ends when the app closes.';
+
+/** The warning shown on every screen when tokens cannot be sealed by an OS keyring. */
+function storageWarning(state: AppState): Node[] {
+  if (state.storage !== 'memory_only') return [];
+  const p = el('p', { cls: 'warning', text: NO_KEYRING });
+  p.setAttribute('role', 'status');
+  p.dataset.testid = 'storage-warning';
+  return [p];
+}
+
 function renderSignIn(state: Extract<AppState, { status: 'signed_out' }>, error?: ErrorView): void {
   const details = error?.details ?? [];
   const email = field('email', 'Email', 'email', details);
@@ -78,7 +90,7 @@ function renderSignIn(state: Extract<AppState, { status: 'signed_out' }>, error?
       render(result.state, result.error);
     });
   });
-  const parts: Node[] = [el('h1', { text: 'MOSAIQ back office' })];
+  const parts: Node[] = [el('h1', { text: 'MOSAIQ back office' }), ...storageWarning(state)];
   if (state.notice !== undefined) {
     const notice = el('p', { cls: 'notice', text: state.notice });
     notice.dataset.testid = 'notice';
@@ -121,6 +133,7 @@ function renderHome(state: Extract<AppState, { status: 'signed_in' }>): void {
   role.dataset.testid = 'role';
   root.replaceChildren(
     el('h1', { text: 'MOSAIQ back office' }),
+    ...storageWarning(state),
     role,
     el('h2', { text: 'Services' }),
     list,

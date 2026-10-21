@@ -135,3 +135,43 @@ describe('errors', () => {
     expect(!probe.ok && probe.error.code).toBe('forbidden_role');
   });
 });
+
+describe('token storage', () => {
+  const ACCESS = 'access-SECRET-7f3a';
+  const REFRESH = 'refresh-SECRET-91c2';
+  const secret: Responder = (r) =>
+    r.method === 'POST' && r.url.endsWith('/v1/sessions')
+      ? { status: 201, body: tokenResult(ACCESS, REFRESH) }
+      : staff(r);
+
+  /** Every string and byte buffer reachable from a value. */
+  function reachable(
+    value: unknown,
+    seen = new Set<unknown>(),
+    out: (string | Buffer)[] = [],
+  ): (string | Buffer)[] {
+    if (typeof value === 'string') out.push(value);
+    else if (Buffer.isBuffer(value)) out.push(value);
+    else if (value !== null && typeof value === 'object' && !seen.has(value)) {
+      seen.add(value);
+      for (const v of Object.values(value)) reachable(v, seen, out);
+    }
+    return out;
+  }
+
+  it('holds no token as plain text between calls', async () => {
+    const { office, vault, seen } = makeOffice(secret);
+    expect((await office.signIn(creds)).ok).toBe(true);
+    for (const v of reachable(office))
+      for (const token of [ACCESS, REFRESH]) expect(v.includes(token)).toBe(false);
+    expect(vault.tokens?.access).toBe(ACCESS); // sealed, not lost
+    expect(seen.at(-1)?.headers.Authorization).toBe(`Bearer ${ACCESS}`);
+  });
+
+  it('reports memory_only so the screens can warn, and still signs in', async () => {
+    const { office } = makeOffice(secret, new MemoryVault(null, 'memory_only'));
+    expect(office.state().storage).toBe('memory_only');
+    expect((await office.signIn(creds)).ok).toBe(true);
+    expect(office.state()).toMatchObject({ status: 'signed_in', storage: 'memory_only' });
+  });
+});

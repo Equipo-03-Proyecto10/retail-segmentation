@@ -50,14 +50,32 @@ being ignored. `MOSAIQ_DESKTOP_CONFIG_DIR` overrides the directory (the window t
 - The screens reach the network only through the named operations of `src/preload/preload.ts`
   (`getState`, `signIn`, `signOut`, `probeService`, `onStateChange`). There is no generic fetch and no
   `ipcRenderer`.
-- Tokens live in the main process only, encrypted with `safeStorage`. Where the platform offers no
-  encryption they stay in memory and are never written.
+- Tokens live in the main process only, and only as sealed bytes (see Token storage below).
 - A response is checked in the main process before it is parsed: its root namespace must be the called
   service's (or `common/v1` for an `Error`) and it must validate against the bundled XSD
   (`xmllint-wasm`). Otherwise it is a contract defect naming the service and the correlation id, and
   nothing of it is rendered.
 - Access tokens are refreshed through one single-flight path; waiting calls are retried once.
 - The client never calls `GET /v1/jwks.json`.
+
+## Token storage
+
+The access and refresh tokens are never held as plain strings between calls. Each is sealed as soon as
+it arrives and opened into a local variable only to build the request that needs it (the
+`Authorization` header, or the body of `POST /v1/sessions/refresh`).
+
+| Mode          | When                                                                                 | Sealed with                                     | Kept across restarts                                        |
+| ------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------- | ----------------------------------------------------------- |
+| `os_keyring`  | macOS Keychain, Windows DPAPI, or a Linux keyring (GNOME Keyring, KWallet)           | `safeStorage`                                   | Yes, in `session.bin` (mode 0600)                           |
+| `memory_only` | No keyring, including Linux's `basic_text` backend, whose key is built into Chromium | AES-256-GCM under a random key made at start-up | No; nothing is written, and an old `session.bin` is deleted |
+
+In `memory_only` mode every screen shows: "This computer has no secure keyring. Your session is kept in
+memory only and ends when the app closes."
+
+Limits: a token is plain text for the moment a request is built and sent, since the server needs the
+real value, and JavaScript cannot wipe a string. In `memory_only` mode the key sits in the same process,
+so sealing keeps tokens out of casual memory dumps and swap scans, not away from code running inside the
+app.
 
 ## Checks
 

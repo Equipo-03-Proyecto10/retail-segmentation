@@ -1,5 +1,6 @@
 import { loadBundle } from '../../src/main/bundle';
-import { Backoffice, type TokenVault, type Tokens } from '../../src/main/backoffice';
+import { Backoffice, type Protection, type SealedTokens, type TokenVault } from '../../src/main/backoffice';
+import { MemorySealer } from '../../src/main/sealer';
 import { Transport } from '../../src/main/transport';
 import { XsdValidator } from '../../src/main/xml';
 
@@ -42,16 +43,48 @@ export function fakeFetch(responder: Responder): { fetch: typeof fetch; seen: Se
   return { fetch: impl as typeof fetch, seen };
 }
 
+export interface Tokens {
+  access: string;
+  refresh: string;
+  expiresAt: number;
+}
+
+/** A vault that seals like the memory_only mode and lets a test read what it holds. */
 export class MemoryVault implements TokenVault {
-  constructor(public tokens: Tokens | null = null) {}
-  load(): Tokens | null {
-    return this.tokens;
+  readonly protection: Protection;
+  private readonly sealer = new MemorySealer();
+  sealed: SealedTokens | null = null;
+
+  constructor(tokens: Tokens | null = null, protection: Protection = 'os_keyring') {
+    this.protection = protection;
+    if (tokens !== null)
+      this.sealed = {
+        access: this.seal(tokens.access),
+        refresh: this.seal(tokens.refresh),
+        expiresAt: tokens.expiresAt,
+      };
   }
-  save(t: Tokens): void {
-    this.tokens = t;
+  /** What the vault holds, opened, for assertions. */
+  get tokens(): Tokens | null {
+    const s = this.sealed;
+    return s === null
+      ? null
+      : { access: this.open(s.access), refresh: this.open(s.refresh), expiresAt: s.expiresAt };
+  }
+  seal(plain: string): Buffer {
+    return this.sealer.seal(plain);
+  }
+  open(sealed: Buffer): string {
+    return this.sealer.open(sealed);
+  }
+  load(): SealedTokens | null {
+    return this.sealed;
+  }
+  save(t: SealedTokens): void {
+    this.sealed = t;
   }
   clear(): void {
-    this.tokens = null;
+    this.sealed = null;
   }
 }
 

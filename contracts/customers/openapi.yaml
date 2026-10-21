@@ -42,6 +42,7 @@ paths:
           description: Exact customer email match.
           schema:
             type: string
+            minLength: 1
             maxLength: 160
           example: ana@example.com
         - $ref: '#/components/parameters/Page'

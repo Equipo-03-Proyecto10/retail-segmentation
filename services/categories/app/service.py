@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -110,15 +111,15 @@ def parent_filter() -> int | None:
     raw = request.args.get("parent_id")
     if raw is None:
         return None
-    try:
+    # Strict base-10 digits: int() alone accepts " 1 ", "1_0" and "+1".
+    if re.fullmatch(r"-?[0-9]{1,10}", raw) and -(2**31) <= int(raw) < 2**31:
         return int(raw)
-    except ValueError:
-        raise ApiError(
-            422,
-            "invalid_pagination",
-            "parent_id must be an integer.",
-            [{"field": "parent_id", "code": "invalid_type"}],
-        ) from None
+    raise ApiError(
+        422,
+        "invalid_pagination",
+        "parent_id must be an integer.",
+        [{"field": "parent_id", "code": "invalid_type"}],
+    )
 
 
 def start_background(kit: Kit, cache: TreeCache) -> tuple[OutboxRelay, StreamConsumer]:

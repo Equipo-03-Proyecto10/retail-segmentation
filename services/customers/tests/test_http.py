@@ -126,3 +126,20 @@ def test_a_doctype_body_is_refused_as_malformed(client, manager):
         400,
         "malformed_body",
     )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [{"q": ""}, {"email": ""}, {"q": "a" * 161}, {"email": "a" * 161}],
+)
+def test_text_filters_outside_their_bounds_are_422(client, manager, query):
+    response = client.get("/v1/customers", query_string=query, headers=manager)
+    body = response.get_json()
+    assert (response.status_code, body["code"]) == (422, "invalid_pagination")
+    assert body["details"][0]["field"] in query
+
+
+def test_text_filters_at_their_bounds_are_accepted(client, manager):
+    for query in ({"q": "a"}, {"q": "a" * 160}, {"email": "a" * 160}):
+        response = client.get("/v1/customers", query_string=query, headers=manager)
+        assert response.status_code == 200

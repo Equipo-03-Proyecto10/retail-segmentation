@@ -325,3 +325,12 @@ def test_the_view_publishes_the_tree_to_recommendations(owner, tree):
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             with owner.transaction():
                 owner.execute("SELECT * FROM public.category")
+
+
+@pytest.mark.parametrize("value", [" 1 ", "1_0", "+1", "", "2147483648", "1.0"])
+def test_parent_id_accepts_only_plain_integers(client, admin_headers, value):
+    response = client.get(
+        "/v1/categories", query_string={"parent_id": value}, headers=admin_headers
+    )
+    assert response.status_code == 422
+    assert response.get_json()["details"][0]["field"] == "parent_id"

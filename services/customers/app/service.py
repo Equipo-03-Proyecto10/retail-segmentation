@@ -79,6 +79,22 @@ def refusal(error: psycopg.errors.IntegrityError) -> ApiError | None:
     return None
 
 
+def text_filter(name: str, minimum: int) -> str | None:
+    """A string query parameter held to its contract bounds (max 160)."""
+
+    raw = request.args.get(name)
+    if raw is None:
+        return None
+    if len(raw) < minimum or len(raw) > 160:
+        raise ApiError(
+            422,
+            "invalid_pagination",
+            f"{name} is outside its allowed length.",
+            [{"field": name, "code": "out_of_range"}],
+        )
+    return raw
+
+
 def create_app() -> Flask:
     app = Flask(__name__)
     configure_logging()
@@ -104,8 +120,8 @@ def create_app() -> Flask:
 
     @kit.operation("searchCustomers")
     def search_customers() -> Page:
-        q = request.args.get("q") or None
-        email = request.args.get("email") or None
+        q = text_filter("q", minimum=1)
+        email = text_filter("email", minimum=1)
         pattern = like_pattern(q) if q is not None else None
         offset = (kit.page - 1) * kit.size
         # Fixed statements; the filters arrive only as bind parameters. LIKE

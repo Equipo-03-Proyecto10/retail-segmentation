@@ -770,6 +770,8 @@ struct Element {
     name: String,
     children: Vec<Element>,
     text: String,
+    /// `xsi:nil="true"` (or `1`): the XML spelling of JSON null.
+    nil: bool,
 }
 
 /// Read the document with quick-xml. A DOCTYPE or an entity other than the
@@ -799,9 +801,11 @@ fn parse_tree(raw: &[u8]) -> Option<Element> {
                 let name = std::str::from_utf8(start.local_name().as_ref())
                     .ok()?
                     .to_owned();
+                let nil = is_nil(&reader, &start);
                 let element = Element {
                     namespace,
                     name,
+                    nil,
                     ..Element::default()
                 };
                 if is_empty {
@@ -860,6 +864,50 @@ fn parse_tree(raw: &[u8]) -> Option<Element> {
         return None;
     }
     root
+}
+
+const XSI: &[u8] = b"http://www.w3.org/2001/XMLSchema-instance";
+
+fn is_nil(reader: &NsReader<&[u8]>, start: &quick_xml::events::BytesStart) -> bool {
+    start.attributes().flatten().any(|attribute| {
+        let (resolved, local) = reader.resolve_attribute(attribute.key);
+        matches!(resolved, ResolveResult::Bound(namespace) if namespace.as_ref() == XSI)
+            && local.as_ref() == b"nil"
+            && matches!(attribute.value.as_ref(), b"true" | b"1")
+    })
+}
+
+fn nullable(schema: &JsonValue) -> bool {
+    match schema.get("type") {
+        Some(JsonValue::String(kind)) if kind == "null" => return true,
+        Some(JsonValue::Array(kinds)) if kinds.iter().any(|kind| kind == "null") => return true,
+        _ => {}
+    }
+    ["oneOf", "anyOf"].iter().any(|keyword| {
+        schema
+            .get(keyword)
+            .and_then(JsonValue::as_array)
+            .is_some_and(|branches| branches.iter().any(nullable))
+    })
+}
+
+fn required_names(schema: &JsonValue, names: &mut Vec<String>) {
+    if let Some(required) = schema.get("required").and_then(JsonValue::as_array) {
+        names.extend(
+            required
+                .iter()
+                .filter_map(JsonValue::as_str)
+                .map(str::to_owned),
+        );
+    }
+    for branch in schema
+        .get("allOf")
+        .and_then(JsonValue::as_array)
+        .into_iter()
+        .flatten()
+    {
+        required_names(branch, names);
+    }
 }
 
 fn schema_type(schema: &JsonValue) -> Option<String> {
@@ -940,6 +988,9 @@ fn exact_number(text: &str, integer: bool) -> Option<JsonValue> {
 }
 
 fn element_to_value(element: &Element, schema: &JsonValue) -> JsonValue {
+    if element.nil {
+        return JsonValue::Null;
+    }
     let kind = schema_type(schema);
     if kind.as_deref() == Some("object") || !element.children.is_empty() {
         let properties = merged_properties(schema);
@@ -963,6 +1014,15 @@ fn element_to_value(element: &Element, schema: &JsonValue) -> JsonValue {
                 element_to_value(children[0], child_schema)
             };
             result.insert(name.to_owned(), value);
+        }
+        // "An absent value is omitted in XML and is null in JSON": a member that
+        // is required and nullable, and omitted, reads as null.
+        let mut required = Vec::new();
+        required_names(schema, &mut required);
+        for name in required {
+            if !result.contains_key(&name) && properties.get(&name).is_some_and(nullable) {
+                result.insert(name, JsonValue::Null);
+            }
         }
         return JsonValue::Object(result);
     }
@@ -1016,6 +1076,48 @@ mod tests {
         assert!(parse_tree(b"<!DOCTYPE a><a/>").is_none());
         assert!(parse_tree(b"<a><b></a>").is_none());
         assert!(parse_tree(b"<a/><b/>").is_none());
+    }
+
+    fn read_xml(body: &str, schema: &JsonValue) -> JsonValue {
+        let raw = format!("<R xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">{body}</R>");
+        element_to_value(&parse_tree(raw.as_bytes()).expect("well formed"), schema)
+    }
+
+    fn nil_schema() -> JsonValue {
+        serde_json::json!({
+            "type": "object",
+            "required": ["name", "email", "phone", "note"],
+            "properties": {
+                "name": {"type": "string"},
+                "email": {"type": ["string", "null"]},
+                "phone": {"oneOf": [{"type": "string"}, {"type": "null"}]},
+                "note": {"type": "string"},
+                "parent": {"type": ["integer", "null"]}
+            }
+        })
+    }
+
+    #[test]
+    fn omitted_required_nullable_members_read_as_null() {
+        let value = read_xml("<name>A</name>", &nil_schema());
+        // `note` is required but not nullable: it stays absent for validation.
+        assert_eq!(
+            value,
+            serde_json::json!({"name": "A", "email": null, "phone": null})
+        );
+    }
+
+    #[test]
+    fn xsi_nil_reads_as_null() {
+        let value = read_xml(
+            "<name>A</name><email xsi:nil=\"true\"/><parent xsi:nil=\"1\"></parent>\
+             <phone>1</phone><note xsi:nil=\"false\">x</note>",
+            &nil_schema(),
+        );
+        assert_eq!(value["email"], JsonValue::Null);
+        assert_eq!(value["parent"], JsonValue::Null);
+        assert_eq!(value["phone"], "1");
+        assert_eq!(value["note"], "x");
     }
 
     #[test]

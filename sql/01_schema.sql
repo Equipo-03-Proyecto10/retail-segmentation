@@ -1206,6 +1206,89 @@ GRANT SELECT ON api_customers.customer_ref_v1
        svc_recommendations, svc_engagement;
 -- END BOUNDARY customers
 
+-- BEGIN BOUNDARY customer-preferences
+-- customer-preferences-service (F14-16, RN-54, ADR-0034, ADR-0044). The two
+-- 4NF tables stay in public as legacy; the service is their only service
+-- writer, and the web only reads them. A replace is a DELETE and an INSERT
+-- under pg_advisory_xact_lock(290001, hashtext(customer_id::text))
+-- (contracts/db/advisory-locks.md), so the role gets no UPDATE. The capture
+-- trigger fires for every writer, so the web's cascades from a customer,
+-- channel or category delete are announced too. The tables carry no audit
+-- trigger, and this section adds none.
+
+CREATE SCHEMA IF NOT EXISTS api_preferences;
+REVOKE ALL ON SCHEMA api_preferences FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS preferences_events;
+REVOKE ALL ON SCHEMA preferences_events FROM PUBLIC;
+
+-- Keys only, never state: consumers re-read api_preferences.interest_category_v1.
+CREATE TABLE IF NOT EXISTS preferences_events.outbox (
+    event_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    stream      text NOT NULL,
+    event_type  text NOT NULL,
+    entity_id   text NOT NULL,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    relayed_at  timestamptz
+);
+CREATE INDEX IF NOT EXISTS outbox_unrelayed
+    ON preferences_events.outbox (occurred_at) WHERE relayed_at IS NULL;
+
+-- contracts/db/api_preferences.interest_category.v1.md. Definer rights
+-- (security_invoker = off): recommendations reads these two columns and needs
+-- no privilege on the base table.
+CREATE OR REPLACE VIEW api_preferences.interest_category_v1
+WITH (security_invoker = off) AS
+SELECT customer_id, category_id
+FROM public.customer_interest_category;
+REVOKE ALL ON api_preferences.interest_category_v1 FROM PUBLIC;
+
+-- Captures every writer of either set, the web included, in the writer's
+-- transaction. entity_id is the customer whose profile changed (ADR-0044).
+CREATE OR REPLACE FUNCTION preferences_events.capture_changed() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+DECLARE
+    entity text;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        entity := OLD.customer_id::text;
+    ELSE
+        entity := NEW.customer_id::text;
+    END IF;
+    INSERT INTO preferences_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:preferences.v1.changed', TG_OP, entity);
+    -- An empty wake-up for the owner's relay; only that relay LISTENs.
+    PERFORM pg_notify('preferences_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION preferences_events.capture_changed() OWNER TO definer_preferences;
+REVOKE EXECUTE ON FUNCTION preferences_events.capture_changed() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_capture_preferred_channel_changed
+AFTER INSERT OR DELETE ON public.customer_preferred_channel
+FOR EACH ROW EXECUTE FUNCTION preferences_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_capture_interest_category_changed
+AFTER INSERT OR DELETE ON public.customer_interest_category
+FOR EACH ROW EXECUTE FUNCTION preferences_events.capture_changed();
+
+-- Whole-set replace: SELECT, INSERT and DELETE, never UPDATE. The customer is
+-- checked through api_customers.customer_ref_v1 (granted in the customers
+-- section), and channels and categories by foreign key, which needs no
+-- privilege on the parent (E-11).
+GRANT SELECT, INSERT, DELETE ON public.customer_preferred_channel TO svc_preferences;
+GRANT SELECT, INSERT, DELETE ON public.customer_interest_category TO svc_preferences;
+
+GRANT USAGE ON SCHEMA preferences_events TO svc_preferences, definer_preferences;
+GRANT INSERT ON preferences_events.outbox TO definer_preferences;
+GRANT SELECT, DELETE, UPDATE (relayed_at) ON preferences_events.outbox TO svc_preferences;
+
+GRANT USAGE ON SCHEMA api_preferences TO svc_preferences, svc_recommendations;
+GRANT SELECT ON api_preferences.interest_category_v1 TO svc_preferences, svc_recommendations;
+-- END BOUNDARY customer-preferences
+
 -- BEGIN BOUNDARY categories
 -- categories-service (F14-08) owns the category tree: no cycle (RN-33,
 -- trg_category_no_cycle), and no service delete of a category that has

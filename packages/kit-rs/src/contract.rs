@@ -579,6 +579,18 @@ impl Contract {
         let Some(validator) = &operation.validator else {
             return Ok(());
         };
+        // jsonschema 0.30 panics comparing a number no f64 holds against a
+        // bound (#583), so such a number is refused before it reaches it.
+        let mut oversized = Vec::new();
+        oversized_numbers(value, &mut Vec::new(), &mut oversized);
+        if !oversized.is_empty() {
+            oversized.sort();
+            let details = oversized
+                .iter()
+                .map(|path| Detail::new(field_name(path), "out_of_range"))
+                .collect();
+            return Err(ApiError::invalid_body(details));
+        }
         let mut errors: Vec<(Vec<String>, Detail)> = validator
             .iter_errors(value)
             .map(|error| {
@@ -590,11 +602,7 @@ impl Contract {
                         LocationSegment::Index(index) => index.to_string(),
                     })
                     .collect();
-                let mut field = if path.is_empty() {
-                    "$".to_owned()
-                } else {
-                    path.join(".")
-                };
+                let mut field = field_name(&path);
                 let code = match &error.kind {
                     ValidationErrorKind::Required { property } => {
                         field = property
@@ -638,6 +646,42 @@ impl Contract {
             }
         }
         Err(ApiError::invalid_body(details))
+    }
+}
+
+/// A detail's field: the instance path joined with dots, or `$` for the root.
+fn field_name(path: &[String]) -> String {
+    if path.is_empty() {
+        "$".to_owned()
+    } else {
+        path.join(".")
+    }
+}
+
+/// Collect the path of every number that is neither a u64, an i64 nor a finite
+/// f64, such as `1e400` or a 400-digit integer.
+fn oversized_numbers(value: &JsonValue, path: &mut Vec<String>, found: &mut Vec<Vec<String>>) {
+    match value {
+        JsonValue::Number(number) => {
+            if number.as_u64().is_none() && number.as_i64().is_none() && number.as_f64().is_none() {
+                found.push(path.clone());
+            }
+        }
+        JsonValue::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                path.push(index.to_string());
+                oversized_numbers(item, path, found);
+                path.pop();
+            }
+        }
+        JsonValue::Object(members) => {
+            for (name, member) in members {
+                path.push(name.clone());
+                oversized_numbers(member, path, found);
+                path.pop();
+            }
+        }
+        _ => {}
     }
 }
 
@@ -1131,5 +1175,18 @@ mod tests {
             Some("5".to_owned())
         );
         assert!(exact_number("1.5", true).is_none());
+    }
+
+    #[test]
+    fn numbers_no_f64_holds_are_found_by_path() {
+        let huge_integer = format!("1{}", "0".repeat(399));
+        let raw = format!(
+            r#"{{"a":1e400,"b":[1,-1e400,1e308,18446744073709551616],"c":{{"d":1e309,"e":{huge_integer}}},"f":-9223372036854775808,"g":1e-400}}"#
+        );
+        let value: JsonValue = serde_json::from_str(&raw).unwrap();
+        let mut found = Vec::new();
+        oversized_numbers(&value, &mut Vec::new(), &mut found);
+        let fields: Vec<String> = found.iter().map(|path| field_name(path)).collect();
+        assert_eq!(fields, ["a", "b.1", "c.d", "c.e"]);
     }
 }

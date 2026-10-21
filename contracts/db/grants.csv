@@ -87,6 +87,11 @@ svc_stores,api_stores,USAGE
 svc_stores,api_stores.store_directory_v1,SELECT
 svc_checkins,api_stores,USAGE
 svc_checkins,api_stores.store_directory_v1,SELECT
+svc_checkins,checkins,USAGE
+svc_checkins,checkins.store_check_in,SELECT
+svc_checkins,checkins.store_check_in,INSERT
+svc_checkins,checkins.check_in_review,SELECT
+svc_checkins,checkins.check_in_review,INSERT
 svc_engagement,api_stores,USAGE
 svc_engagement,api_stores.store_directory_v1,SELECT
 svc_users,public.app_user,SELECT

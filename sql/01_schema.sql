@@ -1489,6 +1489,130 @@ GRANT USAGE ON SCHEMA api_users TO svc_users, svc_auth;
 GRANT SELECT ON api_users.credential_v1 TO svc_users, svc_auth;
 -- END BOUNDARY users
 
+-- BEGIN BOUNDARY check-ins
+-- check-ins-service (F14-26, ADR-0046): GPS check-ins whose verdict the server
+-- decides (RN-56), and the append-only reviews that override it. No outbox:
+-- nothing consumes these. The web has no privilege here; a store or user with
+-- check-ins can no longer be deleted (E-11).
+CREATE SCHEMA IF NOT EXISTS checkins;
+REVOKE ALL ON SCHEMA checkins FROM PUBLIC;
+
+-- No verified column: it would depend on reason, or on the latest review.
+-- distance_m and reason are fixed at recorded_at against the location then.
+CREATE TABLE IF NOT EXISTS checkins.store_check_in (
+    check_in_id UUID NOT NULL DEFAULT gen_random_uuid(),
+    client_check_in_id UUID NOT NULL,
+    user_id UUID NOT NULL,
+    store_id SMALLINT NOT NULL,
+    latitude NUMERIC,
+    longitude NUMERIC,
+    accuracy_m NUMERIC,
+    distance_m NUMERIC,
+    reason TEXT NOT NULL,
+    occurred_at TIMESTAMPTZ NOT NULL,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Every named constraint is added separately so this boundary is safe to
+-- re-apply to a database that already contains the table.
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.store_check_in'::regclass
+      AND conname = 'store_check_in_pkey'
+) THEN ALTER TABLE checkins.store_check_in ADD CONSTRAINT store_check_in_pkey
+        PRIMARY KEY (check_in_id); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.store_check_in'::regclass
+      AND conname = 'store_check_in_client_check_in_id_key'
+) THEN ALTER TABLE checkins.store_check_in ADD CONSTRAINT store_check_in_client_check_in_id_key
+        UNIQUE (client_check_in_id); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.store_check_in'::regclass
+      AND conname = 'store_check_in_user_id_fkey'
+) THEN ALTER TABLE checkins.store_check_in ADD CONSTRAINT store_check_in_user_id_fkey
+        FOREIGN KEY (user_id) REFERENCES public.app_user(user_id) ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.store_check_in'::regclass
+      AND conname = 'store_check_in_store_id_fkey'
+) THEN ALTER TABLE checkins.store_check_in ADD CONSTRAINT store_check_in_store_id_fkey
+        FOREIGN KEY (store_id) REFERENCES public.store(store_id) ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.store_check_in'::regclass
+      AND conname = 'store_check_in_reason_check'
+) THEN ALTER TABLE checkins.store_check_in ADD CONSTRAINT store_check_in_reason_check
+        CHECK (reason IN ('within_geofence', 'outside_geofence', 'low_accuracy',
+                          'store_location_unknown', 'no_fix')); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.store_check_in'::regclass
+      AND conname = 'store_check_in_latitude_check'
+) THEN ALTER TABLE checkins.store_check_in ADD CONSTRAINT store_check_in_latitude_check
+        CHECK (latitude BETWEEN -90 AND 90); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.store_check_in'::regclass
+      AND conname = 'store_check_in_longitude_check'
+) THEN ALTER TABLE checkins.store_check_in ADD CONSTRAINT store_check_in_longitude_check
+        CHECK (longitude BETWEEN -180 AND 180); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.store_check_in'::regclass
+      AND conname = 'store_check_in_accuracy_m_check'
+) THEN ALTER TABLE checkins.store_check_in ADD CONSTRAINT store_check_in_accuracy_m_check
+        CHECK (accuracy_m > 0); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.store_check_in'::regclass
+      AND conname = 'store_check_in_fix_check'
+) THEN ALTER TABLE checkins.store_check_in ADD CONSTRAINT store_check_in_fix_check
+        CHECK (CASE WHEN reason = 'no_fix'
+               THEN num_nulls(latitude, longitude, accuracy_m) = 3
+               ELSE num_nulls(latitude, longitude, accuracy_m) = 0 END); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.store_check_in'::regclass
+      AND conname = 'store_check_in_distance_check'
+) THEN ALTER TABLE checkins.store_check_in ADD CONSTRAINT store_check_in_distance_check
+        CHECK ((distance_m IS NULL) = (reason IN ('no_fix', 'store_location_unknown'))); END IF; END $$;
+
+CREATE TABLE IF NOT EXISTS checkins.check_in_review (
+    review_id UUID NOT NULL DEFAULT gen_random_uuid(),
+    check_in_id UUID NOT NULL,
+    verified BOOLEAN NOT NULL,
+    reason TEXT NOT NULL,
+    reviewed_by UUID NOT NULL,
+    reviewed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.check_in_review'::regclass
+      AND conname = 'check_in_review_pkey'
+) THEN ALTER TABLE checkins.check_in_review ADD CONSTRAINT check_in_review_pkey
+        PRIMARY KEY (review_id); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.check_in_review'::regclass
+      AND conname = 'check_in_review_check_in_id_fkey'
+) THEN ALTER TABLE checkins.check_in_review ADD CONSTRAINT check_in_review_check_in_id_fkey
+        FOREIGN KEY (check_in_id) REFERENCES checkins.store_check_in(check_in_id)
+        ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.check_in_review'::regclass
+      AND conname = 'check_in_review_reviewed_by_fkey'
+) THEN ALTER TABLE checkins.check_in_review ADD CONSTRAINT check_in_review_reviewed_by_fkey
+        FOREIGN KEY (reviewed_by) REFERENCES public.app_user(user_id) ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.check_in_review'::regclass
+      AND conname = 'check_in_review_reason_check'
+) THEN ALTER TABLE checkins.check_in_review ADD CONSTRAINT check_in_review_reason_check
+        CHECK (btrim(reason) <> ''); END IF; END $$;
+
+CREATE INDEX IF NOT EXISTS store_check_in_store_occurred
+    ON checkins.store_check_in (store_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS store_check_in_user_occurred
+    ON checkins.store_check_in (user_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS check_in_review_check_in_reviewed
+    ON checkins.check_in_review (check_in_id, reviewed_at);
+
+-- Append-only: SELECT and INSERT, never UPDATE or DELETE (RN-56). The store
+-- locations come from api_stores.store_directory_v1, granted in the stores
+-- section.
+GRANT USAGE ON SCHEMA checkins TO svc_checkins;
+GRANT SELECT, INSERT ON checkins.store_check_in, checkins.check_in_review TO svc_checkins;
+-- END BOUNDARY check-ins
+
 -- BEGIN APPLICATION ROLE VERIFICATION
 -- F1-05 (#53). Opt-in acceptance checks, kept here because even a rejected
 -- DROP belongs in the only file allowed to contain table DDL. Normal schema

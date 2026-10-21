@@ -176,6 +176,80 @@ SELECT n,
        now() - (n || ' hours')::interval
 FROM generate_series(1,30) n;
 
+-- ---------- checkins.store_check_in (30, one per seeded store) ----------
+-- Check-in k is at store k, by the administrator or one of the five seeded
+-- STORE_MANAGERs (users 3, 9, 15, 21, 27), k hours before the load. The fix is
+-- placed due north of the store's seeded location, so the reasons cover four
+-- of RN-56's five cases: k mod 5 = 1 or 2 inside the geofence, 3 at three
+-- radii, 4 near the store with accuracy worse than the radius, 0 no fix.
+-- Every store has a location, so store_location_unknown has no seeded row.
+-- distance_m and reason are computed here with the service's own formula:
+-- haversine on a sphere of radius 6,371,008.8 m, rounded to one decimal.
+INSERT INTO checkins.store_check_in
+    (check_in_id, client_check_in_id, user_id, store_id, latitude, longitude,
+     accuracy_m, distance_m, reason, occurred_at, recorded_at)
+SELECT ('44444444-4444-4444-8444-' || lpad(f.k::text, 12, '0'))::uuid,
+       ('33333333-3333-4333-8333-' || lpad(f.k::text, 12, '0'))::uuid,
+       ('11111111-1111-1111-1111-' || lpad(f.user_n::text, 12, '0'))::uuid,
+       f.k,
+       f.latitude, f.longitude, f.accuracy_m,
+       CASE WHEN f.latitude IS NOT NULL THEN d.distance_m END,
+       CASE
+           WHEN f.latitude IS NULL THEN 'no_fix'
+           WHEN f.accuracy_m > f.radius THEN 'low_accuracy'
+           WHEN d.distance_m <= f.radius THEN 'within_geofence'
+           ELSE 'outside_geofence'
+       END,
+       now() - make_interval(hours => f.k),
+       now() - make_interval(hours => f.k) + interval '4 seconds'
+FROM (
+    SELECT k,
+           (ARRAY[1, 3, 9, 15, 21, 27])[1 + (k - 1) % 6] AS user_n,
+           l.latitude AS store_latitude,
+           l.longitude AS store_longitude,
+           l.geofence_radius_m AS radius,
+           -- Metres north of the store, as a latitude offset (1 degree is
+           -- 111,195.08 m on that sphere).
+           CASE WHEN k % 5 = 0 THEN NULL
+                ELSE round(l.latitude + (CASE k % 5 WHEN 3 THEN 3.0
+                                                    WHEN 4 THEN 0.2
+                                                    ELSE 0.4 END)
+                                        * l.geofence_radius_m / 111195.08, 6)
+           END AS latitude,
+           CASE WHEN k % 5 = 0 THEN NULL ELSE l.longitude END AS longitude,
+           CASE WHEN k % 5 = 0 THEN NULL
+                WHEN k % 5 = 4 THEN l.geofence_radius_m + 15
+                ELSE 8 + k % 7
+           END::numeric AS accuracy_m
+    FROM generate_series(1, 30) AS k
+    JOIN stores.store_location AS l ON l.store_id = k
+) AS f
+CROSS JOIN LATERAL (
+    SELECT round((2 * 6371008.8 * asin(sqrt(
+               power(sin(radians(f.latitude - f.store_latitude) / 2), 2)
+             + cos(radians(f.store_latitude)) * cos(radians(f.latitude))
+               * power(sin(radians(f.longitude - f.store_longitude) / 2), 2)
+           )))::numeric, 1) AS distance_m
+) AS d;
+
+-- ---------- checkins.check_in_review (30, one per seeded check-in) ----------
+-- The administrator reviews every seeded check-in an hour after it, so each
+-- shows a verdict that came from a person. Most confirm what the server
+-- decided; every third overturns it, which is what reviews exist for.
+INSERT INTO checkins.check_in_review
+    (review_id, check_in_id, verified, reason, reviewed_by, reviewed_at)
+SELECT ('55555555-5555-4555-8555-' || lpad(k::text, 12, '0'))::uuid,
+       c.check_in_id,
+       CASE WHEN k % 3 = 0 THEN c.reason <> 'within_geofence'
+            ELSE c.reason = 'within_geofence' END,
+       CASE WHEN k % 3 = 0 THEN 'Overturned after checking the shift roster'
+            ELSE 'Confirmed against the shift roster' END,
+       '11111111-1111-1111-1111-000000000001'::uuid,
+       c.recorded_at + interval '1 hour'
+FROM generate_series(1, 30) AS k
+JOIN checkins.store_check_in AS c
+  ON c.check_in_id = ('44444444-4444-4444-8444-' || lpad(k::text, 12, '0'))::uuid;
+
 -- ---------- app_session (30, one finished sign-in per user) ----------
 -- Server-side sessions (ADR-0022): the history of each demonstration account's
 -- last sign-in. Every session has ended (revoked_at is set), so none can

@@ -43,3 +43,10 @@ Thumbs.db
 CLAUDE.local.md
 cookies.txt
 .playwright-mcp/
+
+# Android client (F17-01): build outputs and the machine's SDK path.
+clients/android/.gradle/
+clients/android/.kotlin/
+clients/android/build/
+clients/android/app/build/
+clients/android/local.properties

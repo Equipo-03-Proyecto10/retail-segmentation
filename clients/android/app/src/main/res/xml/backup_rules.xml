@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and earlier: the session tokens are never backed up. -->
+<full-backup-content>
+    <exclude domain="file" path="session.tokens" />
+    <exclude domain="file" path="session.tokens.tmp" />
+</full-backup-content>

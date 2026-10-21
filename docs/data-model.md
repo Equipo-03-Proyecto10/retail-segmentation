@@ -448,6 +448,9 @@ Nullability is stated for every column. `PK` primary key, `FK` foreign key,
 The hierarchy is a tree (RN-33). `category_not_own_parent` refuses the one-row
 cycle; a CHECK cannot see other rows, so `trg_category_no_cycle` walks up from
 the new parent and refuses a longer cycle as `category_no_cycle`.
+`trg_category_hierarchy_lock`, a statement-level trigger, takes the hierarchy
+advisory lock before any row is locked, so two opposite concurrent moves queue
+instead of deadlocking and the second one is refused as `category_no_cycle` (#586).
 
 #### `store`
 

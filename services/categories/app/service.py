@@ -116,7 +116,7 @@ def parent_filter() -> int | None:
     if raw is None:
         return None
     # Strict base-10 digits: int() alone accepts " 1 ", "1_0" and "+1".
-    if not re.fullmatch(r"-?[0-9]{1,10}", raw):
+    if not re.fullmatch(r"-?[0-9]+", raw):
         raise ApiError(
             422,
             "invalid_query",

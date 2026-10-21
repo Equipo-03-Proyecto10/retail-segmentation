@@ -353,7 +353,7 @@ def test_a_nul_in_a_text_filter_is_refused(client, manager, query):
     response = client.get("/v1/customers", query_string=query, headers=manager)
     assert response.status_code == 422
     error = response.get_json()
-    assert error["code"] == "invalid_pagination"
+    assert error["code"] == "invalid_query"
     assert error["details"] == [{"field": next(iter(query)), "code": "invalid_format"}]
 
 

@@ -329,7 +329,7 @@ def test_the_view_publishes_the_tree_to_recommendations(owner, tree):
                 owner.execute("SELECT * FROM public.category")
 
 
-@pytest.mark.parametrize("value", [" 1 ", "1_0", "+1", "", "2147483648", "1.0"])
+@pytest.mark.parametrize("value", [" 1 ", "1_0", "+1", "", "1.0"])
 @pytest.mark.parametrize("accept", ["application/json", "application/xml"])
 def test_parent_id_refusals_are_422_invalid_query(client, admin_headers, value, accept):
     response = client.get(

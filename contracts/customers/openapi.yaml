@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: customers-service
-  version: 1.1.0
+  version: 1.2.0
   description: >-
     Registers, searches, reads and corrects customers under RN-08. Customers
     are never deleted through services; a mistaken registration is corrected

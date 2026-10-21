@@ -84,6 +84,41 @@ fn quote_identifier(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
 
+/// The one way an identifier enters the relay's SQL: `{identifier}` in a fixed
+/// statement becomes `name`, quoted. Values are only ever bound (#593).
+fn with_identifier(statement: &'static str, name: &str) -> String {
+    statement.replace("{identifier}", &quote_identifier(name))
+}
+
+const LISTEN: &str = "LISTEN {identifier}";
+const SELECT_UNRELAYED: &str = "SELECT event_id, stream, event_type, entity_id, occurred_at \
+     FROM {identifier}.outbox WHERE relayed_at IS NULL ORDER BY occurred_at LIMIT $1 \
+     FOR UPDATE SKIP LOCKED";
+const MARK_RELAYED: &str =
+    "UPDATE {identifier}.outbox SET relayed_at = now() WHERE event_id = ANY($1)";
+const PURGE_RELAYED: &str = "DELETE FROM {identifier}.outbox WHERE relayed_at IS NOT NULL \
+     AND relayed_at < now() - ($1::integer * interval '1 day')";
+
+/// One boundary's relay statements, built once from its validated suffix.
+struct Statements {
+    listen: String,
+    select: String,
+    update: String,
+    purge: String,
+}
+
+impl Statements {
+    fn new(suffix: &str) -> Self {
+        let schema = [suffix, "_events"].concat();
+        Self {
+            listen: with_identifier(LISTEN, &[suffix, "_outbox"].concat()),
+            select: with_identifier(SELECT_UNRELAYED, &schema),
+            update: with_identifier(MARK_RELAYED, &schema),
+            purge: with_identifier(PURGE_RELAYED, &schema),
+        }
+    }
+}
+
 fn timestamp(value: &DateTime<Utc>) -> String {
     use chrono::Timelike;
     let format = if value.nanosecond() / 1_000 != 0 {
@@ -140,7 +175,7 @@ struct RelayConnection {
 /// Relay one service boundary's outbox to its configured streams.
 pub struct OutboxRelay<R: StreamStore> {
     config: tokio_postgres::Config,
-    suffix: String,
+    statements: Statements,
     streams: HashSet<String>,
     redis: R,
     connection: Option<RelayConnection>,
@@ -164,20 +199,13 @@ impl<R: StreamStore> OutboxRelay<R> {
             .map_err(|error| KitError(format!("The relay database URL is invalid: {error}")))?;
         Ok(Self {
             config,
-            suffix: suffix.to_owned(),
+            statements: Statements::new(suffix),
             streams: streams.into_iter().map(Into::into).collect(),
             redis,
             connection: None,
             last_purge: None,
             delivery_failure: None,
         })
-    }
-
-    fn table(&self) -> String {
-        format!(
-            "{}.outbox",
-            quote_identifier(&format!("{}_events", self.suffix))
-        )
     }
 
     async fn connect(&mut self) -> Result<&mut RelayConnection, tokio_postgres::Error> {
@@ -204,8 +232,7 @@ impl<R: StreamStore> OutboxRelay<R> {
                     }
                 }
             });
-            let channel = quote_identifier(&format!("{}_outbox", self.suffix));
-            client.batch_execute(&format!("LISTEN {channel}")).await?;
+            client.batch_execute(&self.statements.listen).await?;
             self.connection = Some(RelayConnection { client, wakeups });
         }
         Ok(self.connection.as_mut().expect("connected"))
@@ -218,18 +245,12 @@ impl<R: StreamStore> OutboxRelay<R> {
 
     /// Wait for a wake-up (at most 5 s), poll once, and return the relayed row count.
     pub async fn run_once(&mut self, wait: Duration) -> Result<usize, tokio_postgres::Error> {
-        let table = self.table();
         let wait = wait.min(MAX_WAIT);
         let connection = self.connect().await?;
         if !wait.is_zero() {
             let _ = tokio::time::timeout(wait, connection.wakeups.recv()).await;
         }
         while connection.wakeups.try_recv().is_ok() {}
-        let select = format!(
-            "SELECT event_id, stream, event_type, entity_id, occurred_at FROM {table} \
-             WHERE relayed_at IS NULL ORDER BY occurred_at LIMIT $1 FOR UPDATE SKIP LOCKED"
-        );
-        let update = format!("UPDATE {table} SET relayed_at = now() WHERE event_id = ANY($1)");
         let transaction = self
             .connection
             .as_mut()
@@ -237,7 +258,9 @@ impl<R: StreamStore> OutboxRelay<R> {
             .client
             .transaction()
             .await?;
-        let rows = transaction.query(&select, &[&BATCH]).await?;
+        let rows = transaction
+            .query(&self.statements.select, &[&BATCH])
+            .await?;
         let mut event_ids: Vec<uuid::Uuid> = Vec::new();
         let mut delivery: Result<(), RedisError> = Ok(());
         for row in &rows {
@@ -279,16 +302,16 @@ impl<R: StreamStore> OutboxRelay<R> {
         }
         let relayed = event_ids.len();
         if relayed > 0 {
-            transaction.execute(&update, &[&event_ids]).await?;
+            transaction
+                .execute(&self.statements.update, &[&event_ids])
+                .await?;
         }
         transaction.commit().await?;
         if self.last_purge.is_none_or(|at| at.elapsed() >= PURGE_EVERY) {
-            let purge = format!(
-                "DELETE FROM {table} WHERE relayed_at IS NOT NULL \
-                 AND relayed_at < now() - ($1::integer * interval '1 day')"
-            );
             let client = &self.connection.as_ref().expect("connected").client;
-            client.execute(&purge, &[&RETENTION_DAYS]).await?;
+            client
+                .execute(&self.statements.purge, &[&RETENTION_DAYS])
+                .await?;
             self.last_purge = Some(Instant::now());
         }
         Ok(relayed)
@@ -712,5 +735,33 @@ where
 {
     pub fn spawn(self) -> tokio::task::JoinHandle<()> {
         tokio::spawn(self.run_forever())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn relay_statements_quote_the_suffix_and_bind_every_value() {
+        let statements = Statements::new("kit_probe");
+        assert_eq!(statements.listen, r#"LISTEN "kit_probe_outbox""#);
+        assert_eq!(
+            statements.select,
+            "SELECT event_id, stream, event_type, entity_id, occurred_at \
+             FROM \"kit_probe_events\".outbox WHERE relayed_at IS NULL \
+             ORDER BY occurred_at LIMIT $1 FOR UPDATE SKIP LOCKED"
+        );
+        assert_eq!(
+            statements.update,
+            "UPDATE \"kit_probe_events\".outbox SET relayed_at = now() \
+             WHERE event_id = ANY($1)"
+        );
+        assert_eq!(
+            statements.purge,
+            "DELETE FROM \"kit_probe_events\".outbox WHERE relayed_at IS NOT NULL \
+             AND relayed_at < now() - ($1::integer * interval '1 day')"
+        );
+        assert_eq!(with_identifier(LISTEN, "a\"b"), r#"LISTEN "a""b""#);
     }
 }

@@ -14,7 +14,7 @@ from typing import Any
 import psycopg
 from flask import Flask, request
 from mosaiq_kit import ApiError, Kit, Page, Representation, configure_logging
-from psycopg import errors
+from psycopg import errors, sql
 
 EMAIL_KEY = "customer_email_key"
 CHANNEL_FKEY = "customer_registration_channel_id_fkey"
@@ -22,7 +22,17 @@ EMAIL_CHECK = "customer_email_check"
 
 CONTRACTS_DIR = Path(__file__).resolve().parents[1] / "contracts"
 
-COLUMNS = "customer_id, name, email, phone, registration_channel_id, registered_on"
+COLUMNS = sql.SQL(", ").join(
+    sql.Identifier(name)
+    for name in (
+        "customer_id",
+        "name",
+        "email",
+        "phone",
+        "registration_channel_id",
+        "registered_on",
+    )
+)
 
 # The fields a correction may name; registered_on and customer_id are refused
 # by the contract's schema before a handler runs.
@@ -128,7 +138,7 @@ def create_app() -> Flask:
         offset = (kit.page - 1) * kit.size
         # Fixed statements; the filters arrive only as bind parameters. LIKE
         # runs with an explicit ESCAPE so % and _ in q match themselves.
-        filters = (
+        filters = sql.SQL(
             "WHERE (%(pattern)s::text IS NULL"
             " OR name ILIKE %(pattern)s ESCAPE '\\'"
             " OR email ILIKE %(pattern)s ESCAPE '\\'"
@@ -138,14 +148,16 @@ def create_app() -> Flask:
         params = {"pattern": pattern, "email": email}
         with kit.db.connection() as connection:
             total = connection.execute(
-                "SELECT count(*) FROM public.customer " + filters, params
+                sql.SQL("SELECT count(*) FROM public.customer {filters}").format(
+                    filters=filters
+                ),
+                params,
             ).fetchone()[0]
             rows = connection.execute(
-                "SELECT "
-                + COLUMNS
-                + " FROM public.customer "
-                + filters
-                + " ORDER BY name, customer_id LIMIT %(limit)s OFFSET %(offset)s",
+                sql.SQL(
+                    "SELECT {columns} FROM public.customer {filters}"
+                    " ORDER BY name, customer_id LIMIT %(limit)s OFFSET %(offset)s"
+                ).format(columns=COLUMNS, filters=filters),
                 params | {"limit": kit.size, "offset": offset},
             ).fetchall()
         return Page(
@@ -162,7 +174,9 @@ def create_app() -> Flask:
     def get_customer(customer_id: Any) -> Representation:
         with kit.db.connection() as connection:
             row = connection.execute(
-                "SELECT " + COLUMNS + " FROM public.customer WHERE customer_id = %s",
+                sql.SQL("SELECT {} FROM public.customer WHERE customer_id = %s").format(
+                    COLUMNS
+                ),
                 (customer_id,),
             ).fetchone()
         if row is None:
@@ -176,13 +190,15 @@ def create_app() -> Flask:
         try:
             with kit.db.transaction() as connection:
                 row = connection.execute(
-                    "INSERT INTO public.customer"
-                    " (name, email, phone, registration_channel_id, registered_on) "
-                    "SELECT %(name)s, %(email)s, %(phone)s, %(channel)s,"
-                    " coalesce(%(registered_on)s::date, CURRENT_DATE) "
-                    "WHERE coalesce(%(registered_on)s::date, CURRENT_DATE)"
-                    " <= CURRENT_DATE "
-                    "RETURNING " + COLUMNS,
+                    sql.SQL(
+                        "INSERT INTO public.customer"
+                        " (name, email, phone, registration_channel_id, registered_on) "
+                        "SELECT %(name)s, %(email)s, %(phone)s, %(channel)s,"
+                        " coalesce(%(registered_on)s::date, CURRENT_DATE) "
+                        "WHERE coalesce(%(registered_on)s::date, CURRENT_DATE)"
+                        " <= CURRENT_DATE "
+                        "RETURNING {}"
+                    ).format(COLUMNS),
                     {
                         "name": body["name"],
                         "email": body.get("email"),
@@ -222,16 +238,20 @@ def create_app() -> Flask:
         try:
             with kit.db.transaction() as connection:
                 row = connection.execute(
-                    "UPDATE public.customer SET"
-                    " name = CASE WHEN %(set_name)s THEN %(name)s ELSE name END,"
-                    " email = CASE WHEN %(set_email)s THEN %(email)s ELSE email END,"
-                    " phone = CASE WHEN %(set_phone)s THEN %(phone)s ELSE phone END,"
-                    " registration_channel_id = CASE"
-                    " WHEN %(set_registration_channel_id)s"
-                    " THEN %(registration_channel_id)s::smallint"
-                    " ELSE registration_channel_id END "
-                    "WHERE customer_id = %(customer_id)s "
-                    "RETURNING " + COLUMNS,
+                    sql.SQL(
+                        "UPDATE public.customer SET"
+                        " name = CASE WHEN %(set_name)s THEN %(name)s ELSE name END,"
+                        " email = CASE WHEN %(set_email)s THEN %(email)s"
+                        " ELSE email END,"
+                        " phone = CASE WHEN %(set_phone)s THEN %(phone)s"
+                        " ELSE phone END,"
+                        " registration_channel_id = CASE"
+                        " WHEN %(set_registration_channel_id)s"
+                        " THEN %(registration_channel_id)s::smallint"
+                        " ELSE registration_channel_id END "
+                        "WHERE customer_id = %(customer_id)s "
+                        "RETURNING {}"
+                    ).format(COLUMNS),
                     params,
                 ).fetchone()
         except psycopg.errors.IntegrityError as error:

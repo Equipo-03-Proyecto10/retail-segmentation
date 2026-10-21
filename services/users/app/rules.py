@@ -19,16 +19,17 @@ from typing import Any
 from uuid import UUID
 
 from mosaiq_kit import ApiError
-from psycopg import Connection
+from psycopg import Connection, sql
 from psycopg.errors import UniqueViolation
 
 ADMIN = "ADMIN"
 ADMIN_ROLE_ID = 1
 
-USER_COLUMNS = (
+# Fixed fragments, composed with psycopg.sql; values are only ever bound.
+USER_COLUMNS = sql.SQL(
     "u.user_id, u.name, u.email, r.code AS role_code, u.is_active, u.created_at"
 )
-USER_FROM = "app_user AS u JOIN role AS r ON r.role_id = u.role_id"
+USER_FROM = sql.SQL("app_user AS u JOIN role AS r ON r.role_id = u.role_id")
 
 
 def normalize_email(email: str) -> str:
@@ -113,8 +114,14 @@ def get_user(
 ) -> dict[str, Any] | None:
     with connection.cursor() as cursor:
         cursor.execute(
-            f"SELECT {USER_COLUMNS}, u.role_id, u.password_hash FROM {USER_FROM}"  # noqa: S608
-            " WHERE u.user_id = %s" + (" FOR UPDATE OF u" if lock else ""),
+            sql.SQL(
+                "SELECT {columns}, u.role_id, u.password_hash FROM {source}"
+                " WHERE u.user_id = %s{lock}"
+            ).format(
+                columns=USER_COLUMNS,
+                source=USER_FROM,
+                lock=sql.SQL(" FOR UPDATE OF u" if lock else ""),
+            ),
             (str(user_id),),
         )
         return _row(cursor)
@@ -313,13 +320,13 @@ def list_users(
     page: int,
     size: int,
 ) -> tuple[list[dict[str, Any]], int]:
-    conditions = []
+    conditions: list[sql.Composable] = []
     params: list[Any] = []
     if role_code is not None:
-        conditions.append("r.code = %s")
+        conditions.append(sql.SQL("r.code = %s"))
         params.append(role_code)
     if active is not None:
-        conditions.append("u.is_active = %s")
+        conditions.append(sql.SQL("u.is_active = %s"))
         params.append(active)
     if query is not None:
         # % and _ match literally.
@@ -328,15 +335,26 @@ def list_users(
             + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             + "%"
         )
-        conditions.append("(u.name ILIKE %s OR u.email ILIKE %s)")
+        conditions.append(sql.SQL("(u.name ILIKE %s OR u.email ILIKE %s)"))
         params.extend([pattern, pattern])
-    where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+    where = (
+        sql.SQL(" WHERE {}").format(sql.SQL(" AND ").join(conditions))
+        if conditions
+        else sql.SQL("")
+    )
     with connection.cursor() as cursor:
-        cursor.execute(f"SELECT count(*) FROM {USER_FROM}{where}", params)  # noqa: S608
+        cursor.execute(
+            sql.SQL("SELECT count(*) FROM {source}{where}").format(
+                source=USER_FROM, where=where
+            ),
+            params,
+        )
         total = cursor.fetchone()[0]
         cursor.execute(
-            f"SELECT {USER_COLUMNS} FROM {USER_FROM}{where}"  # noqa: S608
-            " ORDER BY u.created_at, u.user_id LIMIT %s OFFSET %s",
+            sql.SQL(
+                "SELECT {columns} FROM {source}{where}"
+                " ORDER BY u.created_at, u.user_id LIMIT %s OFFSET %s"
+            ).format(columns=USER_COLUMNS, source=USER_FROM, where=where),
             [*params, size, (page - 1) * size],
         )
         names = [column.name for column in cursor.description]

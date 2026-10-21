@@ -492,8 +492,9 @@ argument is about 3NF (BCNF where every determinant is a key) and 4NF.
     sale. The writers keep it equal to its lines. The web recomputes it from
     the committed lines after every accepted CSV row, under the header lock
     (`recompute_total`, RN-37), and sales-service computes it once and never
-    updates it (ADR-0039). The database does not yet refuse a `total` that
-    disagrees with its lines; #591 tracks that.
+    updates it (ADR-0039). The database refuses a `total` that disagrees with
+    its lines at `COMMIT`, through the deferred `transaction_total_matches_lines`
+    trigger described under `transaction_line` (#591).
 - **`audit_log`.**
   - *Key:* `audit_id`.
   - *Dependencies:* `audit_id → user_id, entity, entity_pk, action,

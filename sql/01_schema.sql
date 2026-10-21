@@ -1569,8 +1569,9 @@ DO $$ BEGIN IF NOT EXISTS (
 ) THEN ALTER TABLE checkins.store_check_in ADD CONSTRAINT store_check_in_distance_check
         CHECK ((distance_m IS NULL) = (reason IN ('no_fix', 'store_location_unknown'))); END IF; END $$;
 
+-- review_id is a number because the v1 contract publishes it as int64.
 CREATE TABLE IF NOT EXISTS checkins.check_in_review (
-    review_id UUID NOT NULL DEFAULT gen_random_uuid(),
+    review_id BIGINT GENERATED ALWAYS AS IDENTITY,
     check_in_id UUID NOT NULL,
     verified BOOLEAN NOT NULL,
     reason TEXT NOT NULL,

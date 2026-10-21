@@ -237,9 +237,8 @@ CROSS JOIN LATERAL (
 -- shows a verdict that came from a person. Most confirm what the server
 -- decided; every third overturns it, which is what reviews exist for.
 INSERT INTO checkins.check_in_review
-    (review_id, check_in_id, verified, reason, reviewed_by, reviewed_at)
-SELECT ('55555555-5555-4555-8555-' || lpad(k::text, 12, '0'))::uuid,
-       c.check_in_id,
+    (check_in_id, verified, reason, reviewed_by, reviewed_at)
+SELECT c.check_in_id,
        CASE WHEN k % 3 = 0 THEN c.reason <> 'within_geofence'
             ELSE c.reason = 'within_geofence' END,
        CASE WHEN k % 3 = 0 THEN 'Overturned after checking the shift roster'
@@ -248,7 +247,8 @@ SELECT ('55555555-5555-4555-8555-' || lpad(k::text, 12, '0'))::uuid,
        c.recorded_at + interval '1 hour'
 FROM generate_series(1, 30) AS k
 JOIN checkins.store_check_in AS c
-  ON c.check_in_id = ('44444444-4444-4444-8444-' || lpad(k::text, 12, '0'))::uuid;
+  ON c.check_in_id = ('44444444-4444-4444-8444-' || lpad(k::text, 12, '0'))::uuid
+ORDER BY k;
 
 -- ---------- app_session (30, one finished sign-in per user) ----------
 -- Server-side sessions (ADR-0022): the history of each demonstration account's

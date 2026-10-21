@@ -531,7 +531,7 @@ effective `verified` are computed on read.
 
 | Column | Type | Null | Constraints | Meaning |
 |---|---|---|---|---|
-| `review_id` | `UUID` | NN | PK; default `gen_random_uuid()` | Review identifier |
+| `review_id` | `BIGINT` | NN | PK; generated always as identity | Review identifier, a number because the v1 contract publishes it as `int64` |
 | `check_in_id` | `UUID` | NN | FK → `checkins.store_check_in`, `ON DELETE RESTRICT` | The check-in reviewed |
 | `verified` | `BOOLEAN` | NN | — | The reviewer's verdict |
 | `reason` | `TEXT` | NN | CHECK not blank | Why the reviewer decided so |

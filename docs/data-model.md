@@ -402,6 +402,8 @@ argument is about 3NF (BCNF where every determinant is a key) and 4NF.
     validity dates, and `segment.rule_id` is not unique. A label is therefore
     not a function of the rule, and storing one on the rule would be wrong
     rather than merely redundant.
+  - *Why it is in 4NF:* one row is one band, with single-valued attributes
+    and no multivalued fact.
 - **`app_user`.**
   - *Keys:* `user_id`, and `lower(email)` through the unique index
     `ux_app_user_email_lower`, so the email determines the row

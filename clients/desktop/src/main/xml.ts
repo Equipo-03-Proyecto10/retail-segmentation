@@ -15,9 +15,13 @@ const COMMON_FILE = 'common/v1/common.xsd';
  */
 export function rootElement(xml: string): RootInfo | null {
   if (/<!DOCTYPE|<!ENTITY/i.test(xml)) return null;
-  const stripped = (xml.charCodeAt(0) === 0xfeff ? xml.slice(1) : xml)
-    .replace(/<\?[\s\S]*?\?>/g, '')
-    .replace(/<!--[\s\S]*?-->/g, '');
+  // Repeated until nothing changes: one pass over `<!-<!---->-` leaves `<!--`.
+  let stripped = xml.charCodeAt(0) === 0xfeff ? xml.slice(1) : xml;
+  let previous: string;
+  do {
+    previous = stripped;
+    stripped = stripped.replace(/<\?[\s\S]*?\?>/g, '').replace(/<!--[\s\S]*?-->/g, '');
+  } while (stripped !== previous);
   const match = /^\s*<([A-Za-z_][\w.-]*)(?::([A-Za-z_][\w.-]*))?((?:\s+[^<>]*?)?)\s*\/?>/.exec(stripped);
   if (!match) return null;
   const [, first, second, attrs] = match;

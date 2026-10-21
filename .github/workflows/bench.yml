@@ -1,0 +1,113 @@
+# The bench-only Rust twin of the products reads (F15-01, ADR-0042). It runs on
+# changes to bench/ or to the contract the twin follows, and is not a required
+# check: a benchmark must never block a products-service release. It builds the
+# twin's image to test it and pushes nothing.
+name: Bench
+
+on:
+  pull_request:
+    paths:
+      - bench/**
+      - contracts/products/**
+      - .github/workflows/bench.yml
+
+permissions:
+  contents: read
+
+jobs:
+  twin:
+    name: Products twin — Rust gates, conformance and ADR-0042 checks
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      DIR: bench/products-service-rs
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install the contract tools and the suite's requirements
+        run: |
+          pip install -r web/requirements-dev.txt -r contracts/requirements.txt
+          bash contracts/install-tools.sh
+
+      - name: Never registered, routed, deployed or pushed; reads only
+        env:
+          # In a variable, so the check below does not find its own text.
+          TWIN: products-service-rs
+        run: |
+          set -euo pipefail
+          out=$(
+            grep -rnE "5103|$TWIN" contracts/registry.yaml services/*/nginx/ deploy/ .github/workflows/deploy-service.yml 2>/dev/null || true
+            grep -rnE "$TWIN" .github/workflows/ | grep -iE 'ghcr|push' || true
+            yq -r '.services | to_entries[] | select((.value.profiles // []) | index("bench") | not) | .key' bench/compose.yaml
+            yq -r --arg twin "$TWIN" '.services[$twin].ports[]' bench/compose.yaml | grep -vx '127.0.0.1:5103:5103' || true
+            grep -rnE '\.(post|put|patch|delete)\(' bench/products-service-rs/src/ || true
+          )
+          # ADR-0042's "exactly the six" applies as a subset until all six exist.
+          for crate in services/*/Cargo.toml; do
+            name=$(basename "$(dirname "$crate")")
+            case " audit-trail check-ins customer-preferences segments stock stores " in
+              *" $name "*) ;;
+              *) out+=$'\n'"FAIL: $name is a Rust production service outside ADR-0034's six" ;;
+            esac
+          done
+          if [ -n "$(printf '%s' "$out" | tr -d '[:space:]')" ]; then printf '%s\n' "$out"; exit 1; fi
+
+      - name: Load PostgreSQL scripts
+        run: |
+          psql -v ON_ERROR_STOP=1 -f sql/00_create_database.sql
+          psql -v ON_ERROR_STOP=1 -d retail -f sql/01_schema.sql
+          psql -v ON_ERROR_STOP=1 -d retail -f sql/02_seed_30_per_table.sql
+
+      - name: Rust gates — fmt, clippy, test
+        working-directory: ${{ env.DIR }}
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/retail
+          MOSAIQ_REQUIRE_POSTGRES: "1"
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libclang-dev libxml2-dev pkg-config
+          channel=$(sed -n 's/^FROM rust:\([0-9.]*\)-.*/\1/p' Dockerfile | head -1)
+          rustup toolchain install "$channel" --profile minimal --component clippy,rustfmt
+          export RUSTUP_TOOLCHAIN=$channel
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+
+      - name: Build the twin's image from its own directory (not pushed)
+        run: |
+          set -euo pipefail
+          rm -rf "$DIR/contracts" && mkdir -p "$DIR/contracts/common"
+          cp -R contracts/products "$DIR/contracts/products"
+          cp -R contracts/common/v1 "$DIR/contracts/common/v1"
+          docker build -t products-service-rs:ci "$DIR"
+
+      # tests/conformance/stack.sh keys on <dir>/redis/<name>.acl, so the twin
+      # runs from a staged directory holding bench/redis/products-bench.acl.
+      - name: Shared conformance suite against the twin
+        env:
+          CONFORMANCE_CONTRACT_DIR: contracts/products
+        run: |
+          set -euo pipefail
+          staged="$RUNNER_TEMP/products-bench"
+          mkdir -p "$staged/redis"
+          cp bench/redis/products-bench.acl "$staged/redis/products-bench.acl"
+          bash tests/conformance/run.sh products-service-rs:ci "$staged" 5103

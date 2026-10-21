@@ -43,3 +43,9 @@ Thumbs.db
 CLAUDE.local.md
 cookies.txt
 .playwright-mcp/
+
+# The products reads bench (ADR-0042): its throwaway keys, the twin's staged
+# contracts and its build output.
+bench/keys/
+bench/products-service-rs/contracts/
+bench/products-service-rs/target/

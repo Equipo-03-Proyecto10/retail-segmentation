@@ -63,8 +63,8 @@ from web.db.segmentation_dashboard import (
 )
 from web.db.segments import SegmentationRun, get_label_ordinals, get_run, list_runs
 from web.services.consumption_profile import UnknownCustomer
-from web.services.experiment_uplift import SYNTHETIC_LABEL
 from web.services.experiments import is_synthetic
+from web.services.provenance import SYNTHETIC_LABEL, runs_synthetic
 from web.services.recommendations import recommend
 from web.services.segment_migration import (
     CustomerMigration,
@@ -260,6 +260,21 @@ class Dashboard:
     revenue_window_start: datetime
     revenue_window_end: datetime
 
+    @property
+    def run_synthetic(self) -> bool:
+        """Whether the run's own figures are Synthetic (ADR-0052): sizes, the
+        RFM charts, the label means and revenue by label, all from this run
+        and the window it scored."""
+        return runs_synthetic(self.run)
+
+    @property
+    def migration_synthetic(self) -> bool:
+        """Whether the migration flow is Synthetic: it compares two runs, so
+        either one marks it."""
+        return self.migration is not None and runs_synthetic(
+            self.run, self.previous_run
+        )
+
 
 def build_dashboard(connection: Any, run_id: int | None) -> Dashboard:
     """Build every chart for one run: the named run, or the newest run there
@@ -364,7 +379,7 @@ class ActiveExperiment:
 
     @property
     def label(self) -> str | None:
-        return SYNTHETIC_LABEL if is_synthetic(self.experiment.data_origin) else None
+        return SYNTHETIC_LABEL if is_synthetic(self.experiment) else None
 
 
 def build_active_experiments(
@@ -405,6 +420,8 @@ class TopRecommended:
     products: tuple[RecommendedProduct, ...]
     considered: int
     total: int
+    # ADR-0052: a tallied recommendation was built from seeded data.
+    synthetic: bool = False
 
     @property
     def capped(self) -> bool:
@@ -429,11 +446,13 @@ def build_top_recommended(
     customers: dict[int, int] = {}
     named: dict[int, tuple[str, str]] = {}
     stock: dict[int, dict[int, tuple[str, int]]] = {}
+    synthetic = False
     for customer_id in customer_ids:
         try:
             result = recommend(connection, customer_id)
         except UnknownCustomer:
             continue
+        synthetic = synthetic or (result.synthetic and bool(result.recommendations))
         for item in result.recommendations:
             customers[item.product_id] = customers.get(item.product_id, 0) + 1
             named[item.product_id] = (item.name, item.category_name)
@@ -455,7 +474,7 @@ def build_top_recommended(
         )
         for product_id in ranked[:limit]
     )
-    return TopRecommended(products, len(customer_ids), total)
+    return TopRecommended(products, len(customer_ids), total, synthetic)
 
 
 @dataclass(frozen=True)
@@ -486,4 +505,15 @@ def build_kpis(
         active_experiments=build_active_experiments(connection, active_on, now),
         recommended=build_top_recommended(connection, ids, total),
         scored=any(m.mean_r is not None for m in means),
+    )
+
+
+def page_synthetic(dashboard: Dashboard, kpis: Kpis) -> bool:
+    """Whether any panel of the page is Synthetic, for the banner at its top.
+    Each panel is still marked on its own (ADR-0052)."""
+    return (
+        dashboard.run_synthetic
+        or dashboard.migration_synthetic
+        or kpis.recommended.synthetic
+        or any(active.label for active in kpis.active_experiments)
     )

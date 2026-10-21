@@ -18,6 +18,9 @@ product line: the denominator of a category's share and the purchases RN-50's
 minimum counts for categories (#341). `customer_id` narrows every grouping to
 one customer, which is how the consumption profile reads the same totals the
 shift report does.
+
+Every grouping also says whether it read a SEEDED sale, so the report is marked
+Synthetic from the same snapshot its figures come from (ADR-0052, #560).
 """
 
 from __future__ import annotations
@@ -46,9 +49,10 @@ def list_totals_for_periods(
     later_end: datetime,
     *,
     customer_id: Any | None = None,
-) -> tuple[DimensionTotals, DimensionTotals]:
+) -> tuple[DimensionTotals, DimensionTotals, bool]:
     """Return channel, store and category totals, and purchases with product
-    lines, for both periods at once; for every customer, or only one."""
+    lines, for both periods at once; for every customer, or only one. The
+    third value says whether any sale read is SEEDED (ADR-0052)."""
     with connection.cursor() as cursor:
         cursor.execute(
             """
@@ -62,7 +66,8 @@ def list_totals_for_periods(
             SELECT periods.period, 'channel' AS dimension,
                    t.customer_id, ch.channel_id, ch.name,
                    count(*) AS purchases, NULL::bigint AS units,
-                   sum(t.total) AS spend
+                   sum(t.total) AS spend,
+                   bool_or(t.data_origin = 'SEEDED') AS seeded
             FROM periods
             JOIN transaction AS t
               ON t.occurred_at >= periods.start_at
@@ -77,7 +82,8 @@ def list_totals_for_periods(
             SELECT periods.period, 'store' AS dimension,
                    t.customer_id, s.store_id, s.name,
                    count(*) AS purchases, NULL::bigint AS units,
-                   sum(t.total) AS spend
+                   sum(t.total) AS spend,
+                   bool_or(t.data_origin = 'SEEDED') AS seeded
             FROM periods
             JOIN transaction AS t
               ON t.occurred_at >= periods.start_at
@@ -93,7 +99,8 @@ def list_totals_for_periods(
                    t.customer_id, c.category_id, c.name,
                    count(DISTINCT t.transaction_id) AS purchases,
                    sum(tl.quantity) AS units,
-                   sum(tl.quantity * tl.unit_price) AS spend
+                   sum(tl.quantity * tl.unit_price) AS spend,
+                   bool_or(t.data_origin = 'SEEDED') AS seeded
             FROM periods
             JOIN transaction AS t
               ON t.occurred_at >= periods.start_at
@@ -111,7 +118,8 @@ def list_totals_for_periods(
             SELECT periods.period, 'lined' AS dimension,
                    t.customer_id, 0, '',
                    count(*) AS purchases, NULL::bigint AS units,
-                   NULL::numeric AS spend
+                   NULL::numeric AS spend,
+                   bool_or(t.data_origin = 'SEEDED') AS seeded
             FROM periods
             JOIN transaction AS t
               ON t.occurred_at >= periods.start_at
@@ -143,7 +151,10 @@ def list_totals_for_periods(
         }
         for period in ("earlier", "later")
     }
-    for period, dimension, customer, item_id, name, purchases, units, spend in rows:
+    seeded = False
+    for row in rows:
+        period, dimension, customer, item_id, name, purchases, units, spend, mark = row
+        seeded = seeded or mark
         if dimension == "lined":
             totals[period]["lined"][str(customer)] = purchases
             continue
@@ -153,10 +164,11 @@ def list_totals_for_periods(
             total = GroupTotal(item_id, name, purchases, spend)
         totals[period][dimension][str(customer)].append(total)
 
-    return tuple(
+    earlier, later = (
         tuple(
             dict(totals[period][dimension])
             for dimension in ("channel", "store", "category", "lined")
         )
         for period in ("earlier", "later")
     )
+    return earlier, later, seeded

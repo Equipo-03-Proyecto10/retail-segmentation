@@ -34,15 +34,13 @@ from web.services.experiments import (
     ExperimentNotFound,
     is_synthetic,
 )
+from web.services.provenance import SYNTHETIC_LABEL
 
 ALPHA = 0.05
 # Two-sided normal critical value for ALPHA.
 Z_CRITICAL = 1.959963984540054
 
 CONVERSION_METRIC = "CONVERSION"
-
-# The literal label every result derived from seeded or injected data carries.
-SYNTHETIC_LABEL = "Synthetic"
 
 
 class UpliftRefused(Exception):
@@ -137,7 +135,7 @@ class MeasuredUplift:
 
     @property
     def label(self) -> str | None:
-        return SYNTHETIC_LABEL if is_synthetic(self.experiment.data_origin) else None
+        return SYNTHETIC_LABEL if is_synthetic(self.experiment) else None
 
     @property
     def pending(self) -> int:

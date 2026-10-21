@@ -5,7 +5,7 @@
 {% block breadcrumbs %}{{ application_name }} / Catalogs / Customers / {{ customer_name }} / Consumption profile{% endblock %}
 
 {% block content %}
-  {% from "macros/ui.html" import alert, empty_state, page_header, status_pill %}
+  {% from "macros/ui.html" import alert, empty_state, page_header, status_pill, synthetic_banner, synthetic_pill %}
   {% macro money(value) %}{{ "{:,.2f}".format(value) }}{% endmacro %}
   {% macro day(moment) %}{{ moment.strftime("%Y-%m-%d") }}{% endmacro %}
   {% macro noun(n, singular) %}{{ singular if n == 1 else singular ~ "s" }}{% endmacro %}
@@ -39,10 +39,12 @@
   </section>
 
   {% if profile %}
+    {{ synthetic_banner(profile.seeded_sales or (shifts and shifts.seeded), "This customer's sales in the window include demonstration data, so the sales measures marked below are Synthetic.") }}
+    {{ synthetic_banner(profile.segment_synthetic, "The segment and R/F/M come from a segmentation run that scored demonstration data, so they are Synthetic.") }}
     {% if profile.has_sales %}
       <div class="mq-grid mq-grid--4">
         <article class="mq-metric">
-          <span class="mq-metric__label">Total spend</span>
+          <span class="mq-metric__label">Total spend {{ synthetic_pill(profile.seeded_sales) }}</span>
           <span class="mq-metric__value">{{ money(profile.total_spend) }}<span class="mq-metric__unit">MXN</span></span>
           <div class="mq-metric__footer"><span>Sum of purchase totals</span></div>
         </article>
@@ -66,7 +68,7 @@
 
       <div class="mq-grid mq-grid--3">
         <article class="mq-metric">
-          <span class="mq-metric__label">Average discount</span>
+          <span class="mq-metric__label">Average discount {{ synthetic_pill(profile.seeded_sales) }}</span>
           {% if profile.average_discount_pct is not none %}
             <span class="mq-metric__value">{{ "{:.2f}".format(profile.average_discount_pct) }}<span class="mq-metric__unit">%</span></span>
             <div class="mq-metric__footer"><span>Paid versus today's list price; negative means above list price</span></div>
@@ -98,6 +100,7 @@
       <section class="mq-panel mq-panel--table mq-density-compact">
         <header class="mq-panel__header">
           <h2 class="mq-panel__title">Favourite categories</h2>
+          {{ synthetic_pill(profile.seeded_sales) }}
           <span class="mq-caption">Top {{ profile.favourite_categories | length }}, by purchases containing the category</span>
         </header>
         {% if profile.favourite_categories %}
@@ -133,6 +136,7 @@
       <section class="mq-panel mq-panel--table mq-density-compact">
         <header class="mq-panel__header">
           <h2 class="mq-panel__title">Frequent products</h2>
+          {{ synthetic_pill(profile.seeded_sales) }}
           <span class="mq-caption">Top {{ profile.frequent_products | length }}, by purchases including the product</span>
         </header>
         {% if profile.frequent_products %}
@@ -171,6 +175,7 @@
     <section class="mq-panel">
       <header class="mq-panel__header">
         <h2 class="mq-panel__title">Segment and R/F/M</h2>
+        {{ synthetic_pill(profile.segment_synthetic) }}
         <span class="mq-caption">From assignment history, not from the window above</span>
       </header>
       <div class="mq-panel__body">

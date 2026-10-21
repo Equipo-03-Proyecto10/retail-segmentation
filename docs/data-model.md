@@ -298,6 +298,41 @@ names can otherwise make the decomposition look unfinished:
   lossless for assignment-level reporting without inventing an
   exposure-to-sale relationship.
 
+**Data origin (ADR-0052, #559).** `transaction.data_origin` and
+`segmentation_run.data_origin` each add one attribute, and neither breaks a
+normal form:
+
+- *Whole-key, single-valued.* `transaction_id → data_origin` and
+  `run_id → data_origin` hold, and each sale or run has exactly one origin.
+  The determinant is the whole primary key. `source_transaction_id` is a
+  candidate key of `transaction`, so it determines `data_origin` too, and
+  BCNF still holds: every determinant is a key.
+- *Not derivable from another column.* The seed's `TXN-` identifiers suggest
+  an answer, but a CSV file may use the same shape (ADR-0052), so no
+  dependency `source_transaction_id`-shape → origin can stand in for the
+  column. Linking each sale to its `sales_load` was rejected by ADR-0052 too:
+  sales-service writes sales without a load, and a foreign key would record
+  one bit.
+- *On the header, not on `transaction_line`.* A line's key is
+  `(transaction_id, product_id)`, and origin depends on `transaction_id`
+  alone. Storing it per line would be a partial-key dependency, a 2NF
+  violation. The CSV import refuses a line onto a `SEEDED` sale, so all of a
+  sale's lines share its one origin.
+- *A run's origin is a recorded fact, not a derived one.* Like
+  `customer_count`, it describes what the run read when it ran. A later CSV
+  load with backdated `occurred_at` values adds sales to an old run's window,
+  so deriving the origin at render time would describe sales the run never
+  read; ADR-0052 rejected exactly that. It is run-level, so it is not
+  repeated on `customer_segment_history`, which would copy one run fact once
+  per customer.
+- *No multivalued fact.* Origin is one value per row, so no 4NF question
+  arises.
+- *A CHECK, not a lookup table.* Two fixed values, with no attribute of their
+  own, follow the `experiment.data_origin` precedent (ADR-0019). A subset
+  table listing only the `SEEDED` rows was rejected as well: its absence
+  would silently mean `OBSERVED`, while `NOT NULL` with no default makes every
+  writer state the origin.
+
 The other analytics relations were checked by the same test. `segment_label`,
 `segment`, `campaign`, `experiment`, and `experiment_group` each store one fact
 whose attributes depend on a declared key. `segmentation_run` stores one run;
@@ -600,6 +635,7 @@ replacement; ADR-0017 fulfils that prediction with `segmentation_run` and
 | `customer_count` | `INT` | NN | default `0`; `CHECK >= 0` (`segmentation_run_customer_count_check`) | Customers this run scored |
 | `executed_by` | `UUID` | yes | FK → `app_user`, `SET NULL` | Who ran it; `NULL` for a seed or maintenance run, the same reasoning `audit_log.user_id` uses |
 | `run_at` | `TIMESTAMPTZ` | NN | default `now()` | When the run executed |
+| `data_origin` | `VARCHAR(20)` | NN | `CHECK IN ('OBSERVED','SEEDED')`, no default; `trg_segmentation_run_origin_guard` | `SEEDED` if any sale the run scored is `SEEDED`, else `OBSERVED`, recorded when the run executes (ADR-0052). `create_run` takes it from `fn_segmentation_window_origin(window_days)`; the guard refuses an `OBSERVED` run whose window holds a `SEEDED` sale (23514, `segmentation_run_origin_observed_only`). Seeded runs are `SEEDED` |
 
 #### `customer_segment_history`
 
@@ -683,6 +719,7 @@ These two are the 4NF decomposition from §2.4.
 | `channel_id` | `SMALLINT` | NN | FK → `channel`, `RESTRICT` | Through which channel |
 | `occurred_at` | `TIMESTAMPTZ` | NN | `CHECK <= clock_timestamp()` (`transaction_not_future`) | When the sale happened |
 | `total` | `NUMERIC(12,2)` | NN | `CHECK >= 0`; deferred trigger: equals the sum of its lines (RN-37, `transaction_total_matches_lines`) | Sale total |
+| `data_origin` | `VARCHAR(20)` | NN | `CHECK IN ('OBSERVED','SEEDED')`, no default | Where the sale came from (ADR-0052): `SEEDED` for the seed, `OBSERVED` for the CSV import and sales-service. The `sales` boundary refuses anything but `OBSERVED` from `svc_sales` (§4) |
 
 #### `transaction_line`
 
@@ -961,7 +998,10 @@ boundary section enforce it, both raising SQLSTATE 22023:
 - one on `transaction` refuses a prefixed identifier from any session user but
   `svc_sales`, and refuses an unprefixed one from `svc_sales`;
 - one on `transaction_line` refuses a line on a prefixed header from anyone
-  but `svc_sales`.
+  but `svc_sales`;
+- the same trigger on `transaction` refuses a row from `svc_sales` whose
+  `data_origin` is not `OBSERVED` (ADR-0052, #559): a phone sale is never
+  seeded.
 
 A CSV row can therefore never collide with a phone sale or append to one. The
 global `UNIQUE` still holds, because the two producers' identifiers can no
@@ -1036,6 +1076,7 @@ deletes any of the four.
 | `idx_transaction_customer_date` | `transaction (customer_id, occurred_at)` | A customer's purchase history; the RFM window later |
 | `idx_transaction_store_date` | `transaction (store_id, occurred_at)` | Sales by store over a period |
 | `idx_transaction_line_product` | `transaction_line (product_id)` | Units sold of one product |
+| `idx_transaction_seeded_date` | `transaction (occurred_at) WHERE data_origin = 'SEEDED'` | Whether a run's window holds a `SEEDED` sale (`fn_segmentation_window_origin`, ADR-0052); stays the seed's size however many real sales arrive |
 | `ux_customer_segment_history_open` | `customer_segment_history (customer_id) WHERE valid_to IS NULL` | A customer's current segment; also RN-20's constraint |
 | `idx_customer_segment_history_customer` | `customer_segment_history (customer_id, valid_from)` | A customer's segment history over time |
 | `idx_sales_load_rejection_load` | `sales_load_rejection (load_id)` | Rejected rows for one upload attempt |

@@ -5,7 +5,7 @@
 {% block breadcrumbs %}{{ application_name }} / Analysis / Segment history report{% endblock %}
 
 {% block content %}
-  {% from "macros/ui.html" import alert, count_label, empty_state, page_header, pagination, status_pill %}
+  {% from "macros/ui.html" import alert, count_label, empty_state, page_header, pagination, status_pill, synthetic_banner, synthetic_pill %}
   {{ page_header(
     "Segment history report",
     "Every segment assignment, filterable by run, label and period, each with why the customer got there.",
@@ -48,6 +48,7 @@
   </form>
 
   {% if report.rows %}
+    {{ synthetic_banner(report.synthetic, "Rows marked Synthetic come from, or are explained against, a run that scored demonstration data.") }}
     <section class="mq-panel mq-panel--table mq-density-compact">
       <div class="mq-table__toolbar">
         <span class="mq-table__count">{{ count_label(report.total, "row", "rows") }}</span>
@@ -69,7 +70,7 @@
               {% set entry = row.entry %}
               <tr>
                 <td class="mq-table__cell--sticky"><a class="mq-table__link" href="{{ url_for('catalog.customer_detail', customer_id=entry.assignment.customer_id) }}">{{ entry.assignment.customer_name }}</a></td>
-                <td class="mq-mono">#{{ entry.run_id }} · {{ entry.run_at.strftime("%Y-%m-%d") }} · {{ entry.method }}</td>
+                <td class="mq-mono">#{{ entry.run_id }} · {{ entry.run_at.strftime("%Y-%m-%d") }} · {{ entry.method }} {{ synthetic_pill(row.synthetic) }}</td>
                 <td>{% if entry.label_name %}{{ status_pill(entry.label_name, "info") }}{% else %}{{ status_pill("Unassigned", "neutral") }}{% endif %}</td>
                 <td class="mq-mono">{{ entry.valid_from.strftime("%Y-%m-%d") }}</td>
                 <td class="mq-mono">{% if entry.valid_to %}{{ entry.valid_to.strftime("%Y-%m-%d") }}{% else %}<span class="mq-caption">still open</span>{% endif %}</td>

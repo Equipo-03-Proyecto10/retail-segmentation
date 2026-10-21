@@ -10,7 +10,7 @@
   {{ page_header("Conversion", "A conversion links an assignment to a real sale inside the experiment's fixed window. It can be reproduced from the recorded rows.", "Experiments") }}
   {% if error %}{{ alert(error, "danger", "Not evaluated") }}{% endif %}
   <section class="mq-panel">
-    <header class="mq-panel__header"><h2 class="mq-panel__title">Experiment {{ e.experiment_id }} · {{ e.name }}</h2>{% if is_synthetic(e.data_origin) %}{{ status_pill("Synthetic", "warning") }}{% endif %}</header>
+    <header class="mq-panel__header"><h2 class="mq-panel__title">Experiment {{ e.experiment_id }} · {{ e.name }}</h2>{% if is_synthetic(e) %}{{ status_pill("Synthetic", "warning") }}{% endif %}</header>
     <div class="mq-panel__body">
       {% if e.assignments == 0 %}
         <p>Nobody is assigned yet, so there is nothing to convert.</p>

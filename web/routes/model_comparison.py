@@ -10,6 +10,9 @@ two runs' rows and the label vocabulary and nothing else. The *kind* of a run is
 metadata, and this module uses it for exactly three things: offering the page one
 run of each kind, refusing a run in the wrong slot, and naming each run on screen.
 It is never what an assignment is read through.
+
+The comparison is of two runs, so it is marked Synthetic when either is
+SEEDED (ADR-0052), and each run's panel says which.
 """
 
 from __future__ import annotations
@@ -30,6 +33,7 @@ from web.services.model_comparison import (
     flatten_parameters,
 )
 from web.services.pagination import page_count
+from web.services.provenance import runs_synthetic
 
 bp = Blueprint("model_comparison", __name__, url_prefix="/model-comparison")
 
@@ -114,6 +118,8 @@ def index() -> tuple[str, int] | str | Response:
         **{
             **context,
             "comparison": comparison,
+            "synthetic": runs_synthetic(rules, kmeans),
+            "runs_synthetic": runs_synthetic,
             "customers": listed[(page - 1) * _PER_PAGE : page * _PER_PAGE],
             "total": len(listed),
             "page": page,

@@ -109,7 +109,9 @@ def test_a_filter_combination_that_matches_nothing_is_an_empty_tuple() -> None:
 # ---------- the shift report: orchestration ----------
 
 
-def _wire_shifts(monkeypatch: pytest.MonkeyPatch, *, shifts=None, names=None) -> Mock:
+def _wire_shifts(
+    monkeypatch: pytest.MonkeyPatch, *, shifts=None, names=None, seeded=False
+) -> Mock:
     manager = Mock()
     manager.detect_shifts = Mock(
         return_value=ShiftReport(
@@ -121,6 +123,7 @@ def _wire_shifts(monkeypatch: pytest.MonkeyPatch, *, shifts=None, names=None) ->
             absences=(),
             compared=1,
             unchanged=0,
+            seeded=seeded,
         )
     )
     manager.list_customer_names = Mock(return_value=names or {"a": "Ada Lovelace"})
@@ -129,6 +132,17 @@ def _wire_shifts(monkeypatch: pytest.MonkeyPatch, *, shifts=None, names=None) ->
     monkeypatch.setattr(service, "detect_shifts", manager.detect_shifts)
     monkeypatch.setattr(service, "list_customer_names", manager.list_customer_names)
     return manager
+
+
+@pytest.mark.parametrize("seeded", [True, False])
+def test_the_shift_report_carries_whether_its_periods_hold_a_seeded_sale(
+    monkeypatch: pytest.MonkeyPatch, seeded: bool
+) -> None:
+    _wire_shifts(monkeypatch, seeded=seeded)
+
+    report = build_shift_report(MagicMock(), as_of=_NOW, window_days=90)
+
+    assert report.seeded is seeded
 
 
 def test_the_shift_report_derives_two_consecutive_periods_from_as_of_and_window(
@@ -315,6 +329,32 @@ def _wire_recommend(
     monkeypatch.setattr(service, "list_customers", manager.list_customers)
     monkeypatch.setattr(service, "recommend", manager.recommend)
     return manager
+
+
+def test_a_synthetic_result_marks_its_rows_and_the_whole_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#560: a row carries its customer's marker; the report is marked when
+    any matched row is, on whichever page it falls."""
+    customers = [
+        Customer("a", None, "Ada", None, None, 1, None),
+        Customer("b", None, "Bob", None, None, 1, None),
+    ]
+    _wire_recommend(
+        monkeypatch,
+        customers=customers,
+        results=[
+            _result(customer_id="a"),
+            _result(customer_id="b", synthetic=True),
+        ],
+    )
+
+    report = build_recommendation_report(
+        MagicMock(), as_of=_NOW, window_days=180, page_size=1
+    )
+
+    assert [row.synthetic for row in report.rows] == [False]
+    assert report.synthetic
 
 
 def test_the_recommendation_report_asks_every_customer(

@@ -687,3 +687,47 @@ def test_the_no_usual_store_message_says_one_day_in_the_singular(monkeypatch) ->
     message = recommend(MagicMock(), _ID, window_days=1).message
 
     assert "last 1 day," in message and "1 days" not in message
+
+
+# ---------- #560: what marks a recommendation Synthetic (decision 2) ----------
+
+
+def _segment(origin: str) -> SegmentState:
+    return SegmentState(
+        run_id=30,
+        label_code="LOYAL",
+        label_name="Loyal",
+        valid_from=_END,
+        valid_to=None,
+        data_origin=origin,
+    )
+
+
+@pytest.mark.parametrize(
+    ("window_seeded", "origin", "marked"),
+    [
+        (True, "OBSERVED", True),
+        (False, "SEEDED", True),
+        (False, "OBSERVED", False),
+    ],
+)
+def test_a_seeded_sale_in_the_window_or_a_seeded_label_marks_the_result(
+    monkeypatch, window_seeded, origin, marked
+) -> None:
+    _World(
+        monkeypatch,
+        _profile(window_seeded=window_seeded, current_segment=_segment(origin)),
+    )
+
+    result = recommend(MagicMock(), _ID)
+
+    assert result.status is Status.RECOMMENDED
+    assert result.synthetic is marked
+
+
+def test_a_customer_with_no_segment_is_still_marked_by_the_window(monkeypatch) -> None:
+    _World(monkeypatch, _profile(window_seeded=True, current_segment=None))
+
+    result = recommend(MagicMock(), _ID)
+
+    assert result.status is Status.NO_SEGMENT and result.synthetic

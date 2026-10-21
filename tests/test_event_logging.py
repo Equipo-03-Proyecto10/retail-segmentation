@@ -78,7 +78,7 @@ def test_segment_completion_is_logged_only_after_commit(caplog, monkeypatch):
     for name, value in {
         "score_rfm_rules": Mock(return_value=[labelled, unassigned]),
         "read_open_assignments": Mock(return_value={"a": (1, "CHAMPION")}),
-        "create_run": Mock(return_value=9),
+        "create_run": Mock(return_value=(9, "OBSERVED")),
         "close_open_assignments": Mock(),
         "insert_assignments": Mock(),
         "notify_segment_run": Mock(),

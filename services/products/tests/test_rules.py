@@ -444,3 +444,22 @@ def test_every_statement_is_parameterized() -> None:
                 assert not isinstance(
                     first, ast.JoinedStr | ast.BinOp
                 ), f"{path.name}:{node.lineno} builds SQL by string operations"
+
+
+def test_a_price_with_a_final_newline_is_refused_on_create_and_patch(client) -> None:
+    """#594: Python's `$` matches before a final newline; the contract's
+    ListPrice pattern means the whole value."""
+    response = create(client, list_price="1.00\n")
+    assert response.status_code == 422
+    assert response.get_json()["details"] == [
+        {"field": "list_price", "code": "invalid_format"}
+    ]
+    create(client)
+    response = client.patch(
+        f"/v1/products/{FIRST_TEST_ID + 1}",
+        json={"list_price": "2.00\n"},
+        headers=headers(),
+    )
+    assert response.status_code == 422
+    fetched = client.get(f"/v1/products/{FIRST_TEST_ID + 1}", headers=headers())
+    assert fetched.get_json()["list_price"] == "12.50"

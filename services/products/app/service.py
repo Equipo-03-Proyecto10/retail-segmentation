@@ -100,6 +100,24 @@ def _ids_filter() -> list[int] | None:
     return sorted(set(ids))
 
 
+def _whole_pattern_match(body: dict[str, Any], *fields: str) -> None:
+    """Refuse what the contract's patterns refuse, including a final newline.
+
+    The kit validates `pattern` with Python's `re`, where `$` also matches just
+    before a final newline, so "1.00\n" passed the ListPrice pattern (#594).
+    The contract's pattern means the whole value.
+    """
+    for field in fields:
+        value = body.get(field)
+        if isinstance(value, str) and value.endswith("\n"):
+            raise ApiError(
+                422,
+                "invalid_body",
+                "The request body violates the service schema.",
+                [{"field": field, "code": "invalid_format"}],
+            )
+
+
 def _constraint(error: psycopg.errors.Diagnostic | Any) -> str:
     return getattr(getattr(error, "diag", None), "constraint_name", None) or ""
 
@@ -227,6 +245,7 @@ def create_app() -> Flask:
     @kit.operation("createProduct")
     def create_product() -> Representation:
         body = kit.body
+        _whole_pattern_match(body, "list_price")
         try:
             with kit.db.transaction() as connection:
                 product = store.create_product(connection, body)
@@ -242,6 +261,7 @@ def create_app() -> Flask:
 
     @kit.operation("updateProduct")
     def update_product(product_id: int) -> Representation:
+        _whole_pattern_match(kit.body, "list_price")
         try:
             with kit.db.transaction() as connection:
                 product = store.update_product(connection, product_id, kit.body)

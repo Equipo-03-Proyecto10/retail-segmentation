@@ -401,3 +401,27 @@ def test_a_stale_administrator_token_cannot_transfer(
     assert (
         _scalar(owner, "SELECT user_id::text FROM app_user WHERE role_id = 1") == ADMIN
     )
+
+
+@pytest.mark.parametrize("field", ["email", "role_code"])
+def test_a_final_newline_is_refused_on_create(api: Any, field: str) -> None:
+    """#594: Python's `$` matches before a final newline; the contract's
+    patterns mean the whole value."""
+    reply = api(
+        "POST", "/v1/users", json_body=NEW_USER | {field: NEW_USER[field] + "\n"}
+    )
+    assert _code(reply) == (422, "invalid_body")
+    assert reply.get_json()["details"] == [{"field": field, "code": "invalid_format"}]
+
+
+def test_a_final_newline_in_an_edited_email_is_refused(
+    api: Any, owner: psycopg.Connection
+) -> None:
+    reply = api(
+        "PATCH", f"/v1/users/{ANALYST}", json_body={"email": "new@example.com\n"}
+    )
+    assert _code(reply) == (422, "invalid_body")
+    assert (
+        _scalar(owner, "SELECT email FROM app_user WHERE user_id = %s", ANALYST)
+        == "user14@mosaiq-demo.com"
+    )

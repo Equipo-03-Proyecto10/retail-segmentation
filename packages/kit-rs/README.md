@@ -18,13 +18,13 @@ Each service pins the annotated tag as a git dependency and commits its own
 
 ```toml
 [dependencies]
-mosaiq-kit = { git = "https://github.com/Equipo-03-Proyecto10/retail-segmentation", tag = "kit-rs/v0.1.2" }
+mosaiq-kit = { git = "https://github.com/Equipo-03-Proyecto10/retail-segmentation", tag = "kit-rs/v0.1.3" }
 ```
 
 Path dependencies on `packages/` are rejected, and the crate has no
 `[workspace]` table, so it never shares a lock file with a service. A kit
 upgrade is a service pull request with an exact new tag, a refreshed lock and
-that service's own `VERSION` bump. The current release is `kit-rs/v0.1.2`,
+that service's own `VERSION` bump. The current release is `kit-rs/v0.1.3`,
 matching this crate's version.
 
 ## Build requirement: libxml2

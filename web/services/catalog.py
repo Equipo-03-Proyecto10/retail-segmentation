@@ -183,6 +183,12 @@ CATEGORY_CYCLE = "A category cannot sit under itself or one of its own subcatego
 ROLE_CODE_IMMUTABLE = (
     "A role's code cannot change: the permission matrix is keyed by it."
 )
+ROLE_ADMIN_RESERVED = (
+    "ADMIN is the administrator's role code, and only role 1 may hold it."
+)
+ROLE_ADMIN_LOOKALIKE = (
+    "That code looks like ADMIN and would be mistaken for the administrator role."
+)
 
 
 class CatalogConflict(Exception):
@@ -236,6 +242,19 @@ def _refusal(entity: str, operation: str, error: IntegrityError) -> CatalogConfl
         and error.diag.constraint_name == "role_code_immutable"
     ):
         return CatalogConflict("code", ROLE_CODE_IMMUTABLE)
+
+    # RN-01's guards on the role table (#595): without these the refusal fell
+    # through to the general message below, which names no field.
+    if isinstance(error, CheckViolation) and error.diag.constraint_name == (
+        "role_admin_code_bound_to_reserved_id"
+    ):
+        return CatalogConflict("code", ROLE_ADMIN_RESERVED)
+
+    if (
+        isinstance(error, CheckViolation)
+        and error.diag.constraint_name == "role_admin_lookalike"
+    ):
+        return CatalogConflict("code", ROLE_ADMIN_LOOKALIKE)
 
     # Anything else the database refuses is still a refused value, so it belongs
     # on the form rather than on the error page. The wording stays general: the

@@ -257,6 +257,10 @@ def create_run(
     as one is a defect in the run that must not be written as a plausible number.
     `executed_by` is the connection setting fn_audit() reads (web/middleware/
     authz.py sets it once per request), not a Python-side actor argument.
+
+    `data_origin` (ADR-0052) is decided by the database, not passed in:
+    fn_segmentation_window_origin reads the same window the scoring read, in
+    the same transaction, and returns SEEDED if any sale in it is SEEDED.
     """
     snapshot = json.dumps(parameters, sort_keys=True, allow_nan=False)
     with connection.cursor() as cursor:
@@ -264,14 +268,15 @@ def create_run(
             """
             INSERT INTO segmentation_run
                 (method, window_days, parameters, customer_count, executed_by,
-                 run_at)
+                 run_at, data_origin)
             VALUES (
                 %s, %s, %s::jsonb, %s,
-                NULLIF(current_setting('mosaiq.user_id', true), '')::uuid, %s
+                NULLIF(current_setting('mosaiq.user_id', true), '')::uuid, %s,
+                fn_segmentation_window_origin(%s)
             )
             RETURNING run_id
             """,
-            (method, window_days, snapshot, customer_count, run_at),
+            (method, window_days, snapshot, customer_count, run_at, window_days),
         )
         return cursor.fetchone()[0]
 
@@ -569,6 +574,20 @@ class SegmentationRun:
     executed_by: UUID | None
     executed_by_name: str | None
     run_at: datetime
+    # ADR-0052: SEEDED if the run scored any SEEDED sale, else OBSERVED.
+    data_origin: str
+
+
+# The select list every SegmentationRun reader shares, in the dataclass's
+# field order, so a reader cannot drop or reorder a column (#559). It expects
+# segmentation_run AS r LEFT JOIN app_user AS u.
+RUN_COLUMNS = """
+            SELECT r.run_id, r.method, r.window_days, r.parameters,
+                   r.customer_count, r.executed_by, u.name, r.run_at,
+                   r.data_origin
+            FROM segmentation_run AS r
+            LEFT JOIN app_user AS u ON u.user_id = r.executed_by
+"""
 
 
 # Each filter is optional: a NULL parameter switches its condition off, so one
@@ -579,19 +598,10 @@ _RUN_FILTER = """
               AND (%(search)s::text IS NULL OR u.name ILIKE %(search)s)
 """
 
-_LIST_RUNS = (
-    """
-            SELECT r.run_id, r.method, r.window_days, r.parameters,
-                   r.customer_count, r.executed_by, u.name, r.run_at
-            FROM segmentation_run AS r
-            LEFT JOIN app_user AS u ON u.user_id = r.executed_by
-"""
-    + _RUN_FILTER
-    + """
+_LIST_RUNS = RUN_COLUMNS + _RUN_FILTER + """
             ORDER BY r.run_at DESC, r.run_id DESC
             LIMIT %(limit)s OFFSET %(offset)s
 """
-)
 
 _COUNT_RUNS = """
             SELECT count(*)
@@ -629,19 +639,15 @@ def list_runs(
     return [SegmentationRun(*row) for row in rows], total
 
 
+_GET_RUN = RUN_COLUMNS + """
+            WHERE r.run_id = %s
+"""
+
+
 def get_run(connection: Connection[Any], run_id: int) -> SegmentationRun | None:
     """Return one run by id, or None if it does not exist."""
     with connection.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT r.run_id, r.method, r.window_days, r.parameters,
-                   r.customer_count, r.executed_by, u.name, r.run_at
-            FROM segmentation_run AS r
-            LEFT JOIN app_user AS u ON u.user_id = r.executed_by
-            WHERE r.run_id = %s
-            """,
-            (run_id,),
-        )
+        cursor.execute(_GET_RUN, (run_id,))
         row = cursor.fetchone()
 
     return SegmentationRun(*row) if row else None

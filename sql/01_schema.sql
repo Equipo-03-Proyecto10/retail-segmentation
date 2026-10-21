@@ -276,7 +276,15 @@ CREATE TABLE segmentation_run (
     parameters     JSONB NOT NULL DEFAULT '{}'::jsonb,
     customer_count INT NOT NULL DEFAULT 0,
     executed_by    UUID REFERENCES app_user(user_id) ON DELETE SET NULL,
-    run_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+    run_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- ADR-0052: SEEDED if any sale the run scored is SEEDED, else OBSERVED,
+    -- recorded when the run executes. A later backdated CSV load adds sales
+    -- to an old window, so it is a historical fact, not derivable afterwards.
+    -- No default: every writer states it. create_run takes it from
+    -- fn_segmentation_window_origin, and trg_segmentation_run_origin_guard
+    -- (DATA ORIGIN below) refuses an OBSERVED run over a SEEDED sale. Last
+    -- column, so an instance that gained it by ADD COLUMN dumps the same.
+    data_origin    VARCHAR(20) NOT NULL CHECK (data_origin IN ('OBSERVED', 'SEEDED'))
 );
 
 -- A run is a record of what was computed and how, and the application only
@@ -417,14 +425,23 @@ CREATE TABLE transaction (
     -- sole producer (ADR-0020); docs/data-model.md §4 records what a later
     -- multi-producer contract would need to change here. The prefix
     -- `svc-sales:` is reserved for sales-service (ADR-0039): the guards in
-    -- BOUNDARY sales refuse it from any other session user, and refuse
-    -- anything else from svc_sales.
+    -- BOUNDARY sales refuse it from any other session user, refuse
+    -- anything else from svc_sales, and refuse a svc_sales row whose
+    -- data_origin is not OBSERVED (ADR-0052).
     source_transaction_id  VARCHAR(64) NOT NULL UNIQUE,
     customer_id            UUID NOT NULL REFERENCES customer(customer_id) ON DELETE RESTRICT,
     store_id               SMALLINT NOT NULL REFERENCES store(store_id) ON DELETE RESTRICT,
     channel_id             SMALLINT NOT NULL REFERENCES channel(channel_id) ON DELETE RESTRICT,
     occurred_at            TIMESTAMPTZ NOT NULL,
-    total                  NUMERIC(12,2) NOT NULL CHECK (total >= 0)
+    total                  NUMERIC(12,2) NOT NULL CHECK (total >= 0),
+    -- ADR-0052: where the sale came from. The seed writes SEEDED; the CSV
+    -- import (ADR-0020) and sales-service (ADR-0039) write OBSERVED, and the
+    -- guard in BOUNDARY sales refuses anything else from svc_sales. No
+    -- default, so a writer that forgets it fails rather than guessing. On the
+    -- header, not the lines: a line belongs to one sale, and the CSV import
+    -- refuses a line onto a SEEDED sale. Last column, so an instance that
+    -- gained it by ADD COLUMN dumps the same.
+    data_origin            VARCHAR(20) NOT NULL CHECK (data_origin IN ('OBSERVED', 'SEEDED'))
 );
 
 CREATE TABLE transaction_line (
@@ -434,6 +451,82 @@ CREATE TABLE transaction_line (
     unit_price     NUMERIC(10,2) NOT NULL CHECK (unit_price >= 0),
     PRIMARY KEY (transaction_id, product_id)
 );
+
+-- BEGIN DATA ORIGIN COLUMNS (ADR-0052, #559)
+-- A no-op on a clean build, where CREATE TABLE above already has both
+-- columns. On a database loaded before #559 it adds them nullable, so the
+-- operator's backfill (deploy/README.md) can fill them before the block
+-- below makes them NOT NULL. DDL stays in this file (AGENTS.md, ADR-0046).
+ALTER TABLE transaction ADD COLUMN IF NOT EXISTS data_origin VARCHAR(20);
+ALTER TABLE segmentation_run ADD COLUMN IF NOT EXISTS data_origin VARCHAR(20);
+-- END DATA ORIGIN COLUMNS
+
+-- BEGIN DATA ORIGIN (ADR-0052, #559)
+-- Re-runnable, so an operator can apply it to a database that gained the
+-- columns from the block above (deploy/README.md). There, SET NOT NULL
+-- refuses to finish while any row is left unfilled, and each CHECK is added
+-- under the name CREATE TABLE gives it on a clean build, so the two dump the
+-- same (deploy/check-schema-drift.sh). On a clean build all four are no-ops.
+ALTER TABLE transaction ALTER COLUMN data_origin SET NOT NULL;
+ALTER TABLE segmentation_run ALTER COLUMN data_origin SET NOT NULL;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'public.transaction'::regclass
+      AND conname = 'transaction_data_origin_check'
+) THEN ALTER TABLE public.transaction ADD CONSTRAINT transaction_data_origin_check
+        CHECK (data_origin IN ('OBSERVED', 'SEEDED')); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'public.segmentation_run'::regclass
+      AND conname = 'segmentation_run_data_origin_check'
+) THEN ALTER TABLE public.segmentation_run ADD CONSTRAINT segmentation_run_data_origin_check
+        CHECK (data_origin IN ('OBSERVED', 'SEEDED')); END IF; END $$;
+
+-- A segmentation run records whether any sale it scored was SEEDED. The
+-- window is the one the scoring reads (web/db/segments.py): occurred_at in
+-- [now() - window_days, now()], now() being the run transaction's start, so
+-- the run's INSERT and the scoring see the same sales.
+CREATE OR REPLACE FUNCTION fn_segmentation_window_origin(window_days INT)
+RETURNS VARCHAR(20)
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT CASE WHEN EXISTS (
+        SELECT FROM public.transaction AS t
+         WHERE t.data_origin = 'SEEDED'
+           AND t.occurred_at >= now() - make_interval(days => window_days)
+           AND t.occurred_at <= now()
+    ) THEN 'SEEDED' ELSE 'OBSERVED' END::VARCHAR(20)
+$$;
+
+REVOKE EXECUTE ON FUNCTION fn_segmentation_window_origin(INT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION fn_segmentation_window_origin(INT) TO retail_app;
+
+-- The schema, not only create_run, keeps a run that read a SEEDED sale from
+-- being recorded OBSERVED. One direction only, on INSERT only: a SEEDED run
+-- over OBSERVED sales over-marks, which is the safe error, and the seed's
+-- SEEDED runs load whatever order the sales arrive in.
+CREATE OR REPLACE FUNCTION fn_segmentation_run_origin_guard()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.data_origin = 'OBSERVED' THEN
+        IF fn_segmentation_window_origin(NEW.window_days) = 'SEEDED' THEN
+            RAISE EXCEPTION 'Run over a window holding a SEEDED sale cannot be OBSERVED'
+                USING ERRCODE = '23514',
+                      CONSTRAINT = 'segmentation_run_origin_observed_only';
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER trg_segmentation_run_origin_guard
+BEFORE INSERT ON segmentation_run
+FOR EACH ROW EXECUTE FUNCTION fn_segmentation_run_origin_guard();
+
+-- Serves fn_segmentation_window_origin: SEEDED sales are a small, fixed set,
+-- so the partial index stays small however many OBSERVED sales arrive.
+CREATE INDEX IF NOT EXISTS idx_transaction_seeded_date
+    ON transaction (occurred_at) WHERE data_origin = 'SEEDED';
+-- END DATA ORIGIN
 
 -- ---------- SALES CSV IMPORT (F8-01, #334) ----------
 --
@@ -953,8 +1046,10 @@ FOR EACH ROW EXECUTE FUNCTION fn_audit('history_id');
 -- sale. Both guards are SECURITY INVOKER: they read session_user, the role
 -- that connected, which SET ROLE cannot change. SQLSTATE 22023 is a DataError
 -- that ingest_row already reports as a malformed row, so the web is unchanged.
--- sales-service's own story (F14-18) extends this section and does not
--- re-create these guards.
+-- The transaction guard also requires data_origin = 'OBSERVED' from svc_sales
+-- (ADR-0052, #559): a phone sale is never seeded, and a 22023 from that
+-- check is a sales-service defect. sales-service's own story (F14-18) extends
+-- this section and does not re-create these guards.
 
 CREATE OR REPLACE FUNCTION fn_sales_namespace_guard_transaction() RETURNS trigger
 LANGUAGE plpgsql
@@ -965,6 +1060,10 @@ BEGIN
     IF (NEW.source_transaction_id LIKE 'svc-sales:%')
        IS DISTINCT FROM (session_user = 'svc_sales') THEN
         RAISE EXCEPTION 'source_transaction_id is outside the namespace of %', session_user
+            USING ERRCODE = '22023';
+    END IF;
+    IF session_user = 'svc_sales' AND NEW.data_origin IS DISTINCT FROM 'OBSERVED' THEN
+        RAISE EXCEPTION 'svc_sales records OBSERVED sales only (ADR-0052)'
             USING ERRCODE = '22023';
     END IF;
     RETURN NEW;
@@ -1727,12 +1826,13 @@ BEGIN
     -- already reports as a malformed row; any other outcome fails.
     BEGIN
         INSERT INTO public.transaction
-            (source_transaction_id, customer_id, store_id, channel_id, occurred_at, total)
+            (source_transaction_id, customer_id, store_id, channel_id, occurred_at, total,
+             data_origin)
         SELECT 'svc-sales:00000000-0000-0000-0000-000000000000',
                (SELECT customer_id FROM public.customer ORDER BY customer_id LIMIT 1),
                (SELECT store_id FROM public.store ORDER BY store_id LIMIT 1),
                (SELECT channel_id FROM public.channel ORDER BY channel_id LIMIT 1),
-               now(), 0;
+               now(), 0, 'OBSERVED';
         RAISE EXCEPTION 'FAIL: retail_app wrote into the svc-sales: namespace';
     EXCEPTION WHEN invalid_parameter_value THEN
         RAISE NOTICE 'PASS: svc-sales: namespace refused (SQLSTATE 22023)';

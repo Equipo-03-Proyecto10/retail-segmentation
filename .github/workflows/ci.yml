@@ -235,13 +235,21 @@ jobs:
           SELECT 'ADR-0053 experiment measured on a metric other than CONVERSION', e.experiment_id
           FROM experiment AS e
           WHERE e.target_metric <> 'CONVERSION';
+
+          SELECT 'ADR-0052 seeded sale not marked SEEDED', t.transaction_id, t.data_origin
+          FROM transaction AS t
+          WHERE t.data_origin <> 'SEEDED';
+
+          SELECT 'ADR-0052 seeded run not marked SEEDED', r.run_id, r.data_origin
+          FROM segmentation_run AS r
+          WHERE r.data_origin <> 'SEEDED';
           SQL
           )"
           if [ -n "$violations" ]; then
             printf '%s\n' "$violations"
             exit 1
           fi
-          echo "Seed satisfies ADR-0017, ADR-0018, ADR-0019, ADR-0020 and ADR-0053."
+          echo "Seed satisfies ADR-0017, ADR-0018, ADR-0019, ADR-0020, ADR-0052 and ADR-0053."
 
       - name: Application role can write data but cannot drop a table
         env:

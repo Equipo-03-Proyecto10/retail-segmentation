@@ -194,7 +194,7 @@ The design accepts a small number of deliberate deviations from the strict readi
 
 - **What:** Phone sales and CSV rows both write `transaction`, and share the unique `source_transaction_id`. Phone sales use the prefix `svc-sales:`.
 - **Why it is acceptable:** A single unique column lets the web's lookup by source id keep working, and makes phone sales idempotent in PostgreSQL alone.
-- **Guard:** Two BEFORE INSERT triggers refuse the prefix unless the session user is `svc_sales`, and refuse lines on a namespace header. A CSV row that names the prefix is rejected as a malformed row, with no web change.
+- **Guard:** Two BEFORE INSERT triggers refuse the prefix unless the session user is `svc_sales`, and refuse lines on a namespace header. The `transaction` trigger also refuses a row from `svc_sales` whose `data_origin` is not `OBSERVED` (ADR-0052, #559), so the header INSERT must name the column and bind `OBSERVED`; that 22023 is a service defect, not a client error. A CSV row that names the prefix is rejected as a malformed row, with no web change.
 - **Services:** [sales](./sales.md)
 - **Decided in:** [ADR-0039](../adr/0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) (The reserved namespace)
 

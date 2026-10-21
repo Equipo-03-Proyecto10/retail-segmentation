@@ -76,6 +76,7 @@ def _run(run_id: int, method: str = "RFM_RULES", **overrides) -> SegmentationRun
         executed_by=None,
         executed_by_name=None,
         run_at=_WHEN,
+        data_origin="SEEDED",
     )
     return SegmentationRun(**{**defaults, **overrides})
 

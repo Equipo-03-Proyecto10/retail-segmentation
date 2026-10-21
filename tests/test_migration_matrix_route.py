@@ -126,7 +126,7 @@ def _run(run_id: int, day: int):
     from web.db.segments import SegmentationRun
 
     return SegmentationRun(
-        run_id, "RFM_RULES", 90, {}, 30, None, None, datetime(2026, 1, day)
+        run_id, "RFM_RULES", 90, {}, 30, None, None, datetime(2026, 1, day), "SEEDED"
     )
 
 

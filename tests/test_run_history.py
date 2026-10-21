@@ -54,6 +54,7 @@ def _run(**overrides) -> SegmentationRun:
         executed_by="11111111-1111-1111-1111-000000000001",
         executed_by_name="MOSAIQ Administrator",
         run_at=datetime(2026, 9, 24, 0, 0, 0),
+        data_origin="SEEDED",
     )
     return SegmentationRun(**{**defaults, **overrides})
 

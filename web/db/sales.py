@@ -18,6 +18,7 @@ class TransactionHeader:
     store_id: int
     channel_id: int
     occurred_at: datetime
+    data_origin: str
 
 
 @dataclass(frozen=True)
@@ -36,7 +37,7 @@ def get_transaction_by_source_id(
         cursor.execute(
             """
             SELECT transaction_id, source_transaction_id, customer_id,
-                   store_id, channel_id, occurred_at
+                   store_id, channel_id, occurred_at, data_origin
             FROM transaction
             WHERE source_transaction_id = %s
             FOR UPDATE
@@ -53,6 +54,7 @@ def get_transaction_by_source_id(
         store_id,
         channel_id,
         occurred_at,
+        data_origin,
     ) = row
     # customer_id comes back as uuid.UUID (psycopg's default loader for the
     # UUID column type), not str; normalizing here keeps this dataclass's
@@ -65,6 +67,7 @@ def get_transaction_by_source_id(
         store_id=store_id,
         channel_id=channel_id,
         occurred_at=occurred_at,
+        data_origin=data_origin,
     )
 
 
@@ -104,19 +107,30 @@ def insert_transaction(
     store_id: int,
     channel_id: int,
     occurred_at: datetime,
+    data_origin: str,
 ) -> int:
     """Insert a new transaction header with total 0; the first line's insert
-    and the immediate recompute bring it to the correct value before commit."""
+    and the immediate recompute bring it to the correct value before commit.
+
+    `data_origin` is ADR-0052's provenance, OBSERVED or SEEDED, and has no
+    default in the schema: the caller states it."""
     with connection.cursor() as cursor:
         cursor.execute(
             """
             INSERT INTO transaction
                 (source_transaction_id, customer_id, store_id, channel_id,
-                 occurred_at, total)
-            VALUES (%s, %s, %s, %s, %s, 0)
+                 occurred_at, total, data_origin)
+            VALUES (%s, %s, %s, %s, %s, 0, %s)
             RETURNING transaction_id
             """,
-            (source_transaction_id, customer_id, store_id, channel_id, occurred_at),
+            (
+                source_transaction_id,
+                customer_id,
+                store_id,
+                channel_id,
+                occurred_at,
+                data_origin,
+            ),
         )
         return cursor.fetchone()[0]
 

@@ -856,12 +856,19 @@ from all committed lines, so two concurrent loads cannot overwrite it with a
 subtotal. A segmentation run also closes its sales window at the database's
 current timestamp; a future-dated row can therefore never improve recency.
 
+Every accepted row records an `OBSERVED` sale (ADR-0052). A row whose source
+transaction id names a `SEEDED` sale is refused as
+`duplicate: <id> is a seeded sale`, even when it repeats that sale's header
+exactly, so a sale's lines always share its one origin.
+
 **Enforced:** application — `web/services/ingestion.py` and
 `web/services/sales_csv.py`; parameterized reads in `web/db/sales.py`; the
 header lock in `get_transaction_by_source_id`; and the upper bound in
-`web/db/segments.py`. **Verified** — by
+`web/db/segments.py`. Database — `transaction.data_origin` is `NOT NULL` with
+no default and `CHECK IN ('OBSERVED','SEEDED')`. **Verified** — by
 `tests/test_ingestion_service.py`, `tests/test_sales_csv.py`,
-`tests/test_sales_db.py` and `tests/test_segments_pipeline_db.py`. · #355 · #356
+`tests/test_sales_db.py`, `tests/test_segments_pipeline_db.py` and
+`tests/test_data_origin_postgres.py`. · #355 · #356 · #559
 
 ## Consumption profile
 

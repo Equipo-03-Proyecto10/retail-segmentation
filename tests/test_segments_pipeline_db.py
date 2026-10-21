@@ -181,6 +181,22 @@ def test_the_run_row_carries_method_window_parameters_count_and_the_actor() -> N
     assert "%s::jsonb" in statement
 
 
+def test_the_run_takes_its_data_origin_from_the_window_it_scored() -> None:
+    """ADR-0052: the database decides the origin from the run's own window,
+    bound as a parameter, so the caller can neither forget nor forge it."""
+    connection = MagicMock()
+    cursor = _cursor(connection)
+    cursor.fetchone.return_value = (11,)
+
+    create_run(connection, "RFM_RULES", 45, {}, 30, run_at=_AT)
+
+    statement, parameters = cursor.execute.call_args.args
+    assert "data_origin" in statement
+    assert "fn_segmentation_window_origin(%s)" in statement
+    assert statement.count("%s") == len(parameters) == 6
+    assert parameters[-1] == 45
+
+
 def test_the_parameters_are_stored_in_a_stable_key_order() -> None:
     connection = MagicMock()
     _cursor(connection).fetchone.return_value = (1,)

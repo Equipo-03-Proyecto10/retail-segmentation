@@ -50,6 +50,7 @@ def _run(run_id: int, run_at: datetime) -> SegmentationRun:
         executed_by=None,
         executed_by_name=None,
         run_at=run_at,
+        data_origin="SEEDED",
     )
 
 

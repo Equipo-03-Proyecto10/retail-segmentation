@@ -26,6 +26,7 @@ from .types import ApiError, Collection, NoContent, Page, Representation
 
 LOGGER = logging.getLogger(__name__)
 _CORRELATION = re.compile(r"^[0-9A-Za-z-]{1,64}$")
+_MAX_PAGE = 4_294_967_295
 _ResponseValue = Representation | Collection | Page | NoContent
 _Handler = TypeVar("_Handler", bound=Callable[..., _ResponseValue])
 
@@ -301,16 +302,24 @@ class Kit:
     def _pagination() -> tuple[int, int]:
         details = []
         values: dict[str, int] = {}
+        # A page above 2^32 - 1 is out of range, as in kit-rs, so the offset
+        # always fits PostgreSQL's bigint.
         for name, default, minimum, maximum in (
-            ("page", 1, 1, None),
+            ("page", 1, 1, _MAX_PAGE),
             ("size", 20, 1, 100),
         ):
             raw = request.args.get(name)
             if raw is not None and re.fullmatch(r"[0-9]+", raw) is None:
                 details.append({"field": name, "code": "invalid_type"})
                 continue
-            value = default if raw is None else int(raw)
-            if value < minimum or (maximum is not None and value > maximum):
+            # Too many digits is out of range before int(), which refuses
+            # strings past its own digit limit.
+            digits = None if raw is None else raw.lstrip("0") or "0"
+            if digits is not None and len(digits) > len(str(maximum)):
+                details.append({"field": name, "code": "out_of_range"})
+                continue
+            value = default if digits is None else int(digits)
+            if not minimum <= value <= maximum:
                 details.append({"field": name, "code": "out_of_range"})
             values[name] = value
         if details:

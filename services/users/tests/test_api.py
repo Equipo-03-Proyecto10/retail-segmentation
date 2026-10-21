@@ -96,6 +96,65 @@ def test_a_token_for_an_unknown_user_is_user_not_found(api: Any) -> None:
     assert _code(api("GET", f"/v1/users/{stranger}")) == (404, "user_not_found")
 
 
+@pytest.mark.parametrize("subject", ["not-a-uuid", "", "1234", "x" * 200])
+def test_a_signed_subject_that_is_no_uuid_is_user_not_found(
+    api: Any, subject: str
+) -> None:
+    # A validly signed token whose sub names no app_user.user_id (#581).
+    reply = api("GET", "/v1/users/me", as_user=(subject, "ANALYST"))
+    assert _code(reply) == (404, "user_not_found")
+
+
+@pytest.mark.parametrize("query", ["q=%00", "q=a%00b", "q=USER14%00"])
+def test_a_nul_in_the_text_filter_is_refused(api: Any, query: str) -> None:
+    # PostgreSQL text cannot hold U+0000; the filter never reaches it (#580).
+    reply = api("GET", "/v1/users?" + query)
+    assert _code(reply) == (422, "invalid_pagination")
+    assert reply.get_json()["details"] == [{"field": "q", "code": "invalid_format"}]
+
+
+# Refused by mosaiq-kit 0.1.3 for every Python service (#580, #581, #582).
+KIT_0_1_3 = pytest.mark.xfail(
+    reason="mosaiq-kit 0.1.3 answers these; the kit bump removes this mark",
+    strict=True,
+)
+
+
+@KIT_0_1_3
+def test_a_page_beyond_the_kit_bound_is_invalid_pagination(api: Any) -> None:
+    reply = api("GET", "/v1/users?page=99999999999999999999")
+    assert _code(reply) == (422, "invalid_pagination")
+
+
+@KIT_0_1_3
+@pytest.mark.parametrize(
+    "field,value", [("name", "a\x00b"), ("email", "a\x00b@example.com")]
+)
+def test_a_nul_in_a_body_field_is_invalid_body(
+    api: Any, field: str, value: str
+) -> None:
+    created = api("POST", "/v1/users", json_body={**NEW_USER, field: value})
+    assert _code(created) == (422, "invalid_body")
+    updated = api("PATCH", f"/v1/users/{ANALYST}", json_body={field: value})
+    assert _code(updated) == (422, "invalid_body")
+
+
+@KIT_0_1_3
+def test_an_xml_comment_in_the_body_is_skipped(api: Any) -> None:
+    namespace = "https://mosaiq.maxthecoder.online/xml/users/v1"
+    reply = api(
+        "PATCH",
+        f"/v1/users/{ANALYST}",
+        data=(
+            f'<UpdateUserRequest xmlns="{namespace}"><!--c--><?pi x?>'
+            "<name>Re<!--c-->named</name></UpdateUserRequest>"
+        ),
+        headers={"Content-Type": "application/xml"},
+    )
+    assert reply.status_code == 200, reply.data
+    assert reply.get_json()["name"] == "Renamed"
+
+
 def test_roles_are_the_seven_codes_and_one_can_be_read(api: Any) -> None:
     body = api("GET", "/v1/roles").get_json()
     assert [role["role_code"] for role in body["roles"]][0] == "ADMIN"

@@ -43,6 +43,8 @@ PARENT_FKEY = "category_parent_category_id_fkey"
 PRODUCT_FKEY = "product_category_id_fkey"
 INTEREST_GUARD = "category_has_customer_interest"
 CYCLE_CHECKS = ("category_not_own_parent", "category_no_cycle")
+CATEGORY_ID_MAX = 32767
+INT32_MIN, INT32_MAX = -(2**31), 2**31 - 1
 
 
 def not_found() -> ApiError:
@@ -113,7 +115,7 @@ def parent_filter() -> int | None:
     if raw is None:
         return None
     try:
-        return int(raw)
+        value = int(raw)
     except ValueError:
         raise ApiError(
             422,
@@ -121,6 +123,32 @@ def parent_filter() -> int | None:
             "parent_id must be an integer.",
             [{"field": "parent_id", "code": "invalid_type"}],
         ) from None
+    # The contract types parent_id as int32. Inside that range an id no
+    # category can have simply matches nothing: an empty page.
+    if not INT32_MIN <= value <= INT32_MAX:
+        raise ApiError(
+            422,
+            "invalid_pagination",
+            "parent_id is outside the int32 range.",
+            [{"field": "parent_id", "code": "out_of_range"}],
+        )
+    return value
+
+
+def require_storable_parent(parent: int | None) -> None:
+    """A parent id beyond category_id's range names no category.
+
+    category_id is a smallint from 1 to 32767; a larger or smaller parent would
+    reach PostgreSQL as an out-of-range value instead of a foreign-key miss.
+    """
+
+    if parent is not None and not 1 <= parent <= CATEGORY_ID_MAX:
+        raise ApiError(
+            422,
+            "unknown_parent_category",
+            "The parent category does not exist.",
+            [{"field": "parent_category_id", "code": "unknown"}],
+        )
 
 
 def start_background(kit: Kit, cache: TreeCache) -> tuple[OutboxRelay, StreamConsumer]:
@@ -223,8 +251,8 @@ def create_app() -> Flask:
             f"list:{parent}",
             sql.SQL(
                 "SELECT {} FROM public.category"
-                " WHERE (%(parent)s::smallint IS NULL"
-                " OR parent_category_id = %(parent)s::smallint)"
+                " WHERE (%(parent)s::integer IS NULL"
+                " OR parent_category_id = %(parent)s::integer)"
             ).format(COLUMNS),
             {"parent": parent},
         )
@@ -266,6 +294,7 @@ def create_app() -> Flask:
     @kit.operation("createCategory")
     def create_category() -> Representation:
         body = kit.body
+        require_storable_parent(body.get("parent_category_id"))
         try:
             row = write(
                 sql.SQL(
@@ -300,6 +329,7 @@ def create_app() -> Flask:
     @kit.operation("updateCategory")
     def update_category(category_id: int) -> Representation:
         body = kit.body
+        require_storable_parent(body.get("parent_category_id"))
         row = write(
             sql.SQL(
                 "UPDATE public.category SET"

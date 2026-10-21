@@ -46,6 +46,24 @@ def like_pattern(text: str) -> str:
     return "%" + escaped + "%"
 
 
+def text_filter(name: str) -> str | None:
+    """A text query parameter; an empty one filters nothing.
+
+    PostgreSQL text cannot hold U+0000, so a filter containing it is refused
+    before it reaches the driver.
+    """
+
+    value = request.args.get(name) or None
+    if value is not None and "\x00" in value:
+        raise ApiError(
+            422,
+            "invalid_pagination",
+            "A query value is outside its allowed range.",
+            [{"field": name, "code": "invalid_format"}],
+        )
+    return value
+
+
 def customer_json(row: tuple[Any, ...]) -> dict[str, Any]:
     return {
         "customer_id": str(row[0]),
@@ -114,8 +132,8 @@ def create_app() -> Flask:
 
     @kit.operation("searchCustomers")
     def search_customers() -> Page:
-        q = request.args.get("q") or None
-        email = request.args.get("email") or None
+        q = text_filter("q")
+        email = text_filter("email")
         pattern = like_pattern(q) if q is not None else None
         offset = (kit.page - 1) * kit.size
         # Fixed statements; the filters arrive only as bind parameters. LIKE

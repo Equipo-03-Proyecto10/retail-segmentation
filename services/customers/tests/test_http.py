@@ -111,6 +111,28 @@ def test_xml_round_trip_is_valid_against_the_xsd(client, manager, unique):
     assert duplicate.mimetype == "application/xml"
 
 
+def test_a_blank_name_is_refused_in_xml(client, manager, unique):
+    request = f"""<?xml version="1.0" encoding="UTF-8"?>
+<RegisterCustomerRequest xmlns="{NAMESPACE}">
+  <name>   </name>
+  <email>{unique}@example.com</email>
+  <phone>555</phone>
+  <registration_channel_id>3</registration_channel_id>
+</RegisterCustomerRequest>"""
+    headers = {
+        **manager,
+        "Content-Type": "application/xml",
+        "Accept": "application/xml",
+    }
+    response = client.post("/v1/customers", data=request, headers=headers)
+    assert response.status_code == 422, response.data
+    assert response.mimetype == "application/xml"
+    error = etree.fromstring(response.data)
+    common = "{https://mosaiq.maxthecoder.online/xml/common/v1}"
+    assert error.findtext(common + "code") == "invalid_body"
+    assert error.findtext(f"{common}details/{common}field") == "name"
+
+
 def test_a_doctype_body_is_refused_as_malformed(client, manager):
     request = (
         '<?xml version="1.0"?><!DOCTYPE x [<!ENTITY e "v">]>'

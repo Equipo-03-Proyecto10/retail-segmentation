@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.5 - 2026-10-21
+
+- Read an XML request member that is a required list, and has no item
+  elements, as `[]`, as kit-rs 0.1.3 does. XML cannot write an empty list any
+  other way (#475).
+
 ## 0.1.4 - 2026-10-21
 
 - Read an XML request member that is required and nullable in the OpenAPI, and

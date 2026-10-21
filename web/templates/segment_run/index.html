@@ -5,7 +5,7 @@
 {% block breadcrumbs %}{{ application_name }} / Analysis / Segment run{% endblock %}
 
 {% block content %}
-  {% from "macros/ui.html" import alert, page_header %}
+  {% from "macros/ui.html" import alert, page_header, synthetic_banner, synthetic_pill %}
   {{ page_header(
     "Segment run",
     "Score customer recency, frequency and spend over a recorded-sales window, then match each result against the current segment rules or K-means.",
@@ -69,6 +69,7 @@
   </section>
 
   {% if result %}
+    {{ synthetic_banner(result.synthetic, "The window this run scored holds demonstration sales, so the run is recorded SEEDED and its results are Synthetic.") }}
     <div class="mq-grid mq-grid--3">
       <article class="mq-metric"><span class="mq-metric__label">Customers processed</span><span class="mq-metric__value">{{ "{:,}".format(result.processed) }}</span><div class="mq-metric__footer"><span>{{ result.window_days }}-day window · {{ result.method }}</span></div></article>
       <article class="mq-metric"><span class="mq-metric__label">Segments assigned</span><span class="mq-metric__value">{{ "{:,}".format(result.assigned) }}</span><div class="mq-metric__footer"><span>Current assignment</span></div></article>
@@ -78,7 +79,7 @@
     </div>
 
     <section class="mq-panel">
-      <header class="mq-panel__header"><h2 class="mq-panel__title">Result details</h2></header>
+      <header class="mq-panel__header"><h2 class="mq-panel__title">Result details</h2>{{ synthetic_pill(result.synthetic) }}</header>
       <div class="mq-panel__body">
         <dl class="mq-description-list">
           <dt>Method</dt><dd>{{ result.method }}</dd>

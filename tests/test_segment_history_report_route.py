@@ -120,7 +120,7 @@ def _row(**overrides) -> ReportRow:
         ),
     )
     explanation = overrides.pop("explanation", _explanation())
-    return ReportRow(entry=entry, explanation=explanation)
+    return ReportRow(entry=entry, explanation=explanation, **overrides)
 
 
 def _report(**overrides) -> ReportPage:
@@ -391,3 +391,44 @@ def test_names_are_escaped(app, monkeypatch) -> None:
 
     assert "<script>alert(1)</script>" not in body
     assert "&lt;script&gt;" in body
+
+
+# ---------- #560: a row is Synthetic by its run or the run it is explained against ----
+
+
+def _entry_of(origin: str) -> HistoryEntry:
+    return HistoryEntry(
+        history_id=2,
+        run_id=31,
+        run_at=_WHEN,
+        method="RFM_RULES",
+        window_days=180,
+        valid_from=_WHEN,
+        valid_to=None,
+        label_name="Loyal",
+        assignment=_assignment(),
+        data_origin=origin,
+    )
+
+
+@pytest.mark.parametrize(
+    ("origin", "previous", "explained", "marked"),
+    [
+        ("SEEDED", None, False, True),
+        ("OBSERVED", "SEEDED", True, True),
+        ("OBSERVED", "OBSERVED", True, False),
+        ("OBSERVED", None, False, False),
+    ],
+)
+def test_a_row_is_synthetic_by_its_run_or_the_previous_run_it_explains(
+    app, monkeypatch, origin, previous, explained, marked
+) -> None:
+    row = _row(
+        entry=_entry_of(origin),
+        explanation=_explanation() if explained else None,
+        previous_data_origin=previous,
+    )
+
+    body = _body(_open(app, monkeypatch, _report(rows=(row,)))[0])
+
+    assert ("Synthetic" in body) is marked

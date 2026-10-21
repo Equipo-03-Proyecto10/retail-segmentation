@@ -248,8 +248,9 @@ def create_run(
     customer_count: int,
     *,
     run_at: datetime,
-) -> int:
-    """Insert the run row, recorded at `run_at`, and return its id.
+) -> tuple[int, str]:
+    """Insert the run row, recorded at `run_at`, and return its id and the
+    data origin the database recorded for it.
 
     `parameters` is ADR-0017's snapshot of what produced the run. It is stored
     with its keys sorted so the same parameters are always the same text, and
@@ -260,7 +261,9 @@ def create_run(
 
     `data_origin` (ADR-0052) is decided by the database, not passed in:
     fn_segmentation_window_origin reads the same window the scoring read, in
-    the same transaction, and returns SEEDED if any sale in it is SEEDED.
+    the same transaction, and returns SEEDED if any sale in it is SEEDED. It
+    is returned with the id so the run's own result page can be marked
+    Synthetic without reading the row back (#560).
     """
     snapshot = json.dumps(parameters, sort_keys=True, allow_nan=False)
     with connection.cursor() as cursor:
@@ -274,11 +277,12 @@ def create_run(
                 NULLIF(current_setting('mosaiq.user_id', true), '')::uuid, %s,
                 fn_segmentation_window_origin(%s)
             )
-            RETURNING run_id
+            RETURNING run_id, data_origin
             """,
             (method, window_days, snapshot, customer_count, run_at, window_days),
         )
-        return cursor.fetchone()[0]
+        run_id, data_origin = cursor.fetchone()
+        return run_id, data_origin
 
 
 def read_open_assignments(

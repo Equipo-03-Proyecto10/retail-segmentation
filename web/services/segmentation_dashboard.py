@@ -65,6 +65,7 @@ from web.db.segments import SegmentationRun, get_label_ordinals, get_run, list_r
 from web.services.consumption_profile import UnknownCustomer
 from web.services.experiment_uplift import SYNTHETIC_LABEL
 from web.services.experiments import is_synthetic
+from web.services.provenance import runs_synthetic
 from web.services.recommendations import recommend
 from web.services.segment_migration import (
     CustomerMigration,
@@ -259,6 +260,21 @@ class Dashboard:
     migration: MigrationFlow | None
     revenue_window_start: datetime
     revenue_window_end: datetime
+
+    @property
+    def run_synthetic(self) -> bool:
+        """Whether the run's own figures are Synthetic (ADR-0052): sizes, the
+        RFM charts, the label means and revenue by label, all from this run
+        and the window it scored."""
+        return runs_synthetic(self.run)
+
+    @property
+    def migration_synthetic(self) -> bool:
+        """Whether the migration flow is Synthetic: it compares two runs, so
+        either one marks it."""
+        return self.migration is not None and runs_synthetic(
+            self.run, self.previous_run
+        )
 
 
 def build_dashboard(connection: Any, run_id: int | None) -> Dashboard:
@@ -486,4 +502,14 @@ def build_kpis(
         active_experiments=build_active_experiments(connection, active_on, now),
         recommended=build_top_recommended(connection, ids, total),
         scored=any(m.mean_r is not None for m in means),
+    )
+
+
+def page_synthetic(dashboard: Dashboard, kpis: Kpis) -> bool:
+    """Whether any panel of the page is Synthetic, for the banner at its top.
+    Each panel is still marked on its own (ADR-0052)."""
+    return (
+        dashboard.run_synthetic
+        or dashboard.migration_synthetic
+        or any(active.label for active in kpis.active_experiments)
     )

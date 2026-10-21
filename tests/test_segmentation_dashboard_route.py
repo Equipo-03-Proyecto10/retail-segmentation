@@ -283,20 +283,67 @@ def test_the_table_behind_the_rfm_charts_includes_monetary_in_mxn(
     assert len(re.findall(r"<tr><td>Q\d</td><td>Q\d</td>", body)) == 25
 
 
-def test_the_rfm_charts_are_marked_synthetic_like_the_page(app, monkeypatch) -> None:
-    app.config["APP_CONFIG"] = Config(
-        secret_key="test",
-        environment="testing",
-        port=5000,
-        log_level="INFO",
-        session_cookie_secure=False,
-        database_url="unused-by-test",
-        data_is_synthetic=True,
-    )
+# ---------- Synthetic, from the runs behind each panel (ADR-0052) ----------
+
+_CHART_LABELS = (
+    "Customers per label",
+    "Revenue per label over the run's window",
+    "Customers by recency and frequency quintile",
+    "Mean spend per customer in MXN, by recency and frequency quintile",
+    "Customers moving between labels since the previous run",
+)
+
+
+def _observed(run_id: int) -> SegmentationRun:
+    return _run(run_id, data_origin="OBSERVED")
+
+
+def test_every_chart_of_a_seeded_run_is_marked_synthetic(app, monkeypatch) -> None:
     body = _body(_open(app, monkeypatch)[0])
 
-    assert 'aria-label="Synthetic. Mean spend per customer in MXN' in body
-    assert 'aria-label="Synthetic. Customers by recency and frequency' in body
+    for label in _CHART_LABELS:
+        assert f'aria-label="Synthetic. {label}"' in body
+    assert '<caption class="mq-visually-hidden">Synthetic. Customers and spend' in body
+    assert 'class="mq-alert mq-alert--warning" role="status"' in body
+    payload = _payload(body)
+    assert payload["synthetic"] == dict.fromkeys(
+        ("sizes", "revenue", "rfm", "rfm_spend", "migration"), True
+    )
+    assert payload["label"] == "Synthetic"
+
+
+def test_an_observed_run_against_an_observed_run_carries_no_synthetic_mark(
+    app, monkeypatch
+) -> None:
+    dashboard = _dashboard(run=_observed(31), previous_run=_observed(30))
+
+    body = _body(_open(app, monkeypatch, dashboard, runs=[_observed(31)])[0])
+
+    assert "Synthetic" not in body
+    payload = _payload(body)
+    assert not any(payload["synthetic"].values())
+    assert payload["label"] is None
+
+
+def test_the_migration_flow_is_marked_by_a_seeded_previous_run(
+    app, monkeypatch
+) -> None:
+    """A flow compares two runs, so the earlier one marks it while the run's
+    own charts stay unmarked (ADR-0052)."""
+    dashboard = _dashboard(run=_observed(31), previous_run=_run(30))
+
+    body = _body(_open(app, monkeypatch, dashboard, runs=[_observed(31)])[0])
+
+    assert (
+        'aria-label="Synthetic. Customers moving between labels since the previous'
+        in body
+    )
+    assert 'aria-label="Customers per label"' in body
+    assert 'aria-label="Customers by recency and frequency quintile"' in body
+    assert 'class="mq-alert mq-alert--warning" role="status"' in body
+    payload = _payload(body)
+    assert payload["synthetic"]["migration"] is True
+    assert payload["synthetic"]["sizes"] is False
 
 
 def test_highcharts_and_the_page_script_are_loaded_same_origin_only(
@@ -442,40 +489,6 @@ def test_the_page_never_names_a_method_or_a_cluster(app, monkeypatch) -> None:
         assert word not in body
     # "method" legitimately appears only inside a run's own recorded kind,
     # e.g. "RFM_RULES", shown as metadata about a run and never branched on.
-
-
-def test_the_synthetic_badge_shows_when_the_data_is_marked_synthetic(
-    app, monkeypatch
-) -> None:
-    app.config["APP_CONFIG"] = Config(
-        secret_key="test",
-        environment="testing",
-        port=5000,
-        log_level="INFO",
-        session_cookie_secure=False,
-        database_url="unused-by-test",
-        data_is_synthetic=True,
-    )
-    body = _body(_open(app, monkeypatch)[0])
-
-    assert "Synthetic" in body
-
-
-def test_the_synthetic_badge_is_hidden_when_the_data_is_not_marked_synthetic(
-    app, monkeypatch
-) -> None:
-    app.config["APP_CONFIG"] = Config(
-        secret_key="test",
-        environment="testing",
-        port=5000,
-        log_level="INFO",
-        session_cookie_secure=False,
-        database_url="unused-by-test",
-        data_is_synthetic=False,
-    )
-    body = _body(_open(app, monkeypatch)[0])
-
-    assert "Synthetic" not in body
 
 
 def test_the_migration_panel_explains_itself_with_no_previous_run(

@@ -264,7 +264,7 @@ def test_the_run_commits_so_the_audit_entries_survive(monkeypatch) -> None:
     for name, value in {
         "score_rfm_rules": Mock(return_value=rows),
         "read_open_assignments": Mock(return_value={}),
-        "create_run": Mock(return_value=1),
+        "create_run": Mock(return_value=(1, "OBSERVED")),
         "close_open_assignments": Mock(),
         "insert_assignments": Mock(),
         "notify_segment_run": Mock(),
@@ -275,6 +275,7 @@ def test_the_run_commits_so_the_audit_entries_survive(monkeypatch) -> None:
     result = run(connection, 180)
 
     connection.commit.assert_called_once_with()
+    assert result.data_origin == "OBSERVED" and not result.synthetic
     assert (result.processed, result.assigned, result.unmatched) == (30, 0, 30)
     assert result.seconds >= 0
 
@@ -306,3 +307,23 @@ def test_segment_run_requires_a_second_post(app, monkeypatch):
     response = client.post("/segment-run/", data={"window": "45", "confirm": "yes"})
     assert response.status_code == 200
     assert recalculate.call_args.args[1] == 45
+
+
+# ---------- #560: the result of a run over seeded sales is Synthetic ----------
+
+
+@pytest.mark.parametrize(("origin", "marked"), [("SEEDED", True), ("OBSERVED", False)])
+def test_the_result_is_marked_by_the_origin_the_run_recorded(
+    app, monkeypatch, origin, marked
+):
+    monkeypatch.setattr(
+        "web.routes.segment_run.run",
+        Mock(return_value=_result(run_id=7, data_origin=origin)),
+    )
+    client = app.test_client()
+    _sign_in(client, "ADMIN")
+
+    response = client.post("/segment-run/", data={"window": "45", "confirm": "yes"})
+
+    assert response.status_code == 200
+    assert ("Synthetic" in response.get_data(as_text=True)) is marked

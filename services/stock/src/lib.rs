@@ -13,11 +13,12 @@ use mosaiq_kit::{
     service_redis_info, ApiError, Ctx, Database, Detail, Kit, KitConfig, OutboxRelay, Page, Reply,
     Representation, Value,
 };
+use redis::aio::MultiplexedConnection;
 use tokio_postgres::{GenericClient, Row};
 
 const SERVICE: &str = "stock";
-const SUFFIX: &str = "stock";
-const STREAM: &str = "stream:stock.v1.changed";
+pub const SUFFIX: &str = "stock";
+pub const STREAM: &str = "stream:stock.v1.changed";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct StockFilters {
@@ -270,21 +271,23 @@ pub fn router(config: KitConfig, contracts: &str) -> Result<Router, Box<dyn std:
         .layer(middleware::from_fn(capture_query)))
 }
 
-async fn relay(config: KitConfig) {
-    let Some(database_url) = config.database_url else {
-        tracing::error!("DATABASE_URL is missing; the stock outbox relay is disabled");
-        return;
-    };
+async fn redis_connection(
+    url: String,
+    password: Option<String>,
+) -> redis::RedisResult<MultiplexedConnection> {
+    let info = service_redis_info(&url, SUFFIX, password)?;
+    redis::Client::open(info)?
+        .get_multiplexed_async_connection()
+        .await
+}
+
+/// The outbox relay for `stream:stock.v1.changed`. The first connection is
+/// retried every second, so the service comes up during a Redis outage; after
+/// that the kit rebuilds the connection after every outage (#579).
+pub async fn run_relay(database_url: String, redis_url: String, password: Option<String>) {
     loop {
         let result = async {
-            let info = service_redis_info(
-                &config.redis_state_url,
-                SUFFIX,
-                config.redis_password.clone(),
-            )?;
-            let connection = redis::Client::open(info)?
-                .get_multiplexed_async_connection()
-                .await?;
+            let connection = redis_connection(redis_url.clone(), password.clone()).await?;
             let relay =
                 OutboxRelay::new(&database_url, SUFFIX, [STREAM], connection).map_err(|error| {
                     redis::RedisError::from((
@@ -293,7 +296,9 @@ async fn relay(config: KitConfig) {
                         error.to_string(),
                     ))
                 })?;
-            relay.run_forever().await;
+            relay
+                .run_with_reconnect(|| redis_connection(redis_url.clone(), password.clone()))
+                .await;
             Ok::<(), redis::RedisError>(())
         }
         .await;
@@ -302,6 +307,14 @@ async fn relay(config: KitConfig) {
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
+}
+
+async fn relay(config: KitConfig) {
+    let Some(database_url) = config.database_url else {
+        tracing::error!("DATABASE_URL is missing; the stock outbox relay is disabled");
+        return;
+    };
+    run_relay(database_url, config.redis_state_url, config.redis_password).await;
 }
 
 pub async fn serve(config: KitConfig, contracts: &str) -> Result<(), Box<dyn std::error::Error>> {

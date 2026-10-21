@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: customers-service
-  version: 1.0.1
+  version: 1.1.0
   description: >-
     Registers, searches, reads and corrects customers under RN-08. Customers
     are never deleted through services; a mistaken registration is corrected
@@ -23,7 +23,9 @@ paths:
         Searches the customer directory. q is matched case-insensitively as a
         substring of name, email or phone; percent (%) and underscore (_) in q
         match themselves literally and are not SQL wildcards. email is an
-        exact match. When both filters are present, both must match.
+        exact match. When both filters are present, both must match. A filter
+        value outside its schema, or an empty email, returns 422
+        `invalid_query`, naming the parameter in `details`.
       x-mosaiq-roles: [ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
@@ -42,7 +44,6 @@ paths:
           description: Exact customer email match.
           schema:
             type: string
-            minLength: 1
             maxLength: 160
           example: ana@example.com
         - $ref: '#/components/parameters/Page'
@@ -73,7 +74,7 @@ paths:
         '406':
           $ref: '#/components/responses/NotAcceptable'
         '422':
-          $ref: '#/components/responses/InvalidPagination'
+          $ref: '#/components/responses/CustomerListValidation'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -769,8 +770,8 @@ components:
           examples:
             unsupported_media_type:
               $ref: '#/components/examples/UnsupportedMediaType'
-    InvalidPagination:
-      description: invalid_pagination — page or size is outside its allowed range.
+    CustomerListValidation:
+      description: '`invalid_pagination` or `invalid_query`.'
       headers:
         X-Correlation-ID:
           $ref: '#/components/headers/CorrelationId'
@@ -781,12 +782,16 @@ components:
           examples:
             invalid_pagination:
               $ref: '#/components/examples/InvalidPagination'
+            invalid_query:
+              externalValue: ./examples/invalid-query.json
         application/xml:
           schema:
             $ref: '#/components/schemas/Error'
           examples:
             invalid_pagination:
               $ref: '#/components/examples/InvalidPagination'
+            invalid_query:
+              externalValue: ./examples/invalid-query.xml
     RateLimited:
       description: rate_limited — the request limit was exceeded.
       headers:

@@ -214,7 +214,7 @@ fn directory_filters(query: &str) -> Result<(Option<bool>, Option<String>), ApiE
     } else {
         Err(ApiError::new(
             422,
-            "invalid_pagination",
+            "invalid_query",
             "A query parameter is outside its allowed values.",
         )
         .with_details(details))
@@ -482,6 +482,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::directory_filters;
+    use mosaiq_kit::Detail;
 
     #[test]
     fn directory_filters_decode_active_and_city() {
@@ -498,19 +499,26 @@ mod tests {
 
     #[test]
     fn directory_filters_refuse_values_outside_the_contract() {
-        for query in [
-            "active=maybe",
-            "active=1",
-            "active=yes",
-            "active=",
-            "active=True",
-            "city=",
+        for (query, field, detail_code) in [
+            ("active=maybe", "active", "invalid_type"),
+            ("active=1", "active", "invalid_type"),
+            ("active=yes", "active", "invalid_type"),
+            ("active=", "active", "invalid_type"),
+            ("active=True", "active", "invalid_type"),
+            ("city=", "city", "out_of_range"),
         ] {
             let error = directory_filters(query).unwrap_err();
-            assert_eq!(error.status, 422, "{query}");
+            assert_eq!(
+                (error.status, error.code.as_str()),
+                (422, "invalid_query"),
+                "{query}"
+            );
+            assert_eq!(error.details, [Detail::new(field, detail_code)], "{query}");
         }
         let long = format!("city={}", "a".repeat(81));
-        assert!(directory_filters(&long).is_err());
+        let error = directory_filters(&long).unwrap_err();
+        assert_eq!((error.status, error.code.as_str()), (422, "invalid_query"));
+        assert_eq!(error.details, [Detail::new("city", "out_of_range")]);
         let ok = format!("city={}", "a".repeat(80));
         assert!(directory_filters(&ok).is_ok());
     }

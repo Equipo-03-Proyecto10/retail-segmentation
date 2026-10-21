@@ -116,7 +116,7 @@ def parent_filter() -> int | None:
         return int(raw)
     raise ApiError(
         422,
-        "invalid_pagination",
+        "invalid_query",
         "parent_id must be an integer.",
         [{"field": "parent_id", "code": "invalid_type"}],
     )

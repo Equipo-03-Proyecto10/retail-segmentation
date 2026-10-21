@@ -88,7 +88,7 @@ def text_filter(name: str, minimum: int) -> str | None:
     if len(raw) < minimum or len(raw) > 160:
         raise ApiError(
             422,
-            "invalid_pagination",
+            "invalid_query",
             f"{name} is outside its allowed length.",
             [{"field": name, "code": "out_of_range"}],
         )

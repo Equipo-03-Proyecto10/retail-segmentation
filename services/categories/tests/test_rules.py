@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import psycopg
 import pytest
+from lxml import etree
 
 from app.service import refusal
 
 pytestmark = pytest.mark.postgres
+COMMON_NAMESPACE = "https://mosaiq.maxthecoder.online/xml/common/v1"
 
 
 def create(client, headers, category_id, name, parent=None):
@@ -328,9 +330,22 @@ def test_the_view_publishes_the_tree_to_recommendations(owner, tree):
 
 
 @pytest.mark.parametrize("value", [" 1 ", "1_0", "+1", "", "2147483648", "1.0"])
-def test_parent_id_accepts_only_plain_integers(client, admin_headers, value):
+@pytest.mark.parametrize("accept", ["application/json", "application/xml"])
+def test_parent_id_refusals_are_422_invalid_query(client, admin_headers, value, accept):
     response = client.get(
-        "/v1/categories", query_string={"parent_id": value}, headers=admin_headers
+        "/v1/categories",
+        query_string={"parent_id": value},
+        headers={**admin_headers, "Accept": accept},
     )
     assert response.status_code == 422
-    assert response.get_json()["details"][0]["field"] == "parent_id"
+    if accept == "application/json":
+        body = response.get_json()
+        assert body["code"] == "invalid_query"
+        assert body["details"] == [{"field": "parent_id", "code": "invalid_type"}]
+    else:
+        root = etree.fromstring(response.data)
+        assert root.findtext(f"{{{COMMON_NAMESPACE}}}code") == "invalid_query"
+        detail = root.find(f"{{{COMMON_NAMESPACE}}}details")
+        assert detail is not None
+        assert detail.findtext(f"{{{COMMON_NAMESPACE}}}field") == "parent_id"
+        assert detail.findtext(f"{{{COMMON_NAMESPACE}}}code") == "invalid_type"

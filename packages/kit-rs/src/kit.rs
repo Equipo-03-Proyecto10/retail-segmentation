@@ -321,16 +321,30 @@ impl Kit {
             )
             .route(
                 "/openapi.yaml",
-                get_only(on(MethodFilter::GET, move || {
+                get_only(on(MethodFilter::GET, move |request: Request| {
                     let openapi = openapi.clone();
-                    async move { bytes_response(openapi, "application/yaml") }
+                    async move {
+                        document(
+                            &request,
+                            openapi,
+                            "application/yaml",
+                            &["application/yaml", "application/x-yaml", "text/yaml"],
+                        )
+                    }
                 })),
             )
             .route(
                 "/schema.xsd",
-                get_only(on(MethodFilter::GET, move || {
+                get_only(on(MethodFilter::GET, move |request: Request| {
                     let xsd = xsd.clone();
-                    async move { bytes_response(xsd, "application/xml") }
+                    async move {
+                        document(
+                            &request,
+                            xsd,
+                            "application/xml",
+                            &["application/xml", "text/xml"],
+                        )
+                    }
                 })),
             );
         for (version, payload) in versioned_schemas(&contract.root, &self.service) {
@@ -378,6 +392,37 @@ fn bytes_response(payload: Bytes, content_type: &'static str) -> Response<Body> 
         .headers_mut()
         .insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
     response
+}
+
+/// Serve a contract document, or 406 `not_acceptable` when `Accept` excludes
+/// every type the document can be served as. An absent or blank `Accept`, `*/*`
+/// and type wildcards such as `application/*` are served.
+fn document(
+    request: &Request,
+    payload: Bytes,
+    content_type: &'static str,
+    offered: &[&str],
+) -> Response<Body> {
+    let accept = request
+        .headers()
+        .get(header::ACCEPT)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if let Some(accept) = accept {
+        let acceptable = accept_items(accept)
+            .iter()
+            .any(|item| item.quality > 0.0 && offered.iter().any(|media| item.matches(media)));
+        if !acceptable {
+            let error = ApiError::new(
+                406,
+                "not_acceptable",
+                "The requested response format is unsupported.",
+            );
+            return error_response(request, &error, None);
+        }
+    }
+    bytes_response(payload, content_type)
 }
 
 fn versioned_schemas(root: &Path, service: &str) -> Vec<(String, Bytes)> {

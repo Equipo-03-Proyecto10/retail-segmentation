@@ -523,6 +523,25 @@ There is one outbox per owning boundary rather than one shared table, which
 keeps one writer per table: only that boundary's definer appends, and only its
 own relay marks and purges.
 
+The check-ins boundary (ADR-0046, F14-26) adds two relations, both in 4NF:
+- **`checkins.store_check_in`** has two candidate keys: `check_in_id` and the
+  phone's `client_check_in_id`. Each determines every other column.
+  - There is no `verified` column. The automatic verdict depends on `reason`
+    alone, so storing it would be a transitive dependency; the effective verdict
+    depends on the latest review, a fact of another relation.
+  - `distance_m` and `reason` look derivable from the fix and the store's
+    location, but they are fixed at `recorded_at` against the location *then*.
+    A later change to the store's location must not rewrite past verdicts, so
+    they are facts of the check-in, not functions of current data.
+  - There is no current-status column either, which would turn an append-only
+    history into an updated one.
+- **`checkins.check_in_review`** is the multivalued fact "this check-in was
+  reviewed, by whom, with what verdict", which can occur any number of times
+  per check-in. It is therefore its own relation: `review_id` determines a
+  review, and `check_in_id` relates it to its check-in. Keeping reviews in the
+  check-in row would need either repeating columns (not 1NF) or updating that
+  row, which RN-56 forbids.
+
 ---
 
 ## 3. Logical model
@@ -610,6 +629,9 @@ Nullability is stated for every column. `PK` primary key, `FK` foreign key,
 The hierarchy is a tree (RN-33). `category_not_own_parent` refuses the one-row
 cycle; a CHECK cannot see other rows, so `trg_category_no_cycle` walks up from
 the new parent and refuses a longer cycle as `category_no_cycle`.
+`trg_category_hierarchy_lock`, a statement-level trigger, takes the hierarchy
+advisory lock before any row is locked, so two opposite concurrent moves queue
+instead of deadlocking and the second one is refused as `category_no_cycle` (#586).
 
 #### `store`
 
@@ -649,6 +671,40 @@ independent multivalued facts, so the relation is in 4NF.
 
 The outbox stores one event identity and its delivery state, with no repeating
 groups or copied store state; its key determines all columns, so it is in 4NF.
+
+#### `checkins.store_check_in`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `check_in_id` | `UUID` | NN | PK; default `gen_random_uuid()` | Check-in identifier |
+| `client_check_in_id` | `UUID` | NN | UNIQUE | The phone's identifier, which makes a retried post a replay |
+| `user_id` | `UUID` | NN | FK → `public.app_user`, `ON DELETE RESTRICT` | The staff member checking in: the token's `sub` |
+| `store_id` | `SMALLINT` | NN | FK → `public.store`, `ON DELETE RESTRICT` | The store checked into |
+| `latitude` | `NUMERIC` | yes | CHECK −90 to 90 | Reported latitude; null with no fix |
+| `longitude` | `NUMERIC` | yes | CHECK −180 to 180 | Reported longitude; null with no fix |
+| `accuracy_m` | `NUMERIC` | yes | CHECK `> 0` | Reported accuracy radius in metres; null with no fix |
+| `distance_m` | `NUMERIC` | yes | null exactly when the reason is `no_fix` or `store_location_unknown` | Server-computed haversine distance to the store, one decimal |
+| `reason` | `TEXT` | NN | one of `within_geofence`, `outside_geofence`, `low_accuracy`, `store_location_unknown`, `no_fix`; the fix is all null exactly when `no_fix` | The server's verdict (RN-56) |
+| `occurred_at` | `TIMESTAMPTZ` | NN | — | When the phone took the check-in |
+| `recorded_at` | `TIMESTAMPTZ` | NN | default `now()` | When the server recorded it |
+
+Append-only: `svc_checkins` holds SELECT and INSERT only, and the web has no
+privilege on `checkins`. `auto_verified` (reason is `within_geofence`) and the
+effective `verified` are computed on read.
+
+#### `checkins.check_in_review`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `review_id` | `BIGINT` | NN | PK; generated always as identity | Review identifier, a number because the v1 contract publishes it as `int64` |
+| `check_in_id` | `UUID` | NN | FK → `checkins.store_check_in`, `ON DELETE RESTRICT` | The check-in reviewed |
+| `verified` | `BOOLEAN` | NN | — | The reviewer's verdict |
+| `reason` | `TEXT` | NN | CHECK not blank | Why the reviewer decided so |
+| `reviewed_by` | `UUID` | NN | FK → `public.app_user`, `ON DELETE RESTRICT` | The administrator who reviewed |
+| `reviewed_at` | `TIMESTAMPTZ` | NN | default `now()` | When the review was appended |
+
+A check-in's effective verdict is its latest review's `verified`, by
+`reviewed_at`. Reviews are appended and never changed.
 
 #### `segment_rule`
 
@@ -1144,6 +1200,10 @@ suffix:
 
 The stores boundary therefore owns `stores` for `store_location`, publishes
 through `api_stores`, and keeps relay state in `stores_events`.
+The check-ins boundary owns `checkins` for `store_check_in` and
+`check_in_review`. It has no contract schema and no outbox, because nothing
+reads or consumes check-ins but its own service. It reads store locations
+through `api_stores.store_directory_v1`.
 
 The eight outbox owners named by ADR-0044 therefore have both of these schemas:
 
@@ -1216,6 +1276,43 @@ deletes any of the four.
 | `idx_notification_recipient_inbox` | `notification_recipient (user_id, notification_id DESC)` | One user's inbox, newest first, paginated |
 | `idx_notification_recipient_unread` | `notification_recipient (user_id) WHERE read_at IS NULL` | The unread count on every page, and "mark all read" |
 | `notification_{sales_load,run,experiment}_id_key` | `notification (sales_load_id)`, `(run_id)`, `(experiment_id)`, each `UNIQUE` | An event is announced once; the arbiter of the announcer's `ON CONFLICT` |
+| `idx_app_user_role` | `app_user (role_id)` | Users listed and counted by role; the `RESTRICT` check when a role is deleted |
+| `idx_customer_registration_channel` | `customer (registration_channel_id)` | The `RESTRICT` check when a channel is deleted |
+| `idx_customer_preferred_channel_channel` | `customer_preferred_channel (channel_id)` | The `CASCADE` when a channel is deleted (the primary key leads with `customer_id`) |
+| `idx_transaction_channel` | `transaction (channel_id)` | The `RESTRICT` check when a channel is deleted, which would otherwise scan every sale |
+| `idx_category_parent` | `category (parent_category_id)` | A category's children and subtree; the `RESTRICT` check when a category is deleted |
+| `idx_customer_interest_category_category` | `customer_interest_category (category_id)` | The `CASCADE` when a category is deleted (the primary key leads with `customer_id`) |
+| `idx_inventory_product` | `inventory (product_id)` | Stock of one product across stores; the `CASCADE` when a product is deleted (the primary key leads with `store_id`) |
+| `idx_experiment_campaign` | `experiment (campaign_id)` | A campaign's experiments |
+| `idx_experiment_group_experiment` | `experiment_group (experiment_id)` | An experiment's arms (`ux_experiment_one_control` covers only the control) |
+| `idx_experiment_assignment_group` | `experiment_assignment (group_id, experiment_id)` | Assignments per arm, for the dashboard and the conversion measures; the composite foreign key to `experiment_group` |
+
+**Foreign keys without an index.** A foreign key is indexed when its child
+table grows and either some code path deletes the parent, so the `ON DELETE`
+check scans the child, or a query reads the child by that key (#596). These
+twelve meet neither condition:
+
+- *The parent is `app_user`, which is never deleted (deactivation removes
+  access, F3-06), and no query reads the child by the user:*
+  `app_session (user_id)`, `audit_log (user_id)`,
+  `notification (subject_user_id)`, `sales_load (loaded_by)`,
+  `segmentation_run (executed_by)`, `stores.store_location (set_by)` and
+  `checkins.check_in_review (reviewed_by)`.
+  Revoking a deactivated user's open sessions is served by the partial
+  `idx_app_session_open_by_user`; revoked sessions are history and nothing
+  looks them up by user.
+- *The parent is a fixed catalog that no code deletes:*
+  `segment (label_code)` and `customer_segment_history (label_code)` reference
+  the six-label vocabulary, and `segment (rule_id)` references the RFM bands.
+  `segment` itself holds about thirty rows, so reading it by rule is a scan of
+  a page.
+- *No code deletes the parent, and the child is read through another key:*
+  `customer_segment_history (segment_id, label_code)` is read by run and by
+  customer, through `idx_customer_segment_history_customer` and the open-row
+  index; an operator retiring an RFM band is a one-off maintenance step for
+  which a scan is acceptable. `experiment_conversion (transaction_id)` is read
+  through `UNIQUE (assignment_id, transaction_id)`, and a sale is never
+  deleted.
 
 **Partitioning is not implemented.** `transaction` is the fastest-growing table
 and range partitioning by date is the obvious eventual move, but at 300 seed

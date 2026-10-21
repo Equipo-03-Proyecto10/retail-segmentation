@@ -1,6 +1,6 @@
 [package]
 name = "mosaiq-kit"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2021"
 rust-version = "1.90"
 description = "Shared transport and infrastructure mechanisms for MOSAIQ Rust services"

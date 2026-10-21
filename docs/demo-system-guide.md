@@ -260,8 +260,10 @@ filtered to `customer_segment_history`.
 ### 3.5 What the seed holds
 
 The seed holds 30 customers, 300 transactions spread over 180 days, and **31
-runs**: 30 RFM-rules runs (#1 to #30, one per day, the last at load time), plus
-K-means run #31 (K = 4, seed 463, twelve hours before the newest RFM run).
+runs**: 30 RFM-rules runs, one per day, and one K-means run. On a clean build
+the ids follow insertion order: RFM-rules runs #1 to #29 (the daily history up
+to yesterday), K-means run #30 (K = 4, seed 463, twelve hours before the newest
+RFM run), and the newest RFM-rules run #31 at load time.
 Each run has one history row per customer derived from the sales that existed
 at its timestamp. The current assignments remain rule-based. Customers have
 3 to 17 purchases each, and the newest RFM run reaches all six labels.

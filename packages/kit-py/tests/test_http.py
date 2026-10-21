@@ -206,6 +206,70 @@ def test_schema_errors_have_stable_details(
     assert {"field": field, "code": code} in response.json["details"]
 
 
+@pytest.mark.parametrize(
+    "body,field",
+    [
+        ({"title": "a\x00b", "amount": "1.00"}, "title"),
+        ({"title": "\x00", "amount": "1.00"}, "title"),
+        ({"title": "New", "amount": "1.00", "ex\x00tra": "x"}, "$"),
+    ],
+)
+def test_nul_in_a_json_string_is_a_schema_violation(
+    client, writer_headers, body: dict[str, object], field: str
+) -> None:
+    # PostgreSQL text cannot hold U+0000; it must never reach the driver (#580).
+    response = client.post("/v1/notes", headers=writer_headers, json=body)
+    assert response.status_code == 422
+    assert response.json["code"] == "invalid_body"
+    assert {"field": field, "code": "invalid_format"} in response.json["details"]
+
+
+def test_escaped_nul_in_raw_json_is_a_schema_violation(client, writer_headers) -> None:
+    response = client.post(
+        "/v1/notes",
+        headers={**writer_headers, "Accept": "application/xml"},
+        data=b'{"title":"a\\u0000b","amount":"1.00"}',
+        content_type="application/json",
+    )
+    assert response.status_code == 422
+    assert response.content_type == "application/xml"
+    assert b"invalid_body" in response.data
+
+
+@pytest.mark.parametrize(
+    "inner,title",
+    [
+        ("<!--c--><title>New</title><amount>1.25</amount>", "New"),
+        ("<?pi x?><title>New</title><amount>1.25</amount><!--end-->", "New"),
+        ("<title>a<!--c-->b</title><amount>1.25</amount>", "ab"),
+        ("<title>a<?pi x?>b</title><amount>1<!--c-->.25</amount>", "ab"),
+        ("<title><!--only--></title><amount>1.25</amount>", None),
+    ],
+)
+def test_xml_comments_and_processing_instructions_are_skipped(
+    client, writer_headers, inner: str, title: str | None
+) -> None:
+    # Comments and PIs are legal XML; kit-rs skips them too (#582).
+    namespace = "https://mosaiq.maxthecoder.online/xml/kit-example/v1"
+    response = client.post(
+        "/v1/notes",
+        headers=writer_headers,
+        data=(
+            f'<?xml version="1.0"?><!--lead--><CreateNoteRequest xmlns="{namespace}">'
+            f"{inner}</CreateNoteRequest><?trail x?>"
+        ),
+        content_type="application/xml",
+    )
+    if title is None:
+        # An element holding only a comment is empty, which the XSD refuses.
+        assert response.status_code == 422
+        assert response.json["code"] == "invalid_body"
+        return
+    assert response.status_code == 201
+    assert response.json["title"] == title
+    assert response.json["amount"] == "1.25"
+
+
 def test_duplicate_json_member_is_malformed(client, writer_headers) -> None:
     response = client.post(
         "/v1/notes",
@@ -257,6 +321,42 @@ def test_invalid_pagination(client, reader_headers, query: str) -> None:
     response = client.get("/v1/notes" + query, headers=reader_headers)
     assert response.status_code == 422
     assert response.json["code"] == "invalid_pagination"
+
+
+@pytest.mark.parametrize(
+    "query,field",
+    [
+        ("?page=99999999999999999999", "page"),
+        ("?page=4294967296", "page"),
+        ("?page=" + "9" * 5000, "page"),
+        ("?size=99999999999999999999", "size"),
+        ("?size=" + "1" * 5000, "size"),
+    ],
+)
+def test_out_of_range_pagination_is_refused(
+    client, reader_headers, query: str, field: str
+) -> None:
+    # The bound keeps OFFSET inside bigint, as kit-rs's u32 does (#581).
+    response = client.get("/v1/notes" + query, headers=reader_headers)
+    assert response.status_code == 422
+    assert response.json["code"] == "invalid_pagination"
+    assert response.json["details"] == [{"field": field, "code": "out_of_range"}]
+
+
+@pytest.mark.parametrize(
+    "query,page,size",
+    [
+        ("?page=4294967295", 4_294_967_295, 20),
+        ("?page=0000000000000000000002&size=007", 2, 7),
+    ],
+)
+def test_pagination_bounds_are_inclusive(
+    client, reader_headers, query: str, page: int, size: int
+) -> None:
+    response = client.get("/v1/notes" + query, headers=reader_headers)
+    assert response.status_code == 200
+    assert response.json["page_info"]["page"] == page
+    assert response.json["page_info"]["size"] == size
 
 
 def test_valid_pagination_is_passed_to_page_info(client, reader_headers) -> None:

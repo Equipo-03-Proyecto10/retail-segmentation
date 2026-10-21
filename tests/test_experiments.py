@@ -481,6 +481,17 @@ def test_a_seeded_or_injected_experiment_is_labelled_synthetic(
     assert "Synthetic" in body and origin in body
 
 
+def test_an_observed_experiment_whose_conversion_links_a_seeded_sale_is_synthetic(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#560, ADR-0052: the conversions it counts mark it too."""
+    _wire_pages(monkeypatch, _experiment(origin="OBSERVED", seeded_conversion=True))
+    client = app.test_client()
+    _sign_in(client, "ANALYST")
+
+    assert "Synthetic" in client.get("/experiments/").get_data(as_text=True)
+
+
 def test_an_observed_experiment_is_not_labelled_synthetic(
     app: Flask, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -63,9 +63,8 @@ from web.db.segmentation_dashboard import (
 )
 from web.db.segments import SegmentationRun, get_label_ordinals, get_run, list_runs
 from web.services.consumption_profile import UnknownCustomer
-from web.services.experiment_uplift import SYNTHETIC_LABEL
 from web.services.experiments import is_synthetic
-from web.services.provenance import runs_synthetic
+from web.services.provenance import SYNTHETIC_LABEL, runs_synthetic
 from web.services.recommendations import recommend
 from web.services.segment_migration import (
     CustomerMigration,
@@ -380,7 +379,7 @@ class ActiveExperiment:
 
     @property
     def label(self) -> str | None:
-        return SYNTHETIC_LABEL if is_synthetic(self.experiment.data_origin) else None
+        return SYNTHETIC_LABEL if is_synthetic(self.experiment) else None
 
 
 def build_active_experiments(

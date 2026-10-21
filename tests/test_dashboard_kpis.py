@@ -159,6 +159,23 @@ def test_a_synthetic_experiment_is_labelled(monkeypatch: pytest.MonkeyPatch) -> 
     assert active.label == "Synthetic"
 
 
+def test_an_observed_experiment_with_a_seeded_conversion_is_labelled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#560, ADR-0052: the per-experiment rule holds on the dashboard too."""
+    observed = _experiment(starts_on=TODAY, assignments=5, data_origin="OBSERVED")
+    _running(monkeypatch, [observed], [])
+    (active,) = service.build_active_experiments(MagicMock(), TODAY, NOW)
+    assert active.label is None
+
+    seeded = _experiment(
+        starts_on=TODAY, assignments=5, data_origin="OBSERVED", seeded_conversion=True
+    )
+    _running(monkeypatch, [seeded], [])
+    (active,) = service.build_active_experiments(MagicMock(), TODAY, NOW)
+    assert active.label == "Synthetic"
+
+
 # ---------- most recommended products ----------
 
 

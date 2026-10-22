@@ -24,11 +24,14 @@ const claims = (role: string): string =>
 /** The recorded product, renamed for each requested id, so every line and level has a name. */
 function productsFor(ids: string[]): string {
   const template = /<Product>[\s\S]*?<\/Product>/.exec(example('products', 'products'))![0];
-  const items = ids.map((id) =>
-    template
-      .replace(/<product_id>\d+<\/product_id>/, `<product_id>${id}</product_id>`)
-      .replace(/<name>[^<]*<\/name>/, `<name>Item ${id}</name>`),
-  );
+  const items = ids
+    .map(Number)
+    .filter((id) => Number.isSafeInteger(id) && id > 0)
+    .map((id) =>
+      template
+        .replace(/<product_id>\d+<\/product_id>/, `<product_id>${id}</product_id>`)
+        .replace(/<name>[^<]*<\/name>/, `<name>Item ${id}</name>`),
+    );
   return `<Products xmlns="${PRODUCTS}" xmlns:common="${COMMON}">${items.join('')}<common:PageInfo><common:page>1</common:page><common:size>50</common:size><common:total>${items.length}</common:total></common:PageInfo></Products>`;
 }
 
@@ -60,7 +63,7 @@ function reset(): void {
 test.beforeAll(async () => {
   server = createServer((req, res) => {
     const reply = (status: number, body?: string): void => {
-      res.writeHead(status, { 'Content-Type': 'application/xml' });
+      res.writeHead(status, { 'Content-Type': 'application/xml', 'X-Content-Type-Options': 'nosniff' });
       res.end(body);
     };
     let body = '';
@@ -125,7 +128,8 @@ test.beforeAll(async () => {
           ),
         );
       if (path === `/api/check-ins/v1/check-ins/${REVIEWED}/reviews`) {
-        const reason = /<reason>([^<]*)<\/reason>/.exec(body)?.[1] ?? '';
+        const reason = 'Footage shows the car park, not the store.';
+        expect(body).toContain(`<reason>${reason}</reason>`);
         const review = example('check-ins', 'review')
           .replace('<review_id>42</review_id>', `<review_id>${43 + reviews.length}</review_id>`)
           .replace(/<reason>[^<]*<\/reason>/, `<reason>${reason}</reason>`);

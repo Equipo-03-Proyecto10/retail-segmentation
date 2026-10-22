@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: segments-service
-  version: 1.0.0
+  version: 1.0.1
   description: >-
     Serves what the web's segmentation runs recorded: the label vocabulary, each
     customer's current assignment and the history. It writes nothing (RN-20,
@@ -194,6 +194,11 @@ paths:
         A row with an unassigned result has a null `label_code` and null scores; it
         is reported as recorded.
       operationId: listSegmentAssignments
+      # The query the shared conformance suite calls this read with: it needs
+      # one of two filters, so a bare call is 422 by design (tests/conformance).
+      x-mosaiq-conformance-query:
+        label_code: CHAMPION
+        open: true
       x-mosaiq-roles:
         - ADMIN
         - ANALYST

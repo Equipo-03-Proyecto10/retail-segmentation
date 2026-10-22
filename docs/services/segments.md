@@ -1,6 +1,6 @@
 # segments
 
-> **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
+> **Status:** Implemented (phase 14, core; F14-20, #461). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
 > **One rule:** A customer has at most one current segment, named by its stable label code, and unassigned states are reported as they are (RN-20, RN-21)
 
 ## Summary

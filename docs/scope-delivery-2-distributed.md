@@ -198,7 +198,7 @@ Story ids and the dependency graph are in [`backlog.md`](backlog.md). Its phase 
 - **Kubernetes, managed databases, and any second VM** (C-5, C-6).
 - **Any Redis connection or service call from the web system** (#398).
 - **Rebuilding the web system** or moving it into containers.
-- **Account email verification over SMTP,** pending spike F13-10 (#446); GCP blocks outbound port 25.
+- **Account email verification over SMTP.** Not required for the second delivery: the Product Owner answered on 2026-10-21 (Q-11, F13-10, #446) that accounts need not verify their email, and our requirements do not ask for it. It would also need a relay on port 587 through an external provider, because GCP blocks outbound port 25 on Compute Engine. Work deferred is not built early (`AGENTS.md`).
 - **Push notifications** (they need Firebase); Android uses camera/QR, GPS and local storage.
 - **Stock receipts, transfers, counts and adjustments** (`inventory.write`), sequenced after analytics in [`roadmap.md`](roadmap.md).
 
@@ -225,7 +225,7 @@ The distributed stage is complete when all of these are checkable and pass:
 | HS256 with one secret shared by every service | RS256: only auth-service signs | With a shared secret, any service could mint an administrator's token ([ADR-0036][adr-0036]) |
 | Redis for sessions, revocation, cache and counters | Two Redis instances, one that never evicts and one cache, also carrying the inter-service streams | Sessions and streams must never be evicted, while a cache must be ([ADR-0037][adr-0037]) |
 | A public Electron client reading one service | An authenticated Electron client over four or more services, validating XSD | Our requirements ([ADR-0041][adr-0041]) |
-| Postfix SMTP for verification | Out of scope pending F13-10 | Not in our requirements, and port 25 is blocked on GCP |
+| Postfix SMTP for verification | Out of scope (Q-11) | The Product Owner answered on 2026-10-21 that email verification is not required, and port 25 is blocked on GCP |
 | Services for books, authors, orders and payments | Fifteen single-rule services over our retail domain | Our domain has no payments, and the instructor requires one business rule per service ([ADR-0034][adr-0034], [ADR-0043][adr-0043]) |
 
 ## 11. Answered questions
@@ -233,17 +233,14 @@ The distributed stage is complete when all of these are checkable and pass:
 | ID | Answer |
 |---|---|
 | Q-12 | **ANSWERED (2026-10-13).** The course's Redis requirement says that every component consults Redis during authentication or authorization. That means the microservices, not the web system. The web system connects to no Redis and keeps its PostgreSQL sessions ([ADR-0022](adr/0022-sessions-are-resolved-server-side-on-every-request.md)). Only the services consult Redis ([ADR-0037][adr-0037]) |
+| Q-11 | **ANSWERED by the Product Owner (2026-10-21).** Not required: accounts do not verify their email in the second delivery, so there is no SMTP path, no verification token in Redis and no mail-sending service. Recorded by F13-10 (#446); §8 keeps it out of scope |
 | Q-13 | **ANSWERED by the instructor (2026-10-15).** Yes to both: (1) read-only boundaries, such as segments and audit-trail, count as services implementing one business rule, and (2) services that co-write legacy `public` tables with the frozen web, reading across boundaries only through versioned `api_*` views and exchanging events only on Redis Streams, satisfy "totally independent" ([ADR-0043][adr-0043], [ADR-0034][adr-0034]) |
 
 **Decided by the team.** Q-14 (2026-10-15): **No.** Only deactivations made in the web create AN-04's notification (#419). A deactivation through users-service (`POST /v1/users/{user_id}/deactivation`) creates none, and no trigger on `app_user` is added for it.
 
 ## 12. Open questions
 
-Q-13 and Q-14 are answered in §11.
-
-| ID | Question | Working assumption |
-|---|---|---|
-| Q-11 | Is account email verification part of the second delivery? | No, until F13-10 (#446) records the Product Owner's answer |
+Q-11, Q-13 and Q-14 are answered in §11. No question is open.
 
 [adr-0016]: adr/0016-the-second-delivery-reinstates-the-distributed-architecture.md
 [adr-0034]: adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md

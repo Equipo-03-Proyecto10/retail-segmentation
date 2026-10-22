@@ -10,8 +10,11 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.SocketPolicy
 import online.maxthecoder.mosaiq.floor.auth.Tokens
+import online.maxthecoder.mosaiq.floor.net.SaleRequest
+import online.maxthecoder.mosaiq.floor.net.json
 import online.maxthecoder.mosaiq.floor.outbox.OutboxWorker
 import online.maxthecoder.mosaiq.floor.outbox.RowState
+import online.maxthecoder.mosaiq.floor.outbox.refusalAdvice
 import online.maxthecoder.mosaiq.floor.session.Profile
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -114,6 +117,39 @@ class OutboxWorkerTest {
         assertEquals(RowState.REFUSED to "client_check_in_conflict", first.state to first.code)
         assertEquals("corr-client_check_in_conflict", first.correlationId)
         assertEquals("unknown_store", graph.outbox.find(unknown)!!.code)
+    }
+
+    @Test
+    fun everyFinalSaleRefusalIsKeptWithItsCodeAndNeverResent() = runBlocking {
+        signIn("A", "token-A")
+        val request = json.decodeFromString(
+            SaleRequest.serializer(),
+            contract("sales/examples/record-sale.request.json")
+        )
+        val refusals =
+            listOf(409 to "stock_unavailable", 409 to "idempotency_key_reused", 409 to "duplicate_product_line") +
+                listOf("no_stock_record", "inactive_product", "before_registration", "future_dated").map { 422 to it } +
+                listOf("invalid_price", "invalid_quantity", "unknown_product", "unknown_store").map { 422 to it }
+        val ids =
+            refusals.map {
+                graph.writes.queueSale(request.customerId, request.storeId, request.channelId, request.lines)
+            }
+        refusals.forEach { (status, code) -> server.enqueue(error(status, code)) }
+
+        assertEquals(ListenableWorker.Result.success(), work())
+        assertEquals(refusals.size, server.requestCount)
+        refusals.zip(ids).forEach { (refusal, id) ->
+            val row = graph.outbox.find(id)!!
+            assertEquals(RowState.REFUSED, row.state)
+            assertEquals(refusal.first, row.status)
+            assertEquals(refusal.second, row.code)
+            assertEquals(1, row.attempts)
+        }
+        // Nothing is pending, so a later run sends nothing.
+        assertEquals(ListenableWorker.Result.success(), work())
+        assertEquals(refusals.size, server.requestCount)
+        assertTrue(refusalAdvice("future_dated")!!.contains("phone's clock"))
+        assertEquals(null, refusalAdvice("stock_unavailable"))
     }
 
     @Test

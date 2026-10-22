@@ -108,6 +108,10 @@ fun ErrorPanel(error: ApiError) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(error.message, color = MaterialTheme.colorScheme.error)
         Text("Code: ${error.code}", style = MaterialTheme.typography.bodySmall)
+        if (error.code == "future_dated") Text("Check the phone's date, time and time zone.")
+        error.details.forEach { detail ->
+            Text("${detail.field}: ${detail.code}", style = MaterialTheme.typography.bodySmall)
+        }
         Text("Correlation ID: ${error.correlationId ?: "none"}", style = MaterialTheme.typography.bodySmall)
     }
 }

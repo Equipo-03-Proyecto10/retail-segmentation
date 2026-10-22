@@ -20,3 +20,9 @@ fun describe(result: CheckInResult): String {
     val verdict = if (result.verified) "Verified." else "Not verified."
     return "$reason $verdict"
 }
+
+/** Extra advice for a refusal the user can fix on the phone; `null` when there is none. */
+fun refusalAdvice(code: String?): String? = when (code) {
+    "future_dated" -> "The sale is dated in the future. Check the phone's clock, then record the sale again."
+    else -> null
+}

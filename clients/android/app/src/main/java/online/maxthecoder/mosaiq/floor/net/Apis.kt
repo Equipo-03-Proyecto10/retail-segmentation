@@ -5,6 +5,7 @@ import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -39,8 +40,59 @@ interface StoresApi {
 
 /** products-service's catalog read (contracts/products/openapi.yaml). */
 interface ProductsApi {
+    @GET(Services.PRODUCTS + "products")
+    suspend fun listProducts(
+        @Query("q") query: String,
+        @Query("page") page: Int = 1,
+        @Query("size") size: Int = 20
+    ): Response<ProductPage>
+
     @GET(Services.PRODUCTS + "products/{product_id}")
     suspend fun getProduct(@Path("product_id") productId: Int): Response<Product>
+}
+
+interface CustomersApi {
+    @GET(Services.CUSTOMERS + "customers")
+    suspend fun searchCustomers(
+        @Query("q") query: String? = null,
+        @Query("email") email: String? = null,
+        @Query("page") page: Int = 1,
+        @Query("size") size: Int = 20
+    ): Response<CustomerPage>
+
+    @POST(Services.CUSTOMERS + "customers")
+    suspend fun registerCustomer(@Body request: RegisterCustomerRequest): Response<Customer>
+}
+
+interface CustomerPreferencesApi {
+    @GET(Services.CUSTOMER_PREFERENCES + "preference-profiles/{customer_id}")
+    suspend fun getProfile(@Path("customer_id") customerId: String): Response<PreferenceProfile>
+
+    @PUT(Services.CUSTOMER_PREFERENCES + "preference-profiles/{customer_id}/interest-categories")
+    suspend fun replaceInterests(
+        @Path("customer_id") customerId: String,
+        @Body request: ReplaceInterestCategoriesRequest
+    ): Response<PreferenceProfile>
+}
+
+interface CategoriesApi {
+    @GET(Services.CATEGORIES + "categories")
+    suspend fun listCategories(@Query("page") page: Int = 1, @Query("size") size: Int = 100): Response<CategoryPage>
+}
+
+interface SalesApi {
+    @GET(Services.SALES + "channels")
+    suspend fun listChannels(): Response<ChannelList>
+
+    @GET(Services.SALES + "sales/{sale_id}")
+    suspend fun getSale(@Path("sale_id") saleId: Long): Response<Sale>
+
+    @GET(Services.SALES + "sales")
+    suspend fun listSales(
+        @Query("customer_id") customerId: String,
+        @Query("page") page: Int = 1,
+        @Query("size") size: Int = 20
+    ): Response<SalePage>
 }
 
 /**

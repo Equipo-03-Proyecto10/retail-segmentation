@@ -7,10 +7,13 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import java.time.Instant
+import java.time.OffsetDateTime
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import online.maxthecoder.mosaiq.floor.net.CheckInRequest
 import online.maxthecoder.mosaiq.floor.net.EngagementEventRequest
+import online.maxthecoder.mosaiq.floor.net.SaleLineRequest
+import online.maxthecoder.mosaiq.floor.net.SaleRequest
 import online.maxthecoder.mosaiq.floor.net.Services
 import online.maxthecoder.mosaiq.floor.net.json
 import online.maxthecoder.mosaiq.floor.scan.Scan
@@ -85,6 +88,36 @@ class FloorWrites(
                     clientId = request.clientEventId,
                     userId = userId,
                     createdAt = scan.occurredAt.toEpochMilli()
+                )
+            )
+        schedule()
+        return id
+    }
+
+    /**
+     * Captures the complete sale at the confirming tap. The UUID is generated
+     * once here and stored as both the row identity and the Idempotency-Key.
+     */
+    suspend fun queueSale(
+        customerId: String,
+        storeId: Int,
+        channelId: Int,
+        lines: List<SaleLineRequest>,
+        now: OffsetDateTime = OffsetDateTime.now(),
+        newId: () -> UUID = UUID::randomUUID
+    ): Long {
+        val userId = checkNotNull(session.userId.value) { "No user is signed in." }
+        val key = newId().toString().lowercase()
+        val request = SaleRequest(customerId, storeId, channelId, now.toString(), lines)
+        val id =
+            outbox.insert(
+                OutboxRow(
+                    operation = Operation.SALE,
+                    path = Services.SALES + "sales",
+                    body = json.encodeToString(SaleRequest.serializer(), request),
+                    clientId = key,
+                    userId = userId,
+                    createdAt = now.toInstant().toEpochMilli()
                 )
             )
         schedule()

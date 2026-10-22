@@ -12,7 +12,7 @@ import androidx.room.RoomDatabase
 import kotlinx.coroutines.flow.Flow
 
 /** What a queued write is; the sales story adds its own. */
-enum class Operation { CHECK_IN, QR_SCAN }
+enum class Operation { CHECK_IN, QR_SCAN, SALE }
 
 /** Where a write stands. A refused one is kept until the user dismisses it. */
 enum class RowState { PENDING, DONE, REFUSED }
@@ -61,14 +61,20 @@ interface OutboxDao {
     @Query("SELECT * FROM outbox WHERE state != 'DONE' ORDER BY id")
     fun observeOpen(): Flow<List<OutboxRow>>
 
+    @Query("SELECT * FROM outbox WHERE operation = 'SALE' AND userId = :userId ORDER BY id DESC")
+    fun observeSales(userId: String): Flow<List<OutboxRow>>
+
+    @Query("SELECT * FROM outbox WHERE operation = 'CHECK_IN' AND userId = :userId ORDER BY id DESC LIMIT 1")
+    suspend fun latestCheckIn(userId: String): OutboxRow?
+
     @Query("UPDATE outbox SET attempts = attempts + 1 WHERE id = :id")
     suspend fun countAttempt(id: Long)
 
     @Query(
         "UPDATE outbox SET state = 'DONE', status = :status, responseBody = :body, " +
-            "correlationId = :correlationId WHERE id = :id AND state = 'PENDING'"
+            "correlationId = :correlationId, code = :code WHERE id = :id AND state = 'PENDING'"
     )
-    suspend fun markDone(id: Long, status: Int, body: String?, correlationId: String?)
+    suspend fun markDone(id: Long, status: Int, body: String?, correlationId: String?, code: String? = null)
 
     @Query(
         "UPDATE outbox SET state = 'REFUSED', status = :status, code = :code, message = :message, " +

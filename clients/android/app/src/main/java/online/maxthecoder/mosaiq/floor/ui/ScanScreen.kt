@@ -49,7 +49,12 @@ enum class CameraPermission { NOT_ASKED, GRANTED, DENIED }
  * why and offers typing the product id instead.
  */
 @Composable
-fun ScanScreen(model: ScanViewModel, store: ChosenStore?, onPickStore: () -> Unit) {
+fun ScanScreen(
+    model: ScanViewModel,
+    store: ChosenStore?,
+    onPickStore: () -> Unit,
+    onAddProduct: ((online.maxthecoder.mosaiq.floor.net.Product) -> Unit)? = null
+) {
     val context = LocalContext.current
     var permission by rememberSaveable {
         mutableStateOf(
@@ -81,6 +86,7 @@ fun ScanScreen(model: ScanViewModel, store: ChosenStore?, onPickStore: () -> Uni
                 launcher.launch(Manifest.permission.CAMERA)
             }
         },
+        onAddProduct = onAddProduct,
         camera = { CameraPreview(onDecoded = model::onDecoded) }
     )
 }
@@ -94,6 +100,7 @@ fun ScanContent(
     scanning: Boolean,
     onPickStore: () -> Unit,
     onScan: () -> Unit,
+    onAddProduct: ((online.maxthecoder.mosaiq.floor.net.Product) -> Unit)? = null,
     camera: @Composable () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -115,7 +122,7 @@ fun ScanContent(
             else -> Button(onClick = onScan) { Text("Scan") }
         }
         ManualEntry(model)
-        ScanAnswer(model)
+        ScanAnswer(model, onAddProduct)
     }
 }
 
@@ -136,7 +143,7 @@ private fun ManualEntry(model: ScanViewModel) {
 }
 
 @Composable
-private fun ScanAnswer(model: ScanViewModel) {
+private fun ScanAnswer(model: ScanViewModel, onAddProduct: ((online.maxthecoder.mosaiq.floor.net.Product) -> Unit)?) {
     val result by model.result.collectAsState()
     when (val current = result) {
         ScanResult.Idle -> Unit
@@ -154,6 +161,9 @@ private fun ScanAnswer(model: ScanViewModel) {
                 current.stockError != null -> ErrorPanel(current.stockError)
                 current.quantity == null -> Text("Not stocked at this store.")
                 else -> Text("${current.quantity} in stock at ${current.storeName}.")
+            }
+            onAddProduct?.let { add ->
+                Button(onClick = { add(product) }) { Text("Add to sale") }
             }
         }
     }

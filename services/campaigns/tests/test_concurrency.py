@@ -91,6 +91,37 @@ def test_ten_concurrent_creates_get_ten_distinct_ids(
     assert owner.execute("SELECT count(*) FROM campaign").fetchone()[0] == 40
 
 
+def test_identical_concurrent_creates_leave_exactly_one_draft(
+    service: Any, token: Any, owner: psycopg.Connection
+) -> None:
+    headers = {"Authorization": "Bearer " + token(ADMIN, "ADMIN")}
+    replies: list[Any] = [None] * 10
+
+    def create(index: int) -> None:
+        replies[index] = service.test_client().post(
+            "/v1/campaigns", json=BODY, headers=headers
+        )
+
+    threads = [threading.Thread(target=create, args=(i,)) for i in range(10)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+
+    answers = sorted(
+        (reply.status_code, (reply.get_json() or {}).get("code")) for reply in replies
+    )
+    assert answers == [(201, None)] + [(409, "duplicate_draft")] * 9
+    assert (
+        owner.execute(
+            "SELECT count(*) FROM campaign WHERE name = %s AND label_code = %s"
+            " AND starts_on = %s AND ends_on = %s AND status = 'DRAFT'",
+            tuple(BODY.values()),
+        ).fetchone()[0]
+        == 1
+    )
+
+
 def _collide(connection: Any) -> None:
     """Another writer that skipped the lock already holds the id: a 23505."""
     connection.execute(

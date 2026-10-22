@@ -65,6 +65,11 @@ GET_FOR_UPDATE = (
     "SELECT campaign_id, name, label_code, starts_on, ends_on, status"
     " FROM public.campaign WHERE campaign_id = %s FOR UPDATE"
 )
+DUPLICATE_DRAFT = (
+    "SELECT 1 FROM public.campaign"
+    " WHERE name = %s AND label_code = %s AND starts_on = %s AND ends_on = %s"
+    " AND status = 'DRAFT'"
+)
 INSERT = (
     "INSERT INTO public.campaign (campaign_id, name, label_code, starts_on,"
     " ends_on, status)"
@@ -113,6 +118,15 @@ def unknown_label() -> ApiError:
 
 def campaign_not_draft() -> ApiError:
     return ApiError(409, "campaign_not_draft", "Only a DRAFT campaign may be edited.")
+
+
+def duplicate_draft() -> ApiError:
+    return ApiError(
+        409,
+        "duplicate_draft",
+        "A DRAFT campaign with the same name, label_code, starts_on and ends_on"
+        " already exists.",
+    )
 
 
 def status_changed() -> ApiError:
@@ -251,7 +265,7 @@ def create_campaign_once(
     starts_on: date,
     ends_on: date,
 ) -> dict[str, Any]:
-    """One attempt: the lock, max+1 and the INSERT, as one DRAFT row.
+    """One attempt: lock, reject an identical DRAFT, then allocate and insert.
 
     The lock is transaction-scoped, so a refused or failed attempt releases it
     with its rollback. A UniqueViolation on `campaign_pkey` reaches the caller,
@@ -261,6 +275,9 @@ def create_campaign_once(
         raise ends_before_start()
     with connection.cursor() as cursor:
         cursor.execute("SELECT pg_advisory_xact_lock(%s)", (CREATE_LOCK_KEY,))
+        cursor.execute(DUPLICATE_DRAFT, (name, label_code, starts_on, ends_on))
+        if cursor.fetchone() is not None:
+            raise duplicate_draft()
         cursor.execute(INSERT, (name, label_code, starts_on, ends_on))
         return representation(cursor.fetchone())
 

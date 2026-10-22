@@ -5,7 +5,7 @@
 {% block breadcrumbs %}{{ application_name }} / Administration / Sales import / Load #{{ load.load_id }}{% endblock %}
 
 {% block content %}
-  {% from "macros/ui.html" import count_label, empty_state, page_header %}
+  {% from "macros/ui.html" import count_label, empty_state, page_header, pagination %}
   {% call page_header("Load #" ~ load.load_id, load.filename ~ " — uploaded " ~ load.loaded_at.strftime("%Y-%m-%d %H:%M"), "Sales import") %}
     <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('sales_import.index') }}">Back to sales import</a>
   {% endcall %}
@@ -23,7 +23,7 @@
 
   {% if rejections %}
     <section class="mq-panel mq-panel--table mq-density-compact">
-      <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(rejections|length, "rejected row") }}</span>
+      <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(total, "rejected row") }}</span>
         <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('sales_import.download_rejections', load_id=load.load_id) }}">Download CSV</a>
       </div>
       <div class="mq-table-wrap">
@@ -36,6 +36,13 @@
           </tbody>
         </table>
       </div>
+      {{ pagination(
+        page,
+        total_pages,
+        "Page {} of {} · ".format(page, total_pages) ~ count_label(total, "rejected row"),
+        url_for('sales_import.detail', load_id=load.load_id, page=page - 1) if page > 1 else none,
+        url_for('sales_import.detail', load_id=load.load_id, page=page + 1) if page < total_pages else none
+      ) }}
     </section>
   {% else %}
     {{ empty_state("No rejected rows", "Every row in this file was accepted.") }}

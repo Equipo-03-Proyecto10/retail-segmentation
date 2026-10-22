@@ -221,3 +221,43 @@ async fn the_role_cannot_write_the_store_directory() {
     assert_eq!(denied.code().map(|c| c.code()), Some("42501"));
     store.cleanup(&owner).await;
 }
+
+#[tokio::test]
+async fn a_session_whose_sub_is_not_a_user_is_401_not_500() {
+    let Some(url) = owner_url() else { return };
+    let owner = connect(&url).await;
+    let db = service_database(&url);
+    let (known, _) = users(&owner).await;
+    let store = TestStore::create(&owner).await;
+    let stranger = uuid::Uuid::new_v4();
+
+    let error = set_location(
+        &db,
+        &principal(stranger),
+        store.id,
+        dec("25.6866"),
+        dec("-100.3161"),
+        150,
+    )
+    .await
+    .expect_err("unknown actor");
+    assert_eq!((error.status, error.code.as_str()), (401, "invalid_token"));
+    assert_eq!(rows_for(&owner, store.id).await, 0);
+
+    set_location(
+        &db,
+        &principal(known),
+        store.id,
+        dec("25.6866"),
+        dec("-100.3161"),
+        150,
+    )
+    .await
+    .unwrap();
+    let error = clear_location(&db, Some(&principal(stranger)), store.id)
+        .await
+        .expect_err("unknown actor");
+    assert_eq!((error.status, error.code.as_str()), (401, "invalid_token"));
+    assert_eq!(rows_for(&owner, store.id).await, 1);
+    store.cleanup(&owner).await;
+}

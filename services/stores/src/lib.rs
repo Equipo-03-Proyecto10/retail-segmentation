@@ -246,6 +246,15 @@ pub fn constraint_error(error: tokio_postgres::Error) -> ApiError {
         .as_db_error()
         .and_then(|database| database.constraint())
         .unwrap_or_default();
+    // A session whose `sub` is not an `app_user` fails the foreign keys on
+    // `set_by` and on the audit trigger's `user_id`. The contract documents
+    // 401 for the token, so it is refused as an invalid token, not a 500.
+    if matches!(
+        constraint,
+        "store_location_set_by_fkey" | "audit_log_user_id_fkey"
+    ) {
+        return ApiError::new(401, "invalid_token", "The bearer token is invalid.");
+    }
     let field = match constraint {
         "store_location_latitude_check" => Some("latitude"),
         "store_location_longitude_check" => Some("longitude"),
@@ -364,8 +373,9 @@ pub async fn clear_location(
             "DELETE FROM stores.store_location WHERE store_id = $1",
             &[&id],
         )
-        .await?;
-    transaction.commit().await?;
+        .await
+        .map_err(constraint_error)?;
+    transaction.commit().await.map_err(constraint_error)?;
     Ok(())
 }
 

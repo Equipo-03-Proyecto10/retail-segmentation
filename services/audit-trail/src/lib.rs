@@ -8,17 +8,13 @@
 //! entry leaves it (RN-29).
 //!
 //! A payload is a JSON object in the JSON representation and a string holding
-//! that object's JSON text in the XML one (`contracts/audit-trail/`). kit-rs
-//! renders one value for both formats, so a handler carries the payload as
-//! text, which is exactly what the XML wants, and the last layer of the router
-//! turns that text back into an object in a JSON reply.
+//! that object's JSON text in the XML one (`contracts/audit-trail/`).
 
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::body::{to_bytes, Body};
+use axum::body::Body;
 use axum::extract::Request;
-use axum::http::{header, HeaderValue};
 use axum::middleware::{self, Next};
 use axum::response::Response;
 use axum::Router;
@@ -209,11 +205,13 @@ impl AuditEntry {
             ("action".to_owned(), Value::from(self.action.as_str())),
             (
                 "data_before".to_owned(),
-                self.data_before.clone().map_or(Value::Null, Value::Text),
+                self.data_before
+                    .clone()
+                    .map_or(Value::Null, Value::JsonText),
             ),
             (
                 "data_after".to_owned(),
-                self.data_after.clone().map_or(Value::Null, Value::Text),
+                self.data_after.clone().map_or(Value::Null, Value::JsonText),
             ),
             ("executed_at".to_owned(), Value::from(self.executed_at)),
         ])
@@ -338,64 +336,12 @@ async fn database_ready(db: Arc<Database>) -> bool {
         .is_ok()
 }
 
-// ---------- the two layers around the kit's router ----------
+// ---------- the layer around the kit's router ----------
 
 /// kit-rs gives a handler no query string, so it is kept for the request.
 async fn capture_query(request: Request<Body>, next: Next) -> Response {
     let query = request.uri().query().unwrap_or_default().to_owned();
     REQUEST_QUERY.scope(query, next.run(request)).await
-}
-
-/// In a JSON reply, a payload is the object its text holds.
-///
-/// Applies to the two successful reads only; an error, an XML reply and every
-/// other path pass through untouched.
-pub fn expand_payloads(body: &[u8]) -> Option<Vec<u8>> {
-    let mut document: serde_json::Value = serde_json::from_slice(body).ok()?;
-    let expand = |entry: &mut serde_json::Value| {
-        let Some(members) = entry.as_object_mut() else {
-            return;
-        };
-        for name in ["data_before", "data_after"] {
-            let parsed = match members.get(name) {
-                Some(serde_json::Value::String(text)) => serde_json::from_str(text).ok(),
-                _ => None,
-            };
-            if let Some(object) = parsed {
-                members.insert(name.to_owned(), object);
-            }
-        }
-    };
-    match document
-        .get_mut("audit_entries")
-        .and_then(|v| v.as_array_mut())
-    {
-        Some(entries) => entries.iter_mut().for_each(expand),
-        None => expand(&mut document),
-    }
-    serde_json::to_vec(&document).ok()
-}
-
-async fn payloads_as_objects(request: Request<Body>, next: Next) -> Response {
-    let reads_entries = request.uri().path().starts_with("/v1/audit-entries");
-    let response = next.run(request).await;
-    let is_json = response
-        .headers()
-        .get(header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value.starts_with("application/json"));
-    if !(reads_entries && is_json && response.status().as_u16() == 200) {
-        return response;
-    }
-    let (mut parts, body) = response.into_parts();
-    let Ok(bytes) = to_bytes(body, usize::MAX).await else {
-        return Response::from_parts(parts, Body::empty());
-    };
-    let rewritten = expand_payloads(&bytes).unwrap_or_else(|| bytes.to_vec());
-    parts
-        .headers
-        .insert(header::CONTENT_LENGTH, HeaderValue::from(rewritten.len()));
-    Response::from_parts(parts, Body::from(rewritten))
 }
 
 pub fn router(config: KitConfig, contracts: &str) -> Result<Router, Box<dyn std::error::Error>> {
@@ -404,8 +350,7 @@ pub fn router(config: KitConfig, contracts: &str) -> Result<Router, Box<dyn std:
         .operation("getAuditEntry", get)?
         .ready_check(database_ready)
         .into_router()
-        .layer(middleware::from_fn(capture_query))
-        .layer(middleware::from_fn(payloads_as_objects)))
+        .layer(middleware::from_fn(capture_query)))
 }
 
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {

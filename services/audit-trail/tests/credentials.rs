@@ -1,7 +1,7 @@
 //! RN-29 as the service holds it: no entry carries `password_hash`, at any
 //! depth, in either format.
 
-use audit_trail::{clean_payload, expand_payloads, strip_credentials, AuditEntry};
+use audit_trail::{clean_payload, strip_credentials, AuditEntry};
 use chrono::{TimeZone, Utc};
 use mosaiq_kit::rendering::{render_json, render_xml};
 use mosaiq_kit::{Page, Reply};
@@ -81,26 +81,11 @@ fn xml_holds_the_payload_as_json_text_and_omits_what_is_null() {
 #[test]
 fn json_holds_the_payload_as_an_object_and_null_as_null() {
     let rendered = render_json(&page_of(&entry_with_credentials()), 20).unwrap();
-    let body = serde_json::to_vec(&rendered).unwrap();
-    let rewritten: serde_json::Value =
-        serde_json::from_slice(&expand_payloads(&body).unwrap()).unwrap();
-    let entry = &rewritten["audit_entries"][0];
+    let entry = &rendered["audit_entries"][0];
     assert!(entry["data_before"].is_null());
     assert!(entry["user_id"].is_null());
     assert_eq!(entry["data_after"]["nested"]["kept"], 1);
     assert_eq!(entry["data_after"]["name"], "Sam");
     assert!(entry["data_after"].get("password_hash").is_none());
-    assert_eq!(rewritten["page_info"]["total"], 1);
-}
-
-#[test]
-fn a_single_entry_is_expanded_too() {
-    let body = serde_json::to_vec(&json!({
-        "audit_id": 1, "data_before": "{\"a\":1}", "data_after": null
-    }))
-    .unwrap();
-    let rewritten: serde_json::Value =
-        serde_json::from_slice(&expand_payloads(&body).unwrap()).unwrap();
-    assert_eq!(rewritten["data_before"], json!({"a": 1}));
-    assert!(rewritten["data_after"].is_null());
+    assert_eq!(rendered["page_info"]["total"], 1);
 }

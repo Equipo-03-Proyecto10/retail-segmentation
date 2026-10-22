@@ -6,6 +6,10 @@ use audit_trail::{audit_entry_not_found, list_entries, parse_filters, read_entry
 use support::{connect, owner_url, remove_test_rows, service_database, ADMIN};
 use uuid::Uuid;
 
+/// Some tests here add rows to the shared `audit_log` and others count it, and
+/// the test harness runs them on parallel threads. Each takes this turn first.
+static TURN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 fn filters(query: &str) -> Filters {
     parse_filters(query).unwrap()
 }
@@ -33,6 +37,7 @@ async fn owner_count(
 #[tokio::test]
 async fn each_filter_narrows_the_result_and_combinations_are_anded() {
     let Some(url) = owner_url() else { return };
+    let _turn = TURN.lock().await;
     let owner = connect(&url).await;
     let db = service_database(&url);
 
@@ -87,6 +92,7 @@ async fn each_filter_narrows_the_result_and_combinations_are_anded() {
 #[tokio::test]
 async fn time_bounds_are_inclusive_and_the_order_is_newest_first() {
     let Some(url) = owner_url() else { return };
+    let _turn = TURN.lock().await;
     let owner = connect(&url).await;
     let db = service_database(&url);
     let key = format!("order-test-{}", Uuid::new_v4());
@@ -148,6 +154,7 @@ async fn time_bounds_are_inclusive_and_the_order_is_newest_first() {
 #[tokio::test]
 async fn one_entry_by_id_and_a_missing_one() {
     let Some(url) = owner_url() else { return };
+    let _turn = TURN.lock().await;
     let db = service_database(&url);
     let (page, _) = list_entries(&db, &filters(""), 1, 1).await.unwrap();
     let newest = &page[0];
@@ -166,6 +173,7 @@ async fn one_entry_by_id_and_a_missing_one() {
 #[tokio::test]
 async fn a_write_that_named_its_caller_is_attributed_to_it() {
     let Some(url) = owner_url() else { return };
+    let _turn = TURN.lock().await;
     let mut owner = connect(&url).await;
     let db = service_database(&url);
     let transaction = owner.transaction().await.unwrap();
@@ -217,6 +225,7 @@ async fn a_write_that_named_its_caller_is_attributed_to_it() {
 #[tokio::test]
 async fn a_credential_in_the_table_never_reaches_an_entry() {
     let Some(url) = owner_url() else { return };
+    let _turn = TURN.lock().await;
     let owner = connect(&url).await;
     let db = service_database(&url);
     let key = format!("credential-test-{}", Uuid::new_v4());
@@ -257,6 +266,7 @@ async fn a_credential_in_the_table_never_reaches_an_entry() {
 #[tokio::test]
 async fn the_service_reads_audit_log_and_holds_nothing_else() {
     let Some(url) = owner_url() else { return };
+    let _turn = TURN.lock().await;
     let owner = connect(&url).await;
     let service = connect(&support::service_url(&url)).await;
 

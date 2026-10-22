@@ -104,10 +104,6 @@ def test_xml_round_trip_is_valid_against_the_xsd(client, admin_headers, new_id, 
     assert valid(duplicate.data)
 
 
-@pytest.mark.xfail(
-    reason="kit-py v0.1.1 does not read xsi:nil; the contract's make-root XML is 422",
-    strict=True,
-)
 def test_xml_nil_parent_makes_a_root(client, admin_headers, new_id, unique):
     parent, child = new_id(), new_id()
     client.post(
@@ -238,14 +234,9 @@ def test_an_xml_parent_beyond_category_id_is_an_unknown_parent(
     )
 
 
-# Refused by mosaiq-kit 0.1.3 for every Python service (#580, #581, #582).
-KIT_0_1_3 = pytest.mark.xfail(
-    reason="mosaiq-kit 0.1.3 answers these; the kit bump removes this mark",
-    strict=True,
-)
+# Refused by the kit since 0.1.3 for every Python service (#580, #581, #582).
 
 
-@KIT_0_1_3
 def test_a_page_beyond_the_kit_bound_is_invalid_pagination(client, admin_headers):
     response = client.get(
         "/v1/categories?page=99999999999999999999", headers=admin_headers
@@ -256,7 +247,6 @@ def test_a_page_beyond_the_kit_bound_is_invalid_pagination(client, admin_headers
     )
 
 
-@KIT_0_1_3
 def test_a_nul_in_the_name_is_invalid_body(client, admin_headers, new_id):
     response = client.post(
         "/v1/categories",
@@ -269,7 +259,6 @@ def test_a_nul_in_the_name_is_invalid_body(client, admin_headers, new_id):
     )
 
 
-@KIT_0_1_3
 def test_an_xml_comment_in_the_body_is_skipped(client, admin_headers, new_id, unique):
     request = (
         f'<CreateCategoryRequest xmlns="{NAMESPACE}"><!--c--><?pi x?>'

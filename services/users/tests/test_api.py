@@ -113,20 +113,14 @@ def test_a_nul_in_the_text_filter_is_refused(api: Any, query: str) -> None:
     assert reply.get_json()["details"] == [{"field": "q", "code": "invalid_format"}]
 
 
-# Refused by mosaiq-kit 0.1.3 for every Python service (#580, #581, #582).
-KIT_0_1_3 = pytest.mark.xfail(
-    reason="mosaiq-kit 0.1.3 answers these; the kit bump removes this mark",
-    strict=True,
-)
+# Refused by the kit since 0.1.3 for every Python service (#580, #581, #582).
 
 
-@KIT_0_1_3
 def test_a_page_beyond_the_kit_bound_is_invalid_pagination(api: Any) -> None:
     reply = api("GET", "/v1/users?page=99999999999999999999")
     assert _code(reply) == (422, "invalid_pagination")
 
 
-@KIT_0_1_3
 @pytest.mark.parametrize(
     "field,value", [("name", "a\x00b"), ("email", "a\x00b@example.com")]
 )
@@ -139,7 +133,6 @@ def test_a_nul_in_a_body_field_is_invalid_body(
     assert _code(updated) == (422, "invalid_body")
 
 
-@KIT_0_1_3
 def test_an_xml_comment_in_the_body_is_skipped(api: Any) -> None:
     namespace = "https://mosaiq.maxthecoder.online/xml/users/v1"
     reply = api(

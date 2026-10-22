@@ -303,21 +303,15 @@ def test_a_nul_in_a_text_filter_is_422_invalid_query(client, query) -> None:
     ]
 
 
-# Refused by mosaiq-kit 0.1.3 for every Python service (#580, #581, #582).
-KIT_0_1_3 = pytest.mark.xfail(
-    reason="mosaiq-kit 0.1.3 answers these; the kit bump removes this mark",
-    strict=True,
-)
+# Refused by the kit since 0.1.3 for every Python service (#580, #581, #582).
 
 
-@KIT_0_1_3
 def test_a_page_beyond_the_kit_bound_is_invalid_pagination(client) -> None:
     response = client.get("/v1/products?page=99999999999999999999", headers=headers())
     assert response.status_code == 422
     assert response.get_json()["code"] == "invalid_pagination"
 
 
-@KIT_0_1_3
 @pytest.mark.parametrize("field,value", [("name", "a\x00b"), ("sku", "TST-\x00")])
 def test_a_nul_in_a_body_field_is_422_invalid_body(client, field, value) -> None:
     created = create(client, **{field: value})
@@ -333,7 +327,6 @@ def test_a_nul_in_a_body_field_is_422_invalid_body(client, field, value) -> None
     assert updated.get_json()["code"] == "invalid_body"
 
 
-@KIT_0_1_3
 def test_an_xml_comment_in_the_body_is_skipped(client) -> None:
     body = (
         '<CreateProductRequest xmlns="https://mosaiq.maxthecoder.online/xml/products/v1">'

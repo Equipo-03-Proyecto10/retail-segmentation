@@ -2,6 +2,7 @@ import type { AppState, ErrorView, MosaiqBridge } from '../shared/api';
 import { renderCategories, renderProducts } from './catalog';
 import { el, errorBox } from './dom';
 import { renderCheckIns, renderEngagement, renderSales, renderStock } from './floor';
+import { renderStores } from './stores';
 import { renderAccount, renderTransfer, renderUsers } from './users';
 
 declare global {
@@ -81,6 +82,7 @@ type View =
   | 'sales'
   | 'engagement'
   | 'check-ins'
+  | 'stores'
   | 'users'
   | 'transfer'
   | 'services';
@@ -93,6 +95,7 @@ const VIEWS: { name: View; label: string; operation: string | null }[] = [
   { name: 'sales', label: 'Sales', operation: 'listSales' },
   { name: 'engagement', label: 'Engagement', operation: 'getEngagementSummary' },
   { name: 'check-ins', label: 'Check-ins', operation: 'listCheckIns' },
+  { name: 'stores', label: 'Stores', operation: 'listStores' },
   { name: 'users', label: 'Users', operation: 'listUsers' },
   { name: 'transfer', label: 'Transfer administrator', operation: 'transferAdministrator' },
   { name: 'services', label: 'Services', operation: null },
@@ -141,6 +144,7 @@ function renderHome(state: Extract<AppState, { status: 'signed_in' }>): void {
     else if (next === 'sales') renderSales(screen, ctx);
     else if (next === 'engagement') renderEngagement(screen, ctx);
     else if (next === 'check-ins') renderCheckIns(screen, ctx);
+    else if (next === 'stores') renderStores(screen, ctx);
     else if (next === 'users') renderUsers(screen, ctx);
     else if (next === 'transfer') renderTransfer(screen, ctx);
     else renderServices(screen, state);

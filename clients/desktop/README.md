@@ -7,7 +7,8 @@ response against that service's own XSD, and signs in through auth-service
 [ADR-0036](../../docs/adr/0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md)).
 F16-01 is the foundation: shell, secure window, preload bridge, XML transport, sign-in and
 role-gated screens. F16-02 adds Products and Categories, F16-04 adds Stock, Sales, Engagement and
-Check-ins, and F16-06 adds Users, Transfer administrator and the account menu (see below).
+Check-ins, F16-06 adds Users, Transfer administrator and the account menu, and F16-07 adds Stores
+with their locations (see below).
 
 ## Run it
 
@@ -57,6 +58,7 @@ being ignored. `MOSAIQ_DESKTOP_CONFIG_DIR` overrides the directory (the window t
     `listEngagementEvents`, `voidEngagementEvent`, `listCheckIns`, `getCheckIn`, `reviewCheckIn`.
   - users: `listUsers`, `getUser`, `listRoles`, `createUser`, `updateUser`, `deactivateUser`,
     `reactivateUser`, `resetUserPassword`, `changeOwnPassword`, `transferAdministrator`.
+  - store locations: `listStores`, `getStore`, `setStoreLocation`, `removeStoreLocation`.
 
   There is no generic fetch and no `ipcRenderer`. The main process checks every value a screen sends
   (`src/main/checks.ts`, used by `catalog.ts` and `floor.ts`) before it builds a path or a body from it.
@@ -157,6 +159,29 @@ its field).
 The window tests (`tests/window/users.spec.ts`) answer with the recorded examples in
 `contracts/users/examples/`, read from disk, and keep the users they create, change and hand over.
 The transfer test signs in again as the successor and reads `GET /v1/users?role=ADMIN`.
+
+## Store locations and geofences (F16-07)
+
+Through stores-service (`contracts/stores/`). The **Stores** screen is open to every staff role:
+
+- The directory comes from `GET /v1/stores` (`active`, `city`, paging); a store opens from
+  `GET /v1/stores/{store_id}`. A store without a location reads "no location: check-ins here are
+  recorded as store_location_unknown".
+- An `ADMIN` sets a location with `PUT /v1/stores/{store_id}/location` (`latitude`, `longitude`,
+  `geofence_radius_m`) and removes it with `DELETE` after a confirmation. The screen then shows what
+  the service stored: the directory is read again. These are the only calls that write coordinates
+  (ADR-0035). Other roles see no control, and a forced write gets 403 `forbidden_role`, shown as
+  returned.
+- The bounds are the XSD's facets: latitude -90 to 90, longitude -180 to 180, radius 25 to 2000 m.
+  The main process checks them first so the refusal names its field (`out_of_range`,
+  `invalid_format`, `required`), nothing is sent, and the XSD check in the transport stays the last
+  gate. A forced request that the service refuses with 422 `invalid_body` shows its `details` next to
+  the field; an unknown store shows `store_not_found` as returned.
+- No map is drawn: coordinates are plain numbers, and the CSP of F16-01 (no remote script, tile, image
+  or font) is unchanged. The window test records every request and finds none outside the app.
+
+The window tests (`tests/window/stores.spec.ts`) answer with the recorded examples in
+`contracts/stores/examples/`, read from disk, and keep the locations they are given.
 
 ## Checks
 

@@ -121,6 +121,33 @@ export interface StoreView {
   is_active: boolean;
 }
 
+export interface StoreLocationView {
+  /** Decimal degrees, as stores-service returned them. */
+  latitude: string;
+  longitude: string;
+  geofence_radius_m: number;
+  set_at: string;
+}
+
+/** A store of the directory, with its location when one is set. */
+export interface StoreDetailView extends StoreView {
+  location: StoreLocationView | null;
+}
+
+export interface StoreQuery {
+  active?: boolean;
+  city?: string;
+  page?: number;
+  size?: number;
+}
+
+/** Typed values, sent as written: the main process checks the bounds before anything is sent. */
+export interface StoreLocationDraft {
+  latitude: string;
+  longitude: string;
+  geofence_radius_m: string;
+}
+
 export interface StockQuery {
   store_id?: number;
   below?: number;
@@ -317,6 +344,10 @@ export interface MosaiqBridge {
   updateCategory(categoryId: number, changes: CategoryChanges): Promise<Result<CategoryView>>;
   deleteCategory(categoryId: number): Promise<Result<null>>;
   stores(): Promise<Result<StoreView[]>>;
+  listStores(query: StoreQuery): Promise<Result<Paged<StoreDetailView>>>;
+  getStore(storeId: number): Promise<Result<StoreDetailView>>;
+  setStoreLocation(storeId: number, location: StoreLocationDraft): Promise<Result<StoreDetailView>>;
+  removeStoreLocation(storeId: number): Promise<Result<null>>;
   stockLevels(query: StockQuery): Promise<Result<Paged<StockLevelView>>>;
   listSales(query: SalesQuery): Promise<Result<Paged<SaleView>>>;
   getSale(saleId: number): Promise<Result<SaleView>>;
@@ -358,6 +389,10 @@ export const CHANNELS = {
   updateCategory: 'mosaiq:update-category',
   deleteCategory: 'mosaiq:delete-category',
   stores: 'mosaiq:stores',
+  listStores: 'mosaiq:list-stores',
+  getStore: 'mosaiq:get-store',
+  setStoreLocation: 'mosaiq:set-store-location',
+  removeStoreLocation: 'mosaiq:remove-store-location',
   stockLevels: 'mosaiq:stock-levels',
   listSales: 'mosaiq:list-sales',
   getSale: 'mosaiq:get-sale',

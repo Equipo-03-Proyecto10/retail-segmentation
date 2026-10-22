@@ -53,6 +53,7 @@ def _entry(**overrides) -> HistoryEntry:
         valid_to=None,
         label_name="Loyal",
         assignment=_assignment(),
+        data_origin="OBSERVED",
     )
     return HistoryEntry(**{**defaults, **overrides})
 
@@ -67,6 +68,7 @@ def _run(run_id: int, **overrides) -> SegmentationRun:
         executed_by=None,
         executed_by_name=None,
         run_at=_WHEN,
+        data_origin="SEEDED",
     )
     return SegmentationRun(**{**defaults, **overrides})
 
@@ -178,6 +180,30 @@ def test_a_row_carries_the_explanation_from_its_customers_previous_run(
         30,
         "00000000-0000-0000-0000-000000000001",
     )
+
+
+def test_an_observed_row_explained_against_a_seeded_run_is_synthetic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#560, ADR-0052: the explanation reads both runs, so either marks it."""
+    _wire(monkeypatch, previous=_run(30, data_origin="SEEDED"))
+
+    report = build_report(MagicMock(), page=1)
+
+    (row,) = report.rows
+    assert row.entry.data_origin == "OBSERVED"
+    assert row.previous_data_origin == "SEEDED"
+    assert row.synthetic and report.synthetic
+
+
+def test_an_observed_row_against_an_observed_run_is_not_synthetic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _wire(monkeypatch, previous=_run(30, data_origin="OBSERVED"))
+
+    report = build_report(MagicMock(), page=1)
+
+    assert not report.rows[0].synthetic and not report.synthetic
 
 
 def test_a_customers_first_ever_row_has_no_explanation(

@@ -18,6 +18,9 @@ from .types import ApiError
 _FORBIDDEN_XML = re.compile(rb"<!\s*(?:DOCTYPE|ENTITY)\b", re.IGNORECASE)
 
 
+_XSI_NIL = "{http://www.w3.org/2001/XMLSchema-instance}nil"
+
+
 def _strict_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key, value in pairs:
@@ -25,6 +28,29 @@ def _strict_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
             raise ValueError("A JSON object contains a duplicate member.")
         result[key] = value
     return result
+
+
+def _nul_fields(value: Any, path: tuple[str, ...] = ()) -> list[str]:
+    """The fields whose string, or member name, contains a NUL character.
+
+    PostgreSQL text cannot hold U+0000, so such a value can never be stored or
+    matched; it is refused as a schema violation rather than reaching the
+    database driver.
+    """
+
+    if isinstance(value, str):
+        return [".".join(path) or "$"] if "\x00" in value else []
+    fields: list[str] = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if "\x00" in key:
+                fields.append(".".join(path) or "$")
+            else:
+                fields.extend(_nul_fields(item, (*path, key)))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            fields.extend(_nul_fields(item, (*path, str(index))))
+    return fields
 
 
 @dataclass(slots=True)
@@ -328,13 +354,38 @@ class Contract:
                     return branch_type
         return None
 
+    def _nullable(self, schema: dict[str, Any]) -> bool:
+        schema_type = schema.get("type")
+        if schema_type == "null" or (
+            isinstance(schema_type, list) and "null" in schema_type
+        ):
+            return True
+        return any(
+            self._nullable(branch)
+            for keyword in ("oneOf", "anyOf")
+            for branch in schema.get(keyword, [])
+        )
+
+    def _required_names(self, schema: dict[str, Any]) -> set[str]:
+        names = set(schema.get("required", []))
+        for branch in schema.get("allOf", []):
+            names |= self._required_names(branch)
+        return names
+
     def _element_to_value(self, element: etree._Element, schema: dict[str, Any]) -> Any:
+        # xsi:nil="true" is the XML spelling of JSON null.
+        if element.get(_XSI_NIL) in {"true", "1"}:
+            return None
         schema_type = self._schema_type(schema)
-        if schema_type == "object" or len(element):
+        # Comments and processing instructions are legal anywhere in content.
+        # They carry no tag name and no value, so they are skipped, and the
+        # text around them joins, as kit-rs reads it.
+        elements = [child for child in element if isinstance(child.tag, str)]
+        if schema_type == "object" or elements:
             properties = self._merged_properties(schema)
             result: dict[str, Any] = {}
             grouped: dict[str, list[etree._Element]] = {}
-            for child in element:
+            for child in elements:
                 grouped.setdefault(etree.QName(child).localname, []).append(child)
             for name, children in grouped.items():
                 child_schema = properties.get(name, {})
@@ -345,8 +396,13 @@ class Contract:
                     ]
                 else:
                     result[name] = self._element_to_value(children[0], child_schema)
+            # "An absent value is omitted in XML and is null in JSON": a member
+            # that is required and nullable, and omitted, reads as null.
+            for name in self._required_names(schema):
+                if name not in result and self._nullable(properties.get(name, {})):
+                    result[name] = None
             return result
-        text = element.text or ""
+        text = "".join(element.itertext())
         if schema_type == "integer":
             try:
                 return int(text)
@@ -365,15 +421,17 @@ class Contract:
         return text
 
     def validate(self, value: Any, schema: dict[str, Any]) -> None:
+        details = [
+            {"field": field, "code": "invalid_format"} for field in _nul_fields(value)
+        ]
         errors = sorted(
             Draft202012Validator(schema, format_checker=FormatChecker()).iter_errors(
                 value
             ),
             key=lambda error: tuple(str(part) for part in error.absolute_path),
         )
-        if not errors:
+        if not errors and not details:
             return
-        details = []
         for error in errors:
             field = ".".join(str(part) for part in error.absolute_path) or "$"
             if error.validator == "required":

@@ -85,7 +85,7 @@ def _wire(
     so a test can assert on the order and arguments of the whole sequence."""
     manager = Mock()
     manager.read_open_assignments.return_value = prior or {}
-    manager.create_run.return_value = run_id
+    manager.create_run.return_value = (run_id, "OBSERVED")
     for name in (
         "read_open_assignments",
         "create_run",
@@ -388,9 +388,9 @@ def test_the_run_commits_once_after_every_write() -> None:
             "insert_assignments",
             "notify_segment_run",
         ):
-            getattr(manager, name).side_effect = (
-                lambda *a, _n=name, **k: order.append(_n) or 7
-            )
+            getattr(manager, name).side_effect = lambda *a, _n=name, **k: order.append(
+                _n
+            ) or (7, "OBSERVED")
         run_method(
             connection, "RFM_RULES", 180, adapter=_adapter(_scored(_ADA, "LOYAL"))
         )

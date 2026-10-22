@@ -8,6 +8,9 @@ segment.read like the rest of the segmentation surface (ADR-0010).
 
 Reached from a customer listed in a migration matrix cell (#339) and from a
 change on the customer's segment timeline (#337).
+
+The explanation compares two runs, so it is marked Synthetic when either is
+SEEDED (ADR-0052).
 """
 
 from __future__ import annotations
@@ -20,6 +23,7 @@ from web.db import get_connection
 from web.db.segments import get_customer_assignment_for_run, get_run
 from web.middleware.authz import SEGMENT_READ, requires
 from web.parsing import BIGINT_MAX, whole_number
+from web.services.provenance import runs_synthetic
 from web.services.segment_migration import (
     UnknownRun,
     describe_migration,
@@ -81,6 +85,7 @@ def index() -> str:
         "migration_explanation/index.html",
         earlier_run=earlier_run,
         later_run=later_run,
+        synthetic=runs_synthetic(earlier_run, later_run),
         customer_id=customer_id,
         customer_name=customer_name,
         explanation=explanation,

@@ -90,6 +90,7 @@ def _experiment(experiment_id: int = 31) -> Experiment:
         1,
         1,
         0,
+        False,
     )
 
 
@@ -103,6 +104,7 @@ def _run(run_id: int = 40) -> SegmentationRun:
         USER_ID,
         "MOSAIQ Administrator",
         datetime(2026, 10, 1, 9, 0),
+        "OBSERVED",
     )
 
 

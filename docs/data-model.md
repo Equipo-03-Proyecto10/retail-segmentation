@@ -117,7 +117,8 @@ and [`business-rules.md`](business-rules.md) RN-01 explains the split.
 
 **Functional.** Each surrogate key determines every non-key attribute of its
 row: `product_id → sku, name, category_id, list_price, image_path, is_active`,
-and equivalently for the other entities. Three candidate keys carry a
+and equivalently for the other entities; §2.4 states each base relation's keys
+and dependencies one by one. Three candidate keys carry a
 functional dependency of their own and are therefore `UNIQUE`: `sku →
 product_id`, `email → user_id`, and `source_transaction_id → transaction_id` —
 the identifier the sales contract supplies determines the row the database
@@ -298,6 +299,41 @@ names can otherwise make the decomposition look unfinished:
   lossless for assignment-level reporting without inventing an
   exposure-to-sale relationship.
 
+**Data origin (ADR-0052, #559).** `transaction.data_origin` and
+`segmentation_run.data_origin` each add one attribute, and neither breaks a
+normal form:
+
+- *Whole-key, single-valued.* `transaction_id → data_origin` and
+  `run_id → data_origin` hold, and each sale or run has exactly one origin.
+  The determinant is the whole primary key. `source_transaction_id` is a
+  candidate key of `transaction`, so it determines `data_origin` too, and
+  BCNF still holds: every determinant is a key.
+- *Not derivable from another column.* The seed's `TXN-` identifiers suggest
+  an answer, but a CSV file may use the same shape (ADR-0052), so no
+  dependency `source_transaction_id`-shape → origin can stand in for the
+  column. Linking each sale to its `sales_load` was rejected by ADR-0052 too:
+  sales-service writes sales without a load, and a foreign key would record
+  one bit.
+- *On the header, not on `transaction_line`.* A line's key is
+  `(transaction_id, product_id)`, and origin depends on `transaction_id`
+  alone. Storing it per line would be a partial-key dependency, a 2NF
+  violation. The CSV import refuses a line onto a `SEEDED` sale, so all of a
+  sale's lines share its one origin.
+- *A run's origin is a recorded fact, not a derived one.* Like
+  `customer_count`, it describes what the run read when it ran. A later CSV
+  load with backdated `occurred_at` values adds sales to an old run's window,
+  so deriving the origin at render time would describe sales the run never
+  read; ADR-0052 rejected exactly that. It is run-level, so it is not
+  repeated on `customer_segment_history`, which would copy one run fact once
+  per customer.
+- *No multivalued fact.* Origin is one value per row, so no 4NF question
+  arises.
+- *A CHECK, not a lookup table.* Two fixed values, with no attribute of their
+  own, follow the `experiment.data_origin` precedent (ADR-0019). A subset
+  table listing only the `SEEDED` rows was rejected as well: its absence
+  would silently mean `OBSERVED`, while `NOT NULL` with no default makes every
+  writer state the origin.
+
 The other analytics relations were checked by the same test. `segment_label`,
 `segment`, `campaign`, `experiment`, and `experiment_group` each store one fact
 whose attributes depend on a declared key. `segmentation_run` stores one run;
@@ -345,12 +381,138 @@ unfinished:
 No message text is stored. The sentence is a function of the subject row, so
 storing it would be a second copy of facts the subject already holds.
 
-Every other relation in the model is already in 4NF. The remaining composite-key
-tables — `transaction_line`, `inventory` — each carry a single multivalued
-fact plus attributes that depend on the whole key, so there is nothing to
-decompose. `experiment_assignment` (F11-01, replacing the composite-keyed
-`experiment_group_customer`) is not in this group: it carries a surrogate key
-for reasons of physical design, not normalization — see §4.
+The remaining composite-key tables — `transaction_line`, `inventory` — each
+carry a single multivalued fact plus attributes that depend on the whole key,
+so there is nothing to decompose. `experiment_assignment` (F11-01, replacing
+the composite-keyed `experiment_group_customer`) is not in this group: it
+carries a surrogate key for reasons of physical design, not normalization —
+see §4.
+
+**The eight base relations.** `role`, `channel`, `store`, `segment_rule`,
+`app_user`, `customer`, `transaction` and `audit_log` came out of the
+decomposition above unchanged, so no step names them. Each one is argued here
+the same way: its keys, its functional dependencies, and why it has no partial,
+transitive or multivalued dependency. A single-attribute key cannot have a
+partial dependency, so for these relations 2NF follows from the key and the
+argument is about 3NF (BCNF where every determinant is a key) and 4NF.
+
+- **`role`.**
+  - *Keys:* `role_id`, and `code`, which is `UNIQUE` and cannot change after
+    insert (`trg_role_code_immutable`).
+  - *Dependencies:* `role_id → code, description` and
+    `code → role_id, description`.
+  - *Why it is in 4NF:* both determinants are keys, so the relation is in BCNF.
+    `description` describes the role and nothing else. The permissions a role
+    grants are not columns here: the matrix lives with the requirements (§1)
+    and each service owns its own role policy (ADR-0036), so a role row holds
+    no repeating or multivalued fact.
+- **`channel`.**
+  - *Keys:* `channel_id` and `name` (`UNIQUE`).
+  - *Dependencies:* `channel_id → name` and `name → channel_id`.
+  - *Why it is in 4NF:* the relation has two attributes and both are keys, so
+    there is no non-key attribute that could depend on anything. It is BCNF
+    with no multivalued fact.
+- **`store`.**
+  - *Key:* `store_id`. `name` is not a key; nothing makes it unique.
+  - *Dependencies:* `store_id → name, city, state, is_active`.
+  - *Why there is no transitive dependency:* `city → state` would be one, but it
+    does not hold in the domain. Municipality names repeat across Mexican
+    states (Guadalupe is in both Nuevo León and Zacatecas), so a city name does
+    not determine its state. The seeded stores happen to place each city in one
+    state; that is a property of the data, not a rule the schema could rely on.
+    A state name repeated across stores is a repeated value, not a repeated
+    fact: changing one store's state never requires changing another's.
+  - *Why it is in 4NF:* one row is one store with single-valued attributes. Its
+    geofence is not here; `stores.store_location` holds it under the stores
+    boundary (§3).
+- **`segment_rule`.**
+  - *Keys:* `rule_id`, and `rule_code` (`UNIQUE`).
+  - *Dependencies:* `rule_id → rule_code, r_min, r_max, f_min, f_max, m_min,
+    m_max`.
+  - *Why there is no dependency among the bounds:* each bound is an independent
+    fact. The table `CHECK` constrains them (each minimum is at most its
+    maximum) but determines none of them. The six bounds are separate atomic
+    columns, not one array, so each carries its own `CHECK BETWEEN 1 AND 5`.
+  - *Why the label is not here:* `segment` maps a rule to a label, with its own
+    validity dates, and `segment.rule_id` is not unique. A label is therefore
+    not a function of the rule, and storing one on the rule would be wrong
+    rather than merely redundant.
+  - *Why it is in 4NF:* one row is one band, with single-valued attributes
+    and no multivalued fact.
+- **`app_user`.**
+  - *Keys:* `user_id`, and `lower(email)` through the unique index
+    `ux_app_user_email_lower`, so the email determines the row
+    case-insensitively.
+  - *Dependencies:* `user_id → role_id, name, email, password_hash, is_active,
+    created_at`.
+  - *Why there is no transitive dependency:* only `role_id` is stored; the
+    role's `code` and `description` stay in `role`. `password_hash` is a fact
+    of the user's current password, not of any other attribute.
+  - *Why it is in 4NF:* a user holds exactly one role, so `role_id` is
+    single-valued, not a multivalued fact needing its own relation. The
+    single-administrator partial index (§1) limits how many rows hold
+    `role_id = 1`; it is a constraint on rows, not a dependency between
+    columns.
+- **`customer`.**
+  - *Keys:* `customer_id`. `email` and `user_id` are `UNIQUE` and nullable, so
+    each is a key on the rows where it is present.
+  - *Dependencies:* `customer_id → user_id, name, email, phone,
+    registration_channel_id, registered_on`. `phone` determines nothing: it is
+    not unique, and two customers may share a number.
+  - *Why there is no transitive dependency:* `registration_channel_id` stores
+    the channel the customer was acquired through, and the channel's name stays
+    in `channel`. It is not the channel of any sale; that is
+    `transaction.channel_id`, a different fact. The customer's `name` and
+    `email` are contact data, not copies of the linked account's login
+    identity, so `user_id → app_user.email` copies nothing into this row.
+  - *Why it is in 4NF:* the preferences are the two relations split off above,
+    and there is no current-segment column (§3), so no multivalued fact is
+    left in the row.
+- **`transaction`.**
+  - *Keys:* `transaction_id`, and `source_transaction_id` (`UNIQUE`).
+  - *Dependencies:* `transaction_id → source_transaction_id, customer_id,
+    store_id, channel_id, occurred_at, total`.
+  - *Why there is no transitive dependency:* neither `customer_id` nor
+    `store_id` determines `channel_id`. One customer buys through different
+    channels, and one store records sales from more than one. The sale's
+    channel is therefore a fact of the sale.
+  - *Why it is in 4NF:* its lines are the separate relation from §2.2, so the
+    header holds one sale with single-valued attributes.
+  - *The deliberate exception, `total`:* `total` equals the sum of
+    `quantity × unit_price` over the sale's lines (ADR-0020, RN-37). That is a
+    dependency on another relation, not a functional dependency inside
+    `transaction`, so it breaks no normal form. It is still a stored derived
+    value, and so a redundancy that can drift. It is kept on purpose, for two
+    reasons. First, the analytics read it directly: spend, the consumption
+    profile and the experiment conversions sum `transaction.total`
+    (`web/db/consumption.py`, `web/db/consumption_shift.py`,
+    `web/db/experiment_conversions.py`). Second, `stream:sales.v1.recorded` is
+    captured by a trigger on `INSERT OR UPDATE OF total` (ADR-0039), so the
+    update of `total` is what announces a CSV line appended to an existing
+    sale. The writers keep it equal to its lines. The web recomputes it from
+    the committed lines after every accepted CSV row, under the header lock
+    (`recompute_total`, RN-37), and sales-service computes it once and never
+    updates it (ADR-0039). The database refuses a `total` that disagrees with
+    its lines at `COMMIT`, through the deferred `transaction_total_matches_lines`
+    trigger described under `transaction_line` (#591).
+- **`audit_log`.**
+  - *Key:* `audit_id`.
+  - *Dependencies:* `audit_id → user_id, entity, entity_pk, action,
+    data_before, data_after, executed_at`.
+  - *Why `(entity, entity_pk)` is not a key:* it names the changed row, which
+    changes many times. There is no foreign key to that row, on purpose: one
+    log covers many tables, and an entry must outlive the deletion it records
+    (§5).
+  - *Why the JSONB columns satisfy 1NF:* `data_before` and `data_after` are
+    snapshots of a whole row, written once by `fn_audit()` and read back whole.
+    The audit trail (`web/services/audit.py`) pairs their fields only to
+    display a change. No query filters or joins on their members, and their
+    shape follows whichever table was audited. Only the integrity checks look
+    inside them in SQL: `sql/verify_integrity.sql` proves `password_hash` is
+    absent and reads a campaign's recorded status transition. Splitting the
+    snapshots would need one row per column per change, or one audit table per
+    audited table.
+  - *Why it is in 4NF:* one row is one change, with no multivalued fact.
 
 Every boundary outbox, `<suffix>_events.outbox` (ADR-0044, ADR-0046), is in 4NF
 too. `event_id` determines every other column (`stream`, `event_type`,
@@ -360,6 +522,25 @@ key only, never by copying its state, so there is nothing derived to drift.
 There is one outbox per owning boundary rather than one shared table, which
 keeps one writer per table: only that boundary's definer appends, and only its
 own relay marks and purges.
+
+The check-ins boundary (ADR-0046, F14-26) adds two relations, both in 4NF:
+- **`checkins.store_check_in`** has two candidate keys: `check_in_id` and the
+  phone's `client_check_in_id`. Each determines every other column.
+  - There is no `verified` column. The automatic verdict depends on `reason`
+    alone, so storing it would be a transitive dependency; the effective verdict
+    depends on the latest review, a fact of another relation.
+  - `distance_m` and `reason` look derivable from the fix and the store's
+    location, but they are fixed at `recorded_at` against the location *then*.
+    A later change to the store's location must not rewrite past verdicts, so
+    they are facts of the check-in, not functions of current data.
+  - There is no current-status column either, which would turn an append-only
+    history into an updated one.
+- **`checkins.check_in_review`** is the multivalued fact "this check-in was
+  reviewed, by whom, with what verdict", which can occur any number of times
+  per check-in. It is therefore its own relation: `review_id` determines a
+  review, and `check_in_id` relates it to its check-in. Keeping reviews in the
+  check-in row would need either repeating columns (not 1NF) or updating that
+  row, which RN-56 forbids.
 
 ---
 
@@ -448,6 +629,9 @@ Nullability is stated for every column. `PK` primary key, `FK` foreign key,
 The hierarchy is a tree (RN-33). `category_not_own_parent` refuses the one-row
 cycle; a CHECK cannot see other rows, so `trg_category_no_cycle` walks up from
 the new parent and refuses a longer cycle as `category_no_cycle`.
+`trg_category_hierarchy_lock`, a statement-level trigger, takes the hierarchy
+advisory lock before any row is locked, so two opposite concurrent moves queue
+instead of deadlocking and the second one is refused as `category_no_cycle` (#586).
 
 #### `store`
 
@@ -487,6 +671,40 @@ independent multivalued facts, so the relation is in 4NF.
 
 The outbox stores one event identity and its delivery state, with no repeating
 groups or copied store state; its key determines all columns, so it is in 4NF.
+
+#### `checkins.store_check_in`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `check_in_id` | `UUID` | NN | PK; default `gen_random_uuid()` | Check-in identifier |
+| `client_check_in_id` | `UUID` | NN | UNIQUE | The phone's identifier, which makes a retried post a replay |
+| `user_id` | `UUID` | NN | FK → `public.app_user`, `ON DELETE RESTRICT` | The staff member checking in: the token's `sub` |
+| `store_id` | `SMALLINT` | NN | FK → `public.store`, `ON DELETE RESTRICT` | The store checked into |
+| `latitude` | `NUMERIC` | yes | CHECK −90 to 90 | Reported latitude; null with no fix |
+| `longitude` | `NUMERIC` | yes | CHECK −180 to 180 | Reported longitude; null with no fix |
+| `accuracy_m` | `NUMERIC` | yes | CHECK `> 0` | Reported accuracy radius in metres; null with no fix |
+| `distance_m` | `NUMERIC` | yes | null exactly when the reason is `no_fix` or `store_location_unknown` | Server-computed haversine distance to the store, one decimal |
+| `reason` | `TEXT` | NN | one of `within_geofence`, `outside_geofence`, `low_accuracy`, `store_location_unknown`, `no_fix`; the fix is all null exactly when `no_fix` | The server's verdict (RN-56) |
+| `occurred_at` | `TIMESTAMPTZ` | NN | — | When the phone took the check-in |
+| `recorded_at` | `TIMESTAMPTZ` | NN | default `now()` | When the server recorded it |
+
+Append-only: `svc_checkins` holds SELECT and INSERT only, and the web has no
+privilege on `checkins`. `auto_verified` (reason is `within_geofence`) and the
+effective `verified` are computed on read.
+
+#### `checkins.check_in_review`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `review_id` | `BIGINT` | NN | PK; generated always as identity | Review identifier, a number because the v1 contract publishes it as `int64` |
+| `check_in_id` | `UUID` | NN | FK → `checkins.store_check_in`, `ON DELETE RESTRICT` | The check-in reviewed |
+| `verified` | `BOOLEAN` | NN | — | The reviewer's verdict |
+| `reason` | `TEXT` | NN | CHECK not blank | Why the reviewer decided so |
+| `reviewed_by` | `UUID` | NN | FK → `public.app_user`, `ON DELETE RESTRICT` | The administrator who reviewed |
+| `reviewed_at` | `TIMESTAMPTZ` | NN | default `now()` | When the review was appended |
+
+A check-in's effective verdict is its latest review's `verified`, by
+`reviewed_at`. Reviews are appended and never changed.
 
 #### `segment_rule`
 
@@ -580,7 +798,7 @@ request, and it is not in `sql/seed-exempt.txt`.
 | `email` | `VARCHAR(160)` | yes | UQ, dotted-domain email check | Contact address |
 | `phone` | `VARCHAR(20)` | yes | — | Contact number |
 | `registration_channel_id` | `SMALLINT` | NN | FK → `channel`, `RESTRICT` | Where the customer was acquired |
-| `registered_on` | `DATE` | NN | default `CURRENT_DATE` | Registration date |
+| `registered_on` | `DATE` | NN | default `CURRENT_DATE`; `CHECK <= CURRENT_DATE` (`customer_registered_not_future`) | Registration date |
 
 There is no `current_segment_id` column. ADR-0004 called the mutable column
 the first delivery briefly carried a known limitation and predicted its
@@ -596,10 +814,11 @@ replacement; ADR-0017 fulfils that prediction with `segmentation_run` and
 | `run_id` | `BIGINT` | NN | PK, `GENERATED ALWAYS AS IDENTITY` | Run identifier |
 | `method` | `VARCHAR(20)` | NN | `CHECK IN ('RFM_RULES','KMEANS')` | The implemented strategy that produced this run — ADR-0018, RN-58 |
 | `window_days` | `INT` | NN | `CHECK > 0` | Sales window scored |
-| `parameters` | `JSONB` | NN | default `'{}'::jsonb` | Reproducible parameter and quality snapshot; K-means records `k`, seed, iteration limit, tolerance, feature window, label mapping and quality measures (RN-58, ADR-0030) |
-| `customer_count` | `INT` | NN | default `0` | Customers this run scored |
+| `parameters` | `JSONB` | NN | default `'{}'::jsonb`; `CHECK jsonb_typeof = 'object'` (`segmentation_run_parameters_object`) | Reproducible parameter and quality snapshot; K-means records `k`, seed, iteration limit, tolerance, feature window, label mapping and quality measures (RN-58, ADR-0030) |
+| `customer_count` | `INT` | NN | default `0`; `CHECK >= 0` (`segmentation_run_customer_count_check`) | Customers this run scored |
 | `executed_by` | `UUID` | yes | FK → `app_user`, `SET NULL` | Who ran it; `NULL` for a seed or maintenance run, the same reasoning `audit_log.user_id` uses |
 | `run_at` | `TIMESTAMPTZ` | NN | default `now()` | When the run executed |
+| `data_origin` | `VARCHAR(20)` | NN | `CHECK IN ('OBSERVED','SEEDED')`, no default; `trg_segmentation_run_origin_guard` | `SEEDED` if any sale the run scored is `SEEDED`, else `OBSERVED`, recorded when the run executes (ADR-0052). `create_run` takes it from `fn_segmentation_window_origin(window_days)`; the guard refuses an `OBSERVED` run whose window holds a `SEEDED` sale (23514, `segmentation_run_origin_observed_only`). Seeded runs are `SEEDED` |
 
 #### `customer_segment_history`
 
@@ -681,8 +900,9 @@ These two are the 4NF decomposition from §2.4.
 | `customer_id` | `UUID` | NN | FK → `customer`, `RESTRICT` | Who bought |
 | `store_id` | `SMALLINT` | NN | FK → `store`, `RESTRICT` | Where |
 | `channel_id` | `SMALLINT` | NN | FK → `channel`, `RESTRICT` | Through which channel |
-| `occurred_at` | `TIMESTAMPTZ` | NN | — | When the sale happened |
-| `total` | `NUMERIC(12,2)` | NN | `CHECK >= 0` | Sale total |
+| `occurred_at` | `TIMESTAMPTZ` | NN | `CHECK <= clock_timestamp()` (`transaction_not_future`) | When the sale happened |
+| `total` | `NUMERIC(12,2)` | NN | `CHECK >= 0`; deferred trigger: equals the sum of its lines (RN-37, `transaction_total_matches_lines`) | Sale total |
+| `data_origin` | `VARCHAR(20)` | NN | `CHECK IN ('OBSERVED','SEEDED')`, no default | Where the sale came from (ADR-0052): `SEEDED` for the seed, `OBSERVED` for the CSV import and sales-service. The `sales` boundary refuses anything but `OBSERVED` from `svc_sales` (§4) |
 
 #### `transaction_line`
 
@@ -691,7 +911,34 @@ These two are the 4NF decomposition from §2.4.
 | `transaction_id` | `BIGINT` | NN | PK, FK → `transaction`, `CASCADE` | The sale |
 | `product_id` | `INT` | NN | PK, FK → `product`, `RESTRICT` | The product |
 | `quantity` | `INT` | NN | `CHECK > 0` | Units sold |
-| `unit_price` | `NUMERIC(10,2)` | NN | `CHECK >= 0` | Price actually charged, not the product's list price |
+| `unit_price` | `NUMERIC(10,2)` | NN | `CHECK > 0` | Price actually charged, not the product's list price |
+
+**Domain rules the database holds (#591).** The checks above are in
+`sql/01_schema.sql` so that no writer, whatever its role, can store a value the
+domain forbids.
+
+- *Header total equals the sum of its lines (RN-37).* A row CHECK cannot see
+  another table, and the header is written before its lines, so the rule is a
+  deferred constraint trigger on both tables, evaluated at `COMMIT`. A header
+  with no lines must total 0, which is what the ingestion writes first.
+  Moving a line between sales checks both its source and destination headers.
+  Statements may come in any order inside a transaction; only the committed
+  state is held to the rule. The `total` column stays: it is a stored
+  derivation kept for reads, and the trigger is what guarantees it cannot
+  drift. Removing the column would change every report query; it is not a
+  normalization defect once the database proves the equality.
+- *No future registration or sale.* A CHECK that reads the clock is unusual,
+  but safe here: a row valid when written can never turn invalid, since time
+  only moves forward, so a restore or a re-check of an old row passes.
+  `registered_on` compares with `CURRENT_DATE`, which follows the session time
+  zone; `occurred_at` compares with `clock_timestamp()`, not `now()`, so a sale
+  stamped after its transaction began is not called future.
+- *Positive unit price.* `unit_price > 0`. A product with `list_price = 0` is
+  allowed in the catalog, but a sale line cannot be recorded for it at zero;
+  a free item would need its own rule.
+- *Run values.* `customer_count >= 0`, and `parameters` is a JSON object (the
+  column is documented as one; an array or scalar breaks every reader that
+  looks a key up).
 
 #### `sales_load`
 
@@ -934,7 +1181,10 @@ boundary section enforce it, both raising SQLSTATE 22023:
 - one on `transaction` refuses a prefixed identifier from any session user but
   `svc_sales`, and refuses an unprefixed one from `svc_sales`;
 - one on `transaction_line` refuses a line on a prefixed header from anyone
-  but `svc_sales`.
+  but `svc_sales`;
+- the same trigger on `transaction` refuses a row from `svc_sales` whose
+  `data_origin` is not `OBSERVED` (ADR-0052, #559): a phone sale is never
+  seeded.
 
 A CSV row can therefore never collide with a phone sale or append to one. The
 global `UNIQUE` still holds, because the two producers' identifiers can no
@@ -950,6 +1200,10 @@ suffix:
 
 The stores boundary therefore owns `stores` for `store_location`, publishes
 through `api_stores`, and keeps relay state in `stores_events`.
+The check-ins boundary owns `checkins` for `store_check_in` and
+`check_in_review`. It has no contract schema and no outbox, because nothing
+reads or consumes check-ins but its own service. It reads store locations
+through `api_stores.store_directory_v1`.
 
 The eight outbox owners named by ADR-0044 therefore have both of these schemas:
 
@@ -1009,6 +1263,7 @@ deletes any of the four.
 | `idx_transaction_customer_date` | `transaction (customer_id, occurred_at)` | A customer's purchase history; the RFM window later |
 | `idx_transaction_store_date` | `transaction (store_id, occurred_at)` | Sales by store over a period |
 | `idx_transaction_line_product` | `transaction_line (product_id)` | Units sold of one product |
+| `idx_transaction_seeded_date` | `transaction (occurred_at) WHERE data_origin = 'SEEDED'` | Whether a run's window holds a `SEEDED` sale (`fn_segmentation_window_origin`, ADR-0052); stays the seed's size however many real sales arrive |
 | `ux_customer_segment_history_open` | `customer_segment_history (customer_id) WHERE valid_to IS NULL` | A customer's current segment; also RN-20's constraint |
 | `idx_customer_segment_history_customer` | `customer_segment_history (customer_id, valid_from)` | A customer's segment history over time |
 | `idx_sales_load_rejection_load` | `sales_load_rejection (load_id)` | Rejected rows for one upload attempt |
@@ -1021,6 +1276,43 @@ deletes any of the four.
 | `idx_notification_recipient_inbox` | `notification_recipient (user_id, notification_id DESC)` | One user's inbox, newest first, paginated |
 | `idx_notification_recipient_unread` | `notification_recipient (user_id) WHERE read_at IS NULL` | The unread count on every page, and "mark all read" |
 | `notification_{sales_load,run,experiment}_id_key` | `notification (sales_load_id)`, `(run_id)`, `(experiment_id)`, each `UNIQUE` | An event is announced once; the arbiter of the announcer's `ON CONFLICT` |
+| `idx_app_user_role` | `app_user (role_id)` | Users listed and counted by role; the `RESTRICT` check when a role is deleted |
+| `idx_customer_registration_channel` | `customer (registration_channel_id)` | The `RESTRICT` check when a channel is deleted |
+| `idx_customer_preferred_channel_channel` | `customer_preferred_channel (channel_id)` | The `CASCADE` when a channel is deleted (the primary key leads with `customer_id`) |
+| `idx_transaction_channel` | `transaction (channel_id)` | The `RESTRICT` check when a channel is deleted, which would otherwise scan every sale |
+| `idx_category_parent` | `category (parent_category_id)` | A category's children and subtree; the `RESTRICT` check when a category is deleted |
+| `idx_customer_interest_category_category` | `customer_interest_category (category_id)` | The `CASCADE` when a category is deleted (the primary key leads with `customer_id`) |
+| `idx_inventory_product` | `inventory (product_id)` | Stock of one product across stores; the `CASCADE` when a product is deleted (the primary key leads with `store_id`) |
+| `idx_experiment_campaign` | `experiment (campaign_id)` | A campaign's experiments |
+| `idx_experiment_group_experiment` | `experiment_group (experiment_id)` | An experiment's arms (`ux_experiment_one_control` covers only the control) |
+| `idx_experiment_assignment_group` | `experiment_assignment (group_id, experiment_id)` | Assignments per arm, for the dashboard and the conversion measures; the composite foreign key to `experiment_group` |
+
+**Foreign keys without an index.** A foreign key is indexed when its child
+table grows and either some code path deletes the parent, so the `ON DELETE`
+check scans the child, or a query reads the child by that key (#596). These
+twelve meet neither condition:
+
+- *The parent is `app_user`, which is never deleted (deactivation removes
+  access, F3-06), and no query reads the child by the user:*
+  `app_session (user_id)`, `audit_log (user_id)`,
+  `notification (subject_user_id)`, `sales_load (loaded_by)`,
+  `segmentation_run (executed_by)`, `stores.store_location (set_by)` and
+  `checkins.check_in_review (reviewed_by)`.
+  Revoking a deactivated user's open sessions is served by the partial
+  `idx_app_session_open_by_user`; revoked sessions are history and nothing
+  looks them up by user.
+- *The parent is a fixed catalog that no code deletes:*
+  `segment (label_code)` and `customer_segment_history (label_code)` reference
+  the six-label vocabulary, and `segment (rule_id)` references the RFM bands.
+  `segment` itself holds about thirty rows, so reading it by rule is a scan of
+  a page.
+- *No code deletes the parent, and the child is read through another key:*
+  `customer_segment_history (segment_id, label_code)` is read by run and by
+  customer, through `idx_customer_segment_history_customer` and the open-row
+  index; an operator retiring an RFM band is a one-off maintenance step for
+  which a scan is acceptable. `experiment_conversion (transaction_id)` is read
+  through `UNIQUE (assignment_id, transaction_id)`, and a sale is never
+  deleted.
 
 **Partitioning is not implemented.** `transaction` is the fastest-growing table
 and range partitioning by date is the obvious eventual move, but at 300 seed

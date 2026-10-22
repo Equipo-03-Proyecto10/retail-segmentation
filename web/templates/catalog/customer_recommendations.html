@@ -5,7 +5,7 @@
 {% block breadcrumbs %}{{ application_name }} / Catalogs / Customers / {{ customer_name }} / Recommendations{% endblock %}
 
 {% block content %}
-  {% from "macros/ui.html" import alert, empty_state, page_header, status_pill %}
+  {% from "macros/ui.html" import alert, empty_state, page_header, status_pill, synthetic_banner, synthetic_pill %}
   {% macro day(moment) %}{{ moment.strftime("%Y-%m-%d") }}{% endmacro %}
   {% macro units(count) %}{{ count }} {{ "unit" if count == 1 else "units" }}{% endmacro %}
 
@@ -31,10 +31,12 @@
   {% if error %}{{ alert(error) }}{% endif %}
 
   {% if result %}
+    {{ synthetic_banner(result.synthetic, "These recommendations were built from demonstration data: the window holds seeded sales, or the customer's segment comes from a run that scored them.") }}
     {% if result.status.value == "recommended" %}
       <section class="mq-panel">
         <header class="mq-panel__header">
           <h2 class="mq-panel__title">Based on</h2>
+          {{ synthetic_pill(result.synthetic) }}
           <span class="mq-caption">{{ result.message }}</span>
         </header>
         <div class="mq-panel__body">

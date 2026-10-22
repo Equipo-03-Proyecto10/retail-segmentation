@@ -194,6 +194,7 @@ class _Cursor:
                     header["store_id"],
                     header["channel_id"],
                     header["occurred_at"],
+                    header["data_origin"],
                 )
             )
         elif text.startswith("INSERT INTO transaction_line"):
@@ -209,9 +210,14 @@ class _Cursor:
             c._uncommitted_lines.append((header, product_id))
             self.row = None
         elif text.startswith("INSERT INTO transaction"):
-            source_transaction_id, customer_id, store_id, channel_id, occurred_at = (
-                parameters
-            )
+            (
+                source_transaction_id,
+                customer_id,
+                store_id,
+                channel_id,
+                occurred_at,
+                data_origin,
+            ) = parameters
             if c.simulate_concurrent_header:
                 raise _ConcurrentHeader()
             if customer_id not in c.customer_ids:
@@ -230,6 +236,7 @@ class _Cursor:
                 "store_id": store_id,
                 "channel_id": channel_id,
                 "occurred_at": occurred_at,
+                "data_origin": data_origin,
                 "total": Decimal("0"),
                 "lines": {},
             }
@@ -278,6 +285,15 @@ def test_a_row_with_a_new_source_id_creates_a_transaction_and_a_line() -> None:
     assert connection.inventory[(1, 1)] == 8
     assert connection.commits == 1
     assert connection.rollbacks == 0
+
+
+def test_an_accepted_row_records_an_observed_sale() -> None:
+    """ADR-0052: a CSV load records real sales, never seeded ones."""
+    connection = _Connection()
+
+    ingest_row(connection, _row())
+
+    assert connection.headers["TXN-1"]["data_origin"] == "OBSERVED"
 
 
 def test_header_lock_is_acquired_before_the_inventory_lock() -> None:
@@ -502,6 +518,7 @@ def test_a_row_disagreeing_with_the_accepted_header_is_rejected() -> None:
                 "store_id": 1,
                 "channel_id": 1,
                 "occurred_at": _OCCURRED_AT,
+                "data_origin": "OBSERVED",
                 "total": Decimal("19.98"),
                 "lines": {1: (2, Decimal("9.99"))},
             }
@@ -529,6 +546,7 @@ def test_a_row_with_a_different_customer_for_the_same_header_is_rejected() -> No
                 "store_id": 1,
                 "channel_id": 1,
                 "occurred_at": _OCCURRED_AT,
+                "data_origin": "OBSERVED",
                 "total": Decimal("19.98"),
                 "lines": {1: (2, Decimal("9.99"))},
             }
@@ -550,6 +568,7 @@ def test_a_repeated_product_line_for_the_same_source_id_is_rejected_as_duplicate
                 "store_id": 1,
                 "channel_id": 1,
                 "occurred_at": _OCCURRED_AT,
+                "data_origin": "OBSERVED",
                 "total": Decimal("19.98"),
                 "lines": {1: (2, Decimal("9.99"))},
             }
@@ -562,6 +581,35 @@ def test_a_repeated_product_line_for_the_same_source_id_is_rejected_as_duplicate
     assert connection.rollbacks == 1
     # The line already there is untouched by the failed re-insert attempt.
     assert connection.headers["TXN-1"]["lines"] == {1: (2, Decimal("9.99"))}
+
+
+def test_a_line_onto_a_seeded_sale_is_rejected_even_when_the_header_agrees() -> None:
+    """ADR-0052: a sale has one origin, so a CSV line never joins a seeded
+    sale, even one whose header the row repeats exactly."""
+    connection = _Connection(
+        headers={
+            "TXN-1": {
+                "transaction_id": 1,
+                "customer_id": _CUSTOMER_1,
+                "store_id": 1,
+                "channel_id": 1,
+                "occurred_at": _OCCURRED_AT,
+                "data_origin": "SEEDED",
+                "total": Decimal("19.98"),
+                "lines": {1: (2, Decimal("9.99"))},
+            }
+        }
+    )
+
+    with pytest.raises(RowRejected, match="^duplicate: TXN-1 is a seeded sale$"):
+        ingest_row(connection, _row(product_id=2))
+
+    assert connection.rollbacks == 1
+    assert connection.headers["TXN-1"]["lines"] == {1: (2, Decimal("9.99"))}
+    assert not any(
+        statement.startswith("INSERT INTO transaction_line")
+        for statement in connection.statements
+    )
 
 
 # ---------- out-of-range values don't escape as unhandled exceptions ----------

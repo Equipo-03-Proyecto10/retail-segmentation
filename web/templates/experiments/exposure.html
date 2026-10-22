@@ -10,7 +10,7 @@
   {{ page_header("Exposure", "Assigned is not exposed. Exposure is recorded as its own event, so a customer who was never reached stays in the assigned population.", "Experiments") }}
   {% if error %}{{ alert(error, "danger", "Not recorded") }}{% endif %}
   <section class="mq-panel">
-    <header class="mq-panel__header"><h2 class="mq-panel__title">Experiment {{ e.experiment_id }} · {{ e.name }}</h2>{% if is_synthetic(e.data_origin) %}{{ status_pill("Synthetic", "warning") }}{% endif %}</header>
+    <header class="mq-panel__header"><h2 class="mq-panel__title">Experiment {{ e.experiment_id }} · {{ e.name }}</h2>{% if is_synthetic(e) %}{{ status_pill("Synthetic", "warning") }}{% endif %}</header>
     <div class="mq-panel__body">
       {% if e.assignments == 0 %}
         <p>Nobody is assigned yet, so nobody can be exposed.</p>

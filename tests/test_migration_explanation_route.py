@@ -40,7 +40,7 @@ def _sign_in(client: FlaskClient, role_code: str) -> None:
         flask_session["name"] = f"{role_code.title()} user"
 
 
-def _run(run_id: int, run_at: datetime) -> SegmentationRun:
+def _run(run_id: int, run_at: datetime, origin: str = "SEEDED") -> SegmentationRun:
     return SegmentationRun(
         run_id=run_id,
         method="RFM_RULES",
@@ -50,6 +50,7 @@ def _run(run_id: int, run_at: datetime) -> SegmentationRun:
         executed_by=None,
         executed_by_name=None,
         run_at=run_at,
+        data_origin=origin,
     )
 
 
@@ -181,14 +182,22 @@ _CUSTOMER_URL = (
 
 
 def _explained(
-    monkeypatch: pytest.MonkeyPatch, app: Flask, before, after
+    monkeypatch: pytest.MonkeyPatch,
+    app: Flask,
+    before,
+    after,
+    origins: tuple[str, str] = ("SEEDED", "SEEDED"),
 ) -> tuple[int, str]:
     monkeypatch.setattr(
         "web.routes.migration_explanation.order_runs", lambda *a, **k: (1, 2)
     )
     monkeypatch.setattr(
         "web.routes.migration_explanation.get_run",
-        lambda _c, run_id: _run(run_id, _EARLIER_AT if run_id == 1 else _LATER_AT),
+        lambda _c, run_id: _run(
+            run_id,
+            _EARLIER_AT if run_id == 1 else _LATER_AT,
+            origins[0] if run_id == 1 else origins[1],
+        ),
     )
     monkeypatch.setattr(
         "web.routes.migration_explanation.get_customer_assignment_for_run",
@@ -198,6 +207,26 @@ def _explained(
     _sign_in(client, "ANALYST")
     response = client.get(_CUSTOMER_URL)
     return response.status_code, " ".join(response.get_data(as_text=True).split())
+
+
+@pytest.mark.parametrize(
+    ("origins", "marked"),
+    [
+        (("SEEDED", "OBSERVED"), True),
+        (("OBSERVED", "SEEDED"), True),
+        (("OBSERVED", "OBSERVED"), False),
+    ],
+)
+def test_the_explanation_is_synthetic_when_either_run_is_seeded(
+    app: Flask, monkeypatch: pytest.MonkeyPatch, origins, marked
+) -> None:
+    """#560, ADR-0052: an explanation compares two runs, so either marks it."""
+    status, body = _explained(
+        monkeypatch, app, _assignment(), _assignment(), origins=origins
+    )
+
+    assert status == 200
+    assert ("Synthetic" in body) is marked
 
 
 def test_each_measure_reads_as_a_sentence_with_days_and_a_judgement(

@@ -140,6 +140,31 @@ def test_the_export_carries_origin_and_synthetic_label_on_every_line(
     assert {r["label"] for r in rows} == {"Synthetic"}
 
 
+def test_an_observed_export_with_a_seeded_conversion_is_labelled_on_every_line(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rows = _exported(monkeypatch, data_origin="OBSERVED", seeded_conversion=True)
+
+    assert {r["data_origin"] for r in rows} == {"OBSERVED"}
+    assert {r["label"] for r in rows} == {"Synthetic"}
+
+
+def test_an_observed_experiment_with_a_seeded_conversion_is_marked_on_the_page(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _wire(
+        monkeypatch,
+        [_experiment(assignments=2000, data_origin="OBSERVED", seeded_conversion=True)],
+    )
+    monkeypatch.setattr(
+        "web.routes.experiment_report.list_campaign_choices", Mock(return_value=[])
+    )
+
+    body = _client(app).get("/experiment-report/").get_data(as_text=True)
+
+    assert "Synthetic" in body and "link seeded sales" in body
+
+
 def test_an_observed_export_carries_the_origin_and_no_synthetic_label(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

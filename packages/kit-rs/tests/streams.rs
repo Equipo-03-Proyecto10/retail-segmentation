@@ -239,6 +239,122 @@ async fn relay_leaves_a_row_when_stream_delivery_fails() {
     outbox.drop().await;
 }
 
+/// A store that fails like a dead connection until it is replaced.
+struct FlakyRedis {
+    inner: Option<MultiplexedConnection>,
+}
+
+impl StreamStore for FlakyRedis {
+    async fn xadd(&mut self, stream: &str, fields: &[(&str, String)]) -> RedisResult<()> {
+        match self.inner.as_mut() {
+            Some(inner) => inner.xadd(stream, fields).await,
+            None => Err((redis::ErrorKind::IoError, "broken pipe").into()),
+        }
+    }
+
+    async fn wait_aof(&mut self) -> RedisResult<i64> {
+        match self.inner.as_mut() {
+            Some(inner) => inner.wait_aof().await,
+            None => Err((redis::ErrorKind::IoError, "broken pipe").into()),
+        }
+    }
+}
+
+#[tokio::test]
+async fn relay_rebuilds_its_store_after_a_redis_outage_and_delivers_the_backlog() {
+    let _serial = SERIAL.lock().await;
+    let Some(outbox) = Outbox::create().await else {
+        return;
+    };
+    outbox.insert_item(40).await;
+    outbox.insert_item(41).await;
+    let relay = OutboxRelay::new(
+        &relay_url(),
+        &suffix(),
+        [stream()],
+        FlakyRedis { inner: None },
+    )
+    .unwrap();
+    let attempts = Arc::new(Mutex::new(0));
+    let counter = Arc::clone(&attempts);
+    let task = tokio::spawn(relay.run_with_reconnect(move || {
+        let counter = Arc::clone(&counter);
+        async move {
+            let attempt = {
+                let mut guard = counter.lock().unwrap();
+                *guard += 1;
+                *guard
+            };
+            if attempt < 2 {
+                return Err((redis::ErrorKind::IoError, "still down").into());
+            }
+            Ok(FlakyRedis {
+                inner: Some(admin().await),
+            })
+        }
+    }));
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    loop {
+        if outbox.relayed("40").await == Some(true) && outbox.relayed("41").await == Some(true) {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the backlog was not delivered"
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    assert!(*attempts.lock().unwrap() >= 2);
+    task.abort();
+    let _ = task.await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    outbox.drop().await;
+}
+
+#[tokio::test]
+async fn consumer_rebuilds_its_connection_after_a_redis_outage() {
+    let _serial = SERIAL.lock().await;
+    let Some(mut admin_connection) = fresh_stream().await else {
+        return;
+    };
+    service_name("kit-consumer-reconnect");
+    let handled = Handled::default();
+    let connections = Arc::new(Mutex::new(0));
+    let counter = Arc::clone(&connections);
+    let consumer = StreamConsumer::new(admin().await, &consumed(), recorder(&handled)).unwrap();
+    let group = consumer.group().to_owned();
+    // Kill this connection's server-side session so the next command fails.
+    let _: i64 = redis::cmd("CLIENT")
+        .arg("KILL")
+        .arg("TYPE")
+        .arg("normal")
+        .arg("SKIPME")
+        .arg("yes")
+        .query_async(&mut admin_connection)
+        .await
+        .unwrap_or(0);
+    let task = tokio::spawn(consumer.run_with_reconnect(move || {
+        *counter.lock().unwrap() += 1;
+        async { Ok(admin().await) }
+    }));
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    assert!(
+        *connections.lock().unwrap() >= 1,
+        "the connection was not rebuilt"
+    );
+    let mut fresh = admin().await;
+    let _ = xadd(&mut fresh, "reconnect-1").await;
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while handled.lock().unwrap().is_empty() {
+        assert!(std::time::Instant::now() < deadline, "nothing was handled");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    assert_eq!(pending(&mut fresh, &group).await, 0);
+    task.abort();
+    let _ = task.await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+}
+
 struct RecordingRedis {
     inner: MultiplexedConnection,
     calls: Arc<Mutex<Vec<&'static str>>>,

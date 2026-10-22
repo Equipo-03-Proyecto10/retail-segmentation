@@ -166,12 +166,15 @@ def test_a_second_methods_inputs_are_parameterized_and_cover_every_customer() ->
 def test_the_run_row_carries_method_window_parameters_count_and_the_actor() -> None:
     connection = MagicMock()
     cursor = _cursor(connection)
-    cursor.fetchone.return_value = (11,)
+    cursor.fetchone.return_value = (11, "SEEDED")
 
-    run_id = create_run(connection, "KMEANS", 45, {"k": 5, "seed": 7}, 30, run_at=_AT)
+    run_id, origin = create_run(
+        connection, "KMEANS", 45, {"k": 5, "seed": 7}, 30, run_at=_AT
+    )
 
     statement, parameters = cursor.execute.call_args.args
-    assert run_id == 11
+    assert (run_id, origin) == (11, "SEEDED")
+    assert "RETURNING run_id, data_origin" in statement
     assert parameters[0] == "KMEANS" and parameters[1] == 45 and parameters[3] == 30
     assert json.loads(parameters[2]) == {"k": 5, "seed": 7}
     assert parameters[4] == _AT and "now()" not in statement
@@ -181,9 +184,25 @@ def test_the_run_row_carries_method_window_parameters_count_and_the_actor() -> N
     assert "%s::jsonb" in statement
 
 
+def test_the_run_takes_its_data_origin_from_the_window_it_scored() -> None:
+    """ADR-0052: the database decides the origin from the run's own window,
+    bound as a parameter, so the caller can neither forget nor forge it."""
+    connection = MagicMock()
+    cursor = _cursor(connection)
+    cursor.fetchone.return_value = (11, "SEEDED")
+
+    create_run(connection, "RFM_RULES", 45, {}, 30, run_at=_AT)
+
+    statement, parameters = cursor.execute.call_args.args
+    assert "data_origin" in statement
+    assert "fn_segmentation_window_origin(%s)" in statement
+    assert statement.count("%s") == len(parameters) == 6
+    assert parameters[-1] == 45
+
+
 def test_the_parameters_are_stored_in_a_stable_key_order() -> None:
     connection = MagicMock()
-    _cursor(connection).fetchone.return_value = (1,)
+    _cursor(connection).fetchone.return_value = (1, "OBSERVED")
 
     create_run(
         connection,

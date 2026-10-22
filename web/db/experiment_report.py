@@ -13,7 +13,7 @@ from datetime import date, datetime
 from psycopg import Connection
 
 from web.db.experiment_conversions import EXPOSED_CONVERTED_SQL
-from web.db.experiments import Experiment
+from web.db.experiments import EXPERIMENT_COLUMNS, Experiment
 
 
 @dataclass(frozen=True)
@@ -52,18 +52,7 @@ _FILTER = """
        AND (%(origin)s::text IS NULL OR e.data_origin = %(origin)s::text)
 """
 
-_EXPERIMENT_SELECT = """
-    SELECT e.experiment_id, e.name, e.campaign_id, c.name, e.target_metric,
-           e.starts_on, e.ends_on, e.conversion_window_days, e.data_origin,
-           (SELECT count(*) FROM experiment_group AS g
-             WHERE g.experiment_id = e.experiment_id AND g.kind = 'CONTROL'),
-           (SELECT count(*) FROM experiment_group AS g
-             WHERE g.experiment_id = e.experiment_id AND g.kind = 'TREATMENT'),
-           (SELECT count(*) FROM experiment_assignment AS a
-             WHERE a.experiment_id = e.experiment_id)
-      FROM experiment AS e
-      LEFT JOIN campaign AS c ON c.campaign_id = e.campaign_id
-"""
+_EXPERIMENT_SELECT = EXPERIMENT_COLUMNS
 
 _LIST_EXPERIMENTS = (
     _EXPERIMENT_SELECT

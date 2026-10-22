@@ -27,7 +27,11 @@ from flask.testing import FlaskClient
 from web.app import create_app
 from web.config import Config
 from web.db.sales_loads import SalesLoad, SalesLoadRejectionRow
-from web.services.sales_csv import LoadReport, UnsupportedContractVersion
+from web.services.sales_csv import (
+    LoadReport,
+    UnsupportedContractVersion,
+    load_and_record_sales_csv,
+)
 
 _URL = "/admin/sales-import/"
 _ADMIN_ID = "11111111-1111-1111-1111-000000000001"
@@ -152,6 +156,33 @@ def test_a_file_off_the_contract_is_refused_in_words(app, pages) -> None:
         in _body(response)
     )
     assert "september.csv" in _body(response)
+
+
+def test_a_field_past_the_csv_limit_is_refused_in_words_not_a_500(
+    app, pages, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#584, through the real loader. The csv field limit is lowered for the test
+    so the file fits under this app's 1 KiB upload limit; the default limit is
+    131,072 characters."""
+    monkeypatch.setattr(
+        "web.routes.sales_import.load_and_record_sales_csv", load_and_record_sales_csv
+    )
+    content = (
+        "transaction_id,customer_id,store_id,channel_id,occurred_at,"
+        "product_id,quantity,unit_price\n"
+        "TXN-1," + "9" * 200 + ",1,1,2026-01-15T10:00:00+00:00,1,2,9.99\n"
+    ).encode()
+    default_limit = csv.field_size_limit(100)
+    try:
+        response = _upload(_admin(app), content)
+    finally:
+        csv.field_size_limit(default_limit)
+
+    assert response.status_code == 400
+    assert (
+        "The file was not loaded: line 2 has a field longer than 100 characters, "
+        "which no column of the contract allows." in _body(response)
+    )
 
 
 def test_a_file_over_the_upload_limit_is_refused_before_any_row_is_read(

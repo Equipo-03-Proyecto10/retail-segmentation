@@ -338,6 +338,19 @@ def test_a_synthetic_experiment_renders_the_literal_label(
     assert "Synthetic" in _get(app).get_data(as_text=True)
 
 
+def test_an_observed_experiment_with_a_seeded_conversion_renders_the_label(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _wire(
+        monkeypatch,
+        experiment=_experiment(
+            assignments=300, data_origin="OBSERVED", seeded_conversion=True
+        ),
+    )
+
+    assert "Synthetic" in _get(app).get_data(as_text=True)
+
+
 def test_no_control_is_a_409_with_the_reason(
     app: Flask, monkeypatch: pytest.MonkeyPatch
 ) -> None:

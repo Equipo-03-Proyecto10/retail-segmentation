@@ -5,7 +5,7 @@
 {% block breadcrumbs %}{{ application_name }} / Catalogs / Customers / {{ customer.name }}{% endblock %}
 
 {% block content %}
-  {% from "macros/ui.html" import alert, empty_state, page_header, status_pill %}
+  {% from "macros/ui.html" import alert, empty_state, page_header, status_pill, synthetic_banner, synthetic_pill %}
   {% from "macros/migration.html" import rank_only_move, score_change %}
   {% macro money(value) %}{{ "{:,.2f}".format(value) }}{% endmacro %}
   {% macro day(moment) %}{{ moment.strftime("%Y-%m-%d") }}{% endmacro %}
@@ -18,6 +18,8 @@
     <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('catalog.customer_recommendations', customer_id=customer.customer_id) }}">Recommendations</a>
     <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('catalog.customers') }}">Back to customers</a>
   {% endcall %}
+
+  {{ synthetic_banner(timeline.synthetic, "Assignments marked Synthetic come from segmentation runs that scored demonstration data.") }}
 
   <div class="mq-grid mq-grid--2">
     <section class="mq-panel">
@@ -32,7 +34,7 @@
       </div>
     </section>
     <section class="mq-panel">
-      <header class="mq-panel__header"><h2 class="mq-panel__title">Preferences and segment</h2></header>
+      <header class="mq-panel__header"><h2 class="mq-panel__title">Preferences and segment</h2>{{ synthetic_pill(timeline.current and timeline.current.synthetic) }}</header>
       <div class="mq-panel__body">
         <dl class="mq-description-list">
           <dt>Current label</dt>
@@ -54,6 +56,7 @@
     <section class="mq-panel" aria-labelledby="comparison-title">
       <header class="mq-panel__header">
         <h2 class="mq-panel__title" id="comparison-title">Current and previous R/F/M</h2>
+        {{ synthetic_pill(timeline.comparison_synthetic) }}
         <span class="mq-caption">Run #{{ then_row.run_id }} against run #{{ now_row.run_id }}, as each run stored them</span>
       </header>
       <div class="mq-table-wrap">
@@ -131,7 +134,7 @@
         {% set found = timeline.as_of_entry %}
         <p role="status">
           {% if found %}
-            On {{ timeline.as_of.strftime("%Y-%m-%d") }}: {{ label_pill(found.row, "info") }}
+            On {{ timeline.as_of.strftime("%Y-%m-%d") }}: {{ label_pill(found.row, "info") }} {{ synthetic_pill(found.synthetic) }}
             <span class="mq-caption">since {{ day(found.label_since) }} · run #{{ found.row.run_id }} · assignment {{ day(found.row.valid_from) }} to {% if found.row.valid_to %}{{ day(found.row.valid_to) }}{% else %}open{% endif %}</span>
           {% else %}
             On {{ timeline.as_of.strftime("%Y-%m-%d") }} no segmentation run had scored this customer.
@@ -145,6 +148,7 @@
     <section class="mq-panel" aria-labelledby="timeline-title">
       <header class="mq-panel__header">
         <h2 class="mq-panel__title" id="timeline-title">Segment timeline</h2>
+        {{ synthetic_pill(timeline.synthetic) }}
         <span class="mq-caption">{{ timeline.entries | length }} {{ noun(timeline.entries | length, "assignment") }}, newest first</span>
       </header>
       <div class="mq-table-wrap">
@@ -168,7 +172,7 @@
             {% for entry in timeline.entries %}
               {% set row = entry.row %}
               <tr>
-                <td><a href="{{ url_for('run_history.detail', run_id=row.run_id) }}">#{{ row.run_id }}</a> <span class="mq-caption">{{ day(row.run_at) }} · {{ row.window_days }}-day window</span></td>
+                <td><a href="{{ url_for('run_history.detail', run_id=row.run_id) }}">#{{ row.run_id }}</a> {{ synthetic_pill(entry.synthetic) }} <span class="mq-caption">{{ day(row.run_at) }} · {{ row.window_days }}-day window</span></td>
                 <td>{{ label_pill(row, "info" if entry.is_open else "neutral") }} <span class="mq-caption">since {{ day(entry.label_since) }}</span></td>
                 <td class="mq-mono">{{ row.valid_from.strftime("%Y-%m-%d %H:%M") }}</td>
                 <td class="mq-mono">{% if row.valid_to %}{{ row.valid_to.strftime("%Y-%m-%d %H:%M") }}{% else %}Open{% endif %}</td>

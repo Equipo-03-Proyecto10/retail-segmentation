@@ -81,11 +81,22 @@ test('window is locked down', async () => {
   expect(await page.evaluate(() => typeof require)).toBe('undefined');
   expect(await page.evaluate(() => typeof process)).toBe('undefined');
   expect(await page.evaluate(() => Object.keys(window.mosaiq).sort())).toEqual([
+    'categoryDescendants',
+    'categoryTree',
+    'createCategory',
+    'createProduct',
+    'deactivateProduct',
+    'deleteCategory',
+    'getProduct',
     'getState',
+    'listCategories',
+    'listProducts',
     'onStateChange',
     'probeService',
     'signIn',
     'signOut',
+    'updateCategory',
+    'updateProduct',
   ]);
   const csp = await page.getAttribute('meta[http-equiv="Content-Security-Policy"]', 'content');
   expect(csp).toContain("script-src 'self'");
@@ -112,6 +123,7 @@ test('staff sign-in shows role-gated services, then sign-out', async () => {
   const { app, page } = await launch();
   await signIn(page, 'a@b.c');
   await expect(page.getByTestId('role')).toHaveText('Signed in as MARKETING');
+  await page.getByRole('button', { name: 'Services' }).click();
   await expect(page.locator('[data-service=campaigns]')).toHaveCount(1);
   await expect(page.locator('[data-service=audit-trail]')).toHaveCount(0);
   // A forced call refused with 403 forbidden_role is shown, not hidden.

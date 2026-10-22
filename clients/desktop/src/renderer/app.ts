@@ -1,4 +1,6 @@
 import type { AppState, ErrorView, MosaiqBridge } from '../shared/api';
+import { renderCategories, renderProducts } from './catalog';
+import { el, errorBox } from './dom';
 
 declare global {
   interface Window {
@@ -8,37 +10,6 @@ declare global {
 
 const root = document.getElementById('app') as HTMLElement;
 const api = window.mosaiq;
-
-function el<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  props: { text?: string; cls?: string } = {},
-  ...children: Node[]
-): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  if (props.text !== undefined) node.textContent = props.text;
-  if (props.cls !== undefined) node.className = props.cls;
-  node.append(...children);
-  return node;
-}
-
-/** Shows the envelope: code, message and correlation id; details go next to their fields. */
-function errorBox(error: ErrorView, fieldNames: string[] = []): HTMLElement {
-  const box = el('dl', { cls: 'error' });
-  box.setAttribute('role', 'alert');
-  box.dataset.testid = 'error';
-  const row = (name: string, value: string, id: string): void => {
-    const dd = el('dd', { text: value });
-    dd.dataset.testid = id;
-    box.append(el('dt', { text: name }), dd);
-  };
-  row('Code', error.code, 'error-code');
-  row('Message', error.message, 'error-message');
-  row('Correlation id', error.correlation_id, 'error-correlation');
-  for (const d of error.details) {
-    if (!fieldNames.includes(d.field)) row(`Field ${d.field}`, d.code, 'error-detail');
-  }
-  return box;
-}
 
 function field(
   name: string,
@@ -101,7 +72,10 @@ function renderSignIn(state: Extract<AppState, { status: 'signed_out' }>, error?
   root.replaceChildren(...parts);
 }
 
-function renderHome(state: Extract<AppState, { status: 'signed_in' }>): void {
+type View = 'products' | 'categories' | 'services';
+let view: View = 'products';
+
+function renderServices(host: HTMLElement, state: Extract<AppState, { status: 'signed_in' }>): void {
   const result = el('div');
   const list = el('ul', { cls: 'services' });
   for (const s of state.services) {
@@ -125,6 +99,33 @@ function renderHome(state: Extract<AppState, { status: 'signed_in' }>): void {
     item.dataset.service = s.name;
     list.append(item);
   }
+  host.replaceChildren(el('h2', { text: 'Services' }), list, result);
+}
+
+function renderHome(state: Extract<AppState, { status: 'signed_in' }>): void {
+  const screen = el('div');
+  const ctx = { api, can: (operationId: string) => state.operations.includes(operationId) };
+  const show = (next: View): void => {
+    view = next;
+    nav
+      .querySelectorAll('button')
+      .forEach((b) => b.setAttribute('aria-current', String(b.dataset.view === next)));
+    if (next === 'products') renderProducts(screen, ctx);
+    else if (next === 'categories') renderCategories(screen, ctx);
+    else renderServices(screen, state);
+  };
+  const nav = el('nav', { cls: 'nav' });
+  for (const [name, label] of [
+    ['products', 'Products'],
+    ['categories', 'Categories'],
+    ['services', 'Services'],
+  ] as [View, string][]) {
+    const b = el('button', { text: label });
+    b.type = 'button';
+    b.dataset.view = name;
+    b.addEventListener('click', () => show(name));
+    nav.append(b);
+  }
   const out = el('button', { text: 'Sign out' });
   out.addEventListener('click', () => {
     void api.signOut().then((r) => render(r.state));
@@ -135,11 +136,11 @@ function renderHome(state: Extract<AppState, { status: 'signed_in' }>): void {
     el('h1', { text: 'MOSAIQ back office' }),
     ...storageWarning(state),
     role,
-    el('h2', { text: 'Services' }),
-    list,
-    result,
+    nav,
+    screen,
     out,
   );
+  show(view);
 }
 
 function render(state: AppState, error?: ErrorView): void {

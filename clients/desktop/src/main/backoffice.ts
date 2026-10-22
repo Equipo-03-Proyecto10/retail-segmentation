@@ -1,6 +1,13 @@
-import type { ActionResult, AppState, ErrorView, ProbeResult } from '../shared/api';
-import { servicesForRole, type Bundle } from './bundle';
-import { ContractDefect, defectView, type CallOptions, type CallResult, type Transport } from './transport';
+import type { ActionResult, AppState, ErrorView, ProbeResult, Result } from '../shared/api';
+import { operationsForRole, servicesForRole, type Bundle } from './bundle';
+import {
+  ContractDefect,
+  InvalidRequest,
+  defectView,
+  type CallOptions,
+  type CallResult,
+  type Transport,
+} from './transport';
 
 /** Tokens as they are held: sealed bytes, opened only to build a request. */
 export interface SealedTokens {
@@ -37,13 +44,13 @@ const PLAIN_MESSAGE: Record<string, string> = {
 const STAFF_ONLY = 'The back office is for staff roles. Customer accounts cannot sign in here.';
 const REFRESH_SKEW_MS = 30_000;
 
-function plain(error: ErrorView): ErrorView {
+export function plain(error: ErrorView): ErrorView {
   const message = PLAIN_MESSAGE[error.code];
   return message === undefined ? error : { ...error, message };
 }
 
-function localError(code: string, message: string): ErrorView {
-  return { code, message, correlation_id: '-', details: [] };
+export function localError(code: string, message: string, details: ErrorView['details'] = []): ErrorView {
+  return { code, message, correlation_id: '-', details };
 }
 
 /** The session was ended; the renderer must show the sign-in screen. */
@@ -93,6 +100,7 @@ export class Backoffice {
       storage,
       role: this.role,
       services: servicesForRole(this.bundle, this.role),
+      operations: operationsForRole(this.bundle, this.role),
     };
   }
 
@@ -208,9 +216,23 @@ export class Backoffice {
     }
   }
 
+  /** Runs work that calls services and turns anything it throws into the error view shown on screen. */
+  async attempt<T>(work: () => Promise<Result<T>>): Promise<Result<T>> {
+    try {
+      return await work();
+    } catch (e) {
+      return { ok: false, error: this.viewOf(e) };
+    }
+  }
+
   private viewOf(e: unknown): ErrorView {
     if (e instanceof SessionEnded || e instanceof CallFailed) return e.view;
     if (e instanceof ContractDefect) return defectView(e);
+    if (e instanceof InvalidRequest)
+      return localError(
+        'invalid_body',
+        `The values do not match the ${e.service} contract. Nothing was sent.`,
+      );
     if (e instanceof TypeError) return localError('network_unreachable', 'The service could not be reached.');
     return localError('client_error', 'The request could not be completed.');
   }

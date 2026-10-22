@@ -30,6 +30,12 @@ describe('compliance', () => {
       '',
     );
   });
+  it('never deletes a product: products are retired (RN-11)', () => {
+    // Each DELETE with the line after it, where the path is written.
+    const deletes = grep(['-rn', '-A1', "method: 'DELETE'", src]);
+    expect(deletes).toContain('/v1/categories/');
+    expect(deletes).not.toContain('/v1/products');
+  });
   it('exposes no generic transport on the bridge', () => {
     expect(
       grep([

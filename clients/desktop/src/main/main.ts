@@ -4,6 +4,7 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import { CHANNELS } from '../shared/api';
 import { Backoffice } from './backoffice';
 import { loadBundle } from './bundle';
+import { Catalog } from './catalog';
 import { loadSettings } from './settings';
 import { Transport } from './transport';
 import { SafeStorageVault } from './vault';
@@ -50,6 +51,29 @@ function start(): void {
           error: { code: 'invalid_input', message: 'Unknown service.', correlation_id: '-', details: [] },
         },
   );
+  // Each handler passes the renderer's values on unchanged; Catalog checks every one of them.
+  const catalog = new Catalog(office);
+  ipcMain.handle(CHANNELS.listProducts, (_e, query: unknown) => catalog.listProducts(query));
+  ipcMain.handle(CHANNELS.getProduct, (_e, productId: unknown) => catalog.getProduct(productId));
+  ipcMain.handle(CHANNELS.createProduct, (_e, draft: unknown) => catalog.createProduct(draft));
+  ipcMain.handle(CHANNELS.updateProduct, (_e, productId: unknown, changes: unknown) =>
+    catalog.updateProduct(productId, changes),
+  );
+  ipcMain.handle(CHANNELS.deactivateProduct, (_e, productId: unknown) =>
+    catalog.deactivateProduct(productId),
+  );
+  ipcMain.handle(CHANNELS.categoryTree, () => catalog.categoryTree());
+  ipcMain.handle(CHANNELS.listCategories, (_e, parentId: unknown, page: unknown) =>
+    catalog.listCategories(parentId, page),
+  );
+  ipcMain.handle(CHANNELS.categoryDescendants, (_e, categoryId: unknown, page: unknown) =>
+    catalog.categoryDescendants(categoryId, page),
+  );
+  ipcMain.handle(CHANNELS.createCategory, (_e, draft: unknown) => catalog.createCategory(draft));
+  ipcMain.handle(CHANNELS.updateCategory, (_e, categoryId: unknown, changes: unknown) =>
+    catalog.updateCategory(categoryId, changes),
+  );
+  ipcMain.handle(CHANNELS.deleteCategory, (_e, categoryId: unknown) => catalog.deleteCategory(categoryId));
   office.onStateChange((state) => {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(CHANNELS.stateChanged, state);
   });

@@ -1,0 +1,25 @@
+# Packaging for the desktop client (F16-05). The packages are unsigned on purpose:
+# there is no certificate in this project, and none may be committed (see README).
+appId: mx.mosaiq.desktop
+productName: MOSAIQ Back Office
+directories:
+  output: release
+files:
+  - dist/**
+  - bundled/**
+  - package.json
+asar: true
+publish: null
+linux:
+  target:
+    - target: AppImage
+  category: Office
+  maintainer: Team 03 <noreply@users.noreply.github.com>
+win:
+  target:
+    - target: nsis
+  signAndEditExecutable: false
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+artifactName: mosaiq-desktop-${version}-${os}-${arch}.${ext}

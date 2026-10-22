@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import { deferred, type Deferred } from '../support/deferred';
+import { shot } from '../support/evidence';
 
 // The products and categories screens (F16-02, #410), against a fake gateway
 // that answers with the recorded examples in contracts/*/examples/.
@@ -189,6 +190,7 @@ test('lists, filters and shows products, naming categories from categories-servi
   await expect(rows(page).first()).toContainText('Aisle Camera');
   await expect(rows(page).first()).toContainText('Yogurt');
   expect(seen.some((s) => s.url.endsWith('/api/categories/v1/categories/12'))).toBe(true);
+  await shot(page, '410-desktop-products-01-list-with-category-names');
 
   await page.fill('#filter-q', 'camera');
   await page.selectOption('#filter-active', 'true');
@@ -201,6 +203,7 @@ test('lists, filters and shows products, naming categories from categories-servi
   await page.getByTestId('view-1001').click();
   await expect(page.getByTestId('product-sku')).toHaveText('MOS-CAM-001');
   await expect(page.getByTestId('product-category')).toHaveText('Yogurt');
+  await shot(page, '410-desktop-products-02-product-detail');
 
   await page.getByTestId('view-1002').click();
   await expect(page.getByTestId('error-code')).toHaveText('product_not_found');
@@ -234,6 +237,8 @@ test('products keeps a newer filtered page when the initial page answers late', 
 test('an ADMIN creates a product, and refusals are shown as returned', async () => {
   const { app, page } = await launch('ADMIN');
   const fill = async (sku: string, price: string): Promise<void> => {
+    // The form is built from the category tree, so wait until the tree has loaded.
+    await expect(page.locator('#filter-category_id option[value="12"]')).toBeAttached();
     await page.getByTestId('new-product').click();
     await page.fill('#c-product_id', '1051');
     await page.fill('#c-sku', sku);
@@ -250,6 +255,7 @@ test('an ADMIN creates a product, and refusals are shown as returned', async () 
   await fill('MOS-CAM-001', '89.00');
   await expect(page.getByTestId('error-code')).toHaveText('sku_taken');
   await expect(page.getByTestId('error-correlation')).toHaveText('corr-create-409a');
+  await shot(page, '410-desktop-products-03-sku-taken-refusal');
 
   await fill('MOS-SCN-051', '89.00');
   await expect(page.getByTestId('notice')).toHaveText('Product 1051 created.');
@@ -293,6 +299,7 @@ test('the category tree, its descendants, and an ADMIN creating and editing cate
 
   await page.getByTestId('category-1').click();
   await expect(page.getByTestId('category-descendants').locator('li')).toHaveCount(3);
+  await shot(page, '410-desktop-categories-04-tree-and-descendants');
 
   await page.getByTestId('new-category').click();
   await page.fill('#c-category_id', '31');

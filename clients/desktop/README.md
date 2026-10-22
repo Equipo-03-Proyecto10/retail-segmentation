@@ -13,7 +13,7 @@ F16-03 adds Customers (see below).
 
 ## Run it
 
-Needs Node 20.19 or later.
+Needs Node 22.12 or later.
 
 ```sh
 cd clients/desktop
@@ -273,6 +273,36 @@ customer opened earlier is dropped.
 The window tests (`tests/window/customers.spec.ts`) answer with the recorded examples of the seven
 contracts, read from disk, including the `unassigned_result` and `no_open_assignment` examples that no
 seeded customer has.
+
+## Packages and CI (F16-05)
+
+`.github/workflows/desktop.yml` runs on a pull request that touches `clients/desktop/**`,
+`contracts/**` or the workflow: `npm ci`, ESLint, `prettier --check`, `tsc --noEmit`, the unit tests
+(which first bundle the schemas from the contracts in the pull request, so a contract change that the
+client no longer validates fails), the Playwright Electron tests, the ADR-0041 checks
+(`npm run check:adr41`, which print nothing), and then build a Linux AppImage uploaded as the workflow
+artifact `mosaiq-desktop-appimage`. It is separate from the services workflow.
+
+```sh
+npm run package:linux    # release/mosaiq-desktop-<version>-linux-<arch>.AppImage
+npm run package:win      # release/mosaiq-desktop-<version>-win-x64.exe (NSIS); built by CI
+```
+
+Pushing a tag `desktop/vX.Y.Z` (it must equal `version` in `package.json`) builds the Windows (NSIS) and
+Linux (AppImage) packages and attaches them to a GitHub release. `release/` is git-ignored.
+
+### The packages are unsigned
+
+There is no code-signing certificate, so the operating system warns on first run:
+
+- **Windows (SmartScreen):** "Windows protected your PC". Choose **More info**, then **Run anyway**.
+- **Linux:** an AppImage must be marked executable: `chmod +x mosaiq-desktop-*.AppImage`, then run it.
+  On a system without FUSE 2 (Ubuntu 22.04 and later), run it with `--appimage-extract-and-run`. If the
+  sandbox is refused on a hardened kernel, the warning names the missing user-namespace setting; the
+  `sandbox: true` window setting is never switched off to get past it.
+
+For the demonstration, download the package before the session, open it once beforehand to accept the
+warning, and have the base URL set in `settings.json` (see above).
 
 ## Checks
 

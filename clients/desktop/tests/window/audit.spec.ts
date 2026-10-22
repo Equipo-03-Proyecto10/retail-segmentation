@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import { shot } from '../support/evidence';
 
 // The audit trail (F16-09, #487), against a fake gateway that answers with the
 // recorded examples of contracts/audit-trail/ and records the product edits it
@@ -138,6 +139,7 @@ for (const as of ['ADMIN', 'AUDITOR']) {
     const { app, page: p } = await launch(as);
     await open(p);
     await expect(p.locator('[data-testid=audit-table] tbody tr')).toHaveCount(4);
+    await shot(p, '487-desktop-audit-01-list');
     expect(seen.some((s) => s.url.includes('/audit-entries?') && s.url.includes('size=20'))).toBe(true);
 
     await p.locator('#filter-entity').selectOption('category');
@@ -152,6 +154,7 @@ for (const as of ['ADMIN', 'AUDITOR']) {
     // Formatted JSON text in a <pre>.
     await expect(p.getByTestId('audit-before')).toContainText('"name": "Seasonal"');
     expect(await p.locator('[data-testid=audit-before]').evaluate((n) => n.tagName)).toBe('PRE');
+    await shot(p, '487-desktop-audit-02-entry-detail');
 
     // Append-only: nothing to create, edit or delete, and the bridge has no such operation.
     const screen = p.locator('div:has(> h2:text-is("Audit trail"))');
@@ -188,6 +191,7 @@ test('an unknown id is audit_entry_not_found, shown as returned; an invalid filt
   await p.locator('#filter-to').fill('2026-10-16T00:00:00Z');
   await p.getByRole('button', { name: 'Search' }).click();
   await expect(p.getByTestId('error-code')).toHaveText('invalid_query');
+  await shot(p, '487-desktop-audit-03-invalid-query');
   await expect(p.getByTestId('error-correlation')).toHaveText('corr-audit-422');
   await expect(p.getByTestId('error-detail')).toHaveText('enum');
   await app.close();

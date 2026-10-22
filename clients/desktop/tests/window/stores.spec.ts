@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import { shot } from '../support/evidence';
 
 // Store locations and geofences (F16-07, #485), against a fake gateway that
 // answers with the recorded examples of contracts/stores/ and keeps the
@@ -145,6 +146,7 @@ test('every staff role reads the directory; a store without a location is marked
   await expect(page.getByTestId('store-latitude')).toHaveText('19.432608');
   await expect(page.getByTestId('store-longitude')).toHaveText('-99.133209');
   await expect(page.getByTestId('store-radius')).toHaveText('150 m');
+  await shot(page, '485-desktop-stores-01-directory-and-location');
   expect(seen.some((s) => s.url.endsWith('/stores/1') && s.method === 'GET')).toBe(true);
 
   // Read-only: no control, and a forced write is refused by the service and shown as a message.
@@ -202,6 +204,7 @@ test('a value outside its bounds is refused before sending, naming the field', a
   await save('19.3', '-99.1', '2001');
   await expect(page.getByTestId('detail-geofence_radius_m')).toHaveText('geofence_radius_m: out_of_range');
   expect(writes()).toHaveLength(0);
+  await shot(page, '485-desktop-stores-02-out-of-range-refused');
 
   // What the service answers to a forced request is shown with its details next to the field.
   nextRefusal = { file: 'invalid-body-longitude', status: 422 };

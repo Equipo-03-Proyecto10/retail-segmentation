@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import { shot } from '../support/evidence';
 
 const AUTH = 'https://mosaiq.maxthecoder.online/xml/auth/v1';
 const COMMON = 'https://mosaiq.maxthecoder.online/xml/common/v1';
@@ -16,6 +17,7 @@ let server: Server;
 let base = '';
 let role = 'ANALYST';
 let deleted = 0;
+let campaignsAnswer: 'forbidden' | 'off_contract' = 'forbidden';
 
 test.beforeAll(async () => {
   server = createServer((req, res) => {
@@ -42,6 +44,13 @@ test.beforeAll(async () => {
           return reply(204);
         }
         return reply(200, claims(role));
+      }
+      if (campaignsAnswer === 'off_contract' && req.url?.startsWith('/api/campaigns/')) {
+        // Well-formed XML that is not what the campaigns contract allows.
+        return reply(
+          200,
+          '<CampaignList xmlns="https://mosaiq.maxthecoder.online/xml/campaigns/v1"><total>two</total><surprise/></CampaignList>',
+        );
       }
       reply(403, error('forbidden_role'));
     });
@@ -164,8 +173,10 @@ test('window is locked down', async () => {
 test('staff sign-in shows role-gated services, then sign-out', async () => {
   role = 'MARKETING';
   const { app, page } = await launch();
+  await shot(page, '406-desktop-signin-01-form');
   await signIn(page, 'a@b.c');
   await expect(page.getByTestId('role')).toHaveText('Signed in as MARKETING');
+  await shot(page, '406-desktop-home-02-signed-in');
   await page.getByRole('button', { name: 'Services' }).click();
   await expect(page.locator('[data-service=campaigns]')).toHaveCount(1);
   await expect(page.locator('[data-service=audit-trail]')).toHaveCount(0);
@@ -173,6 +184,7 @@ test('staff sign-in shows role-gated services, then sign-out', async () => {
   await page.locator('[data-service=campaigns] button').click();
   await expect(page.getByTestId('error-code')).toHaveText('forbidden_role');
   await expect(page.getByTestId('error-correlation')).toHaveText('srv-42');
+  await shot(page, '406-desktop-services-03-forbidden-role');
   deleted = 0;
   await page.getByText('Sign out').click();
   await page.waitForSelector('form');
@@ -198,7 +210,29 @@ test('an error envelope shows code, message, correlation id and field details', 
   await expect(page.getByTestId('error-message')).toHaveText('Server says invalid_body');
   await expect(page.getByTestId('error-correlation')).toHaveText('srv-42');
   await expect(page.getByTestId('detail-password')).toHaveText('password: required');
+  await shot(page, '406-desktop-signin-04-error-envelope');
   await app.close();
+});
+
+test('a response that fails its XSD is refused as a contract defect', async () => {
+  role = 'MARKETING';
+  campaignsAnswer = 'off_contract';
+  const { app, page } = await launch();
+  try {
+    await signIn(page, 'a@b.c');
+    await page.getByRole('button', { name: 'Services' }).click();
+    await page.locator('[data-service=campaigns] button').click();
+    await expect(page.getByTestId('error-code')).toHaveText('contract_defect');
+    await expect(page.getByTestId('error-message')).toContainText('outside its contract');
+    await expect(page.getByTestId('error-correlation')).toBeVisible();
+    // Nothing of the invalid body reaches the screen.
+    await expect(page.locator('body')).not.toContainText('surprise');
+    await page.getByTestId('error-correlation').scrollIntoViewIfNeeded();
+    await shot(page, '406-desktop-contract-defect-05-xsd-failure');
+  } finally {
+    campaignsAnswer = 'forbidden';
+    await app.close();
+  }
 });
 
 test('warns on every screen exactly when there is no OS keyring', async () => {

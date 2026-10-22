@@ -62,3 +62,4 @@ clients/desktop/bundled/
 clients/desktop/dist/
 clients/desktop/node_modules/
 clients/desktop/test-results/
+clients/desktop/release/

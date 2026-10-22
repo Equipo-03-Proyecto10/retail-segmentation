@@ -146,3 +146,34 @@ def list_sales_load_rejections(
             (load_id,),
         )
         return [SalesLoadRejectionRow(*row) for row in cursor.fetchall()]
+
+
+def list_sales_load_rejections_page(
+    connection: Connection[Any], load_id: int, *, page: int, per_page: int
+) -> tuple[list[SalesLoadRejectionRow], int]:
+    """Return one page of a load's rejected lines, in line order, and how many
+    there are in all. The report page shows this; the CSV download still
+    carries every line (#595: an all-rejected 40,000-row file rendered as one
+    5.4 MB page)."""
+    offset = (page - 1) * per_page
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT line_number, reason
+            FROM sales_load_rejection
+            WHERE load_id = %s
+            ORDER BY line_number
+            LIMIT %s OFFSET %s
+            """,
+            (load_id, per_page, offset),
+        )
+        rows = [SalesLoadRejectionRow(*row) for row in cursor.fetchall()]
+
+        cursor.execute(
+            "SELECT count(*) FROM sales_load_rejection WHERE load_id = %s",
+            (load_id,),
+        )
+        total = cursor.fetchone()[0]
+
+    return rows, total

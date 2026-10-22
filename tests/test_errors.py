@@ -5,7 +5,7 @@ import re
 from unittest.mock import Mock
 
 import pytest
-from flask import Flask
+from flask import Flask, abort
 from flask.testing import FlaskClient
 
 from web.app import create_app
@@ -38,6 +38,11 @@ def _app() -> Flask:
     @public
     def boom() -> str:
         raise RuntimeError("deliberate failure raised by the test")
+
+    @app.get("/bad")
+    @public
+    def bad() -> str:
+        abort(400)
 
     return app
 
@@ -89,3 +94,22 @@ def test_the_error_page_shows_a_reference_shared_with_the_log(
     on_page = _REFERENCE.search(body)
     assert on_page, "the error page carries no reference id"
     assert on_page.group(0) in caplog.text
+
+
+def test_a_bad_request_asks_to_check_what_was_sent(client: FlaskClient) -> None:
+    """#595: a 400 is about the request, so the page never says the user
+    could not have caused it."""
+    response = client.get("/bad")
+    body = response.get_data(as_text=True)
+
+    assert response.status_code == 400
+    assert "Check the values that were" in body
+    assert "nothing you did caused it" not in body
+
+
+def test_a_server_failure_still_says_it_was_not_the_visitor(
+    client: FlaskClient,
+) -> None:
+    body = client.get("/boom").get_data(as_text=True)
+
+    assert "nothing you did caused it" in body

@@ -10,7 +10,6 @@
 //! A payload is a JSON object in the JSON representation and a string holding
 //! that object's JSON text in the XML one (`contracts/audit-trail/`).
 
-use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::body::Body;
@@ -362,11 +361,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     runtime.block_on(async {
         let router = router(KitConfig::from_env(SUFFIX), "contracts")?;
         let listener = tokio::net::TcpListener::bind("0.0.0.0:5015").await?;
-        axum::serve(
-            listener,
-            router.into_make_service_with_connect_info::<SocketAddr>(),
-        )
-        .await?;
+        mosaiq_kit::serve(listener, router).await?;
         Ok::<(), Box<dyn std::error::Error>>(())
     })
 }

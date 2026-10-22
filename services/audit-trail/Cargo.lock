@@ -1009,8 +1009,8 @@ dependencies = [
 
 [[package]]
 name = "mosaiq-kit"
-version = "0.1.4"
-source = "git+https://github.com/Equipo-03-Proyecto10/retail-segmentation?tag=kit-rs%2Fv0.1.4#e3177242f7d0cb7dd1f1af42f86071a982c65f0e"
+version = "0.1.5"
+source = "git+https://github.com/Equipo-03-Proyecto10/retail-segmentation?tag=kit-rs%2Fv0.1.5#7ffcb9ec93ac76754be5652538750bfeb8ca9555"
 dependencies = [
  "axum",
  "bytes",
@@ -1018,6 +1018,8 @@ dependencies = [
  "deadpool-postgres",
  "form_urlencoded",
  "http-body-util",
+ "hyper",
+ "hyper-util",
  "indexmap",
  "jsonschema",
  "jsonwebtoken",

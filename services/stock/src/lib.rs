@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -321,10 +320,6 @@ pub async fn serve(config: KitConfig, contracts: &str) -> Result<(), Box<dyn std
     tokio::spawn(relay(config.clone()));
     let app = router(config, contracts)?;
     let listener = tokio::net::TcpListener::bind("0.0.0.0:5006").await?;
-    axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .await?;
+    mosaiq_kit::serve(listener, app).await?;
     Ok(())
 }

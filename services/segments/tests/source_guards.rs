@@ -17,7 +17,7 @@ fn rust_files(dir: &Path, found: &mut Vec<std::path::PathBuf>) {
 #[test]
 fn kit_is_pinned_by_tag_and_the_crate_has_no_workspace_or_path_dependency() {
     let manifest = fs::read_to_string("Cargo.toml").unwrap();
-    assert!(manifest.contains("tag = \"kit-rs/v0.1.3\""));
+    assert!(manifest.contains("tag = \"kit-rs/v0.1.5\""));
     assert!(!manifest.contains("[workspace]"));
     assert!(!manifest.contains("path ="));
 }

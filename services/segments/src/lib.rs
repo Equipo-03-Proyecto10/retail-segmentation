@@ -8,7 +8,6 @@
 //! simply never asked for again and expire by their TTL; nothing scans.
 
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -817,11 +816,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             .into_router()
             .layer(middleware::from_fn(capture_request));
         let listener = tokio::net::TcpListener::bind("0.0.0.0:5010").await?;
-        axum::serve(
-            listener,
-            router.into_make_service_with_connect_info::<SocketAddr>(),
-        )
-        .await?;
+        mosaiq_kit::serve(listener, router).await?;
         Ok::<(), Box<dyn std::error::Error>>(())
     })
 }

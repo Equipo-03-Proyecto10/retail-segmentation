@@ -76,10 +76,23 @@ const initial = (): Customer[] => [
   },
 ];
 
+/** The fake answers with values a test sent (a PATCH, a PUT), so every one is escaped as XML text. */
+const XML_ESCAPES: Record<string, string> = {
+  '<': '&lt;',
+  '>': '&gt;',
+  '&': '&amp;',
+  "'": '&apos;',
+  '"': '&quot;',
+};
+const xmlText = (value: string | number): string =>
+  String(value).replace(/[<>&'"]/g, (ch) => XML_ESCAPES[ch]);
+
 const customerBody = (c: Customer): string =>
-  `<customer_id>${c.id}</customer_id><name>${c.name}</name>${c.email ? `<email>${c.email}</email>` : ''}${
-    c.phone ? `<phone>${c.phone}</phone>` : ''
-  }<registration_channel_id>${c.channel}</registration_channel_id><registered_on>2025-09-17</registered_on>`;
+  `<customer_id>${xmlText(c.id)}</customer_id><name>${xmlText(c.name)}</name>${
+    c.email ? `<email>${xmlText(c.email)}</email>` : ''
+  }${c.phone ? `<phone>${xmlText(c.phone)}</phone>` : ''}<registration_channel_id>${xmlText(
+    c.channel,
+  )}</registration_channel_id><registered_on>2025-09-17</registered_on>`;
 const oneCustomer = (c: Customer): string =>
   `<Customer xmlns="${NS}/customers/v1">${customerBody(c)}</Customer>`;
 const directory = (list: Customer[]): string =>
@@ -89,16 +102,16 @@ const directory = (list: Customer[]): string =>
       '',
     )}<common:PageInfo><common:page>1</common:page><common:size>20</common:size><common:total>${list.length}</common:total></common:PageInfo></Customers>`;
 const profile = (c: Customer): string =>
-  `<PreferenceProfile xmlns="${NS}/customer-preferences/v1"><customer_id>${c.id}</customer_id>${c.channels
-    .map((n) => `<preferred_channel_ids>${n}</preferred_channel_ids>`)
+  `<PreferenceProfile xmlns="${NS}/customer-preferences/v1"><customer_id>${xmlText(c.id)}</customer_id>${c.channels
+    .map((n) => `<preferred_channel_ids>${xmlText(n)}</preferred_channel_ids>`)
     .join(
       '',
-    )}${c.categories.map((n) => `<interest_category_ids>${n}</interest_category_ids>`).join('')}</PreferenceProfile>`;
+    )}${c.categories.map((n) => `<interest_category_ids>${xmlText(n)}</interest_category_ids>`).join('')}</PreferenceProfile>`;
 const productsFor = (ids: number[]): string =>
   `<Products xmlns="${NS}/products/v1" xmlns:common="${COMMON}">${ids
     .map(
       (id) =>
-        `<Product><product_id>${id}</product_id><sku>SKU-${id}</sku><name>Product name ${id}</name><category_id>12</category_id><list_price>10.00</list_price><is_active>true</is_active></Product>`,
+        `<Product><product_id>${xmlText(id)}</product_id><sku>SKU-${xmlText(id)}</sku><name>Product name ${xmlText(id)}</name><category_id>12</category_id><list_price>10.00</list_price><is_active>true</is_active></Product>`,
     )
     .join(
       '',
@@ -221,7 +234,7 @@ test.beforeAll(async () => {
       if (path === '/api/recommendations/v1/recommendations') {
         const id = url.searchParams.get('customer_id') ?? '';
         const xml = example('recommendations', RECOMMENDATION[id] ?? 'recommended');
-        return reply(200, xml.replace(/<customer_id>[^<]*</, `<customer_id>${id}<`));
+        return reply(200, xml.replace(/<customer_id>[^<]*</, `<customer_id>${xmlText(id)}<`));
       }
       return reply(404, example('customers', 'customer-not-found'));
     });

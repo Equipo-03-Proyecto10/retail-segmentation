@@ -103,10 +103,13 @@ impl fmt::Display for ApiError {
 
 impl std::error::Error for ApiError {}
 
-/// A wire value rendered identically to JSON and XML.
+/// A value rendered to JSON and XML.
 ///
 /// Timestamps are always time-zone aware, so a naive timestamp cannot be
 /// rendered. `Money` is a two-place string; a bare `Decimal` stays a number.
+/// `JsonText` keeps JSON source text: JSON replies parse valid text into its
+/// value, while XML replies carry the original text. Invalid JSON is rendered
+/// as a JSON string, so constructing and rendering a value remain infallible.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     Null,
@@ -116,6 +119,9 @@ pub enum Value {
     Decimal(Decimal),
     Money(String),
     Text(String),
+    /// JSON source rendered as its parsed value in JSON and as text in XML.
+    /// Invalid JSON is rendered as a JSON string instead of being rejected.
+    JsonText(String),
     DateTime(DateTime<Utc>),
     Date(NaiveDate),
     List(Vec<Value>),

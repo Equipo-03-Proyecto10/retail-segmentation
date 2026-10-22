@@ -45,6 +45,9 @@ pub fn wire_value(value: &Value) -> serde_json::Value {
             serde_json::from_str(&text).unwrap_or(serde_json::Value::Null)
         }
         Value::Money(text) | Value::Text(text) => serde_json::Value::String(text.clone()),
+        Value::JsonText(text) => {
+            serde_json::from_str(text).unwrap_or_else(|_| serde_json::Value::String(text.clone()))
+        }
         Value::DateTime(moment) => serde_json::Value::String(timestamp(moment)),
         Value::Date(date) => serde_json::Value::String(date.format("%Y-%m-%d").to_string()),
         Value::List(items) => serde_json::Value::Array(items.iter().map(wire_value).collect()),
@@ -75,7 +78,7 @@ fn text(value: &Value) -> String {
             fixed.trim_end_matches('0').trim_end_matches('.').to_owned()
         }
         Value::Decimal(decimal) => decimal.to_string(),
-        Value::Money(text) | Value::Text(text) => text.clone(),
+        Value::Money(text) | Value::Text(text) | Value::JsonText(text) => text.clone(),
         Value::DateTime(moment) => timestamp(moment),
         Value::Date(date) => date.format("%Y-%m-%d").to_string(),
         Value::Null | Value::List(_) | Value::Object(_) => String::new(),

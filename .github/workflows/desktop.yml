@@ -1,0 +1,89 @@
+name: Desktop
+
+# The Electron client is linted, tested and packaged alone (ADR-0041, F16-05),
+# separate from the services matrix so a client failure never blocks a service
+# release. Pull requests build an unsigned Linux AppImage and upload it as a
+# workflow artifact. A tag desktop/vX.Y.Z builds the unsigned Windows (NSIS)
+# and Linux (AppImage) packages and attaches them to a GitHub release.
+on:
+  pull_request:
+    paths:
+      - "clients/desktop/**"
+      - "contracts/**"
+      - ".github/workflows/desktop.yml"
+  push:
+    branches: [develop]
+    paths:
+      - "clients/desktop/**"
+      - "contracts/**"
+      - ".github/workflows/desktop.yml"
+    tags: ["desktop/v*"]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: clients/desktop
+
+jobs:
+  check:
+    name: Lint, test and package
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20.19.0"
+          cache: npm
+          cache-dependency-path: clients/desktop/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck
+      # Bundles the schemas from the changed contracts first, then runs Vitest:
+      # a desktop test that no longer validates fails the pull request.
+      - name: Unit tests
+        run: npm test
+      - name: Playwright Electron tests
+        run: npm run test:window
+      - name: ADR-0041 desktop checks (each prints nothing)
+        run: npm run check:adr41
+      - name: Build the Linux AppImage
+        run: npm run package:linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mosaiq-desktop-appimage
+          path: clients/desktop/release/*.AppImage
+          if-no-files-found: error
+
+  release:
+    name: Release (${{ github.ref_name }})
+    needs: check
+    if: startsWith(github.ref, 'refs/tags/desktop/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20.19.0"
+          cache: npm
+          cache-dependency-path: clients/desktop/package-lock.json
+      - run: npm ci
+      - name: Tag matches package version
+        run: test "${GITHUB_REF_NAME#desktop/v}" = "$(node -p "require('./package.json').version")"
+      - name: Build the unsigned Linux and Windows packages
+        # Wine is not needed: NSIS is built by electron-builder's own makensis.
+        run: |
+          npm run package:linux
+          npm run package:win
+      - name: Attach the packages to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: ${{ github.workspace }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "Desktop ${GITHUB_REF_NAME#desktop/}" \
+            --notes "Unsigned packages. See clients/desktop/README.md for the operating-system warning." \
+            clients/desktop/release/*.AppImage clients/desktop/release/*.exe

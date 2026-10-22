@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "MOSAIQ products-service: the product catalog rule (RN-10, RN-11)"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "mosaiq-kit @ git+https://github.com/Equipo-03-Proyecto10/retail-segmentation@kit-py/v0.1.6#subdirectory=packages/kit-py",
+    "mosaiq-kit @ git+https://github.com/Equipo-03-Proyecto10/retail-segmentation@kit-py/v0.1.7#subdirectory=packages/kit-py",
     "gunicorn==23.0.0",
 ]
 

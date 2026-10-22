@@ -8,6 +8,7 @@ import okhttp3.mockwebserver.MockWebServer
 import online.maxthecoder.mosaiq.floor.auth.Tokens
 import online.maxthecoder.mosaiq.floor.outbox.Fix
 import online.maxthecoder.mosaiq.floor.outbox.OutboxWorker
+import online.maxthecoder.mosaiq.floor.session.Profile
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -30,7 +31,7 @@ class CheckInReasonsTest {
         app = ApplicationProvider.getApplicationContext()
         graph = app.build(server.url("/").toString())
         graph.tokens.write(Tokens("token-A", "refresh-A"))
-        graph.session.signedIn("A")
+        graph.session.signedIn(Profile("A", "Demo A", "STORE_MANAGER"))
     }
 
     @After

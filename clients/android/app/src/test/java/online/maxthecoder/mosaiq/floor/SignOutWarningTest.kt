@@ -7,6 +7,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.runBlocking
 import online.maxthecoder.mosaiq.floor.auth.Tokens
+import online.maxthecoder.mosaiq.floor.session.Profile
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
 import online.maxthecoder.mosaiq.floor.ui.SignOutButton
 import org.junit.After
@@ -31,7 +32,7 @@ class SignOutWarningTest {
         app = ApplicationProvider.getApplicationContext()
         graph = app.build("http://127.0.0.1:9/")
         graph.tokens.write(Tokens("token-A", "refresh-A"))
-        graph.session.signedIn("A")
+        graph.session.signedIn(Profile("A", "Demo A", "STORE_MANAGER"))
     }
 
     @After

@@ -13,6 +13,7 @@ import online.maxthecoder.mosaiq.floor.ui.FloorHome
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
 import online.maxthecoder.mosaiq.floor.ui.SessionState
 import online.maxthecoder.mosaiq.floor.ui.SessionViewModel
+import online.maxthecoder.mosaiq.floor.ui.SignOutButton
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -38,7 +39,8 @@ class MainActivity : ComponentActivity() {
                 onSignIn = model::signIn,
                 onRetry = model::refreshProfile,
                 onSignOut = model::signOut,
-                floor = { signedIn -> FloorHome(signedIn, floor, model::signOut) }
+                floor = { signedIn -> FloorHome(signedIn, floor, model::signOut) },
+                signOut = { SignOutButton(floor, model::signOut) }
             )
         }
     }

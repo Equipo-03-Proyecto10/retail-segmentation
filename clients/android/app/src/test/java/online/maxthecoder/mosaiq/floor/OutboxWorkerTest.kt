@@ -12,6 +12,7 @@ import okhttp3.mockwebserver.SocketPolicy
 import online.maxthecoder.mosaiq.floor.auth.Tokens
 import online.maxthecoder.mosaiq.floor.outbox.OutboxWorker
 import online.maxthecoder.mosaiq.floor.outbox.RowState
+import online.maxthecoder.mosaiq.floor.session.Profile
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -42,7 +43,7 @@ class OutboxWorkerTest {
 
     private fun signIn(userId: String, access: String) {
         graph.tokens.write(Tokens(access, "refresh-$userId"))
-        graph.session.signedIn(userId)
+        graph.session.signedIn(Profile(userId, "Demo $userId", "STORE_MANAGER"))
     }
 
     private fun work(): ListenableWorker.Result = runBlocking {

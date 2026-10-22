@@ -31,7 +31,8 @@ fun FloorApp(
     onSignIn: (String, String) -> Unit,
     onRetry: () -> Unit,
     onSignOut: () -> Unit,
-    floor: (@Composable (SessionState.SignedIn) -> Unit)? = null
+    floor: (@Composable (SessionState.SignedIn) -> Unit)? = null,
+    signOut: (@Composable () -> Unit)? = null
 ) {
     // Kept here, above the screens, so a refused sign-in does not clear what was typed.
     var email by rememberSaveable { mutableStateOf("") }
@@ -49,7 +50,8 @@ fun FloorApp(
                     is SessionState.Failed -> {
                         ErrorPanel(state.error)
                         Button(onClick = onRetry) { Text("Try again") }
-                        OutlinedButton(onClick = onSignOut) { Text("Sign out") }
+                        // The floor's sign-out warns about queued writes first.
+                        signOut?.invoke() ?: OutlinedButton(onClick = onSignOut) { Text("Sign out") }
                     }
                 }
             }

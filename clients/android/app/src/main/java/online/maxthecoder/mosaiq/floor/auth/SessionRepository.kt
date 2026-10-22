@@ -6,6 +6,7 @@ import online.maxthecoder.mosaiq.floor.net.CurrentUser
 import online.maxthecoder.mosaiq.floor.net.Network
 import online.maxthecoder.mosaiq.floor.net.SignInRequest
 import online.maxthecoder.mosaiq.floor.session.InMemorySessionStore
+import online.maxthecoder.mosaiq.floor.session.Profile
 import online.maxthecoder.mosaiq.floor.session.SessionStore
 import retrofit2.Response
 
@@ -52,7 +53,7 @@ class SessionRepository(
     suspend fun currentUser(): SessionResult {
         val response =
             call { network.users.getCurrentUser() }
-                ?: return SessionResult.Failed(ApiError.unreachable(null))
+                ?: return offline()
         val user = response.body()
         if (!response.isSuccessful || user == null) {
             val error = ApiError.from(response)
@@ -69,8 +70,19 @@ class SessionRepository(
             return SessionResult.RoleRefused(user.roleCode)
         }
         // The floor-write queue sends a row only under this user's session.
-        session.signedIn(user.userId)
+        session.signedIn(Profile(user.userId, user.name, user.roleCode))
         return SessionResult.SignedIn(user)
+    }
+
+    /**
+     * No answer from users-service. With a session on this phone, the floor
+     * stays open as the user it last confirmed, so queued writes and the outbox
+     * stay reachable offline; the services check every request anyway.
+     */
+    private fun offline(): SessionResult {
+        val known = session.profile()
+        if (tokens.read() == null || known == null) return SessionResult.Failed(ApiError.unreachable(null))
+        return SessionResult.SignedIn(CurrentUser(known.userId, known.name, known.role))
     }
 
     /** Ends the session at auth-service, then forgets it here whatever the answer. */

@@ -45,6 +45,11 @@ jobs:
       # a desktop test that no longer validates fails the pull request.
       - name: Unit tests
         run: npm test
+      # Ubuntu 24.04's AppArmor refuses the unprivileged user namespaces that
+      # Chromium's sandbox needs, so Electron fails to launch. Lift that on the
+      # runner instead of passing --no-sandbox, which would test a weaker app.
+      - name: Allow the Chromium sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Playwright Electron tests
         run: npm run test:window
       - name: ADR-0041 desktop checks (each prints nothing)

@@ -16,6 +16,12 @@
           This page is not part of what your role may reach. If you believe you
           should have access, ask the administrator to review your role.
         </p>
+      {% elif code < 500 %}
+        {# A 4xx is about the request itself, so it never claims the user is blameless (#595). #}
+        <p class="mq-state__text">
+          The application could not use that request. Check the values that were
+          sent, such as a filter or a page number, and try again.
+        </p>
       {% else %}
         <p class="mq-state__text">
           The application could not complete that request. The problem has been

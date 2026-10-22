@@ -26,7 +26,14 @@ import androidx.compose.ui.unit.dp
 import online.maxthecoder.mosaiq.floor.net.ApiError
 
 @Composable
-fun FloorApp(state: SessionState, onSignIn: (String, String) -> Unit, onRetry: () -> Unit, onSignOut: () -> Unit) {
+fun FloorApp(
+    state: SessionState,
+    onSignIn: (String, String) -> Unit,
+    onRetry: () -> Unit,
+    onSignOut: () -> Unit,
+    floor: (@Composable (SessionState.SignedIn) -> Unit)? = null,
+    signOut: (@Composable () -> Unit)? = null
+) {
     // Kept here, above the screens, so a refused sign-in does not clear what was typed.
     var email by rememberSaveable { mutableStateOf("") }
     MaterialTheme {
@@ -39,11 +46,12 @@ fun FloorApp(state: SessionState, onSignIn: (String, String) -> Unit, onRetry: (
                 when (state) {
                     is SessionState.SignIn -> SignInForm(state, email, { email = it }, onSignIn)
                     SessionState.Loading -> CircularProgressIndicator()
-                    is SessionState.SignedIn -> SignedInPanel(state, onSignOut)
+                    is SessionState.SignedIn -> floor?.invoke(state) ?: SignedInPanel(state, onSignOut)
                     is SessionState.Failed -> {
                         ErrorPanel(state.error)
                         Button(onClick = onRetry) { Text("Try again") }
-                        OutlinedButton(onClick = onSignOut) { Text("Sign out") }
+                        // The floor's sign-out warns about queued writes first.
+                        signOut?.invoke() ?: OutlinedButton(onClick = onSignOut) { Text("Sign out") }
                     }
                 }
             }

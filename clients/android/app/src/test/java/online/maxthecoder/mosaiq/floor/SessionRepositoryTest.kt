@@ -140,4 +140,31 @@ class SessionRepositoryTest {
 
         assertNull(client.store.read())
     }
+
+    @Test
+    fun withoutANetworkTheFloorStaysOpenAsTheLastConfirmedUser() = runBlocking {
+        routes = {
+            when (it.path) {
+                SIGN_IN -> ok(201, tokens("access-1", "refresh-1"))
+                ME -> ok(200, user("STORE_MANAGER"))
+                else -> MockResponse().setResponseCode(404)
+            }
+        }
+        val client = client()
+        client.repository.signIn("user3@mosaiq-demo.com", "Password123!")
+        server.shutdown()
+
+        val offline = client.repository.currentUser() as SessionResult.SignedIn
+
+        assertEquals("Demo User 3", offline.user.name)
+        assertEquals("STORE_MANAGER", offline.user.roleCode)
+        assertEquals(Tokens("access-1", "refresh-1"), client.store.read())
+    }
+
+    @Test
+    fun withoutANetworkOrASessionItIsStillUnreachable() = runBlocking {
+        server.shutdown()
+        val result = client().repository.currentUser() as SessionResult.Failed
+        assertEquals("unreachable", result.error.code)
+    }
 }

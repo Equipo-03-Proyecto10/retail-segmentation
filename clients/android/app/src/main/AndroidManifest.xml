@@ -2,10 +2,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- GPS check-in (F17-03): asked at first use; denied or approximate still
+         records the check-in, and the server decides what it is worth. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <!-- The session never leaves the device: backups and device transfer
          exclude the token file (also kept in noBackupFilesDir). -->
     <application
+        android:name=".FloorApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"

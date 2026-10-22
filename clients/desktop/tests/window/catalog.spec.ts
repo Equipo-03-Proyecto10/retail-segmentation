@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import { deferred, type Deferred } from '../support/deferred';
 
 // The products and categories screens (F16-02, #410), against a fake gateway
 // that answers with the recorded examples in contracts/*/examples/.
@@ -49,11 +50,15 @@ let categories: string[] = [];
 /** The recorded refusal the next PATCH or DELETE answers with, when a test sets one. */
 let nextRefusal: { file: string; status: number } | null = null;
 let treeReads = 0;
+let heldUnfilteredProducts: Deferred<void> | null = null;
+let productReads = 0;
 
 function reset(): void {
   seen = [];
   nextRefusal = null;
   treeReads = 0;
+  heldUnfilteredProducts = null;
+  productReads = 0;
   products = blocks(example('products', 'products'), 'Product');
   // Dairy (1) with Cheese (11) and Yogurt (12) below it.
   categories = [
@@ -88,8 +93,15 @@ test.beforeAll(async () => {
       }
 
       // products-service
-      if (path === '/api/products/v1/products' && method === 'GET')
-        return reply(200, page('Products', PRODUCTS, products));
+      if (path === '/api/products/v1/products' && method === 'GET') {
+        productReads += 1;
+        const response = page('Products', PRODUCTS, url.searchParams.get('q') === 'no-match' ? [] : products);
+        if (heldUnfilteredProducts !== null && url.searchParams.get('q') !== 'no-match') {
+          void heldUnfilteredProducts.promise.then(() => reply(200, response));
+          return;
+        }
+        return reply(200, response);
+      }
       if (path === '/api/products/v1/products' && method === 'POST') {
         if (body.includes('<sku>MOS-CAM-001</sku>')) return reply(409, example('products', 'sku-taken'));
         products.push(...blocks(example('products', 'create-product'), 'Product'));
@@ -192,6 +204,30 @@ test('lists, filters and shows products, naming categories from categories-servi
 
   await page.getByTestId('view-1002').click();
   await expect(page.getByTestId('error-code')).toHaveText('product_not_found');
+  await app.close();
+});
+
+test('products keeps a newer filtered page when the initial page answers late', async () => {
+  heldUnfilteredProducts = deferred<void>();
+  const { app, page } = await launch('ADMIN');
+  // Signing in renders the home screen twice (the reply and the state event),
+  // so the unfiltered page is read once per render. Every unfiltered read is
+  // held, the one of the screen on display included, while the filter answers.
+  await expect.poll(() => productReads).toBeGreaterThanOrEqual(1);
+  await page.fill('#filter-q', 'no-match');
+  await page.getByRole('button', { name: 'Search' }).click();
+  await expect.poll(() => seen.some((s) => s.url.includes('q=no-match'))).toBe(true);
+  await expect(page.getByTestId('products-table')).toBeVisible();
+  await expect(rows(page)).toHaveCount(0);
+
+  heldUnfilteredProducts.resolve();
+  await expect
+    .poll(() => seen.filter((s) => s.url.endsWith('/api/categories/v1/categories/12')).length)
+    .toBeGreaterThan(0);
+  for (let sample = 0; sample < 10; sample += 1) {
+    await page.waitForTimeout(100);
+    await expect(rows(page)).toHaveCount(0);
+  }
   await app.close();
 });
 

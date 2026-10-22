@@ -1,6 +1,7 @@
 import type { StoreDetailView, StoreLocationView, StoreQuery } from '../shared/api';
 import type { ScreenContext } from './catalog';
 import { button, el, errorBox, formField, markDetails, pager, select, show, testid, textInput } from './dom';
+import { latestRequest } from './latest-request';
 
 // Store locations and geofences (F16-07, #485). Every staff role reads the
 // directory; an ADMIN sets and removes a location. Coordinates are plain
@@ -27,6 +28,8 @@ export function renderStores(host: HTMLElement, ctx: ScreenContext): void {
   const message = testid(el('div'), 'stores-message');
   const tableArea = el('div');
   const detail = testid(el('section', { cls: 'panel' }), 'store-detail');
+  const renderLatestList = latestRequest();
+  const renderLatestDetail = latestRequest();
   let query: StoreQuery = { page: 1, size: 20 };
 
   const city = textInput('');
@@ -62,48 +65,56 @@ export function renderStores(host: HTMLElement, ctx: ScreenContext): void {
   });
 
   async function load(): Promise<void> {
-    const res = await api.listStores(query);
-    if (!res.ok) return void tableArea.replaceChildren(errorBox(res.error));
-    const head = el('tr');
-    for (const h of ['ID', 'Name', 'City', 'State', 'Status', 'Location', ''])
-      head.append(el('th', { text: h }));
-    const body = el('tbody');
-    for (const s of res.value.items) {
-      const place = testid(
-        el('td', { text: s.location === null ? NO_LOCATION : describe(s.location) }),
-        `store-location-${s.store_id}`,
-      );
-      const row = el(
-        'tr',
-        {},
-        el('td', { text: String(s.store_id) }),
-        el('td', { text: s.name }),
-        el('td', { text: s.city }),
-        el('td', { text: s.state }),
-        el('td', { text: s.is_active ? 'Active' : 'Inactive' }),
-        place,
-        el(
-          'td',
-          {},
-          button('View', `view-store-${s.store_id}`, () => void open(s.store_id)),
-        ),
-      );
-      row.dataset.storeId = String(s.store_id);
-      body.append(row);
-    }
-    tableArea.replaceChildren(
-      testid(el('table', {}, el('thead', {}, head), body), 'stores-table'),
-      pager(res.value.page, 'stores', (page) => {
-        query = { ...query, page };
-        void load();
-      }),
+    await renderLatestList(
+      () => api.listStores(query),
+      (res) => {
+        if (!res.ok) return void tableArea.replaceChildren(errorBox(res.error));
+        const head = el('tr');
+        for (const h of ['ID', 'Name', 'City', 'State', 'Status', 'Location', ''])
+          head.append(el('th', { text: h }));
+        const body = el('tbody');
+        for (const s of res.value.items) {
+          const place = testid(
+            el('td', { text: s.location === null ? NO_LOCATION : describe(s.location) }),
+            `store-location-${s.store_id}`,
+          );
+          const row = el(
+            'tr',
+            {},
+            el('td', { text: String(s.store_id) }),
+            el('td', { text: s.name }),
+            el('td', { text: s.city }),
+            el('td', { text: s.state }),
+            el('td', { text: s.is_active ? 'Active' : 'Inactive' }),
+            place,
+            el(
+              'td',
+              {},
+              button('View', `view-store-${s.store_id}`, () => void open(s.store_id)),
+            ),
+          );
+          row.dataset.storeId = String(s.store_id);
+          body.append(row);
+        }
+        tableArea.replaceChildren(
+          testid(el('table', {}, el('thead', {}, head), body), 'stores-table'),
+          pager(res.value.page, 'stores', (page) => {
+            query = { ...query, page };
+            void load();
+          }),
+        );
+      },
     );
   }
 
   async function open(storeId: number): Promise<void> {
-    const res = await api.getStore(storeId);
-    if (!res.ok) return void detail.replaceChildren(errorBox(res.error));
-    showStore(res.value);
+    await renderLatestDetail(
+      () => api.getStore(storeId),
+      (res) => {
+        if (!res.ok) return void detail.replaceChildren(errorBox(res.error));
+        showStore(res.value);
+      },
+    );
   }
 
   function showStore(s: StoreDetailView): void {
@@ -152,6 +163,7 @@ export function renderStores(host: HTMLElement, ctx: ScreenContext): void {
     form.noValidate = true;
     form.addEventListener('submit', (event) => {
       event.preventDefault();
+      const isCurrent = renderLatestDetail.begin();
       void api
         .setStoreLocation(s.store_id, {
           latitude: lat.value,
@@ -159,6 +171,7 @@ export function renderStores(host: HTMLElement, ctx: ScreenContext): void {
           geofence_radius_m: radius.value,
         })
         .then(async (res) => {
+          if (!isCurrent()) return;
           show(message, res, `Location of ${s.name} saved.`, LOCATION_FIELDS);
           if (res.ok) showStore(res.value);
           else markDetails(form, res.error.details);
@@ -171,7 +184,9 @@ export function renderStores(host: HTMLElement, ctx: ScreenContext): void {
   function removeControl(s: StoreDetailView): HTMLElement {
     const area = el('div');
     const confirm = button('Confirm removal', 'confirm-remove-location', () => {
+      const isCurrent = renderLatestDetail.begin();
       void api.removeStoreLocation(s.store_id).then(async (res) => {
+        if (!isCurrent()) return;
         show(message, res, `Location of ${s.name} removed.`);
         if (res.ok) await open(s.store_id);
         await load();

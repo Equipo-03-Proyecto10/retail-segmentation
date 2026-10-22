@@ -13,6 +13,7 @@ import {
   textInput,
   type Details,
 } from './dom';
+import { latestRequest } from './latest-request';
 
 // User administration, the administrator transfer and the account menu (F16-06,
 // #484). A control is drawn only for a role that may call its operation; the
@@ -82,6 +83,8 @@ export function renderUsers(host: HTMLElement, ctx: ScreenContext): void {
   const message = testid(el('div'), 'users-message');
   const tableArea = el('div');
   const detail = testid(el('section', { cls: 'panel' }), 'user-detail');
+  const renderLatestList = latestRequest();
+  const renderLatestDetail = latestRequest();
   let roles: RoleView[] = [];
   let query: UserQuery = { page: 1, size: 20 };
 
@@ -119,39 +122,49 @@ export function renderUsers(host: HTMLElement, ctx: ScreenContext): void {
   });
 
   async function load(): Promise<void> {
-    const res = await api.listUsers(query);
-    if (!res.ok) return void tableArea.replaceChildren(errorBox(res.error));
-    const rows = res.value.items.map((u) => {
-      const tr = el(
-        'tr',
-        {},
-        el('td', { text: u.name }),
-        el('td', { text: u.email }),
-        el('td', { text: u.role_code }),
-        el('td', { text: u.is_active ? 'Active' : 'Inactive' }),
-        el(
-          'td',
-          {},
-          button('View', `view-user-${u.user_id}`, () => void open(u.user_id)),
-        ),
-      );
-      tr.dataset.userId = u.user_id;
-      return tr;
-    });
-    tableArea.replaceChildren(
-      table('users-table', ['Name', 'Email', 'Role', 'Status', ''], rows),
-      pager(res.value.page, 'users', (page) => {
-        query = { ...query, page };
-        void load();
-      }),
+    await renderLatestList(
+      () => api.listUsers(query),
+      (res) => {
+        if (!res.ok) return void tableArea.replaceChildren(errorBox(res.error));
+        const rows = res.value.items.map((u) => {
+          const tr = el(
+            'tr',
+            {},
+            el('td', { text: u.name }),
+            el('td', { text: u.email }),
+            el('td', { text: u.role_code }),
+            el('td', { text: u.is_active ? 'Active' : 'Inactive' }),
+            el(
+              'td',
+              {},
+              button('View', `view-user-${u.user_id}`, () => void open(u.user_id)),
+            ),
+          );
+          tr.dataset.userId = u.user_id;
+          return tr;
+        });
+        tableArea.replaceChildren(
+          table('users-table', ['Name', 'Email', 'Role', 'Status', ''], rows),
+          pager(res.value.page, 'users', (page) => {
+            query = { ...query, page };
+            void load();
+          }),
+        );
+      },
     );
   }
 
   async function open(userId: string): Promise<void> {
-    await rolesLoaded;
-    const res = await api.getUser(userId);
-    if (!res.ok) return void detail.replaceChildren(errorBox(res.error));
-    showUser(res.value);
+    await renderLatestDetail(
+      async () => {
+        await rolesLoaded;
+        return api.getUser(userId);
+      },
+      (res) => {
+        if (!res.ok) return void detail.replaceChildren(errorBox(res.error));
+        showUser(res.value);
+      },
+    );
   }
 
   function showUser(u: UserView): void {
@@ -198,7 +211,9 @@ export function renderUsers(host: HTMLElement, ctx: ScreenContext): void {
       if (name.value !== u.name) changes.name = name.value;
       if (email.value !== u.email) changes.email = email.value;
       if (picked.value !== u.role_code) changes.role_code = picked.value;
+      const isCurrent = renderLatestDetail.begin();
       void api.updateUser(u.user_id, changes).then(async (res) => {
+        if (!isCurrent()) return;
         showUserResult(message, res, 'User saved.');
         if (res.ok) showUser(res.value);
         else markDetails(form, res.error.details);
@@ -213,7 +228,9 @@ export function renderUsers(host: HTMLElement, ctx: ScreenContext): void {
     if (!u.is_active) {
       area.append(
         button('Reactivate', 'reactivate', () => {
+          const isCurrent = renderLatestDetail.begin();
           void api.reactivateUser(u.user_id).then(async (res) => {
+            if (!isCurrent()) return;
             showUserResult(message, res, 'User reactivated.');
             if (res.ok) showUser(res.value);
             await load();
@@ -223,7 +240,9 @@ export function renderUsers(host: HTMLElement, ctx: ScreenContext): void {
       return area;
     }
     const confirm = button('Confirm deactivation', 'confirm-deactivate', () => {
+      const isCurrent = renderLatestDetail.begin();
       void api.deactivateUser(u.user_id).then(async (res) => {
+        if (!isCurrent()) return;
         showUserResult(message, res, 'User deactivated.');
         if (res.ok) showUser(res.value);
         await load();
@@ -257,7 +276,9 @@ export function renderUsers(host: HTMLElement, ctx: ScreenContext): void {
       event.preventDefault();
       const typed = next.value;
       next.value = '';
+      const isCurrent = renderLatestDetail.begin();
       void api.resetUserPassword(u.user_id, typed).then((res) => {
+        if (!isCurrent()) return;
         showUserResult(message, res, 'Password reset. It is not shown.');
         if (!res.ok) markDetails(form, res.error.details);
       });
@@ -287,7 +308,9 @@ export function renderUsers(host: HTMLElement, ctx: ScreenContext): void {
     form.addEventListener('submit', (event) => {
       event.preventDefault();
       const typed = { name: name.value, email: email.value, role_code: picked.value };
+      const isCurrent = renderLatestDetail.begin();
       void api.createUser({ ...typed, password: password.value }).then(async (res) => {
+        if (!isCurrent()) return;
         showUserResult(message, res, 'User created.');
         // The password is never put back on screen.
         if (res.ok) showUser(res.value);
@@ -304,7 +327,10 @@ export function renderUsers(host: HTMLElement, ctx: ScreenContext): void {
       button('New user', 'new-user', () => {
         message.replaceChildren();
         // The role picker is filled from users-service, so the form waits for the roles.
-        void rolesLoaded.then(() => detail.replaceChildren(newUserForm()));
+        void renderLatestDetail(
+          () => rolesLoaded,
+          () => detail.replaceChildren(newUserForm()),
+        );
       }),
     );
   host.replaceChildren(...header, filters, message, tableArea, detail);
@@ -326,24 +352,30 @@ export function renderTransfer(host: HTMLElement, ctx: ScreenContext): void {
   const successor = select([['', 'Choose an active user']], '');
   const search = textInput('', 'search');
   const dialog = testid(el('dialog'), 'transfer-dialog');
+  const renderLatestCandidates = latestRequest();
 
   async function loadCandidates(): Promise<void> {
-    const res = await api.listUsers({
-      active: true,
-      size: 100,
-      ...(search.value.trim() ? { q: search.value.trim() } : {}),
-    });
-    if (!res.ok) return void message.replaceChildren(errorBox(res.error));
-    successor.replaceChildren(
-      Object.assign(el('option', { text: 'Choose an active user' }), { value: '' }),
-      // The incumbent is the one ADMIN in the list; the service still checks the successor.
-      ...res.value.items
-        .filter((u) => u.role_code !== ADMIN)
-        .map((u) =>
-          Object.assign(el('option', { text: `${u.name} <${u.email}> (${u.role_code})` }), {
-            value: u.user_id,
-          }),
-        ),
+    await renderLatestCandidates(
+      () =>
+        api.listUsers({
+          active: true,
+          size: 100,
+          ...(search.value.trim() ? { q: search.value.trim() } : {}),
+        }),
+      (res) => {
+        if (!res.ok) return void message.replaceChildren(errorBox(res.error));
+        successor.replaceChildren(
+          Object.assign(el('option', { text: 'Choose an active user' }), { value: '' }),
+          // The incumbent is the one ADMIN in the list; the service still checks the successor.
+          ...res.value.items
+            .filter((u) => u.role_code !== ADMIN)
+            .map((u) =>
+              Object.assign(el('option', { text: `${u.name} <${u.email}> (${u.role_code})` }), {
+                value: u.user_id,
+              }),
+            ),
+        );
+      },
     );
   }
 
@@ -365,7 +397,9 @@ export function renderTransfer(host: HTMLElement, ctx: ScreenContext): void {
   function confirmTransfer(userId: string, label: string): void {
     const confirm = button('Confirm transfer', 'confirm-transfer', () => {
       dialog.close();
+      const isCurrent = renderLatestCandidates.begin();
       void api.transferAdministrator(userId).then(async (res) => {
+        if (!isCurrent()) return;
         showUserResult(
           message,
           res,
@@ -431,6 +465,7 @@ export function renderTransfer(host: HTMLElement, ctx: ScreenContext): void {
 
 /** Any staff role changes its own password here; the service ends every session of the user. */
 export function renderAccount(ctx: ScreenContext): HTMLElement {
+  const renderLatest = latestRequest();
   const message = testid(el('div'), 'account-message');
   const current = passwordInput('current-password');
   const next = passwordInput('new-password');
@@ -451,7 +486,9 @@ export function renderAccount(ctx: ScreenContext): HTMLElement {
     current.value = '';
     next.value = '';
     // On success the app returns to sign-in with "Password changed, sign in again."
+    const isCurrent = renderLatest.begin();
     void ctx.api.changeOwnPassword(typed.current, typed.next).then((res) => {
+      if (!isCurrent()) return;
       showUserResult(message, res, 'Password changed.', ['current_password', 'new_password']);
       if (!res.ok) markDetails(form, res.error.details);
     });

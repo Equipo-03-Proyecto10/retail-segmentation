@@ -233,8 +233,10 @@ test('an ADMIN removes a location after a confirmation; an unknown store is stor
   const missing = await page.evaluate(() => window.mosaiq.getStore(9999));
   expect(missing).toMatchObject({ ok: false, error: { code: 'store_not_found' } });
 
-  // The same refusal reaches the screen as the service returned it.
+  // The same refusal reaches the screen as the service returned it. Wait for
+  // store 2's detail first: filling the previous form would be replaced.
   await page.getByTestId('view-store-2').click();
+  await expect(page.getByTestId('store-name')).toHaveText('Coyoacan');
   await page.fill('[data-testid=location-form] #c-latitude', '19.3');
   await page.fill('[data-testid=location-form] #c-longitude', '-99.1');
   await page.fill('[data-testid=location-form] #c-geofence_radius_m', '100');

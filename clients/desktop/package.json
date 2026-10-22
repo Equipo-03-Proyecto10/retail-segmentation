@@ -5,9 +5,10 @@
   "description": "MOSAIQ back-office desktop client (XML over per-service XSD)",
   "main": "dist/main.js",
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=22.12.0"
   },
   "scripts": {
+    "postinstall": "install-electron",
     "bundle:contracts": "node scripts/bundle-contracts.mjs",
     "build": "npm run bundle:contracts && node scripts/build.mjs",
     "start": "npm run build && electron .",
@@ -26,16 +27,16 @@
   "devDependencies": {
     "@eslint/js": "9.39.5",
     "@playwright/test": "1.56.1",
-    "@types/node": "20.19.43",
-    "electron": "38.8.6",
+    "@types/node": "22.20.5",
+    "electron": "45.0.0",
     "electron-builder": "26.15.3",
-    "esbuild": "0.25.12",
+    "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "globals": "17.13.0",
     "prettier": "3.9.10",
     "typescript": "5.9.3",
     "typescript-eslint": "8.72.0",
-    "vitest": "3.2.7",
+    "vitest": "5.0.5",
     "yaml": "2.9.1"
   },
   "dependencies": {

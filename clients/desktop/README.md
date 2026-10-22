@@ -13,7 +13,7 @@ F16-03 adds Customers (see below).
 
 ## Run it
 
-Needs Node 20.19 or later.
+Needs Node 22.12 or later.
 
 ```sh
 cd clients/desktop

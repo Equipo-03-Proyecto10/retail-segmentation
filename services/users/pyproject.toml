@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "MOSAIQ users-service: the single-administrator rule, case-insensitive emails, deactivation never deletion (RN-01, RN-02, RN-04)"
 requires-python = ">=3.12"
 dependencies = [
-    "mosaiq-kit @ git+https://github.com/Equipo-03-Proyecto10/retail-segmentation@kit-py/v0.1.2#subdirectory=packages/kit-py",
+    "mosaiq-kit @ git+https://github.com/Equipo-03-Proyecto10/retail-segmentation@kit-py/v0.1.6#subdirectory=packages/kit-py",
     # The web's version, so a hash either writer makes verifies in the other.
     "argon2-cffi==23.1.0",
     "gunicorn==23.0.0",

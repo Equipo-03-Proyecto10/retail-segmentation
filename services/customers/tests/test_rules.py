@@ -357,14 +357,9 @@ def test_a_nul_in_a_text_filter_is_refused(client, manager, query):
     assert error["details"] == [{"field": next(iter(query)), "code": "invalid_format"}]
 
 
-# Refused by mosaiq-kit 0.1.3 for every Python service (#580, #581, #582).
-KIT_0_1_3 = pytest.mark.xfail(
-    reason="mosaiq-kit 0.1.3 answers these; the kit bump removes this mark",
-    strict=True,
-)
+# Refused by the kit since 0.1.3 for every Python service (#580, #581, #582).
 
 
-@KIT_0_1_3
 def test_a_page_beyond_the_kit_bound_is_invalid_pagination(client, manager):
     response = client.get(
         "/v1/customers", query_string={"page": "9" * 20}, headers=manager
@@ -375,7 +370,6 @@ def test_a_page_beyond_the_kit_bound_is_invalid_pagination(client, manager):
     )
 
 
-@KIT_0_1_3
 @pytest.mark.parametrize(
     "field,value",
     [("name", "a\x00b"), ("email", "a\x00b@example.com"), ("phone", "55\x00")],
@@ -385,7 +379,6 @@ def test_a_nul_in_a_body_field_is_invalid_body(client, manager, unique, field, v
     assert (response.status_code, response.get_json()["code"]) == (422, "invalid_body")
 
 
-@KIT_0_1_3
 def test_a_nul_in_a_correction_is_invalid_body(client, manager, unique):
     created = register(client, manager, body(unique)).get_json()
     response = client.patch(
@@ -396,7 +389,6 @@ def test_a_nul_in_a_correction_is_invalid_body(client, manager, unique):
     assert (response.status_code, response.get_json()["code"]) == (422, "invalid_body")
 
 
-@KIT_0_1_3
 def test_an_xml_comment_in_the_body_is_skipped(client, manager, unique):
     created = register(client, manager, body(unique)).get_json()
     response = client.patch(

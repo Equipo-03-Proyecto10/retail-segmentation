@@ -351,6 +351,11 @@ def _valid_email(email: str) -> bool:
     return bool(local_part) and len(labels) >= 2 and all(labels)
 
 
+# Embedding, override and isolate controls (U+202A-U+202E, U+2066-U+2069).
+# In a name they reorder the text shown around it (#595).
+_BIDI_CONTROLS = frozenset("\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
+
+
 def validate_user(
     *, name: str, email: str, password: str, role_code: str
 ) -> dict[str, str]:
@@ -360,6 +365,8 @@ def validate_user(
         errors["name"] = "Name is required."
     elif len(name) > 120:
         errors["name"] = "Name must be 120 characters or fewer."
+    elif any(character in _BIDI_CONTROLS for character in name):
+        errors["name"] = "Name must not contain text-direction control characters."
     if not _valid_email(email):
         errors["email"] = "A valid email is required."
     if len(password) < MINIMUM_PASSWORD_LENGTH:

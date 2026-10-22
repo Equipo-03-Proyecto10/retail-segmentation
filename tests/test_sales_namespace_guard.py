@@ -117,11 +117,8 @@ def test_svc_sales_records_observed_sales_only(
     with psycopg.connect(owner_url) as conn:
         try:
             with conn.cursor() as cur:
-                # svc_sales holds no INSERT on transaction until F14-18 grants
-                # it; this grant lives only inside the rolled-back transaction.
                 cur.execute("SELECT min(customer_id::text) FROM public.customer")
                 (customer_id,) = cur.fetchone()
-                cur.execute("GRANT INSERT ON public.transaction TO svc_sales")
                 cur.execute(_AS_SVC_SALES)
                 cur.execute("SELECT session_user::text")
                 assert cur.fetchone()[0] == "svc_sales"

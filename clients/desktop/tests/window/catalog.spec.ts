@@ -237,6 +237,8 @@ test('products keeps a newer filtered page when the initial page answers late', 
 test('an ADMIN creates a product, and refusals are shown as returned', async () => {
   const { app, page } = await launch('ADMIN');
   const fill = async (sku: string, price: string): Promise<void> => {
+    // The form is built from the category tree, so wait until the tree has loaded.
+    await expect(page.locator('#filter-category_id option[value="12"]')).toBeAttached();
     await page.getByTestId('new-product').click();
     await page.fill('#c-product_id', '1051');
     await page.fill('#c-sku', sku);

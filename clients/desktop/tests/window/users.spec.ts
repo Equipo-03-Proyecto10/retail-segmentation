@@ -474,6 +474,8 @@ test('the transfer screen warns in a dialog, shows its refusals, and ends both s
 });
 
 test('screens and controls follow each role', async () => {
+  // Three Electron launches in a row: slower than the default 60 s on a CI runner.
+  test.setTimeout(180_000);
   let { app, page } = await launch('AUDITOR');
   expect(await nav(page)).toContain('users');
   expect(await nav(page)).not.toContain('transfer');

@@ -1,0 +1,6 @@
+{
+  "code": "duplicate_draft",
+  "message": "A DRAFT campaign with the same name, label_code, starts_on and ends_on already exists.",
+  "correlation_id": "corr-campaign-409a",
+  "details": []
+}

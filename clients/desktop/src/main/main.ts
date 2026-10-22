@@ -5,6 +5,7 @@ import { CHANNELS } from '../shared/api';
 import { Backoffice } from './backoffice';
 import { loadBundle } from './bundle';
 import { Catalog } from './catalog';
+import { Floor } from './floor';
 import { loadSettings } from './settings';
 import { Transport } from './transport';
 import { SafeStorageVault } from './vault';
@@ -74,6 +75,21 @@ function start(): void {
     catalog.updateCategory(categoryId, changes),
   );
   ipcMain.handle(CHANNELS.deleteCategory, (_e, categoryId: unknown) => catalog.deleteCategory(categoryId));
+  const floor = new Floor(office);
+  ipcMain.handle(CHANNELS.stores, () => floor.stores());
+  ipcMain.handle(CHANNELS.stockLevels, (_e, query: unknown) => floor.stockLevels(query));
+  ipcMain.handle(CHANNELS.listSales, (_e, query: unknown) => floor.listSales(query));
+  ipcMain.handle(CHANNELS.getSale, (_e, saleId: unknown) => floor.getSale(saleId));
+  ipcMain.handle(CHANNELS.engagementSummary, (_e, query: unknown) => floor.engagementSummary(query));
+  ipcMain.handle(CHANNELS.listEngagementEvents, (_e, query: unknown) => floor.listEngagementEvents(query));
+  ipcMain.handle(CHANNELS.voidEngagementEvent, (_e, eventId: unknown, reason: unknown) =>
+    floor.voidEngagementEvent(eventId, reason),
+  );
+  ipcMain.handle(CHANNELS.listCheckIns, (_e, query: unknown) => floor.listCheckIns(query));
+  ipcMain.handle(CHANNELS.getCheckIn, (_e, checkInId: unknown) => floor.getCheckIn(checkInId));
+  ipcMain.handle(CHANNELS.reviewCheckIn, (_e, checkInId: unknown, verified: unknown, reason: unknown) =>
+    floor.reviewCheckIn(checkInId, verified, reason),
+  );
   office.onStateChange((state) => {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(CHANNELS.stateChanged, state);
   });

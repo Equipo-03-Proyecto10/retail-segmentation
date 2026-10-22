@@ -56,7 +56,18 @@ export class XsdValidator {
   }
 }
 
-const REPEATED = new Set(['Products.Product', 'Categories.Category']);
+const REPEATED = new Set([
+  'Products.Product',
+  'Categories.Category',
+  'StockLevels.StockLevel',
+  'Sales.Sale',
+  'Channels.Channel',
+  'EngagementEvents.EngagementEvent',
+  'CheckIns.CheckIn',
+  'Stores.Store',
+]);
+/** Child elements that repeat wherever they appear: error details, sale lines, summary groups, event history, check-in reviews. */
+const REPEATED_CHILDREN = new Set(['details', 'lines', 'groups', 'history', 'reviews']);
 
 const parser = new XMLParser({
   removeNSPrefix: true,
@@ -66,7 +77,7 @@ const parser = new XMLParser({
   processEntities: false,
   // Repeated elements are arrays even when a page holds one. Matched by path,
   // so a single <Product> root stays an object.
-  isArray: (name, jpath) => name === 'details' || REPEATED.has(String(jpath)),
+  isArray: (name, jpath) => REPEATED_CHILDREN.has(name) || REPEATED.has(String(jpath)),
 });
 
 /** Parses a document that already passed the namespace and XSD checks. */

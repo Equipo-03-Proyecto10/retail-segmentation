@@ -24,6 +24,17 @@ const bridge: MosaiqBridge = {
   createCategory: (draft) => ipcRenderer.invoke(CHANNELS.createCategory, draft),
   updateCategory: (categoryId, changes) => ipcRenderer.invoke(CHANNELS.updateCategory, categoryId, changes),
   deleteCategory: (categoryId) => ipcRenderer.invoke(CHANNELS.deleteCategory, categoryId),
+  stores: () => ipcRenderer.invoke(CHANNELS.stores),
+  stockLevels: (query) => ipcRenderer.invoke(CHANNELS.stockLevels, query),
+  listSales: (query) => ipcRenderer.invoke(CHANNELS.listSales, query),
+  getSale: (saleId) => ipcRenderer.invoke(CHANNELS.getSale, saleId),
+  engagementSummary: (query) => ipcRenderer.invoke(CHANNELS.engagementSummary, query),
+  listEngagementEvents: (query) => ipcRenderer.invoke(CHANNELS.listEngagementEvents, query),
+  voidEngagementEvent: (eventId, reason) => ipcRenderer.invoke(CHANNELS.voidEngagementEvent, eventId, reason),
+  listCheckIns: (query) => ipcRenderer.invoke(CHANNELS.listCheckIns, query),
+  getCheckIn: (checkInId) => ipcRenderer.invoke(CHANNELS.getCheckIn, checkInId),
+  reviewCheckIn: (checkInId, verified, reason) =>
+    ipcRenderer.invoke(CHANNELS.reviewCheckIn, checkInId, verified, reason),
 };
 
 contextBridge.exposeInMainWorld('mosaiq', bridge);

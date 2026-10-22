@@ -1,6 +1,7 @@
 import type { AppState, ErrorView, MosaiqBridge } from '../shared/api';
 import { renderCategories, renderProducts } from './catalog';
 import { el, errorBox } from './dom';
+import { renderCheckIns, renderEngagement, renderSales, renderStock } from './floor';
 
 declare global {
   interface Window {
@@ -72,7 +73,18 @@ function renderSignIn(state: Extract<AppState, { status: 'signed_out' }>, error?
   root.replaceChildren(...parts);
 }
 
-type View = 'products' | 'categories' | 'services';
+type View = 'products' | 'categories' | 'stock' | 'sales' | 'engagement' | 'check-ins' | 'services';
+
+/** Each screen, and the read operation the role must be allowed to call to see it (x-mosaiq-roles). */
+const VIEWS: { name: View; label: string; operation: string | null }[] = [
+  { name: 'products', label: 'Products', operation: 'listProducts' },
+  { name: 'categories', label: 'Categories', operation: 'listCategories' },
+  { name: 'stock', label: 'Stock', operation: 'listStockLevels' },
+  { name: 'sales', label: 'Sales', operation: 'listSales' },
+  { name: 'engagement', label: 'Engagement', operation: 'getEngagementSummary' },
+  { name: 'check-ins', label: 'Check-ins', operation: 'listCheckIns' },
+  { name: 'services', label: 'Services', operation: null },
+];
 let view: View = 'products';
 
 function renderServices(host: HTMLElement, state: Extract<AppState, { status: 'signed_in' }>): void {
@@ -105,6 +117,7 @@ function renderServices(host: HTMLElement, state: Extract<AppState, { status: 's
 function renderHome(state: Extract<AppState, { status: 'signed_in' }>): void {
   const screen = el('div');
   const ctx = { api, can: (operationId: string) => state.operations.includes(operationId) };
+  const allowed = VIEWS.filter((v) => v.operation === null || ctx.can(v.operation));
   const show = (next: View): void => {
     view = next;
     nav
@@ -112,18 +125,18 @@ function renderHome(state: Extract<AppState, { status: 'signed_in' }>): void {
       .forEach((b) => b.setAttribute('aria-current', String(b.dataset.view === next)));
     if (next === 'products') renderProducts(screen, ctx);
     else if (next === 'categories') renderCategories(screen, ctx);
+    else if (next === 'stock') renderStock(screen, ctx);
+    else if (next === 'sales') renderSales(screen, ctx);
+    else if (next === 'engagement') renderEngagement(screen, ctx);
+    else if (next === 'check-ins') renderCheckIns(screen, ctx);
     else renderServices(screen, state);
   };
   const nav = el('nav', { cls: 'nav' });
-  for (const [name, label] of [
-    ['products', 'Products'],
-    ['categories', 'Categories'],
-    ['services', 'Services'],
-  ] as [View, string][]) {
-    const b = el('button', { text: label });
+  for (const v of allowed) {
+    const b = el('button', { text: v.label });
     b.type = 'button';
-    b.dataset.view = name;
-    b.addEventListener('click', () => show(name));
+    b.dataset.view = v.name;
+    b.addEventListener('click', () => show(v.name));
     nav.append(b);
   }
   const out = el('button', { text: 'Sign out' });
@@ -140,7 +153,7 @@ function renderHome(state: Extract<AppState, { status: 'signed_in' }>): void {
     screen,
     out,
   );
-  show(view);
+  show(allowed.some((v) => v.name === view) ? view : (allowed[0]?.name ?? 'services'));
 }
 
 function render(state: AppState, error?: ErrorView): void {

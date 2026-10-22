@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import { shot } from '../support/evidence';
 
 // Campaigns and their transitions (F16-08, #486), against a fake gateway that answers
 // with the recorded examples of contracts/campaigns/ and contracts/segments/. Campaign
@@ -159,6 +160,7 @@ test('the list shows label names from segments-service, filters and opens one ca
   await expect(page.getByTestId('campaign-label-302')).toHaveText('At risk (AT_RISK)');
   await expect(page.getByTestId('campaign-status-301')).toHaveText('DRAFT');
   await expect(page.getByTestId('campaigns-page')).toHaveText('Page 1 of 1 · 2 campaigns');
+  await shot(page, '486-desktop-campaigns-01-list');
   expect(seen.some((s) => s.url.endsWith('/api/segments/v1/segments'))).toBe(true);
 
   await page.selectOption('#filter-status', 'ACTIVE');
@@ -172,6 +174,7 @@ test('the list shows label names from segments-service, filters and opens one ca
   await expect(page.getByTestId('campaign-label')).toHaveText('Loyal (LOYAL)');
   await expect(page.getByTestId('campaign-starts-on')).toHaveText('2026-11-01');
   await expect(page.getByTestId('campaign-ends-on')).toHaveText('2026-12-31');
+  await shot(page, '486-desktop-campaigns-02-detail');
   await expect(page.getByTestId('campaign-status')).toHaveText('DRAFT');
   expect(seen.some((s) => s.method === 'GET' && s.url.endsWith('/campaigns/301'))).toBe(true);
 
@@ -237,6 +240,7 @@ test('an end before the start shows ends_before_start next to the dates; duplica
   await expect(page.getByTestId('error-message')).toHaveText('ends_on cannot be before starts_on.');
   await expect(page.getByTestId('error-correlation')).toHaveText('corr-campaign-422b');
   await expect(form.getByTestId('detail-ends_on')).toHaveText('ends_on: before_start');
+  await shot(page, '486-desktop-campaigns-03-ends-before-start');
   await expect(form.locator('#create-ends_on')).toHaveValue('2026-11-01');
 
   nextRefusal = { file: 'duplicate-draft', status: 409 };
@@ -303,6 +307,7 @@ test('only the moves the status allows are offered; each is sent with the status
   await page.getByTestId('transition-ACTIVE').click();
   await expect(page.getByTestId('notice')).toHaveText('Campaign Holiday Loyalty Preview is now ACTIVE.');
   await expect(page.getByTestId('campaign-status')).toHaveText('ACTIVE');
+  await shot(page, '486-desktop-campaigns-04-moved-to-active');
   expect(fieldsOf(transitionsSent().at(-1)!.body)).toEqual(
     fieldsOf(example('campaigns', 'draft-to-active.request')),
   );
@@ -354,6 +359,7 @@ test('illegal_transition, campaign_ended and experiment_not_ready are shown as r
   await page.getByTestId('transition-ACTIVE').click();
   await expect(page.getByTestId('error-code')).toHaveText('illegal_transition');
   await expect(page.getByTestId('error-correlation')).toHaveText(/corr-/);
+  await shot(page, '486-desktop-campaigns-05-illegal-transition');
 
   for (const code of ['campaign-ended', 'experiment-not-ready'] as const) {
     activation = code;

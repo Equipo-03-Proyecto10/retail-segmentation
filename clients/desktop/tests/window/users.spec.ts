@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import { shot } from '../support/evidence';
 
 // User administration, the account menu and the administrator transfer (F16-06,
 // #484), against a fake gateway that answers with the recorded examples of
@@ -227,6 +228,7 @@ test('the users screen lists, filters and opens a user in XML; roles come from u
   await page.getByTestId(`view-user-${INACTIVE}`).click();
   await expect(page.getByTestId('user-name')).toHaveText('Ian Inactive');
   await expect(page.getByTestId('user-status')).toHaveText('Inactive');
+  await shot(page, '484-desktop-users-01-list-and-detail');
   expect(seen.some((s) => s.url.endsWith(`/users/${INACTIVE}`) && s.method === 'GET')).toBe(true);
   // Accounts are deactivated, never deleted.
   await expect(page.getByRole('button', { name: /delete|remove/i })).toHaveCount(0);
@@ -428,6 +430,7 @@ test('the transfer screen warns in a dialog, shows its refusals, and ends both s
   await page.selectOption('#transfer-successor_user_id', ALEX);
   await page.getByRole('button', { name: 'Transfer the administrator role' }).click();
   await expect(page.getByTestId('transfer-warning')).toContainText('ends the sessions of both accounts');
+  await shot(page, '484-desktop-transfer-02-warning-dialog');
   await page.getByTestId('cancel-transfer').click();
   await expect(page.getByTestId('transfer-dialog')).toBeHidden();
   expect(seen.some((s) => s.url.endsWith('/administrator-transfers'))).toBe(false);
@@ -437,6 +440,7 @@ test('the transfer screen warns in a dialog, shows its refusals, and ends both s
   await page.getByRole('button', { name: 'Transfer the administrator role' }).click();
   await page.getByTestId('confirm-transfer').click();
   await expect(page.getByTestId('error-code')).toHaveText('successor_inactive');
+  await shot(page, '484-desktop-transfer-03-successor-inactive');
   const incumbent = await page.evaluate((id) => window.mosaiq.transferAdministrator(id), SUB);
   expect(incumbent).toMatchObject({ ok: false, error: { code: 'invalid_successor' } });
   await expect(page.getByTestId('role')).toHaveText('Signed in as ADMIN');

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import { deferred, type Deferred } from '../support/deferred';
+import { shot } from '../support/evidence';
 
 // Stock, sales, engagement and check-ins (F16-04, #417), against a fake gateway
 // that answers with the recorded examples of the six contracts involved.
@@ -198,6 +199,7 @@ test('stock below a threshold, named from products-service and stores-service', 
   const row = page.locator('tr[data-product-id="120"]');
   await expect(row).toContainText('Item 120 (#120)');
   await expect(row).toContainText('Coyoacan');
+  await shot(page, '417-desktop-stock-01-below-threshold');
   // One ids= call for the page, never one per product.
   const lookups = seen.filter((s) => s.url.includes('/api/products/v1/products'));
   expect(new URL(lookups.at(-1)!.url).searchParams.get('ids')).toBe('120,245,311');
@@ -216,6 +218,7 @@ test('sales read back in XML, with lines, total, channel and store; refusals as 
   await expect(lines).toHaveCount(3);
   await expect(lines.nth(1)).toContainText('Item 1020 (#1020)');
   await expect(lines.nth(1)).toContainText('12.75');
+  await shot(page, '417-desktop-sales-02-sale-detail');
 
   await page.getByTestId('view-sale-4811').click();
   await expect(page.getByTestId('error-code')).toHaveText('sale_not_found');
@@ -271,6 +274,7 @@ test('an ADMIN voids an event: it stays listed as voided and the summary stops c
   await expect(page.getByTestId('event-history')).toContainText('Scanned the wrong shelf label.');
   await expect(page.locator(`tr[data-event-id="${VOIDABLE}"]`)).toContainText('Voided');
   await expect(page.locator('[data-testid=summary-table] tr[data-key="3"]')).toContainText('56');
+  await shot(page, '417-desktop-engagement-03-event-voided');
   expect(seen.filter((s) => s.url.endsWith('/void')).at(-1)!.body).toContain(
     '<reason>Scanned the wrong shelf label.</reason>',
   );
@@ -288,6 +292,7 @@ test('a void that another user already made is shown as already_voided', async (
   await page.getByTestId('confirm-void').click();
   await expect(page.getByTestId('error-code')).toHaveText('already_voided');
   await expect(page.getByTestId('error-correlation')).toHaveText('corr-already-voided');
+  await shot(page, '417-desktop-engagement-04-already-voided');
   await app.close();
 });
 
@@ -314,6 +319,7 @@ test('check-ins show reason and verified; an ADMIN appends a review below the ea
   await expect(items).toHaveCount(3);
   await expect(items.last()).toHaveAttribute('data-review-id', '43');
   await expect(items.last()).toContainText('Footage shows the car park');
+  await shot(page, '417-desktop-check-ins-05-review-appended');
   const post = seen.filter((s) => s.url.endsWith('/reviews')).at(-1)!;
   expect(post.body).toContain('<verified>false</verified>');
   await expect(page.getByTestId('check-in-detail').getByText(/Delete|Edit/)).toHaveCount(0);

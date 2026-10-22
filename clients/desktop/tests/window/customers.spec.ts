@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
 import { deferred, type Deferred } from '../support/deferred';
+import { shot } from '../support/evidence';
 
 // Customers, both preference sets, the segment and the recommendations (F16-03, #414),
 // against a fake gateway that answers with the recorded examples of the customers,
@@ -426,6 +427,7 @@ test('an ADMIN sends the whole edited set, and an empty list clears it', async (
   await page.getByTestId('channel-option-1').uncheck();
   await page.locator('[data-testid=channels-form] button[type=submit]').click();
   await expect(page.getByTestId('notice')).toHaveText('Preferred channels saved.');
+  await shot(page, '414-desktop-preferences-03-channels-saved');
   await expect(page.getByTestId('pref-channels')).toHaveText('physical_store, call_center');
   const put = writes().at(-1)!;
   expect(put.method).toBe('PUT');

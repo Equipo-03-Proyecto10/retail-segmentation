@@ -1,0 +1,1550 @@
+{
+  "cases": [
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000001",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000001"
+      },
+      "outcome": {
+        "channel_id": 4,
+        "items": [],
+        "label_code": "POTENTIAL",
+        "message": "Nothing in stock at Store 29 matches this customer: no product there is in a category they prefer or buy from, or was bought by their segment, that they have not already bought.",
+        "status": "none_match",
+        "store_id": 29,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000002",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000002"
+      },
+      "outcome": {
+        "channel_id": 5,
+        "items": [
+          {
+            "category_id": 5,
+            "category_name": "Household cleaning",
+            "in_stock": 17,
+            "name": "Demo Product 5",
+            "product_id": 5,
+            "reasons": [
+              {
+                "signal": "preferred_category",
+                "text": "In Household cleaning, a category the customer said they like"
+              }
+            ]
+          }
+        ],
+        "label_code": "HIBERNATING",
+        "message": "1 recommendation from what Store 2 has in stock.",
+        "status": "recommended",
+        "store_id": 2,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000003",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000003"
+      },
+      "outcome": {
+        "channel_id": 5,
+        "items": [
+          {
+            "category_id": 2,
+            "category_name": "Bakery",
+            "in_stock": 29,
+            "name": "Demo Product 2",
+            "product_id": 2,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "3 other Champion customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 1,
+            "category_name": "Dairy",
+            "in_stock": 28,
+            "name": "Demo Product 1",
+            "product_id": 1,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other Champion customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 3,
+            "category_name": "Snacks",
+            "in_stock": 30,
+            "name": "Demo Product 3",
+            "product_id": 3,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other Champion customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 4,
+            "category_name": "Beverages",
+            "in_stock": 31,
+            "name": "Demo Product 4",
+            "product_id": 4,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other Champion customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 5,
+            "category_name": "Household cleaning",
+            "in_stock": 32,
+            "name": "Demo Product 5",
+            "product_id": 5,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other Champion customers bought it in the last 180 days"
+              }
+            ]
+          }
+        ],
+        "label_code": "CHAMPION",
+        "message": "5 recommendations from what Store 17 has in stock.",
+        "status": "recommended",
+        "store_id": 17,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000004",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000004"
+      },
+      "outcome": {
+        "channel_id": 4,
+        "items": [],
+        "label_code": "AT_RISK",
+        "message": "Nothing in stock at Store 2 matches this customer: no product there is in a category they prefer or buy from, or was bought by their segment, that they have not already bought.",
+        "status": "none_match",
+        "store_id": 2,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000005",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000005"
+      },
+      "outcome": {
+        "channel_id": 3,
+        "items": [],
+        "label_code": "LOST",
+        "message": "Nothing in stock at Store 14 matches this customer: no product there is in a category they prefer or buy from, or was bought by their segment, that they have not already bought.",
+        "status": "none_match",
+        "store_id": 14,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000006",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000006"
+      },
+      "outcome": {
+        "channel_id": 5,
+        "items": [
+          {
+            "category_id": 1,
+            "category_name": "Dairy",
+            "in_stock": 28,
+            "name": "Demo Product 1",
+            "product_id": 1,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "3 other Loyal customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 2,
+            "category_name": "Bakery",
+            "in_stock": 29,
+            "name": "Demo Product 2",
+            "product_id": 2,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "3 other Loyal customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 3,
+            "category_name": "Snacks",
+            "in_stock": 30,
+            "name": "Demo Product 3",
+            "product_id": 3,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "3 other Loyal customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 4,
+            "category_name": "Beverages",
+            "in_stock": 31,
+            "name": "Demo Product 4",
+            "product_id": 4,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "3 other Loyal customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 5,
+            "category_name": "Household cleaning",
+            "in_stock": 32,
+            "name": "Demo Product 5",
+            "product_id": 5,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "3 other Loyal customers bought it in the last 180 days"
+              }
+            ]
+          }
+        ],
+        "label_code": "LOYAL",
+        "message": "5 recommendations from what Store 17 has in stock.",
+        "status": "recommended",
+        "store_id": 17,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000007",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000007"
+      },
+      "outcome": {
+        "channel_id": 2,
+        "items": [
+          {
+            "category_id": 2,
+            "category_name": "Bakery",
+            "in_stock": 23,
+            "name": "Demo Product 2",
+            "product_id": 2,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other At risk customers bought it in the last 180 days"
+              },
+              {
+                "signal": "purchase_history",
+                "text": "The customer bought from Bakery in 2 of their 12 purchases in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 5,
+            "category_name": "Household cleaning",
+            "in_stock": 26,
+            "name": "Demo Product 5",
+            "product_id": 5,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "3 other At risk customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 1,
+            "category_name": "Dairy",
+            "in_stock": 22,
+            "name": "Demo Product 1",
+            "product_id": 1,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other At risk customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 3,
+            "category_name": "Snacks",
+            "in_stock": 24,
+            "name": "Demo Product 3",
+            "product_id": 3,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other At risk customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 4,
+            "category_name": "Beverages",
+            "in_stock": 25,
+            "name": "Demo Product 4",
+            "product_id": 4,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other At risk customers bought it in the last 180 days"
+              }
+            ]
+          }
+        ],
+        "label_code": "AT_RISK",
+        "message": "5 recommendations from what Store 11 has in stock.",
+        "status": "recommended",
+        "store_id": 11,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000008",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000008"
+      },
+      "outcome": {
+        "channel_id": 5,
+        "items": [],
+        "label_code": "CHAMPION",
+        "message": "Nothing in stock at Store 2 matches this customer: no product there is in a category they prefer or buy from, or was bought by their segment, that they have not already bought.",
+        "status": "none_match",
+        "store_id": 2,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000009",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000009"
+      },
+      "outcome": {
+        "channel_id": 3,
+        "items": [
+          {
+            "category_id": 2,
+            "category_name": "Bakery",
+            "in_stock": 36,
+            "name": "Demo Product 2",
+            "product_id": 2,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "1 other Potential customer bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 3,
+            "category_name": "Snacks",
+            "in_stock": 37,
+            "name": "Demo Product 3",
+            "product_id": 3,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "1 other Potential customer bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 4,
+            "category_name": "Beverages",
+            "in_stock": 38,
+            "name": "Demo Product 4",
+            "product_id": 4,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "1 other Potential customer bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 5,
+            "category_name": "Household cleaning",
+            "in_stock": 39,
+            "name": "Demo Product 5",
+            "product_id": 5,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "1 other Potential customer bought it in the last 180 days"
+              }
+            ]
+          }
+        ],
+        "label_code": "POTENTIAL",
+        "message": "4 recommendations from what Store 24 has in stock.",
+        "status": "recommended",
+        "store_id": 24,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000010",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000010"
+      },
+      "outcome": {
+        "channel_id": 1,
+        "items": [],
+        "label_code": "LOST",
+        "message": "Nothing in stock at Store 11 matches this customer: no product there is in a category they prefer or buy from, or was bought by their segment, that they have not already bought.",
+        "status": "none_match",
+        "store_id": 11,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000011",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000011"
+      },
+      "outcome": {
+        "channel_id": 4,
+        "items": [
+          {
+            "category_id": 1,
+            "category_name": "Dairy",
+            "in_stock": 13,
+            "name": "Demo Product 1",
+            "product_id": 1,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "3 other Loyal customers bought it in the last 180 days"
+              },
+              {
+                "signal": "purchase_history",
+                "text": "The customer bought from Dairy in 2 of their 11 purchases in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 2,
+            "category_name": "Bakery",
+            "in_stock": 14,
+            "name": "Demo Product 2",
+            "product_id": 2,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "3 other Loyal customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 3,
+            "category_name": "Snacks",
+            "in_stock": 15,
+            "name": "Demo Product 3",
+            "product_id": 3,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "3 other Loyal customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 4,
+            "category_name": "Beverages",
+            "in_stock": 16,
+            "name": "Demo Product 4",
+            "product_id": 4,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "3 other Loyal customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 5,
+            "category_name": "Household cleaning",
+            "in_stock": 17,
+            "name": "Demo Product 5",
+            "product_id": 5,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "3 other Loyal customers bought it in the last 180 days"
+              }
+            ]
+          }
+        ],
+        "label_code": "LOYAL",
+        "message": "5 recommendations from what Store 2 has in stock.",
+        "status": "recommended",
+        "store_id": 2,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000012",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000012"
+      },
+      "outcome": {
+        "channel_id": 5,
+        "items": [],
+        "label_code": "LOYAL",
+        "message": "Nothing in stock at Store 17 matches this customer: no product there is in a category they prefer or buy from, or was bought by their segment, that they have not already bought.",
+        "status": "none_match",
+        "store_id": 17,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000013",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000013"
+      },
+      "outcome": {
+        "channel_id": 2,
+        "items": [],
+        "label_code": "LOST",
+        "message": "Nothing in stock at Store 20 matches this customer: no product there is in a category they prefer or buy from, or was bought by their segment, that they have not already bought.",
+        "status": "none_match",
+        "store_id": 20,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000014",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000014"
+      },
+      "outcome": {
+        "channel_id": 4,
+        "items": [
+          {
+            "category_id": 2,
+            "category_name": "Bakery",
+            "in_stock": 14,
+            "name": "Demo Product 2",
+            "product_id": 2,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "1 other Potential customer bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 3,
+            "category_name": "Snacks",
+            "in_stock": 15,
+            "name": "Demo Product 3",
+            "product_id": 3,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "1 other Potential customer bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 4,
+            "category_name": "Beverages",
+            "in_stock": 16,
+            "name": "Demo Product 4",
+            "product_id": 4,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "1 other Potential customer bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 5,
+            "category_name": "Household cleaning",
+            "in_stock": 17,
+            "name": "Demo Product 5",
+            "product_id": 5,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "1 other Potential customer bought it in the last 180 days"
+              }
+            ]
+          }
+        ],
+        "label_code": "POTENTIAL",
+        "message": "4 recommendations from what Store 2 has in stock.",
+        "status": "recommended",
+        "store_id": 2,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000015",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000015"
+      },
+      "outcome": {
+        "channel_id": 1,
+        "items": [
+          {
+            "category_id": 1,
+            "category_name": "Dairy",
+            "in_stock": 37,
+            "name": "Demo Product 1",
+            "product_id": 1,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other At risk customers bought it in the last 180 days"
+              },
+              {
+                "signal": "preferred_category",
+                "text": "In Dairy, a category the customer said they like"
+              }
+            ]
+          },
+          {
+            "category_id": 2,
+            "category_name": "Bakery",
+            "in_stock": 38,
+            "name": "Demo Product 2",
+            "product_id": 2,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other At risk customers bought it in the last 180 days"
+              },
+              {
+                "signal": "preferred_category",
+                "text": "In Bakery, a category the customer said they like"
+              }
+            ]
+          },
+          {
+            "category_id": 5,
+            "category_name": "Household cleaning",
+            "in_stock": 41,
+            "name": "Demo Product 5",
+            "product_id": 5,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "3 other At risk customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 3,
+            "category_name": "Snacks",
+            "in_stock": 39,
+            "name": "Demo Product 3",
+            "product_id": 3,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other At risk customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 4,
+            "category_name": "Beverages",
+            "in_stock": 40,
+            "name": "Demo Product 4",
+            "product_id": 4,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other At risk customers bought it in the last 180 days"
+              }
+            ]
+          }
+        ],
+        "label_code": "AT_RISK",
+        "message": "5 recommendations from what Store 26 has in stock.",
+        "status": "recommended",
+        "store_id": 26,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000016",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000016"
+      },
+      "outcome": {
+        "channel_id": 5,
+        "items": [
+          {
+            "category_id": 3,
+            "category_name": "Snacks",
+            "in_stock": 30,
+            "name": "Demo Product 3",
+            "product_id": 3,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other Champion customers bought it in the last 180 days"
+              },
+              {
+                "signal": "preferred_category",
+                "text": "In Snacks, a category the customer said they like"
+              }
+            ]
+          },
+          {
+            "category_id": 4,
+            "category_name": "Beverages",
+            "in_stock": 31,
+            "name": "Demo Product 4",
+            "product_id": 4,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other Champion customers bought it in the last 180 days"
+              },
+              {
+                "signal": "preferred_category",
+                "text": "In Beverages, a category the customer said they like"
+              }
+            ]
+          },
+          {
+            "category_id": 5,
+            "category_name": "Household cleaning",
+            "in_stock": 32,
+            "name": "Demo Product 5",
+            "product_id": 5,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other Champion customers bought it in the last 180 days"
+              }
+            ]
+          }
+        ],
+        "label_code": "CHAMPION",
+        "message": "3 recommendations from what Store 17 has in stock.",
+        "status": "recommended",
+        "store_id": 17,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000017",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000017"
+      },
+      "outcome": {
+        "channel_id": 2,
+        "items": [
+          {
+            "category_id": 1,
+            "category_name": "Dairy",
+            "in_stock": 13,
+            "name": "Demo Product 1",
+            "product_id": 1,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other Champion customers bought it in the last 180 days"
+              }
+            ]
+          }
+        ],
+        "label_code": "CHAMPION",
+        "message": "1 recommendation from what Store 2 has in stock.",
+        "status": "recommended",
+        "store_id": 2,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000018",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000018"
+      },
+      "outcome": {
+        "channel_id": 5,
+        "items": [],
+        "label_code": "HIBERNATING",
+        "message": "Nothing in stock at Store 17 matches this customer: no product there is in a category they prefer or buy from, or was bought by their segment, that they have not already bought.",
+        "status": "none_match",
+        "store_id": 17,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000019",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000019"
+      },
+      "outcome": {
+        "channel_id": 1,
+        "items": [
+          {
+            "category_id": 2,
+            "category_name": "Bakery",
+            "in_stock": 23,
+            "name": "Demo Product 2",
+            "product_id": 2,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "3 other Loyal customers bought it in the last 180 days"
+              },
+              {
+                "signal": "purchase_history",
+                "text": "The customer bought from Bakery in 2 of their 9 purchases in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 1,
+            "category_name": "Dairy",
+            "in_stock": 22,
+            "name": "Demo Product 1",
+            "product_id": 1,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "3 other Loyal customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 3,
+            "category_name": "Snacks",
+            "in_stock": 24,
+            "name": "Demo Product 3",
+            "product_id": 3,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "3 other Loyal customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 4,
+            "category_name": "Beverages",
+            "in_stock": 25,
+            "name": "Demo Product 4",
+            "product_id": 4,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "3 other Loyal customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 5,
+            "category_name": "Household cleaning",
+            "in_stock": 26,
+            "name": "Demo Product 5",
+            "product_id": 5,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "3 other Loyal customers bought it in the last 180 days"
+              }
+            ]
+          }
+        ],
+        "label_code": "LOYAL",
+        "message": "5 recommendations from what Store 11 has in stock.",
+        "status": "recommended",
+        "store_id": 11,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000020",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000020"
+      },
+      "outcome": {
+        "channel_id": 5,
+        "items": [],
+        "label_code": "LOYAL",
+        "message": "Nothing in stock at Store 2 matches this customer: no product there is in a category they prefer or buy from, or was bought by their segment, that they have not already bought.",
+        "status": "none_match",
+        "store_id": 2,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000021",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000021"
+      },
+      "outcome": {
+        "channel_id": 4,
+        "items": [
+          {
+            "category_id": 5,
+            "category_name": "Household cleaning",
+            "in_stock": 32,
+            "name": "Demo Product 5",
+            "product_id": 5,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "3 other At risk customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 1,
+            "category_name": "Dairy",
+            "in_stock": 28,
+            "name": "Demo Product 1",
+            "product_id": 1,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other At risk customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 2,
+            "category_name": "Bakery",
+            "in_stock": 29,
+            "name": "Demo Product 2",
+            "product_id": 2,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other At risk customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 3,
+            "category_name": "Snacks",
+            "in_stock": 30,
+            "name": "Demo Product 3",
+            "product_id": 3,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other At risk customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 4,
+            "category_name": "Beverages",
+            "in_stock": 31,
+            "name": "Demo Product 4",
+            "product_id": 4,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other At risk customers bought it in the last 180 days"
+              }
+            ]
+          }
+        ],
+        "label_code": "AT_RISK",
+        "message": "5 recommendations from what Store 17 has in stock.",
+        "status": "recommended",
+        "store_id": 17,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000022",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000022"
+      },
+      "outcome": {
+        "channel_id": 5,
+        "items": [
+          {
+            "category_id": 2,
+            "category_name": "Bakery",
+            "in_stock": 14,
+            "name": "Demo Product 2",
+            "product_id": 2,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "1 other Potential customer bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 3,
+            "category_name": "Snacks",
+            "in_stock": 15,
+            "name": "Demo Product 3",
+            "product_id": 3,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "1 other Potential customer bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 4,
+            "category_name": "Beverages",
+            "in_stock": 16,
+            "name": "Demo Product 4",
+            "product_id": 4,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "1 other Potential customer bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 5,
+            "category_name": "Household cleaning",
+            "in_stock": 17,
+            "name": "Demo Product 5",
+            "product_id": 5,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "1 other Potential customer bought it in the last 180 days"
+              }
+            ]
+          }
+        ],
+        "label_code": "POTENTIAL",
+        "message": "4 recommendations from what Store 2 has in stock.",
+        "status": "recommended",
+        "store_id": 2,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000023",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000023"
+      },
+      "outcome": {
+        "channel_id": 3,
+        "items": [
+          {
+            "category_id": 3,
+            "category_name": "Snacks",
+            "in_stock": 18,
+            "name": "Demo Product 3",
+            "product_id": 3,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "1 other Potential customer bought it in the last 180 days"
+              },
+              {
+                "signal": "purchase_history",
+                "text": "The customer bought from Snacks in 2 of their 8 purchases in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 4,
+            "category_name": "Beverages",
+            "in_stock": 19,
+            "name": "Demo Product 4",
+            "product_id": 4,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "1 other Potential customer bought it in the last 180 days"
+              },
+              {
+                "signal": "purchase_history",
+                "text": "The customer bought from Beverages in 2 of their 8 purchases in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 2,
+            "category_name": "Bakery",
+            "in_stock": 17,
+            "name": "Demo Product 2",
+            "product_id": 2,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "1 other Potential customer bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 5,
+            "category_name": "Household cleaning",
+            "in_stock": 20,
+            "name": "Demo Product 5",
+            "product_id": 5,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "1 other Potential customer bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 1,
+            "category_name": "Dairy",
+            "in_stock": 16,
+            "name": "Demo Product 1",
+            "product_id": 1,
+            "reasons": [
+              {
+                "signal": "purchase_history",
+                "text": "The customer bought from Dairy in 2 of their 8 purchases in the last 180 days"
+              }
+            ]
+          }
+        ],
+        "label_code": "POTENTIAL",
+        "message": "5 recommendations from what Store 5 has in stock.",
+        "status": "recommended",
+        "store_id": 5,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000024",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000024"
+      },
+      "outcome": {
+        "channel_id": 1,
+        "items": [],
+        "label_code": "AT_RISK",
+        "message": "Nothing in stock at Store 17 matches this customer: no product there is in a category they prefer or buy from, or was bought by their segment, that they have not already bought.",
+        "status": "none_match",
+        "store_id": 17,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000025",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000025"
+      },
+      "outcome": {
+        "channel_id": 5,
+        "items": [
+          {
+            "category_id": 2,
+            "category_name": "Bakery",
+            "in_stock": 14,
+            "name": "Demo Product 2",
+            "product_id": 2,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "3 other Champion customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 1,
+            "category_name": "Dairy",
+            "in_stock": 13,
+            "name": "Demo Product 1",
+            "product_id": 1,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other Champion customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 3,
+            "category_name": "Snacks",
+            "in_stock": 15,
+            "name": "Demo Product 3",
+            "product_id": 3,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other Champion customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 4,
+            "category_name": "Beverages",
+            "in_stock": 16,
+            "name": "Demo Product 4",
+            "product_id": 4,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other Champion customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 5,
+            "category_name": "Household cleaning",
+            "in_stock": 17,
+            "name": "Demo Product 5",
+            "product_id": 5,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other Champion customers bought it in the last 180 days"
+              }
+            ]
+          }
+        ],
+        "label_code": "CHAMPION",
+        "message": "5 recommendations from what Store 2 has in stock.",
+        "status": "recommended",
+        "store_id": 2,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000026",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000026"
+      },
+      "outcome": {
+        "channel_id": 1,
+        "items": [],
+        "label_code": "LOST",
+        "message": "Nothing in stock at Store 26 matches this customer: no product there is in a category they prefer or buy from, or was bought by their segment, that they have not already bought.",
+        "status": "none_match",
+        "store_id": 26,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000027",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000027"
+      },
+      "outcome": {
+        "channel_id": 4,
+        "items": [
+          {
+            "category_id": 3,
+            "category_name": "Snacks",
+            "in_stock": 30,
+            "name": "Demo Product 3",
+            "product_id": 3,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "1 other Potential customer bought it in the last 180 days"
+              },
+              {
+                "signal": "purchase_history",
+                "text": "The customer bought from Snacks in 2 of their 7 purchases in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 2,
+            "category_name": "Bakery",
+            "in_stock": 29,
+            "name": "Demo Product 2",
+            "product_id": 2,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "1 other Potential customer bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 4,
+            "category_name": "Beverages",
+            "in_stock": 31,
+            "name": "Demo Product 4",
+            "product_id": 4,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "1 other Potential customer bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 5,
+            "category_name": "Household cleaning",
+            "in_stock": 32,
+            "name": "Demo Product 5",
+            "product_id": 5,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "1 other Potential customer bought it in the last 180 days"
+              }
+            ]
+          }
+        ],
+        "label_code": "POTENTIAL",
+        "message": "4 recommendations from what Store 17 has in stock.",
+        "status": "recommended",
+        "store_id": 17,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000028",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000028"
+      },
+      "outcome": {
+        "channel_id": 5,
+        "items": [],
+        "label_code": "LOYAL",
+        "message": "Nothing in stock at Store 2 matches this customer: no product there is in a category they prefer or buy from, or was bought by their segment, that they have not already bought.",
+        "status": "none_match",
+        "store_id": 2,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000029",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000029"
+      },
+      "outcome": {
+        "channel_id": 3,
+        "items": [
+          {
+            "category_id": 1,
+            "category_name": "Dairy",
+            "in_stock": 37,
+            "name": "Demo Product 1",
+            "product_id": 1,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other At risk customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 2,
+            "category_name": "Bakery",
+            "in_stock": 38,
+            "name": "Demo Product 2",
+            "product_id": 2,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other At risk customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 3,
+            "category_name": "Snacks",
+            "in_stock": 39,
+            "name": "Demo Product 3",
+            "product_id": 3,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other At risk customers bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 4,
+            "category_name": "Beverages",
+            "in_stock": 40,
+            "name": "Demo Product 4",
+            "product_id": 4,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "2 other At risk customers bought it in the last 180 days"
+              }
+            ]
+          }
+        ],
+        "label_code": "AT_RISK",
+        "message": "4 recommendations from what Store 26 has in stock.",
+        "status": "recommended",
+        "store_id": 26,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "customer-00000000-0000-0000-0000-000000000030",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-000000000030"
+      },
+      "outcome": {
+        "channel_id": 5,
+        "items": [
+          {
+            "category_id": 2,
+            "category_name": "Bakery",
+            "in_stock": 29,
+            "name": "Demo Product 2",
+            "product_id": 2,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "1 other Potential customer bought it in the last 180 days"
+              },
+              {
+                "signal": "preferred_category",
+                "text": "In Bakery, a category the customer said they like"
+              }
+            ]
+          },
+          {
+            "category_id": 3,
+            "category_name": "Snacks",
+            "in_stock": 30,
+            "name": "Demo Product 3",
+            "product_id": 3,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "1 other Potential customer bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 4,
+            "category_name": "Beverages",
+            "in_stock": 31,
+            "name": "Demo Product 4",
+            "product_id": 4,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "1 other Potential customer bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 5,
+            "category_name": "Household cleaning",
+            "in_stock": 32,
+            "name": "Demo Product 5",
+            "product_id": 5,
+            "reasons": [
+              {
+                "signal": "segment",
+                "text": "1 other Potential customer bought it in the last 180 days"
+              }
+            ]
+          },
+          {
+            "category_id": 1,
+            "category_name": "Dairy",
+            "in_stock": 28,
+            "name": "Demo Product 1",
+            "product_id": 1,
+            "reasons": [
+              {
+                "signal": "preferred_category",
+                "text": "In Dairy, a category the customer said they like"
+              }
+            ]
+          }
+        ],
+        "label_code": "POTENTIAL",
+        "message": "5 recommendations from what Store 17 has in stock.",
+        "status": "recommended",
+        "store_id": 17,
+        "window_days": 180
+      }
+    },
+    {
+      "id": "synthetic-no-history",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-00000000a001",
+        "setup": "a customer with no customer_segment_history row"
+      },
+      "outcome": {
+        "channel_id": null,
+        "items": [],
+        "label_code": null,
+        "message": "No segment is available for this customer: no segmentation run has assigned them one, so no recommendations are given.",
+        "status": "no_segment",
+        "store_id": null,
+        "window_days": 180
+      },
+      "service_differs": "recommendations-service reports no_open_assignment where the web reports no_segment: the customer has no open assignment."
+    },
+    {
+      "id": "synthetic-unassigned",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-00000000a002",
+        "setup": "a customer whose open row, from an added run, has a NULL label_code"
+      },
+      "outcome": {
+        "channel_id": null,
+        "items": [],
+        "label_code": null,
+        "message": "No segment is available for this customer: run <added run> left them unassigned, because they had no sales in its window, so no recommendations are given.",
+        "status": "no_segment",
+        "store_id": null,
+        "window_days": 180
+      },
+      "service_differs": "recommendations-service reports unassigned_result where the web reports no_segment: the open assignment is the unassigned result."
+    },
+    {
+      "id": "synthetic-no-sale",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-00000000a003",
+        "setup": "a customer assigned LOYAL by an added run, with no accepted sale"
+      },
+      "outcome": {
+        "channel_id": null,
+        "items": [],
+        "label_code": "LOYAL",
+        "message": "No usual store is available: the customer has no accepted sale in the last 180 days, so stock cannot be checked and no recommendations are given.",
+        "status": "no_usual_store",
+        "store_id": null,
+        "window_days": 180
+      }
+    }
+  ],
+  "header": {
+    "as_of": {
+      "anchor": "2026-10-22T05:04:20.346739+00:00"
+    },
+    "captured_on": "2026-10-22",
+    "port": "recommendations",
+    "seed_sha256": "80665f3bc7aad670e29038455666c8d1ac38a0596bafbd16d1e56b36388c097e",
+    "web_commit": "9617216638e0a21a9d2de5a91a8d3f4a83298fdb"
+  }
+}

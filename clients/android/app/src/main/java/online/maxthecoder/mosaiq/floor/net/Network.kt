@@ -48,6 +48,8 @@ class Network(
     val auth: AuthApi = retrofit.create(AuthApi::class.java)
     val users: UsersApi = retrofit.create(UsersApi::class.java)
     val stores: StoresApi = retrofit.create(StoresApi::class.java)
+    val products: ProductsApi = retrofit.create(ProductsApi::class.java)
+    val stock: StockApi = retrofit.create(StockApi::class.java)
 
     /** The gateway, for the floor-write queue's raw requests. */
     val gateway: okhttp3.HttpUrl get() = base

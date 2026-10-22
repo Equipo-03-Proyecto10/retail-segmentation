@@ -35,21 +35,24 @@ import online.maxthecoder.mosaiq.floor.outbox.OutboxRow
 import online.maxthecoder.mosaiq.floor.outbox.RowState
 import online.maxthecoder.mosaiq.floor.session.ChosenStore
 
-private enum class Tab { CHECK_IN, OUTBOX }
+private enum class Tab { CHECK_IN, SCAN, OUTBOX }
 
 /** The floor process once signed in: who, the store and its check-in, the outbox. */
 @Composable
-fun FloorHome(signedIn: SessionState.SignedIn, model: FloorViewModel, onSignOut: () -> Unit) {
+fun FloorHome(signedIn: SessionState.SignedIn, model: FloorViewModel, scan: ScanViewModel, onSignOut: () -> Unit) {
     var tab by remember { mutableStateOf(Tab.CHECK_IN) }
+    val chosen by model.chosen.collectAsState()
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("${signedIn.name} · ${signedIn.role}", style = MaterialTheme.typography.titleMedium)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { tab = Tab.CHECK_IN }) { Text("Store & check-in") }
+            OutlinedButton(onClick = { tab = Tab.SCAN }) { Text("Scan a product") }
             OutlinedButton(onClick = { tab = Tab.OUTBOX }) { Text("Outbox") }
             SignOutButton(model, onSignOut)
         }
         when (tab) {
             Tab.CHECK_IN -> StoreAndCheckIn(model)
+            Tab.SCAN -> ScanScreen(scan, chosen, onPickStore = { tab = Tab.CHECK_IN })
             Tab.OUTBOX -> OutboxList(model)
         }
     }

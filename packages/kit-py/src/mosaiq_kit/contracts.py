@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
 import yaml
-from jsonschema import Draft202012Validator, FormatChecker
+from jsonschema import Draft202012Validator, FormatChecker, validators
+from jsonschema.exceptions import ValidationError
 from lxml import etree
 
 from .types import ApiError
@@ -19,6 +22,46 @@ _FORBIDDEN_XML = re.compile(rb"<!\s*(?:DOCTYPE|ENTITY)\b", re.IGNORECASE)
 
 
 _XSI_NIL = "{http://www.w3.org/2001/XMLSchema-instance}nil"
+
+
+@functools.lru_cache(maxsize=256)
+def _ecma_pattern(pattern: str) -> re.Pattern[str]:
+    r"""A JSON Schema pattern, compiled with ECMA-262's end of input.
+
+    JSON Schema patterns are ECMA-262 regular expressions, where `$` matches
+    only at the end of the input. Python's `$` also matches just before a final
+    newline, so "x@example.com\n" passed an anchored email pattern (#594). Each
+    `$` that is not escaped or inside a character class becomes `\Z`, which is
+    what kit-rs's regex engine already does.
+    """
+    translated = []
+    escaped = in_class = False
+    for character in pattern:
+        if escaped:
+            escaped = False
+        elif character == "\\":
+            escaped = True
+        elif in_class:
+            in_class = character != "]"
+        elif character == "[":
+            in_class = True
+        elif character == "$":
+            translated.append(r"\Z")
+            continue
+        translated.append(character)
+    return re.compile("".join(translated))
+
+
+def _pattern(
+    validator: Any, pattern: str, instance: Any, schema: dict[str, Any]
+) -> Iterator[ValidationError]:
+    if validator.is_type(instance, "string") and not _ecma_pattern(pattern).search(
+        instance
+    ):
+        yield ValidationError(f"{instance!r} does not match {pattern!r}")
+
+
+_SchemaValidator = validators.extend(Draft202012Validator, {"pattern": _pattern})
 
 
 def _strict_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -433,9 +476,7 @@ class Contract:
             {"field": field, "code": "invalid_format"} for field in _nul_fields(value)
         ]
         errors = sorted(
-            Draft202012Validator(schema, format_checker=FormatChecker()).iter_errors(
-                value
-            ),
+            _SchemaValidator(schema, format_checker=FormatChecker()).iter_errors(value),
             key=lambda error: tuple(str(part) for part in error.absolute_path),
         )
         if not errors and not details:

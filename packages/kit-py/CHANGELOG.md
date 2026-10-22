@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.6 - 2026-10-21
+
+- Match a schema `pattern` with ECMA-262's end of input, as JSON Schema
+  specifies and kit-rs already does. Python's `$` also matched just before a
+  final newline, so `"x@example.com\n"` passed an anchored email pattern and
+  `"1.00\n"` a price pattern. Such a value is now refused with 422
+  `invalid_body` (`invalid_format`) (#594).
+
 ## 0.1.5 - 2026-10-21
 
 - Read an XML request member that is a required list, and has no item

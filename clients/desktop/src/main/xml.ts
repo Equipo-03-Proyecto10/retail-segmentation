@@ -67,9 +67,18 @@ const REPEATED = new Set([
   'Stores.Store',
   'Users.User',
   'Roles.Role',
+  'Campaigns.Campaign',
+  'Segments.Segment',
 ]);
-/** Child elements that repeat wherever they appear: error details, sale lines, summary groups, event history, check-in reviews. */
-const REPEATED_CHILDREN = new Set(['details', 'lines', 'groups', 'history', 'reviews']);
+/** Child elements that repeat wherever they appear: error details, sale lines, summary groups, event history, check-in reviews, a campaign's allowed transitions. */
+const REPEATED_CHILDREN = new Set([
+  'details',
+  'lines',
+  'groups',
+  'history',
+  'reviews',
+  'allowed_transitions',
+]);
 
 const parser = new XMLParser({
   removeNSPrefix: true,

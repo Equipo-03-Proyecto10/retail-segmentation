@@ -136,6 +136,30 @@ def test_the_validation_refusal_is_ends_before_start_on_create(api: Any) -> None
     assert "service_differs" in case
 
 
+def test_the_captured_duplicate_create_leaves_one_draft(
+    api: Any, owner: psycopg.Connection
+) -> None:
+    case = CASES["create-duplicate-draft"]
+    given, web = case["input"], case["outcome"]
+    body = {key: given[key] for key in FORM}
+
+    assert api("POST", "/v1/campaigns", json_body=body).status_code == 201
+    assert _code(api("POST", "/v1/campaigns", json_body=body)) == (
+        409,
+        "duplicate_draft",
+    )
+    assert web["observed"] == {"count": 1, "first": 31, "second": None}
+    assert (
+        owner.execute(
+            "SELECT count(*) FROM campaign WHERE name = %s AND label_code = %s"
+            " AND starts_on = %s AND ends_on = %s AND status = 'DRAFT'",
+            tuple(body.values()),
+        ).fetchone()[0]
+        == 1
+    )
+    assert "service_differs" in case
+
+
 def _draft_2099(api: Any, given: dict[str, Any]) -> int:
     reply = api("POST", "/v1/campaigns", json_body={key: given[key] for key in FORM})
     assert reply.status_code == 201

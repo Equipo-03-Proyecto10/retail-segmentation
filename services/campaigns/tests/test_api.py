@@ -139,6 +139,71 @@ def test_create_is_born_draft_with_its_location(
     assert api("GET", f"/v1/campaigns/{body['campaign_id']}").get_json() == body
 
 
+def test_two_identical_sequential_creates_leave_one_draft(
+    api: Any, owner: psycopg.Connection
+) -> None:
+    created = api("POST", "/v1/campaigns", json_body=DRAFT_BODY)
+    duplicate = api("POST", "/v1/campaigns", json_body=DRAFT_BODY)
+
+    assert created.status_code == 201
+    assert _code(duplicate) == (409, "duplicate_draft")
+    assert duplicate.get_json()["message"] == (
+        "A DRAFT campaign with the same name, label_code, starts_on and ends_on"
+        " already exists."
+    )
+    assert (
+        owner.execute(
+            "SELECT count(*) FROM campaign WHERE name = %s AND label_code = %s"
+            " AND starts_on = %s AND ends_on = %s AND status = 'DRAFT'",
+            tuple(DRAFT_BODY.values()),
+        ).fetchone()[0]
+        == 1
+    )
+
+
+def test_duplicate_draft_is_answered_in_xml(api: Any) -> None:
+    assert api("POST", "/v1/campaigns", json_body=DRAFT_BODY).status_code == 201
+    payload = (
+        '<CreateCampaignRequest xmlns="https://mosaiq.maxthecoder.online/xml/'
+        'campaigns/v1"><name>Holiday Loyalty Preview</name>'
+        "<label_code>LOYAL</label_code>"
+        "<starts_on>2099-11-01</starts_on><ends_on>2099-12-31</ends_on>"
+        "</CreateCampaignRequest>"
+    )
+    duplicate = api(
+        "POST",
+        "/v1/campaigns",
+        data=payload,
+        content_type="application/xml",
+        headers={"Accept": "application/xml"},
+    )
+
+    assert duplicate.status_code == 409
+    assert duplicate.content_type == "application/xml"
+    assert b"<code>duplicate_draft</code>" in duplicate.data
+
+
+@pytest.mark.parametrize("status", ["ACTIVE", "FINISHED", "CANCELLED"])
+def test_an_identical_non_draft_does_not_block_create(
+    api: Any, owner: psycopg.Connection, status: str
+) -> None:
+    owner.execute(
+        "INSERT INTO campaign (campaign_id, name, label_code, starts_on, ends_on,"
+        " status) SELECT max(campaign_id) + 1, %s, %s, %s, %s, %s FROM campaign",
+        (*DRAFT_BODY.values(), status),
+    )
+
+    assert api("POST", "/v1/campaigns", json_body=DRAFT_BODY).status_code == 201
+    assert (
+        owner.execute(
+            "SELECT count(*) FROM campaign WHERE name = %s AND label_code = %s"
+            " AND starts_on = %s AND ends_on = %s",
+            tuple(DRAFT_BODY.values()),
+        ).fetchone()[0]
+        == 2
+    )
+
+
 def test_create_trims_the_name_and_refuses_an_empty_one(api: Any) -> None:
     named = api("POST", "/v1/campaigns", json_body=DRAFT_BODY | {"name": "  Kept  "})
     assert named.get_json()["name"] == "Kept"

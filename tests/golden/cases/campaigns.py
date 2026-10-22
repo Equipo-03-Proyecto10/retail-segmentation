@@ -18,6 +18,7 @@ from typing import Any
 import psycopg
 
 from tests.golden.cases import Case, Context, accepted, invalid, one, refused
+from web.db.campaigns import create_campaign as create_campaign_row
 from web.services.campaigns import (
     ACTIONS,
     TRANSITIONS,
@@ -142,6 +143,29 @@ def _activate_new_draft(
     return run
 
 
+def _create_duplicate_draft(connection: psycopg.Connection) -> dict[str, Any]:
+    values = {
+        "name": DRAFT_2099.name,
+        "label_code": DRAFT_2099.label_code,
+        "starts_on": DRAFT_2099.starts_on,
+        "ends_on": DRAFT_2099.ends_on,
+    }
+    first = create_campaign_row(connection, **values)
+    second = create_campaign_row(connection, **values)
+    count = one(
+        connection,
+        "SELECT count(*) FROM campaign WHERE name = %s AND label_code = %s"
+        " AND starts_on = %s AND ends_on = %s AND status = 'DRAFT'",
+        (
+            DRAFT_2099.name,
+            DRAFT_2099.label_code,
+            DRAFT_2099.starts_on,
+            DRAFT_2099.ends_on,
+        ),
+    )
+    return accepted(first=first, second=second, count=count)
+
+
 def build(connection: psycopg.Connection, context: Context) -> list[Case]:
     cases = [
         Case(
@@ -212,6 +236,16 @@ def build(connection: psycopg.Connection, context: Context) -> list[Case]:
             _attempt(lambda c: update_draft(c, 1, backwards), lambda c: {}),
             "campaigns-service answers 422 ends_before_start where the web raises"
             " CampaignRefused with a message for the ends_on field.",
+        ),
+        Case(
+            "create-duplicate-draft",
+            {
+                "call": "create_campaign twice",
+                **_draft_input(DRAFT_2099),
+            },
+            _create_duplicate_draft,
+            "The web returns None for the second create where campaigns-service"
+            " answers 409 duplicate_draft; both leave exactly one DRAFT row.",
         ),
         Case(
             "activate-draft-with-no-experiment",

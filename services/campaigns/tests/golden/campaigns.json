@@ -295,6 +295,25 @@
       "service_differs": "campaigns-service answers 422 ends_before_start where the web raises CampaignRefused with a message for the ends_on field."
     },
     {
+      "id": "create-duplicate-draft",
+      "input": {
+        "call": "create_campaign twice",
+        "ends_on": "2099-12-31",
+        "label_code": "LOYAL",
+        "name": "Golden draft",
+        "starts_on": "2099-01-01"
+      },
+      "outcome": {
+        "observed": {
+          "count": 1,
+          "first": 31,
+          "second": null
+        },
+        "outcome": "accepted"
+      },
+      "service_differs": "The web returns None for the second create where campaigns-service answers 409 duplicate_draft; both leave exactly one DRAFT row."
+    },
+    {
       "id": "activate-draft-with-no-experiment",
       "input": {
         "action": "activate",
@@ -340,6 +359,6 @@
     "captured_on": "2026-10-22",
     "port": "campaigns",
     "seed_sha256": "5e04ccddb7eacad529c3549576db3ae0d3b849f27abd63d70e8498fe798147bd",
-    "web_commit": "3c7ec1849a48b99c4d279d8dc385da0e61dc0857"
+    "web_commit": "c503c2d193149d7b40df8b6d64d4daa0825e8c23-dirty"
   }
 }

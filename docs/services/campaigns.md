@@ -21,7 +21,7 @@
 ## Business rule
 
 - Each transition is conditional on the status that was read (`expected_status`), so two administrators cannot both move a campaign. Edits are allowed only in DRAFT, and the end date is never before the start.
-- `campaign_id` is allocated as max+1 under the web's advisory lock key 221001, with a retry on 23505 (E-14). A campaign targets a stable segment label code. No DELETE grant.
+- `campaign_id` is allocated as max+1 under the web's advisory lock key 221001, with a retry on 23505 (E-14). Under the same lock, a create is refused when an identical DRAFT already exists. A campaign targets a stable segment label code. No DELETE grant.
 - Activation is refused for a campaign whose `ends_on` is before PostgreSQL's `CURRENT_DATE`, checked by the service in the same transaction (RN-49), and by `trg_campaign_activation_guard` while an attached experiment has no treatment group, or has no control and other than two treatment groups (RN-24, E-13). The guard reads the web-only experiment tables as `definer_guard` and fires for `svc_campaigns` sessions only.
 
 ## Endpoints
@@ -65,6 +65,7 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 
 | HTTP | Code | When |
 |---|---|---|
+| 409 | `duplicate_draft` | A DRAFT with the same name, label code and dates already exists |
 | 409 | `campaign_not_draft` | An edit outside DRAFT |
 | 409 | `illegal_transition` | A move the state machine does not allow |
 | 409 | `status_changed` | `expected_status` no longer matches |

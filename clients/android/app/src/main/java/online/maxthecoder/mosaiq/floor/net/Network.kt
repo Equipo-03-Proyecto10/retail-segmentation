@@ -47,6 +47,10 @@ class Network(
 
     val auth: AuthApi = retrofit.create(AuthApi::class.java)
     val users: UsersApi = retrofit.create(UsersApi::class.java)
+    val stores: StoresApi = retrofit.create(StoresApi::class.java)
+
+    /** The gateway, for the floor-write queue's raw requests. */
+    val gateway: okhttp3.HttpUrl get() = base
 
     private companion object {
         const val TIMEOUT_SECONDS = 20L

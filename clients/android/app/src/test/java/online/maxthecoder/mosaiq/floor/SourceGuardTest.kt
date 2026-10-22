@@ -39,10 +39,10 @@ class SourceGuardTest {
                 owners[service!!] = match.groupValues[1].split(",").map { it.trim() }.toSet()
             }
         }
-        val calls = Regex("""Services\.([A-Z]+) \+ "([a-z0-9.-]+)""")
+        val calls = Regex("""Services\.([A-Z_]+) \+ "([a-z0-9.-]+)""")
         val services = File(main, "online/maxthecoder/mosaiq/floor/net/Services.kt").readText()
         val prefixes =
-            Regex("""const val ([A-Z]+) = "api/([a-z-]+)/v1/"""")
+            Regex("""const val ([A-Z_]+) = "api/([a-z-]+)/v1/"""")
                 .findAll(services)
                 .associate { it.groupValues[1] to it.groupValues[2] }
         val found = sources.flatMap { calls.findAll(it.readText()).toList() }
@@ -51,6 +51,16 @@ class SourceGuardTest {
             val name = prefixes.getValue(call.groupValues[1])
             val resource = call.groupValues[2]
             assertTrue("$resource is not a resource of $name", resource in owners.getValue(name))
+        }
+    }
+
+    /** ADR-0041: a retry id is generated once, at the tap, never per attempt. */
+    @Test
+    fun noWorkerGeneratesAClientId() {
+        val workers = sources.filter { it.name.contains("Worker") }
+        assertTrue("a worker exists", workers.isNotEmpty())
+        for (file in workers) {
+            assertTrue("${file.name} generates ids", "UUID.randomUUID" !in file.readText())
         }
     }
 }

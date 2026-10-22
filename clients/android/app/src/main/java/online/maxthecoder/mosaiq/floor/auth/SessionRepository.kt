@@ -5,6 +5,8 @@ import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.net.CurrentUser
 import online.maxthecoder.mosaiq.floor.net.Network
 import online.maxthecoder.mosaiq.floor.net.SignInRequest
+import online.maxthecoder.mosaiq.floor.session.InMemorySessionStore
+import online.maxthecoder.mosaiq.floor.session.SessionStore
 import retrofit2.Response
 
 /** What a sign-in or a profile read came to. */
@@ -31,7 +33,8 @@ sealed interface SessionResult {
 class SessionRepository(
     private val network: Network,
     private val tokens: TokenStore,
-    private val deviceLabel: String
+    private val deviceLabel: String,
+    private val session: SessionStore = InMemorySessionStore()
 ) {
     val isSignedIn: Boolean get() = tokens.read() != null
 
@@ -55,13 +58,18 @@ class SessionRepository(
             val error = ApiError.from(response)
             // A 401 after a refresh that could not run is the refresh's story.
             val shown = if (error.status == 401) network.authenticator.lastFailure ?: error else error
-            if (tokens.read() == null || shown.code in SIGNED_OUT) tokens.clear()
+            if (tokens.read() == null || shown.code in SIGNED_OUT) {
+                tokens.clear()
+                session.signedOut()
+            }
             return SessionResult.Failed(friendly(shown))
         }
         if (user.roleCode !in FLOOR_ROLES) {
             signOut()
             return SessionResult.RoleRefused(user.roleCode)
         }
+        // The floor-write queue sends a row only under this user's session.
+        session.signedIn(user.userId)
         return SessionResult.SignedIn(user)
     }
 
@@ -69,6 +77,7 @@ class SessionRepository(
     suspend fun signOut() {
         if (tokens.read() != null) call { network.auth.deleteCurrentSession() }
         tokens.clear()
+        session.signedOut()
     }
 
     private fun friendly(error: ApiError): ApiError = when {

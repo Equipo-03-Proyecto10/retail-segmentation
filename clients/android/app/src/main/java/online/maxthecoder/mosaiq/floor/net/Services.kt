@@ -11,4 +11,10 @@ object Services {
 
     /** users owns `users`, `roles` and `administrator-transfers`. */
     const val USERS = "api/users/v1/"
+
+    /** stores owns `stores`. */
+    const val STORES = "api/stores/v1/"
+
+    /** check-ins owns `check-ins`. */
+    const val CHECK_INS = "api/check-ins/v1/"
 }

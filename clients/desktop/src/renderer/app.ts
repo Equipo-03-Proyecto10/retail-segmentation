@@ -2,6 +2,7 @@ import type { AppState, ErrorView, MosaiqBridge } from '../shared/api';
 import { renderCategories, renderProducts } from './catalog';
 import { el, errorBox } from './dom';
 import { renderCheckIns, renderEngagement, renderSales, renderStock } from './floor';
+import { latestRequest } from './latest-request';
 import { reconcileRender, type RenderState } from './render-state';
 import { renderStores } from './stores';
 import { renderAccount, renderTransfer, renderUsers } from './users';
@@ -105,11 +106,14 @@ let view: View = 'products';
 
 function renderServices(host: HTMLElement, state: Extract<AppState, { status: 'signed_in' }>): void {
   const result = el('div');
+  const renderLatest = latestRequest();
   const list = el('ul', { cls: 'services' });
   for (const s of state.services) {
     const probe = el('button', { text: 'Check' });
     probe.addEventListener('click', () => {
+      const isCurrent = renderLatest.begin();
       void api.probeService(s.name).then((r) => {
+        if (!isCurrent()) return;
         result.replaceChildren(
           r.ok
             ? el('p', { cls: 'notice', text: `${r.service}: ${r.status} ${r.root} (${r.correlation_id})` })

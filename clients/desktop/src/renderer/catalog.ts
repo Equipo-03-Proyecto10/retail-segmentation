@@ -19,6 +19,7 @@ import {
   textInput,
   type Details,
 } from './dom';
+import { latestRequest } from './latest-request';
 
 // Products and the category tree (F16-02, #410). Every call goes through a
 // named bridge operation; a write control is drawn only when the signed-in
@@ -52,6 +53,8 @@ export function renderProducts(host: HTMLElement, ctx: ScreenContext): void {
   const message = testid(el('div'), 'products-message');
   const tableArea = el('div');
   const detail = testid(el('section', { cls: 'panel' }), 'product-detail');
+  const renderLatestList = latestRequest();
+  const renderLatestDetail = latestRequest();
   let tree: CategoryNode[] = [];
   let query: ProductQuery = { page: 1, size: 20 };
 
@@ -101,47 +104,49 @@ export function renderProducts(host: HTMLElement, ctx: ScreenContext): void {
   });
 
   async function load(): Promise<void> {
-    const res = await api.listProducts(query);
-    if (!res.ok) {
-      tableArea.replaceChildren(errorBox(res.error));
-      return;
-    }
-    const body = el('tbody');
-    for (const p of res.value.items) {
-      const view = button('View', `view-${p.product_id}`, () => void open(p.product_id));
-      const row = el(
-        'tr',
-        {},
-        el('td', { text: String(p.product_id) }),
-        el('td', { text: p.sku }),
-        el('td', { text: p.name }),
-        el('td', { text: p.category_name }),
-        el('td', { text: p.list_price, cls: 'num' }),
-        el('td', { text: p.is_active ? 'Active' : 'Inactive' }),
-        el('td', {}, view),
-      );
-      row.dataset.productId = String(p.product_id);
-      body.append(row);
-    }
-    const head = el('tr');
-    for (const h of ['ID', 'SKU', 'Name', 'Category', 'List price', 'Status', ''])
-      head.append(el('th', { text: h }));
-    tableArea.replaceChildren(
-      testid(el('table', {}, el('thead', {}, head), body), 'products-table'),
-      pager(res.value.page, 'products', (page) => {
-        query = { ...query, page };
-        void load();
-      }),
+    await renderLatestList(
+      () => api.listProducts(query),
+      (res) => {
+        if (!res.ok) return void tableArea.replaceChildren(errorBox(res.error));
+        const body = el('tbody');
+        for (const p of res.value.items) {
+          const view = button('View', `view-${p.product_id}`, () => void open(p.product_id));
+          const row = el(
+            'tr',
+            {},
+            el('td', { text: String(p.product_id) }),
+            el('td', { text: p.sku }),
+            el('td', { text: p.name }),
+            el('td', { text: p.category_name }),
+            el('td', { text: p.list_price, cls: 'num' }),
+            el('td', { text: p.is_active ? 'Active' : 'Inactive' }),
+            el('td', {}, view),
+          );
+          row.dataset.productId = String(p.product_id);
+          body.append(row);
+        }
+        const head = el('tr');
+        for (const h of ['ID', 'SKU', 'Name', 'Category', 'List price', 'Status', ''])
+          head.append(el('th', { text: h }));
+        tableArea.replaceChildren(
+          testid(el('table', {}, el('thead', {}, head), body), 'products-table'),
+          pager(res.value.page, 'products', (page) => {
+            query = { ...query, page };
+            void load();
+          }),
+        );
+      },
     );
   }
 
   async function open(productId: number): Promise<void> {
-    const res = await api.getProduct(productId);
-    if (!res.ok) {
-      detail.replaceChildren(errorBox(res.error));
-      return;
-    }
-    showProduct(res.value);
+    await renderLatestDetail(
+      () => api.getProduct(productId),
+      (res) => {
+        if (!res.ok) return void detail.replaceChildren(errorBox(res.error));
+        showProduct(res.value);
+      },
+    );
   }
 
   function showProduct(p: ProductView): void {
@@ -190,7 +195,9 @@ export function renderProducts(host: HTMLElement, ctx: ScreenContext): void {
       if (name.value !== p.name) changes.name = name.value;
       if (Number(cat.value) !== p.category_id) changes.category_id = Number(cat.value);
       if (price.value !== p.list_price) changes.list_price = price.value;
+      const isCurrent = renderLatestDetail.begin();
       void api.updateProduct(p.product_id, changes).then(async (res) => {
+        if (!isCurrent()) return;
         show(message, res, `Product ${p.product_id} saved.`, PRODUCT_FIELDS);
         if (res.ok) showProduct(res.value);
         else markDetails(form, res.error.details);
@@ -204,7 +211,9 @@ export function renderProducts(host: HTMLElement, ctx: ScreenContext): void {
     const area = el('div');
     if (!p.is_active) return area;
     const confirm = button('Confirm deactivation', 'confirm-deactivate', () => {
+      const isCurrent = renderLatestDetail.begin();
       void api.deactivateProduct(p.product_id).then(async (res) => {
+        if (!isCurrent()) return;
         show(message, res, `Product ${p.product_id} deactivated.`);
         if (res.ok) showProduct(res.value);
         await load();
@@ -253,6 +262,7 @@ export function renderProducts(host: HTMLElement, ctx: ScreenContext): void {
         category_id: c.value,
         list_price: price.value,
       };
+      const isCurrent = renderLatestDetail.begin();
       void api
         .createProduct({
           product_id: Number(id.value),
@@ -262,6 +272,7 @@ export function renderProducts(host: HTMLElement, ctx: ScreenContext): void {
           list_price: price.value,
         })
         .then(async (res) => {
+          if (!isCurrent()) return;
           show(message, res, `Product ${id.value} created.`, PRODUCT_FIELDS);
           if (res.ok) showProduct(res.value);
           else detail.replaceChildren(newProductForm(typed, res.error.details));
@@ -275,6 +286,7 @@ export function renderProducts(host: HTMLElement, ctx: ScreenContext): void {
   if (ctx.can('createProduct'))
     header.push(
       button('New product', 'new-product', () => {
+        renderLatestDetail.begin();
         message.replaceChildren();
         detail.replaceChildren(newProductForm());
       }),
@@ -302,6 +314,9 @@ export function renderCategories(host: HTMLElement, ctx: ScreenContext): void {
   const message = testid(el('div'), 'categories-message');
   const treeArea = el('div');
   const detail = testid(el('section', { cls: 'panel' }), 'category-detail');
+  const renderLatestTree = latestRequest();
+  const renderLatestDescendants = latestRequest();
+  const renderLatestDetail = latestRequest();
   let tree: CategoryNode[] = [];
 
   function find(id: number, nodes: CategoryNode[] = tree): CategoryNode | undefined {
@@ -314,26 +329,27 @@ export function renderCategories(host: HTMLElement, ctx: ScreenContext): void {
   }
 
   async function loadTree(): Promise<void> {
-    const res = await api.categoryTree();
-    if (!res.ok) {
-      treeArea.replaceChildren(errorBox(res.error));
-      return;
-    }
-    tree = res.value;
-    const list = (nodes: CategoryNode[]): HTMLElement => {
-      const ul = el('ul', { cls: 'tree' });
-      for (const n of nodes) {
-        const pick = button(`${n.name} (#${n.category_id})`, `category-${n.category_id}`, () =>
-          showCategory(n),
-        );
-        const li = el('li', {}, pick);
-        li.dataset.categoryId = String(n.category_id);
-        if (n.children.length > 0) li.append(list(n.children));
-        ul.append(li);
-      }
-      return ul;
-    };
-    treeArea.replaceChildren(testid(list(tree), 'category-tree'));
+    await renderLatestTree(
+      () => api.categoryTree(),
+      (res) => {
+        if (!res.ok) return void treeArea.replaceChildren(errorBox(res.error));
+        tree = res.value;
+        const list = (nodes: CategoryNode[]): HTMLElement => {
+          const ul = el('ul', { cls: 'tree' });
+          for (const n of nodes) {
+            const pick = button(`${n.name} (#${n.category_id})`, `category-${n.category_id}`, () =>
+              showCategory(n),
+            );
+            const li = el('li', {}, pick);
+            li.dataset.categoryId = String(n.category_id);
+            if (n.children.length > 0) li.append(list(n.children));
+            ul.append(li);
+          }
+          return ul;
+        };
+        treeArea.replaceChildren(testid(list(tree), 'category-tree'));
+      },
+    );
   }
 
   function parentOptions(excluding?: number): [string, string][] {
@@ -344,6 +360,7 @@ export function renderCategories(host: HTMLElement, ctx: ScreenContext): void {
   }
 
   function showCategory(c: CategoryView): void {
+    renderLatestDetail.begin();
     const parent = c.parent_category_id === null ? undefined : find(c.parent_category_id);
     const facts = el('dl');
     const fact = (name: string, value: string, id: string): void => {
@@ -372,16 +389,17 @@ export function renderCategories(host: HTMLElement, ctx: ScreenContext): void {
   }
 
   async function descendants(id: number, page: number, area: HTMLElement): Promise<void> {
-    const res = await api.categoryDescendants(id, page);
-    if (!res.ok) {
-      area.replaceChildren(errorBox(res.error));
-      return;
-    }
-    const ul = el('ul');
-    for (const d of res.value.items) ul.append(el('li', { text: `${d.name} (#${d.category_id})` }));
-    area.replaceChildren(
-      res.value.items.length === 0 ? el('p', { text: 'No category is below this one.' }) : ul,
-      pager(res.value.page, 'descendants', (p) => void descendants(id, p, area)),
+    await renderLatestDescendants(
+      () => api.categoryDescendants(id, page),
+      (res) => {
+        if (!res.ok) return void area.replaceChildren(errorBox(res.error));
+        const ul = el('ul');
+        for (const d of res.value.items) ul.append(el('li', { text: `${d.name} (#${d.category_id})` }));
+        area.replaceChildren(
+          res.value.items.length === 0 ? el('p', { text: 'No category is below this one.' }) : ul,
+          pager(res.value.page, 'descendants', (p) => void descendants(id, p, area)),
+        );
+      },
     );
   }
 
@@ -411,10 +429,13 @@ export function renderCategories(host: HTMLElement, ctx: ScreenContext): void {
       if (name.value !== c.name) changes.name = name.value;
       const chosen = parent.value === '' ? null : Number(parent.value);
       if (chosen !== c.parent_category_id) changes.parent_category_id = chosen;
+      const isCurrent = renderLatestDetail.begin();
       void api.updateCategory(c.category_id, changes).then(async (res) => {
+        if (!isCurrent()) return;
         show(message, res, `Category ${c.category_id} saved.`, CATEGORY_FIELDS);
         // Reloaded either way: after a refusal the tree is shown as the service still has it.
         await loadTree();
+        if (!isCurrent()) return;
         if (res.ok) showCategory(res.value);
         else markDetails(form, res.error.details);
       });
@@ -425,9 +446,12 @@ export function renderCategories(host: HTMLElement, ctx: ScreenContext): void {
   function deleteControl(c: CategoryView): HTMLElement {
     const area = el('div');
     const confirm = button('Confirm delete', 'confirm-delete', () => {
+      const isCurrent = renderLatestDetail.begin();
       void api.deleteCategory(c.category_id).then(async (res) => {
+        if (!isCurrent()) return;
         show(message, res, `Category ${c.category_id} deleted.`);
         await loadTree();
+        if (!isCurrent()) return;
         if (res.ok) detail.replaceChildren();
         else showCategory(c);
       });
@@ -467,6 +491,7 @@ export function renderCategories(host: HTMLElement, ctx: ScreenContext): void {
     form.addEventListener('submit', (event) => {
       event.preventDefault();
       const typed = { category_id: id.value, name: name.value, parent_category_id: parent.value };
+      const isCurrent = renderLatestDetail.begin();
       void api
         .createCategory({
           category_id: Number(id.value),
@@ -474,8 +499,10 @@ export function renderCategories(host: HTMLElement, ctx: ScreenContext): void {
           parent_category_id: parent.value === '' ? null : Number(parent.value),
         })
         .then(async (res) => {
+          if (!isCurrent()) return;
           show(message, res, `Category ${id.value} created.`, CATEGORY_FIELDS);
           await loadTree();
+          if (!isCurrent()) return;
           if (res.ok) showCategory(res.value);
           else detail.replaceChildren(newCategoryForm(typed, res.error.details));
         });
@@ -487,6 +514,8 @@ export function renderCategories(host: HTMLElement, ctx: ScreenContext): void {
   if (ctx.can('createCategory'))
     header.push(
       button('New category', 'new-category', () => {
+        renderLatestDetail.begin();
+        renderLatestDescendants.begin();
         message.replaceChildren();
         detail.replaceChildren(newCategoryForm());
       }),

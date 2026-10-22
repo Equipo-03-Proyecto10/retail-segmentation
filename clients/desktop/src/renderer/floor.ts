@@ -14,6 +14,7 @@ import type {
 } from '../shared/api';
 import type { ScreenContext } from './catalog';
 import { button, el, errorBox, formField, markDetails, pager, select, show, testid, textInput } from './dom';
+import { latestRequest } from './latest-request';
 
 // What happened on the floor (F16-04, #417). Each screen reads through a named
 // bridge operation. The two corrections the back office may make, voiding an
@@ -84,29 +85,39 @@ const SIZES: [string, string][] = [
 
 export function renderStock(host: HTMLElement, ctx: ScreenContext): void {
   const results = el('div');
+  const renderLatest = latestRequest();
   const store = storePicker(ctx, 'Every store');
   const below = textInput('', 'number');
   const size = select(SIZES, '20');
   let query: StockQuery = { page: 1, size: 20 };
 
   async function load(): Promise<void> {
-    const res = await ctx.api.stockLevels(query);
-    if (!res.ok) return void results.replaceChildren(errorBox(res.error));
-    results.replaceChildren(
-      table(
-        'stock-table',
-        ['Product', 'Store', 'On hand', 'Updated'],
-        res.value.items.map((l) =>
-          row(
-            [`${l.product_name} (#${l.product_id})`, l.store_name, String(l.quantity_on_hand), l.updated_at],
-            ['productId', String(l.product_id)],
+    await renderLatest(
+      () => ctx.api.stockLevels(query),
+      (res) => {
+        if (!res.ok) return void results.replaceChildren(errorBox(res.error));
+        results.replaceChildren(
+          table(
+            'stock-table',
+            ['Product', 'Store', 'On hand', 'Updated'],
+            res.value.items.map((l) =>
+              row(
+                [
+                  `${l.product_name} (#${l.product_id})`,
+                  l.store_name,
+                  String(l.quantity_on_hand),
+                  l.updated_at,
+                ],
+                ['productId', String(l.product_id)],
+              ),
+            ),
           ),
-        ),
-      ),
-      pager(res.value.page, 'levels', (page) => {
-        query = { ...query, page };
-        void load();
-      }),
+          pager(res.value.page, 'levels', (page) => {
+            query = { ...query, page };
+            void load();
+          }),
+        );
+      },
     );
   }
 
@@ -136,6 +147,8 @@ export function renderStock(host: HTMLElement, ctx: ScreenContext): void {
 export function renderSales(host: HTMLElement, ctx: ScreenContext): void {
   const results = el('div');
   const detail = testid(el('section', { cls: 'panel' }), 'sale-detail');
+  const renderLatestList = latestRequest();
+  const renderLatestDetail = latestRequest();
   const customer = textInput('');
   const store = storePicker(ctx, 'Every store');
   const from = textInput('', 'datetime-local');
@@ -143,38 +156,46 @@ export function renderSales(host: HTMLElement, ctx: ScreenContext): void {
   let query: SalesQuery = { page: 1, size: 20 };
 
   async function load(): Promise<void> {
-    const res = await ctx.api.listSales(query);
-    if (!res.ok) return void results.replaceChildren(errorBox(res.error));
-    results.replaceChildren(
-      table(
-        'sales-table',
-        ['Sale', 'When', 'Store', 'Channel', 'Customer', 'Total', ''],
-        res.value.items.map((s) =>
-          row(
-            [
-              String(s.sale_id),
-              s.occurred_at,
-              s.store_name,
-              s.channel_name,
-              s.customer_id,
-              s.total,
-              button('View', `view-sale-${s.sale_id}`, () => void open(s.sale_id)),
-            ],
-            ['saleId', String(s.sale_id)],
+    await renderLatestList(
+      () => ctx.api.listSales(query),
+      (res) => {
+        if (!res.ok) return void results.replaceChildren(errorBox(res.error));
+        results.replaceChildren(
+          table(
+            'sales-table',
+            ['Sale', 'When', 'Store', 'Channel', 'Customer', 'Total', ''],
+            res.value.items.map((s) =>
+              row(
+                [
+                  String(s.sale_id),
+                  s.occurred_at,
+                  s.store_name,
+                  s.channel_name,
+                  s.customer_id,
+                  s.total,
+                  button('View', `view-sale-${s.sale_id}`, () => void open(s.sale_id)),
+                ],
+                ['saleId', String(s.sale_id)],
+              ),
+            ),
           ),
-        ),
-      ),
-      pager(res.value.page, 'sales', (page) => {
-        query = { ...query, page };
-        void load();
-      }),
+          pager(res.value.page, 'sales', (page) => {
+            query = { ...query, page };
+            void load();
+          }),
+        );
+      },
     );
   }
 
   async function open(saleId: number): Promise<void> {
-    const res = await ctx.api.getSale(saleId);
-    if (!res.ok) return void detail.replaceChildren(errorBox(res.error));
-    showSale(res.value);
+    await renderLatestDetail(
+      () => ctx.api.getSale(saleId),
+      (res) => {
+        if (!res.ok) return void detail.replaceChildren(errorBox(res.error));
+        showSale(res.value);
+      },
+    );
   }
 
   function showSale(s: SaleView): void {
@@ -236,6 +257,9 @@ export function renderEngagement(host: HTMLElement, ctx: ScreenContext): void {
   const message = testid(el('div'), 'engagement-message');
   const eventsArea = el('div');
   const detail = testid(el('section', { cls: 'panel' }), 'event-detail');
+  const renderLatestSummary = latestRequest();
+  const renderLatestEvents = latestRequest();
+  const renderLatestDetail = latestRequest();
 
   const sFrom = textInput('', 'date');
   const sTo = textInput('', 'date');
@@ -251,16 +275,20 @@ export function renderEngagement(host: HTMLElement, ctx: ScreenContext): void {
   let summaryQuery: SummaryQuery = { group_by: 'store' };
 
   async function loadSummary(): Promise<void> {
-    const res = await ctx.api.engagementSummary(summaryQuery);
-    if (!res.ok) return void summaryArea.replaceChildren(errorBox(res.error));
-    const v = res.value;
-    const heading = { store: 'Store', day: 'Day', type: 'Type' }[v.group_by];
-    summaryArea.replaceChildren(
-      table(
-        'summary-table',
-        [heading, 'Events'],
-        v.groups.map((g) => row([g.label, String(g.count)], ['key', g.key])),
-      ),
+    await renderLatestSummary(
+      () => ctx.api.engagementSummary(summaryQuery),
+      (res) => {
+        if (!res.ok) return void summaryArea.replaceChildren(errorBox(res.error));
+        const v = res.value;
+        const heading = { store: 'Store', day: 'Day', type: 'Type' }[v.group_by];
+        summaryArea.replaceChildren(
+          table(
+            'summary-table',
+            [heading, 'Events'],
+            v.groups.map((g) => row([g.label, String(g.count)], ['key', g.key])),
+          ),
+        );
+      },
     );
   }
 
@@ -314,34 +342,39 @@ export function renderEngagement(host: HTMLElement, ctx: ScreenContext): void {
     let eventsQuery: EventsQuery = { page: 1, size: 20 };
 
     const loadEvents = async (): Promise<void> => {
-      const res = await ctx.api.listEngagementEvents(eventsQuery);
-      if (!res.ok) return void eventsArea.replaceChildren(errorBox(res.error));
-      eventsArea.replaceChildren(
-        table(
-          'events-table',
-          ['Type', 'Product', 'Store', 'When', 'Status', ''],
-          res.value.items.map((e) =>
-            row(
-              [
-                e.type,
-                `${e.product_name} (#${e.product_id})`,
-                e.store_name,
-                e.occurred_at,
-                e.voided ? 'Voided' : 'Counted',
-                button('View', `view-event-${e.event_id}`, () => showEvent(e)),
-              ],
-              ['eventId', e.event_id],
+      await renderLatestEvents(
+        () => ctx.api.listEngagementEvents(eventsQuery),
+        (res) => {
+          if (!res.ok) return void eventsArea.replaceChildren(errorBox(res.error));
+          eventsArea.replaceChildren(
+            table(
+              'events-table',
+              ['Type', 'Product', 'Store', 'When', 'Status', ''],
+              res.value.items.map((e) =>
+                row(
+                  [
+                    e.type,
+                    `${e.product_name} (#${e.product_id})`,
+                    e.store_name,
+                    e.occurred_at,
+                    e.voided ? 'Voided' : 'Counted',
+                    button('View', `view-event-${e.event_id}`, () => showEvent(e)),
+                  ],
+                  ['eventId', e.event_id],
+                ),
+              ),
             ),
-          ),
-        ),
-        pager(res.value.page, 'events', (page) => {
-          eventsQuery = { ...eventsQuery, page };
-          void loadEvents();
-        }),
+            pager(res.value.page, 'events', (page) => {
+              eventsQuery = { ...eventsQuery, page };
+              void loadEvents();
+            }),
+          );
+        },
       );
     };
 
     const showEvent = (e: EngagementEventView): void => {
+      renderLatestDetail.begin();
       const entries: [string, string, string][] = [
         ['Type', e.type, 'event-type'],
         ['Product', `${e.product_name} (#${e.product_id})`, 'event-product'],
@@ -368,7 +401,9 @@ export function renderEngagement(host: HTMLElement, ctx: ScreenContext): void {
       const why = el('textarea');
       const area = el('div');
       const confirm = button('Confirm void', 'confirm-void', () => {
+        const isCurrent = renderLatestDetail.begin();
         void ctx.api.voidEngagementEvent(e.event_id, why.value).then(async (res) => {
+          if (!isCurrent()) return;
           show(message, res, 'The event is voided. It stays listed, and the summary no longer counts it.', [
             'reason',
           ]);
@@ -445,6 +480,8 @@ export function renderCheckIns(host: HTMLElement, ctx: ScreenContext): void {
   const message = testid(el('div'), 'check-ins-message');
   const results = el('div');
   const detail = testid(el('section', { cls: 'panel' }), 'check-in-detail');
+  const renderLatestList = latestRequest();
+  const renderLatestDetail = latestRequest();
   const store = storePicker(ctx, 'Every store');
   const verified = select(
     [
@@ -459,37 +496,45 @@ export function renderCheckIns(host: HTMLElement, ctx: ScreenContext): void {
   let query: CheckInsQuery = { page: 1, size: 20 };
 
   async function load(): Promise<void> {
-    const res = await ctx.api.listCheckIns(query);
-    if (!res.ok) return void results.replaceChildren(errorBox(res.error));
-    results.replaceChildren(
-      table(
-        'check-ins-table',
-        ['When', 'Store', 'User', 'Result', 'Verified', ''],
-        res.value.items.map((c) =>
-          row(
-            [
-              c.occurred_at,
-              c.store_name,
-              c.user_id,
-              describeReason(c),
-              c.verified ? 'Yes' : 'No',
-              button('View', `view-check-in-${c.check_in_id}`, () => void open(c.check_in_id)),
-            ],
-            ['checkInId', c.check_in_id],
+    await renderLatestList(
+      () => ctx.api.listCheckIns(query),
+      (res) => {
+        if (!res.ok) return void results.replaceChildren(errorBox(res.error));
+        results.replaceChildren(
+          table(
+            'check-ins-table',
+            ['When', 'Store', 'User', 'Result', 'Verified', ''],
+            res.value.items.map((c) =>
+              row(
+                [
+                  c.occurred_at,
+                  c.store_name,
+                  c.user_id,
+                  describeReason(c),
+                  c.verified ? 'Yes' : 'No',
+                  button('View', `view-check-in-${c.check_in_id}`, () => void open(c.check_in_id)),
+                ],
+                ['checkInId', c.check_in_id],
+              ),
+            ),
           ),
-        ),
-      ),
-      pager(res.value.page, 'check-ins', (page) => {
-        query = { ...query, page };
-        void load();
-      }),
+          pager(res.value.page, 'check-ins', (page) => {
+            query = { ...query, page };
+            void load();
+          }),
+        );
+      },
     );
   }
 
   async function open(checkInId: string): Promise<void> {
-    const res = await ctx.api.getCheckIn(checkInId);
-    if (!res.ok) return void detail.replaceChildren(errorBox(res.error));
-    showCheckIn(res.value);
+    await renderLatestDetail(
+      () => ctx.api.getCheckIn(checkInId),
+      (res) => {
+        if (!res.ok) return void detail.replaceChildren(errorBox(res.error));
+        showCheckIn(res.value);
+      },
+    );
   }
 
   function reviewItem(r: ReviewView): HTMLElement {
@@ -545,7 +590,9 @@ export function renderCheckIns(host: HTMLElement, ctx: ScreenContext): void {
         submit('Add review'),
       ],
       () => {
+        const isCurrent = renderLatestDetail.begin();
         void ctx.api.reviewCheckIn(c.check_in_id, verdict.value === 'true', why.value).then(async (res) => {
+          if (!isCurrent()) return;
           show(message, res, 'Review added.', ['verified', 'reason']);
           if (res.ok) {
             await open(c.check_in_id);

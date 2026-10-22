@@ -5,6 +5,7 @@ import { Backoffice, type Protection, type SealedTokens, type TokenVault } from 
 import { MemorySealer } from '../../src/main/sealer';
 import { Transport } from '../../src/main/transport';
 import { XsdValidator } from '../../src/main/xml';
+export { deferred, type Deferred } from './deferred';
 
 export const AUTH_NS = 'https://mosaiq.maxthecoder.online/xml/auth/v1';
 export const COMMON_NS = 'https://mosaiq.maxthecoder.online/xml/common/v1';

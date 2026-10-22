@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import { deferred, type Deferred } from '../support/deferred';
 
 // Stock, sales, engagement and check-ins (F16-04, #417), against a fake gateway
 // that answers with the recorded examples of the six contracts involved.
@@ -52,12 +53,16 @@ let seen: Seen[] = [];
 let voided = false;
 let reviews: string[] = [];
 let nextRefusal: { service: string; file: string; status: number } | null = null;
+let delayedFirstSales: Deferred<void> | null = null;
+let salesReads = 0;
 
 function reset(): void {
   seen = [];
   voided = false;
   nextRefusal = null;
   reviews = [];
+  delayedFirstSales = null;
+  salesReads = 0;
 }
 
 test.beforeAll(async () => {
@@ -88,7 +93,20 @@ test.beforeAll(async () => {
       if (path === '/api/stores/v1/stores') return reply(200, directory());
       if (path === '/api/sales/v1/channels') return reply(200, example('sales', 'list-channels'));
       if (path === '/api/stock/v1/stock-levels') return reply(200, example('stock', 'stock-levels-filtered'));
-      if (path === '/api/sales/v1/sales') return reply(200, example('sales', 'list-sales'));
+      if (path === '/api/sales/v1/sales') {
+        salesReads += 1;
+        const response =
+          url.searchParams.has('store_id') || url.searchParams.has('from')
+            ? example('sales', 'list-sales')
+                .replace(/\s*<Sale>[\s\S]*?<\/Sale>/g, '')
+                .replace('<common:total>2</common:total>', '<common:total>0</common:total>')
+            : example('sales', 'list-sales');
+        if (salesReads === 1 && delayedFirstSales !== null) {
+          void delayedFirstSales.promise.then(() => reply(200, response));
+          return;
+        }
+        return reply(200, response);
+      }
       if (path === '/api/sales/v1/sales/4812') return reply(200, example('sales', 'get-sale'));
       if (path.startsWith('/api/sales/v1/sales/')) return reply(404, example('sales', 'sale-not-found'));
 
@@ -205,6 +223,30 @@ test('sales read back in XML, with lines, total, channel and store; refusals as 
   const before = seen.filter((s) => s.url.includes('/api/sales/v1/sales?')).length;
   await page.getByTestId('refresh-sales').click();
   await expect.poll(() => seen.filter((s) => s.url.includes('/api/sales/v1/sales?')).length).toBe(before + 1);
+  await app.close();
+});
+
+test('sales keeps a newer filtered page when the initial page answers late', async () => {
+  delayedFirstSales = deferred<void>();
+  const { app, page } = await launch('ADMIN');
+  await open(page, 'sales');
+  await expect.poll(() => salesReads).toBe(1);
+  await page.selectOption('#filter-store_id', '3');
+  await page.fill('#filter-from', '2026-10-22T00:00');
+  await page.getByRole('button', { name: 'Search' }).click();
+  await expect.poll(() => salesReads).toBe(2);
+  await expect(page.getByTestId('sales-table')).toBeVisible();
+  await expect(page.locator('[data-testid=sales-table] tbody tr')).toHaveCount(0);
+
+  delayedFirstSales.resolve();
+  await expect
+    .poll(() => seen.filter((s) => s.url.includes('/api/sales/v1/channels')).length)
+    .toBeGreaterThan(0);
+  // Observe the renderer after the old page's name lookups, including its IPC delivery.
+  for (let sample = 0; sample < 10; sample += 1) {
+    await page.waitForTimeout(100);
+    await expect(page.locator('[data-testid=sales-table] tbody tr')).toHaveCount(0);
+  }
   await app.close();
 });
 

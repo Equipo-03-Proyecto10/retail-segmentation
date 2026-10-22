@@ -8,7 +8,8 @@
 #   docker compose -f bench/compose.yaml --profile bench down -v   # afterwards
 set -euo pipefail
 
-compose=(docker compose -f bench/compose.yaml --profile bench)
+# bench/run.sh sets BENCH_COMPOSE_EXTRA to the pinning override.
+compose=(docker compose -f bench/compose.yaml ${BENCH_COMPOSE_EXTRA:+-f "$BENCH_COMPOSE_EXTRA"} --profile bench)
 
 bash bench/keys.sh
 # The twin's build context carries its contract, as a service's does (ADR-0045).

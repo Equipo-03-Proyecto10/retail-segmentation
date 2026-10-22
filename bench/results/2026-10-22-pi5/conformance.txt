@@ -1,0 +1,155 @@
+bench-keys: /home/pi/school/retail-segmentation/bench/keys/jwks.json holds kid bench
+ Image mosaiq-products-service-rs:bench Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 636B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 1.48kB done
+#2 DONE 0.1s
+
+#3 [internal] load metadata for docker.io/library/rust:1.98.1-slim-trixie@sha256:4cd829461bd5c4d511c32e269da9cb8929223b666519d8004e35fc8d1d771ab7
+#3 DONE 1.1s
+
+#4 [internal] load metadata for docker.io/library/debian:trixie-20260918-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
+#4 DONE 1.1s
+
+#5 [internal] load .dockerignore
+#5 transferring context: 2B done
+#5 DONE 0.1s
+
+#6 [internal] load build context
+#6 transferring context: 70.23kB done
+#6 DONE 0.3s
+
+#7 [stage-1 1/5] FROM docker.io/library/debian:trixie-20260918-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
+#7 resolve docker.io/library/debian:trixie-20260918-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
+#7 resolve docker.io/library/debian:trixie-20260918-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a 0.3s done
+#7 DONE 0.4s
+
+#8 [build 1/6] FROM docker.io/library/rust:1.98.1-slim-trixie@sha256:4cd829461bd5c4d511c32e269da9cb8929223b666519d8004e35fc8d1d771ab7
+#8 resolve docker.io/library/rust:1.98.1-slim-trixie@sha256:4cd829461bd5c4d511c32e269da9cb8929223b666519d8004e35fc8d1d771ab7
+#8 resolve docker.io/library/rust:1.98.1-slim-trixie@sha256:4cd829461bd5c4d511c32e269da9cb8929223b666519d8004e35fc8d1d771ab7 0.3s done
+#8 DONE 0.4s
+
+#9 [build 4/6] COPY Cargo.toml Cargo.lock ./
+#9 CACHED
+
+#10 [stage-1 3/5] RUN apt-get update     && apt-get install -y --no-install-recommends libxml2     && rm -rf /var/lib/apt/lists/*
+#10 CACHED
+
+#11 [build 2/6] WORKDIR /src
+#11 CACHED
+
+#12 [build 5/6] COPY src/ ./src/
+#12 CACHED
+
+#13 [stage-1 4/5] COPY --from=build /usr/local/bin/products-service-rs /usr/local/bin/products-service-rs
+#13 CACHED
+
+#14 [stage-1 2/5] WORKDIR /app
+#14 CACHED
+
+#15 [build 3/6] RUN apt-get update     && apt-get install -y --no-install-recommends libclang-dev libxml2-dev pkg-config     && rm -rf /var/lib/apt/lists/*
+#15 CACHED
+
+#16 [build 6/6] RUN cargo build --release --locked     && install -m 0755 target/release/products-service-rs /usr/local/bin/products-service-rs
+#16 CACHED
+
+#17 [stage-1 5/5] COPY contracts/ ./contracts/
+#17 CACHED
+
+#18 exporting to image
+#18 exporting layers done
+#18 exporting manifest sha256:4e8070455e618feb0cbae1a11922a15149af402d0018d8a55d02a993fd961395 done
+#18 exporting config sha256:031f6f0b6e544dade151e0463528e421f4b2bf201683b33bd83d5153e612b9e3 done
+#18 exporting attestation manifest sha256:d479fa86c52ec2590fffe26b41a28c65cdffb89f8d35f890744bad93a21cfa1f
+#18 exporting attestation manifest sha256:d479fa86c52ec2590fffe26b41a28c65cdffb89f8d35f890744bad93a21cfa1f 0.1s done
+#18 exporting manifest list sha256:3b52dab5b0eec612e10c21606f55cac90a3ae8a1e7ad66c33dbcf457a1ecedd3
+#18 exporting manifest list sha256:3b52dab5b0eec612e10c21606f55cac90a3ae8a1e7ad66c33dbcf457a1ecedd3 0.1s done
+#18 naming to docker.io/library/mosaiq-products-service-rs:bench
+#18 naming to docker.io/library/mosaiq-products-service-rs:bench done
+#18 unpacking to docker.io/library/mosaiq-products-service-rs:bench 0.1s done
+#18 DONE 0.5s
+
+#19 resolving provenance for metadata file
+#19 DONE 0.0s
+ Image mosaiq-products-service-rs:bench Built 
+ Volume mosaiq-bench_redis-acl Creating 
+ Network mosaiq-bench_default Creating 
+ Volume mosaiq-bench_redis-acl Creating 
+ Network mosaiq-bench_default Creating 
+ Volume mosaiq-bench_pgsocket Creating 
+ Volume mosaiq-bench_pgsocket Creating 
+ Volume mosaiq-bench_pgsocket Created 
+ Volume mosaiq-bench_pgsocket Created 
+ Volume mosaiq-bench_redis-acl Created 
+ Volume mosaiq-bench_redis-acl Created 
+ Network mosaiq-bench_default Created 
+ Network mosaiq-bench_default Created 
+ Container mosaiq-bench-redis-acl-1 Creating 
+ Container mosaiq-bench-redis-cache-1 Creating 
+ Container mosaiq-bench-postgres-1 Creating 
+ Container mosaiq-bench-redis-cache-1 Created 
+ Container mosaiq-bench-postgres-1 Created 
+ Container mosaiq-bench-redis-acl-1 Created 
+ Container mosaiq-bench-redis-state-1 Creating 
+ Container mosaiq-bench-redis-state-1 Created 
+ Container mosaiq-bench-products-service-rs-1 Creating 
+ Container mosaiq-bench-auth-1 Creating 
+ Container mosaiq-bench-products-1 Creating 
+ products-service-rs Your kernel does not support memory limit capabilities or the cgroup is not mounted. Limitation discarded. 
+ Container mosaiq-bench-products-service-rs-1 Created 
+ products Your kernel does not support memory limit capabilities or the cgroup is not mounted. Limitation discarded. 
+ Container mosaiq-bench-products-1 Created 
+ Container mosaiq-bench-auth-1 Created 
+ Container mosaiq-bench-redis-acl-1 Starting 
+ Container mosaiq-bench-redis-cache-1 Starting 
+ Container mosaiq-bench-postgres-1 Starting 
+ Container mosaiq-bench-redis-acl-1 Started 
+ Container mosaiq-bench-redis-acl-1 Waiting 
+ Container mosaiq-bench-redis-cache-1 Started 
+ Container mosaiq-bench-redis-acl-1 Exited 
+ Container mosaiq-bench-redis-state-1 Starting 
+ Container mosaiq-bench-postgres-1 Started 
+ Container mosaiq-bench-redis-state-1 Started 
+ Container mosaiq-bench-redis-state-1 Waiting 
+ Container mosaiq-bench-postgres-1 Waiting 
+ Container mosaiq-bench-postgres-1 Waiting 
+ Container mosaiq-bench-redis-state-1 Waiting 
+ Container mosaiq-bench-redis-state-1 Waiting 
+ Container mosaiq-bench-postgres-1 Waiting 
+ Container mosaiq-bench-redis-state-1 Healthy 
+ Container mosaiq-bench-redis-state-1 Healthy 
+ Container mosaiq-bench-redis-state-1 Healthy 
+ Container mosaiq-bench-postgres-1 Healthy 
+ Container mosaiq-bench-postgres-1 Healthy 
+ Container mosaiq-bench-auth-1 Starting 
+ Container mosaiq-bench-products-1 Starting 
+ Container mosaiq-bench-postgres-1 Healthy 
+ Container mosaiq-bench-products-service-rs-1 Starting 
+ Container mosaiq-bench-auth-1 Started 
+ Container mosaiq-bench-products-1 Started 
+ Container mosaiq-bench-products-service-rs-1 Started 
+ Container mosaiq-bench-auth-1 Waiting 
+ Container mosaiq-bench-products-1 Waiting 
+ Container mosaiq-bench-products-service-rs-1 Waiting 
+ Container mosaiq-bench-postgres-1 Waiting 
+ Container mosaiq-bench-redis-acl-1 Waiting 
+ Container mosaiq-bench-redis-state-1 Waiting 
+ Container mosaiq-bench-redis-cache-1 Waiting 
+ Container mosaiq-bench-postgres-1 Healthy 
+ Container mosaiq-bench-auth-1 Healthy 
+ Container mosaiq-bench-products-service-rs-1 Healthy 
+ Container mosaiq-bench-redis-acl-1 Exited 
+ Container mosaiq-bench-products-1 Healthy 
+ Container mosaiq-bench-redis-state-1 Healthy 
+ Container mosaiq-bench-redis-cache-1 Healthy 
+== conformance: products on 127.0.0.1:5003
+................................................ssss                     [100%]
+48 passed, 4 skipped in 12.96s
+== conformance: products-service-rs on 127.0.0.1:5103
+....................................................                     [100%]
+52 passed in 5.65s
+== identical answers
+compare: 20 requests x 2 formats answered identically

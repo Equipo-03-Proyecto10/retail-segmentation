@@ -1,0 +1,332 @@
+{
+  "cases": [
+    {
+      "id": "accepted-line",
+      "input": {
+        "channel_id": 1,
+        "customer_id": "00000000-0000-0000-0000-000000000001",
+        "occurred_at": {
+          "days_before_anchor": 1
+        },
+        "product_id": 1,
+        "quantity": 1,
+        "source_transaction_id": "GOLDEN-SALE-1",
+        "store_id": 1,
+        "unit_price": "10.00"
+      },
+      "outcome": {
+        "observed": {
+          "quantity_on_hand_after": 11
+        },
+        "outcome": "accepted"
+      }
+    },
+    {
+      "id": "future-dated",
+      "input": {
+        "channel_id": 1,
+        "customer_id": "00000000-0000-0000-0000-000000000001",
+        "occurred_at": "2099-01-01T12:00:00+00:00",
+        "product_id": 1,
+        "quantity": 1,
+        "source_transaction_id": "GOLDEN-SALE-1",
+        "store_id": 1,
+        "unit_price": "10.00"
+      },
+      "outcome": {
+        "error": "RowRejected",
+        "outcome": "refused",
+        "reason": "occurred_at cannot be in the future"
+      }
+    },
+    {
+      "id": "before-registration",
+      "input": {
+        "channel_id": 1,
+        "customer_id": "00000000-0000-0000-0000-000000000001",
+        "occurred_at": "2020-01-01T12:00:00+00:00",
+        "product_id": 1,
+        "quantity": 1,
+        "source_transaction_id": "GOLDEN-SALE-1",
+        "store_id": 1,
+        "unit_price": "10.00"
+      },
+      "outcome": {
+        "error": "RowRejected",
+        "outcome": "refused",
+        "reason": "sale occurred before customer registration"
+      }
+    },
+    {
+      "id": "inactive-product",
+      "input": {
+        "channel_id": 1,
+        "customer_id": "00000000-0000-0000-0000-000000000001",
+        "occurred_at": {
+          "days_before_anchor": 1
+        },
+        "product_id": 2,
+        "quantity": 1,
+        "setup": "UPDATE product SET is_active = false WHERE product_id = 2",
+        "source_transaction_id": "GOLDEN-SALE-1",
+        "store_id": 1,
+        "unit_price": "10.00"
+      },
+      "outcome": {
+        "error": "RowRejected",
+        "outcome": "refused",
+        "reason": "product is inactive"
+      }
+    },
+    {
+      "id": "zero-quantity",
+      "input": {
+        "channel_id": 1,
+        "customer_id": "00000000-0000-0000-0000-000000000001",
+        "occurred_at": {
+          "days_before_anchor": 1
+        },
+        "product_id": 1,
+        "quantity": 0,
+        "source_transaction_id": "GOLDEN-SALE-1",
+        "store_id": 1,
+        "unit_price": "10.00"
+      },
+      "outcome": {
+        "error": "RowRejected",
+        "outcome": "refused",
+        "reason": "quantity must be positive"
+      }
+    },
+    {
+      "id": "negative-quantity",
+      "input": {
+        "channel_id": 1,
+        "customer_id": "00000000-0000-0000-0000-000000000001",
+        "occurred_at": {
+          "days_before_anchor": 1
+        },
+        "product_id": 1,
+        "quantity": -1,
+        "source_transaction_id": "GOLDEN-SALE-1",
+        "store_id": 1,
+        "unit_price": "10.00"
+      },
+      "outcome": {
+        "error": "RowRejected",
+        "outcome": "refused",
+        "reason": "quantity must be positive"
+      }
+    },
+    {
+      "id": "zero-price",
+      "input": {
+        "channel_id": 1,
+        "customer_id": "00000000-0000-0000-0000-000000000001",
+        "occurred_at": {
+          "days_before_anchor": 1
+        },
+        "product_id": 1,
+        "quantity": 1,
+        "source_transaction_id": "GOLDEN-SALE-1",
+        "store_id": 1,
+        "unit_price": "0.00"
+      },
+      "outcome": {
+        "error": "RowRejected",
+        "outcome": "refused",
+        "reason": "unit price must be positive"
+      }
+    },
+    {
+      "id": "negative-price",
+      "input": {
+        "channel_id": 1,
+        "customer_id": "00000000-0000-0000-0000-000000000001",
+        "occurred_at": {
+          "days_before_anchor": 1
+        },
+        "product_id": 1,
+        "quantity": 1,
+        "source_transaction_id": "GOLDEN-SALE-1",
+        "store_id": 1,
+        "unit_price": "-1.00"
+      },
+      "outcome": {
+        "error": "RowRejected",
+        "outcome": "refused",
+        "reason": "unit price must be positive"
+      }
+    },
+    {
+      "id": "three-decimal-price",
+      "input": {
+        "channel_id": 1,
+        "customer_id": "00000000-0000-0000-0000-000000000001",
+        "occurred_at": {
+          "days_before_anchor": 1
+        },
+        "product_id": 1,
+        "quantity": 1,
+        "source_transaction_id": "GOLDEN-SALE-1",
+        "store_id": 1,
+        "unit_price": "10.005"
+      },
+      "outcome": {
+        "error": "RowRejected",
+        "outcome": "refused",
+        "reason": "unit price must have at most 2 decimal places"
+      }
+    },
+    {
+      "id": "unknown-customer",
+      "input": {
+        "channel_id": 1,
+        "customer_id": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+        "occurred_at": {
+          "days_before_anchor": 1
+        },
+        "product_id": 1,
+        "quantity": 1,
+        "source_transaction_id": "GOLDEN-SALE-1",
+        "store_id": 1,
+        "unit_price": "10.00"
+      },
+      "outcome": {
+        "error": "RowRejected",
+        "outcome": "refused",
+        "reason": "unknown customer"
+      }
+    },
+    {
+      "id": "unknown-product",
+      "input": {
+        "channel_id": 1,
+        "customer_id": "00000000-0000-0000-0000-000000000001",
+        "occurred_at": {
+          "days_before_anchor": 1
+        },
+        "product_id": 99999,
+        "quantity": 1,
+        "source_transaction_id": "GOLDEN-SALE-1",
+        "store_id": 1,
+        "unit_price": "10.00"
+      },
+      "outcome": {
+        "error": "RowRejected",
+        "outcome": "refused",
+        "reason": "unknown product"
+      }
+    },
+    {
+      "id": "unknown-store",
+      "input": {
+        "channel_id": 1,
+        "customer_id": "00000000-0000-0000-0000-000000000001",
+        "occurred_at": {
+          "days_before_anchor": 1
+        },
+        "product_id": 1,
+        "quantity": 1,
+        "source_transaction_id": "GOLDEN-SALE-1",
+        "store_id": 999,
+        "unit_price": "10.00"
+      },
+      "outcome": {
+        "error": "RowRejected",
+        "outcome": "refused",
+        "reason": "unknown store"
+      }
+    },
+    {
+      "id": "unknown-channel",
+      "input": {
+        "channel_id": 99,
+        "customer_id": "00000000-0000-0000-0000-000000000001",
+        "occurred_at": {
+          "days_before_anchor": 1
+        },
+        "product_id": 1,
+        "quantity": 1,
+        "source_transaction_id": "GOLDEN-SALE-1",
+        "store_id": 1,
+        "unit_price": "10.00"
+      },
+      "outcome": {
+        "error": "RowRejected",
+        "outcome": "refused",
+        "reason": "unknown channel"
+      }
+    },
+    {
+      "id": "no-inventory-row",
+      "input": {
+        "channel_id": 1,
+        "customer_id": "00000000-0000-0000-0000-000000000001",
+        "occurred_at": {
+          "days_before_anchor": 1
+        },
+        "product_id": 6,
+        "quantity": 1,
+        "source_transaction_id": "GOLDEN-SALE-1",
+        "store_id": 1,
+        "unit_price": "10.00"
+      },
+      "outcome": {
+        "error": "RowRejected",
+        "outcome": "refused",
+        "reason": "no inventory for store 1 and product 6"
+      }
+    },
+    {
+      "id": "insufficient-stock",
+      "input": {
+        "channel_id": 1,
+        "customer_id": "00000000-0000-0000-0000-000000000001",
+        "occurred_at": {
+          "days_before_anchor": 1
+        },
+        "product_id": 1,
+        "quantity": 13,
+        "source_transaction_id": "GOLDEN-SALE-1",
+        "store_id": 1,
+        "unit_price": "10.00"
+      },
+      "outcome": {
+        "error": "RowRejected",
+        "outcome": "refused",
+        "reason": "insufficient stock for store 1 and product 1: 12 available"
+      }
+    },
+    {
+      "id": "service-namespace",
+      "input": {
+        "channel_id": 1,
+        "customer_id": "00000000-0000-0000-0000-000000000001",
+        "occurred_at": {
+          "days_before_anchor": 1
+        },
+        "product_id": 1,
+        "quantity": 1,
+        "source_transaction_id": "svc-sales:00000000-0000-0000-0000-000000000001",
+        "store_id": 1,
+        "unit_price": "10.00"
+      },
+      "outcome": {
+        "error": "RowRejected",
+        "outcome": "refused",
+        "reason": "malformed row: a value is not in the expected format"
+      },
+      "service_differs": "sales-service writes the svc-sales: namespace itself (ADR-0039): a CSV line naming it is refused, a phone sale from svc_sales is not."
+    }
+  ],
+  "header": {
+    "as_of": {
+      "anchor": "2026-10-21T20:39:03.975475-06:00"
+    },
+    "captured_on": "2026-10-22",
+    "port": "sales",
+    "seed_sha256": "80665f3bc7aad670e29038455666c8d1ac38a0596bafbd16d1e56b36388c097e",
+    "web_commit": "fc0ffdad64e0665c1b92b1efe634643080ee0ef6"
+  }
+}

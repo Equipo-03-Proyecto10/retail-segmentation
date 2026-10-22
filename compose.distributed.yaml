@@ -37,6 +37,8 @@ include:
     env_file: docker/distributed/local.env
   - path: [services/stock/compose.yaml, docker/distributed/service.local.yaml]
     env_file: docker/distributed/local.env
+  - path: [services/sales/compose.yaml, docker/distributed/service.local.yaml]
+    env_file: docker/distributed/local.env
   - path: [services/stores/compose.yaml, docker/distributed/service.local.yaml]
     env_file: docker/distributed/local.env
   - path: [services/users/compose.yaml, docker/distributed/service.local.yaml]

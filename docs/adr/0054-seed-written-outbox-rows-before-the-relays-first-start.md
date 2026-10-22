@@ -1,9 +1,9 @@
 # ADR-0054 — What happens to the outbox rows the seed writes before the relays first start
 
-**Status:** Proposed
+**Status:** Accepted (2026-10-21)
 **Owner:** Marcelo
 **Issue:** #597
-**Supersedes:** — *(once accepted with any option below, ADR-0046's consequence "The outboxes hold the seed's own events" in part)*
+**Supersedes:** [ADR-0046](0046-service-owned-data-lives-in-service-schemas.md) in part (publication of seed-written outbox events only)
 **Superseded by:** —
 
 ---
@@ -15,11 +15,11 @@ capture triggers ([ADR-0044](0044-boundaries-meet-only-through-versioned-databas
 while `02_seed_30_per_table.sql` loads the owner tables: `categories_events.outbox` 30,
 `products_events.outbox` 40, `stock_events.outbox` 150, `stores_events.outbox` 60
 and `users_events.outbox` 0, 280 rows in all. The instance was rebuilt this way
-on 2026-10-20, so the rows are there now. All have `relayed_at IS NULL`, so
+on 2026-10-20, so these were the rows reported by the issue. All have `relayed_at IS NULL`, so
 when each service first starts, its relay publishes them to Redis Streams.
-More outboxes will join as the remaining boundaries land (preferences, sales,
-segments); sales alone would add about 600 rows (an INSERT and an UPDATE OF
-`total` per seeded sale).
+The current schema also includes preferences, sales and segments: all eight
+outboxes are covered by this decision. The counts above describe the original
+2026-10-20 observation, not the current state of the running database.
 
 [ADR-0046](0046-service-owned-data-lives-in-service-schemas.md) exempts the
 outboxes from the 30-row rule because they are runtime state, and the
@@ -54,7 +54,24 @@ populated at first start. Nothing in ADR-0044 says so, and no story asks for it.
 
 ## Decision
 
-*Proposed, not decided: the team chooses. The recommendation is option B1.*
+**Accept B1.** The seed deletes every row in each of the eight outboxes after
+loading the demonstration data and **before its existing `COMMIT`**. Capture
+triggers and integrity checks remain enabled throughout. Until that commit,
+relays cannot see the seed's uncommitted events; after it, none remain.
+
+This is exclusively an empty-database bootstrap operation. The seed is not a
+maintenance or live-cleanup script and must not run against an in-use database.
+Relays continue to publish every pending runtime event regardless of its age.
+
+The requester accepted B1 and authorized its implementation and the verified
+live cleanup on 2026-10-21. For the existing instance only, that authorization
+permits a one-time data cleanup: identify the seed transaction from its exact
+`occurred_at` and corroborating audit records, archive the candidate event rows,
+then delete only those event IDs while still unrelayed, in one transaction.
+Verify expected counts and preserve every other event, including later user
+access changes. If provenance or counts cannot be established, do not delete.
+This narrowly scoped exception does not authorize a blanket live outbox purge
+or a database rebuild.
 
 ## Alternatives considered
 
@@ -68,43 +85,33 @@ populated at first start. Nothing in ADR-0044 says so, and no story asks for it.
 
 ## Consequences
 
-*If option B1 is accepted:*
-
 **What this makes easy.** `SELECT count(*)` over all outboxes after a clean run
 is 0, a check CI can run. The exemption in `sql/seed-exempt.txt` is consistent
 with the seed. No relay publishes a fact nobody caused. F18 can deploy the
 first service without a burst of replayed history.
 
 **What this makes hard.** Each new outbox needs its own `DELETE` line in the
-seed, in the same pull request that creates it. The instance's current 280 rows
-are not removed by this record: either the database is rebuilt, or the operator
-runs the same statements once before the first service starts, which is the
-single hand-applied step "nothing else is applied by hand" would otherwise
-forbid, so it needs the team's explicit approval in the issue.
+seed, in the same pull request that creates it. The database test discovers
+outboxes from the PostgreSQL catalog, so forgetting a new boundary fails CI.
+Existing live events require the separately scoped cleanup above; accepting
+this record alone does not remove them.
 
 **What must now be true elsewhere.**
 - ADR-0046's consequence about the seed's own events is superseded in part; its
   status line gains `Partially superseded by ADR-0054`.
 - `sql/02_seed_30_per_table.sql` ends with one `DELETE` per outbox.
-- The CI step that runs the three scripts gains the query below.
+- The CI database job checks every discovered outbox after the three scripts
+  and proves that a subsequent web write still captures an event transactionally.
 - Each later boundary that adds an outbox adds its line and keeps the check green.
-
-*If option A is accepted,* this record states the choice made on purpose and
-that a first start publishes the seed. ADR-0046 and ADR-0044 are accepted and
-stay as written (AGENTS.md): only ADR-0046's status line changes, as under B1.
 
 ## Compliance
 
-After the three scripts on an empty database, this returns 0 (extended with each
-new outbox):
+Run `pytest tests/test_seed_outboxes_postgres.py -m postgres` against an empty
+database loaded with the three scripts, with `MOSAIQ_REQUIRE_POSTGRES=1` and
+`MOSAIQ_TEST_OWNER_URL` set. The database CI job runs this check immediately
+after installing its Python dependencies, before other database tests.
 
-```sql
-SELECT (SELECT count(*) FROM categories_events.outbox)
-     + (SELECT count(*) FROM products_events.outbox)
-     + (SELECT count(*) FROM stock_events.outbox)
-     + (SELECT count(*) FROM stores_events.outbox)
-     + (SELECT count(*) FROM users_events.outbox);
-```
-
-A service created later is checked by its own PR: a clean run followed by the
-same count for its outbox.
+The test discovers all `*_events.outbox` tables, requires every exact count to
+be zero, and exercises a product update as `retail_app`: its event is pending
+inside the writing transaction, invisible to another connection, and removed
+by rollback. The seed cleanup must not disable ordinary capture.

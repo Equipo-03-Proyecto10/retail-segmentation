@@ -18,7 +18,12 @@ import online.maxthecoder.mosaiq.floor.session.SessionStore
 /** What one attempt at a queued write came to. */
 sealed interface Attempt {
     /** 2xx: the server holds the write; nothing to resend. */
-    data class Done(val status: Int, val body: String?, val correlationId: String?) : Attempt
+    data class Done(
+        val status: Int,
+        val body: String?,
+        val correlationId: String?,
+        val replayed: Boolean = false
+    ) : Attempt
 
     /** 409, 422 or any other final 4xx: kept and shown, never resent. */
     data class Refused(val error: ApiError) : Attempt
@@ -79,22 +84,36 @@ class OutboxWorker(
                         .Builder()
                         .url(gateway.resolve(row.path)!!)
                         .post(row.body.toRequestBody(JSON))
+                        .apply {
+                            if (row.operation == Operation.SALE) header("Idempotency-Key", row.clientId)
+                        }
                         .build()
                 val attempt =
                     try {
                         client.newCall(request).execute().use {
-                            Attempt.of(
+                            val verdict = Attempt.of(
                                 it.code,
                                 it.body?.string(),
                                 it.header(ApiError.CORRELATION_HEADER),
                                 it.header("Retry-After")
                             )
+                            if (verdict is Attempt.Done) {
+                                verdict.copy(replayed = it.header("Idempotent-Replayed") == "true")
+                            } else {
+                                verdict
+                            }
                         }
                     } catch (unreachable: IOException) {
                         Attempt.Retry
                     }
                 when (attempt) {
-                    is Attempt.Done -> outbox.markDone(row.id, attempt.status, attempt.body, attempt.correlationId)
+                    is Attempt.Done -> outbox.markDone(
+                        row.id,
+                        attempt.status,
+                        attempt.body,
+                        attempt.correlationId,
+                        if (attempt.replayed) "idempotent_replayed" else null
+                    )
                     is Attempt.Refused ->
                         outbox.markRefused(
                             row.id,

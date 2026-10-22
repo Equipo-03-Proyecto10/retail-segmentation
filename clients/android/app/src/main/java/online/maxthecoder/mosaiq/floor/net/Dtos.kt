@@ -40,8 +40,12 @@ data class CurrentUser(
 data class ErrorEnvelope(
     val code: String,
     val message: String,
-    @SerialName("correlation_id") val correlationId: String? = null
+    @SerialName("correlation_id") val correlationId: String? = null,
+    val details: List<ErrorDetail> = emptyList()
 )
+
+@Serializable
+data class ErrorDetail(val field: String, val code: String)
 
 /** `PageInfo` of contracts/common/v1. */
 @Serializable
@@ -111,6 +115,86 @@ data class Product(
     @SerialName("list_price") val listPrice: String,
     @SerialName("is_active") val isActive: Boolean
 )
+
+@Serializable
+data class ProductPage(val products: List<Product>, @SerialName("page_info") val pageInfo: PageInfo)
+
+@Serializable
+data class Customer(
+    @SerialName("customer_id") val customerId: String,
+    val name: String,
+    val email: String?,
+    val phone: String?,
+    @SerialName("registration_channel_id") val registrationChannelId: Int,
+    @SerialName("registered_on") val registeredOn: String
+)
+
+@Serializable
+data class CustomerPage(val customers: List<Customer>, @SerialName("page_info") val pageInfo: PageInfo)
+
+@Serializable
+data class RegisterCustomerRequest(
+    val name: String,
+    val email: String?,
+    val phone: String?,
+    @SerialName("registration_channel_id") val registrationChannelId: Int
+)
+
+@Serializable
+data class Channel(@SerialName("channel_id") val channelId: Int, val name: String)
+
+@Serializable
+data class ChannelList(val channels: List<Channel>)
+
+@Serializable
+data class Category(
+    @SerialName("category_id") val categoryId: Int,
+    val name: String,
+    @SerialName("parent_category_id") val parentCategoryId: Int? = null
+)
+
+@Serializable
+data class CategoryPage(val categories: List<Category>, @SerialName("page_info") val pageInfo: PageInfo)
+
+@Serializable
+data class PreferenceProfile(
+    @SerialName("customer_id") val customerId: String,
+    @SerialName("preferred_channel_ids") val preferredChannelIds: List<Int>,
+    @SerialName("interest_category_ids") val interestCategoryIds: List<Int>
+)
+
+@Serializable
+data class ReplaceInterestCategoriesRequest(@SerialName("category_ids") val categoryIds: List<Int>)
+
+@Serializable
+data class SaleLineRequest(
+    @SerialName("product_id") val productId: Int,
+    val quantity: Int,
+    @SerialName("unit_price") val unitPrice: String
+)
+
+@Serializable
+data class SaleRequest(
+    @SerialName("customer_id") val customerId: String,
+    @SerialName("store_id") val storeId: Int,
+    @SerialName("channel_id") val channelId: Int,
+    @SerialName("occurred_at") val occurredAt: String,
+    val lines: List<SaleLineRequest>
+)
+
+@Serializable
+data class Sale(
+    @SerialName("sale_id") val saleId: Long,
+    @SerialName("customer_id") val customerId: String,
+    @SerialName("store_id") val storeId: Int,
+    @SerialName("channel_id") val channelId: Int,
+    @SerialName("occurred_at") val occurredAt: String,
+    val total: String,
+    val lines: List<SaleLineRequest>
+)
+
+@Serializable
+data class SalePage(val sales: List<Sale>, @SerialName("page_info") val pageInfo: PageInfo)
 
 @Serializable
 data class StockLevel(

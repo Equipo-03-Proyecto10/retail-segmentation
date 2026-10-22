@@ -35,13 +35,20 @@ import kotlinx.coroutines.withContext
 import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.outbox.OutboxRow
 import online.maxthecoder.mosaiq.floor.outbox.RowState
+import online.maxthecoder.mosaiq.floor.outbox.refusalAdvice
 import online.maxthecoder.mosaiq.floor.session.ChosenStore
 
-private enum class Tab { CHECK_IN, SCAN, OUTBOX }
+private enum class Tab { CHECK_IN, SCAN, SALE, OUTBOX }
 
 /** The floor process once signed in: who, the store and its check-in, the outbox. */
 @Composable
-fun FloorHome(signedIn: SessionState.SignedIn, model: FloorViewModel, scan: ScanViewModel, onSignOut: () -> Unit) {
+fun FloorHome(
+    signedIn: SessionState.SignedIn,
+    model: FloorViewModel,
+    scan: ScanViewModel,
+    sales: SalesViewModel,
+    onSignOut: () -> Unit
+) {
     var tab by remember { mutableStateOf(Tab.CHECK_IN) }
     val chosen by model.chosen.collectAsState()
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -52,12 +59,20 @@ fun FloorHome(signedIn: SessionState.SignedIn, model: FloorViewModel, scan: Scan
         ) {
             OutlinedButton(onClick = { tab = Tab.CHECK_IN }) { Text("Store & check-in") }
             OutlinedButton(onClick = { tab = Tab.SCAN }) { Text("Scan a product") }
+            OutlinedButton(onClick = { tab = Tab.SALE }) { Text("Customer & sale") }
             OutlinedButton(onClick = { tab = Tab.OUTBOX }) { Text("Outbox") }
             SignOutButton(model, onSignOut)
         }
         when (tab) {
             Tab.CHECK_IN -> StoreAndCheckIn(model)
-            Tab.SCAN -> ScanScreen(scan, chosen, onPickStore = { tab = Tab.CHECK_IN })
+            Tab.SCAN ->
+                ScanScreen(
+                    scan,
+                    chosen,
+                    onPickStore = { tab = Tab.CHECK_IN },
+                    onAddProduct = sales::addProduct
+                )
+            Tab.SALE -> SalesScreen(sales, chosen, onPickStore = { tab = Tab.CHECK_IN })
             Tab.OUTBOX -> OutboxList(model)
         }
     }
@@ -200,6 +215,7 @@ private fun OutboxList(model: FloorViewModel) {
                 when {
                     row.state == RowState.REFUSED -> {
                         ErrorPanel(row.asError())
+                        refusalAdvice(row.code)?.let { Text(it) }
                         OutlinedButton(onClick = { model.dismiss(row) }) { Text("Dismiss") }
                     }
                     row.userId != userId -> Text("Waiting for the user who made it to sign in again.")

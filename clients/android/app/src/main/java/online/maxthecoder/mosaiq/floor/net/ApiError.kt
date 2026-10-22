@@ -19,6 +19,7 @@ data class ApiError(
     val code: String,
     val message: String,
     val correlationId: String?,
+    val details: List<ErrorDetail> = emptyList(),
     val retryAfterSeconds: Long? = null
 ) {
     companion object {
@@ -40,6 +41,7 @@ data class ApiError(
                 code = envelope?.code ?: "http_$status",
                 message = envelope?.message ?: "The service answered $status.",
                 correlationId = envelope?.correlationId ?: correlationHeader,
+                details = envelope?.details.orEmpty(),
                 retryAfterSeconds = retryAfter?.trim()?.toLongOrNull()
             )
         }

@@ -24,6 +24,18 @@ object Services {
     /** stock owns `stock-levels`. */
     const val STOCK = "api/stock/v1/"
 
+    /** customers owns `customers`. */
+    const val CUSTOMERS = "api/customers/v1/"
+
+    /** customer-preferences owns `preference-profiles`. */
+    const val CUSTOMER_PREFERENCES = "api/customer-preferences/v1/"
+
+    /** categories owns `categories`. */
+    const val CATEGORIES = "api/categories/v1/"
+
+    /** sales owns `sales` and `channels`. */
+    const val SALES = "api/sales/v1/"
+
     /** engagement owns `engagement-events` and `engagement-summaries`. */
     const val ENGAGEMENT = "api/engagement/v1/"
 }

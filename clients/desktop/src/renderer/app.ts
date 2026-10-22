@@ -2,6 +2,7 @@ import type { AppState, ErrorView, MosaiqBridge } from '../shared/api';
 import { renderCategories, renderProducts } from './catalog';
 import { el, errorBox } from './dom';
 import { renderCheckIns, renderEngagement, renderSales, renderStock } from './floor';
+import { reconcileRender, type RenderState } from './render-state';
 import { renderStores } from './stores';
 import { renderAccount, renderTransfer, renderUsers } from './users';
 
@@ -175,9 +176,12 @@ function renderHome(state: Extract<AppState, { status: 'signed_in' }>): void {
   show(allowed.some((v) => v.name === view) ? view : (allowed[0]?.name ?? 'services'));
 }
 
+let rendered: RenderState | undefined;
+
 function render(state: AppState, error?: ErrorView): void {
-  if (state.status === 'signed_in') renderHome(state);
-  else renderSignIn(state, error);
+  rendered = reconcileRender(rendered, state, error);
+  if (rendered.state.status === 'signed_in') renderHome(rendered.state);
+  else renderSignIn(rendered.state, rendered.error);
 }
 
 api.onStateChange((state) => render(state));

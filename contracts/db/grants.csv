@@ -166,3 +166,4 @@ svc_campaigns,public.campaign,INSERT
 svc_campaigns,public.campaign,UPDATE
 definer_guard,public.experiment,SELECT
 definer_guard,public.experiment_group,SELECT
+svc_audit_trail,public.audit_log,SELECT

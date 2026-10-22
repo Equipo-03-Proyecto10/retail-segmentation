@@ -1,0 +1,1 @@
+user svc_audit_trail on {{password}} resetchannels -@all +@connection +@read +@write -@dangerous -scan -randomkey ~audit_trail:rl:* (%R~pub:auth:v1:live:* +exists)

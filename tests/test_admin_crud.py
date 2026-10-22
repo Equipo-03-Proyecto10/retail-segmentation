@@ -500,3 +500,85 @@ def test_a_delete_that_is_still_referenced_explains_itself(
     body = response.get_data(as_text=True)
     assert message in body
     assert all(text not in body for text in ("Traceback", "Werkzeug", "psycopg"))
+
+
+# ---------- refusals with no message (#595) ----------
+
+
+def test_deactivating_an_unknown_user_is_404_like_edit_and_activate(
+    client: FlaskClient, monkeypatch
+) -> None:
+    from web.services.users import UnknownUserError
+
+    monkeypatch.setattr(
+        admin, "set_active", Mock(side_effect=UnknownUserError("No user."))
+    )
+    response = client.post(
+        "/admin/users/11111111-1111-1111-1111-999999999999/deactivate"
+    )
+    assert response.status_code == 404
+
+
+def test_deactivating_the_only_administrator_is_still_409_with_its_reason(
+    client: FlaskClient, monkeypatch
+) -> None:
+    from web.services.users import LAST_ADMINISTRATOR, SingleAdministratorError
+
+    monkeypatch.setattr(
+        admin,
+        "set_active",
+        Mock(side_effect=SingleAdministratorError(LAST_ADMINISTRATOR)),
+    )
+    monkeypatch.setattr(admin, "list_users", Mock(return_value=([], 0)))
+    response = client.post(
+        "/admin/users/11111111-1111-1111-1111-000000000001/deactivate"
+    )
+    assert response.status_code == 409
+    assert "only administrator" in response.get_data(as_text=True)
+
+
+@pytest.mark.parametrize(
+    ("constraint", "words"),
+    [
+        ("role_admin_code_bound_to_reserved_id", "only role 1 may hold it"),
+        ("role_admin_lookalike", "looks like ADMIN"),
+    ],
+)
+def test_the_databases_admin_code_guards_are_form_errors_on_code(
+    constraint: str, words: str
+) -> None:
+    from psycopg.errors import CheckViolation
+
+    from web.services import catalog
+
+    violation = CheckViolation()
+    connection = MagicMock()
+    cursor = connection.cursor.return_value.__enter__.return_value
+    cursor.execute.side_effect = violation
+    with patch.object(
+        type(violation),
+        "diag",
+        property(lambda _self: Mock(constraint_name=constraint)),
+    ):
+        with pytest.raises(catalog.CatalogConflict) as refusal:
+            catalog.create_role(connection, role_id=31, code="ADMIN", description="x")
+    assert refusal.value.field == "code"
+    assert words in str(refusal.value)
+
+
+def test_creating_a_second_admin_role_shows_why_on_the_form(
+    client: FlaskClient, monkeypatch
+) -> None:
+    from web.services.catalog import ROLE_ADMIN_RESERVED
+
+    monkeypatch.setattr(
+        admin,
+        "create_role",
+        Mock(side_effect=CatalogConflict("code", ROLE_ADMIN_RESERVED)),
+    )
+    response = client.post(
+        "/admin/roles/new",
+        data={"role_id": "31", "code": "ADMIN", "description": "Second admin"},
+    )
+    assert response.status_code == 409
+    assert "only role 1 may hold it" in response.get_data(as_text=True)

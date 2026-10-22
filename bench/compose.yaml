@@ -1,0 +1,136 @@
+# The products reads benchmark (ADR-0042): products-service and its bench-only
+# Rust twin on the same data, the same token path and the same limits. Every
+# service is in profile `bench`, every port binds loopback, and nothing here
+# runs on the instance.
+#
+#   bash bench/keys.sh
+#   docker compose -f bench/compose.yaml --profile bench up --build --wait
+#
+# auth and products run at their released GHCR tags (docker login ghcr.io, or
+# build them locally under the same tag; see bench/README.md). The twin is
+# built from the commit under test and never pushed.
+name: mosaiq-bench
+
+services:
+  # The instance's PostgreSQL major, built by the three scripts plus the fixture.
+  postgres:
+    profiles: [bench]
+    image: postgres:18
+    environment:
+      POSTGRES_PASSWORD: postgres
+      APP_DB_PASSWORD: retail_app
+    volumes:
+      - ../sql:/opt/sql:ro
+      - ../docker/initdb.sh:/docker-entrypoint-initdb.d/10-initdb.sh:ro
+      - ./fixtures/load.sh:/docker-entrypoint-initdb.d/20-products-10k.sh:ro
+      - ./fixtures:/opt/bench:ro
+      - pgsocket:/var/run/postgresql
+    tmpfs:
+      - /var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "psql -U postgres -d retail -tAc \"SELECT 1 FROM product WHERE product_id = 110000\" | grep -q 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  # The aclfile redis-state loads, assembled by the instance's own script from
+  # the three services' ACL lines and their bench env files.
+  redis-acl:
+    profiles: [bench]
+    image: bash:5.2
+    entrypoint: ["bash", "/repo/deploy/infra/redis/assemble-acl.sh", "--write-only"]
+    environment:
+      REDIS_OPS_PASSWORD: ${REDIS_OPS_PASSWORD:-bench-ops-only}
+      ACL_SOURCES: "/repo/services/auth/redis/auth.acl /repo/services/products/redis/products.acl /repo/bench/redis/products-bench.acl"
+      SVC_ENV_DIR: /repo/bench/env
+      ACL_FILE: /acl/users.acl
+    volumes:
+      - ..:/repo:ro
+      - redis-acl:/acl
+
+  # The same pinned image as deploy/infra/compose.yaml.
+  redis-state:
+    profiles: [bench]
+    image: redis:7.4.11-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    depends_on:
+      redis-acl:
+        condition: service_completed_successfully
+    volumes:
+      - ../deploy/infra/redis/redis-state.conf:/usr/local/etc/redis/redis.conf:ro
+      - redis-acl:/etc/redis/acl:ro
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--user", "ops", "--pass", "${REDIS_OPS_PASSWORD:-bench-ops-only}", "--no-auth-warning", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  # Unused by both builds (their caches are off), and present because the
+  # shared conformance suite stops and restarts a redis-cache to prove that
+  # reads survive it.
+  redis-cache:
+    profiles: [bench]
+    image: redis:7.4.11-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    tmpfs:
+      - /data
+
+  auth:
+    profiles: [bench]
+    image: ghcr.io/equipo-03-proyecto10/mosaiq-auth:${AUTH_TAG:-0.1.0}
+    user: "10001:10001"
+    read_only: true
+    tmpfs: ["/tmp:uid=10001,gid=10001,mode=0700"]
+    env_file: [./env/auth.env]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis-state: {condition: service_healthy}
+    volumes:
+      - pgsocket:/run/postgresql:ro
+      - ./keys/jwks.json:/run/mosaiq/jwks.json:ro
+      - ./keys/auth-bench.pem:/run/mosaiq/auth-bench.pem:ro
+    ports: ["127.0.0.1:5001:5001"]
+
+  # Fairness (ADR-0042): products-service's production limits, for both builds.
+  products:
+    profiles: [bench]
+    image: ghcr.io/equipo-03-proyecto10/mosaiq-products:${PRODUCTS_TAG:-0.1.0}
+    user: "10001:10001"
+    read_only: true
+    tmpfs: ["/tmp:uid=10001,gid=10001,mode=0700"]
+    mem_limit: 160m
+    cpus: 0.5
+    env_file: [./env/products.env]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis-state: {condition: service_healthy}
+    volumes:
+      - pgsocket:/run/postgresql:ro
+      - ./keys/jwks.json:/run/mosaiq/jwks.json:ro
+    ports: ["127.0.0.1:5003:5003"]
+
+  products-service-rs:
+    profiles: [bench]
+    build:
+      context: ./products-service-rs
+    image: mosaiq-products-service-rs:bench
+    user: "10001:10001"
+    read_only: true
+    tmpfs: ["/tmp:uid=10001,gid=10001,mode=0700"]
+    mem_limit: 160m
+    cpus: 0.5
+    env_file: [./env/products-bench.env]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis-state: {condition: service_healthy}
+    volumes:
+      - pgsocket:/run/postgresql:ro
+      - ./keys/jwks.json:/run/mosaiq/jwks.json:ro
+    ports:
+      - "127.0.0.1:5103:5103"
+
+volumes:
+  pgsocket:
+  redis-acl:

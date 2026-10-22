@@ -419,6 +419,14 @@ test('the transfer screen warns in a dialog, shows its refusals, and ends both s
     'Mia Marketing <mia.marketing@example.com> (MARKETING)',
   ]);
 
+  // The warning, captured before any refusal is on screen.
+  await page.selectOption('#transfer-successor_user_id', ALEX);
+  await page.getByRole('button', { name: 'Transfer the administrator role' }).click();
+  await expect(page.getByTestId('transfer-warning')).toContainText('ends the sessions of both accounts');
+  await shot(page, '484-desktop-transfer-02-warning-dialog');
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await page.selectOption('#transfer-successor_user_id', '');
+
   // No successor chosen: refused before sending.
   await page.getByRole('button', { name: 'Transfer the administrator role' }).click();
   await expect(page.getByTestId('transfer-dialog')).toBeVisible();
@@ -430,7 +438,6 @@ test('the transfer screen warns in a dialog, shows its refusals, and ends both s
   await page.selectOption('#transfer-successor_user_id', ALEX);
   await page.getByRole('button', { name: 'Transfer the administrator role' }).click();
   await expect(page.getByTestId('transfer-warning')).toContainText('ends the sessions of both accounts');
-  await shot(page, '484-desktop-transfer-02-warning-dialog');
   await page.getByTestId('cancel-transfer').click();
   await expect(page.getByTestId('transfer-dialog')).toBeHidden();
   expect(seen.some((s) => s.url.endsWith('/administrator-transfers'))).toBe(false);

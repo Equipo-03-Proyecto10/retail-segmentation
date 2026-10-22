@@ -58,7 +58,7 @@ in [`414-desktop-customers.md`](414-desktop-customers.md). One more shot of it i
 | Screenshot | What it shows |
 |---|---|
 | `484-desktop-users-01-list-and-detail.png` | The users list filtered to an inactive user and its detail; accounts are deactivated, never deleted. |
-| `484-desktop-transfer-02-warning-dialog.png` | The transfer confirmation dialog, warning that both accounts' sessions end. The refusal behind it is the earlier "no successor chosen" check, refused before sending. |
+| `484-desktop-transfer-02-warning-dialog.png` | The transfer confirmation dialog, warning that both accounts' sessions end. |
 | `484-desktop-transfer-03-successor-inactive.png` | The service refuses an inactive successor: `successor_inactive`, shown as returned. The one-administrator rule stays with the service. |
 
 ## F16-07 (#485): store locations and geofences

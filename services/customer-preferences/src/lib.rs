@@ -349,41 +349,53 @@ pub fn router(config: KitConfig, contracts: &str) -> Result<Router, Box<dyn std:
         .into_router())
 }
 
-/// The kit's outbox relay for `stream:preferences.v1.changed`, reconnecting
-/// in a loop so the service comes up during a Redis outage. Protected
-/// operations still fail closed through the kit.
+async fn redis_connection(
+    redis_url: &str,
+    redis_password: Option<String>,
+) -> redis::RedisResult<redis::aio::MultiplexedConnection> {
+    let info = service_redis_info(redis_url, SUFFIX, redis_password)?;
+    redis::Client::open(info)?
+        .get_multiplexed_async_connection()
+        .await
+}
+
+/// The kit's outbox relay for `stream:preferences.v1.changed`. The first
+/// connection is retried every second, so the service comes up during a Redis
+/// outage; after that the kit rebuilds the connection after every outage
+/// (#579). Protected operations still fail closed through the kit.
+pub async fn run_relay(database_url: &str, redis_url: &str, redis_password: Option<String>) {
+    let connection = loop {
+        match redis_connection(redis_url, redis_password.clone()).await {
+            Ok(connection) => break connection,
+            Err(error) => {
+                tracing::error!("Preferences outbox relay connection failed: {error}");
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        }
+    };
+    let relay = match OutboxRelay::new(database_url, SUFFIX, [STREAM], connection) {
+        Ok(relay) => relay,
+        Err(error) => {
+            tracing::error!("The preferences outbox relay is misconfigured: {error}");
+            return;
+        }
+    };
+    relay
+        .run_with_reconnect(|| redis_connection(redis_url, redis_password.clone()))
+        .await;
+}
+
 async fn relay(config: KitConfig) {
     let Some(database_url) = config.database_url else {
         tracing::error!("DATABASE_URL is missing; the preferences outbox relay is disabled");
         return;
     };
-    loop {
-        let result = async {
-            let info = service_redis_info(
-                &config.redis_state_url,
-                SUFFIX,
-                config.redis_password.clone(),
-            )?;
-            let connection = redis::Client::open(info)?
-                .get_multiplexed_async_connection()
-                .await?;
-            let relay =
-                OutboxRelay::new(&database_url, SUFFIX, [STREAM], connection).map_err(|error| {
-                    redis::RedisError::from((
-                        redis::ErrorKind::ClientError,
-                        "relay configuration",
-                        error.to_string(),
-                    ))
-                })?;
-            relay.run_forever().await;
-            Ok::<(), redis::RedisError>(())
-        }
-        .await;
-        if let Err(error) = result {
-            tracing::error!("Preferences outbox relay connection failed: {error}");
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        }
-    }
+    run_relay(
+        &database_url,
+        &config.redis_state_url,
+        config.redis_password,
+    )
+    .await;
 }
 
 pub async fn serve(config: KitConfig, contracts: &str) -> Result<(), Box<dyn std::error::Error>> {

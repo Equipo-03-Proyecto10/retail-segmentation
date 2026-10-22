@@ -5,7 +5,7 @@ mod support;
 
 use std::time::{Duration, Instant};
 
-use customer_preferences::{replace, PreferenceSet, STREAM, SUFFIX};
+use customer_preferences::{replace, run_relay, PreferenceSet, STREAM, SUFFIX};
 use mosaiq_kit::{service_redis_info, OutboxRelay};
 use redis::aio::MultiplexedConnection;
 use support::{channel_ids, connect, owner_url, principal, service_database, TestCustomer};
@@ -186,6 +186,109 @@ async fn a_changing_replace_reaches_the_stream_within_five_seconds() {
         .unwrap()
         .get(0);
     assert_eq!(unrelayed, 0);
+
+    let _: () = redis::cmd("ACL")
+        .arg("DELUSER")
+        .arg("svc_preferences")
+        .query_async(&mut admin)
+        .await
+        .unwrap();
+    customer.cleanup(&owner).await;
+}
+
+/// Entries in the stream for one customer.
+async fn entries_for(admin: &mut MultiplexedConnection, entity: &str) -> usize {
+    let entries: Vec<(String, Vec<(String, String)>)> = redis::cmd("XREVRANGE")
+        .arg(STREAM)
+        .arg("+")
+        .arg("-")
+        .arg("COUNT")
+        .arg(200)
+        .query_async(admin)
+        .await
+        .unwrap();
+    let wanted = ("entity_id".to_owned(), entity.to_owned());
+    entries
+        .iter()
+        .filter(|(_, fields)| fields.contains(&wanted))
+        .count()
+}
+
+/// Poll until the customer has more than `seen` entries, or `within` passes.
+async fn entries_after(
+    admin: &mut MultiplexedConnection,
+    entity: &str,
+    seen: usize,
+    within: Duration,
+) -> usize {
+    let started = Instant::now();
+    loop {
+        let count = entries_for(admin, entity).await;
+        if count > seen || started.elapsed() >= within {
+            return count;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}
+
+/// #579: the service's own relay rebuilds its Redis connection after a real
+/// outage. The server drops the connection, as a Redis restart does, and a
+/// replace committed afterwards still reaches the stream.
+#[tokio::test]
+async fn the_service_relay_delivers_again_after_its_connection_is_killed() {
+    let (Some(db_url), Some(url)) = (owner_url(), redis_url()) else {
+        return;
+    };
+    let _turn = REDIS_USER.lock().await;
+    let owner = connect(&db_url).await;
+    let db = service_database(&db_url);
+    let mut admin = admin(&url).await;
+    let password = load_acl(&mut admin).await;
+    let relay = tokio::spawn({
+        let (service_url, url) = (support::service_url(&db_url), url.clone());
+        async move { run_relay(&service_url, &url, Some(password)).await }
+    });
+
+    let customer = TestCustomer::create(&owner).await;
+    let channels = channel_ids(&owner).await;
+    let entity = customer.id.to_string();
+    let manager = principal(Uuid::new_v4(), "STORE_MANAGER");
+    replace(
+        &db,
+        &manager,
+        customer.id,
+        PreferenceSet::PreferredChannels,
+        &[Some(channels[0])],
+    )
+    .await
+    .unwrap();
+    let before = entries_after(&mut admin, &entity, 0, Duration::from_secs(10)).await;
+    assert!(before > 0, "the first replace did not reach {STREAM}");
+
+    let killed: i64 = redis::cmd("CLIENT")
+        .arg("KILL")
+        .arg("USER")
+        .arg("svc_preferences")
+        .query_async(&mut admin)
+        .await
+        .unwrap();
+    assert!(killed >= 1, "the relay held no Redis connection to drop");
+
+    replace(
+        &db,
+        &manager,
+        customer.id,
+        PreferenceSet::PreferredChannels,
+        &[Some(channels[1])],
+    )
+    .await
+    .unwrap();
+    let after = entries_after(&mut admin, &entity, before, Duration::from_secs(20)).await;
+    relay.abort();
+    assert!(
+        after > before,
+        "a replace after the outage did not reach {STREAM} within 20 s"
+    );
 
     let _: () = redis::cmd("ACL")
         .arg("DELUSER")

@@ -388,55 +388,80 @@ async fn database_ready(db: Arc<Database>) -> bool {
         .is_ok()
 }
 
-async fn redis_connection(url: &str, password: Option<String>) -> Option<MultiplexedConnection> {
-    let info = service_redis_info(url, SUFFIX, password).ok()?;
-    redis::Client::open(info)
-        .ok()?
+async fn redis_connection(
+    url: String,
+    password: Option<String>,
+) -> redis::RedisResult<MultiplexedConnection> {
+    let info = service_redis_info(&url, SUFFIX, password)?;
+    redis::Client::open(info)?
         .get_multiplexed_async_connection()
         .await
-        .ok()
+}
+
+/// The outbox relay for `stream:stores.v1.changed`. The first connection is
+/// retried every second, so the service comes up during a Redis outage; after
+/// that the kit rebuilds the connection after every outage (#579).
+pub async fn run_relay(database_url: String, redis_url: String, password: Option<String>) {
+    loop {
+        if let Ok(redis) = redis_connection(redis_url.clone(), password.clone()).await {
+            match OutboxRelay::new(&database_url, SUFFIX, [STREAM], redis) {
+                Ok(relay) => {
+                    relay
+                        .run_with_reconnect(|| {
+                            redis_connection(redis_url.clone(), password.clone())
+                        })
+                        .await;
+                }
+                Err(error) => tracing::error!("Outbox relay configuration failed: {error}"),
+            }
+        }
+        tracing::warn!("Stream relay is waiting for redis-state");
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+}
+
+/// The `stores` consumer group on the same stream, reconnecting as the relay
+/// does. Each event runs `handler`; the service's handler drops the cache.
+pub async fn run_consumer<H, Fut, E>(redis_url: String, password: Option<String>, handler: H)
+where
+    H: FnMut(HashMap<String, String>) -> Fut + Clone + Send + 'static,
+    Fut: std::future::Future<Output = Result<(), E>> + Send + 'static,
+    E: std::fmt::Display + 'static,
+{
+    loop {
+        if let Ok(redis) = redis_connection(redis_url.clone(), password.clone()).await {
+            match StreamConsumer::new(redis, STREAM, handler.clone()) {
+                Ok(consumer) => {
+                    consumer
+                        .run_with_reconnect(|| {
+                            redis_connection(redis_url.clone(), password.clone())
+                        })
+                        .await;
+                }
+                Err(error) => {
+                    tracing::error!("Stream consumer configuration failed: {error}")
+                }
+            }
+        }
+        tracing::warn!("Stream consumer is waiting for redis-state");
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
 }
 
 fn spawn_stream_tasks(password: Option<String>) {
     let state_url = std::env::var("REDIS_STATE_URL")
         .unwrap_or_else(|_| "redis://redis-state:6379/0".to_owned());
     if let Ok(database_url) = std::env::var("DATABASE_URL") {
-        let relay_url = state_url.clone();
-        let relay_password = password.clone();
-        tokio::spawn(async move {
-            loop {
-                if let Some(redis) = redis_connection(&relay_url, relay_password.clone()).await {
-                    match OutboxRelay::new(&database_url, SUFFIX, [STREAM], redis) {
-                        Ok(relay) => relay.run_forever().await,
-                        Err(error) => tracing::error!("Outbox relay configuration failed: {error}"),
-                    }
-                }
-                tracing::warn!("Stream relay is waiting for redis-state");
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
-        });
+        tokio::spawn(run_relay(database_url, state_url.clone(), password.clone()));
     }
-    tokio::spawn(async move {
-        loop {
-            if let Some(redis) = redis_connection(&state_url, password.clone()).await {
-                let handler = |_event: HashMap<String, String>| async move {
-                    if let Some(cache) = CACHE.get() {
-                        cache.invalidate().await
-                    } else {
-                        Ok(())
-                    }
-                };
-                match StreamConsumer::new(redis, STREAM, handler) {
-                    Ok(consumer) => consumer.run_forever().await,
-                    Err(error) => {
-                        tracing::error!("Stream consumer configuration failed: {error}")
-                    }
-                }
-            }
-            tracing::warn!("Stream consumer is waiting for redis-state");
-            tokio::time::sleep(Duration::from_secs(1)).await;
+    let handler = |_event: HashMap<String, String>| async move {
+        if let Some(cache) = CACHE.get() {
+            cache.invalidate().await
+        } else {
+            Ok(())
         }
-    });
+    };
+    tokio::spawn(run_consumer(state_url, password, handler));
 }
 
 async fn capture_query(request: Request<Body>, next: Next) -> Response {

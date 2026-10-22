@@ -291,22 +291,15 @@ async fn the_list_filters_on_store_user_effective_verdict_and_time() {
     let db = service_database(&url);
     let store = TestStore::create(&owner, true).await;
     let manager = principal(STORE_MANAGER, "STORE_MANAGER");
-    let (inside, _) = record_check_in(
-        &db,
-        &manager,
-        &request(&store, north(10.0, "5")),
-        chrono::Utc::now(),
-    )
-    .await
-    .unwrap();
-    let (outside, _) = record_check_in(
-        &db,
-        &manager,
-        &request(&store, north(800.0, "5")),
-        chrono::Utc::now(),
-    )
-    .await
-    .unwrap();
+    // One instant for both, so the `from` filter below excludes both however
+    // long the first insert takes under a loaded test run.
+    let now = chrono::Utc::now();
+    let (inside, _) = record_check_in(&db, &manager, &request(&store, north(10.0, "5")), now)
+        .await
+        .unwrap();
+    let (outside, _) = record_check_in(&db, &manager, &request(&store, north(800.0, "5")), now)
+        .await
+        .unwrap();
     // A review overturns the outside one: the filter is on the effective verdict.
     append_review(
         &db,
@@ -365,9 +358,11 @@ async fn the_web_cannot_delete_a_store_that_has_check_ins() {
         .await
         .unwrap_err();
     owner.batch_execute("RESET ROLE").await.unwrap();
+    // PostgreSQL 16 reports RESTRICT as 23503 and 18 as 23001; the key that
+    // refused the delete is what is asserted.
     assert_eq!(
-        error.code(),
-        Some(&tokio_postgres::error::SqlState::FOREIGN_KEY_VIOLATION)
+        error.as_db_error().and_then(|error| error.constraint()),
+        Some("store_check_in_store_id_fkey")
     );
     store.cleanup(&owner).await;
 }

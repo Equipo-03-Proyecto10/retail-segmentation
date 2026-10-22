@@ -976,8 +976,8 @@ dependencies = [
 
 [[package]]
 name = "mosaiq-kit"
-version = "0.1.0"
-source = "git+https://github.com/Equipo-03-Proyecto10/retail-segmentation?tag=kit-rs%2Fv0.1.0#736fdb1370bc60697a83da28c472578da11187c3"
+version = "0.1.3"
+source = "git+https://github.com/Equipo-03-Proyecto10/retail-segmentation?tag=kit-rs%2Fv0.1.3#22ae172ec60c98f43cc7a8bfbbf69cdec91e5bf9"
 dependencies = [
  "axum",
  "bytes",
@@ -1667,7 +1667,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "stock"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "chrono",

@@ -147,33 +147,26 @@ fn the_invalid_xml_examples_are_refused() {
     }
 }
 
-/// Known kit gap, kept strict so it flips when the kit is fixed: kit-rs
-/// v0.1.0 reads an XML request with no id elements as an object without the
-/// member, so the OpenAPI `required` refuses the contract's own XML clear
-/// example with 422 before the handler runs. JSON clears work. This is the
-/// family of #571 (an absent nullable member) and #585 (`xsi:nil`); the fix
-/// belongs in the kit (an absent array member reads as `[]`), then this test
-/// is inverted to expect the clear.
+/// An XML clear has no id elements; kit-rs 0.1.3 reads the omitted required
+/// list as `[]`, so XML clears the set exactly as JSON does (#475).
 #[test]
-fn kit_gap_an_xml_clear_is_still_refused_by_kit_rs_v0_1_0() {
+fn an_xml_clear_is_a_valid_clear() {
     let contract = contract();
-    for (operation, field, name) in [
+    for (operation, set, name) in [
         (
             "replacePreferredChannels",
-            "channel_ids",
+            PreferenceSet::PreferredChannels,
             "clear-preferred-channels.request.xml",
         ),
         (
             "replaceInterestCategories",
-            "category_ids",
+            PreferenceSet::InterestCategories,
             "clear-interest-categories.request.xml",
         ),
     ] {
         let operation = contract.operation(operation).unwrap();
         let body = contract.parse_xml(&example(name), operation).unwrap();
-        let error = contract.validate(&body, operation).unwrap_err();
-        assert_eq!((error.status, error.code.as_str()), (422, "invalid_body"));
-        assert_eq!(error.details[0].field, field);
-        assert_eq!(error.details[0].code, "required");
+        contract.validate(&body, operation).unwrap();
+        assert!(submitted_ids(set, &body).unwrap().is_empty(), "{name}");
     }
 }

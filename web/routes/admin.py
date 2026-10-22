@@ -1233,7 +1233,10 @@ def deactivate_user_view(user_id: UUID) -> ResponseReturnValue:
     connection = get_connection()
     try:
         set_active(connection, user_id, is_active=False)
-    except (SingleAdministratorError, UnknownUserError) as error:
+    except UnknownUserError:
+        # As edit and activate answer: the account does not exist (#595).
+        abort(404)
+    except SingleAdministratorError as error:
         page = parse_pagination(request.args.get("page"))
         users, total = list_users(
             connection, search=None, page=page, per_page=_PER_PAGE

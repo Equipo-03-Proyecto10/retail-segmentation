@@ -15,6 +15,9 @@ PostgreSQL listener, HBA policy, SSH access and application-role verification:
 | `nginx/mosaiq.compose.conf` | not deployed — local verification only, see `../compose.proxy.yaml` |
 | `postgresql/mosaiq.conf` | `/var/lib/pgsql/18/data/conf.d/mosaiq.conf` (loopback listener, SCRAM) |
 | `systemd/mosaiq.service` | `/etc/systemd/system/mosaiq.service` |
+| `systemd/mosaiq-infra.service` | `/etc/systemd/system/mosaiq-infra.service`: the infrastructure project (F18-01, below) |
+| `systemd/mosaiq-svc@.service` | `/etc/systemd/system/mosaiq-svc@.service`: one compose project per service (F18-01) |
+| `check-services.sh` | not installed: run from the checkout, as root, after any change to the services (F18-01) |
 | `deploy.sh` | copied to `/tmp/mosaiq-deploy.sh` by the deploy workflow on each run, not installed |
 | the TLS certificate | `/etc/nginx/tls/mosaiq.{crt,key}` — a Cloudflare Origin CA pair on the instance (F6-03 Path C, [ADR-0013](../docs/adr/0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md)), not in the repo |
 
@@ -26,6 +29,10 @@ PostgreSQL listener, HBA policy, SSH access and application-role verification:
 | `/opt/mosaiq/venv` | virtualenv, `web/requirements.txt` installed |
 | `/etc/mosaiq/mosaiq.env` | the environment file the unit reads (from `.env.example`) |
 | user/group `mosaiq` | unprivileged, owns `/opt/mosaiq`, runs gunicorn |
+| `/opt/mosaiq/services/<name>/<version>` | one staged release of a service: its `compose.yaml`, `redis/`, `mongo/` if it has one, and `release.env`; `current` links the one running (F18-01) |
+| `/etc/mosaiq/svc/<name>.env` | a service's secrets, `0600 root`, read by its compose file's `env_file` |
+| `/etc/mosaiq/keys/` | the signing key (`0400`, UID 10001) and `jwks.json` (`0444`), [auth-keys.md](auth-keys.md) |
+| `/etc/mosaiq/redis/users.acl`, `/etc/mosaiq/mongodb/root.env` | the assembled aclfile and MongoDB's root account, [infra/README.md](infra/README.md) |
 
 ---
 
@@ -877,3 +884,181 @@ sudo -u postgres /opt/mosaiq/venv/bin/python deploy/cleanup-seed-outboxes-597.py
 Adding `--apply` performed the authorized correction. It has already run;
 re-running it refuses the missing candidates and does not overwrite the
 archive. Preserve that archive on the instance; never commit database exports.
+
+## F18-01 — Docker, the infrastructure project and one unit per service
+
+[ADR-0040](../docs/adr/0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md)
+(issue #448). Next to the unchanged web, the instance runs the infrastructure
+project `mosaiq-infra` (Redis and MongoDB) and each service as its own compose
+project, `mosaiq-<name>`, under `mosaiq-svc@<name>.service`.
+
+The instance never builds an image. A service's image exists once
+`.github/workflows/services.yml` has built, tested and pushed it to GHCR on a
+merge to `main` that bumped its `VERSION`. Every step below is idempotent and
+runs as root. A secret is never typed on a command line: `sudo` records its
+argv in the journal. Secrets are read from files, or from a pipe or a prompt.
+
+### 1. Swap
+
+With no swap (`swapon --show` prints nothing), a 2 GB swapfile is the
+cushion of ADR-0040's memory budget. `docs/infra.md` records its size.
+
+```sh
+sudo fallocate -l 2G /swapfile && sudo chmod 0600 /swapfile && sudo restorecon /swapfile
+sudo mkswap /swapfile && sudo swapon /swapfile
+echo '/swapfile none swap defaults 0 0' | sudo tee -a /etc/fstab
+```
+
+### 2. Docker Engine and the Compose plugin
+
+From Docker's CentOS repository, not Podman's emulation. `podman-docker` must
+be absent, and SELinux stays enforcing.
+
+```sh
+sudo dnf -y install dnf-plugins-core
+sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+rpm -q podman-docker && sudo dnf -y remove podman-docker
+sudo dnf -y install docker-ce docker-ce-cli containerd.io docker-compose-plugin
+sudo install -m 0644 /dev/stdin /etc/docker/daemon.json <<'JSON'
+{ "log-driver": "json-file", "log-opts": { "max-size": "10m", "max-file": "3" } }
+JSON
+sudo systemctl enable --now docker
+getenforce                                   # Enforcing
+docker --version && docker compose version   # recorded in docs/infra.md
+```
+
+The log caps hold each container's logs to 30 MB, so the disk cannot fill with
+them.
+
+### 3. The GHCR credential
+
+The service packages are private. Root pulls them with a **classic personal
+access token that holds `read:packages` only**:
+
+- **Ownership:** Marcelo Villanueva (`marcelovillanuevam-code`) owns it and
+  rotates it.
+- **Expiry:** 90 days.
+- **Rotation:** before it expires, make the next token, run the login again,
+  check that a pull works, then revoke the old one.
+
+The token never goes into the repository, `.env.example`, a unit or an
+argument.
+
+```sh
+sudo docker login ghcr.io -u marcelovillanuevam-code   # paste the token at the prompt
+```
+
+Docker keeps it in `/root/.docker/config.json` (`0600`).
+
+### 4. Secrets and keys
+
+- `/etc/mosaiq/svc/` is `0700 root`, and each `<name>.env` in it is `0600 root`. It holds:
+  - `DATABASE_URL=postgresql://svc_<suffix>:<password>@/retail?host=/run/postgresql`,
+    with the password from `/root/mosaiq-svc-db.env`, URL-encoded;
+  - `REDIS_STATE_URL=redis://redis-state:6379/0` and
+    `REDIS_CACHE_URL=redis://redis-cache:6379/0`;
+  - `REDIS_<SUFFIX>_PASSWORD`, generated once on the instance;
+  - `AUTH_JWKS_PATH=/run/mosaiq/jwks.json` and `MOSAIQ_SERVICE_NAME=<name>`;
+  - every other variable that service's section of `.env.example` lists, such as
+    the signer's key variables or a MongoDB URI.
+
+  `<suffix>` is the service's role suffix, which is not always its name.
+  `docker/distributed/svc/<name>.env` shows each service's full set with local
+  values.
+- **Redis `ops`:** its password lives in `/root/mosaiq-redis-ops.env` (`0600`).
+- **MongoDB root:** `/etc/mosaiq/mongodb/root.env`, per
+  [infra/README.md](infra/README.md), "First start", step 2.
+- **The signing key and the JWK Set:** [auth-keys.md](auth-keys.md), "First key".
+
+### 5. PostgreSQL
+
+Before a service starts, its role (`sql/00_create_database.sql`) and its
+boundary section of `sql/01_schema.sql` must have been applied as `postgres`
+(expand before deploy). A release that rebuilds the database does both. Its
+`pg_hba.conf` line is described in
+[postgresql/README.md](postgresql/README.md), under "The service roles".
+
+### 6. The infrastructure project
+
+The aclfile comes first, because both Redis instances load it at boot. It is
+built from the lines of the services staged in step 8.
+
+```sh
+sudo install -m 0644 /opt/mosaiq/current/deploy/systemd/mosaiq-infra.service /etc/systemd/system/
+sudo bash -c 'set -a; . /root/mosaiq-redis-ops.env; set +a
+  ACL_SOURCES="/opt/mosaiq/services/*/current/redis/*.acl" \
+  exec /opt/mosaiq/current/deploy/infra/redis/assemble-acl.sh --write-only'
+sudo systemctl daemon-reload && sudo systemctl enable --now mosaiq-infra
+sudo bash -c 'set -a; . /root/mosaiq-redis-ops.env; set +a
+  cd /opt/mosaiq/current && exec deploy/infra/check-redis.sh'
+```
+
+The unit creates the external network `mosaiq` when it is missing. Restarting
+it recreates only the infrastructure containers: no service container's
+`StartedAt` changes.
+
+### 7. A service's MongoDB schema
+
+Any service that ships `mongo/init.js` has that file applied to the live
+MongoDB, as root, before the service's first start
+([ADR-0038](../docs/adr/0038-mongodb-holds-in-store-engagement-owned-by-engagement-service-alone.md): expand
+before deploy). Use the command in [infra/README.md](infra/README.md),
+"MongoDB", with the password the file reads taken from the service's
+`/etc/mosaiq/svc/<name>.env`. A second run changes nothing.
+
+### 8. Staging a service by hand
+
+These are the steps F18-03 (#456) automates on each release.
+
+```sh
+name=<name>; version=$(cat /opt/mosaiq/current/services/$name/VERSION)
+dir=/opt/mosaiq/services/$name/$version
+sudo install -d -m 0755 "$dir"
+sudo cp /opt/mosaiq/current/services/$name/compose.yaml "$dir/"
+sudo cp -r /opt/mosaiq/current/services/$name/redis "$dir/"
+[ -d /opt/mosaiq/current/services/$name/mongo ] && sudo cp -r /opt/mosaiq/current/services/$name/mongo "$dir/"
+printf 'IMAGE_TAG=%s\n' "$version" | sudo tee "$dir/release.env" >/dev/null
+sudo ln -sfn "$version" /opt/mosaiq/services/$name/current
+sudo docker compose -p mosaiq-$name --env-file "$dir/release.env" -f "$dir/compose.yaml" pull
+```
+
+`release.env` also carries every variable the compose file interpolates
+without a default (`grep -o '\${[A-Z_]*}' compose.yaml`), such as the signer's
+key id.
+
+Then load its ACL line with the same `assemble-acl.sh` command as step 6,
+without `--write-only`. Install the unit once and start the service:
+
+```sh
+sudo install -m 0644 /opt/mosaiq/current/deploy/systemd/mosaiq-svc@.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now mosaiq-svc@$name
+curl -fsS -o /dev/null -w '%{http_code}\n' "http://127.0.0.1:$(yq -r ".services[] | select(.name == \"$name\") | .port" /opt/mosaiq/current/contracts/registry.yaml)/health/ready"
+```
+
+`/health/ready` answers 503 `schema_not_ready` until step 5 has been done for
+that service.
+
+### 9. Checks and evidence
+
+- `sudo bash /opt/mosaiq/current/deploy/check-services.sh` prints nothing.
+- `systemctl is-active mosaiq` stays active, and
+  `curl -sS -o /dev/null -w '%{http_code}' https://mosaiq.maxthecoder.online/` answers 200, throughout.
+- `free -m` and `docker stats --no-stream`, with every service running, go to
+  `docs/evidence/f18-01-memory.md` and
+  `docs/infra.md`. They are compared with ADR-0040's estimate. If memory is
+  short, the record's cut order applies.
+- **SELinux:** a container running as UID 10001 must connect through the mounted
+  `/run/postgresql`. If `ausearch -m avc -ts recent` shows a denial, the fix is a
+  local policy module committed under `deploy/selinux/` and loaded with
+  `semodule -i`, never a `:z` relabel. The outcome is recorded in
+  `docs/evidence/f18-01-runtime.md`.
+
+### Rollback
+
+```sh
+for d in /opt/mosaiq/services/*/; do sudo systemctl disable --now "mosaiq-svc@$(basename "$d")"; done
+sudo systemctl disable --now mosaiq-infra
+```
+
+Then remove the `svc_*` lines from `pg_hba.conf` and reload PostgreSQL. The web
+depends on none of this.

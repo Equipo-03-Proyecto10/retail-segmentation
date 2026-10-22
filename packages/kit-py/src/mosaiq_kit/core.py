@@ -240,6 +240,14 @@ class Kit:
             ) from None
         if len(raw) > 65_536:
             raise ApiError(413, "payload_too_large", "The request body exceeds 64 KiB.")
+        if content_length is None and len(raw) == 65_536:
+            # With no Content-Length (chunked), Werkzeug's limited stream stops
+            # at the cap without raising, so a longer body would be truncated
+            # and then fail to parse. Probe the raw input for one more byte.
+            if request.environ["wsgi.input"].read(1):
+                raise ApiError(
+                    413, "payload_too_large", "The request body exceeds 64 KiB."
+                )
         return raw
 
     @staticmethod

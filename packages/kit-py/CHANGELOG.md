@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.7 - 2026-10-22
+
+- Answer 413 `payload_too_large` for a chunked body over 64 KiB. Werkzeug's
+  limited stream stops at the cap without raising when there is no
+  `Content-Length`, so the truncated body used to fail to parse as 400
+  `malformed_body` (#594).
+- Refuse `Authorization: Bearer  <token>` (extra whitespace) and a token whose
+  `aud` is a list, even one containing `mosaiq-api` (#594).
+
 ## 0.1.6 - 2026-10-21
 
 - Match a schema `pattern` with ECMA-262's end of input, as JSON Schema

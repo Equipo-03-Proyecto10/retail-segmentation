@@ -47,6 +47,10 @@ interface ProductsApi {
         @Query("size") size: Int = 20
     ): Response<ProductPage>
 
+    /** Names for a list of ids, in one call: at most 50 ids (contracts/products). */
+    @GET(Services.PRODUCTS + "products")
+    suspend fun listProductsByIds(@Query("ids") ids: String, @Query("size") size: Int = MAX_IDS): Response<ProductPage>
+
     @GET(Services.PRODUCTS + "products/{product_id}")
     suspend fun getProduct(@Path("product_id") productId: Int): Response<Product>
 }
@@ -102,4 +106,33 @@ interface SalesApi {
 interface StockApi {
     @GET(Services.STOCK + "stock-levels/{store_id}/{product_id}")
     suspend fun getStockLevel(@Path("store_id") storeId: Int, @Path("product_id") productId: Int): Response<StockLevel>
+}
+
+/** At most this many product ids per `products?ids=` call. */
+const val MAX_IDS = 50
+
+/** segments-service's current assignment (contracts/segments/openapi.yaml). */
+interface SegmentsApi {
+    @GET(Services.SEGMENTS + "segment-assignments/current")
+    suspend fun getCurrentAssignment(@Query("customer_id") customerId: String): Response<CurrentAssignment>
+}
+
+/** recommendations-service's RN-40 answer (contracts/recommendations/openapi.yaml). */
+interface RecommendationsApi {
+    @GET(Services.RECOMMENDATIONS + "recommendations")
+    suspend fun getRecommendations(
+        @Query("customer_id") customerId: String,
+        @Query("limit") limit: Int = 10
+    ): Response<RecommendationResult>
+}
+
+/** engagement-service's event list (contracts/engagement/openapi.yaml). */
+interface EngagementApi {
+    @GET(Services.ENGAGEMENT + "engagement-events")
+    suspend fun listEvents(
+        @Query("type") type: String? = null,
+        @Query("customer_id") customerId: String? = null,
+        @Query("page") page: Int = 1,
+        @Query("size") size: Int = 20
+    ): Response<EngagementEventPage>
 }

@@ -79,6 +79,9 @@ class Network(
     val preferences: CustomerPreferencesApi = retrofit.create(CustomerPreferencesApi::class.java)
     val categories: CategoriesApi = retrofit.create(CategoriesApi::class.java)
     val sales: SalesApi = retrofit.create(SalesApi::class.java)
+    val segments: SegmentsApi = retrofit.create(SegmentsApi::class.java)
+    val recommendations: RecommendationsApi = retrofit.create(RecommendationsApi::class.java)
+    val engagement: EngagementApi = retrofit.create(EngagementApi::class.java)
 
     /** The gateway, for the floor-write queue's raw requests. */
     val gateway: okhttp3.HttpUrl get() = base

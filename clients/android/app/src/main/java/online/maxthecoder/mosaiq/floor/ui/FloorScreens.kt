@@ -47,6 +47,7 @@ fun FloorHome(
     model: FloorViewModel,
     scan: ScanViewModel,
     sales: SalesViewModel,
+    insights: CustomerInsightsViewModel,
     onSignOut: () -> Unit
 ) {
     var tab by remember { mutableStateOf(Tab.CHECK_IN) }
@@ -72,7 +73,17 @@ fun FloorHome(
                     onPickStore = { tab = Tab.CHECK_IN },
                     onAddProduct = sales::addProduct
                 )
-            Tab.SALE -> SalesScreen(sales, chosen, onPickStore = { tab = Tab.CHECK_IN })
+            Tab.SALE ->
+                SalesScreen(
+                    sales,
+                    chosen,
+                    onPickStore = { tab = Tab.CHECK_IN },
+                    insights = insights,
+                    onOpenProduct = { productId ->
+                        scan.showProduct(productId)
+                        tab = Tab.SCAN
+                    }
+                )
             Tab.OUTBOX -> OutboxList(model)
         }
     }

@@ -95,6 +95,47 @@ class FloorWrites(
     }
 
     /**
+     * Queues one RECO_CLICK for a tapped recommendation (F17-05). The client
+     * event id is generated here, once, at the tap: a retry resends it, and a
+     * second tap on the same item is a second click with a new id.
+     */
+    suspend fun queueRecoClick(
+        customerId: String,
+        storeId: Int,
+        productId: Int,
+        labelCode: String,
+        rank: Int,
+        now: Instant = Instant.now()
+    ): Long {
+        val userId = checkNotNull(session.userId.value) { "No user is signed in." }
+        require(rank >= 1) { "A rank is 1-based." }
+        val request =
+            EngagementEventRequest(
+                clientEventId = UUID.randomUUID().toString(),
+                type = "RECO_CLICK",
+                storeId = storeId,
+                productId = productId,
+                occurredAt = now.toString(),
+                customerId = customerId,
+                labelCode = labelCode,
+                rank = rank
+            )
+        val id =
+            outbox.insert(
+                OutboxRow(
+                    operation = Operation.RECO_CLICK,
+                    path = Services.ENGAGEMENT + "engagement-events",
+                    body = json.encodeToString(EngagementEventRequest.serializer(), request),
+                    clientId = request.clientEventId,
+                    userId = userId,
+                    createdAt = now.toEpochMilli()
+                )
+            )
+        schedule()
+        return id
+    }
+
+    /**
      * Captures the complete sale at the confirming tap. The UUID is generated
      * once here and stored as both the row identity and the Idempotency-Key.
      */

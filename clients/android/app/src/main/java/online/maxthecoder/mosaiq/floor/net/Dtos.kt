@@ -215,5 +215,69 @@ data class EngagementEventRequest(
     @SerialName("store_id") val storeId: Int,
     @SerialName("product_id") val productId: Int,
     @SerialName("occurred_at") val occurredAt: String,
-    @SerialName("customer_id") val customerId: String? = null
+    @SerialName("customer_id") val customerId: String? = null,
+    /** RECO_CLICK only: the assignment's label and the item's 1-based rank. */
+    @SerialName("label_code") val labelCode: String? = null,
+    val rank: Int? = null
+)
+
+/**
+ * The customer's open assignment, exactly as segments-service states it:
+ * `assigned`, `unassigned_result` or `no_open_assignment`. Nothing is filled in.
+ */
+@Serializable
+data class CurrentAssignment(
+    @SerialName("customer_id") val customerId: String,
+    val state: String,
+    @SerialName("label_code") val labelCode: String? = null,
+    @SerialName("r_score") val rScore: Int? = null,
+    @SerialName("f_score") val fScore: Int? = null,
+    @SerialName("m_score") val mScore: Int? = null,
+    val since: String? = null,
+    @SerialName("run_id") val runId: Long? = null
+)
+
+@Serializable
+data class RecommendationReason(
+    val signal: String,
+    @SerialName("segment_buyers") val segmentBuyers: Int? = null,
+    @SerialName("category_id") val categoryId: Int? = null,
+    val share: Double? = null
+)
+
+/** Ids and figures only; names come from products-service (ADR-0035). */
+@Serializable
+data class RecommendationItem(
+    @SerialName("product_id") val productId: Int,
+    @SerialName("category_id") val categoryId: Int,
+    @SerialName("quantity_on_hand") val quantityOnHand: Int,
+    val reasons: List<RecommendationReason>
+)
+
+@Serializable
+data class RecommendationResult(
+    @SerialName("customer_id") val customerId: String,
+    val status: String,
+    @SerialName("label_code") val labelCode: String? = null,
+    @SerialName("usual_store_id") val usualStoreId: Int? = null,
+    val items: List<RecommendationItem> = emptyList()
+)
+
+@Serializable
+data class EngagementEvent(
+    @SerialName("event_id") val eventId: String,
+    @SerialName("client_event_id") val clientEventId: String,
+    val type: String,
+    @SerialName("store_id") val storeId: Int,
+    @SerialName("product_id") val productId: Int,
+    @SerialName("customer_id") val customerId: String? = null,
+    @SerialName("label_code") val labelCode: String? = null,
+    val rank: Int? = null,
+    val voided: Boolean = false
+)
+
+@Serializable
+data class EngagementEventPage(
+    @SerialName("engagement_events") val events: List<EngagementEvent>,
+    @SerialName("page_info") val pageInfo: PageInfo
 )

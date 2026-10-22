@@ -1,7 +1,7 @@
 # ADR-0054 — What happens to the outbox rows the seed writes before the relays first start
 
 **Status:** Proposed
-**Owner:** Max
+**Owner:** Marcelo
 **Issue:** #597
 **Supersedes:** — *(once accepted with any option below, ADR-0046's consequence "The outboxes hold the seed's own events" in part)*
 **Superseded by:** —

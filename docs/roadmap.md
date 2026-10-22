@@ -145,6 +145,11 @@ following:
 | Integration contracts | Specified **before** the clients are built — JSON shapes, HTTP codes, pagination and versioning; XML elements, hierarchy, XSD and namespaces | Each service versions its own contract under ADR-0035, registered in `contracts/registry.yaml`; database and stream contracts under ADR-0044. Each service's contract is its first story in phase 14 |
 | The web system | Keeps working independently, and grows: the five additional profiles already delivered, advanced administration, filters, pagination, reports, Highcharts, file upload, history and internal notifications | Phases 7–12 delivered most of it; the gaps audit (#405) added the experiment dashboard (AN-03, #415) and internal notifications (AN-04, #419, [ADR-0047](adr/0047-notifications-are-pulled-from-postgresql-and-an-experiments-end-is-announced-by-the-next-page-read.md)) |
 
+Beyond the course scope, the ops console of
+[ADR-0055](adr/0055-an-ops-console-supervises-services-through-their-meta-routes.md)
+(#676) shows the services' health, containers and stream lag on one page,
+reached through an SSH tunnel. It is a tool, not a sixteenth service.
+
 The end-to-end demonstration remains one process across components. The mobile
 client sends JSON, a microservice validates the JWT, Redis confirms that the
 session is live, the data lands in PostgreSQL or MongoDB, the web system

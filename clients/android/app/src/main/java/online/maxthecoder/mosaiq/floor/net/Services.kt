@@ -38,4 +38,10 @@ object Services {
 
     /** engagement owns `engagement-events` and `engagement-summaries`. */
     const val ENGAGEMENT = "api/engagement/v1/"
+
+    /** segments owns `segments` and `segment-assignments`. */
+    const val SEGMENTS = "api/segments/v1/"
+
+    /** recommendations owns `recommendations`. */
+    const val RECOMMENDATIONS = "api/recommendations/v1/"
 }

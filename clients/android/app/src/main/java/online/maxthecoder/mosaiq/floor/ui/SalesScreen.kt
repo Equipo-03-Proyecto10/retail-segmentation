@@ -30,7 +30,13 @@ import online.maxthecoder.mosaiq.floor.outbox.refusalAdvice
 import online.maxthecoder.mosaiq.floor.session.ChosenStore
 
 @Composable
-fun SalesScreen(model: SalesViewModel, store: ChosenStore?, onPickStore: () -> Unit) {
+fun SalesScreen(
+    model: SalesViewModel,
+    store: ChosenStore?,
+    onPickStore: () -> Unit,
+    insights: CustomerInsightsViewModel,
+    onOpenProduct: (Int) -> Unit
+) {
     val customer by model.selectedCustomer.collectAsState()
     val sale by model.sale.collectAsState()
     val registration by model.registration.collectAsState()
@@ -45,6 +51,10 @@ fun SalesScreen(model: SalesViewModel, store: ChosenStore?, onPickStore: () -> U
         customer?.let { picked ->
             item { Text("Selected: ${picked.name} · ${picked.email ?: "no email"}") }
             item { Interests(model) }
+            item {
+                LaunchedEffect(picked.customerId) { insights.load(picked.customerId) }
+                CustomerInsights(insights, onOpenProduct)
+            }
         }
         item { Text("Sale", style = MaterialTheme.typography.titleLarge) }
         item {

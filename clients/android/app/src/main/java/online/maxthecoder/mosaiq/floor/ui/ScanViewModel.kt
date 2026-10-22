@@ -3,6 +3,7 @@ package online.maxthecoder.mosaiq.floor.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import java.io.IOException
+import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import online.maxthecoder.mosaiq.floor.AppGraph
@@ -11,6 +12,7 @@ import online.maxthecoder.mosaiq.floor.net.Product
 import online.maxthecoder.mosaiq.floor.scan.Payload
 import online.maxthecoder.mosaiq.floor.scan.Scan
 import online.maxthecoder.mosaiq.floor.scan.ScanSession
+import online.maxthecoder.mosaiq.floor.session.ChosenStore
 import retrofit2.Response
 
 /** What the scan screen shows for the last code. */
@@ -29,14 +31,15 @@ sealed interface ScanResult {
     /**
      * The product, and its stock at the store: `quantity` null means the store
      * holds no inventory row for it. `stockError` is a refusal of the stock read
-     * itself. The QR_SCAN is queued as `rowId`.
+     * itself. A scanned product's QR_SCAN is queued as `rowId`; a product opened
+     * from a recommendation queues none here (its RECO_CLICK is its own row).
      */
     data class Shown(
         val product: Product,
         val storeName: String,
         val quantity: Int?,
         val stockError: ApiError?,
-        val rowId: Long
+        val rowId: Long?
     ) : ScanResult
 
     data class Failed(val error: ApiError) : ScanResult
@@ -75,8 +78,8 @@ class ScanViewModel(
         return false
     }
 
-    private fun show(scan: Scan, user: String, answer: ScanResult) {
-        if (stillSignedIn(user) && latestScan == scan.clientEventId) result.value = answer
+    private fun show(token: String, user: String, answer: ScanResult) {
+        if (stillSignedIn(user) && latestScan == token) result.value = answer
     }
 
     /** A frame's decoded code. Repeats of the same code are ignored. */
@@ -111,15 +114,46 @@ class ScanViewModel(
             result.value = ScanResult.NotAProduct
             return
         }
+        lookUp(scan.clientEventId, user, store, payload.value) { product ->
+            graph.writes.queueQrScan(scan, product.productId, store.storeId)
+        }
+    }
+
+    /**
+     * Opens a product without scanning it (F17-05): the same detail, product and
+     * stock at the checked-in store, but no QR_SCAN, since nothing was scanned.
+     */
+    fun showProduct(productId: Int) {
+        synchronizeSession()
+        val user = graph.session.userId.value ?: return
+        session.scanAgain()
+        val token = "open:" + UUID.randomUUID()
+        latestScan = token
+        val store = graph.session.chosenStore()
+        if (store == null) {
+            result.value = ScanResult.NoStore
+            return
+        }
+        lookUp(token, user, store, productId) { null }
+    }
+
+    /** Reads the product, then its stock at `store`; `count` queues what the look-up counts as. */
+    private fun lookUp(
+        token: String,
+        user: String,
+        store: ChosenStore,
+        productId: Int,
+        count: suspend (Product) -> Long?
+    ) {
         result.value = ScanResult.Looking
         viewModelScope.launch {
             val product =
-                when (val answer = call { graph.network.products.getProduct(payload.value) }) {
+                when (val answer = call { graph.network.products.getProduct(productId) }) {
                     is Answer.Body -> answer.value
                     is Answer.Refused ->
                         return@launch run {
                             show(
-                                scan,
+                                token,
                                 user,
                                 if (answer.error.status == NOT_FOUND) {
                                     ScanResult.ProductNotFound
@@ -140,8 +174,8 @@ class ScanViewModel(
                     }
                 }
             if (!stillSignedIn(user)) return@launch
-            val rowId = graph.writes.queueQrScan(scan, product.productId, store.storeId)
-            show(scan, user, ScanResult.Shown(product, store.name, quantity, stockError, rowId))
+            val rowId = count(product)
+            show(token, user, ScanResult.Shown(product, store.name, quantity, stockError, rowId))
         }
     }
 

@@ -12,6 +12,8 @@ export interface ErrorView {
   message: string;
   correlation_id: string;
   details: FieldDetail[];
+  /** The Retry-After header of a 429, as sent. */
+  retry_after?: string;
 }
 
 export interface ServiceView {
@@ -260,6 +262,42 @@ export interface CheckInDetailView extends CheckInView {
   reviews: ReviewView[];
 }
 
+export interface UserView {
+  user_id: string;
+  name: string;
+  email: string;
+  role_code: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface RoleView {
+  role_code: string;
+  description: string;
+}
+
+export interface UserQuery {
+  role?: string;
+  active?: boolean;
+  q?: string;
+  page?: number;
+  size?: number;
+}
+
+/** The password travels to users-service and is never returned or shown back. */
+export interface UserDraft {
+  name: string;
+  email: string;
+  role_code: string;
+  password: string;
+}
+
+export interface UserChanges {
+  name?: string;
+  email?: string;
+  role_code?: string;
+}
+
 /** The named operations the renderer may call; there is no generic transport. */
 export interface MosaiqBridge {
   getState(): Promise<AppState>;
@@ -288,6 +326,18 @@ export interface MosaiqBridge {
   listCheckIns(query: CheckInsQuery): Promise<Result<Paged<CheckInView>>>;
   getCheckIn(checkInId: string): Promise<Result<CheckInDetailView>>;
   reviewCheckIn(checkInId: string, verified: boolean, reason: string): Promise<Result<ReviewView>>;
+  listUsers(query: UserQuery): Promise<Result<Paged<UserView>>>;
+  getUser(userId: string): Promise<Result<UserView>>;
+  listRoles(): Promise<Result<RoleView[]>>;
+  createUser(draft: UserDraft): Promise<Result<UserView>>;
+  updateUser(userId: string, changes: UserChanges): Promise<Result<UserView>>;
+  deactivateUser(userId: string): Promise<Result<UserView>>;
+  reactivateUser(userId: string): Promise<Result<UserView>>;
+  /** An administrator sets another user's password; no current password is sent. */
+  resetUserPassword(userId: string, newPassword: string): Promise<Result<null>>;
+  /** The caller's own password. A success ends every session, so the app returns to sign-in. */
+  changeOwnPassword(currentPassword: string, newPassword: string): Promise<Result<null>>;
+  transferAdministrator(successorUserId: string): Promise<Result<null>>;
 }
 
 export const CHANNELS = {
@@ -317,4 +367,14 @@ export const CHANNELS = {
   listCheckIns: 'mosaiq:list-check-ins',
   getCheckIn: 'mosaiq:get-check-in',
   reviewCheckIn: 'mosaiq:review-check-in',
+  listUsers: 'mosaiq:list-users',
+  getUser: 'mosaiq:get-user',
+  listRoles: 'mosaiq:list-roles',
+  createUser: 'mosaiq:create-user',
+  updateUser: 'mosaiq:update-user',
+  deactivateUser: 'mosaiq:deactivate-user',
+  reactivateUser: 'mosaiq:reactivate-user',
+  resetUserPassword: 'mosaiq:reset-user-password',
+  changeOwnPassword: 'mosaiq:change-own-password',
+  transferAdministrator: 'mosaiq:transfer-administrator',
 } as const;

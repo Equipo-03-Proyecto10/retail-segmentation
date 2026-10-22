@@ -137,3 +137,9 @@ textarea {
   margin-top: 0.25rem;
   font: inherit;
 }
+.account {
+  margin: 0.5rem 0;
+}
+dialog {
+  max-width: 32rem;
+}

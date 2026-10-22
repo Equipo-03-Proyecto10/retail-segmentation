@@ -35,6 +35,19 @@ const bridge: MosaiqBridge = {
   getCheckIn: (checkInId) => ipcRenderer.invoke(CHANNELS.getCheckIn, checkInId),
   reviewCheckIn: (checkInId, verified, reason) =>
     ipcRenderer.invoke(CHANNELS.reviewCheckIn, checkInId, verified, reason),
+  listUsers: (query) => ipcRenderer.invoke(CHANNELS.listUsers, query),
+  getUser: (userId) => ipcRenderer.invoke(CHANNELS.getUser, userId),
+  listRoles: () => ipcRenderer.invoke(CHANNELS.listRoles),
+  createUser: (draft) => ipcRenderer.invoke(CHANNELS.createUser, draft),
+  updateUser: (userId, changes) => ipcRenderer.invoke(CHANNELS.updateUser, userId, changes),
+  deactivateUser: (userId) => ipcRenderer.invoke(CHANNELS.deactivateUser, userId),
+  reactivateUser: (userId) => ipcRenderer.invoke(CHANNELS.reactivateUser, userId),
+  resetUserPassword: (userId, newPassword) =>
+    ipcRenderer.invoke(CHANNELS.resetUserPassword, userId, newPassword),
+  changeOwnPassword: (currentPassword, newPassword) =>
+    ipcRenderer.invoke(CHANNELS.changeOwnPassword, currentPassword, newPassword),
+  transferAdministrator: (successorUserId) =>
+    ipcRenderer.invoke(CHANNELS.transferAdministrator, successorUserId),
 };
 
 contextBridge.exposeInMainWorld('mosaiq', bridge);

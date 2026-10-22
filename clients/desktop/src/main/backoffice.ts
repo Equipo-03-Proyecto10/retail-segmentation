@@ -72,6 +72,8 @@ export class Backoffice {
   /** Bumped on every new token pair, so a waiting call can tell a refresh already happened. */
   private generation = 0;
   private role: string | null = null;
+  /** The signed-in user's id, from the session claims. */
+  private subject: string | null = null;
   private notice: string | undefined;
   private refreshing: Promise<void> | undefined;
   private listeners = new Set<(state: AppState) => void>();
@@ -112,6 +114,7 @@ export class Backoffice {
   private endSession(notice: string): void {
     this.tokens = null;
     this.role = null;
+    this.subject = null;
     this.notice = notice;
     this.vault.clear();
     this.publish();
@@ -131,13 +134,14 @@ export class Backoffice {
   private async loadRole(): Promise<void> {
     const res = await this.authed({ method: 'GET', path: '/v1/sessions/current' });
     if (!res.ok) throw new CallFailed(plain(res.error));
-    const claims = res.data?.SessionClaims as { role: string };
+    const claims = res.data?.SessionClaims as { role: string; sub: string };
     if (claims.role === 'CUSTOMER') {
       await this.signOutRemote();
       this.endSession(STAFF_ONLY);
       return;
     }
     this.role = claims.role;
+    this.subject = claims.sub;
     this.notice = undefined;
     this.publish();
   }
@@ -172,6 +176,21 @@ export class Backoffice {
     } catch (e) {
       return { ok: false, error: this.viewOf(e), state: this.state() };
     }
+  }
+
+  /** The signed-in user's own id, or null when signed out. */
+  userId(): string | null {
+    return this.subject;
+  }
+
+  /**
+   * users-service ends every session of a user whose password changed. When that user is the
+   * caller, the app returns to sign-in at once instead of waiting for its next call to be refused.
+   */
+  async passwordChanged(userId: string): Promise<void> {
+    if (userId !== this.subject) return;
+    await this.signOutRemote();
+    this.endSession('Password changed, sign in again.');
   }
 
   async signOut(): Promise<ActionResult> {
@@ -242,10 +261,18 @@ export class Backoffice {
     if (this.tokens === null) throw new SessionEnded(localError('signed_out', 'You are signed out.'));
     if (this.tokens.expiresAt - this.now() < REFRESH_SKEW_MS) await this.refresh(this.generation);
     const used = this.generation;
-    const first = await this.send(options);
+    const first = this.revoked(await this.send(options));
     if (first.ok || first.status !== 401 || first.error.code !== 'invalid_token') return first;
     await this.refresh(used);
-    return this.send(options);
+    return this.revoked(await this.send(options));
+  }
+
+  /** A 401 session_revoked on any call (a password change, a transfer, a deactivation) ends the session here. */
+  private revoked(res: CallResult): CallResult {
+    if (res.ok || res.status !== 401 || res.error.code !== 'session_revoked') return res;
+    const reason = TERMINAL_REFRESH.session_revoked as string;
+    this.endSession(reason);
+    throw new SessionEnded({ ...res.error, message: reason });
   }
 
   /** Opens the access token only to build this request. */

@@ -6,8 +6,8 @@ response against that service's own XSD, and signs in through auth-service
 [ADR-0035](../../docs/adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md),
 [ADR-0036](../../docs/adr/0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md)).
 F16-01 is the foundation: shell, secure window, preload bridge, XML transport, sign-in and
-role-gated screens. F16-02 adds Products and Categories, and F16-04 adds Stock, Sales, Engagement and
-Check-ins (see below).
+role-gated screens. F16-02 adds Products and Categories, F16-04 adds Stock, Sales, Engagement and
+Check-ins, and F16-06 adds Users, Transfer administrator and the account menu (see below).
 
 ## Run it
 
@@ -55,6 +55,8 @@ being ignored. `MOSAIQ_DESKTOP_CONFIG_DIR` overrides the directory (the window t
     `updateCategory`, `deleteCategory`.
   - floor activity: `stores`, `stockLevels`, `listSales`, `getSale`, `engagementSummary`,
     `listEngagementEvents`, `voidEngagementEvent`, `listCheckIns`, `getCheckIn`, `reviewCheckIn`.
+  - users: `listUsers`, `getUser`, `listRoles`, `createUser`, `updateUser`, `deactivateUser`,
+    `reactivateUser`, `resetUserPassword`, `changeOwnPassword`, `transferAdministrator`.
 
   There is no generic fetch and no `ipcRenderer`. The main process checks every value a screen sends
   (`src/main/checks.ts`, used by `catalog.ts` and `floor.ts`) before it builds a path or a body from it.
@@ -122,6 +124,39 @@ cannot be read shows as unavailable, and the screen still loads.
 
 The navigation shows a screen only when the role may call its read operation. The window tests
 (`tests/window/floor.spec.ts`) answer with the recorded examples of the six contracts involved.
+
+## Users, account menu and administrator transfer (F16-06)
+
+All of it goes through users-service (`contracts/users/`). The single-administrator rule is the
+service's and the schema's: the client only reflects the answers, so `single_administrator`,
+`use_administrator_transfer`, `administrator_required`, `email_taken`, `successor_inactive` and
+`invalid_successor` are shown as returned (code, message, correlation id, each `details` entry next to
+its field).
+
+- **Users** (`ADMIN` and `AUDITOR`; hidden from every other role): `GET /v1/users` with `role`,
+  `active`, `q` and paging, one user from `GET /v1/users/{user_id}`, and the role names from
+  `GET /v1/roles`. `AUDITOR` reads only. An `ADMIN` creates (the role picker offers every role except
+  `ADMIN`), edits name, email and a non-`ADMIN` role, deactivates (after a confirmation) and
+  reactivates, and resets another user's password. There is no delete control: accounts are
+  deactivated, never deleted. A `use_administrator_transfer` refusal adds a pointer to the transfer
+  screen.
+- **Passwords** are 12 characters or more (the XSD facet, checked before sending, so a short one is
+  refused as `invalid_body` with `min_length` on its field) and are never shown back: the field is
+  emptied on submit and no response carries one.
+- **Account menu** (every staff role): changes the caller's own password with
+  `PUT /v1/users/{user_id}/password`, using the id from the session claims and the current password. A
+  wrong current password and a 429 `rate_limited` (with its `Retry-After`) are shown as returned. A
+  success ends every session of the user, the caller's own included, so the app returns to sign-in with
+  "Password changed, sign in again."
+- **Transfer administrator** (`ADMIN`): pick an active successor and confirm a dialog that warns that
+  the change ends the sessions of both accounts, then `POST /v1/administrator-transfers`. After a
+  success the screen makes one more call; users-service refuses it with 401 `session_revoked`, and so
+  does any call after a deactivation or a password change. The app treats that 401 on any call as the
+  end of the session and returns to sign-in.
+
+The window tests (`tests/window/users.spec.ts`) answer with the recorded examples in
+`contracts/users/examples/`, read from disk, and keep the users they create, change and hand over.
+The transfer test signs in again as the successor and reads `GET /v1/users?role=ADMIN`.
 
 ## Checks
 

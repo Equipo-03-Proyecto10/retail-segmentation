@@ -8,6 +8,7 @@ import { Catalog } from './catalog';
 import { Floor } from './floor';
 import { loadSettings } from './settings';
 import { Transport } from './transport';
+import { Users } from './users';
 import { SafeStorageVault } from './vault';
 import { createSecureWindow, hardenSession } from './window';
 import { XsdValidator } from './xml';
@@ -89,6 +90,25 @@ function start(): void {
   ipcMain.handle(CHANNELS.getCheckIn, (_e, checkInId: unknown) => floor.getCheckIn(checkInId));
   ipcMain.handle(CHANNELS.reviewCheckIn, (_e, checkInId: unknown, verified: unknown, reason: unknown) =>
     floor.reviewCheckIn(checkInId, verified, reason),
+  );
+  const users = new Users(office);
+  ipcMain.handle(CHANNELS.listUsers, (_e, query: unknown) => users.listUsers(query));
+  ipcMain.handle(CHANNELS.getUser, (_e, userId: unknown) => users.getUser(userId));
+  ipcMain.handle(CHANNELS.listRoles, () => users.listRoles());
+  ipcMain.handle(CHANNELS.createUser, (_e, draft: unknown) => users.createUser(draft));
+  ipcMain.handle(CHANNELS.updateUser, (_e, userId: unknown, changes: unknown) =>
+    users.updateUser(userId, changes),
+  );
+  ipcMain.handle(CHANNELS.deactivateUser, (_e, userId: unknown) => users.deactivateUser(userId));
+  ipcMain.handle(CHANNELS.reactivateUser, (_e, userId: unknown) => users.reactivateUser(userId));
+  ipcMain.handle(CHANNELS.resetUserPassword, (_e, userId: unknown, newPassword: unknown) =>
+    users.resetUserPassword(userId, newPassword),
+  );
+  ipcMain.handle(CHANNELS.changeOwnPassword, (_e, current: unknown, next: unknown) =>
+    users.changeOwnPassword(current, next),
+  );
+  ipcMain.handle(CHANNELS.transferAdministrator, (_e, successor: unknown) =>
+    users.transferAdministrator(successor),
   );
   office.onStateChange((state) => {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(CHANNELS.stateChanged, state);

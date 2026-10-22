@@ -1,4 +1,5 @@
 import type { AppState, ErrorView, MosaiqBridge } from '../shared/api';
+import { renderAudit } from './audit';
 import { renderCampaigns } from './campaigns';
 import { renderCategories, renderProducts } from './catalog';
 import { el, errorBox } from './dom';
@@ -88,6 +89,7 @@ type View =
   | 'stores'
   | 'campaigns'
   | 'users'
+  | 'audit'
   | 'transfer'
   | 'services';
 
@@ -102,6 +104,7 @@ const VIEWS: { name: View; label: string; operation: string | null }[] = [
   { name: 'stores', label: 'Stores', operation: 'listStores' },
   { name: 'campaigns', label: 'Campaigns', operation: 'listCampaigns' },
   { name: 'users', label: 'Users', operation: 'listUsers' },
+  { name: 'audit', label: 'Audit trail', operation: 'listAuditEntries' },
   { name: 'transfer', label: 'Transfer administrator', operation: 'transferAdministrator' },
   { name: 'services', label: 'Services', operation: null },
 ];
@@ -155,6 +158,7 @@ function renderHome(state: Extract<AppState, { status: 'signed_in' }>): void {
     else if (next === 'stores') renderStores(screen, ctx);
     else if (next === 'campaigns') renderCampaigns(screen, ctx);
     else if (next === 'users') renderUsers(screen, ctx);
+    else if (next === 'audit') renderAudit(screen, ctx);
     else if (next === 'transfer') renderTransfer(screen, ctx);
     else renderServices(screen, state);
   };

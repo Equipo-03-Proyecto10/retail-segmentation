@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.4 - 2026-10-22
+
+- Add `Value::JsonText`, which renders valid JSON source text as its parsed
+  value in JSON replies and as escaped element text in XML replies. Invalid
+  JSON remains a string in both formats (#668).
+
 ## 0.1.3 - 2026-10-21
 
 - Read an XML request member that is a required list, and has no item

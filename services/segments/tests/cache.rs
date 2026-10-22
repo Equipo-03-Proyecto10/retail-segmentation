@@ -87,7 +87,10 @@ async fn plant(admin: &mut MultiplexedConnection, key: &str, list: &SegmentList)
 #[tokio::test]
 async fn a_run_the_web_records_is_served_within_ten_seconds_and_the_old_keys_are_left() {
     let _turn = REDIS_USER.lock().await;
-    let (db_url, redis_url) = (owner_url(), redis_url());
+    let Some(redis_url) = redis_url() else {
+        return;
+    };
+    let db_url = owner_url();
     let mut owner = connect(&db_url).await;
     let db = service_database(&db_url);
     let mut admin = admin(&redis_url).await;
@@ -255,7 +258,10 @@ async fn a_run_the_web_records_is_served_within_ten_seconds_and_the_old_keys_are
 #[tokio::test]
 async fn a_repeated_event_moves_reads_once() {
     let _turn = REDIS_USER.lock().await;
-    let (db_url, redis_url) = (owner_url(), redis_url());
+    let Some(redis_url) = redis_url() else {
+        return;
+    };
+    let db_url = owner_url();
     let mut admin = admin(&redis_url).await;
     let password = load_acl(&mut admin).await;
     let _: i64 = redis::cmd("DEL")
@@ -316,7 +322,10 @@ async fn a_repeated_event_moves_reads_once() {
 #[tokio::test]
 async fn reads_answer_the_same_from_postgres_when_redis_cache_is_out() {
     let _turn = REDIS_USER.lock().await;
-    let (db_url, redis_url) = (owner_url(), redis_url());
+    let Some(redis_url) = redis_url() else {
+        return;
+    };
+    let db_url = owner_url();
     let owner = connect(&db_url).await;
     let db = service_database(&db_url);
     let mut admin = admin(&redis_url).await;
@@ -337,7 +346,8 @@ async fn reads_answer_the_same_from_postgres_when_redis_cache_is_out() {
     assert_eq!(list, read_list(&db).await.unwrap());
 
     let refused = redis::Client::open("redis://127.0.0.1:1/0").unwrap();
-    let wrong_password = service_cache(&redis_url, "not-the-password");
+    // Any password but the one load_acl set: a fresh random one never matches.
+    let wrong_password = service_cache(&redis_url, &Uuid::new_v4().simple().to_string());
     for cache in [Cache::new(refused), wrong_password] {
         let reader = Reader::new(Some(cache));
         let started = Instant::now();

@@ -67,7 +67,10 @@ async fn group_exists(admin: &mut MultiplexedConnection, group: &str) -> bool {
 #[tokio::test]
 async fn a_recorded_run_reaches_the_stream_within_five_seconds_and_old_rows_are_purged() {
     let _turn = REDIS_USER.lock().await;
-    let (db_url, redis_url) = (owner_url(), redis_url());
+    let Some(redis_url) = redis_url() else {
+        return;
+    };
+    let db_url = owner_url();
     let mut owner = connect(&db_url).await;
     let mut admin = admin(&redis_url).await;
     let password = load_acl(&mut admin).await;
@@ -181,7 +184,10 @@ async fn a_recorded_run_reaches_the_stream_within_five_seconds_and_old_rows_are_
 #[tokio::test]
 async fn relay_and_consumer_reconnect_after_redis_kills_their_connections() {
     let _turn = REDIS_USER.lock().await;
-    let (db_url, redis_url) = (owner_url(), redis_url());
+    let Some(redis_url) = redis_url() else {
+        return;
+    };
+    let db_url = owner_url();
     let mut owner = connect(&db_url).await;
     let mut admin = admin(&redis_url).await;
     let password = load_acl(&mut admin).await;

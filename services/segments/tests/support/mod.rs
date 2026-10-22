@@ -20,10 +20,18 @@ pub fn owner_url() -> String {
     }
 }
 
-pub fn redis_url() -> String {
+/// The Redis URL, or None (the test then skips) when none is configured.
+/// MOSAIQ_REQUIRE_REDIS=1 turns a missing URL into a failure, as in stores.
+pub fn redis_url() -> Option<String> {
     match std::env::var("TEST_REDIS_URL") {
-        Ok(url) if !url.is_empty() => url,
-        _ => panic!("TEST_REDIS_URL is required; these tests never skip"),
+        Ok(url) if !url.is_empty() => Some(url),
+        _ => {
+            if std::env::var("MOSAIQ_REQUIRE_REDIS").as_deref() == Ok("1") {
+                panic!("TEST_REDIS_URL is missing, and MOSAIQ_REQUIRE_REDIS forbids skipping");
+            }
+            eprintln!("skipped: TEST_REDIS_URL is not set");
+            None
+        }
     }
 }
 

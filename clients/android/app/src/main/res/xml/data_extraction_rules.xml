@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12 and later: neither a cloud backup nor a device-to-device
+     transfer carries the session tokens (ADR-0041). -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="session.tokens" />
+        <exclude domain="file" path="session.tokens.tmp" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="session.tokens" />
+        <exclude domain="file" path="session.tokens.tmp" />
+    </device-transfer>
+</data-extraction-rules>

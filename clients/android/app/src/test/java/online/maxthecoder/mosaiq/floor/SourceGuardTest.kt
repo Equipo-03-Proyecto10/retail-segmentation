@@ -1,0 +1,56 @@
+package online.maxthecoder.mosaiq.floor
+
+import java.io.File
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/** The rules a reviewer would otherwise check by eye (ADR-0041). */
+class SourceGuardTest {
+    private val main = File("src/main/java")
+    private val sources = main.walkTopDown().filter { it.isFile && it.extension == "kt" }.toList()
+    private val registry = File("../../../contracts/registry.yaml")
+
+    @Test
+    fun theAppNeverTouchesXml() {
+        val forbidden = Regex("application/xml|XmlPullParser|SimpleXml")
+        val hits = sources.filter { forbidden.containsMatchIn(it.readText()) }
+        assertEquals("ADR-0041: Android is JSON only", emptyList<File>(), hits)
+    }
+
+    @Test
+    fun nothingCanWriteATokenToLogcat() {
+        for (file in sources) {
+            val text = file.readText()
+            assertTrue("${file.name} uses a logging interceptor", "HttpLoggingInterceptor" !in text)
+            val logged = Regex("""Log\.[a-z]\([^)]*(?i:token)""").containsMatchIn(text)
+            assertTrue("${file.name} logs a token", !logged)
+        }
+    }
+
+    @Test
+    fun everyPathIsAResourceOfTheServiceItCalls() {
+        assertTrue("the registry is at ${registry.path}", registry.isFile)
+        val owners = mutableMapOf<String, Set<String>>()
+        var service: String? = null
+        for (line in registry.readLines()) {
+            Regex("""^\s*- name: ([a-z-]+)""").find(line)?.let { service = it.groupValues[1] }
+            Regex("""^\s*resources: \[(.*)]""").find(line)?.let { match ->
+                owners[service!!] = match.groupValues[1].split(",").map { it.trim() }.toSet()
+            }
+        }
+        val calls = Regex("""Services\.([A-Z]+) \+ "([a-z0-9.-]+)""")
+        val services = File(main, "online/maxthecoder/mosaiq/floor/net/Services.kt").readText()
+        val prefixes =
+            Regex("""const val ([A-Z]+) = "api/([a-z-]+)/v1/"""")
+                .findAll(services)
+                .associate { it.groupValues[1] to it.groupValues[2] }
+        val found = sources.flatMap { calls.findAll(it.readText()).toList() }
+        assertTrue("some API calls exist", found.isNotEmpty())
+        for (call in found) {
+            val name = prefixes.getValue(call.groupValues[1])
+            val resource = call.groupValues[2]
+            assertTrue("$resource is not a resource of $name", resource in owners.getValue(name))
+        }
+    }
+}

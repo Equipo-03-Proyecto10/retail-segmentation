@@ -696,3 +696,25 @@ def test_categories_own_nil_example_reads_as_null() -> None:
     value = contract.parse_xml(raw, operation)
     assert value == {"parent_category_id": None}
     contract.validate(value, operation.request_schema)
+
+
+def test_chunked_oversize_body_is_413(client) -> None:
+    import io
+
+    response = client.post(
+        "/v1/notes",
+        input_stream=io.BytesIO(b"x" * 65_537),
+        headers={"Transfer-Encoding": "chunked"},
+        environ_overrides={"wsgi.input_terminated": True},
+        content_type="application/json",
+    )
+    assert response.status_code == 413
+    assert response.json["code"] == "payload_too_large"
+
+
+def test_bearer_with_extra_whitespace_is_refused(client, tokens) -> None:
+    response = client.get(
+        "/v1/notes", headers={"Authorization": "Bearer  " + tokens["valid_reader"]}
+    )
+    assert response.status_code == 401
+    assert response.json["code"] == "invalid_token"

@@ -139,6 +139,12 @@ right place for it, and which the team accepted on 2026-09-07.
 |---|---|
 | [F14-24 (#466)](f14-24-engagement-service.md) | engagement-service on MongoDB: once per client event, voids, rollup, live counters; run against MongoDB 7.0, PostgreSQL 16 and Redis 7.4 with its real ACL, with the shared conformance suite, mutations and what was not run (the image) |
 
+## Phase 16 — desktop client
+
+| Document | What it records |
+|---|---|
+| [F16-04 (#417)](417-sales-readback.md) | A sale posted in JSON as a store manager, read back on the desktop Sales screen in XML after Refresh, with lines and total; run against real auth, sales, products and stores services behind the local gateway, the XML checked against `sales.xsd` with xmllint; step evidence for F18-05 |
+
 ## Review passes
 
 These follow a specific review rather than a story.

@@ -2140,6 +2140,15 @@ GRANT SELECT ON public.experiment, public.experiment_group TO definer_guard;
 GRANT SELECT, INSERT, UPDATE ON public.campaign TO svc_campaigns;
 -- END BOUNDARY campaigns
 
+-- BEGIN BOUNDARY audit-trail
+-- audit-trail-service (F14-30, ADR-0034): reads audit_log and nothing else. It
+-- adds no table, no view and no function, and it owns no write: fn_audit, which
+-- runs as definer_audit, is the only writer of an entry (E-12), and no svc_*
+-- role holds INSERT, UPDATE, DELETE or TRUNCATE on the table. Only this role
+-- reads it. Idempotent: an operator re-applies it.
+GRANT SELECT ON public.audit_log TO svc_audit_trail;
+-- END BOUNDARY audit-trail
+
 -- BEGIN APPLICATION ROLE VERIFICATION
 -- F1-05 (#53). Opt-in acceptance checks, kept here because even a rejected
 -- DROP belongs in the only file allowed to contain table DDL. Normal schema

@@ -542,6 +542,19 @@ The check-ins boundary (ADR-0046, F14-26) adds two relations, both in 4NF:
   check-in row would need either repeating columns (not 1NF) or updating that
   row, which RN-56 forbids.
 
+The sales boundary (ADR-0039, ADR-0046, F14-18) adds one relation, also in 4NF:
+- **`sales.sale_capture`** is keyed by `transaction_id`, which determines
+  `request_sha256`, `recorded_by` and `captured_at`. It is a 1:1 split of
+  `transaction` for phone sales only: those columns would be NULL on every CSV
+  header, and the web, which writes those headers, must never see them.
+  - The `Idempotency-Key` is not stored. It is the suffix of the header's
+    `source_transaction_id` (`svc-sales:<key>`), so a column for it would hold
+    the same fact twice, free to disagree (ADR-0039).
+  - `request_sha256` is a fact of the request as accepted, not a function of
+    current data, so it is not derived state.
+
+`sales_events.outbox` is one more boundary outbox, under the outbox note above.
+
 ---
 
 ## 3. Logical model
@@ -705,6 +718,19 @@ effective `verified` are computed on read.
 
 A check-in's effective verdict is its latest review's `verified`, by
 `reviewed_at`. Reviews are appended and never changed.
+
+#### `sales.sale_capture`
+
+One row per sale recorded through `POST /v1/sales`, written in that sale's own
+transaction (ADR-0039). `svc_sales` holds SELECT and INSERT only, and the web
+has no privilege on `sales`. A CSV header has no row here.
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `transaction_id` | `BIGINT` | NN | PK, FK → `public.transaction`, `ON DELETE CASCADE` | The phone sale's header |
+| `request_sha256` | `BYTEA` | NN | `CHECK octet_length = 32` (`sale_capture_request_sha256_check`) | SHA-256 of the canonical request (the caller's `sub`, the ids, `occurred_at` in UTC, the lines sorted with two-decimal prices); a retry with the same key is compared with it |
+| `recorded_by` | `UUID` | NN | FK → `public.app_user`, `ON DELETE RESTRICT` | The token's `sub`: who recorded the sale |
+| `captured_at` | `TIMESTAMPTZ` | NN | default `now()` | When the sale was accepted |
 
 #### `segment_rule`
 
@@ -1200,6 +1226,8 @@ suffix:
 
 The stores boundary therefore owns `stores` for `store_location`, publishes
 through `api_stores`, and keeps relay state in `stores_events`.
+The sales boundary owns `sales` for `sale_capture`, publishes
+`api_sales.purchase_line_v1` and keeps relay state in `sales_events`.
 The check-ins boundary owns `checkins` for `store_check_in` and
 `check_in_review`. It has no contract schema and no outbox, because nothing
 reads or consumes check-ins but its own service. It reads store locations

@@ -1188,6 +1188,93 @@ FOR EACH ROW EXECUTE FUNCTION fn_sales_namespace_guard_transaction();
 CREATE OR REPLACE TRIGGER trg_sales_namespace_guard
 BEFORE INSERT ON public.transaction_line
 FOR EACH ROW EXECUTE FUNCTION fn_sales_namespace_guard_line();
+
+-- sales-service (F14-18, ADR-0039). Its provenance table, its outbox for
+-- stream:sales.v1.recorded, its contract view and the grants of svc_sales.
+CREATE SCHEMA IF NOT EXISTS sales;
+REVOKE ALL ON SCHEMA sales FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS api_sales;
+REVOKE ALL ON SCHEMA api_sales FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS sales_events;
+REVOKE ALL ON SCHEMA sales_events FROM PUBLIC;
+
+-- One row per phone sale, written in the sale's own transaction and never
+-- changed. The Idempotency-Key is not stored: it is the suffix of the header's
+-- source_transaction_id (ADR-0039). request_sha256 is the canonical request
+-- hash a retry is compared with.
+CREATE TABLE IF NOT EXISTS sales.sale_capture (
+    transaction_id bigint PRIMARY KEY
+        REFERENCES public.transaction (transaction_id) ON DELETE CASCADE,
+    request_sha256 bytea NOT NULL
+        CONSTRAINT sale_capture_request_sha256_check
+        CHECK (octet_length(request_sha256) = 32),
+    recorded_by    uuid NOT NULL
+        REFERENCES public.app_user (user_id) ON DELETE RESTRICT,
+    captured_at    timestamptz NOT NULL DEFAULT now()
+);
+
+-- Keys only, never state: consumers re-read api_sales.purchase_line_v1.
+CREATE TABLE IF NOT EXISTS sales_events.outbox (
+    event_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    stream      text NOT NULL,
+    event_type  text NOT NULL,
+    entity_id   text NOT NULL,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    relayed_at  timestamptz
+);
+CREATE INDEX IF NOT EXISTS outbox_unrelayed
+    ON sales_events.outbox (occurred_at) WHERE relayed_at IS NULL;
+
+-- contracts/db/api_sales.purchase_line.v1.md: one row per sale line, phone and
+-- CSV alike. Definer rights, so a consumer needs no privilege on either table.
+CREATE OR REPLACE VIEW api_sales.purchase_line_v1
+WITH (security_invoker = off) AS
+SELECT t.transaction_id, t.customer_id, t.store_id, t.channel_id, t.occurred_at,
+       l.product_id, l.quantity, l.unit_price
+FROM public.transaction AS t
+JOIN public.transaction_line AS l ON l.transaction_id = t.transaction_id;
+REVOKE ALL ON api_sales.purchase_line_v1 FROM PUBLIC;
+
+-- stream:sales.v1.recorded, for every writer of a header, the web's CSV path
+-- included. A service sale fires once (its total is never updated); a CSV row
+-- that creates a header fires twice (the insert, then recompute_total), and a
+-- line appended to an existing header fires once more (ADR-0039).
+CREATE OR REPLACE FUNCTION sales_events.capture_recorded() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+BEGIN
+    INSERT INTO sales_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:sales.v1.recorded', TG_OP, NEW.transaction_id::text);
+    -- An empty wake-up for the owner's relay; only that relay LISTENs.
+    PERFORM pg_notify('sales_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION sales_events.capture_recorded() OWNER TO definer_sales;
+REVOKE EXECUTE ON FUNCTION sales_events.capture_recorded() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_capture_recorded
+AFTER INSERT OR UPDATE OF total ON public.transaction
+FOR EACH ROW EXECUTE FUNCTION sales_events.capture_recorded();
+
+-- svc_sales records sales and never changes or deletes one. It reaches
+-- inventory only through api_stock.consume_v1 (granted in BOUNDARY stock), and
+-- customers and products only through their api_ views. Each is a row of
+-- contracts/db/grants.csv.
+GRANT SELECT, INSERT ON public.transaction TO svc_sales;
+GRANT SELECT, INSERT ON public.transaction_line TO svc_sales;
+GRANT SELECT ON public.channel TO svc_sales;
+GRANT USAGE ON SCHEMA sales TO svc_sales;
+GRANT SELECT, INSERT ON sales.sale_capture TO svc_sales;
+
+GRANT USAGE ON SCHEMA sales_events TO svc_sales, definer_sales;
+GRANT INSERT ON sales_events.outbox TO definer_sales;
+GRANT SELECT, DELETE, UPDATE (relayed_at) ON sales_events.outbox TO svc_sales;
+
+GRANT USAGE ON SCHEMA api_sales TO svc_sales, svc_recommendations;
+GRANT SELECT ON api_sales.purchase_line_v1 TO svc_sales, svc_recommendations;
 -- END BOUNDARY sales
 
 -- BEGIN BOUNDARY products

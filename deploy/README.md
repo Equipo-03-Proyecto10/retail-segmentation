@@ -847,3 +847,33 @@ complete and the permissions above were applied.
 
 Record in `docs/infra.md` under a new "Documentation" row: the URL,
 the date published, and the three checks above.
+
+### Seed outboxes and the one-time #597 cleanup
+
+[ADR-0054](../docs/adr/0054-seed-written-outbox-rows-before-the-relays-first-start.md)
+requires an empty-database bootstrap to leave all eight outboxes empty. The
+seed removes its captured events before `COMMIT`, with capture and integrity
+triggers enabled. Never run the seed or its unconditional `DELETE` block on
+an in-use database.
+
+The explicitly authorized correction of the 2026-10-20 instance is recorded in
+[#597's evidence](../docs/evidence/597-seed-outbox-cleanup.md). Its
+procedure is preserved in `deploy/cleanup-seed-outboxes-597.py`; it is specific
+to that seed, not a general purge tool. It verifies the exact timestamp,
+audited seed identities, expected event identities/counts and unrelayed state.
+It archives rows with mode `0600`, deletes by bound event IDs and timestamp in
+one transaction, and verifies that every retained event is unchanged. A failed
+check rolls back. It requires psycopg from the web's existing environment.
+
+Before the one-time cleanup, its read-only preview was:
+
+```sh
+sudo -u postgres /opt/mosaiq/venv/bin/python deploy/cleanup-seed-outboxes-597.py \
+  --dsn 'dbname=retail user=postgres' \
+  --seed-at '2026-10-20T07:48:39.423052+00:00' \
+  --backup /var/tmp/mosaiq-597-outboxes-before.json
+```
+
+Adding `--apply` performed the authorized correction. It has already run;
+re-running it refuses the missing candidates and does not overwrite the
+archive. Preserve that archive on the instance; never commit database exports.

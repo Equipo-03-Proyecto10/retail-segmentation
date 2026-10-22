@@ -791,4 +791,19 @@ JOIN app_user AS u ON u.role_id = r.role_id AND u.is_active;
 -- campaign, experiment, category, product, store, channel, role, customer,
 -- app_user and customer_segment_history. Nothing is inserted here by hand.
 
+-- ---------- outboxes (ADR-0054, #597) ----------
+-- Empty-database bootstrap only: remove the events this transaction captured
+-- before COMMIT makes them visible to a relay. Keep all capture and integrity
+-- triggers enabled. Never use this block to purge an in-use database: later
+-- runtime events must still be delivered. Each new outbox adds its line here;
+-- the database test discovers every outbox and requires it to be empty.
+DELETE FROM categories_events.outbox;
+DELETE FROM preferences_events.outbox;
+DELETE FROM products_events.outbox;
+DELETE FROM sales_events.outbox;
+DELETE FROM segments_events.outbox;
+DELETE FROM stock_events.outbox;
+DELETE FROM stores_events.outbox;
+DELETE FROM users_events.outbox;
+
 COMMIT;

@@ -52,9 +52,36 @@ class ScanViewModel(
     private val session: ScanSession = ScanSession()
 ) : ViewModel() {
     val result = MutableStateFlow<ScanResult>(ScanResult.Idle)
+    private var currentUser = graph.session.userId.value
+    private var latestScan: String? = null
+
+    init {
+        viewModelScope.launch {
+            graph.session.userId.collect { synchronizeSession() }
+        }
+    }
+
+    private fun synchronizeSession() {
+        val user = graph.session.userId.value
+        if (user != currentUser) {
+            currentUser = user
+            scanAgain()
+        }
+    }
+
+    private fun stillSignedIn(user: String): Boolean {
+        if (graph.session.userId.value == user) return true
+        synchronizeSession()
+        return false
+    }
+
+    private fun show(scan: Scan, user: String, answer: ScanResult) {
+        if (stillSignedIn(user) && latestScan == scan.clientEventId) result.value = answer
+    }
 
     /** A frame's decoded code. Repeats of the same code are ignored. */
     fun onDecoded(raw: String) {
+        synchronizeSession()
         session.onDecoded(raw)?.let(::handle)
     }
 
@@ -66,11 +93,14 @@ class ScanViewModel(
 
     /** "Scan again": the same code may count once more. */
     fun scanAgain() {
+        latestScan = null
         session.scanAgain()
         result.value = ScanResult.Idle
     }
 
     private fun handle(scan: Scan) {
+        val user = graph.session.userId.value ?: return
+        latestScan = scan.clientEventId
         val store = graph.session.chosenStore()
         if (store == null) {
             result.value = ScanResult.NoStore
@@ -88,14 +118,18 @@ class ScanViewModel(
                     is Answer.Body -> answer.value
                     is Answer.Refused ->
                         return@launch run {
-                            result.value =
+                            show(
+                                scan,
+                                user,
                                 if (answer.error.status == NOT_FOUND) {
                                     ScanResult.ProductNotFound
                                 } else {
                                     ScanResult.Failed(answer.error)
                                 }
+                            )
                         }
                 }
+            if (!stillSignedIn(user)) return@launch
             var stockError: ApiError? = null
             val quantity =
                 when (val answer = call { graph.network.stock.getStockLevel(store.storeId, product.productId) }) {
@@ -105,8 +139,9 @@ class ScanViewModel(
                         null
                     }
                 }
+            if (!stillSignedIn(user)) return@launch
             val rowId = graph.writes.queueQrScan(scan, product.productId, store.storeId)
-            result.value = ScanResult.Shown(product, store.name, quantity, stockError, rowId)
+            show(scan, user, ScanResult.Shown(product, store.name, quantity, stockError, rowId))
         }
     }
 

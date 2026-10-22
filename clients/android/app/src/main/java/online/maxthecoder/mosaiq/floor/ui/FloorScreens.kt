@@ -3,12 +3,14 @@ package online.maxthecoder.mosaiq.floor.ui
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -44,7 +46,10 @@ fun FloorHome(signedIn: SessionState.SignedIn, model: FloorViewModel, scan: Scan
     val chosen by model.chosen.collectAsState()
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("${signedIn.name} · ${signedIn.role}", style = MaterialTheme.typography.titleMedium)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             OutlinedButton(onClick = { tab = Tab.CHECK_IN }) { Text("Store & check-in") }
             OutlinedButton(onClick = { tab = Tab.SCAN }) { Text("Scan a product") }
             OutlinedButton(onClick = { tab = Tab.OUTBOX }) { Text("Outbox") }

@@ -167,4 +167,28 @@ class ScanViewModelTest {
         assertEquals(2, rows.size)
         assertEquals(2, rows.map { it.clientId }.toSet().size)
     }
+
+    @Test
+    fun anInflightScanCannotBeQueuedUnderTheNextUser() {
+        val model = ScanViewModel(graph)
+        model.onDecoded("120")
+        graph.session.signedOut()
+        graph.session.signedIn(Profile("B", "Demo B", "STORE_MANAGER"))
+        graph.session.choose(ChosenStore(3, "Coyoacan"))
+        settle(model)
+        assertTrue(runBlocking { graph.outbox.pendingFor("B") }.isEmpty())
+    }
+
+    @Test
+    fun aNewUserCanScanTheSameCodeAsThePreviousUser() {
+        val model = ScanViewModel(graph)
+        model.onDecoded("120")
+        settle(model)
+        graph.session.signedOut()
+        graph.session.signedIn(Profile("B", "Demo B", "STORE_MANAGER"))
+        graph.session.choose(ChosenStore(3, "Coyoacan"))
+        model.onDecoded("120")
+        settle(model)
+        assertEquals(1, runBlocking { graph.outbox.pendingFor("B") }.size)
+    }
 }

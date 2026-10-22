@@ -4,8 +4,10 @@
 # one line per problem and exits 1 otherwise. Run from the repository root.
 #
 # Each block names the record whose Compliance section it carries. Service
-# names come from contracts/registry.yaml; this file is the one place under
-# deploy/ and .github/ allowed to name a service (the golden-fixture list).
+# names come from contracts/registry.yaml; this file (the golden-fixture list)
+# and deploy/check-services.sh (the instance checks, which ADR-0040's compliance
+# check excludes) are the only places under deploy/ and .github/ allowed to
+# name a service.
 set -uo pipefail
 shopt -s nullglob
 
@@ -129,6 +131,7 @@ PERL
   bash deploy/templates/service/check.sh services | sed 's|^FAIL: |ADR-0040: |'
   names=$(sed -n 's/^  - name: //p' contracts/registry.yaml | paste -sd'|')
   git grep -nE "mosaiq-($names)\b" -- .github/ deploy/ ':(exclude).github/scripts/guards.sh' \
+    ':(exclude)deploy/check-services.sh' \
     | found "ADR-0040 a service named"
 
   # ADR-0037: Redis runs in mosaiq-infra only, pinned, and the web never names it.

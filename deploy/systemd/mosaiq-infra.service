@@ -1,0 +1,33 @@
+# MOSAIQ infrastructure project: redis-state, redis-cache and MongoDB as the
+# compose project mosaiq-infra. F18-01 (issue #448), ADR-0040.
+#
+# Install to /etc/systemd/system/mosaiq-infra.service on mosaiq-deployment-vm;
+# the steps are in deploy/README.md (F18-01) and deploy/infra/README.md. The
+# project publishes nothing to the host. Every service project joins the
+# external network `mosaiq`, which the first start creates.
+#
+# Each service is its own project under mosaiq-svc@.service, so restarting this
+# unit recreates only the infrastructure containers: the services keep running
+# and their kits reconnect. compose's `restart: unless-stopped` brings the
+# containers back after a reboot even before this unit runs; `up -d` is then a
+# no-op.
+
+[Unit]
+Description=MOSAIQ infrastructure (redis-state, redis-cache, MongoDB)
+Documentation=https://github.com/Equipo-03-Proyecto10/retail-segmentation/blob/develop/deploy/infra/README.md
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# The checkout deploy/deploy.sh keeps current; compose resolves the project's
+# relative mounts (redis/*.conf) from here.
+WorkingDirectory=/opt/mosaiq/current/deploy/infra
+ExecStartPre=/bin/sh -c 'docker network inspect mosaiq >/dev/null 2>&1 || docker network create mosaiq'
+ExecStart=/usr/bin/docker compose -p mosaiq-infra -f compose.yaml up -d
+ExecStop=/usr/bin/docker compose -p mosaiq-infra -f compose.yaml down
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

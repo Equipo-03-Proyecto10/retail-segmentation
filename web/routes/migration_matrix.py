@@ -3,7 +3,8 @@
 A cross-tabulation of every customer's label between two selected runs —
 rows are the earlier run's labels, columns are the later run's, cells are
 customer counts. Read-only, gated on segment.read like the rest of the
-segmentation surface (ADR-0010).
+segmentation surface (ADR-0010). The matrix compares two runs, so it is
+marked Synthetic when either is SEEDED (ADR-0052).
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from web.db.consumption_reports import list_customer_names
 from web.db.segments import get_label_ordinals, get_run, list_runs
 from web.middleware.authz import SEGMENT_READ, requires
 from web.parsing import BIGINT_MAX, whole_number
+from web.services.provenance import runs_synthetic
 from web.services.segment_migration import (
     UnknownRun,
     build_migration_matrix,
@@ -88,6 +90,7 @@ def index() -> str | tuple[str, int]:
     selected_to = None
     selected_migrations = ()
     customer_names = {}
+    compared: tuple[int, int] = ()
     if run_a_repeated or run_b_repeated:
         error = "Choose each run only once."
     elif run_a_raw and run_b_raw:
@@ -104,6 +107,7 @@ def index() -> str | tuple[str, int]:
                 # Show the pair in the order the matrix uses, so the "Earlier
                 # run" picker always names the run the rows come from.
                 run_a_raw, run_b_raw = str(earlier_id), str(later_id)
+                compared = (earlier_id, later_id)
                 migrations = compute_migration(connection, earlier_id, later_id)
                 ordinals = get_label_ordinals(connection)
                 matrix = build_migration_matrix(migrations, ordinals)
@@ -160,8 +164,12 @@ def index() -> str | tuple[str, int]:
             if selected is not None:
                 runs.append(selected)
 
+    by_id = {run.run_id: run for run in runs}
+    synthetic = runs_synthetic(*(by_id.get(run_id) for run_id in compared))
+
     page = render_template(
         "migration_matrix/index.html",
+        synthetic=synthetic,
         runs=runs,
         run_a=run_a_raw,
         run_b=run_b_raw,

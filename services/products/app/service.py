@@ -58,6 +58,9 @@ def _text_filter(name: str, maximum: int) -> str | None:
         return None
     if not 1 <= len(value) <= maximum:
         raise _invalid_query(name, "too_short" if not value else "too_long")
+    if "\x00" in value:
+        # PostgreSQL text cannot hold U+0000, so no name or SKU matches it.
+        raise _invalid_query(name, "invalid_format")
     return value
 
 

@@ -3,6 +3,9 @@
 ADR-0039 reserves the prefix. BOUNDARY sales in sql/01_schema.sql refuses it
 from any session user but svc_sales with SQLSTATE 22023, which ingest_row
 already reports as a malformed row, so the web needs no change.
+
+ADR-0052 (#559) adds one clause to the same guard: svc_sales records OBSERVED
+sales only.
 """
 
 from __future__ import annotations
@@ -88,5 +91,48 @@ def test_a_csv_row_in_the_service_namespace_is_malformed(app_url: str) -> None:
                 with pytest.raises(_Undo):
                     attempt(conn)
                 assert seen == {"headers": 0, "lines": lines_before}
+        finally:
+            conn.rollback()
+
+
+# The guard's svc_sales branch reads session_user, which SET ROLE cannot change,
+# so the owner (a superuser on the test database) switches the session itself.
+_AS_SVC_SALES = "SET LOCAL SESSION AUTHORIZATION svc_sales"
+_SVC_SALE = (
+    "INSERT INTO public.transaction"
+    " (source_transaction_id, customer_id, store_id, channel_id, occurred_at,"
+    "  total, data_origin)"
+    " VALUES (%s, %s, %s, %s, now(), 0, %s)"
+)
+
+
+@pytest.mark.parametrize(
+    ("data_origin", "refused"), [("SEEDED", True), (None, True), ("OBSERVED", False)]
+)
+def test_svc_sales_records_observed_sales_only(
+    owner_url: str, data_origin: str | None, refused: bool
+) -> None:
+    """ADR-0052 (#559): a phone sale is never seeded, so the boundary refuses
+    any other origin from svc_sales with 22023 before NOT NULL or CHECK."""
+    with psycopg.connect(owner_url) as conn:
+        try:
+            with conn.cursor() as cur:
+                # svc_sales holds no INSERT on transaction until F14-18 grants
+                # it; this grant lives only inside the rolled-back transaction.
+                cur.execute("SELECT min(customer_id::text) FROM public.customer")
+                (customer_id,) = cur.fetchone()
+                cur.execute("GRANT INSERT ON public.transaction TO svc_sales")
+                cur.execute(_AS_SVC_SALES)
+                cur.execute("SELECT session_user::text")
+                assert cur.fetchone()[0] == "svc_sales"
+                if refused:
+                    with pytest.raises(psycopg.errors.InvalidParameterValue) as error:
+                        cur.execute(
+                            _SVC_SALE, (SOURCE_ID, customer_id, 1, 1, data_origin)
+                        )
+                    assert "OBSERVED" in str(error.value)
+                else:
+                    cur.execute(_SVC_SALE, (SOURCE_ID, customer_id, 1, 1, data_origin))
+                    assert cur.rowcount == 1
         finally:
             conn.rollback()

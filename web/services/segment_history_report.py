@@ -12,6 +12,10 @@ not score this customer" case cannot occur in practice -- the machinery
 tolerates it anyway, because it costs nothing to.
 
 Nothing here reads or is told which method produced a run.
+
+A row is marked Synthetic when its run is SEEDED, or when its explanation
+compares it with a SEEDED previous run (ADR-0052): an explanation is a
+figure from both runs.
 """
 
 from __future__ import annotations
@@ -28,6 +32,7 @@ from web.db.segment_history_report import (
 from web.db.segmentation_dashboard import get_previous_run
 from web.db.segments import get_customer_assignment_for_run
 from web.services.pagination import page_count
+from web.services.provenance import is_seeded
 from web.services.segment_migration import MigrationExplanation, explain_migration
 
 PAGE_SIZE = 25
@@ -41,6 +46,15 @@ class InvalidPeriod(ValueError):
 class ReportRow:
     entry: HistoryEntry
     explanation: MigrationExplanation | None
+    # The origin of the previous run the explanation compares with; None
+    # when there is no explanation.
+    previous_data_origin: str | None = None
+
+    @property
+    def synthetic(self) -> bool:
+        return is_seeded(self.entry.data_origin) or (
+            self.explanation is not None and is_seeded(self.previous_data_origin)
+        )
 
 
 @dataclass(frozen=True)
@@ -57,6 +71,11 @@ class ReportPage:
     @property
     def has_next(self) -> bool:
         return self.page < self.page_count
+
+    @property
+    def synthetic(self) -> bool:
+        """Whether any row on the page is Synthetic, for the banner."""
+        return any(row.synthetic for row in self.rows)
 
 
 def build_report(
@@ -103,13 +122,20 @@ def build_report(
             previous_runs[entry.run_id] = get_previous_run(connection, entry.run_id)
         previous_run = previous_runs[entry.run_id]
 
-        explanation = None
+        explanation = previous_origin = None
         if previous_run is not None:
+            previous_origin = previous_run.data_origin
             previous_assignment = get_customer_assignment_for_run(
                 connection, previous_run.run_id, entry.assignment.customer_id
             )
             explanation = explain_migration(previous_assignment, entry.assignment)
 
-        rows.append(ReportRow(entry=entry, explanation=explanation))
+        rows.append(
+            ReportRow(
+                entry=entry,
+                explanation=explanation,
+                previous_data_origin=previous_origin if explanation else None,
+            )
+        )
 
     return ReportPage(rows=tuple(rows), total=total, page=page, page_count=total_pages)

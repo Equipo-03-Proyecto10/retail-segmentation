@@ -5,8 +5,11 @@
 {% block breadcrumbs %}{{ application_name }} / Analysis / Segmentation dashboard{% endblock %}
 
 {% block content %}
-  {% from "macros/ui.html" import alert, empty_state, page_header, status_pill %}
-  {% macro mark() %}{% if is_synthetic %}{{ status_pill("Synthetic", "warning") }}{% endif %}{% endmacro %}
+  {% from "macros/ui.html" import alert, empty_state, page_header, status_pill, synthetic_banner, synthetic_pill, synthetic_prefix %}
+  {# ADR-0052: each panel is marked by the rows behind it; `run_mark` is the
+     run's own, `flow_mark` either run of the migration it compares. #}
+  {% set run_mark = dashboard.run_synthetic if dashboard else false %}
+  {% set flow_mark = dashboard.migration_synthetic if dashboard else false %}
   {% macro money(value) %}{{ "{:,.2f}".format(value) }}{% endmacro %}
   {% macro when(run) %}{{ run.run_at.strftime("%Y-%m-%d %H:%M") }}{% endmacro %}
 
@@ -16,12 +19,7 @@
     "Segmentation modelling"
   ) }}
 
-  {% if is_synthetic %}
-    <div class="mq-alert mq-alert--info" role="status">
-      <span class="mq-pill mq-pill--info">Synthetic</span>
-      These figures come from demonstration data, not observed business activity.
-    </div>
-  {% endif %}
+  {{ synthetic_banner(synthetic) }}
 
   {% if error %}{{ alert(error) }}{% endif %}
 
@@ -73,11 +71,10 @@
       </article>
     </div>
 
-    {% from "macros/ui.html" import status_pill %}
     {% macro num(value, places=2) %}{% if value is none %}–{% else %}{{ ("%." ~ places ~ "f") | format(value) }}{% endif %}{% endmacro %}
 
     <section class="mq-panel mq-panel--table mq-density-compact">
-      <header class="mq-panel__header"><h2 class="mq-panel__title">Average R, F and M by label</h2></header>
+      <header class="mq-panel__header"><h2 class="mq-panel__title">Average R, F and M by label</h2>{{ synthetic_pill(run_mark) }}</header>
       <div class="mq-table-wrap"><table class="mq-table"><thead><tr><th scope="col">Label</th><th scope="col" class="mq-num">Customers</th><th scope="col" class="mq-num">Mean R</th><th scope="col" class="mq-num">Mean F</th><th scope="col" class="mq-num">Mean M</th><th scope="col" class="mq-num">Days since last purchase</th><th scope="col" class="mq-num">Purchases</th><th scope="col" class="mq-num">Spend</th></tr></thead><tbody>
         {% for m in kpis.label_means %}<tr><td>{{ m.label }}</td><td class="mq-num">{{ m.customers }}</td><td class="mq-num">{{ num(m.mean_r) }}</td><td class="mq-num">{{ num(m.mean_f) }}</td><td class="mq-num">{{ num(m.mean_m) }}</td><td class="mq-num">{{ num(m.mean_recency_days, 1) }}</td><td class="mq-num">{{ num(m.mean_frequency, 1) }}</td><td class="mq-num">{{ num(m.mean_monetary) }}</td></tr>{% endfor %}
       </tbody></table></div>
@@ -88,46 +85,48 @@
       <section class="mq-panel">
         <header class="mq-panel__header">
           <h2 class="mq-panel__title">Segment sizes</h2>
+          {{ synthetic_pill(run_mark) }}
           <span class="mq-caption mq-mono">column · categorical</span>
         </header>
         <div class="mq-panel__body">
-          <div id="mq-chart-sizes" class="mq-chart" role="img" aria-label="Customers per label"></div>
+          <div id="mq-chart-sizes" class="mq-chart" role="img" aria-label="{{ synthetic_prefix(run_mark) }}Customers per label"></div>
         </div>
       </section>
 
       <section class="mq-panel">
         <header class="mq-panel__header">
           <h2 class="mq-panel__title">Revenue by label</h2>
+          {{ synthetic_pill(run_mark) }}
           <span class="mq-caption mq-mono">column · categorical</span>
         </header>
         <div class="mq-panel__body">
-          <div id="mq-chart-revenue" class="mq-chart" role="img" aria-label="Revenue per label over the run's window"></div>
+          <div id="mq-chart-revenue" class="mq-chart" role="img" aria-label="{{ synthetic_prefix(run_mark) }}Revenue per label over the run's window"></div>
         </div>
       </section>
 
       <section class="mq-panel">
         <header class="mq-panel__header">
           <h2 class="mq-panel__title">RFM distribution</h2>
-          {{ mark() }}
+          {{ synthetic_pill(run_mark) }}
           <span class="mq-caption mq-mono">heatmap · sequential</span>
         </header>
         <div class="mq-panel__body">
-          <div id="mq-chart-rfm" class="mq-chart" role="img" aria-label="{% if is_synthetic %}Synthetic. {% endif %}Customers by recency and frequency quintile"></div>
+          <div id="mq-chart-rfm" class="mq-chart" role="img" aria-label="{{ synthetic_prefix(run_mark) }}Customers by recency and frequency quintile"></div>
         </div>
       </section>
 
       <section class="mq-panel">
         <header class="mq-panel__header">
           <h2 class="mq-panel__title">Spend by RFM cell</h2>
-          {{ mark() }}
+          {{ synthetic_pill(run_mark) }}
           <span class="mq-caption mq-mono">heatmap · sequential · MXN</span>
         </header>
         <div class="mq-panel__body">
-          <div id="mq-chart-rfm-spend" class="mq-chart" role="img" aria-label="{% if is_synthetic %}Synthetic. {% endif %}Mean spend per customer in MXN, by recency and frequency quintile"></div>
+          <div id="mq-chart-rfm-spend" class="mq-chart" role="img" aria-label="{{ synthetic_prefix(run_mark) }}Mean spend per customer in MXN, by recency and frequency quintile"></div>
           <p class="mq-caption">Monetary, the third RFM dimension: each customer's spend over the run's {{ dashboard.run.window_days }}-day window, averaged over the customers in the cell, in MXN. A cell with no customers has no mean and shows a dash.</p>
           <details>
             <summary class="mq-caption">The 25 cells as a table</summary>
-            <div class="mq-table-wrap"><table class="mq-table mq-density-compact"><caption class="mq-visually-hidden">{% if is_synthetic %}Synthetic. {% endif %}Customers and spend by recency and frequency quintile</caption><thead><tr><th scope="col">Recency</th><th scope="col">Frequency</th><th scope="col" class="mq-num">Customers</th><th scope="col" class="mq-num">Total spend (MXN)</th><th scope="col" class="mq-num">Mean spend (MXN)</th></tr></thead><tbody>
+            <div class="mq-table-wrap"><table class="mq-table mq-density-compact"><caption class="mq-visually-hidden">{{ synthetic_prefix(run_mark) }}Customers and spend by recency and frequency quintile</caption><thead><tr><th scope="col">Recency</th><th scope="col">Frequency</th><th scope="col" class="mq-num">Customers</th><th scope="col" class="mq-num">Total spend (MXN)</th><th scope="col" class="mq-num">Mean spend (MXN)</th></tr></thead><tbody>
               {% for cell in dashboard.heatmap | sort(attribute="frequency_bin", reverse=true) | sort(attribute="recency_bin", reverse=true) %}<tr><td>Q{{ cell.recency_bin }}</td><td>Q{{ cell.frequency_bin }}</td><td class="mq-num">{{ cell.count }}</td><td class="mq-num">{{ money(cell.monetary_total) }}</td><td class="mq-num">{% if cell.mean_monetary is none %}–{% else %}{{ money(cell.mean_monetary) }}{% endif %}</td></tr>{% endfor %}
             </tbody></table></div>
           </details>
@@ -138,11 +137,12 @@
     <section class="mq-panel">
       <header class="mq-panel__header">
         <h2 class="mq-panel__title">Migration flow</h2>
+        {{ synthetic_pill(flow_mark) }}
         <span class="mq-caption mq-mono">sankey · categorical</span>
       </header>
       <div class="mq-panel__body">
         {% if dashboard.migration %}
-          <div id="mq-chart-migration" class="mq-chart" role="img" aria-label="Customers moving between labels since the previous run"></div>
+          <div id="mq-chart-migration" class="mq-chart" role="img" aria-label="{{ synthetic_prefix(flow_mark) }}Customers moving between labels since the previous run"></div>
           <dl class="mq-description-list">
             <dt>New to the population</dt><dd>{{ dashboard.migration.new_to_population }}</dd>
             <dt>Left the population</dt><dd>{{ dashboard.migration.left_the_population }}</dd>
@@ -174,7 +174,7 @@
     </section>
 
     <section class="mq-panel mq-panel--table mq-density-compact">
-      <header class="mq-panel__header"><h2 class="mq-panel__title">Most recommended products</h2></header>
+      <header class="mq-panel__header"><h2 class="mq-panel__title">Most recommended products</h2>{{ synthetic_pill(kpis.recommended.synthetic) }}</header>
       {% if kpis.recommended.products %}
         <div class="mq-table-wrap"><table class="mq-table"><thead><tr><th scope="col">Product</th><th scope="col">Category</th><th scope="col" class="mq-num">Customers</th><th scope="col">Stock at the stores it is recommended from</th></tr></thead><tbody>
           {% for p in kpis.recommended.products %}<tr><td>{{ p.name }} <span class="mq-mono">#{{ p.product_id }}</span></td><td>{{ p.category_name }}</td><td class="mq-num">{{ p.customers }}</td><td>{{ p.stock | length }} store{{ "" if p.stock | length == 1 else "s" }}, <span class="mq-num">{{ p.stock | map(attribute=1) | sum }}</span> units in stock: {% for store, units in p.stock[:5] %}{{ store }}: <span class="mq-num">{{ units }}</span>{% if not loop.last %} · {% endif %}{% endfor %}{% if p.stock | length > 5 %} · and {{ p.stock | length - 5 }} more{% endif %}</td></tr>{% endfor %}

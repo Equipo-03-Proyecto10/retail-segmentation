@@ -5,7 +5,7 @@
     Included by catalog/customer_profile.html with `shifts` (a ProfileShifts,
     or None when the window is too short to halve) and `min_purchases`. Kept in
     its own file so the profile page carries a single line for it. -#}
-{% from "macros/ui.html" import status_pill %}
+{% from "macros/ui.html" import status_pill, synthetic_pill %}
 {% macro day(moment) %}{{ moment.strftime("%Y-%m-%d") }}{% endmacro %}
 {% macro noun(n, singular) %}{{ singular if n == 1 else singular ~ "s" }}{% endmacro %}
 {% macro share(leader) %}{% if leader %}{{ leader.name }} <span class="mq-num">{{ leader.share }} %</span> <span class="mq-caption">({{ leader.purchases }} of {{ leader.period_purchases }})</span>{% else %}<span class="mq-caption">—</span>{% endif %}{% endmacro %}
@@ -25,6 +25,7 @@
   <section class="mq-panel mq-panel--table mq-density-compact" aria-labelledby="shifts-title">
     <header class="mq-panel__header">
       <h2 class="mq-panel__title" id="shifts-title">Before and now</h2>
+      {{ synthetic_pill(shifts.seeded) }}
       <span class="mq-caption">{{ day(shifts.earlier.start) }} to {{ day(shifts.earlier.end) }} against {{ day(shifts.later.start) }} to {{ day(shifts.later.end) }} · {{ shifts.half_days }} {{ noun(shifts.half_days, "day") }} each</span>
     </header>
     <div class="mq-table-wrap">

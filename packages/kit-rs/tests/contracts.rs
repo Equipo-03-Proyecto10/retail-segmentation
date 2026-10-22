@@ -222,6 +222,65 @@ async fn xsd_errors_use_stable_details() {
     }
 }
 
+/// #583: jsonschema 0.30 panicked comparing a number no f64 holds against a
+/// bound, and the connection dropped. Each such number is a 422 now.
+#[tokio::test]
+async fn numbers_no_f64_holds_are_out_of_range() {
+    let root = TempDir::new();
+    stage_probe(root.path());
+    let seen = Seen::default();
+    let app = probe_app(root.path(), Arc::clone(&seen));
+    let huge_integer = format!("1{}", "0".repeat(399));
+    let cases = [
+        ("1e400", "level"),
+        ("1e309", "level"),
+        ("-1e400", "level"),
+        (huge_integer.as_str(), "level"),
+        ("1e308", "level"),
+        ("18446744073709551616", "level"),
+    ];
+    for (number, field) in cases {
+        let body = format!(
+            r#"{{"title":"Valid","code":"AB","level":{number},"color":"red","price":0.1}}"#
+        );
+        let answer = call("POST", "/v1/facets")
+            .body("application/json", body.clone())
+            .send(&app)
+            .await;
+        assert_eq!(answer.status, 422, "{body}: {}", answer.text());
+        assert_eq!(answer.code(), "invalid_body", "{body}");
+        assert_eq!(
+            answer.json()["details"],
+            json!([{"field": field, "code": "out_of_range"}]),
+            "{body}"
+        );
+    }
+    for price in ["1e400", "-1e400", huge_integer.as_str()] {
+        let body =
+            format!(r#"{{"title":"Valid","code":"AB","level":3,"color":"red","price":{price}}}"#);
+        let answer = call("POST", "/v1/facets")
+            .body("application/json", body)
+            .send(&app)
+            .await;
+        assert_eq!(answer.status, 422, "{price}: {}", answer.text());
+        assert_eq!(
+            answer.json()["details"],
+            json!([{"field": "price", "code": "out_of_range"}])
+        );
+    }
+    let xml_answer = call("POST", "/v1/facets")
+        .body(
+            "application/xml",
+            probe_xml(&[("price", huge_integer.as_str())]),
+        )
+        .send(&app)
+        .await;
+    // libxml2 refuses a 400-digit xs:decimal itself, before the kit's screen.
+    assert_eq!(xml_answer.status, 422, "{}", xml_answer.text());
+    assert_eq!(xml_answer.code(), "invalid_body");
+    assert!(seen.lock().unwrap().is_empty());
+}
+
 #[tokio::test]
 async fn json_and_xml_numbers_are_parsed_exactly() {
     let root = TempDir::new();

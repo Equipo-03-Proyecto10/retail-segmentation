@@ -5,6 +5,11 @@
  * here fetches anything: the page is server-rendered with its data already
  * embedded, per docs/roadmap.md's "dashboards constraint, resolved by the
  * second delivery".
+ *
+ * A chart built from seeded data says Synthetic in its own subtitle, so the
+ * mark survives a screenshot of the chart alone (ADR-0052). Which charts are
+ * marked comes from the page, per chart: the migration flow compares two
+ * runs and can be marked when the run's own charts are not.
  */
 (function () {
   "use strict";
@@ -42,9 +47,17 @@
     ? window.MOSAIQCharts.sequentialStops()
     : undefined;
 
-  function bar(elementId, title, series) {
+  var marks = data.synthetic || {};
+  function subtitle(chart) {
+    return marks[chart]
+      ? { text: data.label, style: { fontWeight: "600" } }
+      : { text: undefined };
+  }
+
+  function bar(elementId, chart, title, series) {
     Highcharts.chart(elementId, {
       chart: { type: "column" },
+      subtitle: subtitle(chart),
       xAxis: { categories: series.map(function (p) { return p.name; }), tickLength: 0 },
       yAxis: { title: { text: title } },
       legend: { enabled: false },
@@ -59,12 +72,13 @@
     });
   }
 
-  bar("mq-chart-sizes", "Customers", data.sizes);
-  bar("mq-chart-revenue", "Revenue", data.revenue);
+  bar("mq-chart-sizes", "sizes", "Customers", data.sizes);
+  bar("mq-chart-revenue", "revenue", "Revenue", data.revenue);
 
   var quintile = ["Q1", "Q2", "Q3", "Q4", "Q5"];
   Highcharts.chart("mq-chart-rfm", {
     chart: { type: "heatmap", spacing: [8, 8, 4, 4] },
+    subtitle: subtitle("rfm"),
     xAxis: { categories: quintile, title: { text: "Frequency quintile" }, gridLineWidth: 0, tickLength: 0 },
     yAxis: { categories: quintile, title: { text: "Recency quintile" }, gridLineWidth: 0, reversed: true },
     colorAxis: { stops: sequentialStops, min: 0 },
@@ -89,6 +103,7 @@
   }
   Highcharts.chart("mq-chart-rfm-spend", {
     chart: { type: "heatmap", spacing: [8, 8, 4, 4] },
+    subtitle: subtitle("rfm_spend"),
     xAxis: { categories: quintile, title: { text: "Frequency quintile" }, gridLineWidth: 0, tickLength: 0 },
     yAxis: { categories: quintile, title: { text: "Recency quintile" }, gridLineWidth: 0, reversed: true },
     colorAxis: { stops: sequentialStops, min: 0, labels: { format: "{value:,.0f}" } },
@@ -130,6 +145,7 @@
   if (data.migration) {
     Highcharts.chart("mq-chart-migration", {
       chart: { type: "sankey" },
+      subtitle: subtitle("migration"),
       tooltip: {
         pointFormat: "{point.fromNode.name} \u2192 {point.toNode.name}: <b>{point.weight}</b> customers",
       },

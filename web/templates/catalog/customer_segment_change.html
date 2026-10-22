@@ -5,7 +5,7 @@
 {% block breadcrumbs %}{{ application_name }} / Catalogs / Customers / {{ customer.name }} / Run #{{ change.entry.row.run_id }}{% endblock %}
 
 {% block content %}
-  {% from "macros/ui.html" import empty_state, page_header, status_pill %}
+  {% from "macros/ui.html" import empty_state, page_header, status_pill, synthetic_banner, synthetic_pill %}
   {% from "macros/migration.html" import explanation_sentences, score_change %}
   {% macro money(value) %}{{ "{:,.2f}".format(value) }}{% endmacro %}
   {% macro day(moment) %}{{ moment.strftime("%Y-%m-%d") }}{% endmacro %}
@@ -54,6 +54,8 @@
     <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('catalog.customer_detail', customer_id=customer.customer_id) }}">Back to customer</a>
   {% endcall %}
 
+  {{ synthetic_banner(change.synthetic, "At least one of these runs scored demonstration data, so this change is Synthetic.") }}
+
   {% if change.previous is none %}
     {{ empty_state("First assignment", "Run #" ~ row.run_id ~ " is the first run that scored this customer, so there is no earlier assignment to compare with.", "First") }}
   {% else %}
@@ -64,6 +66,7 @@
         <h2 class="mq-panel__title" id="explanation-title">
           {{ label_pill(before) }} → {{ label_pill(row, "info") }}
         </h2>
+        {{ synthetic_pill(change.synthetic) }}
         <span class="mq-caption">{{ "Label changed" if explanation.label_changed else "Label unchanged" }} · run #{{ before.run_id }} → run #{{ row.run_id }}</span>
       </header>
       <div class="mq-table-wrap">
@@ -116,6 +119,7 @@
     <section class="mq-panel" aria-labelledby="entered-title">
       <header class="mq-panel__header">
         <h2 class="mq-panel__title" id="entered-title">Sales that entered the calculation</h2>
+        {{ synthetic_pill(change.synthetic) }}
         <span class="mq-caption">In run #{{ row.run_id }}'s window ({{ day(change.window.start) }} to {{ day(change.window.end) }}) and not in run #{{ before.run_id }}'s ({{ day(change.previous_window.start) }} to {{ day(change.previous_window.end) }})</span>
       </header>
       {% if change.entered %}
@@ -128,6 +132,7 @@
     <section class="mq-panel" aria-labelledby="left-title">
       <header class="mq-panel__header">
         <h2 class="mq-panel__title" id="left-title">Sales that left the window</h2>
+        {{ synthetic_pill(change.synthetic) }}
         <span class="mq-caption">Counted by run #{{ before.run_id }} and too old for run #{{ row.run_id }}</span>
       </header>
       {% if change.left %}

@@ -541,3 +541,41 @@ def test_the_customer_page_links_to_the_profile(
     body = client.get(f"/catalog/customers/{_ID}").get_data(as_text=True)
 
     assert f'href="{_URL}"' in body
+
+
+# ---------- #560: sales panels by their sales, the segment panel by its run ----------
+
+
+def _panel(body: str, title: str) -> str:
+    start = body.index(f">{title}</h2>")
+    return body[start : body.index("</header>", start)]
+
+
+def test_an_observed_profile_carries_no_synthetic_mark(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    response, _ = _open(app, monkeypatch)
+
+    assert "Synthetic" not in response.get_data(as_text=True)
+
+
+def test_seeded_sales_mark_the_sales_panels_and_not_the_segment_panel(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    response, _ = _open(app, monkeypatch, _profile(seeded_sales=True))
+    body = response.get_data(as_text=True)
+
+    assert "Synthetic" in _panel(body, "Favourite categories")
+    assert "Synthetic" in _panel(body, "Frequent products")
+    assert "Synthetic" not in _panel(body, "Segment and R/F/M")
+
+
+def test_a_seeded_run_marks_the_segment_panel_and_not_the_sales_panels(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    profile = _profile(rfm=_rfm_with(data_origin="SEEDED"))
+    response, _ = _open(app, monkeypatch, profile)
+    body = response.get_data(as_text=True)
+
+    assert "Synthetic" in _panel(body, "Segment and R/F/M")
+    assert "Synthetic" not in _panel(body, "Favourite categories")

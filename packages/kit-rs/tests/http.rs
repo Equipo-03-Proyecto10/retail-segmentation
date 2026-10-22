@@ -416,6 +416,38 @@ async fn meta_routes_are_public_and_byte_exact() {
 }
 
 #[tokio::test]
+async fn contract_documents_refuse_an_unsupported_accept() {
+    let Some(app) = app().await else { return };
+    for path in ["/openapi.yaml", "/schema.xsd"] {
+        for accept in ["image/png", "text/html", "application/json"] {
+            let answer = call("GET", path).header("Accept", accept).send(&app).await;
+            assert_eq!(answer.status, 406, "{path} {accept}");
+            assert_eq!(answer.code(), "not_acceptable");
+        }
+    }
+}
+
+#[tokio::test]
+async fn contract_documents_serve_a_supported_accept() {
+    let Some(app) = app().await else { return };
+    for (path, accept) in [
+        ("/openapi.yaml", None),
+        ("/openapi.yaml", Some("*/*")),
+        ("/openapi.yaml", Some("application/yaml")),
+        ("/openapi.yaml", Some("application/*")),
+        ("/schema.xsd", None),
+        ("/schema.xsd", Some("application/xml")),
+        ("/schema.xsd", Some("text/xml, */*;q=0.1")),
+    ] {
+        let mut request = call("GET", path);
+        if let Some(accept) = accept {
+            request = request.header("Accept", accept);
+        }
+        assert_eq!(request.send(&app).await.status, 200, "{path} {accept:?}");
+    }
+}
+
+#[tokio::test]
 async fn failed_readiness_has_its_own_error() {
     if redis_url().is_none() {
         return;

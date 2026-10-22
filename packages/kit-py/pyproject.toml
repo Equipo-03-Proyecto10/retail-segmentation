@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mosaiq-kit"
-version = "0.1.2"
+version = "0.1.4"
 description = "Shared transport and infrastructure mechanisms for MOSAIQ Flask services"
 readme = "README.md"
 requires-python = ">=3.12"

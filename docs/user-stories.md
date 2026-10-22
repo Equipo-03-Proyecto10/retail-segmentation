@@ -323,7 +323,7 @@ design later.
 - Given a no-control design, when I save it, then it has exactly two treatment arms
 - Given an experiment setup, when I choose its target metric, then Conversion rate is the only choice (ADR-0053)
 - Given the first assignment exists, when I try to change the campaign, dates, target metric, conversion window or arm definitions, then the change is refused; only the name may change
-- Given a `SEEDED` or `INJECTED` experiment, when any setup or result surface shows it, then that surface says `Synthetic`
+- Given a `SEEDED` or `INJECTED` experiment, when any setup or result surface shows it, then that surface says `Synthetic`; given an `OBSERVED` experiment with a conversion linking a `SEEDED` sale, its result surfaces say `Synthetic` too
 
 `RF-23` · F11-01, F11-03, #342, #427, #457
 
@@ -350,7 +350,7 @@ is known.
 - Given an open conversion window, when the result is shown, then it is marked preliminary and the still-open assignments remain in the denominator
 - Given no control, an empty arm, a metric other than conversion or unrecorded qualifying sales, when uplift is requested, then it is refused with the reason
 - Given the validation fixtures, when the A/A and fixed injected-uplift checks run, then the A/A difference is not significant and the injected effect is recovered within its stated tolerance
-- Given a non-`OBSERVED` experiment, when its result is shown, then it says `Synthetic`
+- Given a non-`OBSERVED` experiment, or one whose recorded conversions link a `SEEDED` sale, when its result is shown, then it says `Synthetic`
 
 `RF-25` · F11-07, #343
 
@@ -365,8 +365,9 @@ can read its population, behaviour, movement and revenue together.
 - Given equal raw R, F or M values, when quintile bins are built, then tied customers remain in the same bin
 - Given either segmentation method, when the charts are built, then they read stable labels and stored raw values without interpreting a cluster id or method-specific score
 - Given the page is loaded, when its assets and data are inspected, then Highcharts is served by the application and chart data is embedded in the server-rendered HTML rather than fetched from an endpoint
+- Given a `SEEDED` run, when the page is read visually or by assistive technology, then each of its panels and charts says `Synthetic`; given an `OBSERVED` run against an `OBSERVED` previous run, nothing does
 
-`RF-26` · F12-01, #340, #423
+`RF-26` · F12-01, #340, #423, AN-20 (#560)
 
 ### HU-28 — Filter segment history
 **As an** auditor, **I want** to filter stored assignment history and expand a
@@ -412,7 +413,7 @@ conversion window without changing the measurement rule.
 - Given a control, when differences are charted, then each treatment is compared with that control using the intent-to-treat rate and its 95% interval
 - Given no control, when differences are charted, then the first treatment arm is named as the reference and the chart calls the result a difference, not uplift
 - Given conversions through the fixed window, when the cumulative series is drawn, then it never falls and its final point equals the assigned-customer rate
-- Given a non-`OBSERVED` experiment, when any chart is read visually or by assistive technology, then it says `Synthetic`
+- Given a non-`OBSERVED` experiment, or one whose recorded conversions link a `SEEDED` sale, when any chart is read visually or by assistive technology, then it says `Synthetic`
 
 `RF-30` · AN-03 (#415)
 
@@ -424,7 +425,7 @@ their addresses.
 - Given sales on record, when I open Reports, then I see the revenue and the sales count of the newest 90 days, split by channel and by store
 - Given no sales on record, when I open Reports, then the page says so instead of showing zeros
 - Given my role, when the page lists analytics reports, then it links only those my role can open
-- Given the deployment declares demonstration data, when the page loads, then it carries the `Synthetic` badge
+- Given a `SEEDED` sale in the revenue window, when the page loads, then it carries the `Synthetic` banner; given only `OBSERVED` sales, it does not
 - Given a role without `report.read`, when it requests the page, then it is refused
 
 `RF-31` · #344
@@ -457,12 +458,12 @@ their addresses.
 | HU-24 | RF-23 | F11-01, F11-03 | #220, #222, #342, #427 |
 | HU-25 | RF-24 | F11-04–F11-06 | #223–#225, #357 |
 | HU-26 | RF-25 | F11-07 | #226, #343 |
-| HU-27 | RF-26 | F12-01 | #227, #340, #423 |
+| HU-27 | RF-26 | F12-01, AN-20 | #227, #340, #423, #560 |
 | HU-28 | RF-27 | F12-02 | #228 |
 | HU-29 | RF-28 | F12-03 | #229 |
 | HU-30 | RF-29 | F12-04 | #230, #358 |
 | HU-31 | RF-30 | AN-03 | #415 |
-| HU-32 | RF-31 | — | #344 |
+| HU-32 | RF-31 | AN-20 | #344, #560 |
 
 Thirty-two product stories cover every functional requirement, RF-01 to RF-31.
 HU-14 and HU-15 cover the non-functional requirements they name, and the

@@ -22,6 +22,7 @@ from psycopg.errors import (
 from web.db import sales
 from web.db.inventory import StockUnavailable, decrement_stock
 from web.db.transactions import atomic
+from web.services import provenance
 
 
 @dataclass(frozen=True)
@@ -141,6 +142,8 @@ def ingest_row(connection: Connection, row: SalesRow) -> None:
                 store_id=row.store_id,
                 channel_id=row.channel_id,
                 occurred_at=row.occurred_at,
+                # ADR-0052: a CSV load records real sales.
+                data_origin=provenance.OBSERVED,
             )
         except ForeignKeyViolation as error:
             raise _unknown_reference(error) from error
@@ -151,6 +154,10 @@ def ingest_row(connection: Connection, row: SalesRow) -> None:
         except DataError as error:
             raise _malformed(error, _HEADER_DATA_ERRORS) from error
     else:
+        # A sale has one origin. A line added to a seeded sale would make a
+        # real purchase look synthetic, or the seed's sale partly real.
+        if header.data_origin != provenance.OBSERVED:
+            raise RowRejected(f"duplicate: {source_transaction_id} is a seeded sale")
         if (
             header.customer_id != row.customer_id
             or header.store_id != row.store_id

@@ -85,22 +85,22 @@ Each cell is the median over the 5 repetitions with the min-max range in parenth
 | Flask | 116.2 (116.2-116.3) | 120.1 (120.0-120.1) | 281.3 | 8568 (8439-8990) |
 | Rust twin | 21.6 (21.6-21.6) | 61.8 (61.8-61.8) | 157.1 | 543 (419-854) |
 
-RSS under load is the peak of samples taken every 10 s during each measured run;
-its range is over every measured run of the build (all scenarios, formats and repetitions).
-
-
-RSS is the sum over every process in the container (`docker top`), idle after a 10 s settle following a start, and the peak of samples every 10 s during the measured phase. The cold start is the time from `docker start` to the first `200` on an authenticated `GET /v1/products/100001`, over 5 restarts.
+RSS is the sum over every process in the container (`docker top`), idle after a 10 s settle following a start, and the peak of samples every 10 s during the measured phase. The range under load is over every measured run of the build (all scenarios, formats and repetitions). The cold start is the time from `docker start` to the first `200` on an authenticated `GET /v1/products/100001`, over 5 restarts.
 
 ## Method
 
 - Calibration: a ramp of constant-arrival steps of 10 s (10, 20, 40, 60, 80, 120, 160, 240, 320, 480, 640, 960, 1280, 1920 req/s). A step is sustained when at most 1% of arrivals were dropped, at most 1% of requests and checks failed, and p99 was at most 1,000 ms. The saturation rate is the highest step of the unbroken sustained run from the bottom (`bench/README.md`). Each measured run offers 70% of the lower of the two builds' saturation rates for the scenario and format.
 - Measured runs: 30 s warm-up then 2 min measured at a constant arrival rate, 5 repetitions. The builds alternate within each repetition, and Flask starts the odd repetitions and the twin the even ones. 80 runs in all.
 - Scenarios: `list` (20 rows, pages 1 to 500), `search` (`q`), `filter` (`category_id` and `active`, 50 rows), `detail` (5% unknown ids, whose 404 is expected); each with `Accept: application/json` and `Accept: application/xml`, checking the status and the format.
-- Fairness settings applied and read back by `bench/run.sh`: `CACHE_ENABLED`, `RATE_LIMIT_ENABLED`, `STREAM_CONSUMER_ENABLED` and `OUTBOX_RELAY_ENABLED` false for products-service (the twin has no cache and forces its limiter off); 0.5 CPU each; the builds pinned to CPU 1, PostgreSQL, Redis and auth to CPU 2, k6 to CPU 3; one token and database for both, RS256 verification and the `EXISTS pub:auth:v1:live:{sid}` check on every request.
+- Fairness settings applied and read back by `bench/run.sh`: `CACHE_ENABLED`, `RATE_LIMIT_ENABLED`, `STREAM_CONSUMER_ENABLED` and `OUTBOX_RELAY_ENABLED` false for products-service (the twin has no cache and forces its limiter off); 0.5 CPU each; the builds pinned to CPU 1, PostgreSQL, Redis and auth to CPU 2, k6 to CPU 3; one database for both, and tokens minted the same way for both (an ANALYST token signed with the bench key, a fresh one for each k6 run); RS256 verification and the `EXISTS pub:auth:v1:live:{sid}` check on every request.
 
 ## Deviation: the memory limit was not enforced
 
 ADR-0042 fixes `mem_limit` at 160 MB. This machine boots with `cgroup_disable=memory` (Raspberry Pi OS default), so Docker printed "Your kernel does not support memory limit capabilities" and discarded the limit for both containers. Both ran without a memory limit, which is symmetric, but it is not the specified configuration. Flask's 120 MiB resident set would have fitted the limit, and the twin's 62 MiB did too, so neither would have been constrained; the numbers above still do not prove that. `run.sh` accepts this only with `BENCH_ALLOW_NO_MEMLIMIT=1` and records `memory_limit=not-enforced` in `facts.txt`. The CPU limit (0.5) and the pinning were enforced and read back.
+
+## Deviation: the saturation rate has a single value
+
+#455 asks for every reported figure, the saturation rate included, as the median and the min-max range over the 5 repetitions. `run.sh` calibrates once per build, format and scenario, before the repetitions, because the measured rate is derived from that calibration. The saturation column therefore holds one value with no range, and its "Difference" compares two single numbers (see "Single calibration" under the threats to validity). A range would need the calibration repeated five times.
 
 ## Machine and versions
 

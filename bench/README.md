@@ -21,7 +21,6 @@
 | `env/` | The bench's local, throwaway configuration. Caches, rate limits and stream workers are off, per ADR-0042's fairness rules |
 | `keys.sh` | A throwaway signing key for the bench, written to `bench/keys/` (git-ignored) |
 | `conformance.sh` | Fairness rule 1: both builds pass the shared conformance suite and the products read cases (`tests/`), then answer a fixed sample identically (`compare.py`) |
-
 | `compose.pinned.yaml` | What `run.sh` layers over `compose.yaml`: `cpuset` pinning and the products flags |
 | `k6/` | `list.js`, `search.js`, `filter.js`, `detail.js` and their shared `lib.js` |
 | `mint_token.py` | Mints the one-hour access token for a k6 run, as the conformance suite does |
@@ -54,7 +53,7 @@ docker compose -f bench/compose.yaml --profile bench down -v
 
 ## Run the benchmark
 
-The machine must be a developer machine, never the instance. It needs Docker, `xmllint` (`libxml2-utils`) and the repository's `.venv` (the conformance suite needs pytest). k6 runs as `grafana/k6` in Docker. Four CPUs are assumed: CPU 0 is left to the system, the two builds share CPU 1 (only one is ever under load), PostgreSQL, Redis and auth share CPU 2, and k6 has CPU 3 (`BENCH_APP_CPUS`, `BENCH_BACKING_CPUS`, `BENCH_K6_CPUS`).
+The machine must be a developer machine, never the instance. It needs Docker, `xmllint` (`libxml2-utils`) and the repository's `.venv` (the conformance suite needs pytest). k6 runs as `grafana/k6` in Docker, pinned by digest to the reported run's image, k6 v2.3.0 (`K6_IMAGE` overrides it). Four CPUs are assumed: CPU 0 is left to the system, the two builds share CPU 1 (only one is ever under load), PostgreSQL, Redis and auth share CPU 2, and k6 has CPU 3 (`BENCH_APP_CPUS`, `BENCH_BACKING_CPUS`, `BENCH_K6_CPUS`).
 
 ```bash
 source .venv/bin/activate

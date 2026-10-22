@@ -5,7 +5,7 @@
 #
 #   source .venv/bin/activate        # the conformance suite needs pytest
 #   bash bench/run.sh
-#   python3 bench/aggregate.py bench/results/<run>   # the report's tables
+#   python3 bench/aggregate.py report bench/results/<run>   # the report's tables
 #
 # Everything is overridable, the defaults are the specified run:
 #   BENCH_REPS=5  BENCH_WARMUP_SECONDS=30  BENCH_MEASURE_SECONDS=120
@@ -15,7 +15,9 @@
 #   BENCH_APP_CPUS=1 BENCH_BACKING_CPUS=2 BENCH_K6_CPUS=3   (CPU 0 is the OS's)
 #   BENCH_OUT=bench/results/<name>   re-running with the same name resumes
 #   BENCH_ALLOW_NO_MEMLIMIT=1        accept a kernel without a memory cgroup (mem_limit discarded)
+#   BENCH_COLDSTART_TIMEOUT_SECONDS=120   how long a restarted build may take to answer 200
 #   BENCH_KEEP_UP=1                  leave the stack running afterwards
+#   K6_IMAGE=grafana/k6@sha256:...   the load generator, by default the reported run's (k6 v2.3.0)
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -32,7 +34,10 @@ export BENCH_BACKING_CPUS=${BENCH_BACKING_CPUS:-2}
 k6_cpus=${BENCH_K6_CPUS:-3}
 export AUTH_TAG=${AUTH_TAG:-$(cat services/auth/VERSION)}
 export PRODUCTS_TAG=${PRODUCTS_TAG:-$(cat services/products/VERSION)}
-k6_image=${K6_IMAGE:-grafana/k6:latest}
+coldstart_timeout=${BENCH_COLDSTART_TIMEOUT_SECONDS:-120}
+# Pinned by digest: the multi-arch index `grafana/k6:latest` resolved to on
+# 2026-10-22, k6 v2.3.0, so a rerun uses the reported run's load generator.
+k6_image=${K6_IMAGE:-grafana/k6@sha256:e66db15b860113878fa74670e31f5e274830b7b6e42c8bff28b2f2d86a257603}
 out=${BENCH_OUT:-bench/results/$(date -u +%Y%m%dT%H%M%SZ)}
 out=${out%/}
 mkdir -p "$out/calibration" "$out/runs" "$out/coldstart"
@@ -142,6 +147,10 @@ for build in flask rust; do
     docker start "$id" >/dev/null
     until [[ $(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $tok" \
       -H 'Accept: application/json' "${url[$build]}/v1/products/100001" || true) == 200 ]]; do
+      if (($(date +%s%N) - start > coldstart_timeout * 1000000000)); then
+        echo "FAIL: $build did not answer 200 within $coldstart_timeout s of docker start"
+        exit 1
+      fi
       sleep 0.05
     done
     ms=$((($(date +%s%N) - start) / 1000000))

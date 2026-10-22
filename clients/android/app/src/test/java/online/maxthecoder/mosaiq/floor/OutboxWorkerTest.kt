@@ -85,6 +85,22 @@ class OutboxWorkerTest {
     }
 
     @Test
+    fun aRateLimitAndAGatewayErrorAreNotFinalAnswers() = runBlocking {
+        signIn("A", "token-A")
+        val id = graph.writes.queueCheckIn(3, null)
+        server.enqueue(error(429, "rate_limited"))
+        server.enqueue(MockResponse().setResponseCode(504).setBody("<html>Gateway Time-out</html>"))
+        server.enqueue(checkIn("no_fix"))
+
+        assertEquals(ListenableWorker.Result.retry(), work())
+        assertEquals(RowState.PENDING, graph.outbox.find(id)!!.state)
+        assertEquals(ListenableWorker.Result.retry(), work())
+        assertEquals(RowState.PENDING, graph.outbox.find(id)!!.state)
+        assertEquals(ListenableWorker.Result.success(), work())
+        assertEquals(RowState.DONE, graph.outbox.find(id)!!.state)
+    }
+
+    @Test
     fun conflictsAndRefusalsAreFinalAndKeptWithTheirError() = runBlocking {
         signIn("A", "token-A")
         val conflict = graph.writes.queueCheckIn(3, null)

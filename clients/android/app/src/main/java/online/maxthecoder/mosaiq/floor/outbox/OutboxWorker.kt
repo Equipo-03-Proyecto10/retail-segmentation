@@ -23,17 +23,23 @@ sealed interface Attempt {
     /** 409, 422 or any other final 4xx: kept and shown, never resent. */
     data class Refused(val error: ApiError) : Attempt
 
-    /** A network error, a timeout or a 503: resend later, with the same id. */
+    /**
+     * A network error, a timeout or a 503, and their gateway forms: a 504 (the
+     * service may have kept the write, so only a resend with the same id can
+     * tell), a 502, or a 429. None is a final answer; resend later.
+     */
     data object Retry : Attempt
 
     /** 401: wait for the refresh, or for the same user to sign in again. */
     data object WaitForSession : Attempt
 
     companion object {
+        private val RESEND = setOf(429, 502, 503, 504)
+
         fun of(status: Int, body: String?, correlationId: String?, retryAfter: String?): Attempt = when {
             status in 200..299 -> Done(status, body, correlationId)
             status == 401 -> WaitForSession
-            status == 503 -> Retry
+            status in RESEND -> Retry
             else -> Refused(ApiError.from(status, body, correlationId, retryAfter))
         }
     }

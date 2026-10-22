@@ -6,8 +6,8 @@ Evidence for F15-02 (#455), under [ADR-0042](../adr/0042-a-bench-only-rust-build
 
 - **Latency:** at an offered rate of 70% of the lower saturation rate, the twin was lower than Flask in every scenario and format, and its p50, p95 and p99 ranges did not overlap Flask's. The gap was small on `search` (p50 12 to 17% lower), where PostgreSQL dominates, and large on `detail` (p50 about 61% lower) and `filter` (p50 43 to 64% lower).
 - **Saturation:** the twin sustained 1x (`list` JSON, `search`), 1.3x (`list` XML), 3x to 6x (`filter`) and 4x to 6x (`detail`) Flask's rate.
-- **Memory:** the twin used 22 MiB idle and 62 MiB under load; Flask used 116 MiB and 120 MiB. Image: 157 MB against 281 MB. Cold start: 0.5 s against 8.6 s.
-- **No difference** in requests per second (both builds were offered the same constant rate and sustained it) and in error rate (0 in all 80 measured runs).
+- **Memory:** the twin used 22 MiB idle and 62 MiB under load; Flask used 116 MiB and 120 MiB, a sum over gunicorn's two processes that counts their shared pages twice (see the note under the memory table). Image: 157 MB against 281 MB. Cold start: 0.5 s against 8.6 s.
+- **No difference** in requests per second (both builds were offered the same constant rate and sustained it; Flask dropped 7 arrivals in three of its 40 runs, listed below the tables) and in error rate (0 in all 80 measured runs).
 - Where the shared path dominates, `search` and `list`, saturation is identical or close: both builds sit on the same PostgreSQL query. The error rate is 0.000% everywhere, so the rows say nothing more than that neither build failed at 70%.
 
 ## How to read the tables
@@ -78,6 +78,14 @@ Each cell is the median over the 5 repetitions with the min-max range in parenth
 | Rust twin | 5 | 0.9 (0.9-0.9) | 2.5 (2.4-2.5) | 6.0 (5.6-6.2) | 112.0 (112.0-112.0) | 0.000 (0.000-0.000) | 960 |
 | Difference | | Rust 62% lower | Rust 51% lower | Rust 36% lower | no difference | no difference | Rust 500% higher |
 
+### Dropped arrivals and failed checks in the measured runs
+
+- `rep2-flask-json-list`: 13438 requests, dropped arrivals: 3, failed checks: 0.000%
+- `rep4-flask-json-list`: 13438 requests, dropped arrivals: 3, failed checks: 0.000%
+- `rep3-flask-json-detail`: 20160 requests, dropped arrivals: 1, failed checks: 0.000%
+
+Every other measured run dropped nothing, and no check failed in any run. The RPS column rounds these drops away.
+
 ### Memory, image size and cold start
 
 | Build | RSS idle (MiB) | RSS under load (MiB) | image (MB) | cold start (ms) |
@@ -87,12 +95,14 @@ Each cell is the median over the 5 repetitions with the min-max range in parenth
 
 RSS is the sum over every process in the container (`docker top`), idle after a 10 s settle following a start, and the peak of samples every 10 s during the measured phase. The range under load is over every measured run of the build (all scenarios, formats and repetitions). The cold start is the time from `docker start` to the first `200` on an authenticated `GET /v1/products/100001`, over 5 restarts.
 
+Flask's container holds two processes, the gunicorn master and the worker it forks. The pages they share copy-on-write, the interpreter and its libraries, appear in both resident sets and are counted twice, so the sum overstates Flask's footprint against the twin's single process, by at most the master's size. PSS (`/proc/<pid>/smaps_rollup`) would split the shared pages instead; this run did not record it.
+
 ## Method
 
 - Calibration: a ramp of constant-arrival steps of 10 s (10, 20, 40, 60, 80, 120, 160, 240, 320, 480, 640, 960, 1280, 1920 req/s). A step is sustained when at most 1% of arrivals were dropped, at most 1% of requests and checks failed, and p99 was at most 1,000 ms. The saturation rate is the highest step of the unbroken sustained run from the bottom (`bench/README.md`). Each measured run offers 70% of the lower of the two builds' saturation rates for the scenario and format.
 - Measured runs: 30 s warm-up then 2 min measured at a constant arrival rate, 5 repetitions. The builds alternate within each repetition, and Flask starts the odd repetitions and the twin the even ones. 80 runs in all.
 - Scenarios: `list` (20 rows, pages 1 to 500), `search` (`q`), `filter` (`category_id` and `active`, 50 rows), `detail` (5% unknown ids, whose 404 is expected); each with `Accept: application/json` and `Accept: application/xml`, checking the status and the format.
-- Fairness settings applied and read back by `bench/run.sh`: `CACHE_ENABLED`, `RATE_LIMIT_ENABLED`, `STREAM_CONSUMER_ENABLED` and `OUTBOX_RELAY_ENABLED` false for products-service (the twin has no cache and forces its limiter off); 0.5 CPU each; the builds pinned to CPU 1, PostgreSQL, Redis and auth to CPU 2, k6 to CPU 3; one database for both, and tokens minted the same way for both (an ANALYST token signed with the bench key, a fresh one for each k6 run); RS256 verification and the `EXISTS pub:auth:v1:live:{sid}` check on every request.
+- Fairness settings applied and read back by `bench/run.sh`: `CACHE_ENABLED`, `RATE_LIMIT_ENABLED`, `STREAM_CONSUMER_ENABLED` and `OUTBOX_RELAY_ENABLED` false for products-service (the twin has no cache and forces its limiter off); 0.5 CPU each; the builds pinned to CPU 1, PostgreSQL, Redis and auth to CPU 2, k6 to CPU 3; one database for both, and tokens minted the same way for both (an ANALYST token signed with the bench key, a fresh one for each k6 run, because a token and its session live an hour and the run takes several); RS256 verification and the `EXISTS pub:auth:v1:live:{sid}` check on every request.
 
 ## Deviation: the memory limit was not enforced
 
@@ -112,7 +122,7 @@ ADR-0042 fixes `mem_limit` at 160 MB. This machine boots with `cgroup_disable=me
 | OS | Debian GNU/Linux 13 (trixie), kernel 6.18.50+rpt-rpi-2712, aarch64 |
 | Docker | 29.8.1 |
 | k6 | v2.3.0, `grafana/k6@sha256:e66db15b860113878fa74670e31f5e274830b7b6e42c8bff28b2f2d86a257603` |
-| Commit | base `3e483e64cd31e75d6ce2379f1393e3981152d2e7` (develop) plus the #455 commit on `feature/455-products-bench` that adds `bench/run.sh` and the files it uses; `facts.txt` records `dirty=yes` because they were not yet committed when the run started |
+| Commit | base `3e483e64cd31e75d6ce2379f1393e3981152d2e7` (develop) plus the #455 commit on `feature/455-products-bench` that adds `bench/run.sh` and the files it uses; `facts.txt` records `dirty=yes` because they were not yet committed when the run started. The check also counted the run's own untracked output under `bench/results/`, so it could not have read `no`; `run.sh` now excludes that directory |
 | products-service | `ghcr.io/equipo-03-proyecto10/mosaiq-products:0.1.3`, built locally from `services/products` (the GHCR package is private), image `sha256:fc70c186f669b3954badbe8b115cc8a5dbf6d876ecc20b5cab84fea4559a86c7` |
 | Rust twin | `mosaiq-products-service-rs:bench`, image `sha256:3b52dab5b0eec612e10c21606f55cac90a3ae8a1e7ad66c33dbcf457a1ecedd3` |
 | auth-service | `mosaiq-auth:0.1.1`, built locally |
@@ -142,11 +152,13 @@ compare: 20 requests x 2 formats answered identically
 
 - **Shared token path.** Both builds verify the same RS256 token and check the same Redis key on every request. That work is common to both and compresses the differences; a language difference can show only in what is left.
 - **Shared Redis and PostgreSQL.** One PostgreSQL and one Redis, on a pinned CPU, serve both builds. `search` is dominated by the query, which is why its gap is small and its saturation is identical. The twin's advantage grows where there is less database work (`detail`, `filter`).
+- **Two search terms match nothing.** The fixture pairs each name prefix with two nouns only, so `organic juice` and `family soap`, two of the eight terms in `k6/search.js`, match no bench product. About a quarter of the `search` requests scan the table and return an empty page. Both builds got the same mix, but the `search` cells serialize fewer rows than a full 20-row page, which tilts them further towards the query.
 - **Production concurrency, not equal parallelism.** One gunicorn worker with four threads against two Tokio workers compares deployments, not runtimes at equal parallelism. Flask's GIL and the twin's second worker are part of the result.
 - **Off-instance numbers.** An A76 core at the Pi's clock is not an e2-standard-2 vCPU, and PostgreSQL, Redis, k6 and the builds here do not share cores as they would there. The numbers compare the builds with each other and say nothing about the instance.
 - **Memory limit not enforced** (above).
 - **Single calibration.** The saturation rates have no repetition range, are quantised by the ramp's steps, and the criterion (1% drops, 1% errors, p99 at most 1 s) is a choice. The 70% load is therefore a 70% of an estimate.
 - **Order and thermals.** Alternating the builds mitigates drift, but the Pi was not temperature-controlled and the host also runs other containers (unrelated to this project) which were idle during the run.
-- **Load generator.** k6 had one core (CPU 3); calibration steps near the twin's top (up to 1,920 req/s) may be limited by k6 itself, which is why the highest steps show fewer requests than offered.
+- **Load generator.** k6 had one core (CPU 3); calibration steps near the twin's top (up to 1,920 req/s) may be limited by k6 itself, which is why the highest steps show fewer requests than offered. k6 also starts each step with `max(20, rate/10)` virtual users and creates more mid-step when latency rises, and the arrivals it drops meanwhile count against the build. The twin's `filter` XML step at 640 req/s failed this way, on 1.4% drops with a p99 of 192 ms. A saturation rate is therefore a lower bound, for both builds.
+- **The RSS sampler.** During each measured phase `run.sh` runs `docker compose ps` and `docker top` every 10 s, unpinned, so these commands can briefly take CPU from the build, the backing services or k6.
 - **Small ranges.** With five repetitions the min-max range is a coarse measure of noise; "no difference" means the ranges overlap, not that a difference was ruled out.
 - **Local images.** products-service and auth were built locally under their release tags because the GHCR packages are private; they are the repository's code at that commit, not necessarily byte-identical to the published images.

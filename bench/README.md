@@ -32,14 +32,15 @@ The report is [`docs/evidence/products-reads-flask-vs-rust.md`](../docs/evidence
 
 ## Run it
 
-auth and products run at their released GHCR tags, 0.1.0 by default (`AUTH_TAG`, `PRODUCTS_TAG`). Those packages are private: sign in with `docker login ghcr.io`, or build each one locally under the same tag:
+auth and products run at their released GHCR tags (`AUTH_TAG`, `PRODUCTS_TAG`). `conformance.sh` on its own defaults to 0.1.0; `run.sh` sets both from `services/auth/VERSION` and `services/products/VERSION`. Those packages are private: sign in with `docker login ghcr.io`, or build each one locally under the tag it will run as:
 
 ```bash
+export AUTH_TAG=$(cat services/auth/VERSION) PRODUCTS_TAG=$(cat services/products/VERSION)
 .github/scripts/stage-contracts.sh products
-docker build -t ghcr.io/equipo-03-proyecto10/mosaiq-products:0.1.0 services/products
+docker build -t ghcr.io/equipo-03-proyecto10/mosaiq-products:"$PRODUCTS_TAG" services/products
 ```
 
-Do the same for `auth`. Then, from the repository root:
+Do the same for `auth`, under `"$AUTH_TAG"`. Then, from the repository root:
 
 ```bash
 bash bench/conformance.sh
@@ -70,7 +71,7 @@ python3 bench/aggregate.py report bench/results/<run>   # the report's tables
 
 `run.sh` stops if the containers do not report the 160 MB memory limit. A kernel without the memory cgroup (Raspberry Pi OS by default) discards it; `BENCH_ALLOW_NO_MEMLIMIT=1` accepts that, and the run records `memory_limit=not-enforced`.
 
-Everything is overridable by environment variable (`BENCH_REPS`, `BENCH_WARMUP_SECONDS`, `BENCH_MEASURE_SECONDS`, `BENCH_RATE_FRACTION`, `BENCH_CAL_RATES`, `BENCH_CAL_STEP_SECONDS`, `BENCH_SCENARIOS`, `BENCH_FORMATS`, `BENCH_OUT`; see the head of `run.sh`). A short smoke run: `BENCH_REPS=1 BENCH_WARMUP_SECONDS=5 BENCH_MEASURE_SECONDS=20 BENCH_CAL_STEP_SECONDS=5 BENCH_OUT=bench/results/smoke bash bench/run.sh`. Running again with the same `BENCH_OUT` resumes, skipping what has a summary.
+Everything is overridable by environment variable (`BENCH_REPS`, `BENCH_WARMUP_SECONDS`, `BENCH_MEASURE_SECONDS`, `BENCH_RATE_FRACTION`, `BENCH_CAL_RATES`, `BENCH_CAL_STEP_SECONDS`, `BENCH_SCENARIOS`, `BENCH_FORMATS`, `BENCH_OUT`; see the head of `run.sh`). A short smoke run: `BENCH_REPS=1 BENCH_WARMUP_SECONDS=5 BENCH_MEASURE_SECONDS=20 BENCH_CAL_STEP_SECONDS=5 BENCH_OUT=bench/results/smoke bash bench/run.sh`. Running again with the same `BENCH_OUT` resumes, skipping what has a summary; it refuses to resume with other repetition, timing or calibration settings, which `aggregate.py` reads back from `facts.txt`. A summary is kept only when k6 finished and the build was still running afterwards, and a build that does not answer within `BENCH_COLDSTART_TIMEOUT_SECONDS` (120) of a restart stops the run.
 
 ### The scenarios
 

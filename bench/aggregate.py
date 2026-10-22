@@ -94,6 +94,9 @@ def calibration(run: Path, build: str, fmt: str, scn: str) -> dict:
 
 def measured_rate(run: Path, fmt: str, scn: str, percent: float) -> int:
     lower = min(calibration(run, b, fmt, scn)["saturation"] for b in BUILDS)
+    if lower == 0:
+        # Not even the lowest step was sustained: a broken build or stack, not a rate.
+        raise SystemExit(f"{scn} {fmt}: a build sustained no calibration step")
     return max(1, int(lower * percent / 100))
 
 
@@ -118,9 +121,13 @@ def runs(run: Path, build: str, fmt: str, scn: str) -> list[dict]:
         tag = "{scenario:measure}"
         duration = values(summary, "http_req_duration" + tag)
         count = number(values(summary, "http_reqs" + tag), "count")
+        if count == 0:
+            # A missing metric reads as 0; never let it into the medians.
+            raise SystemExit(f"{path}: no requests in the measured phase")
         rss = path.with_suffix(".rss")
         result.append(
             {
+                "name": path.stem,
                 "p50": number(duration, "med"),
                 "p95": number(duration, "p(95)"),
                 "p99": number(duration, "p(99)"),
@@ -223,6 +230,20 @@ def cmd_report(run: Path) -> None:
                 )
             )
             print("| Difference | | " + " | ".join(cols) + f" | {sat_verdict} |\n")
+    # The tables' RPS rounds small drops away and their error rate leaves the
+    # format checks out, so every measured run with either is listed here.
+    print("### Dropped arrivals and failed checks in the measured runs\n")
+    flagged = [
+        f"- `{r['name']}`: {r['requests']:.0f} requests, dropped arrivals: {r['dropped']:.0f},"
+        f" failed checks: {(1 - r['checks']) * 100:.3f}%"
+        for scn in scenarios
+        for fmt in formats
+        for build in BUILDS
+        for r in runs(run, build, fmt, scn)
+        if r["dropped"] or r["checks"] < 1
+    ]
+    print("\n".join(flagged) if flagged else "None.")
+    print()
     print("### Memory, image size and cold start\n")
     print(
         "| Build | RSS idle (MiB) | RSS under load (MiB) | image (MB) | cold start (ms) |"
@@ -282,7 +303,9 @@ def main(argv: list[str]) -> int:
             cmd_report(run)
         else:
             raise IndexError
-    except (IndexError, KeyError):
+    except IndexError:
+        # A wrong command or a missing argument; a missing key in the run's
+        # data raises with its name instead of printing this.
         print(__doc__)
         return 2
     return 0

@@ -40,6 +40,14 @@ coldstart_timeout=${BENCH_COLDSTART_TIMEOUT_SECONDS:-120}
 k6_image=${K6_IMAGE:-grafana/k6@sha256:e66db15b860113878fa74670e31f5e274830b7b6e42c8bff28b2f2d86a257603}
 out=${BENCH_OUT:-bench/results/$(date -u +%Y%m%dT%H%M%SZ)}
 out=${out%/}
+settings="reps=$reps warmup=$warmup measure=$measure fraction=$fraction step=$step"
+# Resuming keeps the summaries already taken, and aggregate.py reads these
+# settings back from facts.txt to interpret them, so they must not change.
+if [[ -f $out/facts.txt ]] &&
+  ! { grep -qxF "$settings" "$out/facts.txt" && grep -qxF "cal_rates=$cal_rates" "$out/facts.txt"; }; then
+  echo "FAIL: $out was started with other settings (see its facts.txt); use a new BENCH_OUT"
+  exit 1
+fi
 mkdir -p "$out/calibration" "$out/runs" "$out/coldstart"
 chmod 777 "$out/calibration" "$out/runs"
 
@@ -70,7 +78,7 @@ echo "== fairness settings"
 for build in flask rust; do
   id=$(container "$build")
   limits=$(docker inspect -f '{{.HostConfig.Memory}} {{.HostConfig.NanoCpus}} {{.HostConfig.CpusetCpus}}' "$id")
-  if [[ $limits == "0 500000000 $BENCH_APP_CPUS" && -n ${BENCH_ALLOW_NO_MEMLIMIT:-} ]]; then
+  if [[ $limits == "0 500000000 $BENCH_APP_CPUS" && ${BENCH_ALLOW_NO_MEMLIMIT:-0} == 1 ]]; then
     # Raspberry Pi OS boots with cgroup_disable=memory: Docker discards mem_limit.
     # Both builds then run unlimited; the report states it.
     memlimit=not-enforced
@@ -96,7 +104,8 @@ echo "rust: 2 Tokio workers and 3 pooled connections are constants of the crate 
 {
   echo "date_utc=$(date -u +%FT%TZ)"
   echo "commit=$(git rev-parse HEAD)"
-  echo "dirty=$([[ -n $(git status --porcelain -- bench services contracts sql) ]] && echo yes || echo no)"
+  # The run's own output under bench/results/ is untracked by design.
+  echo "dirty=$([[ -n $(git status --porcelain -- bench services contracts sql ':(exclude)bench/results') ]] && echo yes || echo no)"
   echo "cpu=$(lscpu | sed -n 's/^Model name: *//p' | head -1)"
   echo "cores=$(nproc)"
   echo "memory=$(free -h | awk '/^Mem:/{print $2}')"
@@ -112,7 +121,7 @@ echo "rust: 2 Tokio workers and 3 pooled connections are constants of the crate 
   echo "kit_rs=$(grep -o 'kit-rs/v[0-9.]*' bench/products-service-rs/Cargo.toml | head -1)"
   echo "postgres=$(docker compose -f bench/compose.yaml --profile bench ps -q postgres | xargs docker inspect -f '{{.Config.Image}} {{.Image}}')"
   echo "memory_limit=${memlimit:-unknown}"
-  echo "reps=$reps warmup=$warmup measure=$measure fraction=$fraction step=$step"
+  echo "$settings"
   echo "cal_rates=$cal_rates"
   echo "cpus=app:$BENCH_APP_CPUS backing:$BENCH_BACKING_CPUS k6:$k6_cpus"
 } >"$out/facts.txt"
@@ -124,14 +133,21 @@ rss_kb() { docker top "$(container "$1")" -eo pid,rss | awk 'NR>1{s+=$2} END{pri
 token() { python3 bench/mint_token.py; }
 
 # k6 <build> <scenario> <format> <mode> <summary-file> [extra -e args...]
+# The summary is written under a temporary name and kept only when k6 finished
+# and the build is still running afterwards, so an interrupted run or a crashed
+# build never leaves a summary that a resumed run would skip over.
 k6() {
-  local build=$1 scn=$2 fmt=$3 mode=$4 file=$5
+  local build=$1 scn=$2 fmt=$3 mode=$4 file=$5 dir
   shift 5
+  dir=$(cd "$(dirname "$file")" && pwd)
   docker run --rm --network host --cpuset-cpus "$k6_cpus" --user "$(id -u):$(id -g)" \
-    -v "$PWD/bench/k6:/scripts:ro" -v "$PWD/$(dirname "$file"):/out" \
+    -v "$PWD/bench/k6:/scripts:ro" -v "$dir:/out" \
     -e BASE_URL="${url[$build]}" -e TOKEN="$(token)" -e FORMAT="$fmt" -e MODE="$mode" \
-    -e SUMMARY_PATH="/out/$(basename "$file")" "$@" \
+    -e SUMMARY_PATH="/out/$(basename "$file").partial" "$@" \
     "$k6_image" run --quiet --no-usage-report /scripts/"$scn".js >/dev/null
+  [[ $(docker inspect -f '{{.State.Running}}' "$(container "$build")" 2>/dev/null) == true ]] ||
+    { echo "FAIL: ${service[$build]} is no longer running after $scn $fmt $mode"; exit 1; }
+  mv "$file.partial" "$file"
 }
 
 # 3. Cold start and idle memory: restart the container, time the first good answer.
@@ -145,7 +161,7 @@ for build in flask rust; do
     tok=$(token)
     start=$(date +%s%N)
     docker start "$id" >/dev/null
-    until [[ $(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $tok" \
+    until [[ $(curl -s --max-time 2 -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $tok" \
       -H 'Accept: application/json' "${url[$build]}/v1/products/100001" || true) == 200 ]]; do
       if (($(date +%s%N) - start > coldstart_timeout * 1000000000)); then
         echo "FAIL: $build did not answer 200 within $coldstart_timeout s of docker start"

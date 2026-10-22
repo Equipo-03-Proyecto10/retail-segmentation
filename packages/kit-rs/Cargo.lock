@@ -976,7 +976,7 @@ dependencies = [
 
 [[package]]
 name = "mosaiq-kit"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "axum",
  "bytes",
@@ -984,6 +984,8 @@ dependencies = [
  "deadpool-postgres",
  "form_urlencoded",
  "http-body-util",
+ "hyper",
+ "hyper-util",
  "indexmap",
  "jsonschema",
  "jsonwebtoken",

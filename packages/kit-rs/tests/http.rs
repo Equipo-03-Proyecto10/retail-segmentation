@@ -468,12 +468,19 @@ async fn path_constraints_and_undeclared_methods_are_routing_errors() {
         .send(&app)
         .await;
     assert_eq!(answer.status, 404);
-    assert_eq!(answer.code(), "not_found");
+    assert_eq!(answer.code(), "note_not_found");
     let answer = call("GET", "/v1/notes/abc")
         .bearer("valid_reader")
         .send(&app)
         .await;
     assert_eq!(answer.status, 404);
+    assert_eq!(answer.code(), "note_not_found");
+    let answer = call("GET", "/v1/other/3")
+        .bearer("valid_reader")
+        .send(&app)
+        .await;
+    assert_eq!(answer.status, 404);
+    assert_eq!(answer.code(), "not_found");
     let answer = call("OPTIONS", "/v1/notes")
         .bearer("valid_reader")
         .send(&app)
@@ -610,4 +617,16 @@ fn vector_files_have_public_material_only() {
         .path()
         .extension()
         .is_some_and(|ext| ext == "pem")));
+}
+
+#[tokio::test]
+async fn a_padded_bearer_credential_is_refused() {
+    let Some(app) = app().await else { return };
+    let padded = format!("Bearer  {}", common::token("valid_reader"));
+    let answer = call("GET", "/v1/notes")
+        .header("Authorization", &padded)
+        .send(&app)
+        .await;
+    assert_eq!(answer.status, 401);
+    assert_eq!(answer.code(), "invalid_token");
 }

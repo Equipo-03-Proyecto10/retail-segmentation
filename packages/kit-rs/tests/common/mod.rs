@@ -277,7 +277,9 @@ async fn list_notes(ctx: Ctx) -> Result<Reply, ApiError> {
 }
 
 async fn get_note(ctx: Ctx) -> Result<Reply, ApiError> {
-    let note_id = ctx.path_i64("note_id").unwrap();
+    let note_id = ctx
+        .path_i64("note_id")
+        .ok_or_else(|| ApiError::new(404, "note_not_found", "The note does not exist."))?;
     Ok(Representation::new("Note", sample_note(note_id, Value::Null)).into())
 }
 

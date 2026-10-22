@@ -922,7 +922,10 @@ async fn handle(
     ))
 }
 
-/// Match the request path against the template's typed segments.
+/// Match the request path against the template's typed segments. A parameter
+/// segment that fails its type or range is left out of the values, so the
+/// handler's own `*_not_found` answers it; only a literal mismatch or a wrong
+/// segment count is a routing miss.
 fn path_values(
     template: &str,
     path: &str,
@@ -941,7 +944,9 @@ fn path_values(
             let decoded = percent_encoding::percent_decode_str(actual)
                 .decode_utf8()
                 .ok()?;
-            values.insert(name.clone(), matcher.matches(&decoded)?);
+            if let Some(value) = matcher.matches(&decoded) {
+                values.insert(name.clone(), value);
+            }
         } else if *expected != actual {
             return None;
         }
@@ -1017,8 +1022,15 @@ mod tests {
             path_values(template, "/v1/notes/3", &matchers).and_then(|v| v.get("note_id").cloned()),
             Some(PathValue::Integer(3))
         );
-        assert!(path_values(template, "/v1/notes/0", &matchers).is_none());
-        assert!(path_values(template, "/v1/notes/-1", &matchers).is_none());
-        assert!(path_values(template, "/v1/notes/11", &matchers).is_none());
+        for path in [
+            "/v1/notes/0",
+            "/v1/notes/-1",
+            "/v1/notes/11",
+            "/v1/notes/abc",
+        ] {
+            let values = path_values(template, path, &matchers).expect("still routed");
+            assert!(values.is_empty(), "{path}");
+        }
+        assert!(path_values(template, "/v1/other/3", &matchers).is_none());
     }
 }

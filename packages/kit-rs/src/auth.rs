@@ -282,8 +282,7 @@ impl Authenticator {
     fn verify_token(&self, authorization: Option<&str>) -> Result<Principal, ApiError> {
         let token = authorization
             .and_then(|value| value.strip_prefix("Bearer "))
-            .map(str::trim)
-            .filter(|token| !token.is_empty() && !token.contains(' '))
+            .filter(|token| !token.is_empty() && !token.contains(char::is_whitespace))
             .ok_or_else(ApiError::invalid_token)?;
         let header = decode_header(token).map_err(|_| ApiError::invalid_token())?;
         if header.alg != Algorithm::RS256 {
@@ -300,6 +299,11 @@ impl Authenticator {
         let claims = decode::<Map<String, JsonValue>>(token, &key, &validation)
             .map_err(|_| ApiError::invalid_token())?
             .claims;
+        // The audience is the single string `mosaiq-api`; a list is refused
+        // even when it contains it.
+        if claims.get("aud").and_then(JsonValue::as_str) != Some(AUDIENCE) {
+            return Err(ApiError::invalid_token());
+        }
         if let Some(issued_at) = claims.get("iat") {
             let issued_at = issued_at.as_f64().ok_or_else(ApiError::invalid_token)?;
             if issued_at > jsonwebtoken::get_current_timestamp() as f64 {

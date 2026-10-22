@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.5 - 2026-10-22
+
+- XML text never carries a character XML 1.0 forbids (C0 controls other than
+  tab, line feed and carriage return, U+FFFE, U+FFFF). Each is replaced with
+  U+FFFD in XML replies; JSON keeps the original text. Such data used to make
+  the document ill-formed (#594).
+- A path parameter that fails its type or range (`/v1/stores/abc`, id 0) no
+  longer ends as the routing `not_found`: the parameter is left unset, so the
+  handler's `path_i64`/`path_uuid` returns `None` and it answers with the
+  resource's own not-found code. A wrong literal segment or segment count is
+  still `not_found` (#594).
+- `Authorization: Bearer  <token>` (extra whitespace) and a token whose `aud`
+  is a list are refused with 401 `invalid_token` (#594).
+- Add `mosaiq_kit::serve`, a listener with a 10 s request-head and idle
+  timeout, which `axum::serve` lacks. Services call it in place of
+  `axum::serve(listener, router.into_make_service_with_connect_info())`;
+  `ConnectInfo<SocketAddr>` is still provided (#594).
+
 ## 0.1.4 - 2026-10-22
 
 - Add `Value::JsonText`, which renders valid JSON source text as its parsed

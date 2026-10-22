@@ -278,6 +278,21 @@ async fn roles_methods_and_both_representations() {
         assert!(!xml.contains("<user_id"), "{xml}");
     }
 
+    // A single object and a SQL NULL retain their JSON shapes through the router.
+    owner
+        .execute(
+            "UPDATE public.audit_log SET data_before = $1::text::jsonb, data_after = NULL \
+             WHERE audit_id = $2",
+            &[&r#"{"a":1}"#, &id],
+        )
+        .await
+        .unwrap();
+    let (status, body) = send(&app, "GET", &single, Some(&auditor), "application/json").await;
+    assert_eq!(status, 200, "{body}");
+    let entry: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(entry["data_before"], json!({"a": 1}));
+    assert!(entry["data_after"].is_null());
+
     // The two error answers of the contract.
     let (status, body) = send(
         &app,

@@ -47,21 +47,30 @@ def like_pattern(text: str) -> str:
 
 
 def text_filter(name: str) -> str | None:
-    """A text query parameter; an empty one filters nothing.
+    """A text query parameter held to its contract bounds, 1 to 160 characters.
 
     PostgreSQL text cannot hold U+0000, so a filter containing it is refused
     before it reaches the driver.
     """
 
-    value = request.args.get(name) or None
-    if value is not None and "\x00" in value:
+    raw = request.args.get(name)
+    if raw is None:
+        return None
+    if not 1 <= len(raw) <= 160:
         raise ApiError(
             422,
-            "invalid_pagination",
-            "A query value is outside its allowed range.",
+            "invalid_query",
+            f"{name} is outside its allowed length.",
+            [{"field": name, "code": "out_of_range"}],
+        )
+    if "\x00" in raw:
+        raise ApiError(
+            422,
+            "invalid_query",
+            f"{name} contains a NUL character.",
             [{"field": name, "code": "invalid_format"}],
         )
-    return value
+    return raw
 
 
 def customer_json(row: tuple[Any, ...]) -> dict[str, Any]:

@@ -10,6 +10,7 @@ from lxml import etree
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "contracts/customers"
 NAMESPACE = "https://mosaiq.maxthecoder.online/xml/customers/v1"
+COMMON_NAMESPACE = "https://mosaiq.maxthecoder.online/xml/common/v1"
 
 pytestmark = pytest.mark.postgres
 
@@ -148,3 +149,36 @@ def test_a_doctype_body_is_refused_as_malformed(client, manager):
         400,
         "malformed_body",
     )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("q", ""), ("email", ""), ("q", "a" * 161), ("email", "a" * 161)],
+)
+@pytest.mark.parametrize("accept", ["application/json", "application/xml"])
+def test_text_filters_outside_their_bounds_are_422_invalid_query(
+    client, manager, field, value, accept
+):
+    response = client.get(
+        "/v1/customers",
+        query_string={field: value},
+        headers={**manager, "Accept": accept},
+    )
+    assert response.status_code == 422
+    if accept == "application/json":
+        body = response.get_json()
+        assert body["code"] == "invalid_query"
+        assert body["details"] == [{"field": field, "code": "out_of_range"}]
+    else:
+        root = etree.fromstring(response.data)
+        assert root.findtext(f"{{{COMMON_NAMESPACE}}}code") == "invalid_query"
+        detail = root.find(f"{{{COMMON_NAMESPACE}}}details")
+        assert detail is not None
+        assert detail.findtext(f"{{{COMMON_NAMESPACE}}}field") == field
+        assert detail.findtext(f"{{{COMMON_NAMESPACE}}}code") == "out_of_range"
+
+
+def test_text_filters_at_their_bounds_are_accepted(client, manager):
+    for query in ({"q": "a"}, {"q": "a" * 160}, {"email": "a" * 160}):
+        response = client.get("/v1/customers", query_string=query, headers=manager)
+        assert response.status_code == 200

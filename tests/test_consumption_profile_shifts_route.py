@@ -70,8 +70,10 @@ _SHIFTED = (
 )
 
 
-def _page(app: Flask, monkeypatch: pytest.MonkeyPatch, halves) -> tuple[int, str]:
-    read = Mock(return_value=halves)
+def _page(
+    app: Flask, monkeypatch: pytest.MonkeyPatch, halves, seeded: bool = False
+) -> tuple[int, str]:
+    read = Mock(return_value=(*halves, seeded))
     monkeypatch.setattr("web.services.consumption_shift.list_totals_for_periods", read)
     response, _ = _open(app, monkeypatch, _profile())
     return response.status_code, " ".join(response.get_data(as_text=True).split())
@@ -208,3 +210,14 @@ def test_a_one_day_window_has_no_before_and_now(
     assert response.status_code == 200
     assert 'id="shifts-title"' not in response.get_data(as_text=True)
     read.assert_not_called()
+
+
+@pytest.mark.parametrize("seeded", [True, False])
+def test_before_and_now_is_marked_by_the_customers_seeded_sales(
+    app: Flask, monkeypatch: pytest.MonkeyPatch, seeded: bool
+) -> None:
+    """#560, ADR-0052: the halves are the customer's sales, so a SEEDED one
+    marks the panel."""
+    _, body = _page(app, monkeypatch, _SHIFTED, seeded=seeded)
+
+    assert ("Synthetic" in _panel(body)) is seeded

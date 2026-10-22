@@ -10,6 +10,12 @@ carry a same-origin-only script-src (deploy/nginx/mosaiq.conf), the CDN
 allowance in docs/design-system/charts/ does not extend here, and a page that
 assumed otherwise would render as this application's fonts once did before
 they were vendored for the same reason.
+
+Each panel is marked Synthetic from the rows behind it (ADR-0052, #560):
+the run's panels by the run, the migration flow by either run it compares,
+and the page carries a banner when any panel is marked. Every chart's
+flag travels in the embedded JSON too, so a chart says it in its own
+subtitle.
 """
 
 from __future__ import annotations
@@ -19,17 +25,19 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
-from flask import Blueprint, Response, abort, current_app, render_template, request
+from flask import Blueprint, Response, abort, render_template, request
 
 from web.db import get_connection
 from web.db.segments import get_run, list_runs
 from web.middleware.authz import SEGMENT_READ, requires
 from web.parsing import BIGINT_MAX, whole_number
+from web.services.provenance import SYNTHETIC_LABEL
 from web.services.segmentation_dashboard import (
     Dashboard,
     NoRuns,
     build_dashboard,
     build_kpis,
+    page_synthetic,
 )
 
 bp = Blueprint("segmentation_dashboard", __name__, url_prefix="/segmentation-dashboard")
@@ -99,6 +107,14 @@ def _chart_payload(dashboard: Dashboard) -> dict:
         for cell in dashboard.heatmap
     ]
 
+    marks = {
+        "sizes": dashboard.run_synthetic,
+        "revenue": dashboard.run_synthetic,
+        "rfm": dashboard.run_synthetic,
+        "rfm_spend": dashboard.run_synthetic,
+        "migration": dashboard.migration_synthetic,
+    }
+
     migration: dict | None = None
     if dashboard.migration is not None:
         nodes = {}
@@ -121,6 +137,10 @@ def _chart_payload(dashboard: Dashboard) -> dict:
         "heatmap": heatmap,
         "rfm_spend": rfm_spend,
         "migration": migration,
+        # ADR-0052: which charts are Synthetic, for each chart's subtitle. The
+        # label is sent only when one is, so an OBSERVED page never holds it.
+        "synthetic": marks,
+        "label": SYNTHETIC_LABEL if any(marks.values()) else None,
     }
 
 
@@ -132,7 +152,6 @@ def index() -> Response | tuple[Response, int]:
     that does not exist is a 404; no run at all yet is a 200 that says so.
     """
     connection = get_connection()
-    config = current_app.config["APP_CONFIG"]
 
     raw_run = request.args.get("run", "")
     run_id: int | None = None
@@ -145,7 +164,6 @@ def index() -> Response | tuple[Response, int]:
                     dashboard=None,
                     runs=[],
                     error="Choose a run from the list.",
-                    is_synthetic=config.data_is_synthetic,
                 ),
                 400,
             )
@@ -160,7 +178,6 @@ def index() -> Response | tuple[Response, int]:
             dashboard=None,
             runs=[],
             error=None,
-            is_synthetic=config.data_is_synthetic,
         )
 
     runs, _total = list_runs(connection, page=1, per_page=_RUN_OPTIONS)
@@ -175,12 +192,13 @@ def index() -> Response | tuple[Response, int]:
         **_chart_payload(dashboard),
     }
 
+    kpis = build_kpis(connection, dashboard.run, datetime.now(UTC))
     return render_template(
         "segmentation_dashboard/index.html",
         dashboard=dashboard,
         runs=runs,
         error=None,
-        is_synthetic=config.data_is_synthetic,
+        synthetic=page_synthetic(dashboard, kpis),
         chart_data=_embed(payload),
-        kpis=build_kpis(connection, dashboard.run, datetime.now(UTC)),
+        kpis=kpis,
     )

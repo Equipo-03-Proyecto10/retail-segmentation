@@ -291,6 +291,64 @@ def test_malformed_filters_are_422_invalid_query(client, query) -> None:
     assert response.get_json()["code"] == "invalid_query"
 
 
+@pytest.mark.parametrize("query", ["q=%00", "q=a%00b", "sku=%00", "sku=TST%00"])
+def test_a_nul_in_a_text_filter_is_422_invalid_query(client, query) -> None:
+    # PostgreSQL text cannot hold U+0000; the filter never reaches it (#580).
+    response = client.get("/v1/products?" + query, headers=headers())
+    assert response.status_code == 422
+    error = response.get_json()
+    assert error["code"] == "invalid_query"
+    assert error["details"] == [
+        {"field": query.split("=")[0], "code": "invalid_format"}
+    ]
+
+
+# Refused by mosaiq-kit 0.1.3 for every Python service (#580, #581, #582).
+KIT_0_1_3 = pytest.mark.xfail(
+    reason="mosaiq-kit 0.1.3 answers these; the kit bump removes this mark",
+    strict=True,
+)
+
+
+@KIT_0_1_3
+def test_a_page_beyond_the_kit_bound_is_invalid_pagination(client) -> None:
+    response = client.get("/v1/products?page=99999999999999999999", headers=headers())
+    assert response.status_code == 422
+    assert response.get_json()["code"] == "invalid_pagination"
+
+
+@KIT_0_1_3
+@pytest.mark.parametrize("field,value", [("name", "a\x00b"), ("sku", "TST-\x00")])
+def test_a_nul_in_a_body_field_is_422_invalid_body(client, field, value) -> None:
+    created = create(client, **{field: value})
+    assert created.status_code == 422
+    assert created.get_json()["code"] == "invalid_body"
+    assert create(client).status_code == 201
+    updated = client.patch(
+        f"/v1/products/{FIRST_TEST_ID + 1}",
+        json={"name": "a\x00b"},
+        headers=headers(),
+    )
+    assert updated.status_code == 422
+    assert updated.get_json()["code"] == "invalid_body"
+
+
+@KIT_0_1_3
+def test_an_xml_comment_in_the_body_is_skipped(client) -> None:
+    body = (
+        '<CreateProductRequest xmlns="https://mosaiq.maxthecoder.online/xml/products/v1">'
+        f"<!--c--><?pi x?><product_id>{FIRST_TEST_ID + 1}</product_id>"
+        "<sku>TST-XML</sku><name>Xml<!--c--> product</name>"
+        "<category_id>1</category_id><list_price>9.99</list_price>"
+        "</CreateProductRequest>"
+    )
+    created = client.post(
+        "/v1/products", data=body, content_type="application/xml", headers=headers()
+    )
+    assert created.status_code == 201, created.data
+    assert created.get_json()["name"] == "Xml product"
+
+
 def test_pagination_and_filters(client) -> None:
     for offset in range(1, 4):
         create(client, offset=offset, sku=f"TST-P{offset}", name=f"Pager {offset}")

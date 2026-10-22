@@ -1,0 +1,11 @@
+{
+  "code": "invalid_query",
+  "message": "A query parameter is outside its allowed range.",
+  "correlation_id": "corr-invalid-query",
+  "details": [
+    {
+      "field": "email",
+      "code": "out_of_range"
+    }
+  ]
+}

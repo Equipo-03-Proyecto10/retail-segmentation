@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: categories-service
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     Reads the category tree and lets an administrator create, move, rename and
     delete categories without a cycle and without orphaning products, children
@@ -21,7 +21,8 @@ paths:
         it lists every category; with it, only the direct children of that category.
         A `parent_id` that matches no category gives an empty page. Cache misses
         read PostgreSQL, so a database failure stays visible even though successful
-        reads may be cached.
+        reads may be cached. A filter value outside its schema returns 422
+        `invalid_query`, naming the parameter in `details`.
       operationId: listCategories
       x-mosaiq-roles:
         - ADMIN
@@ -61,7 +62,7 @@ paths:
         '406':
           $ref: '#/components/responses/NotAcceptable'
         '422':
-          $ref: '#/components/responses/InvalidPagination'
+          $ref: '#/components/responses/CategoryListValidation'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -741,6 +742,28 @@ components:
           examples:
             unsupported_media_type:
               externalValue: ./examples/unsupported-media-type.xml
+    CategoryListValidation:
+      description: '`invalid_pagination` or `invalid_query`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.json
+            invalid_query:
+              externalValue: ./examples/invalid-query.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.xml
+            invalid_query:
+              externalValue: ./examples/invalid-query.xml
     InvalidPagination:
       description: '`invalid_pagination`.'
       headers:

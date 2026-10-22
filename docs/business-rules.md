@@ -279,6 +279,8 @@ never replaces the first. It is read from `transaction`, so it does not wait for
 conversion evaluation. Uplift before conversion is evaluated is a 200 that asks for
 the evaluation, not a 409.
 
+**Both rates are marked by RN-26's rule** (ADR-0052, #560), including the per-exposure rate, with the gap RN-26 states.
+
 **Enforced:** `EXPOSED_CONVERTED_SQL` in `web/db/experiment_conversions.py`, shared
 by the uplift page and the report, and `ConversionNotEvaluated` in
 `web/services/experiment_uplift.py`. **Verified** — `tests/test_exposed_conversion.py`.
@@ -396,6 +398,8 @@ comparison is built from two runs' rows and the label vocabulary and is never gi
 the method, so an assignment cannot be interpreted through it: the same labelled rows
 give the same comparison whatever produced them.
 
+**Marked Synthetic by either run** (ADR-0052, #560). The comparison reads two runs, so it is marked when either run's `data_origin` is `SEEDED`; each run's panel is marked by its own.
+
 **Enforced:** application — `web/services/model_comparison.py` for the rules,
 `web/db/model_comparison.py` for the reads (`SELECT`-only, parameterized, and the
 assignment reader does not select the method), and the page gated on `segment.read`
@@ -418,6 +422,8 @@ from the later run remains explicitly **Not in later run**. These states are dis
 from `Unassigned` and can each be selected as a filter, including zero-count cells.
 The customer list is the already-classified matrix result; it never performs a second
 comparison.
+
+**Marked Synthetic by either run** (ADR-0052, #560). The matrix compares two runs, so it carries the marker and a warning banner when either run is `SEEDED`.
 
 **Enforced:** application — `compute_migration` and `build_migration_matrix` keep the
 classification and cell members together, and `web/routes/migration_matrix.py` only
@@ -453,6 +459,8 @@ no value for is reported as not compared, with which of the two reasons applies.
 
 The explanation is reachable from every place a migration is shown: a customer in a
 migration matrix cell (RN-59) and each label change on a customer's segment timeline.
+
+**Marked Synthetic by either run** (ADR-0052, #560). An explanation compares two runs, so it is marked when either is `SEEDED`; so are the customer timeline's current-against-previous panel and a segment-change page. A timeline row is marked by its own run.
 
 **Enforced:** application — `describe_migration` in `web/services/segment_migration.py`,
 with the thresholds as the named constants `RECENCY_STABLE_DAYS`,
@@ -500,6 +508,14 @@ Only the stable label is read (ADR-0018): the computation is not told, and does 
 read, how a run was produced or any raw cluster number, so the same labels give the same
 recommendations whatever produced them.
 
+**A recommendation is marked `Synthetic` when the profile window holds a `SEEDED`
+sale of anyone's, or when the run behind the customer's open label is `SEEDED`**
+(ADR-0052, decision 2 on #560). The segment signal reads other customers' sales in
+the window, so the customer's own sales are not enough to clear it. Both facts come
+from reads the profile already makes; the window check uses the partial index on
+`SEEDED` sales. The customer page, the recommendation report and the dashboard's
+"Most recommended products" all follow this rule.
+
 **Enforced:** application — `web/services/recommendations.py` for the rules and
 `web/db/recommendations.py` for the two reads it adds (`SELECT`-only, parameterized).
 The open assignment, the usual store and the categories bought come from the consumption
@@ -546,13 +562,15 @@ and the embedded data sits in an inert `<script type="application/json">` block 
 same-origin script reads, never in an inline `<script>` block the policy would
 block.
 
-**A `Synthetic` badge marks the dashboard's figures as demonstration data**, driven
-by `Config.data_is_synthetic` (default true). No table this dashboard reads —
-`segmentation_run`, `customer_segment_history`, `transaction` — carries a data-origin
-marker the way the experiment tables do (ADR-0019); that marker is scoped to
-campaigns and experiments. This default reflects that every instance shown running
-today holds only the seeded demonstration data, and is a decision recorded for
-confirmation, not a fact this delivery's schema can check row by row.
+**Each panel is marked `Synthetic` from the rows behind it, never from a setting**
+(ADR-0052, #560). Every sale and every run records its `data_origin`. The run's own
+panels (sizes, revenue, the two RFM heatmaps, the label means) are marked when the
+run is `SEEDED`; the migration flow compares two runs and is marked when either is;
+each active experiment follows RN-26; "Most recommended products" follows RN-40's
+marker rule. A warning banner heads the page when any panel is marked. A marked
+chart says `Synthetic` in its own subtitle, and its `aria-label` (and the heatmap
+table's caption) starts "Synthetic. ", so assistive technology reads it too. An
+`OBSERVED` page carries no trace of the word, not even in its embedded data.
 
 **Enforced:** application — `web/services/segmentation_dashboard.py` for the four
 charts, `web/db/segmentation_dashboard.py` for its two new reads (`SELECT`-only,
@@ -563,7 +581,12 @@ migration comparison. The page is gated on `segment.read`
 and `tests/test_segmentation_dashboard_route.py`, including that faults seeded into
 each rule above fail a test, and against the seeded PostgreSQL and a real browser by
 [`evidence/f12-01-segmentation-dashboard.md`](evidence/f12-01-segmentation-dashboard.md).
-· `F12-01`
+The marker is enforced by `web/services/provenance.py` (`runs_synthetic`), the
+`synthetic_*` macros in `web/templates/macros/ui.html`, and verified by a
+SEEDED/OBSERVED pair per page in the route tests and against PostgreSQL by
+`tests/test_analytics_db_postgres.py`, with screenshots in
+[`evidence/an-20-row-level-synthetic-marker.md`](evidence/an-20-row-level-synthetic-marker.md).
+· `F12-01` · `AN-20`
 
 ### RN-43 — The segment history report's filters combine, and a row's explanation is its customer's previous run
 
@@ -588,6 +611,8 @@ F12-01's dashboard finds a run's previous run — the run immediately before it 
 earlier run to compare it with, and says so rather than showing an empty or
 invented comparison. Nothing here recomputes a score; every value comes from the
 stored history rows (ADR-0017).
+
+**A row is marked Synthetic by its run, and by the previous run its explanation compares with** (ADR-0052, #560). A row without an explanation is marked by its run alone. The page carries a warning banner when any row on it is marked.
 
 **Enforced:** application — `web/services/segment_history_report.py` for the
 filters and the per-row explanation, `web/db/segment_history_report.py` for the
@@ -636,6 +661,8 @@ compute.
   Shift rows are filtered before pagination, and each table has its own page
   parameter so moving through one preserves the other table's page and every
   selected filter.
+
+**Each report is marked Synthetic by the data it read** (ADR-0052, #560). The shift report is marked when either period holds a `SEEDED` sale (`bool_or` in the same statement that reads the totals). A recommendation row, and the report, is marked under RN-40's marker rule below.
 
 **Enforced:** application — `web/services/consumption_reports.py` for the
 filters, `web/db/consumption_reports.py` for the one new read (bulk customer
@@ -712,6 +739,8 @@ first assignment. · `F11-03`
 ### RN-26 — Every experiment's data carries its origin
 `OBSERVED`, `SEEDED` or `INJECTED`.
 
+**A figure is Synthetic when the experiment is not `OBSERVED`, or when any conversion it records links a `SEEDED` sale** (ADR-0052, #560). Every read that returns an experiment selects that check (`SEEDED_CONVERSION_SQL` in `web/db/experiments.py`). The setup pages (form, assign) show no figure and stay on `experiment.data_origin` alone. **Known gap:** the per-exposure figure ("bought after exposure", `EXPOSED_CONVERTED_SQL`) counts sales directly, and those sales are not checked themselves: an `OBSERVED` experiment whose recorded conversions all link `OBSERVED` sales is unmarked even if a `SEEDED` sale falls after an exposure. ADR-0052's rule names the conversions, and decision 5 on #560 keeps it literal.
+
 **Enforced:** `experiment_data_origin_check`. **Verified** — case N25.
 
 The origin is chosen when the experiment is set up and is never updated
@@ -763,7 +792,9 @@ It is trusted because two checks hold: an A/A split from pre-cut-off data shows
 no significant difference, and a fixed-seed injected uplift (10,000 per arm, 10%
 against 15%) is recovered within 0.1 point with an interval excluding zero.
 
-### RN-45 — The experiment report keeps counts, filters and provenance explicit
+#**The label follows RN-26's rule** (ADR-0052, #560): an `OBSERVED` experiment whose conversions link a `SEEDED` sale is `Synthetic` on the page and on every line of the CSV export.
+
+## RN-45 — The experiment report keeps counts, filters and provenance explicit
 The experiment report shows assignment,
 exposure and conversion as three counts per arm, each labelled with what it
 counts, beside the intent-to-treat uplift and its 95% interval (F11-07's own
@@ -799,6 +830,8 @@ When the experiment's `data_origin` is not `OBSERVED`, every chart carries
 `Synthetic` in its header, in its own subtitle and in its accessible name. The
 data is computed on the server and embedded as inert JSON; there is no JSON
 endpoint, and Highcharts is served from the application.
+
+**The charts follow RN-26's rule** (ADR-0052, #560): a conversion linking a `SEEDED` sale marks every chart, its subtitle and its `aria-label`, even for an `OBSERVED` experiment.
 
 **Enforced:** application — `web/services/experiment_dashboard.py` and
 `web/routes/experiment_dashboard.py`; the read is `web/db/experiment_dashboard.py`.
@@ -856,12 +889,19 @@ from all committed lines, so two concurrent loads cannot overwrite it with a
 subtotal. A segmentation run also closes its sales window at the database's
 current timestamp; a future-dated row can therefore never improve recency.
 
+Every accepted row records an `OBSERVED` sale (ADR-0052). A row whose source
+transaction id names a `SEEDED` sale is refused as
+`duplicate: <id> is a seeded sale`, even when it repeats that sale's header
+exactly, so a sale's lines always share its one origin.
+
 **Enforced:** application — `web/services/ingestion.py` and
 `web/services/sales_csv.py`; parameterized reads in `web/db/sales.py`; the
 header lock in `get_transaction_by_source_id`; and the upper bound in
-`web/db/segments.py`. **Verified** — by
+`web/db/segments.py`. Database — `transaction.data_origin` is `NOT NULL` with
+no default and `CHECK IN ('OBSERVED','SEEDED')`. **Verified** — by
 `tests/test_ingestion_service.py`, `tests/test_sales_csv.py`,
-`tests/test_sales_db.py` and `tests/test_segments_pipeline_db.py`. · #355 · #356
+`tests/test_sales_db.py`, `tests/test_segments_pipeline_db.py` and
+`tests/test_data_origin_postgres.py`. · #355 · #356 · #559
 
 ## Consumption profile
 
@@ -896,6 +936,8 @@ so a segment run committed between two `READ COMMITTED` reads cannot make the
 same history row appear as both current and previous. An id that is not a UUID,
 or that names no customer, raises `UnknownCustomer`; the page that shows the
 profile (F8-04) maps it to HTTP 404.
+
+**The sales measures are marked Synthetic when any of the customer's sales in the window is `SEEDED`; the Segment and R/F/M panel is marked apart, by the runs it shows** (ADR-0052, #560). The flag comes from the same statement that counts the customer's sales.
 
 **Enforced:** application — `web/services/consumption_profile.py` for the rules,
 `web/db/consumption.py` for the reads, which are `SELECT`-only and parameterized.

@@ -58,6 +58,7 @@ def _row(**overrides) -> tuple:
         recency_last_purchase_at=datetime(2026, 9, 1, tzinfo=UTC),
         frequency_count=6,
         monetary_total=Decimal("400.00"),
+        data_origin="SEEDED",
     )
     values = {**defaults, **overrides}
     return tuple(values.values())
@@ -202,6 +203,10 @@ def test_a_row_carries_everything_the_explanation_needs() -> None:
     assert entry.assignment.label_code == "LOYAL"
     assert entry.assignment.r_score == 4
     assert entry.assignment.monetary_total == Decimal("400.00")
+    # ADR-0052: the run's origin travels with the row that marks it.
+    assert entry.data_origin == "SEEDED"
+    statement = _cursor(connection).execute.call_args.args[0]
+    assert "r.data_origin" in statement
 
 
 def test_a_customer_id_is_returned_as_text() -> None:

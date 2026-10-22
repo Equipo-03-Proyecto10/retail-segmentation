@@ -9,6 +9,9 @@
 
 FROM rust:1.98.1-slim-trixie@sha256:4cd829461bd5c4d511c32e269da9cb8929223b666519d8004e35fc8d1d771ab7 AS build
 WORKDIR /src
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libclang-dev libxml2-dev pkg-config \
+    && rm -rf /var/lib/apt/lists/*
 COPY Cargo.toml Cargo.lock ./
 COPY src/ ./src/
 RUN cargo build --release --locked \
@@ -16,6 +19,9 @@ RUN cargo build --release --locked \
 
 FROM debian:trixie-20260918-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
 WORKDIR /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libxml2 \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=build /usr/local/bin/__NAME__ /usr/local/bin/__NAME__
 COPY contracts/ ./contracts/
 

@@ -5,7 +5,7 @@
 {% block breadcrumbs %}{{ application_name }} / Analysis / Model comparison{% endblock %}
 
 {% block content %}
-  {% from "macros/ui.html" import alert, count_label, empty_state, page_header, pagination, status_pill %}
+  {% from "macros/ui.html" import alert, count_label, empty_state, page_header, pagination, status_pill, synthetic_banner, synthetic_pill %}
   {% macro when(run) %}{{ run.run_at.strftime("%Y-%m-%d %H:%M") }}{% endmacro %}
   {% macro percent(share) %}{% if share is none %}—{% else %}{{ "{:.1%}".format(share) }}{% endif %}{% endmacro %}
   {% macro label_name(label) %}{{ label if label else "Unassigned" }}{% endmacro %}
@@ -61,11 +61,13 @@
   {% endif %}
 
   {% if comparison %}
+    {{ synthetic_banner(synthetic, "At least one of these runs scored demonstration data, so the comparison is Synthetic.") }}
     <div class="mq-grid mq-grid--2">
       {% for run, heading, parameters in [(rules, "Rule-based run", rules_parameters), (kmeans, "K-means run", kmeans_parameters)] %}
         <section class="mq-panel">
           <header class="mq-panel__header">
             <h2 class="mq-panel__title">{{ heading }} #{{ run.run_id }}</h2>
+            {{ synthetic_pill(runs_synthetic(run)) }}
             <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('run_history.detail', run_id=run.run_id) }}">Open run</a>
           </header>
           <div class="mq-panel__body">
@@ -116,6 +118,7 @@
     <section class="mq-panel mq-panel--table mq-density-compact">
       <header class="mq-panel__header">
         <h2 class="mq-panel__title">Population per label</h2>
+        {{ synthetic_pill(synthetic) }}
         <span class="mq-caption">Best to worst, as the vocabulary declares it</span>
       </header>
       <div class="mq-table-wrap">
@@ -157,6 +160,7 @@
     <section class="mq-panel mq-panel--table mq-density-compact">
       <header class="mq-panel__header">
         <h2 class="mq-panel__title">Where they agree</h2>
+        {{ synthetic_pill(synthetic) }}
         <span class="mq-caption">Rows: rule-based label · Columns: K-means label · The diagonal is agreement</span>
       </header>
       <div class="mq-table-wrap">

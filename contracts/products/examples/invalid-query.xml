@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_query</code>
+  <message>A query parameter is outside its allowed range.</message>
+  <correlation_id>corr-list-003</correlation_id>
+  <details>
+    <field>category_id</field>
+    <code>out_of_range</code>
+  </details>
+</Error>

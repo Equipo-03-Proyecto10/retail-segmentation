@@ -351,7 +351,7 @@ def _adapter(*customers: str) -> MethodAdapter:
 def run_writes(monkeypatch: pytest.MonkeyPatch) -> Mock:
     manager = Mock()
     manager.read_open_assignments.return_value = {}
-    manager.create_run.return_value = 12
+    manager.create_run.return_value = (12, "OBSERVED")
     for name in (
         "read_open_assignments",
         "create_run",

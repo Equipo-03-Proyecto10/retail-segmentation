@@ -335,7 +335,7 @@ def test_the_report_is_ordered_by_customer_id_whatever_order_the_input_had() -> 
 
 
 def _fake_read(monkeypatch, earlier_rows, later_rows) -> Mock:
-    read = Mock(return_value=(earlier_rows, later_rows))
+    read = Mock(return_value=(earlier_rows, later_rows, False))
     monkeypatch.setattr(shift_service, "list_totals_for_periods", read)
     return read
 

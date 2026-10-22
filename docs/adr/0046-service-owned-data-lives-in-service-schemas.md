@@ -1,10 +1,10 @@
 # ADR-0046 — Service-owned data lives in service schemas
 
-**Status:** Accepted
+**Status:** Partially superseded by [ADR-0054](0054-seed-written-outbox-rows-before-the-relays-first-start.md) (publication of seed-written outbox events only)
 **Owner:** Marcelo
 **Issue:** #398
 **Supersedes:** —
-**Superseded by:** —
+**Superseded by:** [ADR-0054](0054-seed-written-outbox-rows-before-the-relays-first-start.md) in part
 
 ---
 

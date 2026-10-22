@@ -87,9 +87,10 @@ def _limit() -> int:
     message = f"limit must be a whole number from 1 to {MAX_LIMIT}."
     if _INT.fullmatch(value) is None:
         raise _invalid_query("limit", "invalid_type", message)
-    if not 1 <= int(value) <= MAX_LIMIT:
+    normalized = value.lstrip("0") or "0"
+    if len(normalized) > len(str(MAX_LIMIT)) or not 1 <= int(normalized) <= MAX_LIMIT:
         raise _invalid_query("limit", "out_of_range", message)
-    return int(value)
+    return int(normalized)
 
 
 def _long_timeout_client(url: str, timeout: float) -> redis.Redis:
@@ -143,7 +144,8 @@ def create_app() -> Flask:
                 )
             label = store.current_label(connection, customer_id)
             key = result_key(customer_id, label.run_id, limit)
-            cached = cache.get(key)
+            generation = cache.generation()
+            cached = cache.get(key, generation)
             if cached is not None:
                 return Representation("Recommendation", cached)
             now = datetime.now(UTC)
@@ -151,7 +153,7 @@ def create_app() -> Flask:
                 ViewReads(connection, label), customer_id, now, limit
             )
         data = wire_value(result.as_dict(now))
-        cache.put(key, data)
+        cache.put(key, data, generation)
         return Representation("Recommendation", data)
 
     _start_consumers(app, settings, cache)

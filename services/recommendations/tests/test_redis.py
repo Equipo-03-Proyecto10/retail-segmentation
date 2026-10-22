@@ -159,3 +159,46 @@ def test_with_redis_cache_down_the_same_items_are_recomputed(
     answer = _ask(down, token)
     assert answer["items"] == cached["items"]
     assert answer["status"] == cached["status"]
+
+
+def test_an_inflight_result_cannot_repopulate_the_cache_after_invalidation(
+    app: Flask, token: Callable[..., dict], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app import rule
+
+    original = rule.recommend
+    calls = []
+
+    def invalidated_while_computing(*args):
+        answer = original(*args)
+        calls.append(answer)
+        app.extensions["recommendations_cache"].invalidate()
+        return answer
+
+    monkeypatch.setattr(rule, "recommend", invalidated_while_computing)
+    _ask(app, token)
+    _ask(app, token)
+    assert len(calls) == 2, "A pre-invalidation result was cached for 120 seconds"
+
+
+def test_eviction_of_the_index_does_not_defeat_invalidation(
+    app: Flask,
+    token: Callable[..., dict],
+    redis_connection: redis.Redis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import rule
+
+    _ask(app, token)
+    redis_connection.delete(INDEX)
+    app.extensions["recommendations_cache"].invalidate()
+    original = rule.recommend
+    calls = []
+
+    def recompute(*args):
+        calls.append(True)
+        return original(*args)
+
+    monkeypatch.setattr(rule, "recommend", recompute)
+    _ask(app, token)
+    assert calls, "A result survived invalidation after the index was evicted"

@@ -25,7 +25,7 @@ STREAMS = (
 EXPECTED = (
     "user svc_recommendations on {{password}} resetchannels -@all +@connection"
     " +@read +@write -@dangerous -scan -randomkey"
-    " ~recommendations:rl:* ~recommendations:cache:* +waitaof"
+    " ~recommendations:rl:* ~recommendations:cache:* +waitaof +multi +exec +discard"
     " (%R~pub:auth:v1:live:* +exists)"
     " (" + " ".join("~" + stream for stream in STREAMS) + " +xreadgroup +xack"
     " +xgroup|create +xpending +xclaim)"
@@ -68,6 +68,9 @@ def _dryrun(client: Any, *command: str) -> str:
     "command",
     [
         ("PING",),
+        ("MULTI",),
+        ("EXEC",),
+        ("DISCARD",),
         ("EXISTS", "pub:auth:v1:live:session"),
         ("INCR", "recommendations:rl:actor:window"),
         ("SET", "recommendations:cache:c:1:10", "{}", "EX", "120"),

@@ -45,6 +45,7 @@ def _get(client: FlaskClient, headers: dict[str, str], **query: str):
         ({"customer_id": "abc"}, "customer_id", "invalid_format"),
         ({"customer_id": RECOMMENDED, "limit": "0"}, "limit", "out_of_range"),
         ({"customer_id": RECOMMENDED, "limit": "51"}, "limit", "out_of_range"),
+        ({"customer_id": RECOMMENDED, "limit": "9" * 5000}, "limit", "out_of_range"),
         ({"customer_id": RECOMMENDED, "limit": "abc"}, "limit", "invalid_type"),
     ],
 )

@@ -3,110 +3,38 @@ import type {
   CategoryDraft,
   CategoryNode,
   CategoryView,
-  ErrorView,
-  FieldDetail,
   Paged,
-  PageView,
   ProductChanges,
   ProductDraft,
   ProductQuery,
   ProductView,
   Result,
 } from '../shared/api';
-import { localError, plain, type Backoffice } from './backoffice';
+import type { Backoffice } from './backoffice';
+import {
+  checked,
+  failed,
+  FieldChecks,
+  id,
+  invalidInput,
+  MAX_INT,
+  optionalText,
+  pageNumber,
+  pageOf,
+  pageSize,
+  record,
+} from './checks';
 import type { CallResult } from './transport';
 import type { FieldValue } from './xml';
 
 // Products and the category tree (F16-02, #410). Every value from the screens is
 // checked here, in the main process, before a path or a body is built from it.
 
-const MAX_PRODUCT_ID = 2147483647;
+const MAX_PRODUCT_ID = MAX_INT;
 const MAX_CATEGORY_ID = 32767;
-const PRICE = /^(0|[1-9][0-9]{0,7})\.[0-9]{2}$/;
 const TREE_PAGE_SIZE = 100;
 /** A tree of 32,767 categories at 100 a page; a service that never ends its pages is cut off here. */
 const TREE_PAGE_LIMIT = 328;
-
-/** A value from the screens that cannot be sent. Nothing reaches the network. */
-class Refused extends Error {
-  constructor(readonly view: ErrorView) {
-    super(view.code);
-  }
-}
-
-function invalidInput(message: string): Refused {
-  return new Refused(localError('invalid_input', message));
-}
-
-function id(value: unknown, max: number, label: string): number {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > max)
-    throw invalidInput(`${label} must be a whole number from 1 to ${max}.`);
-  return value;
-}
-
-function pageNumber(value: unknown): number {
-  if (value === undefined) return 1;
-  return id(value, MAX_PRODUCT_ID, 'The page');
-}
-
-function pageSize(value: unknown): number {
-  if (value === undefined) return 20;
-  return id(value, 100, 'The page size');
-}
-
-function optionalText(value: unknown, label: string): string | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== 'string') throw invalidInput(`${label} must be text.`);
-  return value;
-}
-
-function record(value: unknown, label: string): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value))
-    throw invalidInput(`${label} is missing.`);
-  return value as Record<string, unknown>;
-}
-
-/** Field checks mirroring the XSD, so a refusal names its field the way the service would. */
-class FieldChecks {
-  readonly details: FieldDetail[] = [];
-
-  text(field: string, value: unknown, max: number): string {
-    if (typeof value !== 'string' || value.trim() === '') {
-      this.details.push({ field, code: 'required' });
-      return '';
-    }
-    if (value.length > max) this.details.push({ field, code: 'too_long' });
-    return value;
-  }
-
-  id(field: string, value: unknown, max: number): number {
-    if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > max) {
-      this.details.push({ field, code: 'out_of_range' });
-      return 0;
-    }
-    return value;
-  }
-
-  price(field: string, value: unknown): string {
-    if (typeof value !== 'string' || !PRICE.test(value)) {
-      this.details.push({ field, code: 'invalid_format' });
-      return '';
-    }
-    return value;
-  }
-
-  done(): void {
-    if (this.details.length > 0)
-      throw new Refused(
-        localError('invalid_body', 'Some values cannot be sent. Correct the marked fields.', this.details),
-      );
-  }
-}
-
-function pageOf(data: Record<string, unknown>): PageView {
-  const p = data.PageInfo as { page: string; size: string; total: string };
-  return { page: Number(p.page), size: Number(p.size), total: Number(p.total) };
-}
 
 interface ProductXml {
   product_id: string;
@@ -132,23 +60,11 @@ function categoryOf(x: CategoryXml): CategoryView {
   };
 }
 
-function failed<T>(res: CallResult): Result<T> {
-  if (res.ok) throw new Error('a refusal was expected');
-  return { ok: false, error: plain(res.error) };
-}
-
 export class Catalog {
   constructor(private readonly office: Backoffice) {}
 
   private run<T>(work: () => Promise<Result<T>>): Promise<Result<T>> {
-    return this.office.attempt(async () => {
-      try {
-        return await work();
-      } catch (e) {
-        if (e instanceof Refused) return { ok: false, error: e.view };
-        throw e;
-      }
-    });
+    return checked(this.office, work);
   }
 
   // ---------- products ----------

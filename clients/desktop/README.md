@@ -6,7 +6,8 @@ response against that service's own XSD, and signs in through auth-service
 [ADR-0035](../../docs/adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md),
 [ADR-0036](../../docs/adr/0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md)).
 F16-01 is the foundation: shell, secure window, preload bridge, XML transport, sign-in and
-role-gated screens. F16-02 adds the first feature screens, Products and Categories (see below).
+role-gated screens. F16-02 adds Products and Categories, and F16-04 adds Stock, Sales, Engagement and
+Check-ins (see below).
 
 ## Run it
 
@@ -52,9 +53,11 @@ being ignored. `MOSAIQ_DESKTOP_CONFIG_DIR` overrides the directory (the window t
   - products: `listProducts`, `getProduct`, `createProduct`, `updateProduct`, `deactivateProduct`;
   - categories: `categoryTree`, `listCategories`, `categoryDescendants`, `createCategory`,
     `updateCategory`, `deleteCategory`.
+  - floor activity: `stores`, `stockLevels`, `listSales`, `getSale`, `engagementSummary`,
+    `listEngagementEvents`, `voidEngagementEvent`, `listCheckIns`, `getCheckIn`, `reviewCheckIn`.
 
   There is no generic fetch and no `ipcRenderer`. The main process checks every value a screen sends
-  (`src/main/catalog.ts`) before it builds a path or a body from it.
+  (`src/main/checks.ts`, used by `catalog.ts` and `floor.ts`) before it builds a path or a body from it.
 
 - Tokens live in the main process only, and only as sealed bytes (see Token storage below).
 - A response is checked in the main process before it is parsed: its root namespace must be the called
@@ -98,6 +101,27 @@ app.
   refused category change the tree is reloaded, so what is shown is what the service still has.
 - The window tests (`tests/window/catalog.spec.ts`) answer with the recorded examples in
   `contracts/products/examples/` and `contracts/categories/examples/`, read from disk.
+
+## Stock, sales, engagement and check-ins (F16-04)
+
+A stock level, a sale or an event carries ids only (ADR-0035). `src/main/names.ts` reads the names
+from their owners within each call: products through `GET /v1/products?ids=`, 50 ids per call;
+stores through every page of `GET /v1/stores`; channels through `GET /v1/channels`. A name that
+cannot be read shows as unavailable, and the screen still loads.
+
+- **Stock**: levels from `GET /v1/stock-levels`, by store and below a threshold.
+- **Sales**: `GET /v1/sales` with customer, store and a UTC time range, and one sale with its lines,
+  line totals and the total as returned. **Refresh** reads the list again, so a sale the phone
+  recorded in JSON shows here, read in XML and validated against `sales.xsd`.
+- **Engagement**: the summary grouped by store, day or type, then the event list for roles that may
+  read events (not `INVENTORY_PLANNER`). An `ADMIN` voids an event with a required reason: it stays
+  listed, marked voided, with its history, and the summary is read again. There is no delete.
+- **Check-ins** (`ADMIN`, `STORE_MANAGER`, `AUDITOR`): each check-in with its `verified` flag and its
+  reason in plain words, and one check-in with its reviews in order. An `ADMIN` appends a review with
+  a verdict and a required reason; nothing edits or deletes a check-in or a review.
+
+The navigation shows a screen only when the role may call its read operation. The window tests
+(`tests/window/floor.spec.ts`) answer with the recorded examples of the six contracts involved.
 
 ## Checks
 

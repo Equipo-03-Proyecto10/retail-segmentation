@@ -111,6 +111,155 @@ export interface CategoryChanges {
   parent_category_id?: number | null;
 }
 
+export interface StoreView {
+  store_id: number;
+  name: string;
+  city: string;
+  state: string;
+  is_active: boolean;
+}
+
+export interface StockQuery {
+  store_id?: number;
+  below?: number;
+  page?: number;
+  size?: number;
+}
+
+/** A stock level carries ids only; the names are read from products-service and stores-service. */
+export interface StockLevelView {
+  store_id: number;
+  store_name: string;
+  product_id: number;
+  product_name: string;
+  quantity_on_hand: number;
+  updated_at: string;
+}
+
+export interface SalesQuery {
+  customer_id?: string;
+  store_id?: number;
+  /** RFC 3339 date-times. */
+  from?: string;
+  to?: string;
+  page?: number;
+  size?: number;
+}
+
+export interface SaleLineView {
+  product_id: number;
+  product_name: string;
+  quantity: number;
+  unit_price: string;
+  /** quantity × unit_price, worked out in cents. */
+  line_total: string;
+}
+
+export interface SaleView {
+  sale_id: number;
+  customer_id: string;
+  store_id: number;
+  store_name: string;
+  channel_id: number;
+  channel_name: string;
+  occurred_at: string;
+  /** As returned by sales-service. */
+  total: string;
+  lines: SaleLineView[];
+}
+
+export type GroupBy = 'store' | 'day' | 'type';
+
+export interface SummaryQuery {
+  /** YYYY-MM-DD. */
+  from?: string;
+  to?: string;
+  store_id?: number;
+  group_by: GroupBy;
+}
+
+export interface SummaryView {
+  from?: string;
+  to?: string;
+  group_by: GroupBy;
+  /** label is the store name when grouped by store, otherwise the key. */
+  groups: { key: string; label: string; count: number }[];
+}
+
+export interface EventsQuery {
+  type?: 'QR_SCAN' | 'RECO_CLICK';
+  store_id?: number;
+  customer_id?: string;
+  voided?: boolean;
+  from?: string;
+  to?: string;
+  page?: number;
+  size?: number;
+}
+
+export interface HistoryEntryView {
+  action: string;
+  reason: string;
+  by: string;
+  at: string;
+}
+
+export interface EngagementEventView {
+  event_id: string;
+  type: string;
+  store_id: number;
+  store_name: string;
+  product_id: number;
+  product_name: string;
+  customer_id?: string;
+  label_code?: string;
+  rank?: number;
+  recorded_by: string;
+  occurred_at: string;
+  recorded_at: string;
+  voided: boolean;
+  history: HistoryEntryView[];
+}
+
+export interface CheckInsQuery {
+  store_id?: number;
+  user_id?: string;
+  verified?: boolean;
+  from?: string;
+  to?: string;
+  page?: number;
+  size?: number;
+}
+
+export interface CheckInView {
+  check_in_id: string;
+  user_id: string;
+  store_id: number;
+  store_name: string;
+  latitude?: string;
+  longitude?: string;
+  accuracy_m?: string;
+  distance_m?: string;
+  reason: string;
+  auto_verified: boolean;
+  verified: boolean;
+  occurred_at: string;
+  recorded_at: string;
+}
+
+export interface ReviewView {
+  review_id: number;
+  verified: boolean;
+  reason: string;
+  reviewed_by: string;
+  reviewed_at: string;
+}
+
+export interface CheckInDetailView extends CheckInView {
+  /** In the order the service returns them, oldest first. */
+  reviews: ReviewView[];
+}
+
 /** The named operations the renderer may call; there is no generic transport. */
 export interface MosaiqBridge {
   getState(): Promise<AppState>;
@@ -129,6 +278,16 @@ export interface MosaiqBridge {
   createCategory(draft: CategoryDraft): Promise<Result<CategoryView>>;
   updateCategory(categoryId: number, changes: CategoryChanges): Promise<Result<CategoryView>>;
   deleteCategory(categoryId: number): Promise<Result<null>>;
+  stores(): Promise<Result<StoreView[]>>;
+  stockLevels(query: StockQuery): Promise<Result<Paged<StockLevelView>>>;
+  listSales(query: SalesQuery): Promise<Result<Paged<SaleView>>>;
+  getSale(saleId: number): Promise<Result<SaleView>>;
+  engagementSummary(query: SummaryQuery): Promise<Result<SummaryView>>;
+  listEngagementEvents(query: EventsQuery): Promise<Result<Paged<EngagementEventView>>>;
+  voidEngagementEvent(eventId: string, reason: string): Promise<Result<EngagementEventView>>;
+  listCheckIns(query: CheckInsQuery): Promise<Result<Paged<CheckInView>>>;
+  getCheckIn(checkInId: string): Promise<Result<CheckInDetailView>>;
+  reviewCheckIn(checkInId: string, verified: boolean, reason: string): Promise<Result<ReviewView>>;
 }
 
 export const CHANNELS = {
@@ -148,4 +307,14 @@ export const CHANNELS = {
   createCategory: 'mosaiq:create-category',
   updateCategory: 'mosaiq:update-category',
   deleteCategory: 'mosaiq:delete-category',
+  stores: 'mosaiq:stores',
+  stockLevels: 'mosaiq:stock-levels',
+  listSales: 'mosaiq:list-sales',
+  getSale: 'mosaiq:get-sale',
+  engagementSummary: 'mosaiq:engagement-summary',
+  listEngagementEvents: 'mosaiq:list-engagement-events',
+  voidEngagementEvent: 'mosaiq:void-engagement-event',
+  listCheckIns: 'mosaiq:list-check-ins',
+  getCheckIn: 'mosaiq:get-check-in',
+  reviewCheckIn: 'mosaiq:review-check-in',
 } as const;

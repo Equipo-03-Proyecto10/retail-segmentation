@@ -128,3 +128,12 @@ td button,
 .tree li {
   margin: 0.25rem 0;
 }
+textarea {
+  display: block;
+  width: 100%;
+  min-height: 4rem;
+  box-sizing: border-box;
+  padding: 0.5rem;
+  margin-top: 0.25rem;
+  font: inherit;
+}

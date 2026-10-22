@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="refresh" content="{{ refresh }}">
+  <title>{{ ready }}/{{ total }} ready · MOSAIQ ops</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='console.css') }}">
+</head>
+<body>
+<header>
+  <h1><span>MOSAIQ</span> ops console</h1>
+  <div class="summary {{ 'good' if ready == total else 'bad' }}">{{ ready }}/{{ total }} ready</div>
+  <div class="meta">polled {{ polled_at | ago }} · refreshes every {{ refresh }} s · <a href="{{ url_for('status') }}">status.json</a></div>
+</header>
+
+{% if snapshot.stale %}
+<div class="notice">Container snapshot is stale ({{ snapshot.error or ('taken ' ~ (snapshot.taken_at | ago)) }}): container columns may be out of date. Is <span class="mono">mosaiq-ops-snapshot.timer</span> running?</div>
+{% endif %}
+
+<h2>Services</h2>
+<div class="panel">
+<table>
+  <thead>
+    <tr>
+      <th>Service</th><th class="num">Port</th><th>Live</th><th>Ready</th>
+      <th class="num">Latency</th><th>Last hour</th><th class="num">Uptime</th>
+      <th>Contract</th><th>Container</th><th>Image</th>
+      <th class="num">Restarts</th><th class="num">CPU</th><th class="num">Memory</th><th>Rule</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for item in rows %}
+    {% set r = item.row %}{% set p = r.probe %}{% set c = item.container %}
+    <tr>
+      <td class="mono">{{ r.service.name }}</td>
+      <td class="num">{{ r.service.port }}</td>
+      {% if p %}
+      <td><span class="badge {{ p.live }}">{{ p.live }}</span></td>
+      <td><span class="badge {{ p.ready }}" title="{{ p.error or '' }}">{{ p.ready_code or p.ready }}</span></td>
+      <td class="num">{{ '%.0f ms' % p.latency_ms if p.latency_ms is not none else '—' }}</td>
+      {% else %}
+      <td colspan="3" class="meta">not polled yet</td>
+      {% endif %}
+      <td>{% if item.history | length > 1 %}<svg class="spark" width="120" height="24" viewBox="0 0 120 24" role="img" aria-label="readiness latency, last hour"><polyline points="{{ item.history | sparkline }}"/></svg>{% endif %}</td>
+      <td class="num {{ 'bad' if r.uptime_percent is not none and r.uptime_percent < 99 else '' }}">{{ '%.1f %%' % r.uptime_percent if r.uptime_percent is not none else '—' }}</td>
+      <td class="mono">{{ r.contract_version or '—' }}</td>
+      {% if c %}
+      <td class="{{ '' if c.state == 'running' else 'bad' }}" title="{{ c.status }}">{{ c.state }}</td>
+      <td class="mono">{{ c.image.rsplit(':', 1)[-1] }}</td>
+      <td class="num {{ 'warn' if c.restarts else '' }}">{{ c.restarts }}</td>
+      <td class="num">{{ '%.1f %%' % c.cpu_percent if c.cpu_percent is not none else '—' }}</td>
+      <td class="num {{ 'warn' if c.mem_percent and c.mem_percent > 85 else '' }}">{{ c.mem_used or '—' }}{% if c.mem_limit %} / {{ c.mem_limit }}{% endif %}</td>
+      {% else %}
+      <td colspan="5" class="meta">no container</td>
+      {% endif %}
+      <td class="rule" title="{{ r.service.rule }}">{{ r.service.rn | join(', ') }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<h2>Redis</h2>
+<div class="panel">
+<table>
+  <thead><tr><th>Instance</th><th>State</th><th class="num">Memory</th><th>Stream</th><th>Consumer group</th><th class="num">Lag</th><th class="num">Pending</th></tr></thead>
+  <tbody>
+  {% for i in redis %}
+    {% set groups = i.groups or [none] %}
+    {% for g in groups %}
+    <tr>
+      {% if loop.first %}
+      <td class="mono" rowspan="{{ groups | length }}">{{ i.name }}</td>
+      <td rowspan="{{ groups | length }}"><span class="badge {{ 'up' if i.up else 'down' }}" title="{{ i.error or '' }}">{{ 'up' if i.up else (i.error or 'down') }}</span></td>
+      <td class="num" rowspan="{{ groups | length }}">{{ i.used_memory or '—' }}{% if i.max_memory and i.max_memory != '0B' %} / {{ i.max_memory }}{% endif %}</td>
+      {% endif %}
+      {% if g %}
+      <td class="mono">{{ g.stream }}</td><td class="mono">{{ g.group }}</td>
+      <td class="num {{ 'warn' if g.lag else '' }}">{{ g.lag if g.lag is not none else '?' }}</td>
+      <td class="num {{ 'warn' if g.pending else '' }}">{{ g.pending }}</td>
+      {% else %}
+      <td colspan="4" class="meta">{{ 'no streams' if i.up else '' }}</td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+  {% else %}
+    <tr><td colspan="7" class="meta">not polled yet</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+</body>
+</html>

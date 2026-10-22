@@ -1,0 +1,2 @@
+# Copied from contracts/registry.yaml by CI before `docker build` (ADR-0055).
+/registry.yaml

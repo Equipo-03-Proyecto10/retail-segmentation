@@ -40,13 +40,15 @@ class TokenAuthenticator(
 
     override fun authenticate(route: Route?, response: Response): Request? {
         val sent = response.request.header("Authorization")?.removePrefix("Bearer ") ?: return null
-        if (response.priorResponse != null) return null
         val code = ApiError.from(response.code, response.peekBody(MAX_ERROR_BYTES).string(), null, null).code
         if (code == "session_revoked") {
             // The service found the session ended: refreshing cannot bring it back.
+            // Read before the retry guard, so a session revoked between a refresh
+            // and its retry still signs out.
             endSession("session_revoked")
             return null
         }
+        if (response.priorResponse != null) return null
         if (code != "invalid_token") return null
         synchronized(lock) {
             val current = tokens.read() ?: return null

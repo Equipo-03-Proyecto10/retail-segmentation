@@ -117,6 +117,38 @@ class TokenAuthenticatorTest {
     }
 
     @Test
+    fun aSessionRevokedOnTheRetryAfterARefreshSignsOut() = runBlocking {
+        server.dispatcher =
+            object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse = when (request.path) {
+                    REFRESH -> {
+                        refreshes.incrementAndGet()
+                        ok(200, tokens("fresh-access", "fresh-refresh"))
+                    }
+                    // Revoked between the refresh and the retry.
+                    ME ->
+                        if (request.getHeader("Authorization") == "Bearer fresh-access") {
+                            error(401, "session_revoked")
+                        } else {
+                            error(401, "invalid_token")
+                        }
+                    else -> MockResponse().setResponseCode(404)
+                }
+            }
+        val client = expiredClient()
+        val event = async(start = CoroutineStart.UNDISPATCHED) { client.events.signedOut.first() }
+
+        // The raw call, not the repository: only the authenticator can end it.
+        val answer = async(Dispatchers.IO) { client.network.users.getCurrentUser() }.await()
+        val signedOut = withTimeout(1_000) { event.await() }
+
+        assertEquals(401, answer.code())
+        assertEquals(1, refreshes.get())
+        assertNull(client.store.read())
+        assertTrue(signedOut.reason.isNotBlank())
+    }
+
+    @Test
     fun authUnavailableKeepsTheTokensAndSaysTryAgain() = runBlocking {
         refreshAnswer = { error(503, "auth_unavailable") }
         val client = expiredClient()

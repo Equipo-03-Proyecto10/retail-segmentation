@@ -5,7 +5,7 @@
 {% block breadcrumbs %}{{ application_name }} / Analysis / Consumption reports{% endblock %}
 
 {% block content %}
-  {% from "macros/ui.html" import alert, count_label, page_header, pagination, status_pill %}
+  {% from "macros/ui.html" import alert, count_label, page_header, pagination, status_pill, synthetic_banner, synthetic_pill %}
   {% set signal_names = {"segment": "Segment", "preferred_category": "Preferred category", "purchase_history": "Purchase history"} %}
   {% macro with_share(leader) %}{{ leader.name }}{% if leader.share is not none %} {{ leader.share }} %{% endif %}{% endmacro %}
   {% macro leader(dimension) %}{% if dimension %}{{ with_share(dimension.before) }} → {{ with_share(dimension.after) }}{% else %}<span class="mq-caption">unchanged</span>{% endif %}{% endmacro %}
@@ -62,10 +62,13 @@
     </div>
   </form>
 
+  {{ synthetic_banner((shifts and shifts.seeded) or (recommendations and recommendations.synthetic), "Figures marked Synthetic were computed from demonstration sales or a run that scored them.") }}
+
   {% if shifts %}
     <section class="mq-panel mq-panel--table mq-density-compact">
       <header class="mq-panel__header">
         <h2 class="mq-panel__title">Consumption shifts</h2>
+        {{ synthetic_pill(shifts.seeded) }}
         <span class="mq-caption">{{ shifts.earlier.start.strftime("%Y-%m-%d") }} → {{ shifts.earlier.end.strftime("%Y-%m-%d") }}, compared with {{ shifts.later.start.strftime("%Y-%m-%d") }} → {{ shifts.later.end.strftime("%Y-%m-%d") }}</span>
       </header>
       <div class="mq-panel__body">
@@ -112,6 +115,7 @@
     <section class="mq-panel mq-panel--table mq-density-compact">
       <header class="mq-panel__header">
         <h2 class="mq-panel__title">Recommendations</h2>
+        {{ synthetic_pill(recommendations.synthetic) }}
       </header>
       {% if recommendations.rows %}
         <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(recommendations.total, "recommendation", "recommendations") }}</span></div>
@@ -130,7 +134,7 @@
             <tbody>
               {% for row in recommendations.rows %}
                 <tr>
-                  <td class="mq-table__cell--sticky"><a class="mq-table__link" href="{{ url_for('catalog.customer_detail', customer_id=row.customer_id) }}">{{ row.customer_name }}</a></td>
+                  <td class="mq-table__cell--sticky"><a class="mq-table__link" href="{{ url_for('catalog.customer_detail', customer_id=row.customer_id) }}">{{ row.customer_name }}</a> {{ synthetic_pill(row.synthetic) }}</td>
                   <td>{{ row.store_name }}</td>
                   <td><a class="mq-table__link" href="{{ url_for('catalog.product_detail', product_id=row.product_id) }}">{{ row.product_name }}</a></td>
                   <td>{{ row.category_name }}</td>

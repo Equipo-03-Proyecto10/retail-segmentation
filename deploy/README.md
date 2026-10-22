@@ -409,6 +409,158 @@ sudo -u postgres psql -v ON_ERROR_STOP=1 -d retail -c \
 It reports `UPDATE 15` the first time and `UPDATE 0` after. As above, only the
 thirty seeded ids are touched.
 
+### Recording data origin on an existing database (#559)
+
+#559 gives `transaction` and `segmentation_run` a `data_origin` column,
+`OBSERVED` or `SEEDED`, `NOT NULL` with no default (ADR-0052). A database
+rebuilt from the scripts after #559 needs nothing. A database loaded before it
+needs the column, and a value for every existing row. Which rows came from the
+seed and which from CSV loads is decided against the database's own rows, so
+step (a) comes first and changes nothing.
+
+**(a) Check the rule against the rows (read-only).** The seed numbers its 300
+sales `TXN-00000001` to `TXN-00000300`, in `transaction_id` order on an empty
+database, and gives each exactly two lines: for `d` in 0 and 1,
+`product_id = 1 + ((transaction_id + d) % 40)` and
+`quantity = 1 + ((transaction_id + d) % 3)` (`sql/02_seed_30_per_table.sql`).
+A CSV file could use the same `TXN-` shape, so the lines corroborate the id:
+
+```sh
+sudo -u postgres psql -X -d retail <<'SQL'
+-- Sales: seed-shaped id, TXN- prefix, and whether the lines are the seed's.
+WITH line AS (
+    SELECT l.transaction_id,
+           count(*) AS lines,
+           count(*) FILTER (WHERE EXISTS (
+               SELECT FROM generate_series(0, 1) AS d
+                WHERE l.product_id = 1 + ((l.transaction_id + d) % 40)
+                  AND l.quantity = 1 + ((l.transaction_id + d) % 3)
+           )) AS seed_lines
+      FROM transaction_line AS l
+     GROUP BY l.transaction_id
+)
+SELECT t.transaction_id BETWEEN 1 AND 300
+       AND t.source_transaction_id = 'TXN-' || lpad(t.transaction_id::text, 8, '0')
+           AS seed_shaped,
+       t.source_transaction_id LIKE 'TXN-%' AS txn_prefix,
+       count(*) AS sales,
+       count(*) FILTER (WHERE l.lines = 2 AND l.seed_lines = 2) AS lines_as_seeded
+  FROM transaction AS t
+  LEFT JOIN line AS l ON l.transaction_id = t.transaction_id
+ GROUP BY 1, 2
+ ORDER BY 1, 2;
+
+-- Runs: seeded (no actor, among the seed's ids), and whether the window held
+-- a seed-shaped sale when the run executed.
+SELECT r.executed_by IS NULL AND r.run_id <= 31 AS seed_run,
+       EXISTS (
+           SELECT FROM transaction AS t
+            WHERE t.transaction_id BETWEEN 1 AND 300
+              AND t.source_transaction_id = 'TXN-' || lpad(t.transaction_id::text, 8, '0')
+              AND t.occurred_at >= r.run_at - make_interval(days => r.window_days)
+              AND t.occurred_at <= r.run_at
+       ) AS read_seeded_sale,
+       count(*) AS runs
+  FROM segmentation_run AS r
+ GROUP BY 1, 2
+ ORDER BY 1, 2;
+SQL
+```
+
+What the rule needs to hold:
+
+- one sales row `t | t | 300 | 300`: all 300 seed-shaped sales, each with
+  exactly its two seeded lines;
+- any CSV-loaded sales as `f | f | <n> | …`;
+- **no** `f | t` row. A `TXN-` id outside the seed's shape is a CSV sale the
+  rule cannot tell from the seed by its id; stop and inspect it. So is a
+  seed-shaped row whose `lines_as_seeded` is below `sales`: a CSV file appended
+  a line to a seeded sale, which #559 now refuses;
+- runs: `t | t` for the seed's runs (30 on a database loaded at `f4ae690`, 31
+  from the current seed, which adds a K-means run), and every run executed
+  since in `f | t` or `f | f`.
+
+**(b) If every sale is the seed's** (only the `t | t | 300 | 300` sales row),
+the database holds demonstration data only: back it up and rebuild it from the
+three scripts at the deployed commit, as #346 did. Nothing below is needed.
+
+**(c) Otherwise, backfill in place, once.** Rebuilding would drop real CSV
+sales, so the columns are added to the live database instead, by the committed
+blocks of `sql/01_schema.sql` and never by DDL typed on the server (AGENTS.md,
+ADR-0046). It runs as one transaction with `ON_ERROR_STOP`, so either all of it
+applies or none does:
+
+1. the `DATA ORIGIN COLUMNS` block adds both columns, nullable;
+2. two `UPDATE`s, the only statements typed here, fill them with the rule from
+   (a), as bound parameters (psql's `\bind`). A run is `SEEDED` if it is one of
+   the seed's, or if a `SEEDED` sale fell in its window when it ran;
+3. the `DATA ORIGIN` block sets `NOT NULL`, which fails if any row was left
+   unfilled, adds each `CHECK` under the name a clean build gives it, and
+   creates the run-origin function, guard and index;
+4. the `BOUNDARY sales` section re-creates the guard that requires `OBSERVED`
+   from `svc_sales`.
+
+```sh
+cd /opt/mosaiq/current
+{
+  sed -n '/^-- BEGIN DATA ORIGIN COLUMNS/,/^-- END DATA ORIGIN COLUMNS$/p' sql/01_schema.sql
+  cat <<'SQL'
+UPDATE transaction
+   SET data_origin = CASE
+       WHEN transaction_id BETWEEN $1 AND $2
+        AND source_transaction_id = $3 || lpad(transaction_id::text, 8, '0')
+       THEN $4 ELSE $5 END
+ WHERE data_origin IS NULL
+\bind 1 300 'TXN-' 'SEEDED' 'OBSERVED' \g
+
+UPDATE segmentation_run AS r
+   SET data_origin = CASE
+       WHEN (r.executed_by IS NULL AND r.run_id <= $1)
+         OR EXISTS (
+            SELECT FROM transaction AS t
+             WHERE t.data_origin = $2
+               AND t.occurred_at >= r.run_at - make_interval(days => r.window_days)
+               AND t.occurred_at <= r.run_at)
+       THEN $2 ELSE $3 END
+ WHERE r.data_origin IS NULL
+\bind 31 'SEEDED' 'OBSERVED' \g
+SQL
+  sed -n '/^-- BEGIN DATA ORIGIN (/,/^-- END DATA ORIGIN$/p' sql/01_schema.sql
+  sed -n '/^-- BEGIN BOUNDARY sales$/,/^-- END BOUNDARY sales$/p' sql/01_schema.sql
+} | sudo -u postgres psql -X -v ON_ERROR_STOP=1 --single-transaction -d retail -f -
+```
+
+It reports `UPDATE <every sale>` and `UPDATE <every run>`. Then compare against
+a clean build of the same commit, as in the next section:
+`check-schema-drift.sh compare` must report no drift. The columns are last in
+both tables in `sql/01_schema.sql` so that a database that gained them by
+`ADD COLUMN` dumps identically.
+
+**(d) Order.** The new code names `data_origin` in every sale and run it
+writes, and the old code names it in none, so neither can run against the
+other's schema. Apply (b) or (c) right after the deploy that ships #559, and
+run no CSV load and no segmentation in between.
+
+### Retiring `DATA_IS_SYNTHETIC` (#560)
+
+#560 marks every analytics page Synthetic from the `data_origin` of the rows it
+reads (ADR-0052), and the instance flag is gone from the code. Two things
+follow on the instance:
+
+1. **#559's step above must be done first.** The pages read `data_origin` on
+   sales and runs; against a database without those columns they fail. Deploy
+   #560 only after (b) or (c) of the previous section has been applied and
+   verified.
+2. **Delete the stale line from the environment file.** The application no
+   longer reads it, so it is harmless, but an operator reading the file would
+   believe it still governs the marker:
+
+   ```bash
+   sudo sed -i '/^DATA_IS_SYNTHETIC=/d' /etc/mosaiq/mosaiq.env
+   sudo grep -c '^DATA_IS_SYNTHETIC=' /etc/mosaiq/mosaiq.env   # prints 0
+   sudo systemctl restart mosaiq
+   ```
+
 ### Checking the database has kept up with the code
 
 Because the deploy never runs SQL, a database can fall behind the commit it

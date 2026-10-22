@@ -21,7 +21,7 @@
   {% if dashboard and dashboard.label %}
     <div class="mq-alert mq-alert--warning" role="status">
       <span class="mq-pill mq-pill--warning">{{ dashboard.label }}</span>
-      Every figure here is derived from {{ e.data_origin.lower() }} data, not an observed business result.
+      {% if e.data_origin != "OBSERVED" %}Every figure here is derived from {{ e.data_origin.lower() }} data{% else %}The conversions counted here link seeded sales{% endif %}, not an observed business result.
     </div>
   {% endif %}
 

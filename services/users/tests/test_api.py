@@ -207,6 +207,21 @@ def test_create_refuses_an_unknown_role_and_a_short_password(api: Any) -> None:
     assert _code(reply) == (422, "invalid_body")
 
 
+@pytest.mark.parametrize("name", ["   ", "\t\n"])
+def test_a_name_blank_after_trimming_is_refused(
+    api: Any, owner: psycopg.Connection, name: str
+) -> None:
+    before = _scalar(owner, "SELECT count(*) FROM app_user")
+    reply = api("POST", "/v1/users", json_body=NEW_USER | {"name": name})
+    assert _code(reply) == (422, "invalid_body")
+    assert reply.get_json()["details"] == [{"field": "name", "code": "too_short"}]
+    assert _scalar(owner, "SELECT count(*) FROM app_user") == before
+    reply = api("PATCH", f"/v1/users/{ANALYST}", json_body={"name": name})
+    assert _code(reply) == (422, "invalid_body")
+    stored = _scalar(owner, "SELECT name FROM app_user WHERE user_id = %s", ANALYST)
+    assert stored.strip()
+
+
 def test_only_the_administrator_creates(api: Any) -> None:
     reply = api("POST", "/v1/users", as_user=(USER_2, "AUDITOR"), json_body=NEW_USER)
     assert _code(reply) == (403, "forbidden_role")

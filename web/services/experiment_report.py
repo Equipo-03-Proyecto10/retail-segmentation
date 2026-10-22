@@ -72,11 +72,7 @@ class ExperimentReport:
 
     @property
     def label(self) -> str | None:
-        return (
-            uplift.SYNTHETIC_LABEL
-            if is_synthetic(self.experiment.data_origin)
-            else None
-        )
+        return uplift.SYNTHETIC_LABEL if is_synthetic(self.experiment) else None
 
     @property
     def pending(self) -> int:

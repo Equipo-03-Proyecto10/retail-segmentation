@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: customer-preferences-service
-  version: 1.0.0
+  version: 1.0.1
   description: >-
     Reads a customer's preference profile and replaces each of its two sets,
     preferred channels and interest categories, only as a whole (RN-54).
@@ -326,6 +326,7 @@ components:
       schema:
         type: string
         format: uuid
+        example: 00000000-0000-0000-0000-000000000001
   headers:
     CorrelationId:
       description: The effective correlation id for this request.

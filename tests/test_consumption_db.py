@@ -50,7 +50,7 @@ def _statement_and_params(connection: MagicMock) -> tuple[str, dict]:
 
 
 _WINDOWED_READS = [
-    (get_sales_totals, (0, None, None), "fetchone"),
+    (get_sales_totals, (0, None, None, False, False), "fetchone"),
     (list_channel_totals, [], "fetchall"),
     (list_store_totals, [], "fetchall"),
     (list_category_totals, [], "fetchall"),
@@ -108,7 +108,7 @@ def test_a_customer_id_that_is_a_uuid_object_still_travels_as_text() -> None:
     from uuid import UUID
 
     connection = MagicMock()
-    _cursor(connection).fetchone.return_value = (0, None, None)
+    _cursor(connection).fetchone.return_value = (0, None, None, False, False)
 
     get_sales_totals(connection, UUID(_CUSTOMER), _SINCE, _UNTIL)
 
@@ -121,21 +121,57 @@ def test_a_customer_id_that_is_a_uuid_object_still_travels_as_text() -> None:
 
 def test_sales_totals_of_no_purchases_are_none_not_zero() -> None:
     connection = MagicMock()
-    _cursor(connection).fetchone.return_value = (0, None, None)
+    _cursor(connection).fetchone.return_value = (0, None, None, False, False)
 
     totals = get_sales_totals(connection, _CUSTOMER, _SINCE, _UNTIL)
 
-    assert totals == SalesTotals(purchases=0, spend=None, last_purchase_at=None)
+    assert totals == SalesTotals(
+        purchases=0,
+        spend=None,
+        last_purchase_at=None,
+        seeded=False,
+        window_seeded=False,
+    )
+
+
+def test_sales_totals_say_whether_the_customer_or_the_window_holds_a_seeded_sale() -> (
+    None
+):
+    """ADR-0052: `seeded` is over the customer's own sales; `window_seeded` is
+    over anyone's in the same window, through the partial index on SEEDED."""
+    connection = MagicMock()
+    _cursor(connection).fetchone.return_value = (0, None, None, False, True)
+
+    totals = get_sales_totals(connection, _CUSTOMER, _SINCE, _UNTIL)
+
+    flat = " ".join(_statement_and_params(connection)[0].split())
+    assert "coalesce(bool_or(data_origin = 'SEEDED'), false)" in flat
+    assert "seeded.data_origin = 'SEEDED'" in flat
+    assert "seeded.occurred_at >= %(since)s" in flat
+    assert "seeded.occurred_at <= %(until)s" in flat
+    assert (totals.seeded, totals.window_seeded) == (False, True)
 
 
 def test_sales_totals_carry_count_spend_and_last_purchase() -> None:
     connection = MagicMock()
     last = datetime(2026, 9, 20, tzinfo=UTC)
-    _cursor(connection).fetchone.return_value = (4, Decimal("400.00"), last)
+    _cursor(connection).fetchone.return_value = (
+        4,
+        Decimal("400.00"),
+        last,
+        True,
+        True,
+    )
 
     totals = get_sales_totals(connection, _CUSTOMER, _SINCE, _UNTIL)
 
-    assert totals == SalesTotals(4, Decimal("400.00"), last)
+    assert totals == SalesTotals(
+        4,
+        Decimal("400.00"),
+        last,
+        True,
+        True,
+    )
 
 
 def test_the_group_reads_map_rows_to_their_dataclasses() -> None:
@@ -200,6 +236,7 @@ _HISTORY_ROW = (
     None,
     _UNTIL,
     180,
+    "SEEDED",
 )
 
 

@@ -61,7 +61,8 @@ def list_history_rows(
             SELECT h.run_id, h.label_code, sl.name,
                    h.recency_last_purchase_at, h.frequency_count,
                    h.monetary_total, h.r_score, h.f_score, h.m_score,
-                   h.valid_from, h.valid_to, r.run_at, r.window_days
+                   h.valid_from, h.valid_to, r.run_at, r.window_days,
+                   r.data_origin
             FROM customer_segment_history AS h
             JOIN segmentation_run AS r ON r.run_id = h.run_id
             LEFT JOIN segment_label AS sl ON sl.label_code = h.label_code

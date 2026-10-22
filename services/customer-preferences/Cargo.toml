@@ -1,0 +1,20 @@
+[package]
+name = "customer-preferences"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.90"
+publish = false
+
+[dependencies]
+axum = { version = "0.8.4", default-features = false, features = ["http1", "tokio"] }
+mosaiq-kit = { git = "https://github.com/Equipo-03-Proyecto10/retail-segmentation", tag = "kit-rs/v0.1.0" }
+redis = { version = "0.32.4", default-features = false, features = ["aio", "tokio-comp"] }
+serde_json = "1.0.140"
+tokio = { version = "1.47.1", features = ["macros", "net", "rt-multi-thread", "time"] }
+tokio-postgres = { version = "0.7.13", features = ["with-uuid-1"] }
+tracing = "0.1.41"
+uuid = "1.17.0"
+
+[dev-dependencies]
+tokio = { version = "1.47.1", features = ["full"] }
+uuid = { version = "1.17.0", features = ["v4"] }

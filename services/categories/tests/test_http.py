@@ -189,7 +189,7 @@ def test_a_parent_filter_outside_int32_is_refused(client, admin_headers, parent_
     )
     assert response.status_code == 422
     body = response.get_json()
-    assert body["code"] == "invalid_pagination"
+    assert body["code"] == "invalid_query"
     assert body["details"] == [{"field": "parent_id", "code": "out_of_range"}]
 
 

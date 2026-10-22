@@ -120,13 +120,13 @@ def test_an_unknown_run_shows_an_error_not_a_500(
     assert "no longer exists" in response.get_data(as_text=True)
 
 
-def _run(run_id: int, day: int):
+def _run(run_id: int, day: int, origin: str = "SEEDED"):
     from datetime import datetime
 
     from web.db.segments import SegmentationRun
 
     return SegmentationRun(
-        run_id, "RFM_RULES", 90, {}, 30, None, None, datetime(2026, 1, day)
+        run_id, "RFM_RULES", 90, {}, 30, None, None, datetime(2026, 1, day), origin
     )
 
 
@@ -149,6 +149,31 @@ def _stub_selected_runs(monkeypatch: pytest.MonkeyPatch) -> None:
         "web.routes.migration_matrix.get_run",
         lambda _connection, run_id: _run(run_id, run_id),
     )
+
+
+@pytest.mark.parametrize(
+    ("earlier", "later", "marked"),
+    [
+        ("SEEDED", "SEEDED", True),
+        ("SEEDED", "OBSERVED", True),
+        ("OBSERVED", "SEEDED", True),
+        ("OBSERVED", "OBSERVED", False),
+    ],
+)
+def test_the_matrix_is_synthetic_when_either_run_is_seeded(
+    app: Flask, monkeypatch: pytest.MonkeyPatch, earlier, later, marked
+) -> None:
+    """#560, ADR-0052: a figure comparing two runs is marked by either."""
+    _stub_matrix(monkeypatch, [_run(2, 2, later), _run(1, 1, earlier)])
+    monkeypatch.setattr(
+        "web.routes.migration_matrix.order_runs", lambda _c, a, b: (1, 2)
+    )
+    client = app.test_client()
+    _sign_in(client, "ANALYST")
+
+    body = client.get("/migration-matrix/?run_a=1&run_b=2").get_data(as_text=True)
+
+    assert ("Synthetic" in body) is marked
 
 
 def test_runs_picked_in_reverse_are_shown_in_the_order_the_matrix_uses(

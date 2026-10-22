@@ -55,6 +55,7 @@ def test_history_reads_every_row_of_the_one_customer_newest_first() -> None:
             None,
             _AT,
             180,
+            "SEEDED",
         )
     ]
 
@@ -83,6 +84,7 @@ def test_history_reads_every_row_of_the_one_customer_newest_first() -> None:
             valid_to=None,
             run_at=_AT,
             window_days=180,
+            data_origin="SEEDED",
         )
     ]
 

@@ -166,7 +166,7 @@ async fn directory(ctx: &Ctx) -> Result<Vec<StoreRecord>, ApiError> {
 
 async fn list_stores(ctx: Ctx) -> Result<Reply, ApiError> {
     let query = REQUEST_QUERY.try_with(Clone::clone).unwrap_or_default();
-    let (active, city) = directory_filters(&query);
+    let (active, city) = directory_filters(&query)?;
     let stores: Vec<_> = directory(&ctx)
         .await?
         .into_iter()
@@ -188,20 +188,37 @@ async fn list_stores(ctx: Ctx) -> Result<Reply, ApiError> {
     )
 }
 
-fn directory_filters(query: &str) -> (Option<bool>, Option<String>) {
+fn directory_filters(query: &str) -> Result<(Option<bool>, Option<String>), ApiError> {
     let values: HashMap<String, String> = form_urlencoded::parse(query.as_bytes())
         .map(|(key, value)| (key.into_owned(), value.into_owned()))
         .collect();
-    let active = values.get("active").and_then(|value| match value.as_str() {
-        "true" => Some(true),
-        "false" => Some(false),
-        _ => None,
-    });
-    let city = values
-        .get("city")
-        .filter(|value| !value.is_empty())
-        .cloned();
-    (active, city)
+    let mut details = Vec::new();
+    let active = match values.get("active").map(String::as_str) {
+        None => None,
+        Some("true") => Some(true),
+        Some("false") => Some(false),
+        Some(_) => {
+            details.push(Detail::new("active", "invalid_type"));
+            None
+        }
+    };
+    let city = values.get("city").cloned();
+    if let Some(city) = &city {
+        let length = city.chars().count();
+        if !(1..=80).contains(&length) {
+            details.push(Detail::new("city", "out_of_range"));
+        }
+    }
+    if details.is_empty() {
+        Ok((active, city))
+    } else {
+        Err(ApiError::new(
+            422,
+            "invalid_query",
+            "A query parameter is outside its allowed values.",
+        )
+        .with_details(details))
+    }
 }
 
 fn store_id(ctx: &Ctx) -> Result<i16, ApiError> {
@@ -465,13 +482,44 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::directory_filters;
+    use mosaiq_kit::Detail;
 
     #[test]
     fn directory_filters_decode_active_and_city() {
         assert_eq!(
-            directory_filters("active=true&city=San+Nicol%C3%A1s"),
+            directory_filters("active=true&city=San+Nicol%C3%A1s").unwrap(),
             (Some(true), Some("San Nicolás".to_owned()))
         );
-        assert_eq!(directory_filters("active=false&city="), (Some(false), None));
+        assert_eq!(directory_filters("").unwrap(), (None, None));
+        assert_eq!(
+            directory_filters("active=false").unwrap(),
+            (Some(false), None)
+        );
+    }
+
+    #[test]
+    fn directory_filters_refuse_values_outside_the_contract() {
+        for (query, field, detail_code) in [
+            ("active=maybe", "active", "invalid_type"),
+            ("active=1", "active", "invalid_type"),
+            ("active=yes", "active", "invalid_type"),
+            ("active=", "active", "invalid_type"),
+            ("active=True", "active", "invalid_type"),
+            ("city=", "city", "out_of_range"),
+        ] {
+            let error = directory_filters(query).unwrap_err();
+            assert_eq!(
+                (error.status, error.code.as_str()),
+                (422, "invalid_query"),
+                "{query}"
+            );
+            assert_eq!(error.details, [Detail::new(field, detail_code)], "{query}");
+        }
+        let long = format!("city={}", "a".repeat(81));
+        let error = directory_filters(&long).unwrap_err();
+        assert_eq!((error.status, error.code.as_str()), (422, "invalid_query"));
+        assert_eq!(error.details, [Detail::new("city", "out_of_range")]);
+        let ok = format!("city={}", "a".repeat(80));
+        assert!(directory_filters(&ok).is_ok());
     }
 }

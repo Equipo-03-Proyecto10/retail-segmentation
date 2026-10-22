@@ -58,3 +58,22 @@
 {% macro status_pill(label, tone="neutral") -%}
   <span class="mq-pill mq-pill--{{ tone }}"><span class="mq-pill__dot"></span>{{ label }}</span>
 {%- endmacro %}
+
+{# The Synthetic marker (ADR-0052, #560). `on` comes from the rows the figure
+   read, never from a setting; each macro renders nothing when it is false, so
+   an OBSERVED page carries no trace of the word. #}
+{% macro synthetic_pill(on) -%}
+  {%- if on %}{{ status_pill("Synthetic", "warning") }}{% endif -%}
+{%- endmacro %}
+
+{% macro synthetic_banner(on, message="Figures marked Synthetic come from demonstration data, not observed business activity.") -%}
+  {%- if on %}
+  <div class="mq-alert mq-alert--warning" role="status">
+    {{ status_pill("Synthetic", "warning") }}
+    <span class="mq-alert__text">{{ message }}</span>
+  </div>
+  {%- endif -%}
+{%- endmacro %}
+
+{# For an aria-label or a caption: "Synthetic. " ahead of the description. #}
+{% macro synthetic_prefix(on) %}{% if on %}Synthetic. {% endif %}{% endmacro %}

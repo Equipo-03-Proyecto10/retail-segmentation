@@ -126,8 +126,8 @@ def _new_subject(connection: psycopg.Connection, column: str):
     if column == "run_id":
         return _one(
             connection,
-            "INSERT INTO segmentation_run (method, window_days, customer_count)"
-            " VALUES ('RFM_RULES', 30, 0) RETURNING run_id",
+            "INSERT INTO segmentation_run (method, window_days, customer_count,"
+            " data_origin) VALUES ('RFM_RULES', 30, 0, 'SEEDED') RETURNING run_id",
         )
     if column == "experiment_id":
         return _one(

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +24,7 @@ from mosaiq_kit import (
     StreamConsumer,
     configure_logging,
 )
-from psycopg import errors
+from psycopg import errors, sql
 
 import redis
 
@@ -33,7 +34,9 @@ LOGGER = logging.getLogger(__name__)
 
 CONTRACTS_DIR = Path(__file__).resolve().parents[1] / "contracts"
 STREAM = "stream:categories.v1.changed"
-COLUMNS = "category_id, name, parent_category_id"
+COLUMNS = sql.SQL(", ").join(
+    sql.Identifier(name) for name in ("category_id", "name", "parent_category_id")
+)
 
 NAME_KEY = "category_name_key"
 PRIMARY_KEY = "category_pkey"
@@ -112,21 +115,21 @@ def parent_filter() -> int | None:
     raw = request.args.get("parent_id")
     if raw is None:
         return None
-    try:
-        value = int(raw)
-    except ValueError:
+    # Strict base-10 digits: int() alone accepts " 1 ", "1_0" and "+1".
+    if not re.fullmatch(r"-?[0-9]+", raw):
         raise ApiError(
             422,
-            "invalid_pagination",
+            "invalid_query",
             "parent_id must be an integer.",
             [{"field": "parent_id", "code": "invalid_type"}],
-        ) from None
+        )
+    value = int(raw)
     # The contract types parent_id as int32. Inside that range an id no
     # category can have simply matches nothing: an empty page.
     if not INT32_MIN <= value <= INT32_MAX:
         raise ApiError(
             422,
-            "invalid_pagination",
+            "invalid_query",
             "parent_id is outside the int32 range.",
             [{"field": "parent_id", "code": "out_of_range"}],
         )
@@ -197,17 +200,20 @@ def create_app() -> Flask:
     app.extensions["mosaiq_kit"] = kit
     app.extensions["categories_cache"] = cache
 
-    def page_of(name: str, query: str, params: dict[str, Any]) -> Page:
+    def page_of(name: str, query: sql.Composable, params: dict[str, Any]) -> Page:
         offset = (kit.page - 1) * kit.size
         key = f"{name}:{kit.page}:{kit.size}"
         cached = cache.get(key)
         if cached is None:
             with kit.db.connection() as connection:
                 total = connection.execute(
-                    "SELECT count(*) FROM (" + query + ") AS matched", params
+                    sql.SQL("SELECT count(*) FROM ({}) AS matched").format(query),
+                    params,
                 ).fetchone()[0]
                 rows = connection.execute(
-                    query + " ORDER BY category_id LIMIT %(limit)s OFFSET %(offset)s",
+                    sql.SQL(
+                        "{} ORDER BY category_id LIMIT %(limit)s OFFSET %(offset)s"
+                    ).format(query),
                     params | {"limit": kit.size, "offset": offset},
                 ).fetchall()
             cached = {"items": [category_json(row) for row in rows], "total": total}
@@ -229,7 +235,9 @@ def create_app() -> Flask:
             return cached
         with kit.db.connection() as connection:
             row = connection.execute(
-                "SELECT " + COLUMNS + " FROM public.category WHERE category_id = %s",
+                sql.SQL("SELECT {} FROM public.category WHERE category_id = %s").format(
+                    COLUMNS
+                ),
                 (category_id,),
             ).fetchone()
         if row is None:
@@ -242,9 +250,11 @@ def create_app() -> Flask:
         parent = parent_filter()
         return page_of(
             f"list:{parent}",
-            "SELECT " + COLUMNS + " FROM public.category"
-            " WHERE (%(parent)s::integer IS NULL"
-            " OR parent_category_id = %(parent)s::integer)",
+            sql.SQL(
+                "SELECT {} FROM public.category"
+                " WHERE (%(parent)s::integer IS NULL"
+                " OR parent_category_id = %(parent)s::integer)"
+            ).format(COLUMNS),
             {"parent": parent},
         )
 
@@ -257,18 +267,22 @@ def create_app() -> Flask:
         existing(category_id)
         return page_of(
             f"descendants:{category_id}",
-            "WITH RECURSIVE subtree(category_id) AS ("
-            " SELECT category_id FROM public.category"
-            " WHERE parent_category_id = %(root)s::smallint"
-            " UNION"
-            " SELECT c.category_id FROM public.category AS c"
-            " JOIN subtree AS s ON c.parent_category_id = s.category_id)"
-            " SELECT " + COLUMNS + " FROM public.category"
-            " WHERE category_id IN (SELECT category_id FROM subtree)",
+            sql.SQL(
+                "WITH RECURSIVE subtree(category_id) AS ("
+                " SELECT category_id FROM public.category"
+                " WHERE parent_category_id = %(root)s::smallint"
+                " UNION"
+                " SELECT c.category_id FROM public.category AS c"
+                " JOIN subtree AS s ON c.parent_category_id = s.category_id)"
+                " SELECT {} FROM public.category"
+                " WHERE category_id IN (SELECT category_id FROM subtree)"
+            ).format(COLUMNS),
             {"root": category_id},
         )
 
-    def write(statement: str, params: dict[str, Any], *, deleting: bool = False):
+    def write(
+        statement: sql.Composable, params: dict[str, Any], *, deleting: bool = False
+    ):
         try:
             with kit.db.transaction() as connection:
                 return connection.execute(statement, params).fetchone()
@@ -284,8 +298,11 @@ def create_app() -> Flask:
         require_storable_parent(body.get("parent_category_id"))
         try:
             row = write(
-                "INSERT INTO public.category (category_id, name, parent_category_id)"
-                " VALUES (%(id)s, %(name)s, %(parent)s) RETURNING " + COLUMNS,
+                sql.SQL(
+                    "INSERT INTO public.category"
+                    " (category_id, name, parent_category_id)"
+                    " VALUES (%(id)s, %(name)s, %(parent)s) RETURNING {}"
+                ).format(COLUMNS),
                 {
                     "id": body["category_id"],
                     "name": body["name"],
@@ -315,11 +332,13 @@ def create_app() -> Flask:
         body = kit.body
         require_storable_parent(body.get("parent_category_id"))
         row = write(
-            "UPDATE public.category SET"
-            " name = CASE WHEN %(set_name)s THEN %(name)s ELSE name END,"
-            " parent_category_id = CASE WHEN %(set_parent)s"
-            " THEN %(parent)s::smallint ELSE parent_category_id END"
-            " WHERE category_id = %(id)s RETURNING " + COLUMNS,
+            sql.SQL(
+                "UPDATE public.category SET"
+                " name = CASE WHEN %(set_name)s THEN %(name)s ELSE name END,"
+                " parent_category_id = CASE WHEN %(set_parent)s"
+                " THEN %(parent)s::smallint ELSE parent_category_id END"
+                " WHERE category_id = %(id)s RETURNING {}"
+            ).format(COLUMNS),
             {
                 "id": category_id,
                 "set_name": "name" in body,
@@ -336,8 +355,10 @@ def create_app() -> Flask:
     @kit.operation("deleteCategory")
     def delete_category(category_id: int) -> NoContent:
         row = write(
-            "DELETE FROM public.category WHERE category_id = %(id)s"
-            " RETURNING category_id",
+            sql.SQL(
+                "DELETE FROM public.category WHERE category_id = %(id)s"
+                " RETURNING category_id"
+            ),
             {"id": category_id},
             deleting=True,
         )

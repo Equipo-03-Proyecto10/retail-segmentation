@@ -20,6 +20,7 @@ from flask.testing import FlaskClient
 
 from web.app import create_app
 from web.config import Config
+from web.db import experiment_report as report_db
 from web.db import experiments as db
 from web.db.campaigns import Campaign
 from web.db.experiments import Experiment, GroupCounts
@@ -63,7 +64,9 @@ EDIT = {
 }
 
 
-def _experiment(assignments: int = 0, origin: str = "OBSERVED") -> Experiment:
+def _experiment(
+    assignments: int = 0, origin: str = "OBSERVED", seeded_conversion: bool = False
+) -> Experiment:
     return Experiment(
         experiment_id=3,
         name="Win-back offer",
@@ -77,6 +80,7 @@ def _experiment(assignments: int = 0, origin: str = "OBSERVED") -> Experiment:
         control_groups=1,
         treatment_groups=2,
         assignments=assignments,
+        seeded_conversion=seeded_conversion,
     )
 
 
@@ -328,6 +332,38 @@ def test_the_data_origin_is_never_rewritten(connection: MagicMock) -> None:
     assert "UPDATE experiment" in statement and "data_origin" not in statement
 
 
+@pytest.mark.parametrize(
+    "statement",
+    [
+        db._LIST_EXPERIMENTS,
+        db._GET_EXPERIMENT,
+        report_db._LIST_EXPERIMENTS,
+        report_db._LIST_ACTIVE_EXPERIMENTS,
+    ],
+)
+def test_every_experiment_read_says_whether_a_conversion_links_a_seeded_sale(
+    statement: str,
+) -> None:
+    """ADR-0052: an OBSERVED experiment measured on a seeded sale is still
+    Synthetic, so every read that returns an Experiment carries the check."""
+    flat = " ".join(statement.split())
+    assert " ".join(db.SEEDED_CONVERSION_SQL.split()) in flat
+    assert "JOIN experiment_conversion AS sc" in flat
+    assert "st.data_origin = 'SEEDED'" in flat
+
+
+def test_the_seeded_conversion_column_lands_on_the_experiment(
+    connection: MagicMock,
+) -> None:
+    row = (3, "X", None, None, "CONVERSION", date(2026, 10, 1), None, 14)
+    _cursor(connection).fetchone.return_value = (*row, "OBSERVED", 1, 1, 4, True)
+
+    experiment = db.get_experiment(connection, 3)
+
+    assert experiment.data_origin == "OBSERVED"
+    assert experiment.seeded_conversion is True
+
+
 # ---------- activation needs a control and a treatment ----------
 
 
@@ -443,6 +479,17 @@ def test_a_seeded_or_injected_experiment_is_labelled_synthetic(
     body = client.get("/experiments/").get_data(as_text=True)
 
     assert "Synthetic" in body and origin in body
+
+
+def test_an_observed_experiment_whose_conversion_links_a_seeded_sale_is_synthetic(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#560, ADR-0052: the conversions it counts mark it too."""
+    _wire_pages(monkeypatch, _experiment(origin="OBSERVED", seeded_conversion=True))
+    client = app.test_client()
+    _sign_in(client, "ANALYST")
+
+    assert "Synthetic" in client.get("/experiments/").get_data(as_text=True)
 
 
 def test_an_observed_experiment_is_not_labelled_synthetic(

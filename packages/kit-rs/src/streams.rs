@@ -27,8 +27,96 @@ const STREAM_LENGTH: usize = 10_000;
 const CLAIM_IDLE_MS: u64 = 60_000;
 const MAX_DELIVERIES: u64 = 5;
 
+const BACKOFF_START: Duration = Duration::from_secs(1);
+const BACKOFF_CAP: Duration = Duration::from_secs(30);
+
+/// Tracks one Redis outage: one warning when it starts, one info line when it
+/// ends, and a wait that doubles from one second up to thirty.
+struct Outage {
+    what: &'static str,
+    down: bool,
+    delay: Duration,
+}
+
+impl Outage {
+    fn new(what: &'static str) -> Self {
+        Self {
+            what,
+            down: false,
+            delay: BACKOFF_START,
+        }
+    }
+
+    /// Record a failure and return how long to wait before the next attempt.
+    fn lost(&mut self, error: &dyn Display) -> Duration {
+        if !self.down {
+            tracing::warn!("{} lost Redis ({error}); retrying with backoff", self.what);
+            self.down = true;
+        }
+        let wait = self.delay;
+        self.delay = (self.delay * 2).min(BACKOFF_CAP);
+        wait
+    }
+
+    fn recovered(&mut self) {
+        if self.down {
+            tracing::info!("{} reconnected to Redis", self.what);
+            self.down = false;
+        }
+        self.delay = BACKOFF_START;
+    }
+}
+
+/// Whether an error means the connection or the server is unavailable, as
+/// opposed to a fault in the command or the handler.
+fn is_outage(error: &RedisError) -> bool {
+    error.is_connection_dropped()
+        || error.is_io_error()
+        || error.is_timeout()
+        || error.is_connection_refusal()
+        || matches!(
+            error.code(),
+            Some("NOAUTH" | "WRONGPASS" | "NOPERM" | "LOADING" | "READONLY")
+        )
+}
+
 fn quote_identifier(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
+}
+
+/// The one way an identifier enters the relay's SQL: `{identifier}` in a fixed
+/// statement becomes `name`, quoted. Values are only ever bound (#593).
+fn with_identifier(statement: &'static str, name: &str) -> String {
+    statement.replace("{identifier}", &quote_identifier(name))
+}
+
+const LISTEN: &str = "LISTEN {identifier}";
+const SELECT_UNRELAYED: &str = "SELECT event_id, stream, event_type, entity_id, occurred_at \
+     FROM {identifier}.outbox WHERE relayed_at IS NULL ORDER BY occurred_at LIMIT $1 \
+     FOR UPDATE SKIP LOCKED";
+const MARK_RELAYED: &str =
+    "UPDATE {identifier}.outbox SET relayed_at = now() WHERE event_id = ANY($1)";
+const PURGE_RELAYED: &str = "DELETE FROM {identifier}.outbox WHERE relayed_at IS NOT NULL \
+     AND relayed_at < now() - ($1::integer * interval '1 day')";
+
+/// One boundary's relay statements, built once from its validated suffix.
+struct Statements {
+    listen: String,
+    select: String,
+    update: String,
+    purge: String,
+}
+
+impl Statements {
+    fn new(suffix: &str) -> Self {
+        let schema = [suffix, "_events"].concat();
+        Self {
+            listen: with_identifier(LISTEN, &[suffix, "_outbox"].concat()),
+            select: with_identifier(SELECT_UNRELAYED, &schema),
+            update: with_identifier(MARK_RELAYED, &schema),
+            purge: with_identifier(PURGE_RELAYED, &schema),
+        }
+    }
 }
 
 fn timestamp(value: &DateTime<Utc>) -> String {
@@ -87,11 +175,12 @@ struct RelayConnection {
 /// Relay one service boundary's outbox to its configured streams.
 pub struct OutboxRelay<R: StreamStore> {
     config: tokio_postgres::Config,
-    suffix: String,
+    statements: Statements,
     streams: HashSet<String>,
     redis: R,
     connection: Option<RelayConnection>,
     last_purge: Option<Instant>,
+    delivery_failure: Option<String>,
 }
 
 impl<R: StreamStore> OutboxRelay<R> {
@@ -110,19 +199,13 @@ impl<R: StreamStore> OutboxRelay<R> {
             .map_err(|error| KitError(format!("The relay database URL is invalid: {error}")))?;
         Ok(Self {
             config,
-            suffix: suffix.to_owned(),
+            statements: Statements::new(suffix),
             streams: streams.into_iter().map(Into::into).collect(),
             redis,
             connection: None,
             last_purge: None,
+            delivery_failure: None,
         })
-    }
-
-    fn table(&self) -> String {
-        format!(
-            "{}.outbox",
-            quote_identifier(&format!("{}_events", self.suffix))
-        )
     }
 
     async fn connect(&mut self) -> Result<&mut RelayConnection, tokio_postgres::Error> {
@@ -149,8 +232,7 @@ impl<R: StreamStore> OutboxRelay<R> {
                     }
                 }
             });
-            let channel = quote_identifier(&format!("{}_outbox", self.suffix));
-            client.batch_execute(&format!("LISTEN {channel}")).await?;
+            client.batch_execute(&self.statements.listen).await?;
             self.connection = Some(RelayConnection { client, wakeups });
         }
         Ok(self.connection.as_mut().expect("connected"))
@@ -163,18 +245,12 @@ impl<R: StreamStore> OutboxRelay<R> {
 
     /// Wait for a wake-up (at most 5 s), poll once, and return the relayed row count.
     pub async fn run_once(&mut self, wait: Duration) -> Result<usize, tokio_postgres::Error> {
-        let table = self.table();
         let wait = wait.min(MAX_WAIT);
         let connection = self.connect().await?;
         if !wait.is_zero() {
             let _ = tokio::time::timeout(wait, connection.wakeups.recv()).await;
         }
         while connection.wakeups.try_recv().is_ok() {}
-        let select = format!(
-            "SELECT event_id, stream, event_type, entity_id, occurred_at FROM {table} \
-             WHERE relayed_at IS NULL ORDER BY occurred_at LIMIT $1 FOR UPDATE SKIP LOCKED"
-        );
-        let update = format!("UPDATE {table} SET relayed_at = now() WHERE event_id = ANY($1)");
         let transaction = self
             .connection
             .as_mut()
@@ -182,7 +258,9 @@ impl<R: StreamStore> OutboxRelay<R> {
             .client
             .transaction()
             .await?;
-        let rows = transaction.query(&select, &[&BATCH]).await?;
+        let rows = transaction
+            .query(&self.statements.select, &[&BATCH])
+            .await?;
         let mut event_ids: Vec<uuid::Uuid> = Vec::new();
         let mut delivery: Result<(), RedisError> = Ok(());
         for row in &rows {
@@ -217,34 +295,88 @@ impl<R: StreamStore> OutboxRelay<R> {
             };
         }
         if let Err(error) = delivery {
-            tracing::error!("Outbox delivery failed; rows remain unrelayed: {error}");
+            // The caller logs it, once per outage; the rows stay unrelayed.
+            self.delivery_failure = Some(error.to_string());
             transaction.rollback().await?;
             return Ok(0);
         }
         let relayed = event_ids.len();
         if relayed > 0 {
-            transaction.execute(&update, &[&event_ids]).await?;
+            transaction
+                .execute(&self.statements.update, &[&event_ids])
+                .await?;
         }
         transaction.commit().await?;
         if self.last_purge.is_none_or(|at| at.elapsed() >= PURGE_EVERY) {
-            let purge = format!(
-                "DELETE FROM {table} WHERE relayed_at IS NOT NULL \
-                 AND relayed_at < now() - ($1::integer * interval '1 day')"
-            );
             let client = &self.connection.as_ref().expect("connected").client;
-            client.execute(&purge, &[&RETENTION_DAYS]).await?;
+            client
+                .execute(&self.statements.purge, &[&RETENTION_DAYS])
+                .await?;
             self.last_purge = Some(Instant::now());
         }
         Ok(relayed)
     }
 
-    /// Relay until the task is aborted, reconnecting after a failed pass.
-    pub async fn run_forever(mut self) {
-        loop {
-            if let Err(error) = self.run_once(MAX_WAIT).await {
+    /// One pass of the forever loop: returns the wait owed after a Redis
+    /// failure, or `None`.
+    async fn pass(&mut self, outage: &mut Outage) -> Option<Duration> {
+        match self.run_once(MAX_WAIT).await {
+            Err(error) => {
                 tracing::error!("Outbox relay pass failed: {error}");
                 self.connection = None;
                 tokio::time::sleep(Duration::from_secs(1)).await;
+                None
+            }
+            Ok(relayed) => match self.delivery_failure.take() {
+                Some(failure) => Some(outage.lost(&failure)),
+                None => {
+                    if relayed > 0 {
+                        outage.recovered();
+                    }
+                    None
+                }
+            },
+        }
+    }
+
+    /// Relay until the task is aborted, reconnecting PostgreSQL after a failed
+    /// pass. A Redis failure is logged once per outage and retried with
+    /// backoff, but `redis` is never rebuilt: use `run_with_reconnect` for a
+    /// store that does not recover by itself.
+    pub async fn run_forever(mut self) {
+        let mut outage = Outage::new("Outbox relay");
+        loop {
+            if let Some(wait) = self.pass(&mut outage).await {
+                tokio::time::sleep(wait).await;
+            }
+        }
+    }
+
+    /// Like `run_forever`, but after a Redis failure it waits (backoff from
+    /// 1 s doubling to 30 s) and rebuilds the store with `connect` until that
+    /// succeeds. The failed batch was rolled back, so every row is delivered
+    /// again: at least once, never lost.
+    pub async fn run_with_reconnect<C, Fut>(mut self, mut connect: C)
+    where
+        C: FnMut() -> Fut,
+        Fut: Future<Output = RedisResult<R>>,
+    {
+        let mut outage = Outage::new("Outbox relay");
+        loop {
+            if let Some(wait) = self.pass(&mut outage).await {
+                tokio::time::sleep(wait).await;
+                loop {
+                    match connect().await {
+                        Ok(redis) => {
+                            self.redis = redis;
+                            break;
+                        }
+                        Err(error) => {
+                            let wait = outage.lost(&error);
+                            tokio::time::sleep(wait).await;
+                        }
+                    }
+                }
             }
         }
     }
@@ -537,12 +669,59 @@ where
         }
     }
 
-    /// Consume until the task is aborted.
+    /// Consume until the task is aborted. A Redis outage is logged once and
+    /// retried with backoff on the same connection; use `run_with_reconnect`
+    /// to rebuild it.
     pub async fn run_forever(mut self) {
+        let mut outage = Outage::new("Stream consumer");
         loop {
-            if let Err(error) = self.run_once(Some(5_000)).await {
+            if let Some(wait) = self.pass(&mut outage).await {
+                tokio::time::sleep(wait).await;
+            }
+        }
+    }
+
+    async fn pass(&mut self, outage: &mut Outage) -> Option<Duration> {
+        match self.run_once(Some(5_000)).await {
+            Ok(_) => {
+                outage.recovered();
+                None
+            }
+            Err(error) if is_outage(&error) => Some(outage.lost(&error)),
+            Err(error) => {
                 tracing::error!("Stream consumer pass failed: {error}");
                 tokio::time::sleep(Duration::from_secs(1)).await;
+                None
+            }
+        }
+    }
+
+    /// Like `run_forever`, but after an outage it waits, rebuilds the
+    /// connection with `connect` until that succeeds, and starts over from the
+    /// group's pending entries, so no unacknowledged entry is skipped.
+    pub async fn run_with_reconnect<C, Conn>(mut self, mut connect: C)
+    where
+        C: FnMut() -> Conn,
+        Conn: Future<Output = RedisResult<MultiplexedConnection>>,
+    {
+        let mut outage = Outage::new("Stream consumer");
+        loop {
+            if let Some(wait) = self.pass(&mut outage).await {
+                tokio::time::sleep(wait).await;
+                loop {
+                    match connect().await {
+                        Ok(redis) => {
+                            self.redis = redis;
+                            self.group_ready = false;
+                            self.started = false;
+                            break;
+                        }
+                        Err(error) => {
+                            let wait = outage.lost(&error);
+                            tokio::time::sleep(wait).await;
+                        }
+                    }
+                }
             }
         }
     }
@@ -556,5 +735,33 @@ where
 {
     pub fn spawn(self) -> tokio::task::JoinHandle<()> {
         tokio::spawn(self.run_forever())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn relay_statements_quote_the_suffix_and_bind_every_value() {
+        let statements = Statements::new("kit_probe");
+        assert_eq!(statements.listen, r#"LISTEN "kit_probe_outbox""#);
+        assert_eq!(
+            statements.select,
+            "SELECT event_id, stream, event_type, entity_id, occurred_at \
+             FROM \"kit_probe_events\".outbox WHERE relayed_at IS NULL \
+             ORDER BY occurred_at LIMIT $1 FOR UPDATE SKIP LOCKED"
+        );
+        assert_eq!(
+            statements.update,
+            "UPDATE \"kit_probe_events\".outbox SET relayed_at = now() \
+             WHERE event_id = ANY($1)"
+        );
+        assert_eq!(
+            statements.purge,
+            "DELETE FROM \"kit_probe_events\".outbox WHERE relayed_at IS NOT NULL \
+             AND relayed_at < now() - ($1::integer * interval '1 day')"
+        );
+        assert_eq!(with_identifier(LISTEN, "a\"b"), r#"LISTEN "a""b""#);
     }
 }

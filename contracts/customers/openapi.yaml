@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: customers-service
-  version: 1.0.1
+  version: 1.2.0
   description: >-
     Registers, searches, reads and corrects customers under RN-08. Customers
     are never deleted through services; a mistaken registration is corrected
@@ -23,7 +23,9 @@ paths:
         Searches the customer directory. q is matched case-insensitively as a
         substring of name, email or phone; percent (%) and underscore (_) in q
         match themselves literally and are not SQL wildcards. email is an
-        exact match. When both filters are present, both must match.
+        exact match. When both filters are present, both must match. A filter
+        value outside its schema, or an empty email, returns 422
+        `invalid_query`, naming the parameter in `details`.
       x-mosaiq-roles: [ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
@@ -72,7 +74,7 @@ paths:
         '406':
           $ref: '#/components/responses/NotAcceptable'
         '422':
-          $ref: '#/components/responses/InvalidPagination'
+          $ref: '#/components/responses/CustomerListValidation'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -432,6 +434,9 @@ components:
         name:
           type: string
           maxLength: 120
+          description: >-
+            Refused with 422 invalid_body when it is empty or only
+            whitespace.
         email:
           $ref: '#/components/schemas/NullableEmail'
         phone:
@@ -460,6 +465,9 @@ components:
         name:
           type: string
           maxLength: 120
+          description: >-
+            Refused with 422 invalid_body when it is empty or only
+            whitespace.
         email:
           $ref: '#/components/schemas/NullableEmail'
         phone:
@@ -768,8 +776,8 @@ components:
           examples:
             unsupported_media_type:
               $ref: '#/components/examples/UnsupportedMediaType'
-    InvalidPagination:
-      description: invalid_pagination — page or size is outside its allowed range.
+    CustomerListValidation:
+      description: '`invalid_pagination` or `invalid_query`.'
       headers:
         X-Correlation-ID:
           $ref: '#/components/headers/CorrelationId'
@@ -780,12 +788,16 @@ components:
           examples:
             invalid_pagination:
               $ref: '#/components/examples/InvalidPagination'
+            invalid_query:
+              externalValue: ./examples/invalid-query.json
         application/xml:
           schema:
             $ref: '#/components/schemas/Error'
           examples:
             invalid_pagination:
               $ref: '#/components/examples/InvalidPagination'
+            invalid_query:
+              externalValue: ./examples/invalid-query.xml
     RateLimited:
       description: rate_limited — the request limit was exceeded.
       headers:
@@ -833,10 +845,11 @@ components:
     RegisterValidationFailed:
       description: >-
         invalid_body — the parsed body violates its schema, including an email
-        rejected by customer_email_check, a name over 120 characters, an email
-        over 160 characters, a phone over 20 characters, or an undeclared
-        field; unknown_channel — registration_channel_id is not known;
-        future_registration — registered_on is after the current date.
+        rejected by customer_email_check, a name that is empty or only
+        whitespace, a name over 120 characters, an email over 160 characters,
+        a phone over 20 characters, or an undeclared field; unknown_channel —
+        registration_channel_id is not known; future_registration —
+        registered_on is after the current date.
       headers:
         X-Correlation-ID:
           $ref: '#/components/headers/CorrelationId'
@@ -864,9 +877,10 @@ components:
     CorrectionValidationFailed:
       description: >-
         invalid_body — the parsed body violates its schema, including an email
-        rejected by customer_email_check, a name over 120 characters, an email
-        over 160 characters, a phone over 20 characters, or any undeclared
-        field such as registered_on; details names every invalid field;
+        rejected by customer_email_check, a name that is empty or only
+        whitespace, a name over 120 characters, an email over 160 characters,
+        a phone over 20 characters, or any undeclared field such as
+        registered_on; details names every invalid field;
         unknown_channel — registration_channel_id is not known.
       headers:
         X-Correlation-ID:

@@ -11,6 +11,7 @@ are replaced, so each test states exactly what the page was given.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, Mock
 
@@ -379,3 +380,37 @@ def test_the_report_states_compared_shifted_undecided_and_absent(
         "only one period." in body
     )
     assert "a shift needs 3 or more purchases in each period" in body
+
+
+# ---------- #560: each report is marked by the sales it read ----------
+
+
+def test_observed_reports_carry_no_synthetic_mark(app, monkeypatch) -> None:
+    response, _, _ = _open(app, monkeypatch)
+
+    assert "Synthetic" not in response.get_data(as_text=True)
+
+
+def test_a_seeded_period_marks_the_shift_report(app, monkeypatch) -> None:
+    response, _, _ = _open(app, monkeypatch, shifts=_shift_report(seeded=True))
+    body = response.get_data(as_text=True)
+
+    shifts = body[body.index(">Consumption shifts</h2>") :]
+    assert "Synthetic" in shifts.split("</header>")[0]
+    assert 'class="mq-alert mq-alert--warning" role="status"' in body
+
+
+def test_a_synthetic_recommendation_marks_its_row_and_the_report(
+    app, monkeypatch
+) -> None:
+    page = _recommendation_page()
+    marked = _recommendation_page(
+        rows=tuple(replace(row, synthetic=True) for row in page.rows), synthetic=True
+    )
+
+    response, _, _ = _open(app, monkeypatch, recommendations=marked)
+    body = response.get_data(as_text=True)
+
+    recommendations = body[body.index(">Recommendations</h2>") :]
+    assert "Synthetic" in recommendations.split("</header>")[0]
+    assert "Ada Lovelace</a> " in recommendations and "Synthetic" in recommendations

@@ -61,7 +61,10 @@ GET = (
     "SELECT campaign_id, name, label_code, starts_on, ends_on, status"
     " FROM public.campaign WHERE campaign_id = %s"
 )
-GET_FOR_UPDATE = GET + " FOR UPDATE"
+GET_FOR_UPDATE = (
+    "SELECT campaign_id, name, label_code, starts_on, ends_on, status"
+    " FROM public.campaign WHERE campaign_id = %s FOR UPDATE"
+)
 INSERT = (
     "INSERT INTO public.campaign (campaign_id, name, label_code, starts_on,"
     " ends_on, status)"

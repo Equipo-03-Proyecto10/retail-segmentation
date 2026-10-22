@@ -27,6 +27,7 @@ export function errorBox(error: ErrorView, fieldNames: string[] = []): HTMLEleme
   row('Code', error.code, 'error-code');
   row('Message', error.message, 'error-message');
   row('Correlation id', error.correlation_id, 'error-correlation');
+  if (error.retry_after !== undefined) row('Retry after', error.retry_after, 'error-retry-after');
   for (const d of error.details) {
     if (!fieldNames.includes(d.field)) row(`Field ${d.field}`, d.code, 'error-detail');
   }

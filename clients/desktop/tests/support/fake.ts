@@ -25,9 +25,12 @@ export interface Seen {
   headers: Record<string, string>;
   body: string | undefined;
 }
-export type Responder = (
-  req: Seen,
-) => { status: number; body?: string } | Promise<{ status: number; body?: string }>;
+export interface Reply {
+  status: number;
+  body?: string;
+  headers?: Record<string, string>;
+}
+export type Responder = (req: Seen) => Reply | Promise<Reply>;
 
 export function fakeFetch(responder: Responder): { fetch: typeof fetch; seen: Seen[] } {
   const seen: Seen[] = [];
@@ -40,7 +43,10 @@ export function fakeFetch(responder: Responder): { fetch: typeof fetch; seen: Se
     };
     seen.push(req);
     const r = await responder(req);
-    return new Response(r.body ?? null, { status: r.status, headers: { 'Content-Type': 'application/xml' } });
+    return new Response(r.body ?? null, {
+      status: r.status,
+      headers: { 'Content-Type': 'application/xml', ...r.headers },
+    });
   };
   return { fetch: impl as typeof fetch, seen };
 }

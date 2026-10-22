@@ -118,6 +118,8 @@ export class Transport {
       correlation_id: e.correlation_id,
       details: (e.details ?? []).map((d) => ({ field: d.field, code: d.code })),
     };
+    const retryAfter = response.headers.get('Retry-After');
+    if (retryAfter !== null) error.retry_after = retryAfter;
     return { ok: false, status, service, correlationId, error };
   }
 }

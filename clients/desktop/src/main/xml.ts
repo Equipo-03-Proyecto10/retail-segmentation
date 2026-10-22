@@ -65,6 +65,8 @@ const REPEATED = new Set([
   'EngagementEvents.EngagementEvent',
   'CheckIns.CheckIn',
   'Stores.Store',
+  'Users.User',
+  'Roles.Role',
 ]);
 /** Child elements that repeat wherever they appear: error details, sale lines, summary groups, event history, check-in reviews. */
 const REPEATED_CHILDREN = new Set(['details', 'lines', 'groups', 'history', 'reviews']);

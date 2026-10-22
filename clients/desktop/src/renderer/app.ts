@@ -2,6 +2,7 @@ import type { AppState, ErrorView, MosaiqBridge } from '../shared/api';
 import { renderCategories, renderProducts } from './catalog';
 import { el, errorBox } from './dom';
 import { renderCheckIns, renderEngagement, renderSales, renderStock } from './floor';
+import { renderAccount, renderTransfer, renderUsers } from './users';
 
 declare global {
   interface Window {
@@ -73,7 +74,16 @@ function renderSignIn(state: Extract<AppState, { status: 'signed_out' }>, error?
   root.replaceChildren(...parts);
 }
 
-type View = 'products' | 'categories' | 'stock' | 'sales' | 'engagement' | 'check-ins' | 'services';
+type View =
+  | 'products'
+  | 'categories'
+  | 'stock'
+  | 'sales'
+  | 'engagement'
+  | 'check-ins'
+  | 'users'
+  | 'transfer'
+  | 'services';
 
 /** Each screen, and the read operation the role must be allowed to call to see it (x-mosaiq-roles). */
 const VIEWS: { name: View; label: string; operation: string | null }[] = [
@@ -83,6 +93,8 @@ const VIEWS: { name: View; label: string; operation: string | null }[] = [
   { name: 'sales', label: 'Sales', operation: 'listSales' },
   { name: 'engagement', label: 'Engagement', operation: 'getEngagementSummary' },
   { name: 'check-ins', label: 'Check-ins', operation: 'listCheckIns' },
+  { name: 'users', label: 'Users', operation: 'listUsers' },
+  { name: 'transfer', label: 'Transfer administrator', operation: 'transferAdministrator' },
   { name: 'services', label: 'Services', operation: null },
 ];
 let view: View = 'products';
@@ -129,6 +141,8 @@ function renderHome(state: Extract<AppState, { status: 'signed_in' }>): void {
     else if (next === 'sales') renderSales(screen, ctx);
     else if (next === 'engagement') renderEngagement(screen, ctx);
     else if (next === 'check-ins') renderCheckIns(screen, ctx);
+    else if (next === 'users') renderUsers(screen, ctx);
+    else if (next === 'transfer') renderTransfer(screen, ctx);
     else renderServices(screen, state);
   };
   const nav = el('nav', { cls: 'nav' });
@@ -149,6 +163,7 @@ function renderHome(state: Extract<AppState, { status: 'signed_in' }>): void {
     el('h1', { text: 'MOSAIQ back office' }),
     ...storageWarning(state),
     role,
+    renderAccount(ctx),
     nav,
     screen,
     out,

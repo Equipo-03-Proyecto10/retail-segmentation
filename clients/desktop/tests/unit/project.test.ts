@@ -36,6 +36,11 @@ describe('compliance', () => {
     expect(deletes).toContain('/v1/categories/');
     expect(deletes).not.toContain('/v1/products');
   });
+  it('never deletes a user: accounts are deactivated (RN-04)', () => {
+    const deletes = grep(['-rn', '-A1', "method: 'DELETE'", src]);
+    expect(deletes).toContain('/deactivation');
+    expect(deletes).not.toMatch(/\/v1\/users\/\$\{[^}]*\}`/);
+  });
   it('exposes no generic transport on the bridge', () => {
     expect(
       grep([

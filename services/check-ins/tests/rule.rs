@@ -291,15 +291,17 @@ async fn the_list_filters_on_store_user_effective_verdict_and_time() {
     let db = service_database(&url);
     let store = TestStore::create(&owner, true).await;
     let manager = principal(STORE_MANAGER, "STORE_MANAGER");
-    // One instant for both, so the `from` filter below excludes both however
-    // long the first insert takes under a loaded test run.
+    // One occurred_at for both, so the `from` filter below excludes both. Each
+    // request() reads the clock, truncated to the second: two calls that
+    // straddle a second boundary put the second check-in inside the filter.
     let now = chrono::Utc::now();
-    let (inside, _) = record_check_in(&db, &manager, &request(&store, north(10.0, "5")), now)
-        .await
-        .unwrap();
-    let (outside, _) = record_check_in(&db, &manager, &request(&store, north(800.0, "5")), now)
-        .await
-        .unwrap();
+    let at = earlier();
+    let mut near = request(&store, north(10.0, "5"));
+    near.occurred_at = at;
+    let mut far = request(&store, north(800.0, "5"));
+    far.occurred_at = at;
+    let (inside, _) = record_check_in(&db, &manager, &near, now).await.unwrap();
+    let (outside, _) = record_check_in(&db, &manager, &far, now).await.unwrap();
     // A review overturns the outside one: the filter is on the effective verdict.
     append_review(
         &db,

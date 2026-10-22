@@ -52,7 +52,11 @@ def writer(contract: Contract) -> Operation:
 
 
 def reads(contract: Contract) -> list[Operation]:
-    """Every protected GET that needs no parameter, so it can answer 200."""
+    """Every protected GET that needs no parameter, so it can answer 200.
+
+    Its URL carries the contract's x-mosaiq-conformance-query, when declared,
+    for an operation that needs one of several filters (Operation.url()).
+    """
 
     return [
         op
@@ -193,10 +197,10 @@ def test_every_parameterless_read_answers_json_and_valid_xml(
 ) -> None:
     for op in reads(contract):
         token = live(signer, sessions, op.allowed_role)
-        assert client.call("GET", op.path, token=token).status == 200, op.operation_id
+        assert client.call("GET", op.url(), token=token).status == 200, op.operation_id
         if op.xml_reply:
             # Client.call validates the body against the service's XSD.
-            xml = client.call("GET", op.path, token=token, accept="application/xml")
+            xml = client.call("GET", op.url(), token=token, accept="application/xml")
             assert xml.status == 200, op.operation_id
 
 
@@ -331,7 +335,7 @@ def test_cached_reads_answer_200_with_redis_cache_stopped(
     try:
         for op in operations:
             token = live(signer, sessions, op.allowed_role)
-            reply = client.call("GET", op.path, token=token)
+            reply = client.call("GET", op.url(), token=token)
             assert reply.status == 200, (op.operation_id, reply.status, reply.body)
     finally:
         container_ctl("start", container)

@@ -65,6 +65,9 @@ class Operation:
     parameters: tuple[dict, ...]
     body: bool
     xml_reply: bool
+    # x-mosaiq-conformance-query: a query a successful call needs although no
+    # single parameter is required, such as "exactly one of these filters".
+    sample_query: tuple[tuple[str, str], ...] = ()
 
     def required(self) -> list[dict]:
         return [p for p in self.parameters if p.get("required") or p["in"] == "path"]
@@ -99,7 +102,13 @@ class Operation:
                 path = path.replace("{" + parameter["name"] + "}", value)
             elif parameter["in"] == "query":
                 query.append(parameter["name"] + "=" + value)
+        query.extend(name + "=" + value for name, value in self.sample_query)
         return path + ("?" + "&".join(query) if query else "")
+
+
+def _query_text(value: object) -> str:
+    # YAML reads `true` as a boolean; a query string carries it as `true`.
+    return str(value).lower() if isinstance(value, bool) else str(value)
 
 
 def sample(schema: dict) -> str:
@@ -177,6 +186,12 @@ def load_contract(directory: Path) -> Contract:
                     ),
                     body="requestBody" in operation,
                     xml_reply="application/xml" in reply.get("content", {}),
+                    sample_query=tuple(
+                        (name, _query_text(value))
+                        for name, value in operation.get(
+                            "x-mosaiq-conformance-query", {}
+                        ).items()
+                    ),
                 )
             )
     return contract

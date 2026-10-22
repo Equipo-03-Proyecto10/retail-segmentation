@@ -70,3 +70,9 @@ sales.sale_capture
 # on transaction passes the seed's own sales through it once, as every
 # writer's do (F14-18).
 sales_events.outbox
+
+# segments-service relays stream:segments.v1.run_recorded from here and
+# purges relayed rows after seven days: runtime state, never seed data. The
+# capture trigger on segmentation_run passes the seed's own runs through it
+# once, as every writer's do (F14-20).
+segments_events.outbox

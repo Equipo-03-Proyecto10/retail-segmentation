@@ -521,7 +521,8 @@ multivalued fact: one row is one captured change. An event names its entity by
 key only, never by copying its state, so there is nothing derived to drift.
 There is one outbox per owning boundary rather than one shared table, which
 keeps one writer per table: only that boundary's definer appends, and only its
-own relay marks and purges.
+own relay marks and purges. `segments_events.outbox` (F14-20) is one of them: it
+captures each `segmentation_run` the web inserts.
 
 The check-ins boundary (ADR-0046, F14-26) adds two relations, both in 4NF:
 - **`checkins.store_check_in`** has two candidate keys: `check_in_id` and the
@@ -1228,6 +1229,9 @@ The stores boundary therefore owns `stores` for `store_location`, publishes
 through `api_stores`, and keeps relay state in `stores_events`.
 The sales boundary owns `sales` for `sale_capture`, publishes
 `api_sales.purchase_line_v1` and keeps relay state in `sales_events`.
+The segments boundary owns no table: it publishes
+`api_segments.current_label_v1` over the web's `customer_segment_history` and
+keeps relay state in `segments_events`.
 The check-ins boundary owns `checkins` for `store_check_in` and
 `check_in_review`. It has no contract schema and no outbox, because nothing
 reads or consumes check-ins but its own service. It reads store locations

@@ -1386,6 +1386,85 @@ GRANT SELECT ON api_customers.customer_ref_v1
        svc_recommendations, svc_engagement;
 -- END BOUNDARY customers
 
+-- BEGIN BOUNDARY segments
+-- segments-service (F14-20, RN-20, RN-21, ADR-0034, ADR-0044). It reads the
+-- runs the web makes and never writes a segmentation table (RN-05): its
+-- contract view of each customer's current label, its outbox for
+-- stream:segments.v1.run_recorded and the read grants of svc_segments.
+
+CREATE SCHEMA IF NOT EXISTS api_segments;
+REVOKE ALL ON SCHEMA api_segments FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS segments_events;
+REVOKE ALL ON SCHEMA segments_events FROM PUBLIC;
+
+-- Keys only, never state: consumers re-read api_segments.current_label_v1.
+CREATE TABLE IF NOT EXISTS segments_events.outbox (
+    event_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    stream      text NOT NULL,
+    event_type  text NOT NULL,
+    entity_id   text NOT NULL,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    relayed_at  timestamptz
+);
+CREATE INDEX IF NOT EXISTS outbox_unrelayed
+    ON segments_events.outbox (occurred_at) WHERE relayed_at IS NULL;
+
+-- contracts/db/api_segments.current_label.v1.md: one row per customer, from
+-- the customer's open history row only, never an earlier row or a default.
+-- An open row with a label is assigned; one without is the run's own result
+-- of no label (RN-21); no open row at all is reported as such. Definer
+-- rights, so a consumer needs no privilege on either table.
+CREATE OR REPLACE VIEW api_segments.current_label_v1
+WITH (security_invoker = off) AS
+SELECT c.customer_id,
+       CASE
+           WHEN h.history_id IS NULL THEN 'no_open_assignment'
+           WHEN h.label_code IS NULL THEN 'unassigned_result'
+           ELSE 'assigned'
+       END::text AS state,
+       h.label_code,
+       h.valid_from AS since,
+       h.run_id
+FROM api_customers.customer_ref_v1 AS c
+LEFT JOIN public.customer_segment_history AS h
+       ON h.customer_id = c.customer_id AND h.valid_to IS NULL;
+REVOKE ALL ON api_segments.current_label_v1 FROM PUBLIC;
+
+-- One event per run the web records, so the service and recommendations move
+-- their caches to the new run's keys.
+CREATE OR REPLACE FUNCTION segments_events.capture_run_recorded() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+BEGIN
+    INSERT INTO segments_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:segments.v1.run_recorded', TG_OP, NEW.run_id::text);
+    -- An empty wake-up for the owner's relay; only that relay LISTENs.
+    PERFORM pg_notify('segments_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION segments_events.capture_run_recorded() OWNER TO definer_segments;
+REVOKE EXECUTE ON FUNCTION segments_events.capture_run_recorded() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_capture_run_recorded
+AFTER INSERT ON public.segmentation_run
+FOR EACH ROW EXECUTE FUNCTION segments_events.capture_run_recorded();
+
+-- svc_segments reads the web's segmentation tables and writes none of them.
+-- Each is a row of contracts/db/grants.csv.
+GRANT SELECT ON public.segment_label, public.segment, public.segment_rule,
+    public.segmentation_run, public.customer_segment_history TO svc_segments;
+
+GRANT USAGE ON SCHEMA segments_events TO svc_segments, definer_segments;
+GRANT INSERT ON segments_events.outbox TO definer_segments;
+GRANT SELECT, DELETE, UPDATE (relayed_at) ON segments_events.outbox TO svc_segments;
+
+GRANT USAGE ON SCHEMA api_segments TO svc_segments, svc_recommendations;
+GRANT SELECT ON api_segments.current_label_v1 TO svc_segments, svc_recommendations;
+-- END BOUNDARY segments
+
 -- BEGIN BOUNDARY customer-preferences
 -- customer-preferences-service (F14-16, RN-54, ADR-0034, ADR-0044). The two
 -- 4NF tables stay in public as legacy; the service is their only service

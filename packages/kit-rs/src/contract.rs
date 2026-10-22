@@ -1060,12 +1060,24 @@ fn element_to_value(element: &Element, schema: &JsonValue) -> JsonValue {
             result.insert(name.to_owned(), value);
         }
         // "An absent value is omitted in XML and is null in JSON": a member that
-        // is required and nullable, and omitted, reads as null.
+        // is required and nullable, and omitted, reads as null. XML has no way
+        // to write an empty list other than no item elements, so a required list
+        // that is omitted reads as []; the XSD has already said whether zero
+        // items are allowed.
         let mut required = Vec::new();
         required_names(schema, &mut required);
         for name in required {
-            if !result.contains_key(&name) && properties.get(&name).is_some_and(nullable) {
-                result.insert(name, JsonValue::Null);
+            if result.contains_key(&name) {
+                continue;
+            }
+            match properties.get(&name) {
+                Some(member) if nullable(member) => {
+                    result.insert(name, JsonValue::Null);
+                }
+                Some(member) if schema_type(member).as_deref() == Some("array") => {
+                    result.insert(name, JsonValue::Array(Vec::new()));
+                }
+                _ => {}
             }
         }
         return JsonValue::Object(result);
@@ -1162,6 +1174,29 @@ mod tests {
         assert_eq!(value["parent"], JsonValue::Null);
         assert_eq!(value["phone"], "1");
         assert_eq!(value["note"], "x");
+    }
+
+    #[test]
+    fn an_omitted_required_list_reads_as_empty() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "required": ["ids", "tags"],
+            "properties": {
+                "ids": {"type": "array", "items": {"type": "integer"}},
+                "tags": {"type": ["array", "null"], "items": {"type": "string"}},
+                "extra": {"type": "array", "items": {"type": "string"}}
+            }
+        });
+        // `tags` is nullable, so it still reads as null; `extra` is not
+        // required and stays absent.
+        assert_eq!(
+            read_xml("", &schema),
+            serde_json::json!({"ids": [], "tags": null})
+        );
+        assert_eq!(
+            read_xml("<ids>1</ids><ids>2</ids>", &schema)["ids"],
+            serde_json::json!([1, 2])
+        );
     }
 
     #[test]

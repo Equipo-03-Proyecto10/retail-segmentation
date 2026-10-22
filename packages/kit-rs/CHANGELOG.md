@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.3 - 2026-10-21
+
+- Read an XML request member that is a required list, and has no item
+  elements, as `[]`. XML cannot write an empty list any other way, so the
+  contracts' own clear examples (customer-preferences' channel and interest
+  sets) were refused with 422 `required` (#475).
+- The outbox relay builds its four statements once from the validated suffix,
+  with the identifier quoted in one place (#593).
+
 ## 0.1.2 - 2026-10-21
 
 Version 0.1.1 is the number-panic fix (#583); this release builds on it.

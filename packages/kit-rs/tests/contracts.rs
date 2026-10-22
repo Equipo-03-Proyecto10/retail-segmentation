@@ -173,7 +173,9 @@ fn probe_app(root: &Path, seen: Seen) -> axum::Router {
         })
         .unwrap()
         .operation("getCode", |ctx: Ctx| async move {
-            assert!(ctx.path_text("code").is_some());
+            if ctx.path_text("code").is_none() {
+                return Err(ApiError::new(404, "code_not_found", "No such code."));
+            }
             Ok::<Reply, ApiError>(NoContent::default().into())
         })
         .unwrap()

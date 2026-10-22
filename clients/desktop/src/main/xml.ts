@@ -70,6 +70,12 @@ const REPEATED = new Set([
   'Campaigns.Campaign',
   'Segments.Segment',
   'AuditEntries.AuditEntry',
+  'Customers.Customer',
+  'SegmentAssignments.SegmentAssignment',
+  'PreferenceProfile.preferred_channel_ids',
+  'PreferenceProfile.interest_category_ids',
+  'Recommendation.items',
+  'Recommendation.items.reasons',
 ]);
 /** Child elements that repeat wherever they appear: error details, sale lines, summary groups, event history, check-in reviews, a campaign's allowed transitions. */
 const REPEATED_CHILDREN = new Set([
@@ -111,12 +117,18 @@ const XSI = 'http://www.w3.org/2001/XMLSchema-instance';
 /** A request field: text, or null for an explicit xsi:nil (for example, make a category a root). */
 export type FieldValue = string | null;
 
-/** Builds a request body; scalar fields only, in the given order. */
-export function buildXml(root: string, namespace: string, fields: Record<string, FieldValue>): string {
+/** Builds a request body, in the given order. A list repeats its element once per value, and an empty list sends none. */
+export function buildXml(
+  root: string,
+  namespace: string,
+  fields: Record<string, FieldValue | string[]>,
+): string {
   const element: Record<string, unknown> = { '@_xmlns': namespace };
   let nil = false;
   for (const [name, value] of Object.entries(fields)) {
-    if (value === null) {
+    if (Array.isArray(value)) {
+      if (value.length > 0) element[name] = value;
+    } else if (value === null) {
       element[name] = { '@_xsi:nil': 'true' };
       nil = true;
     } else {

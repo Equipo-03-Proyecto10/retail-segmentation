@@ -7,6 +7,7 @@ import { Backoffice } from './backoffice';
 import { loadBundle } from './bundle';
 import { Campaigns } from './campaigns';
 import { Catalog } from './catalog';
+import { Customers } from './customers';
 import { Floor } from './floor';
 import { loadSettings } from './settings';
 import { Stores } from './stores';
@@ -134,6 +135,26 @@ function start(): void {
   const audit = new Audit(office);
   ipcMain.handle(CHANNELS.listAuditEntries, (_e, query: unknown) => audit.listEntries(query));
   ipcMain.handle(CHANNELS.getAuditEntry, (_e, auditId: unknown) => audit.getEntry(auditId));
+  const customers = new Customers(office);
+  ipcMain.handle(CHANNELS.searchCustomers, (_e, query: unknown) => customers.search(query));
+  ipcMain.handle(CHANNELS.getCustomer, (_e, customerId: unknown) => customers.get(customerId));
+  ipcMain.handle(CHANNELS.correctCustomer, (_e, customerId: unknown, changes: unknown) =>
+    customers.correct(customerId, changes),
+  );
+  ipcMain.handle(CHANNELS.listChannels, () => customers.channels());
+  ipcMain.handle(CHANNELS.getPreferences, (_e, customerId: unknown) => customers.preferences(customerId));
+  ipcMain.handle(CHANNELS.replacePreferredChannels, (_e, customerId: unknown, ids: unknown) =>
+    customers.replaceChannels(customerId, ids),
+  );
+  ipcMain.handle(CHANNELS.replaceInterestCategories, (_e, customerId: unknown, ids: unknown) =>
+    customers.replaceCategories(customerId, ids),
+  );
+  ipcMain.handle(CHANNELS.segmentVocabulary, () => customers.vocabulary());
+  ipcMain.handle(CHANNELS.currentAssignment, (_e, customerId: unknown) => customers.current(customerId));
+  ipcMain.handle(CHANNELS.listAssignments, (_e, query: unknown) => customers.assignments(query));
+  ipcMain.handle(CHANNELS.getRecommendations, (_e, customerId: unknown) =>
+    customers.recommendations(customerId),
+  );
   office.onStateChange((state) => {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(CHANNELS.stateChanged, state);
   });

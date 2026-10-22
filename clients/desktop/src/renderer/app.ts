@@ -3,6 +3,7 @@ import { renderAudit } from './audit';
 import { renderCampaigns } from './campaigns';
 import { renderCategories, renderProducts } from './catalog';
 import { el, errorBox } from './dom';
+import { renderCustomers } from './customers';
 import { renderCheckIns, renderEngagement, renderSales, renderStock } from './floor';
 import { latestRequest } from './latest-request';
 import { reconcileRender, type RenderState } from './render-state';
@@ -88,6 +89,7 @@ type View =
   | 'check-ins'
   | 'stores'
   | 'campaigns'
+  | 'customers'
   | 'users'
   | 'audit'
   | 'transfer'
@@ -103,6 +105,7 @@ const VIEWS: { name: View; label: string; operation: string | null }[] = [
   { name: 'check-ins', label: 'Check-ins', operation: 'listCheckIns' },
   { name: 'stores', label: 'Stores', operation: 'listStores' },
   { name: 'campaigns', label: 'Campaigns', operation: 'listCampaigns' },
+  { name: 'customers', label: 'Customers', operation: 'searchCustomers' },
   { name: 'users', label: 'Users', operation: 'listUsers' },
   { name: 'audit', label: 'Audit trail', operation: 'listAuditEntries' },
   { name: 'transfer', label: 'Transfer administrator', operation: 'transferAdministrator' },
@@ -157,6 +160,7 @@ function renderHome(state: Extract<AppState, { status: 'signed_in' }>): void {
     else if (next === 'check-ins') renderCheckIns(screen, ctx);
     else if (next === 'stores') renderStores(screen, ctx);
     else if (next === 'campaigns') renderCampaigns(screen, ctx);
+    else if (next === 'customers') renderCustomers(screen, ctx);
     else if (next === 'users') renderUsers(screen, ctx);
     else if (next === 'audit') renderAudit(screen, ctx);
     else if (next === 'transfer') renderTransfer(screen, ctx);

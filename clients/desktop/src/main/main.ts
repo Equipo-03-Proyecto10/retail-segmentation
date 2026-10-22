@@ -7,6 +7,7 @@ import { loadBundle } from './bundle';
 import { Catalog } from './catalog';
 import { Floor } from './floor';
 import { loadSettings } from './settings';
+import { Stores } from './stores';
 import { Transport } from './transport';
 import { Users } from './users';
 import { SafeStorageVault } from './vault';
@@ -110,6 +111,13 @@ function start(): void {
   ipcMain.handle(CHANNELS.transferAdministrator, (_e, successor: unknown) =>
     users.transferAdministrator(successor),
   );
+  const stores = new Stores(office);
+  ipcMain.handle(CHANNELS.listStores, (_e, query: unknown) => stores.listStores(query));
+  ipcMain.handle(CHANNELS.getStore, (_e, storeId: unknown) => stores.getStore(storeId));
+  ipcMain.handle(CHANNELS.setStoreLocation, (_e, storeId: unknown, location: unknown) =>
+    stores.setLocation(storeId, location),
+  );
+  ipcMain.handle(CHANNELS.removeStoreLocation, (_e, storeId: unknown) => stores.removeLocation(storeId));
   office.onStateChange((state) => {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(CHANNELS.stateChanged, state);
   });

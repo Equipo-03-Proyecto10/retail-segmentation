@@ -280,14 +280,22 @@ test('check-ins show reason and verified; an ADMIN appends a review below the ea
 
 test('screens and controls follow each role', async () => {
   let { app, page } = await launch('INVENTORY_PLANNER');
-  expect(await nav(page)).toEqual(['products', 'categories', 'stock', 'engagement', 'services']);
+  expect(await nav(page)).toEqual(['products', 'categories', 'stock', 'engagement', 'stores', 'services']);
   await open(page, 'engagement');
   await expect(page.locator('[data-testid=summary-table] tbody tr')).toHaveCount(3);
   await expect(page.getByTestId('event-filters')).toHaveCount(0);
   await app.close();
 
   ({ app, page } = await launch('ANALYST'));
-  expect(await nav(page)).toEqual(['products', 'categories', 'stock', 'sales', 'engagement', 'services']);
+  expect(await nav(page)).toEqual([
+    'products',
+    'categories',
+    'stock',
+    'sales',
+    'engagement',
+    'stores',
+    'services',
+  ]);
   await open(page, 'engagement');
   await page.getByTestId(`view-event-${VOIDABLE}`).click();
   await expect(page.getByTestId('event-status')).toHaveText('Counted');

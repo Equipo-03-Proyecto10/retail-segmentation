@@ -1032,7 +1032,12 @@ without `--write-only`. Install the unit once and start the service:
 ```sh
 sudo install -m 0644 /opt/mosaiq/current/deploy/systemd/mosaiq-svc@.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now mosaiq-svc@$name
-curl -fsS -o /dev/null -w '%{http_code}\n' "http://127.0.0.1:$(yq -r ".services[] | select(.name == \"$name\") | .port" /opt/mosaiq/current/contracts/registry.yaml)/health/ready"
+port=$(awk -v service="$name" '
+  $1 == "-" && $2 == "name:" { selected = ($3 == service) }
+  selected && $1 == "port:" { print $2; exit }
+' /opt/mosaiq/current/contracts/registry.yaml)
+test -n "$port"
+curl -fsS -o /dev/null -w '%{http_code}\n' "http://127.0.0.1:$port/health/ready"
 ```
 
 `/health/ready` answers 503 `schema_not_ready` until step 5 has been done for

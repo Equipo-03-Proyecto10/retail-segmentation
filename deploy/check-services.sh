@@ -57,12 +57,16 @@ problems=$(
       "$GHCR"* | redis:* | mongo:*) ;;
       *) echo "container from an unexpected image: $name $image" ;;
     esac
+    case $mounts in
+      *.pem*) [[ $project == mosaiq-auth ]] || echo "a .pem is mounted into $name ($project)" ;;
+    esac
     case $project in
       mosaiq-infra | '') ;;
       mosaiq-*)
         case $user in '' | 0 | 0:* | root | root:*) echo "service container runs as root: $name" ;; esac
         case " $capdrop" in *' ALL '*) ;; *) echo "service container does not drop ALL capabilities: $name" ;; esac
-        case $mounts in *.pem*) [[ $project == mosaiq-auth ]] || echo "a .pem is mounted into $name ($project)" ;; esac
+        [[ $project != mosaiq-auth || $mounts == *.pem* ]] \
+          || echo "the auth signer has no .pem mount: $name"
         ;;
     esac
   done
@@ -95,9 +99,10 @@ problems=$(
                WHERE rolname LIKE 'svc\_%' AND rolname <> 'svc_products_bench' ORDER BY rolname")
   [[ $(grep -c . <<<"$roles") -eq 15 ]] || echo "pg_roles: expected 15 service roles, found $(grep -c . <<<"$roles")"
   for role in $roles; do
+    matches=$(grep -c "^$role|" <<<"$scram" || true)
     line=$(grep "^$role|" <<<"$scram" | head -1 | cut -d'|' -f2)
-    if [[ -z $line ]]; then
-      echo "pg_hba: no 'local retail $role scram-sha-256' line"
+    if [[ $matches -ne 1 ]]; then
+      echo "pg_hba: expected one 'local retail $role scram-sha-256' line, found $matches"
     elif [[ -n $peer && $line -gt $peer ]]; then
       echo "pg_hba: the line for $role ($line) is below 'local all all peer' ($peer)"
     fi

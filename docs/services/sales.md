@@ -1,6 +1,6 @@
 # sales
 
-> **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
+> **Status:** Implemented (phase 14, core; F14-18, #454). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
 > **One rule:** A sale is recorded exactly once, all or nothing, consuming its stock in the same transaction, and only with lines dated not in the future and not before the customer's registration, for active products, with positive quantities and positive two-decimal prices (RN-11 to RN-13, RN-37 (accepted sales))
 
 ## Summary

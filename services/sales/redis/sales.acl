@@ -1,0 +1,1 @@
+user svc_sales on {{password}} resetchannels -@all +@connection +@read +@write -@dangerous -scan -randomkey ~sales:rl:* +waitaof (%R~pub:auth:v1:live:* +exists) (~stream:sales.v1.recorded +xadd)

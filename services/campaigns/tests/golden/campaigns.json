@@ -1,0 +1,345 @@
+{
+  "cases": [
+    {
+      "id": "transition-table",
+      "input": {
+        "read": "TRANSITIONS"
+      },
+      "outcome": {
+        "outcome": "table",
+        "transitions": {
+          "ACTIVE": [
+            "CANCELLED",
+            "FINISHED"
+          ],
+          "CANCELLED": [],
+          "DRAFT": [
+            "ACTIVE",
+            "CANCELLED"
+          ],
+          "FINISHED": []
+        }
+      }
+    },
+    {
+      "id": "transition-draft-activate",
+      "input": {
+        "action": "activate",
+        "call": "transition",
+        "campaign_id": 1,
+        "from": "DRAFT",
+        "to": "ACTIVE",
+        "today": "2026-10-16"
+      },
+      "outcome": {
+        "error": "InvalidTransition",
+        "outcome": "refused",
+        "reason": "Campaign 1 ended on 2026-02-01, so it cannot be activated; edit the draft's dates first."
+      },
+      "service_differs": "campaigns-service answers 409 campaign_ended where the web raises InvalidTransition with a sentence: the draft ended before the business date."
+    },
+    {
+      "id": "transition-draft-cancel",
+      "input": {
+        "action": "cancel",
+        "call": "transition",
+        "campaign_id": 1,
+        "from": "DRAFT",
+        "to": "CANCELLED",
+        "today": "2026-10-16"
+      },
+      "outcome": {
+        "observed": {
+          "status": "CANCELLED"
+        },
+        "outcome": "accepted"
+      }
+    },
+    {
+      "id": "transition-draft-complete",
+      "input": {
+        "action": "complete",
+        "call": "transition",
+        "campaign_id": 1,
+        "from": "DRAFT",
+        "to": "FINISHED",
+        "today": "2026-10-16"
+      },
+      "outcome": {
+        "error": "InvalidTransition",
+        "outcome": "refused",
+        "reason": "Campaign 1 is draft and cannot become finished; from draft it can only become active or cancelled."
+      },
+      "service_differs": "campaigns-service answers 409 illegal_transition where the web raises InvalidTransition with a sentence. It takes the target status `to` and an `expected_status`, not the web's action name."
+    },
+    {
+      "id": "transition-active-activate",
+      "input": {
+        "action": "activate",
+        "call": "transition",
+        "campaign_id": 2,
+        "from": "ACTIVE",
+        "to": "ACTIVE",
+        "today": "2026-10-16"
+      },
+      "outcome": {
+        "error": "InvalidTransition",
+        "outcome": "refused",
+        "reason": "Campaign 2 is active and cannot become active; from active it can only become cancelled or finished."
+      },
+      "service_differs": "campaigns-service answers 409 illegal_transition where the web raises InvalidTransition with a sentence. It takes the target status `to` and an `expected_status`, not the web's action name."
+    },
+    {
+      "id": "transition-active-cancel",
+      "input": {
+        "action": "cancel",
+        "call": "transition",
+        "campaign_id": 2,
+        "from": "ACTIVE",
+        "to": "CANCELLED",
+        "today": "2026-10-16"
+      },
+      "outcome": {
+        "observed": {
+          "status": "CANCELLED"
+        },
+        "outcome": "accepted"
+      }
+    },
+    {
+      "id": "transition-active-complete",
+      "input": {
+        "action": "complete",
+        "call": "transition",
+        "campaign_id": 2,
+        "from": "ACTIVE",
+        "to": "FINISHED",
+        "today": "2026-10-16"
+      },
+      "outcome": {
+        "observed": {
+          "status": "FINISHED"
+        },
+        "outcome": "accepted"
+      }
+    },
+    {
+      "id": "transition-finished-activate",
+      "input": {
+        "action": "activate",
+        "call": "transition",
+        "campaign_id": 3,
+        "from": "FINISHED",
+        "to": "ACTIVE",
+        "today": "2026-10-16"
+      },
+      "outcome": {
+        "error": "InvalidTransition",
+        "outcome": "refused",
+        "reason": "Campaign 3 is finished; no further transition is permitted."
+      },
+      "service_differs": "campaigns-service answers 409 illegal_transition where the web raises InvalidTransition with a sentence. It takes the target status `to` and an `expected_status`, not the web's action name."
+    },
+    {
+      "id": "transition-finished-cancel",
+      "input": {
+        "action": "cancel",
+        "call": "transition",
+        "campaign_id": 3,
+        "from": "FINISHED",
+        "to": "CANCELLED",
+        "today": "2026-10-16"
+      },
+      "outcome": {
+        "error": "InvalidTransition",
+        "outcome": "refused",
+        "reason": "Campaign 3 is finished; no further transition is permitted."
+      },
+      "service_differs": "campaigns-service answers 409 illegal_transition where the web raises InvalidTransition with a sentence. It takes the target status `to` and an `expected_status`, not the web's action name."
+    },
+    {
+      "id": "transition-finished-complete",
+      "input": {
+        "action": "complete",
+        "call": "transition",
+        "campaign_id": 3,
+        "from": "FINISHED",
+        "to": "FINISHED",
+        "today": "2026-10-16"
+      },
+      "outcome": {
+        "error": "InvalidTransition",
+        "outcome": "refused",
+        "reason": "Campaign 3 is finished; no further transition is permitted."
+      },
+      "service_differs": "campaigns-service answers 409 illegal_transition where the web raises InvalidTransition with a sentence. It takes the target status `to` and an `expected_status`, not the web's action name."
+    },
+    {
+      "id": "transition-cancelled-activate",
+      "input": {
+        "action": "activate",
+        "call": "transition",
+        "campaign_id": 4,
+        "from": "CANCELLED",
+        "to": "ACTIVE",
+        "today": "2026-10-16"
+      },
+      "outcome": {
+        "error": "InvalidTransition",
+        "outcome": "refused",
+        "reason": "Campaign 4 is cancelled; no further transition is permitted."
+      },
+      "service_differs": "campaigns-service answers 409 illegal_transition where the web raises InvalidTransition with a sentence. It takes the target status `to` and an `expected_status`, not the web's action name."
+    },
+    {
+      "id": "transition-cancelled-cancel",
+      "input": {
+        "action": "cancel",
+        "call": "transition",
+        "campaign_id": 4,
+        "from": "CANCELLED",
+        "to": "CANCELLED",
+        "today": "2026-10-16"
+      },
+      "outcome": {
+        "error": "InvalidTransition",
+        "outcome": "refused",
+        "reason": "Campaign 4 is cancelled; no further transition is permitted."
+      },
+      "service_differs": "campaigns-service answers 409 illegal_transition where the web raises InvalidTransition with a sentence. It takes the target status `to` and an `expected_status`, not the web's action name."
+    },
+    {
+      "id": "transition-cancelled-complete",
+      "input": {
+        "action": "complete",
+        "call": "transition",
+        "campaign_id": 4,
+        "from": "CANCELLED",
+        "to": "FINISHED",
+        "today": "2026-10-16"
+      },
+      "outcome": {
+        "error": "InvalidTransition",
+        "outcome": "refused",
+        "reason": "Campaign 4 is cancelled; no further transition is permitted."
+      },
+      "service_differs": "campaigns-service answers 409 illegal_transition where the web raises InvalidTransition with a sentence. It takes the target status `to` and an `expected_status`, not the web's action name."
+    },
+    {
+      "id": "edit-draft",
+      "input": {
+        "call": "update_draft",
+        "campaign_id": 1,
+        "ends_on": "2026-02-01",
+        "label_code": "LOYAL",
+        "name": "Campaign edited",
+        "starts_on": "2026-01-02"
+      },
+      "outcome": {
+        "observed": {
+          "name": "Campaign edited"
+        },
+        "outcome": "accepted"
+      }
+    },
+    {
+      "id": "edit-active-campaign",
+      "input": {
+        "call": "update_draft",
+        "campaign_id": 2,
+        "ends_on": "2026-02-01",
+        "label_code": "LOYAL",
+        "name": "Campaign edited",
+        "starts_on": "2026-01-02"
+      },
+      "outcome": {
+        "error": "InvalidTransition",
+        "outcome": "refused",
+        "reason": "Campaign 2 is active; only a draft can be edited."
+      },
+      "service_differs": "campaigns-service answers 409 campaign_not_draft where the web raises InvalidTransition with a sentence."
+    },
+    {
+      "id": "validate-end-before-start",
+      "input": {
+        "call": "validate_campaign",
+        "ends_on": "2099-01-01",
+        "label_code": "LOYAL",
+        "name": "Campaign backwards",
+        "starts_on": "2099-02-01"
+      },
+      "outcome": {
+        "errors": {
+          "ends_on": "End date cannot be before the start date."
+        },
+        "outcome": "refused"
+      },
+      "service_differs": "campaigns-service answers 422 ends_before_start where the web's form validation returns a message for the ends_on field."
+    },
+    {
+      "id": "edit-draft-end-before-start",
+      "input": {
+        "call": "update_draft",
+        "campaign_id": 1,
+        "ends_on": "2099-01-01",
+        "label_code": "LOYAL",
+        "name": "Campaign backwards",
+        "starts_on": "2099-02-01"
+      },
+      "outcome": {
+        "error": "CampaignRefused",
+        "field": "ends_on",
+        "outcome": "refused",
+        "reason": "End date cannot be before the start date."
+      },
+      "service_differs": "campaigns-service answers 422 ends_before_start where the web raises CampaignRefused with a message for the ends_on field."
+    },
+    {
+      "id": "activate-draft-with-no-experiment",
+      "input": {
+        "action": "activate",
+        "call": "transition",
+        "ends_on": "2099-12-31",
+        "label_code": "LOYAL",
+        "name": "Golden draft",
+        "setup": "a new draft with no experiment",
+        "starts_on": "2099-01-01",
+        "today": "2026-10-16"
+      },
+      "outcome": {
+        "observed": {
+          "status": "ACTIVE"
+        },
+        "outcome": "accepted"
+      }
+    },
+    {
+      "id": "activate-draft-with-control-only-experiment",
+      "input": {
+        "action": "activate",
+        "call": "transition",
+        "ends_on": "2099-12-31",
+        "label_code": "LOYAL",
+        "name": "Golden draft",
+        "setup": "a new draft whose experiment has a control and no treatment",
+        "starts_on": "2099-01-01",
+        "today": "2026-10-16"
+      },
+      "outcome": {
+        "error": "InvalidTransition",
+        "outcome": "refused",
+        "reason": "Campaign 31 cannot be activated: experiment 31 (Golden control only) has no treatment group."
+      },
+      "service_differs": "campaigns-service answers 409 experiment_not_ready, refused by trg_campaign_activation_guard (E-13), where the web raises InvalidTransition with a sentence from activation_refusal."
+    }
+  ],
+  "header": {
+    "as_of": {
+      "today": "2026-10-16"
+    },
+    "captured_on": "2026-10-22",
+    "port": "campaigns",
+    "seed_sha256": "5e04ccddb7eacad529c3549576db3ae0d3b849f27abd63d70e8498fe798147bd",
+    "web_commit": "3c7ec1849a48b99c4d279d8dc385da0e61dc0857"
+  }
+}

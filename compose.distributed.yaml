@@ -53,6 +53,8 @@ include:
     env_file: docker/distributed/local.env
   - path: [services/recommendations/compose.yaml, docker/distributed/service.local.yaml]
     env_file: docker/distributed/local.env
+  - path: [services/campaigns/compose.yaml, docker/distributed/service.local.yaml]
+    env_file: docker/distributed/local.env
 
 services:
   # The development PostgreSQL of compose.yaml, with its socket directory on a

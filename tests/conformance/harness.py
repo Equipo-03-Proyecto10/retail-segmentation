@@ -145,6 +145,13 @@ class Contract:
             item = node
         return item
 
+    def parameter(self, item: dict) -> dict:
+        """A parameter with its schema resolved too, so `sample` sees its type."""
+        parameter = self.resolve(item)
+        if "schema" in parameter:
+            parameter = {**parameter, "schema": self.resolve(parameter["schema"])}
+        return parameter
+
 
 def contract_dir() -> Path:
     directory = Path(
@@ -162,7 +169,7 @@ def load_contract(directory: Path) -> Contract:
     contract = Contract(directory, document)
     root_security = contract.document.get("security", [])
     for path, item in contract.document["paths"].items():
-        shared = [contract.resolve(p) for p in item.get("parameters", [])]
+        shared = [contract.parameter(p) for p in item.get("parameters", [])]
         for method in METHODS:
             if method not in item:
                 continue
@@ -182,7 +189,10 @@ def load_contract(directory: Path) -> Contract:
                     protected=bool(security),
                     parameters=tuple(
                         shared
-                        + [contract.resolve(p) for p in operation.get("parameters", [])]
+                        + [
+                            contract.parameter(p)
+                            for p in operation.get("parameters", [])
+                        ]
                     ),
                     body="requestBody" in operation,
                     xml_reply="application/xml" in reply.get("content", {}),

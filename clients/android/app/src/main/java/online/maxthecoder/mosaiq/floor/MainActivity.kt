@@ -11,6 +11,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import online.maxthecoder.mosaiq.floor.ui.FloorApp
 import online.maxthecoder.mosaiq.floor.ui.FloorHome
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
+import online.maxthecoder.mosaiq.floor.ui.ScanViewModel
 import online.maxthecoder.mosaiq.floor.ui.SessionState
 import online.maxthecoder.mosaiq.floor.ui.SessionViewModel
 import online.maxthecoder.mosaiq.floor.ui.SignOutButton
@@ -29,6 +30,8 @@ class MainActivity : ComponentActivity() {
                 )
             val floor: FloorViewModel =
                 viewModel(factory = viewModelFactory { initializer { FloorViewModel(graph) } })
+            val scan: ScanViewModel =
+                viewModel(factory = viewModelFactory { initializer { ScanViewModel(graph) } })
             val state = model.state.collectAsStateWithLifecycle()
             // Signing in again lets this user's queued writes go out.
             LaunchedEffect(state.value is SessionState.SignedIn) {
@@ -39,7 +42,7 @@ class MainActivity : ComponentActivity() {
                 onSignIn = model::signIn,
                 onRetry = model::refreshProfile,
                 onSignOut = model::signOut,
-                floor = { signedIn -> FloorHome(signedIn, floor, model::signOut) },
+                floor = { signedIn -> FloorHome(signedIn, floor, scan, model::signOut) },
                 signOut = { SignOutButton(floor, model::signOut) }
             )
         }

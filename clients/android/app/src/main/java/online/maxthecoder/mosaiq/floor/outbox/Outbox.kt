@@ -11,8 +11,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import kotlinx.coroutines.flow.Flow
 
-/** What a queued write is; later floor stories add engagement and sales. */
-enum class Operation { CHECK_IN }
+/** What a queued write is; the sales story adds its own. */
+enum class Operation { CHECK_IN, QR_SCAN }
 
 /** Where a write stands. A refused one is kept until the user dismisses it. */
 enum class RowState { PENDING, DONE, REFUSED }

@@ -100,3 +100,36 @@ data class CheckInResult(
     @SerialName("auto_verified") val autoVerified: Boolean,
     val verified: Boolean
 )
+
+/** A product as products-service returns it; names and prices stay there (ADR-0035). */
+@Serializable
+data class Product(
+    @SerialName("product_id") val productId: Int,
+    val sku: String,
+    val name: String,
+    @SerialName("category_id") val categoryId: Int,
+    @SerialName("list_price") val listPrice: String,
+    @SerialName("is_active") val isActive: Boolean
+)
+
+@Serializable
+data class StockLevel(
+    @SerialName("store_id") val storeId: Int,
+    @SerialName("product_id") val productId: Int,
+    @SerialName("quantity_on_hand") val quantityOnHand: Int,
+    @SerialName("updated_at") val updatedAt: String
+)
+
+/**
+ * One engagement event (contracts/engagement/openapi.yaml). `clientEventId`
+ * is fixed when the code is decoded, so every resend is the same event.
+ */
+@Serializable
+data class EngagementEventRequest(
+    @SerialName("client_event_id") val clientEventId: String,
+    val type: String,
+    @SerialName("store_id") val storeId: Int,
+    @SerialName("product_id") val productId: Int,
+    @SerialName("occurred_at") val occurredAt: String,
+    @SerialName("customer_id") val customerId: String? = null
+)

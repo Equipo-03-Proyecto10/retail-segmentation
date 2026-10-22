@@ -5,6 +5,7 @@ import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.Path
 import retrofit2.http.Query
 
 /** auth-service's sessions (contracts/auth/openapi.yaml). */
@@ -34,4 +35,19 @@ interface StoresApi {
         @Query("page") page: Int = 1,
         @Query("size") size: Int = 20
     ): Response<StorePage>
+}
+
+/** products-service's catalog read (contracts/products/openapi.yaml). */
+interface ProductsApi {
+    @GET(Services.PRODUCTS + "products/{product_id}")
+    suspend fun getProduct(@Path("product_id") productId: Int): Response<Product>
+}
+
+/**
+ * stock-service's level, keyed by its own identity (E-03). Read uncached, so it
+ * reflects the latest sale (contracts/stock/openapi.yaml).
+ */
+interface StockApi {
+    @GET(Services.STOCK + "stock-levels/{store_id}/{product_id}")
+    suspend fun getStockLevel(@Path("store_id") storeId: Int, @Path("product_id") productId: Int): Response<StockLevel>
 }

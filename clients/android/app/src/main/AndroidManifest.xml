@@ -6,6 +6,10 @@
          records the check-in, and the server decides what it is worth. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- QR scanning (F17-02): asked at the first scan; denied still allows
+         typing the product id. A phone without a camera can still install. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <!-- The session never leaves the device: backups and device transfer
          exclude the token file (also kept in noBackupFilesDir). -->

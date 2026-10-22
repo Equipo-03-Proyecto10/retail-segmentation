@@ -10,8 +10,10 @@ import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import online.maxthecoder.mosaiq.floor.net.CheckInRequest
+import online.maxthecoder.mosaiq.floor.net.EngagementEventRequest
 import online.maxthecoder.mosaiq.floor.net.Services
 import online.maxthecoder.mosaiq.floor.net.json
+import online.maxthecoder.mosaiq.floor.scan.Scan
 import online.maxthecoder.mosaiq.floor.session.SessionStore
 
 /** What the phone measured. No fix at all is `null`, never zeros. */
@@ -52,6 +54,37 @@ class FloorWrites(
                     clientId = request.clientCheckInId,
                     userId = userId,
                     createdAt = now.toEpochMilli()
+                )
+            )
+        schedule()
+        return id
+    }
+
+    /**
+     * Queues one QR_SCAN for a product that was found. The client event id is
+     * the scan's own, fixed when the code was decoded, never a new one here.
+     * `customerId` stays null until a customer is selected (F17-04).
+     */
+    suspend fun queueQrScan(scan: Scan, productId: Int, storeId: Int, customerId: String? = null): Long {
+        val userId = checkNotNull(session.userId.value) { "No user is signed in." }
+        val request =
+            EngagementEventRequest(
+                clientEventId = scan.clientEventId,
+                type = "QR_SCAN",
+                storeId = storeId,
+                productId = productId,
+                occurredAt = scan.occurredAt.toString(),
+                customerId = customerId
+            )
+        val id =
+            outbox.insert(
+                OutboxRow(
+                    operation = Operation.QR_SCAN,
+                    path = Services.ENGAGEMENT + "engagement-events",
+                    body = json.encodeToString(EngagementEventRequest.serializer(), request),
+                    clientId = request.clientEventId,
+                    userId = userId,
+                    createdAt = scan.occurredAt.toEpochMilli()
                 )
             )
         schedule()

@@ -17,4 +17,13 @@ object Services {
 
     /** check-ins owns `check-ins`. */
     const val CHECK_INS = "api/check-ins/v1/"
+
+    /** products owns `products`. */
+    const val PRODUCTS = "api/products/v1/"
+
+    /** stock owns `stock-levels`. */
+    const val STOCK = "api/stock/v1/"
+
+    /** engagement owns `engagement-events` and `engagement-summaries`. */
+    const val ENGAGEMENT = "api/engagement/v1/"
 }

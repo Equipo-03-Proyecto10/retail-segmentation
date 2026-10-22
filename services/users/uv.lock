@@ -662,8 +662,8 @@ wheels = [
 
 [[package]]
 name = "mosaiq-kit"
-version = "0.1.2"
-source = { git = "https://github.com/Equipo-03-Proyecto10/retail-segmentation?subdirectory=packages%2Fkit-py&rev=kit-py%2Fv0.1.2#a75cb0c21690c2fec0b91ed6a0f30690081baad7" }
+version = "0.1.6"
+source = { git = "https://github.com/Equipo-03-Proyecto10/retail-segmentation?subdirectory=packages%2Fkit-py&rev=kit-py%2Fv0.1.6#d0caf99f86543801240cba3243cac8d2f0d76cfc" }
 dependencies = [
     { name = "flask" },
     { name = "jsonschema", extra = ["format-nongpl"] },
@@ -1167,7 +1167,7 @@ dev = [
 requires-dist = [
     { name = "argon2-cffi", specifier = "==23.1.0" },
     { name = "gunicorn", specifier = "==23.0.0" },
-    { name = "mosaiq-kit", git = "https://github.com/Equipo-03-Proyecto10/retail-segmentation?subdirectory=packages%2Fkit-py&rev=kit-py%2Fv0.1.2" },
+    { name = "mosaiq-kit", git = "https://github.com/Equipo-03-Proyecto10/retail-segmentation?subdirectory=packages%2Fkit-py&rev=kit-py%2Fv0.1.6" },
 ]
 
 [package.metadata.requires-dev]

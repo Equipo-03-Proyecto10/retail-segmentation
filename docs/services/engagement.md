@@ -122,6 +122,16 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 | `redis-state` unreachable or over 200 ms | Every authenticated request returns 503 `auth_unavailable`; authentication fails closed and never falls back to the signature alone |
 | Any other service down | No effect: services never call each other over HTTP |
 
+## Operations
+
+| Task | Command | Notes |
+|---|---|---|
+| Create the database, user, validator and indexes | `mongo/init.js` in mongosh as root, with `MONGO_ENGAGEMENT_PASSWORD` set | Before the service version that needs it; idempotent, and a later run brings an older validator and the index set back to the definition. The service never creates or alters any of it, and `/health/ready` is 503 until it exists |
+| Load demonstration data | `mongo/seed.js` in mongosh | 40 `QR_SCAN` and 36 `RECO_CLICK` over stores 1-6, products 1-40 and customers 1-30 on ten fixed UTC days; fixed ids, so a second run inserts nothing; ends by rebuilding `engagement_daily` for those days |
+| Rebuild the rollup | `python -m app rebuild-rollup --from YYYY-MM-DD --to YYYY-MM-DD` in the service's container | Recomputes `engagement_daily` from the events that are not voided for the UTC days, inclusive, and sets the live counters still alive to the rebuilt counts. A crash between an insert and its `$inc` is repaired by it. Not an endpoint |
+
+The first request after a counter on `redis-cache` expires or is lost repairs it: the `INCR` or `DECR` returns 1 or -1, so the counter is overwritten with the count the rollup update returned.
+
 ## Compliance
 
 - [ADR-0038](../adr/0038-mongodb-holds-in-store-engagement-owned-by-engagement-service-alone.md) Compliance (`explain()` shows index use; one MongoDB owner; the user's roles).

@@ -111,6 +111,21 @@ docker compose -p mosaiq-infra -f deploy/infra/compose.yaml exec -e HOME=/tmp mo
 
 `HOME=/tmp` keeps mongosh's history and logs out of the data volume.
 
+Applying engagement's file, as root, with the password it reads from the
+environment (it exits non-zero when the variable is unset, and a second run
+changes nothing):
+
+```bash
+docker compose -p mosaiq-infra -f deploy/infra/compose.yaml exec -T -e HOME=/tmp \
+  -e MONGO_ENGAGEMENT_PASSWORD mongodb mongosh --quiet --norc --eval \
+  "db.getSiblingDB('admin').auth(process.env.MONGO_INITDB_ROOT_USERNAME,
+    process.env.MONGO_INITDB_ROOT_PASSWORD); $(cat services/engagement/mongo/init.js)"
+```
+
+`mongo/seed.js` loads the demonstration events the same way. The maintenance
+command that rebuilds the rollup runs in the service's own container; its
+service sheet, `docs/services/engagement.md`, has it under Operations.
+
 ## Checks
 
 ```bash

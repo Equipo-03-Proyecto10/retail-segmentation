@@ -133,6 +133,12 @@ right place for it, and which the team accepted on 2026-09-07.
 | [#344](f344-reports-index.md) | The analytics reports index that replaced the Reports placeholder: the revenue summary checked against a query over the transaction lines, each profile offered only the reports it can open (and no link that answers 403), and the refusal of a role without `report.read`, at 375 px and 1440 px |
 | [AN-04](an-04-notifications.md) | In-app notifications (ADR-0047): the inbox, the unread badge capped at `99+` and the privacy of each notification, checked against PostgreSQL and a test client, with the 375 px and 1440 px captures still to take |
 
+## Phase 14 — distributed services
+
+| Document | What it records |
+|---|---|
+| [F14-24 (#466)](f14-24-engagement-service.md) | engagement-service on MongoDB: once per client event, voids, rollup, live counters; run against MongoDB 7.0, PostgreSQL 16 and Redis 7.4 with its real ACL, with the shared conformance suite, mutations and what was not run (the image) |
+
 ## Review passes
 
 These follow a specific review rather than a story.

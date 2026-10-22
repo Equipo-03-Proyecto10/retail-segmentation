@@ -9,6 +9,16 @@
 set -euo pipefail
 shopt -s nullglob
 
+# Each service's local MONGO_<SUFFIX>_PASSWORD comes from its own env file,
+# as redis-acl takes REDIS_<SUFFIX>_PASSWORD from it; a value .env sets wins.
+for env in /repo/docker/distributed/svc/*.env; do
+  while IFS='=' read -r key value; do
+    if [[ -z ${!key:-} ]]; then
+      export "$key=$value"
+    fi
+  done < <(grep -E '^MONGO_[A-Z0-9_]+_PASSWORD=' "$env" || true)
+done
+
 uri=mongodb://mongodb:27017/admin
 auth='db.getSiblingDB("admin").auth(process.env.MONGO_INITDB_ROOT_USERNAME, process.env.MONGO_INITDB_ROOT_PASSWORD)'
 

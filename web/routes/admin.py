@@ -727,6 +727,12 @@ def create_product_view() -> ResponseReturnValue:
             ),
             409,
         )
+    except BaseException:
+        # Anything else (#595): the row was not written, so the file must not
+        # stay on disk; the error still reaches the application's handler.
+        if saved:
+            delete_product_image(saved.relative_path, config)
+        raise
 
     flash("Product created.", "success")
     return redirect(url_for("admin.list_products_view"))
@@ -836,6 +842,11 @@ def edit_product_view(product_id: int) -> ResponseReturnValue:
             ),
             409,
         )
+    except BaseException:
+        # As on create (#595): a failed update leaves no new file behind.
+        if image_file and image_file.filename:
+            delete_product_image(saved.relative_path, config)
+        raise
 
     if image_file and image_file.filename:
         old_path = product.image_path

@@ -1,0 +1,11 @@
+{
+  "code": "invalid_query",
+  "message": "A query parameter is outside its allowed range.",
+  "correlation_id": "corr-list-003",
+  "details": [
+    {
+      "field": "category_id",
+      "code": "out_of_range"
+    }
+  ]
+}

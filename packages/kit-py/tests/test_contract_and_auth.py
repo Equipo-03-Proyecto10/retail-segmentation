@@ -81,5 +81,5 @@ def test_project_version_matches_the_current_release() -> None:
     pyproject = (REPOSITORY / "packages/kit-py/pyproject.toml").read_text()
     readme = (REPOSITORY / "packages/kit-py/README.md").read_text()
     assert 'name = "mosaiq-kit"' in pyproject
-    assert 'version = "0.1.3"' in pyproject
-    assert "kit-py/v0.1.3" in readme
+    assert 'version = "0.1.4"' in pyproject
+    assert "kit-py/v0.1.4" in readme

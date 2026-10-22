@@ -194,6 +194,9 @@ class ShiftReport:
     compared: int
     unchanged: int
     undecided: int = 0
+    # Whether either period holds a SEEDED sale, so the report is Synthetic
+    # (ADR-0052). Read with the totals, from the same snapshot.
+    seeded: bool = False
 
 
 # ---------- periods ----------
@@ -335,6 +338,8 @@ def compare_periods(
     later: Period,
     before: dict[str, CustomerLeaders],
     after: dict[str, CustomerLeaders],
+    *,
+    seeded: bool = False,
 ) -> ShiftReport:
     """Compare who led in the earlier period with who led in the later one.
 
@@ -379,6 +384,7 @@ def compare_periods(
         compared=compared,
         unchanged=compared - len(shifts),
         undecided=undecided,
+        seeded=seeded,
     )
 
 
@@ -392,7 +398,7 @@ def detect_shifts(
     costs no query. One statement reads both periods from one database snapshot.
     """
     earlier, later = order_periods(first, second)
-    earlier_totals, later_totals = list_totals_for_periods(
+    earlier_totals, later_totals, seeded = list_totals_for_periods(
         connection,
         earlier.start,
         earlier.end,
@@ -404,6 +410,7 @@ def detect_shifts(
         later,
         build_leaders(*earlier_totals),
         build_leaders(*later_totals),
+        seeded=seeded,
     )
 
 
@@ -478,6 +485,8 @@ class ProfileShifts:
     category: DimensionComparison
     categories_before: tuple[Leader, ...]
     categories_after: tuple[Leader, ...]
+    # Whether the customer has a SEEDED sale in either half (ADR-0052).
+    seeded: bool = False
 
     @property
     def dimensions(self) -> tuple[DimensionComparison, ...]:
@@ -503,7 +512,7 @@ def build_profile_shifts(
     if half_days < 1:
         return None
     earlier, later = consecutive_periods(until, half_days)
-    earlier_totals, later_totals = list_totals_for_periods(
+    earlier_totals, later_totals, seeded = list_totals_for_periods(
         connection,
         earlier.start,
         earlier.end,
@@ -536,4 +545,5 @@ def build_profile_shifts(
         ),
         categories_before=was.categories if was else (),
         categories_after=now.categories if now else (),
+        seeded=seeded,
     )

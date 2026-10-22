@@ -53,6 +53,7 @@ from web.db.customer_timeline import (
     list_history_rows,
     list_sales_in_window_only,
 )
+from web.services.provenance import is_seeded
 from web.services.segment_migration import (
     MigrationExplanation,
     MigrationNarrative,
@@ -89,6 +90,12 @@ class TimelineEntry:
     def is_open(self) -> bool:
         return self.row.valid_to is None
 
+    @property
+    def synthetic(self) -> bool:
+        """Whether this assignment's figures are Synthetic: its run is SEEDED
+        (ADR-0052)."""
+        return is_seeded(self.row.data_origin)
+
 
 @dataclass(frozen=True)
 class Timeline:
@@ -103,6 +110,20 @@ class Timeline:
     as_of_entry: TimelineEntry | None = None
     # The comparison in plain language (#338), None exactly when it is.
     narrative: MigrationNarrative | None = None
+
+    @property
+    def synthetic(self) -> bool:
+        """Whether any assignment on the page is Synthetic, for the banner."""
+        return any(entry.synthetic for entry in self.entries)
+
+    @property
+    def comparison_synthetic(self) -> bool:
+        """The current-against-previous comparison reads two runs, so either
+        marks it."""
+        return any(
+            entry is not None and entry.synthetic
+            for entry in (self.current, self.previous)
+        )
 
 
 @dataclass(frozen=True)
@@ -136,6 +157,13 @@ class SegmentChange:
     @property
     def left_total(self) -> Decimal:
         return sum((sale.total for sale in self.left), Decimal(0))
+
+    @property
+    def synthetic(self) -> bool:
+        """A change compares two runs, so either marks it (ADR-0052)."""
+        return self.entry.synthetic or (
+            self.previous is not None and self.previous.synthetic
+        )
 
 
 # ---------- the rules, pure ----------

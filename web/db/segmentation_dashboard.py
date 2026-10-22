@@ -31,7 +31,7 @@ from typing import Any
 
 from psycopg import Connection
 
-from web.db.segments import SegmentationRun
+from web.db.segments import RUN_COLUMNS, SegmentationRun
 
 
 @dataclass(frozen=True)
@@ -86,6 +86,15 @@ def list_run_revenue_by_label(
     return {label: total for label, total in rows if label is not None}
 
 
+_PREVIOUS_RUN = RUN_COLUMNS + """
+            WHERE (r.run_at, r.run_id) < (
+                SELECT run_at, run_id FROM segmentation_run WHERE run_id = %s
+            )
+            ORDER BY r.run_at DESC, r.run_id DESC
+            LIMIT 1
+"""
+
+
 def get_previous_run(
     connection: Connection[Any], run_id: int
 ) -> SegmentationRun | None:
@@ -93,20 +102,7 @@ def get_previous_run(
     whichever method produced either of them (ADR-0018). None for the
     earliest run there is."""
     with connection.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT r.run_id, r.method, r.window_days, r.parameters,
-                   r.customer_count, r.executed_by, u.name, r.run_at
-            FROM segmentation_run AS r
-            LEFT JOIN app_user AS u ON u.user_id = r.executed_by
-            WHERE (r.run_at, r.run_id) < (
-                SELECT run_at, run_id FROM segmentation_run WHERE run_id = %s
-            )
-            ORDER BY r.run_at DESC, r.run_id DESC
-            LIMIT 1
-            """,
-            (run_id,),
-        )
+        cursor.execute(_PREVIOUS_RUN, (run_id,))
         row = cursor.fetchone()
 
     return SegmentationRun(*row) if row else None

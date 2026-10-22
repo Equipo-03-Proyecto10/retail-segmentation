@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -114,21 +115,21 @@ def parent_filter() -> int | None:
     raw = request.args.get("parent_id")
     if raw is None:
         return None
-    try:
-        value = int(raw)
-    except ValueError:
+    # Strict base-10 digits: int() alone accepts " 1 ", "1_0" and "+1".
+    if not re.fullmatch(r"-?[0-9]+", raw):
         raise ApiError(
             422,
-            "invalid_pagination",
+            "invalid_query",
             "parent_id must be an integer.",
             [{"field": "parent_id", "code": "invalid_type"}],
-        ) from None
+        )
+    value = int(raw)
     # The contract types parent_id as int32. Inside that range an id no
     # category can have simply matches nothing: an empty page.
     if not INT32_MIN <= value <= INT32_MAX:
         raise ApiError(
             422,
-            "invalid_pagination",
+            "invalid_query",
             "parent_id is outside the int32 range.",
             [{"field": "parent_id", "code": "out_of_range"}],
         )

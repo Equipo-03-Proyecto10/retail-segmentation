@@ -5,7 +5,7 @@
 {% block breadcrumbs %}{{ application_name }} / Analysis / Migration matrix / Explanation{% endblock %}
 
 {% block content %}
-  {% from "macros/ui.html" import page_header %}
+  {% from "macros/ui.html" import page_header, synthetic_banner, synthetic_pill %}
   {% from "macros/migration.html" import explanation_sentences, migration_headline, score_change %}
   {% macro money(value) %}{{ "{:,.2f}".format(value) }}{% endmacro %}
   {% macro day(moment) %}{{ moment.strftime("%Y-%m-%d") }}{% endmacro %}
@@ -18,8 +18,10 @@
     <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('migration_matrix.index', run_a=earlier_run.run_id, run_b=later_run.run_id) }}">Migration matrix</a>
   {% endcall %}
 
+  {{ synthetic_banner(synthetic, "At least one of these runs scored demonstration data, so this explanation is Synthetic.") }}
+
   <section class="mq-panel" aria-labelledby="why-title">
-    <header class="mq-panel__header"><h2 class="mq-panel__title" id="why-title">Why</h2></header>
+    <header class="mq-panel__header"><h2 class="mq-panel__title" id="why-title">Why</h2>{{ synthetic_pill(synthetic) }}</header>
     <div class="mq-panel__body">
       {{ migration_headline(explanation, narrative, earlier_run.run_id, later_run.run_id) }}
       {{ explanation_sentences(narrative) }}
@@ -27,7 +29,7 @@
   </section>
 
   <section class="mq-panel mq-panel--table mq-density-compact" aria-labelledby="scores-title">
-    <header class="mq-panel__header"><h2 class="mq-panel__title" id="scores-title">Values and scores</h2></header>
+    <header class="mq-panel__header"><h2 class="mq-panel__title" id="scores-title">Values and scores</h2>{{ synthetic_pill(synthetic) }}</header>
     <div class="mq-table-wrap">
       <table class="mq-table">
         <thead>

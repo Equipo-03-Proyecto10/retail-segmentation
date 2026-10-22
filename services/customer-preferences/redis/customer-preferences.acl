@@ -1,0 +1,1 @@
+user svc_preferences on {{password}} resetchannels -@all +@connection +@read +@write -@dangerous -scan -randomkey ~preferences:rl:* +waitaof (%R~pub:auth:v1:live:* +exists) (~stream:preferences.v1.changed +xadd)

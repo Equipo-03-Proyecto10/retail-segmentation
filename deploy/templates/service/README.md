@@ -8,7 +8,7 @@ The files a service's implementation story copies into `services/<name>/`
 |---|---|---|
 | `compose.yaml` | `services/<name>/compose.yaml` | Project `mosaiq-<name>`, one container from GHCR, ports on `127.0.0.1` only, `mem_limit` and `cpus`, no `depends_on`, UID 10001 with no capabilities and a read-only root, the socket, JWKS and env-file mounts, the external `mosaiq` network |
 | `nginx.conf` | `services/<name>/nginx/<name>.conf` | `location /api/<name>/`, the overwritten forwarded headers, `client_max_body_size 64k` and the 413 (and auth's 429) in the shared error envelope |
-| `Dockerfile.python`, `Dockerfile.rust` | `services/<name>/Dockerfile` | The service's own build context, contracts copied from inside it, UID 10001 |
+| `Dockerfile.python`, `Dockerfile.rust` | `services/<name>/Dockerfile` | The service's own build context, contracts copied from inside it, UID 10001; for Rust, libxml2 for kit-rs's XML validation (headers and `pkg-config` to build, the library to run) |
 | `render.py` | — | Writes the three files for one service |
 | `check.sh` | — | ADR-0040's compose and NGINX loop; prints nothing when they hold |
 

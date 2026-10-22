@@ -31,6 +31,8 @@ include:
     env_file: docker/distributed/local.env
   - path: [services/customers/compose.yaml, docker/distributed/service.local.yaml]
     env_file: docker/distributed/local.env
+  - path: [services/customer-preferences/compose.yaml, docker/distributed/service.local.yaml]
+    env_file: docker/distributed/local.env
   - path: [services/categories/compose.yaml, docker/distributed/service.local.yaml]
     env_file: docker/distributed/local.env
   - path: [services/stock/compose.yaml, docker/distributed/service.local.yaml]
@@ -40,6 +42,8 @@ include:
   - path: [services/users/compose.yaml, docker/distributed/service.local.yaml]
     env_file: docker/distributed/local.env
   - path: [services/auth/compose.yaml, docker/distributed/service.local.yaml]
+    env_file: docker/distributed/local.env
+  - path: [services/check-ins/compose.yaml, docker/distributed/service.local.yaml]
     env_file: docker/distributed/local.env
 
 services:

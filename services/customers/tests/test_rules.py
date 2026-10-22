@@ -188,6 +188,36 @@ def test_a_patch_to_a_taken_email_or_unknown_channel_is_refused(
     assert (channel.status_code, channel.get_json()["code"]) == (422, "unknown_channel")
 
 
+def by_email(owner, unique: str) -> int:
+    return owner.execute(
+        "SELECT count(*) FROM customer WHERE email = %s", (unique + "@example.com",)
+    ).fetchone()[0]
+
+
+@pytest.mark.parametrize("name", ["", "   ", "\t\n"])
+def test_a_blank_name_is_refused_on_register_and_correct(
+    client, manager, owner, unique, name
+):
+    blank = {"field": "name", "code": "too_short"}
+    response = register(client, manager, body(unique, name=name))
+    assert (response.status_code, response.get_json()["code"]) == (
+        422,
+        "invalid_body",
+    )
+    assert response.get_json()["details"] == [blank]
+    assert by_email(owner, unique) == 0
+
+    created = register(client, manager, body(unique)).get_json()
+    url = "/v1/customers/" + created["customer_id"]
+    response = client.patch(url, json={"name": name}, headers=manager)
+    assert (response.status_code, response.get_json()["code"]) == (
+        422,
+        "invalid_body",
+    )
+    assert response.get_json()["details"] == [blank]
+    assert client.get(url, headers=manager).get_json() == created
+
+
 def test_a_patch_with_a_bad_email_gets_422(client, manager, unique):
     created = register(client, manager, body(unique)).get_json()
     response = client.patch(
@@ -323,7 +353,7 @@ def test_a_nul_in_a_text_filter_is_refused(client, manager, query):
     response = client.get("/v1/customers", query_string=query, headers=manager)
     assert response.status_code == 422
     error = response.get_json()
-    assert error["code"] == "invalid_pagination"
+    assert error["code"] == "invalid_query"
     assert error["details"] == [{"field": next(iter(query)), "code": "invalid_format"}]
 
 

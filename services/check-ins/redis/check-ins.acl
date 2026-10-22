@@ -1,0 +1,1 @@
+user svc_checkins on {{password}} resetchannels -@all +@connection +@read +@write -@dangerous -scan -randomkey ~checkins:rl:* (%R~pub:auth:v1:live:* +exists)

@@ -202,6 +202,28 @@ def test_every_chart_of_a_non_observed_experiment_is_marked_synthetic(
         assert 'aria-label="Synthetic.' in panel
 
 
+def test_an_observed_experiment_with_a_seeded_conversion_marks_every_chart(
+    app, monkeypatch
+) -> None:
+    """#560, ADR-0052: the conversions the charts count mark them."""
+    from dataclasses import replace
+
+    dashboard = _dashboard("OBSERVED")
+    _wire(
+        monkeypatch,
+        replace(
+            dashboard, experiment=replace(dashboard.experiment, seeded_conversion=True)
+        ),
+    )
+
+    response = _get(app)
+    html = response.get_data(as_text=True)
+
+    assert _embedded(response)["experiment"]["synthetic"] is True
+    assert html.count('aria-label="Synthetic.') == 3
+    assert "link seeded sales" in html
+
+
 def test_an_observed_experiment_carries_no_synthetic_mark(app, monkeypatch) -> None:
     _wire(monkeypatch, _dashboard("OBSERVED"))
 

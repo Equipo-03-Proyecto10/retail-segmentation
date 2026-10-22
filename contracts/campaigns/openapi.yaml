@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: campaigns-service
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     Owns the campaign lifecycle rule. A campaign is created as DRAFT, may be
     edited only while it remains DRAFT, and moves only DRAFT to ACTIVE or

@@ -336,6 +336,7 @@ test('screens and controls follow each role', async () => {
     'sales',
     'engagement',
     'stores',
+    'campaigns',
     'services',
   ]);
   await open(page, 'engagement');

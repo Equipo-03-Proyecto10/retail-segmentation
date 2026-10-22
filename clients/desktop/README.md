@@ -7,8 +7,8 @@ response against that service's own XSD, and signs in through auth-service
 [ADR-0036](../../docs/adr/0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md)).
 F16-01 is the foundation: shell, secure window, preload bridge, XML transport, sign-in and
 role-gated screens. F16-02 adds Products and Categories, F16-04 adds Stock, Sales, Engagement and
-Check-ins, F16-06 adds Users, Transfer administrator and the account menu, and F16-07 adds Stores
-with their locations (see below).
+Check-ins, F16-06 adds Users, Transfer administrator and the account menu, F16-07 adds Stores
+with their locations, and F16-08 adds Campaigns and their transitions (see below).
 
 ## Run it
 
@@ -59,6 +59,8 @@ being ignored. `MOSAIQ_DESKTOP_CONFIG_DIR` overrides the directory (the window t
   - users: `listUsers`, `getUser`, `listRoles`, `createUser`, `updateUser`, `deactivateUser`,
     `reactivateUser`, `resetUserPassword`, `changeOwnPassword`, `transferAdministrator`.
   - store locations: `listStores`, `getStore`, `setStoreLocation`, `removeStoreLocation`.
+  - campaigns: `listCampaigns`, `getCampaign`, `createCampaign`, `updateCampaign`, `transitionCampaign`,
+    `listCampaignLabels`.
 
   There is no generic fetch and no `ipcRenderer`. The main process checks every value a screen sends
   (`src/main/checks.ts`, used by `catalog.ts` and `floor.ts`) before it builds a path or a body from it.
@@ -182,6 +184,34 @@ Through stores-service (`contracts/stores/`). The **Stores** screen is open to e
 
 The window tests (`tests/window/stores.spec.ts`) answer with the recorded examples in
 `contracts/stores/examples/`, read from disk, and keep the locations they are given.
+
+## Campaigns and their transitions (F16-08)
+
+Through campaigns-service (`contracts/campaigns/`). The **Campaigns** screen is shown to `ADMIN`,
+`ANALYST`, `MARKETING` and `AUDITOR` and hidden from every other role, by the `x-mosaiq-roles` of
+`listCampaigns`:
+
+- The list comes from `GET /v1/campaigns` (`status`, `label_code`, paging); a campaign opens from
+  `GET /v1/campaigns/{campaign_id}`. A campaign carries only a label code, so the label names come from
+  segments-service (`GET /v1/segments`, `listCampaignLabels`), also for the label pickers. A name that
+  cannot be read leaves the code on screen and shows the error.
+- `ADMIN` and `MARKETING` create a campaign (`POST /v1/campaigns`; it is shown as `DRAFT`) and edit one
+  (`PATCH`, only the changed fields). `ANALYST` and `AUDITOR` see no control. Outside `DRAFT` the edit
+  controls are drawn disabled, and a forced edit gets 409 `campaign_not_draft`, shown as returned.
+- A transition is `POST /v1/campaigns/{campaign_id}/transitions` with `to` and the `expected_status`
+  the screen displayed. The buttons are the moves the service lists in `allowed_transitions`
+  (`DRAFT` to `ACTIVE` or `CANCELLED`, `ACTIVE` to `FINISHED` or `CANCELLED`); `FINISHED` and
+  `CANCELLED` offer none. The client does not decide whether a move is legal, so a forced one is
+  answered by the service.
+- The lifecycle and the dates are the service's: the client checks only types and lengths. Refusals are
+  shown as returned (code, message, correlation id): `ends_before_start` with its `ends_on` detail next
+  to the dates, `duplicate_draft` and `unknown_label`, `illegal_transition`, `status_changed`,
+  `campaign_ended` and `experiment_not_ready`. After `status_changed` the campaign is read again and
+  the move is not retried.
+
+The window tests (`tests/window/campaigns.spec.ts`) answer with the recorded examples in
+`contracts/campaigns/examples/` and `contracts/segments/examples/`, read from disk, and keep the status
+of the campaign they transition.
 
 ## Checks
 

@@ -4,6 +4,7 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import { CHANNELS } from '../shared/api';
 import { Backoffice } from './backoffice';
 import { loadBundle } from './bundle';
+import { Campaigns } from './campaigns';
 import { Catalog } from './catalog';
 import { Floor } from './floor';
 import { loadSettings } from './settings';
@@ -118,6 +119,17 @@ function start(): void {
     stores.setLocation(storeId, location),
   );
   ipcMain.handle(CHANNELS.removeStoreLocation, (_e, storeId: unknown) => stores.removeLocation(storeId));
+  const campaigns = new Campaigns(office);
+  ipcMain.handle(CHANNELS.listCampaigns, (_e, query: unknown) => campaigns.listCampaigns(query));
+  ipcMain.handle(CHANNELS.getCampaign, (_e, campaignId: unknown) => campaigns.getCampaign(campaignId));
+  ipcMain.handle(CHANNELS.createCampaign, (_e, draft: unknown) => campaigns.createCampaign(draft));
+  ipcMain.handle(CHANNELS.updateCampaign, (_e, campaignId: unknown, changes: unknown) =>
+    campaigns.updateCampaign(campaignId, changes),
+  );
+  ipcMain.handle(CHANNELS.transitionCampaign, (_e, campaignId: unknown, to: unknown, expected: unknown) =>
+    campaigns.transitionCampaign(campaignId, to, expected),
+  );
+  ipcMain.handle(CHANNELS.listCampaignLabels, () => campaigns.listLabels());
   office.onStateChange((state) => {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(CHANNELS.stateChanged, state);
   });

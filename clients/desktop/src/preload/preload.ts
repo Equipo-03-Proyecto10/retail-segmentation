@@ -29,6 +29,13 @@ const bridge: MosaiqBridge = {
   getStore: (storeId) => ipcRenderer.invoke(CHANNELS.getStore, storeId),
   setStoreLocation: (storeId, location) => ipcRenderer.invoke(CHANNELS.setStoreLocation, storeId, location),
   removeStoreLocation: (storeId) => ipcRenderer.invoke(CHANNELS.removeStoreLocation, storeId),
+  listCampaigns: (query) => ipcRenderer.invoke(CHANNELS.listCampaigns, query),
+  getCampaign: (campaignId) => ipcRenderer.invoke(CHANNELS.getCampaign, campaignId),
+  createCampaign: (draft) => ipcRenderer.invoke(CHANNELS.createCampaign, draft),
+  updateCampaign: (campaignId, changes) => ipcRenderer.invoke(CHANNELS.updateCampaign, campaignId, changes),
+  transitionCampaign: (campaignId, to, expectedStatus) =>
+    ipcRenderer.invoke(CHANNELS.transitionCampaign, campaignId, to, expectedStatus),
+  listCampaignLabels: () => ipcRenderer.invoke(CHANNELS.listCampaignLabels),
   stockLevels: (query) => ipcRenderer.invoke(CHANNELS.stockLevels, query),
   listSales: (query) => ipcRenderer.invoke(CHANNELS.listSales, query),
   getSale: (saleId) => ipcRenderer.invoke(CHANNELS.getSale, saleId),

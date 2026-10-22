@@ -148,6 +148,43 @@ export interface StoreLocationDraft {
   geofence_radius_m: string;
 }
 
+export type CampaignStatus = 'DRAFT' | 'ACTIVE' | 'FINISHED' | 'CANCELLED';
+
+export interface CampaignView {
+  campaign_id: number;
+  name: string;
+  label_code: string;
+  /** Calendar dates, YYYY-MM-DD, as campaigns-service returned them. */
+  starts_on: string;
+  ends_on: string;
+  status: CampaignStatus;
+  /** The moves campaigns-service allows from the status shown. */
+  allowed_transitions: CampaignStatus[];
+}
+
+export interface CampaignQuery {
+  status?: CampaignStatus;
+  label_code?: string;
+  page?: number;
+  size?: number;
+}
+
+export interface CampaignDraft {
+  name: string;
+  label_code: string;
+  starts_on: string;
+  ends_on: string;
+}
+
+/** Only the fields that changed. */
+export type CampaignChanges = Partial<CampaignDraft>;
+
+/** A segment label, from segments-service: the vocabulary a campaign targets. */
+export interface LabelView {
+  label_code: string;
+  name: string;
+}
+
 export interface StockQuery {
   store_id?: number;
   below?: number;
@@ -348,6 +385,17 @@ export interface MosaiqBridge {
   getStore(storeId: number): Promise<Result<StoreDetailView>>;
   setStoreLocation(storeId: number, location: StoreLocationDraft): Promise<Result<StoreDetailView>>;
   removeStoreLocation(storeId: number): Promise<Result<null>>;
+  listCampaigns(query: CampaignQuery): Promise<Result<Paged<CampaignView>>>;
+  getCampaign(campaignId: number): Promise<Result<CampaignView>>;
+  createCampaign(draft: CampaignDraft): Promise<Result<CampaignView>>;
+  updateCampaign(campaignId: number, changes: CampaignChanges): Promise<Result<CampaignView>>;
+  /** expected_status is the status the screen displayed; the service refuses a stale one. */
+  transitionCampaign(
+    campaignId: number,
+    to: CampaignStatus,
+    expectedStatus: CampaignStatus,
+  ): Promise<Result<CampaignView>>;
+  listCampaignLabels(): Promise<Result<LabelView[]>>;
   stockLevels(query: StockQuery): Promise<Result<Paged<StockLevelView>>>;
   listSales(query: SalesQuery): Promise<Result<Paged<SaleView>>>;
   getSale(saleId: number): Promise<Result<SaleView>>;
@@ -393,6 +441,12 @@ export const CHANNELS = {
   getStore: 'mosaiq:get-store',
   setStoreLocation: 'mosaiq:set-store-location',
   removeStoreLocation: 'mosaiq:remove-store-location',
+  listCampaigns: 'mosaiq:list-campaigns',
+  getCampaign: 'mosaiq:get-campaign',
+  createCampaign: 'mosaiq:create-campaign',
+  updateCampaign: 'mosaiq:update-campaign',
+  transitionCampaign: 'mosaiq:transition-campaign',
+  listCampaignLabels: 'mosaiq:list-campaign-labels',
   stockLevels: 'mosaiq:stock-levels',
   listSales: 'mosaiq:list-sales',
   getSale: 'mosaiq:get-sale',

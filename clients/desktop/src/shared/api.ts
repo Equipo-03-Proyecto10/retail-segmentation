@@ -405,6 +405,130 @@ export interface UserChanges {
   role_code?: string;
 }
 
+export interface CustomerView {
+  customer_id: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  registration_channel_id: number;
+  /** Read from sales-service, never from customers-service. */
+  registration_channel_name: string;
+  registered_on: string;
+}
+
+export interface CustomerQuery {
+  q?: string;
+  email?: string;
+  page?: number;
+  size?: number;
+}
+
+/** Only the fields that change are sent; an absent field is left as it is. */
+export interface CustomerChanges {
+  name?: string;
+  email?: string;
+  phone?: string;
+  registration_channel_id?: number;
+}
+
+export interface ChoiceView {
+  id: number;
+  name: string;
+}
+
+/** The profile as customer-preferences returned it, with names read from sales-service and categories-service. */
+export interface PreferencesView {
+  customer_id: string;
+  channels: ChoiceView[];
+  categories: ChoiceView[];
+  /** Every channel and category that can be chosen; empty when its service could not be read. */
+  channel_options: ChoiceView[];
+  category_options: ChoiceView[];
+}
+
+export type AssignmentState = 'assigned' | 'unassigned_result' | 'no_open_assignment';
+
+export interface SegmentLabelView {
+  label_code: string;
+  name: string;
+  description?: string;
+  ordinal_position: number;
+  size: number;
+}
+
+/** The label vocabulary, sorted by ordinal_position (the business order). */
+export interface SegmentVocabularyView {
+  run_id?: number;
+  run_at?: string;
+  unassigned_count: number;
+  labels: SegmentLabelView[];
+}
+
+/** Exactly what segments-service returned; a field it left out stays absent. */
+export interface CurrentAssignmentView {
+  customer_id: string;
+  state: string;
+  label_code?: string;
+  /** From the label vocabulary; absent when the state carries no label. */
+  label_name?: string;
+  r_score?: number;
+  f_score?: number;
+  m_score?: number;
+  since?: string;
+  run_id?: number;
+}
+
+export interface AssignmentRowView {
+  customer_id: string;
+  run_id: number;
+  label_code?: string;
+  label_name?: string;
+  r_score?: number;
+  f_score?: number;
+  m_score?: number;
+  valid_from: string;
+  valid_to?: string;
+}
+
+export interface AssignmentQuery {
+  customer_id?: string;
+  label_code?: string;
+  /** Only open rows (valid_to empty). */
+  open?: boolean;
+  page?: number;
+  size?: number;
+}
+
+export interface ReasonView {
+  signal: string;
+  segment_buyers?: number;
+  category_id?: number;
+  category_name?: string;
+  share?: string;
+}
+
+export interface RecommendationItemView {
+  product_id: number;
+  /** Read from products-service with one call per list. */
+  product_name: string;
+  category_id: number;
+  category_name: string;
+  quantity_on_hand: number;
+  reasons: ReasonView[];
+}
+
+export interface RecommendationView {
+  customer_id: string;
+  /** recommended, none_match, no_open_assignment, unassigned_result or no_usual_store, as returned. */
+  status: string;
+  computed_at: string;
+  window: { days: number; start: string; end: string };
+  label_code?: string;
+  run_id?: number;
+  usual_store_id?: number;
+  items: RecommendationItemView[];
+}
+
 /** The named operations the renderer may call; there is no generic transport. */
 export interface MosaiqBridge {
   getState(): Promise<AppState>;
@@ -462,6 +586,19 @@ export interface MosaiqBridge {
   /** The caller's own password. A success ends every session, so the app returns to sign-in. */
   changeOwnPassword(currentPassword: string, newPassword: string): Promise<Result<null>>;
   transferAdministrator(successorUserId: string): Promise<Result<null>>;
+  searchCustomers(query: CustomerQuery): Promise<Result<Paged<CustomerView>>>;
+  getCustomer(customerId: string): Promise<Result<CustomerView>>;
+  correctCustomer(customerId: string, changes: CustomerChanges): Promise<Result<CustomerView>>;
+  /** Every channel of sales-service, for the registration channel. */
+  listChannels(): Promise<Result<ChoiceView[]>>;
+  getPreferences(customerId: string): Promise<Result<PreferencesView>>;
+  /** Sends the whole set; an empty list clears it. */
+  replacePreferredChannels(customerId: string, channelIds: number[]): Promise<Result<PreferencesView>>;
+  replaceInterestCategories(customerId: string, categoryIds: number[]): Promise<Result<PreferencesView>>;
+  segmentVocabulary(): Promise<Result<SegmentVocabularyView>>;
+  currentAssignment(customerId: string): Promise<Result<CurrentAssignmentView>>;
+  listAssignments(query: AssignmentQuery): Promise<Result<Paged<AssignmentRowView>>>;
+  getRecommendations(customerId: string): Promise<Result<RecommendationView>>;
 }
 
 export const CHANNELS = {
@@ -513,4 +650,15 @@ export const CHANNELS = {
   resetUserPassword: 'mosaiq:reset-user-password',
   changeOwnPassword: 'mosaiq:change-own-password',
   transferAdministrator: 'mosaiq:transfer-administrator',
+  searchCustomers: 'mosaiq:search-customers',
+  getCustomer: 'mosaiq:get-customer',
+  correctCustomer: 'mosaiq:correct-customer',
+  listChannels: 'mosaiq:list-channels',
+  getPreferences: 'mosaiq:get-preferences',
+  replacePreferredChannels: 'mosaiq:replace-preferred-channels',
+  replaceInterestCategories: 'mosaiq:replace-interest-categories',
+  segmentVocabulary: 'mosaiq:segment-vocabulary',
+  currentAssignment: 'mosaiq:current-assignment',
+  listAssignments: 'mosaiq:list-assignments',
+  getRecommendations: 'mosaiq:get-recommendations',
 } as const;

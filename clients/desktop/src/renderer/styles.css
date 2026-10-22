@@ -143,3 +143,14 @@ textarea {
 dialog {
   max-width: 32rem;
 }
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.25rem;
+  margin: 0.5rem 0;
+}
+.choices label {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+}

@@ -8,8 +8,8 @@ response against that service's own XSD, and signs in through auth-service
 F16-01 is the foundation: shell, secure window, preload bridge, XML transport, sign-in and
 role-gated screens. F16-02 adds Products and Categories, F16-04 adds Stock, Sales, Engagement and
 Check-ins, F16-06 adds Users, Transfer administrator and the account menu, F16-07 adds Stores
-with their locations, F16-08 adds Campaigns and their transitions, and F16-09 adds the Audit trail
-(see below).
+with their locations, F16-08 adds Campaigns and their transitions, F16-09 adds the Audit trail, and
+F16-03 adds Customers (see below).
 
 ## Run it
 
@@ -237,6 +237,42 @@ navigation, and a forced call gets 403 `forbidden_role`, shown as returned.
 The window tests (`tests/window/audit.spec.ts`) answer with the recorded examples in
 `contracts/audit-trail/examples/`. The fake gateway records a product edit and then answers the audit
 query with an entry for that entity, key and the signed-in user.
+
+## Customers, preferences, segments and recommendations (F16-03)
+
+The Customers screen is offered to the roles whose `x-mosaiq-roles` allow `searchCustomers`: every
+staff role except `INVENTORY_PLANNER`. Each panel shows what its own service returned, and the client
+composes names from ids (ADR-0035). Each panel keeps its own `latestRequest()`, so a slow answer for a
+customer opened earlier is dropped.
+
+- **Customer** (customers-service). Search with `q` and an exact `email`, with paging; a customer opens
+  from `GET /v1/customers/{customer_id}`. `ADMIN` and `STORE_MANAGER` correct it with `PATCH`; only the
+  fields that changed are sent, because the contract has no way to clear a field, and an empty value is
+  refused in the main process, naming its field. The registration channel is named from
+  `GET /v1/channels` (sales-service). `email_taken`, `unknown_channel` and `invalid_body` are shown as
+  returned.
+- **Preferences** (customer-preferences). Channel names come from sales-service and category names from
+  categories-service (every page, once). `ADMIN` and `STORE_MANAGER` edit a set with checkboxes and the
+  app sends the whole set with `PUT .../preferred-channels` or `PUT .../interest-categories`. Unchecking
+  everything sends an empty body, which clears the set. A chosen id whose service cannot be read is
+  shown as "Channel 7 (unavailable)", never guessed. `unknown_channel` and `unknown_category` are shown
+  as returned. Other roles see no control.
+- **Segment** (segments-service). `GET /v1/segment-assignments/current?customer_id=` is printed as
+  returned: `assigned` with the label (named from `GET /v1/segments`), the RFM scores, `since` and
+  `run_id`, or `unassigned_result` and `no_open_assignment` with only the fields the service sent.
+  "Show history" pages through `GET /v1/segment-assignments?customer_id=`. The label view lists the
+  labels in `ordinal_position` order with their sizes; a label lists its members through
+  `?label_code=` (current members by default, all rows with the box unchecked), and a member opens as
+  a customer.
+- **Recommendations** (recommendations-service). Each item shows its product name, category, the stock
+  held at the usual store and its reasons, with the nearest matching category named. The names of a
+  list come from exactly one `GET /v1/products?ids=` (a list holds at most 50 items). When nothing
+  qualifies, the status is shown as returned: `none_match`, `no_open_assignment`, `unassigned_result`
+  or `no_usual_store`.
+
+The window tests (`tests/window/customers.spec.ts`) answer with the recorded examples of the seven
+contracts, read from disk, including the `unassigned_result` and `no_open_assignment` examples that no
+seeded customer has.
 
 ## Checks
 

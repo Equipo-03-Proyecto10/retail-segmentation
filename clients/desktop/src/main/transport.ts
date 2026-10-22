@@ -10,7 +10,7 @@ export interface CallOptions {
   /** Path starting with /v1/<resource>; the service is derived from the registry. */
   path: string;
   /** Root element and fields of the XML request body, when there is one. */
-  body?: { root: string; fields: Record<string, FieldValue> };
+  body?: { root: string; fields: Record<string, FieldValue | string[]> };
   bearer?: string;
 }
 

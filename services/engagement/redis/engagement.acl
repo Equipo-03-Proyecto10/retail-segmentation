@@ -1,0 +1,1 @@
+user svc_engagement on {{password}} resetchannels -@all +@connection +@read +@write -@dangerous -scan -randomkey ~engagement:rl:* ~engagement:live:* (%R~pub:auth:v1:live:* +exists)

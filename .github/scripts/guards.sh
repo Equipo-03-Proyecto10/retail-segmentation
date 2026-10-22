@@ -72,7 +72,7 @@ problems=$(
     | grep -vE '^services/engagement/' | found "ADR-0038 MongoDB named outside engagement"
   git grep -nE '^\s*mongo(db)?:' -- 'services/*/compose.yaml' | found ADR-0038
   git grep -nE '\b(delete_one|delete_many|find_one_and_delete|drop_collection|drop_database|collMod|createUser)\b|\.drop\(' \
-    -- services/engagement/src/ | found ADR-0038
+    -- services/engagement/src/ services/engagement/app/ | found ADR-0038
 
   # ADR-0044: no other boundary's outbox channel, and no XADD but the kit's.
   for d in services/*/; do

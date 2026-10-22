@@ -133,6 +133,41 @@ jobs:
         with:
           python-version: "3.12"
 
+      # A service that owns MongoDB data (mongo/init.js exists, ADR-0038) is
+      # tested against the real thing: the image deploy/infra/compose.yaml pins,
+      # with authorization on, prepared by that init.js; a Redis for its live
+      # counters; and mongosh, which the data tests run init.js and seed.js with.
+      # Every step is keyed on a file, never on a service name.
+      - name: MongoDB and Redis for a service that owns MongoDB data
+        if: hashFiles(format('services/{0}/mongo/init.js', matrix.service)) != ''
+        run: |
+          set -euo pipefail
+          mongo_image=$(sed -nE 's/^ *image: (mongo:[^ ]+)$/\1/p' deploy/infra/compose.yaml)
+          redis_image=$(sed -nE 's/^ *image: (redis:[^ ]+)$/\1/p' deploy/infra/compose.yaml | head -1)
+          suffix=$(sed -nE 's/^user svc_([a-z0-9_]+) .*/\1/p' "$DIR/redis/$NAME.acl")
+          root=$(openssl rand -hex 16)
+          docker run -d --name data-tests-mongo -p 127.0.0.1:27017:27017 \
+            -e MONGO_INITDB_ROOT_USERNAME=root -e MONGO_INITDB_ROOT_PASSWORD="$root" \
+            "$mongo_image" mongod --auth >/dev/null
+          docker run -d --name data-tests-redis -p 127.0.0.1:6379:6379 "$redis_image" >/dev/null
+          npm install --global mongosh@2.13.0 >/dev/null
+          root_uri="mongodb://root:$root@127.0.0.1:27017/admin"
+          for _ in $(seq 1 60); do
+            mongosh --quiet --norc "$root_uri" --eval 'db.runCommand({ping: 1})' >/dev/null 2>&1 && break
+            sleep 2
+          done
+          password=$(openssl rand -hex 12)
+          export "MONGO_${suffix^^}_PASSWORD=$password"
+          mongosh --quiet --norc "$root_uri" --file "$DIR/mongo/init.js"
+          {
+            echo "MONGO_${suffix^^}_PASSWORD=$password"
+            echo "TEST_MONGO_ROOT_URI=$root_uri"
+            echo "TEST_MONGO_URI=mongodb://svc_$suffix:$password@127.0.0.1:27017/$suffix?authSource=$suffix"
+            echo "TEST_REDIS_URL=redis://127.0.0.1:6379/0"
+            echo "MOSAIQ_REQUIRE_MONGO=1"
+            echo "MOSAIQ_REQUIRE_REDIS=1"
+          } >> "$GITHUB_ENV"
+
       - name: Python service — uv sync, black, ruff, pytest
         if: steps.kind.outputs.kind == 'python'
         working-directory: ${{ env.DIR }}

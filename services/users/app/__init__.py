@@ -98,24 +98,6 @@ def _filters() -> tuple[str | None, bool | None, str | None]:
     return role, None if active is None else active == "true", query
 
 
-def _whole_pattern_match(body: dict[str, Any], *fields: str) -> None:
-    """Refuse what the contract's patterns refuse, including a final newline.
-
-    The kit validates `pattern` with Python's `re`, where `$` also matches just
-    before a final newline, so "x@example.com\n" passed the Email pattern
-    (#594). The contract's pattern means the whole value.
-    """
-    for field in fields:
-        value = body.get(field)
-        if isinstance(value, str) and value.endswith("\n"):
-            raise ApiError(
-                422,
-                "invalid_body",
-                "The request body violates the service schema.",
-                [{"field": field, "code": "invalid_format"}],
-            )
-
-
 def create_app(*, start_relay: bool = True) -> Flask:
     app = Flask(__name__, static_folder=None)
     configure_logging()
@@ -170,7 +152,6 @@ def create_app(*, start_relay: bool = True) -> Flask:
     @kit.operation("createUser")
     def create_user() -> Representation:
         body = kit.body
-        _whole_pattern_match(body, "email", "role_code")
         # Refused before the 64 MiB hash: an ADMIN is only ever transferred.
         if body["role_code"] == rules.ADMIN:
             raise rules.single_administrator()
@@ -206,7 +187,6 @@ def create_app(*, start_relay: bool = True) -> Flask:
     @kit.operation("updateUser")
     def update_user(user_id: UUID) -> Representation:
         body = kit.body
-        _whole_pattern_match(body, "email", "role_code")
         with kit.db.transaction() as connection:
             user = rules.update_user(
                 connection,

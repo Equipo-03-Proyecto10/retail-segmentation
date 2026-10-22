@@ -8,7 +8,8 @@ response against that service's own XSD, and signs in through auth-service
 F16-01 is the foundation: shell, secure window, preload bridge, XML transport, sign-in and
 role-gated screens. F16-02 adds Products and Categories, F16-04 adds Stock, Sales, Engagement and
 Check-ins, F16-06 adds Users, Transfer administrator and the account menu, F16-07 adds Stores
-with their locations, and F16-08 adds Campaigns and their transitions (see below).
+with their locations, F16-08 adds Campaigns and their transitions, and F16-09 adds the Audit trail
+(see below).
 
 ## Run it
 
@@ -61,6 +62,7 @@ being ignored. `MOSAIQ_DESKTOP_CONFIG_DIR` overrides the directory (the window t
   - store locations: `listStores`, `getStore`, `setStoreLocation`, `removeStoreLocation`.
   - campaigns: `listCampaigns`, `getCampaign`, `createCampaign`, `updateCampaign`, `transitionCampaign`,
     `listCampaignLabels`.
+  - audit trail: `listAuditEntries`, `getAuditEntry` (read only).
 
   There is no generic fetch and no `ipcRenderer`. The main process checks every value a screen sends
   (`src/main/checks.ts`, used by `catalog.ts` and `floor.ts`) before it builds a path or a body from it.
@@ -212,6 +214,29 @@ Through campaigns-service (`contracts/campaigns/`). The **Campaigns** screen is 
 The window tests (`tests/window/campaigns.spec.ts`) answer with the recorded examples in
 `contracts/campaigns/examples/` and `contracts/segments/examples/`, read from disk, and keep the status
 of the campaign they transition.
+
+## Audit trail (F16-09)
+
+Through audit-trail (`contracts/audit-trail/`). The **Audit trail** screen is offered only to `ADMIN`
+and `AUDITOR`, by the `x-mosaiq-roles` of `listAuditEntries`. Any other role has no entry in the
+navigation, and a forced call gets 403 `forbidden_role`, shown as returned.
+
+- Entries come from `GET /v1/audit-entries` with `entity`, `entity_pk`, `user_id`, `action`, `from`, `to`
+  and paging; one opens from `GET /v1/audit-entries/{audit_id}`. The main process checks every filter
+  first (the audited table names, `INSERT`/`UPDATE`/`DELETE`, a UUID, RFC 3339 timestamps with an
+  offset, a key of at most 80 characters, and the audit id as a positive 64-bit integer kept as text).
+  `invalid_query` (with its `details`) and `audit_entry_not_found` are shown as returned.
+- The acting user is shown by its `user_id`; an entry with no known actor says so. The screen does not
+  resolve names, so it needs no call to users-service.
+- `data_before` and `data_after` are JSON text in the XML. They are formatted when they parse and set
+  with `textContent` inside a `<pre>`; nothing is rendered as HTML. audit-trail strips credentials, and
+  the client adds none: no password or hash is requested or shown.
+- The trail is append-only: the screen has no create, edit or delete control and the bridge has no
+  operation for one.
+
+The window tests (`tests/window/audit.spec.ts`) answer with the recorded examples in
+`contracts/audit-trail/examples/`. The fake gateway records a product edit and then answers the audit
+query with an entry for that entity, key and the signed-in user.
 
 ## Checks
 

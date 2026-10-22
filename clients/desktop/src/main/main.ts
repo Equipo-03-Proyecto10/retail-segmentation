@@ -2,6 +2,7 @@ import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { CHANNELS } from '../shared/api';
+import { Audit } from './audit';
 import { Backoffice } from './backoffice';
 import { loadBundle } from './bundle';
 import { Campaigns } from './campaigns';
@@ -130,6 +131,9 @@ function start(): void {
     campaigns.transitionCampaign(campaignId, to, expected),
   );
   ipcMain.handle(CHANNELS.listCampaignLabels, () => campaigns.listLabels());
+  const audit = new Audit(office);
+  ipcMain.handle(CHANNELS.listAuditEntries, (_e, query: unknown) => audit.listEntries(query));
+  ipcMain.handle(CHANNELS.getAuditEntry, (_e, auditId: unknown) => audit.getEntry(auditId));
   office.onStateChange((state) => {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(CHANNELS.stateChanged, state);
   });

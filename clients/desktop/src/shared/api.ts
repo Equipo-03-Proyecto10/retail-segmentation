@@ -169,6 +169,37 @@ export interface CampaignQuery {
   size?: number;
 }
 
+/** The audited tables, as fn_audit records them (audit-trail.xsd AuditedEntity). */
+export const AUDITED_ENTITIES = [
+  'category',
+  'product',
+  'store',
+  'customer',
+  'app_user',
+  'segment',
+  'segment_rule',
+  'campaign',
+  'experiment',
+  'channel',
+  'role',
+  'customer_segment_history',
+  'store_location',
+] as const;
+export const AUDIT_ACTIONS = ['INSERT', 'UPDATE', 'DELETE'] as const;
+
+export interface AuditQuery {
+  entity?: string;
+  /** Only valid together with entity. */
+  entity_pk?: string;
+  user_id?: string;
+  action?: string;
+  /** RFC 3339 timestamps with an offset. */
+  from?: string;
+  to?: string;
+  page?: number;
+  size?: number;
+}
+
 export interface CampaignDraft {
   name: string;
   label_code: string;
@@ -183,6 +214,18 @@ export type CampaignChanges = Partial<CampaignDraft>;
 export interface LabelView {
   label_code: string;
   name: string;
+}
+
+/** One append-only entry. audit_id is text: it can exceed 2^53. The payloads are JSON text, as returned. */
+export interface AuditEntryView {
+  audit_id: string;
+  user_id: string | null;
+  entity: string;
+  entity_pk: string;
+  action: string;
+  data_before: string | null;
+  data_after: string | null;
+  executed_at: string;
 }
 
 export interface StockQuery {
@@ -396,6 +439,8 @@ export interface MosaiqBridge {
     expectedStatus: CampaignStatus,
   ): Promise<Result<CampaignView>>;
   listCampaignLabels(): Promise<Result<LabelView[]>>;
+  listAuditEntries(query: AuditQuery): Promise<Result<Paged<AuditEntryView>>>;
+  getAuditEntry(auditId: string): Promise<Result<AuditEntryView>>;
   stockLevels(query: StockQuery): Promise<Result<Paged<StockLevelView>>>;
   listSales(query: SalesQuery): Promise<Result<Paged<SaleView>>>;
   getSale(saleId: number): Promise<Result<SaleView>>;
@@ -447,6 +492,8 @@ export const CHANNELS = {
   updateCampaign: 'mosaiq:update-campaign',
   transitionCampaign: 'mosaiq:transition-campaign',
   listCampaignLabels: 'mosaiq:list-campaign-labels',
+  listAuditEntries: 'mosaiq:list-audit-entries',
+  getAuditEntry: 'mosaiq:get-audit-entry',
   stockLevels: 'mosaiq:stock-levels',
   listSales: 'mosaiq:list-sales',
   getSale: 'mosaiq:get-sale',

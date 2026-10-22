@@ -36,6 +36,8 @@ const bridge: MosaiqBridge = {
   transitionCampaign: (campaignId, to, expectedStatus) =>
     ipcRenderer.invoke(CHANNELS.transitionCampaign, campaignId, to, expectedStatus),
   listCampaignLabels: () => ipcRenderer.invoke(CHANNELS.listCampaignLabels),
+  listAuditEntries: (query) => ipcRenderer.invoke(CHANNELS.listAuditEntries, query),
+  getAuditEntry: (auditId) => ipcRenderer.invoke(CHANNELS.getAuditEntry, auditId),
   stockLevels: (query) => ipcRenderer.invoke(CHANNELS.stockLevels, query),
   listSales: (query) => ipcRenderer.invoke(CHANNELS.listSales, query),
   getSale: (saleId) => ipcRenderer.invoke(CHANNELS.getSale, saleId),

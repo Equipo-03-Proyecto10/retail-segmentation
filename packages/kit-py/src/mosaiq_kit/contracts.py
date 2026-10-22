@@ -397,10 +397,18 @@ class Contract:
                 else:
                     result[name] = self._element_to_value(children[0], child_schema)
             # "An absent value is omitted in XML and is null in JSON": a member
-            # that is required and nullable, and omitted, reads as null.
+            # that is required and nullable, and omitted, reads as null. XML has
+            # no way to write an empty list other than no item elements, so a
+            # required list that is omitted reads as []; the XSD has already
+            # said whether zero items are allowed.
             for name in self._required_names(schema):
-                if name not in result and self._nullable(properties.get(name, {})):
+                member = properties.get(name, {})
+                if name in result:
+                    continue
+                if self._nullable(member):
                     result[name] = None
+                elif self._schema_type(member) == "array":
+                    result[name] = []
             return result
         text = "".join(element.itertext())
         if schema_type == "integer":

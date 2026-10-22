@@ -633,6 +633,29 @@ def test_xml_xsi_nil_reads_as_null(contracts_dir: Path) -> None:
     assert value["phone"] == "1"
 
 
+def test_xml_omitted_required_list_reads_as_empty(contracts_dir: Path) -> None:
+    from mosaiq_kit.contracts import Contract
+
+    schema = {
+        "type": "object",
+        "required": ["ids", "tags"],
+        "properties": {
+            "ids": {"type": "array", "items": {"type": "integer"}},
+            "tags": {"type": ["array", "null"], "items": {"type": "string"}},
+            "extra": {"type": "array", "items": {"type": "string"}},
+        },
+    }
+    contract = Contract(contracts_dir, "kit-example")
+    # `tags` is nullable, so it still reads as null; `extra` is not required
+    # and stays absent. Same reading as kit-rs (#475).
+    assert contract._element_to_value(etree.fromstring("<R/>"), schema) == {
+        "ids": [],
+        "tags": None,
+    }
+    listed = etree.fromstring("<R><ids>1</ids><ids>2</ids></R>")
+    assert contract._element_to_value(listed, schema)["ids"] == [1, 2]
+
+
 def test_categories_own_nil_example_reads_as_null() -> None:
     from mosaiq_kit.contracts import Contract
 

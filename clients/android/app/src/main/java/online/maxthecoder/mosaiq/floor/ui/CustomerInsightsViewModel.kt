@@ -54,8 +54,16 @@ class CustomerInsightsViewModel(
             val recommendations = call { graph.network.recommendations.getRecommendations(customerId) }
             val result = (recommendations as? Answer.Body)?.value
             val items = result?.items.orEmpty()
-            val names = if (items.isEmpty()) emptyMap() else productNames(items.map { it.productId })
-            val categories = if (items.isEmpty()) emptyMap() else categories()
+            val namesAnswer =
+                if (items.isEmpty()) Answer.Body(emptyMap()) else productNames(items.map { it.productId })
+            val categoriesAnswer = if (items.isEmpty()) Answer.Body(emptyMap()) else categories()
+            val dependencyError =
+                listOf(namesAnswer, categoriesAnswer)
+                    .filterIsInstance<Answer.Refused>()
+                    .firstOrNull()
+                    ?.error
+            val names = (namesAnswer as? Answer.Body)?.value.orEmpty()
+            val categoryNames = (categoriesAnswer as? Answer.Body)?.value.orEmpty()
             if (state.value.customerId != customerId) return@launch
             state.value =
                 InsightsState(
@@ -64,15 +72,19 @@ class CustomerInsightsViewModel(
                     assignmentError = (assignment as? Answer.Refused)?.error,
                     recommendations = result,
                     items =
-                    items.mapIndexed { index, item ->
-                        ShownRecommendation(
-                            rank = index + 1,
-                            item = item,
-                            name = names[item.productId] ?: "Product ${item.productId}",
-                            reasons = item.reasons.map { describe(it, categories) }
-                        )
+                    if (dependencyError == null) {
+                        items.mapIndexed { index, item ->
+                            ShownRecommendation(
+                                rank = index + 1,
+                                item = item,
+                                name = names[item.productId] ?: "Product ${item.productId}",
+                                reasons = item.reasons.map { describe(it, categoryNames) }
+                            )
+                        }
+                    } else {
+                        emptyList()
                     },
-                    recommendationsError = (recommendations as? Answer.Refused)?.error
+                    recommendationsError = (recommendations as? Answer.Refused)?.error ?: dependencyError
                 )
         }
     }
@@ -108,17 +120,25 @@ class CustomerInsightsViewModel(
     }
 
     /** One call for every name in the list; the list is at most the limit (10), never over 50. */
-    private suspend fun productNames(ids: List<Int>): Map<Int, String> {
+    private suspend fun productNames(ids: List<Int>): Answer<Map<Int, String>> {
         val answer = call { graph.network.products.listProductsByIds(ids.distinct().take(MAX_IDS).joinToString(",")) }
-        return (answer as? Answer.Body)?.value?.products?.associate { it.productId to it.name }.orEmpty()
+        return when (answer) {
+            is Answer.Body -> Answer.Body(answer.value.products.associate { it.productId to it.name })
+            is Answer.Refused -> answer
+        }
     }
 
-    private suspend fun categories(): Map<Int, String> {
-        categoryNames?.let { return it }
+    private suspend fun categories(): Answer<Map<Int, String>> {
+        categoryNames?.let { return Answer.Body(it) }
         val answer = call { graph.network.categories.listCategories() }
-        val names = (answer as? Answer.Body)?.value?.categories?.associate { it.categoryId to it.name }
-        if (names != null) categoryNames = names
-        return names.orEmpty()
+        return when (answer) {
+            is Answer.Body -> {
+                val names = answer.value.categories.associate { it.categoryId to it.name }
+                categoryNames = names
+                Answer.Body(names)
+            }
+            is Answer.Refused -> answer
+        }
     }
 
     private sealed interface Answer<out T> {

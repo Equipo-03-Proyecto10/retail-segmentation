@@ -40,6 +40,7 @@ private fun example(path: String): String = File("../../../contracts", path).rea
 class InsightsServices : Dispatcher() {
     var assignment = "segments/examples/current-assigned.json"
     var recommendations: String = tenItems()
+    var failingDependency: String? = null
     val productRequests = CopyOnWriteArrayList<RecordedRequest>()
 
     override fun dispatch(request: RecordedRequest): MockResponse {
@@ -49,11 +50,17 @@ class InsightsServices : Dispatcher() {
             "/api/recommendations/v1/recommendations" -> ok(200, recommendations)
             "/api/products/v1/products" -> {
                 productRequests += request
+                if (failingDependency == "products") return error(503, "operation_unavailable")
                 val ids = request.requestUrl!!.queryParameter("ids")!!.split(",").map { it.toInt() }
                 val items = ids.joinToString(",") { product(it) }
                 ok(200, """{"products":[$items],"page_info":{"page":1,"size":50,"total":${ids.size}}}""")
             }
-            "/api/categories/v1/categories" -> ok(200, example("categories/examples/list-categories.json"))
+            "/api/categories/v1/categories" ->
+                if (failingDependency == "categories") {
+                    error(503, "operation_unavailable")
+                } else {
+                    ok(200, example("categories/examples/list-categories.json"))
+                }
             else -> error(404, "not_found")
         }
     }
@@ -151,6 +158,17 @@ class CustomerInsightsViewModelTest {
             ),
             state.items.first().reasons
         )
+    }
+
+    @Test
+    fun anEnrichmentRefusalIsShownInsteadOfInventingProductOrCategoryNames() {
+        for (dependency in listOf("products", "categories")) {
+            services.failingDependency = dependency
+            val state = loaded(CustomerInsightsViewModel(graph))
+
+            assertEquals(dependency, "operation_unavailable", state.recommendationsError?.code)
+            assertTrue(dependency, state.items.isEmpty())
+        }
     }
 
     @Test

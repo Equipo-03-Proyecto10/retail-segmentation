@@ -76,16 +76,14 @@ const initial = (): Customer[] => [
   },
 ];
 
-/** The fake answers with values a test sent (a PATCH, a PUT), so every one is escaped as XML text. */
-const XML_ESCAPES: Record<string, string> = {
-  '<': '&lt;',
-  '>': '&gt;',
-  '&': '&amp;',
-  "'": '&apos;',
-  '"': '&quot;',
-};
+/** The fake answers with values a test sent (a PATCH, a PUT, a query), so every one is escaped as XML text. */
 const xmlText = (value: string | number): string =>
-  String(value).replace(/[<>&'"]/g, (ch) => XML_ESCAPES[ch]);
+  String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
 
 const customerBody = (c: Customer): string =>
   `<customer_id>${xmlText(c.id)}</customer_id><name>${xmlText(c.name)}</name>${
@@ -178,7 +176,7 @@ test.beforeAll(async () => {
         return reply(r.status, example(r.service, r.file));
       }
       const mine = (id: string): Customer | undefined => db.find((c) => c.id === id);
-      const withId = (xml: string, id: string): string => xml.replaceAll(EXAMPLE_ID, id);
+      const withId = (xml: string, id: string): string => xml.replaceAll(EXAMPLE_ID, xmlText(id));
 
       if (path === '/api/sales/v1/channels') return reply(200, example('sales', 'list-channels'));
       if (path === '/api/categories/v1/categories')

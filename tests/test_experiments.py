@@ -558,6 +558,26 @@ def test_an_incomplete_setup_is_refused_with_field_errors(
     create.assert_not_called()
 
 
+def test_an_unknown_control_arm_choice_says_why_on_the_form(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#595: control_group=WEIRD answered 400 with no text, because the
+    control arm was the one field that never showed its error."""
+    _wire_pages(monkeypatch, _experiment())
+    create = Mock()
+    monkeypatch.setattr(service, "create_experiment", create)
+    client = app.test_client()
+    _sign_in(client, "MARKETING")
+
+    response = client.post("/experiments/new", data={**FORM, "control_group": "WEIRD"})
+
+    assert response.status_code == 400
+    assert "Choose whether this experiment has a control." in response.get_data(
+        as_text=True
+    )
+    create.assert_not_called()
+
+
 def test_a_complete_setup_is_created(
     app: Flask, monkeypatch: pytest.MonkeyPatch
 ) -> None:

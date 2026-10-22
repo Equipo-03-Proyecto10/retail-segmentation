@@ -5,6 +5,9 @@ import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.net.CurrentUser
 import online.maxthecoder.mosaiq.floor.net.Network
 import online.maxthecoder.mosaiq.floor.net.SignInRequest
+import online.maxthecoder.mosaiq.floor.session.InMemorySessionStore
+import online.maxthecoder.mosaiq.floor.session.Profile
+import online.maxthecoder.mosaiq.floor.session.SessionStore
 import retrofit2.Response
 
 /** What a sign-in or a profile read came to. */
@@ -31,7 +34,8 @@ sealed interface SessionResult {
 class SessionRepository(
     private val network: Network,
     private val tokens: TokenStore,
-    private val deviceLabel: String
+    private val deviceLabel: String,
+    private val session: SessionStore = InMemorySessionStore()
 ) {
     val isSignedIn: Boolean get() = tokens.read() != null
 
@@ -49,26 +53,43 @@ class SessionRepository(
     suspend fun currentUser(): SessionResult {
         val response =
             call { network.users.getCurrentUser() }
-                ?: return SessionResult.Failed(ApiError.unreachable(null))
+                ?: return offline()
         val user = response.body()
         if (!response.isSuccessful || user == null) {
             val error = ApiError.from(response)
             // A 401 after a refresh that could not run is the refresh's story.
             val shown = if (error.status == 401) network.authenticator.lastFailure ?: error else error
-            if (tokens.read() == null || shown.code in SIGNED_OUT) tokens.clear()
+            if (tokens.read() == null || shown.code in SIGNED_OUT) {
+                tokens.clear()
+                session.signedOut()
+            }
             return SessionResult.Failed(friendly(shown))
         }
         if (user.roleCode !in FLOOR_ROLES) {
             signOut()
             return SessionResult.RoleRefused(user.roleCode)
         }
+        // The floor-write queue sends a row only under this user's session.
+        session.signedIn(Profile(user.userId, user.name, user.roleCode))
         return SessionResult.SignedIn(user)
+    }
+
+    /**
+     * No answer from users-service. With a session on this phone, the floor
+     * stays open as the user it last confirmed, so queued writes and the outbox
+     * stay reachable offline; the services check every request anyway.
+     */
+    private fun offline(): SessionResult {
+        val known = session.profile()
+        if (tokens.read() == null || known == null) return SessionResult.Failed(ApiError.unreachable(null))
+        return SessionResult.SignedIn(CurrentUser(known.userId, known.name, known.role))
     }
 
     /** Ends the session at auth-service, then forgets it here whatever the answer. */
     suspend fun signOut() {
         if (tokens.read() != null) call { network.auth.deleteCurrentSession() }
         tokens.clear()
+        session.signedOut()
     }
 
     private fun friendly(error: ApiError): ApiError = when {

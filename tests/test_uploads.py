@@ -1,5 +1,7 @@
 """Regression checks for the image-upload PR and its integration hotfix."""
 
+import struct
+import zlib
 from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
@@ -11,10 +13,33 @@ from werkzeug.datastructures import FileStorage
 from web.app import create_app
 from web.config import Config
 from web.services.uploads import (
+    MAX_IMAGE_SIDE_PIXELS,
     UploadRejected,
     delete_product_image,
     save_product_image,
 )
+
+
+def _chunk(kind: bytes, body: bytes) -> bytes:
+    return (
+        struct.pack(">I", len(body))
+        + kind
+        + body
+        + struct.pack(">I", zlib.crc32(kind + body))
+    )
+
+
+def _png(width: int = 1, height: int = 1, *, trailer: bytes = b"") -> bytes:
+    """A well-formed one-pixel-row PNG, with the IHDR declaring any size."""
+    header = struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0)
+    pixels = zlib.compress(b"\x00\x00")
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + _chunk(b"IHDR", header)
+        + _chunk(b"IDAT", pixels)
+        + _chunk(b"IEND", b"")
+        + trailer
+    )
 
 
 @pytest.fixture
@@ -34,7 +59,7 @@ def config(tmp_path):
     "mime,content",
     [
         ("image/jpeg", b"\xff\xd8\xffimage bytes"),
-        ("image/png", b"\x89PNG\r\n\x1a\nimage bytes"),
+        ("image/png", _png()),
         ("image/webp", b"RIFF\x04\x00\x00\x00WEBPimage bytes"),
     ],
 )
@@ -83,7 +108,7 @@ def test_image_route_uses_same_relative_directory_as_storage(
     config = replace(config, upload_dir="uploads")
     saved = save_product_image(
         FileStorage(
-            BytesIO(b"\x89PNG\r\n\x1a\nimage"),
+            BytesIO(_png()),
             filename="a.png",
             content_type="image/png",
         ),
@@ -96,7 +121,7 @@ def test_image_route_uses_same_relative_directory_as_storage(
         session.update(user_id="u-1", role_code="ADMIN", name="Admin")
     response = client.get(f"/admin/products/image/{saved.relative_path}")
     assert response.status_code == 200
-    assert response.data == b"\x89PNG\r\n\x1a\nimage"
+    assert response.data == _png()
 
 
 def test_rejected_creation_does_not_insert_product(config, monkeypatch):
@@ -124,3 +149,56 @@ def test_rejected_creation_does_not_insert_product(config, monkeypatch):
     assert response.status_code == 400
     create.assert_not_called()
     assert b'name="product_id"' in response.data
+
+
+def _save_png(content: bytes, config) -> None:
+    save_product_image(
+        FileStorage(BytesIO(content), filename="a.png", content_type="image/png"),
+        config,
+    )
+
+
+def test_a_png_at_the_size_limit_is_accepted(config, tmp_path):
+    _save_png(_png(MAX_IMAGE_SIDE_PIXELS, MAX_IMAGE_SIDE_PIXELS), config)
+
+    assert len(list(tmp_path.iterdir())) == 1
+
+
+@pytest.mark.parametrize(
+    "width,height",
+    [(60000, 60000), (MAX_IMAGE_SIDE_PIXELS + 1, 1), (1, MAX_IMAGE_SIDE_PIXELS + 1)],
+)
+def test_a_png_declaring_huge_dimensions_is_refused(config, tmp_path, width, height):
+    # #595: a few hundred bytes that declare 60000×60000 pixels.
+    with pytest.raises(UploadRejected, match="pixels or fewer"):
+        _save_png(_png(width, height), config)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_png_with_html_appended_is_refused(config, tmp_path):
+    # #595: a valid image followed by a page; served as image/png it runs
+    # nothing today, but no later step should ever receive it.
+    trailer = b"<html><script>alert(1)</script></html>"
+
+    with pytest.raises(UploadRejected, match="extra data after its end"):
+        _save_png(_png(trailer=trailer), config)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        b"\x89PNG\r\n\x1a\nimage bytes",
+        _png()[:-12],
+        _png()[:26] + b"\x01" + _png()[27:],
+        b"\x89PNG\r\n\x1a\n" + _chunk(b"IDAT", b"") + _chunk(b"IEND", b""),
+    ],
+    ids=["no-chunks", "no-iend", "bad-crc", "ihdr-not-first"],
+)
+def test_a_damaged_png_is_refused(config, tmp_path, content):
+    with pytest.raises(UploadRejected, match="damaged or incomplete"):
+        _save_png(content, config)
+
+    assert list(tmp_path.iterdir()) == []

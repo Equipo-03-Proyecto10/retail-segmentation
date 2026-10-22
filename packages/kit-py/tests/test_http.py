@@ -633,6 +633,34 @@ def test_xml_xsi_nil_reads_as_null(contracts_dir: Path) -> None:
     assert value["phone"] == "1"
 
 
+@pytest.mark.parametrize(
+    ("pattern", "accepted", "refused"),
+    [
+        (r"^[^@\s]+@[^@\s]+$", "x@example.com", "x@example.com\n"),
+        (r"^\d+\.\d{2}$", "1.00", "1.00\n"),
+        # An escaped `$` and a `$` inside a class stay literal dollars.
+        (r"^a\$b$", "a$b", "a$b\n"),
+        (r"^[$]+$", "$$", "$$\n"),
+    ],
+)
+def test_a_pattern_ends_where_ecma_262_ends(
+    contracts_dir: Path, pattern: str, accepted: str, refused: str
+) -> None:
+    """#594: Python's `$` also matches before a final newline; JSON Schema's,
+    like kit-rs's, does not."""
+    from mosaiq_kit.contracts import Contract
+
+    contract = Contract(contracts_dir, "kit-example")
+    schema = {
+        "type": "object",
+        "properties": {"value": {"type": "string", "pattern": pattern}},
+    }
+    contract.validate({"value": accepted}, schema)
+    with pytest.raises(ApiError) as error:
+        contract.validate({"value": refused}, schema)
+    assert error.value.details == [{"field": "value", "code": "invalid_format"}]
+
+
 def test_xml_omitted_required_list_reads_as_empty(contracts_dir: Path) -> None:
     from mosaiq_kit.contracts import Contract
 

@@ -57,6 +57,24 @@ def _attempt(
     return run
 
 
+def _transition_note(source: str, action: str, context: Context) -> str | None:
+    """Where campaigns-service answers a refused move with a code, not a message."""
+    target = ACTIONS[action]
+    if target in TRANSITIONS[source]:
+        if target == "ACTIVE":
+            return (
+                "campaigns-service answers 409 campaign_ended where the web raises"
+                " InvalidTransition with a sentence: the draft ended before the"
+                " business date."
+            )
+        return None
+    return (
+        "campaigns-service answers 409 illegal_transition where the web raises"
+        " InvalidTransition with a sentence. It takes the target status `to` and"
+        " an `expected_status`, not the web's action name."
+    )
+
+
 def _transition_case(source: str, action: str, context: Context) -> Case:
     campaign_id = SEEDED[source]
     return Case(
@@ -73,6 +91,7 @@ def _transition_case(source: str, action: str, context: Context) -> Case:
             lambda c: transition(c, campaign_id, action, today=context.today),
             lambda c: {"status": _status(c, campaign_id)},
         ),
+        _transition_note(source, action, context),
     )
 
 
@@ -135,6 +154,7 @@ def build(connection: psycopg.Connection, context: Context) -> list[Case]:
                     for source, targets in sorted(TRANSITIONS.items())
                 },
             },
+            None,
         )
     ]
     cases += [
@@ -163,6 +183,8 @@ def build(connection: psycopg.Connection, context: Context) -> list[Case]:
             "edit-active-campaign",
             {"call": "update_draft", "campaign_id": 2, **_draft_input(edit)},
             _attempt(lambda c: update_draft(c, 2, edit), lambda c: {}),
+            "campaigns-service answers 409 campaign_not_draft where the web raises"
+            " InvalidTransition with a sentence.",
         ),
         Case(
             "validate-end-before-start",
@@ -181,11 +203,15 @@ def build(connection: psycopg.Connection, context: Context) -> list[Case]:
                     ends_on="2099-01-01",
                 )[1]
             ),
+            "campaigns-service answers 422 ends_before_start where the web's form"
+            " validation returns a message for the ends_on field.",
         ),
         Case(
             "edit-draft-end-before-start",
             {"call": "update_draft", "campaign_id": 1, **_draft_input(backwards)},
             _attempt(lambda c: update_draft(c, 1, backwards), lambda c: {}),
+            "campaigns-service answers 422 ends_before_start where the web raises"
+            " CampaignRefused with a message for the ends_on field.",
         ),
         Case(
             "activate-draft-with-no-experiment",
@@ -208,6 +234,9 @@ def build(connection: psycopg.Connection, context: Context) -> list[Case]:
                 "today": context.today.isoformat(),
             },
             _activate_new_draft(True, context),
+            "campaigns-service answers 409 experiment_not_ready, refused by"
+            " trg_campaign_activation_guard (E-13), where the web raises"
+            " InvalidTransition with a sentence from activation_refusal.",
         ),
     ]
     return cases

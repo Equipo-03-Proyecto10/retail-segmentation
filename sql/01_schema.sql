@@ -2074,6 +2074,72 @@ GRANT USAGE ON SCHEMA checkins TO svc_checkins;
 GRANT SELECT, INSERT ON checkins.store_check_in, checkins.check_in_review TO svc_checkins;
 -- END BOUNDARY check-ins
 
+-- BEGIN BOUNDARY campaigns
+-- campaigns-service (F14-28, ADR-0034, ADR-0045): the campaign state machine,
+-- ported from web/services/campaigns.py and pinned to it by golden fixtures.
+-- It adds no table and no api_ object. The table, its seed and its audit
+-- trigger stay as they are, and the web remains a legacy co-writer (E-09).
+-- Idempotent: an operator re-applies it.
+
+-- E-13: RN-24 reads the web-only experiment tables, which no service may
+-- read. A service session (session_user, which SET ROLE cannot change) that
+-- activates a campaign is refused while an attached experiment is not ready:
+-- no treatment group, or no control and a treatment count other than two.
+-- This is the test of activation_refusal in web/services/experiments.py. It
+-- does not fire for the web's own sessions, which run that check themselves.
+-- The function runs as definer_guard, whose only privilege on these tables is
+-- SELECT, so svc_campaigns gains none. The refusal is a check_violation under
+-- its own constraint name, which the service maps to 409.
+CREATE OR REPLACE FUNCTION fn_campaign_activation_guard() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $guard$
+BEGIN
+    IF EXISTS (
+        SELECT FROM public.experiment AS e
+        WHERE e.campaign_id = NEW.campaign_id
+          AND (
+              NOT EXISTS (
+                  SELECT FROM public.experiment_group AS g
+                  WHERE g.experiment_id = e.experiment_id AND g.kind = 'TREATMENT'
+              )
+              OR (
+                  NOT EXISTS (
+                      SELECT FROM public.experiment_group AS g
+                      WHERE g.experiment_id = e.experiment_id AND g.kind = 'CONTROL'
+                  )
+                  AND (
+                      SELECT count(*) FROM public.experiment_group AS g
+                      WHERE g.experiment_id = e.experiment_id AND g.kind = 'TREATMENT'
+                  ) <> 2
+              )
+          )
+    ) THEN
+        RAISE EXCEPTION 'campaign % has an experiment that is not ready', NEW.campaign_id
+            USING ERRCODE = 'check_violation',
+                  CONSTRAINT = 'experiment_not_ready';
+    END IF;
+    RETURN NEW;
+END
+$guard$;
+ALTER FUNCTION fn_campaign_activation_guard() OWNER TO definer_guard;
+REVOKE EXECUTE ON FUNCTION fn_campaign_activation_guard() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_campaign_activation_guard
+BEFORE UPDATE OF status ON public.campaign
+FOR EACH ROW
+WHEN (NEW.status = 'ACTIVE' AND session_user = 'svc_campaigns')
+EXECUTE FUNCTION fn_campaign_activation_guard();
+
+GRANT SELECT ON public.experiment, public.experiment_group TO definer_guard;
+
+-- svc_campaigns writes campaigns and never deletes one (RN-15). The label
+-- foreign key into segment_label is checked as the parent's owner (E-11), so
+-- it needs no privilege there.
+GRANT SELECT, INSERT, UPDATE ON public.campaign TO svc_campaigns;
+-- END BOUNDARY campaigns
+
 -- BEGIN APPLICATION ROLE VERIFICATION
 -- F1-05 (#53). Opt-in acceptance checks, kept here because even a rejected
 -- DROP belongs in the only file allowed to contain table DDL. Normal schema

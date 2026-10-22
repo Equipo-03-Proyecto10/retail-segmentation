@@ -161,3 +161,8 @@ svc_segments,api_segments,USAGE
 svc_recommendations,api_segments,USAGE
 svc_segments,api_segments.current_label_v1,SELECT
 svc_recommendations,api_segments.current_label_v1,SELECT
+svc_campaigns,public.campaign,SELECT
+svc_campaigns,public.campaign,INSERT
+svc_campaigns,public.campaign,UPDATE
+definer_guard,public.experiment,SELECT
+definer_guard,public.experiment_group,SELECT

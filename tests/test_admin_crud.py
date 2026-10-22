@@ -582,3 +582,82 @@ def test_creating_a_second_admin_role_shows_why_on_the_form(
     )
     assert response.status_code == 409
     assert "only role 1 may hold it" in response.get_data(as_text=True)
+
+
+# ---------- an uploaded image never outlives a failed write (#595) ----------
+
+_PRODUCT_FORM = {
+    "product_id": "9002",
+    "sku": "SKU-F5-02",
+    "name": "Image product",
+    "category_id": "1",
+    "list_price": "10.00",
+}
+
+
+def _upload(monkeypatch) -> Mock:
+    """A saved upload, and the deletion the route must call for it."""
+    monkeypatch.setattr(admin, "list_all_categories", Mock(return_value=[]))
+    monkeypatch.setattr(
+        admin,
+        "save_product_image",
+        Mock(return_value=Mock(relative_path="products/new.png")),
+    )
+    delete = Mock()
+    monkeypatch.setattr(admin, "delete_product_image", delete)
+    return delete
+
+
+def _with_image(data: dict) -> dict:
+    from io import BytesIO
+
+    return {**data, "image": (BytesIO(b"\x89PNG\r\n\x1a\n"), "new.png")}
+
+
+def test_a_failed_create_removes_the_uploaded_image(
+    config: Config, monkeypatch
+) -> None:
+    app = create_app(config, database_connector=Mock(return_value=MagicMock()))
+    app.config["PROPAGATE_EXCEPTIONS"] = False
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session.update(user_id="u-1", role_code="ADMIN", name="Admin")
+    delete = _upload(monkeypatch)
+    monkeypatch.setattr(
+        admin, "create_product", Mock(side_effect=RuntimeError("database down"))
+    )
+
+    response = client.post(
+        "/admin/products/new",
+        data=_with_image(_PRODUCT_FORM),
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 500
+    delete.assert_called_once_with("products/new.png", ANY)
+
+
+def test_a_failed_edit_removes_the_new_image_and_keeps_the_old_one(
+    config: Config, monkeypatch
+) -> None:
+    app = create_app(config, database_connector=Mock(return_value=MagicMock()))
+    app.config["PROPAGATE_EXCEPTIONS"] = False
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session.update(user_id="u-1", role_code="ADMIN", name="Admin")
+    delete = _upload(monkeypatch)
+    monkeypatch.setattr(
+        admin, "get_product", Mock(return_value=Mock(image_path="products/old.png"))
+    )
+    monkeypatch.setattr(
+        admin, "update_product", Mock(side_effect=RuntimeError("database down"))
+    )
+
+    response = client.post(
+        "/admin/products/9002/edit",
+        data=_with_image({**_PRODUCT_FORM, "is_active": "on"}),
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 500
+    delete.assert_called_once_with("products/new.png", ANY)

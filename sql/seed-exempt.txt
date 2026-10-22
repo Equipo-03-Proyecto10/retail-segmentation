@@ -59,3 +59,9 @@ preferences_events.outbox
 # users-service relays access changes from here and purges them after seven
 # days: runtime state, empty in a fresh database, never seed data (F14-04).
 users_events.outbox
+
+# segments-service relays stream:segments.v1.run_recorded from here and
+# purges relayed rows after seven days: runtime state, never seed data. The
+# capture trigger on segmentation_run passes the seed's own runs through it
+# once, as every writer's do (F14-20).
+segments_events.outbox

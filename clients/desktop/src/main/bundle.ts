@@ -51,3 +51,8 @@ export function servicesForRole(bundle: Bundle, role: string): { name: string; r
     bundle.operations.some((o) => o.service === s.name && o.roles?.includes(role)),
   );
 }
+
+/** operationIds the role may call, across every service. */
+export function operationsForRole(bundle: Bundle, role: string): string[] {
+  return [...new Set(bundle.operations.filter((o) => o.roles?.includes(role)).map((o) => o.operationId))];
+}

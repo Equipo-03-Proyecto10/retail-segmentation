@@ -56,13 +56,17 @@ export class XsdValidator {
   }
 }
 
+const REPEATED = new Set(['Products.Product', 'Categories.Category']);
+
 const parser = new XMLParser({
   removeNSPrefix: true,
   parseTagValue: false,
   parseAttributeValue: false,
   ignoreAttributes: true,
   processEntities: false,
-  isArray: (name) => name === 'details',
+  // Repeated elements are arrays even when a page holds one. Matched by path,
+  // so a single <Product> root stays an object.
+  isArray: (name, jpath) => name === 'details' || REPEATED.has(String(jpath)),
 });
 
 /** Parses a document that already passed the namespace and XSD checks. */
@@ -72,13 +76,31 @@ export function parseXml(xml: string): Record<string, unknown> {
 
 const builder = new XMLBuilder({
   format: false,
+  suppressEmptyNode: true,
+  suppressBooleanAttributes: false,
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
   processEntities: true,
 });
 
+const XSI = 'http://www.w3.org/2001/XMLSchema-instance';
+
+/** A request field: text, or null for an explicit xsi:nil (for example, make a category a root). */
+export type FieldValue = string | null;
+
 /** Builds a request body; scalar fields only, in the given order. */
-export function buildXml(root: string, namespace: string, fields: Record<string, string>): string {
-  const body = builder.build({ [root]: { '@_xmlns': namespace, ...fields } }) as string;
+export function buildXml(root: string, namespace: string, fields: Record<string, FieldValue>): string {
+  const element: Record<string, unknown> = { '@_xmlns': namespace };
+  let nil = false;
+  for (const [name, value] of Object.entries(fields)) {
+    if (value === null) {
+      element[name] = { '@_xsi:nil': 'true' };
+      nil = true;
+    } else {
+      element[name] = value;
+    }
+  }
+  if (nil) element['@_xmlns:xsi'] = XSI;
+  const body = builder.build({ [root]: element }) as string;
   return `<?xml version="1.0" encoding="UTF-8"?>${body}`;
 }

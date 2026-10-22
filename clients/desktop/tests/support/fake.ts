@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { loadBundle } from '../../src/main/bundle';
 import { Backoffice, type Protection, type SealedTokens, type TokenVault } from '../../src/main/backoffice';
 import { MemorySealer } from '../../src/main/sealer';
@@ -103,4 +105,11 @@ export function makeOffice(
 ): { office: Backoffice; seen: Seen[]; vault: MemoryVault } {
   const { transport, seen } = makeTransport(responder);
   return { office: new Backoffice(bundle, transport, vault, 'test device', now), seen, vault };
+}
+
+const CONTRACTS = new URL('../../../../contracts', import.meta.url).pathname;
+
+/** A recorded example from contracts/<service>/examples/, read from disk so tests never retype it. */
+export function example(service: string, name: string): string {
+  return readFileSync(join(CONTRACTS, service, 'examples', `${name}.xml`), 'utf8');
 }

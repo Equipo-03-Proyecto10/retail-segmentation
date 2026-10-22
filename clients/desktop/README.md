@@ -5,8 +5,8 @@ response against that service's own XSD, and signs in through auth-service
 ([ADR-0041](../../docs/adr/0041-android-and-electron-clients-run-different-processes-over-different-formats.md),
 [ADR-0035](../../docs/adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md),
 [ADR-0036](../../docs/adr/0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md)).
-This is the F16-01 foundation: shell, secure window, preload bridge, XML transport, sign-in and
-role-gated screens. Feature screens come in later stories.
+F16-01 is the foundation: shell, secure window, preload bridge, XML transport, sign-in and
+role-gated screens. F16-02 adds the first feature screens, Products and Categories (see below).
 
 ## Run it
 
@@ -47,9 +47,15 @@ being ignored. `MOSAIQ_DESKTOP_CONFIG_DIR` overrides the directory (the window t
 - Every window: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, `webSecurity` left
   on; a CSP with no remote and no inline script; `will-navigate` cancelled; every new window denied;
   every permission request denied. The one window factory is `src/main/window.ts`.
-- The screens reach the network only through the named operations of `src/preload/preload.ts`
-  (`getState`, `signIn`, `signOut`, `probeService`, `onStateChange`). There is no generic fetch and no
-  `ipcRenderer`.
+- The screens reach the network only through the named operations of `src/preload/preload.ts`:
+  - session: `getState`, `signIn`, `signOut`, `probeService`, `onStateChange`;
+  - products: `listProducts`, `getProduct`, `createProduct`, `updateProduct`, `deactivateProduct`;
+  - categories: `categoryTree`, `listCategories`, `categoryDescendants`, `createCategory`,
+    `updateCategory`, `deleteCategory`.
+
+  There is no generic fetch and no `ipcRenderer`. The main process checks every value a screen sends
+  (`src/main/catalog.ts`) before it builds a path or a body from it.
+
 - Tokens live in the main process only, and only as sealed bytes (see Token storage below).
 - A response is checked in the main process before it is parsed: its root namespace must be the called
   service's (or `common/v1` for an `Error`) and it must validate against the bundled XSD
@@ -76,6 +82,22 @@ Limits: a token is plain text for the moment a request is built and sent, since 
 real value, and JavaScript cannot wipe a string. In `memory_only` mode the key sits in the same process,
 so sealing keeps tokens out of casual memory dumps and swap scans, not away from code running inside the
 app.
+
+## Products and categories (F16-02)
+
+- **Products** lists `GET /v1/products` with its filters (`q`, `sku`, `category_id`, `active`) and
+  paging, and shows one product. Each category name is read from categories-service, never from
+  products-service. An `ADMIN` creates (`POST`), edits (`PATCH` with only the changed fields) and
+  deactivates (`PATCH` of `is_active` to false). There is no delete: products are retired (RN-11).
+- **Categories** builds the tree from every page of `GET /v1/categories` and shows a category's
+  subtree from `.../descendants`. An `ADMIN` creates, edits (choosing "No parent" sends
+  `xsi:nil`) and deletes.
+- A write control is drawn only when the signed-in role may call that operation, per the
+  contracts' `x-mosaiq-roles` (`operations` in the signed-in state). Every refusal is shown as
+  returned: code, message, correlation id, and each `details` entry next to its field. After a
+  refused category change the tree is reloaded, so what is shown is what the service still has.
+- The window tests (`tests/window/catalog.spec.ts`) answer with the recorded examples in
+  `contracts/products/examples/` and `contracts/categories/examples/`, read from disk.
 
 ## Checks
 

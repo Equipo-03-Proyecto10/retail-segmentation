@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { ErrorView } from '../shared/api';
 import { commonNamespace, serviceForResource, serviceNamespace, type Bundle } from './bundle';
-import { buildXml, parseXml, rootElement, type XsdValidator } from './xml';
+import { buildXml, parseXml, rootElement, type FieldValue, type XsdValidator } from './xml';
 
 export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -10,7 +10,7 @@ export interface CallOptions {
   /** Path starting with /v1/<resource>; the service is derived from the registry. */
   path: string;
   /** Root element and fields of the XML request body, when there is one. */
-  body?: { root: string; fields: Record<string, string> };
+  body?: { root: string; fields: Record<string, FieldValue> };
   bearer?: string;
 }
 
@@ -33,6 +33,16 @@ export class ContractDefect extends Error {
     readonly reason: string,
   ) {
     super(`contract defect: ${service} (${correlationId}): ${reason}`);
+  }
+}
+
+/** A request body that fails the service's own XSD. Nothing was sent. */
+export class InvalidRequest extends Error {
+  constructor(
+    readonly service: string,
+    readonly errors: string[],
+  ) {
+    super(`request body for ${service} fails its schema: ${errors.join('; ')}`);
   }
 }
 
@@ -72,8 +82,7 @@ export class Transport {
     if (options.body) {
       body = buildXml(options.body.root, ns, options.body.fields);
       const check = await this.validator.validate(body, ns);
-      if (!check.valid)
-        throw new Error(`request body for ${service} fails its schema: ${check.errors.join('; ')}`);
+      if (!check.valid) throw new InvalidRequest(service, check.errors);
       headers['Content-Type'] = 'application/xml';
     }
     if (options.bearer !== undefined) headers.Authorization = `Bearer ${options.bearer}`;

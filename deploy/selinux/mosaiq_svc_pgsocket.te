@@ -1,0 +1,41 @@
+module mosaiq_svc_pgsocket 1.1;
+
+# F18-01 (issue #448), ADR-0040: a service container reaches PostgreSQL only
+# through the read-only mount of /run/postgresql, as its own svc_* role over
+# scram-sha-256 (deploy/postgresql/README.md). With Docker's selinux-enabled,
+# a container runs as container_t, and the targeted policy denies it the
+# socket's directory (postgresql_var_run_t): the connection fails with EACCES.
+#
+# PGDG installs the server as /usr/pgsql-18/bin/postgres, which the targeted
+# policy labels bin_t, so the server runs as unconfined_service_t rather than
+# postgresql_t. The connectto rule therefore names both: the second keeps
+# working if the server is ever confined. A container reaches only the sockets
+# mounted into it, and /run/postgresql is the only one mounted, so the
+# unconfined_service_t rule opens no other service in practice.
+#
+# This module grants exactly that path, and nothing else: search the socket's
+# directory, write to the socket file, and connect to the server. It grants no
+# read of PostgreSQL's data or configuration, and no TCP access. Authentication
+# is still pg_hba's: a container's UID maps to no host account, so the peer
+# rule refuses it, and only the svc_* lines with their passwords let one in.
+#
+# Build and load on the instance, as root (ADR-0040: never a :z relabel):
+#   checkmodule -M -m -o mosaiq_svc_pgsocket.mod mosaiq_svc_pgsocket.te
+#   semodule_package -o mosaiq_svc_pgsocket.pp -m mosaiq_svc_pgsocket.mod
+#   semodule -i mosaiq_svc_pgsocket.pp
+# Remove with: semodule -r mosaiq_svc_pgsocket
+
+require {
+	type container_t;
+	type postgresql_t;
+	type postgresql_var_run_t;
+	type unconfined_service_t;
+	class dir { getattr search };
+	class sock_file { getattr write };
+	class unix_stream_socket connectto;
+}
+
+allow container_t postgresql_var_run_t:dir { getattr search };
+allow container_t postgresql_var_run_t:sock_file { getattr write };
+allow container_t postgresql_t:unix_stream_socket connectto;
+allow container_t unconfined_service_t:unix_stream_socket connectto;

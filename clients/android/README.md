@@ -30,6 +30,14 @@ The debug build calls the gateway at `http://10.0.2.2:8080/`, which is how the e
 
 The unit tests run on the JVM against MockWebServer. They cover sign-in, `users/me`, the role gate, single-flight refresh, a reused refresh token, a revoked session, an unavailable auth-service and sign-out. They also guard the rules below.
 
+The offline sale queue and the RECO_CLICK queue also run as instrumented tests, on a device or emulator, with real Room files and WorkManager workers:
+
+```bash
+./gradlew connectedDebugAndroidTest
+```
+
+They start MockWebServer on the device's loopback, so they need the debug network security config described below. Robolectric does not apply that policy, so only a device run checks it.
+
 ## What it promises
 
 - **One owner per resource.** Each call goes to `<base>/api/<service>/v1/...` at the service that [`contracts/registry.yaml`](../../contracts/registry.yaml) registers the resource to. `net/Services.kt` is the only place a prefix is written, and a test checks every path against the registry.
@@ -44,6 +52,6 @@ The unit tests run on the JVM against MockWebServer. They cover sign-in, `users/
   - **Temporary failures:** a 503 keeps the tokens and asks to try again.
 - **Roles.** Only `STORE_MANAGER` and `ADMIN` get past sign-in. Any other role is signed out at once with a plain message. The gate is for usability only: the services refuse those roles anyway.
 - **Errors.** Every refusal shows its `code`, its `message` and the request's correlation id.
-- **Network security.** Release builds allow HTTPS only. Debug builds also allow cleartext to `10.0.2.2`, and nothing else (`src/debug/res/xml/network_security_config.xml`).
+- **Network security.** Release builds allow HTTPS only. Debug builds also allow cleartext to `10.0.2.2` and to the device's own loopback (`localhost`, `127.0.0.1`), where the instrumented tests run MockWebServer, and nothing else (`src/debug/res/xml/network_security_config.xml`).
 
 Every dependency version is pinned in `gradle/libs.versions.toml`.

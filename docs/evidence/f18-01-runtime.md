@@ -120,7 +120,7 @@ Since then, the only denial on the instance is `systemd-userdbd` mapping an
 `etc_t` file, which is CentOS's own and unrelated.
 
 **Still open.** PostgreSQL itself runs unconfined, since PGDG's binaries carry
-no `postgresql_exec_t` label. That predates F18-01 and is a separate change.
+no `postgresql_exec_t` label. That predates F18-01, and is tracked in #694.
 
 ## Units and restarts
 
@@ -217,8 +217,8 @@ check-redis exit=1
 `pipeline(transaction=True)`.
 [ADR-0037](../adr/0037-two-redis-instances-carry-sessions-caches-limits-and-inter-service-streams.md)
 allows `MULTI` to `svc_auth` alone. The ACL is the committed one from #477, so
-the defect is older than F18-01, which only ran the check. It is tracked as its
-own issue. No other line of the check failed.
+the defect is older than F18-01, which only ran the check. It is tracked in
+#693. No other line of the check failed.
 
 ## What was not done
 
@@ -229,4 +229,4 @@ own issue. No other line of the check failed.
   probes and the outbox relays. Memory under load is not measured
   ([f18-01-memory.md](f18-01-memory.md)).
 - **PostgreSQL unconfined.** That is the instance's state before F18-01 (see
-  above).
+  above, and #694).

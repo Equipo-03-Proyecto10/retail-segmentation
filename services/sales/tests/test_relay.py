@@ -136,7 +136,10 @@ def test_relay_purges_rows_relayed_more_than_seven_days_ago(
         (STREAM, "UPDATE", "old", 9, 8),
     ).fetchone()[0]
     build_app(relay=True)
-    deadline = time.monotonic() + 5
+    # The relay's first pass waits up to 5 s for a wake-up before it polls and
+    # purges, and this row was inserted before it listened, so none comes. A
+    # failed pass retries 1 s later (#705). Allow for both, with room.
+    deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
         if (
             owner.execute(

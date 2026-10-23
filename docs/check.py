@@ -18,6 +18,14 @@ TABLE_COUNT_DOCUMENTS = (
     Path("docs/architecture/application.d2"),
 )
 
+README = Path("README.md")
+ARCHITECTURE_DIR = Path("docs/architecture")
+
+# [text](target) and ![alt](target); the target ends at whitespace or ")".
+_MARKDOWN_LINK = re.compile(r"!?\[[^\]]*\]\((?P<target><[^>]+>|[^)\s]+)[^)]*\)")
+_CODE_FENCE = re.compile(r"^[ \t]*(```|~~~)")
+_EXTERNAL = re.compile(r"^(?:[a-z][a-z0-9+.-]*:|//|#)", re.IGNORECASE)
+
 _RULE_HEADING = re.compile(r"^### (?P<rule>RN-\d+[a-z]?)\s+—", re.MULTILINE)
 _TABLE_COUNT = re.compile(r"(?<!\d)(?P<count>\d+)[ \t]+tables\b", re.IGNORECASE)
 _ENTITY_SECTION = re.compile(
@@ -83,6 +91,47 @@ def _data_model_tables(data_model: str, errors: list[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(tables))
 
 
+def _relative_links(text: str) -> list[tuple[int, str]]:
+    """Every relative link target outside code fences, with its line number."""
+    links = []
+    fenced = False
+    for number, line in enumerate(text.splitlines(), start=1):
+        if _CODE_FENCE.match(line):
+            fenced = not fenced
+            continue
+        if fenced:
+            continue
+        for match in _MARKDOWN_LINK.finditer(line):
+            target = match.group("target").strip("<>")
+            if target and not _EXTERNAL.match(target):
+                links.append((number, target))
+    return links
+
+
+def _check_links(root: Path, errors: list[str]) -> int:
+    """Every relative link in README.md and docs/architecture/*.md must resolve."""
+    documents = [README] if (root / README).is_file() else []
+    architecture = root / ARCHITECTURE_DIR
+    if architecture.is_dir():
+        documents += sorted(
+            path.relative_to(root) for path in architecture.glob("*.md")
+        )
+    checked = 0
+    for document in documents:
+        text = _read(root, document, errors)
+        for line, target in _relative_links(text):
+            checked += 1
+            path = target.split("#", 1)[0].split("?", 1)[0]
+            if not path:
+                continue
+            resolved = (root / document).parent / path
+            if not resolved.exists():
+                errors.append(
+                    f"{document}:{line} links to {target}, which does not exist"
+                )
+    return checked
+
+
 def check(root: Path) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     report: list[str] = []
@@ -138,6 +187,8 @@ def check(root: Path) -> tuple[list[str], list[str]]:
                     f"{SCHEMA} creates {schema_count}"
                 )
     report.append(f"Documented table counts: {', '.join(stated_counts)}")
+
+    report.append(f"Relative links checked: {_check_links(root, errors)}")
     return errors, report
 
 

@@ -1,4 +1,4 @@
-module mosaiq_svc_pgsocket 1.1;
+module mosaiq_svc_pgsocket 1.2;
 
 # F18-01 (issue #448), ADR-0040: a service container reaches PostgreSQL only
 # through the read-only mount of /run/postgresql, as its own svc_* role over
@@ -6,12 +6,11 @@ module mosaiq_svc_pgsocket 1.1;
 # a container runs as container_t, and the targeted policy denies it the
 # socket's directory (postgresql_var_run_t): the connection fails with EACCES.
 #
-# PGDG installs the server as /usr/pgsql-18/bin/postgres, which the targeted
-# policy labels bin_t, so the server runs as unconfined_service_t rather than
-# postgresql_t. The connectto rule therefore names both: the second keeps
-# working if the server is ever confined. A container reaches only the sockets
-# mounted into it, and /run/postgresql is the only one mounted, so the
-# unconfined_service_t rule opens no other service in practice.
+# The server runs as postgresql_t once its PGDG binary carries the local
+# file-context rule of deploy/postgresql/README.md, "The server runs
+# confined" (issue #694). Version 1.1 also let containers connect to
+# unconfined_service_t, the domain the server had before that rule. Version
+# 1.2 drops it, so this module opens no unconfined service to a container.
 #
 # This module grants exactly that path, and nothing else: search the socket's
 # directory, write to the socket file, and connect to the server. It grants no
@@ -29,7 +28,6 @@ require {
 	type container_t;
 	type postgresql_t;
 	type postgresql_var_run_t;
-	type unconfined_service_t;
 	class dir { getattr search };
 	class sock_file { getattr write };
 	class unix_stream_socket connectto;
@@ -38,4 +36,3 @@ require {
 allow container_t postgresql_var_run_t:dir { getattr search };
 allow container_t postgresql_var_run_t:sock_file { getattr write };
 allow container_t postgresql_t:unix_stream_socket connectto;
-allow container_t unconfined_service_t:unix_stream_socket connectto;

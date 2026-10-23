@@ -1,0 +1,133 @@
+# Deploy each released service alone. F18-03 (#456), ADR-0040.
+#
+# services.yml calls this after its release job, on a push to main. The matrix
+# is the services whose VERSION the push changed, through
+# .github/scripts/service-matrix.sh as the release job derives its own; nothing
+# here names a service. Each entry first checks that this run's release pushed
+# the image, by the revision label the release job sets, so an image CI did
+# not test in this run is never deployed. It then copies the merged commit's
+# deploy/, contracts/registry.yaml and services/<name>/ to the instance and
+# runs deploy/deploy-service.sh <name> <version> there, which rolls back that
+# service alone when any step fails. Authentication is Workload Identity
+# Federation, as in deploy.yml: no key is stored anywhere.
+name: Deploy a service
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  id-token: write
+  packages: read
+
+env:
+  GCP_PROJECT: iac-dev-01
+  GCP_ZONE: northamerica-south1-a
+  INSTANCE: mosaiq-deployment-vm
+
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.derive.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: The services whose VERSION this push changed
+        id: derive
+        env:
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          files=
+          if [[ ! "$BEFORE" =~ ^0+$ ]]; then
+            files=$(git diff --name-only "$BEFORE..$SHA")
+          fi
+          matrix=$({ grep -E '^services/[^/]+/VERSION$' <<<"$files" || true; } | bash .github/scripts/service-matrix.sh)
+          echo "matrix=$matrix"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: deploy (${{ matrix.service }})
+    needs: changes
+    if: needs.changes.outputs.matrix != '[]'
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.changes.outputs.matrix) }}
+    # One deploy of a service at a time, queued rather than cancelled: a
+    # cancelled deploy is one the script has to roll back mid-step.
+    concurrency:
+      group: deploy-service-${{ matrix.service }}
+      cancel-in-progress: false
+    env:
+      NAME: ${{ matrix.service }}
+      # One path per run attempt in sticky /tmp, removed afterwards.
+      BUNDLE: /tmp/mosaiq-deploy-service-${{ matrix.service }}-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Read the version
+        run: |
+          set -euo pipefail
+          version=$(cat "services/$NAME/VERSION")
+          grep -qxE '(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)' <<<"$version"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/mosaiq-$NAME:$version" >> "$GITHUB_ENV"
+
+      - name: The image is the one this run's release pushed
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker pull --quiet "$IMAGE"
+          revision=$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE")
+          if [ "$revision" != "$GITHUB_SHA" ]; then
+            echo "::error::$IMAGE was built from $revision, not $GITHUB_SHA: this run's release did not push it"
+            exit 1
+          fi
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/23051370455/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: mosaiq-deploy@iac-dev-01.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      # As in deploy.yml: a key that OS Login did not take fails here, with a
+      # name, rather than as a bare "Permission denied (publickey)" later.
+      - name: Register an SSH key with OS Login
+        run: |
+          ssh-keygen -t ed25519 -f ~/.ssh/google_compute_engine -N '' -q
+          gcloud compute os-login ssh-keys add \
+            --key-file ~/.ssh/google_compute_engine.pub --ttl 30m
+
+      - name: Copy the merged commit's files to the instance
+        run: |
+          set -euo pipefail
+          git archive --format=tar.gz -o "$RUNNER_TEMP/bundle.tgz" "$GITHUB_SHA" \
+            deploy/deploy-service.sh deploy/infra contracts/registry.yaml "services/$NAME"
+          gcloud compute scp "$RUNNER_TEMP/bundle.tgz" "$INSTANCE:$BUNDLE.tgz" \
+            --project="$GCP_PROJECT" --zone="$GCP_ZONE" --quiet
+
+      - name: Deploy
+        # NAME comes from service-matrix.sh, which admits only [a-z][a-z0-9-]*,
+        # and VERSION was checked as semver above.
+        run: |
+          gcloud compute ssh "$INSTANCE" \
+            --project="$GCP_PROJECT" --zone="$GCP_ZONE" --quiet \
+            --command="sudo install -d -m 0700 '$BUNDLE' \
+              && sudo tar -xzf '$BUNDLE.tgz' -C '$BUNDLE' \
+              && sudo bash '$BUNDLE/deploy/deploy-service.sh' '$NAME' '$VERSION'"
+
+      - name: Remove the copied files
+        if: always()
+        run: |
+          gcloud compute ssh "$INSTANCE" \
+            --project="$GCP_PROJECT" --zone="$GCP_ZONE" --quiet \
+            --command="sudo rm -rf '$BUNDLE' '$BUNDLE.tgz'" || true

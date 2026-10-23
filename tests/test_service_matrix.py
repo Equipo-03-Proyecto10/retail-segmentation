@@ -74,6 +74,7 @@ def test_the_common_schema_and_the_suite_select_every_built_service(
         "products",
         "stock",
     ]
+    assert matrix(repo, ".github/workflows/services.yml") == ["products", "stock"]
 
 
 def test_each_service_is_selected_once_and_in_order(repo: Path) -> None:

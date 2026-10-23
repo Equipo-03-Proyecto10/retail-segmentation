@@ -1,7 +1,8 @@
 """redis/auth.acl, against a disposable Redis 8 (ADR-0037).
 
 The line is checked as text always, and loaded into a Redis for ACL DRYRUN when
-AUTH_TEST_REDIS_URL names an administrator connection to a throwaway server.
+TEST_REDIS_URL (or AUTH_TEST_REDIS_URL) names an administrator connection to a
+throwaway server. MOSAIQ_REQUIRE_REDIS=1 makes a missing one a failure.
 """
 
 from __future__ import annotations
@@ -32,9 +33,13 @@ def test_the_acl_is_exactly_the_one_svc_auth_line() -> None:
 
 @pytest.fixture
 def redis_admin() -> Iterator[Any]:
-    url = os.environ.get("AUTH_TEST_REDIS_URL")
+    url = os.environ.get("TEST_REDIS_URL") or os.environ.get("AUTH_TEST_REDIS_URL")
     if not url:
-        pytest.skip("AUTH_TEST_REDIS_URL is not set")
+        if os.environ.get("MOSAIQ_REQUIRE_REDIS") == "1":
+            pytest.fail(
+                "TEST_REDIS_URL is missing, and MOSAIQ_REQUIRE_REDIS forbids skipping"
+            )
+        pytest.skip("TEST_REDIS_URL is not set")
     import redis
 
     client = redis.Redis.from_url(url, decode_responses=True)

@@ -380,8 +380,13 @@ was installed on 2026-10-23 (#448), and the evidence is in
   absent, and `getenforce` prints `Enforcing`.
 - **SELinux module.** The local module `mosaiq_svc_pgsocket`
   ([deploy/selinux/](../deploy/selinux/)) lets a container reach PostgreSQL's
-  socket and nothing else. The PGDG server runs as `unconfined_service_t`,
-  because `/usr/pgsql-18/bin` is labelled `bin_t`.
+  socket and nothing else.
+- **PostgreSQL confined.** Since 2026-10-23 (#694), the PGDG server runs as
+  `postgresql_t`. The local rule `semanage fcontext -a -t postgresql_exec_t
+  '/usr/pgsql-[0-9]+/bin/postgres'` does it
+  ([deploy/postgresql/README.md](../deploy/postgresql/README.md)). Before
+  that, `/usr/pgsql-18/bin/postgres` was labelled `bin_t`, and the server ran
+  as `unconfined_service_t`.
 - **GHCR.** Root pulls the private service images with a classic personal
   access token that holds `read:packages` only, stored in
   `/root/.docker/config.json` (`0600`).

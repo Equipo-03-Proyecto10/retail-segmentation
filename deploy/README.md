@@ -995,10 +995,14 @@ sudo -u postgres psql -X -d retail -c "SELECT lower(email), count(*)
 
 A labelled container (`container_t`) may not enter the socket's directory
 (`postgresql_var_run_t`) or connect to the server under the targeted policy.
-The PGDG server runs as `unconfined_service_t`, because `/usr/pgsql-18/bin` is
-labelled `bin_t`. So every service fails with `EACCES` on
-`/run/postgresql/.s.PGSQL.5432` and answers 503 `schema_not_ready`. Load the
-local module that grants that one path, once:
+So every service fails with `EACCES` on `/run/postgresql/.s.PGSQL.5432` and
+answers 503 `schema_not_ready`.
+
+The server must run as `postgresql_t` first, as described in
+[postgresql/README.md](postgresql/README.md), "The server runs confined".
+Without that rule, the PGDG server runs as `unconfined_service_t`, which the
+module grants nothing. Then load the local module that grants that one path,
+once:
 
 ```sh
 cd "$(mktemp -d)" && cp /opt/mosaiq/current/deploy/selinux/mosaiq_svc_pgsocket.te .

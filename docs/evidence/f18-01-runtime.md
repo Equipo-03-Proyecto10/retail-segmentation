@@ -109,7 +109,9 @@ instant the module's policy loaded, and none came after. Counted straight from
 
 The services retry every second, and `auditd` logged 111,496 of its own
 `name_connect` denials (`http_port_t`, port 80) in the same window, and none
-after it. The cause of those was not investigated. The 5 × 8 MB audit log
+after it. The cause, found later in #694, is GCP OS Login resolving the
+containers' UID 10001 over HTTP
+([694-postgresql-confined.md](694-postgresql-confined.md)). The 5 × 8 MB audit log
 therefore rotated about every 4.5 minutes, and the denials from before 01:33
 were lost. `ausearch -ts boot` found no matches, so the counts above come from
 the files.
@@ -120,7 +122,8 @@ Since then, the only denial on the instance is `systemd-userdbd` mapping an
 `etc_t` file, which is CentOS's own and unrelated.
 
 **Still open.** PostgreSQL itself runs unconfined, since PGDG's binaries carry
-no `postgresql_exec_t` label. That predates F18-01, and is tracked in #694.
+no `postgresql_exec_t` label. That predates F18-01, and is tracked in #694. It was resolved on the same day: see
+[694-postgresql-confined.md](694-postgresql-confined.md).
 
 ## Units and restarts
 

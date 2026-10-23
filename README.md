@@ -1,8 +1,8 @@
-# Retail Segmentation Platform
+# MOSAIQ — Retail Segmentation Platform
 
-Monolithic web application for retail customer segmentation management.
-Server-rendered Flask over PostgreSQL, deployed on a single GCP Compute Engine
-instance.
+Retail customer segmentation, delivered as a frozen server-rendered web system
+plus **fifteen single-rule services**, an Android floor client and an Electron
+back-office client, on one GCP Compute Engine instance.
 
 Course project — Integración de Aplicaciones Computacionales, Team 03.
 Everything written is in English.
@@ -20,49 +20,71 @@ Everything written is in English.
 | Max | Infrastructure, deployment |
 | Marcelo | Scrum Master, Full stack |
 
-## Scope
+## Architecture
 
-**First delivery — complete.** One deployable application. No external APIs, no
-microservices, no JSON or XML between internal components, one database engine,
-one administrator user. The boundary is in [`docs/scope.md`](docs/scope.md).
+![The application view](docs/architecture/application.svg)
 
-**Second delivery — analytics phase underway.** The RFM, clustering and
-segment-migration work the first delivery deferred is now being built into the
-same Flask application: sales ingestion, segmentation runs with history,
-recommendations, campaigns, experiments and dashboards. Its boundary is in
-[`docs/scope-delivery-2-analytics.md`](docs/scope-delivery-2-analytics.md) and
-its phases in [`docs/roadmap.md`](docs/roadmap.md).
+The web system (`mosaiq.service`, Flask + Jinja2) reads PostgreSQL as
+`retail_app`, uses no Redis and calls no service. The fifteen services each run
+as their own compose project `mosaiq-<name>` under `mosaiq-svc@<name>.service`,
+behind NGINX at `/api/<name>/`; Redis (`redis-state`, `redis-cache`) and MongoDB
+run as project `mosaiq-infra`. Services never call one another: they meet only
+through versioned `api_*` objects in PostgreSQL and Redis Streams
+([ADR-0044](docs/adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md)).
+The application, deployment and infrastructure views, and how to re-render them,
+are in [`docs/architecture/`](docs/architecture/README.md).
 
-[ADR-0016](docs/adr/0016-the-second-delivery-reinstates-the-distributed-architecture.md)
-lifts the first delivery's no-API, no-microservice constraints for the second
-delivery, with the monolith as one of its components. None of the distributed
-components exist yet, and none is built before the ADR that defines its
-contract. There is still exactly one administrator.
+| Service | Port | Language |
+|---|---|---|
+| auth, users, products, categories | 5001–5004 | Flask |
+| stores, stock | 5005, 5006 | Rust |
+| customers | 5007 | Flask |
+| customer-preferences | 5008 | Rust |
+| sales | 5009 | Flask |
+| segments | 5010 | Rust |
+| recommendations, engagement (with MongoDB) | 5011, 5012 | Flask |
+| check-ins | 5013 | Rust |
+| campaigns *(second wave)* | 5014 | Flask |
+| audit-trail *(second wave)* | 5015 | Rust |
+
+The Rust build of the products reads in [`bench/`](bench/README.md) is a
+benchmark artifact: it is not one of the fifteen, is never routed by NGINX and is
+never deployed.
 
 ## Stack
 
-Python 3.12 · Flask + Jinja2 · PostgreSQL · Gunicorn under systemd · NGINX as
-reverse proxy ([ADR-0009](docs/adr/0009-nginx-as-the-reverse-proxy.md)) ·
-Highcharts for the dashboards · CentOS 10 Stream on GCP Compute Engine.
-
-Flask rather than the Node.js the exercise statement illustrates:
-[ADR-0001](docs/adr/0001-flask-monolith-on-a-single-vm.md), superseded for the
-second delivery by ADR-0016, which keeps the monolith. K-means is written in the
-application, not taken as a dependency
-([ADR-0021](docs/adr/0021-k-means-is-implemented-in-the-application-rather-than-taken-as-a-dependency.md)),
-so `web/requirements.txt` has not grown.
+Python 3.12 · Flask + Jinja2 · Rust (axum) · PostgreSQL 18 · Redis · MongoDB ·
+Gunicorn and compose projects under systemd · NGINX as reverse proxy
+([ADR-0009](docs/adr/0009-nginx-as-the-reverse-proxy.md)) · Kotlin and Jetpack
+Compose (Android) · TypeScript and Electron (desktop) · CentOS 10 Stream on GCP.
 
 ## Structure
 
 | Directory | Contents |
 |---|---|
-| `clients/desktop/` | The Electron back-office client, XML only ([`clients/desktop/README.md`](clients/desktop/README.md)) |
-| `deploy/` | Instance deployment: systemd unit, NGINX configuration, scripts ([`deploy/README.md`](deploy/README.md)) |
-| `docker/` | The init script that runs the three SQL scripts in the Compose database |
+| `services/` | The fifteen services, one directory and one compose file each |
+| `contracts/` | Each service's versioned contract (OpenAPI, XSD), the stream descriptions and `registry.yaml` ([`contracts/streams/README.md`](contracts/streams/README.md)) |
+| `clients/android/` | The Android floor client, JSON only ([`README`](clients/android/README.md)) |
+| `clients/desktop/` | The Electron back-office client, XML only ([`README`](clients/desktop/README.md)) |
+| `bench/` | The bench-only Rust twin of the products reads and its load runs ([`README`](bench/README.md)) |
+| `deploy/` | Instance deployment: systemd units, NGINX, the infrastructure project ([`README`](deploy/README.md)) |
+| `docker/` | The database init script and the local gateway and stack configuration |
 | `docs/` | Documentation, decisions, evidence |
 | `sql/` | `00_create_database.sql`, `01_schema.sql`, `02_seed_30_per_table.sql`, plus `verify_integrity.sql` and `seed-exempt.txt` |
 | `tests/` | The `pytest` suite CI runs |
-| `web/` | The application, organized by layers |
+| `web/` | The web system, organized by layers |
+
+## Where to find things
+
+| What | Where |
+|---|---|
+| Contracts of each service | [`contracts/`](contracts/registry.yaml) |
+| One sheet per service: rule, endpoints, data, events, failure behaviour | [`docs/services/`](docs/services/README.md) |
+| The accepted-exceptions register (E-01 to E-22) | [`docs/services/README.md`](docs/services/README.md#accepted-exceptions-register) |
+| The decisions of the distributed delivery, ADR-0034 to ADR-0046 | [`docs/adr/`](docs/adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md); the list is in [`docs/services/README.md`](docs/services/README.md) |
+| Scope of the distributed delivery | [`docs/scope-delivery-2-distributed.md`](docs/scope-delivery-2-distributed.md) |
+| The benchmark report, Flask against Rust | [`docs/evidence/products-reads-flask-vs-rust.md`](docs/evidence/products-reads-flask-vs-rust.md), method in [`bench/README.md`](bench/README.md) |
+| The demonstration document | [`docs/demo-system-guide.md`](docs/demo-system-guide.md) (the web system's journey; the distributed demonstration is F18-05) |
 
 ## Analytics modules
 
@@ -88,7 +110,7 @@ No setting turns the label on or off.
 
 ## Running it
 
-Two ways, and the application behaves identically under both — it reads the same
+The web system runs two ways, and behaves identically under both — it reads the same
 configuration from the environment either way. Containers for local work,
 gunicorn under systemd on the instance, which is the default there:
 [ADR-0006](docs/adr/0006-run-under-both-systemd-and-docker-compose.md).
@@ -159,6 +181,44 @@ The application is then at http://localhost:5000
 The three scripts must run in that order against an empty database — that is
 Definition of Done item 3, and CI checks it on every pull request.
 
+### The full stack: the fifteen services
+
+[`compose.distributed.yaml`](compose.distributed.yaml) brings up PostgreSQL, the
+infrastructure (`redis-state`, `redis-cache`, MongoDB), all fifteen services and
+a local gateway that stands in for NGINX. It includes the infrastructure's own
+compose file and each service's, so each service keeps its own compose project
+shape (F13-08). Requires Docker with the Compose plugin. Run from the repository
+root:
+
+```bash
+docker network create mosaiq                   # once
+bash docker/distributed/auth-keys.sh           # once: auth's local key pair
+bash .github/scripts/stage-contracts.sh --all  # each service's contracts
+docker compose -f compose.distributed.yaml up --build --wait
+```
+
+Every service is then at `http://127.0.0.1:8080/api/<name>/`, as the clients
+reach `https://<host>/api/<name>/` on the instance. Set `MOSAIQ_GATEWAY_PORT`
+to use another port. This file is for a laptop; nothing deployed reads it. The
+web system keeps its own `compose.yaml` and does not join this network.
+
+**Run both clients against it:**
+
+```bash
+# Electron back office (XML), from clients/desktop/
+npm ci && npm start
+
+# Android floor client (JSON), from clients/android/; the emulator reaches the
+# gateway at http://10.0.2.2:8080
+./gradlew installDebug
+```
+
+The desktop client's default base URL is the gateway, so it needs no setting.
+Sign-in, the instance base URL and the checks are in
+[`clients/desktop/README.md`](clients/desktop/README.md) and
+[`clients/android/README.md`](clients/android/README.md). On the instance, the
+services run as described in [`deploy/README.md`](deploy/README.md).
+
 ### Signing in
 
 The seed creates thirty accounts, all with the password `Password123!`, hashed
@@ -198,7 +258,8 @@ The procedure, and what it does about the single-administrator rule, is in
 
 ## Documentation
 
-Start at [`docs/README.md`](docs/README.md). Deploying on the instance:
+Start at [`docs/README.md`](docs/README.md). The diagrams:
+[`docs/architecture/`](docs/architecture/README.md). Deploying on the instance:
 [`deploy/README.md`](deploy/README.md).
 
 ## Contributing

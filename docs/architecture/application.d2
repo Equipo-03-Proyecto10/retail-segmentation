@@ -1,9 +1,14 @@
-# Architectural design of the monolith: layers, their MVC roles, and the
-# datastores that are designed but not implemented in this delivery.
-# Sources: web/app.py create_app(), web/routes, web/middleware/authz.py,
-# web/services, web/db, sql/01_schema.sql, docs/datastores/,
-# ADR-0001, ADR-0005, ADR-0007, ADR-0014, ADR-0016.
-direction: right
+# Application view of the delivered system: the web system, the fifteen
+# services, the datastores they meet at, and the two clients.
+# Sources: docs/scope-delivery-2-distributed.md section 3, contracts/registry.yaml,
+# sql/01_schema.sql, deploy/infra/compose.yaml, docker/distributed/gateway/default.conf,
+# bench/README.md, ADR-0034, ADR-0035, ADR-0037, ADR-0038, ADR-0040, ADR-0041,
+# ADR-0042, ADR-0044, ADR-0045, ADR-0046.
+#
+# No arrow joins two services. They meet only through the producer's api_*
+# objects in PostgreSQL and through Redis Streams (ADR-0044), so every edge here
+# ends at a datastore, at NGINX or at a client.
+direction: down
 
 vars: {
   d2-config: {
@@ -21,12 +26,21 @@ classes: {
   appnode: {
     style: { fill: "#FFE8D1"; stroke: "#D45400"; font-color: "#232320" }
   }
+  svc: {
+    style: { fill: "#FFE8D1"; stroke: "#D45400"; font-color: "#232320" }
+  }
+  svc2: {
+    style: {
+      fill: "#FFF6E8"; stroke: "#D45400"; font-color: "#232320"
+      stroke-dash: 4; stroke-width: 2
+    }
+  }
   store: {
     style: { fill: "#E3F2E9"; stroke: "#1F7A4C"; font-color: "#232320" }
   }
-  notbuilt: {
+  bench: {
     style: {
-      fill: "#F4F4F2"; stroke: "#B3B3AE"; font-color: "#6B6B65"
+      fill: "#F4F4F2"; stroke: "#8C8C86"; font-color: "#4F4F4A"
       stroke-dash: 4
     }
   }
@@ -35,80 +49,119 @@ classes: {
   }
 }
 
-req: "Request from NGINX\n127.0.0.1:8000" { class: edgeio; shape: oval }
+android: "Android — Kotlin\nJSON only · Bearer token\nfloor process: camera/QR · GPS · Room" {
+  class: edgeio
+}
+electron: "Electron — TypeScript\nXML validated against XSD · Bearer token\nback-office process" {
+  class: edgeio
+}
 
-mono: "THE MONOLITH — one deployable unit, one process (ADR-0001)" {
+nginx: "NGINX :443\n/  to the web system\n/api/<name>/ to one loopback port per service\none include per service" {
+  class: gatenode
+}
+
+web: "WEB SYSTEM — mosaiq.service (systemd)\nFlask + Jinja2 under Gunicorn, 127.0.0.1:8000\nfrozen · server-rendered HTML\nno Redis · no service calls" {
+  class: appnode
+}
+
+services: "FIFTEEN SERVICES — each its own compose project mosaiq-<name> under mosaiq-svc@<name>.service (ADR-0040)" {
   class: layer
 
-  gate: "Request preamble — web/app.py\nProxyFix + request id\nAuthorization gate — web/middleware/authz.py\ndefault deny (ADR-0007)" {
-    class: gatenode
-  }
-
-  ctl: "CONTROLLER — web/routes" {
+  core: "Core (13)" {
     class: layer
-    r: "core blueprints\nhome · auth · admin · audit · catalog\nnotifications" {
-      class: appnode
-    }
-    a: "analytics blueprints\nsegment_run · run_history · migration_matrix\nmigration_explanation · model_comparison\nconsumption_reports · segment_history_report\nexperiment_report · segmentation_dashboard\nexperiment_dashboard · campaigns · sales_import\nexperiments · reports" {
-      class: appnode
-    }
+    grid-rows: 3
+      "auth": "auth\nproject mosaiq-auth\nFlask · :5001" { class: svc }
+      "users": "users\nproject mosaiq-users\nFlask · :5002" { class: svc }
+      "products": "products\nproject mosaiq-products\nFlask · :5003" { class: svc }
+      "categories": "categories\nproject mosaiq-categories\nFlask · :5004" { class: svc }
+      "stores": "stores\nproject mosaiq-stores\nRust · :5005" { class: svc }
+      "stock": "stock\nproject mosaiq-stock\nRust · :5006" { class: svc }
+      "customers": "customers\nproject mosaiq-customers\nFlask · :5007" { class: svc }
+      "customer-preferences": "customer-preferences\nproject mosaiq-customer-preferences\nRust · :5008" { class: svc }
+      "sales": "sales\nproject mosaiq-sales\nFlask · :5009" { class: svc }
+      "segments": "segments\nproject mosaiq-segments\nRust · :5010" { class: svc }
+      "recommendations": "recommendations\nproject mosaiq-recommendations\nFlask · :5011" { class: svc }
+      "engagement": "engagement\nproject mosaiq-engagement\nFlask + MongoDB · :5012" { class: svc }
+      "check-ins": "check-ins\nproject mosaiq-check-ins\nRust · :5013" { class: svc }
   }
-
-  mdl: "MODEL — business rules, then persistence" {
+  second: "Second wave (2) — dashed outline" {
     class: layer
-    s: "web/services\nowns the transaction (ADR-0014)\nauth · users · catalog · audit\nsegmentation · uploads · dashboard" {
-      class: appnode
-    }
-    d: "web/db\npsycopg, parameterized only\na module per table area" {
-      class: appnode
-    }
-    s -> d
-  }
-
-  vw: "VIEW — web/templates, web/static" {
-    class: layer
-    t: "Jinja2 templates and macros\nself-hosted IBM Plex\ndesign-system CSS" {
-      class: appnode
-    }
+    grid-columns: 2
+      "campaigns": "campaigns\nproject mosaiq-campaigns\nFlask · :5014\nSECOND WAVE" { class: svc2 }
+      "audit-trail": "audit-trail\nproject mosaiq-audit-trail\nRust · :5015\nSECOND WAVE" { class: svc2 }
   }
 }
 
-runs: "Runs today — one engine (C-6)" {
+bench: "BENCH ONLY — Rust twin of the products reads\nbench/products-service-rs · 127.0.0.1:5103\nnot a service: not registered, not routed by NGINX,\nnot deployed (ADR-0042, E-22)" {
+  class: bench
+}
+
+pg: "PostgreSQL — database retail" {
   class: layer
-  pg: "PostgreSQL 18.6 — retail\n29 tables, 4NF\npartial unique index: one administrator\nfn_audit() triggers" {
+  public: "public\n29 tables, 4NF\nthe web reads and writes it as retail_app;\neach service only its own tables (svc_<name>)" {
+    class: store
+    shape: cylinder
+  }
+  svcschemas: "service schemas\nstores · sales · checkins" {
+    class: store
+    shape: cylinder
+  }
+  api: "api_* schemas\nversioned *_v1 views, consume_v1\nusers · products · categories · stores · stock\ncustomers · preferences · sales · segments" {
+    class: store
+    shape: cylinder
+  }
+  outbox: "eight outboxes — <suffix>_events.outbox\nusers · products · categories · stores\nstock · preferences · sales · segments\nkeys only, filled by capture triggers" {
     class: store
     shape: cylinder
   }
 }
 
-designed: "DESIGNED, NOT IMPLEMENTED" {
+infra: "mosaiq-infra — compose project under mosaiq-infra.service" {
   class: layer
-  caveat: "No engine is installed, no connection code\nis written, no configuration variable\nexists (ADR-0005).\nReinstated for the second delivery\nby ADR-0016." {
-    class: notbuilt
+  rs: "redis-state\nnoeviction · AOF\nsessions · stream:* · rate limits" {
+    class: store
+    shape: cylinder
   }
-  mongo: "MongoDB — docs/datastores/mongodb-design.md\nconsumption_profile · rfm_snapshot\nsegment_migration · clustering_model\nrecommendation · experiment_event" {
-    class: notbuilt
+  streams: "Redis Streams on redis-state — stream:<name>\nusers.v1.access_changed: users to auth\nproducts.v1.changed: products to products, recommendations\ncategories.v1.changed: categories to categories, recommendations\nstores.v1.changed: stores to stores\nstock.v1.changed: stock to recommendations\npreferences.v1.changed: customer-preferences to recommendations\nsales.v1.recorded: sales to recommendations\nsegments.v1.run_recorded: segments to segments, recommendations" {
+    class: store
+    shape: page
   }
-  redis: "Redis — docs/datastores/redis-design.md\nsessions · revoked tokens · cache\ncounters · locks · rate limits" {
-    class: notbuilt
+  rc: "redis-cache\nallkeys-lru\ncaches · live counters" {
+    class: store
+    shape: cylinder
+  }
+  mongo: "MongoDB\ndatabase engagement" {
+    class: store
+    shape: cylinder
   }
 }
 
-html: "Server-rendered HTML\nno JSON, no XML — C-2" { class: edgeio; shape: oval }
+android -> nginx: "JSON"
+electron -> nginx: "XML"
+nginx -> web: "/"
+nginx -> services: "/api/<name>/v1"
 
-req -> mono.gate
-mono.gate -> mono.ctl.r: allowed
-mono.gate -> mono.ctl.a: allowed
-mono.gate -> html: refused
-mono.ctl.r -> mono.mdl.s
-mono.ctl.r -> mono.vw.t
-mono.ctl.a -> mono.mdl.s
-mono.ctl.a -> mono.vw.t
-mono.vw.t -> html
-mono.mdl.d -> runs.pg: SQL
-mono.mdl.s -> designed.redis: designed only {
-  style: { stroke-dash: 4; stroke: "#8C8C86"; font-color: "#4F4F4A"; font-size: 15 }
+web -> pg.public: "SQL as retail_app"
+services -> pg.public: "own tables only · svc_<name> roles"
+services -> pg.svcschemas: "own new tables"
+services -> pg.api: "cross-boundary reads of the producer's views"
+pg.api -> pg.public: "owner-defined views" {
+  style: { stroke-dash: 4; stroke: "#8C8C86"; font-color: "#4F4F4A" }
 }
-mono.mdl.d -> designed.mongo: designed only {
-  style: { stroke-dash: 4; stroke: "#8C8C86"; font-color: "#4F4F4A"; font-size: 15 }
+pg.public -> pg.outbox: "capture triggers (web writes too)" {
+  style: { stroke-dash: 4; stroke: "#8C8C86"; font-color: "#4F4F4A" }
+}
+pg.svcschemas -> pg.outbox: "capture triggers" {
+  style: { stroke-dash: 4; stroke: "#8C8C86"; font-color: "#4F4F4A" }
+}
+
+pg.outbox -> infra.streams: "the owner relays its outbox · XADD"
+infra.streams -> services: "consumer groups · XREADGROUP"
+
+services -> infra.rs: "session liveness EXISTS · rate limits"
+services -> infra.rc: "cache, falls through to PostgreSQL"
+services.core.engagement -> infra.mongo: "events and rollups"
+
+bench -> pg.public: "reads product as svc_products_bench" {
+  style: { stroke-dash: 4; stroke: "#8C8C86"; font-color: "#4F4F4A" }
 }

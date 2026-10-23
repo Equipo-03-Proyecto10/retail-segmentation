@@ -139,6 +139,31 @@ def test_a_rendered_service_passes(repo: Path) -> None:
             "image: mosaiq-products\n",
             "ADR-0040 a service named",
         ),
+        (
+            "deploy/deploy-service.sh",
+            'docker compose --env-file "$rel/release.env" up -d\n',
+            "ADR-0040 a project other than mosaiq-<name>",
+        ),
+        (
+            "deploy/deploy-service.sh",
+            'docker compose -p mosaiq-"$name" up -d --build\n',
+            "ADR-0040 a build",
+        ),
+        (
+            ".github/workflows/deploy-service.yml",
+            "run: docker build -t x services/x\n",
+            "ADR-0040 a build",
+        ),
+        (
+            "deploy/rehearse-rollback.sh",
+            "psql -d retail -c 'SELECT 1'\n",
+            "ADR-0040 SQL in the service deploy",
+        ),
+        (
+            "deploy/deploy.sh",
+            "docker ps\n",
+            "ADR-0040 the web's deploy",
+        ),
         ("web/cache.py", "import redis\n", "ADR-0037 the web names Redis"),
         (
             "services/products/app/rules.py",

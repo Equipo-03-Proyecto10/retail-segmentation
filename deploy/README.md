@@ -19,6 +19,8 @@ PostgreSQL listener, HBA policy, SSH access and application-role verification:
 | `systemd/mosaiq-svc@.service` | `/etc/systemd/system/mosaiq-svc@.service`: one compose project per service (F18-01) |
 | `check-services.sh` | not installed: run from the checkout, as root, after any change to the services (F18-01) |
 | `deploy.sh` | copied to `/tmp/mosaiq-deploy.sh` by the deploy workflow on each run, not installed |
+| `deploy-service.sh` | not installed: `deploy-service.yml` copies it with the merged commit's service files on each release (F18-03) |
+| `rehearse-rollback.sh` | not installed: run from a checkout, as root, before a demonstration (F18-03) |
 | the TLS certificate | `/etc/nginx/tls/mosaiq.{crt,key}` — a Cloudflare Origin CA pair on the instance (F6-03 Path C, [ADR-0013](../docs/adr/0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md)), not in the repo |
 
 ### Deployment layout
@@ -29,7 +31,8 @@ PostgreSQL listener, HBA policy, SSH access and application-role verification:
 | `/opt/mosaiq/venv` | virtualenv, `web/requirements.txt` installed |
 | `/etc/mosaiq/mosaiq.env` | the environment file the unit reads (from `.env.example`) |
 | user/group `mosaiq` | unprivileged, owns `/opt/mosaiq`, runs gunicorn |
-| `/opt/mosaiq/services/<name>/<version>` | one staged release of a service: its `compose.yaml`, `redis/`, `nginx/`, `mongo/` if it has one, and `release.env`; `current` links the one running (F18-01, F18-02) |
+| `/opt/mosaiq/services/<name>/releases/<version>` | one staged release of a service: its `compose.yaml`, `redis/`, `nginx/`, `mongo/` if it has one, and `release.env`; `current` links the one running (F18-03). Releases staged by hand before F18-03 sit at `<name>/<version>` |
+| `/opt/mosaiq/services/<name>/acl/<name>.acl` | the ACL line both Redis instances hold for the service, recorded by its last deploy (F18-03) |
 | `/etc/mosaiq/svc/<name>.env` | a service's secrets, `0600 root`, read by its compose file's `env_file` |
 | `/etc/mosaiq/keys/` | the signing key (`0400`, UID 10001) and `jwks.json` (`0444`), [auth-keys.md](auth-keys.md) |
 | `/etc/mosaiq/redis/users.acl`, `/etc/mosaiq/mongodb/root.env` | the assembled aclfile and MongoDB's root account, [infra/README.md](infra/README.md) |
@@ -1147,3 +1150,179 @@ reload:
 sudo find /etc/nginx/mosaiq-api.d -mindepth 1 -maxdepth 1 -type f -delete
 sudo nginx -t && sudo systemctl reload nginx
 ```
+
+## F18-03 — deploying and rolling back one service
+
+[ADR-0040](../docs/adr/0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md)
+(issue #456). A merge to `main` that changes `services/<name>/VERSION` releases
+that service's image and then deploys it, alone. Nothing else is restarted, and
+the web keeps deploying through `deploy.sh`, unchanged.
+
+1. `services.yml`'s release job builds the image once, runs the conformance
+   suite on it and pushes `ghcr.io/equipo-03-proyecto10/mosaiq-<name>:<VERSION>`
+   (F13-09).
+2. Its `deploy` job then calls `.github/workflows/deploy-service.yml`. The
+   matrix is the services whose `VERSION` the push changed, through
+   `.github/scripts/service-matrix.sh`. Each entry runs in the concurrency group
+   `deploy-service-<name>`, and:
+   - refuses an image whose `org.opencontainers.image.revision` label is not the
+     merged commit, so only the image this run tested is deployed;
+   - authenticates with Workload Identity Federation, as `deploy.yml` does;
+   - copies `deploy/deploy-service.sh`, `deploy/infra/`,
+     `contracts/registry.yaml` and `services/<name>/` from the merged commit to
+     the instance, and runs `deploy-service.sh <name> <version>` there as root.
+
+### What the script does
+
+1. Refuses to start when `/etc/mosaiq/svc/<name>.env` is missing, and records
+   the release `current` points to.
+2. Stages `/opt/mosaiq/services/<name>/releases/<version>/`: `compose.yaml`,
+   `nginx/`, `redis/`, `mongo/` if there is one, and `release.env`.
+   `release.env` holds `IMAGE_TAG=<version>`, plus every variable the compose
+   file interpolates without a default, such as auth's `AUTH_KID`, taken from
+   the service's env file.
+3. Records the ACL line in `/opt/mosaiq/services/<name>/acl/`, then rebuilds the
+   aclfile from every service's recorded line and runs `ACL LOAD` on both Redis
+   instances (`assemble-acl.sh`). Two deploys at once therefore never load each
+   other's previous line.
+4. Runs `docker compose -p mosaiq-<name> pull`, checks that the image is on
+   disk, then runs `up -d --no-deps`.
+5. Polls `http://127.0.0.1:<port>/health/ready` for 60 s.
+6. Installs `/etc/nginx/mosaiq-api.d/<name>.conf`, then runs `nginx -t` and
+   `systemctl reload nginx`.
+7. Points `current` at the new release, and enables and starts
+   `mosaiq-svc@<name>` when it is not already active.
+
+Steps 3 and 6 hold the host lock `/run/lock/mosaiq-deploy.lock`, which every
+service's deploy shares. F18-01 step 6's `assemble-acl.sh` command, which reads
+each current release, builds the same aclfile whenever no deploy is running. The script never runs SQL, never builds an image, and
+never touches another service's container, ACL line or include.
+
+It needs F18-01 in place:
+- the service's env file (step 4 of F18-01);
+- `mosaiq-svc@.service` (step 8);
+- `mosaiq-infra` running, with `/root/mosaiq-redis-ops.env` (step 6);
+- root's GHCR login (step 3).
+
+The first deploy of a service that F18-01 staged by hand moves it to
+`releases/<version>`. The hand-staged `<name>/<version>` directory then stays
+as its previous release.
+
+### Rollback
+
+Any failure from step 3 on restores what the deploy changed, and only for this
+service:
+- the previous release's container, from its image tag, which is still on disk;
+- its recorded ACL line;
+- its include;
+- `current`.
+
+The script then checks the previous release's readiness, and the workflow
+fails. A first release that fails is taken down, and its ACL line and include
+are removed.
+
+| Exit | Meaning |
+|---|---|
+| 0 | deployed, or that release was already serving and is ready |
+| 2 | refused before anything changed |
+| 64 | wrong arguments |
+| 70 | rolled back: the previous release serves again and is ready |
+| 71 | the rollback failed too: the service needs a person |
+
+**After a 71**, read the script's output in the workflow log. `current` names
+the previous release again, so put that release back by hand:
+1. `sudo systemctl restart mosaiq-svc@<name>`;
+2. reinstall its include, as in F18-02;
+3. reload the ACL lines, with F18-01 step 6's `assemble-acl.sh` command;
+4. check `/health/ready`.
+
+To go back to an earlier version on purpose, deploy it from the commit that
+released it (below). Its image tag is still on disk, or still in GHCR.
+
+### Schema and MongoDB changes come first
+
+The deploy runs no SQL and no `mongosh`. A release whose service needs a schema
+change goes in this order:
+
+1. **Apply the boundary section, as `postgres`, from the commit that will
+   merge.** Each section is idempotent, so a second run changes nothing. On the
+   instance:
+
+   ```sh
+   sha=<commit to merge>; name=<boundary>
+   sudo -u mosaiq git -C /opt/mosaiq/current fetch --quiet origin
+   sudo -u mosaiq git -C /opt/mosaiq/current show "$sha:sql/01_schema.sql" \
+     | sed -n "/^-- BEGIN BOUNDARY $name\$/,/^-- END BOUNDARY $name\$/p" \
+     | sudo -u postgres psql -X -v ON_ERROR_STOP=1 --single-transaction -d retail -f -
+   ```
+
+2. **Then merge the `VERSION` bump.**
+
+If the bump merges first, `/health/ready` answers 503 `schema_not_ready`, step 5
+fails, and the service is rolled back to the version that matches the schema it
+has. That holds because each service's readiness probe selects from the
+objects its code reads. So a release that adds a table, view or column its code
+needs also adds that object to its probe.
+
+A release whose `services/<name>/mongo/init.js` changed is handled the same way
+([ADR-0038](../docs/adr/0038-mongodb-holds-in-store-engagement-owned-by-engagement-service-alone.md):
+expand before deploy):
+1. An administrator runs that `init.js` against the live MongoDB as root, with
+   the service's `MONGO_<SUFFIX>_PASSWORD` set. The command is in
+   [infra/README.md](infra/README.md), "MongoDB", and the password comes from
+   `/etc/mosaiq/svc/<name>.env`.
+2. Then the version that needs it merges.
+
+A change that adds a collection or an index makes `/health/ready` answer 503
+`schema_not_ready` until it is applied, so step 5 rolls the service back. A
+change to a validator, or to the user's roles, is guarded only by this order:
+readiness does not see it.
+
+### Running it by hand
+
+The script is not installed on the instance. To deploy a release outside the
+workflow, copy the same files from the commit that released it, to a path
+nobody else owns:
+
+```sh
+sha=<commit>; name=<name>; version=$(git show "$sha:services/$name/VERSION")
+dir=/tmp/mosaiq-deploy-service-$name-$(date +%s)
+git archive --format=tar.gz -o /tmp/bundle.tgz "$sha" \
+  deploy/deploy-service.sh deploy/infra contracts/registry.yaml "services/$name"
+gcloud compute scp /tmp/bundle.tgz "mosaiq-deployment-vm:$dir.tgz" \
+  --project=iac-dev-01 --zone=northamerica-south1-a
+gcloud compute ssh mosaiq-deployment-vm --project=iac-dev-01 \
+  --zone=northamerica-south1-a --command="sudo install -d -m 0700 $dir \
+    && sudo tar -xzf $dir.tgz -C $dir \
+    && sudo bash $dir/deploy/deploy-service.sh $name $version; sudo rm -rf $dir $dir.tgz"
+```
+
+Releases and images are never pruned. To free disk space, remove release
+directories and image tags older than the previous release by hand.
+
+### Rehearsing the rollback
+
+Before a demonstration, rehearse each core service's rollback from a checkout on
+the instance. Record the output in
+[docs/evidence/f18-03-rollback.md](../docs/evidence/f18-03-rollback.md):
+
+```sh
+cd /opt/mosaiq/current
+for name in $(awk '$1 == "-" && $2 == "name:" { n = $3 } $1 == "wave:" && $2 == "core" { print n }' contracts/registry.yaml); do
+  sudo bash deploy/rehearse-rollback.sh "$name"
+done | tee /var/tmp/f18-03-rollback.md
+```
+
+For each service, `rehearse-rollback.sh`:
+1. stages a release of the tag already serving, `<tag>+rehearsal`, published on
+   port + 10000, so its `/health/ready` on the registered port cannot pass;
+2. deploys it with `deploy-service.sh`, which must fail at step 5 and roll
+   back;
+3. checks four things:
+   - the previous release and tag serve again, and are ready;
+   - every other project's containers are the same containers, started at the
+     same moment;
+   - `mosaiq.service` is active;
+   - `https://127.0.0.1/` answers 200.
+
+It prints a Markdown section per service, and exits 1 when a check fails.

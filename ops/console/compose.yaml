@@ -1,0 +1,32 @@
+# ops-console's own Compose project (ADR-0055), hardened like a service's
+# (ADR-0040, deploy/templates/service/compose.yaml) but with no NGINX include:
+# it binds loopback and is reached only through an SSH tunnel.
+name: mosaiq-ops-console
+
+services:
+  ops-console:
+    image: ghcr.io/equipo-03-proyecto10/mosaiq-ops-console:${IMAGE_TAG}
+    build:
+      context: .
+    user: "10001:10001"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,mode=0700
+    mem_limit: 96m
+    cpus: 0.25
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5090:5090"
+    # REDIS_OPS_CONSOLE_PASSWORD, the one secret; the rest default sensibly.
+    env_file:
+      - ${MOSAIQ_SVC_ENV_DIR:-/etc/mosaiq/svc}/ops-console.env
+    volumes:
+      # The directory, not the file: the timer replaces the file by rename.
+      - ${MOSAIQ_OPS_SNAPSHOT_DIR:-/run/mosaiq/ops}:/run/mosaiq/ops:ro
+    networks: [mosaiq]
+
+networks:
+  mosaiq:
+    external: true

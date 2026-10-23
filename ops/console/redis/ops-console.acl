@@ -1,0 +1,5 @@
+# ops-console's Redis user (ADR-0055), assembled by deploy/infra/redis/assemble-acl.sh
+# with REDIS_OPS_CONSOLE_PASSWORD from /etc/mosaiq/svc/ops-console.env. It may
+# read server info, find the streams and read their consumer groups; nothing it
+# can run writes. INFO sits in @dangerous, so it is granted by name.
+user ops_console on {{password}} resetchannels -@all +ping +info +scan +xinfo|groups %R~stream:*

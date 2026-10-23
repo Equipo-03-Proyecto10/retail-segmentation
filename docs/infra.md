@@ -355,6 +355,28 @@ systemctl is-active nginx                  -> active
 curl -skI https://34.51.123.31/            -> HTTP/2 200
 ```
 
+## Ops console
+
+A status panel over the fifteen services, [ADR-0055](adr/0055-an-ops-console-supervises-services-through-their-meta-routes.md)
+(#676). Not a service and not in `contracts/registry.yaml`. Install and update
+steps: [`ops/console/README.md`](../ops/console/README.md).
+
+| Field | Value |
+|---|---|
+| Units | `mosaiq-ops-console.service` (Compose project `mosaiq-ops-console`), `mosaiq-ops-snapshot.timer` every 15 s |
+| Binds | `127.0.0.1:5090` — no NGINX include, no firewall rule |
+| Reads | `/health/live`, `/health/ready` and `/openapi.yaml` of each registered service; `/run/mosaiq/ops/containers.json`; Redis `INFO` and `XINFO GROUPS` as `ops_console` |
+| Environment | `/etc/mosaiq/svc/ops-console.env` (`REDIS_OPS_CONSOLE_PASSWORD`) |
+| Memory | `mem_limit: 96m` (about 80 MB RSS measured: gunicorn master and one worker), `cpus: 0.25` |
+
+Reached only through an SSH tunnel:
+
+```sh
+gcloud compute ssh mosaiq-deployment-vm --zone=northamerica-south1-a \
+  -- -N -L 5090:127.0.0.1:5090
+# then open http://localhost:5090 (or /status.json)
+```
+
 ## Continuous deployment
 
 Story `F6-06` (#90), decision [ADR-0011](adr/0011-one-environment-deployed-from-main.md).

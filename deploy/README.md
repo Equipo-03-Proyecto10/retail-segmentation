@@ -912,7 +912,9 @@ echo '/swapfile none swap defaults 0 0' | sudo tee -a /etc/fstab
 ### 2. Docker Engine and the Compose plugin
 
 From Docker's CentOS repository, not Podman's emulation. `podman-docker` must
-be absent, and SELinux stays enforcing.
+be absent, and SELinux stays enforcing. `docker-ce` leaves `selinux-enabled`
+off by default, which runs every container unlabelled. `daemon.json` turns it
+on, so each container runs as `container_t` with its own MCS categories.
 
 ```sh
 sudo dnf -y install dnf-plugins-core
@@ -920,10 +922,11 @@ sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/dock
 rpm -q podman-docker && sudo dnf -y remove podman-docker
 sudo dnf -y install docker-ce docker-ce-cli containerd.io docker-compose-plugin
 sudo install -m 0644 /dev/stdin /etc/docker/daemon.json <<'JSON'
-{ "log-driver": "json-file", "log-opts": { "max-size": "10m", "max-file": "3" } }
+{ "selinux-enabled": true, "log-driver": "json-file", "log-opts": { "max-size": "10m", "max-file": "3" } }
 JSON
 sudo systemctl enable --now docker
 getenforce                                   # Enforcing
+sudo docker info --format '{{json .SecurityOptions}}'   # lists name=selinux
 docker --version && docker compose version   # recorded in docs/infra.md
 ```
 
@@ -989,6 +992,22 @@ each pair through the service's `PATCH` before applying:
 sudo -u postgres psql -X -d retail -c "SELECT lower(email), count(*)
   FROM customer WHERE email IS NOT NULL GROUP BY 1 HAVING count(*) > 1"
 ```
+
+A labelled container (`container_t`) may not enter the socket's directory
+(`postgresql_var_run_t`) or connect to the server under the targeted policy.
+The PGDG server runs as `unconfined_service_t`, because `/usr/pgsql-18/bin` is
+labelled `bin_t`. So every service fails with `EACCES` on
+`/run/postgresql/.s.PGSQL.5432` and answers 503 `schema_not_ready`. Load the
+local module that grants that one path, once:
+
+```sh
+cd "$(mktemp -d)" && cp /opt/mosaiq/current/deploy/selinux/mosaiq_svc_pgsocket.te .
+sudo checkmodule -M -m -o mosaiq_svc_pgsocket.mod mosaiq_svc_pgsocket.te
+sudo semodule_package -o mosaiq_svc_pgsocket.pp -m mosaiq_svc_pgsocket.mod
+sudo semodule -i mosaiq_svc_pgsocket.pp && sudo semodule -l | grep mosaiq_svc_pgsocket
+```
+
+A running service reconnects on its own once the module is loaded.
 
 ### 6. The infrastructure project
 
@@ -1061,20 +1080,24 @@ that service.
 - `systemctl is-active mosaiq` stays active, and
   `curl -sS -o /dev/null -w '%{http_code}' https://mosaiq.maxthecoder.online/` answers 200, throughout.
 - `free -m` and `docker stats --no-stream`, with every service running, go to
-  `docs/evidence/f18-01-memory.md` and
+  [docs/evidence/f18-01-memory.md](../docs/evidence/f18-01-memory.md) and
   `docs/infra.md`. They are compared with ADR-0040's estimate. If memory is
   short, the record's cut order applies.
 - **SELinux:** a container running as UID 10001 must connect through the mounted
-  `/run/postgresql`. If `ausearch -m avc -ts recent` shows a denial, the fix is a
-  local policy module committed under `deploy/selinux/` and loaded with
-  `semodule -i`, never a `:z` relabel. The outcome is recorded in
-  `docs/evidence/f18-01-runtime.md`.
+  `/run/postgresql`. A new denial goes in a local policy module under
+  `deploy/selinux/`, loaded with `semodule -i`, never a `:z` relabel. The
+  targeted policy hides some denials, so `semodule -DB` shows them while you
+  reproduce, and `semodule -B` restores the policy. Read `/var/log/audit/audit.log`
+  with `sudo` throughout. Services retrying a refused connection rotate the
+  5 × 8 MB log within minutes, so read it right after reproducing. The outcome is recorded in
+  [docs/evidence/f18-01-runtime.md](../docs/evidence/f18-01-runtime.md).
 
 ### Rollback
 
 ```sh
 for d in /opt/mosaiq/services/*/; do sudo systemctl disable --now "mosaiq-svc@$(basename "$d")"; done
 sudo systemctl disable --now mosaiq-infra
+sudo semodule -r mosaiq_svc_pgsocket
 ```
 
 Then remove the `svc_*` lines from `pg_hba.conf` and reload PostgreSQL. The web

@@ -1,6 +1,6 @@
 # ADR-0055 — An ops console supervises the services through their meta routes, a host snapshot and a read-only Redis user
 
-**Status:** Proposed
+**Status:** Accepted (2026-10-22)
 **Owner:** Max
 **Issue:** #676
 **Supersedes:** —

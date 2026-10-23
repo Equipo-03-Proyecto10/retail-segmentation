@@ -30,13 +30,29 @@ The debug build calls the gateway at `http://10.0.2.2:8080/`, which is how the e
 
 The unit tests run on the JVM against MockWebServer. They cover sign-in, `users/me`, the role gate, single-flight refresh, a reused refresh token, a revoked session, an unavailable auth-service and sign-out. They also guard the rules below.
 
-The offline sale queue and the RECO_CLICK queue also run as instrumented tests, on a device or emulator, with real Room files and WorkManager workers:
+ADR-0041's Android checks, run from the repository root, print nothing:
 
 ```bash
-./gradlew connectedDebugAndroidTest
+bash clients/android/check-adr41.sh
 ```
 
-They start MockWebServer on the device's loopback, so they need the debug network security config described below. Robolectric does not apply that policy, so only a device run checks it.
+The instrumented tests run on a device or emulator, with real Room files and WorkManager workers:
+
+```bash
+./gradlew connectedDebugAndroidTest              # with the local stack up, add -Pandroid.testInstrumentationRunnerArguments.stack=required
+./gradlew assembleDebug assembleDebugAndroidTest && bash run-denied-permission-tests.sh
+```
+
+- **The offline sale queue and the RECO_CLICK queue** start MockWebServer on the device's loopback, so they need the debug network security config described below. Robolectric does not apply that policy, so only a device run checks it.
+- **One counter sale against the real services** (`StackSaleInstrumentedTest`). It signs in as the seeded store manager through the gateway at `http://10.0.2.2:8080/`, queues a sale in the outbox, lets the worker send it, and reads it back. It skips when no local stack answers, unless the run passes `stack=required`.
+- **Both permission-denied paths** (`PermissionDeniedInstrumentedTest`) refuse the camera and location at the real system dialog. `connectedAndroidTest` installs with `-g`, which grants every runtime permission, so it leaves out the tests annotated `@DeniedPermissions`. `run-denied-permission-tests.sh` installs without `-g`, revokes the permissions and runs only those.
+
+**In CI,** `.github/workflows/android.yml` (F17-06) has two jobs:
+
+- **On a pull request that touches the client:** it validates the Gradle wrapper, runs the line above and the ADR-0041 checks, and uploads the debug APK as the `mosaiq-floor-debug-apk` artifact.
+- **Nightly and on `workflow_dispatch`:** it starts the local stack from `compose.distributed.yaml`, then runs every instrumented test on an API 35 emulator. It is not a required check.
+
+A failure there blocks only pull requests that touch the client, never a service release.
 
 ## What it promises
 

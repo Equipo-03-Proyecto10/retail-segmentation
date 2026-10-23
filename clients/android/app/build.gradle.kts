@@ -25,6 +25,10 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "online.maxthecoder.mosaiq.floor.SalesTestRunner"
+        // connectedAndroidTest installs with -g, which grants every runtime
+        // permission, so the denied-permission tests are left out of it. The
+        // emulator job runs them alone, after an install without -g.
+        testInstrumentationRunnerArguments["notAnnotation"] = "online.maxthecoder.mosaiq.floor.DeniedPermissions"
     }
 
     buildTypes {
@@ -115,4 +119,7 @@ dependencies {
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.work.testing)
     androidTestImplementation(libs.okhttp.mockwebserver)
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.test.uiautomator)
 }

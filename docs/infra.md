@@ -228,7 +228,7 @@ story `F6-01` (#77). Config and runbook: [`deploy/`](../deploy/README.md).
 |---|---|
 | Package | `nginx` (CentOS Stream 10 AppStream) |
 | Config | `/etc/nginx/conf.d/mosaiq.conf` + `/etc/nginx/conf.d/cloudflare-real-ip.conf`, from `deploy/nginx/` (deploy both — `mosaiq.conf` includes the other) |
-| API includes | `/etc/nginx/mosaiq-api.d/*.conf`, one per service, from `services/<name>/nginx/<name>.conf` (F18-02, #452) |
+| API includes | `/etc/nginx/mosaiq-api.d/*.conf`, one per service, from `services/<name>/nginx/<name>.conf` (F18-02, #452). Installed on 2026-10-23 ([evidence](evidence/f18-02-api-edge.md)) |
 | Listener | `:80` redirects to HTTPS; `:443 ssl http2` `default_server`, `server_name mosaiq.maxthecoder.online` |
 | Upstream | `127.0.0.1:8000` (gunicorn — `F6-02`, #78) |
 | Real client IP | Cloudflare edge ranges trusted (`cloudflare-real-ip.conf`), `real_ip_header CF-Connecting-IP` — the access log and the `X-Forwarded-For` handed to gunicorn carry the visitor, not an edge IP |

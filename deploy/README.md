@@ -978,6 +978,18 @@ boundary section of `sql/01_schema.sql` must have been applied as `postgres`
 `pg_hba.conf` line is described in
 [postgresql/README.md](postgresql/README.md), under "The service roles".
 
+The customers section from customers 0.1.6 on (#594) replaces
+`customer_email_key` with `ux_customer_email_lower`, a unique index on
+`lower(email)`. If the database already holds two customers whose emails
+differ only in letter case, creating the index fails and, with
+`--single-transaction`, nothing changes. Find them first, and correct one of
+each pair through the service's `PATCH` before applying:
+
+```sh
+sudo -u postgres psql -X -d retail -c "SELECT lower(email), count(*)
+  FROM customer WHERE email IS NOT NULL GROUP BY 1 HAVING count(*) > 1"
+```
+
 ### 6. The infrastructure project
 
 The aclfile comes first, because both Redis instances load it at boot. It is

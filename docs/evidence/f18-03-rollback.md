@@ -17,7 +17,57 @@ as root. The procedure is in
 | The web stays active | `mosaiq.service` stayed active and `https://127.0.0.1/` answered 200 after each rehearsal. A one-second monitor through Cloudflare saw 1201 samples, 0 not 200 or not active |
 | One service's failed deploy does not hold back a concurrent deploy of another | `stores` deployed, exit 0, inside the 60 s readiness wait of `segments`' failing rehearsal |
 | ADR-0040's compliance greps over the deploy path | Print nothing (below) |
-| The workflow runs only after the release job, builds its matrix from the changed files and authenticates through Workload Identity Federation | Covered by the workflow file and by `tests/test_deploy_service.py`. **Not yet run end to end:** the first merged `VERSION` bump to `main` (segments 0.1.2) runs it, and its run is to be added here |
+| The workflow runs only after the release job, builds its matrix from the changed files and authenticates through Workload Identity Federation | Run [39992244364](https://github.com/Equipo-03-Proyecto10/retail-segmentation/actions/runs/39992244364), on the merge of release #710 to `main`: the matrix was segments and sales, whose `VERSION` the push changed. Each deploy ran after its release job, checked that the image was built from the merged commit, signed in through Workload Identity Federation, and deployed at the same moment as the other. Both succeeded |
+
+## The workflow, end to end
+
+Release #710 merged `develop` into `main` at `fbcd370` on 2026-10-23. It
+carried two `VERSION` bumps, with no application change in either:
+
+- segments 0.1.1 → 0.1.2, made for this run;
+- sales 0.1.2 → 0.1.3, a test-only fix (#711).
+
+`services.yml` run
+[39992244364](https://github.com/Equipo-03-Proyecto10/retail-segmentation/actions/runs/39992244364)
+went like this:
+
+| Job | Result |
+|---|---|
+| `release (segments)`, `release (sales)` | built each image once, ran the conformance suite on it, and pushed `:0.1.2` and `:0.1.3` |
+| `deploy / changes` | matrix `["sales","segments"]`, from the changed `VERSION` files |
+| `deploy / deploy (segments)` | 17:08:22–17:09:39 UTC; revision label equal to `fbcd370`; script exit 0 |
+| `deploy / deploy (sales)` | 17:08:22–17:09:43 UTC; revision label equal to `fbcd370`; script exit 0 |
+
+The web's own `Deploy` run on the same push succeeded too, unchanged.
+
+The script's output in `deploy (segments)`, layer lines left out:
+
+```text
+=== 1. segments 0.1.2: preconditions
+serving: releases/0.1.1 (image tag 0.1.1)
+```
+
+And in `deploy (sales)`:
+
+```text
+=== 1. sales 0.1.3: preconditions
+serving: releases/0.1.2 (image tag 0.1.2)
+```
+
+Afterwards, on the instance:
+
+```text
+segments -> releases/0.1.2 image ghcr.io/equipo-03-proyecto10/mosaiq-segments:0.1.2 ready 204
+sales -> releases/0.1.3 image ghcr.io/equipo-03-proyecto10/mosaiq-sales:0.1.3 ready 204
+mosaiq, mosaiq-svc@segments, mosaiq-svc@sales: active
+web https 200
+edge /api/segments/health/ready 204
+edge /api/sales/health/ready 204
+check-services: 0 lines
+```
+
+`docker ps` showed the two recreated containers at 13 minutes. The other 16
+containers kept the start times they had before the release.
 
 ## Moving each service onto the script
 

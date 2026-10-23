@@ -253,20 +253,41 @@ def test_the_redis_acl_checks_print_nothing(
 INTERNAL_PORTS = [*range(5001, 5016), 6379, 27017]
 
 
+def _connect(host: str, port: int, seconds: float) -> str:
+    try:
+        with socket.create_connection((host, port), timeout=seconds):
+            return "open"
+    except TimeoutError:
+        return f"filtered (no answer in {seconds:g} s)"
+    except ConnectionRefusedError:
+        return "closed (refused)"
+    except OSError as error:
+        return f"unreachable ({error.strerror or error})"
+
+
+def test_the_probe_reaches_the_instance(outside_evidence: Evidence) -> None:
+    """A port the firewall allows answers, so a filtered port means something.
+
+    Without this, a probe from a machine with no route to the instance would
+    report every port filtered. SSH is open to the world (docs/infra.md).
+    """
+    host = os.environ["MOSAIQ_PROBE_HOST"]
+    port = int(os.environ.get("MOSAIQ_PROBE_CONTROL_PORT", "22"))
+    held = outside_evidence.record(
+        "network",
+        f"control: tcp/{port} on {host}, which the firewall allows",
+        "open",
+        _connect(host, port, 6),
+    )
+    assert held, "the probe cannot reach the instance from here"
+
+
 @pytest.mark.parametrize("port", INTERNAL_PORTS)
 def test_internal_ports_are_closed_from_outside(
     outside_evidence: Evidence, port: int
 ) -> None:
     host = os.environ["MOSAIQ_PROBE_HOST"]
-    try:
-        with socket.create_connection((host, port), timeout=4):
-            actual = "open"
-    except TimeoutError:
-        actual = "filtered (no answer in 4 s)"
-    except ConnectionRefusedError:
-        actual = "closed (refused)"
-    except OSError as error:
-        actual = f"unreachable ({error.strerror or error})"
+    actual = _connect(host, port, 4)
     held = outside_evidence.record(
         "network",
         f"tcp/{port} on {host}",

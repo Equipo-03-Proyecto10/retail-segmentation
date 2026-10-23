@@ -626,12 +626,26 @@ class Row:
 
 
 @dataclass
+class Note:
+    """A case this target does not run, for the services it applies to."""
+
+    kind: str
+    case: str
+    reason: str
+    areas: list[str] = field(default_factory=list)
+
+    def line(self) -> str:
+        areas = ", ".join(self.areas)
+        return f"- **{areas}, {self.case}:** {self.kind}. {self.reason}"
+
+
+@dataclass
 class Evidence:
     """Every case's expected and actual result, for the evidence document."""
 
     label: str
     rows: list[Row] = field(default_factory=list)
-    notes: list[str] = field(default_factory=list)
+    notes: list[Note] = field(default_factory=list)
 
     def check(
         self, area: str, case: str, reply: Reply, status: int, code: str | None = None
@@ -655,10 +669,19 @@ class Evidence:
         return row.held
 
     def not_run(self, area: str, case: str, reason: str) -> None:
-        self.notes.append(f"- **{area}, {case}:** not run here. {reason}")
+        self._note("not run here", area, case, reason)
 
     def not_applicable(self, area: str, case: str, reason: str) -> None:
-        self.notes.append(f"- **{area}, {case}:** not applicable. {reason}")
+        self._note("not applicable", area, case, reason)
+
+    def _note(self, kind: str, area: str, case: str, reason: str) -> None:
+        """One line for a case and reason, naming every area it applies to."""
+        for note in self.notes:
+            if (note.kind, note.case, note.reason) == (kind, case, reason):
+                if area not in note.areas:
+                    note.areas.append(area)
+                return
+        self.notes.append(Note(kind, case, reason, [area]))
 
     def section(self, base_url: str) -> str:
         held = sum(row.held for row in self.rows)
@@ -671,7 +694,7 @@ class Evidence:
             "",
         ]
         if self.notes:
-            lines += self.notes + [""]
+            lines += [note.line() for note in self.notes] + [""]
         lines += ["| Area | Case | Expected | Actual | |", "|---|---|---|---|---|"]
         for row in self.rows:
             cells = [row.area, row.case, row.expected, row.actual]
@@ -706,4 +729,10 @@ EVIDENCE_HEADER = """\
 Issue #459. Written by `tests/negative/` (see its README), one section per
 target: each run replaces its own section and keeps the others. A case holds
 when its actual result is the expected one.
+
+Running the case that stops `redis-state` showed that a restart of it revokes
+every session, although it keeps an append-only file
+([#714](https://github.com/Equipo-03-Proyecto10/retail-segmentation/issues/714)).
+That case therefore runs last, and the cases that follow it in the same run
+would fail on sessions that no longer exist.
 """

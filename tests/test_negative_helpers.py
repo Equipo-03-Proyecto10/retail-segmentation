@@ -117,3 +117,17 @@ def test_the_evidence_document_keeps_the_other_targets_sections(
     assert "1 held, 0 did not" in text
     assert "0 held, 1 did not" in text
     assert text.startswith("# F18-04")
+
+
+def test_a_case_not_run_is_noted_once_for_every_service_it_applies_to() -> None:
+    record = stack.Evidence("Instance")
+    for name in ("auth", "users", "stock"):
+        record.not_run(name, "a wrong iss", "It needs the private key.")
+    record.not_applicable("stock", "the body cases", "Its contract takes no body.")
+    record.not_run("auth", "a wrong iss", "It needs the private key.")
+
+    assert [note.line() for note in record.notes] == [
+        "- **auth, users, stock, a wrong iss:** not run here. "
+        "It needs the private key.",
+        "- **stock, the body cases:** not applicable. Its contract takes no body.",
+    ]

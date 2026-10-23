@@ -89,12 +89,14 @@ export MOSAIQ_NEGATIVE_ADMIN_EMAIL MOSAIQ_NEGATIVE_ADMIN_PASSWORD
 MOSAIQ_BASE_URL=https://127.0.0.1 MOSAIQ_HOST=mosaiq.maxthecoder.online \
 MOSAIQ_INSECURE_TLS=1 MOSAIQ_DIRECT_PORTS=1 \
 MOSAIQ_DB_EXEC="runuser -u postgres --" MOSAIQ_CHECK_REDIS=1 \
-  pytest -q tests/negative
+  pytest -q --confcutdir=tests/negative tests/negative
 unset MOSAIQ_NEGATIVE_ADMIN_EMAIL MOSAIQ_NEGATIVE_ADMIN_PASSWORD
 ```
 
 `check-redis.sh` reads `REDIS_OPS_PASSWORD` from the environment, as in
-`deploy/README.md`, F18-01 step 6.
+`deploy/README.md`, F18-01 step 6. `--confcutdir` keeps pytest from loading the
+web's `tests/conftest.py`, which needs Flask; the suite itself needs only
+`pytest` and PyYAML, so a virtualenv with the system packages is enough.
 
 What the instance run leaves out, and records as not run:
 - the wrong `iss` and `aud` tokens, which need auth's private key;
@@ -112,5 +114,10 @@ The internal ports, 5001 to 5015, 6379 and 27017, must be closed or filtered
 from outside the instance. From any other machine:
 
 ```bash
-MOSAIQ_PROBE_HOST=34.51.123.31 pytest -q tests/negative/test_infrastructure.py -k outside
+MOSAIQ_PROBE_HOST=34.51.123.31 pytest -q --confcutdir=tests/negative \
+  tests/negative/test_infrastructure.py -k "closed_from_outside or reaches_the_instance"
 ```
+
+A control case goes first: it connects to a port the firewall allows (SSH,
+`MOSAIQ_PROBE_CONTROL_PORT`) and expects it open. Without it, a machine with
+no route to the instance would report every port filtered and pass.

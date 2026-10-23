@@ -145,6 +145,12 @@ right place for it, and which the team accepted on 2026-09-07.
 |---|---|
 | [F16-04 (#417)](417-sales-readback.md) | A sale posted in JSON as a store manager, read back on the desktop Sales screen in XML after Refresh, with lines and total; run against real auth, sales, products and stores services behind the local gateway, the XML checked against `sales.xsd` with xmllint; step evidence for F18-05 |
 
+## Phase 17 — Android client
+
+| Document | What it records |
+|---|---|
+| [F17-06 (#445)](445-android-screens.md) | Every Android screen of F17-01 to F17-05, from the real debug app on an emulator against the real services. It includes both permission-denied paths at the system dialog, a sale refused with `no_stock_record` in the outbox screen, and one recommendation tap counted as exactly one `RECO_CLICK`. The database rows behind them are listed, and `clients/android/evidence/screen_tour.py` reproduces the screenshots |
+
 ## Phase 18 — deployment and end-to-end demonstration
 
 | Document | What it records |

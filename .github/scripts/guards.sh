@@ -4,8 +4,10 @@
 # one line per problem and exits 1 otherwise. Run from the repository root.
 #
 # Each block names the record whose Compliance section it carries. Service
-# names come from contracts/registry.yaml; this file is the one place under
-# deploy/ and .github/ allowed to name a service (the golden-fixture list).
+# names come from contracts/registry.yaml; this file (the golden-fixture list)
+# and deploy/check-services.sh (the instance checks, which ADR-0040's compliance
+# check excludes) are the only places under deploy/ and .github/ allowed to
+# name a service.
 set -uo pipefail
 shopt -s nullglob
 
@@ -72,7 +74,7 @@ problems=$(
     | grep -vE '^services/engagement/' | found "ADR-0038 MongoDB named outside engagement"
   git grep -nE '^\s*mongo(db)?:' -- 'services/*/compose.yaml' | found ADR-0038
   git grep -nE '\b(delete_one|delete_many|find_one_and_delete|drop_collection|drop_database|collMod|createUser)\b|\.drop\(' \
-    -- services/engagement/src/ | found ADR-0038
+    -- services/engagement/src/ services/engagement/app/ | found ADR-0038
 
   # ADR-0044: no other boundary's outbox channel, and no XADD but the kit's.
   for d in services/*/; do
@@ -89,11 +91,47 @@ problems=$(
   git grep -niE '^\s*(create|alter|drop)\s+(table|schema)\b' -- services/ packages/ bench/ deploy/ \
     | found ADR-0046
 
+  # AGENTS.md: every SQL statement is parameterized, with no interpolation
+  # into SQL text (#593). Python composes with psycopg.sql (sql.SQL(...)
+  # .format(sql.Identifier(...))), and every Python service's ruff selects
+  # S608 with no noqa for it. Rust keeps fixed statements whose one
+  # identifier enters through a quoting helper, never format!. The grep flags
+  # an f-string, +, % or str.format, or a Rust format! or push_str, around a
+  # literal that holds an SQL keyword. Tests are out of its reach.
+  for f in services/*/pyproject.toml; do
+    grep -qE '^extend-select = \[.*"S608"' "$f" || echo "AGENTS.md SQL: $f does not select ruff's S608"
+  done
+  git grep -n 'noqa: S608' -- services/ packages/ bench/ | found "AGENTS.md SQL"
+  sql_program=$(cat <<'PERL'
+my $kw = qr/\b(?:SELECT|INSERT|UPDATE|DELETE|FROM|WHERE|JOIN|VALUES|RETURNING|LISTEN|NOTIFY|ORDER BY|GROUP BY|LIMIT|OFFSET)\b/;
+my $literal = qr/(?:"[^"\n]*$kw[^"\n]*"|'[^'\n]*$kw[^'\n]*')/;
+for my $file (@ARGV) {
+    open my $in, '<', $file or next;
+    my $text = do { local $/; <$in> };
+    my @patterns = $file =~ /\.rs$/
+        ? (qr/(?:format!|push_str)\(\s*r?#*"[^"]*$kw/, qr/"[^"\n]*$kw[^"\n]*"\s*\+/,
+           qr/\+\s*"[^"\n]*$kw/)
+        : (qr/\b(?:[fF][rR]?|[rR][fF])(?:"[^"\n]*|'[^'\n]*)$kw/,
+           qr/$literal\s*(?:\+|%\s*[\w(\[{]|\.format\()/, qr/\+\s*\(?\s*(?:"[^"\n]*|'[^'\n]*)$kw/);
+    for my $pattern (@patterns) {
+        while ($text =~ /$pattern/g) {
+            my $line = 1 + (substr($text, 0, $-[0]) =~ tr/\n//);
+            print "$file:$line: SQL text built by interpolation\n";
+        }
+    }
+}
+PERL
+)
+  git ls-files -z -- 'services/*.py' 'services/*.rs' 'packages/*.py' 'packages/*.rs' \
+    'bench/*.py' 'bench/*.rs' ':(exclude)services/*/tests/*' ':(exclude)packages/*/tests/*' \
+    ':(exclude)bench/*/tests/*' | xargs -0 -r perl -e "$sql_program" | found "AGENTS.md SQL"
+
   # ADR-0040: each project's compose and NGINX include, and nothing in
   # deploy/ or .github/ names a service.
   bash deploy/templates/service/check.sh services | sed 's|^FAIL: |ADR-0040: |'
   names=$(sed -n 's/^  - name: //p' contracts/registry.yaml | paste -sd'|')
   git grep -nE "mosaiq-($names)\b" -- .github/ deploy/ ':(exclude).github/scripts/guards.sh' \
+    ':(exclude)deploy/check-services.sh' \
     | found "ADR-0040 a service named"
 
   # ADR-0037: Redis runs in mosaiq-infra only, pinned, and the web never names it.

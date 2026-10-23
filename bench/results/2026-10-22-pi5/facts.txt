@@ -1,0 +1,21 @@
+date_utc=2026-10-22T04:01:23Z
+commit=3e483e64cd31e75d6ce2379f1393e3981152d2e7
+dirty=yes
+cpu=Cortex-A76
+cores=4
+memory=15Gi
+os=Debian GNU/Linux 13 (trixie) kernel 6.18.50+rpt-rpi-2712 aarch64
+docker=29.8.1
+k6=k6 v2.3.0 (commit/e088784614, go1.27.1, linux/arm64)
+k6_image_digest=grafana/k6@sha256:e66db15b860113878fa74670e31f5e274830b7b6e42c8bff28b2f2d86a257603
+products_image=ghcr.io/equipo-03-proyecto10/mosaiq-products:0.1.3 sha256:fc70c186f669b3954badbe8b115cc8a5dbf6d876ecc20b5cab84fea4559a86c7
+products_image_size_bytes=281260372
+twin_image=mosaiq-products-service-rs:bench sha256:3b52dab5b0eec612e10c21606f55cac90a3ae8a1e7ad66c33dbcf457a1ecedd3
+twin_image_size_bytes=157092897
+kit_py=kit-py/v0.1.6
+kit_rs=kit-rs/v0.1.0
+postgres=postgres:18 sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6
+memory_limit=not-enforced
+reps=5 warmup=30 measure=120 fraction=70 step=10
+cal_rates=10,20,40,60,80,120,160,240,320,480,640,960,1280,1920
+cpus=app:1 backing:2 k6:3

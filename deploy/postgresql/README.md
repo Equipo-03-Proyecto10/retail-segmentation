@@ -137,6 +137,45 @@ Use the instance credential through the password prompt; the local development
 password from `.env.example` does not apply to the VM. SSH controls who can
 reach the tunnel, and PostgreSQL still requires SCRAM authentication.
 
+### The service roles (ADR-0040, F18-01)
+
+Each service container connects through the read-only mount of
+`/run/postgresql` as its own role, with the password in its
+`/etc/mosaiq/svc/<name>.env`. It runs as UID 10001, which maps to no host
+account, so `peer` would refuse it. Each role therefore gets one
+`local retail <role> scram-sha-256` line, placed **above** `local all all peer`
+(the first matching line wins):
+
+```conf
+local   retail          svc_audit_trail                         scram-sha-256
+local   retail          svc_auth                                scram-sha-256
+local   retail          svc_campaigns                           scram-sha-256
+local   retail          svc_categories                          scram-sha-256
+local   retail          svc_checkins                            scram-sha-256
+local   retail          svc_customers                           scram-sha-256
+local   retail          svc_engagement                          scram-sha-256
+local   retail          svc_preferences                         scram-sha-256
+local   retail          svc_products                            scram-sha-256
+local   retail          svc_recommendations                     scram-sha-256
+local   retail          svc_sales                               scram-sha-256
+local   retail          svc_segments                            scram-sha-256
+local   retail          svc_stock                               scram-sha-256
+local   retail          svc_stores                              scram-sha-256
+local   retail          svc_users                               scram-sha-256
+local   all             all                                     peer
+```
+
+These are the fifteen roles `sql/00_create_database.sql` creates, the second
+wave's `svc_campaigns` and `svc_audit_trail` included. There is no `host` line
+for them, and no line at all for `svc_products_bench`: the bench never runs on
+the instance. `listen_addresses` stays `localhost`, and `mosaiq.conf` does not
+change.
+
+Apply them with `sudo systemctl reload postgresql-18`, then confirm that
+`TABLE pg_hba_file_rules` shows no `error` and that every role's
+`line_number` is smaller than the `peer` line's. `deploy/check-services.sh` checks the same thing on
+every run, and prints nothing when it holds.
+
 ## Verify the restricted role
 
 `sql/00_create_database.sql` creates `retail_app` separately from the owner.

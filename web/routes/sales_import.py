@@ -30,6 +30,7 @@ from web.db import get_connection
 from web.db.sales_loads import (
     get_sales_load,
     list_sales_load_rejections,
+    list_sales_load_rejections_page,
     list_sales_loads,
 )
 from web.middleware.authz import SALES_INGEST_EXECUTE, requires
@@ -45,6 +46,7 @@ from web.services.sales_csv import (
 bp = Blueprint("sales_import", __name__, url_prefix="/admin/sales-import")
 
 _PER_PAGE = 20
+_REJECTIONS_PER_PAGE = 100
 _FILENAME_MAX = 255
 
 
@@ -120,15 +122,28 @@ def upload() -> Response | tuple[str | Response, int]:
 
 @bp.get("/<int:load_id>")
 @requires(SALES_INGEST_EXECUTE)
-def detail(load_id: int) -> str:
+def detail(load_id: int) -> str | Response:
     """Retrieve a past load's report (AC 3): it survives the page that made
-    it."""
+    it. Its rejected lines are paged; the CSV download carries all of them."""
     connection = get_connection()
     load = get_sales_load(connection, load_id)
     if load is None:
         abort(404)
-    rejections = list_sales_load_rejections(connection, load_id)
-    return render_template("sales_import/report.html", load=load, rejections=rejections)
+    page = parse_pagination(request.args.get("page"))
+    rejections, total = list_sales_load_rejections_page(
+        connection, load_id, page=page, per_page=_REJECTIONS_PER_PAGE
+    )
+    total_pages = page_count(total, _REJECTIONS_PER_PAGE)
+    if response := redirect_last_page(page, total_pages):
+        return response
+    return render_template(
+        "sales_import/report.html",
+        load=load,
+        rejections=rejections,
+        page=page,
+        total_pages=total_pages,
+        total=total,
+    )
 
 
 @bp.get("/<int:load_id>/rejections.csv")

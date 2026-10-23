@@ -1,6 +1,6 @@
 # sales
 
-> **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
+> **Status:** Implemented (phase 14, core; F14-18, #454). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
 > **One rule:** A sale is recorded exactly once, all or nothing, consuming its stock in the same transaction, and only with lines dated not in the future and not before the customer's registration, for active products, with positive quantities and positive two-decimal prices (RN-11 to RN-13, RN-37 (accepted sales))
 
 ## Summary
@@ -128,7 +128,7 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 - **What:** Phone sales and CSV rows both write `transaction`, and share the unique `source_transaction_id`. Phone sales use the prefix `svc-sales:`.
 - **Why it is acceptable:** A single unique column lets the web's lookup by source id keep working, and makes phone sales idempotent in PostgreSQL alone.
-- **Guard:** Two BEFORE INSERT triggers refuse the prefix unless the session user is `svc_sales`, and refuse lines on a namespace header. A CSV row that names the prefix is rejected as a malformed row, with no web change.
+- **Guard:** Two BEFORE INSERT triggers refuse the prefix unless the session user is `svc_sales`, and refuse lines on a namespace header. The `transaction` trigger also refuses a row from `svc_sales` whose `data_origin` is not `OBSERVED` (ADR-0052, #559), so the header INSERT must name the column and bind `OBSERVED`; that 22023 is a service defect, not a client error. A CSV row that names the prefix is rejected as a malformed row, with no web change.
 - **Decided in:** [ADR-0039](../adr/0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) (The reserved namespace). Register: [E-16](./README.md#e-16--phone-sales-share-the-transaction-id-namespace-with-csv).
 
 ### E-17 — rules ported from the web exist twice

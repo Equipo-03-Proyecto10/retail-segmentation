@@ -19,16 +19,17 @@ from typing import Any
 from uuid import UUID
 
 from mosaiq_kit import ApiError
-from psycopg import Connection
+from psycopg import Connection, sql
 from psycopg.errors import UniqueViolation
 
 ADMIN = "ADMIN"
 ADMIN_ROLE_ID = 1
 
-USER_COLUMNS = (
+# Fixed fragments, composed with psycopg.sql; values are only ever bound.
+USER_COLUMNS = sql.SQL(
     "u.user_id, u.name, u.email, r.code AS role_code, u.is_active, u.created_at"
 )
-USER_FROM = "app_user AS u JOIN role AS r ON r.role_id = u.role_id"
+USER_FROM = sql.SQL("app_user AS u JOIN role AS r ON r.role_id = u.role_id")
 
 
 def normalize_email(email: str) -> str:
@@ -42,6 +43,23 @@ def single_administrator() -> ApiError:
         "single_administrator",
         "This system has exactly one administrator, and the role is already taken.",
     )
+
+
+def clean_name(name: str) -> str:
+    """The name as stored: trimmed, and refused when nothing is left.
+
+    The schema's minLength counts the untrimmed value, so "   " passes it and
+    would be stored as "" (#587). The web refuses the same name.
+    """
+    cleaned = name.strip()
+    if not cleaned:
+        raise ApiError(
+            422,
+            "invalid_body",
+            "The request body violates its schema.",
+            [{"field": "name", "code": "too_short"}],
+        )
+    return cleaned
 
 
 def user_not_found() -> ApiError:
@@ -96,8 +114,14 @@ def get_user(
 ) -> dict[str, Any] | None:
     with connection.cursor() as cursor:
         cursor.execute(
-            f"SELECT {USER_COLUMNS}, u.role_id, u.password_hash FROM {USER_FROM}"  # noqa: S608
-            " WHERE u.user_id = %s" + (" FOR UPDATE OF u" if lock else ""),
+            sql.SQL(
+                "SELECT {columns}, u.role_id, u.password_hash FROM {source}"
+                " WHERE u.user_id = %s{lock}"
+            ).format(
+                columns=USER_COLUMNS,
+                source=USER_FROM,
+                lock=sql.SQL(" FOR UPDATE OF u" if lock else ""),
+            ),
             (str(user_id),),
         )
         return _row(cursor)
@@ -141,6 +165,7 @@ def create_user(
     role_code: str,
 ) -> dict[str, Any]:
     """Create an account; an ADMIN is never created here, only transferred."""
+    name = clean_name(name)
     if role_code == ADMIN:
         raise single_administrator()
     new_role = role_id(connection, role_code)
@@ -149,7 +174,7 @@ def create_user(
             cursor.execute(
                 "INSERT INTO app_user (role_id, name, email, password_hash)"
                 " VALUES (%s, %s, %s, %s) RETURNING user_id",
-                (new_role, name.strip(), normalize_email(email), password_hash),
+                (new_role, name, normalize_email(email), password_hash),
             )
             user_id = cursor.fetchone()[0]
     except UniqueViolation as error:
@@ -166,6 +191,8 @@ def update_user(
     role_code: str | None = None,
 ) -> dict[str, Any]:
     """Edit name, email or a non-ADMIN role; the ADMIN role only transfers."""
+    if name is not None:
+        name = clean_name(name)
     user = get_user(connection, user_id, lock=True)
     if user is None:
         raise user_not_found()
@@ -183,7 +210,7 @@ def update_user(
             cursor.execute(
                 "UPDATE app_user SET name = %s, email = %s WHERE user_id = %s",
                 (
-                    user["name"] if name is None else name.strip(),
+                    user["name"] if name is None else name,
                     user["email"] if email is None else normalize_email(email),
                     str(user["user_id"]),
                 ),
@@ -293,13 +320,13 @@ def list_users(
     page: int,
     size: int,
 ) -> tuple[list[dict[str, Any]], int]:
-    conditions = []
+    conditions: list[sql.Composable] = []
     params: list[Any] = []
     if role_code is not None:
-        conditions.append("r.code = %s")
+        conditions.append(sql.SQL("r.code = %s"))
         params.append(role_code)
     if active is not None:
-        conditions.append("u.is_active = %s")
+        conditions.append(sql.SQL("u.is_active = %s"))
         params.append(active)
     if query is not None:
         # % and _ match literally.
@@ -308,15 +335,26 @@ def list_users(
             + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             + "%"
         )
-        conditions.append("(u.name ILIKE %s OR u.email ILIKE %s)")
+        conditions.append(sql.SQL("(u.name ILIKE %s OR u.email ILIKE %s)"))
         params.extend([pattern, pattern])
-    where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+    where = (
+        sql.SQL(" WHERE {}").format(sql.SQL(" AND ").join(conditions))
+        if conditions
+        else sql.SQL("")
+    )
     with connection.cursor() as cursor:
-        cursor.execute(f"SELECT count(*) FROM {USER_FROM}{where}", params)  # noqa: S608
+        cursor.execute(
+            sql.SQL("SELECT count(*) FROM {source}{where}").format(
+                source=USER_FROM, where=where
+            ),
+            params,
+        )
         total = cursor.fetchone()[0]
         cursor.execute(
-            f"SELECT {USER_COLUMNS} FROM {USER_FROM}{where}"  # noqa: S608
-            " ORDER BY u.created_at, u.user_id LIMIT %s OFFSET %s",
+            sql.SQL(
+                "SELECT {columns} FROM {source}{where}"
+                " ORDER BY u.created_at, u.user_id LIMIT %s OFFSET %s"
+            ).format(columns=USER_COLUMNS, source=USER_FROM, where=where),
             [*params, size, (page - 1) * size],
         )
         names = [column.name for column in cursor.description]

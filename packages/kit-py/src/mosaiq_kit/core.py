@@ -26,6 +26,7 @@ from .types import ApiError, Collection, NoContent, Page, Representation
 
 LOGGER = logging.getLogger(__name__)
 _CORRELATION = re.compile(r"^[0-9A-Za-z-]{1,64}$")
+_MAX_PAGE = 4_294_967_295
 _ResponseValue = Representation | Collection | Page | NoContent
 _Handler = TypeVar("_Handler", bound=Callable[..., _ResponseValue])
 
@@ -239,6 +240,14 @@ class Kit:
             ) from None
         if len(raw) > 65_536:
             raise ApiError(413, "payload_too_large", "The request body exceeds 64 KiB.")
+        if content_length is None and len(raw) == 65_536:
+            # With no Content-Length (chunked), Werkzeug's limited stream stops
+            # at the cap without raising, so a longer body would be truncated
+            # and then fail to parse. Probe the raw input for one more byte.
+            if request.environ["wsgi.input"].read(1):
+                raise ApiError(
+                    413, "payload_too_large", "The request body exceeds 64 KiB."
+                )
         return raw
 
     @staticmethod
@@ -301,16 +310,24 @@ class Kit:
     def _pagination() -> tuple[int, int]:
         details = []
         values: dict[str, int] = {}
+        # A page above 2^32 - 1 is out of range, as in kit-rs, so the offset
+        # always fits PostgreSQL's bigint.
         for name, default, minimum, maximum in (
-            ("page", 1, 1, None),
+            ("page", 1, 1, _MAX_PAGE),
             ("size", 20, 1, 100),
         ):
             raw = request.args.get(name)
             if raw is not None and re.fullmatch(r"[0-9]+", raw) is None:
                 details.append({"field": name, "code": "invalid_type"})
                 continue
-            value = default if raw is None else int(raw)
-            if value < minimum or (maximum is not None and value > maximum):
+            # Too many digits is out of range before int(), which refuses
+            # strings past its own digit limit.
+            digits = None if raw is None else raw.lstrip("0") or "0"
+            if digits is not None and len(digits) > len(str(maximum)):
+                details.append({"field": name, "code": "out_of_range"})
+                continue
+            value = default if digits is None else int(digits)
+            if not minimum <= value <= maximum:
                 details.append({"field": name, "code": "out_of_range"})
             values[name] = value
         if details:
@@ -340,8 +357,10 @@ class Kit:
         self.app.add_url_rule(
             "/openapi.yaml",
             endpoint="mosaiq_openapi",
-            view_func=lambda: Response(
-                self.contract.openapi_bytes, content_type="application/yaml"
+            view_func=lambda: self._document(
+                self.contract.openapi_bytes,
+                "application/yaml",
+                ("application/yaml", "application/x-yaml", "text/yaml"),
             ),
             methods=["GET"],
             provide_automatic_options=False,
@@ -349,8 +368,10 @@ class Kit:
         self.app.add_url_rule(
             "/schema.xsd",
             endpoint="mosaiq_schema",
-            view_func=lambda: Response(
-                self.contract.xsd_bytes, content_type="application/xml"
+            view_func=lambda: self._document(
+                self.contract.xsd_bytes,
+                "application/xml",
+                ("application/xml", "text/xml"),
             ),
             methods=["GET"],
             provide_automatic_options=False,
@@ -366,6 +387,23 @@ class Kit:
                 methods=["GET"],
                 provide_automatic_options=False,
             )
+
+    @staticmethod
+    def _document(
+        payload: bytes, content_type: str, offered: tuple[str, ...]
+    ) -> Response:
+        """Serve a contract document, or 406 when Accept excludes every type."""
+
+        accept = request.headers.get("Accept")
+        if accept and accept.strip():
+            best = request.accept_mimetypes.best_match(offered)
+            if best is None or request.accept_mimetypes[best] == 0:
+                raise ApiError(
+                    406,
+                    "not_acceptable",
+                    "The requested response format is unsupported.",
+                )
+        return Response(payload, content_type=content_type)
 
     @staticmethod
     def _file_view(path: Path) -> Callable[[], Response]:

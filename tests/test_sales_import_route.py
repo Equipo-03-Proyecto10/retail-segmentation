@@ -27,7 +27,11 @@ from flask.testing import FlaskClient
 from web.app import create_app
 from web.config import Config
 from web.db.sales_loads import SalesLoad, SalesLoadRejectionRow
-from web.services.sales_csv import LoadReport, UnsupportedContractVersion
+from web.services.sales_csv import (
+    LoadReport,
+    UnsupportedContractVersion,
+    load_and_record_sales_csv,
+)
 
 _URL = "/admin/sales-import/"
 _ADMIN_ID = "11111111-1111-1111-1111-000000000001"
@@ -74,6 +78,9 @@ def pages(monkeypatch: pytest.MonkeyPatch) -> dict[str, Mock]:
         "list_sales_loads": Mock(return_value=([_LOAD], 1)),
         "get_sales_load": Mock(return_value=_LOAD),
         "list_sales_load_rejections": Mock(return_value=_REJECTIONS),
+        "list_sales_load_rejections_page": Mock(
+            return_value=(_REJECTIONS, len(_REJECTIONS))
+        ),
         "load_and_record_sales_csv": Mock(
             return_value=(LoadReport(3, 1, 2, ()), _LOAD.load_id)
         ),
@@ -154,6 +161,33 @@ def test_a_file_off_the_contract_is_refused_in_words(app, pages) -> None:
     assert "september.csv" in _body(response)
 
 
+def test_a_field_past_the_csv_limit_is_refused_in_words_not_a_500(
+    app, pages, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#584, through the real loader. The csv field limit is lowered for the test
+    so the file fits under this app's 1 KiB upload limit; the default limit is
+    131,072 characters."""
+    monkeypatch.setattr(
+        "web.routes.sales_import.load_and_record_sales_csv", load_and_record_sales_csv
+    )
+    content = (
+        "transaction_id,customer_id,store_id,channel_id,occurred_at,"
+        "product_id,quantity,unit_price\n"
+        "TXN-1," + "9" * 200 + ",1,1,2026-01-15T10:00:00+00:00,1,2,9.99\n"
+    ).encode()
+    default_limit = csv.field_size_limit(100)
+    try:
+        response = _upload(_admin(app), content)
+    finally:
+        csv.field_size_limit(default_limit)
+
+    assert response.status_code == 400
+    assert (
+        "The file was not loaded: line 2 has a field longer than 100 characters, "
+        "which no column of the contract allows." in _body(response)
+    )
+
+
 def test_a_file_over_the_upload_limit_is_refused_before_any_row_is_read(
     app, pages
 ) -> None:
@@ -208,9 +242,43 @@ def test_a_stored_report_reconciles_and_lists_every_rejected_line(app, pages) ->
     assert response.status_code == 200
     assert "unknown product" in body and "quantity must be positive" in body
     assert 'href="/admin/sales-import/7/rejections.csv"' in body
-    pages["list_sales_load_rejections"].assert_called_once_with(
-        pages["get_sales_load"].call_args.args[0], 7
+    pages["list_sales_load_rejections_page"].assert_called_once_with(
+        pages["get_sales_load"].call_args.args[0], 7, page=1, per_page=100
     )
+
+
+def test_a_large_report_is_paged_and_counts_every_rejected_line(app, pages) -> None:
+    # #595: an all-rejected 40,000-row file rendered as one 5.4 MB page.
+    pages["list_sales_load_rejections_page"].return_value = (_REJECTIONS, 40_000)
+
+    response = _admin(app).get("/admin/sales-import/7?page=2")
+
+    body = _body(response)
+    assert response.status_code == 200
+    pages["list_sales_load_rejections_page"].assert_called_once_with(
+        pages["get_sales_load"].call_args.args[0], 7, page=2, per_page=100
+    )
+    assert "Page 2 of 400" in body
+    assert "40000 rejected rows" in body
+    assert 'href="/admin/sales-import/7?page=1"' in body
+    assert 'href="/admin/sales-import/7?page=3"' in body
+    pages["list_sales_load_rejections"].assert_not_called()
+
+
+def test_a_report_page_past_the_end_goes_to_the_last_page(app, pages) -> None:
+    pages["list_sales_load_rejections_page"].return_value = ([], 250)
+
+    response = _admin(app).get("/admin/sales-import/7?page=9")
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/sales-import/7?page=3")
+
+
+def test_the_csv_download_still_carries_every_rejected_line(app, pages) -> None:
+    _admin(app).get("/admin/sales-import/7/rejections.csv")
+
+    pages["list_sales_load_rejections"].assert_called_once()
+    pages["list_sales_load_rejections_page"].assert_not_called()
 
 
 def test_an_unknown_load_is_a_404(app, pages) -> None:

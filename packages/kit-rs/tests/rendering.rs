@@ -122,6 +122,83 @@ async fn text_is_escaped_in_xml() {
 }
 
 #[tokio::test]
+async fn json_text_is_parsed_for_json_and_escaped_as_text_for_xml() {
+    let object = r#" { "nested": {"items":[1,true,"two"]} } "#;
+    let array = r#"[null,{"markup":"<tag> & \"quoted\""}]"#;
+    let value = Representation::new(
+        "Value",
+        [
+            ("object", Value::JsonText(object.to_owned())),
+            ("array", Value::JsonText(array.to_owned())),
+            ("nothing", Value::JsonText("null".to_owned())),
+        ],
+    );
+
+    let (_, json_body) = render(value.clone(), Format::Json).await;
+    assert_eq!(
+        json_of(&json_body),
+        json!({
+            "object": {"nested": {"items": [1, true, "two"]}},
+            "array": [null, {"markup": "<tag> & \"quoted\""}],
+            "nothing": null,
+        })
+    );
+
+    let (_, xml_body) = render(value, Format::Xml).await;
+    let xml = String::from_utf8(xml_body).unwrap();
+    assert!(
+        xml.contains(
+            "<object> { &quot;nested&quot;: {&quot;items&quot;:[1,true,&quot;two&quot;]} } </object>"
+        ),
+        "{xml}"
+    );
+    assert!(
+        xml.contains(
+            r#"<array>[null,{&quot;markup&quot;:&quot;&lt;tag&gt; &amp; \&quot;quoted\&quot;&quot;}]</array>"#
+        ),
+        "{xml}"
+    );
+    assert!(xml.contains("<nothing>null</nothing>"), "{xml}");
+}
+
+#[tokio::test]
+async fn json_text_scalars_keep_their_json_types_and_original_xml_text() {
+    for (text, expected) in [
+        (" 42 ", json!(42)),
+        ("1.25", json!(1.25)),
+        (r#""hello""#, json!("hello")),
+        ("true", json!(true)),
+        ("false", json!(false)),
+    ] {
+        let value = Representation::new("Value", [("payload", Value::JsonText(text.to_owned()))]);
+        let (_, json_body) = render(value.clone(), Format::Json).await;
+        assert_eq!(json_of(&json_body), json!({"payload": expected}));
+        let (_, xml_body) = render(value, Format::Xml).await;
+        let xml = String::from_utf8(xml_body).unwrap();
+        let escaped = text.replace('"', "&quot;");
+        assert!(
+            xml.contains(&format!("<payload>{escaped}</payload>")),
+            "{xml}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn invalid_json_text_is_a_json_string() {
+    let invalid = "not <json> & \"still text\"";
+    let value = Representation::new("Value", [("payload", Value::JsonText(invalid.to_owned()))]);
+    let (_, json_body) = render(value.clone(), Format::Json).await;
+    assert_eq!(json_of(&json_body), json!({"payload": invalid}));
+
+    let (_, xml_body) = render(value, Format::Xml).await;
+    let xml = String::from_utf8(xml_body).unwrap();
+    assert!(
+        xml.contains("<payload>not &lt;json&gt; &amp; &quot;still text&quot;</payload>"),
+        "{xml}"
+    );
+}
+
+#[tokio::test]
 async fn collection_and_page_shapes() {
     let (_, collection) = render(
         Collection::new("Values", "Value", "values", items(&[1, 2])),

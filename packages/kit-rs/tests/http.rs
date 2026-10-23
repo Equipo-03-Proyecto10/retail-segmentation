@@ -416,6 +416,38 @@ async fn meta_routes_are_public_and_byte_exact() {
 }
 
 #[tokio::test]
+async fn contract_documents_refuse_an_unsupported_accept() {
+    let Some(app) = app().await else { return };
+    for path in ["/openapi.yaml", "/schema.xsd"] {
+        for accept in ["image/png", "text/html", "application/json"] {
+            let answer = call("GET", path).header("Accept", accept).send(&app).await;
+            assert_eq!(answer.status, 406, "{path} {accept}");
+            assert_eq!(answer.code(), "not_acceptable");
+        }
+    }
+}
+
+#[tokio::test]
+async fn contract_documents_serve_a_supported_accept() {
+    let Some(app) = app().await else { return };
+    for (path, accept) in [
+        ("/openapi.yaml", None),
+        ("/openapi.yaml", Some("*/*")),
+        ("/openapi.yaml", Some("application/yaml")),
+        ("/openapi.yaml", Some("application/*")),
+        ("/schema.xsd", None),
+        ("/schema.xsd", Some("application/xml")),
+        ("/schema.xsd", Some("text/xml, */*;q=0.1")),
+    ] {
+        let mut request = call("GET", path);
+        if let Some(accept) = accept {
+            request = request.header("Accept", accept);
+        }
+        assert_eq!(request.send(&app).await.status, 200, "{path} {accept:?}");
+    }
+}
+
+#[tokio::test]
 async fn failed_readiness_has_its_own_error() {
     if redis_url().is_none() {
         return;
@@ -436,12 +468,19 @@ async fn path_constraints_and_undeclared_methods_are_routing_errors() {
         .send(&app)
         .await;
     assert_eq!(answer.status, 404);
-    assert_eq!(answer.code(), "not_found");
+    assert_eq!(answer.code(), "note_not_found");
     let answer = call("GET", "/v1/notes/abc")
         .bearer("valid_reader")
         .send(&app)
         .await;
     assert_eq!(answer.status, 404);
+    assert_eq!(answer.code(), "note_not_found");
+    let answer = call("GET", "/v1/other/3")
+        .bearer("valid_reader")
+        .send(&app)
+        .await;
+    assert_eq!(answer.status, 404);
+    assert_eq!(answer.code(), "not_found");
     let answer = call("OPTIONS", "/v1/notes")
         .bearer("valid_reader")
         .send(&app)
@@ -578,4 +617,16 @@ fn vector_files_have_public_material_only() {
         .path()
         .extension()
         .is_some_and(|ext| ext == "pem")));
+}
+
+#[tokio::test]
+async fn a_padded_bearer_credential_is_refused() {
+    let Some(app) = app().await else { return };
+    let padded = format!("Bearer  {}", common::token("valid_reader"));
+    let answer = call("GET", "/v1/notes")
+        .header("Authorization", &padded)
+        .send(&app)
+        .await;
+    assert_eq!(answer.status, 401);
+    assert_eq!(answer.code(), "invalid_token");
 }

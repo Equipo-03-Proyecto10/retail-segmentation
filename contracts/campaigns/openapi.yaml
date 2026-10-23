@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: campaigns-service
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     Owns the campaign lifecycle rule. A campaign is created as DRAFT, may be
     edited only while it remains DRAFT, and moves only DRAFT to ACTIVE or
@@ -78,7 +78,9 @@ paths:
         Creates a campaign in DRAFT. The server allocates `campaign_id`;
         `campaign_id` and `status` are forbidden in the body and return 422
         `invalid_body`. The end date must not precede the start date, and
-        `label_code` must exist in the stable segment label vocabulary.
+        `label_code` must exist in the stable segment label vocabulary. A DRAFT
+        campaign with the same name, `label_code`, `starts_on` and `ends_on`
+        returns 409 `duplicate_draft`.
       x-mosaiq-roles:
         - ADMIN
         - MARKETING
@@ -133,6 +135,8 @@ paths:
           $ref: '#/components/responses/ForbiddenRole'
         '406':
           $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/CampaignCreateConflict'
         '413':
           $ref: '#/components/responses/PayloadTooLarge'
         '415':
@@ -793,6 +797,26 @@ components:
           examples:
             campaign_not_draft:
               externalValue: ./examples/campaign-not-draft.xml
+    CampaignCreateConflict:
+      description: >-
+        `duplicate_draft`: a DRAFT campaign with the same name, label_code,
+        starts_on and ends_on already exists.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            duplicate_draft:
+              externalValue: ./examples/duplicate-draft.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            duplicate_draft:
+              externalValue: ./examples/duplicate-draft.xml
     TransitionConflict:
       description: >-
         `illegal_transition`, `status_changed`, `campaign_ended` or

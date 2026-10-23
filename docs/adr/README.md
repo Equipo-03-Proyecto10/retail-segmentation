@@ -130,6 +130,12 @@ them to `main`, and this transition records that rather than backdating it.
 ADR-0052 is accepted ahead of its implementation (#559, #560). Their decision
 text is unchanged.
 
+The requester accepted ADR-0054 on 2026-10-21 (#597), choosing B1: clean the
+eight outboxes before the seed commits, exclusively on an empty database.
+It partially supersedes ADR-0046's publication of seed events and authorizes
+one verified, archived cleanup of the existing instance's seed transaction.
+Later runtime events must be preserved.
+
 ## Index
 
 | ADR | Title | Status |
@@ -179,7 +185,7 @@ text is unchanged.
 | [0043](0043-at-least-ten-microservices-each-implementing-one-business-rule.md) | The distributed stage has at least ten microservices, each implementing one business rule | Accepted |
 | [0044](0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) | Boundaries meet only through versioned database contracts and Redis Streams relayed from each owner's outbox | Accepted |
 | [0045](0045-services-never-import-the-web-system.md) | Services never import the web system | Accepted |
-| [0046](0046-service-owned-data-lives-in-service-schemas.md) | Service-owned data lives in service schemas | Accepted |
+| [0046](0046-service-owned-data-lives-in-service-schemas.md) | Service-owned data lives in service schemas | Partially superseded by [0054](0054-seed-written-outbox-rows-before-the-relays-first-start.md) (seed events only) |
 | [0047](0047-notifications-are-pulled-from-postgresql-and-an-experiments-end-is-announced-by-the-next-page-read.md) | Notifications are pulled from PostgreSQL, and an experiment's end is announced by the next signed-in page read | Accepted |
 | [0048](0048-store-managers-read-every-stores-reports.md) | Store managers read every store's reports | Accepted |
 | [0049](0049-kit-rs-validates-xml-request-bodies-with-libxml2.md) | kit-rs validates XML request bodies with libxml2, after a quick-xml screen | Accepted |
@@ -187,6 +193,8 @@ text is unchanged.
 | [0051](0051-app-session-is-seeded-as-runtime-history.md) | `app_session` is seeded as runtime history, not exempted | Accepted |
 | [0052](0052-data-provenance-is-recorded-per-sale-and-per-segmentation-run.md) | Data provenance is recorded per sale and per segmentation run, not per instance | Accepted |
 | [0053](0053-experiments-are-measured-on-conversion-only.md) | Experiments are measured on conversion only; `AVERAGE_TICKET` is removed | Accepted |
+| [0054](0054-seed-written-outbox-rows-before-the-relays-first-start.md) | Seed-written outbox events are removed before bootstrap commits | Accepted |
+| [0055](0055-an-ops-console-supervises-services-through-their-meta-routes.md) | An ops console supervises the services through their meta routes, a host snapshot and a read-only Redis user | Accepted |
 
 ## Writing one
 

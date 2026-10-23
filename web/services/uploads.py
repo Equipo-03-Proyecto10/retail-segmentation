@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import logging
 import os
+import struct
 import uuid
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -24,6 +26,15 @@ _EXTENSION_BY_TYPE = {
     "image/png": ".png",
     "image/webp": ".webp",
 }
+
+
+# A product image is shown as a thumbnail and a detail picture; no camera
+# produces a side longer than this. A header that declares more is refused
+# before anything decodes it, so a later resize step cannot be made to
+# allocate gigapixels from a few hundred bytes (#595).
+MAX_IMAGE_SIDE_PIXELS = 8192
+
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
 class UploadRejected(Exception):
@@ -72,19 +83,69 @@ def _validate(file: FileStorage, config: Config) -> str:
     file.stream.seek(0)
     signatures = {
         "image/jpeg": header.startswith(b"\xff\xd8\xff"),
-        "image/png": header.startswith(b"\x89PNG\r\n\x1a\n"),
+        "image/png": header.startswith(_PNG_SIGNATURE),
         "image/webp": header.startswith(b"RIFF") and header[8:12] == b"WEBP",
     }
     if not signatures[content_type]:
         raise UploadRejected("The file content does not match the selected image type.")
 
+    if content_type == "image/png":
+        _check_png(file.stream.read())
+        file.stream.seek(0)
+
     return _EXTENSION_BY_TYPE[content_type]
+
+
+def _check_png(data: bytes) -> None:
+    """Walk a PNG's chunks without decoding pixels (#595).
+
+    The file must start with IHDR, declare a size within
+    MAX_IMAGE_SIDE_PIXELS, carry a correct CRC on every chunk, and end at
+    IEND: anything appended after it (an HTML page, a script) is refused.
+    """
+    malformed = UploadRejected("The PNG file is damaged or incomplete.")
+    position = len(_PNG_SIGNATURE)
+    first = True
+    while True:
+        if position + 8 > len(data):
+            raise malformed
+        length, kind = struct.unpack(">I4s", data[position : position + 8])
+        body_start = position + 8
+        body_end = body_start + length
+        if body_end + 4 > len(data):
+            raise malformed
+        body = data[body_start:body_end]
+        (crc,) = struct.unpack(">I", data[body_end : body_end + 4])
+        if zlib.crc32(kind + body) != crc:
+            raise malformed
+        position = body_end + 4
+
+        if first:
+            if kind != b"IHDR" or length != 13:
+                raise malformed
+            width, height = struct.unpack(">II", body[:8])
+            if not (0 < width <= MAX_IMAGE_SIDE_PIXELS) or not (
+                0 < height <= MAX_IMAGE_SIDE_PIXELS
+            ):
+                raise UploadRejected(
+                    f"The image is {width}×{height} pixels. Each side must be "
+                    f"{MAX_IMAGE_SIDE_PIXELS} pixels or fewer."
+                )
+            first = False
+        elif kind == b"IEND":
+            if position != len(data):
+                raise UploadRejected(
+                    "The PNG file has extra data after its end. "
+                    "Export the image again and upload that file."
+                )
+            return
 
 
 def save_product_image(file: FileStorage, config: Config) -> SavedUpload:
     """Validate and store an uploaded product image.
 
-    Raises UploadRejected on a disallowed type or an oversized file. The
+    Raises UploadRejected on a disallowed type, an oversized file, or a PNG
+    that is damaged, too large in pixels, or carries data after its end. The
     original filename is ignored; a generated name prevents collisions.
     """
     try:

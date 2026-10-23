@@ -17,7 +17,7 @@ from typing import Any
 
 from psycopg import Connection
 
-from web.db.segments import SegmentationRun
+from web.db.segments import RUN_COLUMNS, SegmentationRun
 
 
 def list_run_label_rows(
@@ -41,23 +41,19 @@ def list_run_label_rows(
     return [(str(customer_id), name, label) for customer_id, name, label in rows]
 
 
+_RUNS_OF_METHOD = RUN_COLUMNS + """
+            WHERE r.method = %s
+            ORDER BY r.run_at DESC, r.run_id DESC
+            LIMIT %s
+"""
+
+
 def list_runs_of_method(
     connection: Connection[Any], method: str, *, limit: int
 ) -> list[SegmentationRun]:
     """The newest runs of one kind, most recent first."""
     with connection.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT r.run_id, r.method, r.window_days, r.parameters,
-                   r.customer_count, r.executed_by, u.name, r.run_at
-            FROM segmentation_run AS r
-            LEFT JOIN app_user AS u ON u.user_id = r.executed_by
-            WHERE r.method = %s
-            ORDER BY r.run_at DESC, r.run_id DESC
-            LIMIT %s
-            """,
-            (method, limit),
-        )
+        cursor.execute(_RUNS_OF_METHOD, (method, limit))
         rows = cursor.fetchall()
 
     return [SegmentationRun(*row) for row in rows]

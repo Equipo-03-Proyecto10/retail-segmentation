@@ -5,13 +5,15 @@
 {% block breadcrumbs %}{{ application_name }} / Analysis / Run history / Run #{{ run.run_id }}{% endblock %}
 
 {% block content %}
-  {% from "macros/ui.html" import count_label, empty_state, page_header, pagination %}
+  {% from "macros/ui.html" import count_label, empty_state, page_header, pagination, synthetic_banner, synthetic_pill %}
   {% call page_header("Run #" ~ run.run_id, "Every customer this run scored, with the label and raw values it produced.", "Segmentation run") %}
     <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('run_history.index') }}">Back to run history</a>
   {% endcall %}
 
+  {{ synthetic_banner(synthetic, "This run scored demonstration data, not observed business activity, so every figure below is Synthetic.") }}
+
   <section class="mq-panel">
-    <header class="mq-panel__header"><h2 class="mq-panel__title">Run details</h2><span class="mq-caption mq-mono">run {{ run.run_id }}</span></header>
+    <header class="mq-panel__header"><h2 class="mq-panel__title">Run details</h2>{{ synthetic_pill(synthetic) }}<span class="mq-caption mq-mono">run {{ run.run_id }}</span></header>
     <div class="mq-panel__body">
       <dl class="mq-description-list">
         <dt>Method</dt><dd>{{ run.method }}</dd>
@@ -47,7 +49,7 @@
 
   {% if assignments %}
     <section class="mq-panel mq-panel--table mq-density-compact">
-      <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(total, "customer") }} scored</span><span class="mq-caption">Assignments from this run</span></div>
+      <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(total, "customer") }} scored</span><span class="mq-caption">Assignments from this run</span>{{ synthetic_pill(synthetic) }}</div>
       <div class="mq-table-wrap">
         <table class="mq-table">
           <thead><tr><th class="mq-table__cell--sticky" scope="col">Customer</th><th scope="col">Label</th><th scope="col">R</th><th scope="col">F</th><th scope="col">M</th><th scope="col">Last purchase</th><th scope="col">Orders</th><th scope="col">Spend</th></tr></thead>

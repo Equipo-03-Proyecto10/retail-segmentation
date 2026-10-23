@@ -321,16 +321,30 @@ impl Kit {
             )
             .route(
                 "/openapi.yaml",
-                get_only(on(MethodFilter::GET, move || {
+                get_only(on(MethodFilter::GET, move |request: Request| {
                     let openapi = openapi.clone();
-                    async move { bytes_response(openapi, "application/yaml") }
+                    async move {
+                        document(
+                            &request,
+                            openapi,
+                            "application/yaml",
+                            &["application/yaml", "application/x-yaml", "text/yaml"],
+                        )
+                    }
                 })),
             )
             .route(
                 "/schema.xsd",
-                get_only(on(MethodFilter::GET, move || {
+                get_only(on(MethodFilter::GET, move |request: Request| {
                     let xsd = xsd.clone();
-                    async move { bytes_response(xsd, "application/xml") }
+                    async move {
+                        document(
+                            &request,
+                            xsd,
+                            "application/xml",
+                            &["application/xml", "text/xml"],
+                        )
+                    }
                 })),
             );
         for (version, payload) in versioned_schemas(&contract.root, &self.service) {
@@ -378,6 +392,37 @@ fn bytes_response(payload: Bytes, content_type: &'static str) -> Response<Body> 
         .headers_mut()
         .insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
     response
+}
+
+/// Serve a contract document, or 406 `not_acceptable` when `Accept` excludes
+/// every type the document can be served as. An absent or blank `Accept`, `*/*`
+/// and type wildcards such as `application/*` are served.
+fn document(
+    request: &Request,
+    payload: Bytes,
+    content_type: &'static str,
+    offered: &[&str],
+) -> Response<Body> {
+    let accept = request
+        .headers()
+        .get(header::ACCEPT)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if let Some(accept) = accept {
+        let acceptable = accept_items(accept)
+            .iter()
+            .any(|item| item.quality > 0.0 && offered.iter().any(|media| item.matches(media)));
+        if !acceptable {
+            let error = ApiError::new(
+                406,
+                "not_acceptable",
+                "The requested response format is unsupported.",
+            );
+            return error_response(request, &error, None);
+        }
+    }
+    bytes_response(payload, content_type)
 }
 
 fn versioned_schemas(root: &Path, service: &str) -> Vec<(String, Bytes)> {
@@ -877,7 +922,10 @@ async fn handle(
     ))
 }
 
-/// Match the request path against the template's typed segments.
+/// Match the request path against the template's typed segments. A parameter
+/// segment that fails its type or range is left out of the values, so the
+/// handler's own `*_not_found` answers it; only a literal mismatch or a wrong
+/// segment count is a routing miss.
 fn path_values(
     template: &str,
     path: &str,
@@ -896,7 +944,9 @@ fn path_values(
             let decoded = percent_encoding::percent_decode_str(actual)
                 .decode_utf8()
                 .ok()?;
-            values.insert(name.clone(), matcher.matches(&decoded)?);
+            if let Some(value) = matcher.matches(&decoded) {
+                values.insert(name.clone(), value);
+            }
         } else if *expected != actual {
             return None;
         }
@@ -972,8 +1022,15 @@ mod tests {
             path_values(template, "/v1/notes/3", &matchers).and_then(|v| v.get("note_id").cloned()),
             Some(PathValue::Integer(3))
         );
-        assert!(path_values(template, "/v1/notes/0", &matchers).is_none());
-        assert!(path_values(template, "/v1/notes/-1", &matchers).is_none());
-        assert!(path_values(template, "/v1/notes/11", &matchers).is_none());
+        for path in [
+            "/v1/notes/0",
+            "/v1/notes/-1",
+            "/v1/notes/11",
+            "/v1/notes/abc",
+        ] {
+            let values = path_values(template, path, &matchers).expect("still routed");
+            assert!(values.is_empty(), "{path}");
+        }
+        assert!(path_values(template, "/v1/other/3", &matchers).is_none());
     }
 }

@@ -45,6 +45,7 @@ def _experiment(**changes) -> Experiment:
         control_groups=1,
         treatment_groups=2,
         assignments=0,
+        seeded_conversion=False,
     )
     return Experiment(**{**fields, **changes})
 

@@ -1,0 +1,106 @@
+name: Ops console
+
+# The ops console of ADR-0055 (ops/console/), built and released alone like a
+# service but outside the services matrix, because it has no contract and no
+# rule. A pull request lints, tests and builds the image, pushing nothing; a
+# push to main that changes ops/console/VERSION pushes :<VERSION>, never
+# overwriting a tag. The registry is part of the image, so a registry change
+# runs the checks too.
+on:
+  pull_request:
+    paths:
+      - ops/console/**
+      - contracts/registry.yaml
+      - deploy/infra/redis/assemble-acl.sh
+      - .github/workflows/ops-console.yml
+  push:
+    branches: [develop, main]
+    paths:
+      - ops/console/**
+      - contracts/registry.yaml
+      - .github/workflows/ops-console.yml
+
+permissions:
+  contents: read
+
+env:
+  DIR: ops/console
+
+jobs:
+  check:
+    name: black, ruff, pytest, image build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: uv sync, black, ruff, pytest
+        working-directory: ops/console
+        run: |
+          set -euo pipefail
+          pip install uv==0.12.3
+          uv sync --frozen
+          uv run black --check .
+          uv run ruff check .
+          uv run pytest
+
+      - name: The snapshot script parses
+        run: bash -n "$DIR/host/mosaiq-ops-snapshot.sh"
+
+      - name: Build the image
+        run: |
+          cp contracts/registry.yaml "$DIR/registry.yaml"
+          docker build -t mosaiq-ops-console:ci "$DIR"
+
+  release:
+    name: Push the image
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+
+      - name: Only a bumped VERSION releases
+        id: bumped
+        run: |
+          if git diff --quiet HEAD^ HEAD -- "$DIR/VERSION"; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Refuse a tag that already exists
+        if: steps.bumped.outputs.release == 'true'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version=$(cat "$DIR/VERSION")
+          grep -qxE '(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)' <<<"$version"
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/mosaiq-ops-console:$version"
+          echo "IMAGE=$image" >> "$GITHUB_ENV"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          if docker manifest inspect "$image" >/dev/null 2>&1; then
+            echo "::error::$image already exists; a release never overwrites a tag"
+            exit 1
+          fi
+
+      - name: Build and push
+        if: steps.bumped.outputs.release == 'true'
+        run: |
+          set -euo pipefail
+          cp contracts/registry.yaml "$DIR/registry.yaml"
+          docker build \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.version=$VERSION" \
+            -t "$IMAGE" "$DIR"
+          docker push "$IMAGE"

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>duplicate_draft</code>
+  <message>A DRAFT campaign with the same name, label_code, starts_on and ends_on already exists.</message>
+  <correlation_id>corr-campaign-409a</correlation_id>
+</Error>

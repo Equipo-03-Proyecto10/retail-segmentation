@@ -1,6 +1,7 @@
 # MOSAIQ — the distributed stage on a laptop, in one command (F13-08):
 #
 #   docker network create mosaiq                   # once
+#   bash docker/distributed/auth-keys.sh           # once: auth's local key pair
 #   bash .github/scripts/stage-contracts.sh --all  # each service's contracts
 #   docker compose -f compose.distributed.yaml up --build --wait
 #
@@ -30,13 +31,31 @@ include:
     env_file: docker/distributed/local.env
   - path: [services/customers/compose.yaml, docker/distributed/service.local.yaml]
     env_file: docker/distributed/local.env
+  - path: [services/customer-preferences/compose.yaml, docker/distributed/service.local.yaml]
+    env_file: docker/distributed/local.env
   - path: [services/categories/compose.yaml, docker/distributed/service.local.yaml]
     env_file: docker/distributed/local.env
   - path: [services/stock/compose.yaml, docker/distributed/service.local.yaml]
     env_file: docker/distributed/local.env
+  - path: [services/sales/compose.yaml, docker/distributed/service.local.yaml]
+    env_file: docker/distributed/local.env
   - path: [services/stores/compose.yaml, docker/distributed/service.local.yaml]
     env_file: docker/distributed/local.env
   - path: [services/users/compose.yaml, docker/distributed/service.local.yaml]
+    env_file: docker/distributed/local.env
+  - path: [services/auth/compose.yaml, docker/distributed/service.local.yaml]
+    env_file: docker/distributed/local.env
+  - path: [services/check-ins/compose.yaml, docker/distributed/service.local.yaml]
+    env_file: docker/distributed/local.env
+  - path: [services/engagement/compose.yaml, docker/distributed/service.local.yaml]
+    env_file: docker/distributed/local.env
+  - path: [services/segments/compose.yaml, docker/distributed/service.local.yaml]
+    env_file: docker/distributed/local.env
+  - path: [services/recommendations/compose.yaml, docker/distributed/service.local.yaml]
+    env_file: docker/distributed/local.env
+  - path: [services/campaigns/compose.yaml, docker/distributed/service.local.yaml]
+    env_file: docker/distributed/local.env
+  - path: [services/audit-trail/compose.yaml, docker/distributed/service.local.yaml]
     env_file: docker/distributed/local.env
 
 services:
@@ -82,8 +101,8 @@ services:
     restart: "no"
 
   # Each services/*/mongo/init.js, once per version of the file, as root, with
-  # the MONGO_<SUFFIX>_PASSWORD values of .env (ADR-0038). Never a `mongo`
-  # service in a services/*/compose.yaml.
+  # the MONGO_<SUFFIX>_PASSWORD values of .env, else of each service's local
+  # env file (ADR-0038). Never a `mongo` service in a services/*/compose.yaml.
   mongo-init:
     image: mongo:7.0.41@sha256:b096b4cb9269f3ebcf363be63f1c50920f786879d03a1890347a3bf33f1f0df0
     entrypoint: ["bash", "/repo/docker/distributed/mongo-init.sh"]

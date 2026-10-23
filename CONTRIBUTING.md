@@ -26,13 +26,23 @@ merged in three days is raised at the Weekly Sync.
 
 Work is pulled by the person who will do it. To take an issue:
 
-1. On the Project board, choose an unassigned issue in the current sprint whose
-   status is Ready and which has no Blocked indicator.
-2. Open Relationships and confirm that every `Blocked by` issue is closed.
-3. Assign yourself and move the issue to In Progress before creating a branch.
-4. Create the branch from the current `develop` using the issue number.
+1. List the Ready issues and choose the highest priority one. There is no
+   project board in the second delivery; the issue carries its own state
+   (`docs/process.md` §8).
+   ```bash
+   gh issue list --search "-is:blocked no:assignee -label:type:epic"
+   ```
+2. Open Relationships and confirm that every `Blocked by` issue is closed. If a
+   `status:blocked` label disagrees with the relationships, the relationship is
+   right; correct the label.
+3. Assign yourself before creating a branch.
+4. Create the branch from the issue, so that it is linked, from the current
+   `develop`:
+   ```bash
+   gh issue develop 42 --name feature/42-kebab-slug --base develop --checkout
+   ```
 
-Self-assignment does not change the issue's priority or sprint. Do not exceed
+Self-assignment does not change the issue's priority. Do not exceed
 the two-story work-in-progress limit. Authentication, the 4NF model, and
 deployment require pair programming, so both participants are assigned.
 

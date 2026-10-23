@@ -48,6 +48,8 @@ class HistoryEntry:
     valid_to: datetime | None
     label_name: str | None
     assignment: RunAssignment
+    # The run's origin (ADR-0052): what marks this row Synthetic.
+    data_origin: str
 
 
 def list_history_entries(
@@ -75,7 +77,8 @@ def list_history_entries(
                    h.valid_from, h.valid_to,
                    h.customer_id, c.name, h.segment_id, h.label_code, sl.name,
                    h.r_score, h.f_score, h.m_score,
-                   h.recency_last_purchase_at, h.frequency_count, h.monetary_total
+                   h.recency_last_purchase_at, h.frequency_count, h.monetary_total,
+                   r.data_origin
             FROM customer_segment_history AS h
             JOIN customer AS c ON c.customer_id = h.customer_id
             JOIN segmentation_run AS r ON r.run_id = h.run_id
@@ -119,6 +122,7 @@ def list_history_entries(
             last_purchase_at,
             frequency,
             monetary,
+            data_origin,
         ) = row
         entries.append(
             HistoryEntry(
@@ -142,6 +146,7 @@ def list_history_entries(
                     frequency_count=frequency,
                     monetary_total=monetary,
                 ),
+                data_origin=data_origin,
             )
         )
     return entries

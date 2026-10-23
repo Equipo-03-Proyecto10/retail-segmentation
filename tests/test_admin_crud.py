@@ -500,3 +500,164 @@ def test_a_delete_that_is_still_referenced_explains_itself(
     body = response.get_data(as_text=True)
     assert message in body
     assert all(text not in body for text in ("Traceback", "Werkzeug", "psycopg"))
+
+
+# ---------- refusals with no message (#595) ----------
+
+
+def test_deactivating_an_unknown_user_is_404_like_edit_and_activate(
+    client: FlaskClient, monkeypatch
+) -> None:
+    from web.services.users import UnknownUserError
+
+    monkeypatch.setattr(
+        admin, "set_active", Mock(side_effect=UnknownUserError("No user."))
+    )
+    response = client.post(
+        "/admin/users/11111111-1111-1111-1111-999999999999/deactivate"
+    )
+    assert response.status_code == 404
+
+
+def test_deactivating_the_only_administrator_is_still_409_with_its_reason(
+    client: FlaskClient, monkeypatch
+) -> None:
+    from web.services.users import LAST_ADMINISTRATOR, SingleAdministratorError
+
+    monkeypatch.setattr(
+        admin,
+        "set_active",
+        Mock(side_effect=SingleAdministratorError(LAST_ADMINISTRATOR)),
+    )
+    monkeypatch.setattr(admin, "list_users", Mock(return_value=([], 0)))
+    response = client.post(
+        "/admin/users/11111111-1111-1111-1111-000000000001/deactivate"
+    )
+    assert response.status_code == 409
+    assert "only administrator" in response.get_data(as_text=True)
+
+
+@pytest.mark.parametrize(
+    ("constraint", "words"),
+    [
+        ("role_admin_code_bound_to_reserved_id", "only role 1 may hold it"),
+        ("role_admin_lookalike", "looks like ADMIN"),
+    ],
+)
+def test_the_databases_admin_code_guards_are_form_errors_on_code(
+    constraint: str, words: str
+) -> None:
+    from psycopg.errors import CheckViolation
+
+    from web.services import catalog
+
+    violation = CheckViolation()
+    connection = MagicMock()
+    cursor = connection.cursor.return_value.__enter__.return_value
+    cursor.execute.side_effect = violation
+    with patch.object(
+        type(violation),
+        "diag",
+        property(lambda _self: Mock(constraint_name=constraint)),
+    ):
+        with pytest.raises(catalog.CatalogConflict) as refusal:
+            catalog.create_role(connection, role_id=31, code="ADMIN", description="x")
+    assert refusal.value.field == "code"
+    assert words in str(refusal.value)
+
+
+def test_creating_a_second_admin_role_shows_why_on_the_form(
+    client: FlaskClient, monkeypatch
+) -> None:
+    from web.services.catalog import ROLE_ADMIN_RESERVED
+
+    monkeypatch.setattr(
+        admin,
+        "create_role",
+        Mock(side_effect=CatalogConflict("code", ROLE_ADMIN_RESERVED)),
+    )
+    response = client.post(
+        "/admin/roles/new",
+        data={"role_id": "31", "code": "ADMIN", "description": "Second admin"},
+    )
+    assert response.status_code == 409
+    assert "only role 1 may hold it" in response.get_data(as_text=True)
+
+
+# ---------- an uploaded image never outlives a failed write (#595) ----------
+
+_PRODUCT_FORM = {
+    "product_id": "9002",
+    "sku": "SKU-F5-02",
+    "name": "Image product",
+    "category_id": "1",
+    "list_price": "10.00",
+}
+
+
+def _upload(monkeypatch) -> Mock:
+    """A saved upload, and the deletion the route must call for it."""
+    monkeypatch.setattr(admin, "list_all_categories", Mock(return_value=[]))
+    monkeypatch.setattr(
+        admin,
+        "save_product_image",
+        Mock(return_value=Mock(relative_path="products/new.png")),
+    )
+    delete = Mock()
+    monkeypatch.setattr(admin, "delete_product_image", delete)
+    return delete
+
+
+def _with_image(data: dict) -> dict:
+    from io import BytesIO
+
+    return {**data, "image": (BytesIO(b"\x89PNG\r\n\x1a\n"), "new.png")}
+
+
+def test_a_failed_create_removes_the_uploaded_image(
+    config: Config, monkeypatch
+) -> None:
+    app = create_app(config, database_connector=Mock(return_value=MagicMock()))
+    app.config["PROPAGATE_EXCEPTIONS"] = False
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session.update(user_id="u-1", role_code="ADMIN", name="Admin")
+    delete = _upload(monkeypatch)
+    monkeypatch.setattr(
+        admin, "create_product", Mock(side_effect=RuntimeError("database down"))
+    )
+
+    response = client.post(
+        "/admin/products/new",
+        data=_with_image(_PRODUCT_FORM),
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 500
+    delete.assert_called_once_with("products/new.png", ANY)
+
+
+def test_a_failed_edit_removes_the_new_image_and_keeps_the_old_one(
+    config: Config, monkeypatch
+) -> None:
+    app = create_app(config, database_connector=Mock(return_value=MagicMock()))
+    app.config["PROPAGATE_EXCEPTIONS"] = False
+    client = app.test_client()
+    with client.session_transaction() as session:
+        session.update(user_id="u-1", role_code="ADMIN", name="Admin")
+    delete = _upload(monkeypatch)
+    monkeypatch.setattr(
+        admin, "get_product", Mock(return_value=Mock(image_path="products/old.png"))
+    )
+    monkeypatch.setattr(
+        admin, "update_product", Mock(side_effect=RuntimeError("database down"))
+    )
+
+    response = client.post(
+        "/admin/products/9002/edit",
+        data=_with_image({**_PRODUCT_FORM, "is_active": "on"}),
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 500
+    delete.assert_called_once_with("products/new.png", ANY)

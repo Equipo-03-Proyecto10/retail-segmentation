@@ -5,9 +5,10 @@ completed first delivery. Phases 7-12 cover the monolith analytics part of the
 second delivery, and phases 13-18 its distributed stage. Story identifiers are
 `F<phase>-<n>`. The `AN-<n>` stories close gaps left in phases 7-12.
 
-Estimates are set by the team at Planning, not here. Sprint membership lives in
-the GitHub Projects `Sprint` field, not in this document — a backlog that
-duplicates the board drifts from it within a week.
+Estimates are set by the team at Planning, not here. The second delivery uses
+no project board: each issue carries its own state and priority
+([`process.md`](process.md) §8), and this document does not duplicate them — a
+backlog that copies issue state drifts from it within a week.
 
 Priority: **P0** the delivery fails without it · **P1** required, schedulable
 later · **P2** optional.

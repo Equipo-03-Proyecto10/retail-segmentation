@@ -3,7 +3,6 @@
 import pytest
 
 from web.config import (
-    DEFAULT_DATA_IS_SYNTHETIC,
     DEFAULT_ENVIRONMENT,
     DEFAULT_LOG_LEVEL,
     DEFAULT_LOGIN_THROTTLE_MAX_ATTEMPTS,
@@ -31,7 +30,6 @@ def test_reads_every_value_from_the_environment() -> None:
             "SESSION_ABSOLUTE_TIMEOUT_SECONDS": "14400",
             "TRUSTED_PROXY_HOPS": "2",
             "DATABASE_URL": "configured-by-the-environment",
-            "DATA_IS_SYNTHETIC": "false",
             "LOGIN_THROTTLE_MAX_ATTEMPTS": "7",
             "LOGIN_THROTTLE_WINDOW_SECONDS": "120",
         }
@@ -46,7 +44,6 @@ def test_reads_every_value_from_the_environment() -> None:
     assert config.session_absolute_timeout_seconds == 14400
     assert config.trusted_proxy_hops == 2
     assert config.database_url == "configured-by-the-environment"
-    assert config.data_is_synthetic is False
     assert config.login_throttle_max_attempts == 7
     assert config.login_throttle_window_seconds == 120
 
@@ -64,7 +61,6 @@ def test_falls_back_to_documented_defaults_for_optional_values() -> None:
         config.session_absolute_timeout_seconds
         == DEFAULT_SESSION_ABSOLUTE_TIMEOUT_SECONDS
     )
-    assert config.data_is_synthetic is DEFAULT_DATA_IS_SYNTHETIC
     assert config.trusted_proxy_hops == DEFAULT_TRUSTED_PROXY_HOPS
     assert config.login_throttle_max_attempts == DEFAULT_LOGIN_THROTTLE_MAX_ATTEMPTS
     assert config.login_throttle_window_seconds == DEFAULT_LOGIN_THROTTLE_WINDOW_SECONDS
@@ -161,3 +157,41 @@ def test_non_positive_login_throttle_values_use_safe_defaults(value: str) -> Non
 
     assert config.login_throttle_max_attempts == DEFAULT_LOGIN_THROTTLE_MAX_ATTEMPTS
     assert config.login_throttle_window_seconds == DEFAULT_LOGIN_THROTTLE_WINDOW_SECONDS
+
+
+# ---------- #560: the instance flag is gone (ADR-0052) ----------
+
+# Spelt in two halves so this file does not match its own search.
+_RETIRED = ("DATA_IS_" + "SYNTHETIC", "data_is_" + "synthetic")
+# ADRs are immutable and evidence is historical (decision 8 on #560); the
+# backlog row is the issue's title; deploy/README.md tells the operator to
+# delete the stale line from the instance's environment file.
+_MAY_NAME_IT = ("docs/adr/", "docs/evidence/", "docs/backlog.md", "deploy/README.md")
+
+
+def test_no_tracked_file_names_the_retired_synthetic_flag() -> None:
+    import subprocess
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    tracked = (
+        subprocess.run(
+            ["git", "ls-files", "-z"], cwd=root, capture_output=True, check=True
+        )
+        .stdout.decode()
+        .split("\0")
+    )
+    offenders = []
+    for name in filter(None, tracked):
+        if name.startswith(_MAY_NAME_IT):
+            continue
+        path = root / name
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        offenders += [name for flag in _RETIRED if flag in text]
+
+    assert offenders == []

@@ -8,7 +8,7 @@ The files a service's implementation story copies into `services/<name>/`
 |---|---|---|
 | `compose.yaml` | `services/<name>/compose.yaml` | Project `mosaiq-<name>`, one container from GHCR, ports on `127.0.0.1` only, `mem_limit` and `cpus`, no `depends_on`, UID 10001 with no capabilities and a read-only root, the socket, JWKS and env-file mounts, the external `mosaiq` network |
 | `nginx.conf` | `services/<name>/nginx/<name>.conf` | `location /api/<name>/`, the overwritten forwarded headers, `client_max_body_size 64k` and the 413 (and auth's 429) in the shared error envelope |
-| `Dockerfile.python`, `Dockerfile.rust` | `services/<name>/Dockerfile` | The service's own build context, contracts copied from inside it, UID 10001 |
+| `Dockerfile.python`, `Dockerfile.rust` | `services/<name>/Dockerfile` | The service's own build context, contracts copied from inside it, UID 10001; for Rust, libxml2 for kit-rs's XML validation (headers and `pkg-config` to build, the library to run) |
 | `render.py` | — | Writes the three files for one service |
 | `check.sh` | — | ADR-0040's compose and NGINX loop; prints nothing when they hold |
 
@@ -69,12 +69,16 @@ ADR-0046 on every pull request.
 | `IMAGE_TAG` | the service's `VERSION`, set by its unit | `local` |
 | `MOSAIQ_SVC_ENV_DIR` | `/etc/mosaiq/svc` | `docker/distributed/svc` |
 | `MOSAIQ_PG_SOCKET` | `/run/postgresql` | named volume `mosaiq-pgsocket` |
-| `MOSAIQ_JWKS_FILE` | `/etc/mosaiq/keys/jwks.json` | `docker/distributed/jwks.dev.json` |
-| `MOSAIQ_AUTH_KEY_DIR` (auth) | `/etc/mosaiq/keys` | set by auth's story |
+| `MOSAIQ_JWKS_FILE` | `/etc/mosaiq/keys/jwks.json` | `docker/distributed/keys/jwks.json`, made by `docker/distributed/auth-keys.sh` |
+| `MOSAIQ_AUTH_KEY_DIR` (auth) | `/etc/mosaiq/keys` | `docker/distributed/keys` |
+| `AUTH_KID` (auth) | the unit's, from `/etc/mosaiq/svc/auth.env` | `local-dev` |
 
 `jwks.dev.json` holds a public key whose private half was discarded: it lets a
-service start and refuse every token. auth-service's story (F14-01) brings the
-local key pair that signs tokens it accepts.
+service start and refuse every token. CI's template job still mounts it. The
+local stack uses auth-service's own throwaway pair instead
+(`docker/distributed/auth-keys.sh`, git-ignored), so the tokens auth signs are
+the ones the other services accept. The rotation runbook is
+[`deploy/auth-keys.md`](../../auth-keys.md).
 
 The units, `deploy/deploy-service.sh` and the NGINX include directory on the
 instance belong to F18-01 to F18-03.

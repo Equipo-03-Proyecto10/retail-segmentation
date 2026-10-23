@@ -1,0 +1,18 @@
+# ops-console's Compose project (ADR-0055), shaped like mosaiq-svc@.service
+# (ADR-0040): it only Wants= the things it watches, so none of them waits on it.
+[Unit]
+Description=MOSAIQ ops-console
+Requires=docker.service
+After=docker.service mosaiq-infra.service
+Wants=mosaiq-ops-snapshot.timer
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/mosaiq/ops-console
+EnvironmentFile=/opt/mosaiq/ops-console/image.env
+ExecStart=/usr/bin/docker compose -p mosaiq-ops-console -f compose.yaml up -d --no-deps
+ExecStop=/usr/bin/docker compose -p mosaiq-ops-console -f compose.yaml down
+
+[Install]
+WantedBy=multi-user.target

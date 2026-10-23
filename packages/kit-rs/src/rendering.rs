@@ -45,6 +45,9 @@ pub fn wire_value(value: &Value) -> serde_json::Value {
             serde_json::from_str(&text).unwrap_or(serde_json::Value::Null)
         }
         Value::Money(text) | Value::Text(text) => serde_json::Value::String(text.clone()),
+        Value::JsonText(text) => {
+            serde_json::from_str(text).unwrap_or_else(|_| serde_json::Value::String(text.clone()))
+        }
         Value::DateTime(moment) => serde_json::Value::String(timestamp(moment)),
         Value::Date(date) => serde_json::Value::String(date.format("%Y-%m-%d").to_string()),
         Value::List(items) => serde_json::Value::Array(items.iter().map(wire_value).collect()),
@@ -75,11 +78,34 @@ fn text(value: &Value) -> String {
             fixed.trim_end_matches('0').trim_end_matches('.').to_owned()
         }
         Value::Decimal(decimal) => decimal.to_string(),
-        Value::Money(text) | Value::Text(text) => text.clone(),
+        Value::Money(text) | Value::Text(text) | Value::JsonText(text) => text.clone(),
         Value::DateTime(moment) => timestamp(moment),
         Value::Date(date) => date.format("%Y-%m-%d").to_string(),
         Value::Null | Value::List(_) | Value::Object(_) => String::new(),
     }
+}
+
+/// XML 1.0 `Char`: tab, line feed, carriage return, and everything from U+0020
+/// except the surrogates (not a Rust `char`) and U+FFFE and U+FFFF.
+fn is_xml_char(character: char) -> bool {
+    matches!(character, '\t' | '\n' | '\r' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..='\u{10FFFF}')
+}
+
+/// Replace each character XML 1.0 cannot carry, even as a character reference,
+/// with U+FFFD. JSON keeps the original text.
+fn xml_safe(text: String) -> String {
+    if text.chars().all(is_xml_char) {
+        return text;
+    }
+    text.chars()
+        .map(|character| {
+            if is_xml_char(character) {
+                character
+            } else {
+                '\u{FFFD}'
+            }
+        })
+        .collect()
 }
 
 /// Writes elements in either the root's default namespace or the common one.
@@ -149,7 +175,7 @@ impl XmlWriter {
             }
             scalar => {
                 self.start(key, namespace);
-                self.out.push_str(&escape(text(scalar)));
+                self.out.push_str(&escape(xml_safe(text(scalar))));
                 self.end(key, namespace);
             }
         }
@@ -330,4 +356,21 @@ pub fn render_error(error: &ApiError, correlation_id: &str, format: Format) -> R
         }
     };
     response(body, error.status, format, &error.headers)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::xml_safe;
+
+    #[test]
+    fn xml_safe_replaces_only_characters_xml_cannot_carry() {
+        assert_eq!(
+            xml_safe("a\u{1}b\u{FFFE}\u{FFFF}c".to_owned()),
+            "a\u{FFFD}b\u{FFFD}\u{FFFD}c"
+        );
+        assert_eq!(
+            xml_safe("tab\t\nline\r\u{FFFD}\u{10000}é".to_owned()),
+            "tab\t\nline\r\u{FFFD}\u{10000}é"
+        );
+    }
 }

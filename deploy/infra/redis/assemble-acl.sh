@@ -8,6 +8,9 @@
 #
 #   user svc_<suffix> on {{password}} <rules>
 #
+# A deployable under ops/ (ADR-0055) commits ops/<name>/redis/<name>.acl the
+# same way, as an `ops_<suffix>` user; its password key is REDIS_OPS_<SUFFIX>_PASSWORD.
+#
 # {{password}} becomes `#<sha256>` of REDIS_<SUFFIX>_PASSWORD, read from
 # /etc/mosaiq/svc/<name>.env (<SUFFIX> is the svc_ role suffix, upper-cased).
 # The file also gets the ops user, whose password is REDIS_OPS_PASSWORD from
@@ -21,7 +24,7 @@
 # and loads nothing: the first start, before the instances run.
 #
 # Environment (each default is the instance's):
-#   ACL_SOURCES       glob of service lines   services/*/redis/*.acl
+#   ACL_SOURCES       globs of user lines     services/*/redis/*.acl ops/*/redis/*.acl
 #   SVC_ENV_DIR       per-service env files   /etc/mosaiq/svc
 #   ACL_FILE          the assembled aclfile   /etc/mosaiq/redis/users.acl
 #   REDIS_OPS_PASSWORD                         required
@@ -31,7 +34,7 @@ set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
 compose=(docker compose -p mosaiq-infra -f "$here/../compose.yaml" exec -T -e REDISCLI_AUTH)
-ACL_SOURCES=${ACL_SOURCES:-services/*/redis/*.acl}
+ACL_SOURCES=${ACL_SOURCES:-services/*/redis/*.acl ops/*/redis/*.acl}
 SVC_ENV_DIR=${SVC_ENV_DIR:-/etc/mosaiq/svc}
 ACL_FILE=${ACL_FILE:-/etc/mosaiq/redis/users.acl}
 read -r -a state_cli <<<"${REDIS_STATE_CLI:-${compose[*]} redis-state redis-cli --no-auth-warning --user ops}"
@@ -78,8 +81,8 @@ for source in "${sources[@]}"; do
   mapfile -t content < <(grep -vE '^[[:space:]]*(#|$)' "$source" || true)
   [[ ${#content[@]} -eq 1 ]] || die "$source: expected one user line, found ${#content[@]}"
   line=${content[0]}
-  [[ $line =~ ^user\ (svc_[a-z][a-z0-9_]*)\ on\ \{\{password\}\}\  ]] \
-    || die "$source: must start with 'user svc_<suffix> on {{password}} '"
+  [[ $line =~ ^user\ ((svc|ops)_[a-z][a-z0-9_]*)\ on\ \{\{password\}\}\  ]] \
+    || die "$source: must start with 'user svc_<suffix> on {{password}} ' (or ops_<suffix>)"
   user=${BASH_REMATCH[1]}
   [[ $(grep -o '{{password}}' <<<"$line" | wc -l) -eq 1 ]] || die "$source: {{password}} must appear once"
   # A committed line never carries a credential of its own.

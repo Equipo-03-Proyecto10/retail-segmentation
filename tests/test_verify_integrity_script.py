@@ -43,6 +43,17 @@ def test_every_transaction_insert_supplies_a_source_transaction_id() -> None:
     assert all("source_transaction_id" in listed for listed in columns), columns
 
 
+def test_every_sale_and_run_insert_states_its_data_origin() -> None:
+    """ADR-0052: data_origin has no default, so an insert that omits it fails on
+    NOT NULL before the case it was written for is reached."""
+    columns = re.findall(
+        r"INSERT INTO (?:transaction|segmentation_run) \(([^)]*)\)", SCRIPT
+    )
+
+    assert len(columns) >= 2
+    assert all("data_origin" in listed for listed in columns), columns
+
+
 @pytest.mark.postgres
 def test_every_integrity_case_has_its_declared_outcome(
     owner_url: str, postgres_binaries: dict[str, str]

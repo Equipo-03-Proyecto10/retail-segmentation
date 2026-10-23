@@ -36,6 +36,9 @@ class Experiment:
     control_groups: int
     treatment_groups: int
     assignments: int
+    # Whether a conversion of this experiment links a SEEDED sale (ADR-0052):
+    # with a non-OBSERVED origin, what marks its figures Synthetic.
+    seeded_conversion: bool
 
 
 @dataclass(frozen=True)
@@ -74,9 +77,24 @@ _EXPERIMENT_FILTER = """
        AND (%(target_metric)s::text IS NULL OR e.target_metric = %(target_metric)s)
 """
 
-# One row per experiment with its group and assignment counts; the two reads
-# differ only in their last clauses.
-_LIST_EXPERIMENTS = (
+# Whether any conversion of experiment `e` links a SEEDED sale (ADR-0052, #560).
+# Every read that returns an Experiment selects it as its last column, so an
+# OBSERVED experiment measured on seeded sales is still marked Synthetic.
+SEEDED_CONVERSION_SQL = """
+           EXISTS (
+               SELECT 1
+                 FROM experiment_assignment AS sa
+                 JOIN experiment_conversion AS sc
+                   ON sc.assignment_id = sa.assignment_id
+                 JOIN transaction AS st ON st.transaction_id = sc.transaction_id
+                WHERE sa.experiment_id = e.experiment_id
+                  AND st.data_origin = 'SEEDED'
+           )
+"""
+
+# Every column of an Experiment, in its field order, for any read over
+# `experiment AS e` joined to `campaign AS c`.
+EXPERIMENT_COLUMNS = (
     """
     SELECT e.experiment_id, e.name, e.campaign_id, c.name, e.target_metric,
            e.starts_on, e.ends_on, e.conversion_window_days, e.data_origin,
@@ -85,16 +103,21 @@ _LIST_EXPERIMENTS = (
            (SELECT count(*) FROM experiment_group AS g
              WHERE g.experiment_id = e.experiment_id AND g.kind = 'TREATMENT'),
            (SELECT count(*) FROM experiment_assignment AS a
-             WHERE a.experiment_id = e.experiment_id)
+             WHERE a.experiment_id = e.experiment_id),
+"""
+    + SEEDED_CONVERSION_SQL
+    + """
       FROM experiment AS e
       LEFT JOIN campaign AS c ON c.campaign_id = e.campaign_id
 """
-    + _EXPERIMENT_FILTER
-    + """
+)
+
+# One row per experiment with its group and assignment counts; the two reads
+# differ only in their last clauses.
+_LIST_EXPERIMENTS = EXPERIMENT_COLUMNS + _EXPERIMENT_FILTER + """
      ORDER BY e.experiment_id DESC
      LIMIT %(limit)s OFFSET %(offset)s
 """
-)
 
 _COUNT_EXPERIMENTS = """
     SELECT count(*)
@@ -102,17 +125,7 @@ _COUNT_EXPERIMENTS = """
       LEFT JOIN campaign AS c ON c.campaign_id = e.campaign_id
 """ + _EXPERIMENT_FILTER
 
-_GET_EXPERIMENT = """
-    SELECT e.experiment_id, e.name, e.campaign_id, c.name, e.target_metric,
-           e.starts_on, e.ends_on, e.conversion_window_days, e.data_origin,
-           (SELECT count(*) FROM experiment_group AS g
-             WHERE g.experiment_id = e.experiment_id AND g.kind = 'CONTROL'),
-           (SELECT count(*) FROM experiment_group AS g
-             WHERE g.experiment_id = e.experiment_id AND g.kind = 'TREATMENT'),
-           (SELECT count(*) FROM experiment_assignment AS a
-             WHERE a.experiment_id = e.experiment_id)
-      FROM experiment AS e
-      LEFT JOIN campaign AS c ON c.campaign_id = e.campaign_id
+_GET_EXPERIMENT = EXPERIMENT_COLUMNS + """
      WHERE e.experiment_id = %s
 """
 

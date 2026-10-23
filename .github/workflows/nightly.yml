@@ -37,6 +37,7 @@ jobs:
         run: |
           docker network create mosaiq
           bash .github/scripts/stage-contracts.sh --all
+          bash docker/distributed/auth-keys.sh
           $COMPOSE up --build --wait --wait-timeout 600
 
       - name: Re-apply every boundary section

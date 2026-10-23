@@ -15,6 +15,9 @@ PostgreSQL listener, HBA policy, SSH access and application-role verification:
 | `nginx/mosaiq.compose.conf` | not deployed — local verification only, see `../compose.proxy.yaml` |
 | `postgresql/mosaiq.conf` | `/var/lib/pgsql/18/data/conf.d/mosaiq.conf` (loopback listener, SCRAM) |
 | `systemd/mosaiq.service` | `/etc/systemd/system/mosaiq.service` |
+| `systemd/mosaiq-infra.service` | `/etc/systemd/system/mosaiq-infra.service`: the infrastructure project (F18-01, below) |
+| `systemd/mosaiq-svc@.service` | `/etc/systemd/system/mosaiq-svc@.service`: one compose project per service (F18-01) |
+| `check-services.sh` | not installed: run from the checkout, as root, after any change to the services (F18-01) |
 | `deploy.sh` | copied to `/tmp/mosaiq-deploy.sh` by the deploy workflow on each run, not installed |
 | the TLS certificate | `/etc/nginx/tls/mosaiq.{crt,key}` — a Cloudflare Origin CA pair on the instance (F6-03 Path C, [ADR-0013](../docs/adr/0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md)), not in the repo |
 
@@ -26,6 +29,10 @@ PostgreSQL listener, HBA policy, SSH access and application-role verification:
 | `/opt/mosaiq/venv` | virtualenv, `web/requirements.txt` installed |
 | `/etc/mosaiq/mosaiq.env` | the environment file the unit reads (from `.env.example`) |
 | user/group `mosaiq` | unprivileged, owns `/opt/mosaiq`, runs gunicorn |
+| `/opt/mosaiq/services/<name>/<version>` | one staged release of a service: its `compose.yaml`, `redis/`, `mongo/` if it has one, and `release.env`; `current` links the one running (F18-01) |
+| `/etc/mosaiq/svc/<name>.env` | a service's secrets, `0600 root`, read by its compose file's `env_file` |
+| `/etc/mosaiq/keys/` | the signing key (`0400`, UID 10001) and `jwks.json` (`0444`), [auth-keys.md](auth-keys.md) |
+| `/etc/mosaiq/redis/users.acl`, `/etc/mosaiq/mongodb/root.env` | the assembled aclfile and MongoDB's root account, [infra/README.md](infra/README.md) |
 
 ---
 
@@ -409,6 +416,158 @@ sudo -u postgres psql -v ON_ERROR_STOP=1 -d retail -c \
 It reports `UPDATE 15` the first time and `UPDATE 0` after. As above, only the
 thirty seeded ids are touched.
 
+### Recording data origin on an existing database (#559)
+
+#559 gives `transaction` and `segmentation_run` a `data_origin` column,
+`OBSERVED` or `SEEDED`, `NOT NULL` with no default (ADR-0052). A database
+rebuilt from the scripts after #559 needs nothing. A database loaded before it
+needs the column, and a value for every existing row. Which rows came from the
+seed and which from CSV loads is decided against the database's own rows, so
+step (a) comes first and changes nothing.
+
+**(a) Check the rule against the rows (read-only).** The seed numbers its 300
+sales `TXN-00000001` to `TXN-00000300`, in `transaction_id` order on an empty
+database, and gives each exactly two lines: for `d` in 0 and 1,
+`product_id = 1 + ((transaction_id + d) % 40)` and
+`quantity = 1 + ((transaction_id + d) % 3)` (`sql/02_seed_30_per_table.sql`).
+A CSV file could use the same `TXN-` shape, so the lines corroborate the id:
+
+```sh
+sudo -u postgres psql -X -d retail <<'SQL'
+-- Sales: seed-shaped id, TXN- prefix, and whether the lines are the seed's.
+WITH line AS (
+    SELECT l.transaction_id,
+           count(*) AS lines,
+           count(*) FILTER (WHERE EXISTS (
+               SELECT FROM generate_series(0, 1) AS d
+                WHERE l.product_id = 1 + ((l.transaction_id + d) % 40)
+                  AND l.quantity = 1 + ((l.transaction_id + d) % 3)
+           )) AS seed_lines
+      FROM transaction_line AS l
+     GROUP BY l.transaction_id
+)
+SELECT t.transaction_id BETWEEN 1 AND 300
+       AND t.source_transaction_id = 'TXN-' || lpad(t.transaction_id::text, 8, '0')
+           AS seed_shaped,
+       t.source_transaction_id LIKE 'TXN-%' AS txn_prefix,
+       count(*) AS sales,
+       count(*) FILTER (WHERE l.lines = 2 AND l.seed_lines = 2) AS lines_as_seeded
+  FROM transaction AS t
+  LEFT JOIN line AS l ON l.transaction_id = t.transaction_id
+ GROUP BY 1, 2
+ ORDER BY 1, 2;
+
+-- Runs: seeded (no actor, among the seed's ids), and whether the window held
+-- a seed-shaped sale when the run executed.
+SELECT r.executed_by IS NULL AND r.run_id <= 31 AS seed_run,
+       EXISTS (
+           SELECT FROM transaction AS t
+            WHERE t.transaction_id BETWEEN 1 AND 300
+              AND t.source_transaction_id = 'TXN-' || lpad(t.transaction_id::text, 8, '0')
+              AND t.occurred_at >= r.run_at - make_interval(days => r.window_days)
+              AND t.occurred_at <= r.run_at
+       ) AS read_seeded_sale,
+       count(*) AS runs
+  FROM segmentation_run AS r
+ GROUP BY 1, 2
+ ORDER BY 1, 2;
+SQL
+```
+
+What the rule needs to hold:
+
+- one sales row `t | t | 300 | 300`: all 300 seed-shaped sales, each with
+  exactly its two seeded lines;
+- any CSV-loaded sales as `f | f | <n> | …`;
+- **no** `f | t` row. A `TXN-` id outside the seed's shape is a CSV sale the
+  rule cannot tell from the seed by its id; stop and inspect it. So is a
+  seed-shaped row whose `lines_as_seeded` is below `sales`: a CSV file appended
+  a line to a seeded sale, which #559 now refuses;
+- runs: `t | t` for the seed's runs (30 on a database loaded at `f4ae690`, 31
+  from the current seed, which adds a K-means run), and every run executed
+  since in `f | t` or `f | f`.
+
+**(b) If every sale is the seed's** (only the `t | t | 300 | 300` sales row),
+the database holds demonstration data only: back it up and rebuild it from the
+three scripts at the deployed commit, as #346 did. Nothing below is needed.
+
+**(c) Otherwise, backfill in place, once.** Rebuilding would drop real CSV
+sales, so the columns are added to the live database instead, by the committed
+blocks of `sql/01_schema.sql` and never by DDL typed on the server (AGENTS.md,
+ADR-0046). It runs as one transaction with `ON_ERROR_STOP`, so either all of it
+applies or none does:
+
+1. the `DATA ORIGIN COLUMNS` block adds both columns, nullable;
+2. two `UPDATE`s, the only statements typed here, fill them with the rule from
+   (a), as bound parameters (psql's `\bind`). A run is `SEEDED` if it is one of
+   the seed's, or if a `SEEDED` sale fell in its window when it ran;
+3. the `DATA ORIGIN` block sets `NOT NULL`, which fails if any row was left
+   unfilled, adds each `CHECK` under the name a clean build gives it, and
+   creates the run-origin function, guard and index;
+4. the `BOUNDARY sales` section re-creates the guard that requires `OBSERVED`
+   from `svc_sales`.
+
+```sh
+cd /opt/mosaiq/current
+{
+  sed -n '/^-- BEGIN DATA ORIGIN COLUMNS/,/^-- END DATA ORIGIN COLUMNS$/p' sql/01_schema.sql
+  cat <<'SQL'
+UPDATE transaction
+   SET data_origin = CASE
+       WHEN transaction_id BETWEEN $1 AND $2
+        AND source_transaction_id = $3 || lpad(transaction_id::text, 8, '0')
+       THEN $4 ELSE $5 END
+ WHERE data_origin IS NULL
+\bind 1 300 'TXN-' 'SEEDED' 'OBSERVED' \g
+
+UPDATE segmentation_run AS r
+   SET data_origin = CASE
+       WHEN (r.executed_by IS NULL AND r.run_id <= $1)
+         OR EXISTS (
+            SELECT FROM transaction AS t
+             WHERE t.data_origin = $2
+               AND t.occurred_at >= r.run_at - make_interval(days => r.window_days)
+               AND t.occurred_at <= r.run_at)
+       THEN $2 ELSE $3 END
+ WHERE r.data_origin IS NULL
+\bind 31 'SEEDED' 'OBSERVED' \g
+SQL
+  sed -n '/^-- BEGIN DATA ORIGIN (/,/^-- END DATA ORIGIN$/p' sql/01_schema.sql
+  sed -n '/^-- BEGIN BOUNDARY sales$/,/^-- END BOUNDARY sales$/p' sql/01_schema.sql
+} | sudo -u postgres psql -X -v ON_ERROR_STOP=1 --single-transaction -d retail -f -
+```
+
+It reports `UPDATE <every sale>` and `UPDATE <every run>`. Then compare against
+a clean build of the same commit, as in the next section:
+`check-schema-drift.sh compare` must report no drift. The columns are last in
+both tables in `sql/01_schema.sql` so that a database that gained them by
+`ADD COLUMN` dumps identically.
+
+**(d) Order.** The new code names `data_origin` in every sale and run it
+writes, and the old code names it in none, so neither can run against the
+other's schema. Apply (b) or (c) right after the deploy that ships #559, and
+run no CSV load and no segmentation in between.
+
+### Retiring `DATA_IS_SYNTHETIC` (#560)
+
+#560 marks every analytics page Synthetic from the `data_origin` of the rows it
+reads (ADR-0052), and the instance flag is gone from the code. Two things
+follow on the instance:
+
+1. **#559's step above must be done first.** The pages read `data_origin` on
+   sales and runs; against a database without those columns they fail. Deploy
+   #560 only after (b) or (c) of the previous section has been applied and
+   verified.
+2. **Delete the stale line from the environment file.** The application no
+   longer reads it, so it is harmless, but an operator reading the file would
+   believe it still governs the marker:
+
+   ```bash
+   sudo sed -i '/^DATA_IS_SYNTHETIC=/d' /etc/mosaiq/mosaiq.env
+   sudo grep -c '^DATA_IS_SYNTHETIC=' /etc/mosaiq/mosaiq.env   # prints 0
+   sudo systemctl restart mosaiq
+   ```
+
 ### Checking the database has kept up with the code
 
 Because the deploy never runs SQL, a database can fall behind the commit it
@@ -695,3 +854,216 @@ complete and the permissions above were applied.
 
 Record in `docs/infra.md` under a new "Documentation" row: the URL,
 the date published, and the three checks above.
+
+### Seed outboxes and the one-time #597 cleanup
+
+[ADR-0054](../docs/adr/0054-seed-written-outbox-rows-before-the-relays-first-start.md)
+requires an empty-database bootstrap to leave all eight outboxes empty. The
+seed removes its captured events before `COMMIT`, with capture and integrity
+triggers enabled. Never run the seed or its unconditional `DELETE` block on
+an in-use database.
+
+The explicitly authorized correction of the 2026-10-20 instance is recorded in
+[#597's evidence](../docs/evidence/597-seed-outbox-cleanup.md). Its
+procedure is preserved in `deploy/cleanup-seed-outboxes-597.py`; it is specific
+to that seed, not a general purge tool. It verifies the exact timestamp,
+audited seed identities, expected event identities/counts and unrelayed state.
+It archives rows with mode `0600`, deletes by bound event IDs and timestamp in
+one transaction, and verifies that every retained event is unchanged. A failed
+check rolls back. It requires psycopg from the web's existing environment.
+
+Before the one-time cleanup, its read-only preview was:
+
+```sh
+sudo -u postgres /opt/mosaiq/venv/bin/python deploy/cleanup-seed-outboxes-597.py \
+  --dsn 'dbname=retail user=postgres' \
+  --seed-at '2026-10-20T07:48:39.423052+00:00' \
+  --backup /var/tmp/mosaiq-597-outboxes-before.json
+```
+
+Adding `--apply` performed the authorized correction. It has already run;
+re-running it refuses the missing candidates and does not overwrite the
+archive. Preserve that archive on the instance; never commit database exports.
+
+## F18-01 — Docker, the infrastructure project and one unit per service
+
+[ADR-0040](../docs/adr/0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md)
+(issue #448). Next to the unchanged web, the instance runs the infrastructure
+project `mosaiq-infra` (Redis and MongoDB) and each service as its own compose
+project, `mosaiq-<name>`, under `mosaiq-svc@<name>.service`.
+
+The instance never builds an image. A service's image exists once
+`.github/workflows/services.yml` has built, tested and pushed it to GHCR on a
+merge to `main` that bumped its `VERSION`. Every step below is idempotent and
+runs as root. A secret is never typed on a command line: `sudo` records its
+argv in the journal. Secrets are read from files, or from a pipe or a prompt.
+
+### 1. Swap
+
+With no swap (`swapon --show` prints nothing), a 2 GB swapfile is the
+cushion of ADR-0040's memory budget. `docs/infra.md` records its size.
+
+```sh
+sudo fallocate -l 2G /swapfile && sudo chmod 0600 /swapfile && sudo restorecon /swapfile
+sudo mkswap /swapfile && sudo swapon /swapfile
+echo '/swapfile none swap defaults 0 0' | sudo tee -a /etc/fstab
+```
+
+### 2. Docker Engine and the Compose plugin
+
+From Docker's CentOS repository, not Podman's emulation. `podman-docker` must
+be absent, and SELinux stays enforcing.
+
+```sh
+sudo dnf -y install dnf-plugins-core
+sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+rpm -q podman-docker && sudo dnf -y remove podman-docker
+sudo dnf -y install docker-ce docker-ce-cli containerd.io docker-compose-plugin
+sudo install -m 0644 /dev/stdin /etc/docker/daemon.json <<'JSON'
+{ "log-driver": "json-file", "log-opts": { "max-size": "10m", "max-file": "3" } }
+JSON
+sudo systemctl enable --now docker
+getenforce                                   # Enforcing
+docker --version && docker compose version   # recorded in docs/infra.md
+```
+
+The log caps hold each container's logs to 30 MB, so the disk cannot fill with
+them.
+
+### 3. The GHCR credential
+
+The service packages are private. Root pulls them with a **classic personal
+access token that holds `read:packages` only**:
+
+- **Ownership:** Marcelo Villanueva (`marcelovillanuevam-code`) owns it and
+  rotates it.
+- **Expiry:** 90 days.
+- **Rotation:** before it expires, make the next token, run the login again,
+  check that a pull works, then revoke the old one.
+
+The token never goes into the repository, `.env.example`, a unit or an
+argument.
+
+```sh
+sudo docker login ghcr.io -u marcelovillanuevam-code   # paste the token at the prompt
+```
+
+Docker keeps it in `/root/.docker/config.json` (`0600`).
+
+### 4. Secrets and keys
+
+- `/etc/mosaiq/svc/` is `0700 root`, and each `<name>.env` in it is `0600 root`. It holds:
+  - `DATABASE_URL=postgresql://svc_<suffix>:<password>@/retail?host=/run/postgresql`,
+    with the password from `/root/mosaiq-svc-db.env`, URL-encoded;
+  - `REDIS_STATE_URL=redis://redis-state:6379/0` and
+    `REDIS_CACHE_URL=redis://redis-cache:6379/0`;
+  - `REDIS_<SUFFIX>_PASSWORD`, generated once on the instance;
+  - `AUTH_JWKS_PATH=/run/mosaiq/jwks.json` and `MOSAIQ_SERVICE_NAME=<name>`;
+  - every other variable that service's section of `.env.example` lists, such as
+    the signer's key variables or a MongoDB URI.
+
+  `<suffix>` is the service's role suffix, which is not always its name.
+  `docker/distributed/svc/<name>.env` shows each service's full set with local
+  values.
+- **Redis `ops`:** its password lives in `/root/mosaiq-redis-ops.env` (`0600`).
+- **MongoDB root:** `/etc/mosaiq/mongodb/root.env`, per
+  [infra/README.md](infra/README.md), "First start", step 2.
+- **The signing key and the JWK Set:** [auth-keys.md](auth-keys.md), "First key".
+
+### 5. PostgreSQL
+
+Before a service starts, its role (`sql/00_create_database.sql`) and its
+boundary section of `sql/01_schema.sql` must have been applied as `postgres`
+(expand before deploy). A release that rebuilds the database does both. Its
+`pg_hba.conf` line is described in
+[postgresql/README.md](postgresql/README.md), under "The service roles".
+
+### 6. The infrastructure project
+
+The aclfile comes first, because both Redis instances load it at boot. It is
+built from the lines of the services staged in step 8.
+
+```sh
+sudo install -m 0644 /opt/mosaiq/current/deploy/systemd/mosaiq-infra.service /etc/systemd/system/
+sudo bash -c 'set -a; . /root/mosaiq-redis-ops.env; set +a
+  ACL_SOURCES="/opt/mosaiq/services/*/current/redis/*.acl" \
+  exec /opt/mosaiq/current/deploy/infra/redis/assemble-acl.sh --write-only'
+sudo systemctl daemon-reload && sudo systemctl enable --now mosaiq-infra
+sudo bash -c 'set -a; . /root/mosaiq-redis-ops.env; set +a
+  cd /opt/mosaiq/current && exec deploy/infra/check-redis.sh'
+```
+
+The unit creates the external network `mosaiq` when it is missing. Restarting
+it recreates only the infrastructure containers: no service container's
+`StartedAt` changes.
+
+### 7. A service's MongoDB schema
+
+Any service that ships `mongo/init.js` has that file applied to the live
+MongoDB, as root, before the service's first start
+([ADR-0038](../docs/adr/0038-mongodb-holds-in-store-engagement-owned-by-engagement-service-alone.md): expand
+before deploy). Use the command in [infra/README.md](infra/README.md),
+"MongoDB", with the password the file reads taken from the service's
+`/etc/mosaiq/svc/<name>.env`. A second run changes nothing.
+
+### 8. Staging a service by hand
+
+These are the steps F18-03 (#456) automates on each release.
+
+```sh
+name=<name>; version=$(cat /opt/mosaiq/current/services/$name/VERSION)
+dir=/opt/mosaiq/services/$name/$version
+sudo install -d -m 0755 "$dir"
+sudo cp /opt/mosaiq/current/services/$name/compose.yaml "$dir/"
+sudo cp -r /opt/mosaiq/current/services/$name/redis "$dir/"
+[ -d /opt/mosaiq/current/services/$name/mongo ] && sudo cp -r /opt/mosaiq/current/services/$name/mongo "$dir/"
+printf 'IMAGE_TAG=%s\n' "$version" | sudo tee "$dir/release.env" >/dev/null
+sudo ln -sfn "$version" /opt/mosaiq/services/$name/current
+sudo docker compose -p mosaiq-$name --env-file "$dir/release.env" -f "$dir/compose.yaml" pull
+```
+
+`release.env` also carries every variable the compose file interpolates
+without a default (`grep -o '\${[A-Z_]*}' compose.yaml`), such as the signer's
+key id.
+
+Then load its ACL line with the same `assemble-acl.sh` command as step 6,
+without `--write-only`. Install the unit once and start the service:
+
+```sh
+sudo install -m 0644 /opt/mosaiq/current/deploy/systemd/mosaiq-svc@.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now mosaiq-svc@$name
+port=$(awk -v service="$name" '
+  $1 == "-" && $2 == "name:" { selected = ($3 == service) }
+  selected && $1 == "port:" { print $2; exit }
+' /opt/mosaiq/current/contracts/registry.yaml)
+test -n "$port"
+curl -fsS -o /dev/null -w '%{http_code}\n' "http://127.0.0.1:$port/health/ready"
+```
+
+`/health/ready` answers 503 `schema_not_ready` until step 5 has been done for
+that service.
+
+### 9. Checks and evidence
+
+- `sudo bash /opt/mosaiq/current/deploy/check-services.sh` prints nothing.
+- `systemctl is-active mosaiq` stays active, and
+  `curl -sS -o /dev/null -w '%{http_code}' https://mosaiq.maxthecoder.online/` answers 200, throughout.
+- `free -m` and `docker stats --no-stream`, with every service running, go to
+  `docs/evidence/f18-01-memory.md` and
+  `docs/infra.md`. They are compared with ADR-0040's estimate. If memory is
+  short, the record's cut order applies.
+- **SELinux:** a container running as UID 10001 must connect through the mounted
+  `/run/postgresql`. If `ausearch -m avc -ts recent` shows a denial, the fix is a
+  local policy module committed under `deploy/selinux/` and loaded with
+  `semodule -i`, never a `:z` relabel. The outcome is recorded in
+  `docs/evidence/f18-01-runtime.md`.
+
+### Rollback
+
+```sh
+for d in /opt/mosaiq/services/*/; do sudo systemctl disable --now "mosaiq-svc@$(basename "$d")"; done
+sudo systemctl disable --now mosaiq-infra
+```
+
+Then remove the `svc_*` lines from `pg_hba.conf` and reload PostgreSQL. The web
+depends on none of this.

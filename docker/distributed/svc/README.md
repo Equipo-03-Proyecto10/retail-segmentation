@@ -13,6 +13,12 @@ AUTH_JWKS_PATH=/run/mosaiq/jwks.json
 MOSAIQ_SERVICE_NAME=<name>
 ```
 
+auth's file also sets `AUTH_ISSUER`, `AUTH_KID`, `AUTH_PRIVATE_KEY_PATH` and the
+two TTLs. Its private key is never committed: run
+`bash docker/distributed/auth-keys.sh` once before `docker compose up`; it
+writes a throwaway pair and the JWK Set every local service mounts into the
+git-ignored `docker/distributed/keys/`.
+
 The local `redis-acl` step reads `REDIS_<SUFFIX>_PASSWORD` from the same file
 to build the aclfile, as `deploy/infra/redis/assemble-acl.sh` does on the
 instance.

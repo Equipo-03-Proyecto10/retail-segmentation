@@ -11,6 +11,7 @@ from flask import Flask
 from lxml import etree
 
 from mosaiq_kit import Kit, Representation, configure_logging
+from mosaiq_kit.types import ApiError
 
 
 def _assert_common_xml(response, contracts_dir: Path, code: str) -> None:
@@ -205,6 +206,70 @@ def test_schema_errors_have_stable_details(
     assert {"field": field, "code": code} in response.json["details"]
 
 
+@pytest.mark.parametrize(
+    "body,field",
+    [
+        ({"title": "a\x00b", "amount": "1.00"}, "title"),
+        ({"title": "\x00", "amount": "1.00"}, "title"),
+        ({"title": "New", "amount": "1.00", "ex\x00tra": "x"}, "$"),
+    ],
+)
+def test_nul_in_a_json_string_is_a_schema_violation(
+    client, writer_headers, body: dict[str, object], field: str
+) -> None:
+    # PostgreSQL text cannot hold U+0000; it must never reach the driver (#580).
+    response = client.post("/v1/notes", headers=writer_headers, json=body)
+    assert response.status_code == 422
+    assert response.json["code"] == "invalid_body"
+    assert {"field": field, "code": "invalid_format"} in response.json["details"]
+
+
+def test_escaped_nul_in_raw_json_is_a_schema_violation(client, writer_headers) -> None:
+    response = client.post(
+        "/v1/notes",
+        headers={**writer_headers, "Accept": "application/xml"},
+        data=b'{"title":"a\\u0000b","amount":"1.00"}',
+        content_type="application/json",
+    )
+    assert response.status_code == 422
+    assert response.content_type == "application/xml"
+    assert b"invalid_body" in response.data
+
+
+@pytest.mark.parametrize(
+    "inner,title",
+    [
+        ("<!--c--><title>New</title><amount>1.25</amount>", "New"),
+        ("<?pi x?><title>New</title><amount>1.25</amount><!--end-->", "New"),
+        ("<title>a<!--c-->b</title><amount>1.25</amount>", "ab"),
+        ("<title>a<?pi x?>b</title><amount>1<!--c-->.25</amount>", "ab"),
+        ("<title><!--only--></title><amount>1.25</amount>", None),
+    ],
+)
+def test_xml_comments_and_processing_instructions_are_skipped(
+    client, writer_headers, inner: str, title: str | None
+) -> None:
+    # Comments and PIs are legal XML; kit-rs skips them too (#582).
+    namespace = "https://mosaiq.maxthecoder.online/xml/kit-example/v1"
+    response = client.post(
+        "/v1/notes",
+        headers=writer_headers,
+        data=(
+            f'<?xml version="1.0"?><!--lead--><CreateNoteRequest xmlns="{namespace}">'
+            f"{inner}</CreateNoteRequest><?trail x?>"
+        ),
+        content_type="application/xml",
+    )
+    if title is None:
+        # An element holding only a comment is empty, which the XSD refuses.
+        assert response.status_code == 422
+        assert response.json["code"] == "invalid_body"
+        return
+    assert response.status_code == 201
+    assert response.json["title"] == title
+    assert response.json["amount"] == "1.25"
+
+
 def test_duplicate_json_member_is_malformed(client, writer_headers) -> None:
     response = client.post(
         "/v1/notes",
@@ -256,6 +321,42 @@ def test_invalid_pagination(client, reader_headers, query: str) -> None:
     response = client.get("/v1/notes" + query, headers=reader_headers)
     assert response.status_code == 422
     assert response.json["code"] == "invalid_pagination"
+
+
+@pytest.mark.parametrize(
+    "query,field",
+    [
+        ("?page=99999999999999999999", "page"),
+        ("?page=4294967296", "page"),
+        ("?page=" + "9" * 5000, "page"),
+        ("?size=99999999999999999999", "size"),
+        ("?size=" + "1" * 5000, "size"),
+    ],
+)
+def test_out_of_range_pagination_is_refused(
+    client, reader_headers, query: str, field: str
+) -> None:
+    # The bound keeps OFFSET inside bigint, as kit-rs's u32 does (#581).
+    response = client.get("/v1/notes" + query, headers=reader_headers)
+    assert response.status_code == 422
+    assert response.json["code"] == "invalid_pagination"
+    assert response.json["details"] == [{"field": field, "code": "out_of_range"}]
+
+
+@pytest.mark.parametrize(
+    "query,page,size",
+    [
+        ("?page=4294967295", 4_294_967_295, 20),
+        ("?page=0000000000000000000002&size=007", 2, 7),
+    ],
+)
+def test_pagination_bounds_are_inclusive(
+    client, reader_headers, query: str, page: int, size: int
+) -> None:
+    response = client.get("/v1/notes" + query, headers=reader_headers)
+    assert response.status_code == 200
+    assert response.json["page_info"]["page"] == page
+    assert response.json["page_info"]["size"] == size
 
 
 def test_valid_pagination_is_passed_to_page_info(client, reader_headers) -> None:
@@ -456,3 +557,164 @@ def test_vector_files_have_public_material_only() -> None:
     jwks = json.loads((vector_root / "jwks.json").read_text())
     assert set(jwks["keys"][0]) == {"kty", "use", "alg", "kid", "n", "e"}
     assert not list(vector_root.glob("*.pem"))
+
+
+@pytest.mark.parametrize("path", ["/openapi.yaml", "/schema.xsd"])
+@pytest.mark.parametrize("accept", ["image/png", "text/html", "application/json"])
+def test_contract_documents_refuse_an_unsupported_accept(
+    client, path: str, accept: str
+) -> None:
+    response = client.get(path, headers={"Accept": accept})
+    assert response.status_code == 406
+    assert response.json["code"] == "not_acceptable"
+
+
+@pytest.mark.parametrize(
+    "path,accept",
+    [
+        ("/openapi.yaml", None),
+        ("/openapi.yaml", "*/*"),
+        ("/openapi.yaml", "application/yaml"),
+        ("/openapi.yaml", "application/*"),
+        ("/schema.xsd", None),
+        ("/schema.xsd", "application/xml"),
+        ("/schema.xsd", "text/xml, */*;q=0.1"),
+    ],
+)
+def test_contract_documents_serve_a_supported_accept(
+    client, path: str, accept: str | None
+) -> None:
+    headers = {"Accept": accept} if accept else {}
+    assert client.get(path, headers=headers).status_code == 200
+
+
+_NIL_SCHEMA = {
+    "type": "object",
+    "required": ["name", "email", "phone", "note"],
+    "properties": {
+        "name": {"type": "string"},
+        "email": {"type": ["string", "null"]},
+        "phone": {"oneOf": [{"type": "string"}, {"type": "null"}]},
+        "note": {"type": "string"},
+        "parent": {"type": ["integer", "null"]},
+    },
+}
+
+
+def _read_xml(contracts_dir: Path, body: str):
+    from mosaiq_kit.contracts import Contract
+
+    contract = Contract(contracts_dir, "kit-example")
+    root = etree.fromstring(
+        f'<R xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">{body}</R>'
+    )
+    return contract, contract._element_to_value(root, _NIL_SCHEMA)
+
+
+def test_xml_omitted_required_nullable_members_read_as_null(
+    contracts_dir: Path,
+) -> None:
+    contract, value = _read_xml(contracts_dir, "<name>A</name>")
+    assert value == {"name": "A", "email": None, "phone": None}
+    # A required member that is not nullable still fails validation.
+    with pytest.raises(ApiError) as error:
+        contract.validate(value, _NIL_SCHEMA)
+    assert error.value.details == [{"field": "note", "code": "required"}]
+
+
+def test_xml_xsi_nil_reads_as_null(contracts_dir: Path) -> None:
+    _, value = _read_xml(
+        contracts_dir,
+        '<name>A</name><email xsi:nil="true"/><parent xsi:nil="true"/>'
+        "<phone>1</phone>",
+    )
+    assert value["email"] is None
+    assert value["parent"] is None
+    assert value["phone"] == "1"
+
+
+@pytest.mark.parametrize(
+    ("pattern", "accepted", "refused"),
+    [
+        (r"^[^@\s]+@[^@\s]+$", "x@example.com", "x@example.com\n"),
+        (r"^\d+\.\d{2}$", "1.00", "1.00\n"),
+        # An escaped `$` and a `$` inside a class stay literal dollars.
+        (r"^a\$b$", "a$b", "a$b\n"),
+        (r"^[$]+$", "$$", "$$\n"),
+    ],
+)
+def test_a_pattern_ends_where_ecma_262_ends(
+    contracts_dir: Path, pattern: str, accepted: str, refused: str
+) -> None:
+    """#594: Python's `$` also matches before a final newline; JSON Schema's,
+    like kit-rs's, does not."""
+    from mosaiq_kit.contracts import Contract
+
+    contract = Contract(contracts_dir, "kit-example")
+    schema = {
+        "type": "object",
+        "properties": {"value": {"type": "string", "pattern": pattern}},
+    }
+    contract.validate({"value": accepted}, schema)
+    with pytest.raises(ApiError) as error:
+        contract.validate({"value": refused}, schema)
+    assert error.value.details == [{"field": "value", "code": "invalid_format"}]
+
+
+def test_xml_omitted_required_list_reads_as_empty(contracts_dir: Path) -> None:
+    from mosaiq_kit.contracts import Contract
+
+    schema = {
+        "type": "object",
+        "required": ["ids", "tags"],
+        "properties": {
+            "ids": {"type": "array", "items": {"type": "integer"}},
+            "tags": {"type": ["array", "null"], "items": {"type": "string"}},
+            "extra": {"type": "array", "items": {"type": "string"}},
+        },
+    }
+    contract = Contract(contracts_dir, "kit-example")
+    # `tags` is nullable, so it still reads as null; `extra` is not required
+    # and stays absent. Same reading as kit-rs (#475).
+    assert contract._element_to_value(etree.fromstring("<R/>"), schema) == {
+        "ids": [],
+        "tags": None,
+    }
+    listed = etree.fromstring("<R><ids>1</ids><ids>2</ids></R>")
+    assert contract._element_to_value(listed, schema)["ids"] == [1, 2]
+
+
+def test_categories_own_nil_example_reads_as_null() -> None:
+    from mosaiq_kit.contracts import Contract
+
+    root = Path(__file__).resolve().parents[3] / "contracts"
+    contract = Contract(root, "categories")
+    operation = contract.operation("updateCategory")
+    raw = (
+        root / "categories/examples/update-category-make-root.request.xml"
+    ).read_bytes()
+    value = contract.parse_xml(raw, operation)
+    assert value == {"parent_category_id": None}
+    contract.validate(value, operation.request_schema)
+
+
+def test_chunked_oversize_body_is_413(client) -> None:
+    import io
+
+    response = client.post(
+        "/v1/notes",
+        input_stream=io.BytesIO(b"x" * 65_537),
+        headers={"Transfer-Encoding": "chunked"},
+        environ_overrides={"wsgi.input_terminated": True},
+        content_type="application/json",
+    )
+    assert response.status_code == 413
+    assert response.json["code"] == "payload_too_large"
+
+
+def test_bearer_with_extra_whitespace_is_refused(client, tokens) -> None:
+    response = client.get(
+        "/v1/notes", headers={"Authorization": "Bearer  " + tokens["valid_reader"]}
+    )
+    assert response.status_code == 401
+    assert response.json["code"] == "invalid_token"

@@ -12,6 +12,7 @@ from web.db.sales_loads import (
     get_sales_load,
     insert_sales_load,
     list_sales_load_rejections,
+    list_sales_load_rejections_page,
     list_sales_loads,
 )
 
@@ -117,3 +118,22 @@ def test_rejections_are_read_in_the_file_s_own_line_order() -> None:
     assert "ORDER BY line_number" in statement
     assert parameters == (7,)
     assert rejections[0].line_number == 3
+
+
+def test_a_page_of_rejected_lines_is_bounded_and_counts_them_all() -> None:
+    connection = MagicMock()
+    cursor = _cursor(connection)
+    cursor.fetchall.return_value = [(301, "unknown product")]
+    cursor.fetchone.return_value = (40_000,)
+
+    rows, total = list_sales_load_rejections_page(connection, 7, page=4, per_page=100)
+
+    assert [(row.line_number, row.reason) for row in rows] == [(301, "unknown product")]
+    assert total == 40_000
+    (page_sql, page_parameters), (count_sql, count_parameters) = (
+        call.args for call in cursor.execute.call_args_list
+    )
+    assert "ORDER BY line_number" in page_sql and "LIMIT %s OFFSET %s" in page_sql
+    assert page_parameters == (7, 100, 300)
+    assert "count(*)" in count_sql
+    assert count_parameters == (7,)

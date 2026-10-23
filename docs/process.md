@@ -19,7 +19,7 @@ sprint boundary until the team sets a calendar.
 |---|---|---|
 | Product Owner | Dr. Raúl Morales Saucedo | Owns the requirements and accepts the delivery |
 | Proxy Product Owner | Raquel | Day-to-day backlog owner. Writes and prioritizes stories, accepts them against acceptance criteria, resolves scope questions the PO has not answered |
-| Scrum Master | Marcelo | Facilitates ceremonies, maintains the board, removes blockers, enforces the Definition of Done |
+| Scrum Master | Marcelo | Facilitates ceremonies, keeps issue state and blocker labels current, removes blockers, enforces the Definition of Done |
 | Development Team | Raquel, Estefanía, Max, Marcelo | Estimates, commits, builds, tests, demonstrates |
 
 The Product Owner is the course professor and is not available for planning or
@@ -33,7 +33,7 @@ and the Proxy PO exists to fill that gap. Open questions are recorded in
 |---|---|
 | [Scope](scope.md) | The boundary of the delivery. Changing it is a decision, and decisions go in `adr/` |
 | [Backlog](backlog.md) | Ordered work, grouped by scope phase |
-| Sprint backlog | The subset committed at Planning, tracked on the GitHub Projects board |
+| Sprint backlog | The open issues committed at Planning, pulled in priority order (§8) |
 | [ADRs](adr/) | Decisions other work inherits |
 | [Roadmap](roadmap.md) | What comes after this delivery |
 
@@ -42,7 +42,7 @@ and the Proxy PO exists to fill that gap. Open questions are recorded in
 | Ceremony | When | Output |
 |---|---|---|
 | Sprint Planning | First day of the sprint | Sprint Goal, committed backlog, work made available for self-assignment |
-| Weekly Sync | Once per week | Blockers raised, board reconciled |
+| Weekly Sync | Once per week | Blockers raised, issue state and blocker labels reconciled |
 | Async check-in | Every working day, written | Yesterday / today / blockers, in the team channel |
 | Backlog Refinement | Mid-sprint | Next sprint's candidates brought to Definition of Ready |
 | Sprint Review | Last day of the sprint | Working software demonstrated, stories accepted or rejected |
@@ -119,21 +119,33 @@ the commitment is calibrated from measured velocity afterwards.
 ## 8. Working agreements
 
 - **Work in progress.** Maximum 2 stories in progress per person. Finish before starting.
+- **Issue state.** The second delivery uses no project board; the issue itself
+  carries the state (#603):
+
+  | State | What the issue shows |
+  |---|---|
+  | Ready | Open, meets the Definition of Ready, unassigned, and every `Blocked by` issue closed |
+  | In progress | Assigned, with a branch linked under Development |
+  | In review | A linked open pull request |
+  | Done | Closed, with the evidence the Definition of Done asks for |
+
 - **Pulling work.** Work is self-assigned, not handed out. Any Development Team
-  member may claim an unassigned issue when it belongs to the current sprint,
-  its board status is Ready, and every `Blocked by` issue is closed. Assign
-  yourself and move it to In Progress before creating the branch.
+  member may claim a Ready issue, highest priority first. The list is
+  `gh issue list --search "-is:blocked no:assignee -label:type:epic"`. Assign
+  yourself before creating the branch, and create the branch from the issue
+  (`gh issue develop`) so that it is linked.
 - **Dependencies.** Every `Depends on` entry in an issue must also be recorded
   under GitHub's native Relationships as `Blocked by`. An open blocker keeps the
-  issue out of Ready and In Progress. The body explains the dependency; the
-  native relationship provides the visible Blocked indicator in Issues and
-  Projects.
-- **Assignment boundaries.** Self-assignment does not change sprint membership
-  or priority, and nobody assigns work to another member without that member's
-  agreement. Pair-required work carries both participants as assignees.
+  issue out of Ready and In progress. The body explains the dependency; the
+  native relationship provides the visible Blocked indicator in Issues. The
+  `status:blocked` and `status:blocking` labels mirror the relationships; when
+  they disagree, the relationship is right and the label is corrected.
+- **Assignment boundaries.** Self-assignment does not change priority, and
+  nobody assigns work to another member without that member's agreement.
+  Pair-required work carries both participants as assignees.
 - **Hand-offs.** A member who stops working on an issue comments with the current
   state and blockers, then either reassigns it with the receiving member's
-  agreement or removes themselves and returns it to Ready. An In Progress issue
+  agreement or removes themselves and returns it to Ready. An issue in progress
   always has an active assignee.
 - **Pull requests.** Reviewed within one working day. A PR over 400 changed lines should have been split.
 - **Branching.** `main` is protected. `develop` is the integration branch and also requires review. Feature branches are `feature/<issue>-kebab-slug`, also `fix/`, `chore/`, `docs/`.
@@ -154,15 +166,14 @@ the commitment is calibrated from measured velocity afterwards.
 | Purpose | Tool |
 |---|---|
 | Source control | GitHub, organization-owned monorepo |
-| Board | GitHub Projects — Backlog, Ready, In Progress, In Review, Done |
-| Issues | GitHub Issues, with native dependency relationships and labels `type:*`, `area:*`, `priority:*` |
+| Issues | GitHub Issues, with native dependency relationships, linked branches and pull requests, and labels `type:*`, `area:*`, `priority:*`, `status:*` |
 | CI | GitHub Actions |
 | Documentation | Markdown in `docs/`, versioned in Git |
 | Decisions | ADRs in `docs/adr/` |
 | Communication | Team channel |
 
-The board is graded evidence. Three rules protect it: Ready means every native
-blocker is closed; an issue moves to In Progress only when an assignee is
+The issues are graded evidence. Three rules protect them: Ready means every
+native blocker is closed; an issue is assigned only when the assignee is
 actually working on it; and nothing is closed retroactively in bulk. Visible
 spillover is stronger evidence of a working process than a suspiciously clean
 burndown.

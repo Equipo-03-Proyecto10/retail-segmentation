@@ -1,0 +1,14 @@
+# One container snapshot for ops-console (ADR-0055). Installed to
+# /etc/systemd/system/ with its timer; see ops/console/README.md.
+[Unit]
+Description=MOSAIQ ops-console container snapshot
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/mosaiq/ops-console/mosaiq-ops-snapshot.sh /run/mosaiq/ops/containers.json
+# Kept between runs, so the console's bind mount always has a directory.
+RuntimeDirectory=mosaiq/ops
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes

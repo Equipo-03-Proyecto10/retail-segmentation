@@ -307,12 +307,36 @@ class StreamConsumer:
             return self._run_pass(block_ms)
 
     def run_forever(self) -> None:
+        """Run passes until stopped.
+
+        A lost Redis connection is an expected outage, not a code fault: it logs
+        one warning, backs off from one second doubling up to 30 s, and logs one
+        line when a pass succeeds again. Any other exception keeps its traceback
+        and the one-second wait.
+        """
+
+        delay = 1.0
+        outage = False
         while not self._stop.is_set():
             try:
                 self.run_once(block_ms=5000)
+            except (redis.ConnectionError, redis.TimeoutError) as error:
+                if not outage:
+                    LOGGER.warning(
+                        "Stream consumer lost Redis (%s); retrying with backoff",
+                        error,
+                    )
+                    outage = True
+                self._stop.wait(delay)
+                delay = min(delay * 2, 30.0)
             except Exception:
                 LOGGER.exception("Stream consumer pass failed")
                 self._stop.wait(1)
+            else:
+                if outage:
+                    LOGGER.info("Stream consumer reconnected to Redis")
+                    outage = False
+                delay = 1.0
 
     def start(self) -> threading.Thread:
         if self._thread is None or not self._thread.is_alive():

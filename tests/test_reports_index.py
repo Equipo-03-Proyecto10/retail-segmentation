@@ -25,18 +25,18 @@ def _cursor(connection: MagicMock) -> MagicMock:
     return connection.cursor.return_value.__enter__.return_value
 
 
-def _connection(with_sales: bool = True) -> MagicMock:
+def _connection(with_sales: bool = True, seeded: bool = False) -> MagicMock:
     connection = MagicMock()
     connection.closed = False
     cursor = _cursor(connection)
     if with_sales:
-        cursor.fetchone.return_value = (_UNTIL, 3, Decimal("300.50"))
+        cursor.fetchone.return_value = (_UNTIL, 3, Decimal("300.50"), seeded)
         cursor.fetchall.side_effect = [
             [("Online", 2, Decimal("200.00")), ("Store", 1, Decimal("100.50"))],
             [("Centro", 3, Decimal("300.50"))],
         ]
     else:
-        cursor.fetchone.return_value = (None, 0, Decimal("0"))
+        cursor.fetchone.return_value = (None, 0, Decimal("0"), False)
         cursor.fetchall.return_value = []
     return connection
 
@@ -75,6 +75,19 @@ def test_the_revenue_summary_shows_totals_and_both_splits() -> None:
 
     for text in ("300.50", "Online", "Centro", "2026-09-28", "Revenue by channel"):
         assert text in body
+
+
+@pytest.mark.parametrize("seeded", [True, False])
+def test_the_revenue_is_marked_synthetic_exactly_when_the_window_holds_a_seeded_sale(
+    seeded: bool,
+) -> None:
+    """#560, ADR-0052: marked by the sales it sums, never by a setting."""
+    body = (
+        _client(_connection(seeded=seeded), "ANALYST").get(_URL).get_data(as_text=True)
+    )
+
+    assert ("Synthetic" in body) is seeded
+    assert ('class="mq-alert mq-alert--warning" role="status"' in body) is seeded
 
 
 def test_no_sales_says_so_instead_of_showing_zeroes() -> None:
@@ -158,3 +171,8 @@ def test_the_revenue_read_is_parameterized_and_window_bound() -> None:
         assert parameters == (90,)
     assert summary.revenue == Decimal("300.50")
     assert [row.name for row in summary.by_channel] == ["Online", "Store"]
+    # ADR-0052: the totals read also says whether the window holds a seeded
+    # sale, so the marker costs no extra statement.
+    assert "bool_or(t.data_origin = 'SEEDED')" in statements[0][0]
+    assert summary.seeded is False
+    assert read_revenue_summary(_connection(seeded=True), 90).seeded is True

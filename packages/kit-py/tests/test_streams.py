@@ -408,3 +408,35 @@ def test_consumer_acks_a_trimmed_pending_entry(
     assert redis_client.acked == [
         ("stream:" + TEST_CONSUMED_STREAM, consumer.group, "1-0")
     ]
+
+
+def test_run_forever_backs_off_on_connection_loss_and_logs_once(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("MOSAIQ_SERVICE_NAME", "kit-consumer-backoff")
+    consumer = StreamConsumer(object(), "stream:" + TEST_CONSUMED_STREAM, print)
+    outcomes = [redis.ConnectionError("down")] * 7 + [redis.TimeoutError("slow")]
+    outcomes += [0, ValueError("bug")]
+    waits: list[float] = []
+
+    def run_once(block_ms=None):
+        if not outcomes:
+            consumer._stop.set()
+            return 0
+        outcome = outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(consumer, "run_once", run_once)
+    monkeypatch.setattr(consumer._stop, "wait", lambda delay: waits.append(delay))
+    with caplog.at_level("INFO", logger="mosaiq_kit.streams"):
+        consumer.run_forever()
+
+    assert waits == [1, 2, 4, 8, 16, 30, 30, 30, 1]
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1 and warnings[0].exc_info is None
+    infos = [r for r in caplog.records if r.levelname == "INFO"]
+    assert len(infos) == 1
+    errors = [r for r in caplog.records if r.levelname == "ERROR"]
+    assert len(errors) == 1 and errors[0].exc_info is not None

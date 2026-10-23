@@ -1,0 +1,9 @@
+saturation rates (requests/s) and the measured rate at 70% of the lower
+list    json flask=  160 rust=  160 measured=112
+list    xml  flask=  120 rust=  160 measured=84
+search  json flask=   80 rust=   80 measured=56
+search  xml  flask=   80 rust=   80 measured=56
+filter  json flask=  160 rust=  480 measured=112
+filter  xml  flask=   80 rust=  480 measured=56
+detail  json flask=  240 rust=  960 measured=168
+detail  xml  flask=  160 rust=  960 measured=112

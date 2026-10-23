@@ -114,8 +114,8 @@ class Authenticator:
     def verify(self, authorization: str | None) -> dict[str, Any]:
         if not authorization or not authorization.startswith("Bearer "):
             raise _invalid_token()
-        token = authorization.removeprefix("Bearer ").strip()
-        if not token or " " in token:
+        token = authorization.removeprefix("Bearer ")
+        if not token or any(character.isspace() for character in token):
             raise _invalid_token()
         try:
             header = jwt.get_unverified_header(token)
@@ -130,6 +130,8 @@ class Authenticator:
                 issuer=self.issuer,
                 options={"require": ["exp", "iss", "aud", "sub", "sid", "role"]},
             )
+            if claims["aud"] != "mosaiq-api":
+                raise _invalid_token()
         except ApiError:
             raise
         except (jwt.PyJWTError, KeyError, OSError, ValueError, json.JSONDecodeError):

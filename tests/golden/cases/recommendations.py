@@ -70,8 +70,8 @@ _ADD_CUSTOMER = (
 )
 _ADD_RUN = (
     "INSERT INTO segmentation_run"
-    " (method, window_days, parameters, customer_count, run_at)"
-    " VALUES ('RFM_RULES', 180, '{\"window_days\": 180}'::jsonb, 1, %s)"
+    " (method, window_days, parameters, customer_count, run_at, data_origin)"
+    " VALUES ('RFM_RULES', 180, '{\"window_days\": 180}'::jsonb, 1, %s, 'SEEDED')"
     " RETURNING run_id"
 )
 _ADD_ROW = (
@@ -108,7 +108,19 @@ def _synthetic(
             "a customer assigned LOYAL by an added run, with no accepted sale"
         ),
     }[case_id]
-    return Case(case_id, {"customer_id": customer_id, "setup": setup}, run)
+    # recommendations-service splits the web's no_segment in two, read from
+    # api_segments.current_label_v1.state (F14-22).
+    differs = {
+        "synthetic-no-history": (
+            "recommendations-service reports no_open_assignment where the web "
+            "reports no_segment: the customer has no open assignment."
+        ),
+        "synthetic-unassigned": (
+            "recommendations-service reports unassigned_result where the web "
+            "reports no_segment: the open assignment is the unassigned result."
+        ),
+    }.get(case_id)
+    return Case(case_id, {"customer_id": customer_id, "setup": setup}, run, differs)
 
 
 def build(connection: psycopg.Connection, context: Context) -> list[Case]:

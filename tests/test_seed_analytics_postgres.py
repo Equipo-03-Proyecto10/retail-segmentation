@@ -197,8 +197,8 @@ def test_an_exempt_table_really_holds_fewer_than_thirty_rows(
         if "." in name:
             # Runtime state in a service schema (ADR-0046), exempt because the
             # seed must not invent its rows, not because its domain is small.
-            # The web's role cannot read it, and a capture trigger has already
-            # recorded the seed's own writes in an outbox.
+            # The web's role cannot read it. ADR-0054 removes the seed's
+            # captured events before commit; the owner checks them separately.
             continue
         (rows,) = connection.execute(
             sql.SQL("SELECT count(*) FROM {}").format(sql.Identifier(*name.split(".")))

@@ -16,7 +16,10 @@
 # - a PostgreSQL 16 built by the three scripts, whose socket the image mounts;
 # - the image, hardened as its compose project runs it, listening on <port> and
 #   published on 127.0.0.1:<port>, with a throwaway key's JWKS mounted at
-#   /run/mosaiq/jwks.json.
+#   /run/mosaiq/jwks.json. A service whose compose.yaml mounts a private key
+#   (auth, the only one that signs) also gets that same throwaway key at
+#   /run/mosaiq/auth-<kid>.pem, with AUTH_KID and AUTH_PRIVATE_KEY_PATH, so the
+#   tokens the suite signs are the ones the service signs and verifies.
 # It waits for /health/ready, then writes the suite's variables to
 # $CONFORMANCE_ENV (default <work>/conformance.env).
 #
@@ -86,6 +89,13 @@ if [[ -n ${GITHUB_ACTIONS:-} ]]; then
   done
 fi
 
+# Keyed on the file, not the name: only a compose.yaml that mounts a private
+# key (ADR-0036) makes the service a signer.
+signer=false
+if [[ -f $service_dir/compose.yaml ]] && grep -q 'auth-\${AUTH_KID}\.pem' "$service_dir/compose.yaml"; then
+  signer=true
+fi
+
 env_file=$work/env/$name.env
 {
   echo "DATABASE_URL=postgresql://svc_$suffix@/retail?host=/run/postgresql"
@@ -113,6 +123,18 @@ kid=conformance-$(openssl rand -hex 4)
 openssl genrsa -out "$work/keys/private.pem" 2048 2>/dev/null
 python3 tests/conformance/tokens.py jwks "$work/keys/private.pem" "$kid" >"$work/keys/jwks.json"
 chmod 0444 "$work/keys/jwks.json"
+key_mounts=()
+if [[ $signer == true ]]; then
+  {
+    echo "AUTH_KID=$kid"
+    echo "AUTH_PRIVATE_KEY_PATH=/run/mosaiq/auth-$kid.pem"
+    echo "AUTH_ACCESS_TOKEN_TTL_SECONDS=600"
+    echo "AUTH_SESSION_ABSOLUTE_TTL_SECONDS=43200"
+  } >>"$env_file"
+  # Throwaway and per run; the container runs as UID 10001, not the runner.
+  chmod 0444 "$work/keys/private.pem"
+  key_mounts=(-v "$work/keys/private.pem:/run/mosaiq/auth-$kid.pem:ro")
+fi
 
 docker run -d --name "$project-postgres" --label "$label" \
   -e POSTGRES_PASSWORD=postgres -e APP_DB_PASSWORD=retail_app \
@@ -167,6 +189,7 @@ docker run -d --name "$project-$name" --label "$label" --network mosaiq \
   --env-file "$env_file" \
   -v "$work/pgsock:/run/postgresql:ro" \
   -v "$work/keys/jwks.json:/run/mosaiq/jwks.json:ro" \
+  "${key_mounts[@]}" \
   -p "127.0.0.1:$port:$port" \
   "$image" >/dev/null
 

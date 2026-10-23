@@ -1,0 +1,34 @@
+# One MOSAIQ service as its own compose project, mosaiq-<name>. F18-01
+# (issue #448), ADR-0040.
+#
+# Install once to /etc/systemd/system/mosaiq-svc@.service, then
+# `systemctl enable --now mosaiq-svc@<name>` per staged service; the steps are
+# in deploy/README.md (F18-01). A service is staged in
+# /opt/mosaiq/services/<name>/current, which holds its compose.yaml and a
+# release.env that sets IMAGE_TAG and any other variable the compose file
+# interpolates (F18-03 writes it on each release). Its secrets reach the
+# container through the compose file's env_file, /etc/mosaiq/svc/<name>.env
+# (F13-08), never through this unit.
+#
+# Only Wants= on Docker, the infrastructure and PostgreSQL, never Requires=:
+# stopping or restarting one of them must not stop every service, and each
+# service reports its own readiness on /health/ready. --no-deps keeps the
+# project to its own container; --no-build means a missing image fails the
+# start instead of being built on the instance.
+
+[Unit]
+Description=MOSAIQ service %i (compose project mosaiq-%i)
+Documentation=https://github.com/Equipo-03-Proyecto10/retail-segmentation/blob/develop/deploy/README.md
+After=network-online.target docker.service mosaiq-infra.service postgresql-18.service
+Wants=network-online.target docker.service mosaiq-infra.service postgresql-18.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/mosaiq/services/%i/current
+ExecStart=/usr/bin/docker compose -p mosaiq-%i --env-file /opt/mosaiq/services/%i/current/release.env up -d --no-deps --no-build
+ExecStop=/usr/bin/docker compose -p mosaiq-%i --env-file /opt/mosaiq/services/%i/current/release.env down
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

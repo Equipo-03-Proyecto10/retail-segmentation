@@ -96,6 +96,58 @@ def test_a_token_for_an_unknown_user_is_user_not_found(api: Any) -> None:
     assert _code(api("GET", f"/v1/users/{stranger}")) == (404, "user_not_found")
 
 
+@pytest.mark.parametrize("subject", ["not-a-uuid", "", "1234", "x" * 200])
+def test_a_signed_subject_that_is_no_uuid_is_user_not_found(
+    api: Any, subject: str
+) -> None:
+    # A validly signed token whose sub names no app_user.user_id (#581).
+    reply = api("GET", "/v1/users/me", as_user=(subject, "ANALYST"))
+    assert _code(reply) == (404, "user_not_found")
+
+
+@pytest.mark.parametrize("query", ["q=%00", "q=a%00b", "q=USER14%00"])
+def test_a_nul_in_the_text_filter_is_refused(api: Any, query: str) -> None:
+    # PostgreSQL text cannot hold U+0000; the filter never reaches it (#580).
+    reply = api("GET", "/v1/users?" + query)
+    assert _code(reply) == (422, "invalid_pagination")
+    assert reply.get_json()["details"] == [{"field": "q", "code": "invalid_format"}]
+
+
+# Refused by the kit since 0.1.3 for every Python service (#580, #581, #582).
+
+
+def test_a_page_beyond_the_kit_bound_is_invalid_pagination(api: Any) -> None:
+    reply = api("GET", "/v1/users?page=99999999999999999999")
+    assert _code(reply) == (422, "invalid_pagination")
+
+
+@pytest.mark.parametrize(
+    "field,value", [("name", "a\x00b"), ("email", "a\x00b@example.com")]
+)
+def test_a_nul_in_a_body_field_is_invalid_body(
+    api: Any, field: str, value: str
+) -> None:
+    created = api("POST", "/v1/users", json_body={**NEW_USER, field: value})
+    assert _code(created) == (422, "invalid_body")
+    updated = api("PATCH", f"/v1/users/{ANALYST}", json_body={field: value})
+    assert _code(updated) == (422, "invalid_body")
+
+
+def test_an_xml_comment_in_the_body_is_skipped(api: Any) -> None:
+    namespace = "https://mosaiq.maxthecoder.online/xml/users/v1"
+    reply = api(
+        "PATCH",
+        f"/v1/users/{ANALYST}",
+        data=(
+            f'<UpdateUserRequest xmlns="{namespace}"><!--c--><?pi x?>'
+            "<name>Re<!--c-->named</name></UpdateUserRequest>"
+        ),
+        headers={"Content-Type": "application/xml"},
+    )
+    assert reply.status_code == 200, reply.data
+    assert reply.get_json()["name"] == "Renamed"
+
+
 def test_roles_are_the_seven_codes_and_one_can_be_read(api: Any) -> None:
     body = api("GET", "/v1/roles").get_json()
     assert [role["role_code"] for role in body["roles"]][0] == "ADMIN"
@@ -146,6 +198,21 @@ def test_create_refuses_an_unknown_role_and_a_short_password(api: Any) -> None:
     assert _code(reply) == (422, "unknown_role")
     reply = api("POST", "/v1/users", json_body=NEW_USER | {"password": "short"})
     assert _code(reply) == (422, "invalid_body")
+
+
+@pytest.mark.parametrize("name", ["   ", "\t\n"])
+def test_a_name_blank_after_trimming_is_refused(
+    api: Any, owner: psycopg.Connection, name: str
+) -> None:
+    before = _scalar(owner, "SELECT count(*) FROM app_user")
+    reply = api("POST", "/v1/users", json_body=NEW_USER | {"name": name})
+    assert _code(reply) == (422, "invalid_body")
+    assert reply.get_json()["details"] == [{"field": "name", "code": "too_short"}]
+    assert _scalar(owner, "SELECT count(*) FROM app_user") == before
+    reply = api("PATCH", f"/v1/users/{ANALYST}", json_body={"name": name})
+    assert _code(reply) == (422, "invalid_body")
+    stored = _scalar(owner, "SELECT name FROM app_user WHERE user_id = %s", ANALYST)
+    assert stored.strip()
 
 
 def test_only_the_administrator_creates(api: Any) -> None:
@@ -400,4 +467,28 @@ def test_a_stale_administrator_token_cannot_transfer(
     assert _code(reply) == (409, "single_administrator")
     assert (
         _scalar(owner, "SELECT user_id::text FROM app_user WHERE role_id = 1") == ADMIN
+    )
+
+
+@pytest.mark.parametrize("field", ["email", "role_code"])
+def test_a_final_newline_is_refused_on_create(api: Any, field: str) -> None:
+    """#594: Python's `$` matches before a final newline; the contract's
+    patterns mean the whole value."""
+    reply = api(
+        "POST", "/v1/users", json_body=NEW_USER | {field: NEW_USER[field] + "\n"}
+    )
+    assert _code(reply) == (422, "invalid_body")
+    assert reply.get_json()["details"] == [{"field": field, "code": "invalid_format"}]
+
+
+def test_a_final_newline_in_an_edited_email_is_refused(
+    api: Any, owner: psycopg.Connection
+) -> None:
+    reply = api(
+        "PATCH", f"/v1/users/{ANALYST}", json_body={"email": "new@example.com\n"}
+    )
+    assert _code(reply) == (422, "invalid_body")
+    assert (
+        _scalar(owner, "SELECT email FROM app_user WHERE user_id = %s", ANALYST)
+        == "user14@mosaiq-demo.com"
     )

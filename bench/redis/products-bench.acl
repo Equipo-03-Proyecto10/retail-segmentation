@@ -1,0 +1,1 @@
+user svc_products_bench on {{password}} resetchannels -@all +@connection (%R~pub:auth:v1:live:* +exists)

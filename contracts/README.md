@@ -92,6 +92,12 @@ Every operation that declares Bearer security also declares
 The token-free operations are `POST /v1/sessions`,
 `POST /v1/sessions/refresh`, `GET /v1/jwks.json`, and the meta routes.
 
+A read that needs no single parameter but refuses a bare call, such as one
+that takes exactly one of several filters, declares
+`x-mosaiq-conformance-query`: a map of query parameters to sample values the
+shared conformance suite (`tests/conformance`) calls it with. It changes nothing
+the service accepts; `listSegmentAssignments` is the first.
+
 The meta routes are `/health/live`, `/health/ready`, `/openapi.yaml`, and
 `/schema.xsd`. They sit outside `/v1`, do not appear in the registry, and need
 no token. Versioned schemas add `/schema.vN.xsd`.

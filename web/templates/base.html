@@ -56,7 +56,7 @@
 
           <div class="mq-nav__footer">
             <div class="mq-nav__identity">
-              <span class="mq-nav__user">{{ current_user_name }}</span>
+              <span class="mq-nav__user"><bdi>{{ current_user_name }}</bdi></span>
               <span class="mq-caption mq-mono">{{ current_user_role }}</span>
             </div>
             <form method="post" action="{{ url_for('auth.logout') }}">

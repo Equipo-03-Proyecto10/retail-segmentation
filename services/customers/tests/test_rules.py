@@ -188,6 +188,36 @@ def test_a_patch_to_a_taken_email_or_unknown_channel_is_refused(
     assert (channel.status_code, channel.get_json()["code"]) == (422, "unknown_channel")
 
 
+def by_email(owner, unique: str) -> int:
+    return owner.execute(
+        "SELECT count(*) FROM customer WHERE email = %s", (unique + "@example.com",)
+    ).fetchone()[0]
+
+
+@pytest.mark.parametrize("name", ["", "   ", "\t\n"])
+def test_a_blank_name_is_refused_on_register_and_correct(
+    client, manager, owner, unique, name
+):
+    blank = {"field": "name", "code": "too_short"}
+    response = register(client, manager, body(unique, name=name))
+    assert (response.status_code, response.get_json()["code"]) == (
+        422,
+        "invalid_body",
+    )
+    assert response.get_json()["details"] == [blank]
+    assert by_email(owner, unique) == 0
+
+    created = register(client, manager, body(unique)).get_json()
+    url = "/v1/customers/" + created["customer_id"]
+    response = client.patch(url, json={"name": name}, headers=manager)
+    assert (response.status_code, response.get_json()["code"]) == (
+        422,
+        "invalid_body",
+    )
+    assert response.get_json()["details"] == [blank]
+    assert client.get(url, headers=manager).get_json() == created
+
+
 def test_a_patch_with_a_bad_email_gets_422(client, manager, unique):
     created = register(client, manager, body(unique)).get_json()
     response = client.patch(
@@ -313,6 +343,65 @@ def test_search_pages_and_counts(client, manager, directory):
     assert len(data["customers"]) == 1
     bad = client.get("/v1/customers", query_string={"size": 0}, headers=manager)
     assert (bad.status_code, bad.get_json()["code"]) == (422, "invalid_pagination")
+
+
+@pytest.mark.parametrize(
+    "query", [{"q": "\x00"}, {"q": "a\x00b"}, {"email": "a\x00@example.com"}]
+)
+def test_a_nul_in_a_text_filter_is_refused(client, manager, query):
+    # PostgreSQL text cannot hold U+0000; the filter never reaches it (#580).
+    response = client.get("/v1/customers", query_string=query, headers=manager)
+    assert response.status_code == 422
+    error = response.get_json()
+    assert error["code"] == "invalid_query"
+    assert error["details"] == [{"field": next(iter(query)), "code": "invalid_format"}]
+
+
+# Refused by the kit since 0.1.3 for every Python service (#580, #581, #582).
+
+
+def test_a_page_beyond_the_kit_bound_is_invalid_pagination(client, manager):
+    response = client.get(
+        "/v1/customers", query_string={"page": "9" * 20}, headers=manager
+    )
+    assert (response.status_code, response.get_json()["code"]) == (
+        422,
+        "invalid_pagination",
+    )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [("name", "a\x00b"), ("email", "a\x00b@example.com"), ("phone", "55\x00")],
+)
+def test_a_nul_in_a_body_field_is_invalid_body(client, manager, unique, field, value):
+    response = register(client, manager, body(unique, **{field: value}))
+    assert (response.status_code, response.get_json()["code"]) == (422, "invalid_body")
+
+
+def test_a_nul_in_a_correction_is_invalid_body(client, manager, unique):
+    created = register(client, manager, body(unique)).get_json()
+    response = client.patch(
+        "/v1/customers/" + created["customer_id"],
+        json={"name": "a\x00b"},
+        headers=manager,
+    )
+    assert (response.status_code, response.get_json()["code"]) == (422, "invalid_body")
+
+
+def test_an_xml_comment_in_the_body_is_skipped(client, manager, unique):
+    created = register(client, manager, body(unique)).get_json()
+    response = client.patch(
+        "/v1/customers/" + created["customer_id"],
+        data=(
+            '<CorrectCustomerRequest xmlns="https://mosaiq.maxthecoder.online/xml/'
+            f'customers/v1"><!--c--><?pi x?><name>{unique}<!--c-->-x</name>'
+            "</CorrectCustomerRequest>"
+        ),
+        headers={**manager, "Content-Type": "application/xml"},
+    )
+    assert response.status_code == 200, response.data
+    assert response.get_json()["name"] == unique + "-x"
 
 
 def test_like_pattern_escapes_the_wildcards():

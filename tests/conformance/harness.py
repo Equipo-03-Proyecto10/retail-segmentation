@@ -65,6 +65,9 @@ class Operation:
     parameters: tuple[dict, ...]
     body: bool
     xml_reply: bool
+    # x-mosaiq-conformance-query: a query a successful call needs although no
+    # single parameter is required, such as "exactly one of these filters".
+    sample_query: tuple[tuple[str, str], ...] = ()
 
     def required(self) -> list[dict]:
         return [p for p in self.parameters if p.get("required") or p["in"] == "path"]
@@ -99,7 +102,13 @@ class Operation:
                 path = path.replace("{" + parameter["name"] + "}", value)
             elif parameter["in"] == "query":
                 query.append(parameter["name"] + "=" + value)
+        query.extend(name + "=" + value for name, value in self.sample_query)
         return path + ("?" + "&".join(query) if query else "")
+
+
+def _query_text(value: object) -> str:
+    # YAML reads `true` as a boolean; a query string carries it as `true`.
+    return str(value).lower() if isinstance(value, bool) else str(value)
 
 
 def sample(schema: dict) -> str:
@@ -136,6 +145,13 @@ class Contract:
             item = node
         return item
 
+    def parameter(self, item: dict) -> dict:
+        """A parameter with its schema resolved too, so `sample` sees its type."""
+        parameter = self.resolve(item)
+        if "schema" in parameter:
+            parameter = {**parameter, "schema": self.resolve(parameter["schema"])}
+        return parameter
+
 
 def contract_dir() -> Path:
     directory = Path(
@@ -153,7 +169,7 @@ def load_contract(directory: Path) -> Contract:
     contract = Contract(directory, document)
     root_security = contract.document.get("security", [])
     for path, item in contract.document["paths"].items():
-        shared = [contract.resolve(p) for p in item.get("parameters", [])]
+        shared = [contract.parameter(p) for p in item.get("parameters", [])]
         for method in METHODS:
             if method not in item:
                 continue
@@ -173,10 +189,19 @@ def load_contract(directory: Path) -> Contract:
                     protected=bool(security),
                     parameters=tuple(
                         shared
-                        + [contract.resolve(p) for p in operation.get("parameters", [])]
+                        + [
+                            contract.parameter(p)
+                            for p in operation.get("parameters", [])
+                        ]
                     ),
                     body="requestBody" in operation,
                     xml_reply="application/xml" in reply.get("content", {}),
+                    sample_query=tuple(
+                        (name, _query_text(value))
+                        for name, value in operation.get(
+                            "x-mosaiq-conformance-query", {}
+                        ).items()
+                    ),
                 )
             )
     return contract

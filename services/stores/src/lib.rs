@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
@@ -166,7 +165,7 @@ async fn directory(ctx: &Ctx) -> Result<Vec<StoreRecord>, ApiError> {
 
 async fn list_stores(ctx: Ctx) -> Result<Reply, ApiError> {
     let query = REQUEST_QUERY.try_with(Clone::clone).unwrap_or_default();
-    let (active, city) = directory_filters(&query);
+    let (active, city) = directory_filters(&query)?;
     let stores: Vec<_> = directory(&ctx)
         .await?
         .into_iter()
@@ -188,20 +187,37 @@ async fn list_stores(ctx: Ctx) -> Result<Reply, ApiError> {
     )
 }
 
-fn directory_filters(query: &str) -> (Option<bool>, Option<String>) {
+fn directory_filters(query: &str) -> Result<(Option<bool>, Option<String>), ApiError> {
     let values: HashMap<String, String> = form_urlencoded::parse(query.as_bytes())
         .map(|(key, value)| (key.into_owned(), value.into_owned()))
         .collect();
-    let active = values.get("active").and_then(|value| match value.as_str() {
-        "true" => Some(true),
-        "false" => Some(false),
-        _ => None,
-    });
-    let city = values
-        .get("city")
-        .filter(|value| !value.is_empty())
-        .cloned();
-    (active, city)
+    let mut details = Vec::new();
+    let active = match values.get("active").map(String::as_str) {
+        None => None,
+        Some("true") => Some(true),
+        Some("false") => Some(false),
+        Some(_) => {
+            details.push(Detail::new("active", "invalid_type"));
+            None
+        }
+    };
+    let city = values.get("city").cloned();
+    if let Some(city) = &city {
+        let length = city.chars().count();
+        if !(1..=80).contains(&length) {
+            details.push(Detail::new("city", "out_of_range"));
+        }
+    }
+    if details.is_empty() {
+        Ok((active, city))
+    } else {
+        Err(ApiError::new(
+            422,
+            "invalid_query",
+            "A query parameter is outside its allowed values.",
+        )
+        .with_details(details))
+    }
 }
 
 fn store_id(ctx: &Ctx) -> Result<i16, ApiError> {
@@ -229,6 +245,15 @@ pub fn constraint_error(error: tokio_postgres::Error) -> ApiError {
         .as_db_error()
         .and_then(|database| database.constraint())
         .unwrap_or_default();
+    // A session whose `sub` is not an `app_user` fails the foreign keys on
+    // `set_by` and on the audit trigger's `user_id`. The contract documents
+    // 401 for the token, so it is refused as an invalid token, not a 500.
+    if matches!(
+        constraint,
+        "store_location_set_by_fkey" | "audit_log_user_id_fkey"
+    ) {
+        return ApiError::new(401, "invalid_token", "The bearer token is invalid.");
+    }
     let field = match constraint {
         "store_location_latitude_check" => Some("latitude"),
         "store_location_longitude_check" => Some("longitude"),
@@ -347,8 +372,9 @@ pub async fn clear_location(
             "DELETE FROM stores.store_location WHERE store_id = $1",
             &[&id],
         )
-        .await?;
-    transaction.commit().await?;
+        .await
+        .map_err(constraint_error)?;
+    transaction.commit().await.map_err(constraint_error)?;
     Ok(())
 }
 
@@ -371,55 +397,80 @@ async fn database_ready(db: Arc<Database>) -> bool {
         .is_ok()
 }
 
-async fn redis_connection(url: &str, password: Option<String>) -> Option<MultiplexedConnection> {
-    let info = service_redis_info(url, SUFFIX, password).ok()?;
-    redis::Client::open(info)
-        .ok()?
+async fn redis_connection(
+    url: String,
+    password: Option<String>,
+) -> redis::RedisResult<MultiplexedConnection> {
+    let info = service_redis_info(&url, SUFFIX, password)?;
+    redis::Client::open(info)?
         .get_multiplexed_async_connection()
         .await
-        .ok()
+}
+
+/// The outbox relay for `stream:stores.v1.changed`. The first connection is
+/// retried every second, so the service comes up during a Redis outage; after
+/// that the kit rebuilds the connection after every outage (#579).
+pub async fn run_relay(database_url: String, redis_url: String, password: Option<String>) {
+    loop {
+        if let Ok(redis) = redis_connection(redis_url.clone(), password.clone()).await {
+            match OutboxRelay::new(&database_url, SUFFIX, [STREAM], redis) {
+                Ok(relay) => {
+                    relay
+                        .run_with_reconnect(|| {
+                            redis_connection(redis_url.clone(), password.clone())
+                        })
+                        .await;
+                }
+                Err(error) => tracing::error!("Outbox relay configuration failed: {error}"),
+            }
+        }
+        tracing::warn!("Stream relay is waiting for redis-state");
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+}
+
+/// The `stores` consumer group on the same stream, reconnecting as the relay
+/// does. Each event runs `handler`; the service's handler drops the cache.
+pub async fn run_consumer<H, Fut, E>(redis_url: String, password: Option<String>, handler: H)
+where
+    H: FnMut(HashMap<String, String>) -> Fut + Clone + Send + 'static,
+    Fut: std::future::Future<Output = Result<(), E>> + Send + 'static,
+    E: std::fmt::Display + 'static,
+{
+    loop {
+        if let Ok(redis) = redis_connection(redis_url.clone(), password.clone()).await {
+            match StreamConsumer::new(redis, STREAM, handler.clone()) {
+                Ok(consumer) => {
+                    consumer
+                        .run_with_reconnect(|| {
+                            redis_connection(redis_url.clone(), password.clone())
+                        })
+                        .await;
+                }
+                Err(error) => {
+                    tracing::error!("Stream consumer configuration failed: {error}")
+                }
+            }
+        }
+        tracing::warn!("Stream consumer is waiting for redis-state");
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
 }
 
 fn spawn_stream_tasks(password: Option<String>) {
     let state_url = std::env::var("REDIS_STATE_URL")
         .unwrap_or_else(|_| "redis://redis-state:6379/0".to_owned());
     if let Ok(database_url) = std::env::var("DATABASE_URL") {
-        let relay_url = state_url.clone();
-        let relay_password = password.clone();
-        tokio::spawn(async move {
-            loop {
-                if let Some(redis) = redis_connection(&relay_url, relay_password.clone()).await {
-                    match OutboxRelay::new(&database_url, SUFFIX, [STREAM], redis) {
-                        Ok(relay) => relay.run_forever().await,
-                        Err(error) => tracing::error!("Outbox relay configuration failed: {error}"),
-                    }
-                }
-                tracing::warn!("Stream relay is waiting for redis-state");
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
-        });
+        tokio::spawn(run_relay(database_url, state_url.clone(), password.clone()));
     }
-    tokio::spawn(async move {
-        loop {
-            if let Some(redis) = redis_connection(&state_url, password.clone()).await {
-                let handler = |_event: HashMap<String, String>| async move {
-                    if let Some(cache) = CACHE.get() {
-                        cache.invalidate().await
-                    } else {
-                        Ok(())
-                    }
-                };
-                match StreamConsumer::new(redis, STREAM, handler) {
-                    Ok(consumer) => consumer.run_forever().await,
-                    Err(error) => {
-                        tracing::error!("Stream consumer configuration failed: {error}")
-                    }
-                }
-            }
-            tracing::warn!("Stream consumer is waiting for redis-state");
-            tokio::time::sleep(Duration::from_secs(1)).await;
+    let handler = |_event: HashMap<String, String>| async move {
+        if let Some(cache) = CACHE.get() {
+            cache.invalidate().await
+        } else {
+            Ok(())
         }
-    });
+    };
+    tokio::spawn(run_consumer(state_url, password, handler));
 }
 
 async fn capture_query(request: Request<Body>, next: Next) -> Response {
@@ -453,11 +504,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             .into_router()
             .layer(middleware::from_fn(capture_query));
         let listener = tokio::net::TcpListener::bind("0.0.0.0:5005").await?;
-        axum::serve(
-            listener,
-            router.into_make_service_with_connect_info::<SocketAddr>(),
-        )
-        .await?;
+        mosaiq_kit::serve(listener, router).await?;
         Ok::<(), Box<dyn std::error::Error>>(())
     })
 }
@@ -465,13 +512,44 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::directory_filters;
+    use mosaiq_kit::Detail;
 
     #[test]
     fn directory_filters_decode_active_and_city() {
         assert_eq!(
-            directory_filters("active=true&city=San+Nicol%C3%A1s"),
+            directory_filters("active=true&city=San+Nicol%C3%A1s").unwrap(),
             (Some(true), Some("San Nicolás".to_owned()))
         );
-        assert_eq!(directory_filters("active=false&city="), (Some(false), None));
+        assert_eq!(directory_filters("").unwrap(), (None, None));
+        assert_eq!(
+            directory_filters("active=false").unwrap(),
+            (Some(false), None)
+        );
+    }
+
+    #[test]
+    fn directory_filters_refuse_values_outside_the_contract() {
+        for (query, field, detail_code) in [
+            ("active=maybe", "active", "invalid_type"),
+            ("active=1", "active", "invalid_type"),
+            ("active=yes", "active", "invalid_type"),
+            ("active=", "active", "invalid_type"),
+            ("active=True", "active", "invalid_type"),
+            ("city=", "city", "out_of_range"),
+        ] {
+            let error = directory_filters(query).unwrap_err();
+            assert_eq!(
+                (error.status, error.code.as_str()),
+                (422, "invalid_query"),
+                "{query}"
+            );
+            assert_eq!(error.details, [Detail::new(field, detail_code)], "{query}");
+        }
+        let long = format!("city={}", "a".repeat(81));
+        let error = directory_filters(&long).unwrap_err();
+        assert_eq!((error.status, error.code.as_str()), (422, "invalid_query"));
+        assert_eq!(error.details, [Detail::new("city", "out_of_range")]);
+        let ok = format!("city={}", "a".repeat(80));
+        assert!(directory_filters(&ok).is_ok());
     }
 }

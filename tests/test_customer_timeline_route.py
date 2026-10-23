@@ -84,6 +84,7 @@ def _row(
     frequency: int = 4,
     monetary: str = "1234.50",
     scores: tuple[int, int, int] = (3, 3, 3),
+    data_origin: str = "OBSERVED",
 ) -> HistoryRow:
     unassigned = label is None
     return HistoryRow(
@@ -100,6 +101,7 @@ def _row(
         valid_to=valid_to,
         run_at=valid_from,
         window_days=180,
+        data_origin=data_origin,
     )
 
 
@@ -527,3 +529,41 @@ def test_an_unchanged_score_on_the_timeline_reads_stable_not_plus_zero(
     assert '<td class="mq-table__cell--num">stable</td>' in comparison
     # Every value stayed put and the label still moved: the rank moved it.
     assert "other customers moved the quintile cut points" in comparison
+
+
+# ---------- #560: assignments from a SEEDED run are Synthetic ----------
+
+
+def _history_of(*origins: str) -> list[HistoryRow]:
+    """Run 2 (current) and run 1 (previous), with the given origins."""
+    return [
+        _row(2, "AT_RISK", _AUGUST, None, data_origin=origins[0]),
+        _row(1, "LOYAL", _JULY, _AUGUST, data_origin=origins[1]),
+    ]
+
+
+def test_a_timeline_of_observed_runs_carries_no_synthetic_mark(
+    client: FlaskClient, page, sales
+) -> None:
+    page(_history_of("OBSERVED", "OBSERVED"))
+    _sign_in(client)
+
+    for url in (_URL, f"{_URL}/segment-changes/2"):
+        assert "Synthetic" not in client.get(url).get_data(as_text=True)
+
+
+def test_a_seeded_previous_run_marks_its_row_the_comparison_and_the_change(
+    client: FlaskClient, page, sales
+) -> None:
+    page(_history_of("OBSERVED", "SEEDED"))
+    _sign_in(client)
+    html = _text(client.get(_URL))
+
+    timeline = _section(html, "timeline-title")
+    rows = timeline.split("<tr>")
+    assert "Synthetic" in rows[-1]  # run 1, the oldest
+    assert "Synthetic" not in rows[-2]  # run 2, the current one
+    assert "Synthetic" in _section(html, "comparison-title")
+    change = _text(client.get(f"{_URL}/segment-changes/2"))
+    assert "Synthetic" in _section(change, "explanation-title")
+    assert "Synthetic" in _section(change, "entered-title")

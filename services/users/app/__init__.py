@@ -85,6 +85,9 @@ def _filters() -> tuple[str | None, bool | None, str | None]:
     query = request.args.get("q")
     if query is not None and not 1 <= len(query) <= 160:
         details.append({"field": "q", "code": "out_of_range"})
+    elif query is not None and "\x00" in query:
+        # PostgreSQL text cannot hold U+0000, so no name or email matches it.
+        details.append({"field": "q", "code": "invalid_format"})
     if details:
         raise ApiError(
             422,
@@ -167,8 +170,14 @@ def create_app(*, start_relay: bool = True) -> Flask:
 
     @kit.operation("getCurrentUser")
     def get_current_user() -> Representation:
+        # auth-service puts app_user.user_id in sub (ADR-0036); any other
+        # subject, however well signed, names no user.
+        try:
+            user_id = UUID(str(caller()["sub"]))
+        except ValueError:
+            raise rules.user_not_found() from None
         with kit.db.connection() as connection:
-            return _user(rules.require_user(connection, str(caller()["sub"])))
+            return _user(rules.require_user(connection, user_id))
 
     @kit.operation("getUser")
     def get_user(user_id: UUID) -> Representation:

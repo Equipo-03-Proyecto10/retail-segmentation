@@ -1,10 +1,10 @@
 [project]
 name = "customers-service"
-version = "0.1.0"
+version = "0.1.4"
 description = "MOSAIQ customers-service: registers, searches and corrects customers under RN-08"
 requires-python = ">=3.12"
 dependencies = [
-    "mosaiq-kit @ git+https://github.com/Equipo-03-Proyecto10/retail-segmentation@kit-py/v0.1.1#subdirectory=packages/kit-py",
+    "mosaiq-kit @ git+https://github.com/Equipo-03-Proyecto10/retail-segmentation@kit-py/v0.1.7#subdirectory=packages/kit-py",
     "gunicorn==23.0.0",
 ]
 
@@ -21,6 +21,9 @@ target-version = ["py312"]
 
 [tool.ruff]
 extend = "../../pyproject.toml"
+
+[tool.ruff.lint]
+extend-select = ["S608"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

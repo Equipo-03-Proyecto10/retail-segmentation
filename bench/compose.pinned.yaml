@@ -1,0 +1,28 @@
+# Fairness settings of ADR-0042 that bench/run.sh layers over compose.yaml
+# (docker compose -f bench/compose.yaml -f bench/compose.pinned.yaml): CPU
+# pinning, and the flags that keep products-service lean. The memory and CPU
+# limits (160 MB, 0.5 CPU) are in compose.yaml. CPU 0 is left to the operating
+# system and Docker, the builds share one core (only one is ever under load),
+# the backing services have another, and k6 runs on the rest.
+services:
+  products:
+    cpuset: ${BENCH_APP_CPUS:-1}
+    environment:
+      CACHE_ENABLED: "false"
+      RATE_LIMIT_ENABLED: "false"
+      STREAM_CONSUMER_ENABLED: "false"
+      OUTBOX_RELAY_ENABLED: "false"
+  products-service-rs:
+    cpuset: ${BENCH_APP_CPUS:-1}
+  postgres:
+    cpuset: ${BENCH_BACKING_CPUS:-2}
+  redis-state:
+    cpuset: ${BENCH_BACKING_CPUS:-2}
+  redis-cache:
+    cpuset: ${BENCH_BACKING_CPUS:-2}
+  auth:
+    cpuset: ${BENCH_BACKING_CPUS:-2}
+    # Nothing in the bench calls auth over the host port; it takes an ephemeral loopback port, not 5001, so
+    # a developer machine that already uses 5001 can run the bench.
+    ports: !override
+      - "127.0.0.1::5001"

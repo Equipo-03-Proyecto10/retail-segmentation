@@ -51,6 +51,28 @@ stock_events.outbox
 # Runtime delivery state; rows are created only by committed store changes.
 stores_events.outbox
 
+# customer-preferences relays both preference sets' changes from here and
+# purges relayed rows after seven days: runtime state, never seed data. The
+# seed's own preference rows pass through it once, as every writer's do (F14-16).
+preferences_events.outbox
+
 # users-service relays access changes from here and purges them after seven
 # days: runtime state, empty in a fresh database, never seed data (F14-04).
 users_events.outbox
+
+# sales-service writes one provenance row per phone sale it records, in the
+# sale's own transaction; the seed records no phone sale, so it is empty in a
+# fresh database (F14-18, ADR-0039).
+sales.sale_capture
+
+# sales-service relays stream:sales.v1.recorded from here and purges relayed
+# rows after seven days: runtime state, never seed data. The capture trigger
+# on transaction passes the seed's own sales through it once, as every
+# writer's do (F14-18).
+sales_events.outbox
+
+# segments-service relays stream:segments.v1.run_recorded from here and
+# purges relayed rows after seven days: runtime state, never seed data. The
+# capture trigger on segmentation_run passes the seed's own runs through it
+# once, as every writer's do (F14-20).
+segments_events.outbox

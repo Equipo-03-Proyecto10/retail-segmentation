@@ -10,7 +10,7 @@ const ACL: &str = "user svc_audit_trail on {{password}} resetchannels -@all +@co
 #[test]
 fn kit_is_pinned_and_service_has_no_workspace() {
     let manifest = fs::read_to_string("Cargo.toml").expect("Cargo.toml");
-    assert!(manifest.contains("tag = \"kit-rs/v0.1.4\""));
+    assert!(manifest.contains("tag = \"kit-rs/v0.1.5\""));
     assert!(!manifest.contains("[workspace]"));
     assert!(!manifest.contains("path ="));
     assert!(fs::metadata("Cargo.lock").is_ok());

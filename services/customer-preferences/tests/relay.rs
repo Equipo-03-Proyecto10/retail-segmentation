@@ -121,7 +121,9 @@ async fn a_changing_replace_reaches_the_stream_within_five_seconds() {
         .await
         .unwrap();
 
-    // A row relayed eight days ago, purged by the relay's first pass.
+    // A row relayed eight days ago, purged by the relay's first pass that
+    // completes. A pass whose delivery fails returns 0 without purging, so run
+    // passes until the row is gone, a bounded number of times (#705).
     let stale = Uuid::new_v4().to_string();
     owner
         .execute(
@@ -134,15 +136,22 @@ async fn a_changing_replace_reaches_the_stream_within_five_seconds() {
         .unwrap();
     let mut relay =
         OutboxRelay::new(&support::service_url(&db_url), SUFFIX, [STREAM], redis).unwrap();
-    while relay.run_once(Duration::ZERO).await.unwrap() > 0 {}
-    let left: i64 = owner
-        .query_one(
-            "SELECT count(*) FROM preferences_events.outbox WHERE entity_id = $1",
-            &[&stale],
-        )
-        .await
-        .unwrap()
-        .get(0);
+    let mut left: i64 = 1;
+    for _ in 0..20 {
+        while relay.run_once(Duration::ZERO).await.unwrap() > 0 {}
+        left = owner
+            .query_one(
+                "SELECT count(*) FROM preferences_events.outbox WHERE entity_id = $1",
+                &[&stale],
+            )
+            .await
+            .unwrap()
+            .get(0);
+        if left == 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
     assert_eq!(left, 0, "a relayed row older than 7 days is purged");
 
     let customer = TestCustomer::create(&owner).await;

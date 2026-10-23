@@ -4,7 +4,7 @@ version = "0.1.1"
 description = "MOSAIQ auth-service: RS256 sessions, refresh rotation and revocation (RN-52)"
 requires-python = ">=3.12"
 dependencies = [
-    "mosaiq-kit @ git+https://github.com/Equipo-03-Proyecto10/retail-segmentation@kit-py/v0.1.6#subdirectory=packages/kit-py",
+    "mosaiq-kit @ git+https://github.com/Equipo-03-Proyecto10/retail-segmentation@kit-py/v0.1.7#subdirectory=packages/kit-py",
     "argon2-cffi==23.1.0",
     "gunicorn==23.0.0",
 ]

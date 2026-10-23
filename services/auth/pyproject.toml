@@ -40,5 +40,5 @@ testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
     "postgres: needs TEST_DATABASE_URL or the documented local PostgreSQL instance",
-    "redis: needs AUTH_TEST_REDIS_URL or the documented local Redis instance",
+    "redis: needs TEST_REDIS_URL (or AUTH_TEST_REDIS_URL), a throwaway Redis",
 ]

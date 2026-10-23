@@ -28,14 +28,22 @@ def _b64url(number: int) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
 
 
-def _required() -> bool:
-    return os.environ.get("AUTH_REQUIRE_SERVICES") == "1"
+def _required(flag: str) -> bool:
+    """CI sets MOSAIQ_REQUIRE_<KIND> for every service (#698); the older
+    AUTH_REQUIRE_SERVICES still forbids skipping too."""
+    return "1" in (os.environ.get("AUTH_REQUIRE_SERVICES"), os.environ.get(flag))
 
 
-def _missing(message: str) -> None:
-    if _required():
+def _missing(message: str, flag: str = "MOSAIQ_REQUIRE_POSTGRES") -> None:
+    if _required(flag):
         pytest.fail(message)
     pytest.skip(message)
+
+
+def redis_url() -> str:
+    """TEST_REDIS_URL, the name every service's tests read; AUTH_TEST_REDIS_URL
+    is still accepted."""
+    return os.environ.get("TEST_REDIS_URL") or os.environ.get("AUTH_TEST_REDIS_URL", "")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -88,15 +96,15 @@ def key_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
 
 @pytest.fixture
 def redis_admin() -> Iterator[redis.Redis]:
-    url = os.environ.get("AUTH_TEST_REDIS_URL", "")
+    url = redis_url()
     if not url:
-        _missing("AUTH_TEST_REDIS_URL is not set")
+        _missing("TEST_REDIS_URL is not set", "MOSAIQ_REQUIRE_REDIS")
     client = redis.Redis.from_url(url, decode_responses=True)
     try:
         client.ping()
     except redis.RedisError:
         client.close()
-        _missing("AUTH_TEST_REDIS_URL is unavailable")
+        _missing("TEST_REDIS_URL is unavailable", "MOSAIQ_REQUIRE_REDIS")
 
     def clean() -> None:
         keys = list(client.scan_iter(match="auth:*"))

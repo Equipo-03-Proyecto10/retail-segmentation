@@ -221,7 +221,8 @@ check-redis exit=1
 [ADR-0037](../adr/0037-two-redis-instances-carry-sessions-caches-limits-and-inter-service-streams.md)
 allows `MULTI` to `svc_auth` alone. The ACL is the committed one from #477, so
 the defect is older than F18-01, which only ran the check. It is tracked in
-#693. No other line of the check failed.
+#693. It was fixed in recommendations 0.1.2, and with that version on the instance
+the check prints nothing ([f18-02-api-edge.md](f18-02-api-edge.md)). No other line of the check failed.
 
 ## What was not done
 

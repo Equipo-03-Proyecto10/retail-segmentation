@@ -14,7 +14,10 @@ STREAM = "stream:sales.v1.recorded"
 
 
 def _wait(redis_connection, count):
-    deadline = time.monotonic() + 5
+    # Rows written before the app's relay listens get no wake-up: its first
+    # pass waits up to 5 s for one, and a failed pass retries 1 s later (#705,
+    # #711). Allow for both, with room; a relayed entry returns at once.
+    deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
         entries = redis_connection.xrange(STREAM)
         if len(entries) >= count:

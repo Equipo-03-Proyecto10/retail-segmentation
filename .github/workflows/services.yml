@@ -5,7 +5,8 @@ name: Services
 # nothing here lists a service. A pull request builds and tests each changed
 # image and pushes nothing. A push to main that changes services/<name>/VERSION
 # builds that image once, runs the conformance suite on it and pushes
-# ghcr.io/equipo-03-proyecto10/mosaiq-<name>:<VERSION>, never over a tag.
+# ghcr.io/equipo-03-proyecto10/mosaiq-<name>:<VERSION>, never over a tag; then
+# deploy-service.yml deploys each such image alone (F18-03).
 on:
   pull_request:
   push:
@@ -375,3 +376,15 @@ jobs:
 
       - name: Push the tested image
         run: docker push "$IMAGE"
+
+  # F18-03: each released image is deployed alone, once the release job is
+  # done. deploy-service.yml checks for each service that this run pushed its
+  # image, so one failed release entry does not hold back the others.
+  deploy:
+    needs: [changes, release]
+    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.release != '[]' }}
+    permissions:
+      contents: read
+      id-token: write
+      packages: read
+    uses: ./.github/workflows/deploy-service.yml

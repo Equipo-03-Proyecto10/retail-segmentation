@@ -133,6 +133,16 @@ PERL
   git grep -nE "mosaiq-($names)\b" -- .github/ deploy/ ':(exclude).github/scripts/guards.sh' \
     ':(exclude)deploy/check-services.sh' \
     | found "ADR-0040 a service named"
+  # ADR-0040: the per-service deploy runs each service as its own project,
+  # never builds an image and never runs SQL (F18-03), and the web's deploy
+  # stays out of the services.
+  deploy_path=(deploy/deploy-service.sh deploy/rehearse-rollback.sh .github/workflows/deploy-service.yml)
+  git grep -nE 'docker compose' -- "${deploy_path[@]}" | grep -v -- '-p mosaiq-' \
+    | found "ADR-0040 a project other than mosaiq-<name>"
+  git grep -nE 'docker (compose .*)?build|--build' -- "${deploy_path[@]}" | found "ADR-0040 a build"
+  git grep -nwE 'psql|pg_dump|pg_restore' -- "${deploy_path[@]}" | found "ADR-0040 SQL in the service deploy"
+  git grep -nE 'docker|ghcr|services/' -- deploy/deploy.sh .github/workflows/deploy.yml \
+    | found "ADR-0040 the web's deploy"
 
   # ADR-0037: Redis runs in mosaiq-infra only, pinned, and the web never names it.
   git grep -nE 'image:\s*redis' -- 'services/*/compose.yaml' | found "ADR-0037 a service runs Redis"

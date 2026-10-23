@@ -230,10 +230,14 @@ done
 if [[ -n $signin_name && $signin_registered -eq 1 ]]; then
   signin_email="edge-probe-$(random_hex 12)@example.invalid"
   signin_password=$(random_hex 24)
-  printf '{"email":"%s","password":"%s"}\n' "$signin_email" "$signin_password" >"$signin_body"
+  # A well-formed sign-in, so the signer answers a failed sign-in (401), not
+  # an invalid body (422): device_label is required by the contract.
+  printf '{"email":"%s","password":"%s","device_label":"edge check"}\n' \
+    "$signin_email" "$signin_password" >"$signin_body"
 
   first_429=0
   sent=0
+  before_429=()
   for n in $(seq 1 15); do
     spoofed_ip="198.51.100.$n"
     status=$(curl_request "$headers" "$body" "$BASE_URL/api/$signin_name/v1/sessions" -X POST \
@@ -250,12 +254,13 @@ if [[ -n $signin_name && $signin_registered -eq 1 ]]; then
       break
     fi
     [[ $status != 000 ]] || fail "sign-in request $n did not receive an HTTP response"
+    before_429+=("$status")
   done
 
   if [[ $first_429 -eq 0 ]]; then
     fail "sign-in rate limit did not return 429 after $sent requests"
   else
-    ok "sign-in rate limit returned 429 after $first_429 request(s)"
+    ok "sign-in rate limit returned 429 at request $first_429, after ${before_429[*]:-none}"
   fi
 
   refresh_429=0

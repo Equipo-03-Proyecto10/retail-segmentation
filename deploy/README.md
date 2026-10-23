@@ -29,7 +29,7 @@ PostgreSQL listener, HBA policy, SSH access and application-role verification:
 | `/opt/mosaiq/venv` | virtualenv, `web/requirements.txt` installed |
 | `/etc/mosaiq/mosaiq.env` | the environment file the unit reads (from `.env.example`) |
 | user/group `mosaiq` | unprivileged, owns `/opt/mosaiq`, runs gunicorn |
-| `/opt/mosaiq/services/<name>/<version>` | one staged release of a service: its `compose.yaml`, `redis/`, `mongo/` if it has one, and `release.env`; `current` links the one running (F18-01) |
+| `/opt/mosaiq/services/<name>/<version>` | one staged release of a service: its `compose.yaml`, `redis/`, `nginx/`, `mongo/` if it has one, and `release.env`; `current` links the one running (F18-01, F18-02) |
 | `/etc/mosaiq/svc/<name>.env` | a service's secrets, `0600 root`, read by its compose file's `env_file` |
 | `/etc/mosaiq/keys/` | the signing key (`0400`, UID 10001) and `jwks.json` (`0444`), [auth-keys.md](auth-keys.md) |
 | `/etc/mosaiq/redis/users.acl`, `/etc/mosaiq/mongodb/root.env` | the assembled aclfile and MongoDB's root account, [infra/README.md](infra/README.md) |
@@ -1050,7 +1050,7 @@ name=<name>; version=$(cat /opt/mosaiq/current/services/$name/VERSION)
 dir=/opt/mosaiq/services/$name/$version
 sudo install -d -m 0755 "$dir"
 sudo cp /opt/mosaiq/current/services/$name/compose.yaml "$dir/"
-sudo cp -r /opt/mosaiq/current/services/$name/redis "$dir/"
+sudo cp -r /opt/mosaiq/current/services/$name/redis /opt/mosaiq/current/services/$name/nginx "$dir/"
 [ -d /opt/mosaiq/current/services/$name/mongo ] && sudo cp -r /opt/mosaiq/current/services/$name/mongo "$dir/"
 printf 'IMAGE_TAG=%s\n' "$version" | sudo tee "$dir/release.env" >/dev/null
 sudo ln -sfn "$version" /opt/mosaiq/services/$name/current
@@ -1106,3 +1106,44 @@ sudo semodule -r mosaiq_svc_pgsocket
 
 Then remove the `svc_*` lines from `pg_hba.conf` and reload PostgreSQL. The web
 depends on none of this.
+
+## F18-02 — the services under `/api/<name>/` on 443
+
+[ADR-0040](../docs/adr/0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md)
+(issue #452). `mosaiq.conf`'s 443 server includes `/etc/nginx/mosaiq-api.d/*.conf`.
+Each file there contributes one service's `location /api/<name>/` and its named
+413/429 locations. F18-03 installs or replaces these files on each deploy; they
+are never edited by hand on the instance.
+
+`mosaiq.conf` is still installed by hand, as F6-06 left it: install the updated
+file first, as [The NGINX config is applied by hand](#the-nginx-config-is-applied-by-hand-on-purpose)
+describes. An include glob that matches no file is not an error, so the 443
+server keeps working while the directory is still empty.
+
+Then, for each staged service directory (step 8 of F18-01 stages `nginx/`),
+install its `nginx/<name>.conf` under the matching name:
+
+```sh
+sudo install -d -m 0755 /etc/nginx/mosaiq-api.d
+for staged in /opt/mosaiq/services/*/current; do
+  [ -d "$staged/nginx" ] || continue
+  name=$(basename "$(dirname "$staged")")
+  sudo install -m 0644 "$staged/nginx/$name.conf" \
+    "/etc/nginx/mosaiq-api.d/$name.conf"
+done
+sudo restorecon -Rv /etc/nginx/mosaiq-api.d
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+From outside the instance, run `bash deploy/check-api-edge.sh`. It prints
+nothing when every criterion of F18-02 holds.
+
+### Rollback
+
+Empty the include directory, validate the remaining NGINX configuration, and
+reload:
+
+```sh
+sudo find /etc/nginx/mosaiq-api.d -mindepth 1 -maxdepth 1 -type f -delete
+sudo nginx -t && sudo systemctl reload nginx
+```

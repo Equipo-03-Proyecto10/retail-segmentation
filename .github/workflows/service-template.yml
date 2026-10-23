@@ -15,6 +15,7 @@ on:
       - compose.distributed.yaml
       - contracts/registry.yaml
       - contracts/common/**
+      - services/*/nginx/**
       - packages/kit-py/**
       - .github/workflows/service-template.yml
   push:
@@ -27,6 +28,7 @@ on:
       - compose.distributed.yaml
       - contracts/registry.yaml
       - contracts/common/**
+      - services/*/nginx/**
       - packages/kit-py/**
       - .github/workflows/service-template.yml
 
@@ -74,18 +76,30 @@ jobs:
           variant root '.services.probe.user = "root"' 'is not hardened'
           variant nocap 'del(.services.probe.cap_drop)' 'is not hardened'
 
-      # The instance file with the rendered includes in its 443 block, as the
-      # deploy installs them, and a throwaway certificate at its paths.
-      - name: nginx -t with the instance file and both includes
+      # The instance file with every committed include and the rendered probe
+      # include, as the deploy installs them, and a throwaway certificate.
+      - name: nginx -t with the instance file and all service includes
         run: |
           set -euo pipefail
           etc="$RUNNER_TEMP/nginx"
           mkdir -p "$etc/conf.d" "$etc/tls" "$etc/mosaiq-api.d"
           cp deploy/nginx/cloudflare-real-ip.conf "$etc/conf.d/"
-          sed 's|^\(\s*\)location /docs/ {|\1include /etc/nginx/mosaiq-api.d/*.conf;\n\n&|' \
-            deploy/nginx/mosaiq.conf > "$etc/mosaiq.conf"
-          grep -q 'include /etc/nginx/mosaiq-api.d/\*.conf;' "$etc/mosaiq.conf"
-          cp "$RUNNER_TEMP"/render/ok/probe/nginx/probe.conf "$RUNNER_TEMP"/render/ok/auth/nginx/auth.conf "$etc/mosaiq-api.d/"
+          cp deploy/nginx/mosaiq.conf "$etc/mosaiq.conf"
+          test "$(grep -cF 'include /etc/nginx/mosaiq-api.d/*.conf;' "$etc/mosaiq.conf")" -eq 1
+          awk '
+            /server[[:space:]]*\{/ { in_server = 1; depth = 1; has_443 = 0; next }
+            in_server {
+              if ($0 ~ /listen[[:space:]]+(\[::\]:)?443([[:space:];]|$)/) has_443 = 1
+              if ($0 ~ /include[[:space:]]+\/etc\/nginx\/mosaiq-api\.d\/\*\.conf;/) { found_443 = has_443; include_count++ }
+              opens = gsub(/\{/, "{", $0)
+              closes = gsub(/\}/, "}", $0)
+              depth += opens - closes
+              if (depth == 0) in_server = 0
+            }
+            END { exit !(include_count == 1 && found_443) }
+          ' "$etc/mosaiq.conf"
+          cp services/*/nginx/*.conf "$etc/mosaiq-api.d/"
+          cp "$RUNNER_TEMP"/render/ok/probe/nginx/probe.conf "$etc/mosaiq-api.d/"
           openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=ci \
             -keyout "$etc/tls/mosaiq.key" -out "$etc/tls/mosaiq.crt" 2>/dev/null
           printf 'events {}\nhttp {\n  include /etc/nginx/mime.types;\n  include /etc/nginx/mosaiq.conf;\n}\n' > "$etc/nginx.conf"

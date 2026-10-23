@@ -1,18 +1,26 @@
 name: Infrastructure
 
 # The Redis instances of ADR-0037 and their per-service ACLs (F13-05), and the
-# MongoDB server of ADR-0038 (F13-06). Runs on any change under deploy/infra/:
-# it starts the project from the real compose file, loads the fixture lines,
-# and checks them the way deploy/infra/check-redis.sh checks the instance.
+# MongoDB server of ADR-0038 (F13-06). Runs on any change under deploy/infra/
+# or to a committed ACL line: it starts the project from the real compose file,
+# loads the fixture lines, and checks them the way deploy/infra/check-redis.sh
+# checks the instance. Then it does the same with every line that services/ and
+# ops/ commit, so a service's own ACL is held to ADR-0037 before it ships (#693).
 on:
   pull_request:
     paths:
       - deploy/infra/**
+      - services/*/redis/**
+      - ops/*/redis/**
+      - contracts/streams/**
       - .github/workflows/infra.yml
   push:
     branches: [develop, main]
     paths:
       - deploy/infra/**
+      - services/*/redis/**
+      - ops/*/redis/**
+      - contracts/streams/**
       - .github/workflows/infra.yml
 
 permissions:
@@ -204,6 +212,27 @@ jobs:
           value=$(a GET fixture_a:rl:probe)
           [ "$value" = 1 ] || { echo "FAIL: the key did not survive the restart (got '$value')"; exit 1; }
           a DEL fixture_a:rl:probe
+          out=$(bash deploy/infra/check-redis.sh) || true
+          if [ -n "$out" ]; then printf '%s\n' "$out"; exit 1; fi
+
+      # The lines the instance loads, with the real stream contracts: each
+      # gets a fresh masked password, and the loaded set must pass every
+      # per-user check, MULTI for svc_auth alone included.
+      - name: The committed service and ops ACLs hold ADR-0037
+        env:
+          ACL_SOURCES: services/*/redis/*.acl ops/*/redis/*.acl
+          STREAMS_DIR: contracts/streams
+        run: |
+          set -euo pipefail
+          for source in $ACL_SOURCES; do
+            user=$(sed -nE 's/^user ((svc|ops)_[a-z0-9_]+) .*/\1/p' "$source" | head -1)
+            [ -n "$user" ] || { echo "FAIL: $source has no user line"; exit 1; }
+            suffix=${user#svc_}
+            pw=$(head -c 24 /dev/urandom | base64 | tr -d '/+=')
+            echo "::add-mask::$pw"
+            printf 'REDIS_%s_PASSWORD=%s\n' "${suffix^^}" "$pw" > "$SVC_ENV_DIR/$(basename "$source" .acl).env"
+          done
+          bash deploy/infra/redis/assemble-acl.sh
           out=$(bash deploy/infra/check-redis.sh) || true
           if [ -n "$out" ]; then printf '%s\n' "$out"; exit 1; fi
 

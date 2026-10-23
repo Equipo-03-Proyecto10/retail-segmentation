@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -74,6 +75,22 @@ def test_a_result_is_cached_by_customer_run_and_limit_for_120_s(
     assert redis_connection.sismember(INDEX, key)
     # A second answer is the cached one, computed_at and all.
     assert _ask(app, token, limit=7) == first
+
+
+def test_a_cache_write_needs_nothing_the_acl_denies(
+    app: Flask,
+    token: Callable[..., dict],
+    redis_connection: redis.Redis,
+    owner: psycopg.Connection,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Redis refuses MULTI and EXEC to this user (ADR-0037) but still runs the
+    # writes queued between them, so a transactional pipeline still caches.
+    # Its one symptom is this warning, on every write.
+    with caplog.at_level(logging.WARNING, logger="app.cache"):
+        _ask(app, token, limit=5)
+    assert redis_connection.exists(result_key(CUSTOMER, _run_id(owner), 5))
+    assert [r.getMessage() for r in caplog.records if r.name == "app.cache"] == []
 
 
 @pytest.mark.parametrize("stream", STREAMS)

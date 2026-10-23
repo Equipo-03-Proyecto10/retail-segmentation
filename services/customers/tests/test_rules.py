@@ -188,6 +188,49 @@ def test_a_patch_to_a_taken_email_or_unknown_channel_is_refused(
     assert (channel.status_code, channel.get_json()["code"]) == (422, "unknown_channel")
 
 
+def test_an_email_is_stored_lower_cased(client, manager, owner, unique):
+    response = register(client, manager, body(unique, email=unique.upper() + "@Ex.COM"))
+    assert response.status_code == 201
+    assert response.get_json()["email"] == unique + "@ex.com"
+    url = response.headers["Location"]
+    patched = client.patch(
+        url, json={"email": "Fixed-" + unique + "@Ex.com"}, headers=manager
+    )
+    assert patched.get_json()["email"] == "fixed-" + unique + "@ex.com"
+
+
+def test_an_email_taken_in_another_letter_case_gets_409(client, manager, owner, unique):
+    assert register(client, manager, body(unique)).status_code == 201
+    upper = (unique + "@example.com").upper()
+    response = register(client, manager, body(unique + "-b", email=upper))
+    assert (response.status_code, response.get_json()["code"]) == (409, "email_taken")
+    second = register(client, manager, body(unique + "-c")).get_json()
+    taken = client.patch(
+        "/v1/customers/" + second["customer_id"],
+        json={"email": unique.capitalize() + "@Example.com"},
+        headers=manager,
+    )
+    assert (taken.status_code, taken.get_json()["code"]) == (409, "email_taken")
+
+
+def test_the_unique_index_ignores_case_and_is_mapped_by_name(
+    client, manager, owner, service_url, unique
+):
+    """The schema half: a direct INSERT that skips the service's lower()."""
+
+    assert register(client, manager, body(unique)).status_code == 201
+    with psycopg.connect(service_url) as connection:
+        with pytest.raises(psycopg.errors.UniqueViolation) as raised:
+            connection.execute(
+                "INSERT INTO customer (name, email, registration_channel_id)"
+                " VALUES (%s, %s, %s)",
+                (unique + "-raw", (unique + "@example.com").upper(), CHANNEL),
+            )
+    mapped = refusal(raised.value)
+    assert mapped is not None
+    assert (mapped.status, mapped.code) == (409, "email_taken")
+
+
 def by_email(owner, unique: str) -> int:
     return owner.execute(
         "SELECT count(*) FROM customer WHERE email = %s", (unique + "@example.com",)
@@ -329,6 +372,7 @@ def test_the_email_filter_is_exact_and_combines_with_q(client, manager, director
     assert found(client, manager, email=exact) == {names["percent"]}
     assert found(client, manager, email=exact, q="a_b") == set()
     assert found(client, manager, email=unique + "-0") == set()
+    assert found(client, manager, email=exact.upper()) == {names["percent"]}
 
 
 def test_search_pages_and_counts(client, manager, directory):

@@ -73,7 +73,12 @@ class ResultCache:
         if self.client is None or generation is None:
             return
         try:
-            pipe = self.client.pipeline(transaction=True)
+            # One round trip, not a transaction: ADR-0037 keeps MULTI for
+            # auth alone. Atomicity buys nothing here. An invalidation that
+            # lands between these writes leaves a key whose generation get()
+            # already refuses, which MULTI would not prevent either, and the
+            # key expires on its own.
+            pipe = self.client.pipeline(transaction=False)
             pipe.set(
                 key,
                 json.dumps(

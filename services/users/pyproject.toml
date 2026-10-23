@@ -42,5 +42,5 @@ testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
     "postgres: needs TEST_DATABASE_URL, the owner's URL to a database built by the three scripts (CI's services job sets it)",
-    "redis: needs USERS_TEST_REDIS_URL, an administrator's URL to a disposable Redis 8; skipped without it",
+    "redis: needs TEST_REDIS_URL (or USERS_TEST_REDIS_URL), an administrator's URL to a disposable Redis 8",
 ]

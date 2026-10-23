@@ -1,0 +1,140 @@
+name: Android
+
+# The Android client is linted, tested and built alone (ADR-0041, F17-06),
+# separate from the services matrix, so a client failure never blocks a
+# service release. A pull request that touches the client runs AGENTS.md's
+# Android gate and ADR-0041's checks, and uploads the debug APK. The
+# instrumented tests need an emulator and the local distributed stack, so they
+# run nightly and on demand instead, and are not a required check.
+on:
+  pull_request:
+    paths:
+      - "clients/android/**"
+      # SourceGuardTest reads the registry: a resource moved to another
+      # service fails the client's unit tests.
+      - "contracts/registry.yaml"
+      - ".github/workflows/android.yml"
+  push:
+    branches: [develop]
+    paths:
+      - "clients/android/**"
+      - "contracts/registry.yaml"
+      - ".github/workflows/android.yml"
+  schedule:
+    # 02:30 in Monterrey (UTC-6), after the nightly demonstration chain.
+    - cron: "30 8 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: clients/android
+
+jobs:
+  check:
+    name: Lint, test and build
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: gradle/actions/wrapper-validation@v6
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v6
+      - name: ktlint, Android lint, unit tests and the debug APK
+        run: ./gradlew ktlintCheck lint testDebugUnitTest assembleDebug
+      - name: ADR-0041 Android checks (each prints nothing)
+        working-directory: ${{ github.workspace }}
+        run: |
+          out=$(bash clients/android/check-adr41.sh)
+          if [ -n "$out" ]; then printf '%s\n' "$out"; exit 1; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mosaiq-floor-debug-apk
+          path: clients/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: android-check-reports
+          path: |
+            clients/android/app/build/reports/
+            clients/android/app/build/test-results/
+
+  emulator:
+    name: Instrumented tests on an emulator, against the local stack
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      COMPOSE: docker compose -f compose.distributed.yaml
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'develop' || github.ref }}
+      - name: Let the emulator use KVM
+        working-directory: ${{ github.workspace }}
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v6
+
+      # The same stack as the nightly demonstration chain (F13-08). The
+      # emulator reaches its gateway at http://10.0.2.2:8080, the debug
+      # build's base URL.
+      - name: Bring the local stack up
+        working-directory: ${{ github.workspace }}
+        run: |
+          docker network create mosaiq
+          bash .github/scripts/stage-contracts.sh --all
+          bash docker/distributed/auth-keys.sh
+          $COMPOSE up --build --wait --wait-timeout 600
+
+      - name: Build the app and its tests
+        run: ./gradlew assembleDebug assembleDebugAndroidTest
+
+      # stack=required makes the stack-backed test fail instead of skipping
+      # when the gateway does not answer. The runner runs each script line
+      # alone; the second line installs without -g, revokes the runtime
+      # permissions and runs the denied-permission tests that the first leaves
+      # out.
+      - name: Instrumented tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: aosp_atd
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect
+          working-directory: clients/android
+          script: |
+            ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.stack=required
+            bash run-denied-permission-tests.sh
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-instrumented-reports
+          path: clients/android/app/build/reports/androidTests/
+      - name: Collect the stack's compose logs
+        if: failure()
+        working-directory: ${{ github.workspace }}
+        run: |
+          mkdir -p android-stack-logs
+          $COMPOSE ps -a > android-stack-logs/ps.txt 2>&1 || true
+          $COMPOSE logs --no-color --timestamps > android-stack-logs/compose.log 2>&1 || true
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: android-stack-logs
+          path: android-stack-logs/

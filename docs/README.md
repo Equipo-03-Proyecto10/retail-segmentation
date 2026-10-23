@@ -15,7 +15,7 @@
 | [Requirements](requirements.md) | Functional and non-functional requirements, the permission matrix, and traceability to the demonstration |
 | [User stories](user-stories.md) | What each role needs from the application, with acceptance criteria |
 | [Business rules](business-rules.md) | The invariants, and where each one is actually enforced |
-| [Architecture](architecture/) | Deployment and application views: the monolith, its layers and their MVC roles |
+| [Architecture](architecture/) | Application, deployment and infrastructure views of the web system and the fifteen services |
 | [System and demonstration guide](demo-system-guide.md) | End-to-end request journey, current capabilities, main process, architecture decisions, limitations, and rehearsal order. The deliverable of F6-08 (#110) |
 | [Data model](data-model.md) | The PostgreSQL model: conceptual, 4NF normalization with its justification, ER diagram, data dictionary |
 | [Datastore designs](datastores/) | MongoDB and Redis. Governed by ADR-0037 and ADR-0038, and rewritten as specifications by F13-05 and F13-06 |

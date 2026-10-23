@@ -63,6 +63,7 @@ def test_repository_documentation_is_consistent() -> None:
     assert "Schema tables:" in result.stdout
     assert "Data-model entity tables:" in result.stdout
     assert "Documented table counts:" in result.stdout
+    assert "Relative links checked:" in result.stdout
 
 
 def test_duplicate_ids_and_stale_table_counts_are_both_reported(
@@ -102,3 +103,30 @@ def test_missing_and_extra_data_model_tables_are_both_reported(
         "docs/data-model.md entity list names tables not created in public: extra_table"
         in result.stderr
     )
+
+
+def test_broken_relative_links_are_reported_and_fenced_ones_are_not(
+    tmp_path: Path,
+) -> None:
+    _fixture(tmp_path)
+    (tmp_path / "docs/real.md").write_text("real\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text(
+        "[ok](docs/real.md#section) [web](https://example.com/x) [here](#top)\n"
+        "[gone](docs/missing.md)\n"
+        "```\n[fenced](docs/also-missing.md)\n```\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "docs/architecture/README.md").write_text(
+        "![view](view.svg) [up](../real.md)\n", encoding="utf-8"
+    )
+
+    result = _run(tmp_path)
+
+    assert result.returncode == 1
+    assert "README.md:2 links to docs/missing.md, which does not exist" in result.stderr
+    assert "also-missing" not in result.stderr
+    assert (
+        "docs/architecture/README.md:1 links to view.svg, which does not exist"
+        in result.stderr
+    )
+    assert "docs/real.md" not in result.stderr

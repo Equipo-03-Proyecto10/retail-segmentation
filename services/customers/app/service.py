@@ -1,9 +1,11 @@
 """The customers rule: one registration per customer, never deleted (RN-08).
 
-Email uniqueness, the channel foreign key and the email format are enforced by
-the schema; this module maps their refusals, by constraint name, to the
-contract's errors. The only rule the schema cannot hold is that a registration
-date is not in the future, so the INSERT itself refuses it.
+Email uniqueness (whatever the letter case, #594), the channel foreign key and
+the email format are enforced by the schema; this module maps their refusals,
+by constraint name, to the contract's errors. The address is lower-cased in SQL
+as it is written, with the same lower() the unique index uses. The only rule
+the schema cannot hold is that a registration date is not in the future, so the
+INSERT itself refuses it.
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ from flask import Flask, request
 from mosaiq_kit import ApiError, Kit, Page, Representation, configure_logging
 from psycopg import errors, sql
 
-EMAIL_KEY = "customer_email_key"
+EMAIL_KEY = "ux_customer_email_lower"
 CHANNEL_FKEY = "customer_registration_channel_id_fkey"
 EMAIL_CHECK = "customer_email_check"
 
@@ -152,7 +154,7 @@ def create_app() -> Flask:
             " OR name ILIKE %(pattern)s ESCAPE '\\'"
             " OR email ILIKE %(pattern)s ESCAPE '\\'"
             " OR phone ILIKE %(pattern)s ESCAPE '\\')"
-            " AND (%(email)s::text IS NULL OR email = %(email)s)"
+            " AND (%(email)s::text IS NULL OR lower(email) = lower(%(email)s))"
         )
         params = {"pattern": pattern, "email": email}
         with kit.db.connection() as connection:
@@ -202,7 +204,7 @@ def create_app() -> Flask:
                     sql.SQL(
                         "INSERT INTO public.customer"
                         " (name, email, phone, registration_channel_id, registered_on) "
-                        "SELECT %(name)s, %(email)s, %(phone)s, %(channel)s,"
+                        "SELECT %(name)s, lower(%(email)s), %(phone)s, %(channel)s,"
                         " coalesce(%(registered_on)s::date, CURRENT_DATE) "
                         "WHERE coalesce(%(registered_on)s::date, CURRENT_DATE)"
                         " <= CURRENT_DATE "
@@ -250,7 +252,7 @@ def create_app() -> Flask:
                     sql.SQL(
                         "UPDATE public.customer SET"
                         " name = CASE WHEN %(set_name)s THEN %(name)s ELSE name END,"
-                        " email = CASE WHEN %(set_email)s THEN %(email)s"
+                        " email = CASE WHEN %(set_email)s THEN lower(%(email)s)"
                         " ELSE email END,"
                         " phone = CASE WHEN %(set_phone)s THEN %(phone)s"
                         " ELSE phone END,"

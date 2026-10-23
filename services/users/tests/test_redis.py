@@ -20,11 +20,26 @@ ACL = (SERVICE / "redis/users.acl").read_text()
 STREAM = "stream:users.v1.access_changed"
 
 
+def _redis_url() -> str:
+    """TEST_REDIS_URL, the name every service's tests read (#698);
+    USERS_TEST_REDIS_URL is still accepted."""
+    return os.environ.get("TEST_REDIS_URL") or os.environ.get(
+        "USERS_TEST_REDIS_URL", ""
+    )
+
+
 @pytest.fixture
 def redis_admin() -> Iterator[redis.Redis]:
-    url = os.environ.get("USERS_TEST_REDIS_URL")
+    url = _redis_url()
     if not url:
-        pytest.skip("USERS_TEST_REDIS_URL is not set")
+        if "1" in (
+            os.environ.get("MOSAIQ_REQUIRE_REDIS"),
+            os.environ.get("USERS_REQUIRE_SERVICES"),
+        ):
+            pytest.fail(
+                "TEST_REDIS_URL is missing, and MOSAIQ_REQUIRE_REDIS forbids skipping"
+            )
+        pytest.skip("TEST_REDIS_URL is not set")
     client = redis.Redis.from_url(url, decode_responses=True)
     client.ping()
     yield client
@@ -45,7 +60,7 @@ def svc_users(
     redis_admin.execute_command("ACL", "DELUSER", "svc_users")
     redis_admin.execute_command("ACL", "SETUSER", "svc_users", *arguments[2:])
     monkeypatch.setenv("REDIS_USERS_PASSWORD", password)
-    monkeypatch.setenv("REDIS_STATE_URL", os.environ["USERS_TEST_REDIS_URL"])
+    monkeypatch.setenv("REDIS_STATE_URL", _redis_url())
     return "svc_users", password
 
 

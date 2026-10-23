@@ -234,7 +234,7 @@ CREATE TABLE customer (
     customer_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id                 UUID UNIQUE REFERENCES app_user(user_id) ON DELETE SET NULL,
     name                    VARCHAR(120) NOT NULL,
-    email                   VARCHAR(160) UNIQUE,
+    email                   VARCHAR(160),
     phone                   VARCHAR(20),
     registration_channel_id SMALLINT NOT NULL REFERENCES channel(channel_id) ON DELETE RESTRICT,
     registered_on           DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -1354,11 +1354,20 @@ GRANT SELECT ON api_products.product_ref_v1
 
 -- BEGIN BOUNDARY customers
 -- customers-service (F14-14) owns the registration rule of RN-08: email unique
--- when given (customer_email_key), a known channel
+-- when given, whatever the letter case (ux_customer_email_lower), a known channel
 -- (customer_registration_channel_id_fkey), a registration date not in the
 -- future (checked by the service) and no deletion. The table stays in public
 -- as legacy, and the web only reads it. The boundary publishes no stream, so it
 -- has no outbox and no capture trigger.
+
+-- One customer per mailbox, whatever the letter case (#594), as app_user
+-- (#288). A plain UNIQUE on email let Ana@ and ana@ register as two customers.
+-- The service lower-cases the address it writes; this index is the half a
+-- direct INSERT cannot bypass. The DROP is a no-op on a clean build and
+-- retires the old constraint on a database loaded before #594.
+ALTER TABLE public.customer DROP CONSTRAINT IF EXISTS customer_email_key;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_customer_email_lower
+    ON public.customer (lower(email));
 
 CREATE SCHEMA IF NOT EXISTS api_customers;
 REVOKE ALL ON SCHEMA api_customers FROM PUBLIC;

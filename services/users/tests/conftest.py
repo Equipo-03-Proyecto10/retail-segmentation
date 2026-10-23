@@ -8,8 +8,9 @@ by the three scripts (CI's services job sets it). Each test gets its own copy
 of that database, made from it as a template, and the service connects to the
 copy as svc_users, so every privilege it lacks is lacking here too.
 
-`redis` tests need USERS_TEST_REDIS_URL, an administrator's URL to a Redis 8
-whose ACLs the test may change.
+`redis` tests need TEST_REDIS_URL (or USERS_TEST_REDIS_URL), an administrator's
+URL to a Redis 8 whose ACLs the test may change. MOSAIQ_REQUIRE_REDIS=1 makes a
+missing one a failure.
 """
 
 from __future__ import annotations

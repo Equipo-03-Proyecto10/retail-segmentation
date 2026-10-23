@@ -8,7 +8,9 @@
 # array of service names. Nothing here lists a service: a name is selected
 # only when services/<name>/Dockerfile exists.
 # - services/<name>/** or contracts/<name>/** selects <name>;
-# - contracts/common/v1/** and tests/conformance/** select every built service;
+# - contracts/common/v1/**, tests/conformance/** and this workflow,
+#   .github/workflows/services.yml, select every built service: a change to how
+#   every service is tested is tested on every service;
 # - a contract-only change for a service not built yet selects nothing.
 #
 # The second form is the required `services` check: it passes when the matrix
@@ -34,7 +36,7 @@ built() { [[ -f $root/services/$1/Dockerfile ]]; }
 
 while IFS= read -r path || [[ -n $path ]]; do
   case $path in
-    contracts/common/v1/* | tests/conformance/*) all=1 ;;
+    contracts/common/v1/* | tests/conformance/* | .github/workflows/services.yml) all=1 ;;
     services/*/* | contracts/*/*)
       name=${path#*/}
       name=${name%%/*}

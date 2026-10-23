@@ -145,6 +145,20 @@ right place for it, and which the team accepted on 2026-09-07.
 |---|---|
 | [F16-04 (#417)](417-sales-readback.md) | A sale posted in JSON as a store manager, read back on the desktop Sales screen in XML after Refresh, with lines and total; run against real auth, sales, products and stores services behind the local gateway, the XML checked against `sales.xsd` with xmllint; step evidence for F18-05 |
 
+## Phase 17 — Android client
+
+| Document | What it records |
+|---|---|
+| [F17-06 (#445)](445-android-screens.md) | Every Android screen of F17-01 to F17-05, from the real debug app on an emulator against the real services. It includes both permission-denied paths at the system dialog, a sale refused with `no_stock_record` in the outbox screen, and one recommendation tap counted as exactly one `RECO_CLICK`. The database rows behind them are listed, and `clients/android/evidence/screen_tour.py` reproduces the screenshots |
+
+## Phase 18 — deployment and end-to-end demonstration
+
+| Document | What it records |
+|---|---|
+| [F18-01 (#448)](f18-01-runtime.md) | Docker, the infrastructure project and one unit per service on the instance, with SELinux enforcing: `check-services.sh` silent with 13 and 15 services, the two denials on PostgreSQL's socket and the local module that grants that path only, every container's user, capabilities, label and loopback port, the infrastructure restarted under running services, the web at 200 throughout, and the Redis ACL check's one failure |
+| [F18-01 (#448), memory](f18-01-memory.md) | `free -m` and `docker stats` with 13 and with 15 services, against ADR-0040's budget: about 900 MiB used under 2,832 MiB of limits, no swap and no OOM kill, measured idle |
+| [#694](694-postgresql-confined.md) | PostgreSQL moved from `unconfined_service_t` to `postgresql_t` on the instance, permissive first: the file-context rule, a 243 ms restart with the web at 200 and every service ready within 1 s, no AVC while permissive, module 1.2, and the one remaining denial, which also explains F18-01's `auditd` flood (GCP OS Login's HTTP lookup of an unknown UID) |
+
 ## Review passes
 
 These follow a specific review rather than a story.

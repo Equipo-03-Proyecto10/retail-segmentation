@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: customers-service
-  version: 1.2.0
+  version: 1.3.0
   description: >-
     Registers, searches, reads and corrects customers under RN-08. Customers
     are never deleted through services; a mistaken registration is corrected
@@ -23,9 +23,9 @@ paths:
         Searches the customer directory. q is matched case-insensitively as a
         substring of name, email or phone; percent (%) and underscore (_) in q
         match themselves literally and are not SQL wildcards. email is an
-        exact match. When both filters are present, both must match. A filter
-        value outside its schema, or an empty email, returns 422
-        `invalid_query`, naming the parameter in `details`.
+        exact match that ignores letter case. When both filters are present,
+        both must match. A filter value outside its schema, or an empty email,
+        returns 422 `invalid_query`, naming the parameter in `details`.
       x-mosaiq-roles: [ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
@@ -41,7 +41,7 @@ paths:
           example: '100% Club_'
         - name: email
           in: query
-          description: Exact customer email match.
+          description: Exact customer email match, ignoring letter case.
           schema:
             type: string
             maxLength: 160
@@ -486,7 +486,9 @@ components:
       pattern: '^[^@\s]+@[^@\s.]+(?:\.[^@\s.]+)+$'
       description: >-
         Null or an address accepted by customer_email_check: non-whitespace
-        local and domain parts, one at-sign, and a dotted domain.
+        local and domain parts, one at-sign, and a dotted domain. It is stored
+        and returned lower-cased, and no two customers share it in any letter
+        case (ux_customer_email_lower).
     PageInfo:
       type: object
       additionalProperties: false
@@ -723,7 +725,9 @@ components:
             not_acceptable:
               $ref: '#/components/examples/NotAcceptable'
     EmailTaken:
-      description: email_taken — the email already belongs to another customer.
+      description: >-
+        email_taken — the email already belongs to another customer, in any
+        letter case.
       headers:
         X-Correlation-ID:
           $ref: '#/components/headers/CorrelationId'

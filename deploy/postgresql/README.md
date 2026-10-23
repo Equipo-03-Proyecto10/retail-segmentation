@@ -137,6 +137,55 @@ Use the instance credential through the password prompt; the local development
 password from `.env.example` does not apply to the VM. SSH controls who can
 reach the tunnel, and PostgreSQL still requires SCRAM authentication.
 
+### The server runs confined (#694)
+
+PGDG installs the server as `/usr/pgsql-18/bin/postgres`. The targeted
+policy's rule names `/usr/bin/postgres`, so the PGDG binary is labelled
+`bin_t`, and systemd starts it as `unconfined_service_t`: enforcing, but
+outside the policy. One local file-context rule gives it `postgresql_exec_t`,
+and it starts as `postgresql_t`, the domain the policy writes for it. The data
+directory (`postgresql_db_t`), the socket directory (`postgresql_var_run_t`)
+and PGDG's libraries (`lib_t`) need no change of their own. `restorecon` also
+relabels the server's logs as `postgresql_log_t`.
+
+```sh
+sudo semanage fcontext -a -t postgresql_exec_t '/usr/pgsql-[0-9]+/bin/postgres'
+sudo restorecon -v /usr/pgsql-18/bin/postgres
+sudo restorecon -Rv /var/lib/pgsql
+sudo systemctl restart postgresql-18
+ps -eZ | awk '$NF == "postgres" {print $1}' | sort -u   # system_u:system_r:postgresql_t:s0
+```
+
+- **The rule names any major version,** so `rpm` labels a new one's binary the
+  same way when it installs it.
+- **The first time on a running instance, start permissive.** Run
+  `sudo semanage permissive -a postgresql_t` before the restart. The policy
+  then logs what it would refuse instead of refusing it. Exercise the server,
+  read `/var/log/audit/audit.log*` for `postgresql_t`, then run
+  `sudo semanage permissive -d postgresql_t`, which needs no restart.
+- **The restart costs a second or less.**
+  - The web opens a connection per request, so it is unaffected.
+  - A Python service's pool discards a dead connection after one failed
+    request. A Rust service's pool recycles closed connections.
+  - On 2026-10-23 the restart took 243 ms, and all fifteen services answered
+    ready within 1 s ([evidence](../../docs/evidence/694-postgresql-confined.md)).
+- **One denial is expected.** `deploy/check-services.sh`, check 6, tries
+  `peer` from a container UID that no host account has. The policy then
+  refuses the server's NSS lookup of that UID through GCP OS Login, over HTTP
+  on port 80, and the lookup fails as before. One `name_connect` AVC for
+  `postgresql_t` per run is that check working, not a missing permission.
+- **Rollback:**
+
+  ```sh
+  sudo semanage fcontext -d '/usr/pgsql-[0-9]+/bin/postgres'
+  sudo restorecon -v /usr/pgsql-18/bin/postgres
+  sudo systemctl restart postgresql-18
+  ```
+
+  The server is then unconfined again. Containers cannot reach it until
+  `deploy/selinux/mosaiq_svc_pgsocket.te` version 1.1 is loaded. That version
+  is in commit `6b2d86f`.
+
 ### The service roles (ADR-0040, F18-01)
 
 Each service container connects through the read-only mount of

@@ -13,6 +13,7 @@ firewall rules, PostgreSQL, and the reverse proxy.
 | Machine type | `e2-standard-2` (2 vCPU, 8 GB RAM) |
 | Boot disk | 50 GB, `pd-balanced` |
 | Image | `centos-stream-10` (project `centos-cloud`) |
+| Swap | 2 GB `/swapfile` (F18-01, #448), the cushion of ADR-0040's memory budget |
 
 Created for `F1-01`.
 
@@ -227,6 +228,7 @@ story `F6-01` (#77). Config and runbook: [`deploy/`](../deploy/README.md).
 |---|---|
 | Package | `nginx` (CentOS Stream 10 AppStream) |
 | Config | `/etc/nginx/conf.d/mosaiq.conf` + `/etc/nginx/conf.d/cloudflare-real-ip.conf`, from `deploy/nginx/` (deploy both — `mosaiq.conf` includes the other) |
+| API includes | `/etc/nginx/mosaiq-api.d/*.conf`, one per service, from `services/<name>/nginx/<name>.conf` (F18-02, #452) |
 | Listener | `:80` redirects to HTTPS; `:443 ssl http2` `default_server`, `server_name mosaiq.maxthecoder.online` |
 | Upstream | `127.0.0.1:8000` (gunicorn — `F6-02`, #78) |
 | Real client IP | Cloudflare edge ranges trusted (`cloudflare-real-ip.conf`), `real_ip_header CF-Connecting-IP` — the access log and the `X-Forwarded-For` handed to gunicorn carry the visitor, not an edge IP |
@@ -354,6 +356,68 @@ systemctl is-active mosaiq                 -> active
 systemctl is-active nginx                  -> active
 curl -skI https://34.51.123.31/            -> HTTP/2 200
 ```
+
+## Docker and the service projects (F18-01)
+
+Next to the web, the instance runs the infrastructure project `mosaiq-infra`
+(both Redis instances and MongoDB) and each service as its own compose project
+under `mosaiq-svc@<name>.service`
+([ADR-0040](adr/0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md)).
+The procedure is in [deploy/README.md](../deploy/README.md), section F18-01. It
+was installed on 2026-10-23 (#448), and the evidence is in
+[f18-01-runtime.md](evidence/f18-01-runtime.md) and
+[f18-01-memory.md](evidence/f18-01-memory.md).
+The NGINX include boundary for these projects is recorded in the Reverse proxy
+table above (F18-02, #452).
+
+| Package | Version |
+|---|---|
+| `docker-ce`, `docker-ce-cli` | 29.9.2-1.el10, from Docker's CentOS repository |
+| `containerd.io` | 2.4.2-3.el10 |
+| `docker-compose-plugin` | 5.6.1-1.el10 |
+| `container-selinux` | 2.248.0-1.el10 |
+
+- **Docker's configuration.** `/etc/docker/daemon.json` turns `selinux-enabled`
+  on, so each container runs as `container_t` with its own MCS categories. It
+  also caps the `json-file` logs at 10 MB × 3 per container. `podman-docker` is
+  absent, and `getenforce` prints `Enforcing`.
+- **SELinux module.** The local module `mosaiq_svc_pgsocket`
+  ([deploy/selinux/](../deploy/selinux/)) lets a container reach PostgreSQL's
+  socket and nothing else.
+- **PostgreSQL confined.** Since 2026-10-23 (#694), the PGDG server runs as
+  `postgresql_t`. The local rule `semanage fcontext -a -t postgresql_exec_t
+  '/usr/pgsql-[0-9]+/bin/postgres'` does it
+  ([deploy/postgresql/README.md](../deploy/postgresql/README.md)). Before
+  that, `/usr/pgsql-18/bin/postgres` was labelled `bin_t`, and the server ran
+  as `unconfined_service_t`.
+- **GHCR.** Root pulls the private service images with a classic personal
+  access token that holds `read:packages` only, stored in
+  `/root/.docker/config.json` (`0600`).
+  - **Owner:** Marcelo Villanueva (`marcelovillanuevam-code`), who creates and rotates it.
+  - **Rotation:** every 90 days, before it expires: log in with the next token,
+    pull, then revoke the old one.
+- **Units.** `mosaiq-infra.service`, and one `mosaiq-svc@<name>.service` for
+  each of the fifteen services, are all enabled. Each service is staged under
+  `/opt/mosaiq/services/<name>/<version>`, and `current` links to the one
+  running. Its secrets are in `/etc/mosaiq/svc/<name>.env` (`0600 root`).
+
+Memory on 2026-10-23, with the web and every container running:
+
+| | 13 core services | all 15 |
+|---|---|---|
+| `free -m` used / available | 2,198 / 5,477 MB | 2,254 / 5,421 MB |
+| Swap used | 0 | 0 |
+| Containers' `mem_limit` | 2,624 MB | 2,832 MB |
+| Containers' resident memory | 850 MiB (services 716, infrastructure 133) | 896 MiB (services 796, infrastructure 100) |
+| OOM kills | 0 | 0 |
+
+ADR-0040 estimated about 2,690 MB for the host and committed about 5.5 GB of
+8 GB with every limit full. Measured idle, the host (the OS, Docker,
+PostgreSQL, the web and NGINX) takes about 1,360 MiB, and all eighteen
+containers about 900 MiB. That is well inside the budget, so no cut was needed
+and the second wave runs. The idle figures are a floor: PostgreSQL's shared
+buffers and the services grow under load, so the ADR's estimate stays the one
+to plan with.
 
 ## Ops console
 

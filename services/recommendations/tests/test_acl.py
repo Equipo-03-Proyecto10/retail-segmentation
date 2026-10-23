@@ -25,7 +25,7 @@ STREAMS = (
 EXPECTED = (
     "user svc_recommendations on {{password}} resetchannels -@all +@connection"
     " +@read +@write -@dangerous -scan -randomkey"
-    " ~recommendations:rl:* ~recommendations:cache:* +waitaof +multi +exec +discard"
+    " ~recommendations:rl:* ~recommendations:cache:* +waitaof"
     " (%R~pub:auth:v1:live:* +exists)"
     " (" + " ".join("~" + stream for stream in STREAMS) + " +xreadgroup +xack"
     " +xgroup|create +xpending +xclaim)"
@@ -68,9 +68,6 @@ def _dryrun(client: Any, *command: str) -> str:
     "command",
     [
         ("PING",),
-        ("MULTI",),
-        ("EXEC",),
-        ("DISCARD",),
         ("EXISTS", "pub:auth:v1:live:session"),
         ("INCR", "recommendations:rl:actor:window"),
         ("SET", "recommendations:cache:c:1:10", "{}", "EX", "120"),
@@ -110,6 +107,10 @@ def test_dryrun_allows_what_recommendations_needs(
         ("KEYS", "*"),
         ("RANDOMKEY",),
         ("FLUSHALL",),
+        # ADR-0037: MULTI is auth's alone.
+        ("MULTI",),
+        ("EXEC",),
+        ("DISCARD",),
     ],
 )
 def test_dryrun_denies_other_boundaries_and_dangerous_commands(

@@ -29,7 +29,7 @@ PostgreSQL listener, HBA policy, SSH access and application-role verification:
 | `/opt/mosaiq/venv` | virtualenv, `web/requirements.txt` installed |
 | `/etc/mosaiq/mosaiq.env` | the environment file the unit reads (from `.env.example`) |
 | user/group `mosaiq` | unprivileged, owns `/opt/mosaiq`, runs gunicorn |
-| `/opt/mosaiq/services/<name>/<version>` | one staged release of a service: its `compose.yaml`, `redis/`, `mongo/` if it has one, and `release.env`; `current` links the one running (F18-01) |
+| `/opt/mosaiq/services/<name>/<version>` | one staged release of a service: its `compose.yaml`, `redis/`, `nginx/`, `mongo/` if it has one, and `release.env`; `current` links the one running (F18-01, F18-02) |
 | `/etc/mosaiq/svc/<name>.env` | a service's secrets, `0600 root`, read by its compose file's `env_file` |
 | `/etc/mosaiq/keys/` | the signing key (`0400`, UID 10001) and `jwks.json` (`0444`), [auth-keys.md](auth-keys.md) |
 | `/etc/mosaiq/redis/users.acl`, `/etc/mosaiq/mongodb/root.env` | the assembled aclfile and MongoDB's root account, [infra/README.md](infra/README.md) |
@@ -912,7 +912,9 @@ echo '/swapfile none swap defaults 0 0' | sudo tee -a /etc/fstab
 ### 2. Docker Engine and the Compose plugin
 
 From Docker's CentOS repository, not Podman's emulation. `podman-docker` must
-be absent, and SELinux stays enforcing.
+be absent, and SELinux stays enforcing. `docker-ce` leaves `selinux-enabled`
+off by default, which runs every container unlabelled. `daemon.json` turns it
+on, so each container runs as `container_t` with its own MCS categories.
 
 ```sh
 sudo dnf -y install dnf-plugins-core
@@ -920,10 +922,11 @@ sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/dock
 rpm -q podman-docker && sudo dnf -y remove podman-docker
 sudo dnf -y install docker-ce docker-ce-cli containerd.io docker-compose-plugin
 sudo install -m 0644 /dev/stdin /etc/docker/daemon.json <<'JSON'
-{ "log-driver": "json-file", "log-opts": { "max-size": "10m", "max-file": "3" } }
+{ "selinux-enabled": true, "log-driver": "json-file", "log-opts": { "max-size": "10m", "max-file": "3" } }
 JSON
 sudo systemctl enable --now docker
 getenforce                                   # Enforcing
+sudo docker info --format '{{json .SecurityOptions}}'   # lists name=selinux
 docker --version && docker compose version   # recorded in docs/infra.md
 ```
 
@@ -978,6 +981,38 @@ boundary section of `sql/01_schema.sql` must have been applied as `postgres`
 `pg_hba.conf` line is described in
 [postgresql/README.md](postgresql/README.md), under "The service roles".
 
+The customers section from customers 0.1.6 on (#594) replaces
+`customer_email_key` with `ux_customer_email_lower`, a unique index on
+`lower(email)`. If the database already holds two customers whose emails
+differ only in letter case, creating the index fails and, with
+`--single-transaction`, nothing changes. Find them first, and correct one of
+each pair through the service's `PATCH` before applying:
+
+```sh
+sudo -u postgres psql -X -d retail -c "SELECT lower(email), count(*)
+  FROM customer WHERE email IS NOT NULL GROUP BY 1 HAVING count(*) > 1"
+```
+
+A labelled container (`container_t`) may not enter the socket's directory
+(`postgresql_var_run_t`) or connect to the server under the targeted policy.
+So every service fails with `EACCES` on `/run/postgresql/.s.PGSQL.5432` and
+answers 503 `schema_not_ready`.
+
+The server must run as `postgresql_t` first, as described in
+[postgresql/README.md](postgresql/README.md), "The server runs confined".
+Without that rule, the PGDG server runs as `unconfined_service_t`, which the
+module grants nothing. Then load the local module that grants that one path,
+once:
+
+```sh
+cd "$(mktemp -d)" && cp /opt/mosaiq/current/deploy/selinux/mosaiq_svc_pgsocket.te .
+sudo checkmodule -M -m -o mosaiq_svc_pgsocket.mod mosaiq_svc_pgsocket.te
+sudo semodule_package -o mosaiq_svc_pgsocket.pp -m mosaiq_svc_pgsocket.mod
+sudo semodule -i mosaiq_svc_pgsocket.pp && sudo semodule -l | grep mosaiq_svc_pgsocket
+```
+
+A running service reconnects on its own once the module is loaded.
+
 ### 6. The infrastructure project
 
 The aclfile comes first, because both Redis instances load it at boot. It is
@@ -1015,7 +1050,7 @@ name=<name>; version=$(cat /opt/mosaiq/current/services/$name/VERSION)
 dir=/opt/mosaiq/services/$name/$version
 sudo install -d -m 0755 "$dir"
 sudo cp /opt/mosaiq/current/services/$name/compose.yaml "$dir/"
-sudo cp -r /opt/mosaiq/current/services/$name/redis "$dir/"
+sudo cp -r /opt/mosaiq/current/services/$name/redis /opt/mosaiq/current/services/$name/nginx "$dir/"
 [ -d /opt/mosaiq/current/services/$name/mongo ] && sudo cp -r /opt/mosaiq/current/services/$name/mongo "$dir/"
 printf 'IMAGE_TAG=%s\n' "$version" | sudo tee "$dir/release.env" >/dev/null
 sudo ln -sfn "$version" /opt/mosaiq/services/$name/current
@@ -1049,21 +1084,66 @@ that service.
 - `systemctl is-active mosaiq` stays active, and
   `curl -sS -o /dev/null -w '%{http_code}' https://mosaiq.maxthecoder.online/` answers 200, throughout.
 - `free -m` and `docker stats --no-stream`, with every service running, go to
-  `docs/evidence/f18-01-memory.md` and
+  [docs/evidence/f18-01-memory.md](../docs/evidence/f18-01-memory.md) and
   `docs/infra.md`. They are compared with ADR-0040's estimate. If memory is
   short, the record's cut order applies.
 - **SELinux:** a container running as UID 10001 must connect through the mounted
-  `/run/postgresql`. If `ausearch -m avc -ts recent` shows a denial, the fix is a
-  local policy module committed under `deploy/selinux/` and loaded with
-  `semodule -i`, never a `:z` relabel. The outcome is recorded in
-  `docs/evidence/f18-01-runtime.md`.
+  `/run/postgresql`. A new denial goes in a local policy module under
+  `deploy/selinux/`, loaded with `semodule -i`, never a `:z` relabel. The
+  targeted policy hides some denials, so `semodule -DB` shows them while you
+  reproduce, and `semodule -B` restores the policy. Read `/var/log/audit/audit.log`
+  with `sudo` throughout. Services retrying a refused connection rotate the
+  5 × 8 MB log within minutes, so read it right after reproducing. The outcome is recorded in
+  [docs/evidence/f18-01-runtime.md](../docs/evidence/f18-01-runtime.md).
 
 ### Rollback
 
 ```sh
 for d in /opt/mosaiq/services/*/; do sudo systemctl disable --now "mosaiq-svc@$(basename "$d")"; done
 sudo systemctl disable --now mosaiq-infra
+sudo semodule -r mosaiq_svc_pgsocket
 ```
 
 Then remove the `svc_*` lines from `pg_hba.conf` and reload PostgreSQL. The web
 depends on none of this.
+
+## F18-02 — the services under `/api/<name>/` on 443
+
+[ADR-0040](../docs/adr/0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md)
+(issue #452). `mosaiq.conf`'s 443 server includes `/etc/nginx/mosaiq-api.d/*.conf`.
+Each file there contributes one service's `location /api/<name>/` and its named
+413/429 locations. F18-03 installs or replaces these files on each deploy; they
+are never edited by hand on the instance.
+
+`mosaiq.conf` is still installed by hand, as F6-06 left it: install the updated
+file first, as [The NGINX config is applied by hand](#the-nginx-config-is-applied-by-hand-on-purpose)
+describes. An include glob that matches no file is not an error, so the 443
+server keeps working while the directory is still empty.
+
+Then, for each staged service directory (step 8 of F18-01 stages `nginx/`),
+install its `nginx/<name>.conf` under the matching name:
+
+```sh
+sudo install -d -m 0755 /etc/nginx/mosaiq-api.d
+for staged in /opt/mosaiq/services/*/current; do
+  [ -d "$staged/nginx" ] || continue
+  name=$(basename "$(dirname "$staged")")
+  sudo install -m 0644 "$staged/nginx/$name.conf" \
+    "/etc/nginx/mosaiq-api.d/$name.conf"
+done
+sudo restorecon -Rv /etc/nginx/mosaiq-api.d
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+From outside the instance, run `bash deploy/check-api-edge.sh`. It prints
+nothing when every criterion of F18-02 holds.
+
+### Rollback
+
+Empty the include directory, validate the remaining NGINX configuration, and
+reload:
+
+```sh
+sudo find /etc/nginx/mosaiq-api.d -mindepth 1 -maxdepth 1 -type f -delete
+sudo nginx -t && sudo systemctl reload nginx
+```

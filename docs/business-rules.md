@@ -119,6 +119,17 @@ it.
 **Enforced:** `transaction_customer_id_fkey` `ON DELETE RESTRICT`. **Verified** —
 case N14. · `RF-07`
 
+customers-service holds the rest of a customer's registration under the same
+rule (`contracts/registry.yaml`): a customer is registered once and never
+deleted through services; an email, when given, is an address and belongs to
+no other customer in any letter case; the channel exists; and the registration
+date is not in the future.
+
+**Enforced:** `ux_customer_email_lower`, a unique index on `lower(email)`
+(#594, as RN-02 does for users), and `customer_email_check`; the service
+lower-cases the address it writes and refuses a future date. **Verified** —
+`services/customers/tests/test_rules.py`.
+
 ### RN-09 — Deleting a sale removes its lines
 A sale line has no meaning without its sale.
 

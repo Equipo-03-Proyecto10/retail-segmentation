@@ -5,12 +5,15 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -20,7 +23,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -29,6 +31,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -51,8 +54,8 @@ fun FloorHome(
     onSignOut: () -> Unit
 ) {
     var tab by remember { mutableStateOf(Tab.CHECK_IN) }
-    val chosen by model.chosen.collectAsState()
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    val chosen by model.chosen.collectAsStateWithLifecycle()
+    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("${signedIn.name} · ${signedIn.role}", style = MaterialTheme.typography.titleMedium)
         Row(
             modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -64,27 +67,30 @@ fun FloorHome(
             OutlinedButton(onClick = { tab = Tab.OUTBOX }) { Text("Outbox") }
             SignOutButton(model, onSignOut)
         }
-        when (tab) {
-            Tab.CHECK_IN -> StoreAndCheckIn(model)
-            Tab.SCAN ->
-                ScanScreen(
-                    scan,
-                    chosen,
-                    onPickStore = { tab = Tab.CHECK_IN },
-                    onAddProduct = sales::addProduct
-                )
-            Tab.SALE ->
-                SalesScreen(
-                    sales,
-                    chosen,
-                    onPickStore = { tab = Tab.CHECK_IN },
-                    insights = insights,
-                    onOpenProduct = { productId ->
-                        scan.showProduct(productId)
-                        tab = Tab.SCAN
-                    }
-                )
-            Tab.OUTBOX -> OutboxList(model)
+        // Each tab scrolls inside the room left under the header.
+        Box(modifier = Modifier.weight(1f).fillMaxSize()) {
+            when (tab) {
+                Tab.CHECK_IN -> StoreAndCheckIn(model)
+                Tab.SCAN ->
+                    ScanScreen(
+                        scan,
+                        chosen,
+                        onPickStore = { tab = Tab.CHECK_IN },
+                        onAddProduct = sales::addProduct
+                    )
+                Tab.SALE ->
+                    SalesScreen(
+                        sales,
+                        chosen,
+                        onPickStore = { tab = Tab.CHECK_IN },
+                        insights = insights,
+                        onOpenProduct = { productId ->
+                            scan.showProduct(productId)
+                            tab = Tab.SCAN
+                        }
+                    )
+                Tab.OUTBOX -> OutboxList(model)
+            }
         }
     }
 }
@@ -127,7 +133,7 @@ fun SignOutButton(model: FloorViewModel, onSignOut: () -> Unit) {
 
 @Composable
 private fun StoreAndCheckIn(model: FloorViewModel) {
-    val chosen by model.chosen.collectAsState()
+    val chosen by model.chosen.collectAsStateWithLifecycle()
     val store = chosen
     if (store == null) {
         StorePicker(model)
@@ -138,46 +144,54 @@ private fun StoreAndCheckIn(model: FloorViewModel) {
         StorePicker(model, onPicked = { picking = false })
         return
     }
-    Text("Store: ${store.name}", style = MaterialTheme.typography.titleMedium)
-    OutlinedButton(onClick = { picking = true }) { Text("Change store") }
-    CheckInPanel(model, store)
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text("Store: ${store.name}", style = MaterialTheme.typography.titleMedium)
+        OutlinedButton(onClick = { picking = true }) { Text("Change store") }
+        CheckInPanel(model, store)
+    }
 }
 
 @Composable
 private fun StorePicker(model: FloorViewModel, onPicked: () -> Unit = {}) {
-    val state by model.stores.collectAsState()
+    val state by model.stores.collectAsStateWithLifecycle()
     var city by remember { mutableStateOf(state.city) }
     LaunchedEffect(Unit) { if (state.stores.isEmpty()) model.searchStores() }
-    Text("Pick your store", style = MaterialTheme.typography.titleMedium)
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(value = city, onValueChange = { city = it }, label = { Text("City") }, singleLine = true)
-        Button(onClick = { model.searchStores(city) }) { Text("Search") }
-    }
-    state.error?.let { ErrorPanel(it) }
-    LazyColumn(modifier = Modifier.fillMaxWidth()) {
-        items(state.stores, key = { it.storeId }) { store ->
-            TextButton(onClick = {
-                model.choose(store)
-                onPicked()
-            }) { Text("${store.name} · ${store.city}, ${store.state}") }
+    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Pick your store", style = MaterialTheme.typography.titleMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(value = city, onValueChange = { city = it }, label = { Text("City") }, singleLine = true)
+            Button(onClick = { model.searchStores(city) }) { Text("Search") }
         }
-    }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(enabled = state.page > 1, onClick = { model.searchStores(page = state.page - 1) }) {
-            Text("Previous")
+        state.error?.let { ErrorPanel(it) }
+        // Weighted, so a long list scrolls itself and the paging row below stays on screen.
+        LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            items(state.stores, key = { it.storeId }) { store ->
+                TextButton(onClick = {
+                    model.choose(store)
+                    onPicked()
+                }) { Text("${store.name} · ${store.city}, ${store.state}") }
+            }
         }
-        Text("Page ${state.page} of ${state.totalPages}")
-        OutlinedButton(
-            enabled = state.page < state.totalPages,
-            onClick = { model.searchStores(page = state.page + 1) }
-        ) { Text("Next") }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(enabled = state.page > 1, onClick = { model.searchStores(page = state.page - 1) }) {
+                Text("Previous")
+            }
+            Text("Page ${state.page} of ${state.totalPages}")
+            OutlinedButton(
+                enabled = state.page < state.totalPages,
+                onClick = { model.searchStores(page = state.page + 1) }
+            ) { Text("Next") }
+        }
     }
 }
 
 @Composable
 private fun CheckInPanel(model: FloorViewModel, store: ChosenStore) {
-    val state by model.checkIn.collectAsState()
-    val row by model.lastCheckIn.collectAsState()
+    val state by model.checkIn.collectAsStateWithLifecycle()
+    val row by model.lastCheckIn.collectAsStateWithLifecycle()
     val permissions =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
             val mode =
@@ -202,9 +216,10 @@ private fun CheckInPanel(model: FloorViewModel, store: ChosenStore) {
         is CheckInState.Queued -> {
             current.note?.let { Text(it) }
             val answer = FloorViewModel.resultOf(row)
+            val refused = row?.takeIf { it.state == RowState.REFUSED }
             when {
                 answer != null -> Text(answer, style = MaterialTheme.typography.bodyLarge)
-                row?.state == RowState.REFUSED -> ErrorPanel(row!!.asError())
+                refused != null -> ErrorPanel(refused.asError())
                 else -> Text("Check-in queued. It is sent as soon as the network allows.")
             }
         }
@@ -213,8 +228,8 @@ private fun CheckInPanel(model: FloorViewModel, store: ChosenStore) {
 
 @Composable
 private fun OutboxList(model: FloorViewModel) {
-    val rows by model.open.collectAsState()
-    val userId by model.userId.collectAsState()
+    val rows by model.open.collectAsStateWithLifecycle()
+    val userId by model.userId.collectAsStateWithLifecycle()
     if (rows.isEmpty()) {
         Text("Nothing is waiting, and nothing was refused.")
         return

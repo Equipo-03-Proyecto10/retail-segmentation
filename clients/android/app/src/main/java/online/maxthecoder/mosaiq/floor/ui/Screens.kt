@@ -1,11 +1,15 @@
 package online.maxthecoder.mosaiq.floor.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -38,20 +42,33 @@ fun FloorApp(
     var email by rememberSaveable { mutableStateOf("") }
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
+            // Bars, cutout and keyboard are kept clear of; the title stays put and the rest scrolls.
             Column(
-                modifier = Modifier.padding(24.dp),
+                modifier = Modifier.safeDrawingPadding().padding(24.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Text("MOSAIQ Floor", style = MaterialTheme.typography.headlineMedium)
-                when (state) {
-                    is SessionState.SignIn -> SignInForm(state, email, { email = it }, onSignIn)
-                    SessionState.Loading -> CircularProgressIndicator()
-                    is SessionState.SignedIn -> floor?.invoke(state) ?: SignedInPanel(state, onSignOut)
-                    is SessionState.Failed -> {
-                        ErrorPanel(state.error)
-                        Button(onClick = onRetry) { Text("Try again") }
-                        // The floor's sign-out warns about queued writes first.
-                        signOut?.invoke() ?: OutlinedButton(onClick = onSignOut) { Text("Sign out") }
+                if (state is SessionState.SignedIn) {
+                    // The floor's tabs scroll on their own (lists and forms), so they get a bounded box.
+                    Box(modifier = Modifier.weight(1f)) {
+                        floor?.invoke(state) ?: Column { SignedInPanel(state, onSignOut) }
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        when (state) {
+                            is SessionState.SignIn -> SignInForm(state, email, { email = it }, onSignIn)
+                            SessionState.Loading -> CircularProgressIndicator()
+                            is SessionState.Failed -> {
+                                ErrorPanel(state.error)
+                                Button(onClick = onRetry) { Text("Try again") }
+                                // The floor's sign-out warns about queued writes first.
+                                signOut?.invoke() ?: OutlinedButton(onClick = onSignOut) { Text("Sign out") }
+                            }
+                            is SessionState.SignedIn -> Unit
+                        }
                     }
                 }
             }

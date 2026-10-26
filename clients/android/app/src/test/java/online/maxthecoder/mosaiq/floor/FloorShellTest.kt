@@ -147,7 +147,7 @@ class FloorShellTest {
         pressBack()
 
         compose.onNodeWithText("Pick your store").assertDoesNotExist()
-        compose.onNodeWithText("Store: Centro").assertExists()
+        compose.onNodeWithText("Check in here").assertExists()
         compose.onNodeWithTag("nav-check-in").assertIsSelected()
     }
 

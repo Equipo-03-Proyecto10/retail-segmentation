@@ -1,4 +1,61 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">MOSAIQ Floor</string>
+
+    <!-- Sign-in and session -->
+    <string name="signin_wordmark">MOSAIQ</string>
+    <string name="signin_help">Sign in with your store account to start the shift.</string>
+    <string name="signin_email">Email</string>
+    <string name="signin_password">Password</string>
+    <string name="signin_submit">Sign in</string>
+    <string name="signin_loading_account">Loading your account…</string>
+    <string name="signin_error_credentials">That email or password is not right. Check them and try again.</string>
+    <string name="signin_error_unreachable">MOSAIQ could not be reached. Check your connection and try again.</string>
+    <string name="signin_error_server">The service is having trouble right now. Try again in a moment.</string>
+    <string name="session_failed_title">Your account could not be loaded</string>
+    <string name="session_sign_out">Sign out</string>
+    <string name="session_signed_in_as">Signed in as</string>
+
+    <!-- Check-in -->
+    <string name="checkin_not_checked_in">Not checked in</string>
+    <string name="checkin_checked_in_at">Checked in at %1$s</string>
+    <string name="checkin_waiting">Waiting to send</string>
+    <string name="checkin_needs_attention">Needs attention</string>
+    <string name="checkin_locating">Finding your position…</string>
+    <string name="checkin_queued_calm">Your check-in is saved on this phone. It is sent as soon as the network allows.</string>
+    <string name="checkin_action">Check in here</string>
+    <string name="checkin_change_store">Change store</string>
+    <string name="checkin_none_title">Pick a store</string>
+    <string name="checkin_none_message">Choose the store you are working in to check in.</string>
+    <string name="checkin_none_action">Pick a store</string>
+    <string name="checkin_location_why">Location confirms that you are at the store. You can still check in without it, but it cannot be verified.</string>
+    <string name="checkin_open_settings">Open settings</string>
+
+    <!-- Store picker -->
+    <string name="picker_title">Pick your store</string>
+    <string name="picker_city">City</string>
+    <string name="picker_search">Search</string>
+    <string name="picker_searching">Searching stores…</string>
+    <string name="picker_empty_title">No stores in that city</string>
+    <string name="picker_empty_message">Check the spelling or try a nearby city.</string>
+
+    <!-- Outbox -->
+    <string name="outbox_empty_title">Everything is sent</string>
+    <string name="outbox_empty_message">Nothing is waiting and nothing needs your attention.</string>
+    <string name="outbox_kind_check_in">Check-in</string>
+    <string name="outbox_kind_check_in_at">Check-in at %1$s</string>
+    <string name="outbox_kind_sale">Sale</string>
+    <string name="outbox_kind_scan">Product scan</string>
+    <string name="outbox_kind_reco">Recommendation click</string>
+    <string name="outbox_state_waiting">Waiting to send</string>
+    <string name="outbox_state_sent">Sent</string>
+    <string name="outbox_state_attention">Needs attention</string>
+    <string name="outbox_other_user">Waiting for the user who made it to sign in again.</string>
+    <string name="outbox_dismiss">Dismiss</string>
+    <string name="outbox_today">Today, %1$s</string>
+    <string name="outbox_yesterday">Yesterday, %1$s</string>
+    <plurals name="outbox_attempts">
+        <item quantity="one">Tried %1$d time so far</item>
+        <item quantity="other">Tried %1$d times so far</item>
+    </plurals>
 </resources>

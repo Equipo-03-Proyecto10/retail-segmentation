@@ -129,7 +129,7 @@ class PermissionDeniedInstrumentedTest {
 
     @Test
     fun aDeniedLocationQueuesTheCheckInWithoutAPosition() {
-        compose.onNodeWithText("Check in").performClick()
+        compose.onNodeWithText("Check in here").performClick()
         refuseAtTheSystemDialog()
         compose.waitUntil(timeoutMillis = 10_000) {
             compose.onAllNodes(hasText("Location is off for this app", substring = true))

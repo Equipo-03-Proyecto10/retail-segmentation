@@ -130,7 +130,7 @@ fun FloorHome(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FloorTopBar(
+internal fun FloorTopBar(
     signedIn: SessionState.SignedIn,
     store: ChosenStore?,
     onStoreClick: () -> Unit,
@@ -202,7 +202,7 @@ private val SECTIONS =
     )
 
 @Composable
-private fun FloorBottomBar(selected: FloorLocation.Root, pendingWrites: Int, onSelect: (FloorLocation) -> Unit) {
+internal fun FloorBottomBar(selected: FloorLocation.Root, pendingWrites: Int, onSelect: (FloorLocation) -> Unit) {
     NavigationBar {
         SECTIONS.forEach { section ->
             NavigationBarItem(

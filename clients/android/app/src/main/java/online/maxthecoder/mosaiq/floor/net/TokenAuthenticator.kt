@@ -60,10 +60,15 @@ class TokenAuthenticator(
 
     private fun refresh(current: Tokens): Tokens? {
         val body = json.encodeToString(RefreshRequest.serializer(), RefreshRequest(current.refreshToken))
+        val url =
+            baseUrl.resolve(Services.AUTH + "sessions/refresh") ?: run {
+                lastFailure = ApiError.unreachable(null)
+                return null
+            }
         val request =
             Request
                 .Builder()
-                .url(baseUrl.resolve(Services.AUTH + "sessions/refresh")!!)
+                .url(url)
                 .post(body.toRequestBody(JSON))
                 .build()
         val answer =

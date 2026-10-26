@@ -28,6 +28,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import online.maxthecoder.mosaiq.floor.net.ApiError
+import online.maxthecoder.mosaiq.floor.ui.theme.MosaiqTheme
 
 @Composable
 fun FloorApp(
@@ -40,7 +41,7 @@ fun FloorApp(
 ) {
     // Kept here, above the screens, so a refused sign-in does not clear what was typed.
     var email by rememberSaveable { mutableStateOf("") }
-    MaterialTheme {
+    MosaiqTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
             // Bars, cutout and keyboard are kept clear of; the title stays put and the rest scrolls.
             Column(

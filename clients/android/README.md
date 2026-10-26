@@ -71,3 +71,9 @@ A failure there blocks only pull requests that touch the client, never a service
 - **Network security.** Release builds allow HTTPS only. Debug builds also allow cleartext to `10.0.2.2` and to the device's own loopback (`localhost`, `127.0.0.1`), where the instrumented tests run MockWebServer, and nothing else (`src/debug/res/xml/network_security_config.xml`).
 
 Every dependency version is pinned in `gradle/libs.versions.toml`.
+
+## Theme and fonts
+
+`ui/theme/` is the only place a color, type size, shape or spacing value is written (ADR-0057); `bash clients/android/check-adr41.sh` lists any that leak out. `ThemeDriftTest` compares the palette with `docs/design-system/tokens/resolved-tokens.css`, and `ThemeContrastTest` checks the WCAG ratios of the pairs the theme defines.
+
+`app/src/main/res/font/` holds IBM Plex Sans (one variable font) and IBM Plex Mono (400, 500, 600), licensed under the SIL Open Font License 1.1. They are the Latin subsets vendored in `docs/design-system/fonts/`, converted from woff2 to ttf, which Android cannot load as woff2. The conversion only unwraps the woff2 container; the glyphs are unchanged. The license is the one `docs/design-system/README.md` names for those files.

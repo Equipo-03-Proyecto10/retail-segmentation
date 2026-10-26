@@ -58,4 +58,43 @@
         <item quantity="one">Tried %1$d time so far</item>
         <item quantity="other">Tried %1$d times so far</item>
     </plurals>
+    <!-- Scan screen -->
+    <string name="scan_no_store_title">Pick your store first</string>
+    <string name="scan_no_store_message">A scan shows the stock of the store you are checked in at.</string>
+    <string name="scan_pick_store">Pick a store</string>
+    <string name="scan_store_caption">Store: %1$s</string>
+    <string name="scan_camera_description">Camera viewport for scanning a product QR code</string>
+    <string name="scan_hint">Point at a product QR code</string>
+    <string name="scan_start">Scan</string>
+    <string name="scan_start_help">Open the camera to read a product QR code.</string>
+    <string name="scan_denied_title">The camera is off for this app</string>
+    <string name="scan_denied_message">The camera is needed only to read a product QR code. Allow it, or type the product number below instead.</string>
+    <string name="scan_open_settings">Open settings</string>
+    <string name="scan_grant_access">Grant access</string>
+    <string name="scan_camera_error_title">The camera could not start</string>
+    <string name="scan_camera_error_message">Another app may be using it. Try again, or type the product number below.</string>
+    <string name="scan_retry">Retry</string>
+    <string name="scan_manual_title">No code to scan?</string>
+    <string name="scan_manual_label">Product number</string>
+    <string name="scan_manual_help">Type the number printed under the QR code.</string>
+    <string name="scan_look_up">Look up</string>
+    <string name="scan_looking">Looking up the product…</string>
+    <string name="scan_not_found_title">We could not find that product</string>
+    <string name="scan_not_found_message">Check the number and try again, or scan another code.</string>
+    <string name="scan_not_a_product_title">That is not a product code</string>
+    <string name="scan_not_a_product_message">Point the camera at a product QR code.</string>
+    <string name="scan_offline">The store systems could not be reached. Check the connection and try again.</string>
+    <string name="scan_scan_another">Scan another</string>
+    <string name="scan_add_to_sale">Add to sale</string>
+    <string name="scan_sku">SKU %1$s</string>
+    <string name="scan_retired">No longer sold</string>
+    <string name="scan_in_stock">In stock</string>
+    <string name="scan_out_of_stock">Out of stock</string>
+    <string name="scan_not_stocked">Not stocked here</string>
+    <plurals name="scan_units_at_store">
+        <item quantity="one">%1$d unit at %2$s</item>
+        <item quantity="other">%1$d units at %2$s</item>
+    </plurals>
+    <string name="scan_none_at_store">None at %1$s</string>
+    <string name="scan_not_stocked_message">%1$s does not hold this product.</string>
 </resources>

@@ -193,7 +193,7 @@ jobs:
           [ "$(users redis-cache)" = "$cache_before" ] || { echo "FAIL: redis-cache lost its users"; exit 1; }
           [ "$(sha256sum < "$ACL_FILE")" = "$file_before" ] || { echo "FAIL: the aclfile was not restored"; exit 1; }
 
-      - name: A key confirmed with WAITAOF survives a restart
+      - name: Keys confirmed with WAITAOF, a MULTI/EXEC session included, survive a restart
         run: |
           set -euo pipefail
           REDISCLI_AUTH=$(sed -n 's/^REDIS_FIXTURE_A_PASSWORD=//p' "$SVC_ENV_DIR/fixture_a.env")
@@ -201,6 +201,13 @@ jobs:
           a() { $COMPOSE exec -T -e REDISCLI_AUTH redis-state redis-cli --no-auth-warning --user svc_fixture_a "$@"; }
           a SET fixture_a:rl:probe 1 EX 3600
           [ "$(a WAITAOF 1 0 1000 | head -1)" = 1 ] || { echo "FAIL: WAITAOF did not confirm the local fsync"; exit 1; }
+          # auth writes a session inside MULTI/EXEC. Redis replays the AOF as
+          # the default user, which must be let run it (ADR-0056, #714).
+          auth_pw=$(sed -n 's/^REDIS_AUTH_PASSWORD=//p' "$SVC_ENV_DIR/auth.env")
+          au() { $COMPOSE exec -T -e REDISCLI_AUTH="$auth_pw" redis-state redis-cli --no-auth-warning --user svc_auth "$@"; }
+          printf 'MULTI\nHSET auth:session:probe sid probe\nEXPIRE auth:session:probe 3600\nSADD auth:user_sids:probe probe\nEXPIRE auth:user_sids:probe 3600\nEXEC\n' \
+            | $COMPOSE exec -T -e REDISCLI_AUTH="$auth_pw" redis-state redis-cli --no-auth-warning --user svc_auth >/dev/null
+          [ "$(au WAITAOF 1 0 1000 | head -1)" = 1 ] || { echo "FAIL: WAITAOF did not confirm the session"; exit 1; }
           $COMPOSE restart redis-state
           # PONG only once the AOF is loaded; until then replies are LOADING.
           for _ in $(seq 1 30); do
@@ -212,6 +219,9 @@ jobs:
           value=$(a GET fixture_a:rl:probe)
           [ "$value" = 1 ] || { echo "FAIL: the key did not survive the restart (got '$value')"; exit 1; }
           a DEL fixture_a:rl:probe
+          [ "$(au HGET auth:session:probe sid)" = probe ] || { echo "FAIL: the MULTI/EXEC session did not survive the restart (#714)"; exit 1; }
+          [ "$(au SISMEMBER auth:user_sids:probe probe)" = 1 ] || { echo "FAIL: the user's session index did not survive the restart (#714)"; exit 1; }
+          au DEL auth:session:probe auth:user_sids:probe
           out=$(bash deploy/infra/check-redis.sh) || true
           if [ -n "$out" ]; then printf '%s\n' "$out"; exit 1; fi
 

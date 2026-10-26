@@ -97,4 +97,85 @@
     </plurals>
     <string name="scan_none_at_store">None at %1$s</string>
     <string name="scan_not_stocked_message">%1$s does not hold this product.</string>
+    <!-- Sale: customer -->
+    <string name="sale_customer_title">Customer</string>
+    <string name="sale_search_label">Name, email or phone</string>
+    <string name="sale_search_email_label">Exact email (optional)</string>
+    <string name="sale_search_button">Search customers</string>
+    <string name="sale_search_loading">Searching customers…</string>
+    <string name="sale_search_empty_title">No customers found</string>
+    <string name="sale_search_empty_help">Check the spelling, or add them with New customer.</string>
+    <string name="sale_new_customer">New customer</string>
+    <string name="sale_cancel">Cancel</string>
+    <string name="sale_change">Change</string>
+    <string name="sale_no_contact">No contact details</string>
+    <string name="sale_segment_loading">Looking up the segment…</string>
+    <string name="sale_interests_show">Show interests</string>
+    <string name="sale_interests_hide">Hide interests</string>
+    <string name="sale_interests_loading">Loading interests…</string>
+    <string name="sale_interests_load">Load interests</string>
+    <string name="sale_interests_save">Save interests</string>
+    <string name="sale_interests_saved">Interests saved.</string>
+    <!-- Sale: registration -->
+    <string name="sale_register_title">New customer</string>
+    <string name="sale_register_submit">Register customer</string>
+    <string name="sale_register_channel">Registration channel</string>
+    <string name="sale_register_unknown">The result is unknown. Search for this customer before registering again.</string>
+    <string name="sale_field_name">Name</string>
+    <string name="sale_field_required">Required</string>
+    <string name="sale_field_email">Email</string>
+    <string name="sale_field_phone">Phone</string>
+    <string name="sale_email_invalid">Enter a valid email address</string>
+    <string name="sale_channels_loading">Loading sales channels…</string>
+    <string name="sale_channels_load">Load channels</string>
+    <string name="sale_channel_in_store">In store</string>
+    <!-- Sale: items -->
+    <string name="sale_store_line">Selling at %1$s</string>
+    <string name="sale_store_missing">Check in at your store first.</string>
+    <string name="sale_store_action">Store and check-in</string>
+    <string name="sale_items_title">Items</string>
+    <string name="sale_product_label">Search products</string>
+    <string name="sale_product_help">Or scan a product and tap Add to sale.</string>
+    <string name="sale_product_search">Search</string>
+    <string name="sale_product_loading">Searching products…</string>
+    <string name="sale_product_empty_title">No products found</string>
+    <string name="sale_product_empty_help">Try another name or SKU.</string>
+    <string name="sale_product_inactive">Not available</string>
+    <string name="sale_add_item">Add %1$s</string>
+    <string name="sale_remove_item">Remove %1$s</string>
+    <string name="sale_cart_title">In this sale</string>
+    <string name="sale_cart_empty_title">No items yet</string>
+    <string name="sale_cart_empty_help">Search above, or scan a product.</string>
+    <string name="sale_unit_price">%1$s each</string>
+    <!-- Sale: bar and history -->
+    <string name="sale_total">Total</string>
+    <string name="sale_record">Record sale</string>
+    <string name="sale_another">Start another sale</string>
+    <string name="sale_saved">Sale saved. It will be sent when you are online.</string>
+    <string name="sale_blocker_store">Check in at your store to record a sale.</string>
+    <string name="sale_blocker_customer">Choose a customer to record the sale.</string>
+    <string name="sale_blocker_items">Add at least one item to record the sale.</string>
+    <string name="sale_blocker_channels">Sales channels are not loaded yet.</string>
+    <string name="sale_history_title">Sales on this phone</string>
+    <string name="sale_history_empty">No sales recorded on this phone yet.</string>
+    <string name="sale_history_row">Sale, %1$s</string>
+    <string name="sale_history_pending">Waiting for a connection.</string>
+    <string name="sale_history_recorded">Sale recorded.</string>
+    <string name="sale_check_status">Check sale status</string>
+    <string name="sale_state_waiting">Waiting to send</string>
+    <string name="sale_state_attention">Needs attention</string>
+    <string name="sale_state_sent">Sent</string>
+    <!-- Customer insights -->
+    <string name="insights_segment_title">Segment</string>
+    <string name="insights_loading">Loading the segment and recommendations…</string>
+    <string name="insights_no_segment">No segment yet for this customer</string>
+    <string name="insights_no_segment_short">No segment yet</string>
+    <string name="insights_unassigned">The latest run found no purchase to score.</string>
+    <string name="insights_not_run">No segmentation run has assigned this customer yet.</string>
+    <string name="insights_scores">Scores: recency %1$d, frequency %2$d, spend %3$d.</string>
+    <string name="insights_since">In this segment since %1$s.</string>
+    <string name="insights_recommendations_title">Recommendations</string>
+    <string name="insights_refresh">Refresh</string>
+    <string name="insights_open_product">Open %1$s in Scan</string>
+    <string name="insights_on_hand">%1$d on hand at their usual store</string>
 </resources>

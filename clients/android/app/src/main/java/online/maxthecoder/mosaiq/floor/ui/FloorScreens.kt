@@ -5,12 +5,15 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -52,7 +55,7 @@ fun FloorHome(
 ) {
     var tab by remember { mutableStateOf(Tab.CHECK_IN) }
     val chosen by model.chosen.collectAsState()
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("${signedIn.name} · ${signedIn.role}", style = MaterialTheme.typography.titleMedium)
         Row(
             modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -64,27 +67,30 @@ fun FloorHome(
             OutlinedButton(onClick = { tab = Tab.OUTBOX }) { Text("Outbox") }
             SignOutButton(model, onSignOut)
         }
-        when (tab) {
-            Tab.CHECK_IN -> StoreAndCheckIn(model)
-            Tab.SCAN ->
-                ScanScreen(
-                    scan,
-                    chosen,
-                    onPickStore = { tab = Tab.CHECK_IN },
-                    onAddProduct = sales::addProduct
-                )
-            Tab.SALE ->
-                SalesScreen(
-                    sales,
-                    chosen,
-                    onPickStore = { tab = Tab.CHECK_IN },
-                    insights = insights,
-                    onOpenProduct = { productId ->
-                        scan.showProduct(productId)
-                        tab = Tab.SCAN
-                    }
-                )
-            Tab.OUTBOX -> OutboxList(model)
+        // Each tab scrolls inside the room left under the header.
+        Box(modifier = Modifier.weight(1f).fillMaxSize()) {
+            when (tab) {
+                Tab.CHECK_IN -> StoreAndCheckIn(model)
+                Tab.SCAN ->
+                    ScanScreen(
+                        scan,
+                        chosen,
+                        onPickStore = { tab = Tab.CHECK_IN },
+                        onAddProduct = sales::addProduct
+                    )
+                Tab.SALE ->
+                    SalesScreen(
+                        sales,
+                        chosen,
+                        onPickStore = { tab = Tab.CHECK_IN },
+                        insights = insights,
+                        onOpenProduct = { productId ->
+                            scan.showProduct(productId)
+                            tab = Tab.SCAN
+                        }
+                    )
+                Tab.OUTBOX -> OutboxList(model)
+            }
         }
     }
 }
@@ -138,9 +144,14 @@ private fun StoreAndCheckIn(model: FloorViewModel) {
         StorePicker(model, onPicked = { picking = false })
         return
     }
-    Text("Store: ${store.name}", style = MaterialTheme.typography.titleMedium)
-    OutlinedButton(onClick = { picking = true }) { Text("Change store") }
-    CheckInPanel(model, store)
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text("Store: ${store.name}", style = MaterialTheme.typography.titleMedium)
+        OutlinedButton(onClick = { picking = true }) { Text("Change store") }
+        CheckInPanel(model, store)
+    }
 }
 
 @Composable
@@ -148,29 +159,32 @@ private fun StorePicker(model: FloorViewModel, onPicked: () -> Unit = {}) {
     val state by model.stores.collectAsState()
     var city by remember { mutableStateOf(state.city) }
     LaunchedEffect(Unit) { if (state.stores.isEmpty()) model.searchStores() }
-    Text("Pick your store", style = MaterialTheme.typography.titleMedium)
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(value = city, onValueChange = { city = it }, label = { Text("City") }, singleLine = true)
-        Button(onClick = { model.searchStores(city) }) { Text("Search") }
-    }
-    state.error?.let { ErrorPanel(it) }
-    LazyColumn(modifier = Modifier.fillMaxWidth()) {
-        items(state.stores, key = { it.storeId }) { store ->
-            TextButton(onClick = {
-                model.choose(store)
-                onPicked()
-            }) { Text("${store.name} · ${store.city}, ${store.state}") }
+    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Pick your store", style = MaterialTheme.typography.titleMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(value = city, onValueChange = { city = it }, label = { Text("City") }, singleLine = true)
+            Button(onClick = { model.searchStores(city) }) { Text("Search") }
         }
-    }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(enabled = state.page > 1, onClick = { model.searchStores(page = state.page - 1) }) {
-            Text("Previous")
+        state.error?.let { ErrorPanel(it) }
+        // Weighted, so a long list scrolls itself and the paging row below stays on screen.
+        LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            items(state.stores, key = { it.storeId }) { store ->
+                TextButton(onClick = {
+                    model.choose(store)
+                    onPicked()
+                }) { Text("${store.name} · ${store.city}, ${store.state}") }
+            }
         }
-        Text("Page ${state.page} of ${state.totalPages}")
-        OutlinedButton(
-            enabled = state.page < state.totalPages,
-            onClick = { model.searchStores(page = state.page + 1) }
-        ) { Text("Next") }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(enabled = state.page > 1, onClick = { model.searchStores(page = state.page - 1) }) {
+                Text("Previous")
+            }
+            Text("Page ${state.page} of ${state.totalPages}")
+            OutlinedButton(
+                enabled = state.page < state.totalPages,
+                onClick = { model.searchStores(page = state.page + 1) }
+            ) { Text("Next") }
+        }
     }
 }
 

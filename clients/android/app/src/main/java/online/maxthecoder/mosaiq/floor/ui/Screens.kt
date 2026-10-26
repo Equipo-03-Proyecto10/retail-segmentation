@@ -43,6 +43,11 @@ fun FloorApp(
     var email by rememberSaveable { mutableStateOf("") }
     MosaiqTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
+            // The floor shell has its own bars and insets, so it takes the whole window.
+            if (state is SessionState.SignedIn && floor != null) {
+                floor(state)
+                return@Surface
+            }
             // Bars, cutout and keyboard are kept clear of; the title stays put and the rest scrolls.
             Column(
                 modifier = Modifier.safeDrawingPadding().padding(24.dp),

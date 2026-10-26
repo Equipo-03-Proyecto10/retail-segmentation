@@ -3,6 +3,7 @@ package online.maxthecoder.mosaiq.floor
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -30,11 +31,11 @@ import online.maxthecoder.mosaiq.floor.session.ChosenStore
 import online.maxthecoder.mosaiq.floor.session.InMemorySessionStore
 import online.maxthecoder.mosaiq.floor.session.Profile
 import online.maxthecoder.mosaiq.floor.ui.CustomerInsightsViewModel
-import online.maxthecoder.mosaiq.floor.ui.FloorHome
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
 import online.maxthecoder.mosaiq.floor.ui.SalesViewModel
 import online.maxthecoder.mosaiq.floor.ui.ScanViewModel
 import online.maxthecoder.mosaiq.floor.ui.SessionState
+import online.maxthecoder.mosaiq.floor.ui.shell.FloorHome
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -115,8 +116,9 @@ class PermissionDeniedInstrumentedTest {
 
     @Test
     fun aDeniedCameraExplainsWhyAndOffersManualEntry() {
-        compose.onNodeWithText("Scan a product").performClick()
-        compose.onNodeWithText("Scan").performClick()
+        compose.onNodeWithTag("nav-scan").performClick()
+        // The bottom bar's label is also "Scan"; the button is the one that is not the tab.
+        compose.onNode(hasText("Scan") and hasClickAction() and !hasTestTag("nav-scan")).performClick()
         refuseAtTheSystemDialog()
         compose.waitUntil(timeoutMillis = 10_000) {
             compose.onAllNodes(hasTestTag("camera-denied")).fetchSemanticsNodes().isNotEmpty()

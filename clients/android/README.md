@@ -77,3 +77,14 @@ Every dependency version is pinned in `gradle/libs.versions.toml`.
 `ui/theme/` is the only place a color, type size, shape or spacing value is written (ADR-0057); `bash clients/android/check-adr41.sh` lists any that leak out. `ThemeDriftTest` compares the palette with `docs/design-system/tokens/resolved-tokens.css`, and `ThemeContrastTest` checks the WCAG ratios of the pairs the theme defines.
 
 `app/src/main/res/font/` holds IBM Plex Sans (one variable font) and IBM Plex Mono (400, 500, 600), licensed under the SIL Open Font License 1.1. They are the Latin subsets vendored in `docs/design-system/fonts/`, converted from woff2 to ttf, which Android cannot load as woff2. The conversion only unwraps the woff2 container; the glyphs are unchanged. The license is the one `docs/design-system/README.md` names for those files.
+
+## Icons (Lucide, ISC)
+
+Icons are [Lucide](https://lucide.dev) icons, vendored as vector drawables in `app/src/main/res/drawable/` named `ic_lucide_<name>.xml` (Android resource names use underscores where Lucide uses hyphens). No icon library is a dependency.
+
+- **Source:** `lucide-static` 0.468.0, `https://unpkg.com/lucide-static@0.468.0/icons/<name>.svg`.
+- **License:** ISC, Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT); all other copyright (c) for Lucide are held by Lucide Contributors 2022.
+- **Conversion:** only the shape geometry (`path`, `circle`, `line`, `rect`, `polyline`) is kept, in a 24dp viewport with no fill, a black 2-unit stroke and round caps and joins. The black is a placeholder: every use site tints it with `Icon(tint = ...)` through `MqIcon`.
+- **Component kit:** `ui/components/` holds the `Mq*` components (button, text field, list row, badge, loading, empty state, pager, error panel, card, section, quantity stepper, snackbar host). Each has a preview in both schemes in `ComponentsPreview.kt`.
+
+Icons in use: search, x, plus, minus, chevron-right, chevron-down, eye, eye-off, circle-alert, circle-check, info, refresh-cw, package, user-search, trash-2, clock, wifi-off, triangle-alert.

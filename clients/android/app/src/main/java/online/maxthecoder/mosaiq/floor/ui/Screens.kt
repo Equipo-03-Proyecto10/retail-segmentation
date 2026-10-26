@@ -28,6 +28,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import online.maxthecoder.mosaiq.floor.net.ApiError
+import online.maxthecoder.mosaiq.floor.ui.components.MqErrorPanel
 import online.maxthecoder.mosaiq.floor.ui.theme.MosaiqTheme
 
 @Composable
@@ -125,16 +126,8 @@ private fun SignedInPanel(state: SessionState.SignedIn, onSignOut: () -> Unit) {
     OutlinedButton(onClick = onSignOut) { Text("Sign out") }
 }
 
-/** Every refusal shows its code, its message and the request's correlation id. */
+/** A refusal in plain words; the code and correlation id sit behind "Details" (see [MqErrorPanel]). */
 @Composable
 fun ErrorPanel(error: ApiError) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(error.message, color = MaterialTheme.colorScheme.error)
-        Text("Code: ${error.code}", style = MaterialTheme.typography.bodySmall)
-        if (error.code == "future_dated") Text("Check the phone's date, time and time zone.")
-        error.details.forEach { detail ->
-            Text("${detail.field}: ${detail.code}", style = MaterialTheme.typography.bodySmall)
-        }
-        Text("Correlation ID: ${error.correlationId ?: "none"}", style = MaterialTheme.typography.bodySmall)
-    }
+    MqErrorPanel(error)
 }

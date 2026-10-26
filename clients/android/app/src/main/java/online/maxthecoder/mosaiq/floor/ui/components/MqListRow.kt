@@ -2,6 +2,7 @@ package online.maxthecoder.mosaiq.floor.ui.components
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.Dp
 import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
 
@@ -32,7 +34,9 @@ fun MqListRow(
     chevron: Boolean = false,
     divider: Boolean = false,
     leading: (@Composable () -> Unit)? = null,
-    trailing: (@Composable () -> Unit)? = null
+    trailing: (@Composable () -> Unit)? = null,
+    belowSupporting: (@Composable () -> Unit)? = null,
+    horizontalPadding: Dp = Spacing.Lg
 ) {
     Column(modifier) {
         Row(
@@ -47,7 +51,7 @@ fun MqListRow(
                     }
                 )
                 .heightIn(min = RowHeight)
-                .padding(horizontal = Spacing.Lg, vertical = Spacing.Sm),
+                .padding(horizontal = horizontalPadding, vertical = Spacing.Sm),
             horizontalArrangement = Arrangement.spacedBy(Spacing.Md),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -60,6 +64,9 @@ fun MqListRow(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+                belowSupporting?.let {
+                    Box(Modifier.padding(top = Spacing.Xs)) { it() }
                 }
             }
             trailing?.invoke()

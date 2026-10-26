@@ -6,10 +6,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,6 +23,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.net.CurrentAssignment
@@ -84,37 +85,38 @@ fun CustomerInsightsContent(
     modifier: Modifier = Modifier
 ) {
     if (state.customerId == null) return
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Spacing.Md)) {
-        SegmentCard(state, onRetry)
-        RecommendationsBlock(state, onRetry, onOpen)
+    MqCard(modifier) {
+        SegmentPart(state, onRetry)
+        if (!state.loading) {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            RecommendationsBlock(state, onRetry, onOpen)
+        }
     }
 }
 
 @Composable
-private fun SegmentCard(state: InsightsState, onRetry: () -> Unit) {
+private fun SegmentPart(state: InsightsState, onRetry: () -> Unit) {
     val assignment = state.assignment
     val error = state.assignmentError
-    MqCard {
-        Text(
-            stringResource(R.string.insights_segment_title),
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.semantics { heading() }
-        )
-        when {
-            state.loading -> MqLoading(stringResource(R.string.insights_loading))
-            error != null -> MqErrorPanel(error, onRetry = onRetry)
-            assignment != null && state.segmentLabel() != null -> {
-                SegmentBadge(state.segmentLabel().orEmpty(), Modifier.testTag("segment"))
-                explanation(assignment)?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
-            }
-            else ->
-                MqEmptyState(
-                    icon = R.drawable.ic_lucide_user_search,
-                    title = stringResource(R.string.insights_no_segment),
-                    message = assignment?.let { noSegmentReason(it) },
-                    modifier = Modifier.testTag("segment-empty")
-                )
+    Text(
+        stringResource(R.string.insights_segment_title),
+        style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.semantics { heading() }
+    )
+    when {
+        state.loading -> MqLoading(stringResource(R.string.insights_loading))
+        error != null -> MqErrorPanel(error, onRetry = onRetry)
+        assignment != null && state.segmentLabel() != null -> {
+            SegmentBadge(state.segmentLabel().orEmpty(), Modifier.testTag("segment"))
+            explanation(assignment)?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
         }
+        else ->
+            MqEmptyState(
+                icon = R.drawable.ic_lucide_user_search,
+                title = stringResource(R.string.insights_no_segment),
+                message = assignment?.let { noSegmentReason(it) },
+                modifier = Modifier.testTag("segment-empty")
+            )
     }
 }
 
@@ -137,12 +139,11 @@ private fun noSegmentReason(assignment: CurrentAssignment): String? = when (assi
 
 @Composable
 private fun RecommendationsBlock(state: InsightsState, onRetry: () -> Unit, onOpen: (ShownRecommendation) -> Unit) {
-    if (state.loading) return
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Xs)) {
         Text(
             stringResource(R.string.insights_recommendations_title),
             style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(horizontal = Spacing.Lg).semantics { heading() }
+            modifier = Modifier.semantics { heading() }
         )
         val result = state.recommendations
         val error = state.recommendationsError
@@ -153,7 +154,7 @@ private fun RecommendationsBlock(state: InsightsState, onRetry: () -> Unit, onOp
                     CustomerInsightsViewModel.whyNone(result.status),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = Spacing.Lg).testTag("why-none")
+                    modifier = Modifier.testTag("why-none")
                 )
         }
         state.items.forEach { shown -> RecommendationRow(shown, onOpen) }
@@ -161,8 +162,7 @@ private fun RecommendationsBlock(state: InsightsState, onRetry: () -> Unit, onOp
             Text(
                 it,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(horizontal = Spacing.Lg)
+                color = MaterialTheme.colorScheme.error
             )
         }
         if (error == null && result != null) {
@@ -185,6 +185,7 @@ private fun RecommendationRow(shown: ShownRecommendation, onOpen: (ShownRecommen
         supporting = (listOf(onHand) + shown.reasons).joinToString("\n"),
         chevron = true,
         divider = true,
+        horizontalPadding = 0.dp,
         modifier =
         Modifier
             .testTag("recommendation-${shown.rank}")

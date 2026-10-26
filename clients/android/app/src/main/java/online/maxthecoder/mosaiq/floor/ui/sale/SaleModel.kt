@@ -21,10 +21,7 @@ data class SaleUi(
     val history: List<OutboxRow> = emptyList(),
     val store: ChosenStore? = null,
     val statusMessage: String? = null,
-    val statusError: ApiError? = null,
-    /** The chosen customer's segment in words, once insights know it. */
-    val segmentLabel: String? = null,
-    val segmentLoading: Boolean = false
+    val statusError: ApiError? = null
 )
 
 /** What the sale screen can ask for; the stateful wrapper wires each to the view model. */

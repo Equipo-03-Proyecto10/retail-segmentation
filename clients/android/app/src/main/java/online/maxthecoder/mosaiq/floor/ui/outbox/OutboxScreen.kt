@@ -115,7 +115,7 @@ private fun OutboxItem(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             },
-            trailing = { StateBadge(row.state) }
+            belowSupporting = { StateBadge(row.state) }
         )
         if (refused) {
             Column(

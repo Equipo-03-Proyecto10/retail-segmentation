@@ -109,7 +109,6 @@
     <string name="sale_cancel">Cancel</string>
     <string name="sale_change">Change</string>
     <string name="sale_no_contact">No contact details</string>
-    <string name="sale_segment_loading">Looking up the segment…</string>
     <string name="sale_interests_show">Show interests</string>
     <string name="sale_interests_hide">Hide interests</string>
     <string name="sale_interests_loading">Loading interests…</string>
@@ -169,7 +168,6 @@
     <string name="insights_segment_title">Segment</string>
     <string name="insights_loading">Loading the segment and recommendations…</string>
     <string name="insights_no_segment">No segment yet for this customer</string>
-    <string name="insights_no_segment_short">No segment yet</string>
     <string name="insights_unassigned">The latest run found no purchase to score.</string>
     <string name="insights_not_run">No segmentation run has assigned this customer yet.</string>
     <string name="insights_scores">Scores: recency %1$d, frequency %2$d, spend %3$d.</string>

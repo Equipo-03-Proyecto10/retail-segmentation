@@ -86,7 +86,6 @@ class SaleContentTest {
                     customer = ana,
                     store = store,
                     registration = ready,
-                    segmentLabel = "Loyal regulars",
                     sale = SaleBuilderState(lines = listOf(SaleLine(socks, 2)))
                 )
             },
@@ -94,7 +93,8 @@ class SaleContentTest {
         )
         compose.onNodeWithText("Ana Torres").assertExists()
         compose.onNodeWithText("ana@example.com").assertExists()
-        compose.onNodeWithText("Loyal regulars").assertExists()
+        // The segment lives only in the insights card, never in the customer card.
+        compose.onNodeWithText("Loyal regulars").assertDoesNotExist()
         compose.onNodeWithText("Change").assertExists()
         compose.onNodeWithText("$12.50 each").assertExists()
         compose.onNodeWithTag("sale-total").assertTextEquals("$25.00")

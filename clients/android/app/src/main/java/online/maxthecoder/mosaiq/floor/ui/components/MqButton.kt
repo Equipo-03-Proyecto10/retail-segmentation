@@ -113,5 +113,10 @@ fun MqButton(
 @Composable
 private fun held(container: Color, content: Color, loading: Boolean): ButtonColors {
     val base = ButtonDefaults.buttonColors(containerColor = container, contentColor = content)
-    return if (loading) base.copy(disabledContainerColor = container, disabledContentColor = content) else base
+    return when {
+        loading -> base.copy(disabledContainerColor = container, disabledContentColor = content)
+        // A see-through button stays see-through when disabled, so it dims instead of filling gray.
+        container == Color.Transparent -> base.copy(disabledContainerColor = Color.Transparent)
+        else -> base
+    }
 }

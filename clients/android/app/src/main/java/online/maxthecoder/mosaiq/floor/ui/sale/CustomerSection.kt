@@ -27,8 +27,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.net.Customer
 import online.maxthecoder.mosaiq.floor.ui.InterestsState
-import online.maxthecoder.mosaiq.floor.ui.SegmentBadge
-import online.maxthecoder.mosaiq.floor.ui.components.MqBadge
 import online.maxthecoder.mosaiq.floor.ui.components.MqButton
 import online.maxthecoder.mosaiq.floor.ui.components.MqButtonVariant
 import online.maxthecoder.mosaiq.floor.ui.components.MqEmptyState
@@ -77,11 +75,6 @@ private fun ChosenCustomer(customer: Customer, ui: SaleUi, actions: SaleActions,
                 )
             }
             MqButton(stringResource(R.string.sale_change), onChange, variant = MqButtonVariant.Secondary)
-        }
-        when {
-            ui.segmentLoading -> MqLoading(stringResource(R.string.sale_segment_loading))
-            ui.segmentLabel != null -> SegmentBadge(ui.segmentLabel)
-            else -> MqBadge(stringResource(R.string.insights_no_segment_short))
         }
         MqButton(
             stringResource(if (interestsOpen) R.string.sale_interests_hide else R.string.sale_interests_show),

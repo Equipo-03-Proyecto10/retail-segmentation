@@ -3,9 +3,12 @@ package online.maxthecoder.mosaiq.floor.ui.checkin
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -82,7 +85,11 @@ fun StorePickerContent(
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.semantics { heading() }
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Sm), verticalAlignment = Alignment.Top) {
+        Row(
+            modifier = Modifier.height(IntrinsicSize.Min),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.Sm),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             MqTextField(
                 value = city,
                 onValueChange = onCity,
@@ -97,7 +104,8 @@ fun StorePickerContent(
                 enabled = !state.loading,
                 variant = MqButtonVariant.Secondary,
                 leadingIcon = R.drawable.ic_lucide_search,
-                modifier = Modifier.padding(top = Spacing.Xs)
+                // The field's outline starts below its floating label, so the button starts there too.
+                modifier = Modifier.fillMaxHeight().padding(top = Spacing.Sm)
             )
         }
         // Weighted, so a long list scrolls itself and the paging row below stays on screen.

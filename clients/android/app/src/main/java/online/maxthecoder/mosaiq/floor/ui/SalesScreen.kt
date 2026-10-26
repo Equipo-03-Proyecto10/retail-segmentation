@@ -65,7 +65,6 @@ fun SalesScreen(
     val history by model.history.collectAsStateWithLifecycle()
     val status by model.statusMessage.collectAsStateWithLifecycle()
     val statusError by model.statusError.collectAsStateWithLifecycle()
-    val insightsState by insights.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val saved = stringResource(R.string.sale_saved)
     val customerId = customer?.customerId
@@ -78,7 +77,6 @@ fun SalesScreen(
         if (sale.queuedRowId != null) snackbar.showSnackbar(saved)
     }
 
-    val forCustomer = insightsState.takeIf { customerId != null && it.customerId == customerId }
     val ui =
         SaleUi(
             customer = customer,
@@ -89,9 +87,7 @@ fun SalesScreen(
             history = history,
             store = store,
             statusMessage = status,
-            statusError = statusError,
-            segmentLabel = forCustomer?.segmentLabel(),
-            segmentLoading = if (customerId == null) false else forCustomer?.loading ?: true
+            statusError = statusError
         )
     val actions =
         SaleActions(
@@ -135,7 +131,7 @@ fun SalesContent(ui: SaleUi, actions: SaleActions, snackbar: SnackbarHostState, 
     }
     Column(Modifier.fillMaxSize()) {
         Column(
-            Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+            Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = Spacing.Lg),
             verticalArrangement = Arrangement.spacedBy(Spacing.Xxl)
         ) {
             StoreLine(ui.store, actions.onPickStore)
@@ -199,7 +195,6 @@ private val previewFilled =
     SaleUi(
         customer = previewCustomer,
         store = previewStore,
-        segmentLabel = "Loyal regulars",
         registration = RegistrationState(channels = previewChannels, selectedChannelId = 1),
         sale = SaleBuilderState(lines = listOf(SaleLine(previewProduct, 2)))
     )

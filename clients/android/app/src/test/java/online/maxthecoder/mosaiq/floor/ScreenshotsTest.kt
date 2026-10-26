@@ -146,9 +146,11 @@ class ScreenshotsTest {
     }
 
     @Test fun signInEmpty() = shoot("signin-empty") {
-        androidx.compose.foundation.layout.Column(
-            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(24.dp)
-        ) { SignInContent("", "", {}, {}, null, null, false, noop) }
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            androidx.compose.foundation.layout.Column(
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(24.dp)
+            ) { SignInContent("", "", {}, {}, null, null, false, noop) }
+        }
     }
 
     @Test fun signInError() = signIn(ApiError(401, "invalid_credentials", "raw", "corr-1"), name = "signin-error")
@@ -249,7 +251,6 @@ class ScreenshotsTest {
         customer = ana,
         store = store,
         registration = ready,
-        segmentLabel = "Loyal regulars",
         sale = SaleBuilderState(lines = listOf(SaleLine(socks, 2), SaleLine(shirt, 1)))
     )
 

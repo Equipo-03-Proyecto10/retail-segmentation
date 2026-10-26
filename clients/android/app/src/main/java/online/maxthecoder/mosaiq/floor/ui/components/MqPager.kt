@@ -22,14 +22,14 @@ fun MqPager(page: Int, pageCount: Int, onPrevious: () -> Unit, onNext: () -> Uni
         horizontalArrangement = Arrangement.spacedBy(Spacing.Sm),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        MqButton("Previous", onPrevious, variant = MqButtonVariant.Quiet, enabled = page > 1)
+        MqButton("Previous", onPrevious, variant = MqButtonVariant.Secondary, enabled = page > 1)
         Text(
             "Page $page of $pageCount",
             modifier = Modifier.weight(1f),
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.bodyMedium
         )
-        MqButton("Next", onNext, variant = MqButtonVariant.Quiet, enabled = page < pageCount)
+        MqButton("Next", onNext, variant = MqButtonVariant.Secondary, enabled = page < pageCount)
     }
 }
 

@@ -1,14 +1,5 @@
 package online.maxthecoder.mosaiq.floor.ui.scan
 
-import java.text.NumberFormat
-import java.util.Locale
-
-/** A product price as the floor reads it: "$12.50". A value that is not a number is shown as sent. */
-fun formatPrice(raw: String): String {
-    val value = raw.trim().toBigDecimalOrNull() ?: return raw
-    return NumberFormat.getCurrencyInstance(Locale.US).format(value)
-}
-
 /** How the stock at the checked-in store reads on the badge. */
 enum class StockStatus { IN_STOCK, OUT_OF_STOCK, NOT_STOCKED }
 

@@ -116,7 +116,7 @@ fun MqErrorPanel(
         color = scheme.surface,
         border = BorderStroke(Hairline, scheme.error)
     ) {
-        Column(Modifier.padding(Spacing.Lg), verticalArrangement = Arrangement.spacedBy(Spacing.Sm)) {
+        Column(Modifier.padding(Spacing.Lg), verticalArrangement = Arrangement.spacedBy(Spacing.Md)) {
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Md), verticalAlignment = Alignment.Top) {
                 MqIcon(R.drawable.ic_lucide_circle_alert, contentDescription = null, tint = scheme.error)
                 Column(verticalArrangement = Arrangement.spacedBy(Spacing.Xs)) {

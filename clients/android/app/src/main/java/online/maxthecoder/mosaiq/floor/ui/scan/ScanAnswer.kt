@@ -21,6 +21,7 @@ import online.maxthecoder.mosaiq.floor.ui.components.MqEmptyState
 import online.maxthecoder.mosaiq.floor.ui.components.MqErrorPanel
 import online.maxthecoder.mosaiq.floor.ui.components.MqLoading
 import online.maxthecoder.mosaiq.floor.ui.components.MqTone
+import online.maxthecoder.mosaiq.floor.ui.formatMoney
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
 
 /**
@@ -90,9 +91,9 @@ private fun ProductCard(shown: ScanResult.Shown, onScanAnother: () -> Unit, onAd
     MqCard {
         Text(product.name, style = MaterialTheme.typography.titleLarge)
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Md), verticalAlignment = Alignment.Bottom) {
-            Text(formatPrice(product.listPrice), style = MaterialTheme.typography.titleMedium)
+            Text(formatMoney(product.listPrice), style = MaterialTheme.typography.titleMedium)
             Text(
-                stringResource(R.string.scan_sku, product.sku),
+                skuLabel(product.sku),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -143,3 +144,8 @@ private fun stockLine(quantity: Int?, storeName: String): String = when {
     quantity <= 0 -> stringResource(R.string.scan_none_at_store, storeName)
     else -> pluralStringResource(R.plurals.scan_units_at_store, quantity, quantity, storeName)
 }
+
+/** "SKU 120" for a bare code; a code that already starts with "SKU" is shown as is. */
+@Composable
+private fun skuLabel(sku: String): String =
+    if (sku.startsWith("SKU", ignoreCase = true)) sku else stringResource(R.string.scan_sku, sku)

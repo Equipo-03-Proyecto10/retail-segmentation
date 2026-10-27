@@ -148,5 +148,12 @@ class FloorViewModel(
                     ?: return UNREADABLE_ANSWER
             return describe(result)
         }
+
+        /** Whether the server verified the check-in; `null` when there is no readable answer yet. */
+        fun verifiedOf(row: OutboxRow?): Boolean? {
+            if (row?.state != RowState.DONE) return null
+            val body = row.responseBody ?: return null
+            return runCatching { json.decodeFromString(CheckInResult.serializer(), body).verified }.getOrNull()
+        }
     }
 }

@@ -112,6 +112,8 @@ class FloorScreensTest {
         compose.onNodeWithText("Waiting to send").assertExists()
         compose.runOnUiThread { status = CheckInStatus.Done("14:32") }
         compose.onNodeWithText("Checked in at 14:32").assertExists()
+        compose.runOnUiThread { status = CheckInStatus.Done("14:32", verified = false) }
+        compose.onNodeWithText("Checked in at 14:32, not verified").assertExists()
         compose.runOnUiThread { status = CheckInStatus.Sending }
         compose.onNodeWithText("Finding your position…").assertExists()
         compose.runOnUiThread { status = CheckInStatus.NeedsAttention(ApiError(422, "x", "Too far away.", "c-9")) }

@@ -85,6 +85,26 @@ class FloorViewModelCrashPathsTest {
         )
     }
 
+    private fun answerBody(verified: Boolean) =
+        """{"check_in_id":"c-1","client_check_in_id":"x","user_id":"A","store_id":3,""" +
+            """"latitude":25.6866,"longitude":-100.3161,"accuracy_m":8.0,"distance_m":812.0,""" +
+            """"reason":"outside_geofence","auto_verified":$verified,"verified":$verified,""" +
+            """"occurred_at":"2026-10-21T12:00:00Z","recorded_at":"2026-10-21T12:00:01Z"}"""
+
+    @Test
+    fun aCheckInTheServerCouldNotVerifyIsNotReportedAsVerified() {
+        assertEquals(true, FloorViewModel.verifiedOf(row(RowState.DONE, answerBody(verified = true))))
+        assertEquals(false, FloorViewModel.verifiedOf(row(RowState.DONE, answerBody(verified = false))))
+    }
+
+    @Test
+    fun theVerdictIsUnknownUntilThereIsAReadableAnswer() {
+        assertNull(FloorViewModel.verifiedOf(null))
+        assertNull(FloorViewModel.verifiedOf(row(RowState.PENDING, answerBody(verified = true))))
+        assertNull(FloorViewModel.verifiedOf(row(RowState.DONE, null)))
+        assertNull(FloorViewModel.verifiedOf(row(RowState.DONE, "{not json")))
+    }
+
     @Test
     fun noStoredAnswerYetIsStillNothingToShow() {
         assertNull(FloorViewModel.resultOf(null))

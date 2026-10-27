@@ -91,8 +91,8 @@ sealed interface CheckInStatus {
     /** Saved on the phone; it goes out when the network allows. */
     data object Waiting : CheckInStatus
 
-    /** The server took it; [time] is the clock time of the check-in. */
-    data class Done(val time: String) : CheckInStatus
+    /** The server took it; [time] is the clock time of the check-in and [verified] is its verdict. */
+    data class Done(val time: String, val verified: Boolean = true) : CheckInStatus
 
     /** The server refused it. */
     data class NeedsAttention(val error: ApiError) : CheckInStatus
@@ -123,7 +123,7 @@ fun CheckInPanel(model: FloorViewModel, store: ChosenStore, onChangeStore: () ->
             current == CheckInState.Locating -> CheckInStatus.Sending
             current is CheckInState.Queued && refused != null -> CheckInStatus.NeedsAttention(refused.asError())
             current is CheckInState.Queued && row?.state == RowState.DONE ->
-                CheckInStatus.Done(clockTime(row?.createdAt ?: 0L))
+                CheckInStatus.Done(clockTime(row?.createdAt ?: 0L), FloorViewModel.verifiedOf(row) == true)
             current is CheckInState.Queued -> CheckInStatus.Waiting
             else -> CheckInStatus.NotCheckedIn
         }
@@ -266,11 +266,20 @@ private fun StatusBadge(status: CheckInStatus) {
                 leadingIcon = R.drawable.ic_lucide_clock
             )
         is CheckInStatus.Done ->
-            MqBadge(
-                stringResource(R.string.checkin_checked_in_at, status.time),
-                tone = MqTone.Success,
-                leadingIcon = R.drawable.ic_lucide_circle_check
-            )
+            // The server took the check-in but could not vouch for it (too far, no fix): not a plain success.
+            if (status.verified) {
+                MqBadge(
+                    stringResource(R.string.checkin_checked_in_at, status.time),
+                    tone = MqTone.Success,
+                    leadingIcon = R.drawable.ic_lucide_circle_check
+                )
+            } else {
+                MqBadge(
+                    stringResource(R.string.checkin_checked_in_unverified, status.time),
+                    tone = MqTone.Warning,
+                    leadingIcon = R.drawable.ic_lucide_triangle_alert
+                )
+            }
         is CheckInStatus.NeedsAttention ->
             MqBadge(
                 stringResource(R.string.checkin_needs_attention),

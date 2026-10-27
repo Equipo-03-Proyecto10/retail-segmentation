@@ -19,6 +19,7 @@
     <!-- Check-in -->
     <string name="checkin_not_checked_in">Not checked in</string>
     <string name="checkin_checked_in_at">Checked in at %1$s</string>
+    <string name="checkin_checked_in_unverified">Checked in at %1$s, not verified</string>
     <string name="checkin_waiting">Waiting to send</string>
     <string name="checkin_needs_attention">Needs attention</string>
     <string name="checkin_locating">Finding your position…</string>

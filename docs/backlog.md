@@ -921,6 +921,36 @@ Epic #403.
 | F17-05 | #441 | Show the customer's current segment and recommendations, one RECO_CLICK per tap | P0 | F17-01, F17-02, F17-03, F17-04, F14-05, F14-06, F14-19, F14-20, F14-21, F14-22, F14-23, F14-24 |
 | F17-06 | #445 | Build, lint and test the Android client in CI and publish the debug APK | P1 | F17-01, F17-02, F17-03, F17-04, F17-05 |
 
+## Phase 17 follow-up — Android UI/UX refresh
+
+Epic #716. Phase 17 (#403) delivered a working floor app with the default Material3 look; this
+follow-up brings it to the MOSAIQ design system (ADR-0057), fixes the layout, state and camera
+defects found on 2026-10-26, and records the result. Navigation is decided in ADR-0058. Ids are
+`UX-<n>` because the refresh belongs to no new phase: phase 18 is deployment.
+
+UX-03 and UX-14 fix files the redesigns rewrite, so they merge first; UX-10 follows UX-09, which
+shares the sale screen with it.
+
+| ID | Issue | Story | Priority | Depends on |
+|---|---|---|---|---|
+| UX-01 | #717 | Accept the Android theme and navigation decisions (ADR-0057, ADR-0058) | P0 | — |
+| UX-02 | #720 | Add a MosaiqTheme with light and dark schemes, IBM Plex type and shapes, and recolor the launcher icon | P0 | UX-01 |
+| UX-03 | #718 | Fix edge-to-edge insets, IME overlap and non-scrolling screens | P0 | — |
+| UX-04 | #722 | Build the shared component kit | P0 | UX-02 |
+| UX-05 | #723 | Replace the button-row tabs with bottom navigation, saved selection and back handling | P0 | UX-02, UX-03, UX-04 |
+| UX-06 | #724 | Redesign sign-in and the session error panel with human error messages | P1 | UX-03, UX-04 |
+| UX-07 | #725 | Redesign the store picker and check-in, with loading and empty states | P1 | UX-03, UX-04, UX-05, UX-14 |
+| UX-08 | #726 | Fix the scanner camera lifecycle and redesign the scan result | P1 | UX-03, UX-04, UX-05 |
+| UX-09 | #727 | Redesign customer search, registration and sale builder, and fix the insights reload on scroll | P1 | UX-03, UX-04, UX-05, UX-14 |
+| UX-10 | #728 | Redesign the segment and recommendations card with the categorical palette | P1 | UX-03, UX-04, UX-09, UX-14 |
+| UX-11 | #729 | Redesign the outbox screen with status badges and retry affordance | P1 | UX-03, UX-04, UX-05 |
+| UX-12 | #730 | Move leftover UI strings to resources, add plurals and currency formatting | P2 | UX-04 |
+| UX-13 | #731 | Make the client accessible | P1 | UX-07, UX-08, UX-09, UX-10, UX-11 |
+| UX-14 | #719 | Remove crash paths in view models | P1 | — |
+| UX-15 | #721 | Deduplicate the Answer/call wrapper, pager math and outbox-to-error mapping | P2 | UX-14 |
+| UX-16 | #732 | Add Compose UI tests and previews for the untested screens, plus rotation and process-death tests | P1 | UX-07, UX-08, UX-09, UX-10, UX-11 |
+| UX-17 | #733 | Re-run the screen tour and record before/after evidence | P2 | UX-13, UX-16 |
+
 ## Phase 18 — Deployment and end-to-end demonstration
 
 Epic #404.

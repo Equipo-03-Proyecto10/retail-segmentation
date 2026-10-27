@@ -112,3 +112,43 @@ private fun OfflineDark() = Frame(dark = true) {
 @Preview(name = "No store, light", widthDp = PREVIEW_WIDTH, heightDp = PREVIEW_HEIGHT, showBackground = true)
 @Composable
 private fun NoStoreLight() = Frame(dark = false) { Body(store = null) }
+
+// The counterparts that complete light and dark for every scan state (UX-16).
+@Preview(
+    name = "Product out of stock, light",
+    widthDp = PREVIEW_WIDTH,
+    heightDp = PREVIEW_HEIGHT,
+    showBackground = true
+)
+@Composable
+private fun ProductOutLight() = Frame(dark = false) {
+    Body(result = ScanResult.Shown(sample, "Coyoacan", 0, null, 1L))
+}
+
+@Preview(name = "Product, dark", widthDp = PREVIEW_WIDTH, heightDp = PREVIEW_HEIGHT, showBackground = true)
+@Composable
+private fun ProductDark() = Frame(dark = true) {
+    Body(result = ScanResult.Shown(sample, "Coyoacan", SAMPLE_STOCK, null, 1L))
+}
+
+@Preview(name = "Not found, dark", widthDp = PREVIEW_WIDTH, heightDp = PREVIEW_HEIGHT, showBackground = true)
+@Composable
+private fun NotFoundDark() = Frame(dark = true) { Body(result = ScanResult.ProductNotFound) }
+
+@Preview(name = "Offline, light", widthDp = PREVIEW_WIDTH, heightDp = PREVIEW_HEIGHT, showBackground = true)
+@Composable
+private fun OfflineLight() = Frame(dark = false) {
+    Body(result = ScanResult.Failed(ApiError.unreachable(null)))
+}
+
+@Preview(name = "Looking up, light", widthDp = PREVIEW_WIDTH, heightDp = PREVIEW_HEIGHT, showBackground = true)
+@Composable
+private fun LookingLight() = Frame(dark = false) { Body(result = ScanResult.Looking) }
+
+@Preview(name = "Looking up, dark", widthDp = PREVIEW_WIDTH, heightDp = PREVIEW_HEIGHT, showBackground = true)
+@Composable
+private fun LookingDark() = Frame(dark = true) { Body(result = ScanResult.Looking) }
+
+@Preview(name = "No store, dark", widthDp = PREVIEW_WIDTH, heightDp = PREVIEW_HEIGHT, showBackground = true)
+@Composable
+private fun NoStoreDark() = Frame(dark = true) { Body(store = null) }

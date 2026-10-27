@@ -1,6 +1,6 @@
 # ADR-0057 — The Android client themes Material3 with the MOSAIQ tokens, adapted for a handheld
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Max
 **Issue:** #717 (UX-01), epic #716
 **Supersedes:** —

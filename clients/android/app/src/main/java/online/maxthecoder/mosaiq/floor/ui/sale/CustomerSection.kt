@@ -19,9 +19,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import online.maxthecoder.mosaiq.floor.R
@@ -37,6 +41,9 @@ import online.maxthecoder.mosaiq.floor.ui.components.MqPager
 import online.maxthecoder.mosaiq.floor.ui.components.MqSection
 import online.maxthecoder.mosaiq.floor.ui.components.MqTextField
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
+
+/** Past this font scale a row of text beside a button stacks instead. */
+private const val LARGE_FONT_SCALE = 1.3f
 
 /** Section 1: find or register a customer, or show the chosen one with their segment. */
 @Composable
@@ -61,8 +68,11 @@ fun CustomerSection(ui: SaleUi, actions: SaleActions, onNewCustomer: () -> Unit)
 private fun ChosenCustomer(customer: Customer, ui: SaleUi, actions: SaleActions, onChange: () -> Unit) {
     var interestsOpen by rememberSaveable { mutableStateOf(false) }
     MqSection(stringResource(R.string.sale_customer_title)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.Md)) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.Xs)) {
+        val details: @Composable (Modifier) -> Unit = { modifier ->
+            Column(
+                modifier.semantics(mergeDescendants = true) {},
+                verticalArrangement = Arrangement.spacedBy(Spacing.Xs)
+            ) {
                 Text(
                     customer.name,
                     style = MaterialTheme.typography.titleMedium,
@@ -74,7 +84,22 @@ private fun ChosenCustomer(customer: Customer, ui: SaleUi, actions: SaleActions,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            MqButton(stringResource(R.string.sale_change), onChange, variant = MqButtonVariant.Secondary)
+        }
+        val change = stringResource(R.string.sale_change)
+        // At large font sizes the email would wrap mid-word beside the button, so the button drops below.
+        if (LocalDensity.current.fontScale > LARGE_FONT_SCALE) {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.Md)) {
+                details(Modifier)
+                MqButton(change, onChange, variant = MqButtonVariant.Secondary)
+            }
+        } else {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Spacing.Md)
+            ) {
+                details(Modifier.weight(1f))
+                MqButton(change, onChange, variant = MqButtonVariant.Secondary)
+            }
         }
         MqButton(
             stringResource(if (interestsOpen) R.string.sale_interests_hide else R.string.sale_interests_show),
@@ -123,7 +148,8 @@ private fun Interests(state: InterestsState, actions: SaleActions) {
             if (state.saved) {
                 Text(
                     stringResource(R.string.sale_interests_saved),
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
                 )
             }
         }

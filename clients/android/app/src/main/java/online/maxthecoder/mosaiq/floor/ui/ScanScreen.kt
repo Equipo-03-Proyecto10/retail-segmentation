@@ -221,7 +221,8 @@ fun ScanBody(
         }
         Text(
             stringResource(R.string.scan_store_caption, store.name),
-            style = MaterialTheme.typography.titleMedium
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.semantics { heading() }
         )
         when {
             permission == CameraPermission.DENIED -> CameraDenied(onOpenSettings, onGrantAccess)

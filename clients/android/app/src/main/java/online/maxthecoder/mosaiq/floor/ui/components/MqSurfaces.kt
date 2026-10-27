@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -75,9 +76,13 @@ fun MqQuantityStepper(
                 contentDescription = stringResource(R.string.component_decrease_quantity)
             )
         }
+        val spoken = stringResource(R.string.a11y_quantity, value)
         Text(
             value.toString(),
-            modifier = Modifier.widthIn(min = Spacing.X4l).semantics { liveRegion = LiveRegionMode.Polite },
+            modifier = Modifier.widthIn(min = Spacing.X4l).semantics {
+                contentDescription = spoken
+                liveRegion = LiveRegionMode.Polite
+            },
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.titleMedium
         )

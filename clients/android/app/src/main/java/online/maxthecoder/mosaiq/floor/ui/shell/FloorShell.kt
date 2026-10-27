@@ -32,9 +32,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.em
@@ -144,14 +149,18 @@ internal fun FloorTopBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(Spacing.Sm)
             ) {
-                Text(
-                    stringResource(R.string.signin_wordmark),
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = WORDMARK_TRACKING
-                    ),
-                    maxLines = 1
-                )
+                // At large font sizes the wordmark gives its room to the store name.
+                if (LocalDensity.current.fontScale <= LARGE_FONT_SCALE) {
+                    Text(
+                        stringResource(R.string.signin_wordmark),
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = WORDMARK_TRACKING
+                        ),
+                        maxLines = 1,
+                        modifier = Modifier.semantics { heading() }
+                    )
+                }
                 AssistChip(
                     onClick = onStoreClick,
                     modifier = Modifier.testTag("store-chip"),
@@ -202,6 +211,8 @@ private fun AccountMenu(signedIn: SessionState.SignedIn, onSignOut: () -> Unit) 
     }
 }
 
+private const val LARGE_FONT_SCALE = 1.3f
+
 private class Section(val root: FloorLocation.Root, @StringRes val label: Int, val icon: Int, val tag: String)
 
 private val SECTIONS =
@@ -214,6 +225,7 @@ private val SECTIONS =
 
 @Composable
 internal fun FloorBottomBar(selected: FloorLocation.Root, pendingWrites: Int, onSelect: (FloorLocation) -> Unit) {
+    val largeFont = LocalDensity.current.fontScale > LARGE_FONT_SCALE
     NavigationBar {
         SECTIONS.forEach { section ->
             NavigationBarItem(
@@ -224,11 +236,24 @@ internal fun FloorBottomBar(selected: FloorLocation.Root, pendingWrites: Int, on
                     BadgedBox(
                         badge = {
                             if (section.root == FloorLocation.Outbox && pendingWrites > 0) {
-                                Badge(modifier = Modifier.testTag("outbox-badge")) { Text(pendingWrites.toString()) }
+                                val waiting =
+                                    pluralStringResource(R.plurals.a11y_outbox_waiting, pendingWrites, pendingWrites)
+                                Badge(
+                                    modifier = Modifier.testTag("outbox-badge")
+                                        .semantics { contentDescription = waiting }
+                                ) { Text(pendingWrites.toString()) }
                             }
                         }
-                    ) { Icon(painterResource(section.icon), contentDescription = null) }
+                    ) {
+                        Icon(
+                            painterResource(section.icon),
+                            contentDescription = null
+                        )
+                    }
                 },
+                // At large font sizes a label wraps mid-word, so only the selected tab draws one; the others
+                // keep it in the semantics tree for TalkBack.
+                alwaysShowLabel = !largeFont,
                 label = { Text(stringResource(section.label)) }
             )
         }

@@ -7,8 +7,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.net.Product
@@ -89,7 +92,11 @@ private fun FailedLookup(error: ApiError, onRetry: () -> Unit, onScanAnother: ()
 private fun ProductCard(shown: ScanResult.Shown, onScanAnother: () -> Unit, onAddProduct: ((Product) -> Unit)?) {
     val product = shown.product
     MqCard {
-        Text(product.name, style = MaterialTheme.typography.titleLarge)
+        Text(
+            product.name,
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.semantics { heading() }
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Md), verticalAlignment = Alignment.Bottom) {
             Text(formatMoney(product.listPrice), style = MaterialTheme.typography.titleMedium)
             Text(

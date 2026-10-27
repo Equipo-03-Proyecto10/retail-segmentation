@@ -264,4 +264,10 @@
     <string name="sale_status_replayed">Sale %1$s was already recorded; this is the same sale.</string>
     <string name="sale_status_recorded">Sale %1$s recorded.</string>
     <!-- end UX-12 (#730) -->
+    <!-- Accessibility (#731) -->
+    <string name="a11y_quantity">Quantity %1$d</string>
+    <plurals name="a11y_outbox_waiting">
+        <item quantity="one">%1$d write waiting to send</item>
+        <item quantity="other">%1$d writes waiting to send</item>
+    </plurals>
 </resources>

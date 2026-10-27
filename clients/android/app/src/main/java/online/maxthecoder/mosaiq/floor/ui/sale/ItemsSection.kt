@@ -20,6 +20,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.ui.SaleLine
@@ -103,7 +105,11 @@ fun ItemsSection(ui: SaleUi, actions: SaleActions) {
             }
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        Text(stringResource(R.string.sale_cart_title), style = MaterialTheme.typography.titleSmall)
+        Text(
+            stringResource(R.string.sale_cart_title),
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.semantics { heading() }
+        )
         if (sale.lines.isEmpty()) {
             MqEmptyState(
                 icon = R.drawable.ic_lucide_shopping_cart,
@@ -120,12 +126,14 @@ fun ItemsSection(ui: SaleUi, actions: SaleActions) {
 private fun CartLine(line: SaleLine, locked: Boolean, actions: SaleActions) {
     val id = line.product.productId
     Column(Modifier.fillMaxWidth().testTag("cart-line-$id"), verticalArrangement = Arrangement.spacedBy(Spacing.Sm)) {
-        Text(line.product.name, style = MaterialTheme.typography.bodyLarge)
-        Text(
-            stringResource(R.string.sale_unit_price, formatMoney(line.product.listPrice)),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Column(Modifier.semantics(mergeDescendants = true) {}) {
+            Text(line.product.name, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                stringResource(R.string.sale_unit_price, formatMoney(line.product.listPrice)),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.Md)) {
             MqQuantityStepper(
                 value = line.quantity,

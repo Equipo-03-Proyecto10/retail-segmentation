@@ -1,5 +1,7 @@
 package online.maxthecoder.mosaiq.floor.ui
 
+// ui-string-ok-file: preview (sample copy for design review, never on a screen)
+
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding

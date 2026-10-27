@@ -344,7 +344,7 @@ class RestorationTest {
         tester.emulateSavedInstanceStateRestore()
 
         compose.onNodeWithText("Writes are still waiting").assertExists()
-        compose.onNodeWithText("1 floor write(s) have not been sent yet.", substring = true).assertExists()
+        compose.onNodeWithText("1 floor write has not been sent yet.", substring = true).assertExists()
         compose.onNodeWithText("Stay signed in").assertExists()
     }
 

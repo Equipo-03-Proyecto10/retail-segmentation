@@ -33,10 +33,20 @@ fun MqPager(page: Int, pageCount: Int, onPrevious: () -> Unit, onNext: () -> Uni
         )
     }
     val previous: @Composable () -> Unit = {
-        MqButton(stringResource(R.string.component_previous), onPrevious, variant = MqButtonVariant.Secondary, enabled = page > 1)
+        MqButton(
+            stringResource(R.string.component_previous),
+            onPrevious,
+            variant = MqButtonVariant.Secondary,
+            enabled = page > 1
+        )
     }
     val next: @Composable () -> Unit = {
-        MqButton(stringResource(R.string.component_next), onNext, variant = MqButtonVariant.Secondary, enabled = page < pageCount)
+        MqButton(
+            stringResource(R.string.component_next),
+            onNext,
+            variant = MqButtonVariant.Secondary,
+            enabled = page < pageCount
+        )
     }
     if (LocalDensity.current.fontScale > LARGE_FONT_SCALE) {
         // At large font sizes the three would squeeze each other: the label goes above the buttons.

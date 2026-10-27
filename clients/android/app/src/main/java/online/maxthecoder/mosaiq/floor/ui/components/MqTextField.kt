@@ -19,6 +19,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.error
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import online.maxthecoder.mosaiq.floor.R
@@ -54,7 +56,9 @@ fun MqTextField(
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier.fillMaxWidth().heightIn(min = ControlHeight),
+        modifier = modifier.fillMaxWidth().heightIn(min = ControlHeight).semantics {
+            if (errorText != null) error(errorText)
+        },
         enabled = enabled,
         readOnly = readOnly,
         label = { Text(label) },

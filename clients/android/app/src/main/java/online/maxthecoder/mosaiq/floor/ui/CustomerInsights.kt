@@ -18,9 +18,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -68,7 +70,7 @@ fun SegmentBadge(label: String, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.mosaic.segment
     val color = colors[Math.floorMod(label.lowercase().hashCode(), colors.size)]
     Row(
-        modifier,
+        modifier.semantics(mergeDescendants = true) {},
         horizontalArrangement = Arrangement.spacedBy(Spacing.Sm),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -162,7 +164,8 @@ private fun RecommendationsBlock(state: InsightsState, onRetry: () -> Unit, onOp
             Text(
                 it,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
             )
         }
         if (error == null && result != null) {

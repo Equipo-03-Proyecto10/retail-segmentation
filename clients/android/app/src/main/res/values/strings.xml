@@ -176,4 +176,11 @@
     <string name="insights_refresh">Refresh</string>
     <string name="insights_open_product">Open %1$s in Scan</string>
     <string name="insights_on_hand">%1$d on hand at their usual store</string>
+
+    <!-- Accessibility (#731) -->
+    <string name="a11y_quantity">Quantity %1$d</string>
+    <plurals name="a11y_outbox_waiting">
+        <item quantity="one">%1$d write waiting to send</item>
+        <item quantity="other">%1$d writes waiting to send</item>
+    </plurals>
 </resources>

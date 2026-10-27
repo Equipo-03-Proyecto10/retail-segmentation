@@ -14,6 +14,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.outbox.OutboxRow
@@ -43,7 +46,15 @@ fun HistorySection(ui: SaleUi, actions: SaleActions) {
             )
         }
         ui.history.forEach { row -> SaleHistoryRow(row, actions) }
-        ui.statusMessage?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        ui.statusMessage?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.semantics {
+                    liveRegion = LiveRegionMode.Polite
+                }
+            )
+        }
         ui.statusError?.let { MqErrorPanel(it) }
     }
 }
@@ -54,7 +65,11 @@ private fun SaleHistoryRow(row: OutboxRow, actions: SaleActions) {
         Modifier.fillMaxWidth().testTag("sale-row-${row.id}"),
         verticalArrangement = Arrangement.spacedBy(Spacing.Sm)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.Md)) {
+        Row(
+            Modifier.semantics(mergeDescendants = true) {},
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.Md)
+        ) {
             Text(
                 stringResource(R.string.sale_history_row, formatWhen(row.createdAt)),
                 style = MaterialTheme.typography.bodyLarge,
@@ -141,7 +156,7 @@ fun SaleBar(ui: SaleUi, actions: SaleActions, modifier: Modifier = Modifier) {
                     Text(
                         stringResource(R.string.sale_saved),
                         style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.testTag("sale-saved")
+                        modifier = Modifier.testTag("sale-saved").semantics { liveRegion = LiveRegionMode.Polite }
                     )
                     MqButton(stringResource(R.string.sale_another), actions.onNewSale, fullWidth = true)
                 } else {

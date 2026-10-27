@@ -8,6 +8,7 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,7 +28,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -195,8 +198,16 @@ fun CheckInContent(
                         }
                     }
                 }
-                StatusBadge(status)
-                result?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
+                Box(Modifier.semantics { liveRegion = LiveRegionMode.Polite }) { StatusBadge(status) }
+                result?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.semantics {
+                            liveRegion = LiveRegionMode.Polite
+                        }
+                    )
+                }
                 if (status == CheckInStatus.Waiting && result == null) {
                     Text(
                         stringResource(R.string.checkin_queued_calm),
@@ -211,6 +222,7 @@ fun CheckInContent(
             note?.let {
                 Text(
                     it,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

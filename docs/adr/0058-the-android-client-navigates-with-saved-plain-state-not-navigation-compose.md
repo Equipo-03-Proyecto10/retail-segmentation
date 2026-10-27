@@ -1,6 +1,6 @@
 # ADR-0058 — The Android client navigates with saved plain state, not Navigation-Compose
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Max
 **Issue:** #717 (UX-01), epic #716; implemented by #723 (UX-05)
 **Supersedes:** —

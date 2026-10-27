@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import online.maxthecoder.mosaiq.floor.AppGraph
+import online.maxthecoder.mosaiq.floor.AppText
+import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.net.CheckInResult
 import online.maxthecoder.mosaiq.floor.net.Store
@@ -115,11 +117,10 @@ class FloorViewModel(
             val note =
                 when {
                     mode == LocationMode.DENIED ->
-                        "Location is off for this app, so the check-in is recorded without a position " +
-                            "and cannot be verified."
+                        AppText.get(R.string.checkin_note_denied)
                     mode == LocationMode.APPROXIMATE ->
-                        "Only approximate location is allowed, so the check-in may be too imprecise to verify."
-                    fix == null -> "No position could be found, so the check-in is recorded without one."
+                        AppText.get(R.string.checkin_note_approximate)
+                    fix == null -> AppText.get(R.string.checkin_note_no_fix)
                     else -> null
                 }
             val rowId = graph.writes.queueCheckIn(store.storeId, fix)

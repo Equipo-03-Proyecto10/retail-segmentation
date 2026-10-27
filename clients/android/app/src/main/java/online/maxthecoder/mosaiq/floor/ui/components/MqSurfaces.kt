@@ -20,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
@@ -69,7 +70,10 @@ fun MqQuantityStepper(
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(onClick = onDecrease, modifier = Modifier.size(ControlHeight), enabled = value > min) {
-            MqIcon(R.drawable.ic_lucide_minus, contentDescription = "Decrease quantity")
+            MqIcon(
+                R.drawable.ic_lucide_minus,
+                contentDescription = stringResource(R.string.component_decrease_quantity)
+            )
         }
         Text(
             value.toString(),
@@ -78,7 +82,7 @@ fun MqQuantityStepper(
             style = MaterialTheme.typography.titleMedium
         )
         IconButton(onClick = onIncrease, modifier = Modifier.size(ControlHeight), enabled = value < max) {
-            MqIcon(R.drawable.ic_lucide_plus, contentDescription = "Increase quantity")
+            MqIcon(R.drawable.ic_lucide_plus, contentDescription = stringResource(R.string.component_increase_quantity))
         }
     }
 }

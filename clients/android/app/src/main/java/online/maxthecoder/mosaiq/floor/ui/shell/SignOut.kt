@@ -9,9 +9,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
 
 /**
@@ -40,20 +43,17 @@ fun SignOutHost(
     if (pending > 0) {
         AlertDialog(
             onDismissRequest = { pending = 0 },
-            title = { Text("Writes are still waiting") },
+            title = { Text(stringResource(R.string.signout_title)) },
             text = {
-                Text(
-                    "$pending floor write(s) have not been sent yet. They stay on this phone and are " +
-                        "sent only when you sign in again."
-                )
+                Text(pluralStringResource(R.plurals.signout_body, pending, pending))
             },
             confirmButton = {
                 TextButton(onClick = {
                     pending = 0
                     onSignOut()
-                }) { Text("Sign out anyway") }
+                }) { Text(stringResource(R.string.signout_confirm)) }
             },
-            dismissButton = { TextButton(onClick = { pending = 0 }) { Text("Stay signed in") } }
+            dismissButton = { TextButton(onClick = { pending = 0 }) { Text(stringResource(R.string.signout_stay)) } }
         )
     }
 }
@@ -62,6 +62,6 @@ fun SignOutHost(
 @Composable
 fun SignOutButton(model: FloorViewModel, onSignOut: () -> Unit) {
     SignOutHost(model, onSignOut) { request ->
-        TextButton(onClick = request) { Text("Sign out") }
+        TextButton(onClick = request) { Text(stringResource(R.string.session_sign_out)) }
     }
 }

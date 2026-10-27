@@ -85,7 +85,12 @@ private fun SaleHistoryRow(row: OutboxRow, actions: SaleActions) {
             )
             RowState.REFUSED -> {
                 MqErrorPanel(
-                    ApiError(row.status ?: 0, row.code ?: "refused", row.message ?: "Sale refused.", row.correlationId)
+                    ApiError(
+                        row.status ?: 0,
+                        row.code ?: "refused",
+                        row.message ?: stringResource(R.string.sale_refused_default),
+                        row.correlationId
+                    )
                 )
                 refusalAdvice(row.code)?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
             }

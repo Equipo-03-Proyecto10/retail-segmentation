@@ -20,11 +20,10 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.time.Instant
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.time.format.FormatStyle
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import online.maxthecoder.mosaiq.floor.AppText
 import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.net.json
@@ -41,6 +40,8 @@ import online.maxthecoder.mosaiq.floor.ui.components.MqErrorPanel
 import online.maxthecoder.mosaiq.floor.ui.components.MqIcon
 import online.maxthecoder.mosaiq.floor.ui.components.MqListRow
 import online.maxthecoder.mosaiq.floor.ui.components.MqTone
+import online.maxthecoder.mosaiq.floor.ui.formatClock
+import online.maxthecoder.mosaiq.floor.ui.formatMediumDay
 import online.maxthecoder.mosaiq.floor.ui.theme.MosaiqTheme
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
 
@@ -187,26 +188,23 @@ private fun title(row: OutboxRow, storeNames: Map<Int, String>): String = when (
     Operation.RECO_CLICK -> stringResource(R.string.outbox_kind_reco)
 }
 
-private val ClockFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
-private val DayFormat: DateTimeFormatter = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
-
 /** "Today, 14:32", "Yesterday, 14:32", or the date and time for anything older. */
 @Composable
 internal fun humanTime(epochMillis: Long, now: Instant, zone: ZoneId): String {
     val at = Instant.ofEpochMilli(epochMillis).atZone(zone)
-    val clock = ClockFormat.format(at)
+    val clock = formatClock(epochMillis, zone)
     val today = now.atZone(zone).toLocalDate()
     return when (at.toLocalDate()) {
         today -> stringResource(R.string.outbox_today, clock)
         today.minusDays(1) -> stringResource(R.string.outbox_yesterday, clock)
-        else -> "${DayFormat.format(at)}, $clock"
+        else -> "${formatMediumDay(at)}, $clock"
     }
 }
 
 internal fun OutboxRow.asError(): ApiError = ApiError(
     status = status ?: 0,
     code = code ?: "refused",
-    message = message ?: "The service refused this write.",
+    message = message ?: AppText.get(R.string.outbox_refused_default),
     correlationId = correlationId
 )
 
@@ -223,6 +221,7 @@ private fun sample(id: Long, operation: Operation, state: RowState, attempts: In
     state = state,
     attempts = attempts,
     code = if (state == RowState.REFUSED) "validation_failed" else null,
+    // ui-string-ok: preview
     message = if (state == RowState.REFUSED) "The sale has no items." else null
 )
 

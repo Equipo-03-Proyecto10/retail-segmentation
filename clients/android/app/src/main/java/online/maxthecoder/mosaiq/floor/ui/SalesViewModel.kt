@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import online.maxthecoder.mosaiq.floor.AppGraph
+import online.maxthecoder.mosaiq.floor.AppText
+import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.net.Category
 import online.maxthecoder.mosaiq.floor.net.Channel
@@ -335,7 +337,8 @@ class SalesViewModel(
                 if (checkedStore != store.storeId || checkIn.state == RowState.REFUSED) {
                     sale.value = sale.value.copy(
                         confirming = false,
-                        error = ApiError(0, "check_in_required", "Check in at the selected store first.", null)
+                        error =
+                        ApiError(0, "check_in_required", AppText.get(R.string.sale_error_check_in_required), null)
                     )
                     return@launch
                 }
@@ -348,9 +351,7 @@ class SalesViewModel(
             } catch (failure: Exception) {
                 sale.value = sale.value.copy(
                     confirming = false,
-                    error = ApiError(
-                        0, "queue_failed", "Could not save the sale on this phone. Try confirming again.", null
-                    )
+                    error = ApiError(0, "queue_failed", AppText.get(R.string.sale_error_queue_failed), null)
                 )
             }
         }
@@ -370,7 +371,8 @@ class SalesViewModel(
         viewModelScope.launch {
             when (val answer = call { graph.network.sales.getSale(recorded.saleId) }) {
                 is HttpAnswer.Body ->
-                    statusMessage.value = "Sale ${answer.value.saleId} recorded · total ${answer.value.total}"
+                    statusMessage.value =
+                        AppText.get(R.string.sale_status_total, answer.value.saleId, formatMoney(answer.value.total))
                 is HttpAnswer.Refused -> statusError.value = answer.error
                 HttpAnswer.Unreachable -> statusError.value = ApiError.unreachable(null)
             }
@@ -381,9 +383,9 @@ class SalesViewModel(
         if (row?.state != RowState.DONE) return null
         val recorded = recordedSale(row) ?: return null
         return if (row.status == 200 && row.code == "idempotent_replayed") {
-            "Sale ${recorded.saleId} was already recorded; this is the same sale."
+            AppText.get(R.string.sale_status_replayed, recorded.saleId)
         } else {
-            "Sale ${recorded.saleId} recorded."
+            AppText.get(R.string.sale_status_recorded, recorded.saleId)
         }
     }
 

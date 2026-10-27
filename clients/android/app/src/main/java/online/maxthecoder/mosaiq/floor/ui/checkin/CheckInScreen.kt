@@ -31,9 +31,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import java.time.Instant
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.outbox.RowState
@@ -50,6 +48,7 @@ import online.maxthecoder.mosaiq.floor.ui.components.MqErrorPanel
 import online.maxthecoder.mosaiq.floor.ui.components.MqIcon
 import online.maxthecoder.mosaiq.floor.ui.components.MqLoading
 import online.maxthecoder.mosaiq.floor.ui.components.MqTone
+import online.maxthecoder.mosaiq.floor.ui.formatClock
 import online.maxthecoder.mosaiq.floor.ui.outbox.asError
 import online.maxthecoder.mosaiq.floor.ui.theme.MosaiqTheme
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
@@ -143,10 +142,8 @@ fun CheckInPanel(model: FloorViewModel, store: ChosenStore, onChangeStore: () ->
     )
 }
 
-private val ClockFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
-
 internal fun clockTime(epochMillis: Long, zone: ZoneId = ZoneId.systemDefault()): String =
-    ClockFormat.format(Instant.ofEpochMilli(epochMillis).atZone(zone))
+    formatClock(epochMillis, zone)
 
 private fun openAppSettings(context: Context) {
     val intent =

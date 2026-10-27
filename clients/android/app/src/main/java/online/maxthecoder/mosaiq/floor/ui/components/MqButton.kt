@@ -19,8 +19,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
 import online.maxthecoder.mosaiq.floor.ui.theme.mosaic
 
@@ -44,11 +46,12 @@ fun MqButton(
     fullWidth: Boolean = false
 ) {
     val scheme = MaterialTheme.colorScheme
+    val loadingState = stringResource(R.string.component_loading)
     val sized =
         modifier
             .then(if (fullWidth) Modifier.fillMaxWidth() else Modifier)
             .defaultMinSize(minWidth = ControlHeight, minHeight = ControlHeight)
-            .semantics { if (loading) stateDescription = "Loading" }
+            .semantics { if (loading) stateDescription = loadingState }
     val active = enabled && !loading
     val shape = MaterialTheme.shapes.small
     val content: @Composable () -> Unit = {

@@ -22,6 +22,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
@@ -110,6 +111,8 @@ fun MqErrorPanel(
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     val scheme = MaterialTheme.colorScheme
+    val expandedState = stringResource(R.string.component_expanded)
+    val collapsedState = stringResource(R.string.component_collapsed)
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.small,
@@ -127,7 +130,7 @@ fun MqErrorPanel(
                     )
                     if (error.code == "future_dated") {
                         Text(
-                            "Check the phone's date, time and time zone.",
+                            stringResource(R.string.component_check_clock),
                             style = MaterialTheme.typography.bodyMedium,
                             color = scheme.onSurfaceVariant
                         )
@@ -136,7 +139,7 @@ fun MqErrorPanel(
             }
             if (onRetry != null) {
                 MqButton(
-                    "Retry",
+                    stringResource(R.string.component_retry),
                     onRetry,
                     variant = MqButtonVariant.Secondary,
                     leadingIcon = R.drawable.ic_lucide_refresh_cw
@@ -148,7 +151,7 @@ fun MqErrorPanel(
                     .fillMaxWidth()
                     .heightIn(min = ControlHeight)
                     .clickable(role = Role.Button) { expanded = !expanded }
-                    .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" },
+                    .semantics { stateDescription = if (expanded) expandedState else collapsedState },
                 horizontalArrangement = Arrangement.spacedBy(Spacing.Sm),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -157,14 +160,24 @@ fun MqErrorPanel(
                     contentDescription = null,
                     tint = scheme.onSurfaceVariant
                 )
-                Text("Details", style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant)
+                Text(
+                    stringResource(R.string.component_details),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = scheme.onSurfaceVariant
+                )
             }
             if (expanded) {
                 Column(verticalArrangement = Arrangement.spacedBy(Spacing.Xs)) {
                     val small = MaterialTheme.typography.bodySmall
-                    Text("Code: ${error.code}", style = small)
+                    Text(stringResource(R.string.component_code, error.code), style = small)
                     error.details.forEach { Text("${it.field}: ${it.code}", style = small) }
-                    Text("Correlation ID: ${error.correlationId ?: "none"}", style = small)
+                    Text(
+                        stringResource(
+                            R.string.component_correlation,
+                            error.correlationId ?: stringResource(R.string.component_correlation_none)
+                        ),
+                        style = small
+                    )
                 }
             }
         }

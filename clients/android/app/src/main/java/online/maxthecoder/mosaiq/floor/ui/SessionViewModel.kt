@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import online.maxthecoder.mosaiq.floor.AppText
+import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.auth.SessionEvents
 import online.maxthecoder.mosaiq.floor.auth.SessionRepository
 import online.maxthecoder.mosaiq.floor.auth.SessionResult
@@ -66,7 +68,7 @@ class SessionViewModel(
     private fun show(result: SessionResult): SessionState = when (result) {
         is SessionResult.SignedIn -> SessionState.SignedIn(result.user.name, result.user.roleCode)
         is SessionResult.RoleRefused ->
-            SessionState.SignIn(notice = "This app is for store managers and administrators. You were signed out.")
+            SessionState.SignIn(notice = AppText.get(R.string.session_role_refused))
         is SessionResult.Failed ->
             if (repository.isSignedIn) SessionState.Failed(result.error) else SessionState.SignIn(error = result.error)
     }

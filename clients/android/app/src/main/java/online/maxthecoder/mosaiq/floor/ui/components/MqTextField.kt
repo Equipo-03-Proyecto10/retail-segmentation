@@ -19,6 +19,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import online.maxthecoder.mosaiq.floor.R
@@ -66,7 +67,9 @@ fun MqTextField(
                     IconButton(onClick = { visible = !visible }, modifier = Modifier.size(ControlHeight)) {
                         MqIcon(
                             if (visible) R.drawable.ic_lucide_eye_off else R.drawable.ic_lucide_eye,
-                            contentDescription = if (visible) "Hide password" else "Show password"
+                            contentDescription = stringResource(
+                                if (visible) R.string.component_hide_password else R.string.component_show_password
+                            )
                         )
                     }
                 }

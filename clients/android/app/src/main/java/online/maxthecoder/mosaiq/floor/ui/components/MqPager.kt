@@ -8,7 +8,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
 
 /**
@@ -22,14 +24,24 @@ fun MqPager(page: Int, pageCount: Int, onPrevious: () -> Unit, onNext: () -> Uni
         horizontalArrangement = Arrangement.spacedBy(Spacing.Sm),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        MqButton("Previous", onPrevious, variant = MqButtonVariant.Secondary, enabled = page > 1)
+        MqButton(
+            stringResource(R.string.component_previous),
+            onPrevious,
+            variant = MqButtonVariant.Secondary,
+            enabled = page > 1
+        )
         Text(
-            "Page $page of $pageCount",
+            stringResource(R.string.component_page, page, pageCount),
             modifier = Modifier.weight(1f),
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.bodyMedium
         )
-        MqButton("Next", onNext, variant = MqButtonVariant.Secondary, enabled = page < pageCount)
+        MqButton(
+            stringResource(R.string.component_next),
+            onNext,
+            variant = MqButtonVariant.Secondary,
+            enabled = page < pageCount
+        )
     }
 }
 
@@ -39,7 +51,7 @@ fun MqLoadMore(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     loading: Boolean = false,
-    label: String = "Load more"
+    label: String = stringResource(R.string.component_load_more)
 ) {
     MqButton(
         label,

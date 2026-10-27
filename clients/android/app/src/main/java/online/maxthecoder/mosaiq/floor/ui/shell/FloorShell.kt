@@ -1,6 +1,7 @@
 package online.maxthecoder.mosaiq.floor.ui.shell
 
 import androidx.activity.compose.BackHandler
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.em
@@ -143,7 +145,7 @@ internal fun FloorTopBar(
                 horizontalArrangement = Arrangement.spacedBy(Spacing.Sm)
             ) {
                 Text(
-                    "MOSAIQ",
+                    stringResource(R.string.signin_wordmark),
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.Bold,
                         letterSpacing = WORDMARK_TRACKING
@@ -153,7 +155,13 @@ internal fun FloorTopBar(
                 AssistChip(
                     onClick = onStoreClick,
                     modifier = Modifier.testTag("store-chip"),
-                    label = { Text(store?.name ?: "Pick a store", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    label = {
+                        Text(
+                            store?.name ?: stringResource(R.string.shell_pick_store),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
                     leadingIcon = {
                         Icon(painterResource(R.drawable.ic_lucide_store), contentDescription = null)
                     }
@@ -169,7 +177,10 @@ private fun AccountMenu(signedIn: SessionState.SignedIn, onSignOut: () -> Unit) 
     var open by rememberSaveable { mutableStateOf(false) }
     Box {
         IconButton(onClick = { open = true }, modifier = Modifier.testTag("account-menu")) {
-            Icon(painterResource(R.drawable.ic_lucide_circle_user), contentDescription = "Account menu")
+            Icon(
+                painterResource(R.drawable.ic_lucide_circle_user),
+                contentDescription = stringResource(R.string.shell_account_menu)
+            )
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             Column(modifier = Modifier.padding(horizontal = Spacing.Lg, vertical = Spacing.Sm)) {
@@ -178,7 +189,7 @@ private fun AccountMenu(signedIn: SessionState.SignedIn, onSignOut: () -> Unit) 
             }
             HorizontalDivider()
             DropdownMenuItem(
-                text = { Text("Sign out") },
+                text = { Text(stringResource(R.string.session_sign_out)) },
                 leadingIcon = {
                     Icon(painterResource(R.drawable.ic_lucide_log_out), contentDescription = null)
                 },
@@ -191,14 +202,14 @@ private fun AccountMenu(signedIn: SessionState.SignedIn, onSignOut: () -> Unit) 
     }
 }
 
-private class Section(val root: FloorLocation.Root, val label: String, val icon: Int, val tag: String)
+private class Section(val root: FloorLocation.Root, @StringRes val label: Int, val icon: Int, val tag: String)
 
 private val SECTIONS =
     listOf(
-        Section(FloorLocation.CheckIn, "Check-in", R.drawable.ic_lucide_map_pin, "nav-check-in"),
-        Section(FloorLocation.Scan, "Scan", R.drawable.ic_lucide_scan_line, "nav-scan"),
-        Section(FloorLocation.Sale, "Sale", R.drawable.ic_lucide_shopping_cart, "nav-sale"),
-        Section(FloorLocation.Outbox, "Outbox", R.drawable.ic_lucide_inbox, "nav-outbox")
+        Section(FloorLocation.CheckIn, R.string.nav_check_in, R.drawable.ic_lucide_map_pin, "nav-check-in"),
+        Section(FloorLocation.Scan, R.string.nav_scan, R.drawable.ic_lucide_scan_line, "nav-scan"),
+        Section(FloorLocation.Sale, R.string.nav_sale, R.drawable.ic_lucide_shopping_cart, "nav-sale"),
+        Section(FloorLocation.Outbox, R.string.nav_outbox, R.drawable.ic_lucide_inbox, "nav-outbox")
     )
 
 @Composable
@@ -218,7 +229,7 @@ internal fun FloorBottomBar(selected: FloorLocation.Root, pendingWrites: Int, on
                         }
                     ) { Icon(painterResource(section.icon), contentDescription = null) }
                 },
-                label = { Text(section.label) }
+                label = { Text(stringResource(section.label)) }
             )
         }
     }

@@ -2,20 +2,20 @@ package online.maxthecoder.mosaiq.floor.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import java.io.IOException
 import java.time.Instant
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import online.maxthecoder.mosaiq.floor.AppGraph
 import online.maxthecoder.mosaiq.floor.AppText
 import online.maxthecoder.mosaiq.floor.R
+import online.maxthecoder.mosaiq.floor.net.Answer
 import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.net.CurrentAssignment
 import online.maxthecoder.mosaiq.floor.net.MAX_IDS
 import online.maxthecoder.mosaiq.floor.net.RecommendationItem
 import online.maxthecoder.mosaiq.floor.net.RecommendationReason
 import online.maxthecoder.mosaiq.floor.net.RecommendationResult
-import retrofit2.Response
+import online.maxthecoder.mosaiq.floor.net.call
 
 /** One recommendation as the panel shows it: the item, its name, its reasons in words. */
 data class ShownRecommendation(
@@ -143,23 +143,6 @@ class CustomerInsightsViewModel(
             }
             is Answer.Refused -> answer
         }
-    }
-
-    private sealed interface Answer<out T> {
-        data class Body<T>(val value: T) : Answer<T>
-
-        data class Refused(val error: ApiError) : Answer<Nothing>
-    }
-
-    private suspend fun <T> call(request: suspend () -> Response<T>): Answer<T> {
-        val response =
-            try {
-                request()
-            } catch (unreachable: IOException) {
-                return Answer.Refused(ApiError.unreachable(null))
-            }
-        val body = response.body()
-        return if (response.isSuccessful && body != null) Answer.Body(body) else Answer.Refused(ApiError.from(response))
     }
 
     companion object {

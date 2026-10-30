@@ -19,6 +19,7 @@ import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.net.CheckInResult
 import online.maxthecoder.mosaiq.floor.net.Store
 import online.maxthecoder.mosaiq.floor.net.json
+import online.maxthecoder.mosaiq.floor.net.totalPages
 import online.maxthecoder.mosaiq.floor.outbox.OutboxRow
 import online.maxthecoder.mosaiq.floor.outbox.RowState
 import online.maxthecoder.mosaiq.floor.outbox.describe
@@ -94,7 +95,7 @@ class FloorViewModel(
                         stores.value.copy(
                             loading = false,
                             stores = body.stores,
-                            totalPages = maxOf(1, (body.pageInfo.total + body.pageInfo.size - 1) / body.pageInfo.size)
+                            totalPages = totalPages(body.pageInfo.total, body.pageInfo.size)
                         )
                 }
         }

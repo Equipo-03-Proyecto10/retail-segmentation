@@ -63,4 +63,33 @@ class SourceGuardTest {
             assertTrue("${file.name} generates ids", "UUID.randomUUID" !in file.readText())
         }
     }
+
+    /** UX-14: collect view model state with the lifecycle, and assert nothing non-null where a null can arrive. */
+    @Test
+    fun screensCollectWithTheLifecycleAndAvoidNonNullAssertions() {
+        val floor = File(main, "online/maxthecoder/mosaiq/floor")
+        for (path in listOf(
+            "ui/shell/FloorShell.kt",
+            "ui/shell/SignOut.kt",
+            "ui/checkin/CheckInScreen.kt",
+            "ui/checkin/StorePicker.kt",
+            "ui/outbox/OutboxScreen.kt",
+            "ui/SalesScreen.kt",
+            "ui/CustomerInsights.kt"
+        )) {
+            assertTrue("$path uses collectAsState", ".collectAsState()" !in File(floor, path).readText())
+        }
+        for (path in listOf(
+            "ui/shell/FloorShell.kt",
+            "ui/shell/SignOut.kt",
+            "ui/checkin/CheckInScreen.kt",
+            "ui/checkin/StorePicker.kt",
+            "ui/outbox/OutboxScreen.kt",
+            "ui/CustomerInsights.kt",
+            "net/TokenAuthenticator.kt",
+            "outbox/OutboxWorker.kt"
+        )) {
+            assertTrue("$path uses !!", "!!" !in File(floor, path).readText())
+        }
+    }
 }

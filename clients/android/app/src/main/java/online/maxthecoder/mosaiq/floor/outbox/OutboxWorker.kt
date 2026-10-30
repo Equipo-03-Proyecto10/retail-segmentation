@@ -10,7 +10,9 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import online.maxthecoder.mosaiq.floor.AppText
 import online.maxthecoder.mosaiq.floor.GraphProvider
+import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.auth.TokenStore
 import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.session.SessionStore
@@ -79,10 +81,16 @@ class OutboxWorker(
             if (userId == null || tokens.read() == null) return@withContext Result.success()
             for (row in outbox.pendingFor(userId)) {
                 outbox.countAttempt(row.id)
+                val url = gateway.resolve(row.path)
+                if (url == null) {
+                    // A path that is no URL never becomes one: refuse the row rather than retry it forever.
+                    outbox.markRefused(row.id, 0, "invalid_path", AppText.get(R.string.outbox_invalid_path), null)
+                    continue
+                }
                 val request =
                     Request
                         .Builder()
-                        .url(gateway.resolve(row.path)!!)
+                        .url(url)
                         .post(row.body.toRequestBody(JSON))
                         .apply {
                             if (row.operation == Operation.SALE) header("Idempotency-Key", row.clientId)

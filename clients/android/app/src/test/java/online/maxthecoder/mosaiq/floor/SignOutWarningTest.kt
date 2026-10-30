@@ -11,7 +11,7 @@ import kotlinx.coroutines.runBlocking
 import online.maxthecoder.mosaiq.floor.auth.Tokens
 import online.maxthecoder.mosaiq.floor.session.Profile
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
-import online.maxthecoder.mosaiq.floor.ui.SignOutButton
+import online.maxthecoder.mosaiq.floor.ui.shell.SignOutButton
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull

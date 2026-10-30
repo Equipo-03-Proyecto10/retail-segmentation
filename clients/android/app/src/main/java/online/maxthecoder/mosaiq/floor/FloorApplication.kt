@@ -47,6 +47,7 @@ class FloorApplication :
 
     override fun onCreate() {
         super.onCreate()
+        AppText.install(this)
         val tokens = KeystoreTokenStore(this)
         val events = SessionEvents()
         graph =

@@ -1,6 +1,8 @@
 package online.maxthecoder.mosaiq.floor.net
 
 import kotlinx.serialization.json.Json
+import online.maxthecoder.mosaiq.floor.AppText
+import online.maxthecoder.mosaiq.floor.R
 import retrofit2.Response
 
 /** JSON as every service speaks it: a field added within v1 never breaks the app. */
@@ -39,18 +41,26 @@ data class ApiError(
             return ApiError(
                 status = status,
                 code = envelope?.code ?: "http_$status",
-                message = envelope?.message ?: "The service answered $status.",
+                message = envelope?.message ?: AppText.get(R.string.error_answered, status),
                 correlationId = envelope?.correlationId ?: correlationHeader,
                 details = envelope?.details.orEmpty(),
                 retryAfterSeconds = retryAfter?.trim()?.toLongOrNull()
             )
         }
 
+        /** The call failed in a way no answer describes; the client cannot say more. */
+        fun unexpected(): ApiError = ApiError(
+            status = 0,
+            code = "unexpected",
+            message = AppText.get(R.string.error_unexpected),
+            correlationId = null
+        )
+
         /** No answer at all: the network or the gateway never replied. */
         fun unreachable(correlationId: String?): ApiError = ApiError(
             status = 0,
             code = "unreachable",
-            message = "The service could not be reached. Check the connection and try again.",
+            message = AppText.get(R.string.error_unreachable),
             correlationId = correlationId
         )
     }

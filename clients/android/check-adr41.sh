@@ -28,4 +28,8 @@ grep -rhoE "api/[a-z][a-z0-9-]*/v[0-9]+" "$main" --include='*.kt' | cut -d/ -f2 
 grep -rln "UUID.randomUUID" clients/android/ --include='*Worker*.kt' \
   | sed 's/^/retry id generated per attempt: /'
 
+# ADR-0057: color, type size and shape values live in ui/theme/ and nowhere else.
+grep -rnE "Color\(0x|[0-9]\.?[0-9]*\.sp\b|RoundedCornerShape\([^)]*[0-9]\.?[0-9]*\.dp" "$main" --include='*.kt' \
+  | grep -v '/ui/theme/' | sed 's/^/outside ui\/theme: /'
+
 exit 0

@@ -2,7 +2,6 @@ package online.maxthecoder.mosaiq.floor.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import java.io.IOException
 import java.time.OffsetDateTime
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -15,6 +14,9 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import online.maxthecoder.mosaiq.floor.AppGraph
+import online.maxthecoder.mosaiq.floor.AppText
+import online.maxthecoder.mosaiq.floor.R
+import online.maxthecoder.mosaiq.floor.net.Answer
 import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.net.Category
 import online.maxthecoder.mosaiq.floor.net.Channel
@@ -25,7 +27,9 @@ import online.maxthecoder.mosaiq.floor.net.RegisterCustomerRequest
 import online.maxthecoder.mosaiq.floor.net.ReplaceInterestCategoriesRequest
 import online.maxthecoder.mosaiq.floor.net.Sale
 import online.maxthecoder.mosaiq.floor.net.SaleLineRequest
+import online.maxthecoder.mosaiq.floor.net.call as netCall
 import online.maxthecoder.mosaiq.floor.net.json
+import online.maxthecoder.mosaiq.floor.net.totalPages
 import online.maxthecoder.mosaiq.floor.outbox.OutboxRow
 import online.maxthecoder.mosaiq.floor.outbox.RowState
 import retrofit2.Response
@@ -69,14 +73,6 @@ data class SaleBuilderState(
     val confirming: Boolean = false,
     val queuedRowId: Long? = null
 )
-
-sealed interface HttpAnswer<out T> {
-    data class Body<T>(val value: T) : HttpAnswer<T>
-
-    data class Refused(val error: ApiError) : HttpAnswer<Nothing>
-
-    data object Unreachable : HttpAnswer<Nothing>
-}
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SalesViewModel(
@@ -131,18 +127,16 @@ class SalesViewModel(
                     )
                 }
             ) {
-                is HttpAnswer.Body -> {
+                is Answer.Body -> {
                     val body = answer.value
                     customers.value =
                         customers.value.copy(
                             loading = false,
                             customers = body.customers,
-                            totalPages = maxOf(1, (body.pageInfo.total + body.pageInfo.size - 1) / body.pageInfo.size)
+                            totalPages = totalPages(body.pageInfo.total, body.pageInfo.size)
                         )
                 }
-                is HttpAnswer.Refused -> customers.value = customers.value.copy(loading = false, error = answer.error)
-                HttpAnswer.Unreachable ->
-                    customers.value = customers.value.copy(loading = false, error = ApiError.unreachable(null))
+                is Answer.Refused -> customers.value = customers.value.copy(loading = false, error = answer.error)
             }
         }
     }
@@ -152,7 +146,7 @@ class SalesViewModel(
         registration.value = registration.value.copy(loading = true, error = null)
         viewModelScope.launch {
             when (val answer = call { graph.network.sales.listChannels() }) {
-                is HttpAnswer.Body -> {
+                is Answer.Body -> {
                     val channels = answer.value.channels
                     registration.value =
                         registration.value.copy(
@@ -163,10 +157,8 @@ class SalesViewModel(
                                 ?: registration.value.selectedChannelId
                         )
                 }
-                is HttpAnswer.Refused ->
+                is Answer.Refused ->
                     registration.value = registration.value.copy(loading = false, error = answer.error)
-                HttpAnswer.Unreachable ->
-                    registration.value = registration.value.copy(loading = false, error = ApiError.unreachable(null))
             }
         }
     }
@@ -195,20 +187,15 @@ class SalesViewModel(
                         )
                     }
             ) {
-                is HttpAnswer.Body -> {
+                is Answer.Body -> {
                     registration.value = registration.value.copy(loading = false, customer = answer.value)
                     selectCustomer(answer.value)
                 }
-                is HttpAnswer.Refused -> registration.value = registration.value.copy(
-                    loading = false, error = answer.error, timeoutAdvice = answer.error.status in setOf(502, 504)
+                is Answer.Refused -> registration.value = registration.value.copy(
+                    loading = false,
+                    error = answer.error,
+                    timeoutAdvice = answer.error.status in setOf(502, 504) || answer.error.code == "unreachable"
                 )
-                HttpAnswer.Unreachable ->
-                    registration.value =
-                        registration.value.copy(
-                            loading = false,
-                            error = ApiError.unreachable(null),
-                            timeoutAdvice = true
-                        )
             }
         }
     }
@@ -228,7 +215,7 @@ class SalesViewModel(
         interestJob = viewModelScope.launch {
             val profile = call { graph.network.preferences.getProfile(customerId) }
             val categories = allCategories()
-            if (profile is HttpAnswer.Body && categories is HttpAnswer.Body) {
+            if (profile is Answer.Body && categories is Answer.Body) {
                 interests.value =
                     InterestsState(
                         categories = categories.value,
@@ -237,8 +224,8 @@ class SalesViewModel(
                     )
             } else {
                 val error =
-                    (profile as? HttpAnswer.Refused)?.error
-                        ?: (categories as? HttpAnswer.Refused)?.error
+                    (profile as? Answer.Refused)?.error
+                        ?: (categories as? Answer.Refused)?.error
                         ?: ApiError.unreachable(null)
                 interests.value = InterestsState(error = error)
             }
@@ -268,16 +255,14 @@ class SalesViewModel(
                         )
                     }
             ) {
-                is HttpAnswer.Body ->
+                is Answer.Body ->
                     interests.value =
                         interests.value.copy(
                             loading = false,
                             selected = answer.value.interestCategoryIds.toSet(),
                             saved = true
                         )
-                is HttpAnswer.Refused -> interests.value = interests.value.copy(loading = false, error = answer.error)
-                HttpAnswer.Unreachable ->
-                    interests.value = interests.value.copy(loading = false, error = ApiError.unreachable(null))
+                is Answer.Refused -> interests.value = interests.value.copy(loading = false, error = answer.error)
             }
         }
     }
@@ -286,10 +271,8 @@ class SalesViewModel(
         sale.value = sale.value.copy(query = query, loading = true, error = null)
         viewModelScope.launch {
             when (val answer = call { graph.network.products.listProducts(query.trim()) }) {
-                is HttpAnswer.Body -> sale.value = sale.value.copy(loading = false, products = answer.value.products)
-                is HttpAnswer.Refused -> sale.value = sale.value.copy(loading = false, error = answer.error)
-                HttpAnswer.Unreachable ->
-                    sale.value = sale.value.copy(loading = false, error = ApiError.unreachable(null))
+                is Answer.Body -> sale.value = sale.value.copy(loading = false, products = answer.value.products)
+                is Answer.Refused -> sale.value = sale.value.copy(loading = false, error = answer.error)
             }
         }
     }
@@ -335,7 +318,8 @@ class SalesViewModel(
                 if (checkedStore != store.storeId || checkIn.state == RowState.REFUSED) {
                     sale.value = sale.value.copy(
                         confirming = false,
-                        error = ApiError(0, "check_in_required", "Check in at the selected store first.", null)
+                        error =
+                        ApiError(0, "check_in_required", AppText.get(R.string.sale_error_check_in_required), null)
                     )
                     return@launch
                 }
@@ -348,9 +332,7 @@ class SalesViewModel(
             } catch (failure: Exception) {
                 sale.value = sale.value.copy(
                     confirming = false,
-                    error = ApiError(
-                        0, "queue_failed", "Could not save the sale on this phone. Try confirming again.", null
-                    )
+                    error = ApiError(0, "queue_failed", AppText.get(R.string.sale_error_queue_failed), null)
                 )
             }
         }
@@ -369,10 +351,10 @@ class SalesViewModel(
         statusError.value = null
         viewModelScope.launch {
             when (val answer = call { graph.network.sales.getSale(recorded.saleId) }) {
-                is HttpAnswer.Body ->
-                    statusMessage.value = "Sale ${answer.value.saleId} recorded · total ${answer.value.total}"
-                is HttpAnswer.Refused -> statusError.value = answer.error
-                HttpAnswer.Unreachable -> statusError.value = ApiError.unreachable(null)
+                is Answer.Body ->
+                    statusMessage.value =
+                        AppText.get(R.string.sale_status_total, answer.value.saleId, formatMoney(answer.value.total))
+                is Answer.Refused -> statusError.value = answer.error
             }
         }
     }
@@ -381,9 +363,9 @@ class SalesViewModel(
         if (row?.state != RowState.DONE) return null
         val recorded = recordedSale(row) ?: return null
         return if (row.status == 200 && row.code == "idempotent_replayed") {
-            "Sale ${recorded.saleId} was already recorded; this is the same sale."
+            AppText.get(R.string.sale_status_replayed, recorded.saleId)
         } else {
-            "Sale ${recorded.saleId} recorded."
+            AppText.get(R.string.sale_status_recorded, recorded.saleId)
         }
     }
 
@@ -391,40 +373,27 @@ class SalesViewModel(
         runCatching { json.decodeFromString(Sale.serializer(), it) }.getOrNull()
     }
 
-    private suspend fun allCategories(): HttpAnswer<List<Category>> {
+    private suspend fun allCategories(): Answer<List<Category>> {
         val all = mutableListOf<Category>()
         var page = 1
         do {
             when (val answer = call { graph.network.categories.listCategories(page) }) {
-                is HttpAnswer.Body -> {
+                is Answer.Body -> {
                     all += answer.value.categories
                     if (page * answer.value.pageInfo.size >= answer.value.pageInfo.total) break
                     page++
                 }
-                is HttpAnswer.Refused -> return answer
-                HttpAnswer.Unreachable -> return HttpAnswer.Unreachable
+                is Answer.Refused -> return answer
             }
         } while (true)
-        return HttpAnswer.Body(all.distinctBy { it.categoryId })
+        return Answer.Body(all.distinctBy { it.categoryId })
     }
 
-    private suspend fun <T> call(block: suspend () -> Response<T>): HttpAnswer<T> {
+    private suspend fun <T> call(block: suspend () -> Response<T>): Answer<T> {
         val user = graph.session.userId.value ?: throw CancellationException("Signed out")
-        val response = try {
-            block()
-        } catch (unreachable: IOException) {
-            if (graph.session.userId.value != user) throw CancellationException("Session changed")
-            return HttpAnswer.Unreachable
-        }
+        val answer = netCall(block)
         if (graph.session.userId.value != user) throw CancellationException("Session changed")
-        val body = response.body()
-        return if (response.isSuccessful && body != null) {
-            HttpAnswer.Body(
-                body
-            )
-        } else {
-            HttpAnswer.Refused(ApiError.from(response))
-        }
+        return answer
     }
 
     private companion object {

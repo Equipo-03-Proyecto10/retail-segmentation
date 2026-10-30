@@ -137,20 +137,26 @@ private fun OutboxItem(
 
 @Composable
 private fun StateBadge(state: RowState) {
-    when (state) {
-        RowState.PENDING ->
+    when (outboxStatus(state)) {
+        OutboxStatus.WAITING ->
             MqBadge(
                 stringResource(R.string.outbox_state_waiting),
                 tone = MqTone.Warning,
                 leadingIcon = R.drawable.ic_lucide_clock
             )
-        RowState.DONE ->
+        OutboxStatus.SENDING ->
+            MqBadge(
+                stringResource(R.string.outbox_state_sending),
+                tone = MqTone.Info,
+                leadingIcon = R.drawable.ic_lucide_clock
+            )
+        OutboxStatus.SENT ->
             MqBadge(
                 stringResource(R.string.outbox_state_sent),
                 tone = MqTone.Success,
                 leadingIcon = R.drawable.ic_lucide_circle_check
             )
-        RowState.REFUSED ->
+        OutboxStatus.NEEDS_ATTENTION ->
             MqBadge(
                 stringResource(R.string.outbox_state_attention),
                 tone = MqTone.Danger,

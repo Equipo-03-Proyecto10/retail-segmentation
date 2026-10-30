@@ -49,6 +49,7 @@
     <string name="outbox_kind_scan">Product scan</string>
     <string name="outbox_kind_reco">Recommendation click</string>
     <string name="outbox_state_waiting">Waiting to send</string>
+    <string name="outbox_state_sending">Sending</string>
     <string name="outbox_state_sent">Sent</string>
     <string name="outbox_state_attention">Needs attention</string>
     <string name="outbox_other_user">Waiting for the user who made it to sign in again.</string>

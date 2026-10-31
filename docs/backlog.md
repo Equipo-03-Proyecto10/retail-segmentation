@@ -1,12 +1,13 @@
 # Backlog
 
-Work across both deliveries, grouped by planning phase. Phases 0-6 record the
+Work across every delivery, grouped by planning phase. Phases 0-6 record the
 completed first delivery. Phases 7-12 cover the monolith analytics part of the
-second delivery, and phases 13-18 its distributed stage. Story identifiers are
-`F<phase>-<n>`. The `AN-<n>` stories close gaps left in phases 7-12.
+second delivery, and phases 13-18 its distributed stage. Phases 19-29 are the
+third delivery. Story identifiers are `F<phase>-<n>`. The `AN-<n>` stories close
+gaps left in phases 7-12.
 
-Estimates are set by the team at Planning, not here. The second delivery uses
-no project board: each issue carries its own state and priority
+Estimates are set by the team at Planning, not here. Since the second delivery
+there is no project board: each issue carries its own state and priority
 ([`process.md`](process.md) §8), and this document does not duplicate them — a
 backlog that copies issue state drifts from it within a week.
 
@@ -891,6 +892,7 @@ Epic #401.
 |---|---|---|---|---|
 | F15-01 | #450 | Build the bench-only Rust products reads, never registered, routed, deployed or counted | P1 | F13-01, F13-04, F13-07, F13-09, F14-02, F14-05, F14-06 |
 | F15-02 | #455 | Benchmark the products reads in Flask and Rust under one load and publish the report | P1 | F15-01, F14-06 |
+| F15-03 | #751 | Re-run the Flask and Rust comparison with CPU, PSS and an enforced memory limit | P0 | — |
 
 ## Phase 16 — Desktop client (Electron, XML)
 
@@ -962,6 +964,490 @@ no Redis and consumes no service.
 | AN-18 | #519 | Segment run form never shows the K-means fields: the CSP blocks its inline onchange | P1 | — |
 | AN-19 | #559 | Record the data origin of every sale and segmentation run | P2 | AN-14 |
 | AN-20 | #560 | Mark every analytics page Synthetic from the rows it reads, and retire DATA_IS_SYNTHETIC | P2 | AN-19 |
+
+## Third delivery — dependency graph
+
+Phases 19 to 29 are the third delivery, scoped in
+[`scope-delivery-3.md`](scope-delivery-3.md). An arrow runs from a blocker to
+what it blocks, and it matches the native relationships in GitHub, which win
+if the two ever differ. Issues are unassigned until someone pulls them
+([`process.md`](process.md) §8).
+
+```mermaid
+flowchart TD
+    F19-03 --> F19-04
+    F19-03 --> F19-05
+    F19-05 --> F19-06
+    F19-06 --> F19-07
+    F19-02 --> F19-08
+    F20-01 --> F20-02
+    F20-03 --> F20-05
+    F20-04 --> F20-05
+    F20-07 --> F20-08
+    F20-07 --> F20-09
+    F20-06 --> F20-10
+    F20-07 --> F20-10
+    F21-01 --> F21-02
+    F21-04 --> F21-05
+    F21-05 --> F21-06
+    F21-02 --> F21-03
+    F21-06 --> F21-03
+    F19-02 --> F22-03
+    F21-01 --> F22-03
+    F22-01 --> F22-03
+    F22-02 --> F22-03
+    F19-08 --> F22-04
+    F22-03 --> F22-04
+    F22-04 --> F22-05
+    F21-03 --> F22-06
+    F22-05 --> F22-06
+    F22-05 --> F22-07
+    F22-06 --> F22-08
+    F22-07 --> F22-08
+    F20-07 --> F20-11
+    F22-08 --> F20-11
+    F20-03 --> F20-12
+    F20-05 --> F20-12
+    F21-11 --> F21-12
+    F21-05 --> F21-07
+    F21-12 --> F21-07
+    F21-07 --> F21-08
+    F21-09 --> F21-10
+    F19-03 --> F21-13
+    F19-04 --> F21-14
+    F21-13 --> F21-14
+    F21-15 --> F21-16
+    F21-16 --> F21-17
+    F21-17 --> F21-18
+    F21-17 --> F21-19
+    F21-20 --> F21-21
+    F21-13 --> F21-22
+    F21-15 --> F21-22
+    F21-14 --> F21-23
+    F21-17 --> F21-23
+    F21-22 --> F21-23
+    F21-24 --> F21-25
+    F22-05 --> F22-09
+    F19-02 --> F22-10
+    F22-02 --> F22-10
+    F19-08 --> F22-11
+    F22-10 --> F22-11
+    F22-05 --> F22-12
+    F22-11 --> F22-12
+    F23-01 --> F22-12
+    F22-11 --> F22-13
+    F19-02 --> F22-14
+    F22-01 --> F22-14
+    F22-02 --> F22-14
+    F21-17 --> F22-15
+    F22-05 --> F22-15
+    F22-13 --> F22-15
+    F22-14 --> F22-15
+    F22-13 --> F22-16
+    F22-14 --> F22-16
+    F22-15 --> F22-17
+    F23-01 --> F23-02
+    F23-02 --> F23-03
+    F23-03 --> F23-04
+    F23-03 --> F23-05
+    F23-04 --> F23-06
+    F23-05 --> F23-06
+    F19-02 --> F23-08
+    F23-07 --> F23-08
+    F22-05 --> F23-09
+    F22-11 --> F23-09
+    F23-08 --> F23-09
+    F23-01 --> F23-10
+    F23-09 --> F23-10
+    F22-15 --> F23-11
+    F23-09 --> F23-11
+    F24-02 --> F24-03
+    F21-07 --> F24-04
+    F21-10 --> F24-04
+    F24-03 --> F24-04
+    F24-03 --> F24-05
+    F21-17 --> F24-06
+    F24-03 --> F24-06
+    F24-04 --> F24-07
+    F20-06 --> F24-08
+    F21-06 --> F24-08
+    F24-04 --> F24-08
+    F19-02 --> F25-03
+    F19-03 --> F25-03
+    F21-17 --> F25-04
+    F25-03 --> F25-04
+    F21-12 --> F25-05
+    F25-04 --> F25-05
+    F19-02 --> F25-06
+    F25-01 --> F25-06
+    F25-02 --> F25-06
+    F19-08 --> F25-07
+    F25-06 --> F25-07
+    F25-04 --> F25-08
+    F25-07 --> F25-08
+    F25-07 --> F25-09
+    F21-21 --> F25-10
+    F25-07 --> F25-10
+    F21-03 --> F25-11
+    F25-07 --> F25-11
+    F25-11 --> F25-12
+    F25-11 --> F25-13
+    F25-08 --> F25-14
+    F25-10 --> F25-14
+    F25-12 --> F25-14
+    F25-13 --> F25-14
+    F19-02 --> F26-01
+    F19-03 --> F26-01
+    F19-08 --> F26-02
+    F21-03 --> F26-02
+    F26-01 --> F26-02
+    F22-16 --> F26-03
+    F26-02 --> F26-03
+    F24-05 --> F26-04
+    F25-12 --> F26-04
+    F25-13 --> F26-04
+    F26-02 --> F26-04
+    F21-06 --> F26-05
+    F26-02 --> F26-05
+    F26-06 --> F26-07
+    F26-07 --> F26-08
+    F26-08 --> F26-09
+    F19-04 --> F27-01
+    I722["#722"] --> F27-01
+    I723["#723"] --> F27-01
+    F21-13 --> F27-02
+    F27-01 --> F27-02
+    F21-16 --> F27-03
+    F27-02 --> F27-03
+    F21-05 --> F27-04
+    F21-09 --> F27-04
+    F27-01 --> F27-04
+    F21-20 --> F27-05
+    F25-03 --> F27-05
+    F27-04 --> F27-05
+    F21-20 --> F27-06
+    F24-03 --> F27-06
+    F27-03 --> F27-06
+    F21-20 --> F27-07
+    F25-03 --> F27-07
+    F25-06 --> F27-07
+    F27-01 --> F27-07
+    F26-01 --> F27-08
+    F27-01 --> F27-08
+    F21-16 --> F27-09
+    F27-02 --> F27-09
+    F27-10 --> F27-11
+    F27-11 --> F27-12
+    F27-05 --> F27-13
+    F27-11 --> F27-14
+    F27-13 --> F27-14
+    F27-07 --> F27-15
+    F27-10 --> F27-15
+    F27-11 --> F27-15
+    F26-07 --> F28-02
+    F28-01 --> F28-02
+    F22-03 --> F28-03
+    F28-01 --> F28-03
+    F22-03 --> F28-04
+    F28-01 --> F28-04
+    F22-10 --> F28-05
+    F28-01 --> F28-05
+    F22-14 --> F28-06
+    F28-01 --> F28-06
+    F23-08 --> F28-07
+    F28-01 --> F28-07
+    F24-03 --> F28-08
+    F28-01 --> F28-08
+    F25-03 --> F28-09
+    F28-01 --> F28-09
+    F25-06 --> F28-10
+    F28-01 --> F28-10
+    F28-10 --> F28-11
+    F26-01 --> F28-12
+    F28-01 --> F28-12
+    F23-06 --> F28-13
+    F28-05 --> F28-13
+    F26-01 --> F28-14
+    F28-01 --> F28-14
+    F21-24 --> F28-15
+    F28-01 --> F28-15
+    F22-06 --> F29-01
+    F22-15 --> F29-02
+    F22-16 --> F29-02
+    I462["#462"] --> F29-03
+    F20-02 --> F29-03
+    F21-03 --> F29-03
+    F20-07 --> F29-03
+    F22-08 --> F29-04
+    F22-12 --> F29-04
+    F23-04 --> F29-04
+    F23-10 --> F29-04
+    F29-01 --> F29-04
+    F29-02 --> F29-04
+    F24-08 --> F29-05
+    F25-14 --> F29-05
+    F27-06 --> F29-05
+    F27-07 --> F29-05
+    F19-07 --> F29-06
+    F21-14 --> F29-06
+    F21-17 --> F29-06
+    F27-13 --> F29-06
+    F27-05 --> F29-09
+    F27-08 --> F29-09
+    F27-09 --> F29-09
+    F27-13 --> F29-09
+    F28-11 --> F29-09
+    F28-14 --> F29-09
+    F29-08 --> F29-09
+    F29-03 --> F29-12
+    F29-04 --> F29-12
+    F29-05 --> F29-12
+    F29-06 --> F29-12
+    F29-09 --> F29-12
+    F20-12 --> F29-07
+    F29-12 --> F29-07
+    I462["#462"] --> F29-10
+    F22-15 --> F29-10
+    F24-04 --> F29-10
+    F25-05 --> F29-10
+    F25-08 --> F29-10
+    F25-10 --> F29-10
+    F25-13 --> F29-10
+    F27-05 --> F29-10
+    F27-07 --> F29-10
+    F28-06 --> F29-10
+    F28-11 --> F29-10
+    F29-12 --> F29-10
+    F29-07 --> F29-11
+    F29-09 --> F29-11
+    F29-10 --> F29-11
+    F15-03 --> F29-11
+```
+
+## Phase 19 — Third-delivery foundation
+
+Epic #740.
+
+| ID | Issue | Story | Priority | Depends on |
+|---|---|---|---|---|
+| F19-01 | #739 | Prepare the repository for the third delivery: scope, traceability and backlog | P0 | — |
+| F19-02 | #752 | Decide which capabilities become containers and re-baseline the memory budget | P0 | — |
+| F19-03 | #753 | Decide the floor roles, what each may read and how a user is tied to a store | P0 | — |
+| F19-04 | #754 | Add the floor roles to the catalog, the seed and the service operation policy | P0 | F19-03 |
+| F19-05 | #755 | Publish the store-assignment contract | P0 | F19-03 |
+| F19-06 | #756 | Implement store assignments in users-service | P0 | F19-05 |
+| F19-07 | #757 | Narrow store-bound operations to the caller's assigned stores | P0 | F19-06 |
+| F19-08 | #758 | Re-baseline the memory gate for the services the map adds | P0 | F19-02 |
+| F19-09 | #898 | Keep the status labels in step with the native relationships automatically | P1 | — |
+
+## Phase 20 — Verified integration of the deployed system
+
+Epic #741.
+
+| ID | Issue | Story | Priority | Depends on |
+|---|---|---|---|---|
+| F20-01 | #759 | Record a real sale from Android through the instance's HTTPS gateway, with request, response and rows | P0 | — |
+| F20-02 | #760 | Read that sale from Electron and write a draft campaign through the gateway, in XML validated by its XSD | P0 | F20-01 |
+| F20-03 | #761 | Run every test suite against one commit from an empty environment with one command | P0 | — |
+| F20-04 | #762 | Make the suites independent of the environment: Redis AOF, PostgreSQL major and shared state | P0 | — |
+| F20-05 | #763 | Reproduce and classify every failure the report blamed on the environment, the two campaign failures first | P0 | F20-03, F20-04 |
+| F20-06 | #764 | Measure Redis Streams propagation per consumer group and set a bound for each | P0 | — |
+| F20-07 | #765 | Build the web-to-service parity harness and prove inventory parity | P0 | — |
+| F20-08 | #766 | Prove audit parity between web writes and service writes | P0 | F20-07 |
+| F20-09 | #767 | Prove segment parity between the web and segments-service | P0 | F20-07 |
+| F20-10 | #768 | Prove recommendations parity after a change, within the propagation bound | P0 | F20-06, F20-07 |
+| F20-11 | #783 | Prove RFM parity between the web's run and rfm-engine | P0 | F20-07, F22-08 |
+| F20-12 | #784 | Publish a consolidated test result for one release | P0 | F20-03, F20-05 |
+
+## Phase 21 — Completing the fifteen services
+
+Epic #742.
+
+| ID | Issue | Story | Priority | Depends on |
+|---|---|---|---|---|
+| F21-01 | #769 | Decide how a sale is cancelled or returned, and how late and duplicate sales are treated | P0 | — |
+| F21-02 | #770 | Publish the sale-reversal contract and its stream | P0 | F21-01 |
+| F21-03 | #774 | Implement sale cancellations and returns in sales-service | P0 | F21-02, F21-06 |
+| F21-04 | #771 | Decide stock by channel, reservations and movements | P0 | — |
+| F21-05 | #772 | Publish the stock-movement and availability contract | P0 | F21-04 |
+| F21-06 | #773 | Implement stock movements in stock-service | P0 | F21-05 |
+| F21-07 | #787 | Serve availability by store and channel from stock-service | P0 | F21-05, F21-12 |
+| F21-08 | #788 | Reserve stock where F21-04 says a reservation applies | P2 | F21-07 |
+| F21-09 | #789 | Publish the product commercial status, attributes, photo, barcode and relations contract | P0 | — |
+| F21-10 | #790 | Implement product commercial status, attributes, photos, barcodes and relations | P0 | F21-09 |
+| F21-11 | #785 | Publish the store hours, channels, status and commercial rules contract | P0 | — |
+| F21-12 | #786 | Implement store hours, channels, status and commercial rules in stores-service | P0 | F21-11 |
+| F21-13 | #791 | Publish the loyalty identifier and permitted-profile contract | P0 | F19-03 |
+| F21-14 | #792 | Implement loyalty identifiers and role-minimised customer reads | P0 | F19-04, F21-13 |
+| F21-15 | #793 | Decide consent, personalization restrictions, retention and anonymization | P0 | — |
+| F21-16 | #794 | Publish the consent, restriction and preference-history contract | P0 | F21-15 |
+| F21-17 | #795 | Implement consent, restrictions and preference history in customer-preferences | P0 | F21-16 |
+| F21-18 | #796 | Infer interests from purchases, apart from declared ones | P1 | F21-17 |
+| F21-19 | #797 | Apply retention and anonymization without breaking history | P1 | F21-17 |
+| F21-20 | #798 | Publish the engagement taxonomy: visits, impressions, clicks, exposures and cart events | P0 | — |
+| F21-21 | #799 | Implement the engagement taxonomy over MongoDB | P0 | F21-20 |
+| F21-22 | #800 | Publish the customer-visit contract | P1 | F21-13, F21-15 |
+| F21-23 | #801 | Implement customer visits in check-ins-service | P1 | F21-14, F21-17, F21-22 |
+| F21-24 | #802 | Decide and publish the domain audit contract: calculations, models, permissions, critical events and authorized reads | P0 | — |
+| F21-25 | #803 | Record domain events in the audit trail | P0 | F21-24 |
+
+## Phase 22 — Dynamic segmentation and model versions
+
+Epic #743.
+
+| ID | Issue | Story | Priority | Depends on |
+|---|---|---|---|---|
+| F22-01 | #775 | Decide what makes segmentation dynamic: triggers, windows, periodicity and incremental scoring | P0 | — |
+| F22-02 | #776 | Decide what a model version is, and how history stays honest across versions | P0 | — |
+| F22-03 | #777 | Publish the rfm-engine contract | P0 | F19-02, F21-01, F22-01, F22-02 |
+| F22-04 | #778 | Stand up rfm-engine as an independent service | P0 | F19-08, F22-03 |
+| F22-05 | #779 | Update a customer's R, F and M from a sale event, touching only that customer | P0 | F22-04 |
+| F22-06 | #780 | Apply reversals, late sales and duplicates to the profile | P0 | F21-03, F22-05 |
+| F22-07 | #781 | Run a scheduled pass for customers whose window or recency changed | P0 | F22-05 |
+| F22-08 | #782 | Verify the incremental result against a full recalculation and publish the difference | P0 | F22-06, F22-07 |
+| F22-09 | #804 | Version the RFM rule sets: windows, percentiles and sale treatment | P0 | F22-05 |
+| F22-10 | #805 | Publish the model-registry contract | P0 | F19-02, F22-02 |
+| F22-11 | #806 | Stand up model-registry and register versions with their dataset and metrics | P0 | F19-08, F22-10 |
+| F22-12 | #808 | Train K-means in the registry, pinned to the web's results by golden fixtures | P0 | F22-05, F22-11, F23-01 |
+| F22-13 | #809 | Publish and roll back a model version without rewriting history | P0 | F22-11 |
+| F22-14 | #810 | Publish the segments contract for per-version assignments, migrations and quality | P0 | F19-02, F22-01, F22-02 |
+| F22-15 | #811 | Apply segment changes under the published version and announce them | P0 | F21-17, F22-05, F22-13, F22-14 |
+| F22-16 | #812 | Serve migrations by version, with their explanation, from segments-service | P0 | F22-13, F22-14 |
+| F22-17 | #813 | Keep the web's segment reports correct alongside incremental changes | P0 | F22-15 |
+
+## Phase 23 — Model validity and drift
+
+Epic #744.
+
+| ID | Issue | Story | Priority | Depends on |
+|---|---|---|---|---|
+| F23-01 | #807 | Build a reproducible evaluation dataset for the model studies | P0 | — |
+| F23-02 | #814 | Justify the variables, the normalization and the treatment of extreme values | P0 | F23-01 |
+| F23-03 | #815 | Choose k with a recorded method and keep silhouette past 2,000 customers | P0 | F23-02 |
+| F23-04 | #816 | Measure K-means stability and reproduce a registered result | P0 | F23-03 |
+| F23-05 | #817 | Show the segments are interpretable and commercially useful | P0 | F23-03 |
+| F23-06 | #818 | Compare RFM and K-means on stated criteria | P0 | F23-04, F23-05 |
+| F23-07 | #819 | Define individual migration, data drift and concept drift, and what is monitored | P0 | — |
+| F23-08 | #820 | Publish the drift contract | P0 | F19-02, F23-07 |
+| F23-09 | #821 | Monitor data drift against each version's reference distribution | P0 | F22-05, F22-11, F23-08 |
+| F23-10 | #822 | Inject controlled drift and measure detection and false alarms | P0 | F23-01, F23-09 |
+| F23-11 | #823 | Monitor the predictive relation, if F23-07 adopted one | P1 | F22-15, F23-09 |
+
+## Phase 24 — Inventory-bound recommendations
+
+Epic #745.
+
+| ID | Issue | Story | Priority | Depends on |
+|---|---|---|---|---|
+| F24-01 | #824 | Prove today's recommendations never offer an out-of-stock, inactive or elsewhere-only product | P0 | — |
+| F24-02 | #825 | Decide the reference store and channel, availability, exclusions, alternatives and explanation | P0 | — |
+| F24-03 | #826 | Publish the recommendations contract for store, channel, alternatives and decisions | P0 | F24-02 |
+| F24-04 | #827 | Filter recommendations by availability at the reference store and channel | P0 | F21-07, F21-10, F24-03 |
+| F24-05 | #828 | Record each recommendation's explanation | P0 | F24-03 |
+| F24-06 | #829 | Exclude what the customer's consent and restrictions forbid | P0 | F21-17, F24-03 |
+| F24-07 | #830 | Offer valid alternatives when a product is unavailable | P0 | F24-04 |
+| F24-08 | #831 | Prove a stock change produces the expected recommendation update | P0 | F20-06, F21-06, F24-04 |
+
+## Phase 25 — Campaign measurement
+
+Epic #746.
+
+| ID | Issue | Story | Priority | Depends on |
+|---|---|---|---|---|
+| F25-01 | #832 | Decide the experiment design: control, verifiable randomization, eligibility, sample size and metrics | P0 | — |
+| F25-02 | #833 | Decide attribution apart from causal effect, with one sale counted once | P0 | — |
+| F25-03 | #834 | Publish the campaigns contract for audiences, budgets, eligibility, exclusions and promotions | P0 | F19-02, F19-03 |
+| F25-04 | #835 | Implement campaign audiences, eligibility, exclusions and budgets | P0 | F21-17, F25-03 |
+| F25-05 | #836 | Apply promotions and valid discounts in the sale | P0 | F21-12, F25-04 |
+| F25-06 | #837 | Publish the experimentation contract | P0 | F19-02, F25-01, F25-02 |
+| F25-07 | #838 | Stand up experimentation and take service ownership of the experiment tables | P0 | F19-08, F25-06 |
+| F25-08 | #839 | Assign customers stably and verifiably, and check the balance | P0 | F25-04, F25-07 |
+| F25-09 | #840 | Plan the sample size before assignment | P0 | F25-07 |
+| F25-10 | #841 | Record real exposures from the floor, apart from assignment | P0 | F21-21, F25-07 |
+| F25-11 | #842 | Evaluate conversions in their window, net of reversals | P0 | F21-03, F25-07 |
+| F25-12 | #843 | Attribute each sale to one campaign at most, and keep it apart from effect | P0 | F25-11 |
+| F25-13 | #844 | Measure incremental effect with its uncertainty | P0 | F25-11 |
+| F25-14 | #845 | Validate the experiment pipeline: A/A, injected effect, stability and contamination | P0 | F25-08, F25-10, F25-12, F25-13 |
+
+## Phase 26 — KPIs, planning and data quality
+
+Epic #747.
+
+| ID | Issue | Story | Priority | Depends on |
+|---|---|---|---|---|
+| F26-01 | #846 | Publish the analytics-kpis contract | P0 | F19-02, F19-03 |
+| F26-02 | #847 | Stand up analytics-kpis with net sales by segment, store, channel and period | P0 | F19-08, F21-03, F26-01 |
+| F26-03 | #848 | Report migrations, retention and spend per segment | P0 | F22-16, F26-02 |
+| F26-04 | #849 | Report conversion, recommendation and campaign performance | P0 | F24-05, F25-12, F25-13, F26-02 |
+| F26-05 | #850 | Relate demand by segment to availability | P0 | F21-06, F26-02 |
+| F26-06 | #851 | Decide how sales imports reach a service past the 64 KiB cap | P0 | — |
+| F26-07 | #852 | Publish the sales-import and reconciliation contract | P0 | F26-06 |
+| F26-08 | #853 | Import sales through sales-service with validation and rejections | P0 | F26-07 |
+| F26-09 | #854 | Reconcile duplicates with existing sales and report data quality | P1 | F26-08 |
+
+## Phase 27 — Android store operations
+
+Epic #748.
+
+| ID | Issue | Story | Priority | Depends on |
+|---|---|---|---|---|
+| F27-01 | #855 | Give each store profile its own navigation, with renewal, revocation and role access | P0 | F19-04, #722, #723 |
+| F27-02 | #856 | Identify a customer by loyalty QR or authorized search | P0 | F21-13, F27-01 |
+| F27-03 | #857 | Show the permitted commercial profile: segment, interests and restrictions | P0 | F21-16, F27-02 |
+| F27-04 | #858 | Search the catalog, scan barcodes and show availability by store | P0 | F21-05, F21-09, F27-01 |
+| F27-05 | #859 | Build a cart and confirm a sale with valid discounts and idempotency | P0 | F21-20, F25-03, F27-04 |
+| F27-06 | #860 | Show explained, available recommendations and record what was really shown | P0 | F21-20, F24-03, F27-03 |
+| F27-07 | #861 | Consume campaigns and record a real exposure | P0 | F21-20, F25-03, F25-06, F27-01 |
+| F27-08 | #862 | Give the store manager local indicators, campaigns, conversions and stock | P0 | F26-01, F27-01 |
+| F27-09 | #863 | Let the loyalty officer register customers, check consent and update preferences | P0 | F21-16, F27-02 |
+| F27-10 | #864 | Decide Android notifications and capture incidents | P1 | — |
+| F27-11 | #865 | Publish the capture-incident contract | P1 | F27-10 |
+| F27-12 | #866 | Implement capture incidents | P1 | F27-11 |
+| F27-13 | #867 | Keep offline drafts with a pending state, validated by the server on return | P0 | F27-05 |
+| F27-14 | #868 | Let the commercial supervisor review incidents, syncs and applied promotions | P1 | F27-11, F27-13 |
+| F27-15 | #869 | Raise notifications for campaigns, capture errors and incidents | P1 | F27-07, F27-10, F27-11 |
+
+## Phase 28 — Desktop analysis console
+
+Epic #749.
+
+| ID | Issue | Story | Priority | Depends on |
+|---|---|---|---|---|
+| F28-01 | #870 | Rebuild the console shell: modules by work, loading, errors, pagination, filters, search, exports and session expiry | P0 | — |
+| F28-02 | #871 | Add the import and data-quality module | P0 | F26-07, F28-01 |
+| F28-03 | #872 | Add the customer exploration module | P0 | F22-03, F28-01 |
+| F28-04 | #873 | Add the RFM configuration module | P0 | F22-03, F28-01 |
+| F28-05 | #874 | Add the K-means configuration module | P0 | F22-10, F28-01 |
+| F28-06 | #875 | Add the migration matrix module | P0 | F22-14, F28-01 |
+| F28-07 | #876 | Add the drift analysis module | P0 | F23-08, F28-01 |
+| F28-08 | #877 | Add the recommendations inspection module | P0 | F24-03, F28-01 |
+| F28-09 | #878 | Add audiences, budget, conditions, validity and exclusions to the campaign module | P0 | F25-03, F28-01 |
+| F28-10 | #879 | Add the A/B experiment module | P0 | F25-06, F28-01 |
+| F28-11 | #880 | Add the conversion analysis module | P0 | F28-10 |
+| F28-12 | #881 | Add the inventory planning module | P0 | F26-01, F28-01 |
+| F28-13 | #882 | Add the model comparison module | P0 | F23-06, F28-05 |
+| F28-14 | #883 | Add executive reports with PDF, CSV and Excel export | P0 | F26-01, F28-01 |
+| F28-15 | #884 | Add versions, rule changes, campaigns, decisions and owners to the audit module | P0 | F21-24, F28-01 |
+| F28-16 | #885 | Prove the Electron security defaults hold across the new modules | P0 | — |
+
+## Phase 29 — Validation, acceptance and demonstration
+
+Epic #750.
+
+| ID | Issue | Story | Priority | Depends on |
+|---|---|---|---|---|
+| F29-01 | #886 | Validate RFM against hand-computed values | P0 | F22-06 |
+| F29-02 | #887 | Validate migrations between two periods for the same customers | P0 | F22-15, F22-16 |
+| F29-03 | #888 | Run the acceptance tests of the transaction path on the instance | P0 | #462, F20-02, F21-03, F20-07 |
+| F29-04 | #889 | Run the acceptance tests of the segmentation path | P0 | F22-08, F22-12, F23-04, F23-10, F29-01, F29-02 |
+| F29-05 | #890 | Run the acceptance tests of the personalization and campaign path | P0 | F24-08, F25-14, F27-06, F27-07 |
+| F29-06 | #891 | Run the acceptance tests of privacy, revocation and disconnection | P0 | F19-07, F21-14, F21-17, F27-13 |
+| F29-07 | #895 | Run the deployed-integration and reproducibility tests on a clean environment | P0 | F20-12, F29-12 |
+| F29-08 | #892 | Plan the usability tests with store staff, analysts and administrators | P0 | — |
+| F29-09 | #893 | Run the usability sessions and act on what they find | P0 | F27-05, F27-08, F27-09, F27-13, F28-11, F28-14, F29-08 |
+| F29-10 | #896 | Demonstrate the complete loop on the deployed system, from purchase to measured effect | P0 | #462, F22-15, F24-04, F25-05, F25-08, F25-10, F25-13, F27-05, F27-07, F28-06, F28-11, F29-12 |
+| F29-11 | #897 | Publish the service catalog compliance and update the delivery documents | P0 | F29-07, F29-09, F29-10, F15-03 |
+| F29-12 | #894 | Release the third delivery to the instance | P0 | F29-03, F29-04, F29-05, F29-06, F29-09 |
 
 [adr-0016]: adr/0016-the-second-delivery-reinstates-the-distributed-architecture.md
 [adr-0017]: adr/0017-segment-assignment-history-replaces-the-mutable-current-segment.md

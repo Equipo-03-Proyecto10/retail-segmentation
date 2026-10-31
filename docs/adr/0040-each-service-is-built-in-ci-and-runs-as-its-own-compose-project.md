@@ -1,10 +1,10 @@
 # ADR-0040 — Each service is built in CI and runs as its own compose project on the instance
 
-**Status:** Accepted
+**Status:** Partially superseded by ADR-0059 (the memory gate and what to drop)
 **Owner:** Marcelo
 **Issue:** #398
 **Supersedes:** [ADR-0015](0015-containers-are-a-development-path-only.md)
-**Superseded by:** —
+**Superseded by:** [ADR-0059](0059-four-new-services-join-the-fifteen-and-six-capabilities-fold-into-the-rule-they-extend.md), in part
 
 ---
 

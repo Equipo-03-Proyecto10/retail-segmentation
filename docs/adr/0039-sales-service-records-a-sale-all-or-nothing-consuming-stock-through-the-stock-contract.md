@@ -1,10 +1,10 @@
 # ADR-0039 — sales-service records a sale all or nothing, consuming stock through the stock contract
 
-**Status:** Accepted
+**Status:** Partially superseded by ADR-0062 (a sale as the only sales write)
 **Owner:** Marcelo
 **Issue:** #398
 **Supersedes:** [ADR-0020](0020-csv-is-the-sole-sales-ingestion-entry-point-for-this-delivery.md), in part: its "sole entry point" clause and its "one implementation of the rules" clause
-**Superseded by:** —
+**Superseded by:** [ADR-0062](0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md), in part
 
 ---
 

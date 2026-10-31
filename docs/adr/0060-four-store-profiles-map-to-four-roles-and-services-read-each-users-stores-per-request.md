@@ -1,6 +1,6 @@
 # ADR-0060 — Four store profiles map to four roles, and services read each user's stores per request
 
-**Status:** Proposed
+**Status:** Accepted (2026-10-31)
 **Owner:** Marcelo
 **Issue:** #753
 **Supersedes:** in part, [ADR-0041](0041-android-and-electron-clients-run-different-processes-over-different-formats.md) (`STORE_MANAGER` as the only floor role) and [ADR-0048](0048-store-managers-read-every-stores-reports.md) (no user-to-store association, for the services only)

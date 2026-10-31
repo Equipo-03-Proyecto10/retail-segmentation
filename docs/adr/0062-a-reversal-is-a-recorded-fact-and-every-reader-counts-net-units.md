@@ -1,6 +1,6 @@
 # ADR-0062 — A reversal is a recorded fact, and every reader counts net units
 
-**Status:** Proposed
+**Status:** Accepted (2026-10-31)
 **Owner:** Marcelo
 **Issue:** #769
 **Supersedes:** in part, [ADR-0039](0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) (a sale as the only sales write) and [ADR-0044](0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) (one synchronous cross-boundary call)

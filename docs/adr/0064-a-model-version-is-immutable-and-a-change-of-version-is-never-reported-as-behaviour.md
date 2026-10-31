@@ -1,6 +1,6 @@
 # ADR-0064 — A model version is immutable, and a change of version is never reported as behaviour
 
-**Status:** Proposed
+**Status:** Accepted (2026-10-31)
 **Owner:** Marcelo
 **Issue:** #776
 **Supersedes:** —

@@ -1,6 +1,6 @@
 # ADR-0059 — Four new services join the fifteen, and six capabilities fold into the rule they extend
 
-**Status:** Proposed
+**Status:** Accepted (2026-10-31)
 **Owner:** Marcelo
 **Issue:** #752
 **Supersedes:** in part, [ADR-0034](0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) (the registry's fifteen), [ADR-0040](0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md) (the 3,000 MB gate and what to drop when memory runs short) and [ADR-0043](0043-at-least-ten-microservices-each-implementing-one-business-rule.md) (the plan of fifteen, the cut order and the next free port)

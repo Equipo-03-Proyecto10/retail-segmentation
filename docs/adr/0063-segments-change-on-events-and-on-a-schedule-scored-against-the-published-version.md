@@ -1,6 +1,6 @@
 # ADR-0063 — Segments change on events and on a schedule, scored against the published version
 
-**Status:** Proposed
+**Status:** Accepted (2026-10-31)
 **Owner:** Marcelo
 **Issue:** #775
 **Supersedes:** in part, [ADR-0017](0017-segment-assignment-history-replaces-the-mutable-current-segment.md) (a run scores every customer) and [ADR-0044](0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) (one synchronous cross-boundary call)

@@ -92,10 +92,10 @@ The instructor's catalog widens each service. It keeps the registered ports.
 The instructor recommends these, says not all need a container, suggests
 integrating some in segments, sales, recommendations or campaigns to avoid
 artificial fragmentation, and notes that ports 5016 to 5025 are proposals.
-**F19-02 decides.** The working assumption below lets the stories be written, and
-says where work lives only until that record is accepted.
+[ADR-0059](adr/0059-four-new-services-join-the-fifteen-and-six-capabilities-fold-into-the-rule-they-extend.md)
+decides it, and the table below is its placement.
 
-| # | Capability | Working placement | Why |
+| # | Capability | Placement | Why |
 |---|---|---|---|
 | 16 | rfm-engine | New container, 5016 | A stream-driven worker with its own invariant |
 | 17 | segment-migration | Folded into segments | A read over assignment history |
@@ -110,7 +110,8 @@ says where work lives only until that record is accepted.
 
 **The budget binds this choice.** The `mem_limit`s sum to 2,832 MB against the gate
 of 3,000 MB, which leaves room for one Flask service at 160 MB. F18-01 measured
-Flask services at about 83 MiB, but idle. F19-02 and F19-08 re-baseline it.
+Flask services at about 83 MiB, but idle. ADR-0059 sets a new gate of 3,500 MB, and
+F19-08 applies it after measuring under load.
 
 ## 6. What must change in decided records
 
@@ -354,7 +355,7 @@ Each carries a working assumption or a decision, and the work continues.
 | ID | Question | Working assumption |
 |---|---|---|
 | Q-15 | When is the delivery, and what is the sprint calendar? | Pending. No date is written until the team sets one |
-| Q-16 | Which capabilities get a container? | Section 5, until F19-02 is accepted |
+| Q-16 | Which capabilities get a container? | **Decided (2026-10-31).** Section 5, by ADR-0059 |
 | Q-17 | Is the web still frozen, and does it expose APIs? The brief lists "Web and APIs" for it | It stays one application that serves HTML, with no Redis and no service calls, and the APIs are the services'. It changes only where a new fact would otherwise make it wrong: reversals (F21-01) and incremental changes (F22-17) |
 | Q-18 | Which are the two campaign failures? | **Decided (2026-10-31).** Nobody on the team can identify the report, so it is not looked for. F20-05 names any campaign failure from a fresh run |
 | Q-19 | Can real store staff join the usability tests? | F29-08 states who took part, and declares anyone who only stands in for a role |

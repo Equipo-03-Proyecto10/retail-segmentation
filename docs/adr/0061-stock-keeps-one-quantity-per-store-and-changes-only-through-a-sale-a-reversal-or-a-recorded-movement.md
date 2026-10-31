@@ -1,6 +1,6 @@
 # ADR-0061 — Stock keeps one quantity per store, and changes only through a sale, a reversal or a recorded movement
 
-**Status:** Proposed
+**Status:** Accepted (2026-10-31)
 **Owner:** Marcelo
 **Issue:** #771
 **Supersedes:** in part, [ADR-0031](0031-sales-ingestion-decrements-inventory-atomically.md) (the server-rendered entry point it reserved for non-sale movements) and [ADR-0044](0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) (one synchronous cross-boundary call)

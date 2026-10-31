@@ -156,7 +156,7 @@ Later runtime events must be preserved.
 | [0014](0014-service-owned-transactions-and-typed-write-failures.md) | Services own transactions and translate typed write failures | Accepted |
 | [0015](0015-containers-are-a-development-path-only.md) | Docker Compose is a development path only, and is never run on the instance | Superseded by [0040](0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md) |
 | [0016](0016-the-second-delivery-reinstates-the-distributed-architecture.md) | The second delivery reinstates the distributed architecture | Partially superseded by [0043](0043-at-least-ten-microservices-each-implementing-one-business-rule.md) (service count only) |
-| [0017](0017-segment-assignment-history-replaces-the-mutable-current-segment.md) | Segment assignment history replaces the mutable current segment | Accepted |
+| [0017](0017-segment-assignment-history-replaces-the-mutable-current-segment.md) | Segment assignment history replaces the mutable current segment | Partially superseded by [0063](0063-segments-change-on-events-and-on-a-schedule-scored-against-the-published-version.md) |
 | [0018](0018-two-segmentation-strategies-behind-one-method-agnostic-pipeline.md) | Two segmentation strategies feed one label-based, method-agnostic pipeline | Superseded by [0030](0030-k-means-clusters-are-paired-with-labels-by-proportional-rank.md) |
 | [0019](0019-experiment-measurement-separates-assignment-exposure-and-conversion.md) | Experiment measurement separates assignment, exposure and conversion | Partially superseded by [0028](0028-experiment-treatment-arms-may-omit-control.md) |
 | [0020](0020-csv-is-the-sole-sales-ingestion-entry-point-for-this-delivery.md) | CSV is the sole sales ingestion entry point for this delivery | Partially superseded by [0039](0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) |
@@ -170,24 +170,24 @@ Later runtime events must be preserved.
 | [0028](0028-experiment-treatment-arms-may-omit-control.md) | Experiment treatment arms may omit a control | Accepted |
 | [0029](0029-segment-history-runs-and-experiments-are-protected-from-the-application-role.md) | Segment history, runs and experiments are protected from the application role | Accepted |
 | [0030](0030-k-means-clusters-are-paired-with-labels-by-proportional-rank.md) | K-means clusters are paired with the stable labels by proportional rank, so k need not equal the vocabulary's size | Accepted |
-| [0031](0031-sales-ingestion-decrements-inventory-atomically.md) | Accepted sales decrement inventory atomically | Accepted |
+| [0031](0031-sales-ingestion-decrements-inventory-atomically.md) | Accepted sales decrement inventory atomically | Partially superseded by [0061](0061-stock-keeps-one-quantity-per-store-and-changes-only-through-a-sale-a-reversal-or-a-recorded-movement.md) |
 | [0032](0032-server-side-sessions-have-idle-and-absolute-lifetimes.md) | Server-side sessions have idle and absolute lifetimes | Accepted |
 | [0033](0033-duplicate-transport-security-policy-at-application-and-proxy.md) | Keep the transport security policy at Flask and NGINX | Accepted |
-| [0034](0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) | Fifteen single-rule services, each the only service that writes its data | Accepted |
+| [0034](0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) | Fifteen single-rule services, each the only service that writes its data | Partially superseded by [0059](0059-four-new-services-join-the-fifteen-and-six-capabilities-fold-into-the-rule-they-extend.md) |
 | [0035](0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md) | Each service publishes its own versioned contract, and no two services share a resource | Accepted |
 | [0036](0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md) | auth-service issues role-only RS256 tokens whose sessions live in Redis | Accepted |
 | [0037](0037-two-redis-instances-carry-sessions-caches-limits-and-inter-service-streams.md) | Two Redis instances carry sessions, caches, limits and the inter-service streams, for the services only | Accepted |
 | [0038](0038-mongodb-holds-in-store-engagement-owned-by-engagement-service-alone.md) | MongoDB holds in-store engagement, owned by engagement-service alone | Accepted |
-| [0039](0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) | sales-service records a sale all or nothing, consuming stock through the stock contract | Accepted |
-| [0040](0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md) | Each service is built in CI and runs as its own compose project on the instance | Accepted |
-| [0041](0041-android-and-electron-clients-run-different-processes-over-different-formats.md) | The Android and Electron clients run different processes over different formats | Accepted |
+| [0039](0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) | sales-service records a sale all or nothing, consuming stock through the stock contract | Partially superseded by [0062](0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md) |
+| [0040](0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md) | Each service is built in CI and runs as its own compose project on the instance | Partially superseded by [0059](0059-four-new-services-join-the-fifteen-and-six-capabilities-fold-into-the-rule-they-extend.md) |
+| [0041](0041-android-and-electron-clients-run-different-processes-over-different-formats.md) | The Android and Electron clients run different processes over different formats | Partially superseded by [0060](0060-four-store-profiles-map-to-four-roles-and-services-read-each-users-stores-per-request.md) |
 | [0042](0042-a-bench-only-rust-build-of-the-products-reads-is-compared-under-one-load.md) | A bench-only Rust build of the products reads is compared with the Flask service under one load | Accepted |
-| [0043](0043-at-least-ten-microservices-each-implementing-one-business-rule.md) | The distributed stage has at least ten microservices, each implementing one business rule | Accepted |
-| [0044](0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) | Boundaries meet only through versioned database contracts and Redis Streams relayed from each owner's outbox | Accepted |
+| [0043](0043-at-least-ten-microservices-each-implementing-one-business-rule.md) | The distributed stage has at least ten microservices, each implementing one business rule | Partially superseded by [0059](0059-four-new-services-join-the-fifteen-and-six-capabilities-fold-into-the-rule-they-extend.md) |
+| [0044](0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) | Boundaries meet only through versioned database contracts and Redis Streams relayed from each owner's outbox | Partially superseded by [0061](0061-stock-keeps-one-quantity-per-store-and-changes-only-through-a-sale-a-reversal-or-a-recorded-movement.md), [0062](0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md) and [0063](0063-segments-change-on-events-and-on-a-schedule-scored-against-the-published-version.md) |
 | [0045](0045-services-never-import-the-web-system.md) | Services never import the web system | Accepted |
 | [0046](0046-service-owned-data-lives-in-service-schemas.md) | Service-owned data lives in service schemas | Partially superseded by [0054](0054-seed-written-outbox-rows-before-the-relays-first-start.md) (seed events only) |
 | [0047](0047-notifications-are-pulled-from-postgresql-and-an-experiments-end-is-announced-by-the-next-page-read.md) | Notifications are pulled from PostgreSQL, and an experiment's end is announced by the next signed-in page read | Accepted |
-| [0048](0048-store-managers-read-every-stores-reports.md) | Store managers read every store's reports | Accepted |
+| [0048](0048-store-managers-read-every-stores-reports.md) | Store managers read every store's reports | Partially superseded by [0060](0060-four-store-profiles-map-to-four-roles-and-services-read-each-users-stores-per-request.md) |
 | [0049](0049-kit-rs-validates-xml-request-bodies-with-libxml2.md) | kit-rs validates XML request bodies with libxml2, after a quick-xml screen | Accepted |
 | [0050](0050-experiment-conversions-are-append-only-for-the-application-role.md) | Experiment conversions are append-only for the application role | Accepted |
 | [0051](0051-app-session-is-seeded-as-runtime-history.md) | `app_session` is seeded as runtime history, not exempted | Accepted |
@@ -195,12 +195,12 @@ Later runtime events must be preserved.
 | [0053](0053-experiments-are-measured-on-conversion-only.md) | Experiments are measured on conversion only; `AVERAGE_TICKET` is removed | Accepted |
 | [0054](0054-seed-written-outbox-rows-before-the-relays-first-start.md) | Seed-written outbox events are removed before bootstrap commits | Accepted |
 | [0055](0055-an-ops-console-supervises-services-through-their-meta-routes.md) | An ops console supervises the services through their meta routes, a host snapshot and a read-only Redis user | Accepted |
-| [0059](0059-four-new-services-join-the-fifteen-and-six-capabilities-fold-into-the-rule-they-extend.md) | Four new services join the fifteen, and six capabilities fold into the rule they extend | Proposed |
-| [0060](0060-four-store-profiles-map-to-four-roles-and-services-read-each-users-stores-per-request.md) | Four store profiles map to four roles, and services read each user's stores per request | Proposed |
-| [0061](0061-stock-keeps-one-quantity-per-store-and-changes-only-through-a-sale-a-reversal-or-a-recorded-movement.md) | Stock keeps one quantity per store, and changes only through a sale, a reversal or a recorded movement | Proposed |
-| [0062](0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md) | A reversal is a recorded fact, and every reader counts net units | Proposed |
-| [0063](0063-segments-change-on-events-and-on-a-schedule-scored-against-the-published-version.md) | Segments change on events and on a schedule, scored against the published version | Proposed |
-| [0064](0064-a-model-version-is-immutable-and-a-change-of-version-is-never-reported-as-behaviour.md) | A model version is immutable, and a change of version is never reported as behaviour | Proposed |
+| [0059](0059-four-new-services-join-the-fifteen-and-six-capabilities-fold-into-the-rule-they-extend.md) | Four new services join the fifteen, and six capabilities fold into the rule they extend | Accepted |
+| [0060](0060-four-store-profiles-map-to-four-roles-and-services-read-each-users-stores-per-request.md) | Four store profiles map to four roles, and services read each user's stores per request | Accepted |
+| [0061](0061-stock-keeps-one-quantity-per-store-and-changes-only-through-a-sale-a-reversal-or-a-recorded-movement.md) | Stock keeps one quantity per store, and changes only through a sale, a reversal or a recorded movement | Accepted |
+| [0062](0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md) | A reversal is a recorded fact, and every reader counts net units | Accepted |
+| [0063](0063-segments-change-on-events-and-on-a-schedule-scored-against-the-published-version.md) | Segments change on events and on a schedule, scored against the published version | Accepted |
+| [0064](0064-a-model-version-is-immutable-and-a-change-of-version-is-never-reported-as-behaviour.md) | A model version is immutable, and a change of version is never reported as behaviour | Accepted |
 
 ## Writing one
 

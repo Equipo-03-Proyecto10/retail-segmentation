@@ -30,7 +30,9 @@ Work is pulled by the person who will do it. To take an issue:
    project board in the second delivery; the issue carries its own state
    (`docs/process.md` §8).
    ```bash
-   gh issue list --search "-is:blocked no:assignee -label:type:epic"
+   gh api -X GET search/issues -f advanced_search=true -f per_page=100 \
+     -f q='repo:Equipo-03-Proyecto10/retail-segmentation is:issue is:open -is:blocked no:assignee -label:type:epic' \
+     --jq '.items[] | "#\(.number) \(.title)"'
    ```
 2. Open Relationships and confirm that every `Blocked by` issue is closed. If a
    `status:blocked` label disagrees with the relationships, the relationship is

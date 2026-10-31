@@ -5,6 +5,7 @@
 | [Scope](scope.md) | What the first delivery includes, the constraints, the phases, the deliverables |
 | [Scope — Delivery 2, analytics](scope-delivery-2-analytics.md) | The web system's analytics phase (phases 7–12) |
 | [Scope — Delivery 2, distributed](scope-delivery-2-distributed.md) | Microservices, Android and Electron clients, Redis, MongoDB and JWT (phases 13–18) |
+| [Scope — Delivery 3](scope-delivery-3.md) | The commercial intelligence platform: the instructor's retrospective checked against the repository, and phases 19–29 |
 | [Analytics permission map](analytics-permission-map.md) | Which permission each analytics surface requires |
 | [Process](process.md) | How the team works: Scrum planning, XP engineering practices, Definition of Done |
 | [Backlog](backlog.md) | Ordered work, grouped by scope phase |

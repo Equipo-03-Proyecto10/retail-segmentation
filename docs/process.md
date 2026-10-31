@@ -119,8 +119,8 @@ the commitment is calibrated from measured velocity afterwards.
 ## 8. Working agreements
 
 - **Work in progress.** Maximum 2 stories in progress per person. Finish before starting.
-- **Issue state.** The second delivery uses no project board; the issue itself
-  carries the state (#603):
+- **Issue state.** Since the second delivery there is no project board; the issue
+  itself carries the state (#603):
 
   | State | What the issue shows |
   |---|---|
@@ -130,10 +130,19 @@ the commitment is calibrated from measured velocity afterwards.
   | Done | Closed, with the evidence the Definition of Done asks for |
 
 - **Pulling work.** Work is self-assigned, not handed out. Any Development Team
-  member may claim a Ready issue, highest priority first. The list is
-  `gh issue list --search "-is:blocked no:assignee -label:type:epic"`. Assign
-  yourself before creating the branch, and create the branch from the issue
-  (`gh issue develop`) so that it is linked.
+  member may claim a Ready issue, highest priority first. The list is the search
+  `is:open -is:blocked no:assignee -label:type:epic`. From a terminal it needs the
+  advanced search, because `gh issue list --search` silently ignores `is:blocked`
+  and lists blocked issues too (seen on gh 2.46):
+
+  ```bash
+  gh api -X GET search/issues -f advanced_search=true -f per_page=100 \
+    -f q='repo:Equipo-03-Proyecto10/retail-segmentation is:issue is:open -is:blocked no:assignee -label:type:epic' \
+    --jq '.items[] | "#\(.number) \(.title)"'
+  ```
+
+  Assign yourself before creating the branch, and create the branch from the
+  issue (`gh issue develop`) so that it is linked.
 - **Dependencies.** Every `Depends on` entry in an issue must also be recorded
   under GitHub's native Relationships as `Blocked by`. An open blocker keeps the
   issue out of Ready and In progress. The body explains the dependency; the

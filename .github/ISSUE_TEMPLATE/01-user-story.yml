@@ -41,7 +41,7 @@ body:
     id: phase
     attributes:
       label: Scope phase
-      description: From `docs/scope.md` §4 (0–6), `docs/scope-delivery-2-analytics.md` §5 (7–12) and `docs/scope-delivery-2-distributed.md` §6 (13–18).
+      description: From `docs/scope.md` §4 (0–6), `docs/scope-delivery-2-analytics.md` §5 (7–12), `docs/scope-delivery-2-distributed.md` §6 (13–18) and `docs/scope-delivery-3.md` §7 (19–29).
       options:
         - "0 — Preparation"
         - "1 — GCP infrastructure"
@@ -62,6 +62,17 @@ body:
         - "16 — Desktop client"
         - "17 — Android client"
         - "18 — Deployment and demonstration"
+        - "19 — Third-delivery foundation"
+        - "20 — Verified integration of the deployed system"
+        - "21 — Completing the fifteen services"
+        - "22 — Dynamic segmentation and model versions"
+        - "23 — Model validity and drift"
+        - "24 — Inventory-bound recommendations"
+        - "25 — Campaign measurement"
+        - "26 — KPIs, planning and data quality"
+        - "27 — Android store operations"
+        - "28 — Desktop analysis console"
+        - "29 — Validation, acceptance and demonstration"
     validations:
       required: true
 

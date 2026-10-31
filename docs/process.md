@@ -148,7 +148,9 @@ the commitment is calibrated from measured velocity afterwards.
   issue out of Ready and In progress. The body explains the dependency; the
   native relationship provides the visible Blocked indicator in Issues. The
   `status:blocked` and `status:blocking` labels mirror the relationships; when
-  they disagree, the relationship is right and the label is corrected.
+  they disagree, the relationship is right and the label is corrected. The
+  `status-labels` workflow does that when an issue closes or reopens, and every
+  hour for relationships that changed.
 - **Assignment boundaries.** Self-assignment does not change priority, and
   nobody assigns work to another member without that member's agreement.
   Pair-required work carries both participants as assignees.

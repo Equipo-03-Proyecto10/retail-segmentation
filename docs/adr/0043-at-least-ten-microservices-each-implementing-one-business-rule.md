@@ -1,10 +1,10 @@
 # ADR-0043 — The distributed stage has at least ten microservices, each implementing one business rule
 
-**Status:** Accepted
+**Status:** Partially superseded by ADR-0059 (the plan of fifteen, the cut order and the next free port)
 **Owner:** Marcelo
 **Issue:** #398
 **Supersedes:** [ADR-0016](0016-the-second-delivery-reinstates-the-distributed-architecture.md), in part. Only its count of six to ten services
-**Superseded by:** —
+**Superseded by:** [ADR-0059](0059-four-new-services-join-the-fifteen-and-six-capabilities-fold-into-the-rule-they-extend.md), in part
 
 ---
 

@@ -197,6 +197,7 @@ Later runtime events must be preserved.
 | [0055](0055-an-ops-console-supervises-services-through-their-meta-routes.md) | An ops console supervises the services through their meta routes, a host snapshot and a read-only Redis user | Accepted |
 | [0059](0059-four-new-services-join-the-fifteen-and-six-capabilities-fold-into-the-rule-they-extend.md) | Four new services join the fifteen, and six capabilities fold into the rule they extend | Proposed |
 | [0060](0060-four-store-profiles-map-to-four-roles-and-services-read-each-users-stores-per-request.md) | Four store profiles map to four roles, and services read each user's stores per request | Proposed |
+| [0061](0061-stock-keeps-one-quantity-per-store-and-changes-only-through-a-sale-a-reversal-or-a-recorded-movement.md) | Stock keeps one quantity per store, and changes only through a sale, a reversal or a recorded movement | Proposed |
 
 ## Writing one
 

@@ -162,6 +162,12 @@ right place for it, and which the team accepted on 2026-09-07.
 | [F18-03 (#456)](f18-03-rollback.md) | One service deployed and rolled back at a time by `deploy/deploy-service.sh`: all 15 services moved onto it at their running versions with no container recreated, 13 of 13 core rollback rehearsals passing every check (previous release and tag ready again, the 17 other containers untouched, the web at 200), a concurrent deploy completing inside a failing one, and ADR-0040's deploy-path greps silent. The workflow's first run, on release #710, deployed segments 0.1.2 and sales 0.1.3 at the same moment, each after its release job, with nothing else restarted |
 | [F18-04 (#459)](f18-04-negative-tests.md) | A scripted negative-test suite across every service and boundary, built from each registered contract: 600 cases, all held, on the local stack (323), on the instance as root through NGINX (259) and from outside it (18, with a control that reaches an allowed port). Covers forged and expired tokens, revoked sessions, roles, representations, the 64 KiB cap, pagination, the single administrator, sales' stock and idempotency refusals, the sign-in and password limits, the grant and Redis ACL checks and the closed ports. Its `redis-state` case found that a restart revokes every session ([#714](https://github.com/Equipo-03-Proyecto10/retail-segmentation/issues/714)) |
 
+## Phase 23 — model validity and drift
+
+| Document | What it records |
+|---|---|
+| [F23-01](f23-01-evaluation-dataset.md) | The reproducible evaluation dataset, loaded on PostgreSQL 18, the web's RFM and K-means runs over it, and the leads it gives the model studies |
+
 ## Review passes
 
 These follow a specific review rather than a story.

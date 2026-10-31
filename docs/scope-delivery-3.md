@@ -54,8 +54,8 @@ states what remains.
 
 | ID | Finding | What the repository shows | Status |
 |---|---|---|---|
-| RT-01 | The gateway does not publish the APIs | **Published since the report.** F18-02 (#452) installed the 15 includes on 2026-10-23, and 15 of 15 readiness routes answered 204 through Cloudflare ([evidence](evidence/f18-02-api-edge.md)). The negative suite held 259 cases on the instance and 18 from outside ([evidence](evidence/f18-04-negative-tests.md)). Still missing: a real authenticated operation from each client on the instance, with its request, response and persisted row | Partly met |
-| RT-02 | Failures blamed on the environment; two campaign failures uninvestigated | No single run covers every suite for one version: `ci.yml`, `services.yml` and `nightly.yml` set up separately. `services/categories/tests/test_redis.py` turns `appendonly` off on its server. CI and `compose.distributed.yaml` run PostgreSQL 16, the instance 18. The report is not in the repository, so the two failures are unnamed | Open |
+| RT-01 | The gateway does not publish the APIs | **Published since the report.** F18-02 (#452) installed the 15 includes on 2026-10-23, and 15 of 15 readiness routes answered 204 through Cloudflare ([evidence](evidence/f18-02-api-edge.md)). The negative suite held 259 cases on the instance and 18 from outside ([evidence](evidence/f18-04-negative-tests.md)). The team discarded this finding on 2026-10-31. The instructor's acceptance tests still need a real authenticated operation from each client, with its request, response and persisted row (F20-01, F20-02) | Discarded |
+| RT-02 | Failures blamed on the environment; two campaign failures uninvestigated | No single run covers every suite for one version: `ci.yml`, `services.yml` and `nightly.yml` set up separately. `services/categories/tests/test_redis.py` turns `appendonly` off on its server. CI and `compose.distributed.yaml` run PostgreSQL 16, the instance 18. Nobody on the team can identify the report, so the two failures are unnamed, and F20-05 works from a fresh run | Open |
 | RT-03 | Parity and propagation delay | `tests/golden/` pins four ports (sales, recommendations, users, campaigns) on fixed inputs. There is no parity for RFM, inventory, audit or segments, and none after a change. The ops console reports stream lag in entries, not in time | Open |
 | RT-04 | Dynamic against manual segmentation | The only way a segment changes is the web's administrator run (RN-05, E-10). No trigger, schedule, model version or treatment of late or voided sales exists, and sales cannot be cancelled or returned | Open |
 | RT-05 | Statistical validation of K-means | Seeded and reproducible (RN-58), k-means++, min-max normalization, inertia, and silhouette up to 2,000 customers. No recorded choice of k, treatment of extreme values or stability study, and the seed holds 30 customers | Partly met |
@@ -349,14 +349,14 @@ campaign caused.
 
 ## 12. Open questions
 
-Each carries a working assumption, and the work continues.
+Each carries a working assumption or a decision, and the work continues.
 
 | ID | Question | Working assumption |
 |---|---|---|
 | Q-15 | When is the delivery, and what is the sprint calendar? | Pending. No date is written until the team sets one |
 | Q-16 | Which capabilities get a container? | Section 5, until F19-02 is accepted |
 | Q-17 | Is the web still frozen, and does it expose APIs? The brief lists "Web and APIs" for it | It stays one application that serves HTML, with no Redis and no service calls, and the APIs are the services'. It changes only where a new fact would otherwise make it wrong: reversals (F21-01) and incremental changes (F22-17) |
-| Q-18 | Which are the two campaign failures? | The team's report of 2026-10-23 is not in the repository. F20-05 gets it from its author, or names them from a fresh run |
+| Q-18 | Which are the two campaign failures? | **Decided (2026-10-31).** Nobody on the team can identify the report, so it is not looked for. F20-05 names any campaign failure from a fresh run |
 | Q-19 | Can real store staff join the usability tests? | F29-08 states who took part, and declares anyone who only stands in for a role |
 | Q-20 | Does a generated dataset satisfy the statistical validation? | Yes, marked synthetic (ADR-0052), with a public retail dataset as an optional second source (F23-01) |
 | Q-21 | What are a customer's loyalty "benefits"? | The promotions that apply to them. There is no points model unless the instructor asks for one (F27-09) |

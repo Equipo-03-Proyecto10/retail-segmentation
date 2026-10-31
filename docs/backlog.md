@@ -1250,7 +1250,7 @@ Epic #741.
 | F20-02 | #760 | Read that sale from Electron and write a draft campaign through the gateway, in XML validated by its XSD | P0 | F20-01 |
 | F20-03 | #761 | Run every test suite against one commit from an empty environment with one command | P0 | — |
 | F20-04 | #762 | Make the suites independent of the environment: Redis AOF, PostgreSQL major and shared state | P0 | — |
-| F20-05 | #763 | Reproduce and classify every failure the report blamed on the environment, the two campaign failures first | P0 | F20-03, F20-04 |
+| F20-05 | #763 | Classify every failure of the consolidated run, the campaign suites first | P0 | F20-03, F20-04 |
 | F20-06 | #764 | Measure Redis Streams propagation per consumer group and set a bound for each | P0 | — |
 | F20-07 | #765 | Build the web-to-service parity harness and prove inventory parity | P0 | — |
 | F20-08 | #766 | Prove audit parity between web writes and service writes | P0 | F20-07 |

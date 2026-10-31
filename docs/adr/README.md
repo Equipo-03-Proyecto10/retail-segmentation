@@ -198,6 +198,7 @@ Later runtime events must be preserved.
 | [0059](0059-four-new-services-join-the-fifteen-and-six-capabilities-fold-into-the-rule-they-extend.md) | Four new services join the fifteen, and six capabilities fold into the rule they extend | Proposed |
 | [0060](0060-four-store-profiles-map-to-four-roles-and-services-read-each-users-stores-per-request.md) | Four store profiles map to four roles, and services read each user's stores per request | Proposed |
 | [0061](0061-stock-keeps-one-quantity-per-store-and-changes-only-through-a-sale-a-reversal-or-a-recorded-movement.md) | Stock keeps one quantity per store, and changes only through a sale, a reversal or a recorded movement | Proposed |
+| [0062](0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md) | A reversal is a recorded fact, and every reader counts net units | Proposed |
 
 ## Writing one
 

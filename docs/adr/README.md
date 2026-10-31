@@ -199,6 +199,7 @@ Later runtime events must be preserved.
 | [0060](0060-four-store-profiles-map-to-four-roles-and-services-read-each-users-stores-per-request.md) | Four store profiles map to four roles, and services read each user's stores per request | Proposed |
 | [0061](0061-stock-keeps-one-quantity-per-store-and-changes-only-through-a-sale-a-reversal-or-a-recorded-movement.md) | Stock keeps one quantity per store, and changes only through a sale, a reversal or a recorded movement | Proposed |
 | [0062](0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md) | A reversal is a recorded fact, and every reader counts net units | Proposed |
+| [0063](0063-segments-change-on-events-and-on-a-schedule-scored-against-the-published-version.md) | Segments change on events and on a schedule, scored against the published version | Proposed |
 
 ## Writing one
 

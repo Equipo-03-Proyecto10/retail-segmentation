@@ -114,6 +114,10 @@ def auth_environment(
 def redis_connection() -> Iterator[redis.Redis]:
     url = _required("TEST_REDIS_URL", "REDIS")
     client = redis.Redis.from_url(url, decode_responses=True)
+    if client.config_get("appendonly")["appendonly"] != "yes":
+        pytest.fail(
+            "This suite needs a Redis with appendonly yes: the relay waits on WAITAOF"
+        )
     password = "sales-test-" + uuid.uuid4().hex
     line = (ROOT / "redis/sales.acl").read_text().strip()
     rendered = line.replace("{{password}}", ">" + password)

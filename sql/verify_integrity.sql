@@ -202,16 +202,17 @@ VALUES (9008, 'SKU-09008', NULL, 1, 10.00);
 ROLLBACK;
 
 \echo ''
-\echo '-- N13: RESTRICT, deleting a category with products [expect: 23503 foreign_key_violation]'
+\echo '-- N13: RESTRICT, deleting a category with products [expect: 23001 restrict_violation]'
 -- Category 11 (Milk) is a leaf, so this exercises product -> category and not
--- the self-reference N16 covers. PostgreSQL reports an ON DELETE RESTRICT
--- refusal as foreign_key_violation, as it does for N14, N16 and N26.
+-- the self-reference N16 covers. PostgreSQL 18, the instance's major, reports
+-- an ON DELETE RESTRICT refusal as restrict_violation, as it does for N14, N16
+-- and N26. Before 18 it reported foreign_key_violation.
 BEGIN;
 DELETE FROM category WHERE category_id = 11;
 ROLLBACK;
 
 \echo ''
-\echo '-- N16: RESTRICT, deleting a parent category    [expect: 23503 foreign_key_violation]'
+\echo '-- N16: RESTRICT, deleting a parent category    [expect: 23001 restrict_violation]'
 -- Category 1 (Dairy) is the parent of 11 and 12. The hierarchy is protected
 -- by the same rule as the product reference, and by a different constraint.
 BEGIN;
@@ -235,7 +236,7 @@ UPDATE category SET parent_category_id = 11 WHERE category_id = 1;
 ROLLBACK;
 
 \echo ''
-\echo '-- N14: RESTRICT, deleting a customer with sales [expect: 23503 foreign_key_violation]'
+\echo '-- N14: RESTRICT, deleting a customer with sales [expect: 23001 restrict_violation]'
 BEGIN;
 DELETE FROM customer WHERE customer_id = '00000000-0000-0000-0000-000000000001';
 ROLLBACK;
@@ -335,7 +336,7 @@ VALUES (9011, 'Bad origin', 1, 'CONVERSION', DATE '2026-01-01', 14, 'FAKE');
 ROLLBACK;
 
 \echo ''
-\echo '-- N26: deleting a sale an experiment counted     [expect: 23503 foreign_key_violation]'
+\echo '-- N26: deleting a sale an experiment counted     [expect: 23001 restrict_violation]'
 -- data-model.md, Delete rules: experiment_conversion is a durable event (#255).
 BEGIN;
 DELETE FROM transaction

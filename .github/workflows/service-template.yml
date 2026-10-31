@@ -264,7 +264,7 @@ jobs:
           bash deploy/infra/redis/assemble-acl.sh --write-only
           $INFRA up -d
           docker run -d --name ci-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=retail \
-            -v "$RUNNER_TEMP/pgsock:/var/run/postgresql" postgres:16
+            -v "$RUNNER_TEMP/pgsock:/var/run/postgresql" postgres:18
           for _ in $(seq 1 60); do docker exec ci-postgres pg_isready -q && break; sleep 1; done
           # A test role, reached through the socket as a service reaches its own.
           docker exec ci-postgres psql -U postgres -d retail -v ON_ERROR_STOP=1 \

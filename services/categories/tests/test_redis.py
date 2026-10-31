@@ -43,6 +43,7 @@ def stack(redis_admin, service_redis_url, make_app, service_url, monkeypatch):
     """The app with a cache, plus a relay and a consumer driven by hand."""
 
     password = os.environ["REDIS_CATEGORIES_PASSWORD"]
+    before = redis_admin.config_get("appendonly")["appendonly"]
     redis_admin.config_set("appendonly", "yes")
     app = make_app(redis_url=service_redis_url)
     relay = OutboxRelay(service_url, "categories", [STREAM], service_client(password))
@@ -53,7 +54,7 @@ def stack(redis_admin, service_redis_url, make_app, service_url, monkeypatch):
     )
     consumer.run_once()  # creates the group before any change
     yield app, relay, consumer
-    redis_admin.config_set("appendonly", "no")
+    redis_admin.config_set("appendonly", before)
     relay.stop()
     (
         redis_admin.xgroup_destroy(STREAM, "categories")
@@ -155,6 +156,7 @@ def test_reads_answer_200_with_redis_cache_down(make_app, admin_headers):
 def test_a_rename_by_the_web_is_served_within_ten_seconds(
     redis_admin, service_redis_url, make_app, admin_headers, new_id, unique, owner
 ):
+    before = redis_admin.config_get("appendonly")["appendonly"]
     redis_admin.config_set("appendonly", "yes")
     try:
         app = make_app(redis_url=service_redis_url, background=True)
@@ -180,4 +182,4 @@ def test_a_rename_by_the_web_is_served_within_ten_seconds(
             name = client.get(url, headers=admin_headers).get_json()["name"]
         assert name == unique + "-web"
     finally:
-        redis_admin.config_set("appendonly", "no")
+        redis_admin.config_set("appendonly", before)

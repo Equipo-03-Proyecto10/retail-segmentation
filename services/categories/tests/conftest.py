@@ -265,6 +265,10 @@ def acl_rules(password: str) -> list[str]:
 @pytest.fixture
 def redis_admin() -> Iterator[redis.Redis]:
     if not REDIS_URL:
+        if os.environ.get("MOSAIQ_REQUIRE_REDIS") == "1":
+            pytest.fail(
+                "TEST_REDIS_URL is missing, and MOSAIQ_REQUIRE_REDIS forbids it"
+            )
         pytest.skip("TEST_REDIS_URL is not set")
     admin = redis.Redis.from_url(REDIS_URL, decode_responses=True)
     yield admin

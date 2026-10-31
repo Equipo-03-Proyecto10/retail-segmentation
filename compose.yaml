@@ -14,7 +14,7 @@
 
 services:
   db:
-    image: postgres:16
+    image: postgres:18
     environment:
       # Superuser for the container only. The application never connects as
       # this role — it uses retail_app, which 00_create_database.sql creates
@@ -26,7 +26,7 @@ services:
       # and the same ones the README documents; nothing here edits them.
       - ./sql:/opt/sql:ro
       - ./docker/initdb.sh:/docker-entrypoint-initdb.d/initdb.sh:ro
-      - mosaiq-pgdata:/var/lib/postgresql/data
+      - mosaiq-pgdata:/var/lib/postgresql
     ports:
       # Loopback only. Publishing 5432 on all interfaces would put a seeded
       # database with a known password on the network.

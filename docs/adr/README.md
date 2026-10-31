@@ -200,6 +200,7 @@ Later runtime events must be preserved.
 | [0061](0061-stock-keeps-one-quantity-per-store-and-changes-only-through-a-sale-a-reversal-or-a-recorded-movement.md) | Stock keeps one quantity per store, and changes only through a sale, a reversal or a recorded movement | Proposed |
 | [0062](0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md) | A reversal is a recorded fact, and every reader counts net units | Proposed |
 | [0063](0063-segments-change-on-events-and-on-a-schedule-scored-against-the-published-version.md) | Segments change on events and on a schedule, scored against the published version | Proposed |
+| [0064](0064-a-model-version-is-immutable-and-a-change-of-version-is-never-reported-as-behaviour.md) | A model version is immutable, and a change of version is never reported as behaviour | Proposed |
 
 ## Writing one
 

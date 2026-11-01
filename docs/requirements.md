@@ -195,6 +195,9 @@ The web's matrix does not change.
 | Reads of RFM rule sets | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Segments and rules: read. A rule set is configuration with no customer data |
 | Reads of RFM recalculations and their differences | `ADMIN`, `ANALYST`, `AUDITOR` | Reports: read, narrowed to the roles that verify the model; a difference names a customer |
 | `POST /v1/rfm-rule-sets`, `POST /v1/rfm-recalculations` | `ADMIN` | Segment run: run (RN-05); a rule set changes what every report says |
+| `GET /v1/kpi-reports/definitions` | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR`, `STORE_MANAGER`, `COMMERCIAL_SUPERVISOR` | Reports: read. The catalog is configuration with no customer data |
+| KPI reports with a store (`net-sales`, `spend`, `retention`, `conversion`, `recommendation-performance`) | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR`, and `STORE_MANAGER`, `COMMERCIAL_SUPERVISOR` narrowed to their assigned stores | Reports: read. Narrowed as ADR-0060 decides: another store is 403 `forbidden_store` |
+| KPI reports with no store (`migrations`, `campaign-performance`) | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Reports: read. A figure with no store cannot be narrowed, so the two store roles do not read it |
 | `GET /v1/audit-entries` | `ADMIN`, `AUDITOR` | Audit log: read |
 | `POST /v1/sessions`, `POST /v1/sessions/refresh`, `GET /v1/jwks.json`, meta routes | No token | — |
 

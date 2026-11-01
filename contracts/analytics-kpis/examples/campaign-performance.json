@@ -1,0 +1,120 @@
+{
+  "kpi": "campaign-performance",
+  "definition_version": 1,
+  "from": "2026-09-01",
+  "to": "2026-10-31",
+  "granularity": null,
+  "group_by": [],
+  "generated_at": "2026-10-31T18:00:00Z",
+  "store_scope": {
+    "restricted": false,
+    "store_ids": []
+  },
+  "data_origin": {
+    "views": [
+      "api_experiments.campaign_effect_v1"
+    ],
+    "synthetic": false,
+    "spans_model_versions": false,
+    "model_version_ids": []
+  },
+  "rows": [
+    {
+      "period_start": "2026-09-15",
+      "period_end": "2026-10-15",
+      "segment_code": null,
+      "segment_state": null,
+      "from_segment_code": null,
+      "store_id": null,
+      "channel_id": null,
+      "campaign_id": 7,
+      "model_version_id": null,
+      "synthetic": false,
+      "measures": [
+        {
+          "code": "attributed_sales_amount",
+          "kind": "ATTRIBUTED",
+          "unit": "currency",
+          "value": "48210.00",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "treated_customers",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "500",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "control_customers",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "500",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "incremental_effect",
+          "kind": "INCREMENTAL",
+          "unit": "currency",
+          "value": "14.30",
+          "lower": "3.10",
+          "upper": "25.50"
+        }
+      ]
+    },
+    {
+      "period_start": "2026-10-01",
+      "period_end": "2026-10-20",
+      "segment_code": null,
+      "segment_state": null,
+      "from_segment_code": null,
+      "store_id": null,
+      "channel_id": null,
+      "campaign_id": 9,
+      "model_version_id": null,
+      "synthetic": true,
+      "measures": [
+        {
+          "code": "attributed_sales_amount",
+          "kind": "ATTRIBUTED",
+          "unit": "currency",
+          "value": "9300.00",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "treated_customers",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "120",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "control_customers",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "0",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "incremental_effect",
+          "kind": "INCREMENTAL",
+          "unit": "currency",
+          "value": null,
+          "lower": null,
+          "upper": null
+        }
+      ]
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 2
+  }
+}

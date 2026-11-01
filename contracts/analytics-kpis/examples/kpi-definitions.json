@@ -1,0 +1,338 @@
+{
+  "kpi_definitions": [
+    {
+      "kpi_code": "net-sales",
+      "name": "Net sales",
+      "version": 1,
+      "definition": "The value, units and number of sales that still stand: accepted sales less their reversals (ADR-0062). A sale counts at the instant it happened, never at the instant it was reversed, and a sale reversed in full counts for nothing. The figure reconciles with the web's /reports/.",
+      "window": "A sale falls in the window when its occurred_at lies in [from 00:00 UTC, to + 1 day 00:00 UTC). Reversals recorded at any time up to generated_at are subtracted from it.",
+      "origin_views": [
+        "api_sales.net_purchase_line_v1",
+        "api_segments.current_label_v1"
+      ],
+      "dimensions": [
+        "segment",
+        "store",
+        "channel",
+        "period"
+      ],
+      "store_attributable": true,
+      "roles": [
+        "ADMIN",
+        "ANALYST",
+        "MARKETING",
+        "AUDITOR"
+      ],
+      "store_scoped_roles": [
+        "STORE_MANAGER",
+        "COMMERCIAL_SUPERVISOR"
+      ],
+      "measures": [
+        {
+          "code": "net_amount",
+          "kind": "OBSERVED",
+          "unit": "currency",
+          "definition": "Sum of net_amount over the lines in the window."
+        },
+        {
+          "code": "net_units",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "definition": "Sum of net_quantity over the lines in the window."
+        },
+        {
+          "code": "net_orders",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "definition": "Distinct sales with at least one line left after reversals."
+        }
+      ]
+    },
+    {
+      "kpi_code": "spend",
+      "name": "Spend per customer",
+      "version": 1,
+      "definition": "What customers net-pay, counted per customer who bought: the net amount, the customers who bought and the average spend per customer. A customer who bought twice counts once as active.",
+      "window": "A sale falls in the window when its occurred_at lies in [from 00:00 UTC, to + 1 day 00:00 UTC). Reversals recorded at any time up to generated_at are subtracted from it.",
+      "origin_views": [
+        "api_sales.net_purchase_line_v1",
+        "api_segments.current_label_v1"
+      ],
+      "dimensions": [
+        "segment",
+        "store",
+        "channel",
+        "period"
+      ],
+      "store_attributable": true,
+      "roles": [
+        "ADMIN",
+        "ANALYST",
+        "MARKETING",
+        "AUDITOR"
+      ],
+      "store_scoped_roles": [
+        "STORE_MANAGER",
+        "COMMERCIAL_SUPERVISOR"
+      ],
+      "measures": [
+        {
+          "code": "net_amount",
+          "kind": "OBSERVED",
+          "unit": "currency",
+          "definition": "Sum of net_amount over the lines in the window."
+        },
+        {
+          "code": "active_customers",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "definition": "Distinct customers with at least one line in the window. A customer who bought in two stores is active once in each store and once in the total."
+        },
+        {
+          "code": "average_spend",
+          "kind": "OBSERVED",
+          "unit": "currency",
+          "definition": "net_amount divided by active_customers, to two places. Absent when active_customers is 0."
+        }
+      ]
+    },
+    {
+      "kpi_code": "retention",
+      "name": "Cohort retention",
+      "version": 1,
+      "definition": "A cohort is the customers whose first net purchase ever falls in a bucket. Retention is the share of the cohort with at least one net purchase in the next bucket. By hand: three customers first buy in March and two of them buy again in April; the March cohort is 3, retained is 2 and the rate is 0.6667. Store and channel are those of the first purchase; the retained purchase may be anywhere. Period is always a dimension of a retention row.",
+      "window": "from and to select cohorts by the bucket of the first purchase. The next bucket is read in full; when it has not ended at generated_at, retained_customers and retention_rate are absent for that cohort.",
+      "origin_views": [
+        "api_sales.net_purchase_line_v1",
+        "api_segments.current_label_v1"
+      ],
+      "dimensions": [
+        "segment",
+        "store",
+        "channel",
+        "period"
+      ],
+      "store_attributable": true,
+      "roles": [
+        "ADMIN",
+        "ANALYST",
+        "MARKETING",
+        "AUDITOR"
+      ],
+      "store_scoped_roles": [
+        "STORE_MANAGER",
+        "COMMERCIAL_SUPERVISOR"
+      ],
+      "measures": [
+        {
+          "code": "cohort_customers",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "definition": "Customers whose first net purchase falls in the bucket."
+        },
+        {
+          "code": "retained_customers",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "definition": "Cohort customers with at least one net purchase in the next bucket."
+        },
+        {
+          "code": "retention_rate",
+          "kind": "OBSERVED",
+          "unit": "ratio",
+          "definition": "retained_customers divided by cohort_customers, to four places."
+        }
+      ]
+    },
+    {
+      "kpi_code": "migrations",
+      "name": "Segment migrations",
+      "version": 1,
+      "definition": "A migration is a change of a customer's segment label between two consecutive assignments within one model version. A change across two model versions is methodological, not behaviour (ADR-0064), so it is counted apart and never in customers_migrated. A row never mixes versions. A change has no store or channel, so only segment and period group it: segment means the pair of the label left and the label entered.",
+      "window": "A change falls in the window when the instant it was recorded lies in [from 00:00 UTC, to + 1 day 00:00 UTC).",
+      "origin_views": [
+        "api_segments.assignment_change_v1"
+      ],
+      "dimensions": [
+        "segment",
+        "period"
+      ],
+      "store_attributable": false,
+      "roles": [
+        "ADMIN",
+        "ANALYST",
+        "MARKETING",
+        "AUDITOR"
+      ],
+      "store_scoped_roles": [],
+      "measures": [
+        {
+          "code": "customers_migrated",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "definition": "Distinct customers with at least one change of label inside one model version."
+        },
+        {
+          "code": "changes",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "definition": "Changes of label inside one model version."
+        },
+        {
+          "code": "methodological_changes",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "definition": "Changes whose previous and new assignments belong to different model versions."
+        }
+      ]
+    },
+    {
+      "kpi_code": "conversion",
+      "name": "Conversion after exposure",
+      "version": 1,
+      "definition": "Of the customers exposed in a bucket, the share who bought within 7 days. A customer is exposed at the first recorded recommendation impression or campaign exposure in the bucket, and converts with at least one net purchase, in any store, within 7 days after that instant. It is observational and never an effect: the effect of a campaign is campaign-performance. Store and channel are those of the exposure.",
+      "window": "Exposures in [from 00:00 UTC, to + 1 day 00:00 UTC). A bucket whose last exposure is under 7 days before generated_at reports converted_customers and conversion_rate absent.",
+      "origin_views": [
+        "api_engagement.interaction_v1",
+        "api_sales.net_purchase_line_v1",
+        "api_segments.current_label_v1"
+      ],
+      "dimensions": [
+        "segment",
+        "store",
+        "channel",
+        "period"
+      ],
+      "store_attributable": true,
+      "roles": [
+        "ADMIN",
+        "ANALYST",
+        "MARKETING",
+        "AUDITOR"
+      ],
+      "store_scoped_roles": [
+        "STORE_MANAGER",
+        "COMMERCIAL_SUPERVISOR"
+      ],
+      "measures": [
+        {
+          "code": "exposed_customers",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "definition": "Distinct customers with an exposure in the bucket."
+        },
+        {
+          "code": "converted_customers",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "definition": "Exposed customers with a net purchase within 7 days after their first exposure in the bucket."
+        },
+        {
+          "code": "conversion_rate",
+          "kind": "OBSERVED",
+          "unit": "ratio",
+          "definition": "converted_customers divided by exposed_customers, to four places."
+        }
+      ]
+    },
+    {
+      "kpi_code": "recommendation-performance",
+      "name": "Recommendation performance",
+      "version": 1,
+      "definition": "Impressions, clicks and purchases of recommendations. Each is counted from its own origin and none is derived from another, so a purchase is never inferred from a click.",
+      "window": "An impression or click falls in the window when its occurred_at lies in [from 00:00 UTC, to + 1 day 00:00 UTC); a purchase when the sale's occurred_at does.",
+      "origin_views": [
+        "api_engagement.interaction_v1",
+        "api_recommendations.recommended_purchase_v1",
+        "api_segments.current_label_v1"
+      ],
+      "dimensions": [
+        "segment",
+        "store",
+        "channel",
+        "period"
+      ],
+      "store_attributable": true,
+      "roles": [
+        "ADMIN",
+        "ANALYST",
+        "MARKETING",
+        "AUDITOR"
+      ],
+      "store_scoped_roles": [
+        "STORE_MANAGER",
+        "COMMERCIAL_SUPERVISOR"
+      ],
+      "measures": [
+        {
+          "code": "impressions",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "definition": "Recommendation impressions that are not voided."
+        },
+        {
+          "code": "clicks",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "definition": "RECO_CLICK events that are not voided."
+        },
+        {
+          "code": "purchases",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "definition": "Net sale lines recorded as bought through a recommendation, after reversals."
+        }
+      ]
+    },
+    {
+      "kpi_code": "campaign-performance",
+      "name": "Campaign performance",
+      "version": 1,
+      "definition": "For each campaign with a measured experiment: the sales attributed to it, labelled ATTRIBUTED, and the incremental effect against its control, labelled INCREMENTAL, with its 95% interval. Attributed sales are not an effect. A campaign without a control has attributed sales and no effect. A row is a campaign, so no dimension groups it.",
+      "window": "A campaign is reported when its experiment's measurement window overlaps [from, to]; the row's period is that window.",
+      "origin_views": [
+        "api_experiments.campaign_effect_v1"
+      ],
+      "dimensions": [],
+      "store_attributable": false,
+      "roles": [
+        "ADMIN",
+        "ANALYST",
+        "MARKETING",
+        "AUDITOR"
+      ],
+      "store_scoped_roles": [],
+      "measures": [
+        {
+          "code": "attributed_sales_amount",
+          "kind": "ATTRIBUTED",
+          "unit": "currency",
+          "definition": "Net amount of sales attributed once to the campaign through its assignments."
+        },
+        {
+          "code": "treated_customers",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "definition": "Customers assigned to a treatment arm."
+        },
+        {
+          "code": "control_customers",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "definition": "Customers assigned to the control arm."
+        },
+        {
+          "code": "incremental_effect",
+          "kind": "INCREMENTAL",
+          "unit": "currency",
+          "definition": "Mean net spend per assigned treated customer less that of control, with a 95% interval in lower and upper. Absent without a control."
+        }
+      ]
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 7
+  }
+}

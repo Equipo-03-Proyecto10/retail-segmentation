@@ -1,0 +1,6 @@
+{
+  "code": "auth_unavailable",
+  "message": "Session state cannot be checked.",
+  "correlation_id": "corr-kpi-503a",
+  "details": []
+}

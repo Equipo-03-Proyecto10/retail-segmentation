@@ -1,0 +1,1307 @@
+openapi: 3.1.0
+info:
+  title: analytics-kpis-service
+  version: 1.0.0
+  description: >-
+    Reports the commercial KPIs of the platform under their published
+    definition, window and data origin, and only to the roles and stores
+    allowed to read them (RN-68). The service is read-only: it has no write
+    operation and owns no table. It reads only `api_*` views published by the
+    other boundaries (ADR-0044) and never a base table, and it calls no other
+    service.
+
+
+    **One definition per figure.** `GET /v1/kpi-reports/definitions` publishes,
+    for each of the seven KPIs, its definition, window, data origin, dimensions
+    and measures. Every report names its `kpi` and `definition_version`, and
+    every measure has a `code`, a `kind` (`OBSERVED`, `ATTRIBUTED` or
+    `INCREMENTAL`) and a `unit`, so a figure cannot mean two things. A change of
+    definition raises `definition_version` and is announced here before it is
+    served.
+
+
+    **Windows.** `from` and `to` are dates read in UTC; `to` is inclusive.
+    A report is computed as of its `generated_at`, so a reversal recorded after
+    the sale is subtracted from it.
+
+
+    **Segments.** The `segment` of a sales-based KPI is the label the customer
+    holds at `generated_at`, from `api_segments.current_label_v1`; a customer
+    with no label is reported as it is, with `segment_state`
+    `unassigned_result` or `no_open_assignment` and no `segment_code` (RN-21).
+    `data_origin.spans_model_versions` is true, and `model_version_ids` names
+    them, when the window holds a change of model version, so a figure that
+    compares periods across a version is marked as such (ADR-0064).
+
+
+    **Provenance.** A row has `synthetic` true when any sale or run it
+    aggregates is `SEEDED`, and the report's `data_origin.synthetic` is true
+    when any row is (ADR-0052). A client shows such a figure as Synthetic.
+
+
+    **Store scope (ADR-0060).** `STORE_MANAGER` and `COMMERCIAL_SUPERVISOR` read
+    only the stores assigned to them, read from `api_users.store_assignment_v1`
+    on each request. Naming another store is 403 `forbidden_store`. With no
+    store named, the report covers the assigned stores only, `store_scope`
+    says so, and a role with no assignment gets an empty report. A KPI whose
+    figure has no store (`migrations`, `campaign-performance`) is not
+    readable by these roles. Every other role reads all stores. No report
+    carries a customer identifier.
+
+
+    **Producer views.** Consumed and published: `api_segments.current_label_v1`.
+    Consumed and contracted by their producers' open contracts:
+    `api_sales.net_purchase_line_v1` (which must also publish a `data_origin`
+    column for ADR-0052) and `api_users.store_assignment_v1`. Required of their
+    producers and not yet contracted: `api_segments.assignment_change_v1` (one
+    row per change of a customer's assignment: customer, previous and new label
+    code, previous and new model version, instant),
+    `api_engagement.interaction_v1` (one row per recommendation impression,
+    campaign exposure and `RECO_CLICK` that is not voided: type, customer,
+    store, channel, instant, data origin),
+    `api_recommendations.recommended_purchase_v1` (one row per sale line bought
+    through a recommendation: sale, store, channel, instant) and
+    `api_experiments.campaign_effect_v1` (one row per measured campaign: its
+    window, arm sizes, attributed amount, effect and interval, data origin).
+    This contract invents none of their columns; each producer's story fixes
+    them, and the service does not deploy before they exist.
+security:
+  - bearer: []
+paths:
+  /v1/kpi-reports/net-sales:
+    get:
+      summary: Report net sales
+      description: >-
+        Net sales (`net-sales`, definition version 1): the net amount, net units and net orders of the sales that still stand, grouped by any of `segment`, `store`, `channel` and `period`. A sale counts at the instant it happened and reversals are subtracted (ADR-0062), so the figure reconciles with the web's `/reports/`. Origin: `api_sales.net_purchase_line_v1`, and `api_segments.current_label_v1` for `segment`. A row is `synthetic` when any sale it aggregates is `SEEDED` (ADR-0052).
+      operationId: getNetSalesReport
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - MARKETING
+        - AUDITOR
+        - STORE_MANAGER
+        - COMMERCIAL_SUPERVISOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/GroupBy'
+        - $ref: '#/components/parameters/Granularity'
+        - $ref: '#/components/parameters/StoreId'
+        - $ref: '#/components/parameters/SegmentCode'
+        - $ref: '#/components/parameters/ChannelId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: The report, ordered by period, then by the other dimensions.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KpiReport'
+              examples:
+                by_store_and_period:
+                  summary: Net sales by store and month.
+                  externalValue: ./examples/net-sales.json
+                store_scoped:
+                  summary: A store manager's two stores.
+                  externalValue: ./examples/net-sales-store-scoped.json
+                by_segment_and_channel:
+                  summary: By segment, with an unassigned customer.
+                  externalValue: ./examples/net-sales-by-segment.json
+                no_assigned_store:
+                  summary: A store-scoped role with no assignment.
+                  externalValue: ./examples/net-sales-no-assigned-store.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/KpiReport'
+              examples:
+                by_store_and_period:
+                  summary: Net sales by store and month.
+                  externalValue: ./examples/net-sales.xml
+                store_scoped:
+                  summary: A store manager's two stores.
+                  externalValue: ./examples/net-sales-store-scoped.xml
+                by_segment_and_channel:
+                  summary: By segment, with an unassigned customer.
+                  externalValue: ./examples/net-sales-by-segment.xml
+                no_assigned_store:
+                  summary: A store-scoped role with no assignment.
+                  externalValue: ./examples/net-sales-no-assigned-store.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRoleOrStore'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/KpiQueryValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/kpi-reports/spend:
+    get:
+      summary: Report spend per customer
+      description: >-
+        Spend (`spend`, definition version 1): the net amount, the customers who bought and the average spend per customer, grouped by any of `segment`, `store`, `channel` and `period`. Origin: `api_sales.net_purchase_line_v1`, and `api_segments.current_label_v1` for `segment`. A customer who bought in two stores is active once in each store and once in a total.
+      operationId: getSpendReport
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - MARKETING
+        - AUDITOR
+        - STORE_MANAGER
+        - COMMERCIAL_SUPERVISOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/GroupBy'
+        - $ref: '#/components/parameters/Granularity'
+        - $ref: '#/components/parameters/StoreId'
+        - $ref: '#/components/parameters/SegmentCode'
+        - $ref: '#/components/parameters/ChannelId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: The report, ordered by period, then by the other dimensions.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KpiReport'
+              examples:
+                by_segment:
+                  summary: Spend by segment.
+                  externalValue: ./examples/spend.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/KpiReport'
+              examples:
+                by_segment:
+                  summary: Spend by segment.
+                  externalValue: ./examples/spend.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRoleOrStore'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/KpiQueryValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/kpi-reports/retention:
+    get:
+      summary: Report cohort retention
+      description: >-
+        Cohort retention (`retention`, definition version 1): for the customers whose first net purchase ever falls in a bucket, how many bought again in the next bucket. Rows are always cohorts, so `period` is always a dimension and `granularity` defaults to `month`. `store` and `channel` are those of the first purchase; the retained purchase may be anywhere. A cohort whose next bucket has not ended at `generated_at` reports no retained count and no rate. Origin: `api_sales.net_purchase_line_v1`, and `api_segments.current_label_v1` for `segment`.
+      operationId: getRetentionReport
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - MARKETING
+        - AUDITOR
+        - STORE_MANAGER
+        - COMMERCIAL_SUPERVISOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/GroupBy'
+        - $ref: '#/components/parameters/Granularity'
+        - $ref: '#/components/parameters/StoreId'
+        - $ref: '#/components/parameters/SegmentCode'
+        - $ref: '#/components/parameters/ChannelId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: The report, ordered by period, then by the other dimensions.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KpiReport'
+              examples:
+                by_month:
+                  summary: Cohorts by month, the last one not yet measurable.
+                  externalValue: ./examples/retention.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/KpiReport'
+              examples:
+                by_month:
+                  summary: Cohorts by month, the last one not yet measurable.
+                  externalValue: ./examples/retention.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRoleOrStore'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/KpiQueryValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/kpi-reports/migrations:
+    get:
+      summary: Report segment migrations
+      description: >-
+        Segment migrations (`migrations`, definition version 1): changes of a customer's segment label within one model version. A change across two versions is methodological (ADR-0064): it is counted in `methodological_changes`, never in `customers_migrated`, and `data_origin.spans_model_versions` is true when the window holds one. A row never mixes versions. `store` and `channel` are not dimensions of a migration. `segment_code` filters on the label entered. Origin: `api_segments.assignment_change_v1`. Because a migration has no store, store-scoped roles do not read it.
+      operationId: getMigrationReport
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - MARKETING
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/GroupBy'
+        - $ref: '#/components/parameters/Granularity'
+        - $ref: '#/components/parameters/SegmentCode'
+        - $ref: '#/components/parameters/ModelVersionId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: The report, ordered by period, then by the other dimensions.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KpiReport'
+              examples:
+                across_versions:
+                  summary: A window spanning two model versions.
+                  externalValue: ./examples/migrations.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/KpiReport'
+              examples:
+                across_versions:
+                  summary: A window spanning two model versions.
+                  externalValue: ./examples/migrations.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/KpiQueryValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/kpi-reports/conversion:
+    get:
+      summary: Report conversion after exposure
+      description: >-
+        Conversion (`conversion`, definition version 1): of the customers exposed in a bucket, the share who bought within 7 days. It is observational, never an effect; the effect of a campaign is `campaign-performance`. Origin: `api_engagement.interaction_v1` and `api_sales.net_purchase_line_v1`, and `api_segments.current_label_v1` for `segment`. The response holds counts and no customer.
+      operationId: getConversionReport
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - MARKETING
+        - AUDITOR
+        - STORE_MANAGER
+        - COMMERCIAL_SUPERVISOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/GroupBy'
+        - $ref: '#/components/parameters/Granularity'
+        - $ref: '#/components/parameters/StoreId'
+        - $ref: '#/components/parameters/SegmentCode'
+        - $ref: '#/components/parameters/ChannelId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: The report, ordered by period, then by the other dimensions.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KpiReport'
+              examples:
+                by_store:
+                  summary: Conversion by store.
+                  externalValue: ./examples/conversion.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/KpiReport'
+              examples:
+                by_store:
+                  summary: Conversion by store.
+                  externalValue: ./examples/conversion.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRoleOrStore'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/KpiQueryValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/kpi-reports/recommendation-performance:
+    get:
+      summary: Report recommendation performance
+      description: >-
+        Recommendation performance (`recommendation-performance`, definition version 1): impressions, clicks and purchases, each counted from its own origin and none derived from another. Origin: `api_engagement.interaction_v1` for impressions and clicks, `api_recommendations.recommended_purchase_v1` for purchases, and `api_segments.current_label_v1` for `segment`. The response holds counts and no customer.
+      operationId: getRecommendationPerformanceReport
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - MARKETING
+        - AUDITOR
+        - STORE_MANAGER
+        - COMMERCIAL_SUPERVISOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/GroupBy'
+        - $ref: '#/components/parameters/Granularity'
+        - $ref: '#/components/parameters/StoreId'
+        - $ref: '#/components/parameters/SegmentCode'
+        - $ref: '#/components/parameters/ChannelId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: The report, ordered by period, then by the other dimensions.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KpiReport'
+              examples:
+                by_channel_and_week:
+                  summary: By channel and week.
+                  externalValue: ./examples/recommendation-performance.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/KpiReport'
+              examples:
+                by_channel_and_week:
+                  summary: By channel and week.
+                  externalValue: ./examples/recommendation-performance.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRoleOrStore'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/KpiQueryValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/kpi-reports/campaign-performance:
+    get:
+      summary: Report campaign performance
+      description: >-
+        Campaign performance (`campaign-performance`, definition version 1): one row per campaign whose experiment's measurement window overlaps the range. Attributed sales are labelled `ATTRIBUTED` and the incremental effect `INCREMENTAL`, with its 95% interval in `lower` and `upper`; the two are never merged. A campaign without a control has attributed sales and no effect. No dimension groups it. Origin: `api_experiments.campaign_effect_v1`. A campaign has no store, so store-scoped roles do not read it.
+      operationId: getCampaignPerformanceReport
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - MARKETING
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: The report, ordered by period, then by the other dimensions.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KpiReport'
+              examples:
+                two_campaigns:
+                  summary: One campaign with an effect, one without a control.
+                  externalValue: ./examples/campaign-performance.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/KpiReport'
+              examples:
+                two_campaigns:
+                  summary: One campaign with an effect, one without a control.
+                  externalValue: ./examples/campaign-performance.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/KpiQueryValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/kpi-reports/definitions:
+    get:
+      summary: List the KPI definitions
+      description: >-
+        Returns the catalog: for each KPI its definition, window, data origin
+        views, dimensions, measures, and the roles that read it, with the roles
+        confined to their stores. The catalog is the single statement of what a
+        figure means; a report repeats only its `kpi` and `definition_version`.
+        Ordered as `KpiCode` lists them.
+      operationId: listKpiDefinitions
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - MARKETING
+        - AUDITOR
+        - STORE_MANAGER
+        - COMMERCIAL_SUPERVISOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of KPI definitions.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KpiDefinitions'
+              examples:
+                catalog:
+                  externalValue: ./examples/kpi-definitions.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/KpiDefinitions'
+              examples:
+                catalog:
+                  externalValue: ./examples/kpi-definitions.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/InvalidPagination'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /health/live:
+    get:
+      summary: Report process liveness
+      operationId: getLiveness
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The process is live.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+  /health/ready:
+    get:
+      summary: Report schema readiness
+      operationId: getReadiness
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The required schema and every producer view it reads are applied.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '503':
+          $ref: '#/components/responses/SchemaNotReady'
+  /openapi.yaml:
+    get:
+      summary: Download this OpenAPI document
+      operationId: getOpenApiDocument
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The OpenAPI document, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/yaml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+  /schema.xsd:
+    get:
+      summary: Download the analytics-kpis XML Schema
+      operationId: getXmlSchema
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The analytics-kpis XSD, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/xml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      description: >-
+        Caller-supplied correlation id. A value that does not match the pattern
+        is ignored and replaced by a generated id.
+      schema:
+        type: string
+        pattern: '^[0-9A-Za-z-]{1,64}$'
+    From:
+      name: from
+      in: query
+      required: true
+      description: >-
+        First day of the window, an RFC 3339 `full-date`, read as 00:00 UTC.
+        Not a date, or after `to`, is 422 `invalid_query` (`invalid_format`,
+        `to_before_from`).
+      schema:
+        type: string
+        format: date
+        example: '2026-10-01'
+    To:
+      name: to
+      in: query
+      required: true
+      description: >-
+        Last day of the window, inclusive, read to the end of that day UTC. A
+        window of more than 731 days is 422 `invalid_query`
+        (`window_too_long`).
+      schema:
+        type: string
+        format: date
+        example: '2026-10-31'
+    GroupBy:
+      name: group_by
+      in: query
+      required: false
+      style: form
+      explode: false
+      description: >-
+        Comma-separated dimensions, any of `segment`, `store`, `channel` and
+        `period`. The dimensions a KPI supports are in its catalog entry; one
+        it does not support is 422 `invalid_query`
+        (`dimension_not_supported`), never ignored. Without `group_by` the
+        report has one row for the whole window.
+      schema:
+        type: array
+        uniqueItems: true
+        items:
+          $ref: '#/components/schemas/Dimension'
+    Granularity:
+      name: granularity
+      in: query
+      required: false
+      description: >-
+        The bucket of `period`: `day`, `week` (ISO, from Monday) or `month`,
+        all in UTC. Default `month`. Given without `period` among the
+        dimensions, except for `retention` whose rows are always cohorts, it
+        is 422 `invalid_query` (`requires_period`).
+      schema:
+        $ref: '#/components/schemas/Granularity'
+    StoreId:
+      name: store_id
+      in: query
+      required: false
+      description: >-
+        Keeps one store. A store-scoped role naming a store it is not assigned
+        to is 403 `forbidden_store`. Without it a store-scoped role gets its
+        assigned stores only (ADR-0060).
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+    SegmentCode:
+      name: segment_code
+      in: query
+      required: false
+      description: Keeps one segment label code.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 40
+    ChannelId:
+      name: channel_id
+      in: query
+      required: false
+      description: Keeps one sales channel.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+    ModelVersionId:
+      name: model_version_id
+      in: query
+      required: false
+      description: Keeps the changes of one model version.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    CampaignId:
+      name: campaign_id
+      in: query
+      required: false
+      description: Keeps one campaign.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    Page:
+      name: page
+      in: query
+      required: false
+      description: One-based page number.
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Size:
+      name: size
+      in: query
+      required: false
+      description: Number of rows (or definitions) per page.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+  headers:
+    CorrelationId:
+      description: Correlation id used for this response.
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9A-Za-z-]{1,64}$'
+    RetryAfter:
+      description: Whole seconds until a retry is allowed.
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  schemas:
+    KpiCode:
+      type: string
+      enum:
+        - net-sales
+        - spend
+        - retention
+        - migrations
+        - conversion
+        - recommendation-performance
+        - campaign-performance
+    Dimension:
+      type: string
+      enum:
+        - segment
+        - store
+        - channel
+        - period
+    Granularity:
+      type: string
+      enum:
+        - day
+        - week
+        - month
+    MeasureKind:
+      type: string
+      description: >-
+        `OBSERVED` is counted from recorded facts, `ATTRIBUTED` is a sale
+        credited to a campaign, `INCREMENTAL` is an effect against a control.
+        A figure of one kind is never presented as another.
+      enum:
+        - OBSERVED
+        - ATTRIBUTED
+        - INCREMENTAL
+    MeasureUnit:
+      type: string
+      enum:
+        - currency
+        - count
+        - ratio
+    SegmentState:
+      type: string
+      enum:
+        - assigned
+        - unassigned_result
+        - no_open_assignment
+    Decimal:
+      type: string
+      description: >-
+        A decimal string: two places for `currency`, none for `count`, four
+        for `ratio`.
+      pattern: '^-?[0-9]+(\.[0-9]+)?$'
+    ViewName:
+      type: string
+      pattern: '^api_[a-z_]+\.[a-z_]+_v[1-9][0-9]*$'
+    Measure:
+      type: object
+      additionalProperties: false
+      required: [code, kind, unit, value, lower, upper]
+      properties:
+        code:
+          type: string
+          description: A measure code of the KPI's catalog entry.
+        kind:
+          $ref: '#/components/schemas/MeasureKind'
+        unit:
+          $ref: '#/components/schemas/MeasureUnit'
+        value:
+          description: >-
+            Null, and omitted in XML, when the figure cannot be computed: a
+            zero denominator, a window that has not ended, or a campaign with
+            no control.
+          oneOf:
+            - $ref: '#/components/schemas/Decimal'
+            - type: 'null'
+        lower:
+          description: Lower bound of the 95% interval; null unless the catalog gives the measure one.
+          oneOf:
+            - $ref: '#/components/schemas/Decimal'
+            - type: 'null'
+        upper:
+          description: Upper bound of the 95% interval; null unless the catalog gives the measure one.
+          oneOf:
+            - $ref: '#/components/schemas/Decimal'
+            - type: 'null'
+      xml:
+        name: measures
+    Row:
+      type: object
+      additionalProperties: false
+      required:
+        - period_start
+        - period_end
+        - segment_code
+        - segment_state
+        - from_segment_code
+        - store_id
+        - channel_id
+        - campaign_id
+        - model_version_id
+        - synthetic
+        - measures
+      properties:
+        period_start:
+          type: [string, 'null']
+          format: date
+          description: First day of the bucket; null when the report is not grouped by period. Omitted in XML when null.
+        period_end:
+          type: [string, 'null']
+          format: date
+          description: Last day of the bucket, inclusive; null when the report is not grouped by period.
+        segment_code:
+          type: [string, 'null']
+          description: >-
+            The label code, only when `segment_state` is `assigned`. For
+            `migrations` it is the label entered.
+        segment_state:
+          description: Null when the report is not grouped by segment.
+          oneOf:
+            - $ref: '#/components/schemas/SegmentState'
+            - type: 'null'
+        from_segment_code:
+          type: [string, 'null']
+          description: The label left; only in `migrations` rows grouped by segment.
+        store_id:
+          type: [integer, 'null']
+          format: int32
+          description: As `stores` identifies it; null when not grouped by store.
+        channel_id:
+          type: [integer, 'null']
+          format: int32
+          description: As `channels` identifies it; null when not grouped by channel.
+        campaign_id:
+          type: [integer, 'null']
+          format: int64
+          description: Only in `campaign-performance` rows.
+        model_version_id:
+          type: [integer, 'null']
+          format: int64
+          description: Only in `migrations` rows, the version the changes belong to.
+        synthetic:
+          type: boolean
+          description: True when any sale or run aggregated into the row is `SEEDED` (ADR-0052).
+        measures:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Measure'
+      xml:
+        name: rows
+    StoreScope:
+      type: object
+      additionalProperties: false
+      required: [restricted, store_ids]
+      properties:
+        restricted:
+          type: boolean
+          description: True when the caller's role is confined to its stores (ADR-0060).
+        store_ids:
+          type: array
+          description: The stores the report covers when `restricted`; empty otherwise, meaning every store.
+          items:
+            type: integer
+            format: int32
+            minimum: 1
+    DataOrigin:
+      type: object
+      additionalProperties: false
+      required: [views, synthetic, spans_model_versions, model_version_ids]
+      properties:
+        views:
+          type: array
+          minItems: 1
+          description: The `api_*` views the figures were read from.
+          items:
+            $ref: '#/components/schemas/ViewName'
+        synthetic:
+          type: boolean
+        spans_model_versions:
+          type: boolean
+          description: >-
+            True when the window holds a change of model version, so a
+            comparison across it is methodological and not behaviour.
+        model_version_ids:
+          type: array
+          items:
+            type: integer
+            format: int64
+            minimum: 1
+    KpiReport:
+      type: object
+      additionalProperties: false
+      required:
+        - kpi
+        - definition_version
+        - from
+        - to
+        - granularity
+        - group_by
+        - generated_at
+        - store_scope
+        - data_origin
+        - rows
+        - page_info
+      properties:
+        kpi:
+          $ref: '#/components/schemas/KpiCode'
+        definition_version:
+          type: integer
+          minimum: 1
+          description: The `version` of the catalog entry the figures follow.
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        granularity:
+          description: Null, and omitted in XML, when the report has no period.
+          oneOf:
+            - $ref: '#/components/schemas/Granularity'
+            - type: 'null'
+        group_by:
+          type: array
+          description: The dimensions the rows are grouped by.
+          items:
+            $ref: '#/components/schemas/Dimension'
+        generated_at:
+          type: string
+          format: date-time
+          description: The instant the figures are as of.
+        store_scope:
+          $ref: '#/components/schemas/StoreScope'
+        data_origin:
+          $ref: '#/components/schemas/DataOrigin'
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/Row'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: KpiReport
+        namespace: https://mosaiq.maxthecoder.online/xml/analytics-kpis/v1
+    MeasureDefinition:
+      type: object
+      additionalProperties: false
+      required: [code, kind, unit, definition]
+      properties:
+        code:
+          type: string
+        kind:
+          $ref: '#/components/schemas/MeasureKind'
+        unit:
+          $ref: '#/components/schemas/MeasureUnit'
+        definition:
+          type: string
+      xml:
+        name: measures
+    KpiDefinition:
+      type: object
+      additionalProperties: false
+      required:
+        - kpi_code
+        - name
+        - version
+        - definition
+        - window
+        - origin_views
+        - dimensions
+        - store_attributable
+        - roles
+        - store_scoped_roles
+        - measures
+      properties:
+        kpi_code:
+          $ref: '#/components/schemas/KpiCode'
+        name:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        definition:
+          type: string
+        window:
+          type: string
+          description: Which instant places a fact in the window, and how the window ends.
+        origin_views:
+          type: array
+          minItems: 1
+          description: The `api_*` views the KPI reads, and nothing else.
+          items:
+            $ref: '#/components/schemas/ViewName'
+        dimensions:
+          type: array
+          description: The `group_by` values the KPI supports.
+          items:
+            $ref: '#/components/schemas/Dimension'
+        store_attributable:
+          type: boolean
+          description: False when a figure has no store, so store-scoped roles cannot read it.
+        roles:
+          type: array
+          minItems: 1
+          description: The roles that read the KPI over every store.
+          items:
+            type: string
+        store_scoped_roles:
+          type: array
+          description: The roles that read the KPI over their assigned stores only.
+          items:
+            type: string
+        measures:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/MeasureDefinition'
+      xml:
+        name: KpiDefinition
+        namespace: https://mosaiq.maxthecoder.online/xml/analytics-kpis/v1
+    KpiDefinitions:
+      type: object
+      additionalProperties: false
+      required: [kpi_definitions, page_info]
+      properties:
+        kpi_definitions:
+          type: array
+          items:
+            $ref: '#/components/schemas/KpiDefinition'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: KpiDefinitions
+        namespace: https://mosaiq.maxthecoder.online/xml/analytics-kpis/v1
+    PageInfo:
+      type: object
+      additionalProperties: false
+      required: [page, size, total]
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+      xml:
+        name: PageInfo
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required: [field, code]
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+    Error:
+      type: object
+      additionalProperties: false
+      required: [code, message, correlation_id, details]
+      properties:
+        code:
+          type: string
+          pattern: '^[a-z][a-z0-9_]*$'
+        message:
+          type: string
+        correlation_id:
+          type: string
+          pattern: '^[0-9A-Za-z-]{1,64}$'
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+      xml:
+        name: Error
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+  responses:
+    AuthenticationError:
+      description: '`invalid_token` or `session_revoked`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              externalValue: ./examples/invalid-token.json
+            session_revoked:
+              externalValue: ./examples/session-revoked.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              externalValue: ./examples/invalid-token.xml
+            session_revoked:
+              externalValue: ./examples/session-revoked.xml
+    ForbiddenRole:
+      description: '`forbidden_role`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.xml
+    ForbiddenRoleOrStore:
+      description: '`forbidden_role`, or `forbidden_store` when a store-scoped role names a store it is not assigned to.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.json
+            forbidden_store:
+              externalValue: ./examples/forbidden-store.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.xml
+            forbidden_store:
+              externalValue: ./examples/forbidden-store.xml
+    NotAcceptable:
+      description: '`not_acceptable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              externalValue: ./examples/not-acceptable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              externalValue: ./examples/not-acceptable.xml
+    KpiQueryValidation:
+      description: '`invalid_query` or `invalid_pagination`. `invalid_query` details name the parameter and a code: `required`, `invalid_format`, `enum`, `to_before_from`, `window_too_long`, `dimension_not_supported` or `requires_period`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.json
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.xml
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.xml
+    InvalidPagination:
+      description: '`invalid_pagination`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.xml
+    RateLimited:
+      description: '`rate_limited`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              externalValue: ./examples/rate-limited.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              externalValue: ./examples/rate-limited.xml
+    ProtectedDatabaseUnavailable:
+      description: '`auth_unavailable` or `database_unavailable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.json
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.xml
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.xml
+    SchemaNotReady:
+      description: '`schema_not_ready`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              externalValue: ./examples/schema-not-ready.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              externalValue: ./examples/schema-not-ready.xml

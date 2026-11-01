@@ -1,0 +1,133 @@
+{
+  "version_id": 9,
+  "name": "rfm-quintiles-v3",
+  "method": "RFM_RULES",
+  "state": "DRAFT",
+  "source": "REGISTERED",
+  "window_days": 180,
+  "seed": null,
+  "parameters": {
+    "rule_set_id": 3,
+    "k": null,
+    "max_iterations": null,
+    "tolerance": null,
+    "features": [
+      "R",
+      "F",
+      "M"
+    ],
+    "normalization": "NONE"
+  },
+  "frozen_scoring": {
+    "quintile_boundaries": {
+      "recency_boundaries": [
+        14,
+        35,
+        70,
+        120
+      ],
+      "frequency_boundaries": [
+        8,
+        5,
+        3,
+        2
+      ],
+      "monetary_boundaries": [
+        "1200.00",
+        "700.00",
+        "350.00",
+        "150.00"
+      ]
+    },
+    "centroids": [],
+    "normalization_bounds": null
+  },
+  "reference_distribution": {
+    "sample_size": 18432,
+    "captured_at": "2026-10-29T03:00:00Z",
+    "features": [
+      {
+        "feature": "R",
+        "bin_edges": [
+          0,
+          30,
+          60,
+          120,
+          180
+        ],
+        "proportions": [
+          0.31,
+          0.27,
+          0.24,
+          0.18
+        ]
+      },
+      {
+        "feature": "F",
+        "bin_edges": [
+          1,
+          2,
+          4,
+          8,
+          42
+        ],
+        "proportions": [
+          0.38,
+          0.29,
+          0.21,
+          0.12
+        ]
+      },
+      {
+        "feature": "M",
+        "bin_edges": [
+          5.0,
+          150.0,
+          600.0,
+          1800.0,
+          9120.5
+        ],
+        "proportions": [
+          0.34,
+          0.33,
+          0.22,
+          0.11
+        ]
+      }
+    ],
+    "labels": [
+      {
+        "label_code": "CHAMPIONS",
+        "share": 0.12
+      },
+      {
+        "label_code": "LOYAL",
+        "share": 0.31
+      },
+      {
+        "label_code": "AT_RISK",
+        "share": 0.33
+      },
+      {
+        "label_code": "LOST",
+        "share": 0.24
+      }
+    ]
+  },
+  "dataset": {
+    "fingerprint": "9f2b6c4e1a7d3058b1e49c06a2d7f3185e0b4a96c7d1f2e38a5b6c0d9e4f7a12",
+    "origin": "OBSERVED",
+    "row_count": 18432
+  },
+  "metrics": {
+    "inertia": null,
+    "silhouette": null,
+    "stability": null
+  },
+  "owner_id": "11111111-1111-1111-1111-000000000001",
+  "source_run_id": null,
+  "training_id": null,
+  "created_at": "2026-10-31T09:00:00Z",
+  "published_at": null,
+  "retired_at": null
+}

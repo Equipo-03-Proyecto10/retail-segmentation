@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>model_training_not_found</code>
+  <message>The model training does not exist.</message>
+  <correlation_id>corr-model-training-not-found</correlation_id>
+</Error>

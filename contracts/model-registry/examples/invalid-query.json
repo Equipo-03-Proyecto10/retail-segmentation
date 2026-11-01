@@ -1,0 +1,11 @@
+{
+  "code": "invalid_query",
+  "message": "A filter is malformed.",
+  "correlation_id": "corr-invalid-query",
+  "details": [
+    {
+      "field": "state",
+      "code": "unknown_value"
+    }
+  ]
+}

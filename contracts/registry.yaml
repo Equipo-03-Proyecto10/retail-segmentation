@@ -89,3 +89,9 @@ services:
     rn: [RN-28, RN-29, RN-30]
     wave: second
     resources: [audit-entries]
+  - name: model-registry
+    port: 5019
+    rule: "A model version is immutable once published, carries its dataset, parameters, metrics and reference distribution, changes state only by an explicit publication or rollback, and every drift alert is judged against that reference (RN-66)"
+    rn: [RN-66]
+    wave: third
+    resources: [model-versions, model-trainings]

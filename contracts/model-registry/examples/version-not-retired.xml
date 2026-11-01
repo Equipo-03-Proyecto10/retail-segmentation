@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>version_not_retired</code>
+  <message>Only a version that was published and then retired can be rolled back to.</message>
+  <correlation_id>corr-version-not-retired</correlation_id>
+</Error>

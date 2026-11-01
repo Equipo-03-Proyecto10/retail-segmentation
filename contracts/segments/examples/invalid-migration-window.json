@@ -1,0 +1,11 @@
+{
+  "code": "invalid_query",
+  "message": "from must be earlier than to, and neither may be in the future.",
+  "correlation_id": "corr-invalid-migration-window",
+  "details": [
+    {
+      "field": "from",
+      "code": "not_before_to"
+    }
+  ]
+}

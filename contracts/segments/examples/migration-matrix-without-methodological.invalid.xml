@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SegmentMigrationMatrix xmlns="https://mosaiq.maxthecoder.online/xml/segments/v1">
+  <from>2026-09-14T03:00:00Z</from>
+  <to>2026-10-12T03:00:00Z</to>
+  <customer_count>0</customer_count>
+</SegmentMigrationMatrix>

@@ -1,16 +1,22 @@
 openapi: 3.1.0
 info:
   title: segments-service
-  version: 1.0.1
+  version: 1.1.0
   description: >-
-    Serves what the web's segmentation runs recorded: the label vocabulary, each
-    customer's current assignment and the history. It writes nothing (RN-20,
-    RN-21).
+    Serves what the segmentation runs recorded: the label vocabulary, each
+    customer's current assignment and the history, the assignments of each model
+    version, and the migrations between two instants with their matrix, entries,
+    exits, cell members and per-customer explanation. A comparison across model
+    versions is marked methodological and is never behaviour (ADR-0064). It writes
+    nothing through HTTP; assignments are applied through
+    `api_segments.apply_assignment_v1` (ADR-0063) (RN-20, RN-21, RN-39, RN-59,
+    RN-60).
 security:
   - bearer: []
 tags:
   - name: Segments
   - name: Assignments
+  - name: Migrations
   - name: Meta
 paths:
   /v1/segments:
@@ -249,6 +255,313 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/OperationUnavailable'
+  /v1/segment-assignments/versioned:
+    get:
+      tags: [Assignments]
+      summary: List assignments with the model version that wrote each
+      description: >-
+        Returns assignment rows, newest first, each with the `model_version_id`
+        of the run that wrote it and the `cause` of the row. Every filter is
+        optional and they combine. `model_version_id` keeps the rows written
+        under that version; `customer_id` keeps one customer's history;
+        `label_code` keeps one label; `open=true` keeps rows whose `valid_to` is
+        null. The version comes from model-registry's published run-version view
+        (ADR-0064), which segments reads and does not own. A run that has no
+        version yet is reported with a null `model_version_id` (omitted in XML),
+        which means pending, and it never matches a `model_version_id` filter. A
+        version no run carries returns an empty page, not an error. `cause` is
+        null (omitted in XML) for a row written before causes were recorded.
+        This is a separate read from `listSegmentAssignments`, whose response
+        type is closed to additions within v1.
+      operationId: listVersionedSegmentAssignments
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ModelVersionIdFilter'
+        - $ref: '#/components/parameters/HistoryCustomerId'
+        - $ref: '#/components/parameters/LabelCodeFilter'
+        - $ref: '#/components/parameters/Open'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of versioned assignments.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionedSegmentAssignmentPage'
+              examples:
+                customer_history:
+                  externalValue: ./examples/versioned-assignments.json
+                version_pending:
+                  externalValue: ./examples/versioned-assignments-pending.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/VersionedSegmentAssignmentPage'
+              examples:
+                customer_history:
+                  externalValue: ./examples/versioned-assignments.xml
+                version_pending:
+                  externalValue: ./examples/versioned-assignments-pending.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/AssignmentsNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/AssignmentsInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/segment-migrations/matrix:
+    get:
+      tags: [Migrations]
+      summary: Get the migration matrix between two instants
+      description: >-
+        Compares every customer's state at `from` with their state at `to`. A
+        customer's state at an instant is the assignment row open then: a label,
+        `unassigned` (scored, no label, RN-21), or `new` (no assignment yet at
+        `from`). The earlier instant is always the before state. The response
+        lists one `totals` entry per state any customer held (its size before and
+        after, the customers that entered it and the customers that left it) and
+        one `cells` entry per before and after pair with at least one customer; a
+        cell with none is omitted, and a client drawing a full grid takes its
+        axes from `listSegments`. `movement` is `improved` or `declined` by the
+        vocabulary's order for a change between labels, `unchanged` for the same
+        label, and `not_ranked` when either side is `unassigned` or `new`.
+        `methodological` is true when the version at `from` differs from the
+        version at `to`, or when either is unknown; then a difference may come
+        from the model and is never behaviour (ADR-0064). A version at an instant
+        is the version of the latest run recorded at or before it that has one.
+        Comparing runs by label is still all the matrix does; it never recomputes
+        an assignment.
+      operationId: getSegmentMigrationMatrix
+      x-mosaiq-conformance-query:
+        from: '2026-09-14T03:00:00Z'
+        to: '2026-10-12T03:00:00Z'
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+      responses:
+        '200':
+          description: The matrix.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SegmentMigrationMatrix'
+              examples:
+                within_one_version:
+                  externalValue: ./examples/migration-matrix.json
+                across_versions:
+                  externalValue: ./examples/migration-matrix-across-versions.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/SegmentMigrationMatrix'
+              examples:
+                within_one_version:
+                  externalValue: ./examples/migration-matrix.xml
+                across_versions:
+                  externalValue: ./examples/migration-matrix-across-versions.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/MigrationInvalidQuery'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/segment-migrations:
+    get:
+      tags: [Migrations]
+      summary: List migrations, a cell's members, or a label's entries or exits
+      description: >-
+        Returns one migration per customer between `from` and `to`, ordered by
+        `changed_at` newest first (customers whose assignment did not change last)
+        and then by `customer_id`. A migration carries the previous and the new
+        state and label, the `movement`, `changed_at` (when the assignment held at
+        `to` began, null when it began before `from`), its `cause`, the run and
+        model version of each side, `methodological`, and the
+        `responsible_variables`: the measures judged `changed` by RN-60's
+        thresholds on the customer's own raw values. `rank_only` is true when the
+        label changed and no variable did, which means the score moved because
+        the population or the model did. `methodological` is true when the
+        previous and new assignments were written under different versions, when
+        either version is unknown, or when `cause` is `VERSION_CHANGE`; such a
+        migration is a consequence of the model and is never counted as
+        behaviour (ADR-0064). Filters combine. A cell's members are the
+        migrations with `previous_state`, `previous_label_code`, `new_state` and
+        `new_label_code` set (a label code only with the state `label`, and never
+        with another state). A label's entries or exits are `direction` with
+        `label_code`. A cell and a direction are mutually exclusive, and a
+        `direction` without `label_code` is refused, each as 422 `invalid_query`.
+        An unknown label is 404 `segment_not_found` and an unknown `customer_id`
+        is 404 `customer_not_found`. `methodological=false` keeps only the
+        behavioural migrations.
+      operationId: listSegmentMigrations
+      x-mosaiq-conformance-query:
+        from: '2026-09-14T03:00:00Z'
+        to: '2026-10-12T03:00:00Z'
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/HistoryCustomerId'
+        - $ref: '#/components/parameters/PreviousState'
+        - $ref: '#/components/parameters/PreviousLabelCode'
+        - $ref: '#/components/parameters/NewState'
+        - $ref: '#/components/parameters/NewLabelCode'
+        - $ref: '#/components/parameters/Direction'
+        - $ref: '#/components/parameters/LabelCodeFilter'
+        - $ref: '#/components/parameters/Methodological'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of migrations.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SegmentMigrationPage'
+              examples:
+                cell_members:
+                  externalValue: ./examples/migrations-cell-members.json
+                entries_across_versions:
+                  externalValue: ./examples/migrations-entries-across-versions.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/SegmentMigrationPage'
+              examples:
+                cell_members:
+                  externalValue: ./examples/migrations-cell-members.xml
+                entries_across_versions:
+                  externalValue: ./examples/migrations-entries-across-versions.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/AssignmentsNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/MigrationInvalidQuery'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/segment-migrations/explanation:
+    get:
+      tags: [Migrations]
+      summary: Explain one customer's migration
+      description: >-
+        Returns the customer's migration between `from` and `to` and, for each
+        of recency, frequency and monetary, the raw value on both sides, a
+        judgement and a plain-language `statement`, all read from the stored
+        values and never recomputed (RN-60). Recency is whole days from the last
+        purchase to the run that measured it, frequency is purchases and monetary
+        is MXN. A measure is `stable` when recency moved by 7 days or less,
+        frequency is unchanged, or monetary moved by 10% or less of the earlier
+        value (stable from zero only to zero), and otherwise `changed`.
+        `rank_changed` is true when the value is stable but its score moved. A
+        measure with no value on a side is `not_compared`, with
+        `not_compared_reason` `new_customer` (no assignment at `from`) or
+        `unassigned` (the side scored the customer and found no purchase to
+        label, RN-21). The embedded migration carries `methodological`, so a
+        client says that a difference across versions may come from the model.
+        All three parameters are required. An unknown customer is 404
+        `customer_not_found`.
+      operationId: getSegmentMigrationExplanation
+      x-mosaiq-conformance-query:
+        customer_id: 7b3ad781-c5de-4f40-ae50-1fa825ce2b25
+        from: '2026-09-14T03:00:00Z'
+        to: '2026-10-12T03:00:00Z'
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CurrentCustomerId'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+      responses:
+        '200':
+          description: The explanation.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SegmentMigrationExplanation'
+              examples:
+                changed_and_stable:
+                  externalValue: ./examples/migration-explanation.json
+                rank_only_across_versions:
+                  externalValue: ./examples/migration-explanation-rank-only.json
+                new_customer:
+                  externalValue: ./examples/migration-explanation-new-customer.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/SegmentMigrationExplanation'
+              examples:
+                changed_and_stable:
+                  externalValue: ./examples/migration-explanation.xml
+                rank_only_across_versions:
+                  externalValue: ./examples/migration-explanation-rank-only.xml
+                new_customer:
+                  externalValue: ./examples/migration-explanation-new-customer.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CustomerNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/MigrationInvalidQuery'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
   /health/live:
     get:
       tags: [Meta]
@@ -365,6 +678,82 @@ components:
       description: One label's members. Exclusive with `customer_id`.
       schema:
         type: string
+    ModelVersionIdFilter:
+      name: model_version_id
+      in: query
+      required: false
+      description: Keep the rows written under this model version.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    From:
+      name: from
+      in: query
+      required: true
+      description: >-
+        The earlier instant, the before state. It must be earlier than `to` and
+        not in the future.
+      schema:
+        type: string
+        format: date-time
+    To:
+      name: to
+      in: query
+      required: true
+      description: The later instant, the after state. It must not be in the future.
+      schema:
+        type: string
+        format: date-time
+    PreviousState:
+      name: previous_state
+      in: query
+      required: false
+      description: The before side of a cell. Give it with `new_state`.
+      schema:
+        $ref: '#/components/schemas/MigrationState'
+    PreviousLabelCode:
+      name: previous_label_code
+      in: query
+      required: false
+      description: The before label, only with `previous_state=label`.
+      schema:
+        type: string
+    NewState:
+      name: new_state
+      in: query
+      required: false
+      description: The after side of a cell. Give it with `previous_state`.
+      schema:
+        $ref: '#/components/schemas/MigrationState'
+    NewLabelCode:
+      name: new_label_code
+      in: query
+      required: false
+      description: The after label, only with `new_state=label`.
+      schema:
+        type: string
+    Direction:
+      name: direction
+      in: query
+      required: false
+      description: >-
+        `entries` keeps customers who held another state before and hold
+        `label_code` after; `exits` the reverse. Requires `label_code`.
+      schema:
+        type: string
+        enum:
+          - entries
+          - exits
+    Methodological:
+      name: methodological
+      in: query
+      required: false
+      description: >-
+        `false` keeps only migrations that show behaviour; `true` only those a
+        model change may explain.
+      schema:
+        type: boolean
     Open:
       name: open
       in: query
@@ -588,6 +977,440 @@ components:
           $ref: '#/components/schemas/PageInfo'
       xml:
         name: SegmentAssignments
+        namespace: https://mosaiq.maxthecoder.online/xml/segments/v1
+    AssignmentCause:
+      type: string
+      enum:
+        - SALE
+        - REVERSAL
+        - AGEING
+        - VERSION_CHANGE
+        - FULL_RUN
+      description: >-
+        Why the row exists (ADR-0063). `FULL_RUN` is the web's administrator
+        run.
+    VersionedSegmentAssignment:
+      type: object
+      additionalProperties: false
+      required:
+        - customer_id
+        - run_id
+        - model_version_id
+        - cause
+        - label_code
+        - r_score
+        - f_score
+        - m_score
+        - valid_from
+        - valid_to
+      properties:
+        customer_id:
+          type: string
+          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+        run_id:
+          type: integer
+          format: int64
+        model_version_id:
+          type:
+            - integer
+            - 'null'
+          format: int64
+          description: The version of the run; null while the run has none yet.
+        cause:
+          oneOf:
+            - $ref: '#/components/schemas/AssignmentCause'
+            - type: 'null'
+        label_code:
+          type:
+            - string
+            - 'null'
+          description: Null for an unassigned result.
+        r_score:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+          maximum: 5
+        f_score:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+          maximum: 5
+        m_score:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+          maximum: 5
+        valid_from:
+          type: string
+          format: date-time
+        valid_to:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: Null while the row is open.
+    VersionedSegmentAssignmentPage:
+      type: object
+      additionalProperties: false
+      required:
+        - assignments
+        - page_info
+      properties:
+        assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/VersionedSegmentAssignment'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: VersionedSegmentAssignments
+        namespace: https://mosaiq.maxthecoder.online/xml/segments/v1
+    MigrationState:
+      type: string
+      enum:
+        - label
+        - unassigned
+        - new
+      description: >-
+        `label` holds a label, `unassigned` was scored and left without one
+        (RN-21), `new` had no assignment yet.
+    Movement:
+      type: string
+      enum:
+        - improved
+        - declined
+        - unchanged
+        - not_ranked
+      description: >-
+        Between labels by the vocabulary's order, `unchanged` for the same
+        label, and `not_ranked` when either side is `unassigned` or `new`.
+    MigrationVariable:
+      type: string
+      enum:
+        - recency
+        - frequency
+        - monetary
+    SegmentMigration:
+      type: object
+      additionalProperties: false
+      required:
+        - customer_id
+        - previous_state
+        - previous_label_code
+        - new_state
+        - new_label_code
+        - movement
+        - changed_at
+        - cause
+        - previous_run_id
+        - new_run_id
+        - previous_model_version_id
+        - new_model_version_id
+        - methodological
+        - responsible_variables
+        - rank_only
+      properties:
+        customer_id:
+          type: string
+          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+        previous_state:
+          $ref: '#/components/schemas/MigrationState'
+        previous_label_code:
+          type:
+            - string
+            - 'null'
+          description: Set exactly when `previous_state` is `label`.
+        new_state:
+          $ref: '#/components/schemas/MigrationState'
+        new_label_code:
+          type:
+            - string
+            - 'null'
+          description: Set exactly when `new_state` is `label`.
+        movement:
+          $ref: '#/components/schemas/Movement'
+        changed_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: >-
+            When the assignment held at `to` began; null when it began before
+            `from`.
+        cause:
+          oneOf:
+            - $ref: '#/components/schemas/AssignmentCause'
+            - type: 'null'
+          description: >-
+            The cause of the assignment held at `to`; null when that row predates
+            causes.
+        previous_run_id:
+          type:
+            - integer
+            - 'null'
+          format: int64
+          description: The run that wrote the assignment held at `from`; null for `new`.
+        new_run_id:
+          type:
+            - integer
+            - 'null'
+          format: int64
+          description: The run that wrote the assignment held at `to`.
+        previous_model_version_id:
+          type:
+            - integer
+            - 'null'
+          format: int64
+          description: The version of `previous_run_id`; null for `new` or while pending.
+        new_model_version_id:
+          type:
+            - integer
+            - 'null'
+          format: int64
+          description: The version of `new_run_id`; null while pending.
+        methodological:
+          type: boolean
+          description: >-
+            True when the two assignments were written under different versions,
+            a version is unknown, or `cause` is `VERSION_CHANGE`. Such a
+            migration may be an effect of the model and never counts as
+            behaviour.
+        responsible_variables:
+          type: array
+          items:
+            $ref: '#/components/schemas/MigrationVariable'
+          description: The measures judged `changed`. Empty when none was.
+        rank_only:
+          type: boolean
+          description: >-
+            True when the label changed and no measure was judged `changed`:
+            only the rank moved (RN-60).
+    SegmentMigrationPage:
+      type: object
+      additionalProperties: false
+      required:
+        - from
+        - to
+        - migrations
+        - page_info
+      properties:
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        migrations:
+          type: array
+          items:
+            $ref: '#/components/schemas/SegmentMigration'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: SegmentMigrations
+        namespace: https://mosaiq.maxthecoder.online/xml/segments/v1
+    MigrationTotal:
+      type: object
+      additionalProperties: false
+      required:
+        - state
+        - label_code
+        - before_count
+        - after_count
+        - entries
+        - exits
+      properties:
+        state:
+          $ref: '#/components/schemas/MigrationState'
+        label_code:
+          type:
+            - string
+            - 'null'
+          description: Set exactly when `state` is `label`.
+        before_count:
+          type: integer
+          minimum: 0
+          description: Customers in this state at `from`.
+        after_count:
+          type: integer
+          minimum: 0
+          description: Customers in this state at `to`.
+        entries:
+          type: integer
+          minimum: 0
+          description: Customers in another state at `from` and this one at `to`.
+        exits:
+          type: integer
+          minimum: 0
+          description: Customers in this state at `from` and another at `to`.
+    MigrationCell:
+      type: object
+      additionalProperties: false
+      required:
+        - previous_state
+        - previous_label_code
+        - new_state
+        - new_label_code
+        - movement
+        - customer_count
+      properties:
+        previous_state:
+          $ref: '#/components/schemas/MigrationState'
+        previous_label_code:
+          type:
+            - string
+            - 'null'
+        new_state:
+          $ref: '#/components/schemas/MigrationState'
+        new_label_code:
+          type:
+            - string
+            - 'null'
+        movement:
+          $ref: '#/components/schemas/Movement'
+        customer_count:
+          type: integer
+          minimum: 1
+    SegmentMigrationMatrix:
+      type: object
+      additionalProperties: false
+      required:
+        - from
+        - to
+        - from_model_version_id
+        - to_model_version_id
+        - methodological
+        - customer_count
+        - totals
+        - cells
+      properties:
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        from_model_version_id:
+          type:
+            - integer
+            - 'null'
+          format: int64
+          description: >-
+            The version at `from`; null while the latest versioned run has none
+            or none exists.
+        to_model_version_id:
+          type:
+            - integer
+            - 'null'
+          format: int64
+        methodological:
+          type: boolean
+          description: >-
+            True when the two versions differ or either is unknown. The
+            difference between the two states may then come from the model and
+            is never behaviour.
+        customer_count:
+          type: integer
+          minimum: 0
+          description: Customers compared; each is in exactly one cell.
+        totals:
+          type: array
+          items:
+            $ref: '#/components/schemas/MigrationTotal'
+        cells:
+          type: array
+          items:
+            $ref: '#/components/schemas/MigrationCell'
+      xml:
+        name: SegmentMigrationMatrix
+        namespace: https://mosaiq.maxthecoder.online/xml/segments/v1
+    MeasureUnit:
+      type: string
+      enum:
+        - days
+        - purchases
+        - MXN
+    Judgement:
+      type: string
+      enum:
+        - changed
+        - stable
+        - not_compared
+    NotComparedReason:
+      type: string
+      enum:
+        - new_customer
+        - unassigned
+    MigrationMeasure:
+      type: object
+      additionalProperties: false
+      required:
+        - variable
+        - unit
+        - previous_value
+        - new_value
+        - judgement
+        - not_compared_reason
+        - rank_changed
+        - statement
+      properties:
+        variable:
+          $ref: '#/components/schemas/MigrationVariable'
+        unit:
+          $ref: '#/components/schemas/MeasureUnit'
+        previous_value:
+          type:
+            - string
+            - 'null'
+          pattern: '^[0-9]+(\.[0-9]{2})?$'
+          description: >-
+            A decimal string: a whole number for days and purchases, two places
+            for MXN. Null when the side holds no value.
+        new_value:
+          type:
+            - string
+            - 'null'
+          pattern: '^[0-9]+(\.[0-9]{2})?$'
+        judgement:
+          $ref: '#/components/schemas/Judgement'
+        not_compared_reason:
+          oneOf:
+            - $ref: '#/components/schemas/NotComparedReason'
+            - type: 'null'
+          description: Set exactly when `judgement` is `not_compared`.
+        rank_changed:
+          type: boolean
+          description: True when the value is stable but its score moved.
+        statement:
+          type: string
+          description: The measure as a plain-language sentence, in English.
+    SegmentMigrationExplanation:
+      type: object
+      additionalProperties: false
+      required:
+        - from
+        - to
+        - migration
+        - measures
+      properties:
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        migration:
+          $ref: '#/components/schemas/SegmentMigration'
+        measures:
+          type: array
+          items:
+            $ref: '#/components/schemas/MigrationMeasure'
+          description: Recency, frequency and monetary, in that order.
+      xml:
+        name: SegmentMigrationExplanation
         namespace: https://mosaiq.maxthecoder.online/xml/segments/v1
     PageInfo:
       type: object
@@ -859,5 +1682,27 @@ components:
           examples:
             invalid_query:
               externalValue: ./examples/invalid-query.xml
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.xml
+    MigrationInvalidQuery:
+      description: '`invalid_query` or `invalid_pagination`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-migration-window.json
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-migration-window.xml
             invalid_pagination:
               externalValue: ./examples/invalid-pagination.xml

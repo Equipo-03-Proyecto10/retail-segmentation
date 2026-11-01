@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SegmentMigrationExplanation xmlns="https://mosaiq.maxthecoder.online/xml/segments/v1"
+        xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <from>2026-10-12T03:00:00Z</from>
+  <to>2026-10-21T03:00:00Z</to>
+  <migration>
+    <customer_id>e4d1b7a2-93c6-4f08-b5a9-2c6d8e0f1a37</customer_id>
+    <previous_state>label</previous_state>
+    <previous_label_code>CHAMPION</previous_label_code>
+    <new_state>label</new_state>
+    <new_label_code>LOYAL</new_label_code>
+    <movement>declined</movement>
+    <changed_at>2026-10-20T02:00:00Z</changed_at>
+    <cause>VERSION_CHANGE</cause>
+    <previous_run_id>42</previous_run_id>
+    <new_run_id>52</new_run_id>
+    <previous_model_version_id>3</previous_model_version_id>
+    <new_model_version_id>4</new_model_version_id>
+    <methodological>true</methodological>
+    <rank_only>true</rank_only>
+  </migration>
+  <MigrationMeasure>
+    <variable>recency</variable>
+    <unit>days</unit>
+    <previous_value>6</previous_value>
+    <new_value>11</new_value>
+    <judgement>stable</judgement>
+    <rank_changed>true</rank_changed>
+    <statement>Recency is stable: 6 days against 11, within the 7-day drift, but its score moved because the model changed.</statement>
+  </MigrationMeasure>
+  <MigrationMeasure>
+    <variable>frequency</variable>
+    <unit>purchases</unit>
+    <previous_value>12</previous_value>
+    <new_value>12</new_value>
+    <judgement>stable</judgement>
+    <rank_changed>false</rank_changed>
+    <statement>Frequency is stable at 12 purchases.</statement>
+  </MigrationMeasure>
+  <MigrationMeasure>
+    <variable>monetary</variable>
+    <unit>MXN</unit>
+    <previous_value>2310.00</previous_value>
+    <new_value>2310.00</new_value>
+    <judgement>stable</judgement>
+    <rank_changed>false</rank_changed>
+    <statement>Monetary is stable at 2310.00 MXN.</statement>
+  </MigrationMeasure>
+</SegmentMigrationExplanation>

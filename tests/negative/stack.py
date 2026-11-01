@@ -427,11 +427,6 @@ class Stack:
             token=self.token("ADMIN"),
         )
 
-    def forget_sessions(self) -> None:
-        """Every session of the run is gone: redis-state lost them (#714)."""
-        for session in self.opened_sessions:
-            session.closed = True
-
     def _create_account(
         self, role: str, password: str, admin_token: str, tag: str = ""
     ) -> Account:

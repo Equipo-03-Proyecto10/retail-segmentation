@@ -64,7 +64,116 @@
     </xs:sequence>
   </xs:complexType>
 
+  <xs:simpleType name="StoreStatusValue">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="OPEN"/>
+      <xs:enumeration value="TEMPORARILY_CLOSED"/>
+      <xs:enumeration value="CLOSED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="LocalTime">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="([01][0-9]|2[0-3]):[0-5][0-9]"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="DayOfWeek">
+    <xs:restriction base="xs:integer">
+      <xs:minInclusive value="1"/>
+      <xs:maxInclusive value="7"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="TimeZoneName">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:maxLength value="64"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="DiscountPercent">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="(100\.00|[0-9]{1,2}\.[0-9]{2})"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="HoursInterval">
+    <xs:sequence>
+      <xs:element name="day_of_week" type="stores:DayOfWeek"/>
+      <xs:element name="opens_at" type="stores:LocalTime"/>
+      <xs:element name="closes_at" type="stores:LocalTime"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="StoreStatus">
+    <xs:sequence>
+      <xs:element name="status" type="stores:StoreStatusValue"/>
+      <xs:element name="updated_at" type="xs:dateTime" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="StoreStatusUpdate">
+    <xs:sequence>
+      <xs:element name="status" type="stores:StoreStatusValue"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="StoreHours">
+    <xs:sequence>
+      <xs:element name="time_zone" type="stores:TimeZoneName"/>
+      <xs:element name="intervals" type="stores:HoursInterval"
+                  minOccurs="0" maxOccurs="7"/>
+      <xs:element name="updated_at" type="xs:dateTime" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="StoreHoursUpdate">
+    <xs:sequence>
+      <xs:element name="time_zone" type="stores:TimeZoneName"/>
+      <xs:element name="intervals" type="stores:HoursInterval"
+                  minOccurs="0" maxOccurs="7"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="StoreChannels">
+    <xs:sequence>
+      <xs:element name="channel_ids" type="xs:integer"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="updated_at" type="xs:dateTime" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="StoreChannelsUpdate">
+    <xs:sequence>
+      <xs:element name="channel_ids" type="xs:integer"
+                  minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="StoreCommercialRules">
+    <xs:sequence>
+      <xs:element name="max_discount_percent" type="stores:DiscountPercent"
+                  minOccurs="0"/>
+      <xs:element name="updated_at" type="xs:dateTime" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="StoreCommercialRulesUpdate">
+    <xs:sequence>
+      <xs:element name="max_discount_percent" type="stores:DiscountPercent"/>
+    </xs:sequence>
+  </xs:complexType>
+
   <xs:element name="LocationUpdate" type="stores:LocationUpdate"/>
   <xs:element name="Store" type="stores:Store"/>
   <xs:element name="Stores" type="stores:Stores"/>
+  <xs:element name="StoreStatus" type="stores:StoreStatus"/>
+  <xs:element name="StoreStatusUpdate" type="stores:StoreStatusUpdate"/>
+  <xs:element name="StoreHours" type="stores:StoreHours"/>
+  <xs:element name="StoreHoursUpdate" type="stores:StoreHoursUpdate"/>
+  <xs:element name="StoreChannels" type="stores:StoreChannels"/>
+  <xs:element name="StoreChannelsUpdate" type="stores:StoreChannelsUpdate"/>
+  <xs:element name="StoreCommercialRules" type="stores:StoreCommercialRules"/>
+  <xs:element name="StoreCommercialRulesUpdate" type="stores:StoreCommercialRulesUpdate"/>
 </xs:schema>

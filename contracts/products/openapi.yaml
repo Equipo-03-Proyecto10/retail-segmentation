@@ -1,13 +1,24 @@
 openapi: 3.1.0
 info:
   title: products-service
-  version: 1.1.0
+  version: 1.2.0
   description: >-
     Owns the product catalog rule: a product has a unique SKU, a non-negative
     two-decimal list price, exactly one existing category, and is retired by
     deactivation. Reads may be cached, but a cache miss reads PostgreSQL. The
     batch `ids` filter lets clients resolve as many as 50 product references in
     one call; unknown ids are omitted rather than treated as errors.
+
+    Commercial details (`/v1/products/{product_id}/details`) add a
+    commercial status (`active`, `paused`, `discontinued`), attributes, a
+    photo URL and a barcode. The `Product` representation of `listProducts`
+    and `getProduct` is unchanged. `product.is_active` stays the one flag
+    that the web, sales and recommendations read, and it is true exactly
+    when the commercial status is `active`; the two are never stored or
+    served out of step. Substitutes and complements of a product are under
+    `/v1/products/{product_id}/relations` and are published to
+    recommendations as `api_products.product_relation_v1`. Photos are
+    uploaded through the web application, never through this service.
 security:
   - bearer: []
 paths:
@@ -293,6 +304,278 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/products/{product_id}/details:
+    get:
+      operationId: getProductDetails
+      summary: Get a product with its commercial details
+      description: >-
+        Returns the product fields of `getProduct` plus its commercial status,
+        attributes, photo URL and barcode. `is_active` is always consistent with
+        `commercial_status`: it is true exactly when the status is `active`.
+        `Product` (the `getProduct` and `listProducts` representation) is
+        unchanged and does not carry the commercial fields.
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - INVENTORY_PLANNER
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The product with its commercial details.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductDetails'
+              examples:
+                product_details:
+                  externalValue: ./examples/product-details.json
+                paused_product_details:
+                  externalValue: ./examples/product-details-paused.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/ProductDetails'
+              examples:
+                product_details:
+                  externalValue: ./examples/product-details.xml
+                paused_product_details:
+                  externalValue: ./examples/product-details-paused.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/ProductNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+    patch:
+      operationId: updateProductDetails
+      summary: Change a product's commercial status, attributes or barcode
+      description: >-
+        Changes one or more of `commercial_status`, `attributes` and `barcode`.
+        No other field is accepted. `photo_url` and `image_path` return
+        `invalid_body`: photos are uploaded through the web application and
+        this service never receives file bytes. `attributes`, when sent,
+        replaces the whole set (one to 20 entries with distinct names; the last
+        attribute of a product cannot be removed through this operation). A
+        barcode cannot be cleared once set; it can be replaced. Changing
+        `commercial_status` changes `is_active` in the same transaction:
+        `active` sets it true; `paused` and `discontinued` set it false.
+        `PATCH /v1/products/{product_id}` with `is_active` stays valid and maps
+        the other way: true sets the status `active`; false sets it
+        `discontinued`, unless it is already `paused` or `discontinued`, in
+        which case the status is unchanged. Because `paused` and
+        `discontinued` make `is_active` false, sales and recommendations stop
+        selling and suggesting the product in either case, and the web system,
+        which reads `product.is_active` only, behaves identically.
+      x-mosaiq-roles:
+        - ADMIN
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProductDetailsRequest'
+            examples:
+              product_details_update:
+                externalValue: ./examples/update-product-details.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/UpdateProductDetailsRequest'
+            examples:
+              product_details_update:
+                externalValue: ./examples/update-product-details.request.xml
+      responses:
+        '200':
+          description: Details updated.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductDetails'
+              examples:
+                updated_product_details:
+                  externalValue: ./examples/update-product-details.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/ProductDetails'
+              examples:
+                updated_product_details:
+                  externalValue: ./examples/update-product-details.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/ProductNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/BarcodeConflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/UpdateProductDetailsValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/products/{product_id}/relations:
+    get:
+      operationId: listProductRelations
+      summary: List a product's substitutes and complements
+      description: >-
+        Returns the products related to `product_id`, ordered by `kind` then
+        `related_product_id`. A relation is directed: "B substitutes A" does not
+        imply "A substitutes B". `kind` filters to one relation kind. Related
+        products are listed whatever their commercial status; consumers decide
+        by `is_active`. Pagination applies after filtering. The same relations
+        are published to recommendations as `api_products.product_relation_v1`.
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - INVENTORY_PLANNER
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: kind
+          in: query
+          description: Restrict the page to one relation kind.
+          schema:
+            $ref: '#/components/schemas/RelationKind'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of relations.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductRelations'
+              examples:
+                product_relations:
+                  externalValue: ./examples/product-relations.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/ProductRelations'
+              examples:
+                product_relations:
+                  externalValue: ./examples/product-relations.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/ProductNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/ProductRelationListValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/products/{product_id}/relations/{relation_kind}:
+    put:
+      operationId: replaceProductRelations
+      summary: Replace a product's substitutes or complements
+      description: >-
+        Replaces the whole set of `relation_kind` relations of `product_id` with
+        `related_product_ids` (zero to 50 distinct existing product ids, none
+        equal to `product_id`) in one transaction; an empty set removes them
+        all. Other relation kinds of the product are untouched. Idempotent. The
+        response is the resulting set, as `listProductRelations` with the same
+        kind, first page. A `relation_kind` outside the enum is `not_found`.
+      x-mosaiq-roles:
+        - ADMIN
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+        - name: relation_kind
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/RelationKind'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplaceProductRelationsRequest'
+            examples:
+              substitutes:
+                externalValue: ./examples/replace-product-relations.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/ReplaceProductRelationsRequest'
+            examples:
+              substitutes:
+                externalValue: ./examples/replace-product-relations.request.xml
+      responses:
+        '200':
+          description: Relations replaced.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductRelations'
+              examples:
+                replaced_relations:
+                  externalValue: ./examples/replace-product-relations.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/ProductRelations'
+              examples:
+                replaced_relations:
+                  externalValue: ./examples/replace-product-relations.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/ProductNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ReplaceProductRelationsValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
   /health/live:
     get:
       operationId: getLiveness
@@ -524,6 +807,167 @@ components:
           type: boolean
       xml:
         name: UpdateProductRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/products/v1
+    CommercialStatus:
+      type: string
+      description: >-
+        Commercial lifecycle of a product. `active` is on sale. `paused` is
+        temporarily off sale and may return. `discontinued` is retired. These
+        three are the working values; adding one is a contract change.
+        `product.is_active` is true exactly when the status is `active`.
+      enum:
+        - active
+        - paused
+        - discontinued
+    Barcode:
+      type: string
+      description: >-
+        A GTIN-8, GTIN-12, GTIN-13 or GTIN-14 as digits only, with a valid check
+        digit. Unique among products.
+      pattern: '^([0-9]{8}|[0-9]{12,14})$'
+    PhotoUrl:
+      type: string
+      description: >-
+        Absolute URL of the product photo: the configured photo base URL joined
+        to the web-managed `image_path`. Read-only.
+      format: uri
+      maxLength: 512
+    AttributeName:
+      type: string
+      description: Lowercase snake_case attribute name, unique within a product.
+      pattern: '^[a-z][a-z0-9_]{0,39}$'
+    AttributeValue:
+      type: string
+      minLength: 1
+      maxLength: 120
+    ProductAttribute:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - value
+      properties:
+        name:
+          $ref: '#/components/schemas/AttributeName'
+        value:
+          $ref: '#/components/schemas/AttributeValue'
+    RelationKind:
+      type: string
+      enum:
+        - substitute
+        - complement
+    ProductDetails:
+      type: object
+      additionalProperties: false
+      required:
+        - product_id
+        - sku
+        - name
+        - category_id
+        - list_price
+        - is_active
+        - commercial_status
+        - attributes
+        - photo_url
+        - barcode
+      properties:
+        product_id:
+          $ref: '#/components/schemas/ProductId'
+        sku:
+          $ref: '#/components/schemas/Sku'
+        name:
+          $ref: '#/components/schemas/ProductName'
+        category_id:
+          $ref: '#/components/schemas/CategoryId'
+        list_price:
+          $ref: '#/components/schemas/ListPrice'
+        is_active:
+          type: boolean
+          description: True exactly when `commercial_status` is `active`.
+        commercial_status:
+          $ref: '#/components/schemas/CommercialStatus'
+        attributes:
+          description: Name and value pairs; empty when the product has none.
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/ProductAttribute'
+        photo_url:
+          description: Null when the product has no photo.
+          readOnly: true
+          oneOf:
+            - $ref: '#/components/schemas/PhotoUrl'
+            - type: 'null'
+        barcode:
+          description: Null when the product has no barcode.
+          oneOf:
+            - $ref: '#/components/schemas/Barcode'
+            - type: 'null'
+      xml:
+        name: ProductDetails
+        namespace: https://mosaiq.maxthecoder.online/xml/products/v1
+    UpdateProductDetailsRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        commercial_status:
+          $ref: '#/components/schemas/CommercialStatus'
+        attributes:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/ProductAttribute'
+        barcode:
+          $ref: '#/components/schemas/Barcode'
+      xml:
+        name: UpdateProductDetailsRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/products/v1
+    ProductRelation:
+      type: object
+      additionalProperties: false
+      required:
+        - related_product_id
+        - kind
+      properties:
+        related_product_id:
+          $ref: '#/components/schemas/ProductId'
+        kind:
+          $ref: '#/components/schemas/RelationKind'
+    ProductRelations:
+      type: object
+      additionalProperties: false
+      required:
+        - product_id
+        - product_relations
+        - page_info
+      properties:
+        product_id:
+          $ref: '#/components/schemas/ProductId'
+        product_relations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductRelation'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: ProductRelations
+        namespace: https://mosaiq.maxthecoder.online/xml/products/v1
+    ReplaceProductRelationsRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - related_product_ids
+      properties:
+        related_product_ids:
+          type: array
+          maxItems: 50
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/ProductId'
+      xml:
+        name: ReplaceProductRelationsRequest
         namespace: https://mosaiq.maxthecoder.online/xml/products/v1
     PageInfo:
       type: object
@@ -785,6 +1229,122 @@ components:
                 <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>invalid_body</code><message>The request body contains a forbidden or invalid field.</message><correlation_id>corr-update-422a</correlation_id><details><field>sku</field><code>additional_property</code></details></Error>
             unknown_category:
               externalValue: ./examples/unknown-category.xml
+    BarcodeConflict:
+      description: '`barcode_taken`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            barcode_taken:
+              externalValue: ./examples/barcode-taken.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            barcode_taken:
+              externalValue: ./examples/barcode-taken.xml
+    UpdateProductDetailsValidation:
+      description: '`invalid_body` or `invalid_barcode`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              value:
+                code: invalid_body
+                message: The request body contains a forbidden or invalid field.
+                correlation_id: corr-details-422a
+                details:
+                  - field: photo_url
+                    code: additional_property
+            invalid_barcode:
+              externalValue: ./examples/invalid-barcode.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>invalid_body</code><message>The request body contains a forbidden or invalid field.</message><correlation_id>corr-details-422a</correlation_id><details><field>photo_url</field><code>additional_property</code></details></Error>
+            invalid_barcode:
+              externalValue: ./examples/invalid-barcode.xml
+    ProductRelationListValidation:
+      description: '`invalid_pagination` or `invalid_query`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              value:
+                code: invalid_pagination
+                message: Pagination values are outside their allowed ranges.
+                correlation_id: corr-relations-422a
+                details:
+                  - field: page
+                    code: minimum
+            invalid_query:
+              value:
+                code: invalid_query
+                message: A query parameter is outside its allowed range.
+                correlation_id: corr-relations-422b
+                details:
+                  - field: kind
+                    code: enum
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>invalid_pagination</code><message>Pagination values are outside their allowed ranges.</message><correlation_id>corr-relations-422a</correlation_id><details><field>page</field><code>minimum</code></details></Error>
+            invalid_query:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>invalid_query</code><message>A query parameter is outside its allowed range.</message><correlation_id>corr-relations-422b</correlation_id><details><field>kind</field><code>enum</code></details></Error>
+    ReplaceProductRelationsValidation:
+      description: '`invalid_body`, `self_relation` or `unknown_related_product`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              value:
+                code: invalid_body
+                message: The request body violates the relations schema.
+                correlation_id: corr-relations-422c
+                details:
+                  - field: related_product_ids
+                    code: max_items
+            self_relation:
+              externalValue: ./examples/self-relation.json
+            unknown_related_product:
+              externalValue: ./examples/unknown-related-product.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>invalid_body</code><message>The request body violates the relations schema.</message><correlation_id>corr-relations-422c</correlation_id><details><field>related_product_ids</field><code>max_items</code></details></Error>
+            self_relation:
+              externalValue: ./examples/self-relation.xml
+            unknown_related_product:
+              externalValue: ./examples/unknown-related-product.xml
     MalformedBody:
       description: '`malformed_body`.'
       headers:

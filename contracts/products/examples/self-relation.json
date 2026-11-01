@@ -1,0 +1,11 @@
+{
+  "code": "self_relation",
+  "message": "A product cannot be related to itself.",
+  "correlation_id": "corr-relations-422d",
+  "details": [
+    {
+      "field": "related_product_ids",
+      "code": "self"
+    }
+  ]
+}

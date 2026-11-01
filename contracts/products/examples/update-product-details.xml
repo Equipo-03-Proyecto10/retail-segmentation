@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ProductDetails xmlns="https://mosaiq.maxthecoder.online/xml/products/v1">
+  <product_id>1002</product_id>
+  <sku>MOS-TAG-002</sku>
+  <name>Shelf Tag Pack</name>
+  <category_id>12</category_id>
+  <list_price>24.50</list_price>
+  <is_active>false</is_active>
+  <commercial_status>discontinued</commercial_status>
+  <attributes>
+    <name>color</name>
+    <value>white</value>
+  </attributes>
+  <barcode>036000291452</barcode>
+</ProductDetails>

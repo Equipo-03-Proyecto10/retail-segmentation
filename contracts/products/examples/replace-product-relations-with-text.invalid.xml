@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ReplaceProductRelationsRequest xmlns="https://mosaiq.maxthecoder.online/xml/products/v1">
+  <related_product_ids>not-an-id</related_product_ids>
+</ReplaceProductRelationsRequest>

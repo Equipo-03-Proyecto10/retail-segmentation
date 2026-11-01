@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>self_relation</code>
+  <message>A product cannot be related to itself.</message>
+  <correlation_id>corr-relations-422d</correlation_id>
+  <details>
+    <field>related_product_ids</field>
+    <code>self</code>
+  </details>
+</Error>

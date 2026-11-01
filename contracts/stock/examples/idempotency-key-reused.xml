@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>idempotency_key_reused</code>
+  <message>The Idempotency-Key was already used for a different movement.</message>
+  <correlation_id>corr-idempotency-key-reused</correlation_id>
+  <details>
+    <field>Idempotency-Key</field>
+    <code>reused</code>
+  </details>
+</Error>

@@ -17,6 +17,9 @@ It is the only write that crosses a service boundary (E-05). It runs the
 conditional `UPDATE ... WHERE quantity_on_hand >= quantity RETURNING` that the
 web's decrement uses, so stock is never negative.
 
+Its counterpart, which restores stock when a sale is reversed, is
+[`api_stock.restock_v1`](api_stock.restock.v1.md); E-05 names both.
+
 ## Arguments
 
 | Position | Name | Type | Meaning |

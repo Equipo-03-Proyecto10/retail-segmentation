@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>unknown_product</code>
+  <message>No product has that id.</message>
+  <correlation_id>corr-unknown-product</correlation_id>
+  <details>
+    <field>product_id</field>
+    <code>unknown</code>
+  </details>
+</Error>

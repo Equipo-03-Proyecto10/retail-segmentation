@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>stock_movement_not_found</code>
+  <message>No stock movement exists with id 9999.</message>
+  <correlation_id>corr-stock-movement-not-found</correlation_id>
+</Error>

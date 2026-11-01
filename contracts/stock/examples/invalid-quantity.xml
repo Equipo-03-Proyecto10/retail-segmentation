@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_quantity</code>
+  <message>The quantity is not valid for this movement type.</message>
+  <correlation_id>corr-invalid-quantity</correlation_id>
+  <details>
+    <field>quantity</field>
+    <code>must_be_positive</code>
+  </details>
+</Error>

@@ -1,0 +1,21 @@
+{
+  "movements": [
+    {
+      "movement_id": 9124,
+      "movement_type": "ADJUSTMENT",
+      "store_id": 3,
+      "product_id": 120,
+      "quantity_delta": -3,
+      "quantity_before": 42,
+      "quantity_after": 39,
+      "transfer_id": null,
+      "reference": null,
+      "reason": "DAMAGE",
+      "counted_by": null,
+      "note": "Crushed in the stockroom.",
+      "reversal_id": null,
+      "recorded_by": "3f0c9e1a-6a7b-4c52-9d1e-2b8f5a7d4c10",
+      "recorded_at": "2026-10-18T08:45:12Z"
+    }
+  ]
+}

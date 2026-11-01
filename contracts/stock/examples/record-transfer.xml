@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<StockMovementRecord xmlns="https://mosaiq.maxthecoder.online/xml/stock/v1">
+  <movements>
+    <movement_id>9121</movement_id>
+    <movement_type>TRANSFER</movement_type>
+    <store_id>3</store_id>
+    <product_id>120</product_id>
+    <quantity_delta>-10</quantity_delta>
+    <quantity_before>54</quantity_before>
+    <quantity_after>44</quantity_after>
+    <transfer_id>b4f2c1de-7a39-4d56-8a0b-6e1d9c3f2a77</transfer_id>
+    <recorded_by>3f0c9e1a-6a7b-4c52-9d1e-2b8f5a7d4c10</recorded_by>
+    <recorded_at>2026-10-16T10:02:31Z</recorded_at>
+  </movements>
+  <movements>
+    <movement_id>9122</movement_id>
+    <movement_type>TRANSFER</movement_type>
+    <store_id>5</store_id>
+    <product_id>120</product_id>
+    <quantity_delta>10</quantity_delta>
+    <quantity_before>6</quantity_before>
+    <quantity_after>16</quantity_after>
+    <transfer_id>b4f2c1de-7a39-4d56-8a0b-6e1d9c3f2a77</transfer_id>
+    <recorded_by>3f0c9e1a-6a7b-4c52-9d1e-2b8f5a7d4c10</recorded_by>
+    <recorded_at>2026-10-16T10:02:31Z</recorded_at>
+  </movements>
+</StockMovementRecord>

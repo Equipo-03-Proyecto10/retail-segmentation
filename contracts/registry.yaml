@@ -49,10 +49,10 @@ services:
     resources: [preference-profiles]
   - name: sales
     port: 5009
-    rule: "A sale is recorded exactly once, all or nothing, consuming its stock in the same transaction, and only with lines dated not in the future and not before the customer's registration, for active products, with positive quantities and positive two-decimal prices (RN-11 to RN-13, RN-37 (accepted sales))"
+    rule: "A sale is recorded exactly once, all or nothing, consuming its stock in the same transaction, and only with lines dated not in the future and not before the customer's registration, for active products, with positive quantities and positive two-decimal prices; it is never edited or deleted, and a cancellation or return is recorded beside it as an append-only reversal that restores stock in the same transaction (RN-11 to RN-13, RN-37 (accepted sales), ADR-0062)"
     rn: [RN-11, RN-12, RN-13, RN-37]
     wave: core
-    resources: [sales, channels]
+    resources: [sales, sale-reversals, channels]
   - name: segments
     port: 5010
     rule: "A customer has at most one current segment, named by its stable label code, and unassigned states are reported as they are (RN-20, RN-21)"

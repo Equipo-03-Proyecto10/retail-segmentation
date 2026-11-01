@@ -71,6 +71,73 @@
     </xs:sequence>
   </xs:complexType>
 
+  <xs:simpleType name="ReversalKind">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="CANCELLATION"/>
+      <xs:enumeration value="RETURN"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- A request quantity is any integer, and reason and resellable may be
+       absent: the service, not the schema, answers invalid_quantity and
+       reason_required. -->
+  <xs:complexType name="SaleReversalLineInput">
+    <xs:sequence>
+      <xs:element name="product_id" type="xs:integer"/>
+      <xs:element name="quantity" type="xs:integer"/>
+      <xs:element name="reason" type="xs:string" minOccurs="0"/>
+      <xs:element name="resellable" type="xs:boolean" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- reason and lines depend on the kind, so the service decides them
+       (reason_required, no_return_lines, unexpected_lines). -->
+  <xs:complexType name="SaleReversalRequest">
+    <xs:sequence>
+      <xs:element name="sale_id" type="xs:long"/>
+      <xs:element name="kind" type="sales:ReversalKind"/>
+      <xs:element name="reason" type="xs:string" minOccurs="0"/>
+      <xs:element name="lines" type="sales:SaleReversalLineInput"
+                  minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SaleReversalLine">
+    <xs:sequence>
+      <xs:element name="product_id" type="xs:integer"/>
+      <xs:element name="quantity" type="xs:positiveInteger"/>
+      <xs:element name="remaining_quantity" type="xs:nonNegativeInteger"/>
+      <xs:element name="unit_price" type="sales:Money"/>
+      <xs:element name="reason" type="xs:string" minOccurs="0"/>
+      <xs:element name="resellable" type="xs:boolean"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SaleReversal">
+    <xs:sequence>
+      <xs:element name="reversal_id" type="xs:long"/>
+      <xs:element name="sale_id" type="xs:long"/>
+      <xs:element name="kind" type="sales:ReversalKind"/>
+      <xs:element name="reason" type="xs:string" minOccurs="0"/>
+      <xs:element name="customer_id" type="sales:Uuid"/>
+      <xs:element name="store_id" type="xs:integer"/>
+      <xs:element name="recorded_at" type="xs:dateTime"/>
+      <xs:element name="recorded_by" type="sales:Uuid"/>
+      <xs:element name="amount" type="sales:Money"/>
+      <xs:element name="net_total" type="sales:Money"/>
+      <xs:element name="lines" type="sales:SaleReversalLine"
+                  maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SaleReversals">
+    <xs:sequence>
+      <xs:element name="SaleReversal" type="sales:SaleReversal"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
   <xs:complexType name="Channel">
     <xs:sequence>
       <xs:element name="channel_id" type="xs:integer"/>
@@ -88,5 +155,8 @@
   <xs:element name="SaleRequest" type="sales:SaleRequest"/>
   <xs:element name="Sale" type="sales:Sale"/>
   <xs:element name="Sales" type="sales:Sales"/>
+  <xs:element name="SaleReversalRequest" type="sales:SaleReversalRequest"/>
+  <xs:element name="SaleReversal" type="sales:SaleReversal"/>
+  <xs:element name="SaleReversals" type="sales:SaleReversals"/>
   <xs:element name="Channels" type="sales:Channels"/>
 </xs:schema>

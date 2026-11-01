@@ -1,0 +1,11 @@
+{
+  "code": "reversal_window_closed",
+  "message": "The time allowed for this kind of reversal has passed.",
+  "correlation_id": "corr-reversal-window-closed",
+  "details": [
+    {
+      "field": "kind",
+      "code": "window_closed"
+    }
+  ]
+}

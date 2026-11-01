@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SaleReversals xmlns="https://mosaiq.maxthecoder.online/xml/sales/v1"
+        xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <SaleReversal>
+    <reversal_id>302</reversal_id>
+    <sale_id>4812</sale_id>
+    <kind>RETURN</kind>
+    <customer_id>7b3ad781-c5de-4f40-ae50-1fa825ce2b25</customer_id>
+    <store_id>3</store_id>
+    <recorded_at>2026-10-20T16:45:10Z</recorded_at>
+    <recorded_by>11111111-1111-1111-1111-000000000003</recorded_by>
+    <amount>93.25</amount>
+    <net_total>110.00</net_total>
+    <lines>
+      <product_id>1020</product_id>
+      <quantity>1</quantity>
+      <remaining_quantity>2</remaining_quantity>
+      <unit_price>4.25</unit_price>
+      <reason>Packaging damaged</reason>
+      <resellable>false</resellable>
+    </lines>
+    <lines>
+      <product_id>1051</product_id>
+      <quantity>1</quantity>
+      <remaining_quantity>1</remaining_quantity>
+      <unit_price>89.00</unit_price>
+      <reason>Customer changed their mind</reason>
+      <resellable>true</resellable>
+    </lines>
+  </SaleReversal>
+  <SaleReversal>
+    <reversal_id>301</reversal_id>
+    <sale_id>4811</sale_id>
+    <kind>CANCELLATION</kind>
+    <reason>Duplicate scan at the till</reason>
+    <customer_id>7b3ad781-c5de-4f40-ae50-1fa825ce2b25</customer_id>
+    <store_id>1</store_id>
+    <recorded_at>2026-10-14T15:20:00Z</recorded_at>
+    <recorded_by>11111111-1111-1111-1111-000000000003</recorded_by>
+    <amount>4.25</amount>
+    <net_total>0.00</net_total>
+    <lines>
+      <product_id>1020</product_id>
+      <quantity>1</quantity>
+      <remaining_quantity>0</remaining_quantity>
+      <unit_price>4.25</unit_price>
+      <resellable>true</resellable>
+    </lines>
+  </SaleReversal>
+  <common:PageInfo>
+    <common:page>1</common:page>
+    <common:size>20</common:size>
+    <common:total>2</common:total>
+  </common:PageInfo>
+</SaleReversals>

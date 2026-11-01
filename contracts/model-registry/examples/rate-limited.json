@@ -1,0 +1,6 @@
+{
+  "code": "rate_limited",
+  "message": "The request limit was exceeded.",
+  "correlation_id": "corr-rate-limited",
+  "details": []
+}

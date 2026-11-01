@@ -95,3 +95,9 @@ services:
     rn: [RN-65]
     wave: third
     resources: [rfm-profiles, rfm-rule-sets, rfm-recalculations]
+  - name: model-registry
+    port: 5019
+    rule: "A model version is immutable once published, carries its dataset, parameters, metrics and reference distribution, changes state only by an explicit publication or rollback, and every drift alert is judged against that reference (RN-66)"
+    rn: [RN-66]
+    wave: third
+    resources: [model-versions, model-trainings]

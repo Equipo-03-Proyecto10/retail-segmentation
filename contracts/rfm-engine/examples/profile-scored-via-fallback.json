@@ -1,0 +1,15 @@
+{
+  "customer_id": "c0a8e1d4-77b2-4a39-8e15-d2f4b6a90c37",
+  "state": "scored",
+  "rule_set_id": 3,
+  "r_days": 140,
+  "f_count": 2,
+  "m_total": "95.00",
+  "r_score": 1,
+  "f_score": 2,
+  "m_score": 1,
+  "label_code": "LOST",
+  "via_fallback": true,
+  "computed_at": "2026-10-30T02:00:03Z",
+  "next_change_at": "2026-11-03T11:30:00Z"
+}

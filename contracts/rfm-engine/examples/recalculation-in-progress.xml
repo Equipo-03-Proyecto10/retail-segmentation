@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>recalculation_in_progress</code>
+  <message>A recalculation is already running.</message>
+  <correlation_id>corr-recalculation-in-progress</correlation_id>
+</Error>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RfmRecalculation xmlns="https://mosaiq.maxthecoder.online/xml/rfm-engine/v1">
+  <recalculation_id>13</recalculation_id>
+  <trigger>ON_DEMAND</trigger>
+  <state>COMPLETED</state>
+  <rule_set_id>3</rule_set_id>
+  <as_of>2026-10-28T15:00:00Z</as_of>
+  <started_at>2026-10-28T15:00:00Z</started_at>
+  <finished_at>2026-10-28T15:01:12Z</finished_at>
+  <started_by>11111111-1111-1111-1111-000000000001</started_by>
+  <customers_checked>30</customers_checked>
+  <customers_different>1</customers_different>
+  <outcome>DIFFERENT</outcome>
+</RfmRecalculation>

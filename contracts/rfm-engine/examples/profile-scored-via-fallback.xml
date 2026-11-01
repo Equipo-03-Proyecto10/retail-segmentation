@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RfmProfile xmlns="https://mosaiq.maxthecoder.online/xml/rfm-engine/v1">
+  <customer_id>c0a8e1d4-77b2-4a39-8e15-d2f4b6a90c37</customer_id>
+  <state>scored</state>
+  <rule_set_id>3</rule_set_id>
+  <r_days>140</r_days>
+  <f_count>2</f_count>
+  <m_total>95.00</m_total>
+  <r_score>1</r_score>
+  <f_score>2</f_score>
+  <m_score>1</m_score>
+  <label_code>LOST</label_code>
+  <via_fallback>true</via_fallback>
+  <computed_at>2026-10-30T02:00:03Z</computed_at>
+  <next_change_at>2026-11-03T11:30:00Z</next_change_at>
+</RfmProfile>

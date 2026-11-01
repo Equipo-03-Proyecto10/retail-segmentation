@@ -1,0 +1,6 @@
+{
+  "code": "rule_set_not_found",
+  "message": "The rule set does not exist.",
+  "correlation_id": "corr-rule-set-not-found",
+  "details": []
+}

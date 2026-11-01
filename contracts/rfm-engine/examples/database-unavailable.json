@@ -1,0 +1,6 @@
+{
+  "code": "database_unavailable",
+  "message": "The rfm-engine database is unavailable.",
+  "correlation_id": "corr-database-unavailable",
+  "details": []
+}

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<KpiReport xmlns="https://mosaiq.maxthecoder.online/xml/analytics-kpis/v1"
+      xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <kpi>net-sales</kpi>
+  <definition_version>1</definition_version>
+  <from>2026-10-01</from>
+  <to>2026-10-31</to>
+  <group_by>store</group_by>
+  <generated_at>2026-10-31T18:00:00Z</generated_at>
+  <store_scope>
+    <restricted>true</restricted>
+  </store_scope>
+  <data_origin>
+    <views>api_sales.net_purchase_line_v1</views>
+    <views>api_users.store_assignment_v1</views>
+    <synthetic>false</synthetic>
+    <spans_model_versions>false</spans_model_versions>
+  </data_origin>
+  <common:PageInfo>
+    <common:page>1</common:page>
+    <common:size>20</common:size>
+    <common:total>0</common:total>
+  </common:PageInfo>
+</KpiReport>

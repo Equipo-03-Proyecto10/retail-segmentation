@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>schema_not_ready</code>
+  <message>The required database schema is not applied.</message>
+  <correlation_id>corr-kpi-503c</correlation_id>
+</Error>

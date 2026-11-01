@@ -1,0 +1,108 @@
+{
+  "kpi": "recommendation-performance",
+  "definition_version": 1,
+  "from": "2026-10-01",
+  "to": "2026-10-31",
+  "granularity": "week",
+  "group_by": [
+    "channel",
+    "period"
+  ],
+  "generated_at": "2026-10-31T18:00:00Z",
+  "store_scope": {
+    "restricted": false,
+    "store_ids": []
+  },
+  "data_origin": {
+    "views": [
+      "api_engagement.interaction_v1",
+      "api_recommendations.recommended_purchase_v1"
+    ],
+    "synthetic": false,
+    "spans_model_versions": false,
+    "model_version_ids": []
+  },
+  "rows": [
+    {
+      "period_start": "2026-10-26",
+      "period_end": "2026-11-01",
+      "segment_code": null,
+      "segment_state": null,
+      "from_segment_code": null,
+      "store_id": null,
+      "channel_id": 1,
+      "campaign_id": null,
+      "model_version_id": null,
+      "synthetic": false,
+      "measures": [
+        {
+          "code": "impressions",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "5400",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "clicks",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "610",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "purchases",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "95",
+          "lower": null,
+          "upper": null
+        }
+      ]
+    },
+    {
+      "period_start": "2026-10-26",
+      "period_end": "2026-11-01",
+      "segment_code": null,
+      "segment_state": null,
+      "from_segment_code": null,
+      "store_id": null,
+      "channel_id": 3,
+      "campaign_id": null,
+      "model_version_id": null,
+      "synthetic": false,
+      "measures": [
+        {
+          "code": "impressions",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "1200",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "clicks",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "0",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "purchases",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "40",
+          "lower": null,
+          "upper": null
+        }
+      ]
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 2
+  }
+}

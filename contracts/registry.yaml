@@ -89,3 +89,9 @@ services:
     rn: [RN-28, RN-29, RN-30]
     wave: second
     resources: [audit-entries]
+  - name: analytics-kpis
+    port: 5022
+    rule: "A KPI is reported only under its published definition, window and data origin, from `api_*` objects, and only to the roles and stores allowed to read it (RN-68)"
+    rn: [RN-68]
+    wave: third
+    resources: [kpi-reports]

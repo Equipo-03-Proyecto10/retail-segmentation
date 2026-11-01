@@ -1,0 +1,109 @@
+{
+  "kpi": "migrations",
+  "definition_version": 1,
+  "from": "2026-10-01",
+  "to": "2026-10-31",
+  "granularity": null,
+  "group_by": [
+    "segment"
+  ],
+  "generated_at": "2026-10-31T18:00:00Z",
+  "store_scope": {
+    "restricted": false,
+    "store_ids": []
+  },
+  "data_origin": {
+    "views": [
+      "api_segments.assignment_change_v1"
+    ],
+    "synthetic": false,
+    "spans_model_versions": true,
+    "model_version_ids": [
+      3,
+      4
+    ]
+  },
+  "rows": [
+    {
+      "period_start": null,
+      "period_end": null,
+      "segment_code": "AT_RISK",
+      "segment_state": "assigned",
+      "from_segment_code": "LOYAL",
+      "store_id": null,
+      "channel_id": null,
+      "campaign_id": null,
+      "model_version_id": 4,
+      "synthetic": false,
+      "measures": [
+        {
+          "code": "customers_migrated",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "12",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "changes",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "12",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "methodological_changes",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "0",
+          "lower": null,
+          "upper": null
+        }
+      ]
+    },
+    {
+      "period_start": null,
+      "period_end": null,
+      "segment_code": "LOYAL",
+      "segment_state": "assigned",
+      "from_segment_code": "CHAMPION",
+      "store_id": null,
+      "channel_id": null,
+      "campaign_id": null,
+      "model_version_id": 4,
+      "synthetic": false,
+      "measures": [
+        {
+          "code": "customers_migrated",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "0",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "changes",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "0",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "methodological_changes",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "30",
+          "lower": null,
+          "upper": null
+        }
+      ]
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 2
+  }
+}

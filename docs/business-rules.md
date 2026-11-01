@@ -1256,6 +1256,28 @@ never updated or deleted.
 `checkins.store_check_in` keeps the computed reason, and
 `checkins.check_in_review` is insert-only for `svc_checkins`. · #398
 
+### RN-68 — A KPI is reported only under its published definition, window and data origin, and only to the roles and stores allowed to read it
+A KPI has one published definition, one window and one data origin, and a report
+names the version of the definition it follows, so a figure cannot mean two
+things. Its figures are read only from the `api_*` views the producers publish,
+never from another boundary's table, and sales figures are net of reversals
+([ADR-0062](adr/0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md)).
+A figure counted from facts, a sale credited to a campaign and an effect against
+a control are labelled `OBSERVED`, `ATTRIBUTED` and `INCREMENTAL`, and one kind
+is never presented as another. A report whose window holds a change of model
+version is marked, because the change is methodological and not behaviour
+([ADR-0064](adr/0064-a-model-version-is-immutable-and-a-change-of-version-is-never-reported-as-behaviour.md)),
+and a figure that aggregates a seeded sale is marked synthetic
+([ADR-0052](adr/0052-data-provenance-is-recorded-per-sale-and-per-segmentation-run.md)).
+A role confined to its stores ([ADR-0060](adr/0060-four-store-profiles-map-to-four-roles-and-services-read-each-users-stores-per-request.md))
+reads only those stores, a store it is not assigned to is refused, and a KPI whose
+figure has no store is not readable by it. No report carries a customer.
+
+**Enforced:** analytics-kpis (planned), ADR-0059 — the catalog served at
+`GET /v1/kpi-reports/definitions` is the only statement of a figure, the service
+holds `SELECT` on `api_*` views only, and the store scope is read from
+`api_users.store_assignment_v1` on each request. · #747
+
 ---
 
 ## Where the gaps are
@@ -1276,7 +1298,8 @@ service's implementation story in Phase 14 (epic #399): RN-52 on auth-service,
 RN-53 on stores-service, RN-54 on customer-preferences-service, RN-55 on
 engagement-service and RN-56 on check-ins-service. RN-57 belongs to the
 experiment dashboard; RN-58 to RN-60 uniquely identify the K-means,
-migration-matrix and migration-explanation rules.
+migration-matrix and migration-explanation rules. RN-68 belongs to analytics-kpis (#747) and waits on its
+implementation story, F26-02 (#847).
 
 RN-01 was the one to watch — a hard rule in `AGENTS.md` and a success criterion
 in [`scope.md`](scope.md) §7 that held only because the seed happened to contain

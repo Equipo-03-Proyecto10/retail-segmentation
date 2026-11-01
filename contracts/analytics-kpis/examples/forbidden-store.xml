@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>forbidden_store</code>
+  <message>The report names a store outside the caller's assigned stores.</message>
+  <correlation_id>corr-kpi-403b</correlation_id>
+  <details>
+    <field>store_id</field>
+    <code>not_assigned</code>
+  </details>
+</Error>

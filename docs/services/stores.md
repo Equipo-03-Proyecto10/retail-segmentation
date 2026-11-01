@@ -31,6 +31,14 @@
 | GET | `/v1/stores/{store_id}` | One store, with its location when set | ADMIN, ANALYST, STORE_MANAGER, MARKETING, INVENTORY_PLANNER, AUDITOR |
 | PUT | `/v1/stores/{store_id}/location` | Set latitude, longitude and geofence radius | ADMIN |
 | DELETE | `/v1/stores/{store_id}/location` | Remove the location | ADMIN |
+| GET | `/v1/stores/{store_id}/status` | Read the operating status | ADMIN, ANALYST, STORE_MANAGER, MARKETING, INVENTORY_PLANNER, AUDITOR |
+| PUT | `/v1/stores/{store_id}/status` | Replace the operating status | ADMIN |
+| GET | `/v1/stores/{store_id}/hours` | Read the weekly opening hours | ADMIN, ANALYST, STORE_MANAGER, MARKETING, INVENTORY_PLANNER, AUDITOR |
+| PUT | `/v1/stores/{store_id}/hours` | Replace the weekly opening hours | ADMIN |
+| GET | `/v1/stores/{store_id}/channel-enablement` | Read the enabled channel ids | ADMIN, ANALYST, STORE_MANAGER, MARKETING, INVENTORY_PLANNER, AUDITOR |
+| PUT | `/v1/stores/{store_id}/channel-enablement` | Replace the enabled channel ids | ADMIN |
+| GET | `/v1/stores/{store_id}/commercial-rules` | Read the commercial rules (the maximum discount) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, INVENTORY_PLANNER, AUDITOR |
+| PUT | `/v1/stores/{store_id}/commercial-rules` | Replace the commercial rules | ADMIN |
 
 Roles follow the [service operation policy](../requirements.md#service-operation-policy-distributed-stage). Meta routes (no token): `GET /health/live`, `GET /health/ready`, `GET /openapi.yaml`, `GET /schema.xsd`.
 
@@ -49,6 +57,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Direction | Object | Counterpart |
 |---|---|---|
 | Publishes | `api_stores.store_directory_v1` | check-ins, engagement |
+| Publishes | `api_stores.store_directory_v2` | stock, campaigns, sales |
 
 ## Events
 

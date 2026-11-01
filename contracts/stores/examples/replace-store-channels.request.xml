@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<StoreChannelsUpdate xmlns="https://mosaiq.maxthecoder.online/xml/stores/v1">
+  <channel_ids>1</channel_ids>
+  <channel_ids>3</channel_ids>
+  <channel_ids>4</channel_ids>
+</StoreChannelsUpdate>

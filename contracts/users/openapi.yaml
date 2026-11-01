@@ -1,17 +1,18 @@
 openapi: 3.1.0
 info:
   title: users-service
-  version: 1.0.1
+  version: 1.1.0
   description: >-
     Owns user accounts, password changes, deactivation, the read-only role
-    vocabulary, and the atomic administrator transfer. Responses never expose
-    credentials.
+    vocabulary, the atomic administrator transfer, and the stores each floor
+    user is assigned to. Responses never expose credentials.
 security:
   - bearer: []
 tags:
   - name: Users
   - name: Roles
   - name: Administrator transfers
+  - name: Store assignments
   - name: Meta
 paths:
   /v1/users:
@@ -546,6 +547,172 @@ paths:
           $ref: '#/components/responses/AdministratorTransferValidationErrors'
         '503':
           $ref: '#/components/responses/DependencyUnavailable'
+  /v1/store-assignments/{user_id}:
+    get:
+      tags: [Store assignments]
+      operationId: getStoreAssignment
+      summary: Get the stores a user is assigned to
+      description: >-
+        Answers the user's current assignment set, sorted ascending; the set is
+        empty when the user has none. The resource is keyed by the user's own
+        id, so it is not nested under `/v1/users` or `/v1/stores`; `stores` is
+        another service's resource (ADR-0035). `ADMIN` and `AUDITOR` may read
+        any user's assignment. A floor role may read only its own, and another
+        user's id is 403 `forbidden_user` whether or not that user exists, so
+        the answer never reveals which ids exist. Any other role is
+        `forbidden_role`. A user whose role is not store-bound, or who is
+        inactive, reads an empty set (see the PUT for the role rule).
+
+
+        Services do not call this operation. They read the same rows from
+        `api_users.store_assignment_v1`, on every narrowed request
+        (ADR-0060). A change reaches them as described under the PUT.
+      x-mosaiq-roles:
+        - ADMIN
+        - AUDITOR
+        - SALES_ASSOCIATE
+        - STORE_MANAGER
+        - LOYALTY_OFFICER
+        - COMMERCIAL_SUPERVISOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: The user's assignment set.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreAssignment'
+              examples:
+                assigned:
+                  externalValue: ./examples/store-assignment.json
+                empty:
+                  externalValue: ./examples/store-assignment-empty.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/StoreAssignment'
+              examples:
+                assigned:
+                  externalValue: ./examples/store-assignment.xml
+                empty:
+                  externalValue: ./examples/store-assignment-empty.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationErrors'
+        '403':
+          $ref: '#/components/responses/StoreAssignmentForbidden'
+        '404':
+          $ref: '#/components/responses/UserNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+    put:
+      tags: [Store assignments]
+      operationId: replaceStoreAssignment
+      summary: Replace the stores a user is assigned to
+      description: >-
+        Replaces the whole set: stores not in the list are unassigned, stores in
+        it are assigned, and an empty list clears the set (in XML, a request
+        element with no `store_ids`). The delete and the inserts commit in one
+        transaction, and two concurrent replaces for one user leave exactly one
+        of the two submitted sets, never a mixture. The answer is 200 with the
+        set after the replace, sorted ascending.
+
+
+        A non-empty set is accepted only for a store-bound role:
+        `SALES_ASSOCIATE`, `STORE_MANAGER`, `LOYALTY_OFFICER` or
+        `COMMERCIAL_SUPERVISOR` (ADR-0060). For any other role, `ADMIN`
+        included, it is 409 `role_not_store_bound`; an empty set is always
+        accepted. The user may be inactive. A duplicate id, or an id outside
+        1 through 32767, is 422 `invalid_body`. An id that names no store is
+        422 `unknown_store`; users-service does not read the stores service's
+        data, and the database's own foreign key refuses the id, so the set is
+        left unchanged.
+
+
+        **How a change reaches the services.** Nothing is pushed. Every
+        narrowed operation of another service reads
+        `api_users.store_assignment_v1` in the request it is serving, with no
+        cache and no Redis state, and no stream carries assignments
+        (ADR-0044, ADR-0060). A committed replace is therefore seen by every
+        request that begins after the commit. The bound on how long a removed
+        assignment can still be honoured is the requests already in flight at
+        the commit: each completes under the set it read, and no request that
+        starts later honours the removed store. Access-token lifetime does not
+        extend the bound, because the token carries no store. The view lists
+        only active users with a store-bound role, so deactivating a user or
+        changing the role to one that is not store-bound ends the assignments
+        at the same instant without a PUT.
+      x-mosaiq-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplaceStoreAssignmentRequest'
+            examples:
+              replace:
+                externalValue: ./examples/replace-store-assignment.request.json
+              clear:
+                externalValue: ./examples/clear-store-assignment.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/ReplaceStoreAssignmentRequest'
+            examples:
+              replace:
+                externalValue: ./examples/replace-store-assignment.request.xml
+              clear:
+                externalValue: ./examples/clear-store-assignment.request.xml
+      responses:
+        '200':
+          description: The assignment set after the replace.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreAssignment'
+              examples:
+                replaced:
+                  externalValue: ./examples/replace-store-assignment.json
+                cleared:
+                  externalValue: ./examples/clear-store-assignment.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/StoreAssignment'
+              examples:
+                replaced:
+                  externalValue: ./examples/replace-store-assignment.xml
+                cleared:
+                  externalValue: ./examples/clear-store-assignment.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/AuthenticationErrors'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/UserNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/RoleNotStoreBound'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/StoreAssignmentRefused'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
   /health/live:
     get:
       tags: [Meta]
@@ -827,6 +994,45 @@ components:
           format: uuid
       xml:
         name: AdministratorTransferRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/users/v1
+    StoreId:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 32767
+      description: A store's identifier, as the stores service publishes it.
+    StoreAssignment:
+      type: object
+      additionalProperties: false
+      required: [user_id, store_ids]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        store_ids:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/StoreId'
+          description: Sorted ascending; empty when the user has none.
+      xml:
+        name: StoreAssignment
+        namespace: https://mosaiq.maxthecoder.online/xml/users/v1
+    ReplaceStoreAssignmentRequest:
+      type: object
+      additionalProperties: false
+      required: [store_ids]
+      properties:
+        store_ids:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/StoreId'
+          description: The complete new set. An empty list clears it.
+      xml:
+        name: ReplaceStoreAssignmentRequest
         namespace: https://mosaiq.maxthecoder.online/xml/users/v1
     PageInfo:
       type: object
@@ -1300,6 +1506,71 @@ components:
           examples:
             schema_not_ready:
               $ref: '#/components/examples/SchemaNotReadyXml'
+    StoreAssignmentForbidden:
+      description: >-
+        The role is `forbidden_role` for this operation, or a floor role asked for another user and gets `forbidden_user`.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.json
+            forbidden_user:
+              externalValue: ./examples/forbidden-user.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.xml
+            forbidden_user:
+              externalValue: ./examples/forbidden-user.xml
+    RoleNotStoreBound:
+      description: >-
+        The user's role is `role_not_store_bound`, so a non-empty set is refused.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            role_not_store_bound:
+              externalValue: ./examples/role-not-store-bound.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            role_not_store_bound:
+              externalValue: ./examples/role-not-store-bound.xml
+    StoreAssignmentRefused:
+      description: >-
+        A store id is `unknown_store`, or the body is `invalid_body` (a duplicate id, an id out of range, or more than 100 ids).
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unknown_store:
+              externalValue: ./examples/unknown-store.json
+            invalid_body:
+              externalValue: ./examples/invalid-body-store-ids.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unknown_store:
+              externalValue: ./examples/unknown-store.xml
+            invalid_body:
+              externalValue: ./examples/invalid-body-store-ids.xml
   examples:
     UsersJson:
       value:

@@ -1,10 +1,10 @@
 # ADR-0037 — Two Redis instances carry sessions, caches, limits and the inter-service streams, for the services only
 
-**Status:** Accepted
+**Status:** Partially superseded by ADR-0065 (the `default` user's rules)
 **Owner:** Marcelo
 **Issue:** #398
 **Supersedes:** —
-**Superseded by:** —
+**Superseded by:** [ADR-0065](0065-the-disabled-default-user-keeps-every-permission-so-the-aof-replay-can-re-run-transactions.md), in part
 
 ---
 

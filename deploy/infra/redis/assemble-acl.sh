@@ -15,7 +15,10 @@
 # /etc/mosaiq/svc/<name>.env (<SUFFIX> is the svc_ role suffix, upper-cased).
 # The file also gets the ops user, whose password is REDIS_OPS_PASSWORD from
 # the environment, and the disabled default user. Without that line, ACL LOAD
-# would recreate `default` with every permission and no password.
+# would recreate `default` with every permission and no password. The line keeps
+# `default` off but lets it run everything: Redis replays the AOF as `default`,
+# and a restricted one refuses every logged MULTI/EXEC, which signs everyone out
+# (ADR-0065).
 #
 # ACL LOAD is all or nothing on each instance. When either instance refuses
 # the new file, the previous file is put back, and redis-state is reloaded
@@ -112,7 +115,7 @@ candidate=$(mktemp "$dir/.users.acl.XXXXXX")
 trap 'rm -f "$candidate"' EXIT
 {
   # The aclfile format has no comments; each line must be a user.
-  echo "user default off resetkeys resetchannels -@all"
+  echo "user default off ~* &* +@all"
   echo "user ops on #$(sha256 "$REDIS_OPS_PASSWORD") ~* &* +@all -@dangerous +acl +config|get +info +client|list +slowlog +latency +monitor"
   printf '%s\n' "${lines[@]}" | LC_ALL=C sort
 } >"$candidate"

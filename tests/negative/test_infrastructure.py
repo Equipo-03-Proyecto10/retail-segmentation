@@ -83,10 +83,11 @@ def test_redis_state_stopped_fails_closed(
     finally:
         subprocess.run(["docker", "start", container], capture_output=True, check=True)
         _wait_for_sessions(deployed_stack)
-        # Redis replays its AOF refusing auth's transactions, so the run's
-        # sessions do not come back (#714). Runs last for that reason.
-        deployed_stack.forget_sessions()
     assert held, [r for r in evidence.rows if not r.held]
+    # The AOF replay re-runs auth's MULTI/EXEC blocks (ADR-0065, #714), so the run's
+    # own session is still live after the restart, not revoked.
+    after = deployed_stack.sessions["ADMIN"].current()
+    assert after.status == 200, (after.status, after.code())
 
 
 def _wait_for_sessions(stack: Stack) -> None:

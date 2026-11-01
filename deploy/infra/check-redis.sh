@@ -79,6 +79,20 @@ for instance in redis-state redis-cache; do
   [[ $reply == *NOAUTH* || $reply == *WRONGPASS* ]] \
     || fail "$instance answers a client without credentials: '$reply'"
 done
+# `default` keeps every permission so the AOF replay can re-run auth's MULTI/EXEC
+# blocks (ADR-0065). That is safe only while it is off and has no password.
+for instance in redis-state redis-cache; do
+  if [[ $instance == redis-state ]]; then
+    line=$("${state_cli[@]}" ACL LIST 2>&1 | grep '^user default ' || true)
+  else
+    line=$("${cache_cli[@]}" ACL LIST 2>&1 | grep '^user default ' || true)
+  fi
+  [[ $line == "user default off "* ]] || fail "$instance: the default user is not off: '$line'"
+  [[ $line != *" nopass"* && $line != *" #"* && $line != *" >"* ]] \
+    || fail "$instance: the default user has a password or nopass: '$line'"
+  [[ $line == *"~* "* && $line == *"&* "* && $line == *"+@all"* ]] \
+    || fail "$instance: the default user is not the AOF-replay line of ADR-0065: '$line'"
+done
 
 # --- the same users on both instances ------------------------------------------
 state_users=$("${state_cli[@]}" ACL LIST 2>&1)

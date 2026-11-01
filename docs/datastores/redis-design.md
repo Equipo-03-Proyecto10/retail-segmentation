@@ -81,7 +81,9 @@ consumer group is named after the consuming service.
 ## ACLs
 
 The `default` user is `off` on both instances, so a client without credentials
-gets `NOAUTH`.
+gets `NOAUTH`. It is written `user default off ~* &* +@all`: Redis replays the AOF
+as `default`, and `EXEC` re-checks permissions, so a restricted `default` drops
+auth's `MULTI`/`EXEC` blocks and signs everyone out on a restart (ADR-0065).
 
 The `ops` user's password, `REDIS_OPS_PASSWORD`, is held outside the
 repository. It runs `ACL LOAD`, `CONFIG GET`, the checks and monitoring, and no
@@ -165,7 +167,7 @@ Per user, by `ACL DRYRUN`, so nothing is written:
 
 Per instance:
 - the settings above;
-- the default user is off;
+- the default user is off, holds no password and answers `NOAUTH`;
 - both instances hold the same users;
 - every non-stream key on `redis-state` has a TTL, and no `*:cache:*` key lives
   there.

@@ -176,7 +176,7 @@ Later runtime events must be preserved.
 | [0034](0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) | Fifteen single-rule services, each the only service that writes its data | Partially superseded by [0059](0059-four-new-services-join-the-fifteen-and-six-capabilities-fold-into-the-rule-they-extend.md) |
 | [0035](0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md) | Each service publishes its own versioned contract, and no two services share a resource | Accepted |
 | [0036](0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md) | auth-service issues role-only RS256 tokens whose sessions live in Redis | Accepted |
-| [0037](0037-two-redis-instances-carry-sessions-caches-limits-and-inter-service-streams.md) | Two Redis instances carry sessions, caches, limits and the inter-service streams, for the services only | Accepted |
+| [0037](0037-two-redis-instances-carry-sessions-caches-limits-and-inter-service-streams.md) | Two Redis instances carry sessions, caches, limits and the inter-service streams, for the services only | Partially superseded by [0065](0065-the-disabled-default-user-keeps-every-permission-so-the-aof-replay-can-re-run-transactions.md) |
 | [0038](0038-mongodb-holds-in-store-engagement-owned-by-engagement-service-alone.md) | MongoDB holds in-store engagement, owned by engagement-service alone | Accepted |
 | [0039](0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) | sales-service records a sale all or nothing, consuming stock through the stock contract | Partially superseded by [0062](0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md) |
 | [0040](0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md) | Each service is built in CI and runs as its own compose project on the instance | Partially superseded by [0059](0059-four-new-services-join-the-fifteen-and-six-capabilities-fold-into-the-rule-they-extend.md) |
@@ -201,6 +201,7 @@ Later runtime events must be preserved.
 | [0062](0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md) | A reversal is a recorded fact, and every reader counts net units | Accepted |
 | [0063](0063-segments-change-on-events-and-on-a-schedule-scored-against-the-published-version.md) | Segments change on events and on a schedule, scored against the published version | Accepted |
 | [0064](0064-a-model-version-is-immutable-and-a-change-of-version-is-never-reported-as-behaviour.md) | A model version is immutable, and a change of version is never reported as behaviour | Accepted |
+| [0065](0065-the-disabled-default-user-keeps-every-permission-so-the-aof-replay-can-re-run-transactions.md) | The disabled default user keeps every permission, so the AOF replay can re-run transactions | Proposed |
 
 ## Writing one
 

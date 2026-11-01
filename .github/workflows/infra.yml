@@ -215,6 +215,32 @@ jobs:
           out=$(bash deploy/infra/check-redis.sh) || true
           if [ -n "$out" ]; then printf '%s\n' "$out"; exit 1; fi
 
+      # Redis replays the AOF as the disabled `default` user, and EXEC checks
+      # permissions again, so a restricted `default` drops auth's MULTI/EXEC
+      # blocks and signs everyone out (ADR-0065, #714).
+      - name: A MULTI/EXEC write survives a restart
+        run: |
+          set -euo pipefail
+          REDISCLI_AUTH=$(sed -n 's/^REDIS_AUTH_PASSWORD=//p' "$SVC_ENV_DIR/auth.env")
+          export REDISCLI_AUTH
+          a() { $COMPOSE exec -T -e REDISCLI_AUTH redis-state redis-cli --no-auth-warning --user svc_auth "$@"; }
+          printf 'MULTI\nSET auth:rl:tx 1\nEXPIRE auth:rl:tx 3600\nEXEC\n' | $COMPOSE exec -T -e REDISCLI_AUTH redis-state \
+            redis-cli --no-auth-warning --user svc_auth | tail -1 | grep -qx 1 \
+            || { echo "FAIL: the transaction did not run"; exit 1; }
+          [ "$(a WAITAOF 1 0 1000 | head -1)" = 1 ] || { echo "FAIL: WAITAOF did not confirm the local fsync"; exit 1; }
+          $COMPOSE restart redis-state
+          for _ in $(seq 1 30); do
+            reply=$(REDISCLI_AUTH=$REDIS_OPS_PASSWORD $COMPOSE exec -T -e REDISCLI_AUTH redis-state \
+              redis-cli --no-auth-warning --user ops PING 2>/dev/null || true)
+            [ "$reply" = PONG ] && break
+            sleep 1
+          done
+          value=$(a GET auth:rl:tx)
+          [ "$value" = 1 ] || { echo "FAIL: the MULTI/EXEC key did not survive the restart (got '$value')"; exit 1; }
+          refused=$($COMPOSE logs redis-state 2>&1 | grep -c 'NOPERM ACLs rules changed' || true)
+          [ "$refused" = 0 ] || { echo "FAIL: the AOF replay refused $refused transactions"; exit 1; }
+          a DEL auth:rl:tx
+
       # The lines the instance loads, with the real stream contracts: each
       # gets a fresh masked password, and the loaded set must pass every
       # per-user check, MULTI for svc_auth alone included.

@@ -1,14 +1,17 @@
 openapi: 3.1.0
 info:
   title: sales-service
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     Records a sale exactly once, all or nothing, and reads sales and the channel
-    vocabulary back (RN-11 to RN-13, RN-37).
+    vocabulary back (RN-11 to RN-13, RN-37). A sale is never edited or deleted:
+    a cancellation or a return is recorded beside it as a reversal, an
+    append-only fact, and every reader counts net units (ADR-0062).
 security:
   - bearer: []
 tags:
   - name: Sales
+  - name: Sale reversals
   - name: Channels
   - name: Meta
 paths:
@@ -230,6 +233,264 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/OperationUnavailable'
+  /v1/sale-reversals:
+    post:
+      tags: [Sale reversals]
+      summary: Record a cancellation or a return
+      description: >-
+        Records a reversal of an accepted sale as a new fact. The sale, its lines
+        and its `total` are never changed: `total` stays what was charged, and
+        `transaction_line.returned_quantity` carries each line's running total,
+        written by this service alone in the same transaction (ADR-0062).
+
+        Two kinds. A `CANCELLATION` reverses the whole sale: it takes a `reason`,
+        takes no `lines` (`unexpected_lines`), and is refused once the sale has any
+        reversal (`sale_already_reversed`). A `RETURN` reverses one or more lines,
+        whole or in part: it takes `lines`, each with its own `reason` and a
+        `quantity`, and no header `reason`. A return may be repeated until every
+        unit is back; returning more units than remain is 409
+        `quantity_exceeds_remaining`. A product appears once per request
+        (`duplicate_product_line`) and must be on the sale (`unknown_sale_line`).
+
+        Who may do what. `x-mosaiq-roles` lists the roles that may call the
+        operation at all. `SALES_ASSOCIATE` may record only a `CANCELLATION`; a
+        `RETURN` from that role is 403 `forbidden_role`. `ADMIN` and
+        `STORE_MANAGER` may record both. The floor roles work only in their
+        assigned stores, and a reversal of a sale at another store is 403
+        `forbidden_store` (ADR-0060).
+
+        When. The window is configuration, not a requirement. By default a
+        cancellation is accepted on the sale's calendar day and a return within
+        30 days of the sale's `occurred_at`; after that the answer is 409
+        `reversal_window_closed`, naming the kind in `details`.
+
+        Stock. Inside the same transaction the service restores stock through
+        `api_stock.restock_v1`: every unit of a cancellation, and every unit of a
+        return line whose `resellable` is true (the default). A line marked
+        `resellable: false` is recorded and restores nothing. If the store has no
+        stock record for a product, the whole reversal is refused with 422
+        `no_stock_record`. Nothing commits unless the reversal, the
+        `returned_quantity` updates and the stock all commit.
+
+        Idempotency. `Idempotency-Key` is required and its namespace is this
+        resource's own: a key used on `POST /v1/sales` is unrelated. The service
+        hashes the caller's `sub`, `sale_id`, `kind`, the cancellation `reason`
+        and the lines sorted by `product_id` with their `quantity`, `reason` and
+        `resellable`, so a JSON retry and an XML retry hash the same. The same
+        key with the same hash is a replay: 200 with the original reversal and
+        `Idempotent-Replayed: true`, and nothing recorded. The same key with a
+        different hash is 409 `idempotency_key_reused`. Only accepted reversals
+        are remembered, so a refused request may be retried with the same key. A
+        client retries only on a network error, a timeout or a 503, with the same
+        key, and treats 409 and 422 as final.
+
+        The sale itself is not changed in any representation: `GET /v1/sales`
+        keeps returning what was charged. Clients read what was reversed from
+        `GET /v1/sale-reversals?sale_id=`.
+      operationId: recordSaleReversal
+      x-mosaiq-roles:
+        - ADMIN
+        - STORE_MANAGER
+        - SALES_ASSOCIATE
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaleReversalRequest'
+            examples:
+              cancellation:
+                externalValue: ./examples/cancel-sale.request.json
+              return:
+                externalValue: ./examples/return-lines.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/SaleReversalRequest'
+            examples:
+              cancellation:
+                externalValue: ./examples/cancel-sale.request.xml
+              return:
+                externalValue: ./examples/return-lines.request.xml
+      responses:
+        '200':
+          description: The key was already used by an identical request; the original reversal is returned.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleReversal'
+              examples:
+                replayed:
+                  externalValue: ./examples/cancel-sale-replay.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/SaleReversal'
+              examples:
+                replayed:
+                  externalValue: ./examples/cancel-sale-replay.xml
+        '201':
+          description: The reversal was recorded.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            Location:
+              $ref: '#/components/headers/ReversalLocation'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleReversal'
+              examples:
+                cancellation:
+                  externalValue: ./examples/cancel-sale.json
+                return:
+                  externalValue: ./examples/return-lines.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/SaleReversal'
+              examples:
+                cancellation:
+                  externalValue: ./examples/cancel-sale.xml
+                return:
+                  externalValue: ./examples/return-lines.xml
+        '400':
+          $ref: '#/components/responses/SaleBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ReversalForbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/ReversalConflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ReversalRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+    get:
+      tags: [Sale reversals]
+      summary: List reversals
+      description: >-
+        Returns a page of reversals, newest first by `recorded_at`, then by
+        `reversal_id`. `sale_id`, `customer_id`, `store_id` and `kind` filter
+        exactly; `from` (inclusive) and `to` (exclusive) bound `recorded_at` and are
+        RFC 3339 timestamps with an offset. A malformed filter, or `from` after
+        `to`, gets 422 `invalid_query`. A caller confined to assigned stores sees
+        only those stores' reversals, and one that names another store gets 403
+        `forbidden_store` (ADR-0060). A reversal carries no product name or price
+        from products: clients fetch them with `GET /v1/products?ids=`.
+      operationId: listSaleReversals
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - AUDITOR
+        - SALES_ASSOCIATE
+        - COMMERCIAL_SUPERVISOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/SaleIdFilter'
+        - $ref: '#/components/parameters/CustomerIdFilter'
+        - $ref: '#/components/parameters/StoreIdFilter'
+        - $ref: '#/components/parameters/ReversalKindFilter'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of reversals.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleReversalPage'
+              examples:
+                reversals_page:
+                  externalValue: ./examples/list-sale-reversals.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/SaleReversalPage'
+              examples:
+                reversals_page:
+                  externalValue: ./examples/list-sale-reversals.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ReversalForbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/InvalidSaleQuery'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/sale-reversals/{reversal_id}:
+    get:
+      tags: [Sale reversals]
+      summary: Get one reversal
+      description: >-
+        Returns the reversal with its lines, for the status check after a retry and
+        for the desktop read-back.
+      operationId: getSaleReversal
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - AUDITOR
+        - SALES_ASSOCIATE
+        - COMMERCIAL_SUPERVISOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ReversalId'
+      responses:
+        '200':
+          description: The requested reversal.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleReversal'
+              examples:
+                reversal:
+                  externalValue: ./examples/get-sale-reversal.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/SaleReversal'
+              examples:
+                reversal:
+                  externalValue: ./examples/get-sale-reversal.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ReversalForbidden'
+        '404':
+          $ref: '#/components/responses/SaleReversalNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
   /v1/channels:
     get:
       tags: [Sales]
@@ -382,6 +643,28 @@ components:
       schema:
         type: integer
         format: int64
+    ReversalId:
+      name: reversal_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    SaleIdFilter:
+      name: sale_id
+      in: query
+      required: false
+      description: Restrict the page to the reversals of this sale.
+      schema:
+        type: integer
+        format: int64
+    ReversalKindFilter:
+      name: kind
+      in: query
+      required: false
+      description: Restrict the page to cancellations or to returns.
+      schema:
+        $ref: '#/components/schemas/ReversalKind'
     CustomerIdFilter:
       name: customer_id
       in: query
@@ -445,6 +728,11 @@ components:
         minimum: 1
     Location:
       description: The URL of the recorded sale, `/v1/sales/{sale_id}`.
+      required: true
+      schema:
+        type: string
+    ReversalLocation:
+      description: The URL of the recorded reversal, `/v1/sale-reversals/{reversal_id}`.
       required: true
       schema:
         type: string
@@ -575,6 +863,180 @@ components:
           $ref: '#/components/schemas/PageInfo'
       xml:
         name: Sales
+        namespace: https://mosaiq.maxthecoder.online/xml/sales/v1
+    ReversalKind:
+      type: string
+      enum: [CANCELLATION, RETURN]
+      description: >-
+        `CANCELLATION` reverses the whole sale. `RETURN` reverses one or more lines,
+        whole or in part. The system has no third state: a voided sale is a
+        cancellation.
+    SaleReversalLineInput:
+      type: object
+      additionalProperties: false
+      required:
+        - product_id
+        - quantity
+      properties:
+        product_id:
+          type: integer
+          format: int32
+        quantity:
+          type: integer
+          description: >-
+            Units to return. Must be positive and at most the units that remain;
+            the service answers `invalid_quantity` or `quantity_exceeds_remaining`.
+        reason:
+          type: string
+          maxLength: 200
+          description: Why these units come back. Absent or blank is 422 `reason_required`.
+        resellable:
+          type: boolean
+          default: true
+          description: >-
+            False when the goods cannot be resold. The line is recorded and stock is
+            not restored for it. Absent means true.
+    SaleReversalRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - sale_id
+        - kind
+      properties:
+        sale_id:
+          type: integer
+          format: int64
+          description: The sale to reverse, its `sale_id`. An unknown sale is 422 `unknown_sale`.
+        kind:
+          $ref: '#/components/schemas/ReversalKind'
+        reason:
+          type: string
+          maxLength: 200
+          description: >-
+            Required for a `CANCELLATION` (422 `reason_required`). A `RETURN` states
+            its reason on each line instead.
+        lines:
+          type: array
+          description: >-
+            Required and non-empty for a `RETURN` (422 `no_return_lines`). A
+            `CANCELLATION` sends none (422 `unexpected_lines`). The same product
+            twice gets 409 `duplicate_product_line`.
+          items:
+            $ref: '#/components/schemas/SaleReversalLineInput'
+      xml:
+        name: SaleReversalRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/sales/v1
+    SaleReversalLine:
+      type: object
+      additionalProperties: false
+      required:
+        - product_id
+        - quantity
+        - remaining_quantity
+        - unit_price
+        - resellable
+      properties:
+        product_id:
+          type: integer
+          format: int32
+        quantity:
+          type: integer
+          minimum: 1
+          description: Units reversed by this reversal.
+        remaining_quantity:
+          type: integer
+          minimum: 0
+          description: >-
+            Units of the sale line still counted after this reversal, which is
+            `quantity - returned_quantity` of the line. It is zero once the line is
+            fully reversed.
+        unit_price:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+          description: The price actually charged on the sale line.
+        reason:
+          type: string
+          description: >-
+            The reason of a returned line. Absent (`null` in JSON) on a cancellation,
+            whose reason is on the header.
+        resellable:
+          type: boolean
+          description: Whether stock was restored for this line.
+    SaleReversal:
+      type: object
+      additionalProperties: false
+      required:
+        - reversal_id
+        - sale_id
+        - kind
+        - customer_id
+        - store_id
+        - recorded_at
+        - recorded_by
+        - amount
+        - net_total
+        - lines
+      properties:
+        reversal_id:
+          type: integer
+          format: int64
+        sale_id:
+          type: integer
+          format: int64
+        kind:
+          $ref: '#/components/schemas/ReversalKind'
+        reason:
+          type: string
+          description: The reason of a cancellation. Absent (`null` in JSON) on a return.
+        customer_id:
+          type: string
+          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+        store_id:
+          type: integer
+        recorded_at:
+          type: string
+          format: date-time
+          description: When the service recorded the reversal, set by the server.
+        recorded_by:
+          type: string
+          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+          description: The `sub` of the caller.
+        amount:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+          description: The sum of quantity times unit price over the reversed lines.
+        net_total:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+          description: >-
+            The sale's net amount after this reversal, the sum of remaining quantity
+            times unit price over all of its lines. It is zero once nothing remains,
+            and the sale then stops counting as a purchase.
+        lines:
+          type: array
+          description: >-
+            The lines this reversal touched, sorted by `product_id`. A cancellation
+            lists every line of the sale.
+          items:
+            $ref: '#/components/schemas/SaleReversalLine'
+      xml:
+        name: SaleReversal
+        namespace: https://mosaiq.maxthecoder.online/xml/sales/v1
+    SaleReversalPage:
+      type: object
+      additionalProperties: false
+      required:
+        - sale_reversals
+        - page_info
+      properties:
+        sale_reversals:
+          type: array
+          items:
+            $ref: '#/components/schemas/SaleReversal'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: SaleReversals
         namespace: https://mosaiq.maxthecoder.online/xml/sales/v1
     Channel:
       type: object
@@ -960,3 +1422,123 @@ components:
               externalValue: ./examples/invalid-query.xml
             invalid_pagination:
               externalValue: ./examples/invalid-pagination.xml
+    ReversalForbidden:
+      description: '`forbidden_role` or `forbidden_store`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.json
+            forbidden_store:
+              externalValue: ./examples/forbidden-store.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.xml
+            forbidden_store:
+              externalValue: ./examples/forbidden-store.xml
+    SaleReversalNotFound:
+      description: '`sale_reversal_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            sale_reversal_not_found:
+              externalValue: ./examples/sale-reversal-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            sale_reversal_not_found:
+              externalValue: ./examples/sale-reversal-not-found.xml
+    ReversalConflict:
+      description: '`idempotency_key_reused`, `duplicate_product_line`, `sale_already_reversed`, `quantity_exceeds_remaining` or `reversal_window_closed`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            idempotency_key_reused:
+              externalValue: ./examples/reversal-idempotency-key-reused.json
+            duplicate_product_line:
+              externalValue: ./examples/duplicate-product-line.json
+            sale_already_reversed:
+              externalValue: ./examples/sale-already-reversed.json
+            quantity_exceeds_remaining:
+              externalValue: ./examples/quantity-exceeds-remaining.json
+            reversal_window_closed:
+              externalValue: ./examples/reversal-window-closed.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            idempotency_key_reused:
+              externalValue: ./examples/reversal-idempotency-key-reused.xml
+            duplicate_product_line:
+              externalValue: ./examples/duplicate-product-line.xml
+            sale_already_reversed:
+              externalValue: ./examples/sale-already-reversed.xml
+            quantity_exceeds_remaining:
+              externalValue: ./examples/quantity-exceeds-remaining.xml
+            reversal_window_closed:
+              externalValue: ./examples/reversal-window-closed.xml
+    ReversalRefused:
+      description: '`unknown_sale`, `unknown_sale_line`, `reason_required`, `no_return_lines`, `unexpected_lines`, `invalid_quantity`, `no_stock_record` or `invalid_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unknown_sale:
+              externalValue: ./examples/unknown-sale.json
+            unknown_sale_line:
+              externalValue: ./examples/unknown-sale-line.json
+            reason_required:
+              externalValue: ./examples/reason-required.json
+            no_return_lines:
+              externalValue: ./examples/no-return-lines.json
+            unexpected_lines:
+              externalValue: ./examples/unexpected-lines.json
+            invalid_quantity:
+              externalValue: ./examples/invalid-quantity.json
+            no_stock_record:
+              externalValue: ./examples/no-stock-record.json
+            invalid_body:
+              externalValue: ./examples/reversal-invalid-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unknown_sale:
+              externalValue: ./examples/unknown-sale.xml
+            unknown_sale_line:
+              externalValue: ./examples/unknown-sale-line.xml
+            reason_required:
+              externalValue: ./examples/reason-required.xml
+            no_return_lines:
+              externalValue: ./examples/no-return-lines.xml
+            unexpected_lines:
+              externalValue: ./examples/unexpected-lines.xml
+            invalid_quantity:
+              externalValue: ./examples/invalid-quantity.xml
+            no_stock_record:
+              externalValue: ./examples/no-stock-record.xml
+            invalid_body:
+              externalValue: ./examples/reversal-invalid-body.xml

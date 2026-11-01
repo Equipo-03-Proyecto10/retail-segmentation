@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>quantity_exceeds_remaining</code>
+  <message>A line returns more units than the sale still holds.</message>
+  <correlation_id>corr-quantity-exceeds-remaining</correlation_id>
+  <details>
+    <field>lines[0].quantity</field>
+    <code>exceeds_remaining</code>
+  </details>
+</Error>

@@ -1,0 +1,11 @@
+{
+  "code": "idempotency_key_reused",
+  "message": "The Idempotency-Key was already used for a different movement.",
+  "correlation_id": "corr-idempotency-key-reused",
+  "details": [
+    {
+      "field": "Idempotency-Key",
+      "code": "reused"
+    }
+  ]
+}

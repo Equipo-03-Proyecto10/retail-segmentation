@@ -1,0 +1,6 @@
+{
+  "code": "database_unavailable",
+  "message": "The model-registry database is unavailable.",
+  "correlation_id": "corr-database-unavailable",
+  "details": []
+}

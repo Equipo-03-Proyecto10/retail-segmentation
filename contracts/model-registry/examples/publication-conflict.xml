@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>publication_conflict</code>
+  <message>Another publication committed first; read the published version again and retry.</message>
+  <correlation_id>corr-publication-conflict</correlation_id>
+</Error>

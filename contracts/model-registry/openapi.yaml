@@ -1,0 +1,1869 @@
+openapi: 3.1.0
+info:
+  title: model-registry-service
+  version: 1.0.0
+  description: >-
+    Keeps every model version immutable and says which one is published. A model version is
+    immutable once published, carries its dataset, parameters, metrics and reference distribution,
+    and changes state only by an explicit publication or rollback (RN-66, ADR-0064). model-registry
+    serves `model-versions`, with their append-only publications and rollbacks beneath them,
+    and `model-trainings`, the runs that fit and register draft versions. Exactly one version
+    is published at a time, because a customer holds one current segment (RN-20). The current
+    published version is published to other services as `api_models.published_version_v1`,
+    not through this API (ADR-0044). Drift reports and alerts, the other half of the rule,
+    are specified by their own contract story (F23) and are not part of this version.
+security:
+- bearer: []
+tags:
+- name: Versions
+- name: Publications
+- name: Trainings
+- name: Meta
+paths:
+  /v1/model-versions:
+    get:
+      tags:
+      - Versions
+      summary: List model versions
+      description: >-
+        Returns a page of versions, newest first. `method` and `state` filter on the stored
+        values. `state=PUBLISHED` is the version every customer is currently scored under:
+        at most one row, because exactly one version is published at a time (ADR-0064). Each
+        version carries its dataset, parameters, seed, metrics, owner, state and reference
+        distribution.
+      operationId: listModelVersions
+      x-mosaiq-roles:
+      - ADMIN
+      - ANALYST
+      - MARKETING
+      - AUDITOR
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/MethodFilter'
+      - $ref: '#/components/parameters/VersionStateFilter'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of versions.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelVersionPage'
+              examples:
+                page:
+                  externalValue: ./examples/model-versions-page.json
+                none:
+                  externalValue: ./examples/model-versions-none.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/ModelVersionPage'
+              examples:
+                page:
+                  externalValue: ./examples/model-versions-page.xml
+                none:
+                  externalValue: ./examples/model-versions-none.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/ListInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+    post:
+      tags:
+      - Versions
+      summary: Register a draft version
+      description: >-
+        Registers an immutable DRAFT version from a definition fitted elsewhere, such as an
+        RFM rule set (`method` RFM_RULES, `parameters.rule_set_id` naming the rfm-engine rule
+        set). Registering publishes nothing. There is no operation to edit or delete a version,
+        published or not: a change is a new version, and the absent routes answer 405 `method_not_allowed`.
+        A version trained by the registry is created by `POST /v1/model-trainings`, not here.
+        `parameters`, `seed` and `frozen_scoring` must belong to `method`, and boundaries
+        must be monotonic, or the answer is 422 `invalid_body` with a detail code `method_mismatch`,
+        `not_monotonic` or `distribution_mismatch`. A name already used is 409 `model_version_name_taken`.
+      operationId: createModelVersion
+      x-mosaiq-roles:
+      - ADMIN
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelVersionRequest'
+            examples:
+              rfm_rules:
+                externalValue: ./examples/model-version.request.json
+              kmeans:
+                externalValue: ./examples/model-version-kmeans.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/ModelVersionRequest'
+            examples:
+              rfm_rules:
+                externalValue: ./examples/model-version.request.xml
+              kmeans:
+                externalValue: ./examples/model-version-kmeans.request.xml
+      responses:
+        '201':
+          description: The draft version was registered.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelVersion'
+              examples:
+                rfm_rules:
+                  externalValue: ./examples/model-version-created.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/ModelVersion'
+              examples:
+                rfm_rules:
+                  externalValue: ./examples/model-version-created.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/VersionNameTaken'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/InvalidBody'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/model-versions/{version_id}:
+    get:
+      tags:
+      - Versions
+      summary: Get one model version
+      description: >-
+        Returns one version with its full definition, frozen scoring, dataset, metrics and
+        reference distribution, in any state.
+      operationId: getModelVersion
+      x-mosaiq-roles:
+      - ADMIN
+      - ANALYST
+      - MARKETING
+      - AUDITOR
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/VersionId'
+      responses:
+        '200':
+          description: The version.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelVersion'
+              examples:
+                published:
+                  externalValue: ./examples/model-version.json
+                retired:
+                  externalValue: ./examples/model-version-rfm-rules.json
+                draft:
+                  externalValue: ./examples/model-version-draft.json
+                from_web_run:
+                  externalValue: ./examples/model-version-from-web-run.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/ModelVersion'
+              examples:
+                published:
+                  externalValue: ./examples/model-version.xml
+                retired:
+                  externalValue: ./examples/model-version-rfm-rules.xml
+                draft:
+                  externalValue: ./examples/model-version-draft.xml
+                from_web_run:
+                  externalValue: ./examples/model-version-from-web-run.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/VersionNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/model-versions/{version_id}/publications:
+    get:
+      tags:
+      - Publications
+      summary: List a version's publications
+      description: >-
+        Returns the append-only publications and rollbacks that made this version the published
+        one, newest first. Each row names the version it replaced, so the whole history can
+        be followed from any version.
+      operationId: listModelPublications
+      x-mosaiq-roles:
+      - ADMIN
+      - ANALYST
+      - MARKETING
+      - AUDITOR
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/VersionId'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of publications.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelPublicationPage'
+              examples:
+                page:
+                  externalValue: ./examples/publications-page.json
+                none:
+                  externalValue: ./examples/publications-none.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/ModelPublicationPage'
+              examples:
+                page:
+                  externalValue: ./examples/publications-page.xml
+                none:
+                  externalValue: ./examples/publications-none.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/VersionNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/InvalidPagination'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+    post:
+      tags:
+      - Publications
+      summary: Publish a draft version
+      description: >-
+        Publishes a DRAFT version: it becomes the one published version and the previously
+        published version becomes RETIRED, atomically, recording who and why. Every customer
+        is then scored under the new version in a full run, recorded as a change of version
+        and never as behaviour (ADR-0063, ADR-0064); the answer does not wait for that run.
+        Only a DRAFT can be published: any other state is 409 `version_not_draft`. Losing
+        a race for the single published slot is 409 `publication_conflict`; read the published
+        version again and retry. Only an administrator publishes (RN-05).
+      operationId: publishModelVersion
+      x-mosaiq-roles:
+      - ADMIN
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/VersionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelPublicationRequest'
+            examples:
+              reason:
+                externalValue: ./examples/publication.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/ModelPublicationRequest'
+            examples:
+              reason:
+                externalValue: ./examples/publication.request.xml
+      responses:
+        '201':
+          description: The version was published.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelPublication'
+              examples:
+                published:
+                  externalValue: ./examples/publication-published.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/ModelPublication'
+              examples:
+                published:
+                  externalValue: ./examples/publication-published.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/VersionNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/NotDraft'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/InvalidBody'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/model-versions/{version_id}/rollbacks:
+    post:
+      tags:
+      - Publications
+      summary: Roll back to a retired version
+      description: >-
+        Publishes again a version that was published and then retired, as a new publication
+        with action ROLLBACK; the currently published version becomes RETIRED. Nothing is
+        rewritten: rows already scored under the replaced version stay as they were, and customers
+        are scored under the restored version in a full run recorded as a change of version
+        (ADR-0064). The path names the version restored. A version that is not RETIRED is
+        409 `version_not_retired`, whether it is a DRAFT that was never published or the version
+        already published. Losing a race is 409 `publication_conflict`. Only an administrator
+        rolls back.
+      operationId: rollbackToModelVersion
+      x-mosaiq-roles:
+      - ADMIN
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/VersionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelPublicationRequest'
+            examples:
+              reason:
+                externalValue: ./examples/rollback.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/ModelPublicationRequest'
+            examples:
+              reason:
+                externalValue: ./examples/rollback.request.xml
+      responses:
+        '201':
+          description: The rollback was recorded.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelPublication'
+              examples:
+                rolled_back:
+                  externalValue: ./examples/publication-rolled-back.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/ModelPublication'
+              examples:
+                rolled_back:
+                  externalValue: ./examples/publication-rolled-back.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/VersionNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/NotRetired'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/InvalidBody'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/model-trainings:
+    get:
+      tags:
+      - Trainings
+      summary: List training runs
+      description: >-
+        Returns a page of training runs, newest first. `method` and `state` filter on the
+        stored values.
+      operationId: listModelTrainings
+      x-mosaiq-roles:
+      - ADMIN
+      - ANALYST
+      - MARKETING
+      - AUDITOR
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/MethodFilter'
+      - $ref: '#/components/parameters/TrainingStateFilter'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of trainings.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelTrainingPage'
+              examples:
+                page:
+                  externalValue: ./examples/trainings-page.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/ModelTrainingPage'
+              examples:
+                page:
+                  externalValue: ./examples/trainings-page.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/ListInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+    post:
+      tags:
+      - Trainings
+      summary: Start a training run
+      description: >-
+        Starts a K-means training over the net purchases of the window. The answer is 201
+        with the training RUNNING; poll `GET /v1/model-trainings/{training_id}`. A COMPLETED
+        training registers a DRAFT version named `version_name`, carrying the dataset fingerprint
+        and origin, the parameters, the seed, the metrics, the frozen centroids and the reference
+        distribution, and publishes nothing. The seed is recorded even when the caller omits
+        it, so the run is reproducible (RN-58). Two trainings never run at once: while one
+        runs, a new request is 409 `training_in_progress`. A `version_name` already used is
+        409 `model_version_name_taken`. Only RFM_RULES versions are registered through `POST
+        /v1/model-versions`; `method` here is always KMEANS.
+      operationId: createModelTraining
+      x-mosaiq-roles:
+      - ADMIN
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelTrainingRequest'
+            examples:
+              with_seed:
+                externalValue: ./examples/training.request.json
+              without_seed:
+                externalValue: ./examples/training-without-seed.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/ModelTrainingRequest'
+            examples:
+              with_seed:
+                externalValue: ./examples/training.request.xml
+              without_seed:
+                externalValue: ./examples/training-without-seed.request.xml
+      responses:
+        '201':
+          description: The training was started.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelTraining'
+              examples:
+                running:
+                  externalValue: ./examples/training-running.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/ModelTraining'
+              examples:
+                running:
+                  externalValue: ./examples/training-running.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          description: '`training_in_progress` or `model_version_name_taken`.'
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                training_in_progress:
+                  externalValue: ./examples/training-in-progress.json
+                model_version_name_taken:
+                  externalValue: ./examples/model-version-name-taken.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                training_in_progress:
+                  externalValue: ./examples/training-in-progress.xml
+                model_version_name_taken:
+                  externalValue: ./examples/model-version-name-taken.xml
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/InvalidBody'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/model-trainings/{training_id}:
+    get:
+      tags:
+      - Trainings
+      summary: Get one training run
+      description: >-
+        Returns one training with its parameters, seed, dataset, metrics and the version it
+        registered.
+      operationId: getModelTraining
+      x-mosaiq-roles:
+      - ADMIN
+      - ANALYST
+      - MARKETING
+      - AUDITOR
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/TrainingId'
+      responses:
+        '200':
+          description: The training.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelTraining'
+              examples:
+                running:
+                  externalValue: ./examples/training-running.json
+                completed:
+                  externalValue: ./examples/training-completed.json
+                failed:
+                  externalValue: ./examples/training-failed.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/ModelTraining'
+              examples:
+                running:
+                  externalValue: ./examples/training-running.xml
+                completed:
+                  externalValue: ./examples/training-completed.xml
+                failed:
+                  externalValue: ./examples/training-failed.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/TrainingNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /health/live:
+    get:
+      tags:
+      - Meta
+      summary: Check process liveness
+      operationId: getLiveness
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The process is live.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+  /health/ready:
+    get:
+      tags:
+      - Meta
+      summary: Check schema readiness
+      operationId: getReadiness
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The required schema is ready.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '503':
+          $ref: '#/components/responses/SchemaNotReady'
+  /openapi.yaml:
+    get:
+      tags:
+      - Meta
+      summary: Get this OpenAPI document
+      operationId: getOpenApi
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The OpenAPI document, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/yaml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+  /schema.xsd:
+    get:
+      tags:
+      - Meta
+      summary: Get the model-registry XML Schema
+      operationId: getSchema
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The model-registry XSD, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/xml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      description: >-
+        Caller-supplied correlation id. A missing or invalid value is replaced by the service,
+        and the effective value is returned on every response.
+      schema:
+        type: string
+        pattern: ^[0-9A-Za-z-]{1,64}$
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Size:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    VersionId:
+      name: version_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    TrainingId:
+      name: training_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    MethodFilter:
+      name: method
+      in: query
+      required: false
+      description: Keep only versions or trainings of this method.
+      schema:
+        $ref: '#/components/schemas/Method'
+    VersionStateFilter:
+      name: state
+      in: query
+      required: false
+      description: >-
+        Keep only versions in this state. `state=PUBLISHED` returns the current published
+        version.
+      schema:
+        $ref: '#/components/schemas/VersionState'
+    TrainingStateFilter:
+      name: state
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/TrainingState'
+  headers:
+    CorrelationId:
+      description: The effective correlation id for this request.
+      required: true
+      schema:
+        type: string
+        pattern: ^[0-9A-Za-z-]{1,64}$
+    RetryAfter:
+      description: Seconds until the caller should retry.
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  schemas:
+    Method:
+      type: string
+      enum:
+      - RFM_RULES
+      - KMEANS
+    TrainingMethod:
+      type: string
+      enum:
+      - KMEANS
+    VersionState:
+      type: string
+      enum:
+      - DRAFT
+      - PUBLISHED
+      - RETIRED
+    VersionSource:
+      type: string
+      enum:
+      - REGISTERED
+      - TRAINING
+      - WEB_RUN
+    DataOrigin:
+      type: string
+      enum:
+      - OBSERVED
+      - SEEDED
+    TrainingState:
+      type: string
+      enum:
+      - RUNNING
+      - COMPLETED
+      - FAILED
+    PublicationAction:
+      type: string
+      enum:
+      - PUBLISH
+      - ROLLBACK
+    Feature:
+      type: string
+      enum:
+      - R
+      - F
+      - M
+    Normalization:
+      type: string
+      enum:
+      - NONE
+      - MIN_MAX
+    Money:
+      type: string
+      pattern: ^[0-9]+\.[0-9]{2}$
+    Name:
+      type: string
+      minLength: 1
+      maxLength: 80
+    WindowDays:
+      type: integer
+      minimum: 1
+      maximum: 3650
+    Dataset:
+      type: object
+      additionalProperties: false
+      description: What a version was fitted on.
+      required:
+      - fingerprint
+      - origin
+      - row_count
+      properties:
+        fingerprint:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+          description: Lowercase SHA-256 of the canonical net-purchase data the version was
+            fitted on.
+        origin:
+          $ref: '#/components/schemas/DataOrigin'
+          description: '`SEEDED` if any sale the fit read is seeded, else `OBSERVED` (ADR-0052).'
+        row_count:
+          type: integer
+          minimum: 0
+          description: Net purchases read.
+    ModelParameters:
+      type: object
+      additionalProperties: false
+      description: >-
+        The definition. RFM_RULES sets `rule_set_id` and leaves `k`, `max_iterations` and
+        `tolerance` null, with `normalization` NONE. KMEANS sets those three, leaves `rule_set_id`
+        null and uses MIN_MAX (ADR-0018). Absent values are null in JSON and omitted in XML.
+      required:
+      - rule_set_id
+      - k
+      - max_iterations
+      - tolerance
+      - features
+      - normalization
+      properties:
+        rule_set_id:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 1
+          description: >-
+            RFM_RULES only: the rfm-engine rule set whose boundaries the version froze. A
+            body field, never a path.
+        k:
+          type:
+          - integer
+          - 'null'
+          minimum: 2
+          maximum: 20
+          description: 'KMEANS only: the number of clusters.'
+        max_iterations:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          maximum: 1000
+          description: KMEANS only.
+        tolerance:
+          type:
+          - number
+          - 'null'
+          exclusiveMinimum: 0
+          description: 'KMEANS only: the centroid-shift threshold that ends the fit.'
+        features:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/Feature'
+        normalization:
+          $ref: '#/components/schemas/Normalization'
+    QuintileBoundaries:
+      type: object
+      additionalProperties: false
+      required:
+      - recency_boundaries
+      - frequency_boundaries
+      - monetary_boundaries
+      properties:
+        recency_boundaries:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            type: integer
+            minimum: 0
+          description: Largest recency in days that still scores 5, 4, 3 and 2; non-decreasing.
+        frequency_boundaries:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            type: integer
+            minimum: 1
+          description: Smallest net purchase count that scores 5, 4, 3 and 2; non-increasing.
+        monetary_boundaries:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            $ref: '#/components/schemas/Money'
+          description: Smallest net total that scores 5, 4, 3 and 2; non-increasing.
+    Centroid:
+      type: object
+      additionalProperties: false
+      required:
+      - cluster_index
+      - label_code
+      - r
+      - f
+      - m
+      properties:
+        cluster_index:
+          type: integer
+          minimum: 0
+        label_code:
+          type: string
+          description: The label paired with the cluster at fit time (ADR-0030).
+        r:
+          type: number
+          description: Normalized recency of the centroid.
+        f:
+          type: number
+          description: Normalized frequency of the centroid.
+        m:
+          type: number
+          description: Normalized monetary value of the centroid. A coordinate, not money.
+    NormalizationBounds:
+      type: object
+      additionalProperties: false
+      description: The raw minimum and maximum used for min-max scaling.
+      required:
+      - r_min
+      - r_max
+      - f_min
+      - f_max
+      - m_min
+      - m_max
+      properties:
+        r_min:
+          type: number
+        r_max:
+          type: number
+        f_min:
+          type: number
+        f_max:
+          type: number
+        m_min:
+          type: number
+        m_max:
+          type: number
+    FrozenScoring:
+      type: object
+      additionalProperties: false
+      description: >-
+        What a customer is scored against, so a score never depends on the population (ADR-0063).
+        RFM_RULES sets `quintile_boundaries`, with no centroids and null bounds. KMEANS sets
+        `centroids` (one per `k`) and `normalization_bounds`, with null boundaries. A mismatch
+        with `method` is 422 `invalid_body`, detail `method_mismatch`.
+      required:
+      - quintile_boundaries
+      - centroids
+      - normalization_bounds
+      properties:
+        quintile_boundaries:
+          oneOf:
+          - $ref: '#/components/schemas/QuintileBoundaries'
+          - type: 'null'
+        centroids:
+          type: array
+          items:
+            $ref: '#/components/schemas/Centroid'
+        normalization_bounds:
+          oneOf:
+          - $ref: '#/components/schemas/NormalizationBounds'
+          - type: 'null'
+    FeatureDistribution:
+      type: object
+      additionalProperties: false
+      required:
+      - feature
+      - bin_edges
+      - proportions
+      properties:
+        feature:
+          $ref: '#/components/schemas/Feature'
+        bin_edges:
+          type: array
+          minItems: 2
+          items:
+            type: number
+          description: Strictly increasing edges.
+        proportions:
+          type: array
+          minItems: 1
+          items:
+            type: number
+            minimum: 0
+            maximum: 1
+          description: One share per bin, so one fewer than the edges; they sum to 1.
+    LabelShare:
+      type: object
+      additionalProperties: false
+      required:
+      - label_code
+      - share
+      properties:
+        label_code:
+          type: string
+        share:
+          type: number
+          minimum: 0
+          maximum: 1
+    ReferenceDistribution:
+      type: object
+      additionalProperties: false
+      description: >-
+        The distribution of the fitted data, which drift is judged against. A malformed histogram
+        (edges not increasing, a count that is not one fewer than the edges, shares that do
+        not sum to 1) is 422 `invalid_body`, detail `distribution_mismatch`.
+      required:
+      - sample_size
+      - captured_at
+      - features
+      - labels
+      properties:
+        sample_size:
+          type: integer
+          minimum: 1
+        captured_at:
+          type: string
+          format: date-time
+        features:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/FeatureDistribution'
+        labels:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/LabelShare'
+    Metrics:
+      type: object
+      additionalProperties: false
+      description: 'As they apply: null for a measure the method does not have.'
+      required:
+      - inertia
+      - silhouette
+      - stability
+      properties:
+        inertia:
+          type:
+          - number
+          - 'null'
+          minimum: 0
+        silhouette:
+          type:
+          - number
+          - 'null'
+          minimum: -1
+          maximum: 1
+        stability:
+          type:
+          - number
+          - 'null'
+          minimum: 0
+          maximum: 1
+    ModelVersionRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - name
+      - method
+      - window_days
+      - parameters
+      - frozen_scoring
+      - reference_distribution
+      - dataset
+      - metrics
+      properties:
+        name:
+          $ref: '#/components/schemas/Name'
+        method:
+          $ref: '#/components/schemas/Method'
+        window_days:
+          $ref: '#/components/schemas/WindowDays'
+        seed:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: 'KMEANS: the seed the fit used. RFM_RULES: null.'
+        parameters:
+          $ref: '#/components/schemas/ModelParameters'
+        frozen_scoring:
+          $ref: '#/components/schemas/FrozenScoring'
+        reference_distribution:
+          $ref: '#/components/schemas/ReferenceDistribution'
+        dataset:
+          $ref: '#/components/schemas/Dataset'
+        metrics:
+          $ref: '#/components/schemas/Metrics'
+      xml:
+        name: ModelVersionRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/model-registry/v1
+    ModelVersion:
+      type: object
+      additionalProperties: false
+      description: >-
+        An immutable record. Its definition, scoring, dataset, metrics and reference distribution
+        never change after creation; only `state`, `published_at` and `retired_at` follow
+        the append-only publications (ADR-0064).
+      required:
+      - version_id
+      - name
+      - method
+      - state
+      - source
+      - window_days
+      - seed
+      - parameters
+      - frozen_scoring
+      - reference_distribution
+      - dataset
+      - metrics
+      - owner_id
+      - source_run_id
+      - training_id
+      - created_at
+      - published_at
+      - retired_at
+      properties:
+        version_id:
+          type: integer
+          format: int64
+        name:
+          $ref: '#/components/schemas/Name'
+        method:
+          $ref: '#/components/schemas/Method'
+        state:
+          $ref: '#/components/schemas/VersionState'
+          description: Changes only through a publication or a rollback.
+        source:
+          $ref: '#/components/schemas/VersionSource'
+          description: >-
+            `REGISTERED` by `POST /v1/model-versions`, `TRAINING` by a training, `WEB_RUN`
+            by the registry for a segmentation run the web started (ADR-0064).
+        window_days:
+          $ref: '#/components/schemas/WindowDays'
+        seed:
+          type:
+          - integer
+          - 'null'
+          format: int64
+        parameters:
+          $ref: '#/components/schemas/ModelParameters'
+        frozen_scoring:
+          $ref: '#/components/schemas/FrozenScoring'
+        reference_distribution:
+          $ref: '#/components/schemas/ReferenceDistribution'
+        dataset:
+          $ref: '#/components/schemas/Dataset'
+        metrics:
+          $ref: '#/components/schemas/Metrics'
+        owner_id:
+          type:
+          - string
+          - 'null'
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+          description: >-
+            The user who registered it; null for a version the registry created from a web
+            run.
+        source_run_id:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: The segmentation run a `WEB_RUN` version came from; otherwise null.
+        training_id:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: The training that produced a `TRAINING` version; otherwise null.
+        created_at:
+          type: string
+          format: date-time
+        published_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: The instant of the version's latest publication or rollback.
+        retired_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: When a later publication replaced it; null unless `state` is RETIRED.
+      xml:
+        name: ModelVersion
+        namespace: https://mosaiq.maxthecoder.online/xml/model-registry/v1
+    ModelVersionPage:
+      type: object
+      additionalProperties: false
+      required:
+      - versions
+      - page_info
+      properties:
+        versions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelVersion'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: ModelVersions
+        namespace: https://mosaiq.maxthecoder.online/xml/model-registry/v1
+    ModelPublicationRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - reason
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+      xml:
+        name: ModelPublicationRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/model-registry/v1
+    ModelPublication:
+      type: object
+      additionalProperties: false
+      description: >-
+        One append-only fact. A rollback is a new row naming the restored version, never an
+        edit.
+      required:
+      - publication_id
+      - version_id
+      - action
+      - previous_version_id
+      - reason
+      - published_by
+      - published_at
+      properties:
+        publication_id:
+          type: integer
+          format: int64
+        version_id:
+          type: integer
+          format: int64
+          description: The version that became published.
+        action:
+          $ref: '#/components/schemas/PublicationAction'
+        previous_version_id:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: The version it replaced; null for the first publication.
+        reason:
+          type: string
+        published_by:
+          type:
+          - string
+          - 'null'
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+          description: The administrator; null when the registry published a web run's version.
+        published_at:
+          type: string
+          format: date-time
+      xml:
+        name: ModelPublication
+        namespace: https://mosaiq.maxthecoder.online/xml/model-registry/v1
+    ModelPublicationPage:
+      type: object
+      additionalProperties: false
+      required:
+      - publications
+      - page_info
+      properties:
+        publications:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelPublication'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: ModelPublications
+        namespace: https://mosaiq.maxthecoder.online/xml/model-registry/v1
+    ModelTrainingRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - version_name
+      - method
+      - window_days
+      - parameters
+      properties:
+        version_name:
+          $ref: '#/components/schemas/Name'
+          description: The name of the DRAFT version a completed training registers.
+        method:
+          $ref: '#/components/schemas/TrainingMethod'
+        window_days:
+          $ref: '#/components/schemas/WindowDays'
+        seed:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: Optional; when absent the service chooses one and records it.
+        parameters:
+          $ref: '#/components/schemas/ModelParameters'
+      xml:
+        name: ModelTrainingRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/model-registry/v1
+    ModelTraining:
+      type: object
+      additionalProperties: false
+      description: >-
+        `dataset`, `metrics`, `iterations`, `converged` and `version_id` are null until COMPLETED.
+      required:
+      - training_id
+      - method
+      - state
+      - version_name
+      - window_days
+      - seed
+      - parameters
+      - dataset
+      - metrics
+      - iterations
+      - converged
+      - version_id
+      - started_at
+      - finished_at
+      - started_by
+      - failure_code
+      properties:
+        training_id:
+          type: integer
+          format: int64
+        method:
+          $ref: '#/components/schemas/TrainingMethod'
+        state:
+          $ref: '#/components/schemas/TrainingState'
+        version_name:
+          $ref: '#/components/schemas/Name'
+        window_days:
+          $ref: '#/components/schemas/WindowDays'
+        seed:
+          type: integer
+          format: int64
+          description: 'Always set: the requested seed or the one the service chose (RN-58).'
+        parameters:
+          $ref: '#/components/schemas/ModelParameters'
+        dataset:
+          oneOf:
+          - $ref: '#/components/schemas/Dataset'
+          - type: 'null'
+        metrics:
+          oneOf:
+          - $ref: '#/components/schemas/Metrics'
+          - type: 'null'
+        iterations:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        converged:
+          type:
+          - boolean
+          - 'null'
+        version_id:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: The DRAFT version a COMPLETED training registered.
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        started_by:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        failure_code:
+          type:
+          - string
+          - 'null'
+          description: Set only when `state` is FAILED, such as `source_unavailable`.
+      xml:
+        name: ModelTraining
+        namespace: https://mosaiq.maxthecoder.online/xml/model-registry/v1
+    ModelTrainingPage:
+      type: object
+      additionalProperties: false
+      required:
+      - trainings
+      - page_info
+      properties:
+        trainings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelTraining'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: ModelTrainings
+        namespace: https://mosaiq.maxthecoder.online/xml/model-registry/v1
+    PageInfo:
+      type: object
+      additionalProperties: false
+      required:
+      - page
+      - size
+      - total
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+      xml:
+        name: PageInfo
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required:
+      - field
+      - code
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+    Error:
+      type: object
+      additionalProperties: false
+      required:
+      - code
+      - message
+      - correlation_id
+      - details
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        correlation_id:
+          type: string
+          pattern: ^[0-9A-Za-z-]{1,64}$
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+      xml:
+        name: Error
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+  responses:
+    Unauthorized:
+      description: '`invalid_token` or `session_revoked`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              externalValue: ./examples/invalid-token.json
+            session_revoked:
+              externalValue: ./examples/session-revoked.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              externalValue: ./examples/invalid-token.xml
+            session_revoked:
+              externalValue: ./examples/session-revoked.xml
+    Forbidden:
+      description: '`forbidden_role`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.xml
+    NotAcceptable:
+      description: '`not_acceptable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              externalValue: ./examples/not-acceptable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              externalValue: ./examples/not-acceptable.xml
+    RateLimited:
+      description: '`rate_limited`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              externalValue: ./examples/rate-limited.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              externalValue: ./examples/rate-limited.xml
+    OperationUnavailable:
+      description: '`auth_unavailable` or `database_unavailable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.json
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.xml
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.xml
+    SchemaNotReady:
+      description: '`schema_not_ready`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              externalValue: ./examples/schema-not-ready.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              externalValue: ./examples/schema-not-ready.xml
+    MalformedBody:
+      description: '`malformed_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            malformed_body:
+              externalValue: ./examples/malformed-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            malformed_body:
+              externalValue: ./examples/malformed-body.xml
+    PayloadTooLarge:
+      description: '`payload_too_large`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            payload_too_large:
+              externalValue: ./examples/payload-too-large.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            payload_too_large:
+              externalValue: ./examples/payload-too-large.xml
+    UnsupportedMediaType:
+      description: '`unsupported_media_type`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unsupported_media_type:
+              externalValue: ./examples/unsupported-media-type.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unsupported_media_type:
+              externalValue: ./examples/unsupported-media-type.xml
+    InvalidBody:
+      description: '`invalid_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-body.xml
+    InvalidPagination:
+      description: '`invalid_pagination`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.xml
+    ListInvalid:
+      description: '`invalid_query` or `invalid_pagination`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.json
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.xml
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.xml
+    VersionNotFound:
+      description: '`model_version_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            model_version_not_found:
+              externalValue: ./examples/model-version-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            model_version_not_found:
+              externalValue: ./examples/model-version-not-found.xml
+    TrainingNotFound:
+      description: '`model_training_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            model_training_not_found:
+              externalValue: ./examples/model-training-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            model_training_not_found:
+              externalValue: ./examples/model-training-not-found.xml
+    VersionNameTaken:
+      description: '`model_version_name_taken`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            model_version_name_taken:
+              externalValue: ./examples/model-version-name-taken.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            model_version_name_taken:
+              externalValue: ./examples/model-version-name-taken.xml
+    NotDraft:
+      description: '`version_not_draft` or `publication_conflict`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            version_not_draft:
+              externalValue: ./examples/version-not-draft.json
+            publication_conflict:
+              externalValue: ./examples/publication-conflict.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            version_not_draft:
+              externalValue: ./examples/version-not-draft.xml
+            publication_conflict:
+              externalValue: ./examples/publication-conflict.xml
+    NotRetired:
+      description: '`version_not_retired` or `publication_conflict`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            version_not_retired:
+              externalValue: ./examples/version-not-retired.json
+            publication_conflict:
+              externalValue: ./examples/publication-conflict.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            version_not_retired:
+              externalValue: ./examples/version-not-retired.xml
+            publication_conflict:
+              externalValue: ./examples/publication-conflict.xml
+    TrainingInProgress:
+      description: '`training_in_progress`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            training_in_progress:
+              externalValue: ./examples/training-in-progress.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            training_in_progress:
+              externalValue: ./examples/training-in-progress.xml

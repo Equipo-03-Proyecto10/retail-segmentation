@@ -1,0 +1,6 @@
+{
+  "code": "publication_conflict",
+  "message": "Another publication committed first; read the published version again and retry.",
+  "correlation_id": "corr-publication-conflict",
+  "details": []
+}

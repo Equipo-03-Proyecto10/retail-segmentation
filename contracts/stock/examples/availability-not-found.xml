@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>availability_not_found</code>
+  <message>No store or product exists for store 3 and product 9999.</message>
+  <correlation_id>corr-availability-not-found</correlation_id>
+</Error>

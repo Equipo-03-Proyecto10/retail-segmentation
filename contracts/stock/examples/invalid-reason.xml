@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_reason</code>
+  <message>An adjustment must state a reason from DAMAGE, LOSS, EXPIRY or CORRECTION.</message>
+  <correlation_id>corr-invalid-reason</correlation_id>
+  <details>
+    <field>reason</field>
+    <code>not_allowed</code>
+  </details>
+</Error>

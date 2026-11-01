@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<StockMovementRequest xmlns="https://mosaiq.maxthecoder.online/xml/stock/v1">
+  <movement_type>ADJUSTMENT</movement_type>
+  <product_id>120</product_id>
+  <store_id>3</store_id>
+  <quantity_delta>-3</quantity_delta>
+  <reason>DAMAGE</reason>
+  <note>Crushed in the stockroom.</note>
+</StockMovementRequest>

@@ -1,0 +1,11 @@
+{
+  "code": "reference_required",
+  "message": "A receipt must state its reference.",
+  "correlation_id": "corr-reference-required",
+  "details": [
+    {
+      "field": "reference",
+      "code": "required"
+    }
+  ]
+}

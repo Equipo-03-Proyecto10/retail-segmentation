@@ -1,0 +1,21 @@
+{
+  "movements": [
+    {
+      "movement_id": 9120,
+      "movement_type": "RECEIPT",
+      "store_id": 3,
+      "product_id": 120,
+      "quantity_delta": 40,
+      "quantity_before": 14,
+      "quantity_after": 54,
+      "transfer_id": null,
+      "reference": "DN-2026-00417",
+      "reason": null,
+      "counted_by": null,
+      "note": null,
+      "reversal_id": null,
+      "recorded_by": "3f0c9e1a-6a7b-4c52-9d1e-2b8f5a7d4c10",
+      "recorded_at": "2026-10-16T09:15:00Z"
+    }
+  ]
+}

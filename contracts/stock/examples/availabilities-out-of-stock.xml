@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Availabilities xmlns="https://mosaiq.maxthecoder.online/xml/stock/v1"
+                xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <Availability>
+    <store_id>3</store_id>
+    <product_id>245</product_id>
+    <channel_id>3</channel_id>
+    <is_available>false</is_available>
+    <reason>OUT_OF_STOCK</reason>
+    <quantity_on_hand>0</quantity_on_hand>
+    <updated_at>2026-10-15T15:03:55Z</updated_at>
+  </Availability>
+  <common:PageInfo>
+    <common:page>1</common:page>
+    <common:size>20</common:size>
+    <common:total>1</common:total>
+  </common:PageInfo>
+</Availabilities>

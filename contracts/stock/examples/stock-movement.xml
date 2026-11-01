@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<StockMovement xmlns="https://mosaiq.maxthecoder.online/xml/stock/v1">
+  <movement_id>9125</movement_id>
+  <movement_type>RESTOCK</movement_type>
+  <store_id>3</store_id>
+  <product_id>120</product_id>
+  <quantity_delta>2</quantity_delta>
+  <quantity_before>39</quantity_before>
+  <quantity_after>41</quantity_after>
+  <reversal_id>77</reversal_id>
+  <recorded_at>2026-10-18T12:10:00Z</recorded_at>
+</StockMovement>

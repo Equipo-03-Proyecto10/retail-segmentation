@@ -1,0 +1,38 @@
+{
+  "movements": [
+    {
+      "movement_id": 9121,
+      "movement_type": "TRANSFER",
+      "store_id": 3,
+      "product_id": 120,
+      "quantity_delta": -10,
+      "quantity_before": 54,
+      "quantity_after": 44,
+      "transfer_id": "b4f2c1de-7a39-4d56-8a0b-6e1d9c3f2a77",
+      "reference": null,
+      "reason": null,
+      "counted_by": null,
+      "note": null,
+      "reversal_id": null,
+      "recorded_by": "3f0c9e1a-6a7b-4c52-9d1e-2b8f5a7d4c10",
+      "recorded_at": "2026-10-16T10:02:31Z"
+    },
+    {
+      "movement_id": 9122,
+      "movement_type": "TRANSFER",
+      "store_id": 5,
+      "product_id": 120,
+      "quantity_delta": 10,
+      "quantity_before": 6,
+      "quantity_after": 16,
+      "transfer_id": "b4f2c1de-7a39-4d56-8a0b-6e1d9c3f2a77",
+      "reference": null,
+      "reason": null,
+      "counted_by": null,
+      "note": null,
+      "reversal_id": null,
+      "recorded_by": "3f0c9e1a-6a7b-4c52-9d1e-2b8f5a7d4c10",
+      "recorded_at": "2026-10-16T10:02:31Z"
+    }
+  ]
+}

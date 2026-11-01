@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>reference_required</code>
+  <message>A receipt must state its reference.</message>
+  <correlation_id>corr-reference-required</correlation_id>
+  <details>
+    <field>reference</field>
+    <code>required</code>
+  </details>
+</Error>

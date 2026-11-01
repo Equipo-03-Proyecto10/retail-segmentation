@@ -1,14 +1,16 @@
 openapi: 3.1.0
 info:
   title: stock-service
-  version: 1.0.0
-  description: 'Publishes the quantity held for each store and product pair (RN-14).
-    A level carries ids and a quantity only: it has no product name, price or store
-    name, so clients fetch those from products and stores by id (ADR-0035, no composition).
-    The service never writes: the only write across the stock boundary is the database
-    function `api_stock.consume_v1`, called by sales inside its own transaction
-    (see contracts/db/api_stock.consume.v1.md). Receipts, transfers and adjustments
-    are deferred and have no operation.'
+  version: 1.1.0
+  description: 'Publishes the quantity held for each store and product pair, records the movements that
+    change it, and states in which channels a product can be sold (RN-14, ADR-0061). A level, movement
+    or availability carries ids and quantities only: no product name, price, store name or channel name,
+    so clients fetch those from products, stores and sales by id (ADR-0035, no composition). A store holds
+    one physical quantity per product; availability per channel is derived from it and is never a second
+    quantity. Stock changes only through three doors: a sale (`api_stock.consume_v1`, called by sales
+    inside its transaction), a sale''s reversal (`api_stock.restock_v1`, called by sales inside the reversal''s
+    transaction), and a recorded movement posted here. Stock is never negative. Reservations are not adopted
+    (ADR-0061). See contracts/db/api_stock.consume.v1.md, api_stock.restock.v1.md and api_stock.availability.v1.md.'
 security:
 - bearer: []
 tags:
@@ -20,10 +22,9 @@ paths:
       tags:
       - Stock
       summary: List stock levels
-      description: Returns a page of stock levels ordered by `store_id`, then `product_id`.
-        `below=N` returns the levels whose `quantity_on_hand` is less than N. A
-        level is read from PostgreSQL on every request and is never cached, so a
-        phone sale and a CSV sale both show on the next read.
+      description: Returns a page of stock levels ordered by `store_id`, then `product_id`. `below=N`
+        returns the levels whose `quantity_on_hand` is less than N. A level is read from PostgreSQL on
+        every request and is never cached, so a phone sale and a CSV sale both show on the next read.
       operationId: listStockLevels
       x-mosaiq-roles: &id002
       - ADMIN
@@ -74,9 +75,8 @@ paths:
       tags:
       - Stock
       summary: Get one stock level
-      description: The store and product pair is the level's own identity (E-03).
-        A level is read from PostgreSQL on every request and is never cached. A
-        pair with no `inventory` row answers 404 `stock_level_not_found`.
+      description: The store and product pair is the level's own identity (E-03). A level is read from
+        PostgreSQL on every request and is never cached. A pair with no `inventory` row answers 404 `stock_level_not_found`.
       operationId: getStockLevel
       x-mosaiq-roles: *id002
       parameters:
@@ -113,6 +113,364 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/OperationUnavailable'
+  /v1/stock-movements:
+    post:
+      tags:
+      - Stock
+      summary: Record a stock movement
+      description: 'Records one receipt, transfer, count or adjustment and changes `inventory` in the
+        same transaction. The movement is append-only: it is never edited or deleted, and a mistake is
+        corrected by a later movement.
+
+
+        | `movement_type` | Effect on on-hand | Body |
+
+        |---|---|---|
+
+        | `RECEIPT` | Adds `quantity` (positive) at `store_id`. Creates the stock record when the pair
+        has none. | `store_id`, `product_id`, `quantity`, `reference` (for example a delivery note) |
+
+        | `TRANSFER` | Two rows sharing a `transfer_id`, in one transaction: subtracts `quantity` (positive)
+        at `origin_store_id`, adds it at `destination_store_id`. The destination record is created when
+        absent. | `product_id`, `origin_store_id`, `destination_store_id`, `quantity` |
+
+        | `COUNT` | Sets on-hand to `quantity` (zero or more) at `store_id`, and stores before and after.
+        Creates the record when absent. | `store_id`, `product_id`, `quantity`, `counted_by` |
+
+        | `ADJUSTMENT` | Adds `quantity_delta` (a non-zero integer, negative to subtract) at `store_id`.
+        Needs an existing record. | `store_id`, `product_id`, `quantity_delta`, `reason` (`DAMAGE`, `LOSS`,
+        `EXPIRY` or `CORRECTION`) |
+
+
+        `RESTOCK` appears in answers only: it is written by `api_stock.restock_v1` when a sale is reversed,
+        and a request that asks for it is 422 `invalid_body`. `note` is optional on every type. The movement''s
+        `recorded_by` is the token''s `sub`.
+
+
+        Concurrency. Quantities change by a conditional `UPDATE`, as `api_stock.consume_v1` does, so two
+        movements on one row add up and on-hand never goes below zero: a subtraction the row cannot cover
+        is 409 `stock_unavailable` and changes nothing. A transfer locks its two rows in ascending store
+        order, so two opposite transfers cannot deadlock.
+
+
+        Idempotency. `Idempotency-Key` is required. The service hashes the caller''s `sub` and the movement''s
+        fields in canonical form, so a JSON retry and an XML retry hash the same. The same key with the
+        same hash is a replay: 200 with the original movement(s) and `Idempotent-Replayed: true`. The
+        same key with a different hash is 409 `idempotency_key_reused`. Only accepted movements are remembered,
+        so a refused request may be retried with the same key. A client retries only on a network error,
+        a timeout or a 503, always with the same key, and treats 409 and 422 as final.
+
+
+        Roles. Only `ADMIN` and `INVENTORY_PLANNER` write.'
+      operationId: recordStockMovement
+      x-mosaiq-roles:
+      - ADMIN
+      - INVENTORY_PLANNER
+      parameters:
+      - &id006
+        $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockMovementRequest'
+            examples:
+              receipt:
+                externalValue: ./examples/record-receipt.request.json
+              transfer:
+                externalValue: ./examples/record-transfer.request.json
+              count:
+                externalValue: ./examples/record-count.request.json
+              adjustment:
+                externalValue: ./examples/record-adjustment.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/StockMovementRequest'
+            examples:
+              receipt:
+                externalValue: ./examples/record-receipt.request.xml
+              transfer:
+                externalValue: ./examples/record-transfer.request.xml
+              count:
+                externalValue: ./examples/record-count.request.xml
+              adjustment:
+                externalValue: ./examples/record-adjustment.request.xml
+      responses:
+        '200':
+          description: The key was already used by an identical request; the original movement(s) are
+            returned.
+          headers:
+            X-Correlation-ID: &id005
+              $ref: '#/components/headers/CorrelationId'
+            Idempotent-Replayed:
+              $ref: '#/components/headers/IdempotentReplayed'
+          content:
+            application/json:
+              schema: &id004
+                $ref: '#/components/schemas/StockMovementRecord'
+              examples:
+                replayed:
+                  externalValue: ./examples/record-receipt-replay.json
+            application/xml:
+              schema: *id004
+              examples:
+                replayed:
+                  externalValue: ./examples/record-receipt-replay.xml
+        '201':
+          description: The movement was recorded. A transfer returns its two rows, origin first.
+          headers: &id010
+            X-Correlation-ID: *id005
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMovementRecord'
+              examples:
+                receipt:
+                  externalValue: ./examples/record-receipt.json
+                transfer:
+                  externalValue: ./examples/record-transfer.json
+                count:
+                  externalValue: ./examples/record-count.json
+                adjustment:
+                  externalValue: ./examples/record-adjustment.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/StockMovementRecord'
+              examples:
+                receipt:
+                  externalValue: ./examples/record-receipt.xml
+                transfer:
+                  externalValue: ./examples/record-transfer.xml
+                count:
+                  externalValue: ./examples/record-count.xml
+                adjustment:
+                  externalValue: ./examples/record-adjustment.xml
+        '400':
+          $ref: '#/components/responses/MovementBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/MovementConflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/MovementRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+    get:
+      tags:
+      - Stock
+      summary: List stock movements
+      description: Returns a page of movements, newest first (`recorded_at` descending, then `movement_id`
+        descending). `store_id` matches the movement's own store, so a transfer shows under both stores.
+        `from` and `to` bound `recorded_at` (RFC 3339 with an offset, `from` inclusive, `to` exclusive).
+      operationId: listStockMovements
+      x-mosaiq-roles: &id008
+      - ADMIN
+      - INVENTORY_PLANNER
+      - AUDITOR
+      parameters:
+      - *id006
+      - $ref: '#/components/parameters/StoreId'
+      - $ref: '#/components/parameters/ProductId'
+      - $ref: '#/components/parameters/MovementTypeFilter'
+      - $ref: '#/components/parameters/TransferIdFilter'
+      - $ref: '#/components/parameters/From'
+      - $ref: '#/components/parameters/To'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of stock movements.
+          headers:
+            X-Correlation-ID: *id005
+          content:
+            application/json:
+              schema: &id007
+                $ref: '#/components/schemas/StockMovementPage'
+              examples:
+                filtered_page:
+                  externalValue: ./examples/stock-movements-filtered.json
+            application/xml:
+              schema: *id007
+              examples:
+                filtered_page:
+                  externalValue: ./examples/stock-movements-filtered.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/InvalidQuery'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/stock-movements/{movement_id}:
+    get:
+      tags:
+      - Stock
+      summary: Get one stock movement
+      description: Returns one movement row. A transfer's two rows are two movements sharing a `transfer_id`.
+      operationId: getStockMovement
+      x-mosaiq-roles: *id008
+      parameters:
+      - *id006
+      - $ref: '#/components/parameters/MovementIdPath'
+      responses:
+        '200':
+          description: The stock movement.
+          headers:
+            X-Correlation-ID: *id005
+          content:
+            application/json:
+              schema: &id009
+                $ref: '#/components/schemas/StockMovement'
+              examples:
+                restock:
+                  externalValue: ./examples/stock-movement.json
+            application/xml:
+              schema: *id009
+              examples:
+                restock:
+                  externalValue: ./examples/stock-movement.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/MovementNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/availabilities:
+    get:
+      tags:
+      - Stock
+      summary: List availability per store, product and channel
+      description: 'Returns a page of availability rows ordered by `store_id`, `product_id`, `channel_id`.
+        A product is available in a store and channel (`is_available` true, `reason` `AVAILABLE`) when
+        its commercial status allows the sale, the store enables that channel, and its on-hand quantity
+        is above zero (ADR-0061). Otherwise `reason` names the first failing test, in this order: `NOT_SELLABLE`,
+        `CHANNEL_NOT_ENABLED`, `NO_STOCK_RECORD`, `OUT_OF_STOCK`. Availability is derived from the one
+        quantity the store holds; it is not a quantity per channel. `quantity_on_hand` and `updated_at`
+        are omitted (null in JSON) when the pair has no stock record, which is not the same as a quantity
+        of zero. Rows are read from PostgreSQL on every request and are never cached. `available=true`
+        returns only the available rows. Channel ids are sales'' and are filters only.'
+      operationId: listAvailabilities
+      x-mosaiq-roles: &id011
+      - ADMIN
+      - ANALYST
+      - STORE_MANAGER
+      - MARKETING
+      - INVENTORY_PLANNER
+      - AUDITOR
+      x-mosaiq-conformance-query:
+        store_id: '3'
+      parameters:
+      - *id006
+      - $ref: '#/components/parameters/StoreId'
+      - $ref: '#/components/parameters/ProductId'
+      - $ref: '#/components/parameters/ChannelId'
+      - $ref: '#/components/parameters/Available'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of availability rows.
+          headers: *id010
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityPage'
+              examples:
+                filtered_page:
+                  externalValue: ./examples/availabilities-filtered.json
+                out_of_stock:
+                  externalValue: ./examples/availabilities-out-of-stock.json
+                no_stock_record:
+                  externalValue: ./examples/availabilities-no-stock-record.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/AvailabilityPage'
+              examples:
+                filtered_page:
+                  externalValue: ./examples/availabilities-filtered.xml
+                out_of_stock:
+                  externalValue: ./examples/availabilities-out-of-stock.xml
+                no_stock_record:
+                  externalValue: ./examples/availabilities-no-stock-record.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/InvalidQuery'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/availabilities/{store_id}/{product_id}:
+    get:
+      tags:
+      - Stock
+      summary: Get one product's availability in one store, in every channel
+      description: The store and product pair is the availability's own identity (E-03). Returns that
+        pair's rows, one per channel, in `channel_id` order, in the same page type as the list. A store
+        or product that does not exist answers 404 `availability_not_found`; a pair with no stock record
+        is a row per channel with `reason` `NO_STOCK_RECORD`, not a 404.
+      operationId: getAvailability
+      x-mosaiq-roles: *id011
+      parameters:
+      - *id006
+      - $ref: '#/components/parameters/StoreIdPath'
+      - $ref: '#/components/parameters/ProductIdPath'
+      responses:
+        '200':
+          description: The pair's availability per channel.
+          headers:
+            X-Correlation-ID: *id005
+          content:
+            application/json:
+              schema: &id012
+                $ref: '#/components/schemas/AvailabilityPage'
+              examples:
+                availability:
+                  externalValue: ./examples/availability.json
+            application/xml:
+              schema: *id012
+              examples:
+                availability:
+                  externalValue: ./examples/availability.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/AvailabilityNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
   /health/live:
     get:
       tags:
@@ -120,12 +478,12 @@ paths:
       summary: Check process liveness
       operationId: getLiveness
       security: []
-      parameters: &id004
+      parameters: &id013
       - $ref: '#/components/parameters/CorrelationId'
       responses:
         '204':
           description: The process is live.
-          headers: &id005
+          headers: &id014
             X-Correlation-ID:
               $ref: '#/components/headers/CorrelationId'
   /health/ready:
@@ -135,11 +493,11 @@ paths:
       summary: Check schema readiness
       operationId: getReadiness
       security: []
-      parameters: *id004
+      parameters: *id013
       responses:
         '204':
           description: The required schema is ready.
-          headers: *id005
+          headers: *id014
         '503':
           $ref: '#/components/responses/SchemaNotReady'
   /openapi.yaml:
@@ -149,11 +507,11 @@ paths:
       summary: Get this OpenAPI document
       operationId: getOpenApi
       security: []
-      parameters: *id004
+      parameters: *id013
       responses:
         '200':
           description: The OpenAPI document, served byte for byte.
-          headers: *id005
+          headers: *id014
           content:
             application/yaml:
               schema:
@@ -167,11 +525,11 @@ paths:
       summary: Get the stock XML Schema
       operationId: getSchema
       security: []
-      parameters: *id004
+      parameters: *id013
       responses:
         '200':
           description: The stock XSD, served byte for byte.
-          headers: *id005
+          headers: *id014
           content:
             application/xml:
               schema:
@@ -189,8 +547,8 @@ components:
       name: X-Correlation-ID
       in: header
       required: false
-      description: Caller-supplied correlation id. A missing or invalid value is
-        replaced by the service, and the effective value is returned on every response.
+      description: Caller-supplied correlation id. A missing or invalid value is replaced by the service,
+        and the effective value is returned on every response.
       schema:
         type: string
         pattern: ^[0-9A-Za-z-]{1,64}$
@@ -231,8 +589,8 @@ components:
       name: store_id
       in: query
       required: false
-      description: Restrict the levels to this store. The service answers 422 `invalid_query`
-        when it is not a positive integer.
+      description: Restrict the levels to this store. The service answers 422 `invalid_query` when it
+        is not a positive integer.
       schema:
         type: integer
         format: int32
@@ -241,8 +599,8 @@ components:
       name: product_id
       in: query
       required: false
-      description: Restrict the levels to this product. The service answers 422
-        `invalid_query` when it is not a positive integer.
+      description: Restrict the levels to this product. The service answers 422 `invalid_query` when it
+        is not a positive integer.
       schema:
         type: integer
         format: int32
@@ -251,12 +609,80 @@ components:
       name: below
       in: query
       required: false
-      description: Return only the levels whose `quantity_on_hand` is less than
-        this number. The service answers 422 `invalid_query` when it is not a positive
-        integer.
+      description: Return only the levels whose `quantity_on_hand` is less than this number. The service
+        answers 422 `invalid_query` when it is not a positive integer.
       schema:
         type: integer
         minimum: 1
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: A UUID the client generates once, when the movement is created, and reuses on every
+        retry of that movement.
+      schema:
+        type: string
+        format: uuid
+    MovementIdPath:
+      name: movement_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    MovementTypeFilter:
+      name: movement_type
+      in: query
+      required: false
+      description: Restrict the movements to one type. 422 `invalid_query` when it is not one of the five
+        types.
+      schema:
+        $ref: '#/components/schemas/MovementType'
+    TransferIdFilter:
+      name: transfer_id
+      in: query
+      required: false
+      description: Restrict the movements to the two rows of one transfer. 422 `invalid_query` when it
+        is not a UUID.
+      schema:
+        type: string
+        format: uuid
+    From:
+      name: from
+      in: query
+      required: false
+      description: Only movements recorded at or after this instant. 422 `invalid_query` when it is not
+        RFC 3339 with an offset.
+      schema:
+        type: string
+        format: date-time
+    To:
+      name: to
+      in: query
+      required: false
+      description: Only movements recorded before this instant. 422 `invalid_query` when it is not RFC
+        3339 with an offset.
+      schema:
+        type: string
+        format: date-time
+    ChannelId:
+      name: channel_id
+      in: query
+      required: false
+      description: Restrict the rows to this channel. 422 `invalid_query` when it is not a positive integer.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+    Available:
+      name: available
+      in: query
+      required: false
+      description: '`true` returns only available rows and `false` only the others. 422 `invalid_query`
+        for any other value.'
+      schema:
+        type: boolean
   headers:
     CorrelationId:
       description: The effective correlation id for this request.
@@ -270,6 +696,13 @@ components:
       schema:
         type: integer
         minimum: 1
+    IdempotentReplayed:
+      description: Always `true`; the answer is the original movement, not a new one.
+      required: true
+      schema:
+        type: string
+        enum:
+        - 'true'
   schemas:
     StockLevel:
       type: object
@@ -366,6 +799,244 @@ components:
       xml:
         name: Error
         namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+    MovementType: &id016
+      type: string
+      enum:
+      - RECEIPT
+      - TRANSFER
+      - COUNT
+      - ADJUSTMENT
+      - RESTOCK
+    AdjustmentReason: &id015
+      type: string
+      enum:
+      - DAMAGE
+      - LOSS
+      - EXPIRY
+      - CORRECTION
+    StockMovementRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - movement_type
+      - product_id
+      description: Which members a type needs is the service's rule, answered as a domain 422; the schema
+        fixes the vocabulary and types.
+      properties:
+        movement_type:
+          type: string
+          enum:
+          - RECEIPT
+          - TRANSFER
+          - COUNT
+          - ADJUSTMENT
+        product_id:
+          type: integer
+          format: int32
+        store_id:
+          type: integer
+          format: int32
+          description: RECEIPT, COUNT and ADJUSTMENT.
+        origin_store_id:
+          type: integer
+          format: int32
+          description: TRANSFER.
+        destination_store_id:
+          type: integer
+          format: int32
+          description: TRANSFER.
+        quantity:
+          type: integer
+          description: 'RECEIPT and TRANSFER: positive. COUNT: the counted quantity, zero or more.'
+        quantity_delta:
+          type: integer
+          description: 'ADJUSTMENT: non-zero, negative to subtract.'
+        reference:
+          type: string
+          maxLength: 100
+          description: 'RECEIPT: a delivery note or similar.'
+        reason: *id015
+        counted_by:
+          type: string
+          maxLength: 100
+          description: 'COUNT: who counted.'
+        note:
+          type: string
+          maxLength: 500
+      xml:
+        name: StockMovementRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/stock/v1
+    StockMovement:
+      type: object
+      additionalProperties: false
+      required:
+      - movement_id
+      - movement_type
+      - store_id
+      - product_id
+      - quantity_delta
+      - quantity_before
+      - quantity_after
+      - transfer_id
+      - reference
+      - reason
+      - counted_by
+      - note
+      - reversal_id
+      - recorded_by
+      - recorded_at
+      properties:
+        movement_id:
+          type: integer
+          format: int64
+        movement_type: *id016
+        store_id:
+          type: integer
+          format: int32
+        product_id:
+          type: integer
+          format: int32
+        quantity_delta:
+          type: integer
+          description: 'The change this row applied: negative at a transfer''s origin.'
+        quantity_before:
+          type: integer
+          minimum: 0
+        quantity_after:
+          type: integer
+          minimum: 0
+        transfer_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        reference:
+          type:
+          - string
+          - 'null'
+        reason:
+          oneOf:
+          - *id015
+          - type: 'null'
+        counted_by:
+          type:
+          - string
+          - 'null'
+        note:
+          type:
+          - string
+          - 'null'
+        reversal_id:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: 'RESTOCK: the sale reversal that returned the units.'
+        recorded_by:
+          type:
+          - string
+          - 'null'
+          format: uuid
+          description: The `sub` of the user who posted it; null for a RESTOCK, which sales writes.
+        recorded_at:
+          type: string
+          format: date-time
+      xml:
+        name: StockMovement
+        namespace: https://mosaiq.maxthecoder.online/xml/stock/v1
+    StockMovementRecord:
+      type: object
+      additionalProperties: false
+      required:
+      - movements
+      description: 'The result of one request: one movement, or a transfer''s two rows (origin first).
+        It is not a collection and has no PageInfo.'
+      properties:
+        movements:
+          type: array
+          minItems: 1
+          maxItems: 2
+          items:
+            $ref: '#/components/schemas/StockMovement'
+      xml:
+        name: StockMovementRecord
+        namespace: https://mosaiq.maxthecoder.online/xml/stock/v1
+    StockMovementPage:
+      type: object
+      additionalProperties: false
+      required:
+      - stock_movements
+      - page_info
+      properties:
+        stock_movements:
+          type: array
+          items:
+            $ref: '#/components/schemas/StockMovement'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: StockMovements
+        namespace: https://mosaiq.maxthecoder.online/xml/stock/v1
+    Availability:
+      type: object
+      additionalProperties: false
+      required:
+      - store_id
+      - product_id
+      - channel_id
+      - is_available
+      - reason
+      - quantity_on_hand
+      - updated_at
+      properties:
+        store_id:
+          type: integer
+          format: int32
+        product_id:
+          type: integer
+          format: int32
+        channel_id:
+          type: integer
+          format: int32
+        is_available:
+          type: boolean
+        reason:
+          type: string
+          enum:
+          - AVAILABLE
+          - OUT_OF_STOCK
+          - NO_STOCK_RECORD
+          - NOT_SELLABLE
+          - CHANNEL_NOT_ENABLED
+        quantity_on_hand:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        updated_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+      xml:
+        name: Availability
+        namespace: https://mosaiq.maxthecoder.online/xml/stock/v1
+    AvailabilityPage:
+      type: object
+      additionalProperties: false
+      required:
+      - availabilities
+      - page_info
+      properties:
+        availabilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/Availability'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: Availabilities
+        namespace: https://mosaiq.maxthecoder.online/xml/stock/v1
   responses:
     Unauthorized:
       description: '`invalid_token` or `session_revoked`.'
@@ -525,3 +1196,163 @@ components:
               externalValue: ./examples/invalid-query.xml
             invalid_pagination:
               externalValue: ./examples/invalid-pagination.xml
+    MovementBadRequest:
+      description: '`idempotency_key_required` or `malformed_body`.'
+      headers:
+        X-Correlation-ID: *id005
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            idempotency_key_required:
+              externalValue: ./examples/idempotency-key-required.json
+            malformed_body:
+              externalValue: ./examples/malformed-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            idempotency_key_required:
+              externalValue: ./examples/idempotency-key-required.xml
+            malformed_body:
+              externalValue: ./examples/malformed-body.xml
+    MovementConflict:
+      description: '`idempotency_key_reused` or `stock_unavailable`.'
+      headers:
+        X-Correlation-ID: *id005
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            idempotency_key_reused:
+              externalValue: ./examples/idempotency-key-reused.json
+            stock_unavailable:
+              externalValue: ./examples/stock-unavailable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            idempotency_key_reused:
+              externalValue: ./examples/idempotency-key-reused.xml
+            stock_unavailable:
+              externalValue: ./examples/stock-unavailable.xml
+    MovementRefused:
+      description: '`invalid_body`, `invalid_quantity`, `reference_required`, `counted_by_required`, `invalid_reason`,
+        `same_store_transfer`, `unknown_store`, `unknown_product` or `no_stock_record`.'
+      headers:
+        X-Correlation-ID: *id005
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-body.json
+            invalid_quantity:
+              externalValue: ./examples/invalid-quantity.json
+            reference_required:
+              externalValue: ./examples/reference-required.json
+            counted_by_required:
+              externalValue: ./examples/counted-by-required.json
+            invalid_reason:
+              externalValue: ./examples/invalid-reason.json
+            same_store_transfer:
+              externalValue: ./examples/same-store-transfer.json
+            unknown_store:
+              externalValue: ./examples/unknown-store.json
+            unknown_product:
+              externalValue: ./examples/unknown-product.json
+            no_stock_record:
+              externalValue: ./examples/no-stock-record.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-body.xml
+            invalid_quantity:
+              externalValue: ./examples/invalid-quantity.xml
+            reference_required:
+              externalValue: ./examples/reference-required.xml
+            counted_by_required:
+              externalValue: ./examples/counted-by-required.xml
+            invalid_reason:
+              externalValue: ./examples/invalid-reason.xml
+            same_store_transfer:
+              externalValue: ./examples/same-store-transfer.xml
+            unknown_store:
+              externalValue: ./examples/unknown-store.xml
+            unknown_product:
+              externalValue: ./examples/unknown-product.xml
+            no_stock_record:
+              externalValue: ./examples/no-stock-record.xml
+    PayloadTooLarge:
+      description: '`payload_too_large`.'
+      headers:
+        X-Correlation-ID: *id005
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            payload_too_large:
+              externalValue: ./examples/payload-too-large.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            payload_too_large:
+              externalValue: ./examples/payload-too-large.xml
+    UnsupportedMediaType:
+      description: '`unsupported_media_type`.'
+      headers:
+        X-Correlation-ID: *id005
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unsupported_media_type:
+              externalValue: ./examples/unsupported-media-type.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unsupported_media_type:
+              externalValue: ./examples/unsupported-media-type.xml
+    MovementNotFound:
+      description: '`stock_movement_not_found`.'
+      headers:
+        X-Correlation-ID: *id005
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            stock_movement_not_found:
+              externalValue: ./examples/stock-movement-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            stock_movement_not_found:
+              externalValue: ./examples/stock-movement-not-found.xml
+    AvailabilityNotFound:
+      description: '`availability_not_found`.'
+      headers:
+        X-Correlation-ID: *id005
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            availability_not_found:
+              externalValue: ./examples/availability-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            availability_not_found:
+              externalValue: ./examples/availability-not-found.xml

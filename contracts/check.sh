@@ -294,6 +294,14 @@ for service in "${service_names[@]}"; do
   head_xsd="contracts/$service/$service.xsd"
   for example in contracts/"$service"/examples/*.xml; do
     [[ $example == *.invalid.xml || $example == *.request.xml ]] && continue
+    # A response whose root element the base XSD never declared is a new
+    # operation's response, and a new operation is not breaking. Every
+    # response of an element the base declares must still validate against it.
+    root_element=$(xmllint --xpath 'local-name(/*)' "$example" 2>/dev/null)
+    if [[ -n $root_element ]] \
+      && ! grep -qE "element[[:space:]]+name=\"$root_element\"" "$base_xsd"; then
+      continue
+    fi
     if ! xmllint --noout --nonet --schema "$base_xsd" "$example" \
       >/dev/null 2>&1; then
       fail "XML response changed in v1: $example"

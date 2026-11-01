@@ -1,0 +1,11 @@
+{
+  "code": "sale_already_reversed",
+  "message": "The sale already has a reversal, so it can no longer be cancelled as a whole.",
+  "correlation_id": "corr-sale-already-reversed",
+  "details": [
+    {
+      "field": "sale_id",
+      "code": "already_reversed"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>unexpected_lines</code>
+  <message>A cancellation reverses the whole sale and takes no lines.</message>
+  <correlation_id>corr-unexpected-lines</correlation_id>
+  <details>
+    <field>lines</field>
+    <code>not_allowed</code>
+  </details>
+</Error>

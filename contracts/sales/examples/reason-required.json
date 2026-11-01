@@ -1,0 +1,11 @@
+{
+  "code": "reason_required",
+  "message": "A reversal needs a reason.",
+  "correlation_id": "corr-reason-required",
+  "details": [
+    {
+      "field": "reason",
+      "code": "required"
+    }
+  ]
+}

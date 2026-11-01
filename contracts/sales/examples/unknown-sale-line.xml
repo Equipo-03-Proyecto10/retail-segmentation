@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>unknown_sale_line</code>
+  <message>A returned product is not on the sale.</message>
+  <correlation_id>corr-unknown-sale-line</correlation_id>
+  <details>
+    <field>lines[0].product_id</field>
+    <code>not_on_sale</code>
+  </details>
+</Error>

@@ -1,0 +1,11 @@
+{
+  "code": "forbidden_store",
+  "message": "The report names a store outside the caller's assigned stores.",
+  "correlation_id": "corr-kpi-403b",
+  "details": [
+    {
+      "field": "store_id",
+      "code": "not_assigned"
+    }
+  ]
+}

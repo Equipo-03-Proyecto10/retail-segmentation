@@ -1,0 +1,144 @@
+{
+  "kpi": "retention",
+  "definition_version": 1,
+  "from": "2026-08-01",
+  "to": "2026-10-31",
+  "granularity": "month",
+  "group_by": [
+    "period"
+  ],
+  "generated_at": "2026-10-31T18:00:00Z",
+  "store_scope": {
+    "restricted": false,
+    "store_ids": []
+  },
+  "data_origin": {
+    "views": [
+      "api_sales.net_purchase_line_v1"
+    ],
+    "synthetic": false,
+    "spans_model_versions": false,
+    "model_version_ids": []
+  },
+  "rows": [
+    {
+      "period_start": "2026-08-01",
+      "period_end": "2026-08-31",
+      "segment_code": null,
+      "segment_state": null,
+      "from_segment_code": null,
+      "store_id": null,
+      "channel_id": null,
+      "campaign_id": null,
+      "model_version_id": null,
+      "synthetic": false,
+      "measures": [
+        {
+          "code": "cohort_customers",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "3",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "retained_customers",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "2",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "retention_rate",
+          "kind": "OBSERVED",
+          "unit": "ratio",
+          "value": "0.6667",
+          "lower": null,
+          "upper": null
+        }
+      ]
+    },
+    {
+      "period_start": "2026-09-01",
+      "period_end": "2026-09-30",
+      "segment_code": null,
+      "segment_state": null,
+      "from_segment_code": null,
+      "store_id": null,
+      "channel_id": null,
+      "campaign_id": null,
+      "model_version_id": null,
+      "synthetic": false,
+      "measures": [
+        {
+          "code": "cohort_customers",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "41",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "retained_customers",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "17",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "retention_rate",
+          "kind": "OBSERVED",
+          "unit": "ratio",
+          "value": "0.4146",
+          "lower": null,
+          "upper": null
+        }
+      ]
+    },
+    {
+      "period_start": "2026-10-01",
+      "period_end": "2026-10-31",
+      "segment_code": null,
+      "segment_state": null,
+      "from_segment_code": null,
+      "store_id": null,
+      "channel_id": null,
+      "campaign_id": null,
+      "model_version_id": null,
+      "synthetic": false,
+      "measures": [
+        {
+          "code": "cohort_customers",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "38",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "retained_customers",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": null,
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "retention_rate",
+          "kind": "OBSERVED",
+          "unit": "ratio",
+          "value": null,
+          "lower": null,
+          "upper": null
+        }
+      ]
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 3
+  }
+}

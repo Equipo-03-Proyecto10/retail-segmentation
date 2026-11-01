@@ -1,0 +1,109 @@
+{
+  "kpi": "spend",
+  "definition_version": 1,
+  "from": "2026-10-01",
+  "to": "2026-10-31",
+  "granularity": null,
+  "group_by": [
+    "segment"
+  ],
+  "generated_at": "2026-10-31T18:00:00Z",
+  "store_scope": {
+    "restricted": false,
+    "store_ids": []
+  },
+  "data_origin": {
+    "views": [
+      "api_sales.net_purchase_line_v1",
+      "api_segments.current_label_v1"
+    ],
+    "synthetic": false,
+    "spans_model_versions": false,
+    "model_version_ids": [
+      4
+    ]
+  },
+  "rows": [
+    {
+      "period_start": null,
+      "period_end": null,
+      "segment_code": "LOYAL",
+      "segment_state": "assigned",
+      "from_segment_code": null,
+      "store_id": null,
+      "channel_id": null,
+      "campaign_id": null,
+      "model_version_id": null,
+      "synthetic": false,
+      "measures": [
+        {
+          "code": "net_amount",
+          "kind": "OBSERVED",
+          "unit": "currency",
+          "value": "120400.00",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "active_customers",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "310",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "average_spend",
+          "kind": "OBSERVED",
+          "unit": "currency",
+          "value": "388.39",
+          "lower": null,
+          "upper": null
+        }
+      ]
+    },
+    {
+      "period_start": null,
+      "period_end": null,
+      "segment_code": "LOST",
+      "segment_state": "assigned",
+      "from_segment_code": null,
+      "store_id": null,
+      "channel_id": null,
+      "campaign_id": null,
+      "model_version_id": null,
+      "synthetic": false,
+      "measures": [
+        {
+          "code": "net_amount",
+          "kind": "OBSERVED",
+          "unit": "currency",
+          "value": "0.00",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "active_customers",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "0",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "average_spend",
+          "kind": "OBSERVED",
+          "unit": "currency",
+          "value": null,
+          "lower": null,
+          "upper": null
+        }
+      ]
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 2
+  }
+}

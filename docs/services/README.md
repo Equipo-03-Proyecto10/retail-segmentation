@@ -23,6 +23,7 @@ The design is governed by ADR-0034 to ADR-0046. Every service implements exactly
 | [check-ins](./check-ins.md) | Rust (axum) | 5013 | core | A check-in is verified only within the store's geofence; overrides are append-only reviews | RN-56 |
 | [campaigns](./campaigns.md) | Flask | 5014 | second | A campaign moves only along the allowed states, is edited only in DRAFT, and is activated only before it ends, with its experiments ready | RN-15, RN-16, RN-22, RN-24 (activation), RN-31, RN-32, RN-49 (activation) |
 | [audit-trail](./audit-trail.md) | Rust (axum) | 5015 | second | An append-only, attributed, credential-free audit readable by ADMIN and AUDITOR only | RN-28, RN-29, RN-30 |
+| [analytics-kpis](./analytics-kpis.md) | Rust (axum) | 5022 | third | A KPI is reported only under its published definition, window and data origin, from `api_*` objects, and only to the roles and stores allowed to read it | RN-68 |
 
 The full one-sentence rule of each service is in its sheet and in the registry of [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md).
 

@@ -1,0 +1,107 @@
+{
+  "kpi": "conversion",
+  "definition_version": 1,
+  "from": "2026-09-01",
+  "to": "2026-09-30",
+  "granularity": null,
+  "group_by": [
+    "store"
+  ],
+  "generated_at": "2026-10-31T18:00:00Z",
+  "store_scope": {
+    "restricted": false,
+    "store_ids": []
+  },
+  "data_origin": {
+    "views": [
+      "api_engagement.interaction_v1",
+      "api_sales.net_purchase_line_v1"
+    ],
+    "synthetic": false,
+    "spans_model_versions": false,
+    "model_version_ids": []
+  },
+  "rows": [
+    {
+      "period_start": null,
+      "period_end": null,
+      "segment_code": null,
+      "segment_state": null,
+      "from_segment_code": null,
+      "store_id": 1,
+      "channel_id": null,
+      "campaign_id": null,
+      "model_version_id": null,
+      "synthetic": false,
+      "measures": [
+        {
+          "code": "exposed_customers",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "200",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "converted_customers",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "54",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "conversion_rate",
+          "kind": "OBSERVED",
+          "unit": "ratio",
+          "value": "0.2700",
+          "lower": null,
+          "upper": null
+        }
+      ]
+    },
+    {
+      "period_start": null,
+      "period_end": null,
+      "segment_code": null,
+      "segment_state": null,
+      "from_segment_code": null,
+      "store_id": 2,
+      "channel_id": null,
+      "campaign_id": null,
+      "model_version_id": null,
+      "synthetic": false,
+      "measures": [
+        {
+          "code": "exposed_customers",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "90",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "converted_customers",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "18",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "conversion_rate",
+          "kind": "OBSERVED",
+          "unit": "ratio",
+          "value": "0.2000",
+          "lower": null,
+          "upper": null
+        }
+      ]
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 2
+  }
+}

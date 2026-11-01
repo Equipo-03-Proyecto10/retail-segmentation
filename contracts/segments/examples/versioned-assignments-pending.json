@@ -1,0 +1,21 @@
+{
+  "assignments": [
+    {
+      "customer_id": "0c9f6a3e-5d2b-4c8e-9a41-7e3b2d1f8a66",
+      "run_id": 58,
+      "model_version_id": null,
+      "cause": "FULL_RUN",
+      "label_code": "AT_RISK",
+      "r_score": 2,
+      "f_score": 4,
+      "m_score": 3,
+      "valid_from": "2026-10-30T03:00:00Z",
+      "valid_to": null
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 1
+  }
+}

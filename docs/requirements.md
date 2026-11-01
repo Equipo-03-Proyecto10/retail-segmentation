@@ -179,7 +179,7 @@ The web's matrix does not change.
 |---|---|---|
 | Reads of products (including `GET /v1/products?ids=`), categories, stores, stock levels and channels | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `INVENTORY_PLANNER`, `AUDITOR` | Catalogs: read. Stock follows the catalog (ADR-0010) |
 | Writes of products, categories and store locations | `ADMIN` | Catalogs: full for `ADMIN` only |
-| Reads of customers, preference profiles, segments, segment assignments and recommendations | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR` | Segments and rules: read. Customers follow `segment.read` (ADR-0010, ADR-0023) |
+| Reads of customers, preference profiles, segments, segment assignments, segment migrations and recommendations | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR` | Segments and rules: read. Customers follow `segment.read` (ADR-0010, ADR-0023) |
 | Reads of sales and engagement events (each row names a customer) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR` | Reports: read, narrowed to `segment.read` holders, which keeps `INVENTORY_PLANNER` out of customer data |
 | Engagement summaries (aggregates, no customer) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `INVENTORY_PLANNER`, `AUDITOR` | Reports: read |
 | Reads of check-ins (where a staff member was) | `ADMIN`, `STORE_MANAGER`, `AUDITOR` | New, and narrowed: staff location data |

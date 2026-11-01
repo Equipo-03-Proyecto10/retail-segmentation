@@ -1,0 +1,48 @@
+{
+  "from": "2026-09-14T03:00:00Z",
+  "to": "2026-10-12T03:00:00Z",
+  "migrations": [
+    {
+      "customer_id": "7b3ad781-c5de-4f40-ae50-1fa825ce2b25",
+      "previous_state": "label",
+      "previous_label_code": "LOYAL",
+      "new_state": "label",
+      "new_label_code": "CHAMPION",
+      "movement": "improved",
+      "changed_at": "2026-10-12T03:00:00Z",
+      "cause": "FULL_RUN",
+      "previous_run_id": 40,
+      "new_run_id": 42,
+      "previous_model_version_id": 3,
+      "new_model_version_id": 3,
+      "methodological": false,
+      "responsible_variables": [
+        "recency",
+        "monetary"
+      ],
+      "rank_only": false
+    },
+    {
+      "customer_id": "0c9f6a3e-5d2b-4c8e-9a41-7e3b2d1f8a66",
+      "previous_state": "label",
+      "previous_label_code": "LOYAL",
+      "new_state": "label",
+      "new_label_code": "CHAMPION",
+      "movement": "improved",
+      "changed_at": "2026-10-05T11:40:02Z",
+      "cause": "SALE",
+      "previous_run_id": 40,
+      "new_run_id": 47,
+      "previous_model_version_id": 3,
+      "new_model_version_id": 3,
+      "methodological": false,
+      "responsible_variables": [],
+      "rank_only": true
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 2
+  }
+}

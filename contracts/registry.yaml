@@ -55,10 +55,10 @@ services:
     resources: [sales, channels]
   - name: segments
     port: 5010
-    rule: "A customer has at most one current segment, named by its stable label code, and unassigned states are reported as they are (RN-20, RN-21)"
-    rn: [RN-20, RN-21]
+    rule: "A customer has at most one current segment, named by its stable label code, unassigned states are reported as they are, a migration compares one customer's labels within one model version, and a comparison across versions is marked methodological (RN-20, RN-21, RN-39, RN-59, RN-60)"
+    rn: [RN-20, RN-21, RN-39, RN-59, RN-60]
     wave: core
-    resources: [segments, segment-assignments]
+    resources: [segments, segment-assignments, segment-migrations]
   - name: recommendations
     port: 5011
     rule: "Recommend active, in-stock products not already bought, matching a stated signal, with reasons, or report why nothing qualifies (RN-40)"

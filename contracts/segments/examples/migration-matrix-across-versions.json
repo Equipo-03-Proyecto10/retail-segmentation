@@ -1,0 +1,60 @@
+{
+  "from": "2026-10-12T03:00:00Z",
+  "to": "2026-10-21T03:00:00Z",
+  "from_model_version_id": 3,
+  "to_model_version_id": 4,
+  "methodological": true,
+  "customer_count": 49,
+  "totals": [
+    {
+      "state": "label",
+      "label_code": "CHAMPION",
+      "before_count": 18,
+      "after_count": 11,
+      "entries": 2,
+      "exits": 9
+    },
+    {
+      "state": "label",
+      "label_code": "LOYAL",
+      "before_count": 31,
+      "after_count": 38,
+      "entries": 9,
+      "exits": 2
+    }
+  ],
+  "cells": [
+    {
+      "previous_state": "label",
+      "previous_label_code": "CHAMPION",
+      "new_state": "label",
+      "new_label_code": "CHAMPION",
+      "movement": "unchanged",
+      "customer_count": 9
+    },
+    {
+      "previous_state": "label",
+      "previous_label_code": "CHAMPION",
+      "new_state": "label",
+      "new_label_code": "LOYAL",
+      "movement": "declined",
+      "customer_count": 9
+    },
+    {
+      "previous_state": "label",
+      "previous_label_code": "LOYAL",
+      "new_state": "label",
+      "new_label_code": "CHAMPION",
+      "movement": "improved",
+      "customer_count": 2
+    },
+    {
+      "previous_state": "label",
+      "previous_label_code": "LOYAL",
+      "new_state": "label",
+      "new_label_code": "LOYAL",
+      "movement": "unchanged",
+      "customer_count": 29
+    }
+  ]
+}

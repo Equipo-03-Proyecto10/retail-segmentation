@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SegmentMigrationExplanation xmlns="https://mosaiq.maxthecoder.online/xml/segments/v1"
+        xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <from>2026-09-14T03:00:00Z</from>
+  <to>2026-10-12T03:00:00Z</to>
+  <migration>
+    <customer_id>7b3ad781-c5de-4f40-ae50-1fa825ce2b25</customer_id>
+    <previous_state>label</previous_state>
+    <previous_label_code>LOYAL</previous_label_code>
+    <new_state>label</new_state>
+    <new_label_code>CHAMPION</new_label_code>
+    <movement>improved</movement>
+    <changed_at>2026-10-12T03:00:00Z</changed_at>
+    <cause>FULL_RUN</cause>
+    <previous_run_id>40</previous_run_id>
+    <new_run_id>42</new_run_id>
+    <previous_model_version_id>3</previous_model_version_id>
+    <new_model_version_id>3</new_model_version_id>
+    <methodological>false</methodological>
+    <responsible_variables>recency</responsible_variables>
+    <responsible_variables>monetary</responsible_variables>
+    <rank_only>false</rank_only>
+  </migration>
+  <MigrationMeasure>
+    <variable>recency</variable>
+    <unit>days</unit>
+    <previous_value>41</previous_value>
+    <new_value>9</new_value>
+    <judgement>changed</judgement>
+    <rank_changed>false</rank_changed>
+    <statement>Recency changed: the last purchase was 41 days before the earlier assignment and 9 days before the later one.</statement>
+  </MigrationMeasure>
+  <MigrationMeasure>
+    <variable>frequency</variable>
+    <unit>purchases</unit>
+    <previous_value>8</previous_value>
+    <new_value>8</new_value>
+    <judgement>stable</judgement>
+    <rank_changed>false</rank_changed>
+    <statement>Frequency is stable at 8 purchases.</statement>
+  </MigrationMeasure>
+  <MigrationMeasure>
+    <variable>monetary</variable>
+    <unit>MXN</unit>
+    <previous_value>1200.00</previous_value>
+    <new_value>1560.00</new_value>
+    <judgement>changed</judgement>
+    <rank_changed>false</rank_changed>
+    <statement>Monetary changed from 1200.00 MXN to 1560.00 MXN, more than 10% of the earlier value.</statement>
+  </MigrationMeasure>
+</SegmentMigrationExplanation>

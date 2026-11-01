@@ -1,7 +1,7 @@
 # segments
 
-> **Status:** Implemented (phase 14, core; F14-20, #461). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
-> **One rule:** A customer has at most one current segment, named by its stable label code, and unassigned states are reported as they are (RN-20, RN-21)
+> **Status:** Implemented (phase 14, core; F14-20, #461). Contract extended by F22-14 (#810) for per-version assignments and migrations; the extension is not yet implemented (F22-16, #812). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
+> **One rule:** A customer has at most one current segment, named by its stable label code, unassigned states are reported as they are, a migration compares one customer's labels within one model version, and a comparison across versions is marked methodological (RN-20, RN-21, RN-39, RN-59, RN-60)
 
 ## Summary
 
@@ -16,12 +16,15 @@
 | MongoDB | — |
 | Compose project / image | `mosaiq-segments` / `ghcr.io/equipo-03-proyecto10/mosaiq-segments` |
 | Used by | Android: the current assignment (F17-05). Electron: segments and assignment history (F16-03). |
-| Governing ADRs | [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md), [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md), [ADR-0043](../adr/0043-at-least-ten-microservices-each-implementing-one-business-rule.md) |
+| Governing ADRs | [ADR-0063](../adr/0063-segments-change-on-events-and-on-a-schedule-scored-against-the-published-version.md), [ADR-0064](../adr/0064-a-model-version-is-immutable-and-a-change-of-version-is-never-reported-as-behaviour.md), [ADR-0059](../adr/0059-four-new-services-join-the-fifteen-and-six-capabilities-fold-into-the-rule-they-extend.md), [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md), [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md), [ADR-0043](../adr/0043-at-least-ten-microservices-each-implementing-one-business-rule.md) |
 
 ## Business rule
 
 - Reads the segmentation tables as their declared read owner (E-10); the web's administrator run (RN-05) is their only writer. A segment is identified by its stable label code, never by a run-scoped id.
 - A customer with no open assignment, or whose latest result is unassigned, is reported as exactly that (`no_open_assignment`, `unassigned_result`) and never filled in from elsewhere. Read-rule service (E-08).
+- A migration is one customer's movement between two instants, read from the assignment history and never recomputed: the label held at each instant, the run, the model version and the cause of each side, and the measures judged to have changed (RN-59, RN-60). The version of a run is read from model-registry's published view and is never stored here.
+- A comparison whose two sides were written under different versions, or whose version is unknown, is marked `methodological`, and so is a row whose cause is a change of version. Such a difference may come from the model and is never behaviour (ADR-0064, RN-39).
+- Assignments are applied by `api_segments.apply_assignment_v1`, which this boundary owns and enforces (RN-20, RN-21), and which rfm-engine calls in the same transaction as its profile (ADR-0063).
 
 ## Endpoints
 
@@ -31,6 +34,10 @@
 | GET | `/v1/segments/{label_code}` | One label | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | GET | `/v1/segment-assignments/current?customer_id=` | Label, RFM scores, `since` and `run_id`, or the unassigned state | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | GET | `/v1/segment-assignments` | One customer's history, or one label's members (`customer_id` or `label_code`, `open`, `page`, `size`) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
+| GET | `/v1/segment-assignments/versioned` | Assignment rows with the model version and cause of each (`model_version_id`, `customer_id`, `label_code`, `open`, `page`, `size`) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
+| GET | `/v1/segment-migrations/matrix` | The migration matrix between two instants: totals with entries and exits per state, cells, and whether it is methodological (`from`, `to`) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
+| GET | `/v1/segment-migrations` | Migrations between two instants: a cell's members, a label's entries or exits, with previous and new segment, date, run, version and responsible variables | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
+| GET | `/v1/segment-migrations/explanation?customer_id=` | One customer's migration, measure by measure, from the stored values (`from`, `to`) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 
 Roles follow the [service operation policy](../requirements.md#service-operation-policy-distributed-stage). Meta routes (no token): `GET /health/live`, `GET /health/ready`, `GET /openapi.yaml`, `GET /schema.xsd`.
 
@@ -40,7 +47,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 | Object | Kind | Access | Notes |
 |---|---|---|---|
-| `segment_label`, `segment`, `segment_rule`, `segmentation_run`, `customer_segment_history` | Tables (`public`) | R: SELECT | Only the web's administrator run writes them (E-10) |
+| `segment_label`, `segment`, `segment_rule`, `segmentation_run`, `customer_segment_history` | Tables (`public`) | R: SELECT | The web's administrator run writes them (E-10), and so does `api_segments.apply_assignment_v1` for rfm-engine (ADR-0063) |
 | `segments_events.outbox` | Table (outbox) | SELECT, UPDATE of `relayed_at`, DELETE (7-day purge) | Filled by `definer_segments`; seed-exempt runtime state |
 
 ## Database contracts
@@ -48,6 +55,8 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Direction | Object | Counterpart |
 |---|---|---|
 | Publishes | `api_segments.current_label_v1` | recommendations |
+| Publishes | `api_segments.apply_assignment_v1` | rfm-engine (the only caller) |
+| Consumes | model-registry's published run-version view (F22-10, #805) | model-registry (the model version of each run) |
 | Consumes | `api_customers.customer_ref_v1` | customers (a 404 for an unknown customer) |
 
 ## Events
@@ -55,6 +64,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Direction | Stream | Captured from / consumer group | Effect |
 |---|---|---|---|
 | Produces | `stream:segments.v1.run_recorded` | captured from `segmentation_run` INSERT | Own cache and recommendations' cache |
+| Produces | `stream:segments.v1.assignment_changed` | captured from `customer_segment_history` INSERT of a row that changes the label or unassigned state | recommendations' cache of the customer's label, and analytics-kpis' figures |
 | Consumes | `stream:segments.v1.run_recorded` | group `segments` | Flushes run-scoped cache keys |
 
 ## Redis keys
@@ -74,6 +84,7 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | 404 | `customer_not_found` | The customer is absent from `api_customers.customer_ref_v1`. The unassigned states are 200 answers, not errors |
 | 404 | `segment_not_found` | The `label_code` names no label |
 | 422 | `invalid_query` | `GET /v1/segment-assignments` is not given exactly one of `customer_id` and `label_code`, or `.../current` has no valid `customer_id` |
+| 422 | `invalid_query` | A migration read has no `from` or `to`, a `from` that is not earlier than `to`, an instant in the future, a state and label code that disagree, a cell together with a `direction`, or a `direction` without a `label_code` |
 
 ## Accepted exceptions
 

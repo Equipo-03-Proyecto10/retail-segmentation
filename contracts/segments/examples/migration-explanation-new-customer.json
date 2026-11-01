@@ -1,0 +1,53 @@
+{
+  "from": "2026-10-12T03:00:00Z",
+  "to": "2026-10-21T03:00:00Z",
+  "migration": {
+    "customer_id": "0c9f6a3e-5d2b-4c8e-9a41-7e3b2d1f8a66",
+    "previous_state": "new",
+    "previous_label_code": null,
+    "new_state": "label",
+    "new_label_code": "LOYAL",
+    "movement": "not_ranked",
+    "changed_at": "2026-10-20T02:00:00Z",
+    "cause": "VERSION_CHANGE",
+    "previous_run_id": null,
+    "new_run_id": 52,
+    "previous_model_version_id": null,
+    "new_model_version_id": 4,
+    "methodological": true,
+    "responsible_variables": [],
+    "rank_only": false
+  },
+  "measures": [
+    {
+      "variable": "recency",
+      "unit": "days",
+      "previous_value": null,
+      "new_value": "14",
+      "judgement": "not_compared",
+      "not_compared_reason": "new_customer",
+      "rank_changed": false,
+      "statement": "Recency is not compared: the customer was new at the earlier instant."
+    },
+    {
+      "variable": "frequency",
+      "unit": "purchases",
+      "previous_value": null,
+      "new_value": "3",
+      "judgement": "not_compared",
+      "not_compared_reason": "new_customer",
+      "rank_changed": false,
+      "statement": "Frequency is not compared: the customer was new at the earlier instant."
+    },
+    {
+      "variable": "monetary",
+      "unit": "MXN",
+      "previous_value": null,
+      "new_value": "240.00",
+      "judgement": "not_compared",
+      "not_compared_reason": "new_customer",
+      "rank_changed": false,
+      "statement": "Monetary is not compared: the customer was new at the earlier instant."
+    }
+  ]
+}

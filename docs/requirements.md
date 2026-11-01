@@ -187,6 +187,8 @@ The web's matrix does not change.
 | Check-in reviews and engagement voids | `ADMIN` | Administrative correction |
 | Reads of users and roles | `ADMIN`, `AUDITOR` | Users: full for `ADMIN`, read for `AUDITOR` |
 | Writes of users, password resets of another user, and `POST /v1/administrator-transfers` | `ADMIN` | Users: full |
+| `PUT /v1/store-assignments/{user_id}` | `ADMIN` | Users: full (ADR-0060) |
+| `GET /v1/store-assignments/{user_id}` | `ADMIN` and `AUDITOR` for any user; `SALES_ASSOCIATE`, `STORE_MANAGER`, `LOYALTY_OFFICER` and `COMMERCIAL_SUPERVISOR` for their own id only | Users: read; own (ADR-0060) |
 | `GET /v1/users/me`; `PUT /v1/users/{user_id}/password` for the caller's own id, with the current password | Every authenticated role, `CUSTOMER` included | Users: own |
 | `GET` and `DELETE /v1/sessions/current` | Every authenticated role | — |
 | Reads of campaigns | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Campaigns: read |

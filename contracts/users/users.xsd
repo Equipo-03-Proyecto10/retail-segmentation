@@ -63,6 +63,13 @@
     </xs:sequence>
   </xs:complexType>
 
+  <xs:simpleType name="StoreId">
+    <xs:restriction base="xs:int">
+      <xs:minInclusive value="1"/>
+      <xs:maxInclusive value="32767"/>
+    </xs:restriction>
+  </xs:simpleType>
+
   <xs:complexType name="Users">
     <xs:sequence>
       <xs:element name="User" type="users:User" minOccurs="0" maxOccurs="unbounded"/>
@@ -128,6 +135,19 @@
     </xs:sequence>
   </xs:complexType>
 
+  <xs:complexType name="StoreAssignment">
+    <xs:sequence>
+      <xs:element name="user_id" type="users:Uuid"/>
+      <xs:element name="store_ids" type="users:StoreId" minOccurs="0" maxOccurs="100"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ReplaceStoreAssignmentRequest">
+    <xs:sequence>
+      <xs:element name="store_ids" type="users:StoreId" minOccurs="0" maxOccurs="100"/>
+    </xs:sequence>
+  </xs:complexType>
+
   <xs:element name="User" type="users:User"/>
   <xs:element name="Users" type="users:Users"/>
   <xs:element name="Role" type="users:Role"/>
@@ -137,4 +157,7 @@
   <xs:element name="PasswordChangeRequest" type="users:PasswordChangeRequest"/>
   <xs:element name="AdministratorTransferRequest"
               type="users:AdministratorTransferRequest"/>
+  <xs:element name="StoreAssignment" type="users:StoreAssignment"/>
+  <xs:element name="ReplaceStoreAssignmentRequest"
+              type="users:ReplaceStoreAssignmentRequest"/>
 </xs:schema>

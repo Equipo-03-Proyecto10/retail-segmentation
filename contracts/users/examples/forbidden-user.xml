@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>forbidden_user</code>
+  <message>A floor role may read only its own store assignment.</message>
+  <correlation_id>corr-forbidden-user</correlation_id>
+</Error>

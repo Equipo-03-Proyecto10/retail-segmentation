@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RfmProfile xmlns="https://mosaiq.maxthecoder.online/xml/rfm-engine/v1">
+  <customer_id>2f6c1d90-4a8e-4c3b-9d57-0b1e6a7c8d12</customer_id>
+  <state>unassigned</state>
+  <rule_set_id>3</rule_set_id>
+  <f_count>0</f_count>
+  <m_total>0.00</m_total>
+  <computed_at>2026-10-30T02:00:04Z</computed_at>
+</RfmProfile>

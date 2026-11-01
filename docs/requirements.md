@@ -191,6 +191,10 @@ The web's matrix does not change.
 | `GET` and `DELETE /v1/sessions/current` | Every authenticated role | — |
 | Reads of campaigns | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Campaigns: read |
 | Writes and transitions of campaigns | `ADMIN`, `MARKETING` | Campaigns: full |
+| Reads of RFM profiles (`GET /v1/rfm-profiles`, `GET /v1/rfm-profiles/{customer_id}`) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR` | Segments and rules: read. A profile names a customer, so it follows `segment.read` (ADR-0010, ADR-0023) |
+| Reads of RFM rule sets | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Segments and rules: read. A rule set is configuration with no customer data |
+| Reads of RFM recalculations and their differences | `ADMIN`, `ANALYST`, `AUDITOR` | Reports: read, narrowed to the roles that verify the model; a difference names a customer |
+| `POST /v1/rfm-rule-sets`, `POST /v1/rfm-recalculations` | `ADMIN` | Segment run: run (RN-05); a rule set changes what every report says |
 | `GET /v1/audit-entries` | `ADMIN`, `AUDITOR` | Audit log: read |
 | `POST /v1/sessions`, `POST /v1/sessions/refresh`, `GET /v1/jwks.json`, meta routes | No token | — |
 

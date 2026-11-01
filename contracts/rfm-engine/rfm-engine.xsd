@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:rfm="https://mosaiq.maxthecoder.online/xml/rfm-engine/v1"
+           xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1"
+           targetNamespace="https://mosaiq.maxthecoder.online/xml/rfm-engine/v1"
+           elementFormDefault="qualified">
+  <xs:import namespace="https://mosaiq.maxthecoder.online/xml/common/v1"
+             schemaLocation="../common/v1/common.xsd"/>
+
+  <xs:simpleType name="Uuid">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Score">
+    <xs:restriction base="xs:integer">
+      <xs:minInclusive value="1"/>
+      <xs:maxInclusive value="5"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- A decimal string with exactly two places, as everywhere in MOSAIQ. -->
+  <xs:simpleType name="Money">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9]+\.[0-9]{2}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="WindowDays">
+    <xs:restriction base="xs:integer">
+      <xs:minInclusive value="1"/>
+      <xs:maxInclusive value="3650"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="ProfileState">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="scored"/>
+      <xs:enumeration value="unassigned"/>
+      <xs:enumeration value="pending"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="RecalculationState">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="RUNNING"/>
+      <xs:enumeration value="COMPLETED"/>
+      <xs:enumeration value="FAILED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="RecalculationTrigger">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="SCHEDULE"/>
+      <xs:enumeration value="ON_DEMAND"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="RecalculationOutcome">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="EQUIVALENT"/>
+      <xs:enumeration value="DIFFERENT"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="DifferenceField">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="state"/>
+      <xs:enumeration value="r_days"/>
+      <xs:enumeration value="f_count"/>
+      <xs:enumeration value="m_total"/>
+      <xs:enumeration value="r_score"/>
+      <xs:enumeration value="f_score"/>
+      <xs:enumeration value="m_score"/>
+      <xs:enumeration value="label_code"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- A pending customer has only customer_id and state. An unassigned
+       customer has rule_set_id, f_count 0, m_total 0.00 and computed_at, and
+       no recency, score, label, via_fallback or next_change_at. A scored
+       customer has every element. -->
+  <xs:complexType name="RfmProfile">
+    <xs:sequence>
+      <xs:element name="customer_id" type="rfm:Uuid"/>
+      <xs:element name="state" type="rfm:ProfileState"/>
+      <xs:element name="rule_set_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="r_days" type="xs:nonNegativeInteger" minOccurs="0"/>
+      <xs:element name="f_count" type="xs:nonNegativeInteger" minOccurs="0"/>
+      <xs:element name="m_total" type="rfm:Money" minOccurs="0"/>
+      <xs:element name="r_score" type="rfm:Score" minOccurs="0"/>
+      <xs:element name="f_score" type="rfm:Score" minOccurs="0"/>
+      <xs:element name="m_score" type="rfm:Score" minOccurs="0"/>
+      <xs:element name="label_code" type="xs:string" minOccurs="0"/>
+      <xs:element name="via_fallback" type="xs:boolean" minOccurs="0"/>
+      <xs:element name="computed_at" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="next_change_at" type="xs:dateTime" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="RfmProfiles">
+    <xs:sequence>
+      <xs:element name="RfmProfile" type="rfm:RfmProfile"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- One band maps a box of scores to a label. Bands of one rule set do not
+       overlap, and each minimum is at most its maximum; the schema cannot say
+       so, and the service answers 422 invalid_body when they do. -->
+  <xs:complexType name="Band">
+    <xs:sequence>
+      <xs:element name="label_code" type="xs:string"/>
+      <xs:element name="r_min" type="rfm:Score"/>
+      <xs:element name="r_max" type="rfm:Score"/>
+      <xs:element name="f_min" type="rfm:Score"/>
+      <xs:element name="f_max" type="rfm:Score"/>
+      <xs:element name="m_min" type="rfm:Score"/>
+      <xs:element name="m_max" type="rfm:Score"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Each boundary list holds four cut-points, in the order of the scores
+       5, 4, 3 and 2. created_by is omitted for a rule set the system seeded. -->
+  <xs:complexType name="RfmRuleSet">
+    <xs:sequence>
+      <xs:element name="rule_set_id" type="xs:long"/>
+      <xs:element name="name" type="xs:string"/>
+      <xs:element name="window_days" type="rfm:WindowDays"/>
+      <xs:element name="recency_boundaries" type="xs:nonNegativeInteger"
+                  minOccurs="4" maxOccurs="4"/>
+      <xs:element name="frequency_boundaries" type="xs:positiveInteger"
+                  minOccurs="4" maxOccurs="4"/>
+      <xs:element name="monetary_boundaries" type="rfm:Money"
+                  minOccurs="4" maxOccurs="4"/>
+      <xs:element name="bands" type="rfm:Band" maxOccurs="unbounded"/>
+      <xs:element name="fallback_label_code" type="xs:string"/>
+      <xs:element name="published" type="xs:boolean"/>
+      <xs:element name="created_at" type="xs:dateTime"/>
+      <xs:element name="created_by" type="rfm:Uuid" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="RfmRuleSets">
+    <xs:sequence>
+      <xs:element name="RfmRuleSet" type="rfm:RfmRuleSet"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="RfmRuleSetRequest">
+    <xs:sequence>
+      <xs:element name="name" type="rfm:RuleSetName"/>
+      <xs:element name="window_days" type="rfm:WindowDays"/>
+      <xs:element name="recency_boundaries" type="xs:nonNegativeInteger"
+                  minOccurs="4" maxOccurs="4"/>
+      <xs:element name="frequency_boundaries" type="xs:positiveInteger"
+                  minOccurs="4" maxOccurs="4"/>
+      <xs:element name="monetary_boundaries" type="rfm:Money"
+                  minOccurs="4" maxOccurs="4"/>
+      <xs:element name="bands" type="rfm:Band" maxOccurs="unbounded"/>
+      <xs:element name="fallback_label_code" type="xs:string"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:simpleType name="RuleSetName">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:maxLength value="80"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- customers_checked, customers_different and outcome are omitted until
+       the recalculation completes; finished_at until it ends; started_by for
+       a scheduled run; failure_code unless it failed. -->
+  <xs:complexType name="RfmRecalculation">
+    <xs:sequence>
+      <xs:element name="recalculation_id" type="xs:long"/>
+      <xs:element name="trigger" type="rfm:RecalculationTrigger"/>
+      <xs:element name="state" type="rfm:RecalculationState"/>
+      <xs:element name="rule_set_id" type="xs:long"/>
+      <xs:element name="as_of" type="xs:dateTime"/>
+      <xs:element name="started_at" type="xs:dateTime"/>
+      <xs:element name="finished_at" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="started_by" type="rfm:Uuid" minOccurs="0"/>
+      <xs:element name="customers_checked" type="xs:nonNegativeInteger"
+                  minOccurs="0"/>
+      <xs:element name="customers_different" type="xs:nonNegativeInteger"
+                  minOccurs="0"/>
+      <xs:element name="outcome" type="rfm:RecalculationOutcome" minOccurs="0"/>
+      <xs:element name="failure_code" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="RfmRecalculations">
+    <xs:sequence>
+      <xs:element name="RfmRecalculation" type="rfm:RfmRecalculation"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- An empty element asks for the published rule set. -->
+  <xs:complexType name="RfmRecalculationRequest">
+    <xs:sequence>
+      <xs:element name="rule_set_id" type="xs:long" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- The raw measures and the label two computations are compared on. -->
+  <xs:complexType name="RfmValues">
+    <xs:sequence>
+      <xs:element name="state" type="rfm:ProfileState"/>
+      <xs:element name="r_days" type="xs:nonNegativeInteger" minOccurs="0"/>
+      <xs:element name="f_count" type="xs:nonNegativeInteger" minOccurs="0"/>
+      <xs:element name="m_total" type="rfm:Money" minOccurs="0"/>
+      <xs:element name="r_score" type="rfm:Score" minOccurs="0"/>
+      <xs:element name="f_score" type="rfm:Score" minOccurs="0"/>
+      <xs:element name="m_score" type="rfm:Score" minOccurs="0"/>
+      <xs:element name="label_code" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="RfmRecalculationDifference">
+    <xs:sequence>
+      <xs:element name="customer_id" type="rfm:Uuid"/>
+      <xs:element name="fields" type="rfm:DifferenceField"
+                  maxOccurs="unbounded"/>
+      <xs:element name="incremental" type="rfm:RfmValues"/>
+      <xs:element name="recomputed" type="rfm:RfmValues"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="RfmRecalculationDifferences">
+    <xs:sequence>
+      <xs:element name="RfmRecalculationDifference"
+                  type="rfm:RfmRecalculationDifference"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name="RfmProfile" type="rfm:RfmProfile"/>
+  <xs:element name="RfmProfiles" type="rfm:RfmProfiles"/>
+  <xs:element name="RfmRuleSet" type="rfm:RfmRuleSet"/>
+  <xs:element name="RfmRuleSets" type="rfm:RfmRuleSets"/>
+  <xs:element name="RfmRuleSetRequest" type="rfm:RfmRuleSetRequest"/>
+  <xs:element name="RfmRecalculation" type="rfm:RfmRecalculation"/>
+  <xs:element name="RfmRecalculations" type="rfm:RfmRecalculations"/>
+  <xs:element name="RfmRecalculationRequest" type="rfm:RfmRecalculationRequest"/>
+  <xs:element name="RfmRecalculationDifferences"
+              type="rfm:RfmRecalculationDifferences"/>
+</xs:schema>

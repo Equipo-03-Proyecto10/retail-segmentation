@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RfmProfiles xmlns="https://mosaiq.maxthecoder.online/xml/rfm-engine/v1"
+        xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <RfmProfile>
+    <customer_id>7b3ad781-c5de-4f40-ae50-1fa825ce2b25</customer_id>
+    <state>scored</state>
+    <rule_set_id>3</rule_set_id>
+    <r_days>30</r_days>
+    <f_count>9</f_count>
+    <m_total>842.50</m_total>
+    <r_score>4</r_score>
+    <f_score>5</f_score>
+    <m_score>4</m_score>
+    <label_code>LOYAL</label_code>
+    <via_fallback>false</via_fallback>
+    <computed_at>2026-10-30T14:22:05Z</computed_at>
+    <next_change_at>2026-11-05T08:10:00Z</next_change_at>
+  </RfmProfile>
+  <RfmProfile>
+    <customer_id>2f6c1d90-4a8e-4c3b-9d57-0b1e6a7c8d12</customer_id>
+    <state>unassigned</state>
+    <rule_set_id>3</rule_set_id>
+    <f_count>0</f_count>
+    <m_total>0.00</m_total>
+    <computed_at>2026-10-30T02:00:04Z</computed_at>
+  </RfmProfile>
+  <RfmProfile>
+    <customer_id>9c41e7b2-5d36-4f08-a1b9-3e2d7c6f5a40</customer_id>
+    <state>pending</state>
+  </RfmProfile>
+  <common:PageInfo>
+    <common:page>1</common:page>
+    <common:size>20</common:size>
+    <common:total>3</common:total>
+  </common:PageInfo>
+</RfmProfiles>

@@ -23,6 +23,7 @@ The design is governed by ADR-0034 to ADR-0046. Every service implements exactly
 | [check-ins](./check-ins.md) | Rust (axum) | 5013 | core | A check-in is verified only within the store's geofence; overrides are append-only reviews | RN-56 |
 | [campaigns](./campaigns.md) | Flask | 5014 | second | A campaign moves only along the allowed states, is edited only in DRAFT, and is activated only before it ends, with its experiments ready | RN-15, RN-16, RN-22, RN-24 (activation), RN-31, RN-32, RN-49 (activation) |
 | [audit-trail](./audit-trail.md) | Rust (axum) | 5015 | second | An append-only, attributed, credential-free audit readable by ADMIN and AUDITOR only | RN-28, RN-29, RN-30 |
+| [rfm-engine](./rfm-engine.md) | Flask | 5016 | third | A customer's R, F and M follow their net purchases under one rule-set version, change only for the customers an event touched, and equal a full recalculation | RN-65 |
 
 The full one-sentence rule of each service is in its sheet and in the registry of [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md).
 
@@ -49,7 +50,7 @@ The design accepts a small number of deliberate deviations from the strict readi
 |---|---|---|
 | [E-01](#e-01--sales-serves-the-read-only-channel-vocabulary) | sales serves the read-only channel vocabulary | [sales](./sales.md) |
 | [E-02](#e-02--users-serves-the-read-only-role-vocabulary) | users serves the read-only role vocabulary | [users](./users.md) |
-| [E-03](#e-03--a-foreign-id-keys-a-resource-that-is-its-own-identity) | a foreign id keys a resource that is its own identity | [customer-preferences](./customer-preferences.md), [stock](./stock.md) |
+| [E-03](#e-03--a-foreign-id-keys-a-resource-that-is-its-own-identity) | a foreign id keys a resource that is its own identity | [customer-preferences](./customer-preferences.md), [stock](./stock.md), [rfm-engine](./rfm-engine.md) |
 | [E-04](#e-04--the-public-key-is-served-as-json-only) | the public key is served as JSON only | [auth](./auth.md) |
 | [E-05](#e-05--one-synchronous-cross-boundary-call-inside-the-database) | one synchronous cross-boundary call, inside the database | [stock](./stock.md), [sales](./sales.md) |
 | [E-06](#e-06--a-recommendation-carries-the-stock-figure-it-used) | a recommendation carries the stock figure it used | [recommendations](./recommendations.md) |
@@ -88,10 +89,10 @@ The design accepts a small number of deliberate deviations from the strict readi
 
 ### E-03 — a foreign id keys a resource that is its own identity
 
-- **What:** Two paths carry another boundary's id: `/v1/preference-profiles/{customer_id}` and `/v1/stock-levels/{store_id}/{product_id}`. Strictly, "foreign ids are query or body fields".
-- **Why it is acceptable:** A preference profile exists once per customer, and a stock level is one row per store and product. The id is the resource's own identity, not a reference to another service's resource, so a query parameter would only hide a key.
-- **Guard:** No path may contain another service's registered resource name, as whole path segments. The registry check enforces it. The remaining half, "the id is the resource's identity", is a review call, and only these two paths use it.
-- **Services:** [customer-preferences](./customer-preferences.md), [stock](./stock.md)
+- **What:** Three paths carry another boundary's id: `/v1/preference-profiles/{customer_id}`, `/v1/stock-levels/{store_id}/{product_id}` and `/v1/rfm-profiles/{customer_id}`. Strictly, "foreign ids are query or body fields".
+- **Why it is acceptable:** A preference profile and an RFM profile each exist once per customer, and a stock level is one row per store and product. The id is the resource's own identity, not a reference to another service's resource, so a query parameter would only hide a key.
+- **Guard:** No path may contain another service's registered resource name, as whole path segments. The registry check enforces it. The remaining half, "the id is the resource's identity", is a review call, and only these three paths use it.
+- **Services:** [customer-preferences](./customer-preferences.md), [stock](./stock.md), [rfm-engine](./rfm-engine.md)
 - **Decided in:** [ADR-0035](../adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md) (Decision (path rule))
 
 ### E-04 — the public key is served as JSON only

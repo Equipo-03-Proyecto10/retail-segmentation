@@ -1,0 +1,6 @@
+{
+  "code": "rule_set_name_taken",
+  "message": "A rule set with this name already exists.",
+  "correlation_id": "corr-rule-set-name-taken",
+  "details": []
+}

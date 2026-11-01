@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RfmRuleSetRequest xmlns="https://mosaiq.maxthecoder.online/xml/rfm-engine/v1">
+  <name>Short boundaries</name>
+  <window_days>180</window_days>
+  <recency_boundaries>14</recency_boundaries>
+  <recency_boundaries>35</recency_boundaries>
+  <recency_boundaries>70</recency_boundaries>
+  <frequency_boundaries>8</frequency_boundaries>
+  <frequency_boundaries>5</frequency_boundaries>
+  <frequency_boundaries>3</frequency_boundaries>
+  <frequency_boundaries>2</frequency_boundaries>
+  <monetary_boundaries>1200.00</monetary_boundaries>
+  <monetary_boundaries>800.00</monetary_boundaries>
+  <monetary_boundaries>450.00</monetary_boundaries>
+  <monetary_boundaries>200.00</monetary_boundaries>
+  <bands>
+    <label_code>LOST</label_code>
+    <r_min>1</r_min>
+    <r_max>5</r_max>
+    <f_min>1</f_min>
+    <f_max>5</f_max>
+    <m_min>1</m_min>
+    <m_max>5</m_max>
+  </bands>
+  <fallback_label_code>LOST</fallback_label_code>
+</RfmRuleSetRequest>

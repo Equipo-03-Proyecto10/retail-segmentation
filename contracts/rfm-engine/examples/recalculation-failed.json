@@ -1,0 +1,14 @@
+{
+  "recalculation_id": 15,
+  "trigger": "SCHEDULE",
+  "state": "FAILED",
+  "rule_set_id": 3,
+  "as_of": "2026-11-01T02:30:00Z",
+  "started_at": "2026-11-01T02:30:00Z",
+  "finished_at": "2026-11-01T02:30:09Z",
+  "started_by": null,
+  "customers_checked": null,
+  "customers_different": null,
+  "outcome": null,
+  "failure_code": "source_unavailable"
+}

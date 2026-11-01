@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<UpdateProductDetailsRequest xmlns="https://mosaiq.maxthecoder.online/xml/products/v1">
+  <photo_url>https://mosaiq.maxthecoder.online/uploads/products/x.webp</photo_url>
+</UpdateProductDetailsRequest>

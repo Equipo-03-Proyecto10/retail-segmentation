@@ -1256,6 +1256,28 @@ never updated or deleted.
 `checkins.store_check_in` keeps the computed reason, and
 `checkins.check_in_review` is insert-only for `svc_checkins`. · #398
 
+### RN-65 — A customer's R, F and M are a function of their net purchases under one rule-set version, change only for the customers an event touched, and equal a full recalculation
+A customer's raw recency, frequency and monetary total, their scores and their
+label are computed from their accepted purchases net of reversals
+([ADR-0062](adr/0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md)),
+in the rule set's window ending at the instant they are processed, scored against the
+boundaries that rule set froze and never against the population. A sale, a
+reversal, the passing of time, a published version or a verification recomputes
+the customer from those purchases, never from a delta, so replaying or reordering
+events cannot change a result. Only the customers an event touched, or whose
+`next_change_at` has passed, are recomputed. A full recomputation of the same rule
+set at the same instant gives every customer the same raw R, F and M and the same
+label as the profile held incrementally, and a verification reports each customer
+for whom it does not. A customer with no net purchase in the window is unassigned
+(RN-21).
+
+**Enforced:** rfm-engine (planned), ADR-0059 and
+[ADR-0063](adr/0063-segments-change-on-events-and-on-a-schedule-scored-against-the-published-version.md) —
+`rfm.customer_profile` is written only by `svc_rfm`, recomputing the touched
+customer from the net purchase view; `next_change_at` is an indexed column the
+daily pass selects on; `POST /v1/rfm-recalculations` and the weekly pass compare
+every customer with a recomputation and record the difference. · #743
+
 ---
 
 ## Where the gaps are
@@ -1276,7 +1298,8 @@ service's implementation story in Phase 14 (epic #399): RN-52 on auth-service,
 RN-53 on stores-service, RN-54 on customer-preferences-service, RN-55 on
 engagement-service and RN-56 on check-ins-service. RN-57 belongs to the
 experiment dashboard; RN-58 to RN-60 uniquely identify the K-means,
-migration-matrix and migration-explanation rules.
+migration-matrix and migration-explanation rules. RN-65 belongs to rfm-engine
+(#743) and waits on its implementation story, F22-05 (#779).
 
 RN-01 was the one to watch — a hard rule in `AGENTS.md` and a success criterion
 in [`scope.md`](scope.md) §7 that held only because the seed happened to contain

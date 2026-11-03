@@ -1,0 +1,11 @@
+{
+  "code": "invalid_body",
+  "message": "Each band must be ordered and no two bands may overlap.",
+  "correlation_id": "corr-invalid-body",
+  "details": [
+    {
+      "field": "bands",
+      "code": "bands_overlap"
+    }
+  ]
+}

@@ -89,3 +89,9 @@ services:
     rn: [RN-28, RN-29, RN-30]
     wave: second
     resources: [audit-entries]
+  - name: rfm-engine
+    port: 5016
+    rule: "A customer's R, F and M are a function of their accepted, unreversed purchases under one rule-set version, change only for the customers an event touched, and equal a full recalculation of that version at the same instant (RN-65)"
+    rn: [RN-65]
+    wave: third
+    resources: [rfm-profiles, rfm-rule-sets, rfm-recalculations]

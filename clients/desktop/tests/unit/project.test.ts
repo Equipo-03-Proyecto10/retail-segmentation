@@ -1,8 +1,9 @@
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 import { loadSettings } from '../../src/main/settings';
 import { bundle } from '../support/fake';
 
@@ -67,7 +68,8 @@ describe('settings', () => {
 
 describe('bundle-contracts', () => {
   it('bundles every registered service with its roles', () => {
-    expect(bundle.services).toHaveLength(16);
+    const registered = parse(readFileSync(join(real, 'registry.yaml'), 'utf8')).services;
+    expect(bundle.services).toHaveLength(registered.length);
     expect(bundle.skipped).toEqual([]);
     expect(Object.keys(bundle.schemas)).toContain('https://mosaiq.maxthecoder.online/xml/common/v1');
     expect(bundle.operations.find((o) => o.operationId === 'createSession')?.roles).toBeNull();

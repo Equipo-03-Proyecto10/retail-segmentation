@@ -223,6 +223,7 @@ paths:
       description: >-
         Returns the store's operating status. A store whose status was never written is `OPEN` with a null `updated_at`.
       operationId: getStoreStatus
+      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -271,6 +272,7 @@ paths:
         Replaces the operating status. `OPEN` lets the store sell, `TEMPORARILY_CLOSED` and `CLOSED` do not. This status is separate from the directory's `is_active` flag, which only the web writes. Only ADMIN may write. The operation is idempotent and answers the
         state it stored.
       operationId: putStoreStatus
+      x-mosaiq-status: planned
       x-mosaiq-roles: [ADMIN]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
@@ -336,6 +338,7 @@ paths:
       description: >-
         Returns the weekly opening hours. A store whose hours were never written has no intervals and a null `updated_at`.
       operationId: getStoreHours
+      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -384,6 +387,7 @@ paths:
         Replaces the whole weekly schedule. A day absent from `intervals` is a closed day, a day appears at most once, and `closes_at` is later than `opens_at` on the same day (no overnight interval). A violation is 422 `invalid_body` with the field and one of `duplicate_day`, `closes_before_opens` or `out_of_range`. Only ADMIN may write. The operation is idempotent and answers the
         state it stored.
       operationId: putStoreHours
+      x-mosaiq-status: planned
       x-mosaiq-roles: [ADMIN]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
@@ -449,6 +453,7 @@ paths:
       description: >-
         Returns the set of channel ids the store enables. Channel ids are sales' vocabulary and are only referenced here; this contract serves no channel resource. A store whose set was never written enables none.
       operationId: getStoreChannels
+      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -497,6 +502,7 @@ paths:
         Replaces the whole set of enabled channel ids atomically. An empty set is valid. An id that does not exist is 422 `invalid_body` with detail code `unknown_channel` on `channel_ids`; a repeated id is `duplicate_channel`. Only ADMIN may write. The operation is idempotent and answers the
         state it stored.
       operationId: putStoreChannels
+      x-mosaiq-status: planned
       x-mosaiq-roles: [ADMIN]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
@@ -562,6 +568,7 @@ paths:
       description: >-
         Returns the store's commercial rules. Exactly one rule exists: `max_discount_percent`, the largest discount the store allows on a sale line. It is null until first set, which means the store imposes no cap of its own.
       operationId: getStoreCommercialRules
+      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -610,6 +617,7 @@ paths:
         Replaces the commercial rules. `max_discount_percent` is a two-decimal string from `0.00` (no discount allowed) to `100.00` (no store cap). Sales enforces it; this service only stores it. Only ADMIN may write. The operation is idempotent and answers the
         state it stored.
       operationId: putStoreCommercialRules
+      x-mosaiq-status: planned
       x-mosaiq-roles: [ADMIN]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'

@@ -786,7 +786,6 @@ paths:
       - Meta
       summary: Get the engagement v2 XML Schema
       operationId: getSchemaV2
-      x-mosaiq-status: planned
       security: []
       parameters:
       - $ref: '#/components/parameters/CorrelationId'

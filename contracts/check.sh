@@ -160,6 +160,13 @@ for entry in entries:
                 continue
             # Token-free operations say security: []; every other operation is
             # protected and must make its local authorization policy visible.
+            # ADR-0073: the only status is "planned", an operation published
+            # ahead of its implementation and skipped by the conformance suite.
+            status = operation.get("x-mosaiq-status")
+            if status is not None and status != "planned":
+                errors.append(
+                    f"{openapi}: {path} {method}: x-mosaiq-status must be planned"
+                )
             if operation.get("security") != [] and operation.get("x-mosaiq-roles") is None:
                 errors.append(f"{openapi}: {path} {method}: missing x-mosaiq-roles")
 

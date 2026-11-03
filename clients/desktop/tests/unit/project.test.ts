@@ -67,7 +67,7 @@ describe('settings', () => {
 
 describe('bundle-contracts', () => {
   it('bundles every registered service with its roles', () => {
-    expect(bundle.services).toHaveLength(15);
+    expect(bundle.services).toHaveLength(16);
     expect(bundle.skipped).toEqual([]);
     expect(Object.keys(bundle.schemas)).toContain('https://mosaiq.maxthecoder.online/xml/common/v1');
     expect(bundle.operations.find((o) => o.operationId === 'createSession')?.roles).toBeNull();

@@ -307,6 +307,18 @@ for service in "${service_names[@]}"; do
       fail "XML response changed in v1: $example"
     fi
   done
+  # Renaming or dropping a v1 root leaves its old response with no element to
+  # validate against, so every response the base published must still validate
+  # against the head XSD.
+  for example in "$base_tree"/contracts/"$service"/examples/*.xml; do
+    [[ -e $example ]] || continue
+    [[ $example == *.invalid.xml || $example == *.request.xml ]] && continue
+    if ! xmllint --noout --nonet --schema "$head_xsd" "$example" \
+      >/dev/null 2>&1; then
+      relative=${example#"$base_tree/"}
+      fail "XML response root removed or changed in v1: $relative"
+    fi
+  done
   for example in "$base_tree"/contracts/"$service"/examples/*.request.xml; do
     if ! xmllint --noout --nonet --schema "$head_xsd" "$example" \
       >/dev/null 2>&1; then

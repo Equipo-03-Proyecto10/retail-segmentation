@@ -311,6 +311,32 @@ def test_a_protected_operation_without_roles_fails(tmp_path: Path) -> None:
     )
 
 
+def _mark(repo: Path, status: str) -> None:
+    _replace(
+        repo / "contracts/alpha/openapi.yaml",
+        "      x-mosaiq-roles: [ADMIN]\n",
+        f"      x-mosaiq-roles: [ADMIN]\n      x-mosaiq-status: {status}\n",
+        count=1,
+    )
+    _bump_contract(repo)
+    _commit(repo, "mark an operation")
+
+
+def test_an_unknown_operation_status_fails(tmp_path: Path) -> None:
+    repo, base = _repository(tmp_path)
+    _mark(repo, "later")
+
+    _assert_fails(_run(repo, base), "x-mosaiq-status must be planned")
+
+
+def test_a_planned_operation_passes(tmp_path: Path) -> None:
+    repo, base = _repository(tmp_path)
+    _mark(repo, "planned")
+
+    result = _run(repo, base)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_whole_segment_matching_allows_preference_subresources(
     tmp_path: Path,
 ) -> None:

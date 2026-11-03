@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PutCampaignAudienceRequest xmlns="https://mosaiq.maxthecoder.online/xml/campaigns/v1">
+  <max_customers>5000</max_customers>
+</PutCampaignAudienceRequest>

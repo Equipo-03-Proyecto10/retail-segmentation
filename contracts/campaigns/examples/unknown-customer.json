@@ -1,0 +1,11 @@
+{
+  "code": "unknown_customer",
+  "message": "A customer id is not in the customer reference.",
+  "correlation_id": "corr-exclusions-422b",
+  "details": [
+    {
+      "field": "customer_ids",
+      "code": "unknown_customer"
+    }
+  ]
+}

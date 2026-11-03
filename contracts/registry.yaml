@@ -82,7 +82,7 @@ services:
     rule: "A campaign moves only DRAFT→ACTIVE/CANCELLED and ACTIVE→FINISHED/CANCELLED, is edited only in DRAFT, never ends before it starts, and is activated only before it has ended and while every attached experiment is ready (RN-15, RN-16, RN-22, RN-24 (activation), RN-31, RN-32, RN-49 (activation))"
     rn: [RN-15, RN-16, RN-22, RN-24, RN-31, RN-32, RN-49]
     wave: second
-    resources: [campaigns]
+    resources: [campaigns, promotions]
   - name: audit-trail
     port: 5015
     rule: "The audit trail is append-only, attributed, free of credentials, and readable by ADMIN and AUDITOR only (RN-28, RN-29, RN-30)"

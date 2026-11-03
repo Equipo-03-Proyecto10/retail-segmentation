@@ -73,8 +73,170 @@
     </xs:sequence>
   </xs:complexType>
 
+  <xs:simpleType name="CardCode">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9A-HJKMNP-TV-Z]{26}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="LoyaltyCardStatus">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="ACTIVE"/>
+      <xs:enumeration value="REVOKED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="RevocationReason">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="LOST"/>
+      <xs:enumeration value="STOLEN"/>
+      <xs:enumeration value="REPLACED"/>
+      <xs:enumeration value="CUSTOMER_REQUEST"/>
+      <xs:enumeration value="OTHER"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="LoyaltyState">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="NONE"/>
+      <xs:enumeration value="ACTIVE"/>
+      <xs:enumeration value="REVOKED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="SegmentState">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="assigned"/>
+      <xs:enumeration value="unassigned_result"/>
+      <xs:enumeration value="no_open_assignment"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="RfmState">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="scored"/>
+      <xs:enumeration value="unassigned"/>
+      <xs:enumeration value="pending"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Code">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[A-Za-z][A-Za-z0-9_]{0,39}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Score">
+    <xs:restriction base="xs:short">
+      <xs:minInclusive value="1"/>
+      <xs:maxInclusive value="5"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="LoyaltyCard">
+    <xs:sequence>
+      <xs:element name="card_id" type="cus:Uuid"/>
+      <xs:element name="customer_id" type="cus:Uuid"/>
+      <xs:element name="code" type="cus:CardCode"/>
+      <xs:element name="status" type="cus:LoyaltyCardStatus"/>
+      <xs:element name="issued_at" type="xs:dateTime"/>
+      <xs:element name="issued_by" type="cus:Uuid"/>
+      <xs:element name="revoked_at" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="revoked_by" type="cus:Uuid" minOccurs="0"/>
+      <xs:element name="revocation_reason" type="cus:RevocationReason" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="LoyaltyCards">
+    <xs:sequence>
+      <xs:element name="LoyaltyCard" type="cus:LoyaltyCard" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="IssueLoyaltyCardRequest">
+    <xs:sequence>
+      <xs:element name="customer_id" type="cus:Uuid"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="RevokeLoyaltyCardRequest">
+    <xs:sequence>
+      <xs:element name="reason" type="cus:RevocationReason"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="LookupLoyaltyCardRequest">
+    <xs:sequence>
+      <xs:element name="code" type="cus:CardCode"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="LoyaltyCardLookup">
+    <xs:sequence>
+      <xs:element name="card_id" type="cus:Uuid"/>
+      <xs:element name="customer_id" type="cus:Uuid"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ProfileSegment">
+    <xs:sequence>
+      <xs:element name="state" type="cus:SegmentState"/>
+      <xs:element name="label_code" type="cus:Code" minOccurs="0"/>
+      <xs:element name="since" type="xs:dateTime" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ProfileRfm">
+    <xs:sequence>
+      <xs:element name="state" type="cus:RfmState"/>
+      <xs:element name="r_score" type="cus:Score" minOccurs="0"/>
+      <xs:element name="f_score" type="cus:Score" minOccurs="0"/>
+      <xs:element name="m_score" type="cus:Score" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ProfileConsent">
+    <xs:sequence>
+      <xs:element name="state" type="cus:Code"/>
+      <xs:element name="recorded_at" type="xs:dateTime" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Every element a role may not read is absent, never empty. -->
+  <xs:complexType name="PermittedProfile">
+    <xs:sequence>
+      <xs:element name="customer_id" type="cus:Uuid"/>
+      <xs:element name="name" type="cus:Name"/>
+      <xs:element name="loyalty_state" type="cus:LoyaltyState"/>
+      <xs:element name="email" type="cus:Email" minOccurs="0"/>
+      <xs:element name="phone" type="cus:Phone" minOccurs="0"/>
+      <xs:element name="segment" type="cus:ProfileSegment"/>
+      <xs:element name="rfm" type="cus:ProfileRfm" minOccurs="0"/>
+      <xs:element name="interest_category_ids" type="xs:short" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="restrictions" type="cus:Code" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="preferred_channel_ids" type="cus:ChannelId" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="consent" type="cus:ProfileConsent" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="PermittedProfiles">
+    <xs:sequence>
+      <xs:element name="PermittedProfile" type="cus:PermittedProfile" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
   <xs:element name="Customer" type="cus:Customer"/>
   <xs:element name="Customers" type="cus:Customers"/>
   <xs:element name="RegisterCustomerRequest" type="cus:RegisterCustomerRequest"/>
   <xs:element name="CorrectCustomerRequest" type="cus:CorrectCustomerRequest"/>
+  <xs:element name="LoyaltyCard" type="cus:LoyaltyCard"/>
+  <xs:element name="LoyaltyCards" type="cus:LoyaltyCards"/>
+  <xs:element name="IssueLoyaltyCardRequest" type="cus:IssueLoyaltyCardRequest"/>
+  <xs:element name="RevokeLoyaltyCardRequest" type="cus:RevokeLoyaltyCardRequest"/>
+  <xs:element name="LookupLoyaltyCardRequest" type="cus:LookupLoyaltyCardRequest"/>
+  <xs:element name="LoyaltyCardLookup" type="cus:LoyaltyCardLookup"/>
+  <xs:element name="PermittedProfile" type="cus:PermittedProfile"/>
+  <xs:element name="PermittedProfiles" type="cus:PermittedProfiles"/>
 </xs:schema>

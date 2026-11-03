@@ -31,8 +31,29 @@
 | GET | `/v1/customers/{customer_id}` | One customer | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | POST | `/v1/customers` | Register a customer | ADMIN, STORE_MANAGER |
 | PATCH | `/v1/customers/{customer_id}` | Correct a customer's data | ADMIN, STORE_MANAGER |
+| POST | `/v1/loyalty-cards` | Issue a loyalty card (an opaque code, no personal data) | ADMIN, LOYALTY_OFFICER |
+| GET | `/v1/loyalty-cards` | List one customer's cards (`customer_id` required) | ADMIN, LOYALTY_OFFICER |
+| POST | `/v1/loyalty-cards/lookup` | Resolve a scanned code to its card and customer id | ADMIN, SALES_ASSOCIATE, LOYALTY_OFFICER |
+| PUT | `/v1/loyalty-cards/{card_id}/revocation` | Revoke a card, idempotently | ADMIN, LOYALTY_OFFICER |
+| GET | `/v1/permitted-profiles` | Search by `q` (3 characters at least, `size` 20 at most) in the caller's representation | ADMIN, SALES_ASSOCIATE, LOYALTY_OFFICER, STORE_MANAGER |
+| GET | `/v1/permitted-profiles/{customer_id}` | One customer in the caller's representation | ADMIN, SALES_ASSOCIATE, LOYALTY_OFFICER, STORE_MANAGER |
 
 Roles follow the [service operation policy](../requirements.md#service-operation-policy-distributed-stage). Meta routes (no token): `GET /health/live`, `GET /health/ready`, `GET /openapi.yaml`, `GET /schema.xsd`.
+
+## Permitted profile
+
+Decided in [ADR-0060](../adr/0060-four-store-profiles-map-to-four-roles-and-services-read-each-users-stores-per-request.md). An element a role may not read is absent, in JSON and in XML.
+
+| Element | `SALES_ASSOCIATE` | `LOYALTY_OFFICER` | `STORE_MANAGER`, `ADMIN` | `COMMERCIAL_SUPERVISOR` |
+|---|---|---|---|---|
+| `customer_id`, `name`, `loyalty_state` | Yes | Yes | Yes | 403 |
+| `email`, `phone` | Absent | Yes | Yes | 403 |
+| `segment` (`state`, `label_code`, `since`) | Yes | Yes | Yes | 403 |
+| `rfm` (R, F, M scores) | Absent | Absent | Yes | 403 |
+| `interest_category_ids`, `restrictions` | Yes | Yes | Yes | 403 |
+| `preferred_channel_ids`, `consent` | Absent | Yes | Yes | 403 |
+
+The QR on a loyalty card encodes only its `code`: 128 random bits as 26 Crockford base32 characters, derived from nothing about the customer. Lookup takes the code in a body, never in a URL, and answers with ids only. A customer has at most one ACTIVE card; a card is revoked, never deleted.
 
 ## Data it owns
 
@@ -47,6 +68,10 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Direction | Object | Counterpart |
 |---|---|---|
 | Publishes | `api_customers.customer_ref_v1` | sales, customer-preferences, segments, recommendations, engagement |
+| Consumes | `api_segments.current_label_v1` | segments (for `segment` of the permitted profile) |
+| Consumes | `api_rfm.current_profile_v1` | rfm-engine (for `rfm`, manager and administrator only) |
+| Consumes | `api_preferences.interest_category_v1` | customer-preferences (for `interest_category_ids`) |
+| Consumes | views not yet published for preferred channels, restrictions and consent | customer-preferences (#793; the permitted profile cannot serve those elements until they exist) |
 
 ## Events
 
@@ -69,6 +94,11 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | 422 | `unknown_channel` | `registration_channel_id` references no channel (23503) |
 | 422 | `future_registration` | A `POST` gives a `registered_on` after the current date |
 | 404 | `customer_not_found` | No customer has the given `customer_id` |
+| 404 | `card_not_found` | No loyalty card has the code or id |
+| 409 | `card_revoked` | A lookup found a revoked card; no customer is named |
+| 409 | `active_card_exists` | The customer already has an ACTIVE card |
+| 422 | `unknown_customer` | `customer_id` of an issue request references no customer |
+| 422 | `invalid_query` | A permitted-profile search with `q` missing or under 3 characters |
 
 ## Accepted exceptions
 

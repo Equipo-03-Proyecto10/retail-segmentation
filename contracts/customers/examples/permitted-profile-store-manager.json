@@ -1,0 +1,31 @@
+{
+  "customer_id": "7b3ad781-c5de-4f40-ae50-1fa825ce2b25",
+  "name": "Jordan Lee",
+  "loyalty_state": "ACTIVE",
+  "email": "jordan.lee@example.com",
+  "phone": "+52-55-5555-0142",
+  "segment": {
+    "state": "assigned",
+    "label_code": "LOYAL",
+    "since": "2026-10-01T06:00:00Z"
+  },
+  "interest_category_ids": [
+    2,
+    7
+  ],
+  "restrictions": [],
+  "preferred_channel_ids": [
+    1,
+    3
+  ],
+  "consent": {
+    "state": "GRANTED",
+    "recorded_at": "2026-09-17T14:20:00Z"
+  },
+  "rfm": {
+    "state": "scored",
+    "r_score": 4,
+    "f_score": 3,
+    "m_score": 5
+  }
+}

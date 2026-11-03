@@ -1,0 +1,11 @@
+{
+  "code": "invalid_query",
+  "message": "A query parameter is outside its allowed range.",
+  "correlation_id": "corr-791-short",
+  "details": [
+    {
+      "field": "q",
+      "code": "too_short"
+    }
+  ]
+}

@@ -549,6 +549,7 @@ paths:
           $ref: '#/components/responses/DependencyUnavailable'
   /v1/store-assignments/{user_id}:
     get:
+      x-mosaiq-status: planned
       tags: [Store assignments]
       operationId: getStoreAssignment
       summary: Get the stores a user is assigned to
@@ -611,6 +612,7 @@ paths:
         '503':
           $ref: '#/components/responses/DependencyUnavailable'
     put:
+      x-mosaiq-status: planned
       tags: [Store assignments]
       operationId: replaceStoreAssignment
       summary: Replace the stores a user is assigned to

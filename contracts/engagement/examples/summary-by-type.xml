@@ -3,12 +3,12 @@
   <from>2026-10-13</from>
   <to>2026-10-15</to>
   <group_by>type</group_by>
-  <groups>
-    <key>QR_SCAN</key>
-    <count>78</count>
-  </groups>
-  <groups>
-    <key>RECO_CLICK</key>
-    <count>30</count>
-  </groups>
+  <groups><key>CAMPAIGN_EXPOSURE</key><count>41</count></groups>
+  <groups><key>CART_ADD</key><count>17</count></groups>
+  <groups><key>CART_REMOVE</key><count>5</count></groups>
+  <groups><key>NAVIGATION</key><count>212</count></groups>
+  <groups><key>QR_SCAN</key><count>78</count></groups>
+  <groups><key>RECO_CLICK</key><count>30</count></groups>
+  <groups><key>RECO_IMPRESSION</key><count>164</count></groups>
+  <groups><key>STORE_VISIT</key><count>95</count></groups>
 </EngagementSummary>

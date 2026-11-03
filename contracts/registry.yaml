@@ -67,7 +67,7 @@ services:
     resources: [recommendations]
   - name: engagement
     port: 5012
-    rule: "In-store engagement (`QR_SCAN`, `RECO_CLICK`) is recorded once per client event, attributed, voided rather than deleted, and summarized (RN-55)"
+    rule: "In-store engagement (`QR_SCAN`, `RECO_CLICK`, `STORE_VISIT`, `RECO_IMPRESSION`, `CAMPAIGN_EXPOSURE`, `CART_ADD`, `CART_REMOVE`, `NAVIGATION`; none is a sale) is recorded once per client event, attributed, voided rather than deleted, and summarized (RN-55)"
     rn: [RN-55]
     wave: core
     resources: [engagement-events, engagement-summaries]

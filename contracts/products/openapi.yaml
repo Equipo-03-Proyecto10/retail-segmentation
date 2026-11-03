@@ -307,6 +307,7 @@ paths:
   /v1/products/{product_id}/details:
     get:
       operationId: getProductDetails
+      x-mosaiq-status: planned
       summary: Get a product with its commercial details
       description: >-
         Returns the product fields of `getProduct` plus its commercial status,
@@ -361,6 +362,7 @@ paths:
           $ref: '#/components/responses/ProtectedDatabaseUnavailable'
     patch:
       operationId: updateProductDetails
+      x-mosaiq-status: planned
       summary: Change a product's commercial status, attributes or barcode
       description: >-
         Changes one or more of `commercial_status`, `attributes` and `barcode`.
@@ -443,6 +445,7 @@ paths:
   /v1/products/{product_id}/relations:
     get:
       operationId: listProductRelations
+      x-mosaiq-status: planned
       summary: List a product's substitutes and complements
       description: >-
         Returns the products related to `product_id`, ordered by `kind` then
@@ -504,6 +507,7 @@ paths:
   /v1/products/{product_id}/relations/{relation_kind}:
     put:
       operationId: replaceProductRelations
+      x-mosaiq-status: planned
       summary: Replace a product's substitutes or complements
       description: >-
         Replaces the whole set of `relation_kind` relations of `product_id` with

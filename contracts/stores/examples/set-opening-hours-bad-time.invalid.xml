@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpeningHoursUpdate xmlns="https://mosaiq.maxthecoder.online/xml/stores/v1">
+  <time_zone>America/Mexico_City</time_zone>
+  <days>
+    <day_of_week>MONDAY</day_of_week>
+    <opens_at>9:00</opens_at>
+    <closes_at>25:00</closes_at>
+  </days>
+</OpeningHoursUpdate>

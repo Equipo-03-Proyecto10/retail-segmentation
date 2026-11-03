@@ -64,7 +64,128 @@
     </xs:sequence>
   </xs:complexType>
 
+  <xs:simpleType name="StoreStatusValue">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="ACTIVE"/>
+      <xs:enumeration value="TEMPORARILY_CLOSED"/>
+      <xs:enumeration value="CLOSED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="StoreStatus">
+    <xs:sequence>
+      <xs:element name="store_id" type="xs:integer"/>
+      <xs:element name="status" type="stores:StoreStatusValue"/>
+      <xs:element name="changed_at" type="xs:dateTime" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="StatusUpdate">
+    <xs:sequence>
+      <xs:element name="status" type="stores:StoreStatusValue"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:simpleType name="DayOfWeek">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="MONDAY"/>
+      <xs:enumeration value="TUESDAY"/>
+      <xs:enumeration value="WEDNESDAY"/>
+      <xs:enumeration value="THURSDAY"/>
+      <xs:enumeration value="FRIDAY"/>
+      <xs:enumeration value="SATURDAY"/>
+      <xs:enumeration value="SUNDAY"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="ClockTime">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="([01][0-9]|2[0-3]):[0-5][0-9]"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="TimeZoneName">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:maxLength value="64"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- A day appears at most once, and closes_at is later than opens_at. XSD
+       cannot say either, so the service answers invalid_body. -->
+  <xs:complexType name="OpeningDay">
+    <xs:sequence>
+      <xs:element name="day_of_week" type="stores:DayOfWeek"/>
+      <xs:element name="opens_at" type="stores:ClockTime"/>
+      <xs:element name="closes_at" type="stores:ClockTime"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="OpeningHours">
+    <xs:sequence>
+      <xs:element name="store_id" type="xs:integer"/>
+      <xs:element name="time_zone" type="stores:TimeZoneName" minOccurs="0"/>
+      <xs:element name="days" type="stores:OpeningDay"
+                  minOccurs="0" maxOccurs="7"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="OpeningHoursUpdate">
+    <xs:sequence>
+      <xs:element name="time_zone" type="stores:TimeZoneName"/>
+      <xs:element name="days" type="stores:OpeningDay"
+                  minOccurs="0" maxOccurs="7"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Duplicate ids are invalid_body and unknown ids are unknown_channel. -->
+  <xs:complexType name="EnabledChannels">
+    <xs:sequence>
+      <xs:element name="store_id" type="xs:integer"/>
+      <xs:element name="channel_ids" type="xs:integer"
+                  minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="EnabledChannelsUpdate">
+    <xs:sequence>
+      <xs:element name="channel_ids" type="xs:integer"
+                  minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:simpleType name="DiscountPercent">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="(100\.00|[0-9]{1,2}\.[0-9]{2})"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- An absent max_discount_percent is no limit. -->
+  <xs:complexType name="CommercialRules">
+    <xs:sequence>
+      <xs:element name="store_id" type="xs:integer"/>
+      <xs:element name="max_discount_percent" type="stores:DiscountPercent"
+                  minOccurs="0"/>
+      <xs:element name="updated_at" type="xs:dateTime" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="CommercialRulesUpdate">
+    <xs:sequence>
+      <xs:element name="max_discount_percent" type="stores:DiscountPercent"
+                  minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
   <xs:element name="LocationUpdate" type="stores:LocationUpdate"/>
   <xs:element name="Store" type="stores:Store"/>
   <xs:element name="Stores" type="stores:Stores"/>
+  <xs:element name="StoreStatus" type="stores:StoreStatus"/>
+  <xs:element name="StatusUpdate" type="stores:StatusUpdate"/>
+  <xs:element name="OpeningHours" type="stores:OpeningHours"/>
+  <xs:element name="OpeningHoursUpdate" type="stores:OpeningHoursUpdate"/>
+  <xs:element name="EnabledChannels" type="stores:EnabledChannels"/>
+  <xs:element name="EnabledChannelsUpdate" type="stores:EnabledChannelsUpdate"/>
+  <xs:element name="CommercialRules" type="stores:CommercialRules"/>
+  <xs:element name="CommercialRulesUpdate" type="stores:CommercialRulesUpdate"/>
 </xs:schema>

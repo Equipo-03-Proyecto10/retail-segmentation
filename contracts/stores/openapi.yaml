@@ -1,10 +1,12 @@
 openapi: 3.1.0
 info:
   title: stores-service
-  version: 1.1.0
+  version: 1.2.0
   description: >-
     Publishes the store directory and lets an administrator set or clear the
-    one geofenced location that belongs to a store (RN-53).
+    one geofenced location that belongs to a store (RN-53). It also publishes,
+    and lets an administrator write, a store's status, weekly opening hours,
+    enabled channels and commercial rules.
 security:
   - bearer: []
 tags:
@@ -209,6 +211,503 @@ paths:
           $ref: '#/components/responses/StoreNotFound'
         '406':
           $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/stores/{store_id}/status:
+    get:
+      tags: [Stores]
+      summary: Get a store's status
+      description: >-
+        Returns the operational status of the store and when it last changed. A
+        store whose status was never written is ACTIVE, with `changed_at` null.
+      operationId: getStoreStatus
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - INVENTORY_PLANNER
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/StoreId'
+      responses:
+        '200':
+          description: The store's operational status.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreStatus'
+              examples:
+                store_status:
+                  externalValue: ./examples/store-status.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/StoreStatus'
+              examples:
+                store_status:
+                  externalValue: ./examples/store-status.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/StoreNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+    put:
+      tags: [Stores]
+      summary: Set a store's status
+      description: >-
+        Sets the store's status to one of ACTIVE, TEMPORARILY_CLOSED or CLOSED.
+        Only ADMIN may write this fact. The operation is idempotent: writing the
+        status the store already has answers 200 and changes nothing. The status
+        is stores-service's own fact; it does not write the catalog flag
+        `is_active`, which the directory keeps publishing as it does today. A
+        value outside the three is 422 `invalid_body`.
+      operationId: putStoreStatus
+      x-mosaiq-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/StoreId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusUpdate'
+            examples:
+              set_status:
+                externalValue: ./examples/set-store-status.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/StatusUpdate'
+            examples:
+              set_status:
+                externalValue: ./examples/set-store-status.request.xml
+      responses:
+        '200':
+          description: The resource after the write.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreStatus'
+              examples:
+                set_status:
+                  externalValue: ./examples/set-store-status.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/StoreStatus'
+              examples:
+                set_status:
+                  externalValue: ./examples/set-store-status.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/StoreNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/InvalidBody'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/stores/{store_id}/opening-hours:
+    get:
+      tags: [Stores]
+      summary: Get a store's opening hours
+      description: >-
+        Returns the store's time zone and its weekly opening hours, one interval
+        for each day it opens. A day with no entry is closed all day. A store with
+        no hours set returns its time zone as null and an empty `days` list.
+      operationId: getStoreOpeningHours
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - INVENTORY_PLANNER
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/StoreId'
+      responses:
+        '200':
+          description: The store's weekly opening hours.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpeningHours'
+              examples:
+                opening_hours:
+                  externalValue: ./examples/opening-hours.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/OpeningHours'
+              examples:
+                opening_hours:
+                  externalValue: ./examples/opening-hours.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/StoreNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+    put:
+      tags: [Stores]
+      summary: Replace a store's opening hours
+      description: >-
+        Replaces the whole week: days not in the list become closed, and an empty
+        list closes every day. Only ADMIN may write this fact. Times are `HH:MM`
+        on a 24-hour clock in the store's `time_zone`, an IANA name such as
+        `America/Monterrey`. Each day appears at most once, has one interval, and
+        `closes_at` is later than `opens_at`; an interval never crosses midnight.
+        A duplicate day, an interval that ends before it starts or a time zone
+        that is not an IANA name is 422 `invalid_body`, with `details` naming the
+        field.
+      operationId: putStoreOpeningHours
+      x-mosaiq-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/StoreId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpeningHoursUpdate'
+            examples:
+              set_hours:
+                externalValue: ./examples/set-opening-hours.request.json
+              close_all_days:
+                externalValue: ./examples/clear-opening-hours.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/OpeningHoursUpdate'
+            examples:
+              set_hours:
+                externalValue: ./examples/set-opening-hours.request.xml
+              close_all_days:
+                externalValue: ./examples/clear-opening-hours.request.xml
+      responses:
+        '200':
+          description: The resource after the write.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpeningHours'
+              examples:
+                set_hours:
+                  externalValue: ./examples/set-opening-hours.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/OpeningHours'
+              examples:
+                set_hours:
+                  externalValue: ./examples/set-opening-hours.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/StoreNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/InvalidBody'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/stores/{store_id}/enabled-channels:
+    get:
+      tags: [Stores]
+      summary: Get the channels a store sells through
+      description: >-
+        Returns the ids of the channels enabled for the store, sorted ascending.
+        The channel vocabulary belongs to sales (ADR-0035), so this contract
+        carries ids only, as customer-preferences does.
+      operationId: getStoreEnabledChannels
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - INVENTORY_PLANNER
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/StoreId'
+      responses:
+        '200':
+          description: The channels the store sells through.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnabledChannels'
+              examples:
+                enabled_channels:
+                  externalValue: ./examples/enabled-channels.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/EnabledChannels'
+              examples:
+                enabled_channels:
+                  externalValue: ./examples/enabled-channels.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/StoreNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+    put:
+      tags: [Stores]
+      summary: Replace the channels a store sells through
+      description: >-
+        Replaces the whole set: ids not in the list are removed, ids in it are
+        added, and an empty list enables no channel (in XML, a request element
+        with no ids). Only ADMIN may write this fact. A duplicate id is 422
+        `invalid_body`. An id that references no channel is 422 `unknown_channel`,
+        with its own code, and nothing changes.
+      operationId: putStoreEnabledChannels
+      x-mosaiq-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/StoreId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnabledChannelsUpdate'
+            examples:
+              replace:
+                externalValue: ./examples/set-enabled-channels.request.json
+              clear:
+                externalValue: ./examples/clear-enabled-channels.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/EnabledChannelsUpdate'
+            examples:
+              replace:
+                externalValue: ./examples/set-enabled-channels.request.xml
+              clear:
+                externalValue: ./examples/clear-enabled-channels.request.xml
+      responses:
+        '200':
+          description: The resource after the write.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnabledChannels'
+              examples:
+                replaced:
+                  externalValue: ./examples/set-enabled-channels.json
+                cleared:
+                  externalValue: ./examples/clear-enabled-channels.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/EnabledChannels'
+              examples:
+                replaced:
+                  externalValue: ./examples/set-enabled-channels.xml
+                cleared:
+                  externalValue: ./examples/clear-enabled-channels.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/StoreNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ChannelsRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/stores/{store_id}/commercial-rules:
+    get:
+      tags: [Stores]
+      summary: Get a store's commercial rules
+      description: >-
+        Returns the commercial rules the store sets. Exactly one rule exists
+        today: `max_discount_percent`, the largest discount, as a percentage of
+        the line price, that a sale at this store may apply. Null means the store
+        has set no limit. F25-05 enforces it in sales; this service only stores
+        it.
+      operationId: getStoreCommercialRules
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - INVENTORY_PLANNER
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/StoreId'
+      responses:
+        '200':
+          description: The store's commercial rules.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommercialRules'
+              examples:
+                commercial_rules:
+                  externalValue: ./examples/commercial-rules.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CommercialRules'
+              examples:
+                commercial_rules:
+                  externalValue: ./examples/commercial-rules.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/StoreNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+    put:
+      tags: [Stores]
+      summary: Set a store's commercial rules
+      description: >-
+        Replaces the store's commercial rules. Only ADMIN may write this fact.
+        `max_discount_percent` is a decimal string with two places from 0.00
+        through 100.00, or null to remove the limit (in XML, an omitted element).
+        A value outside the range or with another number of places is 422
+        `invalid_body`.
+      operationId: putStoreCommercialRules
+      x-mosaiq-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/StoreId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommercialRulesUpdate'
+            examples:
+              set_limit:
+                externalValue: ./examples/set-commercial-rules.request.json
+              remove_limit:
+                externalValue: ./examples/clear-commercial-rules.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/CommercialRulesUpdate'
+            examples:
+              set_limit:
+                externalValue: ./examples/set-commercial-rules.request.xml
+              remove_limit:
+                externalValue: ./examples/clear-commercial-rules.request.xml
+      responses:
+        '200':
+          description: The resource after the write.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommercialRules'
+              examples:
+                set_limit:
+                  externalValue: ./examples/set-commercial-rules.json
+                remove_limit:
+                  externalValue: ./examples/clear-commercial-rules.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CommercialRules'
+              examples:
+                set_limit:
+                  externalValue: ./examples/set-commercial-rules.xml
+                remove_limit:
+                  externalValue: ./examples/clear-commercial-rules.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/StoreNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/InvalidBody'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -429,6 +928,157 @@ components:
             - type: 'null'
       xml:
         name: Store
+        namespace: https://mosaiq.maxthecoder.online/xml/stores/v1
+    StoreStatusValue:
+      type: string
+      enum: [ACTIVE, TEMPORARILY_CLOSED, CLOSED]
+    StoreStatus:
+      type: object
+      additionalProperties: false
+      required: [store_id, status, changed_at]
+      properties:
+        store_id:
+          type: integer
+          format: int32
+        status:
+          $ref: '#/components/schemas/StoreStatusValue'
+        changed_at:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+      xml:
+        name: StoreStatus
+        namespace: https://mosaiq.maxthecoder.online/xml/stores/v1
+    StatusUpdate:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/StoreStatusValue'
+      xml:
+        name: StatusUpdate
+        namespace: https://mosaiq.maxthecoder.online/xml/stores/v1
+    DayOfWeek:
+      type: string
+      enum: [MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY]
+    ClockTime:
+      type: string
+      pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+      examples: ['09:00', '21:30']
+    OpeningDay:
+      type: object
+      additionalProperties: false
+      required: [day_of_week, opens_at, closes_at]
+      properties:
+        day_of_week:
+          $ref: '#/components/schemas/DayOfWeek'
+        opens_at:
+          $ref: '#/components/schemas/ClockTime'
+        closes_at:
+          $ref: '#/components/schemas/ClockTime'
+    OpeningHours:
+      type: object
+      additionalProperties: false
+      required: [store_id, time_zone, days]
+      properties:
+        store_id:
+          type: integer
+          format: int32
+        time_zone:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 64
+        days:
+          type: array
+          maxItems: 7
+          items:
+            $ref: '#/components/schemas/OpeningDay'
+      xml:
+        name: OpeningHours
+        namespace: https://mosaiq.maxthecoder.online/xml/stores/v1
+    OpeningHoursUpdate:
+      type: object
+      additionalProperties: false
+      required: [time_zone, days]
+      properties:
+        time_zone:
+          type: string
+          minLength: 1
+          maxLength: 64
+        days:
+          type: array
+          maxItems: 7
+          items:
+            $ref: '#/components/schemas/OpeningDay'
+      xml:
+        name: OpeningHoursUpdate
+        namespace: https://mosaiq.maxthecoder.online/xml/stores/v1
+    EnabledChannels:
+      type: object
+      additionalProperties: false
+      required: [store_id, channel_ids]
+      properties:
+        store_id:
+          type: integer
+          format: int32
+        channel_ids:
+          type: array
+          items:
+            type: integer
+            format: int32
+      xml:
+        name: EnabledChannels
+        namespace: https://mosaiq.maxthecoder.online/xml/stores/v1
+    EnabledChannelsUpdate:
+      type: object
+      additionalProperties: false
+      required: [channel_ids]
+      properties:
+        channel_ids:
+          type: array
+          items:
+            type: integer
+            format: int32
+      xml:
+        name: EnabledChannelsUpdate
+        namespace: https://mosaiq.maxthecoder.online/xml/stores/v1
+    DiscountPercent:
+      type: string
+      pattern: '^(100\.00|[0-9]{1,2}\.[0-9]{2})$'
+      examples: ['15.00']
+    CommercialRules:
+      type: object
+      additionalProperties: false
+      required: [store_id, max_discount_percent, updated_at]
+      properties:
+        store_id:
+          type: integer
+          format: int32
+        max_discount_percent:
+          anyOf:
+            - $ref: '#/components/schemas/DiscountPercent'
+            - type: 'null'
+        updated_at:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+      xml:
+        name: CommercialRules
+        namespace: https://mosaiq.maxthecoder.online/xml/stores/v1
+    CommercialRulesUpdate:
+      type: object
+      additionalProperties: false
+      required: [max_discount_percent]
+      properties:
+        max_discount_percent:
+          anyOf:
+            - $ref: '#/components/schemas/DiscountPercent'
+            - type: 'null'
+      xml:
+        name: CommercialRulesUpdate
         namespace: https://mosaiq.maxthecoder.online/xml/stores/v1
     StorePage:
       type: object
@@ -672,6 +1322,28 @@ components:
               externalValue: ./examples/invalid-pagination.xml
             invalid_query:
               externalValue: ./examples/invalid-query.xml
+    ChannelsRefused:
+      description: '`unknown_channel` or `invalid_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unknown_channel:
+              externalValue: ./examples/unknown-channel.json
+            invalid_body:
+              externalValue: ./examples/invalid-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unknown_channel:
+              externalValue: ./examples/unknown-channel.xml
+            invalid_body:
+              externalValue: ./examples/invalid-body.xml
     RateLimited:
       description: '`rate_limited`.'
       headers:

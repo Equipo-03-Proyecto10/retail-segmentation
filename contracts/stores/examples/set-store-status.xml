@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<StoreStatus xmlns="https://mosaiq.maxthecoder.online/xml/stores/v1">
+  <store_id>1</store_id>
+  <status>TEMPORARILY_CLOSED</status>
+  <changed_at>2026-11-03T16:05:00Z</changed_at>
+</StoreStatus>

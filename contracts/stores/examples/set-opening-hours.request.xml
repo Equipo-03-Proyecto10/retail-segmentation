@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpeningHoursUpdate xmlns="https://mosaiq.maxthecoder.online/xml/stores/v1">
+  <time_zone>America/Mexico_City</time_zone>
+  <days>
+    <day_of_week>MONDAY</day_of_week>
+    <opens_at>09:00</opens_at>
+    <closes_at>21:00</closes_at>
+  </days>
+  <days>
+    <day_of_week>TUESDAY</day_of_week>
+    <opens_at>09:00</opens_at>
+    <closes_at>21:00</closes_at>
+  </days>
+  <days>
+    <day_of_week>WEDNESDAY</day_of_week>
+    <opens_at>09:00</opens_at>
+    <closes_at>21:00</closes_at>
+  </days>
+  <days>
+    <day_of_week>THURSDAY</day_of_week>
+    <opens_at>09:00</opens_at>
+    <closes_at>21:00</closes_at>
+  </days>
+  <days>
+    <day_of_week>FRIDAY</day_of_week>
+    <opens_at>09:00</opens_at>
+    <closes_at>22:00</closes_at>
+  </days>
+  <days>
+    <day_of_week>SATURDAY</day_of_week>
+    <opens_at>10:00</opens_at>
+    <closes_at>22:00</closes_at>
+  </days>
+</OpeningHoursUpdate>

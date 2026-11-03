@@ -1,0 +1,36 @@
+{
+  "store_id": 1,
+  "time_zone": "America/Mexico_City",
+  "days": [
+    {
+      "day_of_week": "MONDAY",
+      "opens_at": "09:00",
+      "closes_at": "21:00"
+    },
+    {
+      "day_of_week": "TUESDAY",
+      "opens_at": "09:00",
+      "closes_at": "21:00"
+    },
+    {
+      "day_of_week": "WEDNESDAY",
+      "opens_at": "09:00",
+      "closes_at": "21:00"
+    },
+    {
+      "day_of_week": "THURSDAY",
+      "opens_at": "09:00",
+      "closes_at": "21:00"
+    },
+    {
+      "day_of_week": "FRIDAY",
+      "opens_at": "09:00",
+      "closes_at": "22:00"
+    },
+    {
+      "day_of_week": "SATURDAY",
+      "opens_at": "10:00",
+      "closes_at": "22:00"
+    }
+  ]
+}

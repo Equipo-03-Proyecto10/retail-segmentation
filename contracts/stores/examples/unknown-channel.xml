@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>unknown_channel</code>
+  <message>A channel id references no channel.</message>
+  <correlation_id>corr-unknown-channel</correlation_id>
+  <details>
+    <field>channel_ids[1]</field>
+    <code>unknown</code>
+  </details>
+</Error>

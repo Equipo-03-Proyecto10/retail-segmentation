@@ -415,6 +415,7 @@ paths:
       summary: Record an engagement event (never a sale)
       description: 'Records the event once per `client_event_id`, attributed to the token''s `sub` (`recorded_by`). The body has eight shapes, one per `type`. The event is never a sale. Store, product and customer are checked against the published store, product and customer views: the store must exist and be active. A new event answers 201. The same `client_event_id` arriving again with the same `type`, `store_id` and `product_id` answers 200 with the original event and writes nothing; with any other type, store or product it answers 409 `client_event_conflict`. `occurred_at` more than five minutes ahead of the server answers 422 `occurred_in_future`.'
       operationId: createEngagementEventV2
+      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - STORE_MANAGER
@@ -554,6 +555,7 @@ paths:
       summary: List engagement events
       description: Returns a page ordered by `occurred_at`, newest first. `from` and `to` are RFC 3339 timestamps bounding `occurred_at`. Voided events are listed unless `voided=false`.
       operationId: listEngagementEventsV2
+      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - ANALYST
@@ -608,6 +610,7 @@ paths:
       summary: Get one engagement event
       description: Returns the event with its `history`.
       operationId: getEngagementEventV2
+      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - ANALYST
@@ -655,6 +658,7 @@ paths:
       summary: Void an engagement event
       description: 'Voids the event: it is never deleted, a `VOIDED` entry is added to its `history`, and summaries stop counting it.'
       operationId: voidEngagementEventV2
+      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       parameters:
@@ -723,6 +727,7 @@ paths:
       summary: Summarize engagement
       description: Counts events that are not voided, grouped by `store`, `day` or `type`. `from` and `to` are UTC dates (`YYYY-MM-DD`), both inclusive, and a day is a UTC day. Every event type is counted, including `STORE_VISIT`, `RECO_IMPRESSION`, `CAMPAIGN_EXPOSURE`, `CART_ADD`, `CART_REMOVE` and `NAVIGATION`; grouped by `type` each is its own key and none is folded into another or read as a sale.
       operationId: getEngagementSummaryV2
+      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - ANALYST
@@ -781,6 +786,7 @@ paths:
       - Meta
       summary: Get the engagement v2 XML Schema
       operationId: getSchemaV2
+      x-mosaiq-status: planned
       security: []
       parameters:
       - $ref: '#/components/parameters/CorrelationId'

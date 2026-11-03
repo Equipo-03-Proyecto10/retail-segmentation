@@ -62,16 +62,19 @@ taken as one snapshot at the window's end.
 |---|---|---|---|---|
 | Population stability index (PSI) | Segment shares | One per segment | 0.10 | 0.25 |
 | PSI | Each of R, F, M | Deciles of the reference, plus one bin for no value | 0.10 | 0.25 |
-| Chi-square goodness of fit | Segment shares | One per segment | p < 0.01 after Holm | p < 0.01 after Holm |
+| Chi-square goodness of fit | Segment shares | One per segment | p < 0.05 | p < 0.01 |
 
-An empty bin is floored at 0.0005 of its side before the logarithm. Alarm requires
-the PSI alarm threshold **and** the chi-square test on segment shares, or the PSI alarm on
-a feature in two consecutive windows. Watch is displayed, never alerted.
+An empty bin is floored at 0.0005 of its side before the logarithm. An alarm on
+segment shares requires the PSI alarm threshold **and** the chi-square alarm; an alarm on a
+feature requires its PSI alarm threshold. Either alarm must hold in two consecutive
+windows. Watch is displayed, never alerted.
 
 **False alarms are controlled by.** (1) A minimum of 200 customers in the window,
 otherwise the result is "insufficient data", not a number. (2) PSI thresholds are
-conventional, not derived, and are stated as such. (3) Holm correction across the
-four monitored statistics for the tests. (4) Persistence: two consecutive windows.
+conventional, not derived, and are stated as such. (3) Alarm on segment shares needs two
+independent signals (PSI and chi-square); the chi-square is a single test, so no
+multiplicity correction applies to it, and the per-segment outcome tests carry their own
+Holm correction above. (4) Persistence: two consecutive windows.
 (5) A window that crosses a version change is not compared (ADR-0064): a
 methodological difference is never drift. (6) The false-alarm rate is measured, not
 assumed: F23-10 replays resampled data from a single fixed distribution and reports

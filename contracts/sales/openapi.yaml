@@ -235,6 +235,7 @@ paths:
           $ref: '#/components/responses/OperationUnavailable'
   /v1/sale-reversals:
     post:
+      x-mosaiq-status: planned
       tags: [Sale reversals]
       summary: Record a cancellation or a return
       description: >-
@@ -380,6 +381,7 @@ paths:
         '503':
           $ref: '#/components/responses/OperationUnavailable'
     get:
+      x-mosaiq-status: planned
       tags: [Sale reversals]
       summary: List reversals
       description: >-
@@ -443,6 +445,7 @@ paths:
           $ref: '#/components/responses/OperationUnavailable'
   /v1/sale-reversals/{reversal_id}:
     get:
+      x-mosaiq-status: planned
       tags: [Sale reversals]
       summary: Get one reversal
       description: >-

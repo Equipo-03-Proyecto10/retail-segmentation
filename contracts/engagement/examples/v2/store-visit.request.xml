@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<EngagementEventRequest xmlns="https://mosaiq.maxthecoder.online/xml/engagement/v1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="StoreVisitRequest">
+<EngagementEventRequest xmlns="https://mosaiq.maxthecoder.online/xml/engagement/v2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="StoreVisitRequest">
   <client_event_id>0e6d5c4b-3a29-4817-96f5-a4b3c2d1e100</client_event_id>
   <type>STORE_VISIT</type>
   <store_id>3</store_id>

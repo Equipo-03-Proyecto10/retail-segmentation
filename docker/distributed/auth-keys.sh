@@ -21,6 +21,12 @@ if [[ ! -f $private ]]; then
   (umask 077 && openssl genrsa -out "$private" 2048 2>/dev/null)
   chmod 0444 "$private"
 fi
-python3 "$dir/../../../tests/conformance/tokens.py" jwks "$private" "$kid" >"$dir/jwks.json"
-chmod 0444 "$dir/jwks.json"
+# jwks.json is 0444 after the first run, so a redirect onto it fails on a
+# re-run. Write a temp file and rename it over the old one: renaming needs
+# write access to the directory, not to the file.
+tmp=$(mktemp "$dir/jwks.XXXXXX")
+trap 'rm -f "$tmp"' EXIT
+python3 "$dir/../../../tests/conformance/tokens.py" jwks "$private" "$kid" >"$tmp"
+chmod 0444 "$tmp"
+mv -f "$tmp" "$dir/jwks.json"
 echo "auth-keys: $dir/jwks.json holds kid $kid"

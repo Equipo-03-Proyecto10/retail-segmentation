@@ -274,6 +274,7 @@ paths:
         This is a separate read from `listSegmentAssignments`, whose response
         type is closed to additions within v1.
       operationId: listVersionedSegmentAssignments
+      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -348,6 +349,7 @@ paths:
         Comparing runs by label is still all the matrix does; it never recomputes
         an assignment.
       operationId: getSegmentMigrationMatrix
+      x-mosaiq-status: planned
       x-mosaiq-conformance-query:
         from: '2026-09-14T03:00:00Z'
         to: '2026-10-12T03:00:00Z'
@@ -424,6 +426,7 @@ paths:
         is 404 `customer_not_found`. `methodological=false` keeps only the
         behavioural migrations.
       operationId: listSegmentMigrations
+      x-mosaiq-status: planned
       x-mosaiq-conformance-query:
         from: '2026-09-14T03:00:00Z'
         to: '2026-10-12T03:00:00Z'
@@ -506,6 +509,7 @@ paths:
         All three parameters are required. An unknown customer is 404
         `customer_not_found`.
       operationId: getSegmentMigrationExplanation
+      x-mosaiq-status: planned
       x-mosaiq-conformance-query:
         customer_id: 7b3ad781-c5de-4f40-ae50-1fa825ce2b25
         from: '2026-09-14T03:00:00Z'

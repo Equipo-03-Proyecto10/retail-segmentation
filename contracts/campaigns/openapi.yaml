@@ -362,6 +362,7 @@ paths:
   /v1/campaigns/{campaign_id}/audience:
     get:
       operationId: getCampaignAudience
+      x-mosaiq-status: planned
       summary: Get a campaign's audience
       description: >-
         Returns who the campaign targets: the campaign's `label_code`, an optional
@@ -413,6 +414,7 @@ paths:
           $ref: '#/components/responses/ProtectedDatabaseUnavailable'
     put:
       operationId: putCampaignAudience
+      x-mosaiq-status: planned
       summary: Replace a draft campaign's audience
       description: >-
         Replaces the audience's settings while the campaign is DRAFT. The only
@@ -484,6 +486,7 @@ paths:
   /v1/campaigns/{campaign_id}/budget:
     get:
       operationId: getCampaignBudget
+      x-mosaiq-status: planned
       summary: Get a campaign's budget
       description: >-
         Returns the campaign's budget. `total_amount` is the most the campaign may
@@ -531,6 +534,7 @@ paths:
           $ref: '#/components/responses/ProtectedDatabaseUnavailable'
     put:
       operationId: putCampaignBudget
+      x-mosaiq-status: planned
       summary: Replace a draft campaign's budget
       description: >-
         Replaces the budget while the campaign is DRAFT. Both amounts are
@@ -602,6 +606,7 @@ paths:
   /v1/campaigns/{campaign_id}/eligibility-rules:
     get:
       operationId: getCampaignEligibilityRules
+      x-mosaiq-status: planned
       summary: Get a campaign's eligibility rules
       description: >-
         Returns the conditions a customer in the audience must satisfy. A customer
@@ -651,6 +656,7 @@ paths:
           $ref: '#/components/responses/ProtectedDatabaseUnavailable'
     put:
       operationId: putCampaignEligibilityRules
+      x-mosaiq-status: planned
       summary: Replace a draft campaign's eligibility rules
       description: >-
         Replaces the rules while the campaign is DRAFT. An empty body removes
@@ -721,6 +727,7 @@ paths:
   /v1/campaigns/{campaign_id}/exclusions:
     get:
       operationId: getCampaignExclusions
+      x-mosaiq-status: planned
       summary: Get a campaign's exclusions
       description: >-
         Returns who is removed from the audience: customers named by id, and the
@@ -767,6 +774,7 @@ paths:
           $ref: '#/components/responses/ProtectedDatabaseUnavailable'
     put:
       operationId: putCampaignExclusions
+      x-mosaiq-status: planned
       summary: Replace a draft campaign's exclusions
       description: >-
         Replaces both lists while the campaign is DRAFT, with at most 1000
@@ -838,6 +846,7 @@ paths:
   /v1/promotions:
     get:
       operationId: listPromotions
+      x-mosaiq-status: planned
       summary: List promotions
       description: >-
         Returns promotions ordered by `promotion_id`. `campaign_id`, `store_id`,
@@ -902,6 +911,7 @@ paths:
           $ref: '#/components/responses/ProtectedDatabaseUnavailable'
     post:
       operationId: createPromotion
+      x-mosaiq-status: planned
       summary: Create a promotion
       description: >-
         Creates a promotion of a DRAFT campaign. The server allocates
@@ -985,6 +995,7 @@ paths:
   /v1/promotions/{promotion_id}:
     get:
       operationId: getPromotion
+      x-mosaiq-status: planned
       summary: Get a promotion
       description: >-
         Returns one promotion. For the four floor roles a promotion that is not
@@ -1035,6 +1046,7 @@ paths:
           $ref: '#/components/responses/ProtectedDatabaseUnavailable'
     put:
       operationId: replacePromotion
+      x-mosaiq-status: planned
       summary: Replace a promotion of a draft campaign
       description: >-
         Replaces `name`, `discount_percent`, `starts_on`, `ends_on`, `store_ids`

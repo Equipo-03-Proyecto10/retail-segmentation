@@ -267,6 +267,7 @@ paths:
     post:
       tags: [Loyalty cards]
       operationId: issueLoyaltyCard
+      x-mosaiq-status: planned
       summary: Issue a loyalty card to a customer
       description: >-
         Issues one card to the customer named in the body. The service
@@ -340,6 +341,7 @@ paths:
     get:
       tags: [Loyalty cards]
       operationId: listLoyaltyCards
+      x-mosaiq-status: planned
       summary: List a customer's loyalty cards
       description: >-
         Lists every card ever issued to one customer, newest first, active or
@@ -391,6 +393,7 @@ paths:
     post:
       tags: [Loyalty cards]
       operationId: lookupLoyaltyCard
+      x-mosaiq-status: planned
       summary: Look a scanned code up
       description: >-
         Resolves the code a scanner read from a QR to the card's id and the
@@ -467,6 +470,7 @@ paths:
     put:
       tags: [Loyalty cards]
       operationId: revokeLoyaltyCard
+      x-mosaiq-status: planned
       summary: Revoke a loyalty card
       description: >-
         Revokes the card, records who did it, when and why, and answers with the
@@ -541,6 +545,7 @@ paths:
     get:
       tags: [Permitted profiles]
       operationId: searchPermittedProfiles
+      x-mosaiq-status: planned
       summary: Search customers by name, in the caller's representation
       description: >-
         Searches for the customer the caller is serving. It cannot list the
@@ -616,6 +621,7 @@ paths:
     get:
       tags: [Permitted profiles]
       operationId: getPermittedProfile
+      x-mosaiq-status: planned
       summary: Read one customer in the caller's representation
       description: |-
         Returns the customer in the representation of the caller's role, which

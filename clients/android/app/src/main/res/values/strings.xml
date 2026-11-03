@@ -1,4 +1,275 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">MOSAIQ Floor</string>
+
+    <!-- Sign-in and session -->
+    <string name="signin_wordmark">MOSAIQ</string>
+    <string name="signin_help">Sign in with your store account to start the shift.</string>
+    <string name="signin_email">Email</string>
+    <string name="signin_password">Password</string>
+    <string name="signin_submit">Sign in</string>
+    <string name="signin_loading_account">Loading your account…</string>
+    <string name="signin_error_credentials">That email or password is not right. Check them and try again.</string>
+    <string name="signin_error_unreachable">MOSAIQ could not be reached. Check your connection and try again.</string>
+    <string name="signin_error_server">The service is having trouble right now. Try again in a moment.</string>
+    <string name="session_failed_title">Your account could not be loaded</string>
+    <string name="session_sign_out">Sign out</string>
+    <string name="session_signed_in_as">Signed in as</string>
+
+    <!-- Check-in -->
+    <string name="checkin_not_checked_in">Not checked in</string>
+    <string name="checkin_checked_in_at">Checked in at %1$s</string>
+    <string name="checkin_checked_in_unverified">Checked in at %1$s, not verified</string>
+    <string name="checkin_waiting">Waiting to send</string>
+    <string name="checkin_needs_attention">Needs attention</string>
+    <string name="checkin_locating">Finding your position…</string>
+    <string name="checkin_queued_calm">Your check-in is saved on this phone. It is sent as soon as the network allows.</string>
+    <string name="checkin_action">Check in here</string>
+    <string name="checkin_change_store">Change store</string>
+    <string name="checkin_none_title">Pick a store</string>
+    <string name="checkin_none_message">Choose the store you are working in to check in.</string>
+    <string name="checkin_none_action">Pick a store</string>
+    <string name="checkin_location_why">Location confirms that you are at the store. You can still check in without it, but it cannot be verified.</string>
+    <string name="checkin_open_settings">Open settings</string>
+
+    <!-- Store picker -->
+    <string name="picker_title">Pick your store</string>
+    <string name="picker_city">City</string>
+    <string name="picker_search">Search</string>
+    <string name="picker_searching">Searching stores…</string>
+    <string name="picker_empty_title">No stores in that city</string>
+    <string name="picker_empty_message">Check the spelling or try a nearby city.</string>
+
+    <!-- Outbox -->
+    <string name="outbox_empty_title">Everything is sent</string>
+    <string name="outbox_empty_message">Nothing is waiting and nothing needs your attention.</string>
+    <string name="outbox_kind_check_in">Check-in</string>
+    <string name="outbox_kind_check_in_at">Check-in at %1$s</string>
+    <string name="outbox_kind_sale">Sale</string>
+    <string name="outbox_kind_scan">Product scan</string>
+    <string name="outbox_kind_reco">Recommendation click</string>
+    <string name="outbox_state_waiting">Waiting to send</string>
+    <string name="outbox_state_sending">Sending</string>
+    <string name="outbox_state_sent">Sent</string>
+    <string name="outbox_state_attention">Needs attention</string>
+    <string name="outbox_other_user">Waiting for the user who made it to sign in again.</string>
+    <string name="outbox_dismiss">Dismiss</string>
+    <string name="outbox_today">Today, %1$s</string>
+    <string name="outbox_yesterday">Yesterday, %1$s</string>
+    <plurals name="outbox_attempts">
+        <item quantity="one">Tried %1$d time so far</item>
+        <item quantity="other">Tried %1$d times so far</item>
+    </plurals>
+    <!-- Scan screen -->
+    <string name="scan_no_store_title">Pick your store first</string>
+    <string name="scan_no_store_message">A scan shows the stock of the store you are checked in at.</string>
+    <string name="scan_pick_store">Pick a store</string>
+    <string name="scan_store_caption">Store: %1$s</string>
+    <string name="scan_camera_description">Camera viewport for scanning a product QR code</string>
+    <string name="scan_hint">Point at a product QR code</string>
+    <string name="scan_start">Scan</string>
+    <string name="scan_start_help">Open the camera to read a product QR code.</string>
+    <string name="scan_denied_title">The camera is off for this app</string>
+    <string name="scan_denied_message">The camera is needed only to read a product QR code. Allow it, or type the product number below instead.</string>
+    <string name="scan_open_settings">Open settings</string>
+    <string name="scan_grant_access">Grant access</string>
+    <string name="scan_camera_error_title">The camera could not start</string>
+    <string name="scan_camera_error_message">Another app may be using it. Try again, or type the product number below.</string>
+    <string name="scan_retry">Retry</string>
+    <string name="scan_manual_title">No code to scan?</string>
+    <string name="scan_manual_label">Product number</string>
+    <string name="scan_manual_help">Type the number printed under the QR code.</string>
+    <string name="scan_look_up">Look up</string>
+    <string name="scan_looking">Looking up the product…</string>
+    <string name="scan_not_found_title">We could not find that product</string>
+    <string name="scan_not_found_message">Check the number and try again, or scan another code.</string>
+    <string name="scan_not_a_product_title">That is not a product code</string>
+    <string name="scan_not_a_product_message">Point the camera at a product QR code.</string>
+    <string name="scan_offline">The store systems could not be reached. Check the connection and try again.</string>
+    <string name="scan_scan_another">Scan another</string>
+    <string name="scan_add_to_sale">Add to sale</string>
+    <string name="scan_sku">SKU %1$s</string>
+    <string name="scan_retired">No longer sold</string>
+    <string name="scan_in_stock">In stock</string>
+    <string name="scan_out_of_stock">Out of stock</string>
+    <string name="scan_not_stocked">Not stocked here</string>
+    <plurals name="scan_units_at_store">
+        <item quantity="one">%1$d unit at %2$s</item>
+        <item quantity="other">%1$d units at %2$s</item>
+    </plurals>
+    <string name="scan_none_at_store">None at %1$s</string>
+    <string name="scan_not_stocked_message">%1$s does not hold this product.</string>
+    <!-- Sale: customer -->
+    <string name="sale_customer_title">Customer</string>
+    <string name="sale_search_label">Name, email or phone</string>
+    <string name="sale_search_email_label">Exact email (optional)</string>
+    <string name="sale_search_button">Search customers</string>
+    <string name="sale_search_loading">Searching customers…</string>
+    <string name="sale_search_empty_title">No customers found</string>
+    <string name="sale_search_empty_help">Check the spelling, or add them with New customer.</string>
+    <string name="sale_new_customer">New customer</string>
+    <string name="sale_cancel">Cancel</string>
+    <string name="sale_change">Change</string>
+    <string name="sale_no_contact">No contact details</string>
+    <string name="sale_interests_show">Show interests</string>
+    <string name="sale_interests_hide">Hide interests</string>
+    <string name="sale_interests_loading">Loading interests…</string>
+    <string name="sale_interests_load">Load interests</string>
+    <string name="sale_interests_save">Save interests</string>
+    <string name="sale_interests_saved">Interests saved.</string>
+    <!-- Sale: registration -->
+    <string name="sale_register_title">New customer</string>
+    <string name="sale_register_submit">Register customer</string>
+    <string name="sale_register_channel">Registration channel</string>
+    <string name="sale_register_unknown">The result is unknown. Search for this customer before registering again.</string>
+    <string name="sale_field_name">Name</string>
+    <string name="sale_field_required">Required</string>
+    <string name="sale_field_email">Email</string>
+    <string name="sale_field_phone">Phone</string>
+    <string name="sale_email_invalid">Enter a valid email address</string>
+    <string name="sale_channels_loading">Loading sales channels…</string>
+    <string name="sale_channels_load">Load channels</string>
+    <string name="sale_channel_in_store">In store</string>
+    <!-- Sale: items -->
+    <string name="sale_store_line">Selling at %1$s</string>
+    <string name="sale_store_missing">Check in at your store first.</string>
+    <string name="sale_store_action">Store and check-in</string>
+    <string name="sale_items_title">Items</string>
+    <string name="sale_product_label">Search products</string>
+    <string name="sale_product_help">Or scan a product and tap Add to sale.</string>
+    <string name="sale_product_search">Search</string>
+    <string name="sale_product_loading">Searching products…</string>
+    <string name="sale_product_empty_title">No products found</string>
+    <string name="sale_product_empty_help">Try another name or SKU.</string>
+    <string name="sale_product_inactive">Not available</string>
+    <string name="sale_add_item">Add %1$s</string>
+    <string name="sale_remove_item">Remove %1$s</string>
+    <string name="sale_cart_title">In this sale</string>
+    <string name="sale_cart_empty_title">No items yet</string>
+    <string name="sale_cart_empty_help">Search above, or scan a product.</string>
+    <string name="sale_unit_price">%1$s each</string>
+    <!-- Sale: bar and history -->
+    <string name="sale_total">Total</string>
+    <string name="sale_record">Record sale</string>
+    <string name="sale_another">Start another sale</string>
+    <string name="sale_saved">Sale saved. It will be sent when you are online.</string>
+    <string name="sale_blocker_store">Check in at your store to record a sale.</string>
+    <string name="sale_blocker_customer">Choose a customer to record the sale.</string>
+    <string name="sale_blocker_items">Add at least one item to record the sale.</string>
+    <string name="sale_blocker_channels">Sales channels are not loaded yet.</string>
+    <string name="sale_history_title">Sales on this phone</string>
+    <string name="sale_history_empty">No sales recorded on this phone yet.</string>
+    <string name="sale_history_row">Sale, %1$s</string>
+    <string name="sale_history_pending">Waiting for a connection.</string>
+    <string name="sale_history_recorded">Sale recorded.</string>
+    <string name="sale_check_status">Check sale status</string>
+    <string name="sale_state_waiting">Waiting to send</string>
+    <string name="sale_state_attention">Needs attention</string>
+    <string name="sale_state_sent">Sent</string>
+    <!-- Customer insights -->
+    <string name="insights_segment_title">Segment</string>
+    <string name="insights_loading">Loading the segment and recommendations…</string>
+    <string name="insights_no_segment">No segment yet for this customer</string>
+    <string name="insights_unassigned">The latest run found no purchase to score.</string>
+    <string name="insights_not_run">No segmentation run has assigned this customer yet.</string>
+    <string name="insights_scores">Scores: recency %1$d, frequency %2$d, spend %3$d.</string>
+    <string name="insights_since">In this segment since %1$s.</string>
+    <string name="insights_recommendations_title">Recommendations</string>
+    <string name="insights_refresh">Refresh</string>
+    <string name="insights_open_product">Open %1$s in Scan</string>
+    <string name="insights_on_hand">%1$d on hand at their usual store</string>
+
+    <!-- UX-12 (#730): text for code with no composition (view models, network, write queue) and shared components -->
+    <string name="component_loading">Loading</string>
+    <string name="component_expanded">Expanded</string>
+    <string name="component_collapsed">Collapsed</string>
+    <string name="component_previous">Previous</string>
+    <string name="component_next">Next</string>
+    <string name="component_page">Page %1$d of %2$d</string>
+    <string name="component_load_more">Load more</string>
+    <string name="component_hide_password">Hide password</string>
+    <string name="component_show_password">Show password</string>
+    <string name="component_decrease_quantity">Decrease quantity</string>
+    <string name="component_increase_quantity">Increase quantity</string>
+    <string name="component_retry">Retry</string>
+    <string name="component_details">Details</string>
+    <string name="component_code">Code: %1$s</string>
+    <string name="component_correlation">Correlation ID: %1$s</string>
+    <string name="component_correlation_none">none</string>
+    <string name="component_check_clock">Check the phone\'s date, time and time zone.</string>
+    <string name="shell_pick_store">Pick a store</string>
+    <string name="shell_account_menu">Account menu</string>
+    <string name="nav_check_in">Check-in</string>
+    <string name="nav_scan">Scan</string>
+    <string name="nav_sale">Sale</string>
+    <string name="nav_outbox">Outbox</string>
+    <string name="signout_title">Writes are still waiting</string>
+    <plurals name="signout_body">
+        <item quantity="one">%1$d floor write has not been sent yet. It stays on this phone and is sent only when you sign in again.</item>
+        <item quantity="other">%1$d floor writes have not been sent yet. They stay on this phone and are sent only when you sign in again.</item>
+    </plurals>
+    <string name="signout_confirm">Sign out anyway</string>
+    <string name="signout_stay">Stay signed in</string>
+    <string name="error_answered">The service answered %1$d.</string>
+    <string name="error_unexpected">Something went wrong. Try again.</string>
+    <string name="error_unreachable">The service could not be reached. Check the connection and try again.</string>
+    <plurals name="auth_rate_limited">
+        <item quantity="one">Too many attempts. Try again in %1$d second.</item>
+        <item quantity="other">Too many attempts. Try again in %1$d seconds.</item>
+    </plurals>
+    <string name="auth_unavailable">Authentication is unavailable. Try again.</string>
+    <string name="auth_service_unavailable">The service is unavailable. Try again.</string>
+    <string name="session_ended_reused">Your session was used somewhere else, so it was ended. Sign in again.</string>
+    <string name="session_ended_expired">Your session expired. Sign in again.</string>
+    <string name="session_ended_revoked">Your session was ended. Sign in again.</string>
+    <string name="session_ended_invalid">Your session is no longer valid. Sign in again.</string>
+    <string name="session_role_refused">This app is for store managers and administrators. You were signed out.</string>
+    <string name="outbox_invalid_path">The request path is not a valid URL.</string>
+    <string name="outbox_refused_default">The service refused this write.</string>
+    <string name="sale_refused_default">Sale refused.</string>
+    <string name="verdict_within_geofence">You\'re at the store: %1$s m from it, inside its geofence.</string>
+    <string name="verdict_outside_geofence">You\'re %1$s m from the store, outside its geofence.</string>
+    <string name="verdict_low_accuracy">Your location was too imprecise to tell.</string>
+    <string name="verdict_low_accuracy_within">Your location was too imprecise to tell (within %1$d m).</string>
+    <string name="verdict_store_location_unknown">This store has no location set yet, so the check-in could not be measured.</string>
+    <string name="verdict_no_fix">No location was sent, so the check-in could not be measured.</string>
+    <string name="verdict_recorded">The server recorded the check-in (%1$s).</string>
+    <string name="verdict_verified">Verified.</string>
+    <string name="verdict_not_verified">Not verified.</string>
+    <string name="verdict_joined">%1$s %2$s</string>
+    <string name="refusal_future_dated">The sale is dated in the future. Check the phone\'s clock, then record the sale again.</string>
+    <string name="checkin_note_denied">Location is off for this app, so the check-in is recorded without a position and cannot be verified.</string>
+    <string name="checkin_note_approximate">Only approximate location is allowed, so the check-in may be too imprecise to verify.</string>
+    <string name="checkin_note_no_fix">No position could be found, so the check-in is recorded without one.</string>
+    <string name="insights_product_fallback">Product %1$d</string>
+    <string name="insights_category_fallback">category %1$d</string>
+    <string name="insights_click_no_store">Check in at your store first, so the click is counted there.</string>
+    <string name="insights_click_no_segment">The customer has no segment, so the click cannot be counted.</string>
+    <plurals name="insights_reason_segment">
+        <item quantity="one">%1$d other customer in the same segment bought it</item>
+        <item quantity="other">%1$d other customers in the same segment bought it</item>
+    </plurals>
+    <string name="insights_reason_category">In %1$s, a category they like</string>
+    <string name="insights_reason_history">%1$s makes up %2$d%% of their purchases</string>
+    <string name="insights_none_match">Nothing in stock at their usual store matches what they like, buy or their segment buys.</string>
+    <string name="insights_none_no_assignment">No recommendations: the customer has no open segment assignment.</string>
+    <string name="insights_none_unassigned">No recommendations: the latest segmentation run left the customer unassigned.</string>
+    <string name="insights_none_no_store">No recommendations: the customer has no purchase in the window, so no usual store.</string>
+    <string name="insights_none_other">No recommendations (%1$s).</string>
+    <string name="insights_line_assigned">Segment %1$s · R %2$s F %3$s M %4$s · since %5$s</string>
+    <string name="insights_line_unassigned">Unassigned result (run %1$s): the latest run found no purchase to score.</string>
+    <string name="insights_line_none">No open assignment: no segmentation run has assigned this customer yet.</string>
+    <string name="insights_line_other">Segment state: %1$s</string>
+    <string name="sale_error_check_in_required">Check in at the selected store first.</string>
+    <string name="sale_error_queue_failed">Could not save the sale on this phone. Try confirming again.</string>
+    <string name="sale_status_total">Sale %1$s recorded · total %2$s</string>
+    <string name="sale_status_replayed">Sale %1$s was already recorded; this is the same sale.</string>
+    <string name="sale_status_recorded">Sale %1$s recorded.</string>
+    <!-- end UX-12 (#730) -->
+    <!-- Accessibility (#731) -->
+    <string name="a11y_quantity">Quantity %1$d</string>
+    <plurals name="a11y_outbox_waiting">
+        <item quantity="one">%1$d write waiting to send</item>
+        <item quantity="other">%1$d writes waiting to send</item>
+    </plurals>
 </resources>

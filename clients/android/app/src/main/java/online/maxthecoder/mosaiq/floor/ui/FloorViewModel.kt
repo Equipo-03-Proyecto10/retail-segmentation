@@ -3,6 +3,7 @@ package online.maxthecoder.mosaiq.floor.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -12,10 +13,13 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import online.maxthecoder.mosaiq.floor.AppGraph
+import online.maxthecoder.mosaiq.floor.AppText
+import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.net.CheckInResult
 import online.maxthecoder.mosaiq.floor.net.Store
 import online.maxthecoder.mosaiq.floor.net.json
+import online.maxthecoder.mosaiq.floor.net.totalPages
 import online.maxthecoder.mosaiq.floor.outbox.OutboxRow
 import online.maxthecoder.mosaiq.floor.outbox.RowState
 import online.maxthecoder.mosaiq.floor.outbox.describe
@@ -68,15 +72,22 @@ class FloorViewModel(
     fun searchStores(city: String = stores.value.city, page: Int = 1) {
         stores.value = stores.value.copy(city = city, page = page, loading = true, error = null)
         viewModelScope.launch {
+            var failure: Exception? = null
             val answer =
                 try {
                     graph.network.stores.listStores(active = true, city = city.trim().ifEmpty { null }, page = page)
                 } catch (unreachable: IOException) {
                     null
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (unexpected: Exception) {
+                    failure = unexpected
+                    null
                 }
             val body = answer?.body()
             stores.value =
                 when {
+                    failure != null -> stores.value.copy(loading = false, error = ApiError.unexpected())
                     answer == null -> stores.value.copy(loading = false, error = ApiError.unreachable(null))
                     !answer.isSuccessful || body == null ->
                         stores.value.copy(loading = false, error = ApiError.from(answer))
@@ -84,7 +95,7 @@ class FloorViewModel(
                         stores.value.copy(
                             loading = false,
                             stores = body.stores,
-                            totalPages = maxOf(1, (body.pageInfo.total + body.pageInfo.size - 1) / body.pageInfo.size)
+                            totalPages = totalPages(body.pageInfo.total, body.pageInfo.size)
                         )
                 }
         }
@@ -107,11 +118,10 @@ class FloorViewModel(
             val note =
                 when {
                     mode == LocationMode.DENIED ->
-                        "Location is off for this app, so the check-in is recorded without a position " +
-                            "and cannot be verified."
+                        AppText.get(R.string.checkin_note_denied)
                     mode == LocationMode.APPROXIMATE ->
-                        "Only approximate location is allowed, so the check-in may be too imprecise to verify."
-                    fix == null -> "No position could be found, so the check-in is recorded without one."
+                        AppText.get(R.string.checkin_note_approximate)
+                    fix == null -> AppText.get(R.string.checkin_note_no_fix)
                     else -> null
                 }
             val rowId = graph.writes.queueCheckIn(store.storeId, fix)
@@ -127,11 +137,24 @@ class FloorViewModel(
     suspend fun pendingForCurrentUser(): Int = graph.session.userId.value?.let { graph.outbox.countPendingFor(it) } ?: 0
 
     companion object {
+        /** Shown when the stored answer to a check-in cannot be read. */
+        const val UNREADABLE_ANSWER = "Check-in sent. The answer could not be read."
+
         /** The server's answer to a check-in, in plain words, once it has arrived. */
         fun resultOf(row: OutboxRow?): String? {
             if (row?.state != RowState.DONE) return null
-            val result = row.responseBody?.let { json.decodeFromString(CheckInResult.serializer(), it) } ?: return null
+            val body = row.responseBody ?: return null
+            val result =
+                runCatching { json.decodeFromString(CheckInResult.serializer(), body) }.getOrNull()
+                    ?: return UNREADABLE_ANSWER
             return describe(result)
+        }
+
+        /** Whether the server verified the check-in; `null` when there is no readable answer yet. */
+        fun verifiedOf(row: OutboxRow?): Boolean? {
+            if (row?.state != RowState.DONE) return null
+            val body = row.responseBody ?: return null
+            return runCatching { json.decodeFromString(CheckInResult.serializer(), body).verified }.getOrNull()
         }
     }
 }

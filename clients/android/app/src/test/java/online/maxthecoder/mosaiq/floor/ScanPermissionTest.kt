@@ -5,6 +5,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -72,9 +73,9 @@ class ScanPermissionTest {
         compose.onNodeWithTag("camera-denied").assertExists()
         compose.onNodeWithText("Scan").assertDoesNotExist()
         compose.onNodeWithTag("manual-product-id").performTextInput("120")
-        compose.onNodeWithText("Look up").performClick()
+        compose.onNodeWithText("Look up").performScrollTo().performClick()
         compose.waitUntil(timeoutMillis = 5_000) {
-            compose.onAllNodes(androidx.compose.ui.test.hasText("14 in stock at Coyoacan.")).fetchSemanticsNodes()
+            compose.onAllNodes(androidx.compose.ui.test.hasText("14 units at Coyoacan")).fetchSemanticsNodes()
                 .isNotEmpty()
         }
         compose.onNodeWithText("Item 120").assertExists()

@@ -75,6 +75,12 @@ kotlin {
     }
 }
 
+// The screenshots test (ScreenshotsTest) only runs under SCREENSHOTS=1; the variable is an input so a
+// run with it is never mistaken for an up-to-date run without it.
+tasks.withType<Test>().configureEach {
+    inputs.property("screenshots", providers.environmentVariable("SCREENSHOTS").orElse(""))
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

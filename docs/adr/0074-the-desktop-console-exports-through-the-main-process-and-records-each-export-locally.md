@@ -1,6 +1,6 @@
 # ADR-0074 — The desktop console exports tables through the main process and records each export locally
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Max
 **Issue:** #870
 **Supersedes:** —

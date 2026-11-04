@@ -1,4 +1,3 @@
-import { appendFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ExportOutcome, ExportRequest, Result } from '../shared/api';
 import { MODULE_GROUPS, mayExport } from '../shared/modules';
@@ -14,18 +13,9 @@ const MAX_CELL = 10_000;
 export interface ExportEnv {
   /** Opens the save dialog; undefined when the user cancels. */
   chooseFile(suggestedName: string): Promise<string | undefined>;
-  writeFile(path: string, text: string): void;
+  saveCsv(path: string, text: string): void;
   appendLine(path: string, line: string): void;
   now(): Date;
-}
-
-export function nodeEnv(chooseFile: ExportEnv['chooseFile']): ExportEnv {
-  return {
-    chooseFile,
-    writeFile: (path, text) => writeFileSync(path, text, { encoding: 'utf8', mode: 0o600 }),
-    appendLine: (path, line) => appendFileSync(path, line, { encoding: 'utf8', mode: 0o600 }),
-    now: () => new Date(),
-  };
 }
 
 /** Lets spreadsheets read the file as UTF-8. */
@@ -91,7 +81,7 @@ export class Exporter {
       return fail('audit_unavailable', 'The export was not written because it could not be recorded.');
     }
     try {
-      this.env.writeFile(file, toCsv(request.columns, request.rows));
+      this.env.saveCsv(file, toCsv(request.columns, request.rows));
     } catch {
       try {
         this.env.appendLine(log, `${JSON.stringify({ ...record, outcome: 'write_failed', file })}\n`);

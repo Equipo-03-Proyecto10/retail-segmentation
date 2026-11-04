@@ -18,7 +18,7 @@ async function setup(role: string, choose: string | null = '/tmp/out.csv', failA
   const lines: string[] = [];
   const env: ExportEnv = {
     chooseFile: () => Promise.resolve(choose ?? undefined),
-    writeFile: (p, t) => void (files[p] = t),
+    saveCsv: (p, t) => void (files[p] = t),
     appendLine: (_p, l) => {
       if (failAudit) throw new Error('disk full');
       lines.push(l);

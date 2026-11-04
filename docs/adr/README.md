@@ -202,6 +202,7 @@ Later runtime events must be preserved.
 | [0063](0063-segments-change-on-events-and-on-a-schedule-scored-against-the-published-version.md) | Segments change on events and on a schedule, scored against the published version | Accepted |
 | [0064](0064-a-model-version-is-immutable-and-a-change-of-version-is-never-reported-as-behaviour.md) | A model version is immutable, and a change of version is never reported as behaviour | Accepted |
 | [0073](0073-an-operation-published-ahead-of-its-implementation-is-marked-planned-and-skipped-by-conformance.md) | An operation published ahead of its implementation is marked planned and skipped by conformance | Accepted |
+| [0074](0074-engagement-relays-interaction-facts-on-a-redis-stream-from-an-outbox-kept-on-the-event-document.md) | engagement relays interaction facts on a Redis stream, from an outbox kept on the event document | Proposed |
 
 ## Writing one
 

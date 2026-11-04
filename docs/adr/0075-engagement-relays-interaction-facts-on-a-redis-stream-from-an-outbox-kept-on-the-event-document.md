@@ -1,6 +1,6 @@
-# ADR-0075 — engagement relays interaction facts on a Redis stream, from an outbox kept on the event document
+# ADR-0075 — Engagement relays interaction facts on a Redis stream, from an outbox kept on the event document
 
-**Status:** Proposed
+**Status:** Accepted (2026-11-04)
 **Owner:** Max
 **Issue:** #948
 **Supersedes:** in part ADR-0044 (the outbox clause, extended to a MongoDB producer, and the key-only payload rule, for this stream only); in part ADR-0038 (engagement_event's validated fields gain relay_pending)

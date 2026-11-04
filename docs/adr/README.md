@@ -211,6 +211,7 @@ Later runtime events must be preserved.
 | [0069](0069-a-sale-is-attributed-to-one-campaign-at-most-and-only-the-difference-against-control-is-incremental.md) | A sale is attributed to one campaign at most, and only the difference against control is called incremental | Accepted |
 | [0070](0070-a-sales-import-reaches-sales-service-as-numbered-row-chunks-under-the-64-kib-cap-and-is-processed-by-a-worker.md) | A sales import reaches sales-service as numbered chunks of rows under the 64 KiB cap, and a worker processes it row by row, resumable and safe to repeat | Accepted |
 | [0071](0071-android-raises-local-notifications-from-a-periodic-pull-and-a-refused-write-reaches-a-supervisor-as-a-capture-incident.md) | Android raises local notifications from a periodic pull, and a refused write reaches a supervisor as a capture incident owned by engagement | Accepted |
+| [0072](0072-domain-events-are-recorded-by-one-definer-function-into-a-hash-chained-append-only-table-that-audit-trail-reads.md) | Domain events are recorded by one definer function into an append-only, hash-chained table that audit-trail reads | Accepted |
 | [0073](0073-an-operation-published-ahead-of-its-implementation-is-marked-planned-and-skipped-by-conformance.md) | An operation published ahead of its implementation is marked planned and skipped by conformance | Accepted |
 
 ## Writing one

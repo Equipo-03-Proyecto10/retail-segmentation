@@ -1,6 +1,6 @@
 # ADR-0072 — Domain events are recorded by one definer function into an append-only, hash-chained table that audit-trail reads
 
-**Status:** Proposed
+**Status:** Accepted (2026-11-04)
 **Owner:** Maximiliano
 **Issue:** #802
 **Supersedes:** —

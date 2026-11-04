@@ -1,6 +1,6 @@
 # ADR-0056 — The disabled `default` user may replay the append-only file
 
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** Max
 **Issue:** #714
 **Supersedes:** [ADR-0037](0037-two-redis-instances-carry-sessions-caches-limits-and-inter-service-streams.md), in part (the `default` user's line only)

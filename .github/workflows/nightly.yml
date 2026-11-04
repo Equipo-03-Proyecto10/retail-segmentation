@@ -4,7 +4,9 @@ name: Nightly
 # stack of compose.distributed.yaml from scratch, the three scripts plus every
 # boundary section re-applied as an operator applies them, then tests/e2e/.
 # A scenario whose services do not exist yet is skipped and listed in the job
-# summary. A failure marks the run red and uploads the stack's compose logs.
+# summary. After it, tests/parity/ (F20-07, #944) runs against the web system
+# started on the runner next to the stack. A failure marks the run red and
+# uploads the compose logs, the web app's log and the parity results.
 on:
   schedule:
     # 01:30 in Monterrey (UTC-6).
@@ -51,6 +53,47 @@ jobs:
       - name: The demonstration chain
         run: python3 -m pytest tests/e2e -rs --junitxml=test-results/e2e.xml
 
+      # The db service publishes no port, so the web and the harness reach it on
+      # the container's bridge IP. The web stays off the mosaiq network (Q-12).
+      # Credentials are the seeded demonstration accounts (the ones the e2e step
+      # signs in with), or workflow secrets when the repository sets them. The
+      # web's session key is generated for this run only. auth-keys.sh ran once, in
+      # the step that brought the stack up, and is not called again.
+      - name: Start the web system on the runner
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          mkdir -p e2e-logs test-results web-uploads
+          db_ip=$(docker inspect "$($COMPOSE ps -q db)" \
+            --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
+          echo "DB_IP=$db_ip" >> "$GITHUB_ENV"
+          DATABASE_URL="postgresql://retail_app:retail_app@$db_ip:5432/retail" \
+          FLASK_ENV=development \
+          FLASK_SECRET_KEY="$(openssl rand -hex 32)" \
+          UPLOAD_DIR="$PWD/web-uploads" \
+            nohup gunicorn --bind 127.0.0.1:5000 'web.app:create_app()' \
+            > e2e-logs/web.log 2>&1 &
+          echo $! > web.pid
+          for _ in $(seq 1 60); do
+            curl -fs http://127.0.0.1:5000/login >/dev/null && exit 0
+            sleep 1
+          done
+          echo "the web system did not answer on :5000" >&2
+          exit 1
+
+      - name: The web-to-service parity harness
+        if: ${{ !cancelled() }}
+        env:
+          PARITY_WEB_URL: http://127.0.0.1:5000
+          PARITY_WEB_EMAIL: ${{ secrets.PARITY_WEB_EMAIL || 'admin@mosaiq-demo.com' }}
+          PARITY_WEB_PASSWORD: ${{ secrets.PARITY_WEB_PASSWORD || 'Password123!' }}
+          PARITY_GATEWAY_URL: http://127.0.0.1:8080
+          PARITY_SERVICE_EMAIL: ${{ secrets.PARITY_SERVICE_EMAIL || 'user3@mosaiq-demo.com' }}
+          PARITY_SERVICE_PASSWORD: ${{ secrets.PARITY_SERVICE_PASSWORD || 'Password123!' }}
+        run: |
+          PARITY_DATABASE_URL="postgresql://postgres:postgres@$DB_IP:5432/retail" \
+            python3 -m pytest tests/parity -rs --junitxml=test-results/parity.xml
+
       - name: Collect the stack's compose logs
         if: failure()
         run: |
@@ -67,6 +110,11 @@ jobs:
             e2e-logs/
             test-results/
           if-no-files-found: ignore
+
+      - name: Stop the web system
+        if: always()
+        run: |
+          if [ -f web.pid ]; then kill "$(cat web.pid)" 2>/dev/null || true; fi
 
       - name: Take the stack down
         if: always()

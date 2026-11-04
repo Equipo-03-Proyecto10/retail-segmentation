@@ -125,15 +125,18 @@ view, it treats the purpose as withdrawn and says so.
 
 Three consequences are easy to miss. R, F and M of past runs stay in
 `customer_segment_history`: they are facts about sales and a closed run is not
-rewritten. The permitted profile (ADR-0060) shows the restrictions and the consent
-state, so staff see the objection at the till. And a withdrawal takes effect at the
+rewritten. The permitted profile (ADR-0060) shows the restrictions to the seller and never the
+consent record, which only `LOYALTY_OFFICER` and `STORE_MANAGER` read, so the seller sees the
+restriction at the till and not the objection itself. And a withdrawal takes effect at the
 next read, because every consumer re-reads the view; a cache that holds a profile
 (recommendations' cache is invalidated by stream today) is invalidated by the consent
 event as well.
 
-The web is not a consumer of services, but the rule must not depend on that: its
-batch segmentation reads the same view through a `SELECT` grant to `retail_app`, which
-is the "carried by the database" route of ADR-0045.
+The web is not a consumer of services, but the rule must not depend on that. It cannot
+read `api_preferences` (ADR-0046 gives `retail_app` `USAGE` on `public` alone), so its
+batch segmentation reads a read-only view in `public` that carries the same definition,
+the pattern of ADR-0062's `net_sale`. That is the "carried by the database" route of
+ADR-0045, and no grant on `api_preferences` goes to `retail_app`.
 
 ### 3. Retention and anonymization
 
@@ -181,7 +184,7 @@ ADR-0060's table decides who sees which field; this record adds the history rule
 
 | History | Who may read it | Source of the rule |
 |---|---|---|
-| Consent and restriction log | `LOYALTY_OFFICER`, `STORE_MANAGER`, `ADMIN`, `AUDITOR`. Current state and restrictions only, also `SALES_ASSOCIATE` | ADR-0060 table |
+| Consent and restriction log | `LOYALTY_OFFICER`, `STORE_MANAGER`, `ADMIN`, `AUDITOR`. Current restrictions only, also `SALES_ASSOCIATE`, who never reads the consent record | ADR-0060 table |
 | Segment history | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR`, and the floor roles ADR-0060 lists for segments, in its representation | Operation policy, ADR-0060 |
 | Sales history of one customer | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR`, `SALES_ASSOCIATE`, `COMMERCIAL_SUPERVISOR` (narrowed) | Operation policy, ADR-0060 |
 | Anything of an anonymized customer | Same roles; the identity fields are already gone | This record |

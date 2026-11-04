@@ -236,6 +236,47 @@ def test_an_element_added_to_a_v1_response_fails(tmp_path: Path) -> None:
     )
 
 
+def test_a_response_of_a_new_root_element_passes(tmp_path: Path) -> None:
+    repo, base = _repository(tmp_path)
+    xsd = repo / "contracts/alpha/alpha.xsd"
+    _replace(
+        xsd,
+        '  <xs:element name="alpha-request"',
+        '  <xs:element name="alpha-extra" type="alpha:AlphaItem"/>\n'
+        '  <xs:element name="alpha-request"',
+    )
+    _write(
+        repo / "contracts/alpha/examples/alpha-extra.xml",
+        (repo / "contracts/alpha/examples/alpha.xml")
+        .read_text()
+        .replace("alpha-item", "alpha-extra"),
+    )
+    _bump_contract(repo)
+    _commit(repo, "add a response with a new root element")
+
+    result = _run(repo, base)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_renaming_a_v1_response_root_fails(tmp_path: Path) -> None:
+    repo, base = _repository(tmp_path)
+    _replace(
+        repo / "contracts/alpha/alpha.xsd",
+        'element name="alpha-item"',
+        'element name="alpha-renamed"',
+    )
+    _replace(repo / "contracts/alpha/examples/alpha.xml", "alpha-item", "alpha-renamed")
+    _bump_contract(repo)
+    _commit(repo, "rename a response root")
+
+    _assert_fails(
+        _run(repo, base),
+        "XML response root removed or changed in v1: "
+        "contracts/alpha/examples/alpha.xml",
+    )
+
+
 def test_a_change_to_existing_common_v1_fails(tmp_path: Path) -> None:
     repo, base = _repository(tmp_path)
     common = repo / "contracts/common/v1/common.xsd"

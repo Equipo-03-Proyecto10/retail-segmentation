@@ -1278,6 +1278,27 @@ customer from the net purchase view; `next_change_at` is an indexed column the
 daily pass selects on; `POST /v1/rfm-recalculations` and the weekly pass compare
 every customer with a recomputation and record the difference. · #743
 
+### RN-66 — A model version is immutable once published, carries what it was fitted on, and changes state only by an explicit publication or rollback
+A model version records its method, definition, window, seed, frozen scoring
+(quintile boundaries, or centroids and normalization bounds), dataset
+fingerprint and origin, metrics, reference distribution and owner. Once
+created, none of that changes, and no role edits or deletes a version. Exactly
+one version is published at a time. A version becomes published, and the
+previous one retired, only through a recorded publication; a rollback is a new
+publication of an earlier version, never an edit of history. Each publication
+names its version, the one it replaced, who made it and why. A comparison across
+versions is marked methodological and is never counted as behaviour
+([ADR-0064](adr/0064-a-model-version-is-immutable-and-a-change-of-version-is-never-reported-as-behaviour.md)).
+Every drift alert is judged against the reference distribution of the version
+it concerns (F23-07).
+
+**Enforced:** model-registry (planned), ADR-0059 and ADR-0064 —
+`models.model_version` is insert-only for `svc_models` apart from its state, a
+partial unique index allows one `PUBLISHED` row, and `models.model_publication`
+is append-only. The contract of F22-10 (#805) specifies versions, training runs,
+metrics, publications and rollbacks; drift reports and alerts follow with F23. ·
+#743
+
 ### RN-68 — A KPI is reported only under its published definition, window and data origin, and only to the roles and stores allowed to read it
 A KPI has one published definition, one window and one data origin, and a report
 names the version of the definition it follows, so a figure cannot mean two
@@ -1299,6 +1320,53 @@ figure has no store is not readable by it. No report carries a customer.
 `GET /v1/kpi-reports/definitions` is the only statement of a figure, the service
 holds `SELECT` on `api_*` views only, and the store scope is read from
 `api_users.store_assignment_v1` on each request. · #747
+
+### RN-69 — Stock changes only through a sale, its reversal or a recorded movement with a reason, and is never negative
+`inventory` keeps one on-hand quantity per store and product, and it is never
+negative ([ADR-0061](adr/0061-stock-keeps-one-quantity-per-store-and-changes-only-through-a-sale-a-reversal-or-a-recorded-movement.md)).
+Beyond an accepted sale (RN-14), it changes only through a sale's reversal or a
+recorded movement: a receipt with its reference, a transfer between two stores, a
+count with who counted, an adjustment with a reason of damage, loss, expiry or
+correction, or a restock from a reversal. A transfer subtracts at the origin and adds
+at the destination in one transaction. A movement is never edited or deleted, and a
+repeated `Idempotency-Key` records nothing new. A product is available in a store and
+channel when its commercial status allows the sale, the store enables the channel,
+and its on-hand quantity is above zero.
+
+**Enforced:** stock-service (planned) and ADR-0061 — `stock.stock_movement` is
+insert-only, `definer_stock` applies a movement and its `inventory` change in one
+transaction, and quantities change by a conditional `UPDATE`, so two movements on
+one row add up. · #772
+
+### RN-70 — A sale is never edited or deleted: a cancellation or return is recorded beside it, and every reader counts net units
+A cancellation or a return is an append-only reversal recorded beside the sale
+([ADR-0062](adr/0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md)).
+It never edits or deletes the sale. A cancellation covers the whole sale on its
+calendar day, a return covers one or more lines within 30 days of the sale (both are
+configuration defaults), and each states a reason. Returning more units than remain is
+refused. A line's returned units are restored to stock in the same transaction unless
+the line says the goods cannot be resold. Every reader of accepted sales counts net
+units, `quantity - returned_quantity`, and a sale whose net amount is zero stops
+counting as a purchase. A repeated `Idempotency-Key` or `source_transaction_id`
+records nothing new.
+
+**Enforced:** sales-service (planned) and ADR-0062 — `sales.sale_reversal` and
+`sales.sale_reversal_line` are insert-only; `transaction_line.returned_quantity` is
+written only by `svc_sales`, with `CHECK (returned_quantity BETWEEN 0 AND quantity)`;
+the `net_sale_line` and `net_sale` views carry the one definition of net. · #770
+
+### RN-71 — A promotion belongs to one campaign, discounts by a percentage above zero, and is valid only within its campaign's dates
+A promotion names exactly one campaign, a discount percentage greater than zero
+and at most 100, the stores and channels where it applies, and a validity that
+begins no earlier than its campaign's start and ends no later than its end
+(`starts_on` is never after `ends_on`). It is created and replaced only while its
+campaign is a draft (RN-32), and it is usable for a discount only while the
+campaign is `ACTIVE` and today lies within its validity, both ends inclusive. A
+promotion outside its campaign's dates is refused as `promotion_outside_campaign`.
+
+**Enforced:** campaigns-service (planned), ADR-0059 and ADR-0034 — the service
+checks the rule on every write, and `api_campaigns.active_promotion_v1` publishes
+only promotions of an `ACTIVE` campaign whose validity contains `CURRENT_DATE`. · #834
 
 ---
 

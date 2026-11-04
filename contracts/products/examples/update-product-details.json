@@ -1,0 +1,17 @@
+{
+  "product_id": 1002,
+  "sku": "MOS-TAG-002",
+  "name": "Shelf Tag Pack",
+  "category_id": 12,
+  "list_price": "24.50",
+  "is_active": false,
+  "commercial_status": "discontinued",
+  "attributes": [
+    {
+      "name": "color",
+      "value": "white"
+    }
+  ],
+  "photo_url": null,
+  "barcode": "036000291452"
+}

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CampaignExclusions xmlns="https://mosaiq.maxthecoder.online/xml/campaigns/v1">
+  <campaign_id>12</campaign_id>
+  <customer_ids>6f1c2a9e-3b44-4d1e-9a52-0c7d8e1f2a3b</customer_ids>
+  <customer_ids>b7d9e0f4-52a1-4c38-8e6d-1f2a3b4c5d6e</customer_ids>
+  <label_codes>DORMANT</label_codes>
+</CampaignExclusions>

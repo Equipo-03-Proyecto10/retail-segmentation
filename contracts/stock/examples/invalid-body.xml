@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_body</code>
+  <message>The movement violates its schema.</message>
+  <correlation_id>corr-invalid-body</correlation_id>
+  <details>
+    <field>movement_type</field>
+    <code>unknown_movement_type</code>
+  </details>
+</Error>

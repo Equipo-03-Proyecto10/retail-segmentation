@@ -1,0 +1,11 @@
+{
+  "code": "barcode_taken",
+  "message": "Another product already has this barcode.",
+  "correlation_id": "corr-details-409",
+  "details": [
+    {
+      "field": "barcode",
+      "code": "unique"
+    }
+  ]
+}

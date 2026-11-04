@@ -36,6 +36,67 @@
     </xs:restriction>
   </xs:simpleType>
 
+  <xs:simpleType name="Uuid">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Money">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9]+\.[0-9]{2}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="DiscountPercent">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="(100\.00|[0-9]{1,2}\.[0-9]{2})"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="PromotionId">
+    <xs:restriction base="xs:positiveInteger">
+      <xs:maxInclusive value="2147483647"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="PromotionName">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:maxLength value="120"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="StoreId">
+    <xs:restriction base="xs:positiveInteger">
+      <xs:maxInclusive value="32767"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="ChannelId">
+    <xs:restriction base="xs:positiveInteger">
+      <xs:maxInclusive value="32767"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="MaxCustomers">
+    <xs:restriction base="xs:positiveInteger">
+      <xs:maxInclusive value="10000000"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="MinPurchases">
+    <xs:restriction base="xs:positiveInteger">
+      <xs:maxInclusive value="1000"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="PurchaseWindowDays">
+    <xs:restriction base="xs:positiveInteger">
+      <xs:maxInclusive value="731"/>
+    </xs:restriction>
+  </xs:simpleType>
+
   <xs:complexType name="CampaignType">
     <xs:sequence>
       <xs:element name="campaign_id" type="campaigns:CampaignId"/>
@@ -96,6 +157,134 @@
     </xs:sequence>
   </xs:complexType>
 
+  <xs:complexType name="CampaignAudienceType">
+    <xs:sequence>
+      <xs:element name="campaign_id" type="campaigns:CampaignId"/>
+      <xs:element name="label_code" type="campaigns:LabelCode"/>
+      <xs:element name="max_customers" type="campaigns:MaxCustomers"
+                  minOccurs="0"/>
+      <xs:element name="audience_size" type="xs:nonNegativeInteger"/>
+      <xs:element name="as_of" type="xs:dateTime"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="PutCampaignAudienceRequestType">
+    <xs:sequence>
+      <xs:element name="max_customers" type="campaigns:MaxCustomers"
+                  minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="CampaignBudgetType">
+    <xs:sequence>
+      <xs:element name="campaign_id" type="campaigns:CampaignId"/>
+      <xs:element name="total_amount" type="campaigns:Money" minOccurs="0"/>
+      <xs:element name="per_customer_cap" type="campaigns:Money"
+                  minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="PutCampaignBudgetRequestType">
+    <xs:sequence>
+      <xs:element name="total_amount" type="campaigns:Money" minOccurs="0"/>
+      <xs:element name="per_customer_cap" type="campaigns:Money"
+                  minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="CampaignEligibilityRulesType">
+    <xs:sequence>
+      <xs:element name="campaign_id" type="campaigns:CampaignId"/>
+      <xs:element name="registered_on_or_before" type="xs:date"
+                  minOccurs="0"/>
+      <xs:element name="min_purchases" type="campaigns:MinPurchases"
+                  minOccurs="0"/>
+      <xs:element name="purchase_window_days"
+                  type="campaigns:PurchaseWindowDays" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="PutCampaignEligibilityRulesRequestType">
+    <xs:sequence>
+      <xs:element name="registered_on_or_before" type="xs:date"
+                  minOccurs="0"/>
+      <xs:element name="min_purchases" type="campaigns:MinPurchases"
+                  minOccurs="0"/>
+      <xs:element name="purchase_window_days"
+                  type="campaigns:PurchaseWindowDays" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="CampaignExclusionsType">
+    <xs:sequence>
+      <xs:element name="campaign_id" type="campaigns:CampaignId"/>
+      <xs:element name="customer_ids" type="campaigns:Uuid"
+                  minOccurs="0" maxOccurs="1000"/>
+      <xs:element name="label_codes" type="campaigns:LabelCode"
+                  minOccurs="0" maxOccurs="20"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="PutCampaignExclusionsRequestType">
+    <xs:sequence>
+      <xs:element name="customer_ids" type="campaigns:Uuid"
+                  minOccurs="0" maxOccurs="1000"/>
+      <xs:element name="label_codes" type="campaigns:LabelCode"
+                  minOccurs="0" maxOccurs="20"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="PromotionType">
+    <xs:sequence>
+      <xs:element name="promotion_id" type="campaigns:PromotionId"/>
+      <xs:element name="campaign_id" type="campaigns:CampaignId"/>
+      <xs:element name="name" type="campaigns:PromotionName"/>
+      <xs:element name="discount_percent" type="campaigns:DiscountPercent"/>
+      <xs:element name="starts_on" type="xs:date"/>
+      <xs:element name="ends_on" type="xs:date"/>
+      <xs:element name="store_ids" type="campaigns:StoreId"
+                  maxOccurs="100"/>
+      <xs:element name="channel_ids" type="campaigns:ChannelId"
+                  maxOccurs="20"/>
+      <xs:element name="is_active" type="xs:boolean"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="PromotionsType">
+    <xs:sequence>
+      <xs:element name="Promotion" type="campaigns:PromotionType"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="CreatePromotionRequestType">
+    <xs:sequence>
+      <xs:element name="campaign_id" type="campaigns:CampaignId"/>
+      <xs:element name="name" type="campaigns:PromotionName"/>
+      <xs:element name="discount_percent" type="campaigns:DiscountPercent"/>
+      <xs:element name="starts_on" type="xs:date"/>
+      <xs:element name="ends_on" type="xs:date"/>
+      <xs:element name="store_ids" type="campaigns:StoreId"
+                  maxOccurs="100"/>
+      <xs:element name="channel_ids" type="campaigns:ChannelId"
+                  maxOccurs="20"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ReplacePromotionRequestType">
+    <xs:sequence>
+      <xs:element name="name" type="campaigns:PromotionName"/>
+      <xs:element name="discount_percent" type="campaigns:DiscountPercent"/>
+      <xs:element name="starts_on" type="xs:date"/>
+      <xs:element name="ends_on" type="xs:date"/>
+      <xs:element name="store_ids" type="campaigns:StoreId"
+                  maxOccurs="100"/>
+      <xs:element name="channel_ids" type="campaigns:ChannelId"
+                  maxOccurs="20"/>
+    </xs:sequence>
+  </xs:complexType>
+
   <xs:element name="Campaign" type="campaigns:CampaignType"/>
   <xs:element name="Campaigns" type="campaigns:CampaignsType"/>
   <xs:element name="CreateCampaignRequest"
@@ -104,4 +293,24 @@
               type="campaigns:UpdateCampaignRequestType"/>
   <xs:element name="TransitionCampaignRequest"
               type="campaigns:TransitionCampaignRequestType"/>
+  <xs:element name="CampaignAudience" type="campaigns:CampaignAudienceType"/>
+  <xs:element name="PutCampaignAudienceRequest"
+              type="campaigns:PutCampaignAudienceRequestType"/>
+  <xs:element name="CampaignBudget" type="campaigns:CampaignBudgetType"/>
+  <xs:element name="PutCampaignBudgetRequest"
+              type="campaigns:PutCampaignBudgetRequestType"/>
+  <xs:element name="CampaignEligibilityRules"
+              type="campaigns:CampaignEligibilityRulesType"/>
+  <xs:element name="PutCampaignEligibilityRulesRequest"
+              type="campaigns:PutCampaignEligibilityRulesRequestType"/>
+  <xs:element name="CampaignExclusions"
+              type="campaigns:CampaignExclusionsType"/>
+  <xs:element name="PutCampaignExclusionsRequest"
+              type="campaigns:PutCampaignExclusionsRequestType"/>
+  <xs:element name="Promotion" type="campaigns:PromotionType"/>
+  <xs:element name="Promotions" type="campaigns:PromotionsType"/>
+  <xs:element name="CreatePromotionRequest"
+              type="campaigns:CreatePromotionRequestType"/>
+  <xs:element name="ReplacePromotionRequest"
+              type="campaigns:ReplacePromotionRequestType"/>
 </xs:schema>

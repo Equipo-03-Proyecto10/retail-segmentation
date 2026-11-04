@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>role_not_store_bound</code>
+  <message>The user's role is not tied to stores, so only an empty set is accepted.</message>
+  <correlation_id>corr-role-not-store-bound</correlation_id>
+  <details>
+    <field>store_ids</field>
+    <code>role_not_store_bound</code>
+  </details>
+</Error>

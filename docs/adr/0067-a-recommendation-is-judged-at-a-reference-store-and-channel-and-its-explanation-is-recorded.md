@@ -1,6 +1,6 @@
 # ADR-0067 — A recommendation is judged at a reference store and channel, offers a declared alternative when unavailable, and its explanation is recorded
 
-**Status:** Proposed
+**Status:** Accepted (2026-11-04)
 **Owner:** Maximiliano
 **Issue:** #825
 **Supersedes:** — *(it restates RN-40's eligibility test; it does not edit accepted ADRs. The register entry E-17 and `docs/services/recommendations.md` are updated by the stories listed under "What must now be true elsewhere")*

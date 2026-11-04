@@ -55,7 +55,7 @@ steps are what that unit and each service's deploy job do.
    ```
 
    With no service installed, it holds only `ops` and the disabled `default`
-   user. It lives in `/etc/mosaiq/redis/users.acl`, a directory that both
+   user (off, with the rules AOF replay needs, ADR-0056). It lives in `/etc/mosaiq/redis/users.acl`, a directory that both
    containers mount read-only. `MOSAIQ_REDIS_ACL_DIR` points elsewhere for a
    test.
 

@@ -176,7 +176,7 @@ Later runtime events must be preserved.
 | [0034](0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) | Fifteen single-rule services, each the only service that writes its data | Partially superseded by [0059](0059-four-new-services-join-the-fifteen-and-six-capabilities-fold-into-the-rule-they-extend.md) |
 | [0035](0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md) | Each service publishes its own versioned contract, and no two services share a resource | Accepted |
 | [0036](0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md) | auth-service issues role-only RS256 tokens whose sessions live in Redis | Accepted |
-| [0037](0037-two-redis-instances-carry-sessions-caches-limits-and-inter-service-streams.md) | Two Redis instances carry sessions, caches, limits and the inter-service streams, for the services only | Accepted |
+| [0037](0037-two-redis-instances-carry-sessions-caches-limits-and-inter-service-streams.md) | Two Redis instances carry sessions, caches, limits and the inter-service streams, for the services only | Partially superseded by [0056](0056-the-disabled-default-user-may-replay-the-append-only-file.md) (the `default` user's line only) |
 | [0038](0038-mongodb-holds-in-store-engagement-owned-by-engagement-service-alone.md) | MongoDB holds in-store engagement, owned by engagement-service alone | Accepted |
 | [0039](0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) | sales-service records a sale all or nothing, consuming stock through the stock contract | Partially superseded by [0062](0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md) |
 | [0040](0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md) | Each service is built in CI and runs as its own compose project on the instance | Partially superseded by [0059](0059-four-new-services-join-the-fifteen-and-six-capabilities-fold-into-the-rule-they-extend.md) |
@@ -195,6 +195,7 @@ Later runtime events must be preserved.
 | [0053](0053-experiments-are-measured-on-conversion-only.md) | Experiments are measured on conversion only; `AVERAGE_TICKET` is removed | Accepted |
 | [0054](0054-seed-written-outbox-rows-before-the-relays-first-start.md) | Seed-written outbox events are removed before bootstrap commits | Accepted |
 | [0055](0055-an-ops-console-supervises-services-through-their-meta-routes.md) | An ops console supervises the services through their meta routes, a host snapshot and a read-only Redis user | Accepted |
+| [0056](0056-the-disabled-default-user-may-replay-the-append-only-file.md) | The disabled `default` user may replay the append-only file | Accepted |
 | [0057](0057-the-android-client-themes-material3-with-the-mosaiq-tokens-adapted-for-a-handheld.md) | The Android client themes Material3 with the MOSAIQ tokens, adapted for a handheld | Accepted |
 | [0058](0058-the-android-client-navigates-with-saved-plain-state-not-navigation-compose.md) | The Android client navigates with saved plain state, not Navigation-Compose | Accepted |
 | [0059](0059-four-new-services-join-the-fifteen-and-six-capabilities-fold-into-the-rule-they-extend.md) | Four new services join the fifteen, and six capabilities fold into the rule they extend | Accepted |

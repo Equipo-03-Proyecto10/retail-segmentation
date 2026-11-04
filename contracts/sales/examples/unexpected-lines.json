@@ -1,0 +1,11 @@
+{
+  "code": "unexpected_lines",
+  "message": "A cancellation reverses the whole sale and takes no lines.",
+  "correlation_id": "corr-unexpected-lines",
+  "details": [
+    {
+      "field": "lines",
+      "code": "not_allowed"
+    }
+  ]
+}

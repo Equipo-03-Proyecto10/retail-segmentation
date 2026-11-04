@@ -177,16 +177,22 @@ The web's matrix does not change.
 
 | Operations | `x-mosaiq-roles` | Basis |
 |---|---|---|
-| Reads of products (including `GET /v1/products?ids=`), categories, stores, stock levels and channels | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `INVENTORY_PLANNER`, `AUDITOR` | Catalogs: read. Stock follows the catalog (ADR-0010) |
-| Writes of products, categories and store locations | `ADMIN` | Catalogs: full for `ADMIN` only |
+| Reads of products (including `GET /v1/products?ids=`), categories, stores (including a store's status, opening hours, enabled channel ids and commercial rules), stock levels and channels | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `INVENTORY_PLANNER`, `AUDITOR` | Catalogs: read. Stock follows the catalog (ADR-0010) |
+| Writes of products, categories, store locations, and a store's status, opening hours, enabled channel ids and commercial rules | `ADMIN` | Catalogs: full for `ADMIN` only |
 | Reads of customers, preference profiles, segments, segment assignments and recommendations | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR` | Segments and rules: read. Customers follow `segment.read` (ADR-0010, ADR-0023) |
-| Reads of sales and engagement events (each row names a customer) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR` | Reports: read, narrowed to `segment.read` holders, which keeps `INVENTORY_PLANNER` out of customer data |
+| Reads of sales, sale reversals and engagement events (each row names a customer) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR` | Reports: read, narrowed to `segment.read` holders, which keeps `INVENTORY_PLANNER` out of customer data |
 | Engagement summaries (aggregates, no customer) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `INVENTORY_PLANNER`, `AUDITOR` | Reports: read |
 | Reads of check-ins (where a staff member was) | `ADMIN`, `STORE_MANAGER`, `AUDITOR` | New, and narrowed: staff location data |
 | Floor writes: `POST /v1/sales`; `POST /v1/customers` and `PATCH /v1/customers/{customer_id}`; `PUT /v1/preference-profiles/{customer_id}/preferred-channels` and `/interest-categories`; `POST /v1/check-ins`; `POST /v1/engagement-events` | `ADMIN`, `STORE_MANAGER` | New. `STORE_MANAGER` is the floor role (ADR-0041, following ADR-0023). The web still refuses these to `STORE_MANAGER` |
+| `POST /v1/sale-reversals` | `ADMIN`, `STORE_MANAGER` for a cancellation or a return; `SALES_ASSOCIATE` (ADR-0060) for a cancellation only | ADR-0062. A return is refused to the seller with `forbidden_role` |
+| Loyalty cards: `POST` and `GET /v1/loyalty-cards`, `PUT /v1/loyalty-cards/{card_id}/revocation` | `ADMIN`, `LOYALTY_OFFICER` | Customers: loyalty (ADR-0060) |
+| `POST /v1/loyalty-cards/lookup` | `ADMIN`, `SALES_ASSOCIATE`, `LOYALTY_OFFICER` | Identify a customer at the counter (ADR-0060) |
+| `GET /v1/customers/floor-search` and `/v1/customers/{customer_id}/floor-view`, the floor view of a customer | `SALES_ASSOCIATE`, `LOYALTY_OFFICER` | The field table of ADR-0060, for customers' own fields only; `COMMERCIAL_SUPERVISOR` reads no customer element |
 | Check-in reviews and engagement voids | `ADMIN` | Administrative correction |
 | Reads of users and roles | `ADMIN`, `AUDITOR` | Users: full for `ADMIN`, read for `AUDITOR` |
 | Writes of users, password resets of another user, and `POST /v1/administrator-transfers` | `ADMIN` | Users: full |
+| `PUT /v1/store-assignments/{user_id}` | `ADMIN` | Users: full (ADR-0060) |
+| `GET /v1/store-assignments/{user_id}` | `ADMIN` and `AUDITOR` for any user; `SALES_ASSOCIATE`, `STORE_MANAGER`, `LOYALTY_OFFICER` and `COMMERCIAL_SUPERVISOR` for their own id only | Users: read; own (ADR-0060) |
 | `GET /v1/users/me`; `PUT /v1/users/{user_id}/password` for the caller's own id, with the current password | Every authenticated role, `CUSTOMER` included | Users: own |
 | `GET` and `DELETE /v1/sessions/current` | Every authenticated role | — |
 | Reads of campaigns | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Campaigns: read |
@@ -195,6 +201,8 @@ The web's matrix does not change.
 | Reads of RFM rule sets | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Segments and rules: read. A rule set is configuration with no customer data |
 | Reads of RFM recalculations and their differences | `ADMIN`, `ANALYST`, `AUDITOR` | Reports: read, narrowed to the roles that verify the model; a difference names a customer |
 | `POST /v1/rfm-rule-sets`, `POST /v1/rfm-recalculations` | `ADMIN` | Segment run: run (RN-05); a rule set changes what every report says |
+| Reads of model versions, their publications and training runs | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Segments and rules: read. A version is configuration and fitted statistics with no customer data |
+| `POST /v1/model-versions`, `POST /v1/model-trainings`, `POST /v1/model-versions/{version_id}/publications`, `POST /v1/model-versions/{version_id}/rollbacks` | `ADMIN` | Segment run: run (RN-05); a publication changes every customer's segment |
 | Reads of active promotions | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR`, and the four floor roles, who read active promotions of their assigned stores only | ADR-0060. Other campaign reads keep their roles |
 | Writes of a campaign's audience, budget, eligibility rules and exclusions, and of promotions | `ADMIN`, `MARKETING` | Campaigns: full |
 | `GET /v1/audit-entries` | `ADMIN`, `AUDITOR` | Audit log: read |

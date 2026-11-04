@@ -13,7 +13,7 @@ The design is governed by ADR-0034 to ADR-0046. Every service implements exactly
 | [products](./products.md) | Flask | 5003 | core | Unique SKU, non-negative price, one existing category; retired, not deleted | RN-10, RN-11 |
 | [categories](./categories.md) | Flask | 5004 | core | An acyclic category tree; no delete with products, children or customer interests | RN-33, RN-06, RN-07 |
 | [stores](./stores.md) | Rust (axum) | 5005 | core | At most one valid, geofenced location per store, set by ADMIN only | RN-53 |
-| [stock](./stock.md) | Rust (axum) | 5006 | core | Stock never negative, consumed only by an accepted sale, atomically with it | RN-14, ADR-0031 |
+| [stock](./stock.md) | Rust (axum) | 5006 | core | Stock never negative, consumed only by an accepted sale, atomically with it | RN-14, RN-69, ADR-0031 |
 | [customers](./customers.md) | Flask | 5007 | core | A customer registered once with valid data, never deleted through services | RN-08 |
 | [customer-preferences](./customer-preferences.md) | Rust (axum) | 5008 | core | Preferred channels and interest categories each replaced only as a whole set | RN-54 |
 | [sales](./sales.md) | Flask | 5009 | core | A sale recorded once, all or nothing, consuming its stock in the same transaction | RN-11 to RN-13, RN-37 (accepted sales) |

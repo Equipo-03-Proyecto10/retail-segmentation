@@ -31,8 +31,8 @@ services:
     resources: [stores]
   - name: stock
     port: 5006
-    rule: "Stock is never negative, and changes only through an accepted sale, its reversal or a recorded movement with a reason (RN-14, ADR-0031, ADR-0061)"
-    rn: [RN-14]
+    rule: "Stock is never negative, and changes only through an accepted sale, its reversal or a recorded movement with a reason (RN-14, RN-69, ADR-0031)"
+    rn: [RN-14, RN-69]
     wave: core
     resources: [stock-levels, stock-movements, availabilities]
   - name: customers

@@ -1,0 +1,11 @@
+{
+  "code": "invalid_body",
+  "message": "The parameters and the frozen scoring must belong to the version's method.",
+  "correlation_id": "corr-invalid-body",
+  "details": [
+    {
+      "field": "frozen_scoring",
+      "code": "method_mismatch"
+    }
+  ]
+}

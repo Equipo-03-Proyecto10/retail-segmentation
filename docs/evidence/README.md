@@ -167,6 +167,7 @@ right place for it, and which the team accepted on 2026-09-07.
 | Document | What it records |
 |---|---|
 | [F23-01](f23-01-evaluation-dataset.md) | The reproducible evaluation dataset, loaded on PostgreSQL 18, the web's RFM and K-means runs over it, and the leads it gives the model studies |
+| [F23-02](f23-02-variables-and-normalization.md) | Which variables stay, min-max against log, robust and rank scaling, and what winsorizing does to cluster sizes, with a recommendation for a new model version |
 
 ## Review passes
 
@@ -183,3 +184,9 @@ These follow a specific review rather than a story.
 | [#357](f357-experiment-frame-and-exposure.md) | The experiment frame fixed after assignment, exposure refused outside it, and concurrent repeat exposures collapsed to one row, checked on PostgreSQL 16 with 8 concurrent connections |
 | [#343](f343-exposed-conversion.md) | Conversion among exposed customers beside intent to treat, checked against an independent query on PostgreSQL with boundary sales, the uplift page as a 200 before evaluation, and captures at 375 px and 1440 px |
 | [#340](f340-dashboard-kpis.md) | The dashboard KPIs beyond the charts: average R/F/M per label, running experiments with conversion per arm, most recommended products with stock; with the queries to compare them and what was not run |
+
+## Phase 24 — inventory-bound recommendations
+
+| Document | What it records |
+|---|---|
+| [F24-01 (#824)](824-recommendation-guarantee.md) | The current RN-40 guarantee tested on seeded PostgreSQL: zero-stock, elsewhere-only, inactive and already-bought products never appear, reasons carry their figures; and what the rule cannot do: choose a store, consider a channel, offer an alternative, keep the explanation |

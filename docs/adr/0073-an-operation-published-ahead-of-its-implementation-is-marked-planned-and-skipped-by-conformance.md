@@ -1,6 +1,6 @@
 # ADR-0073 — An operation published ahead of its implementation is marked planned and skipped by conformance
 
-**Status:** Proposed
+**Status:** Accepted (2026-11-03)
 **Owner:** Max
 **Issue:** #937
 **Supersedes:** —

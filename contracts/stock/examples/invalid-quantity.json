@@ -1,0 +1,11 @@
+{
+  "code": "invalid_quantity",
+  "message": "The quantity is not valid for this movement type.",
+  "correlation_id": "corr-invalid-quantity",
+  "details": [
+    {
+      "field": "quantity",
+      "code": "must_be_positive"
+    }
+  ]
+}

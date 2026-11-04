@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<StockMovementRecord xmlns="https://mosaiq.maxthecoder.online/xml/stock/v1">
+  <movements>
+    <movement_id>9120</movement_id>
+    <movement_type>RECEIPT</movement_type>
+    <store_id>3</store_id>
+    <product_id>120</product_id>
+    <quantity_delta>40</quantity_delta>
+    <quantity_before>14</quantity_before>
+    <quantity_after>54</quantity_after>
+    <reference>DN-2026-00417</reference>
+    <recorded_by>3f0c9e1a-6a7b-4c52-9d1e-2b8f5a7d4c10</recorded_by>
+    <recorded_at>2026-10-16T09:15:00Z</recorded_at>
+  </movements>
+</StockMovementRecord>

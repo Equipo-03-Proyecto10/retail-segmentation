@@ -1,0 +1,6 @@
+{
+  "code": "not_acceptable",
+  "message": "The requested response format is unsupported.",
+  "correlation_id": "corr-not-acceptable",
+  "details": []
+}

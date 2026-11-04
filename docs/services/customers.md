@@ -1,7 +1,7 @@
 # customers
 
 > **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
-> **One rule:** A customer is registered once, with a valid unique email when given, a known channel and a registration date not in the future, and is never deleted through services (RN-08)
+> **One rule:** A customer is registered once, with a valid unique email when given, a known channel and a registration date not in the future, and is never deleted through services; its loyalty card is an opaque code derived from nothing about the customer, a customer holds at most one active card, and a card is revoked, never deleted, so revoking it again changes nothing (RN-08)
 
 ## Summary
 
@@ -29,10 +29,32 @@
 |---|---|---|---|
 | GET | `/v1/customers` | Search (`q` over name, email or phone; `email`, `page`, `size`) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | GET | `/v1/customers/{customer_id}` | One customer | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
+| GET | `/v1/customers/floor-search` | Floor search: `q` required with 3 characters at least, `size` 20 at most, no `email`; `SALES_ASSOCIATE` matches name only. Items are `FloorCustomer` | SALES_ASSOCIATE, LOYALTY_OFFICER |
+| GET | `/v1/customers/{customer_id}/floor-view` | One customer as `FloorCustomer` | SALES_ASSOCIATE, LOYALTY_OFFICER |
 | POST | `/v1/customers` | Register a customer | ADMIN, STORE_MANAGER |
 | PATCH | `/v1/customers/{customer_id}` | Correct a customer's data | ADMIN, STORE_MANAGER |
+| POST | `/v1/loyalty-cards` | Issue a loyalty card (an opaque code, no personal data) | ADMIN, LOYALTY_OFFICER |
+| GET | `/v1/loyalty-cards` | List one customer's cards and its `loyalty_state` (`customer_id` required) | ADMIN, LOYALTY_OFFICER |
+| POST | `/v1/loyalty-cards/lookup` | Resolve a scanned code to its card and customer id | ADMIN, SALES_ASSOCIATE, LOYALTY_OFFICER |
+| PUT | `/v1/loyalty-cards/{card_id}/revocation` | Revoke a card, idempotently | ADMIN, LOYALTY_OFFICER |
 
 Roles follow the [service operation policy](../requirements.md#service-operation-policy-distributed-stage). Meta routes (no token): `GET /health/live`, `GET /health/ready`, `GET /openapi.yaml`, `GET /schema.xsd`.
+
+## Customer representation per role
+
+Decided in [ADR-0060](../adr/0060-four-store-profiles-map-to-four-roles-and-services-read-each-users-stores-per-request.md). customers returns only its own fields. The v1 `Customer` response is unchanged and keeps all six fields, so it cannot omit any; floor roles read the separate `FloorCustomer` element through the two floor operations above. An element a role may not read is absent, in JSON and in XML.
+
+| Element | `SALES_ASSOCIATE` | `LOYALTY_OFFICER` | Other reading roles (`Customer`) | `COMMERCIAL_SUPERVISOR` |
+|---|---|---|---|---|
+| `customer_id`, `name` | Yes | Yes | Yes | 403 |
+| `email`, `phone` | Absent | Yes | Yes | 403 |
+| `registration_channel_id`, `registered_on` | Absent | Absent | Yes | 403 |
+
+`loyalty_state` (`NONE`, `ACTIVE`, `REVOKED`) is on no customer read. `GET /v1/loyalty-cards?customer_id=` returns it, for `ADMIN` and `LOYALTY_OFFICER`.
+
+Segment, RFM scores, interest categories, restrictions, preferred channels and consent are not customers' resources. Each is read from the service that owns it, which narrows its own resource by role (ADR-0035, ADR-0060); the client composes the customer's view from those reads. customers consumes none of those boundaries.
+
+The QR on a loyalty card encodes only its `code`: 128 random bits as 26 Crockford base32 characters, derived from nothing about the customer. Lookup takes the code in a body, never in a URL, and answers with ids only; the caller then reads the customer with `GET /v1/customers/{customer_id}`. A customer has at most one ACTIVE card; a card is revoked, never deleted, and revoking a revoked card answers as the first revocation did.
 
 ## Data it owns
 
@@ -69,6 +91,11 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | 422 | `unknown_channel` | `registration_channel_id` references no channel (23503) |
 | 422 | `future_registration` | A `POST` gives a `registered_on` after the current date |
 | 404 | `customer_not_found` | No customer has the given `customer_id` |
+| 404 | `card_not_found` | No loyalty card has the code or id |
+| 409 | `card_revoked` | A lookup found a revoked card; no customer is named |
+| 409 | `active_card_exists` | The customer already has an ACTIVE card |
+| 422 | `unknown_customer` | `customer_id` of an issue request references no customer |
+| 422 | `invalid_query` | A floor role's search with `q` missing or under 3 characters |
 
 ## Accepted exceptions
 

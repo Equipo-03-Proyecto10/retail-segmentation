@@ -9,6 +9,7 @@
 | [Analytics permission map](analytics-permission-map.md) | Which permission each analytics surface requires |
 | [Process](process.md) | How the team works: Scrum planning, XP engineering practices, Definition of Done |
 | [Backlog](backlog.md) | Ordered work, grouped by scope phase |
+| [Usability test plan](usability-test-plan.md) | The tasks, participants and measures for the usability sessions of the third delivery, fixed before they run (F29-08) |
 | [Roadmap](roadmap.md) | What the second delivery requires, where each part stands, and how each kind of work enters |
 | [Infrastructure](infra.md) | Provisioned GCP resources, firewall policy, and SSH access |
 | [PostgreSQL access](../deploy/postgresql/README.md) | Loopback and SSH access, HBA rejection checks, and application-role verification |

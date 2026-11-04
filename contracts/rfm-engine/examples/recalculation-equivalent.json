@@ -1,0 +1,14 @@
+{
+  "recalculation_id": 12,
+  "trigger": "SCHEDULE",
+  "state": "COMPLETED",
+  "rule_set_id": 3,
+  "as_of": "2026-10-25T02:30:00Z",
+  "started_at": "2026-10-25T02:30:00Z",
+  "finished_at": "2026-10-25T02:31:48Z",
+  "started_by": null,
+  "customers_checked": 30,
+  "customers_different": 0,
+  "outcome": "EQUIVALENT",
+  "failure_code": null
+}

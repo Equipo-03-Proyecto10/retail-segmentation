@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>reversal_window_closed</code>
+  <message>The time allowed for this kind of reversal has passed.</message>
+  <correlation_id>corr-reversal-window-closed</correlation_id>
+  <details>
+    <field>kind</field>
+    <code>window_closed</code>
+  </details>
+</Error>

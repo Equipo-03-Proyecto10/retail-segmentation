@@ -1,0 +1,11 @@
+{
+  "code": "idempotency_key_required",
+  "message": "The Idempotency-Key header is missing or is not a UUID.",
+  "correlation_id": "corr-idempotency-key-required",
+  "details": [
+    {
+      "field": "Idempotency-Key",
+      "code": "required"
+    }
+  ]
+}

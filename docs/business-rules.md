@@ -1256,6 +1256,96 @@ never updated or deleted.
 `checkins.store_check_in` keeps the computed reason, and
 `checkins.check_in_review` is insert-only for `svc_checkins`. · #398
 
+### RN-65 — A customer's R, F and M are a function of their net purchases under one rule-set version, change only for the customers an event touched, and equal a full recalculation
+A customer's raw recency, frequency and monetary total, their scores and their
+label are computed from their accepted purchases net of reversals
+([ADR-0062](adr/0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md)),
+in the rule set's window ending at the instant they are processed, scored against the
+boundaries that rule set froze and never against the population. A sale, a
+reversal, the passing of time, a published version or a verification recomputes
+the customer from those purchases, never from a delta, so replaying or reordering
+events cannot change a result. Only the customers an event touched, or whose
+`next_change_at` has passed, are recomputed. A full recomputation of the same rule
+set at the same instant gives every customer the same raw R, F and M and the same
+label as the profile held incrementally, and a verification reports each customer
+for whom it does not. A customer with no net purchase in the window is unassigned
+(RN-21).
+
+**Enforced:** rfm-engine (planned), ADR-0059 and
+[ADR-0063](adr/0063-segments-change-on-events-and-on-a-schedule-scored-against-the-published-version.md) —
+`rfm.customer_profile` is written only by `svc_rfm`, recomputing the touched
+customer from the net purchase view; `next_change_at` is an indexed column the
+daily pass selects on; `POST /v1/rfm-recalculations` and the weekly pass compare
+every customer with a recomputation and record the difference. · #743
+
+### RN-66 — A model version is immutable once published, carries what it was fitted on, and changes state only by an explicit publication or rollback
+A model version records its method, definition, window, seed, frozen scoring
+(quintile boundaries, or centroids and normalization bounds), dataset
+fingerprint and origin, metrics, reference distribution and owner. Once
+created, none of that changes, and no role edits or deletes a version. Exactly
+one version is published at a time. A version becomes published, and the
+previous one retired, only through a recorded publication; a rollback is a new
+publication of an earlier version, never an edit of history. Each publication
+names its version, the one it replaced, who made it and why. A comparison across
+versions is marked methodological and is never counted as behaviour
+([ADR-0064](adr/0064-a-model-version-is-immutable-and-a-change-of-version-is-never-reported-as-behaviour.md)).
+Every drift alert is judged against the reference distribution of the version
+it concerns (F23-07).
+
+**Enforced:** model-registry (planned), ADR-0059 and ADR-0064 —
+`models.model_version` is insert-only for `svc_models` apart from its state, a
+partial unique index allows one `PUBLISHED` row, and `models.model_publication`
+is append-only. The contract of F22-10 (#805) specifies versions, training runs,
+metrics, publications and rollbacks; drift reports and alerts follow with F23. ·
+#743
+
+### RN-69 — Stock changes only through a sale, its reversal or a recorded movement with a reason, and is never negative
+`inventory` keeps one on-hand quantity per store and product, and it is never
+negative ([ADR-0061](adr/0061-stock-keeps-one-quantity-per-store-and-changes-only-through-a-sale-a-reversal-or-a-recorded-movement.md)).
+Beyond an accepted sale (RN-14), it changes only through a sale's reversal or a
+recorded movement: a receipt with its reference, a transfer between two stores, a
+count with who counted, an adjustment with a reason of damage, loss, expiry or
+correction, or a restock from a reversal. A transfer subtracts at the origin and adds
+at the destination in one transaction. A movement is never edited or deleted, and a
+repeated `Idempotency-Key` records nothing new. A product is available in a store and
+channel when its commercial status allows the sale, the store enables the channel,
+and its on-hand quantity is above zero.
+
+**Enforced:** stock-service (planned) and ADR-0061 — `stock.stock_movement` is
+insert-only, `definer_stock` applies a movement and its `inventory` change in one
+transaction, and quantities change by a conditional `UPDATE`, so two movements on
+one row add up. · #772
+
+### RN-70 — A sale is never edited or deleted: a cancellation or return is recorded beside it, and every reader counts net units
+A cancellation or a return is an append-only reversal recorded beside the sale
+([ADR-0062](adr/0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md)).
+It never edits or deletes the sale. A cancellation covers the whole sale on its
+calendar day, a return covers one or more lines within 30 days of the sale (both are
+configuration defaults), and each states a reason. Returning more units than remain is
+refused. A line's returned units are restored to stock in the same transaction unless
+the line says the goods cannot be resold. Every reader of accepted sales counts net
+units, `quantity - returned_quantity`, and a sale whose net amount is zero stops
+counting as a purchase. A repeated `Idempotency-Key` or `source_transaction_id`
+records nothing new.
+
+**Enforced:** sales-service (planned) and ADR-0062 — `sales.sale_reversal` and
+`sales.sale_reversal_line` are insert-only; `transaction_line.returned_quantity` is
+written only by `svc_sales`, with `CHECK (returned_quantity BETWEEN 0 AND quantity)`;
+the `net_sale_line` and `net_sale` views carry the one definition of net. · #770
+
+### RN-71 — A promotion belongs to one campaign, discounts by a percentage above zero, and is valid only within its campaign's dates
+A promotion names exactly one campaign, a discount percentage greater than zero
+and at most 100, the stores and channels where it applies, and a validity that
+begins no earlier than its campaign's start and ends no later than its end
+(`starts_on` is never after `ends_on`). It is created and replaced only while its
+campaign is a draft (RN-32), and it is usable for a discount only while the
+campaign is `ACTIVE` and today lies within its validity, both ends inclusive. A
+promotion outside its campaign's dates is refused as `promotion_outside_campaign`.
+
+**Enforced:** campaigns-service (planned), ADR-0059 and ADR-0034 — the service
+checks the rule on every write, and `api_campaigns.active_promotion_v1` publishes
+only promotions of an `ACTIVE` campaign whose validity contains `CURRENT_DATE`. · #834
+
 ---
 
 ## Where the gaps are
@@ -1276,7 +1366,8 @@ service's implementation story in Phase 14 (epic #399): RN-52 on auth-service,
 RN-53 on stores-service, RN-54 on customer-preferences-service, RN-55 on
 engagement-service and RN-56 on check-ins-service. RN-57 belongs to the
 experiment dashboard; RN-58 to RN-60 uniquely identify the K-means,
-migration-matrix and migration-explanation rules.
+migration-matrix and migration-explanation rules. RN-65 belongs to rfm-engine
+(#743) and waits on its implementation story, F22-05 (#779).
 
 RN-01 was the one to watch — a hard rule in `AGENTS.md` and a success criterion
 in [`scope.md`](scope.md) §7 that held only because the seed happened to contain

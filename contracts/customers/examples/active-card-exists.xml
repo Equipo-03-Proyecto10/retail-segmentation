@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>active_card_exists</code>
+  <message>The customer already has an active loyalty card.</message>
+  <correlation_id>corr-791-active</correlation_id>
+  <details>
+    <field>customer_id</field>
+    <code>already_active</code>
+  </details>
+</Error>

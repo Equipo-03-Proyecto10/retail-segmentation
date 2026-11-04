@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ModelPublicationRequest xmlns="https://mosaiq.maxthecoder.online/xml/model-registry/v1">
+  <reason>Drift alerts on the K-means reference; restore the rule set.</reason>
+</ModelPublicationRequest>

@@ -20,9 +20,9 @@ anything.
 
 Concept drift is a change in the relation between inputs and an outcome. A
 segmentation is descriptive: it has no outcome, so there is nothing to drift until a
-predictive task is chosen. That choice is a judgement call and is made here as a
-working assumption, for the human to confirm. ADR-0064 gives each model version a
-reference distribution; this record says what is compared against it.
+predictive task is chosen. This record chooses repurchase within 30 days as that
+predictive task. ADR-0064 gives each model version a reference distribution; this
+record says what is compared against it.
 
 ## Decision
 
@@ -33,21 +33,22 @@ Four terms are fixed, each with the evidence that proves it and no other.
 | Individual migration | One customer's segment differs between two assignments under the same model version | Two rows of `customer_segment_history` for that customer, same version, neither with cause `VERSION_CHANGE`; aggregated, the migration matrix | Any change in behaviour of the population, or any cause |
 | Individual consumption shift | One customer's dominant channel, store or leading category changed between two stated periods | The RN-36 report with RN-50 satisfied (at least 3 purchases per period, a strict leader in each) | A segment change, or drift |
 | Data drift | The distribution of segments or of the RFM features across customers differs from the version's reference distribution | A statistic below, over its window, past its threshold on the persistence rule | That the segments stopped predicting anything |
-| Concept drift | The relation between segment and a predictive outcome changed | The outcome test below, on matured cohorts | Anything, if no outcome is adopted |
+| Concept drift | The relation between segment and a predictive outcome changed | The outcome test below, on matured cohorts | A distribution change by itself, or any claim before the outcome test has run and passed |
 
-**Predictive relation (working assumption, pending acceptance).** The monitored
-relation is the probability that a customer repurchases within a fixed horizon given
-the customer's segment. The outcome is observable: at an as-of date `t`, a customer
-repurchases if at least one accepted sale of theirs falls in `(t, t + H]`, with `H` = 30
-days. Net sales count (ADR-0062). Only cohorts with `t + H` already in the past are
-used, so no unmatured outcome is read as a non-repurchase. The reference is the
-per-segment repurchase rate in the version's reference cohort. The test is a two-proportion
-z-test per segment, current matured cohort against reference, with Holm correction
-across segments at family-wise alpha 0.05, and a segment is tested only when both
-sides have at least 100 customers. Concept drift is claimed when at least one segment
-passes that test and its rate differs by at least 5 percentage points, in two
-consecutive matured cohorts. **If this record is accepted without this relation, no
-predictive task is adopted, and concept drift is not monitored.**
+**Predictive relation.** The monitored relation is the probability that a customer
+repurchases within a fixed horizon given the customer's segment. The outcome is
+observable: at an as-of date `t`, a customer repurchases if at least one accepted sale
+of theirs falls in `(t, t + H]`, with `H` = 30 days. Net sales count (ADR-0062).
+Only cohorts with `t + H` already in the past are used, so no unmatured outcome is
+read as a non-repurchase. Two consecutive matured cohorts have as-of dates exactly
+`H` (30 days) apart, so their outcome windows `(t, t + H]` do not overlap and each
+customer's outcome is counted in one cohort window at a time. The reference is the
+per-segment repurchase rate in the version's reference cohort. The test is a
+two-proportion z-test per segment, current matured cohort against reference, with Holm
+correction across segments at family-wise alpha 0.05, and a segment is tested only
+when both sides have at least 100 customers. Concept drift is claimed when at least
+one segment passes that test and its rate differs by at least 5 percentage points, in
+two consecutive matured cohorts.
 
 **Wording rule.** While no outcome is monitored, or whenever the outcome test has not
 run or has not passed, every screen, report, API field and export says "distribution
@@ -85,7 +86,7 @@ how often an alarm fires.
 | Alternative | Why it was rejected |
 |---|---|
 | Call any significant distribution change concept drift | The instructor forbids claiming it from descriptive data; the distribution can move while the relation to behaviour holds |
-| Monitor no predictive task and never speak of concept drift | Safe, but loses the one defensible reading of RT-06; kept as the fallback if the human declines the relation |
+| Monitor no predictive task and never speak of concept drift | Safe, but loses the one defensible reading of RT-06; rejected because this record adopts the repurchase relation |
 | Predict churn or next segment as the outcome | Churn needs a definition the project does not have; next segment is the segmentation predicting itself |
 | Kolmogorov-Smirnov or Wasserstein on features | Fine for continuous data, but RFM scores are discrete and ties distort them; PSI over reference bins is simpler to explain |
 | Alarm on a single window | Seasonality and small samples would alarm on noise |
@@ -112,5 +113,7 @@ A test scans templates, API schemas and report generators for "concept drift" an
 fails unless it appears on an outcome-test result. A test feeds a fixed distribution
 and a shifted one to the PSI function and checks the thresholds, and one feeds fewer
 than 200 customers and expects "insufficient data". A test creates a version change
-inside the window and expects no comparison. A test with immature cohorts expects
-them excluded from the repurchase rate.
+inside the window and expects no comparison. A cohort test expects immature cohorts
+to be excluded, consecutive matured as-of dates to be exactly `H` apart, their
+outcome windows not to overlap, and each customer's outcome to count in one cohort
+window at a time.

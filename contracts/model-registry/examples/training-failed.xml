@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ModelTraining xmlns="https://mosaiq.maxthecoder.online/xml/model-registry/v1">
+  <training_id>6</training_id>
+  <method>KMEANS</method>
+  <state>FAILED</state>
+  <version_name>kmeans-k8-trial</version_name>
+  <window_days>180</window_days>
+  <seed>5</seed>
+  <parameters>
+    <k>8</k>
+    <max_iterations>100</max_iterations>
+    <tolerance>0.0001</tolerance>
+    <features>R</features>
+    <features>F</features>
+    <features>M</features>
+    <normalization>MIN_MAX</normalization>
+  </parameters>
+  <started_at>2026-10-25T08:00:00Z</started_at>
+  <finished_at>2026-10-25T08:00:03Z</finished_at>
+  <started_by>11111111-1111-1111-1111-000000000001</started_by>
+  <failure_code>source_unavailable</failure_code>
+</ModelTraining>

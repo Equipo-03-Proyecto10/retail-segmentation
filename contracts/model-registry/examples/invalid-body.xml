@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_body</code>
+  <message>The parameters and the frozen scoring must belong to the version's method.</message>
+  <correlation_id>corr-invalid-body</correlation_id>
+  <details>
+    <field>frozen_scoring</field>
+    <code>method_mismatch</code>
+  </details>
+</Error>

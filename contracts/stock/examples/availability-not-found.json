@@ -1,0 +1,6 @@
+{
+  "code": "availability_not_found",
+  "message": "No store or product exists for store 3 and product 9999.",
+  "correlation_id": "corr-availability-not-found",
+  "details": []
+}

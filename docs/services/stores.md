@@ -1,7 +1,7 @@
 # stores
 
 > **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
-> **One rule:** Each store has at most one location, with valid coordinates and a 25–2000 m geofence, set by ADMIN only (RN-53)
+> **One rule:** Each store has at most one location, with valid coordinates and a 25–2000 m geofence, and one operating status, weekly opening hours, set of enabled channels and maximum discount, all set by ADMIN only (RN-53)
 
 ## Summary
 
@@ -21,6 +21,7 @@
 ## Business rule
 
 - `stores.store_location` is a 1:1 vertical split of `store` (PK `store_id`), with CHECKs on latitude (−90 to 90), longitude (−180 to 180) and `geofence_radius_m` (25 to 2000), and `set_by` an `ADMIN`.
+- Status, opening hours, enabled channel ids and the maximum discount are service-owned facts of the same store, each replaced whole by ADMIN only. Clearing is a write: an empty `intervals` list (and a null `time_zone`), an empty `channel_ids` list, or a null `max_discount_percent` (an omitted element in XML). `time_zone` is null exactly when there are no intervals, as in `api_stores.store_directory_v2`.
 - stores reads the web-written `store` table as its declared read owner (E-10) and publishes the directory with the location, so a check-in can be verified against it.
 
 ## Endpoints
@@ -31,6 +32,14 @@
 | GET | `/v1/stores/{store_id}` | One store, with its location when set | ADMIN, ANALYST, STORE_MANAGER, MARKETING, INVENTORY_PLANNER, AUDITOR |
 | PUT | `/v1/stores/{store_id}/location` | Set latitude, longitude and geofence radius | ADMIN |
 | DELETE | `/v1/stores/{store_id}/location` | Remove the location | ADMIN |
+| GET | `/v1/stores/{store_id}/status` | Read the operating status | ADMIN, ANALYST, STORE_MANAGER, MARKETING, INVENTORY_PLANNER, AUDITOR |
+| PUT | `/v1/stores/{store_id}/status` | Replace the operating status | ADMIN |
+| GET | `/v1/stores/{store_id}/hours` | Read the weekly opening hours | ADMIN, ANALYST, STORE_MANAGER, MARKETING, INVENTORY_PLANNER, AUDITOR |
+| PUT | `/v1/stores/{store_id}/hours` | Replace the weekly opening hours | ADMIN |
+| GET | `/v1/stores/{store_id}/channel-enablement` | Read the enabled channel ids | ADMIN, ANALYST, STORE_MANAGER, MARKETING, INVENTORY_PLANNER, AUDITOR |
+| PUT | `/v1/stores/{store_id}/channel-enablement` | Replace the enabled channel ids | ADMIN |
+| GET | `/v1/stores/{store_id}/commercial-rules` | Read the commercial rules (the maximum discount) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, INVENTORY_PLANNER, AUDITOR |
+| PUT | `/v1/stores/{store_id}/commercial-rules` | Replace the commercial rules | ADMIN |
 
 Roles follow the [service operation policy](../requirements.md#service-operation-policy-distributed-stage). Meta routes (no token): `GET /health/live`, `GET /health/ready`, `GET /openapi.yaml`, `GET /schema.xsd`.
 
@@ -49,6 +58,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Direction | Object | Counterpart |
 |---|---|---|
 | Publishes | `api_stores.store_directory_v1` | check-ins, engagement |
+| Publishes | `api_stores.store_directory_v2` | stock, campaigns, sales |
 
 ## Events
 

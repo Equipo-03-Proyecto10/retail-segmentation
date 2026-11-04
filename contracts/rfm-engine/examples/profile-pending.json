@@ -1,0 +1,15 @@
+{
+  "customer_id": "9c41e7b2-5d36-4f08-a1b9-3e2d7c6f5a40",
+  "state": "pending",
+  "rule_set_id": null,
+  "r_days": null,
+  "f_count": null,
+  "m_total": null,
+  "r_score": null,
+  "f_score": null,
+  "m_score": null,
+  "label_code": null,
+  "via_fallback": null,
+  "computed_at": null,
+  "next_change_at": null
+}

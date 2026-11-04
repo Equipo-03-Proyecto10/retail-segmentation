@@ -86,8 +86,212 @@
     </xs:sequence>
   </xs:complexType>
 
+  <!-- How a customer stood at one instant: holding a label, scored with no
+       label (RN-21), or without any assignment yet (a new customer). -->
+  <xs:simpleType name="MigrationState">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="label"/>
+      <xs:enumeration value="unassigned"/>
+      <xs:enumeration value="new"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- not_ranked: either side is unassigned or new, which have no place in the
+       vocabulary's order. -->
+  <xs:simpleType name="Movement">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="improved"/>
+      <xs:enumeration value="declined"/>
+      <xs:enumeration value="unchanged"/>
+      <xs:enumeration value="not_ranked"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="AssignmentCause">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="SALE"/>
+      <xs:enumeration value="REVERSAL"/>
+      <xs:enumeration value="AGEING"/>
+      <xs:enumeration value="VERSION_CHANGE"/>
+      <xs:enumeration value="FULL_RUN"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="MigrationVariable">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="recency"/>
+      <xs:enumeration value="frequency"/>
+      <xs:enumeration value="monetary"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="MeasureUnit">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="days"/>
+      <xs:enumeration value="purchases"/>
+      <xs:enumeration value="MXN"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Judgement">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="changed"/>
+      <xs:enumeration value="stable"/>
+      <xs:enumeration value="not_compared"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="NotComparedReason">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="new_customer"/>
+      <xs:enumeration value="unassigned"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Decimal">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9]+(\.[0-9]{2})?"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- One assignment row with the model version of its run. The version is
+       omitted while the run has none yet (pending). cause is omitted for a row
+       written before causes were recorded. -->
+  <xs:complexType name="VersionedSegmentAssignment">
+    <xs:sequence>
+      <xs:element name="customer_id" type="segments:Uuid"/>
+      <xs:element name="run_id" type="xs:long"/>
+      <xs:element name="model_version_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="cause" type="segments:AssignmentCause" minOccurs="0"/>
+      <xs:element name="label_code" type="xs:string" minOccurs="0"/>
+      <xs:element name="r_score" type="segments:Score" minOccurs="0"/>
+      <xs:element name="f_score" type="segments:Score" minOccurs="0"/>
+      <xs:element name="m_score" type="segments:Score" minOccurs="0"/>
+      <xs:element name="valid_from" type="xs:dateTime"/>
+      <xs:element name="valid_to" type="xs:dateTime" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="VersionedSegmentAssignments">
+    <xs:sequence>
+      <xs:element name="VersionedSegmentAssignment"
+                  type="segments:VersionedSegmentAssignment"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- One customer's movement between two instants. A label code is present
+       exactly when its state is label. changed_at, cause and the previous_*
+       members are omitted when they do not apply; a version is omitted while
+       its run has none yet. -->
+  <xs:complexType name="SegmentMigration">
+    <xs:sequence>
+      <xs:element name="customer_id" type="segments:Uuid"/>
+      <xs:element name="previous_state" type="segments:MigrationState"/>
+      <xs:element name="previous_label_code" type="xs:string" minOccurs="0"/>
+      <xs:element name="new_state" type="segments:MigrationState"/>
+      <xs:element name="new_label_code" type="xs:string" minOccurs="0"/>
+      <xs:element name="movement" type="segments:Movement"/>
+      <xs:element name="changed_at" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="cause" type="segments:AssignmentCause" minOccurs="0"/>
+      <xs:element name="previous_run_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="new_run_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="previous_model_version_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="new_model_version_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="methodological" type="xs:boolean"/>
+      <xs:element name="responsible_variables" type="segments:MigrationVariable"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="rank_only" type="xs:boolean"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SegmentMigrations">
+    <xs:sequence>
+      <xs:element name="from" type="xs:dateTime"/>
+      <xs:element name="to" type="xs:dateTime"/>
+      <xs:element name="SegmentMigration" type="segments:SegmentMigration"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- One state's figures. label_code is present exactly when state is label. -->
+  <xs:complexType name="MigrationTotal">
+    <xs:sequence>
+      <xs:element name="state" type="segments:MigrationState"/>
+      <xs:element name="label_code" type="xs:string" minOccurs="0"/>
+      <xs:element name="before_count" type="xs:nonNegativeInteger"/>
+      <xs:element name="after_count" type="xs:nonNegativeInteger"/>
+      <xs:element name="entries" type="xs:nonNegativeInteger"/>
+      <xs:element name="exits" type="xs:nonNegativeInteger"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- A cell with no customer is omitted. -->
+  <xs:complexType name="MigrationCell">
+    <xs:sequence>
+      <xs:element name="previous_state" type="segments:MigrationState"/>
+      <xs:element name="previous_label_code" type="xs:string" minOccurs="0"/>
+      <xs:element name="new_state" type="segments:MigrationState"/>
+      <xs:element name="new_label_code" type="xs:string" minOccurs="0"/>
+      <xs:element name="movement" type="segments:Movement"/>
+      <xs:element name="customer_count" type="xs:positiveInteger"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- A version is omitted while the latest versioned run at that instant has
+       none, and the comparison is then methodological. -->
+  <xs:complexType name="SegmentMigrationMatrix">
+    <xs:sequence>
+      <xs:element name="from" type="xs:dateTime"/>
+      <xs:element name="to" type="xs:dateTime"/>
+      <xs:element name="from_model_version_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="to_model_version_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="methodological" type="xs:boolean"/>
+      <xs:element name="customer_count" type="xs:nonNegativeInteger"/>
+      <xs:element name="MigrationTotal" type="segments:MigrationTotal"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="MigrationCell" type="segments:MigrationCell"
+                  minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Values are decimal strings: whole numbers for days and purchases, two
+       places for MXN. They and the reason are omitted when not compared;
+       rank_changed is true when the value is unchanged but the score moved. -->
+  <xs:complexType name="MigrationMeasure">
+    <xs:sequence>
+      <xs:element name="variable" type="segments:MigrationVariable"/>
+      <xs:element name="unit" type="segments:MeasureUnit"/>
+      <xs:element name="previous_value" type="segments:Decimal" minOccurs="0"/>
+      <xs:element name="new_value" type="segments:Decimal" minOccurs="0"/>
+      <xs:element name="judgement" type="segments:Judgement"/>
+      <xs:element name="not_compared_reason" type="segments:NotComparedReason"
+                  minOccurs="0"/>
+      <xs:element name="rank_changed" type="xs:boolean"/>
+      <xs:element name="statement" type="xs:string"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SegmentMigrationExplanation">
+    <xs:sequence>
+      <xs:element name="from" type="xs:dateTime"/>
+      <xs:element name="to" type="xs:dateTime"/>
+      <xs:element name="migration" type="segments:SegmentMigration"/>
+      <xs:element name="MigrationMeasure" type="segments:MigrationMeasure"
+                  minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
   <xs:element name="Segment" type="segments:Segment"/>
   <xs:element name="Segments" type="segments:Segments"/>
   <xs:element name="CurrentAssignment" type="segments:CurrentAssignment"/>
   <xs:element name="SegmentAssignments" type="segments:SegmentAssignments"/>
+  <xs:element name="VersionedSegmentAssignments"
+              type="segments:VersionedSegmentAssignments"/>
+  <xs:element name="SegmentMigrations" type="segments:SegmentMigrations"/>
+  <xs:element name="SegmentMigrationMatrix" type="segments:SegmentMigrationMatrix"/>
+  <xs:element name="SegmentMigrationExplanation"
+              type="segments:SegmentMigrationExplanation"/>
 </xs:schema>

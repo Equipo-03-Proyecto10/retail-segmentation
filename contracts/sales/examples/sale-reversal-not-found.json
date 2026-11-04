@@ -1,0 +1,6 @@
+{
+  "code": "sale_reversal_not_found",
+  "message": "Sale reversal 999999 was not found.",
+  "correlation_id": "corr-sale-reversal-not-found",
+  "details": []
+}

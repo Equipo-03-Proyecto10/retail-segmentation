@@ -1,0 +1,11 @@
+{
+  "code": "counted_by_required",
+  "message": "A count must state who counted.",
+  "correlation_id": "corr-counted-by-required",
+  "details": [
+    {
+      "field": "counted_by",
+      "code": "required"
+    }
+  ]
+}

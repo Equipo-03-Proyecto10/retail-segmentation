@@ -13,16 +13,19 @@ The design is governed by ADR-0034 to ADR-0046. Every service implements exactly
 | [products](./products.md) | Flask | 5003 | core | Unique SKU, non-negative price, one existing category; retired, not deleted | RN-10, RN-11 |
 | [categories](./categories.md) | Flask | 5004 | core | An acyclic category tree; no delete with products, children or customer interests | RN-33, RN-06, RN-07 |
 | [stores](./stores.md) | Rust (axum) | 5005 | core | At most one valid, geofenced location per store, set by ADMIN only | RN-53 |
-| [stock](./stock.md) | Rust (axum) | 5006 | core | Stock never negative, consumed only by an accepted sale, atomically with it | RN-14, ADR-0031 |
+| [stock](./stock.md) | Rust (axum) | 5006 | core | Stock never negative, consumed only by an accepted sale, atomically with it | RN-14, RN-69, ADR-0031 |
 | [customers](./customers.md) | Flask | 5007 | core | A customer registered once with valid data, never deleted through services | RN-08 |
 | [customer-preferences](./customer-preferences.md) | Rust (axum) | 5008 | core | Preferred channels and interest categories each replaced only as a whole set | RN-54 |
-| [sales](./sales.md) | Flask | 5009 | core | A sale recorded once, all or nothing, consuming its stock in the same transaction | RN-11 to RN-13, RN-37 (accepted sales) |
-| [segments](./segments.md) | Rust (axum) | 5010 | core | At most one current segment per customer, by stable label; unassigned reported as is | RN-20, RN-21 |
+| [sales](./sales.md) | Flask | 5009 | core | A sale recorded once, all or nothing, consuming its stock in the same transaction | RN-11 to RN-13, RN-37 (accepted sales), RN-70 |
+| [segments](./segments.md) | Rust (axum) | 5010 | core | At most one current segment per customer, by stable label; unassigned reported as is; a migration compares labels within one model version and a comparison across versions is methodological | RN-20, RN-21, RN-39, RN-59, RN-60 |
 | [recommendations](./recommendations.md) | Flask | 5011 | core | Recommend active, in-stock, not-yet-bought products with reasons, or say why none | RN-40 |
 | [engagement](./engagement.md) | Flask + MongoDB | 5012 | core | QR scans and recommendation clicks recorded once, attributed, voided never deleted | RN-55 |
 | [check-ins](./check-ins.md) | Rust (axum) | 5013 | core | A check-in is verified only within the store's geofence; overrides are append-only reviews | RN-56 |
 | [campaigns](./campaigns.md) | Flask | 5014 | second | A campaign moves only along the allowed states, is edited only in DRAFT, and is activated only before it ends, with its experiments ready | RN-15, RN-16, RN-22, RN-24 (activation), RN-31, RN-32, RN-49 (activation) |
 | [audit-trail](./audit-trail.md) | Rust (axum) | 5015 | second | An append-only, attributed, credential-free audit readable by ADMIN and AUDITOR only | RN-28, RN-29, RN-30 |
+| [rfm-engine](./rfm-engine.md) | Flask | 5016 | third | A customer's R, F and M follow their net purchases under one rule-set version, change only for the customers an event touched, and equal a full recalculation | RN-65 |
+| [model-registry](./model-registry.md) | Flask | 5019 | third | A model version is immutable once published, carries what it was fitted on, and changes state only by an explicit publication or rollback | RN-66 |
+| [analytics-kpis](./analytics-kpis.md) | Rust (axum) | 5022 | third | A KPI is reported only under its published definition, window and data origin, from `api_*` objects, and only to the roles and stores allowed to read it | RN-68 |
 
 The full one-sentence rule of each service is in its sheet and in the registry of [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md).
 
@@ -49,9 +52,9 @@ The design accepts a small number of deliberate deviations from the strict readi
 |---|---|---|
 | [E-01](#e-01--sales-serves-the-read-only-channel-vocabulary) | sales serves the read-only channel vocabulary | [sales](./sales.md) |
 | [E-02](#e-02--users-serves-the-read-only-role-vocabulary) | users serves the read-only role vocabulary | [users](./users.md) |
-| [E-03](#e-03--a-foreign-id-keys-a-resource-that-is-its-own-identity) | a foreign id keys a resource that is its own identity | [customer-preferences](./customer-preferences.md), [stock](./stock.md) |
+| [E-03](#e-03--a-foreign-id-keys-a-resource-that-is-its-own-identity) | a foreign id keys a resource that is its own identity | [customer-preferences](./customer-preferences.md), [stock](./stock.md), [rfm-engine](./rfm-engine.md) |
 | [E-04](#e-04--the-public-key-is-served-as-json-only) | the public key is served as JSON only | [auth](./auth.md) |
-| [E-05](#e-05--one-synchronous-cross-boundary-call-inside-the-database) | one synchronous cross-boundary call, inside the database | [stock](./stock.md), [sales](./sales.md) |
+| [E-05](#e-05--one-synchronous-cross-boundary-call-inside-the-database) | synchronous cross-boundary calls, inside the database | [stock](./stock.md), [sales](./sales.md), [segments](./segments.md) |
 | [E-06](#e-06--a-recommendation-carries-the-stock-figure-it-used) | a recommendation carries the stock figure it used | [recommendations](./recommendations.md) |
 | [E-07](#e-07--recommendations-depends-on-seven-published-contracts) | recommendations depends on seven published contracts | [recommendations](./recommendations.md) |
 | [E-08](#e-08--read-rule-services-count-as-one-rule-services) | read-rule services count as one-rule services | [stock](./stock.md), [segments](./segments.md), [recommendations](./recommendations.md), [audit-trail](./audit-trail.md) |
@@ -88,10 +91,10 @@ The design accepts a small number of deliberate deviations from the strict readi
 
 ### E-03 — a foreign id keys a resource that is its own identity
 
-- **What:** Two paths carry another boundary's id: `/v1/preference-profiles/{customer_id}` and `/v1/stock-levels/{store_id}/{product_id}`. Strictly, "foreign ids are query or body fields".
-- **Why it is acceptable:** A preference profile exists once per customer, and a stock level is one row per store and product. The id is the resource's own identity, not a reference to another service's resource, so a query parameter would only hide a key.
-- **Guard:** No path may contain another service's registered resource name, as whole path segments. The registry check enforces it. The remaining half, "the id is the resource's identity", is a review call, and only these two paths use it.
-- **Services:** [customer-preferences](./customer-preferences.md), [stock](./stock.md)
+- **What:** Three paths carry another boundary's id: `/v1/preference-profiles/{customer_id}`, `/v1/stock-levels/{store_id}/{product_id}` and `/v1/rfm-profiles/{customer_id}`. Strictly, "foreign ids are query or body fields".
+- **Why it is acceptable:** A preference profile and an RFM profile each exist once per customer, and a stock level is one row per store and product. The id is the resource's own identity, not a reference to another service's resource, so a query parameter would only hide a key.
+- **Guard:** No path may contain another service's registered resource name, as whole path segments. The registry check enforces it. The remaining half, "the id is the resource's identity", is a review call, and only these three paths use it.
+- **Services:** [customer-preferences](./customer-preferences.md), [stock](./stock.md), [rfm-engine](./rfm-engine.md)
 - **Decided in:** [ADR-0035](../adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md) (Decision (path rule))
 
 ### E-04 — the public key is served as JSON only
@@ -102,13 +105,13 @@ The design accepts a small number of deliberate deviations from the strict readi
 - **Services:** [auth](./auth.md)
 - **Decided in:** [ADR-0035](../adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md) (Formats); [ADR-0036](../adr/0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md) (Keys)
 
-### E-05 — one synchronous cross-boundary call, inside the database
+### E-05 — synchronous cross-boundary calls, inside the database
 
-- **What:** sales-service calls `api_stock.consume_v1` once per sale line, inside its own transaction. It is the only place where one boundary calls into another.
-- **Why it is acceptable:** A sale and its stock decrement must commit together (RN-14, ADR-0031). A saga or an HTTP call to stock could leave a sale without its decrement, or the reverse. A SECURITY DEFINER function owned by `definer_stock` gives atomicity without a stock write privilege for sales.
-- **Guard:** EXECUTE goes to `svc_sales` only, and the grant check compares it both ways. It is in the database and never HTTP. ADR-0044 states that a second cross-boundary write needs its own record.
-- **Services:** [stock](./stock.md), [sales](./sales.md)
-- **Decided in:** [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) (The one synchronous call); [ADR-0039](../adr/0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) (The transaction)
+- **What:** Two functions are called across a boundary, each inside the caller's own transaction. sales-service calls `api_stock.consume_v1` once per sale line. rfm-engine calls `api_segments.apply_assignment_v1` once per customer whose label changes, in the transaction that writes the customer's profile. They are the only places where one boundary calls into another.
+- **Why it is acceptable:** A sale and its stock decrement must commit together (RN-14, ADR-0031), and a profile and the assignment it implies must too (ADR-0063). A saga or an HTTP call could leave one without the other. A SECURITY DEFINER function owned by the callee's definer role gives atomicity without a write privilege for the caller.
+- **Guard:** EXECUTE goes to the single caller only (`svc_sales`; `svc_rfm`), and the grant check compares it both ways. Each is in the database and never HTTP. ADR-0044 states that a further cross-boundary write needs its own record; for the second, that record is ADR-0063.
+- **Services:** [stock](./stock.md), [sales](./sales.md), [segments](./segments.md) (rfm-engine is the caller; its sheet joins with its contract)
+- **Decided in:** [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) (The one synchronous call); [ADR-0039](../adr/0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) (The transaction); [ADR-0063](../adr/0063-segments-change-on-events-and-on-a-schedule-scored-against-the-published-version.md) (The writer)
 
 ### E-06 — a recommendation carries the stock figure it used
 

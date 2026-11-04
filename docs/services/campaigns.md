@@ -33,6 +33,14 @@
 | POST | `/v1/campaigns` | Create (born DRAFT) | ADMIN, MARKETING |
 | PATCH | `/v1/campaigns/{campaign_id}` | Edit (DRAFT only) | ADMIN, MARKETING |
 | POST | `/v1/campaigns/{campaign_id}/transitions` | Change status (`to`, `expected_status`) | ADMIN, MARKETING |
+| GET, PUT | `/v1/campaigns/{campaign_id}/audience` | Audience: optional `max_customers` and the computed `audience_size` (PUT only in DRAFT) | GET: ADMIN, ANALYST, MARKETING, AUDITOR; PUT: ADMIN, MARKETING |
+| GET, PUT | `/v1/campaigns/{campaign_id}/budget` | Budget: `total_amount`, `per_customer_cap` (PUT only in DRAFT) | GET: ADMIN, ANALYST, MARKETING, AUDITOR; PUT: ADMIN, MARKETING |
+| GET, PUT | `/v1/campaigns/{campaign_id}/eligibility-rules` | Eligibility: `registered_on_or_before`, `min_purchases` net purchases (ADR-0062: a sale with a zero net amount does not count) within `purchase_window_days` (PUT only in DRAFT) | GET: ADMIN, ANALYST, MARKETING, AUDITOR; PUT: ADMIN, MARKETING |
+| GET, PUT | `/v1/campaigns/{campaign_id}/exclusions` | Exclusions: `customer_ids`, `label_codes` (PUT only in DRAFT) | GET: ADMIN, ANALYST, MARKETING, AUDITOR; PUT: ADMIN, MARKETING |
+| GET | `/v1/promotions` | List (`campaign_id`, `store_id`, `channel_id`, `active`, `page`, `size`); floor roles see active promotions of their assigned stores only | ADMIN, ANALYST, MARKETING, AUDITOR, and the four floor roles (ADR-0060) |
+| POST | `/v1/promotions` | Create a promotion of a DRAFT campaign | ADMIN, MARKETING |
+| GET | `/v1/promotions/{promotion_id}` | One promotion | ADMIN, ANALYST, MARKETING, AUDITOR, and the four floor roles (ADR-0060) |
+| PUT | `/v1/promotions/{promotion_id}` | Replace a promotion of a DRAFT campaign | ADMIN, MARKETING |
 
 Roles follow the [service operation policy](../requirements.md#service-operation-policy-distributed-stage). Meta routes (no token): `GET /health/live`, `GET /health/ready`, `GET /openapi.yaml`, `GET /schema.xsd`.
 
@@ -46,7 +54,9 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 ## Database contracts
 
-None.
+Published: [`api_campaigns.active_promotion_v1`](../../contracts/db/api_campaigns.active_promotion.v1.md), read by sales to validate a discount.
+
+Consumed, by name: `api_segments.current_label_v1` (audience size, label exclusions), `api_customers.customer_ref_v1` (customer ids, `registered_on`), `api_sales.net_purchase_line_v1` (net purchase-count eligibility, ADR-0062), `api_stores.store_directory_v2` (store and channel ids of a promotion), and `api_users.store_assignment_v1` (the stores a floor role may read promotions of).
 
 ## Events
 
@@ -72,6 +82,14 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | 409 | `campaign_ended` | A move to ACTIVE after `ends_on` (RN-49) |
 | 409 | `experiment_not_ready` | A move to ACTIVE while an attached experiment is not ready, refused by `trg_campaign_activation_guard` (RN-24, E-13) |
 | 422 | `ends_before_start` | An end date before the start |
+| 422 | `unknown_customer` | An exclusion names a customer absent from the customer reference |
+| 422 | `unknown_campaign` | A promotion names a campaign that does not exist |
+| 422 | `promotion_outside_campaign` | A promotion's validity is not within its campaign's |
+| 422 | `unknown_store` | A promotion names a store that does not exist |
+| 422 | `unknown_channel` | A promotion names a channel enabled at none of its stores |
+| 422 | `invalid_query` | A promotion list filter is outside its allowed values |
+| 403 | `forbidden_store` | A floor role asks for a store it is not assigned to |
+| 404 | `promotion_not_found` | No promotion is visible to the caller under that id |
 | 422 | `unknown_label` | A `label_code` absent from the segment label vocabulary |
 | 404 | `campaign_not_found` | No campaign has the requested `campaign_id` |
 

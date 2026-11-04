@@ -1,0 +1,11 @@
+{
+  "code": "invalid_body",
+  "message": "The movement violates its schema.",
+  "correlation_id": "corr-invalid-body",
+  "details": [
+    {
+      "field": "movement_type",
+      "code": "unknown_movement_type"
+    }
+  ]
+}

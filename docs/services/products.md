@@ -22,6 +22,7 @@
 
 - SKU is unique (409 `sku_taken`), `list_price >= 0` (CHECK) and `category_id` is an existing category (FK; 23503 maps to 422 `unknown_category`).
 - A product is retired by `is_active = false`, never deleted: no DELETE grant. `image_path` stays web-managed and is read-only here.
+- Commercial status (`active`, `paused`, `discontinued`) and `is_active` never disagree: `is_active` is true exactly when the status is `active`. Both `PATCH` operations keep them in step in one transaction, and `product_ref_v1` still publishes only `is_active`.
 - `GET /v1/products?ids=` is a batch read of at most 50 ids, so clients avoid one lookup per product.
 
 ## Endpoints
@@ -32,6 +33,10 @@
 | GET | `/v1/products/{product_id}` | One product (the QR payload is `product_id`) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, INVENTORY_PLANNER, AUDITOR |
 | POST | `/v1/products` | Create | ADMIN |
 | PATCH | `/v1/products/{product_id}` | Edit or deactivate | ADMIN |
+| GET | `/v1/products/{product_id}/details` | The product with its commercial status, attributes, photo URL and barcode | ADMIN, ANALYST, STORE_MANAGER, MARKETING, INVENTORY_PLANNER, AUDITOR |
+| PATCH | `/v1/products/{product_id}/details` | Change commercial status, attributes or barcode | ADMIN |
+| GET | `/v1/products/{product_id}/relations` | Substitutes and complements (`kind`, `page`, `size`) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, INVENTORY_PLANNER, AUDITOR |
+| PUT | `/v1/products/{product_id}/relations/{relation_kind}` | Replace the substitutes or the complements | ADMIN |
 
 Roles follow the [service operation policy](../requirements.md#service-operation-policy-distributed-stage). Meta routes (no token): `GET /health/live`, `GET /health/ready`, `GET /openapi.yaml`, `GET /schema.xsd`.
 
@@ -49,6 +54,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Direction | Object | Counterpart |
 |---|---|---|
 | Publishes | `api_products.product_ref_v1` | sales, recommendations, engagement |
+| Publishes | `api_products.product_relation_v1` | recommendations |
 
 ## Events
 

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SaleReversalRequest xmlns="https://mosaiq.maxthecoder.online/xml/sales/v1">
+  <sale_id>4812</sale_id>
+  <kind>RETURN</kind>
+  <lines>
+    <product_id>1020</product_id>
+    <quantity>1</quantity>
+    <reason>Packaging damaged</reason>
+    <resellable>false</resellable>
+  </lines>
+  <lines>
+    <product_id>1051</product_id>
+    <quantity>1</quantity>
+    <reason>Customer changed their mind</reason>
+    <resellable>true</resellable>
+  </lines>
+</SaleReversalRequest>

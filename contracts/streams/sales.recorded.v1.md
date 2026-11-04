@@ -10,7 +10,7 @@
 | Captured operations | `INSERT` and `UPDATE OF total`, by any writer: the service and the CSV path |
 | Outbox | `sales_events.outbox` |
 | Private wake-up channel | `sales_outbox` |
-| Consumer group | `recommendations` |
+| Consumer groups | `recommendations`, `rfm-engine` |
 | Retention | `XADD MAXLEN ~ 10000` |
 | Delivery | At least once |
 
@@ -46,11 +46,18 @@ from the event.
 
 ## Consumer behaviour
 
-The `recommendations` group invalidates its recommendation cache for the
-customer. On restart it handles pending entries first, may claim entries idle
-for more than 60 seconds, and acknowledges only after invalidation succeeds.
-After five failed deliveries it logs and acknowledges the entry; the outbox row
-remains in the seven-day replay log.
+| Group | Effect |
+|---|---|
+| `recommendations` | Invalidates its recommendation cache for the customer. |
+| `rfm-engine` | Finds the customer of the sale by reading `api_sales.purchase_line_v1` for the entry's `transaction_id` (`entity_id` names the sale, never the customer), then recomputes that customer's profile from their net purchases under the published rule set. It reads the net purchases through the net view of `api_sales` that F21-02 (#770) publishes, so a reversed sale does not count. It touches no other customer (ADR-0063, RN-65). |
+
+Each group deduplicates by `event_id` before acknowledging an entry. On restart
+it handles pending entries first, may claim entries idle for more than 60
+seconds, and acknowledges only after its effect succeeds. After five failed
+deliveries it logs and acknowledges the entry; the outbox row remains in the
+seven-day replay log. A sale that raises more than one entry recomputes the same
+customer from the same net purchases each time and so gives the same profile, and
+an entry for a sale that has since been reversed gives the reversed profile.
 
 ## Failure and compatibility
 
@@ -63,4 +70,4 @@ request path never runs `XADD`.
 Changing a field's meaning or encoding, removing a field, changing how
 `entity_id` identifies the sale, or adding state to the payload is breaking.
 A breaking revision creates `stream:sales.v2.recorded` and a matching `.v2.md`
-contract; capture writes both versions until `recommendations` has moved.
+contract; capture writes both versions until `recommendations` and `rfm-engine` have moved.

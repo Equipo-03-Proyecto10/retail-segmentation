@@ -1,0 +1,11 @@
+{
+  "code": "promotion_outside_campaign",
+  "message": "The promotion validity must lie within the campaign validity.",
+  "correlation_id": "corr-promotion-422b",
+  "details": [
+    {
+      "field": "starts_on",
+      "code": "outside_campaign"
+    }
+  ]
+}

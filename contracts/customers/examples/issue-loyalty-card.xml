@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LoyaltyCard xmlns="https://mosaiq.maxthecoder.online/xml/customers/v1">
+  <card_id>3f2b8c1e-9a47-4d65-b1e0-52c7d8a9e641</card_id>
+  <customer_id>7b3ad781-c5de-4f40-ae50-1fa825ce2b25</customer_id>
+  <code>7M3QX9T2KD5VHA8R0WBN4ZPCJE</code>
+  <status>ACTIVE</status>
+  <issued_at>2026-11-02T15:04:05Z</issued_at>
+  <issued_by>b5d0a6f2-18c3-4e7a-9f64-0d2e7c1a3b58</issued_by>
+</LoyaltyCard>

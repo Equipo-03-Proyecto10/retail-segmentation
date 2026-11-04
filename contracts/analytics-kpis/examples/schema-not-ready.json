@@ -1,0 +1,6 @@
+{
+  "code": "schema_not_ready",
+  "message": "The required database schema is not applied.",
+  "correlation_id": "corr-kpi-503c",
+  "details": []
+}

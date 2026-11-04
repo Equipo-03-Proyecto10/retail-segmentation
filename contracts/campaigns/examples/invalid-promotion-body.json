@@ -1,0 +1,11 @@
+{
+  "code": "invalid_body",
+  "message": "The request body contains a forbidden or invalid field.",
+  "correlation_id": "corr-promotion-422e",
+  "details": [
+    {
+      "field": "promotion_id",
+      "code": "additional_property"
+    }
+  ]
+}

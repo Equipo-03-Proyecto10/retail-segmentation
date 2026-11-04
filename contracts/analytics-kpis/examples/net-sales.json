@@ -1,0 +1,183 @@
+{
+  "kpi": "net-sales",
+  "definition_version": 1,
+  "from": "2026-09-01",
+  "to": "2026-10-31",
+  "granularity": "month",
+  "group_by": [
+    "store",
+    "period"
+  ],
+  "generated_at": "2026-10-31T18:00:00Z",
+  "store_scope": {
+    "restricted": false,
+    "store_ids": []
+  },
+  "data_origin": {
+    "views": [
+      "api_sales.net_purchase_line_v1"
+    ],
+    "synthetic": false,
+    "spans_model_versions": false,
+    "model_version_ids": []
+  },
+  "rows": [
+    {
+      "period_start": "2026-09-01",
+      "period_end": "2026-09-30",
+      "segment_code": null,
+      "segment_state": null,
+      "from_segment_code": null,
+      "store_id": 1,
+      "channel_id": null,
+      "campaign_id": null,
+      "model_version_id": null,
+      "synthetic": false,
+      "measures": [
+        {
+          "code": "net_amount",
+          "kind": "OBSERVED",
+          "unit": "currency",
+          "value": "184250.50",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "net_units",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "1420",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "net_orders",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "612",
+          "lower": null,
+          "upper": null
+        }
+      ]
+    },
+    {
+      "period_start": "2026-09-01",
+      "period_end": "2026-09-30",
+      "segment_code": null,
+      "segment_state": null,
+      "from_segment_code": null,
+      "store_id": 2,
+      "channel_id": null,
+      "campaign_id": null,
+      "model_version_id": null,
+      "synthetic": false,
+      "measures": [
+        {
+          "code": "net_amount",
+          "kind": "OBSERVED",
+          "unit": "currency",
+          "value": "97310.00",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "net_units",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "780",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "net_orders",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "335",
+          "lower": null,
+          "upper": null
+        }
+      ]
+    },
+    {
+      "period_start": "2026-10-01",
+      "period_end": "2026-10-31",
+      "segment_code": null,
+      "segment_state": null,
+      "from_segment_code": null,
+      "store_id": 1,
+      "channel_id": null,
+      "campaign_id": null,
+      "model_version_id": null,
+      "synthetic": true,
+      "measures": [
+        {
+          "code": "net_amount",
+          "kind": "OBSERVED",
+          "unit": "currency",
+          "value": "201875.25",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "net_units",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "1530",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "net_orders",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "655",
+          "lower": null,
+          "upper": null
+        }
+      ]
+    },
+    {
+      "period_start": "2026-10-01",
+      "period_end": "2026-10-31",
+      "segment_code": null,
+      "segment_state": null,
+      "from_segment_code": null,
+      "store_id": 2,
+      "channel_id": null,
+      "campaign_id": null,
+      "model_version_id": null,
+      "synthetic": false,
+      "measures": [
+        {
+          "code": "net_amount",
+          "kind": "OBSERVED",
+          "unit": "currency",
+          "value": "88120.75",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "net_units",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "701",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "net_orders",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "301",
+          "lower": null,
+          "upper": null
+        }
+      ]
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 4
+  }
+}

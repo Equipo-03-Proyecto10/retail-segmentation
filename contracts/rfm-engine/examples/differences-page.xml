@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RfmRecalculationDifferences xmlns="https://mosaiq.maxthecoder.online/xml/rfm-engine/v1"
+        xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <RfmRecalculationDifference>
+    <customer_id>7b3ad781-c5de-4f40-ae50-1fa825ce2b25</customer_id>
+    <fields>f_count</fields>
+    <fields>m_total</fields>
+    <fields>f_score</fields>
+    <fields>m_score</fields>
+    <incremental>
+      <state>scored</state>
+      <r_days>30</r_days>
+      <f_count>9</f_count>
+      <m_total>842.50</m_total>
+      <r_score>4</r_score>
+      <f_score>5</f_score>
+      <m_score>4</m_score>
+      <label_code>LOYAL</label_code>
+    </incremental>
+    <recomputed>
+      <state>scored</state>
+      <r_days>30</r_days>
+      <f_count>8</f_count>
+      <m_total>790.00</m_total>
+      <r_score>4</r_score>
+      <f_score>4</f_score>
+      <m_score>3</m_score>
+      <label_code>LOYAL</label_code>
+    </recomputed>
+  </RfmRecalculationDifference>
+  <common:PageInfo>
+    <common:page>1</common:page>
+    <common:size>20</common:size>
+    <common:total>1</common:total>
+  </common:PageInfo>
+</RfmRecalculationDifferences>

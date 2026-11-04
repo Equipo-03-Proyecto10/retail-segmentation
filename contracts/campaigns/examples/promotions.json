@@ -1,0 +1,41 @@
+{
+  "promotions": [
+    {
+      "promotion_id": 38,
+      "campaign_id": 12,
+      "name": "Loyal customers 15 percent",
+      "discount_percent": "15.00",
+      "starts_on": "2026-11-01",
+      "ends_on": "2026-11-30",
+      "store_ids": [
+        1,
+        2
+      ],
+      "channel_ids": [
+        1,
+        2
+      ],
+      "is_active": true
+    },
+    {
+      "promotion_id": 41,
+      "campaign_id": 301,
+      "name": "Holiday preview 10 percent",
+      "discount_percent": "10.00",
+      "starts_on": "2026-11-15",
+      "ends_on": "2026-12-24",
+      "store_ids": [
+        1
+      ],
+      "channel_ids": [
+        1
+      ],
+      "is_active": false
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 2
+  }
+}

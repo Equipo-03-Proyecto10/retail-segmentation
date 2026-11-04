@@ -1,0 +1,7 @@
+{
+  "movement_type": "TRANSFER",
+  "product_id": 120,
+  "origin_store_id": 3,
+  "destination_store_id": 5,
+  "quantity": 10
+}

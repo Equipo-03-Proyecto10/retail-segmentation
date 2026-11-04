@@ -1,0 +1,11 @@
+{
+  "code": "unknown_channel",
+  "message": "A channel id is not enabled at any listed store.",
+  "correlation_id": "corr-promotion-422d",
+  "details": [
+    {
+      "field": "channel_ids",
+      "code": "unknown_channel"
+    }
+  ]
+}

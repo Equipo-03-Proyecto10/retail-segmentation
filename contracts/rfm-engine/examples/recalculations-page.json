@@ -1,0 +1,51 @@
+{
+  "recalculations": [
+    {
+      "recalculation_id": 14,
+      "trigger": "ON_DEMAND",
+      "state": "RUNNING",
+      "rule_set_id": 3,
+      "as_of": "2026-10-30T16:20:00Z",
+      "started_at": "2026-10-30T16:20:00Z",
+      "finished_at": null,
+      "started_by": "11111111-1111-1111-1111-000000000001",
+      "customers_checked": null,
+      "customers_different": null,
+      "outcome": null,
+      "failure_code": null
+    },
+    {
+      "recalculation_id": 13,
+      "trigger": "ON_DEMAND",
+      "state": "COMPLETED",
+      "rule_set_id": 3,
+      "as_of": "2026-10-28T15:00:00Z",
+      "started_at": "2026-10-28T15:00:00Z",
+      "finished_at": "2026-10-28T15:01:12Z",
+      "started_by": "11111111-1111-1111-1111-000000000001",
+      "customers_checked": 30,
+      "customers_different": 1,
+      "outcome": "DIFFERENT",
+      "failure_code": null
+    },
+    {
+      "recalculation_id": 12,
+      "trigger": "SCHEDULE",
+      "state": "COMPLETED",
+      "rule_set_id": 3,
+      "as_of": "2026-10-25T02:30:00Z",
+      "started_at": "2026-10-25T02:30:00Z",
+      "finished_at": "2026-10-25T02:31:48Z",
+      "started_by": null,
+      "customers_checked": 30,
+      "customers_different": 0,
+      "outcome": "EQUIVALENT",
+      "failure_code": null
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 3
+  }
+}

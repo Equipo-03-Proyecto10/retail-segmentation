@@ -110,8 +110,9 @@ cannot verify it, so a producer is trusted for the actor it passes, as it is for
 id it writes. That trust is bounded by check 1 and by `source`.
 
 Services still never call each other over HTTP, and no service writes another boundary's
-table. The one cross-boundary write besides `consume_v1` is this function, authorized by this
-record and documented in `contracts/db/api_audit.record_event_v1.v1.md` with its grants in
+table. Besides `api_stock.consume_v1`, `api_stock.restock_v1` (ADR-0061) and
+`api_segments.apply_assignment_v1` (ADR-0063), this function is the one cross-boundary write,
+authorized by this record and documented in `contracts/db/api_audit.record_event_v1.v1.md` with its grants in
 `grants.csv`. Streams stay the way a service tells others that something changed; they are not
 the way evidence is written (see the alternatives).
 
@@ -220,7 +221,7 @@ record commit together. A new producer is a grant and a mapping row, not a new i
 The v1 `audit-entries` contract is untouched. No container is added.
 
 **What this makes hard.** audit-trail stops being read-only in spirit: it owns a table it
-cannot write, and its registry rule changes. The function is a second cross-boundary write and
+cannot write, and its registry rule changes. The function is a fourth cross-boundary write and
 a synchronous dependency: a producer whose record fails fails its act, which is the intent but
 couples availability. A logged read costs one extra insert and fails when the function does.
 The advisory lock serializes writers. The actor is trusted from the producer, not verified.

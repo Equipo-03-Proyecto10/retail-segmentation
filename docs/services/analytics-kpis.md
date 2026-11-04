@@ -50,11 +50,12 @@ Reports take `from` and `to` (required), `group_by` of `segment`, `store`, `chan
 | `api_sales.net_purchase_line_v1` | sales | Contracted in the reversal story (F21-03); it must also publish `data_origin` (ADR-0052), an additive column |
 | `api_users.store_assignment_v1` | users | Contracted in the store-assignment story (F19-05) |
 | `api_segments.assignment_change_v1` | segments | Required, not contracted: a customer's changes of assignment with previous and new label and model version |
-| `api_engagement.interaction_v1` | engagement | Required, not contracted: impressions, exposures and `RECO_CLICK` events that are not voided |
+| `api_recommendations.interaction_v1` | recommendations | Required, not contracted: `RECO_IMPRESSION` and `RECO_CLICK` events that are not voided, kept by recommendations from engagement's stream (ADR-0075) |
+| `api_experiments.exposure_v1` | experimentation | Required, not contracted: `CAMPAIGN_EXPOSURE` events that are not voided, kept by experimentation from engagement's stream (ADR-0075) |
 | `api_recommendations.recommended_purchase_v1` | recommendations | Required, not contracted: sale lines bought through a recommendation |
 | `api_experiments.campaign_effect_v1` | experimentation | Required, not contracted: per measured campaign, its window, arm sizes, attributed amount, effect and interval |
 
-The contract invents none of the required views' columns. Each producer's story fixes them, adds its grant row for `svc_kpis` to `contracts/db/grants.csv`, and names analytics-kpis as a consumer.
+engagement publishes no `api_*` view; its facts reach recommendations and experimentation on a Redis stream (ADR-0075), so figures built on them are eventually consistent. The contract invents none of the required views' columns. Each producer's story fixes them, adds its grant row for `svc_kpis` to `contracts/db/grants.csv`, and names analytics-kpis as a consumer.
 
 ## Data it owns
 

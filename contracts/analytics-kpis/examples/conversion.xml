@@ -11,7 +11,8 @@
     <restricted>false</restricted>
   </store_scope>
   <data_origin>
-    <views>api_engagement.interaction_v1</views>
+    <views>api_experiments.exposure_v1</views>
+    <views>api_recommendations.interaction_v1</views>
     <views>api_sales.net_purchase_line_v1</views>
     <synthetic>false</synthetic>
     <spans_model_versions>false</spans_model_versions>

@@ -56,9 +56,10 @@ info:
     producers and not yet contracted: `api_segments.assignment_change_v1` (one
     row per change of a customer's assignment: customer, previous and new label
     code, previous and new model version, instant),
-    `api_engagement.interaction_v1` (one row per recommendation impression,
-    campaign exposure and `RECO_CLICK` that is not voided: type, customer,
-    store, channel, instant, data origin),
+    `api_recommendations.interaction_v1` (one row per `RECO_IMPRESSION` and
+    `RECO_CLICK` that is not voided: type, customer, store, instant, data origin),
+    `api_experiments.exposure_v1` (one row per `CAMPAIGN_EXPOSURE` that is not
+    voided: campaign, customer, store, instant, data origin),
     `api_recommendations.recommended_purchase_v1` (one row per sale line bought
     through a recommendation: sale, store, channel, instant) and
     `api_experiments.campaign_effect_v1` (one row per measured campaign: its
@@ -315,7 +316,7 @@ paths:
     get:
       summary: Report conversion after exposure
       description: >-
-        Conversion (`conversion`, definition version 1): of the customers exposed in a bucket, the share who bought within 7 days. It is observational, never an effect; the effect of a campaign is `campaign-performance`. Origin: `api_engagement.interaction_v1` and `api_sales.net_purchase_line_v1`, and `api_segments.current_label_v1` for `segment`. The response holds counts and no customer.
+        Conversion (`conversion`, definition version 1): of the customers exposed in a bucket, the share who bought within 7 days. It is observational, never an effect; the effect of a campaign is `campaign-performance`. Origin: `api_recommendations.interaction_v1` (impressions) and `api_experiments.exposure_v1` (campaign exposures) for exposures, `api_sales.net_purchase_line_v1` for purchases, and `api_segments.current_label_v1` for `segment`. The response holds counts and no customer.
       operationId: getConversionReport
       x-mosaiq-roles:
         - ADMIN
@@ -372,7 +373,7 @@ paths:
     get:
       summary: Report recommendation performance
       description: >-
-        Recommendation performance (`recommendation-performance`, definition version 1): impressions, clicks and purchases, each counted from its own origin and none derived from another. Origin: `api_engagement.interaction_v1` for impressions and clicks, `api_recommendations.recommended_purchase_v1` for purchases, and `api_segments.current_label_v1` for `segment`. The response holds counts and no customer.
+        Recommendation performance (`recommendation-performance`, definition version 1): impressions, clicks and purchases, each counted from its own origin and none derived from another. Origin: `api_recommendations.interaction_v1` for impressions and clicks, `api_recommendations.recommended_purchase_v1` for purchases, and `api_segments.current_label_v1` for `segment`. The response holds counts and no customer.
       operationId: getRecommendationPerformanceReport
       x-mosaiq-roles:
         - ADMIN

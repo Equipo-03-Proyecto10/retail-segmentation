@@ -193,7 +193,8 @@
       "definition": "Of the customers exposed in a bucket, the share who bought within 7 days. A customer is exposed at the first recorded recommendation impression or campaign exposure in the bucket, and converts with at least one net purchase, in any store, within 7 days after that instant. It is observational and never an effect: the effect of a campaign is campaign-performance. Store and channel are those of the exposure.",
       "window": "Exposures in [from 00:00 UTC, to + 1 day 00:00 UTC). A bucket whose last exposure is under 7 days before generated_at reports converted_customers and conversion_rate absent.",
       "origin_views": [
-        "api_engagement.interaction_v1",
+        "api_experiments.exposure_v1",
+        "api_recommendations.interaction_v1",
         "api_sales.net_purchase_line_v1",
         "api_segments.current_label_v1"
       ],
@@ -242,7 +243,7 @@
       "definition": "Impressions, clicks and purchases of recommendations. Each is counted from its own origin and none is derived from another, so a purchase is never inferred from a click.",
       "window": "An impression or click falls in the window when its occurred_at lies in [from 00:00 UTC, to + 1 day 00:00 UTC); a purchase when the sale's occurred_at does.",
       "origin_views": [
-        "api_engagement.interaction_v1",
+        "api_recommendations.interaction_v1",
         "api_recommendations.recommended_purchase_v1",
         "api_segments.current_label_v1"
       ],

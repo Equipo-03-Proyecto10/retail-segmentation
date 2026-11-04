@@ -3,7 +3,7 @@
 **Status:** Proposed
 **Owner:** Maximiliano
 **Issue:** #864
-**Supersedes:** — *(when accepted, it partially supersedes ADR-0038 for the number of collections only, and restates the engagement rule in `contracts/registry.yaml`; see "What must now be true elsewhere". Only status lines of accepted records are edited.)*
+**Supersedes:** in part [ADR-0038](0038-mongodb-holds-in-store-engagement-owned-by-engagement-service-alone.md) (the number of MongoDB collections only); see "What must now be true elsewhere".
 **Superseded by:** —
 
 ---
@@ -13,7 +13,7 @@
 The instructor now requires that campaign alerts, capture errors and incidents reach the
 Android user. `docs/scope-delivery-2-distributed.md` left push out because it needs
 Firebase, ADR-0041 rejected "push notifications as one of Android's device capabilities"
-for the same reason, and `docs/scope-delivery-3.md` §5 lists "Firebase push" as out of
+for the same reason, and `docs/scope-delivery-3.md` §9 lists "Firebase push" as out of
 scope "unless F27-10 decides otherwise". This record is that decision. Three questions
 are open, and they have different answers.
 
@@ -92,10 +92,10 @@ contains personal data.
   open without notifying, so a user is not told about everything that existed.
 
 **What counts as new.**
-- Campaign: a `campaign_id` seen with status `ACTIVE` for the first time raises
-  `CAMPAIGN_STARTED`. One whose `ends_on` is within 2 days of the device's date, once per
-  campaign, raises `CAMPAIGN_ENDING`. Both are computed on the phone from fields the contract
-  already has.
+- Campaign: a `campaign_id` first seen among promotions whose `is_active` is true
+  raises `CAMPAIGN_STARTED`. A promotion whose `ends_on` is within 2 days of the
+  device's date raises `CAMPAIGN_ENDING` once per `campaign_id`. Both are computed
+  on the phone from the promotion's `campaign_id`, `is_active` and `ends_on`.
 - Incident: an `incident_id` not yet in Room. The poll sends `recorded_since` set to the
   largest server `recorded_at` it has stored minus 5 minutes, so the device clock is never
   used as a watermark, and duplicates are removed by id.
@@ -257,7 +257,7 @@ and is kept.
   `additionalProperties: false`, and the two unique indexes and the `{store_id, status,
   recorded_at}` index. It is applied by an operator before the service version that needs it
   (ADR-0038). `svc_engagement` gains `SELECT` on `api_users.store_assignment_v1` (ADR-0060).
-- `docs/scope-delivery-3.md` §5 changes "Firebase push" from out of scope to "decided no
+- `docs/scope-delivery-3.md` §9 changes "Firebase push" from out of scope to "decided no
   (ADR-0071)". `docs/datastores/` and `docs/requirements.md`'s service operation policy
   carry the new rows.
 - Android (F27-10 and its client stories) adds the poll, the channels, the Room table

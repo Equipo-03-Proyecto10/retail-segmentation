@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ModelPublication xmlns="https://mosaiq.maxthecoder.online/xml/model-registry/v1">
+  <publication_id>13</publication_id>
+  <version_id>3</version_id>
+  <action>ROLLBACK</action>
+  <previous_version_id>5</previous_version_id>
+  <reason>Drift alerts on the K-means reference; restore the rule set.</reason>
+  <published_by>11111111-1111-1111-1111-000000000001</published_by>
+  <published_at>2026-10-30T17:45:12Z</published_at>
+</ModelPublication>

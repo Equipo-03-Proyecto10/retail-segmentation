@@ -1,0 +1,6 @@
+{
+  "code": "no_published_rule_set",
+  "message": "No rule set is published and the request names none.",
+  "correlation_id": "corr-no-published-rule-set",
+  "details": []
+}

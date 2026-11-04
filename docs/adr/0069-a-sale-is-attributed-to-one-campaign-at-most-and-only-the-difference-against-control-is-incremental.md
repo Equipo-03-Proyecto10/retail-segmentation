@@ -1,6 +1,6 @@
 # ADR-0069 — A sale is attributed to one campaign at most, and only the difference against control is called incremental
 
-**Status:** Proposed
+**Status:** Accepted (2026-11-04)
 **Owner:** Max
 **Issue:** #833
 **Supersedes:** —

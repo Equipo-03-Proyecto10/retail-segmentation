@@ -162,7 +162,13 @@ private fun StorePicker(model: FloorViewModel, onPicked: () -> Unit = {}) {
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Pick your store", style = MaterialTheme.typography.titleMedium)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(value = city, onValueChange = { city = it }, label = { Text("City") }, singleLine = true)
+            OutlinedTextField(
+                value = city,
+                onValueChange = { city = it },
+                label = { Text("City") },
+                singleLine = true,
+                modifier = Modifier.weight(1f)
+            )
             Button(onClick = { model.searchStores(city) }) { Text("Search") }
         }
         state.error?.let { ErrorPanel(it) }

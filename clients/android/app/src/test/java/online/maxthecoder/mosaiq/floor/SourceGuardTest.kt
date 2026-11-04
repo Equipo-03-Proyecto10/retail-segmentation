@@ -68,7 +68,7 @@ class SourceGuardTest {
     @Test
     fun screensCollectWithTheLifecycleAndAvoidNonNullAssertions() {
         val floor = File(main, "online/maxthecoder/mosaiq/floor")
-        for (path in listOf("ui/FloorScreens.kt", "ui/SalesScreen.kt", "ui/CustomerInsights.kt")) {
+        for (path in listOf("ui/FloorScreens.kt", "ui/SalesScreen.kt", "ui/CustomerInsights.kt", "ui/ScanScreen.kt")) {
             assertTrue("$path uses collectAsState", ".collectAsState()" !in File(floor, path).readText())
         }
         for (path in listOf(

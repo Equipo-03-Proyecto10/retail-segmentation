@@ -121,7 +121,7 @@
 
   <xs:complexType name="StoreHours">
     <xs:sequence>
-      <xs:element name="time_zone" type="stores:TimeZoneName"/>
+      <xs:element name="time_zone" type="stores:TimeZoneName" minOccurs="0"/>
       <xs:element name="intervals" type="stores:HoursInterval"
                   minOccurs="0" maxOccurs="7"/>
       <xs:element name="updated_at" type="xs:dateTime" minOccurs="0"/>
@@ -130,7 +130,7 @@
 
   <xs:complexType name="StoreHoursUpdate">
     <xs:sequence>
-      <xs:element name="time_zone" type="stores:TimeZoneName"/>
+      <xs:element name="time_zone" type="stores:TimeZoneName" minOccurs="0"/>
       <xs:element name="intervals" type="stores:HoursInterval"
                   minOccurs="0" maxOccurs="7"/>
     </xs:sequence>
@@ -161,7 +161,8 @@
 
   <xs:complexType name="StoreCommercialRulesUpdate">
     <xs:sequence>
-      <xs:element name="max_discount_percent" type="stores:DiscountPercent"/>
+      <xs:element name="max_discount_percent" type="stores:DiscountPercent"
+                  minOccurs="0"/>
     </xs:sequence>
   </xs:complexType>
 

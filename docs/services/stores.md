@@ -1,7 +1,7 @@
 # stores
 
 > **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
-> **One rule:** Each store has at most one location, with valid coordinates and a 25–2000 m geofence, set by ADMIN only (RN-53)
+> **One rule:** Each store has at most one location, with valid coordinates and a 25–2000 m geofence, and one operating status, weekly opening hours, set of enabled channels and maximum discount, all set by ADMIN only (RN-53)
 
 ## Summary
 
@@ -21,6 +21,7 @@
 ## Business rule
 
 - `stores.store_location` is a 1:1 vertical split of `store` (PK `store_id`), with CHECKs on latitude (−90 to 90), longitude (−180 to 180) and `geofence_radius_m` (25 to 2000), and `set_by` an `ADMIN`.
+- Status, opening hours, enabled channel ids and the maximum discount are service-owned facts of the same store, each replaced whole by ADMIN only. Clearing is a write: an empty `intervals` list (and a null `time_zone`), an empty `channel_ids` list, or a null `max_discount_percent` (an omitted element in XML). `time_zone` is null exactly when there are no intervals, as in `api_stores.store_directory_v2`.
 - stores reads the web-written `store` table as its declared read owner (E-10) and publishes the directory with the location, so a check-in can be verified against it.
 
 ## Endpoints

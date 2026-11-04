@@ -336,7 +336,7 @@ paths:
       tags: [Stores]
       summary: Get the opening hours of a store
       description: >-
-        Returns the weekly opening hours. A store whose hours were never written has no intervals and a null `updated_at`.
+        Returns the weekly opening hours. A store whose hours were never written, or whose hours were cleared, has a null `time_zone`, no intervals and, if never written, a null `updated_at`. `time_zone` is null exactly when `intervals` is empty, as `api_stores.store_directory_v2` publishes it. In XML an absent `time_zone` is omitted.
       operationId: getStoreHours
       x-mosaiq-status: planned
       x-mosaiq-roles:
@@ -384,7 +384,7 @@ paths:
       tags: [Stores]
       summary: Replace the opening hours of a store
       description: >-
-        Replaces the whole weekly schedule. A day absent from `intervals` is a closed day, a day appears at most once, and `closes_at` is later than `opens_at` on the same day (no overnight interval). A violation is 422 `invalid_body` with the field and one of `duplicate_day`, `closes_before_opens` or `out_of_range`. Only ADMIN may write. The operation is idempotent and answers the
+        Replaces the whole weekly schedule. An empty `intervals` list clears the hours: every day is closed and the store has no time zone, so `time_zone` must then be null (JSON) or omitted (XML). A non-empty list needs a `time_zone`. Anything else is 422 `invalid_body` on `time_zone` with `time_zone_required` or `time_zone_without_hours`. A day absent from `intervals` is a closed day, a day appears at most once, and `closes_at` is later than `opens_at` on the same day (no overnight interval). A violation is 422 `invalid_body` with the field and one of `duplicate_day`, `closes_before_opens` or `out_of_range`. Only ADMIN may write. The operation is idempotent and answers the
         state it stored.
       operationId: putStoreHours
       x-mosaiq-status: planned
@@ -401,12 +401,16 @@ paths:
             examples:
               store_hours:
                 externalValue: ./examples/replace-store-hours.request.json
+              clear:
+                externalValue: ./examples/clear-store-hours.request.json
           application/xml:
             schema:
               $ref: '#/components/schemas/StoreHoursUpdate'
             examples:
               store_hours:
                 externalValue: ./examples/replace-store-hours.request.xml
+              clear:
+                externalValue: ./examples/clear-store-hours.request.xml
       responses:
         '200':
           description: The state now stored.
@@ -420,12 +424,16 @@ paths:
               examples:
                 store_hours:
                   externalValue: ./examples/store-hours.json
+                cleared:
+                  externalValue: ./examples/clear-store-hours.json
             application/xml:
               schema:
                 $ref: '#/components/schemas/StoreHours'
               examples:
                 store_hours:
                   externalValue: ./examples/store-hours.xml
+                cleared:
+                  externalValue: ./examples/clear-store-hours.xml
         '400':
           $ref: '#/components/responses/MalformedBody'
         '401':
@@ -499,7 +507,7 @@ paths:
       tags: [Stores]
       summary: Replace the enabled channels of a store
       description: >-
-        Replaces the whole set of enabled channel ids atomically. An empty set is valid. An id that does not exist is 422 `invalid_body` with detail code `unknown_channel` on `channel_ids`; a repeated id is `duplicate_channel`. Only ADMIN may write. The operation is idempotent and answers the
+        Replaces the whole set of enabled channel ids atomically. An empty set (`channel_ids: []` in JSON, no `channel_ids` element in XML) clears the set: the store then enables no channel. An id that does not exist is 422 `invalid_body` with detail code `unknown_channel` on `channel_ids`; a repeated id is `duplicate_channel`. Only ADMIN may write. The operation is idempotent and answers the
         state it stored.
       operationId: putStoreChannels
       x-mosaiq-status: planned
@@ -516,12 +524,16 @@ paths:
             examples:
               store_channels:
                 externalValue: ./examples/replace-store-channels.request.json
+              clear:
+                externalValue: ./examples/clear-store-channels.request.json
           application/xml:
             schema:
               $ref: '#/components/schemas/StoreChannelsUpdate'
             examples:
               store_channels:
                 externalValue: ./examples/replace-store-channels.request.xml
+              clear:
+                externalValue: ./examples/clear-store-channels.request.xml
       responses:
         '200':
           description: The state now stored.
@@ -535,12 +547,16 @@ paths:
               examples:
                 store_channels:
                   externalValue: ./examples/store-channels.json
+                cleared:
+                  externalValue: ./examples/clear-store-channels.json
             application/xml:
               schema:
                 $ref: '#/components/schemas/StoreChannels'
               examples:
                 store_channels:
                   externalValue: ./examples/store-channels.xml
+                cleared:
+                  externalValue: ./examples/clear-store-channels.xml
         '400':
           $ref: '#/components/responses/MalformedBody'
         '401':
@@ -614,7 +630,7 @@ paths:
       tags: [Stores]
       summary: Replace the commercial rules of a store
       description: >-
-        Replaces the commercial rules. `max_discount_percent` is a two-decimal string from `0.00` (no discount allowed) to `100.00` (no store cap). Sales enforces it; this service only stores it. Only ADMIN may write. The operation is idempotent and answers the
+        Replaces the commercial rules. `max_discount_percent` is a two-decimal string from `0.00` (no discount allowed) to `100.00`, or null (JSON) / an omitted element (XML) to remove the cap, which is the same state as a store never set. Clearing is idempotent. Sales enforces it; this service only stores it. Only ADMIN may write. The operation is idempotent and answers the
         state it stored.
       operationId: putStoreCommercialRules
       x-mosaiq-status: planned
@@ -631,12 +647,16 @@ paths:
             examples:
               store_commercial_rules:
                 externalValue: ./examples/replace-store-commercial-rules.request.json
+              clear:
+                externalValue: ./examples/clear-store-commercial-rules.request.json
           application/xml:
             schema:
               $ref: '#/components/schemas/StoreCommercialRulesUpdate'
             examples:
               store_commercial_rules:
                 externalValue: ./examples/replace-store-commercial-rules.request.xml
+              clear:
+                externalValue: ./examples/clear-store-commercial-rules.request.xml
       responses:
         '200':
           description: The state now stored.
@@ -650,12 +670,16 @@ paths:
               examples:
                 store_commercial_rules:
                   externalValue: ./examples/store-commercial-rules.json
+                cleared:
+                  externalValue: ./examples/clear-store-commercial-rules.json
             application/xml:
               schema:
                 $ref: '#/components/schemas/StoreCommercialRules'
               examples:
                 store_commercial_rules:
                   externalValue: ./examples/store-commercial-rules.xml
+                cleared:
+                  externalValue: ./examples/clear-store-commercial-rules.xml
         '400':
           $ref: '#/components/responses/MalformedBody'
         '401':
@@ -958,10 +982,10 @@ components:
       required: [time_zone, intervals, updated_at]
       properties:
         time_zone:
-          type: string
+          type: [string, 'null']
           minLength: 1
           maxLength: 64
-          description: IANA time zone name, for example `America/Mexico_City`.
+          description: IANA time zone name, for example `America/Mexico_City`. Null exactly when `intervals` is empty (omitted in XML).
         intervals:
           type: array
           maxItems: 7
@@ -979,9 +1003,10 @@ components:
       required: [time_zone, intervals]
       properties:
         time_zone:
-          type: string
+          type: [string, 'null']
           minLength: 1
           maxLength: 64
+          description: Required when `intervals` is not empty. Null (omitted in XML) exactly when `intervals` is empty, which clears the hours.
         intervals:
           type: array
           maxItems: 7
@@ -1044,9 +1069,14 @@ components:
       type: object
       additionalProperties: false
       required: [max_discount_percent]
+      description: >-
+        `max_discount_percent` null (JSON) or omitted (XML) removes the cap: the
+        store then imposes no limit of its own.
       properties:
         max_discount_percent:
-          $ref: '#/components/schemas/DiscountPercent'
+          anyOf:
+            - $ref: '#/components/schemas/DiscountPercent'
+            - type: 'null'
       xml:
         name: StoreCommercialRulesUpdate
         namespace: https://mosaiq.maxthecoder.online/xml/stores/v1

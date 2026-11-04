@@ -43,11 +43,12 @@ experiment's rules before anyone reads a result.
    the page does not say so. An underpowered "no significant difference" is then
    read as "no effect".
 4. **The population is the label, nothing else.** `_plan` assigns every customer
-   holding the campaign's label. Consent and restrictions did not exist when it
-   was written; they are being built now (customer-preferences, F21-17), and a
-   customer who refuses marketing must not be assigned for delivery. A customer
-   can be assigned in two running experiments, and one sale can then convert for
-   both (RT-08).
+   holding the campaign's label. The `PERSONALIZATION` and `MARKETING_CONTACT`
+   consent purposes and channel restrictions did not exist when it was written;
+   they are being built now (customer-preferences, F21-17). A customer without
+   `PERSONALIZATION` consent must not be assigned, and one without
+   `MARKETING_CONTACT` consent must not be contacted. A customer can be assigned
+   in two running experiments, and one sale can then convert for both (RT-08).
 5. **Looks are unbounded.** The result page recomputes whenever it is opened.
    Nothing fixes when the result counts, so a team can stop when the interval
    happens to exclude zero, which inflates the false-positive rate well above
@@ -87,8 +88,10 @@ PostgreSQL clock in the transaction that draws the salt, not from the web
 server (as RN-49 does for dates):
 - they hold the campaign's target label under the segmentation model version
   published at `T` (ADR-0017 history, ADR-0063, ADR-0064);
-- they have a recorded consent for the campaign's channel and no restriction
-  covering it, as customer-preferences records it at `T`;
+- they have a current `PERSONALIZATION` grant for experiment assignment, a
+  current `MARKETING_CONTACT` grant for being contacted through the campaign's
+  channel, and no restriction covering that channel, as customer-preferences
+  records them at `T`;
 - they are not anonymized, not inactive, and not in the campaign's exclusions
   (the audience and exclusion rules campaigns-service publishes, F25-03 and
   F25-04);
@@ -99,10 +102,11 @@ The frame is stored, not recomputed: one row per customer, a digest (SHA-256
 over the sorted customer ids and the criteria as canonical JSON), and the count
 removed by each exclusion reason. Every criterion is decided at `T`, before
 randomization, so exclusions apply identically to all arms and do not bias the
-comparison. Consent withdrawn, or an anonymization, after assignment stops
-further exposure and use of personal data, but the customer stays in the
-assigned count and the analysis (as an identifier that may be pseudonymous),
-because dropping them would condition on a post-assignment event.
+comparison. After assignment, withdrawal of `PERSONALIZATION` stops further
+tailored exposure, withdrawal of `MARKETING_CONTACT` stops further campaign
+communication, and anonymization stops further use of personal data. The customer
+stays in the assigned count and the analysis (as an identifier that may be
+pseudonymous), because dropping them would condition on a post-assignment event.
 
 **2. Randomization a third party can verify.** A customer's assignment key is
 `HMAC-SHA-256(key = salt, message = "mosaiq-assign-v1|" + experiment_id + "|" +
@@ -243,17 +247,18 @@ transaction, in reviewed code, and is stated as a residual risk. A single look a
 `A` means waiting for the window plus seven days; a team wanting an earlier
 answer plans a shorter window. The ITT MDE is larger than the effect among the
 reached, so plans need more customers than a per-exposure estimate would.
-Consent and exclusion criteria shrink the frame, sometimes below `n`. The
-Bonferroni correction costs power for each treatment added.
+The two consent grants and the exclusion criteria shrink the frame, sometimes
+below `n`. The Bonferroni correction costs power for each treatment added.
 
 **What must now be true elsewhere.**
 - experimentation-service's contract (#837) carries the plan, frame, salt, flags
   and results in JSON and XML, with the estimator and its fields, and merges
   before code (ADR-0035).
-- campaigns-service (#834, #835) publishes the audience, consent-aware
-  eligibility and exclusions as a versioned view the frame reads at `T`, and owns
-  neither the frame nor assignment.
-- customer-preferences (F21-17) exposes consent and restrictions as of an instant.
+- campaigns-service (#834, #835) publishes the audience, eligibility that requires
+  both purpose grants, and exclusions as a versioned view the frame reads at `T`,
+  and owns neither the frame nor assignment.
+- customer-preferences (F21-17) exposes the `PERSONALIZATION` and
+  `MARKETING_CONTACT` decisions and channel restrictions as of an instant.
 - experimentation-service takes ownership of the experiment tables (#838). The
   web's `split` and seed are not changed here; whether the web adopts the new
   rule, with the golden fixtures ADR-0045 asks for, is decided in #839.
@@ -289,8 +294,9 @@ them.
   3,839 example); an experiment whose frame divided by its arms is below `n` is
   stored `UNDERPOWERED` and refuses assignment without acknowledgement.
 - **Frame.** Tests that each criterion excludes the right customers at `T`, that
-  consent withdrawn after assignment leaves the customer counted, and that two
-  overlapping experiments never share a customer.
+  withdrawal of either purpose after assignment leaves the customer counted while
+  stopping the action that purpose allowed, and that two overlapping experiments
+  never share a customer.
 - **Validity.** An A/A run whose rejection rate over at least 1,000 seeded
   replications lies in [0.03, 0.07] for both metrics; an injected effect
   recovered within its interval, with interval coverage between 0.93 and 0.97 over

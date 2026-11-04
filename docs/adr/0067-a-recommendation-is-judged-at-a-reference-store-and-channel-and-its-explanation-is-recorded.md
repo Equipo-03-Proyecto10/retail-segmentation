@@ -30,8 +30,10 @@ What is genuinely uncertain, and judged here:
   Recommending against the usual store would offer what the seller's shelf does not hold.
 - ADR-0061 (Accepted) already defines availability as derived, per store and channel: the
   commercial status allows the sale, the store enables the channel, and on-hand is above
-  zero. This record reuses that definition instead of inventing a second one (ADR-0059:
-  "availability is RN-40's own eligibility test, not a second rule").
+  zero. This record extends that definition instead of inventing a second one: it keeps
+  ADR-0061's three conditions and adds a fourth, `store_not_selling` (the reference store's
+  status permits sales). ADR-0059 holds: "availability is RN-40's own eligibility test, not a
+  second rule".
 - The inputs to that definition do not exist yet. Commercial status and product relations
   are F21-09/F21-10 (#789, #790); store channels, hours and status are F21-11/F21-12
   (#785, #786); availability by store and channel is F21-07 (#787); consent and
@@ -54,7 +56,7 @@ may pass `store_id` and `channel_id`; the service never guesses either.
 | Caller gives | Reference store | Reference channel |
 |---|---|---|
 | Nothing | The customer's usual store (RN-35), exactly as RN-40 today | None: availability is judged at the store, over any channel the store enables |
-| `store_id` | That store. A floor role is accepted only at a store assigned to it (ADR-0060); another store is 403 | None, unless given |
+| `store_id` | That store. A floor role is accepted only at a store assigned to it (ADR-0060); another store is 403. This **extends ADR-0060**, which lists recommendations as not narrowed by assignment: narrowing applies only when the caller names a `store_id` | None, unless given |
 | `channel_id` | The usual store, or the given one | That channel. An unknown id is 422 |
 | Nothing, and the customer has no usual store | None: `no_usual_store`, as today. The service does not substitute a store, a default or "all stores" | — |
 
@@ -87,7 +89,7 @@ this order so the reason is deterministic:
 | `store_not_selling` | The reference store's status does not permit sales |
 | `channel_not_enabled` | A reference channel is given and the store does not enable it |
 | `out_of_stock` | On-hand at the reference store is zero |
-| `personalization_declined` | The customer's consent or restrictions forbid it (see Consent) |
+| `PERSONALIZATION_WITHDRAWN` | The customer's consent or restrictions forbid it (see Consent) |
 
 `no_signal` (matches no segment, preferred category or purchase signal) stays what RN-40
 says it is, a failure of relevance and not an availability reason. Exclusions are
@@ -147,7 +149,7 @@ The visible difference is one the record accepts: a discontinued-but-active prod
 shows on the web and not from the service.
 
 **Consent.** A customer who has objected to personalization (a recorded restriction,
-F21-15) is not recommended to. The service answers `status: "personalization_declined"`,
+F21-15) is not recommended to. The service answers `status: "PERSONALIZATION_WITHDRAWN"`,
 with empty items, and reads no segment, purchase history or interest for that customer
 (nothing is substituted, as for `no_open_assignment`). It records a decision with the
 status and no items and no signals. A customer who restricts only some signals (for
@@ -194,7 +196,7 @@ result (F24-08). A seller gets what the shelf in front of them holds.
 
 **What must now be true elsewhere.**
 - F24-03 (#826), blocked by this record, publishes the contract: `store_id`, `channel_id`,
-  `kind`, `alternative_for`, the exclusion counts and `personalization_declined`, the
+  `kind`, `alternative_for`, the exclusion counts and `PERSONALIZATION_WITHDRAWN`, the
   `recommendation-decisions` resource in `contracts/registry.yaml`, JSON and XML, and the
   database section of `sql/01_schema.sql` (idempotent, with its seed, or an exemption
   named in `sql/seed-exempt.txt`).
@@ -226,7 +228,7 @@ result (F24-08). A seller gets what the shelf in front of them holds.
 - A schema check that the decision tables hold only ids, figures and codes (no text
   columns for names or contact data), and a retention test that rows older than 90 days
   are deleted and anonymization clears the customer id.
-- A test that a customer with a recorded objection receives `personalization_declined`
+- A test that a customer with a recorded objection receives `PERSONALIZATION_WITHDRAWN`
   and that no segment, history or interest read ran for them.
 - `contracts/db/check_grants.sh` both ways for the new schema's grants; `contracts/check.sh`
   for the contract.

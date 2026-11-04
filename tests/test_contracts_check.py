@@ -259,6 +259,24 @@ def test_a_response_of_a_new_root_element_passes(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_renaming_a_v1_response_root_fails(tmp_path: Path) -> None:
+    repo, base = _repository(tmp_path)
+    _replace(
+        repo / "contracts/alpha/alpha.xsd",
+        'element name="alpha-item"',
+        'element name="alpha-renamed"',
+    )
+    _replace(repo / "contracts/alpha/examples/alpha.xml", "alpha-item", "alpha-renamed")
+    _bump_contract(repo)
+    _commit(repo, "rename a response root")
+
+    _assert_fails(
+        _run(repo, base),
+        "XML response root removed or changed in v1: "
+        "contracts/alpha/examples/alpha.xml",
+    )
+
+
 def test_a_change_to_existing_common_v1_fails(tmp_path: Path) -> None:
     repo, base = _repository(tmp_path)
     common = repo / "contracts/common/v1/common.xsd"

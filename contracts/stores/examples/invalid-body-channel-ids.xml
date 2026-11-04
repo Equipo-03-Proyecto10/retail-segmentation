@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_body</code>
+  <message>The channel set names a channel that does not exist.</message>
+  <correlation_id>corr-unknown-channel</correlation_id>
+  <details>
+    <field>channel_ids</field>
+    <code>unknown_channel</code>
+  </details>
+</Error>

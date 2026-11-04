@@ -62,17 +62,17 @@ The mapping, light first with dark in parentheses:
 |---|---|---|
 | `background` | `--mq-bg-canvas` | `#FAFAF9` (`#0B0B0A`) |
 | `surface` | `--mq-bg-surface` | `#FFFFFF` (`#141412`) |
-| `surfaceVariant` (sunken) | `--mq-bg-sunken` | `#F4F4F2` (`#232320`) |
+| `surfaceVariant` (sunken) | `--mq-bg-sunken` | `#F4F4F2` (`#0B0B0A`) |
 | `onSurface` | `--mq-text-primary` | `#232320` (`#F4F4F2`) |
 | `onSurfaceVariant` | `--mq-text-secondary` | `#6B6B65` (`#B3B3AE`) |
-| `outlineVariant` (dividers) | `--mq-border-subtle` | `#E7E7E4` |
-| `outline` (field and control borders) | `neutral-500` | `#8C8C86` |
+| `outlineVariant` (dividers) | `--mq-border-subtle` | `#E7E7E4` (`#383834`) |
+| `outline` (field and control borders) | `neutral-500` | `#8C8C86` (`#8C8C86`, the primitive is not redefined in dark) |
 | `primary` | `--mq-accent` | `#D45400` (`#FF6B00`) |
-| `onPrimary` | `--mq-on-accent` | `#000000` |
+| `onPrimary` | `--mq-accent-on` | `#000000` |
 | `primaryContainer` | `--mq-accent-subtle` | `#FFE8D1` (`#3A1D00`) |
-| `onPrimaryContainer` | `--mq-on-accent-subtle` | `#5C2300` |
+| `onPrimaryContainer` | `--mq-accent-subtle-on` | `#5C2300` (`#FFB566`) |
 | `error` | `--mq-danger` | `#C0342B` (`#E8736A`) |
-| `errorContainer` | `--mq-danger-subtle` | `#FAE4E2` |
+| `errorContainer` | `--mq-danger-subtle` | `#FAE4E2` (`#361715`) |
 | `MosaiqColors.success / warning / info` | `--mq-success / warning / info` | `#1F7A4C / #B26A00 / #1F5FA8` (`#4FBF85 / #E0A44A / #6BA6E8`) |
 | `MosaiqColors.segment[0..7]` | categorical `cat-01..08` | Paul Tol muted (Tol light in dark) |
 

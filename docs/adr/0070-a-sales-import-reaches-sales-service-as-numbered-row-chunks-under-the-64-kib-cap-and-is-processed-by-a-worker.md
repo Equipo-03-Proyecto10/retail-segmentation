@@ -48,7 +48,7 @@ concrete enough for an OpenAPI author. Facts that constrain it:
 
 Judgement calls the reviewer should look at first: the chunk size (150 rows, section 2),
 the 100,000-row ceiling (section 2), the cross-path duplicate guard (section 5), and the
-second process of the sales compose project (section 3), whose memory has not been
+second process of the sales compose project (section 3), whose 96 MB memory limit, chosen to keep ADR-0059's 3,500 MB gate, has not been
 measured. The record was written without a load test.
 
 ## Decision
@@ -210,8 +210,8 @@ import is the console's. The only new coupling is the identity of the sale:
   if a header with the prefixed id exists. Both take `pg_advisory_xact_lock` on a hash of
   the bare id before looking, and both raise SQLSTATE 22023 with the message
   `duplicate: <id> was already loaded through the other path`. `ingest_row` already
-  catches 22023 and the worker maps it to `duplicate_row`, so **the web changes not at
-  all**: its report shows the row as rejected, with the reason.
+  catches 22023 and the worker maps it to `duplicate_row`, so **no web code changes**, though what its
+  page reports does change: its report shows the row as rejected, with the reason.
 
 Whoever loads a file should still pick one path; the guard is a net, not a workflow. It
 does not unify a file whose ids were re-keyed between loads.
@@ -256,7 +256,9 @@ check would add a second rule. Widening this is a new record.
 
 **What this makes easy.**
 - The console loads a large file with the 64 KiB cap, the two content types and the XSD
-  unchanged; no NGINX, template or `check-api-edge.sh` change.
+  unchanged: `client_max_body_size 64k` and what `check-api-edge.sh` asserts stay as they
+  are. The template does change in two additive ways (see "What must now be true
+  elsewhere"): a variant for sales' second process and the `limit_req` of section 2.
 - A broken connection, a deploy or a worker crash costs at most the current row's
   transaction, and the client resumes from `next_sequence`; a duplicate request is
   harmless at every level (create, chunk, row).
@@ -264,8 +266,12 @@ check would add a second rule. Widening this is a new record.
 
 **What this makes hard.**
 - **A second process in the sales project.** It adds memory to a budget already gated at
-  3,500 MB (ADR-0059). Estimate: the same limit as a Flask service; unmeasured, and F19-08
-  must include it before sales deploys with it.
+  3,500 MB (ADR-0059). ADR-0059's table commits 3,376 MB, which leaves 124 MB under
+  the gate, so the worker cannot have a Flask service's 160 MB (that would commit 3,536 MB).
+  The worker's `mem_limit` is **96 MB**, for 3,472 MB committed and 28 MB of margin; no other
+  limit is lowered. It is an estimate for a polling process with one connection and 150 staged
+  rows, unmeasured: F19-08 must measure it, and if it needs more, the margin is spent or
+  ADR-0059's Flask limits are lowered to 128 MB as that record allows.
 - **Three tables and a worker are new state**: `sales.import`, `sales.import_chunk`,
   `sales.import_row_outcome`. Each ships with 30 seed rows or a named entry in
   `sql/seed-exempt.txt` (AGENTS.md), and the 4NF note says why outcomes are keyed by
@@ -275,8 +281,8 @@ check would add a second rule. Widening this is a new record.
   outbox rows and stream entries in 20 minutes; the relay and stream length (ADR-0037) must be
   checked at that volume, and consumers already dedupe by `event_id`.
 - **A revoked session does not stop an accepted import.** The administrator cancels it,
-  which stops unprocessed chunks only. This is deliberate (the work must outlive a 12-hour
-  token) and is the one place authority is not re-checked.
+  which stops unprocessed chunks only. This is deliberate (the work must outlive the 10-minute
+  access token and the 12-hour session, ADR-0036) and is the one place authority is not re-checked.
 - **A sale in a file can be partly accepted**, which a phone sale cannot. Reports are by line
   and say so.
 - **The cross-path guard is a net.** It takes an advisory lock and one indexed lookup per

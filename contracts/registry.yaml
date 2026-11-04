@@ -7,10 +7,10 @@ services:
     resources: [sessions, jwks.json]
   - name: users
     port: 5002
-    rule: "Accounts obey the single-administrator rule (never two, never zero, moved only by an explicit transfer), have case-insensitively unique emails, and are deactivated, never deleted (RN-01, RN-02, RN-04)"
+    rule: "Accounts obey the single-administrator rule (never two, never zero, moved only by an explicit transfer), have case-insensitively unique emails, are deactivated, never deleted, and say which stores a floor user works in through one assignment per user and store (RN-01, RN-02, RN-04, ADR-0060)"
     rn: [RN-01, RN-02, RN-04]
     wave: core
-    resources: [users, roles, administrator-transfers]
+    resources: [users, roles, administrator-transfers, store-assignments]
   - name: products
     port: 5003
     rule: "A product has a unique SKU, a price that is never negative and exactly one existing category, and is retired by deactivation (RN-10, RN-11)"
@@ -49,10 +49,10 @@ services:
     resources: [preference-profiles]
   - name: sales
     port: 5009
-    rule: "A sale is recorded exactly once, all or nothing, consuming its stock in the same transaction, and only with lines dated not in the future and not before the customer's registration, for active products, with positive quantities and positive two-decimal prices (RN-11 to RN-13, RN-37 (accepted sales))"
-    rn: [RN-11, RN-12, RN-13, RN-37]
+    rule: "A sale is recorded exactly once, all or nothing, consuming its stock in the same transaction, and only with lines dated not in the future and not before the customer's registration, for active products, with positive quantities and positive two-decimal prices; it is never edited or deleted, and a cancellation or return is recorded beside it as an append-only reversal that restores stock in the same transaction (RN-11 to RN-13, RN-37 (accepted sales), RN-70)"
+    rn: [RN-11, RN-12, RN-13, RN-37, RN-70]
     wave: core
-    resources: [sales, channels]
+    resources: [sales, sale-reversals, channels]
   - name: segments
     port: 5010
     rule: "A customer has at most one current segment, named by its stable label code, and unassigned states are reported as they are (RN-20, RN-21)"
@@ -95,3 +95,9 @@ services:
     rn: [RN-65]
     wave: third
     resources: [rfm-profiles, rfm-rule-sets, rfm-recalculations]
+  - name: model-registry
+    port: 5019
+    rule: "A model version is immutable once published, carries its dataset, parameters, metrics and reference distribution, changes state only by an explicit publication or rollback, and every drift alert is judged against that reference (RN-66)"
+    rn: [RN-66]
+    wave: third
+    resources: [model-versions, model-trainings]

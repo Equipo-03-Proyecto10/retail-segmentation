@@ -29,6 +29,11 @@ a `transaction_id`. Consumers name only the columns they read.
 | `quantity` | `integer` | Units sold; always positive. |
 | `unit_price` | `numeric(10,2)` | The price actually charged for one unit (RN-13). |
 
+The view is gross. A reversal (ADR-0062) never edits a sale line, so this view
+keeps its meaning: it still publishes every accepted line, whether or not it was
+later cancelled or returned. A consumer that needs what a customer bought, net
+of reversals, reads `api_sales.net_purchase_line_v1` instead.
+
 `(transaction_id, product_id)` is unique: a product appears once per sale.
 The view carries no product name, list price or total; consumers read product
 state through `api_products.product_ref_v1`.

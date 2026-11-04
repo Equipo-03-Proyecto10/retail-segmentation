@@ -1278,6 +1278,27 @@ customer from the net purchase view; `next_change_at` is an indexed column the
 daily pass selects on; `POST /v1/rfm-recalculations` and the weekly pass compare
 every customer with a recomputation and record the difference. · #743
 
+### RN-66 — A model version is immutable once published, carries what it was fitted on, and changes state only by an explicit publication or rollback
+A model version records its method, definition, window, seed, frozen scoring
+(quintile boundaries, or centroids and normalization bounds), dataset
+fingerprint and origin, metrics, reference distribution and owner. Once
+created, none of that changes, and no role edits or deletes a version. Exactly
+one version is published at a time. A version becomes published, and the
+previous one retired, only through a recorded publication; a rollback is a new
+publication of an earlier version, never an edit of history. Each publication
+names its version, the one it replaced, who made it and why. A comparison across
+versions is marked methodological and is never counted as behaviour
+([ADR-0064](adr/0064-a-model-version-is-immutable-and-a-change-of-version-is-never-reported-as-behaviour.md)).
+Every drift alert is judged against the reference distribution of the version
+it concerns (F23-07).
+
+**Enforced:** model-registry (planned), ADR-0059 and ADR-0064 —
+`models.model_version` is insert-only for `svc_models` apart from its state, a
+partial unique index allows one `PUBLISHED` row, and `models.model_publication`
+is append-only. The contract of F22-10 (#805) specifies versions, training runs,
+metrics, publications and rollbacks; drift reports and alerts follow with F23. ·
+#743
+
 ### RN-69 — Stock changes only through a sale, its reversal or a recorded movement with a reason, and is never negative
 `inventory` keeps one on-hand quantity per store and product, and it is never
 negative ([ADR-0061](adr/0061-stock-keeps-one-quantity-per-store-and-changes-only-through-a-sale-a-reversal-or-a-recorded-movement.md)).
@@ -1294,6 +1315,23 @@ and its on-hand quantity is above zero.
 insert-only, `definer_stock` applies a movement and its `inventory` change in one
 transaction, and quantities change by a conditional `UPDATE`, so two movements on
 one row add up. · #772
+
+### RN-70 — A sale is never edited or deleted: a cancellation or return is recorded beside it, and every reader counts net units
+A cancellation or a return is an append-only reversal recorded beside the sale
+([ADR-0062](adr/0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md)).
+It never edits or deletes the sale. A cancellation covers the whole sale on its
+calendar day, a return covers one or more lines within 30 days of the sale (both are
+configuration defaults), and each states a reason. Returning more units than remain is
+refused. A line's returned units are restored to stock in the same transaction unless
+the line says the goods cannot be resold. Every reader of accepted sales counts net
+units, `quantity - returned_quantity`, and a sale whose net amount is zero stops
+counting as a purchase. A repeated `Idempotency-Key` or `source_transaction_id`
+records nothing new.
+
+**Enforced:** sales-service (planned) and ADR-0062 — `sales.sale_reversal` and
+`sales.sale_reversal_line` are insert-only; `transaction_line.returned_quantity` is
+written only by `svc_sales`, with `CHECK (returned_quantity BETWEEN 0 AND quantity)`;
+the `net_sale_line` and `net_sale` views carry the one definition of net. · #770
 
 ---
 

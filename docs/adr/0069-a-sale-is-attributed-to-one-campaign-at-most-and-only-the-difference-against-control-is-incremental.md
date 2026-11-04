@@ -23,7 +23,9 @@ The repository already holds the pieces, and one gap between them:
   *experiment*, not across experiments, so one customer can be assigned in two
   experiments and one sale can be a conversion of both. Nothing says which
   campaign owns that sale, so two campaigns' totals can add up to more than the
-  business sold. Delivery 3 puts conversion-attribution inside experimentation
+  business sold. ADR-0068's rule 6 makes the assigned sets of overlapping
+  experiments disjoint, which removes most of that case; the rule in this record is the
+  backstop for what rule 6 leaves. Delivery 3 puts conversion-attribution inside experimentation
   (`docs/scope-delivery-3.md`, capability 21), and F25-12 needs a rule before it
   can write a table that refuses a second holder.
 - ADR-0019 fixes the conversion window before the run starts, makes it immutable
@@ -93,7 +95,9 @@ customer with another qualifying sale with a positive net amount in the window
 remains converted. Revenue per assigned customer in both arms uses net amounts.
 A return recorded after the window closes (ADR-0062 allows up to 30 days by
 default) therefore changes later reads of conversion and revenue, never the
-rows. Every result and report carries the time it was computed and is marked
+rows. It changes the re-read labelled "as of" its time; the primary result of
+ADR-0068 stays the one stored at its analysis instant and is not rewritten.
+Every result and report carries the time it was computed and is marked
 "as of" it, so two reads at different times are not mistaken for a
 contradiction.
 
@@ -129,11 +133,7 @@ to it even when it prompted the purchase. Because the holder is never reopened,
 a sale held by a campaign whose conversion later reads as zero does not pass to
 the runner-up. Results are a function of net sales at read time, so a published
 number can change after a late return; the "as of" stamp is the cost of that, and
-anyone comparing two reports has to compare the stamps. A late exposure could otherwise
-displace a holder already written, so F25-12 must fix the holder only when the
-window has closed, over the exposures that exist then, or order the evaluation so
-the result is the same whenever it runs. That is an implementation constraint
-stated here so it is not discovered later.
+anyone comparing two reports has to compare the stamps.
 
 **What must now be true elsewhere.**
 - F25-06 (#837) specifies attribution and result as separate resources or
@@ -146,7 +146,10 @@ stated here so it is not discovered later.
   sale is unique in it (one holder per sale), that the attributed assignment is
   a treatment assignment of an experiment with a campaign, and that it is
   append-only for the application role (ADR-0050). The record fixes the rule, not
-  the column list.
+  the column list. A late exposure could otherwise displace a holder already
+  written, so F25-12 must fix the holder only when the window has closed, over the
+  exposures that exist then, or order the evaluation so the result is the same
+  whenever it runs.
 - F25-13 (#844) computes the effect from assignments, conversions and net
   purchases only, and refuses an effect for an experiment with no control. It
   uses the estimator the experiment-design ADR fixes.
@@ -166,7 +169,11 @@ stated here so it is not discovered later.
   net revenue over all campaigns does not exceed the period's net sales
   (`net_sale`, ADR-0062).
 - A test builds a customer in two experiments with one qualifying sale and
-  asserts one holder, the latest exposure, and the `assignment_id` tie-break.
+  asserts one holder, the latest exposure, and the `assignment_id` tie-break. The
+  scenario is one rule 6 permits: the two experiments' frames were fixed before
+  ADR-0068's exclusion applied (seeded or earlier data), or a direct insert
+  assigned the customer in both, since rule 6 acts on frames and the table does not
+  refuse a second assignment across experiments.
 - A test cancels an attributed sale and asserts that the attribution and
   conversion rows are unchanged, the attributed revenue is zero, the customer is
   not converted, and no row of `experiment_conversion` was updated or deleted.

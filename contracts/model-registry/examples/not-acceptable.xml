@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>not_acceptable</code>
+  <message>The requested response format is not supported.</message>
+  <correlation_id>corr-not-acceptable</correlation_id>
+</Error>

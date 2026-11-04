@@ -617,7 +617,7 @@ paths:
         counted net of reversals (ADR-0062): its net amount is the sum of
         `(quantity - returned_quantity) * unit_price` over its lines, and a sale
         whose net amount is zero, such as a cancelled one, does not count. The
-        count reads the net view of `api_sales` (F21-02, #770), never gross
+        count reads `api_sales.net_purchase_line_v1`, never gross
         lines. A campaign with no rules written has none.
       x-mosaiq-roles:
         - ADMIN

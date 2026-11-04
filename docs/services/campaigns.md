@@ -56,7 +56,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 Published: [`api_campaigns.active_promotion_v1`](../../contracts/db/api_campaigns.active_promotion.v1.md), read by sales to validate a discount.
 
-Consumed, by name: `api_segments.current_label_v1` (audience size, label exclusions), `api_customers.customer_ref_v1` (customer ids, `registered_on`), the net view of `api_sales` (F21-02, #770; net purchase-count eligibility, ADR-0062), `api_stores.store_directory_v2` (store and channel ids of a promotion), and `api_users.store_assignment_v1` (the stores a floor role may read promotions of). The last two are still in contract pull requests.
+Consumed, by name: `api_segments.current_label_v1` (audience size, label exclusions), `api_customers.customer_ref_v1` (customer ids, `registered_on`), `api_sales.net_purchase_line_v1` (net purchase-count eligibility, ADR-0062), `api_stores.store_directory_v2` (store and channel ids of a promotion), and `api_users.store_assignment_v1` (the stores a floor role may read promotions of).
 
 ## Events
 

@@ -316,7 +316,7 @@ paths:
     get:
       summary: Report conversion after exposure
       description: >-
-        Conversion (`conversion`, definition version 1): of the customers exposed in a bucket, the share who bought within 7 days. It is observational, never an effect; the effect of a campaign is `campaign-performance`. Origin: `api_recommendations.interaction_v1` (impressions) and `api_experiments.exposure_v1` (campaign exposures) for exposures, `api_sales.net_purchase_line_v1` for purchases, and `api_segments.current_label_v1` for `segment`. The response holds counts and no customer.
+        Conversion (`conversion`, definition version 1): of the customers exposed in a bucket, the share who bought within 7 days. `channel` is not a dimension of conversion, because an exposure carries no channel; asking for it is 422 `invalid_query` with `dimension_not_supported`. It is observational, never an effect; the effect of a campaign is `campaign-performance`. Origin: `api_recommendations.interaction_v1` (impressions) and `api_experiments.exposure_v1` (campaign exposures) for exposures, `api_sales.net_purchase_line_v1` for purchases, and `api_segments.current_label_v1` for `segment`. The response holds counts and no customer.
       operationId: getConversionReport
       x-mosaiq-roles:
         - ADMIN

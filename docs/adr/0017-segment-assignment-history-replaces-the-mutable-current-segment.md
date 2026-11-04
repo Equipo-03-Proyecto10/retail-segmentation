@@ -1,10 +1,10 @@
 # ADR-0017 — Segment assignment history replaces the mutable current segment
 
-**Status:** Accepted
+**Status:** Partially superseded by ADR-0063 (a run scores every customer)
 **Owner:** Marcelo
 **Issue:** —
 **Supersedes:** —
-**Superseded by:** —
+**Superseded by:** [ADR-0063](0063-segments-change-on-events-and-on-a-schedule-scored-against-the-published-version.md), in part
 
 ---
 

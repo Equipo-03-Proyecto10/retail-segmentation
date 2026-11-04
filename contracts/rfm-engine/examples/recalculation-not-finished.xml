@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>recalculation_not_finished</code>
+  <message>The recalculation has not finished, so it has no differences yet.</message>
+  <correlation_id>corr-recalculation-not-finished</correlation_id>
+</Error>

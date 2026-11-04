@@ -15,6 +15,8 @@ Read the boundary of the work you are touching before starting:
   the web system's analytics.
 - [`docs/scope-delivery-2-distributed.md`](docs/scope-delivery-2-distributed.md):
   services and clients.
+- [`docs/scope-delivery-3.md`](docs/scope-delivery-3.md): the third delivery, the
+  commercial intelligence platform.
 
 ## Language
 

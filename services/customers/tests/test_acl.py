@@ -27,6 +27,10 @@ def test_the_file_is_one_line_without_a_stream_selector():
 def test_dryrun_denies_streams_and_session_keys():
     url = os.environ.get("TEST_REDIS_URL")
     if not url:
+        if os.environ.get("MOSAIQ_REQUIRE_REDIS") == "1":
+            pytest.fail(
+                "TEST_REDIS_URL is missing, and MOSAIQ_REQUIRE_REDIS forbids it"
+            )
         pytest.skip("TEST_REDIS_URL is not set")
     admin = redis.Redis.from_url(url, decode_responses=True)
     rules = ACL.read_text().strip().replace("{{password}}", ">pw").split()

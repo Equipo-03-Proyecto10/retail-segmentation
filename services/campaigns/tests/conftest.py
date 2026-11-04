@@ -67,7 +67,11 @@ def _sign_rs256(claims: dict[str, Any]) -> str:
 
 
 def _missing(variable: str) -> None:
-    if os.environ.get("CAMPAIGNS_REQUIRE_SERVICES") == "1":
+    required = (
+        os.environ.get("CAMPAIGNS_REQUIRE_SERVICES"),
+        os.environ.get("MOSAIQ_REQUIRE_POSTGRES"),
+    )
+    if "1" in required:
         pytest.fail(variable + " is not set")
     pytest.skip(variable + " is not set")
 

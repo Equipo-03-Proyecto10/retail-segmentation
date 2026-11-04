@@ -170,6 +170,18 @@ the delivery they governed.
 Kubernetes and managed database services remain outside the second delivery.
 Nothing in ADR-0016 brings them into scope.
 
+## The third delivery
+
+[`scope-delivery-3.md`](scope-delivery-3.md) holds its boundary: the instructor's
+retrospective checked against the repository, the fifteen services against the
+instructor's catalog, capabilities 16 to 25, and phases 19 to 29 (epics #740, #741, #742, #743, #744, #745, #746, #747, #748, #749, #750). The
+stories are in [`backlog.md`](backlog.md).
+
+Work enters as above: a change to the web through its short cycle, and a
+distributed component through its decision, then its contract, then its
+implementation. The two deferred permissions that had no route are now decided
+there: `inventory.write` by F21-04, and `segment.write` by F22-09.
+
 ## Two warnings promoted into decisions
 
 The earlier design exposed two failure modes before the analytics work began.

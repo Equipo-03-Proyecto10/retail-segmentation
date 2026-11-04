@@ -1,10 +1,10 @@
 # ADR-0041 — The Android and Electron clients run different processes over different formats
 
-**Status:** Accepted
+**Status:** Partially superseded by ADR-0060 (the floor roles)
 **Owner:** Marcelo
 **Issue:** #398
 **Supersedes:** —
-**Superseded by:** —
+**Superseded by:** [ADR-0060](0060-four-store-profiles-map-to-four-roles-and-services-read-each-users-stores-per-request.md), in part
 
 ---
 

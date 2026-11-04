@@ -31,10 +31,16 @@ FIRST_TEST_ID = 900_000
 _CALLER = {"sub": "00000000-0000-4000-8000-000000000001"}
 
 
+def _missing(message: str, kind: str) -> None:
+    if os.environ.get(f"MOSAIQ_REQUIRE_{kind}") == "1":
+        pytest.fail(message)
+    pytest.skip(message)
+
+
 def _database_url() -> str:
     url = os.environ.get("TEST_DATABASE_URL")
     if not url:
-        pytest.skip("TEST_DATABASE_URL names no seeded PostgreSQL")
+        _missing("TEST_DATABASE_URL names no seeded PostgreSQL", "POSTGRES")
     return url
 
 
@@ -194,7 +200,7 @@ def redis_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[redis.Redis]:
 
     url = os.environ.get("TEST_REDIS_URL")
     if not url:
-        pytest.skip("TEST_REDIS_URL names no throwaway Redis")
+        _missing("TEST_REDIS_URL names no throwaway Redis", "REDIS")
     admin = redis.Redis.from_url(url, decode_responses=True)
     password = secrets.token_urlsafe(16)
     line = (SERVICE_ROOT / "redis" / "products.acl").read_text().strip()
@@ -205,7 +211,7 @@ def redis_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[redis.Redis]:
     try:
         admin.config_set("appendonly", "yes")
     except redis.RedisError:
-        pytest.skip("the test Redis cannot enable the AOF that WAITAOF needs")
+        _missing("the test Redis cannot enable the AOF that WAITAOF needs", "REDIS")
     parsed = urlsplit(url)
     plain = urlunsplit(
         (parsed.scheme, parsed.hostname + f":{parsed.port}", "/0", "", "")

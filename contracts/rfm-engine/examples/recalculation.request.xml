@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RfmRecalculationRequest xmlns="https://mosaiq.maxthecoder.online/xml/rfm-engine/v1">
+  <rule_set_id>3</rule_set_id>
+</RfmRecalculationRequest>

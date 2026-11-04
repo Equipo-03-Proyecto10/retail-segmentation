@@ -16,7 +16,7 @@ The design is governed by ADR-0034 to ADR-0046. Every service implements exactly
 | [stock](./stock.md) | Rust (axum) | 5006 | core | Stock never negative, consumed only by an accepted sale, atomically with it | RN-14, ADR-0031 |
 | [customers](./customers.md) | Flask | 5007 | core | A customer registered once with valid data, never deleted through services | RN-08 |
 | [customer-preferences](./customer-preferences.md) | Rust (axum) | 5008 | core | Preferred channels and interest categories each replaced only as a whole set | RN-54 |
-| [sales](./sales.md) | Flask | 5009 | core | A sale recorded once, all or nothing, consuming its stock in the same transaction | RN-11 to RN-13, RN-37 (accepted sales) |
+| [sales](./sales.md) | Flask | 5009 | core | A sale recorded once, all or nothing, consuming its stock in the same transaction | RN-11 to RN-13, RN-37 (accepted sales), RN-70 |
 | [segments](./segments.md) | Rust (axum) | 5010 | core | At most one current segment per customer, by stable label; unassigned reported as is | RN-20, RN-21 |
 | [recommendations](./recommendations.md) | Flask | 5011 | core | Recommend active, in-stock, not-yet-bought products with reasons, or say why none | RN-40 |
 | [engagement](./engagement.md) | Flask + MongoDB | 5012 | core | QR scans and recommendation clicks recorded once, attributed, voided never deleted | RN-55 |

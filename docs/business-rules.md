@@ -1278,6 +1278,23 @@ customer from the net purchase view; `next_change_at` is an indexed column the
 daily pass selects on; `POST /v1/rfm-recalculations` and the weekly pass compare
 every customer with a recomputation and record the difference. · #743
 
+### RN-70 — A sale is never edited or deleted: a cancellation or return is recorded beside it, and every reader counts net units
+A cancellation or a return is an append-only reversal recorded beside the sale
+([ADR-0062](adr/0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md)).
+It never edits or deletes the sale. A cancellation covers the whole sale on its
+calendar day, a return covers one or more lines within 30 days of the sale (both are
+configuration defaults), and each states a reason. Returning more units than remain is
+refused. A line's returned units are restored to stock in the same transaction unless
+the line says the goods cannot be resold. Every reader of accepted sales counts net
+units, `quantity - returned_quantity`, and a sale whose net amount is zero stops
+counting as a purchase. A repeated `Idempotency-Key` or `source_transaction_id`
+records nothing new.
+
+**Enforced:** sales-service (planned) and ADR-0062 — `sales.sale_reversal` and
+`sales.sale_reversal_line` are insert-only; `transaction_line.returned_quantity` is
+written only by `svc_sales`, with `CHECK (returned_quantity BETWEEN 0 AND quantity)`;
+the `net_sale_line` and `net_sale` views carry the one definition of net. · #770
+
 ---
 
 ## Where the gaps are

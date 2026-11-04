@@ -1,6 +1,6 @@
 # ADR-0065 — Drift is claimed in three separate kinds, and concept drift only from a predictive outcome
 
-**Status:** Proposed
+**Status:** Accepted (2026-11-04)
 **Owner:** Marcelo
 **Issue:** #819 (story F23-07)
 **Supersedes:** —

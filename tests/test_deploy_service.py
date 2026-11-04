@@ -247,7 +247,7 @@ def test_a_first_release_runs_the_seven_steps_in_order(instance: Instance) -> No
     assert instance.running("alpha") == "0.1.0 5901"
     assert instance.include("alpha") == "location /api/alpha/ {}  # 0.1.0 \n"
     assert user_line("alpha", "~alpha:cache:*") in instance.acl()
-    assert "user default off resetkeys resetchannels -@all" in instance.acl()
+    assert "user default off resetchannels -@all +exec +@write ~*" in instance.acl()
 
     calls = instance.calls()
     order = [

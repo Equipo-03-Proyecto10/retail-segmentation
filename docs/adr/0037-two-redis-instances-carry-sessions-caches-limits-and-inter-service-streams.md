@@ -1,10 +1,10 @@
 # ADR-0037 — Two Redis instances carry sessions, caches, limits and the inter-service streams, for the services only
 
-**Status:** Accepted
+**Status:** Partially superseded by ADR-0056 (the `default` user's line only)
 **Owner:** Marcelo
 **Issue:** #398
 **Supersedes:** —
-**Superseded by:** —
+**Superseded by:** [ADR-0056](0056-the-disabled-default-user-may-replay-the-append-only-file.md), in part (the `default` user's line only)
 
 ---
 

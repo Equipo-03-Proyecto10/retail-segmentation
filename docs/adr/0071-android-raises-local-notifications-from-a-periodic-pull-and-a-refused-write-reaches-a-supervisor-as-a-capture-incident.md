@@ -64,7 +64,7 @@ contains personal data.
 
 | What | Source | Raised by | Who sees it |
 |---|---|---|---|
-| Campaign alert | `GET /v1/campaigns?status=ACTIVE` at campaigns-service (the read ADR-0060 grants the floor roles; no new endpoint) | The poll | Every floor role allowed that read |
+| Campaign alert | `GET /v1/promotions` at campaigns-service, the active promotions (the read ADR-0060 grants the floor roles; `/v1/campaigns` stays closed to them; no new endpoint) | The poll | Every floor role allowed that read |
 | Capture error | The Room outbox: a queued write has a final refusal | The outbox, immediately, with no network | The user whose session created the row |
 | Capture incident | `GET /v1/capture-incidents?status=OPEN&recorded_since=` at engagement-service | The poll | `COMMERCIAL_SUPERVISOR` (and `ADMIN`) |
 | Session ended | A 401 `session_expired` or a failed refresh in the poll | The poll, once | The signed-in user |

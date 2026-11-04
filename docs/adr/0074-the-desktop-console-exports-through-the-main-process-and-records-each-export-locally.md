@@ -25,7 +25,8 @@ first (ADR-0035).
   `EXPORT_ROLES` in `clients/desktop/src/shared/modules.ts`; the main process
   enforces it and the renderer only hides the button (`canExport` in the state).
 - **How.** The renderer sends the table it shows (module, column names, cell
-  text) to the main process. The main process validates it, opens the save
+  text) to the main process. A screen that shows more than one table exports the
+  first one, the module's main table; the others are not exported. The main process validates it, opens the save
   dialog, and writes a CSV: UTF-8 with a byte-order mark, RFC 4180 quoting, and a
   leading `=`, `+`, `-`, `@`, tab or carriage return defused with an apostrophe
   unless the cell is a plain number. The renderer never touches the file system.

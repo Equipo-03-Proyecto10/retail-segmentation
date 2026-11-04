@@ -560,6 +560,24 @@ def test_silhouette_is_sampled_and_named_above_its_size_limit(monkeypatch) -> No
     assert "silhouette_skipped" not in quality
 
 
+def test_the_silhouette_is_exact_at_its_size_limit_and_sampled_one_past_it(
+    monkeypatch,
+) -> None:
+    """The limit is inclusive: exactly SILHOUETTE_MAX_CUSTOMERS customers are
+    scored exactly, and one more switches to the seeded sample."""
+    monkeypatch.setattr(kmeans, "SILHOUETTE_MAX_CUSTOMERS", 12)
+    monkeypatch.setattr(kmeans, "SILHOUETTE_SAMPLE_SIZE", 6)
+
+    at_limit = fit(*_cloud(12, 2), KMeansParams(k=2, seed=5))
+    past_limit = fit(*_cloud(13, 2), KMeansParams(k=2, seed=5))
+
+    assert "silhouette_sampled" not in recorded_parameters(at_limit, 180)["quality"]
+    assert at_limit.silhouette is not None
+    quality = recorded_parameters(past_limit, 180)["quality"]
+    assert quality["silhouette_sampled"] is True
+    assert quality["silhouette_sample_size"] == 6
+
+
 def test_an_exact_silhouette_is_not_marked_sampled() -> None:
     ids, points = _blobs()
     quality = recorded_parameters(fit(ids, points, KMeansParams(k=3, seed=1)), 180)[

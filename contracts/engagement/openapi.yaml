@@ -15,8 +15,12 @@ info:
     with their meaning and adds `STORE_VISIT`, `RECO_IMPRESSION`, `CAMPAIGN_EXPOSURE`,
     `CART_ADD`, `CART_REMOVE` and `NAVIGATION`, each a distinct fact. None of these events
     is a sale: a confirmed transaction exists only in sales-service. A `CAMPAIGN_EXPOSURE`
-    carries the campaign and the customer, and experimentation consumes it through this
-    contract as the per-campaign exposure count, never as a conversion. The v2 summary
+    carries the campaign and the customer. experimentation does not call this service:
+    engagement relays the exposure on the Redis Stream `stream:engagement.v1.interaction_recorded`
+    from an outbox kept on the event document (ADR-0075), and experimentation keeps its own
+    projection and counts exposures per campaign and customer from it, never as a conversion.
+    A void reaches that projection as a later notice, so the count is eventually consistent.
+    The contract of that stream follows in its own story. The v2 summary
     counts every type.'
 security:
 - bearer: []
@@ -1443,7 +1447,7 @@ components:
     CampaignExposureRequestV2:
       type: object
       additionalProperties: false
-      description: A customer shown a campaign. It carries the campaign and the customer. Experimentation consumes it as the exposure count of a campaign, per customer, from this service only through its published contract; an exposure is not a conversion and not a sale. Not a sale.
+      description: A customer shown a campaign. It carries the campaign and the customer. Experimentation consumes it from the Redis Stream `stream:engagement.v1.interaction_recorded` that this service relays from its own outbox (ADR-0075), into its own projection, as the exposure count of a campaign per customer; it never calls this service. A void reaches the projection as a later notice. The stream's own contract follows in its own story. An exposure is not a conversion and not a sale.
       required:
       - client_event_id
       - type

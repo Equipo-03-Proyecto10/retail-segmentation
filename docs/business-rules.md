@@ -1236,14 +1236,18 @@ replacement runs in one transaction that takes
 and inserting the set; the foreign keys refuse an unknown channel or category.
 · #398
 
-### RN-55 — In-store engagement is recorded once per client event, attributed, voided rather than deleted, and summarized
-A `QR_SCAN` or `RECO_CLICK` from the floor is stored once per client event id,
-with the user who recorded it. A wrong event is voided with a reason and kept,
-and summaries count only events that are not voided.
+### RN-55 — In-store engagement is recorded once per client event as a distinct fact that is never a sale, attributed, voided rather than deleted, and summarized
+An engagement event from the floor is one of eight kinds: `QR_SCAN`,
+`RECO_CLICK`, `STORE_VISIT`, `RECO_IMPRESSION`, `CAMPAIGN_EXPOSURE`, `CART_ADD`,
+`CART_REMOVE` and `NAVIGATION`. It is stored once per client event id, with the
+user who recorded it. Each kind is its own fact: an impression is never read as
+a visit or a click, and a cart is intent, never a sale. A confirmed transaction
+exists only in sales-service. A wrong event is voided with a reason and kept,
+and summaries count only events that are not voided, each kind under its own key.
 
 **Enforced:** engagement-service (planned), ADR-0038 — the unique
 `client_event_id` index and the `$jsonSchema` validator on `engagement_event`
-in MongoDB, and a void operation that never deletes. · #398
+in MongoDB, and a void operation that never deletes. · #398, #798
 
 ### RN-56 — A staff check-in is verified only within the store's geofence at acceptable accuracy, and overrides are append-only reviews
 The server computes the distance from the reported position to the store's

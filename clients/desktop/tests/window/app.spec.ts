@@ -17,7 +17,7 @@ let server: Server;
 let base = '';
 let role = 'ANALYST';
 let deleted = 0;
-let campaignsAnswer: 'forbidden' | 'off_contract' = 'forbidden';
+let campaignsAnswer: 'forbidden' | 'off_contract' | 'revoked' = 'forbidden';
 
 test.beforeAll(async () => {
   server = createServer((req, res) => {
@@ -44,6 +44,9 @@ test.beforeAll(async () => {
           return reply(204);
         }
         return reply(200, claims(role));
+      }
+      if (campaignsAnswer === 'revoked' && req.url?.startsWith('/api/campaigns/')) {
+        return reply(401, error('session_revoked'));
       }
       if (campaignsAnswer === 'off_contract' && req.url?.startsWith('/api/campaigns/')) {
         // Well-formed XML that is not what the campaigns contract allows.
@@ -103,6 +106,7 @@ test('window is locked down', async () => {
     'deactivateUser',
     'deleteCategory',
     'engagementSummary',
+    'exportTable',
     'getAuditEntry',
     'getCampaign',
     'getCheckIn',
@@ -224,6 +228,9 @@ test('a response that fails its XSD is refused as a contract defect', async () =
     await page.locator('[data-service=campaigns] button').click();
     await expect(page.getByTestId('error-code')).toHaveText('contract_defect');
     await expect(page.getByTestId('error-message')).toContainText('outside its contract');
+    // The technical envelope sits behind a disclosure.
+    await expect(page.getByTestId('error-correlation')).toBeHidden();
+    await page.getByTestId('error-details').locator('summary').click();
     await expect(page.getByTestId('error-correlation')).toBeVisible();
     // Nothing of the invalid body reaches the screen.
     await expect(page.locator('body')).not.toContainText('surprise');
@@ -245,4 +252,58 @@ test('warns on every screen exactly when there is no OS keyring', async () => {
   await expect(page.getByTestId('role')).toBeVisible();
   await expect(warning).toHaveCount(storage === 'memory_only' ? 1 : 0);
   await app.close();
+});
+
+test('modules are grouped by work and only the role-allowed ones show', async () => {
+  role = 'MARKETING';
+  campaignsAnswer = 'forbidden';
+  const { app, page } = await launch();
+  try {
+    await signIn(page, 'a@b.c');
+    await expect(page.getByTestId('role')).toBeVisible();
+    const groups = await page
+      .locator('[data-group]')
+      .evaluateAll((n) => n.map((g) => (g as HTMLElement).dataset.group));
+    expect(groups).toContain('administration');
+  } finally {
+    await app.close();
+  }
+});
+
+test('an export action shows for a role that may export and not for one that may not', async () => {
+  role = 'ANALYST';
+  let { app, page } = await launch();
+  try {
+    await signIn(page, 'a@b.c');
+    await expect(page.getByTestId('export')).toBeVisible();
+  } finally {
+    await app.close();
+  }
+  role = 'STORE_MANAGER';
+  ({ app, page } = await launch());
+  try {
+    await signIn(page, 'a@b.c');
+    await expect(page.getByTestId('role')).toBeVisible();
+    await expect(page.getByTestId('export')).toHaveCount(0);
+  } finally {
+    await app.close();
+  }
+});
+
+test('a revoked session returns to sign-in with a clear message and no module left behind', async () => {
+  role = 'MARKETING';
+  campaignsAnswer = 'revoked';
+  const { app, page } = await launch();
+  try {
+    await signIn(page, 'a@b.c');
+    await page.getByRole('button', { name: 'Services' }).click();
+    await page.locator('[data-service=campaigns] button').click();
+    await expect(page.locator('form')).toBeVisible();
+    await expect(page.getByTestId('notice')).toContainText('revoked');
+    await expect(page.getByTestId('role')).toHaveCount(0);
+    await expect(page.locator('nav')).toHaveCount(0);
+  } finally {
+    campaignsAnswer = 'forbidden';
+    await app.close();
+  }
 });

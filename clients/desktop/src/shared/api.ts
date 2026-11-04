@@ -33,7 +33,19 @@ export type AppState =
       services: ServiceView[];
       /** operationIds this role may call, from the contracts' x-mosaiq-roles. Screens show a write control only when its operation is here. */
       operations: string[];
+      /** Whether this role may write a table to a file (ADR-0074). */
+      canExport: boolean;
     };
+
+/** A table the user is looking at, sent to the main process to be written through a save dialog. */
+export interface ExportRequest {
+  module: string;
+  columns: string[];
+  rows: string[][];
+}
+
+/** null: the user closed the save dialog and nothing was written. */
+export type ExportOutcome = { rows: number; file: string } | null;
 
 export type ActionResult = { ok: true; state: AppState } | { ok: false; error: ErrorView; state: AppState };
 
@@ -535,6 +547,7 @@ export interface MosaiqBridge {
   signIn(credentials: { email: string; password: string }): Promise<ActionResult>;
   signOut(): Promise<ActionResult>;
   probeService(service: string): Promise<ProbeResult>;
+  exportTable(request: ExportRequest): Promise<Result<ExportOutcome>>;
   onStateChange(listener: (state: AppState) => void): () => void;
   listProducts(query: ProductQuery): Promise<Result<Paged<ProductView>>>;
   getProduct(productId: number): Promise<Result<ProductView>>;
@@ -607,6 +620,7 @@ export const CHANNELS = {
   signOut: 'mosaiq:sign-out',
   probeService: 'mosaiq:probe-service',
   stateChanged: 'mosaiq:state-changed',
+  exportTable: 'mosaiq:export-table',
   listProducts: 'mosaiq:list-products',
   getProduct: 'mosaiq:get-product',
   createProduct: 'mosaiq:create-product',

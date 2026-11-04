@@ -4,7 +4,7 @@ The interface design system decided in [ADR-0002](../adr/0002-mosaiq-identity-an
 Plain HTML and CSS with custom properties — no React, Tailwind, or build step.
 The implementation target is Flask + Jinja2 server-rendered templates: every
 component below is semantic HTML with `mq-`-prefixed BEM classes, meant to be
-copied straight into a template.
+copied straight into a template. The Android client is a second consumer: [ADR-0057](../adr/0057-the-android-client-themes-material3-with-the-mosaiq-tokens-adapted-for-a-handheld.md) maps these tokens onto Material3 and fixes the mobile density.
 
 MOSAIQ is a dense analytical tool (commercial analysts, store managers,
 marketing staff, inventory planners, auditors reading tables of 200-800 rows),

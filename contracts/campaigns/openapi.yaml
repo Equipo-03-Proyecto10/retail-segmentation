@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: campaigns-service
-  version: 1.2.0
+  version: 1.2.1
   description: >-
     Owns the campaign lifecycle rule. A campaign is created as DRAFT, may be
     edited only while it remains DRAFT, and moves only DRAFT to ACTIVE or
@@ -612,9 +612,13 @@ paths:
         Returns the conditions a customer in the audience must satisfy. A customer
         is eligible when every rule that is present holds: registered on or before
         `registered_on_or_before` (`api_customers.customer_ref_v1.registered_on`),
-        and having at least `min_purchases` distinct purchases in the
-        `purchase_window_days` days before the request (`api_sales.purchase_line_v1`).
-        A campaign with no rules written has none.
+        and having at least `min_purchases` net purchases in the
+        `purchase_window_days` days before the request. A purchase is a sale
+        counted net of reversals (ADR-0062): its net amount is the sum of
+        `(quantity - returned_quantity) * unit_price` over its lines, and a sale
+        whose net amount is zero, such as a cancelled one, does not count. The
+        count reads the net view of `api_sales` (F21-02, #770), never gross
+        lines. A campaign with no rules written has none.
       x-mosaiq-roles:
         - ADMIN
         - ANALYST

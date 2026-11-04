@@ -1278,6 +1278,19 @@ customer from the net purchase view; `next_change_at` is an indexed column the
 daily pass selects on; `POST /v1/rfm-recalculations` and the weekly pass compare
 every customer with a recomputation and record the difference. · #743
 
+### RN-71 — A promotion belongs to one campaign, discounts by a percentage above zero, and is valid only within its campaign's dates
+A promotion names exactly one campaign, a discount percentage greater than zero
+and at most 100, the stores and channels where it applies, and a validity that
+begins no earlier than its campaign's start and ends no later than its end
+(`starts_on` is never after `ends_on`). It is created and replaced only while its
+campaign is a draft (RN-32), and it is usable for a discount only while the
+campaign is `ACTIVE` and today lies within its validity, both ends inclusive. A
+promotion outside its campaign's dates is refused as `promotion_outside_campaign`.
+
+**Enforced:** campaigns-service (planned), ADR-0059 and ADR-0034 — the service
+checks the rule on every write, and `api_campaigns.active_promotion_v1` publishes
+only promotions of an `ACTIVE` campaign whose validity contains `CURRENT_DATE`. · #834
+
 ---
 
 ## Where the gaps are

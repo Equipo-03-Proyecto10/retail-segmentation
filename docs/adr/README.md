@@ -192,7 +192,7 @@ Later runtime events must be preserved.
 | [0050](0050-experiment-conversions-are-append-only-for-the-application-role.md) | Experiment conversions are append-only for the application role | Accepted |
 | [0051](0051-app-session-is-seeded-as-runtime-history.md) | `app_session` is seeded as runtime history, not exempted | Accepted |
 | [0052](0052-data-provenance-is-recorded-per-sale-and-per-segmentation-run.md) | Data provenance is recorded per sale and per segmentation run, not per instance | Accepted |
-| [0053](0053-experiments-are-measured-on-conversion-only.md) | Experiments are measured on conversion only; `AVERAGE_TICKET` is removed | Accepted |
+| [0053](0053-experiments-are-measured-on-conversion-only.md) | Experiments are measured on conversion only; `AVERAGE_TICKET` is removed | Partially superseded by [0068](0068-an-experiment-is-planned-and-frozen-before-assignment-and-claims-an-effect-only-against-a-control.md) (conversion as the only target metric) |
 | [0054](0054-seed-written-outbox-rows-before-the-relays-first-start.md) | Seed-written outbox events are removed before bootstrap commits | Accepted |
 | [0055](0055-an-ops-console-supervises-services-through-their-meta-routes.md) | An ops console supervises the services through their meta routes, a host snapshot and a read-only Redis user | Accepted |
 | [0056](0056-the-disabled-default-user-may-replay-the-append-only-file.md) | The disabled `default` user may replay the append-only file | Accepted |
@@ -207,6 +207,7 @@ Later runtime events must be preserved.
 | [0065](0065-drift-is-claimed-in-three-separate-kinds-and-concept-drift-only-from-a-predictive-outcome.md) | Drift is claimed in three separate kinds, and concept drift only from a predictive outcome | Accepted |
 | [0066](0066-consent-is-an-append-only-record-by-purpose-and-anonymization-replaces-deletion.md) | Consent is an append-only record by purpose, an objection narrows what is done with a customer, and anonymization replaces deletion | Accepted |
 | [0067](0067-a-recommendation-is-judged-at-a-reference-store-and-channel-and-its-explanation-is-recorded.md) | A recommendation is judged at a reference store and channel, offers a declared alternative when unavailable, and its explanation is recorded | Accepted |
+| [0068](0068-an-experiment-is-planned-and-frozen-before-assignment-and-claims-an-effect-only-against-a-control.md) | An experiment is planned and frozen before assignment, and claims an effect only against a control | Accepted |
 | [0073](0073-an-operation-published-ahead-of-its-implementation-is-marked-planned-and-skipped-by-conformance.md) | An operation published ahead of its implementation is marked planned and skipped by conformance | Accepted |
 
 ## Writing one

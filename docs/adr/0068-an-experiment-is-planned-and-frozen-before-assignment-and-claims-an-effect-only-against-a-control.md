@@ -1,6 +1,6 @@
 # ADR-0068 — An experiment is planned and frozen before assignment, and claims an effect only against a control
 
-**Status:** Proposed
+**Status:** Accepted (2026-11-04)
 **Owner:** Max
 **Issue:** #832
 **Supersedes:** in part [ADR-0053](0053-experiments-are-measured-on-conversion-only.md) (that conversion is the only target metric, and that a revenue metric waits for a later story). It takes effect on this record's acceptance, not before. [ADR-0028](0028-experiment-treatment-arms-may-omit-control.md) is not superseded: it never allowed a no-control experiment to report an effect, it refused an uplift for one, and this record only makes that refusal cover every phrasing.

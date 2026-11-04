@@ -188,6 +188,8 @@ The web's matrix does not change.
 | Check-in reviews and engagement voids | `ADMIN` | Administrative correction |
 | Reads of users and roles | `ADMIN`, `AUDITOR` | Users: full for `ADMIN`, read for `AUDITOR` |
 | Writes of users, password resets of another user, and `POST /v1/administrator-transfers` | `ADMIN` | Users: full |
+| `PUT /v1/store-assignments/{user_id}` | `ADMIN` | Users: full (ADR-0060) |
+| `GET /v1/store-assignments/{user_id}` | `ADMIN` and `AUDITOR` for any user; `SALES_ASSOCIATE`, `STORE_MANAGER`, `LOYALTY_OFFICER` and `COMMERCIAL_SUPERVISOR` for their own id only | Users: read; own (ADR-0060) |
 | `GET /v1/users/me`; `PUT /v1/users/{user_id}/password` for the caller's own id, with the current password | Every authenticated role, `CUSTOMER` included | Users: own |
 | `GET` and `DELETE /v1/sessions/current` | Every authenticated role | — |
 | Reads of campaigns | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Campaigns: read |
@@ -196,6 +198,8 @@ The web's matrix does not change.
 | Reads of RFM rule sets | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Segments and rules: read. A rule set is configuration with no customer data |
 | Reads of RFM recalculations and their differences | `ADMIN`, `ANALYST`, `AUDITOR` | Reports: read, narrowed to the roles that verify the model; a difference names a customer |
 | `POST /v1/rfm-rule-sets`, `POST /v1/rfm-recalculations` | `ADMIN` | Segment run: run (RN-05); a rule set changes what every report says |
+| Reads of model versions, their publications and training runs | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Segments and rules: read. A version is configuration and fitted statistics with no customer data |
+| `POST /v1/model-versions`, `POST /v1/model-trainings`, `POST /v1/model-versions/{version_id}/publications`, `POST /v1/model-versions/{version_id}/rollbacks` | `ADMIN` | Segment run: run (RN-05); a publication changes every customer's segment |
 | `GET /v1/audit-entries` | `ADMIN`, `AUDITOR` | Audit log: read |
 | `POST /v1/sessions`, `POST /v1/sessions/refresh`, `GET /v1/jwks.json`, meta routes | No token | — |
 

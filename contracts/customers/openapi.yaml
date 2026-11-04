@@ -6,8 +6,10 @@ info:
     Registers, searches, reads and corrects customers under RN-08. Customers
     are never deleted through services; a mistaken registration is corrected
     with PATCH. Also issues and revokes loyalty cards, whose QR code is an
-    opaque identifier, and serves each floor role its permitted profile of a
-    customer.
+    opaque identifier. Customer reads answer in the representation of the
+    caller's role and carry only the customer's own fields; segment, RFM,
+    interests, restrictions and consent are read from the services that own
+    them.
 servers:
   - url: /api/customers
 security:
@@ -15,7 +17,6 @@ security:
 tags:
   - name: Customers
   - name: Loyalty cards
-  - name: Permitted profiles
   - name: Meta
 paths:
   /v1/customers:
@@ -30,7 +31,19 @@ paths:
         exact match that ignores letter case. When both filters are present,
         both must match. A filter value outside its schema, or an empty email,
         returns 422 `invalid_query`, naming the parameter in `details`.
-      x-mosaiq-roles: [ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR]
+
+
+        `SALES_ASSOCIATE` and `LOYALTY_OFFICER` search only to find the
+        customer they are serving. For them `q` is required and must hold at
+        least 3 characters once surrounding whitespace is removed (a shorter or
+        missing `q` returns 422 `invalid_query` with the detail code
+        `too_short` or `required`), `size` is at most 20 (a larger `size`
+        returns 422 `invalid_pagination`), and `email` is refused, since an
+        exact email probe would reveal an address to a role that may not read
+        it. `SALES_ASSOCIATE` matches `q` over name alone; `LOYALTY_OFFICER`
+        matches over name, email and phone. Each item is in the caller's
+        representation, as `GET /v1/customers/{customer_id}` returns it.
+      x-mosaiq-roles: [ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR, SALES_ASSOCIATE, LOYALTY_OFFICER]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - name: q
@@ -160,7 +173,27 @@ paths:
       tags: [Customers]
       operationId: getCustomer
       summary: Get one customer
-      x-mosaiq-roles: [ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR]
+      description: |-
+        Returns the customer in the representation of the caller's role, which
+        is decided by the token's role code and nothing the caller sends. An
+        element the role may not read is absent, in JSON and in XML: it is not
+        null, empty or masked. The elements are customers' own; segment, RFM,
+        interests, restrictions and consent belong to other services, each of
+        which narrows its own resource by role, and the client composes them.
+
+
+        | Element | `SALES_ASSOCIATE` | `LOYALTY_OFFICER` | All other roles |
+        |---|---|---|---|
+        | `customer_id`, `name`, `loyalty_state` | Yes | Yes | Yes |
+        | `email`, `phone` | Absent | Yes | Yes |
+        | `registration_channel_id`, `registered_on` | Absent | Absent | Yes |
+
+
+        `loyalty_state` is `ACTIVE` when the customer holds an ACTIVE card,
+        `REVOKED` when every card ever issued is revoked, and `NONE` when none
+        was ever issued. `COMMERCIAL_SUPERVISOR` reads no customer element and
+        receives 403 `forbidden_role`.
+      x-mosaiq-roles: [ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR, SALES_ASSOCIATE, LOYALTY_OFFICER]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/CustomerId'
@@ -177,12 +210,16 @@ paths:
               examples:
                 customer:
                   externalValue: ./examples/get-customer.json
+                sales_associate:
+                  externalValue: ./examples/get-customer-sales-associate.json
             application/xml:
               schema:
                 $ref: '#/components/schemas/Customer'
               examples:
                 customer:
                   externalValue: ./examples/get-customer.xml
+                sales_associate:
+                  externalValue: ./examples/get-customer-sales-associate.xml
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -400,7 +437,7 @@ paths:
         customer it belongs to. The code travels in the body, never in the URL,
         so it stays out of access logs. The response holds two identifiers and
         no personal data; the caller reads the customer through
-        `GET /v1/permitted-profiles/{customer_id}`, which applies the role's
+        `GET /v1/customers/{customer_id}`, which applies the role's
         representation. A code that matches no card returns 404
         `card_not_found`. A revoked card returns 409 `card_revoked` and names no
         customer. A body with any member besides `code`, or a `code` that is not
@@ -541,178 +578,6 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/ProtectedDatabaseUnavailable'
-  /v1/permitted-profiles:
-    get:
-      tags: [Permitted profiles]
-      operationId: searchPermittedProfiles
-      x-mosaiq-status: planned
-      summary: Search customers by name, in the caller's representation
-      description: >-
-        Searches for the customer the caller is serving. It cannot list the
-        directory. `q` is required and must hold at least 3 characters after
-        surrounding whitespace is removed; a shorter or missing `q` returns 422
-        `invalid_query` with the detail code `too_short` or `required`. `size`
-        is at most 20, and `size` above 20 returns 422 `invalid_pagination`.
-        The match is a case-insensitive literal substring, where percent and
-        underscore match themselves. A role searches only fields its
-        representation contains: `SALES_ASSOCIATE` matches over name alone;
-        `LOYALTY_OFFICER`, `STORE_MANAGER` and `ADMIN` match over name, email
-        and phone. There is no `email` filter, since an exact email probe would
-        reveal an address to a role that may not read it. Each item is the
-        caller's permitted profile, exactly as
-        `GET /v1/permitted-profiles/{customer_id}` returns it.
-      x-mosaiq-roles: [ADMIN, SALES_ASSOCIATE, LOYALTY_OFFICER, STORE_MANAGER]
-      x-mosaiq-conformance-query:
-        q: jor
-      parameters:
-        - $ref: '#/components/parameters/CorrelationId'
-        - name: q
-          in: query
-          required: true
-          description: >-
-            Literal substring, at least 3 characters once surrounding
-            whitespace is removed.
-          schema:
-            type: string
-            minLength: 3
-            maxLength: 160
-          example: jordan
-        - $ref: '#/components/parameters/Page'
-        - name: size
-          in: query
-          required: false
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 20
-            default: 20
-      responses:
-        '200':
-          description: A page of permitted profiles.
-          headers:
-            X-Correlation-ID:
-              $ref: '#/components/headers/CorrelationId'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PermittedProfiles'
-              examples:
-                profiles:
-                  externalValue: ./examples/search-permitted-profiles.json
-            application/xml:
-              schema:
-                $ref: '#/components/schemas/PermittedProfiles'
-              examples:
-                profiles:
-                  externalValue: ./examples/search-permitted-profiles.xml
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '406':
-          $ref: '#/components/responses/NotAcceptable'
-        '422':
-          $ref: '#/components/responses/ProfileSearchValidation'
-        '429':
-          $ref: '#/components/responses/RateLimited'
-        '503':
-          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
-  /v1/permitted-profiles/{customer_id}:
-    get:
-      tags: [Permitted profiles]
-      operationId: getPermittedProfile
-      x-mosaiq-status: planned
-      summary: Read one customer in the caller's representation
-      description: |-
-        Returns the customer in the representation of the caller's role, which
-        is decided by the token's role code and nothing the caller sends. An
-        element the role may not read is absent, in JSON and in XML: it is not
-        null, empty or masked. An element the role may read but that has no
-        value is `null` in JSON and omitted in XML, as everywhere else. The
-        resource is keyed by the customer's own identity, as
-        `/v1/preference-profiles/{customer_id}` is, and it is not a copy of
-        any other service's resource: customers composes it from its own table
-        and the `api_*` views named below, and it publishes the composition
-        under its own name.
-
-
-        | Element | `SALES_ASSOCIATE` | `LOYALTY_OFFICER` | `STORE_MANAGER` and `ADMIN` |
-        |---|---|---|---|
-        | `customer_id`, `name`, `loyalty_state` | Yes | Yes | Yes |
-        | `email`, `phone` | Absent | Yes | Yes |
-        | `segment` (`state`, `label_code`, `since`) | Yes | Yes | Yes |
-        | `rfm` (the R, F and M scores) | Absent | Absent | Yes |
-        | `interest_category_ids`, `restrictions` | Yes | Yes | Yes |
-        | `preferred_channel_ids`, `consent` | Absent | Yes | Yes |
-
-
-        `COMMERCIAL_SUPERVISOR` reads no element of a customer, so it is not in
-        the roles and receives 403 `forbidden_role`. `ADMIN` is not confined and
-        receives the widest representation, the manager's. `ANALYST`,
-        `MARKETING` and `AUDITOR` keep reading the directory through
-        `GET /v1/customers/{customer_id}` and are not in this resource's roles.
-        `loyalty_state` is `ACTIVE` when the customer holds an ACTIVE card,
-        `REVOKED` when every card ever issued is revoked, and `NONE` when none
-        was ever issued.
-
-
-        Sources. `name`, `email`, `phone` and `loyalty_state` come from
-        customers' own tables. `segment` comes from
-        `api_segments.current_label_v1`. `rfm` comes from
-        `api_rfm.current_profile_v1`. `interest_category_ids` comes from
-        `api_preferences.interest_category_v1`. `preferred_channel_ids`,
-        `restrictions` and `consent` come from views customer-preferences has
-        not published yet (#793). Until they exist customers cannot serve those
-        three elements. customers reads each view only for the elements the
-        caller's role may read.
-      x-mosaiq-roles: [ADMIN, SALES_ASSOCIATE, LOYALTY_OFFICER, STORE_MANAGER]
-      x-mosaiq-representations:
-        SALES_ASSOCIATE: [customer_id, name, loyalty_state, segment, interest_category_ids, restrictions]
-        LOYALTY_OFFICER: [customer_id, name, loyalty_state, email, phone, segment, interest_category_ids, restrictions, preferred_channel_ids, consent]
-        STORE_MANAGER: [customer_id, name, loyalty_state, email, phone, segment, rfm, interest_category_ids, restrictions, preferred_channel_ids, consent]
-        ADMIN: [customer_id, name, loyalty_state, email, phone, segment, rfm, interest_category_ids, restrictions, preferred_channel_ids, consent]
-      parameters:
-        - $ref: '#/components/parameters/CorrelationId'
-        - $ref: '#/components/parameters/CustomerId'
-      responses:
-        '200':
-          description: The customer, in the caller's representation.
-          headers:
-            X-Correlation-ID:
-              $ref: '#/components/headers/CorrelationId'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PermittedProfile'
-              examples:
-                sales_associate:
-                  externalValue: ./examples/permitted-profile-sales-associate.json
-                loyalty_officer:
-                  externalValue: ./examples/permitted-profile-loyalty-officer.json
-                store_manager:
-                  externalValue: ./examples/permitted-profile-store-manager.json
-            application/xml:
-              schema:
-                $ref: '#/components/schemas/PermittedProfile'
-              examples:
-                sales_associate:
-                  externalValue: ./examples/permitted-profile-sales-associate.xml
-                loyalty_officer:
-                  externalValue: ./examples/permitted-profile-loyalty-officer.xml
-                store_manager:
-                  externalValue: ./examples/permitted-profile-store-manager.xml
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/CustomerNotFound'
-        '406':
-          $ref: '#/components/responses/NotAcceptable'
-        '429':
-          $ref: '#/components/responses/RateLimited'
-        '503':
-          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
   /health/live:
     get:
       tags: [Meta]
@@ -837,13 +702,13 @@ components:
     Customer:
       type: object
       additionalProperties: false
+      description: >-
+        A customer as one role may read it. `customer_id` and `name` are present for every role, and `loyalty_state` on
+        every read; every other member is absent
+        for a role that may not read it (see `getCustomer`).
       required:
         - customer_id
         - name
-        - email
-        - phone
-        - registration_channel_id
-        - registered_on
       properties:
         customer_id:
           type: string
@@ -851,6 +716,9 @@ components:
         name:
           type: string
           maxLength: 120
+        loyalty_state:
+          type: string
+          enum: [NONE, ACTIVE, REVOKED]
         email:
           $ref: '#/components/schemas/NullableEmail'
         phone:
@@ -1085,126 +953,6 @@ components:
           format: uuid
       xml:
         name: LoyaltyCardLookup
-        namespace: https://mosaiq.maxthecoder.online/xml/customers/v1
-    ProfileSegment:
-      type: object
-      additionalProperties: false
-      required: [state, label_code, since]
-      description: One row of `api_segments.current_label_v1`.
-      properties:
-        state:
-          type: string
-          enum: [assigned, unassigned_result, no_open_assignment]
-        label_code:
-          type: [string, 'null']
-          maxLength: 40
-        since:
-          type: [string, 'null']
-          format: date-time
-    ProfileRfm:
-      type: object
-      additionalProperties: false
-      required: [state, r_score, f_score, m_score]
-      description: >-
-        The scores of `api_rfm.current_profile_v1`, which are 1 through 5 when
-        `state` is `scored` and `null` otherwise.
-      properties:
-        state:
-          type: string
-          enum: [scored, unassigned, pending]
-        r_score:
-          type: [integer, 'null']
-          minimum: 1
-          maximum: 5
-        f_score:
-          type: [integer, 'null']
-          minimum: 1
-          maximum: 5
-        m_score:
-          type: [integer, 'null']
-          minimum: 1
-          maximum: 5
-    ProfileConsent:
-      type: object
-      additionalProperties: false
-      required: [state, recorded_at]
-      description: >-
-        The customer's current consent record. The vocabulary of `state` and
-        the record's source are decided by the privacy-consent story (#793);
-        until then the shape is fixed and the codes are open.
-      properties:
-        state:
-          type: string
-          pattern: '^[A-Za-z][A-Za-z0-9_]{0,39}$'
-        recorded_at:
-          type: [string, 'null']
-          format: date-time
-    PermittedProfile:
-      type: object
-      additionalProperties: false
-      required: [customer_id, name, loyalty_state, segment, interest_category_ids, restrictions]
-      description: >-
-        A customer as one role may read it. Only `customer_id`, `name`,
-        `loyalty_state`, `segment`, `interest_category_ids` and `restrictions`
-        are present for every role; every other member is absent for a role that
-        may not read it. See `getPermittedProfile` for the table.
-      properties:
-        customer_id:
-          type: string
-          format: uuid
-        name:
-          type: string
-          maxLength: 120
-        loyalty_state:
-          type: string
-          enum: [NONE, ACTIVE, REVOKED]
-        email:
-          $ref: '#/components/schemas/NullableEmail'
-        phone:
-          type: [string, 'null']
-          maxLength: 20
-        segment:
-          $ref: '#/components/schemas/ProfileSegment'
-        rfm:
-          $ref: '#/components/schemas/ProfileRfm'
-        interest_category_ids:
-          type: array
-          items:
-            type: integer
-            minimum: -32768
-            maximum: 32767
-        restrictions:
-          type: array
-          description: >-
-            Personalization restrictions in force, as codes. Their vocabulary is
-            decided by #793.
-          items:
-            type: string
-            pattern: '^[A-Za-z][A-Za-z0-9_]{0,39}$'
-        preferred_channel_ids:
-          type: array
-          items:
-            type: integer
-            minimum: -32768
-            maximum: 32767
-        consent:
-          $ref: '#/components/schemas/ProfileConsent'
-      xml:
-        name: PermittedProfile
-        namespace: https://mosaiq.maxthecoder.online/xml/customers/v1
-    PermittedProfiles:
-      type: object
-      additionalProperties: false
-      required: [permitted_profiles, page_info]
-      properties:
-        permitted_profiles:
-          type: array
-          items:
-            $ref: '#/components/schemas/PermittedProfile'
-        page_info:
-          $ref: '#/components/schemas/PageInfo'
-      xml:
-        name: PermittedProfiles
         namespace: https://mosaiq.maxthecoder.online/xml/customers/v1
   examples:
     MalformedBody:
@@ -1720,25 +1468,3 @@ components:
           examples:
             invalid_body:
               $ref: '#/components/examples/InvalidLoyaltyBody'
-    ProfileSearchValidation:
-      description: '`invalid_pagination` or `invalid_query`, which carries `too_short` or `required` for `q`.'
-      headers:
-        X-Correlation-ID:
-          $ref: '#/components/headers/CorrelationId'
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          examples:
-            invalid_pagination:
-              $ref: '#/components/examples/InvalidPagination'
-            invalid_query:
-              externalValue: ./examples/query-too-short.json
-        application/xml:
-          schema:
-            $ref: '#/components/schemas/Error'
-          examples:
-            invalid_pagination:
-              $ref: '#/components/examples/InvalidPagination'
-            invalid_query:
-              externalValue: ./examples/query-too-short.xml

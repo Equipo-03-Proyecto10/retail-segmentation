@@ -1,0 +1,17 @@
+{
+  "version_name": "kmeans-k4-next",
+  "method": "KMEANS",
+  "window_days": 180,
+  "parameters": {
+    "rule_set_id": null,
+    "k": 4,
+    "max_iterations": 100,
+    "tolerance": 0.0001,
+    "features": [
+      "R",
+      "F",
+      "M"
+    ],
+    "normalization": "MIN_MAX"
+  }
+}

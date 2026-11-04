@@ -1,0 +1,18 @@
+{
+  "sale_id": 4812,
+  "kind": "RETURN",
+  "lines": [
+    {
+      "product_id": 1020,
+      "quantity": 1,
+      "reason": "Packaging damaged",
+      "resellable": false
+    },
+    {
+      "product_id": 1051,
+      "quantity": 1,
+      "reason": "Customer changed their mind",
+      "resellable": true
+    }
+  ]
+}

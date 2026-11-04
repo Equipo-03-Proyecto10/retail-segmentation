@@ -1,0 +1,150 @@
+{
+  "version_id": 4,
+  "name": "web-run-41-kmeans",
+  "method": "KMEANS",
+  "state": "RETIRED",
+  "source": "WEB_RUN",
+  "window_days": 180,
+  "seed": 1337,
+  "parameters": {
+    "rule_set_id": null,
+    "k": 4,
+    "max_iterations": 100,
+    "tolerance": 0.0001,
+    "features": [
+      "R",
+      "F",
+      "M"
+    ],
+    "normalization": "MIN_MAX"
+  },
+  "frozen_scoring": {
+    "quintile_boundaries": null,
+    "centroids": [
+      {
+        "cluster_index": 0,
+        "label_code": "CHAMPIONS",
+        "r": 0.1204,
+        "f": 0.812,
+        "m": 0.7733
+      },
+      {
+        "cluster_index": 1,
+        "label_code": "LOYAL",
+        "r": 0.2951,
+        "f": 0.553,
+        "m": 0.5127
+      },
+      {
+        "cluster_index": 2,
+        "label_code": "AT_RISK",
+        "r": 0.631,
+        "f": 0.3012,
+        "m": 0.2845
+      },
+      {
+        "cluster_index": 3,
+        "label_code": "LOST",
+        "r": 0.9122,
+        "f": 0.0915,
+        "m": 0.0731
+      }
+    ],
+    "normalization_bounds": {
+      "r_min": 0,
+      "r_max": 180,
+      "f_min": 1,
+      "f_max": 42,
+      "m_min": 5.0,
+      "m_max": 9120.5
+    }
+  },
+  "reference_distribution": {
+    "sample_size": 18432,
+    "captured_at": "2026-10-29T03:00:00Z",
+    "features": [
+      {
+        "feature": "R",
+        "bin_edges": [
+          0,
+          30,
+          60,
+          120,
+          180
+        ],
+        "proportions": [
+          0.31,
+          0.27,
+          0.24,
+          0.18
+        ]
+      },
+      {
+        "feature": "F",
+        "bin_edges": [
+          1,
+          2,
+          4,
+          8,
+          42
+        ],
+        "proportions": [
+          0.38,
+          0.29,
+          0.21,
+          0.12
+        ]
+      },
+      {
+        "feature": "M",
+        "bin_edges": [
+          5.0,
+          150.0,
+          600.0,
+          1800.0,
+          9120.5
+        ],
+        "proportions": [
+          0.34,
+          0.33,
+          0.22,
+          0.11
+        ]
+      }
+    ],
+    "labels": [
+      {
+        "label_code": "CHAMPIONS",
+        "share": 0.12
+      },
+      {
+        "label_code": "LOYAL",
+        "share": 0.31
+      },
+      {
+        "label_code": "AT_RISK",
+        "share": 0.33
+      },
+      {
+        "label_code": "LOST",
+        "share": 0.24
+      }
+    ]
+  },
+  "dataset": {
+    "fingerprint": "9f2b6c4e1a7d3058b1e49c06a2d7f3185e0b4a96c7d1f2e38a5b6c0d9e4f7a12",
+    "origin": "SEEDED",
+    "row_count": 18432
+  },
+  "metrics": {
+    "inertia": 412.78,
+    "silhouette": 0.41,
+    "stability": 0.93
+  },
+  "owner_id": null,
+  "source_run_id": 41,
+  "training_id": null,
+  "created_at": "2026-10-02T10:00:00Z",
+  "published_at": "2026-10-02T10:00:00Z",
+  "retired_at": "2026-10-28T09:30:00Z"
+}

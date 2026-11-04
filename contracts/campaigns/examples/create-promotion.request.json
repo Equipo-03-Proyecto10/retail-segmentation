@@ -1,0 +1,13 @@
+{
+  "campaign_id": 301,
+  "name": "Holiday preview 10 percent",
+  "discount_percent": "10.00",
+  "starts_on": "2026-11-15",
+  "ends_on": "2026-12-24",
+  "store_ids": [
+    1
+  ],
+  "channel_ids": [
+    1
+  ]
+}

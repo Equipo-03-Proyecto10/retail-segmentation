@@ -1,6 +1,6 @@
 # ADR-0071 — Android raises local notifications from a periodic pull, and a refused write reaches a supervisor as a capture incident owned by engagement
 
-**Status:** Proposed
+**Status:** Accepted (2026-11-04)
 **Owner:** Maximiliano
 **Issue:** #864
 **Supersedes:** in part [ADR-0038](0038-mongodb-holds-in-store-engagement-owned-by-engagement-service-alone.md) (the number of MongoDB collections only); see "What must now be true elsewhere".

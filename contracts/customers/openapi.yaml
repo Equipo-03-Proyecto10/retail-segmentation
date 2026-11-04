@@ -6,10 +6,9 @@ info:
     Registers, searches, reads and corrects customers under RN-08. Customers
     are never deleted through services; a mistaken registration is corrected
     with PATCH. Also issues and revokes loyalty cards, whose QR code is an
-    opaque identifier. Customer reads answer in the representation of the
-    caller's role and carry only the customer's own fields; segment, RFM,
-    interests, restrictions and consent are read from the services that own
-    them.
+    opaque identifier. Floor roles read customers through the floor view, which
+    carries only the customer's own fields; segment, RFM, interests,
+    restrictions and consent are read from the services that own them.
 servers:
   - url: /api/customers
 security:
@@ -31,19 +30,7 @@ paths:
         exact match that ignores letter case. When both filters are present,
         both must match. A filter value outside its schema, or an empty email,
         returns 422 `invalid_query`, naming the parameter in `details`.
-
-
-        `SALES_ASSOCIATE` and `LOYALTY_OFFICER` search only to find the
-        customer they are serving. For them `q` is required and must hold at
-        least 3 characters once surrounding whitespace is removed (a shorter or
-        missing `q` returns 422 `invalid_query` with the detail code
-        `too_short` or `required`), `size` is at most 20 (a larger `size`
-        returns 422 `invalid_pagination`), and `email` is refused, since an
-        exact email probe would reveal an address to a role that may not read
-        it. `SALES_ASSOCIATE` matches `q` over name alone; `LOYALTY_OFFICER`
-        matches over name, email and phone. Each item is in the caller's
-        representation, as `GET /v1/customers/{customer_id}` returns it.
-      x-mosaiq-roles: [ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR, SALES_ASSOCIATE, LOYALTY_OFFICER]
+      x-mosaiq-roles: [ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - name: q
@@ -173,27 +160,7 @@ paths:
       tags: [Customers]
       operationId: getCustomer
       summary: Get one customer
-      description: |-
-        Returns the customer in the representation of the caller's role, which
-        is decided by the token's role code and nothing the caller sends. An
-        element the role may not read is absent, in JSON and in XML: it is not
-        null, empty or masked. The elements are customers' own; segment, RFM,
-        interests, restrictions and consent belong to other services, each of
-        which narrows its own resource by role, and the client composes them.
-
-
-        | Element | `SALES_ASSOCIATE` | `LOYALTY_OFFICER` | All other roles |
-        |---|---|---|---|
-        | `customer_id`, `name`, `loyalty_state` | Yes | Yes | Yes |
-        | `email`, `phone` | Absent | Yes | Yes |
-        | `registration_channel_id`, `registered_on` | Absent | Absent | Yes |
-
-
-        `loyalty_state` is `ACTIVE` when the customer holds an ACTIVE card,
-        `REVOKED` when every card ever issued is revoked, and `NONE` when none
-        was ever issued. `COMMERCIAL_SUPERVISOR` reads no customer element and
-        receives 403 `forbidden_role`.
-      x-mosaiq-roles: [ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR, SALES_ASSOCIATE, LOYALTY_OFFICER]
+      x-mosaiq-roles: [ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/CustomerId'
@@ -210,16 +177,12 @@ paths:
               examples:
                 customer:
                   externalValue: ./examples/get-customer.json
-                sales_associate:
-                  externalValue: ./examples/get-customer-sales-associate.json
             application/xml:
               schema:
                 $ref: '#/components/schemas/Customer'
               examples:
                 customer:
                   externalValue: ./examples/get-customer.xml
-                sales_associate:
-                  externalValue: ./examples/get-customer-sales-associate.xml
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -296,6 +259,120 @@ paths:
           $ref: '#/components/responses/UnsupportedMediaType'
         '422':
           $ref: '#/components/responses/CorrectionValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/customers/floor-search:
+    get:
+      tags: [Customers]
+      operationId: searchFloorCustomers
+      x-mosaiq-status: planned
+      summary: Search customers as a floor role
+      description: >-
+        The search a floor role uses to find the customer it is serving, in the
+        floor view (`FloorCustomer`: no registration channel or date). `q` is
+        required and must hold at least 3 characters once surrounding
+        whitespace is removed (a shorter or missing `q` returns 422
+        `invalid_query` with the detail code `too_short` or `required`), `size`
+        is at most 20 (a larger `size` returns 422 `invalid_pagination`), and
+        there is no `email` filter, since an exact email probe would reveal an
+        address to a role that may not read it. `SALES_ASSOCIATE` matches `q`
+        over name alone and its items omit `email` and `phone`;
+        `LOYALTY_OFFICER` matches over name, email and phone and its items
+        carry `email` and `phone`. An element a role may not read is absent,
+        not null or masked.
+      x-mosaiq-roles: [SALES_ASSOCIATE, LOYALTY_OFFICER]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 3
+            maxLength: 160
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of matching customers in the floor view.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FloorCustomers'
+              examples:
+                floor_customers:
+                  externalValue: ./examples/search-floor-customers.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/FloorCustomers'
+              examples:
+                floor_customers:
+                  externalValue: ./examples/search-floor-customers.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/CustomerListValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/customers/{customer_id}/floor-view:
+    get:
+      tags: [Customers]
+      operationId: getFloorCustomer
+      x-mosaiq-status: planned
+      summary: Get one customer as a floor role
+      description: >-
+        Returns the customer in the floor view of the token's role, which
+        nothing the caller sends can change. `customer_id` and `name` are
+        present for both roles; `email` and `phone` only for `LOYALTY_OFFICER`.
+        `registration_channel_id` and `registered_on` are never present. The
+        elements are customers' own; segment, RFM, interests, restrictions and
+        consent belong to other services, each of which narrows its own
+        resource by role, and the client composes them. The customer's loyalty
+        state is read from `GET /v1/loyalty-cards?customer_id=`.
+        `COMMERCIAL_SUPERVISOR` reads no customer element and receives 403
+        `forbidden_role`.
+      x-mosaiq-roles: [SALES_ASSOCIATE, LOYALTY_OFFICER]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CustomerId'
+      responses:
+        '200':
+          description: The customer in the caller's floor view.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FloorCustomer'
+              examples:
+                sales_associate:
+                  externalValue: ./examples/get-floor-customer-sales-associate.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/FloorCustomer'
+              examples:
+                sales_associate:
+                  externalValue: ./examples/get-floor-customer-sales-associate.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CustomerNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -383,7 +460,8 @@ paths:
       description: >-
         Lists every card ever issued to one customer, newest first, active or
         revoked. `customer_id` is required: there is no way to list the cards of
-        all customers.
+        all customers. The response also carries the customer's `loyalty_state`,
+        which is how a client learns it; the customer read does not.
       x-mosaiq-roles: [ADMIN, LOYALTY_OFFICER]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
@@ -702,13 +780,13 @@ components:
     Customer:
       type: object
       additionalProperties: false
-      description: >-
-        A customer as one role may read it. `customer_id` and `name` are present for every role, and `loyalty_state` on
-        every read; every other member is absent
-        for a role that may not read it (see `getCustomer`).
       required:
         - customer_id
         - name
+        - email
+        - phone
+        - registration_channel_id
+        - registered_on
       properties:
         customer_id:
           type: string
@@ -716,9 +794,6 @@ components:
         name:
           type: string
           maxLength: 120
-        loyalty_state:
-          type: string
-          enum: [NONE, ACTIVE, REVOKED]
         email:
           $ref: '#/components/schemas/NullableEmail'
         phone:
@@ -894,11 +969,54 @@ components:
         characters (digits and uppercase letters except I, L, O and U). It
         holds no personal data and is derived from none. A QR encodes this
         string alone.
+    FloorCustomer:
+      type: object
+      additionalProperties: false
+      description: >-
+        A customer in the floor view: `customer_id` and `name` always; `email`
+        and `phone` only for `LOYALTY_OFFICER`, absent for `SALES_ASSOCIATE`.
+      required: [customer_id, name]
+      properties:
+        customer_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 120
+        email:
+          $ref: '#/components/schemas/NullableEmail'
+        phone:
+          type: [string, 'null']
+          maxLength: 20
+      xml:
+        name: FloorCustomer
+        namespace: https://mosaiq.maxthecoder.online/xml/customers/v1
+    FloorCustomers:
+      type: object
+      additionalProperties: false
+      required: [customers, page_info]
+      properties:
+        customers:
+          type: array
+          items:
+            $ref: '#/components/schemas/FloorCustomer'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: FloorCustomers
+        namespace: https://mosaiq.maxthecoder.online/xml/customers/v1
     LoyaltyCards:
       type: object
       additionalProperties: false
-      required: [loyalty_cards, page_info]
+      description: >-
+        The customer's cards and its `loyalty_state`: `ACTIVE` when one card is
+        ACTIVE, `REVOKED` when cards exist and every one is revoked, `NONE`
+        when none was ever issued.
+      required: [loyalty_state, loyalty_cards, page_info]
       properties:
+        loyalty_state:
+          type: string
+          enum: [NONE, ACTIVE, REVOKED]
         loyalty_cards:
           type: array
           items:

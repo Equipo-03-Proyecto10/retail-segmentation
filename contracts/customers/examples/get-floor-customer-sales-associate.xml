@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Customer xmlns="https://mosaiq.maxthecoder.online/xml/customers/v1">
+<FloorCustomer xmlns="https://mosaiq.maxthecoder.online/xml/customers/v1">
   <customer_id>7b3ad781-c5de-4f40-ae50-1fa825ce2b25</customer_id>
   <name>Jordan Lee</name>
-  <loyalty_state>ACTIVE</loyalty_state>
-</Customer>
+</FloorCustomer>

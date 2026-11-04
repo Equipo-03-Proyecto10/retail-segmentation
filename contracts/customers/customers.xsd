@@ -42,9 +42,8 @@
       <xs:element name="name" type="cus:Name"/>
       <xs:element name="email" type="cus:Email" minOccurs="0"/>
       <xs:element name="phone" type="cus:Phone" minOccurs="0"/>
-      <xs:element name="registration_channel_id" type="cus:ChannelId" minOccurs="0"/>
-      <xs:element name="registered_on" type="xs:date" minOccurs="0"/>
-      <xs:element name="loyalty_state" type="cus:LoyaltyState" minOccurs="0"/>
+      <xs:element name="registration_channel_id" type="cus:ChannelId"/>
+      <xs:element name="registered_on" type="xs:date"/>
     </xs:sequence>
   </xs:complexType>
 
@@ -119,8 +118,25 @@
     </xs:sequence>
   </xs:complexType>
 
+  <xs:complexType name="FloorCustomer">
+    <xs:sequence>
+      <xs:element name="customer_id" type="cus:Uuid"/>
+      <xs:element name="name" type="cus:Name"/>
+      <xs:element name="email" type="cus:Email" minOccurs="0"/>
+      <xs:element name="phone" type="cus:Phone" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="FloorCustomers">
+    <xs:sequence>
+      <xs:element name="FloorCustomer" type="cus:FloorCustomer" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
   <xs:complexType name="LoyaltyCards">
     <xs:sequence>
+      <xs:element name="loyalty_state" type="cus:LoyaltyState"/>
       <xs:element name="LoyaltyCard" type="cus:LoyaltyCard" minOccurs="0" maxOccurs="unbounded"/>
       <xs:element ref="common:PageInfo"/>
     </xs:sequence>
@@ -155,6 +171,8 @@
   <xs:element name="Customers" type="cus:Customers"/>
   <xs:element name="RegisterCustomerRequest" type="cus:RegisterCustomerRequest"/>
   <xs:element name="CorrectCustomerRequest" type="cus:CorrectCustomerRequest"/>
+  <xs:element name="FloorCustomer" type="cus:FloorCustomer"/>
+  <xs:element name="FloorCustomers" type="cus:FloorCustomers"/>
   <xs:element name="LoyaltyCard" type="cus:LoyaltyCard"/>
   <xs:element name="LoyaltyCards" type="cus:LoyaltyCards"/>
   <xs:element name="IssueLoyaltyCardRequest" type="cus:IssueLoyaltyCardRequest"/>

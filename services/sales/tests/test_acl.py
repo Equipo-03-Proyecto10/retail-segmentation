@@ -17,7 +17,7 @@ EXPECTED = (
     "user svc_sales on {{password}} resetchannels -@all +@connection +@read"
     " +@write -@dangerous -scan -randomkey ~sales:rl:* +waitaof"
     " (%R~pub:auth:v1:live:* +exists)"
-    " (~stream:sales.v1.recorded +xadd)"
+    " (~stream:sales.v1.recorded ~stream:sales.v1.reversed +xadd)"
 )
 USER = "svc_sales_acltest"
 
@@ -63,6 +63,7 @@ def _dryrun(client: Any, *command: str) -> str:
         ("INCR", "sales:rl:actor:window"),
         ("EXPIRE", "sales:rl:actor:window", "60"),
         ("XADD", "stream:sales.v1.recorded", "*", "event_id", "1"),
+        ("XADD", "stream:sales.v1.reversed", "*", "event_id", "1"),
         ("WAITAOF", "1", "0", "2000"),
     ],
 )

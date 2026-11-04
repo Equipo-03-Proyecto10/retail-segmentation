@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<StoreAssignment xmlns="https://mosaiq.maxthecoder.online/xml/users/v1">
+  <user_id>44444444-4444-4444-8444-444444444444</user_id>
+  <store_ids>2</store_ids>
+  <store_ids>5</store_ids>
+  <store_ids>9</store_ids>
+</StoreAssignment>

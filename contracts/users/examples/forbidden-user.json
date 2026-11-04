@@ -1,0 +1,5 @@
+{
+  "code": "forbidden_user",
+  "message": "A floor role may read only its own store assignment.",
+  "correlation_id": "corr-forbidden-user"
+}

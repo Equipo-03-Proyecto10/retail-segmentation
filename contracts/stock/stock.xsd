@@ -24,6 +24,125 @@
     </xs:sequence>
   </xs:complexType>
 
+  <xs:simpleType name="MovementType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="RECEIPT"/>
+      <xs:enumeration value="TRANSFER"/>
+      <xs:enumeration value="COUNT"/>
+      <xs:enumeration value="ADJUSTMENT"/>
+      <xs:enumeration value="RESTOCK"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- RESTOCK is written only by api_stock.restock_v1, never by a request. -->
+  <xs:simpleType name="RequestMovementType">
+    <xs:restriction base="stock:MovementType">
+      <xs:enumeration value="RECEIPT"/>
+      <xs:enumeration value="TRANSFER"/>
+      <xs:enumeration value="COUNT"/>
+      <xs:enumeration value="ADJUSTMENT"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="AdjustmentReason">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="DAMAGE"/>
+      <xs:enumeration value="LOSS"/>
+      <xs:enumeration value="EXPIRY"/>
+      <xs:enumeration value="CORRECTION"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="AvailabilityReason">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="AVAILABLE"/>
+      <xs:enumeration value="OUT_OF_STOCK"/>
+      <xs:enumeration value="NO_STOCK_RECORD"/>
+      <xs:enumeration value="NOT_SELLABLE"/>
+      <xs:enumeration value="CHANNEL_NOT_ENABLED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Which elements a movement type needs is the service's rule, answered as
+       a domain 422; the schema fixes the vocabulary and the types. -->
+  <xs:complexType name="StockMovementRequest">
+    <xs:sequence>
+      <xs:element name="movement_type" type="stock:RequestMovementType"/>
+      <xs:element name="product_id" type="xs:integer"/>
+      <xs:element name="store_id" type="xs:integer" minOccurs="0"/>
+      <xs:element name="origin_store_id" type="xs:integer" minOccurs="0"/>
+      <xs:element name="destination_store_id" type="xs:integer" minOccurs="0"/>
+      <xs:element name="quantity" type="xs:integer" minOccurs="0"/>
+      <xs:element name="quantity_delta" type="xs:integer" minOccurs="0"/>
+      <xs:element name="reference" type="xs:string" minOccurs="0"/>
+      <xs:element name="reason" type="stock:AdjustmentReason" minOccurs="0"/>
+      <xs:element name="counted_by" type="xs:string" minOccurs="0"/>
+      <xs:element name="note" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="StockMovement">
+    <xs:sequence>
+      <xs:element name="movement_id" type="xs:long"/>
+      <xs:element name="movement_type" type="stock:MovementType"/>
+      <xs:element name="store_id" type="xs:integer"/>
+      <xs:element name="product_id" type="xs:integer"/>
+      <xs:element name="quantity_delta" type="xs:integer"/>
+      <xs:element name="quantity_before" type="xs:nonNegativeInteger"/>
+      <xs:element name="quantity_after" type="xs:nonNegativeInteger"/>
+      <xs:element name="transfer_id" type="xs:string" minOccurs="0"/>
+      <xs:element name="reference" type="xs:string" minOccurs="0"/>
+      <xs:element name="reason" type="stock:AdjustmentReason" minOccurs="0"/>
+      <xs:element name="counted_by" type="xs:string" minOccurs="0"/>
+      <xs:element name="note" type="xs:string" minOccurs="0"/>
+      <xs:element name="reversal_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="recorded_by" type="xs:string" minOccurs="0"/>
+      <xs:element name="recorded_at" type="xs:dateTime"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- The result of one request: one movement, or the two rows of a transfer. -->
+  <xs:complexType name="StockMovementRecord">
+    <xs:sequence>
+      <xs:element name="movements" type="stock:StockMovement"
+                  minOccurs="1" maxOccurs="2"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="StockMovements">
+    <xs:sequence>
+      <xs:element name="StockMovement" type="stock:StockMovement"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Availability">
+    <xs:sequence>
+      <xs:element name="store_id" type="xs:integer"/>
+      <xs:element name="product_id" type="xs:integer"/>
+      <xs:element name="channel_id" type="xs:integer"/>
+      <xs:element name="is_available" type="xs:boolean"/>
+      <xs:element name="reason" type="stock:AvailabilityReason"/>
+      <xs:element name="quantity_on_hand" type="xs:nonNegativeInteger" minOccurs="0"/>
+      <xs:element name="updated_at" type="xs:dateTime" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Availabilities">
+    <xs:sequence>
+      <xs:element name="Availability" type="stock:Availability"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
   <xs:element name="StockLevel" type="stock:StockLevel"/>
   <xs:element name="StockLevels" type="stock:StockLevels"/>
+  <xs:element name="StockMovementRequest" type="stock:StockMovementRequest"/>
+  <xs:element name="StockMovement" type="stock:StockMovement"/>
+  <xs:element name="StockMovementRecord" type="stock:StockMovementRecord"/>
+  <xs:element name="StockMovements" type="stock:StockMovements"/>
+  <xs:element name="Availability" type="stock:Availability"/>
+  <xs:element name="Availabilities" type="stock:Availabilities"/>
 </xs:schema>

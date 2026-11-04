@@ -1,0 +1,394 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:mr="https://mosaiq.maxthecoder.online/xml/model-registry/v1"
+           xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1"
+           targetNamespace="https://mosaiq.maxthecoder.online/xml/model-registry/v1"
+           elementFormDefault="qualified">
+  <xs:import namespace="https://mosaiq.maxthecoder.online/xml/common/v1"
+             schemaLocation="../common/v1/common.xsd"/>
+
+  <xs:simpleType name="Uuid">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- A decimal string with exactly two places, as everywhere in MOSAIQ. -->
+  <xs:simpleType name="Money">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9]+\.[0-9]{2}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Name">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:maxLength value="80"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Reason">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:maxLength value="500"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Sha256">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9a-f]{64}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="WindowDays">
+    <xs:restriction base="xs:integer">
+      <xs:minInclusive value="1"/>
+      <xs:maxInclusive value="3650"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Fraction">
+    <xs:restriction base="xs:decimal">
+      <xs:minInclusive value="0"/>
+      <xs:maxInclusive value="1"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Method">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="RFM_RULES"/>
+      <xs:enumeration value="KMEANS"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="TrainingMethod">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="KMEANS"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="VersionState">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="DRAFT"/>
+      <xs:enumeration value="PUBLISHED"/>
+      <xs:enumeration value="RETIRED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="VersionSource">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="REGISTERED"/>
+      <xs:enumeration value="TRAINING"/>
+      <xs:enumeration value="WEB_RUN"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="DataOrigin">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="OBSERVED"/>
+      <xs:enumeration value="SEEDED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="TrainingState">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="RUNNING"/>
+      <xs:enumeration value="COMPLETED"/>
+      <xs:enumeration value="FAILED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="PublicationAction">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="PUBLISH"/>
+      <xs:enumeration value="ROLLBACK"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Feature">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="R"/>
+      <xs:enumeration value="F"/>
+      <xs:enumeration value="M"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Normalization">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="NONE"/>
+      <xs:enumeration value="MIN_MAX"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- What a version was fitted on. -->
+  <xs:complexType name="Dataset">
+    <xs:sequence>
+      <xs:element name="fingerprint" type="mr:Sha256"/>
+      <xs:element name="origin" type="mr:DataOrigin"/>
+      <xs:element name="row_count" type="xs:nonNegativeInteger"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- RFM_RULES sets rule_set_id and omits k, max_iterations and tolerance;
+       KMEANS sets those three and omits rule_set_id. The schema cannot say so,
+       and the service answers 422 invalid_body (method_mismatch). -->
+  <xs:complexType name="ModelParameters">
+    <xs:sequence>
+      <xs:element name="rule_set_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="k" minOccurs="0">
+        <xs:simpleType>
+          <xs:restriction base="xs:integer">
+            <xs:minInclusive value="2"/>
+            <xs:maxInclusive value="20"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+      <xs:element name="max_iterations" minOccurs="0">
+        <xs:simpleType>
+          <xs:restriction base="xs:integer">
+            <xs:minInclusive value="1"/>
+            <xs:maxInclusive value="1000"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+      <xs:element name="tolerance" minOccurs="0">
+        <xs:simpleType>
+          <xs:restriction base="xs:decimal">
+            <xs:minExclusive value="0"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+      <xs:element name="features" type="mr:Feature" minOccurs="1" maxOccurs="3"/>
+      <xs:element name="normalization" type="mr:Normalization"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Each boundary list holds four cut-points, in the order of the scores
+       5, 4, 3 and 2. -->
+  <xs:complexType name="QuintileBoundaries">
+    <xs:sequence>
+      <xs:element name="recency_boundaries" type="xs:nonNegativeInteger"
+                  minOccurs="4" maxOccurs="4"/>
+      <xs:element name="frequency_boundaries" type="xs:positiveInteger"
+                  minOccurs="4" maxOccurs="4"/>
+      <xs:element name="monetary_boundaries" type="mr:Money"
+                  minOccurs="4" maxOccurs="4"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Normalized coordinates; m is a coordinate, not money. -->
+  <xs:complexType name="Centroid">
+    <xs:sequence>
+      <xs:element name="cluster_index" type="xs:nonNegativeInteger"/>
+      <xs:element name="label_code" type="xs:string"/>
+      <xs:element name="r" type="xs:decimal"/>
+      <xs:element name="f" type="xs:decimal"/>
+      <xs:element name="m" type="xs:decimal"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="NormalizationBounds">
+    <xs:sequence>
+      <xs:element name="r_min" type="xs:decimal"/>
+      <xs:element name="r_max" type="xs:decimal"/>
+      <xs:element name="f_min" type="xs:decimal"/>
+      <xs:element name="f_max" type="xs:decimal"/>
+      <xs:element name="m_min" type="xs:decimal"/>
+      <xs:element name="m_max" type="xs:decimal"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- RFM_RULES: quintile_boundaries only. KMEANS: centroids (one per k) and
+       normalization_bounds. The service answers 422 invalid_body
+       (method_mismatch) for the wrong family. -->
+  <xs:complexType name="FrozenScoring">
+    <xs:sequence>
+      <xs:element name="quintile_boundaries" type="mr:QuintileBoundaries"
+                  minOccurs="0"/>
+      <xs:element name="centroids" type="mr:Centroid"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="normalization_bounds" type="mr:NormalizationBounds"
+                  minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- There is one proportion per bin, so one fewer than the edges, and they
+       sum to 1; the schema cannot say so (distribution_mismatch). -->
+  <xs:complexType name="FeatureDistribution">
+    <xs:sequence>
+      <xs:element name="feature" type="mr:Feature"/>
+      <xs:element name="bin_edges" type="xs:decimal"
+                  minOccurs="2" maxOccurs="unbounded"/>
+      <xs:element name="proportions" type="mr:Fraction"
+                  minOccurs="1" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="LabelShare">
+    <xs:sequence>
+      <xs:element name="label_code" type="xs:string"/>
+      <xs:element name="share" type="mr:Fraction"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ReferenceDistribution">
+    <xs:sequence>
+      <xs:element name="sample_size" type="xs:positiveInteger"/>
+      <xs:element name="captured_at" type="xs:dateTime"/>
+      <xs:element name="features" type="mr:FeatureDistribution"
+                  minOccurs="1" maxOccurs="3"/>
+      <xs:element name="labels" type="mr:LabelShare" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- A measure the method does not have is omitted. -->
+  <xs:complexType name="Metrics">
+    <xs:sequence>
+      <xs:element name="inertia" minOccurs="0">
+        <xs:simpleType>
+          <xs:restriction base="xs:decimal">
+            <xs:minInclusive value="0"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+      <xs:element name="silhouette" minOccurs="0">
+        <xs:simpleType>
+          <xs:restriction base="xs:decimal">
+            <xs:minInclusive value="-1"/>
+            <xs:maxInclusive value="1"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+      <xs:element name="stability" type="mr:Fraction" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- seed is omitted for RFM_RULES. owner_id is omitted for a version the
+       registry created from a web run; source_run_id unless the source is
+       WEB_RUN; training_id unless it is TRAINING; published_at until the
+       version is first published; retired_at unless it is RETIRED. -->
+  <xs:complexType name="ModelVersion">
+    <xs:sequence>
+      <xs:element name="version_id" type="xs:long"/>
+      <xs:element name="name" type="mr:Name"/>
+      <xs:element name="method" type="mr:Method"/>
+      <xs:element name="state" type="mr:VersionState"/>
+      <xs:element name="source" type="mr:VersionSource"/>
+      <xs:element name="window_days" type="mr:WindowDays"/>
+      <xs:element name="seed" type="xs:long" minOccurs="0"/>
+      <xs:element name="parameters" type="mr:ModelParameters"/>
+      <xs:element name="frozen_scoring" type="mr:FrozenScoring"/>
+      <xs:element name="reference_distribution" type="mr:ReferenceDistribution"/>
+      <xs:element name="dataset" type="mr:Dataset"/>
+      <xs:element name="metrics" type="mr:Metrics"/>
+      <xs:element name="owner_id" type="mr:Uuid" minOccurs="0"/>
+      <xs:element name="source_run_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="training_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="created_at" type="xs:dateTime"/>
+      <xs:element name="published_at" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="retired_at" type="xs:dateTime" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ModelVersions">
+    <xs:sequence>
+      <xs:element name="ModelVersion" type="mr:ModelVersion"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ModelVersionRequest">
+    <xs:sequence>
+      <xs:element name="name" type="mr:Name"/>
+      <xs:element name="method" type="mr:Method"/>
+      <xs:element name="window_days" type="mr:WindowDays"/>
+      <xs:element name="seed" type="xs:long" minOccurs="0"/>
+      <xs:element name="parameters" type="mr:ModelParameters"/>
+      <xs:element name="frozen_scoring" type="mr:FrozenScoring"/>
+      <xs:element name="reference_distribution" type="mr:ReferenceDistribution"/>
+      <xs:element name="dataset" type="mr:Dataset"/>
+      <xs:element name="metrics" type="mr:Metrics"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ModelPublicationRequest">
+    <xs:sequence>
+      <xs:element name="reason" type="mr:Reason"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- previous_version_id is omitted for the first publication; published_by
+       for a version the registry published from a web run. -->
+  <xs:complexType name="ModelPublication">
+    <xs:sequence>
+      <xs:element name="publication_id" type="xs:long"/>
+      <xs:element name="version_id" type="xs:long"/>
+      <xs:element name="action" type="mr:PublicationAction"/>
+      <xs:element name="previous_version_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="reason" type="xs:string"/>
+      <xs:element name="published_by" type="mr:Uuid" minOccurs="0"/>
+      <xs:element name="published_at" type="xs:dateTime"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ModelPublications">
+    <xs:sequence>
+      <xs:element name="ModelPublication" type="mr:ModelPublication"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ModelTrainingRequest">
+    <xs:sequence>
+      <xs:element name="version_name" type="mr:Name"/>
+      <xs:element name="method" type="mr:TrainingMethod"/>
+      <xs:element name="window_days" type="mr:WindowDays"/>
+      <xs:element name="seed" type="xs:long" minOccurs="0"/>
+      <xs:element name="parameters" type="mr:ModelParameters"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- dataset, metrics, iterations, converged and version_id are omitted
+       until the training completes; finished_at until it ends; failure_code
+       unless it failed. -->
+  <xs:complexType name="ModelTraining">
+    <xs:sequence>
+      <xs:element name="training_id" type="xs:long"/>
+      <xs:element name="method" type="mr:TrainingMethod"/>
+      <xs:element name="state" type="mr:TrainingState"/>
+      <xs:element name="version_name" type="mr:Name"/>
+      <xs:element name="window_days" type="mr:WindowDays"/>
+      <xs:element name="seed" type="xs:long"/>
+      <xs:element name="parameters" type="mr:ModelParameters"/>
+      <xs:element name="dataset" type="mr:Dataset" minOccurs="0"/>
+      <xs:element name="metrics" type="mr:Metrics" minOccurs="0"/>
+      <xs:element name="iterations" type="xs:nonNegativeInteger" minOccurs="0"/>
+      <xs:element name="converged" type="xs:boolean" minOccurs="0"/>
+      <xs:element name="version_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="started_at" type="xs:dateTime"/>
+      <xs:element name="finished_at" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="started_by" type="mr:Uuid"/>
+      <xs:element name="failure_code" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ModelTrainings">
+    <xs:sequence>
+      <xs:element name="ModelTraining" type="mr:ModelTraining"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name="ModelVersion" type="mr:ModelVersion"/>
+  <xs:element name="ModelVersions" type="mr:ModelVersions"/>
+  <xs:element name="ModelVersionRequest" type="mr:ModelVersionRequest"/>
+  <xs:element name="ModelPublication" type="mr:ModelPublication"/>
+  <xs:element name="ModelPublications" type="mr:ModelPublications"/>
+  <xs:element name="ModelPublicationRequest" type="mr:ModelPublicationRequest"/>
+  <xs:element name="ModelTraining" type="mr:ModelTraining"/>
+  <xs:element name="ModelTrainings" type="mr:ModelTrainings"/>
+  <xs:element name="ModelTrainingRequest" type="mr:ModelTrainingRequest"/>
+</xs:schema>

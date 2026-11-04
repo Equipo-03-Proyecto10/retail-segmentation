@@ -174,6 +174,7 @@ through capture triggers in `sql/01_schema.sql` that fill the owner's outbox.
 | 15 | Rust twin and benchmark | The bench-only Rust build of the products reads, and the k6 comparison | #401 |
 | 16 | Desktop client | Electron back office over XML | #402 |
 | 17 | Android client | Kotlin floor app over JSON | #403 |
+| 17+ | Android UI/UX refresh | MOSAIQ theme, shared components, layout and state fixes, accessibility; follows phase 17, no new phase | #716 |
 | 18 | Deployment and demonstration | Per-service deployment on the instance, NGINX routes, negative tests, end-to-end demo, diagrams | #404 |
 
 Story ids and the dependency graph are in [`backlog.md`](backlog.md). Its phase 13–18 tables follow the fifteen-service design; where they differ, ADR-0034 to ADR-0046 win. F13-01 (#408) accepted the decision set on 2026-10-15.

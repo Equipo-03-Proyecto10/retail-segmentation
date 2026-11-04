@@ -205,6 +205,7 @@ Later runtime events must be preserved.
 | [0063](0063-segments-change-on-events-and-on-a-schedule-scored-against-the-published-version.md) | Segments change on events and on a schedule, scored against the published version | Accepted |
 | [0064](0064-a-model-version-is-immutable-and-a-change-of-version-is-never-reported-as-behaviour.md) | A model version is immutable, and a change of version is never reported as behaviour | Accepted |
 | [0065](0065-drift-is-claimed-in-three-separate-kinds-and-concept-drift-only-from-a-predictive-outcome.md) | Drift is claimed in three separate kinds, and concept drift only from a predictive outcome | Accepted |
+| [0066](0066-consent-is-an-append-only-record-by-purpose-and-anonymization-replaces-deletion.md) | Consent is an append-only record by purpose, an objection narrows what is done with a customer, and anonymization replaces deletion | Accepted |
 | [0073](0073-an-operation-published-ahead-of-its-implementation-is-marked-planned-and-skipped-by-conformance.md) | An operation published ahead of its implementation is marked planned and skipped by conformance | Accepted |
 
 ## Writing one

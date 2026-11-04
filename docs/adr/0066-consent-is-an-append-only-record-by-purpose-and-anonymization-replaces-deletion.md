@@ -1,6 +1,6 @@
 # ADR-0066 — Consent is an append-only record by purpose, an objection narrows what is done with a customer, and anonymization replaces deletion
 
-**Status:** Proposed
+**Status:** Accepted (2026-11-04)
 **Owner:** Maximiliano
 **Issue:** #793
 **Supersedes:** —

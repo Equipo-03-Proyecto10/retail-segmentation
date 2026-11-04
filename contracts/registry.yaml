@@ -7,7 +7,7 @@ services:
     resources: [sessions, jwks.json]
   - name: users
     port: 5002
-    rule: "Accounts obey the single-administrator rule (never two, never zero, moved only by an explicit transfer), have case-insensitively unique emails, and are deactivated, never deleted (RN-01, RN-02, RN-04)"
+    rule: "Accounts obey the single-administrator rule (never two, never zero, moved only by an explicit transfer), have case-insensitively unique emails, are deactivated, never deleted, and say which stores a floor user works in through one assignment per user and store (RN-01, RN-02, RN-04, ADR-0060)"
     rn: [RN-01, RN-02, RN-04]
     wave: core
     resources: [users, roles, administrator-transfers, store-assignments]

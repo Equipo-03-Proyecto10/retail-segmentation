@@ -59,6 +59,13 @@ async fn load_acl(admin: &mut MultiplexedConnection) -> String {
         }
     }
     let _: () = setuser.query_async(admin).await.unwrap();
+    let _: () = redis::cmd("CONFIG")
+        .arg("SET")
+        .arg("appendonly")
+        .arg("yes")
+        .query_async(admin)
+        .await
+        .unwrap();
     password
 }
 

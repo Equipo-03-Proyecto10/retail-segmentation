@@ -73,7 +73,7 @@ jobs:
     # owner: TEST_DATABASE_URL. The conformance stack runs its own.
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_PASSWORD: postgres
         ports:
@@ -90,6 +90,7 @@ jobs:
       PGUSER: postgres
       PGPASSWORD: postgres
       TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/retail
+      MOSAIQ_REQUIRE_POSTGRES: "1"
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@v5

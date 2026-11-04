@@ -1,6 +1,6 @@
 # ADR-0070 — A sales import reaches sales-service as numbered chunks of rows under the 64 KiB cap, and a worker processes it row by row, resumable and safe to repeat
 
-**Status:** Proposed
+**Status:** Accepted (2026-11-04)
 **Owner:** Marcelo
 **Issue:** #851
 **Supersedes:** — *(it extends ADR-0039 and ADR-0020 and replaces no clause of either; see Decision)*

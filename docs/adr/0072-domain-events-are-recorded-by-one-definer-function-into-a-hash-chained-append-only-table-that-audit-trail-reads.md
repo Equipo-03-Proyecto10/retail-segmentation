@@ -52,7 +52,7 @@ append-only table in a service schema, `audit_events.domain_event`, never in `au
 exposed as a second audit-trail resource, `domain-events`, so the v1 `audit-entries` contract
 and its XSD do not change. The only writer is one `SECURITY DEFINER` function,
 `api_audit.record_event_v1`, owned by `definer_audit`, which each producing boundary calls
-inside its own transaction as its own `svc_*` role (the web as `retail_app`). It accepts only a
+inside its own transaction as its own `svc_*` role. It accepts only a
 closed list of event kinds, only the kinds its caller is mapped to, only the keys each kind
 allows, and refuses credentials. Rows form a hash chain. audit-trail only reads: `ADMIN` and
 `AUDITOR`, filterable by kind, actor and model version. The sections below make this exact.
@@ -65,7 +65,7 @@ only, and its keys per kind are fixed by the contract.
 
 | Kind | Recorded when | Writer | `details` carries (besides the common fields) |
 |---|---|---|---|
-| `CALCULATION_RUN` | An RFM recalculation, a segmentation run (RFM rules or K-means) or a published KPI recomputation finishes, or fails | rfm-engine, segments, web (batch run), analytics-kpis | `calculation` (`RFM`, `SEGMENTATION`, `KPI`), `rule_set_version` or `parameters_hash`, window, `data_origin`, input and output counts, `status` |
+| `CALCULATION_RUN` | An RFM recalculation, a segmentation run (RFM rules or K-means) or a published KPI recomputation finishes, or fails | rfm-engine, segments, analytics-kpis | `calculation` (`RFM`, `SEGMENTATION`, `KPI`), `rule_set_version` or `parameters_hash`, window, `data_origin`, input and output counts, `status` |
 | `MODEL_PUBLISHED`, `MODEL_ROLLED_BACK` | A version changes state (ADR-0064) | model-registry | `model_version_id`, previous published version, reason code |
 | `PERMISSION_CHANGED` | A role is assigned or an administrator is transferred, a user is deactivated or reactivated, a store assignment is added or removed | users | `subject_user_id`, `from_role` and `to_role` codes, or `store_ids`; never a password or a token |
 | `CRITICAL_ACTION` | A sale is reversed, stock is adjusted, a customer is anonymized (ADR-0066), audit payloads are redacted, an experiment's frame is frozen, a campaign is activated | sales, stock, customers, experimentation, campaigns | `action` code, `subject_type`, `subject_id`, reason code |
@@ -80,7 +80,7 @@ Common fields, set by the function and never by the caller unless stated:
 | `kind`, `outcome` (`SUCCESS` or `REFUSED`) | Caller, kind checked against the closed list |
 | `occurred_at` | Caller, the moment of the act; `recorded_at` is the server's `now()`, never client-supplied |
 | `actor_type`, `actor_user_id`, `actor_role` | `USER` with the id and role code from the verified token, or `SYSTEM` for a schedule or a stream consumer, with a null id. A `USER` event with no id is refused |
-| `source` | Taken from `session_user`, never from a parameter (`svc_models`, `retail_app`, ...) |
+| `source` | Taken from `session_user`, never from a parameter (`svc_models`, `svc_rfm`, ...) |
 | `store_id` | Nullable. Set when the act happened in a store, so a store-scoped reader can be added later |
 | `subject_type`, `subject_id` | What the event is about |
 | `model_version_id`, `rule_set_version` | Nullable, set for anything computed or scored |
@@ -115,8 +115,9 @@ record and documented in `contracts/db/api_audit.record_event_v1.v1.md` with its
 `grants.csv`. Streams stay the way a service tells others that something changed; they are not
 the way evidence is written (see the alternatives).
 
-The web calls the same function as `retail_app` for `CALCULATION_RUN` only, with
-`mosaiq.user_id` as the actor. Its other changes stay recorded by `fn_audit` as today.
+The web does not call this function: ADR-0046 gives `retail_app` `USAGE` on `public` alone,
+so it cannot name `api_audit`. The web's batch run keeps recording itself through
+`fn_audit` into `audit_log` as today, and its `CALCULATION_RUN` is not a domain event.
 
 ### 3. Where it lives: audit-trail, with a new resource
 
@@ -236,8 +237,9 @@ Retention is open-ended until someone decides otherwise.
   removed from the list.
 - Each producing service's contract states which kinds it records, and its tests assert the
   record in the same transaction as the act.
-- The table is runtime history, like `app_session` (ADR-0051), so the implementation PR names
-  it in `sql/seed-exempt.txt` with that reason.
+- The table is runtime history, like `app_session`, and is seeded with at least thirty rows,
+  not exempted (ADR-0051: an exemption is for a domain that really is smaller, and an empty
+  history shows nothing). The implementation PR leaves `sql/seed-exempt.txt` alone.
 - `contracts/audit-trail/` gains the `domain-events` paths, XSD, and JSON and XML examples
   for each kind, a refused filter, and a verification result.
 

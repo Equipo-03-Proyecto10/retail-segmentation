@@ -3,7 +3,7 @@
 **Status:** Proposed
 **Owner:** Max
 **Issue:** #832
-**Supersedes:** in part [ADR-0028](0028-experiment-treatment-arms-may-omit-control.md) (that a no-control experiment may report any effect) and in part [ADR-0053](0053-experiments-are-measured-on-conversion-only.md) (that conversion is the only target metric, and that a revenue metric waits for a later story). Both take effect on this record's acceptance, not before.
+**Supersedes:** in part [ADR-0053](0053-experiments-are-measured-on-conversion-only.md) (that conversion is the only target metric, and that a revenue metric waits for a later story). It takes effect on this record's acceptance, not before. [ADR-0028](0028-experiment-treatment-arms-may-omit-control.md) is not superseded: it never allowed a no-control experiment to report an effect, it refused an uplift for one, and this record only makes that refusal cover every phrasing.
 **Superseded by:** —
 
 ---
@@ -128,8 +128,9 @@ campaign-effect experiment has exactly one control and one or more treatments.
 ADR-0028's two-treatment experiment stays creatable and assignable as a
 **comparison of two offers**: it may state the difference between the arms and
 its interval, labelled "difference between treatments", and never an effect of
-the campaign against no treatment. This supersedes ADR-0028 only in the claim it
-allowed; its arm structure, immutability and even split stand.
+the campaign against no treatment. This supersedes nothing in ADR-0028, which refused an uplift
+for such an experiment; it extends that refusal to every phrasing of an effect. Its
+arm structure, immutability and even split stand.
 
 **4. Sample size before assignment.** The plan sets, for the primary metric:
 alpha 0.05 two-sided (family-wise: with `m` treatment arms each is compared with

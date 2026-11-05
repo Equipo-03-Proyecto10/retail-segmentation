@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: categories-service
-  version: 1.1.0
+  version: 1.2.0
   description: >-
     Reads the category tree and lets an administrator create, move, rename and
     delete categories without a cycle and without orphaning products, children
@@ -31,6 +31,9 @@ paths:
         - MARKETING
         - INVENTORY_PLANNER
         - AUDITOR
+        - SALES_ASSOCIATE
+        - LOYALTY_OFFICER
+        - COMMERCIAL_SUPERVISOR
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/ParentId'
@@ -150,6 +153,9 @@ paths:
         - MARKETING
         - INVENTORY_PLANNER
         - AUDITOR
+        - SALES_ASSOCIATE
+        - LOYALTY_OFFICER
+        - COMMERCIAL_SUPERVISOR
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/CategoryId'
@@ -317,6 +323,9 @@ paths:
         - MARKETING
         - INVENTORY_PLANNER
         - AUDITOR
+        - SALES_ASSOCIATE
+        - LOYALTY_OFFICER
+        - COMMERCIAL_SUPERVISOR
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/CategoryId'

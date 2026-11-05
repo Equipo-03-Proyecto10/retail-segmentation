@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: recommendations-service
-  version: 1.0.0
+  version: 1.1.0
   description: 'Answers what to recommend to one customer, and why, or why nothing
     qualifies (RN-40). The service owns no table. It reads seven published views
     (E-07): `api_products.product_ref_v1`, `api_categories.category_tree_v1`, `api_stock.stock_level_v1`,
@@ -37,6 +37,8 @@ paths:
       - STORE_MANAGER
       - MARKETING
       - AUDITOR
+      - SALES_ASSOCIATE
+      - LOYALTY_OFFICER
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       - $ref: '#/components/parameters/CustomerId'

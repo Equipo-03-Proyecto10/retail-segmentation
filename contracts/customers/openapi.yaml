@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: customers-service
-  version: 1.3.0
+  version: 1.4.0
   description: >-
     Registers, searches, reads and corrects customers under RN-08. Customers
     are never deleted through services; a mistaken registration is corrected
@@ -26,7 +26,7 @@ paths:
         exact match that ignores letter case. When both filters are present,
         both must match. A filter value outside its schema, or an empty email,
         returns 422 `invalid_query`, naming the parameter in `details`.
-      x-mosaiq-roles: [ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR]
+      x-mosaiq-roles: [ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR, LOYALTY_OFFICER]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - name: q
@@ -87,7 +87,7 @@ paths:
         Registers one customer. registered_on is optional and defaults to the
         server's current date. A date after the server's current date is
         refused.
-      x-mosaiq-roles: [ADMIN, STORE_MANAGER]
+      x-mosaiq-roles: [ADMIN, STORE_MANAGER, LOYALTY_OFFICER]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
       requestBody:
@@ -156,7 +156,7 @@ paths:
       tags: [Customers]
       operationId: getCustomer
       summary: Get one customer
-      x-mosaiq-roles: [ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR]
+      x-mosaiq-roles: [ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR, LOYALTY_OFFICER]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/CustomerId'
@@ -199,7 +199,7 @@ paths:
         Corrects a mistaken registration. Only name, email, phone and
         registration_channel_id are accepted. Any other field, including
         registered_on, gets 422 invalid_body and a detail naming that field.
-      x-mosaiq-roles: [ADMIN, STORE_MANAGER]
+      x-mosaiq-roles: [ADMIN, STORE_MANAGER, LOYALTY_OFFICER]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/CustomerId'

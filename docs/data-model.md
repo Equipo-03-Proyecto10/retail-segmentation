@@ -89,12 +89,13 @@ own schemas under ADR-0046 and are deliberately outside this list and diagram.
 
 ### Permission matrix
 
-The seven roles and what each may reach are specified in
+The ten roles and what each may reach are specified in
 [`requirements.md`](requirements.md) §3. It is not repeated here: two copies of a
 matrix drift, and the one that governs the authorization middleware is the one
 next to the requirements it serves.
 
-`role` holds those seven rows. Which user holds which is data, not schema — with
+`role` holds those ten rows: the seven of the first deliveries and the three
+floor roles of ADR-0060 (`role_id` 8 to 10). Which user holds which is data, not schema — with
 the single exception of the administrator, of whom there is exactly one:
 
 ```sql

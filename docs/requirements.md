@@ -128,6 +128,9 @@ row · `—` no access.
 | `INVENTORY_PLANNER` | read, `inventory` write | — | — | — | — | — | read | — |
 | `AUDITOR` | read | read | read | read | — | — | read | read |
 | `CUSTOMER` | — | own | — | — | — | — | — | — |
+| `SALES_ASSOCIATE` | — | — | — | — | — | — | — | — |
+| `LOYALTY_OFFICER` | — | — | — | — | — | — | — | — |
+| `COMMERCIAL_SUPERVISOR` | — | — | — | — | — | — | — | — |
 
 Three things this matrix is deliberately strict about:
 
@@ -141,6 +144,11 @@ Three things this matrix is deliberately strict about:
   `customer.user_id` ownership link. The seed and current user-management
   workflow leave that link empty, so the dormant `user.self` permission grants
   no current route or access.
+- **The three floor roles hold nothing in the web.** `SALES_ASSOCIATE`,
+  `LOYALTY_OFFICER` and `COMMERCIAL_SUPERVISOR` work through the services from
+  the Android client
+  ([ADR-0060](adr/0060-four-store-profiles-map-to-four-roles-and-services-read-each-users-stores-per-request.md)).
+  They may sign in to the web and reach only what every signed-in user reaches.
 
 Enforced by the authorization middleware at the route level — F4-01 (#69),
 which transcribes this table into `web/middleware/authz.py` and refuses any
@@ -177,17 +185,22 @@ The web's matrix does not change.
 
 | Operations | `x-mosaiq-roles` | Basis |
 |---|---|---|
-| Reads of products (including `GET /v1/products?ids=`), categories, stores, stock levels and channels | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `INVENTORY_PLANNER`, `AUDITOR` | Catalogs: read. Stock follows the catalog (ADR-0010) |
+| Reads of products (including `GET /v1/products?ids=`), categories, stores, stock levels and channels | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `INVENTORY_PLANNER`, `AUDITOR`, `SALES_ASSOCIATE`, `LOYALTY_OFFICER`, `COMMERCIAL_SUPERVISOR` | Catalogs: read. Stock follows the catalog (ADR-0010) |
 | Writes of products, categories and store locations | `ADMIN` | Catalogs: full for `ADMIN` only |
-| Reads of customers, preference profiles, segments, segment assignments and recommendations | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR` | Segments and rules: read. Customers follow `segment.read` (ADR-0010, ADR-0023) |
-| Reads of sales and engagement events (each row names a customer) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR` | Reports: read, narrowed to `segment.read` holders, which keeps `INVENTORY_PLANNER` out of customer data |
+| Reads of segments (labels and sizes) and recommendations | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR`, `SALES_ASSOCIATE`, `LOYALTY_OFFICER` | Segments and rules: read. The floor roles per ADR-0060 |
+| Reads of customers and preference profiles | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR`, `LOYALTY_OFFICER` | Customers follow `segment.read` (ADR-0010, ADR-0023). `SALES_ASSOCIATE` waits for the role-minimised representation (below) |
+| Reads of segment assignments (they carry R, F and M scores) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR` | Segments and rules: read. ADR-0060 gives the scores to `STORE_MANAGER` alone among the floor roles |
+| Reads of sales and engagement events (each row names a customer) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR`, `SALES_ASSOCIATE`, `COMMERCIAL_SUPERVISOR` | Reports: read, narrowed to `segment.read` holders, which keeps `INVENTORY_PLANNER` out of customer data |
 | Engagement summaries (aggregates, no customer) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `INVENTORY_PLANNER`, `AUDITOR` | Reports: read |
 | Reads of check-ins (where a staff member was) | `ADMIN`, `STORE_MANAGER`, `AUDITOR` | New, and narrowed: staff location data |
-| Floor writes: `POST /v1/sales`; `POST /v1/customers` and `PATCH /v1/customers/{customer_id}`; `PUT /v1/preference-profiles/{customer_id}/preferred-channels` and `/interest-categories`; `POST /v1/check-ins`; `POST /v1/engagement-events` | `ADMIN`, `STORE_MANAGER` | New. `STORE_MANAGER` is the floor role (ADR-0041, following ADR-0023). The web still refuses these to `STORE_MANAGER` |
+| Floor writes: `POST /v1/sales`; `POST /v1/customers` and `PATCH /v1/customers/{customer_id}`; `PUT /v1/preference-profiles/{customer_id}/preferred-channels` and `/interest-categories`; `POST /v1/check-ins`; `POST /v1/engagement-events` | `ADMIN`, `STORE_MANAGER` | New. `STORE_MANAGER` is a floor role (ADR-0041, following ADR-0023). The web still refuses these to `STORE_MANAGER` |
+| `POST /v1/sales`, `POST /v1/engagement-events` | also `SALES_ASSOCIATE` | ADR-0060 |
+| `POST` and `PATCH` of customers, `PUT` of preferences | also `LOYALTY_OFFICER` | ADR-0060 |
+| `POST /v1/check-ins` | also `SALES_ASSOCIATE`, `LOYALTY_OFFICER`, `COMMERCIAL_SUPERVISOR` | ADR-0060 |
 | Check-in reviews and engagement voids | `ADMIN` | Administrative correction |
 | Reads of users and roles | `ADMIN`, `AUDITOR` | Users: full for `ADMIN`, read for `AUDITOR` |
 | Writes of users, password resets of another user, and `POST /v1/administrator-transfers` | `ADMIN` | Users: full |
-| `GET /v1/users/me`; `PUT /v1/users/{user_id}/password` for the caller's own id, with the current password | Every authenticated role, `CUSTOMER` included | Users: own |
+| `GET /v1/users/me`; `PUT /v1/users/{user_id}/password` for the caller's own id, with the current password | Every authenticated role, `CUSTOMER` and the floor roles included | Users: own |
 | `GET` and `DELETE /v1/sessions/current` | Every authenticated role | — |
 | Reads of campaigns | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Campaigns: read |
 | Writes and transitions of campaigns | `ADMIN`, `MARKETING` | Campaigns: full |
@@ -203,7 +216,19 @@ The web's matrix does not change.
   customer (sales and engagement events) follow `segment.read`, which keeps
   `INVENTORY_PLANNER` out of customer data. Check-ins, which record where a
   staff member was, are read by `ADMIN`, `STORE_MANAGER` and `AUDITOR` only.
-- No operation is narrowed to a store: `app_user` has no store (ADR-0010).
+- No operation is narrowed to a store yet: `app_user` has no store
+  (ADR-0010). ADR-0060 narrows the four floor roles to their assigned stores;
+  the association is F19-05 and F19-06, the narrowing F19-07. Until then a
+  floor role's reads of sales and engagement events cover every store.
+- ADR-0060's floor roles (F19-04) are listed only on operations that exist.
+  Three of its rows wait for the work that makes them safe:
+  `SALES_ASSOCIATE` reads customers and preference profiles once the
+  role-minimised representation exists (F21-13, F21-14), since today's
+  representation carries email, phone and preferred channels; the two floor
+  roles read segment assignments once their R, F and M scores can be left
+  out; and engagement summaries and reads of check-ins gain floor roles with
+  the narrowing. Reversals, customer visits, consent, active promotions and
+  KPI reports gain them when they are written.
 - `INVENTORY_PLANNER`'s `inventory` write stays deferred
   ([`roadmap.md`](roadmap.md)), and no operation lists it.
 

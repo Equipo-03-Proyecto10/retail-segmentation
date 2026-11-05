@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: sales-service
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     Records a sale exactly once, all or nothing, and reads sales and the channel
     vocabulary back (RN-11 to RN-13, RN-37).
@@ -44,6 +44,7 @@ paths:
       x-mosaiq-roles:
         - ADMIN
         - STORE_MANAGER
+        - SALES_ASSOCIATE
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -143,6 +144,8 @@ paths:
         - STORE_MANAGER
         - MARKETING
         - AUDITOR
+        - SALES_ASSOCIATE
+        - COMMERCIAL_SUPERVISOR
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/CustomerIdFilter'
@@ -196,6 +199,8 @@ paths:
         - STORE_MANAGER
         - MARKETING
         - AUDITOR
+        - SALES_ASSOCIATE
+        - COMMERCIAL_SUPERVISOR
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/SaleId'
@@ -247,6 +252,9 @@ paths:
         - MARKETING
         - INVENTORY_PLANNER
         - AUDITOR
+        - SALES_ASSOCIATE
+        - LOYALTY_OFFICER
+        - COMMERCIAL_SUPERVISOR
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
       responses:

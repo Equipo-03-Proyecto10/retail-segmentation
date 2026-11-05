@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: stock-service
-  version: 1.0.0
+  version: 1.1.0
   description: 'Publishes the quantity held for each store and product pair (RN-14).
     A level carries ids and a quantity only: it has no product name, price or store
     name, so clients fetch those from products and stores by id (ADR-0035, no composition).
@@ -32,6 +32,9 @@ paths:
       - MARKETING
       - INVENTORY_PLANNER
       - AUDITOR
+      - SALES_ASSOCIATE
+      - LOYALTY_OFFICER
+      - COMMERCIAL_SUPERVISOR
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       - $ref: '#/components/parameters/StoreId'

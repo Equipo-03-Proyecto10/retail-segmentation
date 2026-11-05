@@ -11,6 +11,11 @@ set -uo pipefail
 R=/report
 REPORT="python3 /opt/verify/report.py"
 COMPOSE=(docker compose -f compose.distributed.yaml)
+# Image builds use the toolbox's own network namespace: under Rosetta, the
+# inner daemon cannot run a build step in a bridge sandbox (its prestart hook
+# re-executes dockerd). The namespace is the container's, not the host's.
+BUILD_NET=$R/tmp/build-network.yaml
+BUILD=(docker compose -f compose.distributed.yaml -f "$BUILD_NET")
 export PGHOST=localhost PGUSER=postgres PGPASSWORD=postgres
 export CARGO_TERM_COLOR=never
 mkdir -p "$R/logs" "$R/results" "$R/tmp"
@@ -192,15 +197,19 @@ suite_images() {
   check images stage-contracts bash .github/scripts/stage-contracts.sh --all
   check images auth-keys bash docker/distributed/auth-keys.sh
   check images pull "${COMPOSE[@]}" pull --ignore-buildable --quiet
+  {
+    echo "services:"
+    "${COMPOSE[@]}" config --format json | jq -r '.services | to_entries[] | select(.value.build) | .key' \
+      | while read -r service; do printf '  %s:\n    build:\n      network: host\n' "$service"; done
+  } >"$BUILD_NET"
   # VERIFY_BUILD_SERIAL=1 builds one image at a time, for a small machine.
   if [[ ${VERIFY_BUILD_SERIAL:-0} == 1 ]]; then
     local service
-    for service in $("${COMPOSE[@]}" config --services); do
-      "${COMPOSE[@]}" config --format json | jq -e --arg s "$service" '.services[$s].build' >/dev/null || continue
-      check images "build-$service" "${COMPOSE[@]}" build "$service"
+    for service in $(sed -n 's/^  \([a-z][a-z0-9-]*\):$/\1/p' "$BUILD_NET"); do
+      check images "build-$service" "${BUILD[@]}" build "$service"
     done
   else
-    check images build "${COMPOSE[@]}" build
+    check images build "${BUILD[@]}" build
   fi
   check images postgres-18 docker pull -q postgres:18
   check images postgres-16 docker pull -q postgres:16
@@ -358,7 +367,7 @@ suite_kits() {
     tests kit-py pytest "$R/tmp/kit-py.xml" env "${env[@]}" uv run pytest -rs -p no:cacheprovider --junitxml="$R/tmp/kit-py.xml"
     check kit-py example bash -c 'uv build --wheel && mkdir -p example/wheels example/contracts/common &&
       cp dist/*.whl example/wheels/ && cp -R ../../contracts/common/v1 example/contracts/common/ &&
-      docker build -t mosaiq-kit-example example &&
+      docker build --network=host -t mosaiq-kit-example example &&
       test "$(docker run --rm --entrypoint id mosaiq-kit-example -u)" = 10001'
   )
   (
@@ -371,7 +380,7 @@ suite_kits() {
     cargo_tests kit-rs cargo-test env "${env[@]}" cargo +"$channel" test --locked
     check kit-rs example bash -c 'mkdir -p examples/contracts/common &&
       cp -R ../../contracts/common/v1 examples/contracts/common/ &&
-      docker build -f examples/Dockerfile -t mosaiq-kit-rs-example . &&
+      docker build --network=host -f examples/Dockerfile -t mosaiq-kit-rs-example . &&
       test "$(docker run --rm --entrypoint id mosaiq-kit-rs-example -u)" = 10001'
     rm -rf target
   )
@@ -381,7 +390,7 @@ suite_kits() {
   CONFORMANCE_CONTRACT_DIR=packages/kit-py/example/contracts/kit-example \
     tests kit-py conformance test-results/conformance-kit-example.xml \
     bash tests/conformance/run.sh mosaiq-kit-example tests/conformance/kit-example 8000
-  check kit-py no-liveness-image docker build --build-arg BASE=mosaiq-kit-example \
+  check kit-py no-liveness-image docker build --network=host --build-arg BASE=mosaiq-kit-example \
     -t mosaiq-kit-example-no-liveness -f tests/conformance/kit-example/Dockerfile.no-liveness tests/conformance/kit-example
   CONFORMANCE_CONTRACT_DIR=packages/kit-py/example/contracts/kit-example \
     check kit-py conformance-not-vacuous bash tests/conformance/run.sh mosaiq-kit-example-no-liveness \

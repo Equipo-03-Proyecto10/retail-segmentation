@@ -213,6 +213,7 @@ Later runtime events must be preserved.
 | [0071](0071-android-raises-local-notifications-from-a-periodic-pull-and-a-refused-write-reaches-a-supervisor-as-a-capture-incident.md) | Android raises local notifications from a periodic pull, and a refused write reaches a supervisor as a capture incident owned by engagement | Accepted |
 | [0072](0072-domain-events-are-recorded-by-one-definer-function-into-a-hash-chained-append-only-table-that-audit-trail-reads.md) | Domain events are recorded by one definer function into an append-only, hash-chained table that audit-trail reads | Accepted |
 | [0073](0073-an-operation-published-ahead-of-its-implementation-is-marked-planned-and-skipped-by-conformance.md) | An operation published ahead of its implementation is marked planned and skipped by conformance | Accepted |
+| [0074](0074-the-desktop-console-exports-through-the-main-process-and-records-each-export-locally.md) | The desktop console exports tables through the main process and records each export locally | Accepted |
 
 ## Writing one
 

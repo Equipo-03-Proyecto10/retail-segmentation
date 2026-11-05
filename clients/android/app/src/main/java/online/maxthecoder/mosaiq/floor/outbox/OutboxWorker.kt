@@ -79,10 +79,16 @@ class OutboxWorker(
             if (userId == null || tokens.read() == null) return@withContext Result.success()
             for (row in outbox.pendingFor(userId)) {
                 outbox.countAttempt(row.id)
+                val url = gateway.resolve(row.path)
+                if (url == null) {
+                    // A path that is no URL never becomes one: refuse the row rather than retry it forever.
+                    outbox.markRefused(row.id, 0, "invalid_path", "The request path is not a valid URL.", null)
+                    continue
+                }
                 val request =
                     Request
                         .Builder()
-                        .url(gateway.resolve(row.path)!!)
+                        .url(url)
                         .post(row.body.toRequestBody(JSON))
                         .apply {
                             if (row.operation == Operation.SALE) header("Idempotency-Key", row.clientId)

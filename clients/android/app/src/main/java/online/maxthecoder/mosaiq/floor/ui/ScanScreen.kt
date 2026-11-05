@@ -21,7 +21,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
@@ -144,7 +144,7 @@ private fun ManualEntry(model: ScanViewModel) {
 
 @Composable
 private fun ScanAnswer(model: ScanViewModel, onAddProduct: ((online.maxthecoder.mosaiq.floor.net.Product) -> Unit)?) {
-    val result by model.result.collectAsState()
+    val result by model.result.collectAsStateWithLifecycle()
     when (val current = result) {
         ScanResult.Idle -> Unit
         ScanResult.Looking -> Text("Looking up the product…")

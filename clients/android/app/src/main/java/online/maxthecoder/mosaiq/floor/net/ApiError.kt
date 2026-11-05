@@ -46,6 +46,14 @@ data class ApiError(
             )
         }
 
+        /** The call failed in a way no answer describes; the client cannot say more. */
+        fun unexpected(): ApiError = ApiError(
+            status = 0,
+            code = "unexpected",
+            message = "Something went wrong. Try again.",
+            correlationId = null
+        )
+
         /** No answer at all: the network or the gateway never replied. */
         fun unreachable(correlationId: String?): ApiError = ApiError(
             status = 0,

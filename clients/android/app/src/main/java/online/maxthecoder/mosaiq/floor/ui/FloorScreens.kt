@@ -20,7 +20,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -29,6 +28,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -51,7 +51,7 @@ fun FloorHome(
     onSignOut: () -> Unit
 ) {
     var tab by remember { mutableStateOf(Tab.CHECK_IN) }
-    val chosen by model.chosen.collectAsState()
+    val chosen by model.chosen.collectAsStateWithLifecycle()
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("${signedIn.name} · ${signedIn.role}", style = MaterialTheme.typography.titleMedium)
         Row(
@@ -127,7 +127,7 @@ fun SignOutButton(model: FloorViewModel, onSignOut: () -> Unit) {
 
 @Composable
 private fun StoreAndCheckIn(model: FloorViewModel) {
-    val chosen by model.chosen.collectAsState()
+    val chosen by model.chosen.collectAsStateWithLifecycle()
     val store = chosen
     if (store == null) {
         StorePicker(model)
@@ -145,7 +145,7 @@ private fun StoreAndCheckIn(model: FloorViewModel) {
 
 @Composable
 private fun StorePicker(model: FloorViewModel, onPicked: () -> Unit = {}) {
-    val state by model.stores.collectAsState()
+    val state by model.stores.collectAsStateWithLifecycle()
     var city by remember { mutableStateOf(state.city) }
     LaunchedEffect(Unit) { if (state.stores.isEmpty()) model.searchStores() }
     Text("Pick your store", style = MaterialTheme.typography.titleMedium)
@@ -176,8 +176,8 @@ private fun StorePicker(model: FloorViewModel, onPicked: () -> Unit = {}) {
 
 @Composable
 private fun CheckInPanel(model: FloorViewModel, store: ChosenStore) {
-    val state by model.checkIn.collectAsState()
-    val row by model.lastCheckIn.collectAsState()
+    val state by model.checkIn.collectAsStateWithLifecycle()
+    val row by model.lastCheckIn.collectAsStateWithLifecycle()
     val permissions =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
             val mode =
@@ -202,9 +202,10 @@ private fun CheckInPanel(model: FloorViewModel, store: ChosenStore) {
         is CheckInState.Queued -> {
             current.note?.let { Text(it) }
             val answer = FloorViewModel.resultOf(row)
+            val refused = row?.takeIf { it.state == RowState.REFUSED }
             when {
                 answer != null -> Text(answer, style = MaterialTheme.typography.bodyLarge)
-                row?.state == RowState.REFUSED -> ErrorPanel(row!!.asError())
+                refused != null -> ErrorPanel(refused.asError())
                 else -> Text("Check-in queued. It is sent as soon as the network allows.")
             }
         }
@@ -213,8 +214,8 @@ private fun CheckInPanel(model: FloorViewModel, store: ChosenStore) {
 
 @Composable
 private fun OutboxList(model: FloorViewModel) {
-    val rows by model.open.collectAsState()
-    val userId by model.userId.collectAsState()
+    val rows by model.open.collectAsStateWithLifecycle()
+    val userId by model.userId.collectAsStateWithLifecycle()
     if (rows.isEmpty()) {
         Text("Nothing is waiting, and nothing was refused.")
         return

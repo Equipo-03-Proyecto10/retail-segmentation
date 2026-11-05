@@ -73,8 +73,110 @@
     </xs:sequence>
   </xs:complexType>
 
+  <xs:simpleType name="CardCode">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9A-HJKMNP-TV-Z]{26}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="LoyaltyCardStatus">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="ACTIVE"/>
+      <xs:enumeration value="REVOKED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="RevocationReason">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="LOST"/>
+      <xs:enumeration value="STOLEN"/>
+      <xs:enumeration value="REPLACED"/>
+      <xs:enumeration value="CUSTOMER_REQUEST"/>
+      <xs:enumeration value="OTHER"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="LoyaltyState">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="NONE"/>
+      <xs:enumeration value="ACTIVE"/>
+      <xs:enumeration value="REVOKED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="LoyaltyCard">
+    <xs:sequence>
+      <xs:element name="card_id" type="cus:Uuid"/>
+      <xs:element name="customer_id" type="cus:Uuid"/>
+      <xs:element name="code" type="cus:CardCode"/>
+      <xs:element name="status" type="cus:LoyaltyCardStatus"/>
+      <xs:element name="issued_at" type="xs:dateTime"/>
+      <xs:element name="issued_by" type="cus:Uuid"/>
+      <xs:element name="revoked_at" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="revoked_by" type="cus:Uuid" minOccurs="0"/>
+      <xs:element name="revocation_reason" type="cus:RevocationReason" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="FloorCustomer">
+    <xs:sequence>
+      <xs:element name="customer_id" type="cus:Uuid"/>
+      <xs:element name="name" type="cus:Name"/>
+      <xs:element name="email" type="cus:Email" minOccurs="0"/>
+      <xs:element name="phone" type="cus:Phone" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="FloorCustomers">
+    <xs:sequence>
+      <xs:element name="FloorCustomer" type="cus:FloorCustomer" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="LoyaltyCards">
+    <xs:sequence>
+      <xs:element name="loyalty_state" type="cus:LoyaltyState"/>
+      <xs:element name="LoyaltyCard" type="cus:LoyaltyCard" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="IssueLoyaltyCardRequest">
+    <xs:sequence>
+      <xs:element name="customer_id" type="cus:Uuid"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="RevokeLoyaltyCardRequest">
+    <xs:sequence>
+      <xs:element name="reason" type="cus:RevocationReason"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="LookupLoyaltyCardRequest">
+    <xs:sequence>
+      <xs:element name="code" type="cus:CardCode"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="LoyaltyCardLookup">
+    <xs:sequence>
+      <xs:element name="card_id" type="cus:Uuid"/>
+      <xs:element name="customer_id" type="cus:Uuid"/>
+    </xs:sequence>
+  </xs:complexType>
+
   <xs:element name="Customer" type="cus:Customer"/>
   <xs:element name="Customers" type="cus:Customers"/>
   <xs:element name="RegisterCustomerRequest" type="cus:RegisterCustomerRequest"/>
   <xs:element name="CorrectCustomerRequest" type="cus:CorrectCustomerRequest"/>
+  <xs:element name="FloorCustomer" type="cus:FloorCustomer"/>
+  <xs:element name="FloorCustomers" type="cus:FloorCustomers"/>
+  <xs:element name="LoyaltyCard" type="cus:LoyaltyCard"/>
+  <xs:element name="LoyaltyCards" type="cus:LoyaltyCards"/>
+  <xs:element name="IssueLoyaltyCardRequest" type="cus:IssueLoyaltyCardRequest"/>
+  <xs:element name="RevokeLoyaltyCardRequest" type="cus:RevokeLoyaltyCardRequest"/>
+  <xs:element name="LookupLoyaltyCardRequest" type="cus:LookupLoyaltyCardRequest"/>
+  <xs:element name="LoyaltyCardLookup" type="cus:LoyaltyCardLookup"/>
 </xs:schema>

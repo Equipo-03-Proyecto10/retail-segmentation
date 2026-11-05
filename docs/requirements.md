@@ -185,6 +185,9 @@ The web's matrix does not change.
 | Reads of check-ins (where a staff member was) | `ADMIN`, `STORE_MANAGER`, `AUDITOR` | New, and narrowed: staff location data |
 | Floor writes: `POST /v1/sales`; `POST /v1/customers` and `PATCH /v1/customers/{customer_id}`; `PUT /v1/preference-profiles/{customer_id}/preferred-channels` and `/interest-categories`; `POST /v1/check-ins`; `POST /v1/engagement-events` | `ADMIN`, `STORE_MANAGER` | New. `STORE_MANAGER` is the floor role (ADR-0041, following ADR-0023). The web still refuses these to `STORE_MANAGER` |
 | `POST /v1/sale-reversals` | `ADMIN`, `STORE_MANAGER` for a cancellation or a return; `SALES_ASSOCIATE` (ADR-0060) for a cancellation only | ADR-0062. A return is refused to the seller with `forbidden_role` |
+| Loyalty cards: `POST` and `GET /v1/loyalty-cards`, `PUT /v1/loyalty-cards/{card_id}/revocation` | `ADMIN`, `LOYALTY_OFFICER` | Customers: loyalty (ADR-0060) |
+| `POST /v1/loyalty-cards/lookup` | `ADMIN`, `SALES_ASSOCIATE`, `LOYALTY_OFFICER` | Identify a customer at the counter (ADR-0060) |
+| `GET /v1/customers/floor-search` and `/v1/customers/{customer_id}/floor-view`, the floor view of a customer | `SALES_ASSOCIATE`, `LOYALTY_OFFICER` | The field table of ADR-0060, for customers' own fields only; `COMMERCIAL_SUPERVISOR` reads no customer element |
 | Check-in reviews and engagement voids | `ADMIN` | Administrative correction |
 | Reads of users and roles | `ADMIN`, `AUDITOR` | Users: full for `ADMIN`, read for `AUDITOR` |
 | Writes of users, password resets of another user, and `POST /v1/administrator-transfers` | `ADMIN` | Users: full |

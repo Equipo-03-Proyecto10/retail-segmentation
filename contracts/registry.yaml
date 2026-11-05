@@ -37,10 +37,10 @@ services:
     resources: [stock-levels, stock-movements, availabilities]
   - name: customers
     port: 5007
-    rule: "A customer is registered once, with a valid unique email when given, a known channel and a registration date not in the future, and is never deleted through services (RN-08)"
+    rule: "A customer is registered once, with a valid unique email when given, a known channel and a registration date not in the future, and is never deleted through services; its loyalty card is an opaque code derived from nothing about the customer, a customer holds at most one active card, and a card is revoked, never deleted, so revoking it again changes nothing (RN-08)"
     rn: [RN-08]
     wave: core
-    resources: [customers]
+    resources: [customers, loyalty-cards]
   - name: customer-preferences
     port: 5008
     rule: "A customer's preferred channels and interest categories are each replaced only atomically, as a whole set of existing references (RN-54)"

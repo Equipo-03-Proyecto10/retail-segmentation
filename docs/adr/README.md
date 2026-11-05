@@ -208,6 +208,7 @@ Later runtime events must be preserved.
 | [0066](0066-consent-is-an-append-only-record-by-purpose-and-anonymization-replaces-deletion.md) | Consent is an append-only record by purpose, an objection narrows what is done with a customer, and anonymization replaces deletion | Accepted |
 | [0067](0067-a-recommendation-is-judged-at-a-reference-store-and-channel-and-its-explanation-is-recorded.md) | A recommendation is judged at a reference store and channel, offers a declared alternative when unavailable, and its explanation is recorded | Accepted |
 | [0068](0068-an-experiment-is-planned-and-frozen-before-assignment-and-claims-an-effect-only-against-a-control.md) | An experiment is planned and frozen before assignment, and claims an effect only against a control | Accepted |
+| [0069](0069-a-sale-is-attributed-to-one-campaign-at-most-and-only-the-difference-against-control-is-incremental.md) | A sale is attributed to one campaign at most, and only the difference against control is called incremental | Accepted |
 | [0073](0073-an-operation-published-ahead-of-its-implementation-is-marked-planned-and-skipped-by-conformance.md) | An operation published ahead of its implementation is marked planned and skipped by conformance | Accepted |
 
 ## Writing one

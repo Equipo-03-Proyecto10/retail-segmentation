@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>model_version_name_taken</code>
+  <message>A model version with this name already exists.</message>
+  <correlation_id>corr-model-version-name-taken</correlation_id>
+</Error>

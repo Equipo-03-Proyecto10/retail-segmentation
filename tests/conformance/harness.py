@@ -135,6 +135,10 @@ class Contract:
     directory: Path
     document: dict
     operations: list[Operation] = field(default_factory=list)
+    # Operations marked `x-mosaiq-status: planned` (ADR-0073): published ahead
+    # of their implementation, so no case selects them; one guard case checks
+    # that the image still does not answer them.
+    planned: list[Operation] = field(default_factory=list)
 
     @property
     def xsd(self) -> Path:
@@ -183,7 +187,10 @@ def load_contract(directory: Path) -> Contract:
                 or operation.get("responses", {}).get("201")
                 or {}
             )
-            contract.operations.append(
+            status = operation.get("x-mosaiq-status")
+            if status not in (None, "planned"):
+                raise ValueError(f"{operation['operationId']}: status {status!r}")
+            (contract.planned if status else contract.operations).append(
                 Operation(
                     operation_id=operation["operationId"],
                     method=method.upper(),

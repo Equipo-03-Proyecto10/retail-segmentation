@@ -1,0 +1,72 @@
+name: Verify one commit
+
+# Every suite against one commit from an empty environment (F20-03, #761):
+# the same command as on a laptop, ops/verify/run.sh, whose report is
+# uploaded as the artifact verify-<commit>. With `twice`, the commit is run
+# a second time and the two reports are compared; a case that differs is
+# listed as flaky in comparison.md and fails the job.
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: "The commit, branch or tag to verify"
+        required: true
+        default: develop
+      twice:
+        description: "Run it twice and compare the runs"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      # The runner, ops/verify, is the dispatching ref's; the commit under test
+      # is checked out of the full history inside the toolbox.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Resolve the commit
+        id: commit
+        env:
+          INPUT: ${{ inputs.commit }}
+        run: |
+          set -euo pipefail
+          git fetch -q origin "+refs/heads/*:refs/remotes/origin/*" "+refs/tags/*:refs/tags/*"
+          sha=$(git rev-parse --verify "origin/$INPUT^{commit}" 2>/dev/null || git rev-parse --verify "$INPUT^{commit}")
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: The run
+        env:
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: bash ops/verify/run.sh --out "verify/first" "$SHA"
+
+      - name: The second run
+        if: ${{ !cancelled() && inputs.twice }}
+        env:
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: bash ops/verify/run.sh --out "verify/second" "$SHA"
+
+      - name: Compare the runs
+        if: ${{ !cancelled() && inputs.twice }}
+        run: bash ops/verify/run.sh --compare verify/first verify/second
+
+      - name: Summary
+        if: ${{ !cancelled() }}
+        run: |
+          for f in verify/first/report.md verify/second/comparison.md; do
+            [ -f "$f" ] && cat "$f" >> "$GITHUB_STEP_SUMMARY"
+          done
+          true
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: verify-${{ steps.commit.outputs.sha }}
+          path: verify/
+          if-no-files-found: error

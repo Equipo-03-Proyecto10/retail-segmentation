@@ -19,7 +19,7 @@ The design is governed by ADR-0034 to ADR-0046. Every service implements exactly
 | [sales](./sales.md) | Flask | 5009 | core | A sale recorded once, all or nothing, consuming its stock in the same transaction | RN-11 to RN-13, RN-37 (accepted sales), RN-70 |
 | [segments](./segments.md) | Rust (axum) | 5010 | core | At most one current segment per customer, by stable label; unassigned reported as is; a migration compares labels within one model version and a comparison across versions is methodological | RN-20, RN-21, RN-39, RN-59, RN-60 |
 | [recommendations](./recommendations.md) | Flask | 5011 | core | Recommend active, in-stock, not-yet-bought products with reasons, or say why none | RN-40 |
-| [engagement](./engagement.md) | Flask + MongoDB | 5012 | core | QR scans and recommendation clicks recorded once, attributed, voided never deleted | RN-55 |
+| [engagement](./engagement.md) | Flask + MongoDB | 5012 | core | Eight kinds of in-store engagement event recorded once, each a distinct fact and never a sale, attributed, voided never deleted | RN-55 |
 | [check-ins](./check-ins.md) | Rust (axum) | 5013 | core | A check-in is verified only within the store's geofence; overrides are append-only reviews | RN-56 |
 | [campaigns](./campaigns.md) | Flask | 5014 | second | A campaign moves only along the allowed states, is edited only in DRAFT, and is activated only before it ends, with its experiments ready | RN-15, RN-16, RN-22, RN-24 (activation), RN-31, RN-32, RN-49 (activation) |
 | [audit-trail](./audit-trail.md) | Rust (axum) | 5015 | second | An append-only, attributed, credential-free audit readable by ADMIN and AUDITOR only | RN-28, RN-29, RN-30 |

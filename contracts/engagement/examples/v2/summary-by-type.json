@@ -1,0 +1,15 @@
+{
+  "from": "2026-10-13",
+  "to": "2026-10-15",
+  "group_by": "type",
+  "groups": [
+    {"key": "CAMPAIGN_EXPOSURE", "count": 41},
+    {"key": "CART_ADD", "count": 17},
+    {"key": "CART_REMOVE", "count": 5},
+    {"key": "NAVIGATION", "count": 212},
+    {"key": "QR_SCAN", "count": 78},
+    {"key": "RECO_CLICK", "count": 30},
+    {"key": "RECO_IMPRESSION", "count": 164},
+    {"key": "STORE_VISIT", "count": 95}
+  ]
+}

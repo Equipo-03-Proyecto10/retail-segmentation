@@ -196,6 +196,8 @@ Later runtime events must be preserved.
 | [0054](0054-seed-written-outbox-rows-before-the-relays-first-start.md) | Seed-written outbox events are removed before bootstrap commits | Accepted |
 | [0055](0055-an-ops-console-supervises-services-through-their-meta-routes.md) | An ops console supervises the services through their meta routes, a host snapshot and a read-only Redis user | Accepted |
 | [0056](0056-the-disabled-default-user-may-replay-the-append-only-file.md) | The disabled `default` user may replay the append-only file | Accepted |
+| [0057](0057-the-android-client-themes-material3-with-the-mosaiq-tokens-adapted-for-a-handheld.md) | The Android client themes Material3 with the MOSAIQ tokens, adapted for a handheld | Accepted |
+| [0058](0058-the-android-client-navigates-with-saved-plain-state-not-navigation-compose.md) | The Android client navigates with saved plain state, not Navigation-Compose | Accepted |
 | [0059](0059-four-new-services-join-the-fifteen-and-six-capabilities-fold-into-the-rule-they-extend.md) | Four new services join the fifteen, and six capabilities fold into the rule they extend | Accepted |
 | [0060](0060-four-store-profiles-map-to-four-roles-and-services-read-each-users-stores-per-request.md) | Four store profiles map to four roles, and services read each user's stores per request | Accepted |
 | [0061](0061-stock-keeps-one-quantity-per-store-and-changes-only-through-a-sale-a-reversal-or-a-recorded-movement.md) | Stock keeps one quantity per store, and changes only through a sale, a reversal or a recorded movement | Accepted |

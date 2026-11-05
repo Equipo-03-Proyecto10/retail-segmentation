@@ -7,10 +7,10 @@ services:
     resources: [sessions, jwks.json]
   - name: users
     port: 5002
-    rule: "Accounts obey the single-administrator rule (never two, never zero, moved only by an explicit transfer), have case-insensitively unique emails, and are deactivated, never deleted (RN-01, RN-02, RN-04)"
+    rule: "Accounts obey the single-administrator rule (never two, never zero, moved only by an explicit transfer), have case-insensitively unique emails, are deactivated, never deleted, and say which stores a floor user works in through one assignment per user and store (RN-01, RN-02, RN-04, ADR-0060)"
     rn: [RN-01, RN-02, RN-04]
     wave: core
-    resources: [users, roles, administrator-transfers]
+    resources: [users, roles, administrator-transfers, store-assignments]
   - name: products
     port: 5003
     rule: "A product has a unique SKU, a price that is never negative and exactly one existing category, and is retired by deactivation (RN-10, RN-11)"

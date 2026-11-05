@@ -209,6 +209,7 @@ Later runtime events must be preserved.
 | [0067](0067-a-recommendation-is-judged-at-a-reference-store-and-channel-and-its-explanation-is-recorded.md) | A recommendation is judged at a reference store and channel, offers a declared alternative when unavailable, and its explanation is recorded | Accepted |
 | [0068](0068-an-experiment-is-planned-and-frozen-before-assignment-and-claims-an-effect-only-against-a-control.md) | An experiment is planned and frozen before assignment, and claims an effect only against a control | Accepted |
 | [0069](0069-a-sale-is-attributed-to-one-campaign-at-most-and-only-the-difference-against-control-is-incremental.md) | A sale is attributed to one campaign at most, and only the difference against control is called incremental | Accepted |
+| [0070](0070-a-sales-import-reaches-sales-service-as-numbered-row-chunks-under-the-64-kib-cap-and-is-processed-by-a-worker.md) | A sales import reaches sales-service as numbered chunks of rows under the 64 KiB cap, and a worker processes it row by row, resumable and safe to repeat | Accepted |
 | [0073](0073-an-operation-published-ahead-of-its-implementation-is-marked-planned-and-skipped-by-conformance.md) | An operation published ahead of its implementation is marked planned and skipped by conformance | Accepted |
 
 ## Writing one

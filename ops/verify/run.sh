@@ -41,7 +41,7 @@ out=$(cd "$out" && pwd)
 work=$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/verify.XXXXXX")
 name=verify-${commit:0:12}-$(basename "$work" | cut -d. -f2 | tr 'A-Z' 'a-z')
 cleanup() {
-  docker rm -f "$name" >/dev/null 2>&1 || true
+  docker rm -fv "$name" >/dev/null 2>&1 || true
   rm -rf "$work"
 }
 trap cleanup EXIT

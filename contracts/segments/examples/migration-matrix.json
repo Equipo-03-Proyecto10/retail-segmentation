@@ -1,0 +1,108 @@
+{
+  "from": "2026-09-14T03:00:00Z",
+  "to": "2026-10-12T03:00:00Z",
+  "from_model_version_id": 3,
+  "to_model_version_id": 3,
+  "methodological": false,
+  "customer_count": 49,
+  "totals": [
+    {
+      "state": "label",
+      "label_code": "CHAMPION",
+      "before_count": 16,
+      "after_count": 18,
+      "entries": 5,
+      "exits": 3
+    },
+    {
+      "state": "label",
+      "label_code": "LOYAL",
+      "before_count": 27,
+      "after_count": 25,
+      "entries": 3,
+      "exits": 5
+    },
+    {
+      "state": "label",
+      "label_code": "POTENTIAL",
+      "before_count": 0,
+      "after_count": 4,
+      "entries": 4,
+      "exits": 0
+    },
+    {
+      "state": "label",
+      "label_code": "AT_RISK",
+      "before_count": 2,
+      "after_count": 0,
+      "entries": 0,
+      "exits": 2
+    },
+    {
+      "state": "unassigned",
+      "label_code": null,
+      "before_count": 0,
+      "after_count": 2,
+      "entries": 2,
+      "exits": 0
+    },
+    {
+      "state": "new",
+      "label_code": null,
+      "before_count": 4,
+      "after_count": 0,
+      "entries": 0,
+      "exits": 4
+    }
+  ],
+  "cells": [
+    {
+      "previous_state": "label",
+      "previous_label_code": "CHAMPION",
+      "new_state": "label",
+      "new_label_code": "CHAMPION",
+      "movement": "unchanged",
+      "customer_count": 13
+    },
+    {
+      "previous_state": "label",
+      "previous_label_code": "CHAMPION",
+      "new_state": "label",
+      "new_label_code": "LOYAL",
+      "movement": "declined",
+      "customer_count": 3
+    },
+    {
+      "previous_state": "label",
+      "previous_label_code": "LOYAL",
+      "new_state": "label",
+      "new_label_code": "CHAMPION",
+      "movement": "improved",
+      "customer_count": 5
+    },
+    {
+      "previous_state": "label",
+      "previous_label_code": "LOYAL",
+      "new_state": "label",
+      "new_label_code": "LOYAL",
+      "movement": "unchanged",
+      "customer_count": 22
+    },
+    {
+      "previous_state": "label",
+      "previous_label_code": "AT_RISK",
+      "new_state": "unassigned",
+      "new_label_code": null,
+      "movement": "not_ranked",
+      "customer_count": 2
+    },
+    {
+      "previous_state": "new",
+      "previous_label_code": null,
+      "new_state": "label",
+      "new_label_code": "POTENTIAL",
+      "movement": "not_ranked",
+      "customer_count": 4
+    }
+  ]
+}

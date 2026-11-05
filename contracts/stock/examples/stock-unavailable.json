@@ -1,0 +1,11 @@
+{
+  "code": "stock_unavailable",
+  "message": "The movement would leave the store with negative stock.",
+  "correlation_id": "corr-stock-unavailable",
+  "details": [
+    {
+      "field": "quantity",
+      "code": "insufficient_stock"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "movement_type": "ADJUSTMENT",
+  "store_id": 3,
+  "product_id": 120,
+  "quantity_delta": -3,
+  "reason": "DAMAGE",
+  "note": "Crushed in the stockroom."
+}

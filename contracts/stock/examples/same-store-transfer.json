@@ -1,0 +1,11 @@
+{
+  "code": "same_store_transfer",
+  "message": "A transfer needs two different stores.",
+  "correlation_id": "corr-same-store-transfer",
+  "details": [
+    {
+      "field": "destination_store_id",
+      "code": "same_as_origin"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "availabilities": [
+    {
+      "store_id": 3,
+      "product_id": 245,
+      "channel_id": 3,
+      "is_available": false,
+      "reason": "OUT_OF_STOCK",
+      "quantity_on_hand": 0,
+      "updated_at": "2026-10-15T15:03:55Z"
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 1
+  }
+}

@@ -1299,6 +1299,23 @@ is append-only. The contract of F22-10 (#805) specifies versions, training runs,
 metrics, publications and rollbacks; drift reports and alerts follow with F23. ·
 #743
 
+### RN-69 — Stock changes only through a sale, its reversal or a recorded movement with a reason, and is never negative
+`inventory` keeps one on-hand quantity per store and product, and it is never
+negative ([ADR-0061](adr/0061-stock-keeps-one-quantity-per-store-and-changes-only-through-a-sale-a-reversal-or-a-recorded-movement.md)).
+Beyond an accepted sale (RN-14), it changes only through a sale's reversal or a
+recorded movement: a receipt with its reference, a transfer between two stores, a
+count with who counted, an adjustment with a reason of damage, loss, expiry or
+correction, or a restock from a reversal. A transfer subtracts at the origin and adds
+at the destination in one transaction. A movement is never edited or deleted, and a
+repeated `Idempotency-Key` records nothing new. A product is available in a store and
+channel when its commercial status allows the sale, the store enables the channel,
+and its on-hand quantity is above zero.
+
+**Enforced:** stock-service (planned) and ADR-0061 — `stock.stock_movement` is
+insert-only, `definer_stock` applies a movement and its `inventory` change in one
+transaction, and quantities change by a conditional `UPDATE`, so two movements on
+one row add up. · #772
+
 ### RN-70 — A sale is never edited or deleted: a cancellation or return is recorded beside it, and every reader counts net units
 A cancellation or a return is an append-only reversal recorded beside the sale
 ([ADR-0062](adr/0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md)).

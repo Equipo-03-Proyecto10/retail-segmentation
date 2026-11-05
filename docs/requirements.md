@@ -209,6 +209,9 @@ The web's matrix does not change.
 | `POST /v1/model-versions`, `POST /v1/model-trainings`, `POST /v1/model-versions/{version_id}/publications`, `POST /v1/model-versions/{version_id}/rollbacks` | `ADMIN` | Segment run: run (RN-05); a publication changes every customer's segment |
 | Reads of active promotions | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR`, and the four floor roles, who read active promotions of their assigned stores only | ADR-0060. Other campaign reads keep their roles |
 | Writes of a campaign's audience, budget, eligibility rules and exclusions, and of promotions | `ADMIN`, `MARKETING` | Campaigns: full |
+| `GET /v1/kpi-reports/definitions` | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR`, `STORE_MANAGER`, `COMMERCIAL_SUPERVISOR` | Reports: read. The catalog is configuration with no customer data |
+| KPI reports with a store (`net-sales`, `spend`, `retention`, `conversion`, `recommendation-performance`) | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR`, and `STORE_MANAGER`, `COMMERCIAL_SUPERVISOR` narrowed to their assigned stores | Reports: read. Narrowed as ADR-0060 decides: another store is 403 `forbidden_store` |
+| KPI reports with no store (`migrations`, `campaign-performance`) | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Reports: read. A figure with no store cannot be narrowed, so the two store roles do not read it |
 | `GET /v1/audit-entries` | `ADMIN`, `AUDITOR` | Audit log: read |
 | `POST /v1/sessions`, `POST /v1/sessions/refresh`, `GET /v1/jwks.json`, meta routes | No token | — |
 

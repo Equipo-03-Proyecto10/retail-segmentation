@@ -1,0 +1,14 @@
+# Closed vocabularies that grow inside v1 (ADR-0076). contracts/check.sh
+# excuses an added enum value only when an entry here names the service, the
+# exact contract version that adds it, and the value. An entry stops applying
+# as soon as that contract moves to another version, so it never covers a
+# later change. Remove an entry once its version is merged and superseded.
+entries:
+  - adr: ADR-0076
+    service: auth
+    version: 1.1.0
+    values: [SALES_ASSOCIATE, LOYALTY_OFFICER, COMMERCIAL_SUPERVISOR]
+  - adr: ADR-0076
+    service: users
+    version: 1.1.0
+    values: [SALES_ASSOCIATE, LOYALTY_OFFICER, COMMERCIAL_SUPERVISOR]

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ProductDetails xmlns="https://mosaiq.maxthecoder.online/xml/products/v1">
+  <product_id>1001</product_id>
+  <sku>MOS-CAM-001</sku>
+  <name>Aisle Camera</name>
+  <category_id>12</category_id>
+  <list_price>129.90</list_price>
+  <is_active>true</is_active>
+  <commercial_status>active</commercial_status>
+  <attributes>
+    <name>color</name>
+    <value>graphite</value>
+  </attributes>
+  <attributes>
+    <name>resolution</name>
+    <value>1080p</value>
+  </attributes>
+  <photo_url>https://mosaiq.maxthecoder.online/uploads/products/1001-camera.webp</photo_url>
+  <barcode>4006381333931</barcode>
+</ProductDetails>

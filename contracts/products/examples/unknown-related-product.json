@@ -1,0 +1,11 @@
+{
+  "code": "unknown_related_product",
+  "message": "A related product does not exist.",
+  "correlation_id": "corr-relations-422e",
+  "details": [
+    {
+      "field": "related_product_ids",
+      "code": "not_found"
+    }
+  ]
+}

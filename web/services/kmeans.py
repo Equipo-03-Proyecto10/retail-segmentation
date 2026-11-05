@@ -57,9 +57,11 @@ EMPTY_CLUSTER_POLICY = (
 TIE_BREAK = "a customer equidistant from two clusters goes to the lower-numbered one"
 
 # Mean silhouette compares every customer with every other, which is quadratic in
-# pure Python. Past this many customers it is recorded as absent rather than made
-# to run for minutes; inertia and the sizes are always recorded.
+# pure Python. Past this many customers it is computed on a seeded sample instead,
+# and the run records that it is sampled (F23-03). Each sampled customer is still
+# compared with every customer, so the cost is linear in the population.
 SILHOUETTE_MAX_CUSTOMERS = 2000
+SILHOUETTE_SAMPLE_SIZE = 1000
 
 
 class InvalidParameters(ValueError):
@@ -129,6 +131,8 @@ class KMeansFit:
     inertia: float
     silhouette: float | None
     cluster_sizes: tuple[int, ...]
+    # How many customers the silhouette was scored on when it is a sample, else None.
+    silhouette_sample: int | None = None
 
     def members(self, cluster: int) -> tuple[str, ...]:
         """The customers in one cluster, ordered by customer id."""
@@ -279,20 +283,39 @@ def _means(points: Sequence[Point], assignments: Sequence[int], k: int) -> list[
     ]
 
 
+def _silhouette_sample(n: int, seed: int) -> list[int]:
+    """SILHOUETTE_SAMPLE_SIZE indexes out of n, chosen by a seeded partial
+    Fisher-Yates shuffle that uses only `Random.random()`, whose sequence Python
+    guarantees across versions. Ascending, so the sum is taken in a fixed order."""
+    rng = random.Random(f"silhouette:{seed}")
+    pool = list(range(n))
+    size = min(SILHOUETTE_SAMPLE_SIZE, n)
+    for i in range(size):
+        j = i + int(rng.random() * (n - i))
+        pool[i], pool[j] = pool[j], pool[i]
+    return sorted(pool[:size])
+
+
 def _silhouette(
-    points: Sequence[Point], assignments: Sequence[int], k: int
-) -> float | None:
-    """Mean silhouette. None for one cluster, where it is undefined, or past
-    SILHOUETTE_MAX_CUSTOMERS. A customer alone in their cluster scores 0."""
+    points: Sequence[Point], assignments: Sequence[int], k: int, seed: int = 0
+) -> tuple[float | None, int | None]:
+    """Mean silhouette and, when it is a sample, the sample's size.
+
+    None for one cluster, where it is undefined. Past SILHOUETTE_MAX_CUSTOMERS it
+    is the mean over a seeded sample of customers, each compared with every
+    customer, and the second value says how many. A customer alone in their cluster
+    scores 0."""
     n = len(points)
-    if k < 2 or n > SILHOUETTE_MAX_CUSTOMERS:
-        return None
+    if k < 2:
+        return None, None
+    sampled = n > SILHOUETTE_MAX_CUSTOMERS
+    chosen = _silhouette_sample(n, seed) if sampled else range(n)
     members: list[list[int]] = [[] for _ in range(k)]
     for index, cluster in enumerate(assignments):
         members[cluster].append(index)
 
     total = 0.0
-    for index in range(n):
+    for index in chosen:
         own = assignments[index]
         if len(members[own]) == 1:
             continue
@@ -305,11 +328,11 @@ def _silhouette(
             math.fsum(math.dist(points[index], points[other]) for other in members[c])
             / len(members[c])
             for c in range(k)
-            if c != own
+            if c != own and members[c]
         )
         scale = max(inside, outside)
         total += 0.0 if scale == 0 else (outside - inside) / scale
-    return total / n
+    return total / len(chosen), (len(chosen) if sampled else None)
 
 
 # ---------- the fit ----------
@@ -370,6 +393,7 @@ def fit(
         _squared(point, centroids[cluster])
         for point, cluster in zip(data, assignments, strict=True)
     )
+    silhouette, silhouette_sample = _silhouette(data, assignments, k, params.seed)
     return KMeansFit(
         params=params,
         customer_ids=ids,
@@ -382,8 +406,9 @@ def fit(
         final_shift=shift,
         empty_cluster_events=events,
         inertia=inertia,
-        silhouette=_silhouette(data, assignments, k),
+        silhouette=silhouette,
         cluster_sizes=tuple(sorted(sizes, reverse=True)),
+        silhouette_sample=silhouette_sample,
     )
 
 
@@ -417,11 +442,11 @@ def recorded_parameters(result: KMeansFit, window_days: int) -> dict:
         "customers_clustered": len(result.customer_ids),
     }
     if result.silhouette is None:
-        quality["silhouette_skipped"] = (
-            "a single cluster has no silhouette"
-            if result.params.k < 2
-            else f"more than {SILHOUETTE_MAX_CUSTOMERS} customers"
-        )
+        quality["silhouette_skipped"] = "a single cluster has no silhouette"
+    if result.silhouette_sample is not None:
+        quality["silhouette_sampled"] = True
+        quality["silhouette_sample_size"] = result.silhouette_sample
+        quality["silhouette_sample_seed"] = result.params.seed
     return {
         "k": result.params.k,
         "seed": result.params.seed,

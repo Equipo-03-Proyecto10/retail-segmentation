@@ -311,9 +311,14 @@ sales in the window are clustered; the rest are the unassigned result (RN-21).
 | A customer is equidistant from two centroids | They go to the lower-numbered cluster | `tie_break` |
 | Fewer customers have sales than k | The run is refused and nothing is written | — |
 
-Quality is recorded as inertia, mean silhouette (absent above 2,000 customers,
-where it would be quadratic in pure Python, and for a single cluster, where it is
-undefined) and the cluster sizes, largest first. Sizes are a list and not a mapping
+Quality is recorded as inertia, mean silhouette and the cluster sizes, largest
+first. The silhouette is absent only for a single cluster, where it is undefined.
+Up to 2,000 customers it compares every customer with every other. Above 2,000,
+where that would be quadratic in pure Python, it is the mean over a sample of 1,000
+customers, each still compared with every clustered customer, chosen by a shuffle
+seeded from the run's seed, so the same run gives the same figure; the run records
+`quality.silhouette_sampled`, `quality.silhouette_sample_size` and
+`quality.silhouette_sample_seed`, and an exact silhouette records none of them (#815). Sizes are a list and not a mapping
 by cluster number: a raw cluster number means something only inside one fit and is
 never something a report can key on (ADR-0018). A clustered customer carries their
 raw recency, frequency and monetary values and no quintile scores, which are

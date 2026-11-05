@@ -1333,6 +1333,19 @@ records nothing new.
 written only by `svc_sales`, with `CHECK (returned_quantity BETWEEN 0 AND quantity)`;
 the `net_sale_line` and `net_sale` views carry the one definition of net. · #770
 
+### RN-71 — A promotion belongs to one campaign, discounts by a percentage above zero, and is valid only within its campaign's dates
+A promotion names exactly one campaign, a discount percentage greater than zero
+and at most 100, the stores and channels where it applies, and a validity that
+begins no earlier than its campaign's start and ends no later than its end
+(`starts_on` is never after `ends_on`). It is created and replaced only while its
+campaign is a draft (RN-32), and it is usable for a discount only while the
+campaign is `ACTIVE` and today lies within its validity, both ends inclusive. A
+promotion outside its campaign's dates is refused as `promotion_outside_campaign`.
+
+**Enforced:** campaigns-service (planned), ADR-0059 and ADR-0034 — the service
+checks the rule on every write, and `api_campaigns.active_promotion_v1` publishes
+only promotions of an `ACTIVE` campaign whose validity contains `CURRENT_DATE`. · #834
+
 ---
 
 ## Where the gaps are

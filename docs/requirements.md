@@ -203,6 +203,8 @@ The web's matrix does not change.
 | `POST /v1/rfm-rule-sets`, `POST /v1/rfm-recalculations` | `ADMIN` | Segment run: run (RN-05); a rule set changes what every report says |
 | Reads of model versions, their publications and training runs | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Segments and rules: read. A version is configuration and fitted statistics with no customer data |
 | `POST /v1/model-versions`, `POST /v1/model-trainings`, `POST /v1/model-versions/{version_id}/publications`, `POST /v1/model-versions/{version_id}/rollbacks` | `ADMIN` | Segment run: run (RN-05); a publication changes every customer's segment |
+| Reads of active promotions | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR`, and the four floor roles, who read active promotions of their assigned stores only | ADR-0060. Other campaign reads keep their roles |
+| Writes of a campaign's audience, budget, eligibility rules and exclusions, and of promotions | `ADMIN`, `MARKETING` | Campaigns: full |
 | `GET /v1/audit-entries` | `ADMIN`, `AUDITOR` | Audit log: read |
 | `POST /v1/sessions`, `POST /v1/sessions/refresh`, `GET /v1/jwks.json`, meta routes | No token | — |
 

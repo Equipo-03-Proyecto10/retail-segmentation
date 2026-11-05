@@ -25,7 +25,7 @@ services:
     resources: [categories]
   - name: stores
     port: 5005
-    rule: "Each store has at most one location, with valid coordinates and a 25–2000 m geofence, set by ADMIN only (RN-53)"
+    rule: "Each store has at most one location, with valid coordinates and a 25–2000 m geofence, and one operating status, weekly opening hours, set of enabled channels and maximum discount, all set by ADMIN only (RN-53)"
     rn: [RN-53]
     wave: core
     resources: [stores]

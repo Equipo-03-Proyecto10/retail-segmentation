@@ -504,5 +504,6 @@ def test_publisher_needs_a_stream_key() -> None:
 
 def test_publisher_names_no_database() -> None:
     source = inspect.getsource(StreamPublisher)
-    for word in ("psycopg", "pymongo", "SELECT"):
+    # Source-agnostic (ADR-0075): no SQL, and no database client of any kind.
+    for word in ("psycopg", "sql.", "SELECT", "find_one", "update_one"):
         assert word not in source

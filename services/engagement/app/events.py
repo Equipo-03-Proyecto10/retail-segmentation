@@ -1,7 +1,9 @@
 """The two MongoDB collections of engagement-service (ADR-0038).
 
-`engagement_event` holds one document per scan or tap, recorded once per
-`client_event_id` and voided, never deleted. `engagement_daily` is its rollup
+`engagement_event` holds one document per interaction (eight kinds, none a
+sale), recorded once per `client_event_id` and voided, never deleted. A
+document of a relayed kind also carries its own outbox, `relay_pending`
+(ADR-0075). `engagement_daily` is its rollup
 by store, UTC day and type. This module only reads and writes documents: the
 database, its user, the validator and the indexes are created by
 `mongo/init.js`, and the service refuses to become ready without them.
@@ -31,7 +33,34 @@ LOGGER = logging.getLogger(__name__)
 DATABASE = "engagement"
 EVENTS = "engagement_event"
 DAILY = "engagement_daily"
+# /v1 records and reads only these two; /v2 all eight (#798).
 TYPES = ("QR_SCAN", "RECO_CLICK")
+ALL_TYPES = (
+    "QR_SCAN",
+    "RECO_CLICK",
+    "STORE_VISIT",
+    "RECO_IMPRESSION",
+    "CAMPAIGN_EXPOSURE",
+    "CART_ADD",
+    "CART_REMOVE",
+    "NAVIGATION",
+)
+# The kinds relayed on stream:engagement.v1.interaction_recorded (ADR-0075).
+RELAYED_TYPES = ("RECO_IMPRESSION", "RECO_CLICK", "CAMPAIGN_EXPOSURE")
+# The fields a kind may carry beyond the common ones, as mongo/init.js's
+# validator requires them.
+KIND_FIELDS = {
+    "QR_SCAN": ("product_id",),
+    "RECO_CLICK": ("product_id", "label_code", "rank"),
+    "RECO_IMPRESSION": ("product_id", "label_code", "rank"),
+    "STORE_VISIT": (),
+    "CAMPAIGN_EXPOSURE": ("campaign_id",),
+    "CART_ADD": ("product_id", "quantity"),
+    "CART_REMOVE": ("product_id", "quantity"),
+    "NAVIGATION": ("screen",),
+}
+# What the relay's query repeats so that the partial index serves it.
+RELAY_PENDING = {"relay_pending.0": {"$exists": True}}
 
 # The most MongoDB may take to answer that it cannot be reached (ADR-0038).
 SERVER_SELECTION_TIMEOUT_MS = 2000
@@ -51,6 +80,11 @@ EVENT_INDEXES = {
     "customer_id_1_occurred_at_-1": (
         [("customer_id", ASCENDING), ("occurred_at", DESCENDING)],
         False,
+    ),
+    "relay_pending_occurred_at_1": (
+        [("occurred_at", ASCENDING)],
+        False,
+        RELAY_PENDING,
     ),
 }
 DAILY_INDEXES = {
@@ -104,6 +138,32 @@ def to_millis(moment: datetime) -> datetime:
     return utc.replace(microsecond=utc.microsecond // 1000 * 1000)
 
 
+def event_json_v2(document: dict[str, Any]) -> dict[str, Any]:
+    """An engagement_event document as the contract's EngagementEventV2.
+
+    Every field of the eight shapes is present, null where the kind has none.
+    """
+
+    v1 = event_json(document)
+    return {
+        **{key: v1[key] for key in ("event_id", "client_event_id", "type")},
+        "store_id": document["store_id"],
+        # The order of engagement.v2.xsd's sequences; JSON ignores it.
+        "product_id": document.get("product_id"),
+        "campaign_id": document.get("campaign_id"),
+        "customer_id": document.get("customer_id"),
+        "label_code": document.get("label_code"),
+        "rank": document.get("rank"),
+        "quantity": document.get("quantity"),
+        "screen": document.get("screen"),
+        **{
+            key: v1[key]
+            for key in ("recorded_by", "occurred_at", "recorded_at", "voided")
+        },
+        "history": v1["history"],
+    }
+
+
 def event_json(document: dict[str, Any]) -> dict[str, Any]:
     """An engagement_event document as the contract's EngagementEvent."""
 
@@ -112,7 +172,7 @@ def event_json(document: dict[str, Any]) -> dict[str, Any]:
         "client_event_id": document["client_event_id"],
         "type": document["type"],
         "store_id": document["store_id"],
-        "product_id": document["product_id"],
+        "product_id": document.get("product_id"),
         "customer_id": document.get("customer_id"),
         "label_code": document.get("label_code"),
         "rank": document.get("rank"),
@@ -190,9 +250,12 @@ class EventStore:
             }
             if set(infos) != {EVENTS, DAILY}:
                 return False
-            if "$jsonSchema" not in infos[EVENTS].get("options", {}).get(
-                "validator", {}
-            ):
+            schema = (
+                infos[EVENTS].get("options", {}).get("validator", {}).get("$jsonSchema")
+            )
+            # An older validator would refuse every insert of this version:
+            # init.js has not been applied yet (expand before deploy, ADR-0075).
+            if not schema or "relay_pending" not in schema.get("properties", {}):
                 return False
             return self._indexes_match(
                 database[EVENTS], EVENT_INDEXES
@@ -201,12 +264,17 @@ class EventStore:
     @staticmethod
     def _indexes_match(collection: Any, wanted: dict[str, Any]) -> bool:
         found = {
-            index["name"]: (list(index["key"].items()), bool(index.get("unique")))
+            index["name"]: (
+                list(index["key"].items()),
+                bool(index.get("unique")),
+                index.get("partialFilterExpression"),
+            )
             for index in collection.list_indexes()
             if index["name"] != "_id_"
         }
         return found == {
-            name: (list(key), unique) for name, (key, unique) in wanted.items()
+            name: (list(spec[0]), spec[1], spec[2] if len(spec) > 2 else None)
+            for name, spec in wanted.items()
         }
 
     # -- events ------------------------------------------------------------
@@ -230,7 +298,7 @@ class EventStore:
                 if stored is None:
                     raise
                 same = all(
-                    stored[field] == document[field]
+                    stored.get(field) == document.get(field)
                     for field in ("type", "store_id", "product_id")
                 )
                 if not same:
@@ -243,31 +311,47 @@ class EventStore:
                 return stored, False
             return document, True
 
-    def get(self, event_id: str) -> dict[str, Any] | None:
+    def get(
+        self, event_id: str, types: tuple[str, ...] = ALL_TYPES
+    ) -> dict[str, Any] | None:
         with mongo_guard():
-            return self.database()[EVENTS].find_one({"_id": event_id})
+            return self.database()[EVENTS].find_one(
+                {"_id": event_id, "type": {"$in": list(types)}}
+            )
 
-    def void(self, event_id: str, reason: str, by: str, at: datetime) -> dict[str, Any]:
-        """Void a live event; the one that voids it is the one that counts."""
+    def void(
+        self,
+        event_id: str,
+        reason: str,
+        by: str,
+        at: datetime,
+        types: tuple[str, ...] = ALL_TYPES,
+    ) -> dict[str, Any]:
+        """Void a live event; the one that voids it is the one that counts.
 
+        An event of a relayed kind gets its VOIDED notice in the same
+        single-document update (ADR-0075). An event whose kind is not in
+        `types` (a /v2 kind voided through /v1) is not found.
+        """
+
+        entry = {"action": "VOIDED", "reason": reason, "by": by, "at": at}
+        relayed = [kind for kind in types if kind in RELAYED_TYPES]
+        quiet = [kind for kind in types if kind not in RELAYED_TYPES]
         with mongo_guard():
             events = self.database()[EVENTS]
-            result = events.update_one(
-                {"_id": event_id, "voided": False},
-                {
-                    "$set": {"voided": True},
-                    "$push": {
-                        "history": {
-                            "action": "VOIDED",
-                            "reason": reason,
-                            "by": by,
-                            "at": at,
-                        }
-                    },
-                },
-            )
-            stored = events.find_one({"_id": event_id})
-        if result.matched_count == 0:
+            matched = 0
+            for kinds, push in (
+                (relayed, {"history": entry, "relay_pending": "VOIDED"}),
+                (quiet, {"history": entry}),
+            ):
+                if matched or not kinds:
+                    continue
+                matched = events.update_one(
+                    {"_id": event_id, "voided": False, "type": {"$in": kinds}},
+                    {"$set": {"voided": True}, "$push": push},
+                ).matched_count
+            stored = events.find_one({"_id": event_id, "type": {"$in": list(types)}})
+        if matched == 0:
             if stored is None:
                 raise ApiError(
                     404, "event_not_found", f"Event {event_id} was not found."
@@ -328,10 +412,14 @@ class EventStore:
         first: str | None,
         last: str | None,
         store_id: int | None,
+        types: tuple[str, ...] = ALL_TYPES,
     ) -> list[dict[str, Any]]:
-        """Count the events not voided, grouped, from the daily rollup."""
+        """Count the events not voided, grouped, from the daily rollup.
 
-        match: dict[str, Any] = {"count": {"$gt": 0}}
+        Only the kinds in `types` count: /v1 sums its two, /v2 all eight.
+        """
+
+        match: dict[str, Any] = {"count": {"$gt": 0}, "type": {"$in": list(types)}}
         if first is not None or last is not None:
             match["day"] = {
                 **({"$gte": first} if first is not None else {}),
@@ -348,3 +436,30 @@ class EventStore:
         with mongo_guard():
             rows = list(self.database()[DAILY].aggregate(pipeline))
         return [{"key": str(row["_id"]), "count": int(row["count"])} for row in rows]
+
+    # -- relay (ADR-0075) --------------------------------------------------
+
+    def pending(self, limit: int = 100) -> list[dict[str, Any]]:
+        """Events with a notice still to relay, oldest first.
+
+        The filter repeats the partial index's, so the scan reads that index
+        and nothing else.
+        """
+
+        with mongo_guard():
+            cursor = (
+                self.database()[EVENTS]
+                .find(RELAY_PENDING)
+                .sort("occurred_at", ASCENDING)
+                .limit(limit)
+            )
+            return list(cursor)
+
+    def relayed(self, event_id: str, notices: list[str]) -> None:
+        """Remove the published notices; a notice added since stays."""
+
+        with mongo_guard():
+            self.database()[EVENTS].update_one(
+                {"_id": event_id},
+                {"$pull": {"relay_pending": {"$in": notices}}},
+            )

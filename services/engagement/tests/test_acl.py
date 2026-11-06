@@ -16,14 +16,18 @@ EXPECTED = (
     "user svc_engagement on {{password}} resetchannels -@all +@connection +@read"
     " +@write -@dangerous -scan -randomkey ~engagement:rl:* ~engagement:live:*"
     " (%R~pub:auth:v1:live:* +exists)"
+    " +waitaof (~stream:engagement.v1.interaction_recorded +xadd)"
 )
+STREAM = "stream:engagement.v1.interaction_recorded"
 LIVE = "engagement:live:1:20261013:QR_SCAN"
 
 
-def test_the_file_is_one_line_with_the_common_rules_and_no_stream():
+def test_the_file_is_one_line_with_the_common_rules_and_its_one_stream():
     lines = ACL.read_text().splitlines()
     assert lines == [EXPECTED]
-    assert "stream" not in lines[0].lower() and "xadd" not in lines[0].lower()
+    # XADD on its own stream only (ADR-0075), and no consumer command.
+    assert re.findall(r"~stream:\S+", lines[0]) == ["~" + STREAM]
+    assert "xreadgroup" not in lines[0] and "xack" not in lines[0]
     assert "~engagement:rl:*" in lines[0] and "~engagement:live:*" in lines[0]
 
 
@@ -66,7 +70,11 @@ def test_dryrun_allows_the_counters_and_denies_streams_and_other_services():
         ):
             assert dry(me, *command) == "OK", command
         assert dry(me, "EXISTS", "pub:auth:v1:live:abc") == "OK"
+        assert dry(me, "XADD", STREAM, "MAXLEN", "~", "10000", "*", "a", "b") == "OK"
+        assert dry(me, "WAITAOF", "1", "0", "2000") == "OK"
         assert dry(me, "XADD", "stream:products.v1.changed", "*", "a", "b") != "OK"
+        assert dry(me, "XREADGROUP", "GROUP", "g", "c", "STREAMS", STREAM, ">") != "OK"
+        assert dry(me, "DEL", STREAM) != "OK"
         assert dry(me, "INCR", "customers:rl:1:2") != "OK"
         assert dry(me, "INCR", "engagement:cache:x") != "OK"
         assert dry(me, "GET", "auth:session:x") != "OK"

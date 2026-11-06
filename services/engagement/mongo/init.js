@@ -59,6 +59,32 @@ if (existingUser === null) {
 
 const uuid = "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$";
 
+// The eight kinds of the taxonomy (#798, contract /v2). Each names the
+// optional fields it requires; every optional field it does not name is
+// forbidden on it, so one kind can never be read as another.
+const optionalFields = ["product_id", "label_code", "rank", "campaign_id", "quantity", "screen"];
+const kinds = {
+  QR_SCAN: ["product_id"],
+  RECO_CLICK: ["product_id", "label_code", "rank"],
+  RECO_IMPRESSION: ["product_id", "label_code", "rank"],
+  STORE_VISIT: [],
+  CAMPAIGN_EXPOSURE: ["campaign_id", "customer_id"],
+  CART_ADD: ["product_id", "quantity"],
+  CART_REMOVE: ["product_id", "quantity"],
+  NAVIGATION: ["screen"],
+};
+
+function shape(kind) {
+  const needs = kinds[kind];
+  const forbidden = optionalFields.filter((field) => !needs.includes(field));
+  const rule = { properties: { type: { enum: [kind] } } };
+  if (needs.length > 0) rule.required = needs;
+  if (forbidden.length > 0) {
+    rule.not = { anyOf: forbidden.map((field) => ({ required: [field] })) };
+  }
+  return rule;
+}
+
 const eventSchema = {
   bsonType: "object",
   additionalProperties: false,
@@ -67,7 +93,6 @@ const eventSchema = {
     "client_event_id",
     "type",
     "store_id",
-    "product_id",
     "recorded_by",
     "occurred_at",
     "recorded_at",
@@ -77,12 +102,15 @@ const eventSchema = {
   properties: {
     _id: { bsonType: "string", pattern: uuid },
     client_event_id: { bsonType: "string", pattern: uuid },
-    type: { enum: ["QR_SCAN", "RECO_CLICK"] },
+    type: { enum: Object.keys(kinds) },
     store_id: { bsonType: "int" },
     product_id: { bsonType: "int" },
     customer_id: { bsonType: "string", pattern: uuid },
     label_code: { bsonType: "string", minLength: 1, maxLength: 40 },
     rank: { bsonType: "int", minimum: 1 },
+    campaign_id: { bsonType: "int", minimum: 1 },
+    quantity: { bsonType: "int", minimum: 1, maximum: 1000 },
+    screen: { bsonType: "string", minLength: 1, maxLength: 40 },
     recorded_by: { bsonType: "string", minLength: 1 },
     occurred_at: { bsonType: "date" },
     recorded_at: { bsonType: "date" },
@@ -101,18 +129,15 @@ const eventSchema = {
         },
       },
     },
+    // The outbox of ADR-0075: the notices still to relay on
+    // stream:engagement.v1.interaction_recorded, in order.
+    relay_pending: {
+      bsonType: "array",
+      maxItems: 2,
+      items: { enum: ["RECORDED", "VOIDED"] },
+    },
   },
-  // Two shapes: a scan never carries a label or a rank, a click always does.
-  oneOf: [
-    {
-      properties: { type: { enum: ["QR_SCAN"] } },
-      not: { anyOf: [{ required: ["label_code"] }, { required: ["rank"] }] },
-    },
-    {
-      properties: { type: { enum: ["RECO_CLICK"] } },
-      required: ["label_code", "rank"],
-    },
-  ],
+  oneOf: Object.keys(kinds).map(shape),
 };
 
 const names = engagementDb.getCollectionNames();
@@ -150,7 +175,9 @@ function converge(collection, wanted) {
     if (
       !want ||
       JSON.stringify(have[name].key) !== JSON.stringify(want.key) ||
-      Boolean(have[name].unique) !== Boolean(want.unique)
+      Boolean(have[name].unique) !== Boolean(want.unique) ||
+      JSON.stringify(have[name].partialFilterExpression || null) !==
+        JSON.stringify(want.partial || null)
     ) {
       collection.dropIndex(name);
       print("init.js: dropped index " + collection.getName() + "." + name);
@@ -159,7 +186,9 @@ function converge(collection, wanted) {
   });
   wanted.forEach((want) => {
     if (!have[want.name]) {
-      collection.createIndex(want.key, { name: want.name, unique: Boolean(want.unique) });
+      const options = { name: want.name, unique: Boolean(want.unique) };
+      if (want.partial) options.partialFilterExpression = want.partial;
+      collection.createIndex(want.key, options);
       print("init.js: created index " + collection.getName() + "." + want.name);
     }
   });
@@ -170,6 +199,13 @@ converge(engagementDb.engagement_event, [
   { name: "store_id_1_occurred_at_-1", key: { store_id: 1, occurred_at: -1 } },
   { name: "type_1_occurred_at_-1", key: { type: 1, occurred_at: -1 } },
   { name: "customer_id_1_occurred_at_-1", key: { customer_id: 1, occurred_at: -1 } },
+  // The relay's scan (ADR-0075): only events with a notice still to publish,
+  // in occurred_at order. `$pull` leaves [], so the filter tests element 0.
+  {
+    name: "relay_pending_occurred_at_1",
+    key: { occurred_at: 1 },
+    partial: { "relay_pending.0": { $exists: true } },
+  },
 ]);
 converge(engagementDb.engagement_daily, [
   { name: "store_id_1_day_1_type_1", key: { store_id: 1, day: 1, type: 1 }, unique: true },

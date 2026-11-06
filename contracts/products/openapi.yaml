@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: products-service
-  version: 1.2.0
+  version: 1.3.0
   description: >-
     Owns the product catalog rule: a product has a unique SKU, a non-negative
     two-decimal list price, exactly one existing category, and is retired by
@@ -41,6 +41,9 @@ paths:
         - MARKETING
         - INVENTORY_PLANNER
         - AUDITOR
+        - SALES_ASSOCIATE
+        - LOYALTY_OFFICER
+        - COMMERCIAL_SUPERVISOR
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - name: q
@@ -203,6 +206,9 @@ paths:
         - MARKETING
         - INVENTORY_PLANNER
         - AUDITOR
+        - SALES_ASSOCIATE
+        - LOYALTY_OFFICER
+        - COMMERCIAL_SUPERVISOR
       parameters:
         - $ref: '#/components/parameters/ProductId'
         - $ref: '#/components/parameters/CorrelationId'

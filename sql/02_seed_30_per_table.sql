@@ -10,7 +10,7 @@
 --    script, and so that a reload produces the same database twice.
 --
 -- 2) role, channel and segment_label hold fewer than 30 rows. Their domains
---    are seven roles, five sales channels and six ordered business labels;
+--    are ten roles, five sales channels and six ordered business labels;
 --    padding them with filler to reach the minimum would make the seed
 --    misrepresent the business. Those three, and only those, are listed in
 --    sql/seed-exempt.txt with the reason, which is the mechanism CI reads.
@@ -48,7 +48,10 @@ INSERT INTO role (role_id, code, description) VALUES
 (4,'MARKETING','Marketing'),
 (5,'INVENTORY_PLANNER','Inventory planner'),
 (6,'AUDITOR','Auditor'),
-(7,'CUSTOMER','Loyalty programme customer');
+(7,'CUSTOMER','Loyalty programme customer'),
+(8,'SALES_ASSOCIATE','Store seller'),
+(9,'LOYALTY_OFFICER','Loyalty officer'),
+(10,'COMMERCIAL_SUPERVISOR','Commercial supervisor');
 
 -- ---------- channel (5) ----------
 INSERT INTO channel (channel_id, name) VALUES
@@ -143,7 +146,7 @@ SELECT n, 'Segment ' || n, 'Segment derived from RULE_' || lpad(n::text,3,'0'), 
 FROM generate_series(1,30) n;
 
 
--- ---------- app_user (30, exactly one administrator) ----------
+-- ---------- app_user (33, exactly one administrator) ----------
 -- AGENTS.md: there is exactly one administrator. User 1 holds role 1 and no
 -- other user does, so the partial unique index F4-02 adds applies to this data
 -- without anyone having to rewrite the seed first.
@@ -162,6 +165,20 @@ SELECT ('11111111-1111-1111-1111-' || lpad(n::text,12,'0'))::uuid,
        TRUE,
        now() - (n || ' days')::interval
 FROM generate_series(1,30) n;
+
+-- One demonstration account per floor role ADR-0060 adds (F19-04, #754):
+-- user 31 is SALES_ASSOCIATE, 32 LOYALTY_OFFICER and 33 COMMERCIAL_SUPERVISOR.
+-- They are appended rather than folded into the rotation above, so users 2 to
+-- 30 keep the roles every other seeded table and test already relies on.
+INSERT INTO app_user (user_id, role_id, name, email, password_hash, is_active, created_at)
+SELECT ('11111111-1111-1111-1111-' || lpad(n::text,12,'0'))::uuid,
+       n - 23,
+       'Demo User ' || n,
+       'user' || n || '@mosaiq-demo.com',
+       '$argon2id$v=19$m=65536,t=3,p=4$BTg0ZDnIiX0UXEv10Pa1Pw$kPMnEtE7i3rQKZhkDCbDiN3R6FEKkEmsN2CKncGfd1c',
+       TRUE,
+       now() - (n || ' days')::interval
+FROM generate_series(31,33) n;
 
 -- ---------- stores.store_location (30, one per seeded store) ----------
 -- Coordinates cycle through plausible city centres in the same order as the

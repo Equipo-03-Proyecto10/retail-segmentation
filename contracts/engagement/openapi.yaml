@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: engagement-service
-  version: 2.0.0
+  version: 2.1.0
   description: 'Records in-store engagement: QR scans and recommendation clicks
     (RN-55). Events live in MongoDB, are recorded once per client event, attributed
     to the caller, voided rather than deleted, and summarized. Only `POST /v1/engagement-events`
@@ -46,6 +46,7 @@ paths:
       x-mosaiq-roles:
       - ADMIN
       - STORE_MANAGER
+      - SALES_ASSOCIATE
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       requestBody:
@@ -139,6 +140,8 @@ paths:
       - STORE_MANAGER
       - MARKETING
       - AUDITOR
+      - SALES_ASSOCIATE
+      - COMMERCIAL_SUPERVISOR
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       - $ref: '#/components/parameters/Type'
@@ -423,6 +426,7 @@ paths:
       x-mosaiq-roles:
       - ADMIN
       - STORE_MANAGER
+      - SALES_ASSOCIATE
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       requestBody:
@@ -566,6 +570,8 @@ paths:
       - STORE_MANAGER
       - MARKETING
       - AUDITOR
+      - SALES_ASSOCIATE
+      - COMMERCIAL_SUPERVISOR
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       - $ref: '#/components/parameters/TypeV2'
@@ -621,6 +627,8 @@ paths:
       - STORE_MANAGER
       - MARKETING
       - AUDITOR
+      - SALES_ASSOCIATE
+      - COMMERCIAL_SUPERVISOR
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       - $ref: '#/components/parameters/EventId'

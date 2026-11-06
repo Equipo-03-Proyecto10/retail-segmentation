@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: customer-preferences-service
-  version: 1.0.1
+  version: 1.1.0
   description: >-
     Reads a customer's preference profile and replaces each of its two sets,
     preferred channels and interest categories, only as a whole (RN-54).
@@ -27,6 +27,7 @@ paths:
         - STORE_MANAGER
         - MARKETING
         - AUDITOR
+        - LOYALTY_OFFICER
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/CustomerId'
@@ -83,6 +84,7 @@ paths:
       x-mosaiq-roles:
         - ADMIN
         - STORE_MANAGER
+        - LOYALTY_OFFICER
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/CustomerId'
@@ -166,6 +168,7 @@ paths:
       x-mosaiq-roles:
         - ADMIN
         - STORE_MANAGER
+        - LOYALTY_OFFICER
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/CustomerId'

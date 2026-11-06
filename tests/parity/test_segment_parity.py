@@ -8,13 +8,23 @@ GET /v1/segment-assignments/current, and a label's open members on
 /segment-history-report/?label= against GET /v1/segment-assignments?label_code=.
 Differences are printed in full.
 
-The second case runs a segmentation through the web on the throwaway stack
-named by PARITY_DATABASE_URL; never point it at the instance.
+The second case adds a customer with no sales and runs a segmentation through
+the web, on the throwaway stack named by PARITY_DATABASE_URL; never point it
+at the instance. That customer is how the case sees both states the seed has
+none of: no open row before the run, and the run's unassigned result after it
+(RN-21).
 """
 
 from __future__ import annotations
 
-from tests.parity.compare import diff_assignments, diff_members
+import uuid
+
+from tests.parity.compare import (
+    NO_OPEN_ASSIGNMENT,
+    UNASSIGNED_RESULT,
+    diff_assignments,
+    diff_members,
+)
 from tests.parity.stack import SEGMENTS_RUN_RECORDED_BOUND_SECONDS, poll
 
 RUN_RECORDED = "stream:segments.v1.run_recorded"
@@ -48,9 +58,16 @@ def test_every_customer_has_the_same_current_segment(
 def test_a_web_run_reaches_the_service_within_the_bound(
     db, web, segments, differences
 ) -> None:
+    [[newcomer]] = db(
+        "INSERT INTO customer (name, registration_channel_id) "
+        "SELECT %s, min(channel_id) FROM channel RETURNING customer_id::text",
+        ("Parity " + uuid.uuid4().hex[:8],),
+    )
     customers = _customers(db)
     # Read through the service first, so whatever it caches is from before.
-    _read_all(segments, customers)
+    before_run = _read_all(web, customers)
+    assert before_run[newcomer].state == NO_OPEN_ASSIGNMENT, before_run[newcomer]
+    differences.extend(diff_assignments(before_run, _read_all(segments, customers)))
     [[before]] = db("SELECT coalesce(max(run_id), 0) FROM segmentation_run")
 
     web.run_segmentation()
@@ -61,6 +78,7 @@ def test_a_web_run_reaches_the_service_within_the_bound(
     assert any(
         a.run_id == run_id for a in seen_by_web.values()
     ), f"no customer's open row names run {run_id}"
+    assert seen_by_web[newcomer].state == UNASSIGNED_RESULT, seen_by_web[newcomer]
 
     seen_by_service = poll(
         lambda: _read_all(segments, customers),

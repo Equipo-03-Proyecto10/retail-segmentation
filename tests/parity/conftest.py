@@ -1,4 +1,4 @@
-"""Fixtures and the results file of the parity harness (F20-07).
+"""Fixtures and the results file of the parity harness (F20-07, F20-09).
 
 Each path is skipped, with its reason, when its configuration or its service
 is missing; nothing is faked. At the end of the session the cases are written
@@ -14,11 +14,18 @@ from pathlib import Path
 import pytest
 
 from tests.parity import stack
-from tests.parity.compare import CaseResult, Difference, write_results
+from tests.parity.compare import (
+    CaseResult,
+    Difference,
+    SegmentDifference,
+    write_results,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 _results: list[CaseResult] = []
-_differences: dict[str, list[Difference]] = {}
+_differences: dict[str, list[Difference | SegmentDifference]] = {}
+# The files whose cases are parity cases; test_compare.py is not one.
+_CASE_FILES = {"test_parity.py", "test_segment_parity.py"}
 
 
 def _missing(*names: str) -> list[str]:
@@ -76,11 +83,31 @@ def service() -> stack.ServicePath:
     )
 
 
+@pytest.fixture(scope="session")
+def segments() -> stack.SegmentsPath:
+    absent = [
+        f"services/{n}/"
+        for n in ("auth", "segments")
+        if not (ROOT / "services" / n).is_dir()
+    ]
+    if absent:
+        pytest.skip("segments path: waiting for " + ", ".join(absent))
+    if missing := _missing(
+        "PARITY_GATEWAY_URL", "PARITY_SERVICE_EMAIL", "PARITY_SERVICE_PASSWORD"
+    ):
+        pytest.skip("segments path: not set: " + ", ".join(missing))
+    return stack.SegmentsPath(
+        stack.env("PARITY_GATEWAY_URL"),
+        stack.env("PARITY_SERVICE_EMAIL"),
+        stack.env("PARITY_SERVICE_PASSWORD"),
+    )
+
+
 @pytest.fixture
 def differences(request) -> list[Difference]:
     """Where a case collects what differs, so it is printed and recorded."""
 
-    found: list[Difference] = []
+    found: list[Difference | SegmentDifference] = []
     _differences[request.node.name] = found
     return found
 
@@ -91,7 +118,7 @@ def pytest_runtest_makereport(item, call):
     report = outcome.get_result()
     if Path(str(item.fspath)).parent != Path(__file__).parent:
         return
-    if item.fspath.basename != "test_parity.py":
+    if item.fspath.basename not in _CASE_FILES:
         return
     if report.when == "call" or (report.when == "setup" and report.skipped):
         status = "skipped" if report.skipped else report.outcome

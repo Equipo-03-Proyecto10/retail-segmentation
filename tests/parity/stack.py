@@ -1,16 +1,21 @@
-"""Drivers for the two paths of the parity harness (F20-07): HTTP and SQL only.
+"""Drivers for the two paths of the parity harness (F20-07, F20-09): HTTP and
+SQL only.
 
-The web path is the browser's: sign in, upload a sales CSV, read /catalog/stock.
-The service path is a client's: sign in to auth-service, POST /v1/sales, GET
-/v1/stock-levels/{store_id}/{product_id}. Neither imports web/ or services/
-(ADR-0045). Every SQL statement is parameterized.
+The web path is the browser's: sign in, upload a sales CSV, read /catalog/stock,
+read a customer's segment timeline and the segment history report, run a
+segmentation. The service path is a client's: sign in to auth-service, POST
+/v1/sales, GET /v1/stock-levels/{store_id}/{product_id}, and the two reads of
+/v1/segment-assignments. Neither imports web/ or services/ (ADR-0045). Every
+SQL statement is parameterized.
 
 Configuration (all optional; a path without its settings is skipped):
 
     PARITY_WEB_URL            the web system, http://127.0.0.1:5000
-    PARITY_WEB_EMAIL/PASSWORD an administrator, who imports CSVs and reads stock
+    PARITY_WEB_EMAIL/PASSWORD an administrator, who imports CSVs, reads stock
+                              and runs a segmentation (RN-05)
     PARITY_GATEWAY_URL        the services' gateway, http://127.0.0.1:8080
-    PARITY_SERVICE_EMAIL/PASSWORD  a STORE_MANAGER, who records sales
+    PARITY_SERVICE_EMAIL/PASSWORD  a STORE_MANAGER, who records sales and reads
+                              segment assignments
     PARITY_DATABASE_URL       the throwaway stack's PostgreSQL, as its owner
     PARITY_PROPAGATION_BOUND_SECONDS  how long a change may take to show (5)
 """
@@ -31,10 +36,28 @@ from http.cookiejar import CookieJar
 from pathlib import Path
 
 from tests.conformance.harness import Client, load_contract
-from tests.parity.compare import Pair, parse_stock_page
+from tests.parity.compare import (
+    ASSIGNED,
+    NO_OPEN_ASSIGNMENT,
+    UNASSIGNED_RESULT,
+    Assignment,
+    Pair,
+    assignment_from_service,
+    parse_customer_current,
+    parse_report_open_members,
+    parse_stock_page,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 _CSRF = re.compile(r'name="csrf_token"\s+value="([^"]+)"')
+_WINDOW = re.compile(r'name="window"\s+value="(\d+)"')
+
+# How long after a web run segments-service may keep answering from before it
+# (F20-09). stream:segments.v1.run_recorded states no delivery bound yet: its
+# relay polls at least every five seconds, so this is that poll plus margin.
+# When #764 states the stream's bound in contracts/streams/, this constant
+# becomes that bound.
+SEGMENTS_RUN_RECORDED_BOUND_SECONDS = 10.0
 
 
 def env(name: str, default: str = "") -> str:
@@ -61,6 +84,7 @@ class WebPath:
     def __init__(self, base_url: str, email: str, password: str, db) -> None:
         self.base = base_url.rstrip("/")
         self.db = db
+        self._label_codes: dict[str, str] | None = None
         self.opener = urllib.request.build_opener(
             urllib.request.HTTPCookieProcessor(CookieJar())
         )
@@ -145,6 +169,61 @@ class WebPath:
             )
         return found
 
+    # ---------- segments (F20-09) ----------
+
+    def label_code(self, name: str) -> str:
+        """The page shows a label's name; the service answers its code."""
+
+        if self._label_codes is None:
+            rows = self.db("SELECT name, label_code FROM segment_label")
+            self._label_codes = dict(rows)
+            assert len(self._label_codes) == len(rows), "two labels share a name"
+        return self._label_codes[name]
+
+    def current_segment(self, customer_id: str) -> Assignment:
+        """What /catalog/customers/<id> shows as open, in the service's terms."""
+
+        found = parse_customer_current(self._get(f"/catalog/customers/{customer_id}"))
+        if found is None:
+            return Assignment(NO_OPEN_ASSIGNMENT)
+        run_id, name, (r, f, m) = found
+        if name is None:
+            return Assignment(UNASSIGNED_RESULT, None, r, f, m, run_id)
+        return Assignment(ASSIGNED, self.label_code(name), r, f, m, run_id)
+
+    def label_members(self, label_code: str) -> set[str]:
+        """Every customer the segment history report lists as still open under
+        the label, over all its pages."""
+
+        members: set[str] = set()
+        page = 1
+        while True:
+            query = urllib.parse.urlencode({"label": label_code, "page": page})
+            found, shown, count = parse_report_open_members(
+                self._get(f"/segment-history-report/?{query}")
+            )
+            members |= found
+            if shown >= count:
+                return members
+            page = shown + 1
+
+    def run_segmentation(self) -> None:
+        """One RFM run, confirmed, over the form's default window."""
+
+        page = self._get("/segment-run/")
+        window = _WINDOW.search(page)
+        assert window, "the run form carries no window"
+        # A refused run answers 400, which urllib raises.
+        self._post(
+            "/segment-run/",
+            {
+                "csrf_token": _token(page),
+                "method": "RFM_RULES",
+                "window": window.group(1),
+                "confirm": "yes",
+            },
+        )
+
 
 def _token(page: str) -> str:
     match = _CSRF.search(page)
@@ -153,21 +232,27 @@ def _token(page: str) -> str:
     return match.group(1)
 
 
+def sign_in(gateway_url: str, email: str, password: str) -> str:
+    """An access token from auth-service, the only signer (ADR-0036)."""
+
+    auth = Client(gateway_url, load_contract(ROOT / "contracts/auth"))
+    reply = auth.call(
+        "POST",
+        "/api/auth/v1/sessions",
+        content_type="application/json",
+        body=json.dumps(
+            {"email": email, "password": password, "device_label": "parity"}
+        ).encode(),
+    )
+    assert reply.status == 201, reply.body
+    return reply.json()["access_token"]
+
+
 class ServicePath:
     def __init__(self, gateway_url: str, email: str, password: str) -> None:
-        auth = Client(gateway_url, load_contract(ROOT / "contracts/auth"))
         self.sales = Client(gateway_url, load_contract(ROOT / "contracts/sales"))
         self.stock_client = Client(gateway_url, load_contract(ROOT / "contracts/stock"))
-        reply = auth.call(
-            "POST",
-            "/api/auth/v1/sessions",
-            content_type="application/json",
-            body=json.dumps(
-                {"email": email, "password": password, "device_label": "parity"}
-            ).encode(),
-        )
-        assert reply.status == 201, reply.body
-        self.token = reply.json()["access_token"]
+        self.token = sign_in(gateway_url, email, password)
 
     def record_sale(self, sale: dict, key: str | None = None):
         return self.sales.call(
@@ -191,6 +276,44 @@ class ServicePath:
                 reply.json()["quantity_on_hand"] if reply.status == 200 else None
             )
         return found
+
+
+class SegmentsPath:
+    """segments-service as a client reads it (F20-09)."""
+
+    def __init__(self, gateway_url: str, email: str, password: str) -> None:
+        self.client = Client(gateway_url, load_contract(ROOT / "contracts/segments"))
+        self.token = sign_in(gateway_url, email, password)
+
+    def _get(self, path: str, query: dict) -> dict:
+        reply = self.client.call(
+            "GET",
+            f"/api/segments/v1/{path}?{urllib.parse.urlencode(query)}",
+            token=self.token,
+        )
+        assert reply.status == 200, f"{path} {query}: {reply.status} {reply.body!r}"
+        return reply.json()
+
+    def current_segment(self, customer_id: str) -> Assignment:
+        return assignment_from_service(
+            self._get("segment-assignments/current", {"customer_id": customer_id})
+        )
+
+    def label_members(self, label_code: str) -> set[str]:
+        """Every customer with an open row under the label, over all pages."""
+
+        members: set[str] = set()
+        page = 1
+        while True:
+            body = self._get(
+                "segment-assignments",
+                {"label_code": label_code, "open": "true", "page": page, "size": 100},
+            )
+            members |= {a["customer_id"] for a in body["assignments"]}
+            info = body["page_info"]
+            if page * info["size"] >= info["total"]:
+                return members
+            page += 1
 
 
 def occurred_at() -> datetime:

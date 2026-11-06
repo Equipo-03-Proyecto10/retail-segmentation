@@ -41,12 +41,7 @@ jobs:
           $COMPOSE up --build --wait --wait-timeout 600
 
       - name: Re-apply every boundary section
-        run: |
-          set -euo pipefail
-          for b in $(sed -n 's/^-- BEGIN BOUNDARY \(.*\)$/\1/p' sql/01_schema.sql); do
-            sed -n "/^-- BEGIN BOUNDARY $b\$/,/^-- END BOUNDARY $b\$/p" sql/01_schema.sql \
-              | $COMPOSE exec -T db psql -X -q -v ON_ERROR_STOP=1 -U postgres -d retail >/dev/null
-          done
+        run: bash .github/scripts/apply-boundaries.sh $COMPOSE exec -T db psql -U postgres -d retail
 
       - name: The demonstration chain
         run: python3 -m pytest tests/e2e -rs --junitxml=test-results/e2e.xml

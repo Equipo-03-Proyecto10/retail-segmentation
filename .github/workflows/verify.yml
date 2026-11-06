@@ -1,0 +1,95 @@
+name: Verify one commit
+
+# Every suite against one commit from an empty environment (F20-03, #761):
+# the same command as on a laptop, ops/verify/run.sh, whose report is
+# uploaded as the artifact verify-<commit>. With `twice`, the commit is run
+# a second time and the two reports are compared; a case that differs is
+# listed as flaky in comparison.md and fails the job.
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: "The commit, branch or tag to verify"
+        required: true
+        default: develop
+      twice:
+        description: "Run it twice and compare the runs"
+        type: boolean
+        default: false
+  # TEMPORARY, removed before merge: GitHub dispatches only a workflow that is
+  # on the default branch, so PR #953 runs it twice on its own branch.
+  push:
+    branches: [chore/761-one-command-all-suites]
+    paths: [.github/workflows/verify.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      # The runner, ops/verify, is the dispatching ref's; the commit under test
+      # is checked out of the full history inside the toolbox.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # The run needs about 30 GB for the inner daemon; the runner image's
+      # preinstalled SDKs are not used by it.
+      - name: Free the runner's disk
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell
+          df -h /
+
+      - name: Resolve the commit
+        id: commit
+        env:
+          INPUT: ${{ inputs.commit || github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch -q origin "+refs/heads/*:refs/remotes/origin/*" "+refs/tags/*:refs/tags/*"
+          sha=$(git rev-parse --verify "origin/$INPUT^{commit}" 2>/dev/null || git rev-parse --verify "$INPUT^{commit}")
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      # On the PR's own branch the job checks the runner, not develop: a
+      # failed case is in the report and the summary, and the job fails only
+      # when a run wrote no report or the two runs disagree. A dispatch fails
+      # on any failed case.
+      - name: The run
+        continue-on-error: ${{ github.event_name == 'push' }}
+        env:
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: bash ops/verify/run.sh --out "verify/first" "$SHA"
+
+      - name: The second run
+        continue-on-error: ${{ github.event_name == 'push' }}
+        if: ${{ !cancelled() && (inputs.twice || github.event_name == 'push') }}
+        env:
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: bash ops/verify/run.sh --out "verify/second" "$SHA"
+
+      - name: Compare the runs
+        if: ${{ !cancelled() && (inputs.twice || github.event_name == 'push') }}
+        run: bash ops/verify/run.sh --compare verify/first verify/second
+
+      - name: Both runs wrote a report
+        if: ${{ !cancelled() && github.event_name == 'push' }}
+        run: test -f verify/first/report.json && test -f verify/second/report.json
+
+      - name: Summary
+        if: ${{ !cancelled() }}
+        run: |
+          for f in verify/first/report.md verify/second/report.md verify/second/comparison.md; do
+            [ -f "$f" ] && cat "$f" >> "$GITHUB_STEP_SUMMARY"
+          done
+          true
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: verify-${{ steps.commit.outputs.sha }}
+          path: verify/
+          if-no-files-found: error

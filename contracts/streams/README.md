@@ -9,7 +9,10 @@ producer's `svc_` PostgreSQL role. That file contracts the stream
 - the meaning and encoding of `entity_id`;
 - the key-only fields `event_id`, `event_type`, `entity_id`, `occurred_at`, and
   `v` (events never carry entity state);
-- every consumer group, named after the consuming service; and
+- every consumer group, named after the consuming service;
+- a `## Propagation bound` table: each group's p95 and maximum, in
+  milliseconds, from the outbox commit to the group's acknowledgement, which
+  `ops/propagation/propagation.py check` enforces (F20-06); and
 - replay, failure, and compatibility behavior.
 
 Producers use `XADD` with `MAXLEN ~ 10000`. Delivery is at least once, and each

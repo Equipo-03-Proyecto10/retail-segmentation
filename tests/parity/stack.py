@@ -1,14 +1,18 @@
-"""Drivers for the two paths of the parity harness (F20-07): HTTP and SQL only.
+"""Drivers for the two paths of the parity harness (F20-07, F20-08): HTTP and
+SQL only.
 
-The web path is the browser's: sign in, upload a sales CSV, read /catalog/stock.
-The service path is a client's: sign in to auth-service, POST /v1/sales, GET
-/v1/stock-levels/{store_id}/{product_id}. Neither imports web/ or services/
-(ADR-0045). Every SQL statement is parameterized.
+The web path is the browser's: sign in, upload a sales CSV, read /catalog/stock,
+submit the administrator's forms. The service path is a client's: sign in to
+auth-service, POST /v1/sales, GET /v1/stock-levels/{store_id}/{product_id},
+write through a service's contract and read GET /v1/audit-entries. Neither
+imports web/ or services/ (ADR-0045). Every SQL statement is parameterized.
 
 Configuration (all optional; a path without its settings is skipped):
 
     PARITY_WEB_URL            the web system, http://127.0.0.1:5000
-    PARITY_WEB_EMAIL/PASSWORD an administrator, who imports CSVs and reads stock
+    PARITY_WEB_EMAIL/PASSWORD the administrator, who imports CSVs, reads stock
+                              and, on both paths, makes the audited changes
+                              (F20-08: every service write it uses is ADMIN's)
     PARITY_GATEWAY_URL        the services' gateway, http://127.0.0.1:8080
     PARITY_SERVICE_EMAIL/PASSWORD  a STORE_MANAGER, who records sales
     PARITY_DATABASE_URL       the throwaway stack's PostgreSQL, as its owner
@@ -145,6 +149,13 @@ class WebPath:
             )
         return found
 
+    def submit(self, form_path: str, fields: dict[str, str], action=None) -> str:
+        """Fill the form served at `form_path` and post it to `action` (the
+        form's own path by default), as a browser does, CSRF token included."""
+
+        token = _token(self._get(form_path))
+        return self._post(action or form_path, {"csrf_token": token} | fields)
+
 
 def _token(page: str) -> str:
     match = _CSRF.search(page)
@@ -153,21 +164,27 @@ def _token(page: str) -> str:
     return match.group(1)
 
 
+def sign_in(gateway_url: str, email: str, password: str) -> str:
+    """An access token from auth-service, the only signer (ADR-0036)."""
+
+    auth = Client(gateway_url, load_contract(ROOT / "contracts/auth"))
+    reply = auth.call(
+        "POST",
+        "/api/auth/v1/sessions",
+        content_type="application/json",
+        body=json.dumps(
+            {"email": email, "password": password, "device_label": "parity"}
+        ).encode(),
+    )
+    assert reply.status == 201, reply.body
+    return reply.json()["access_token"]
+
+
 class ServicePath:
     def __init__(self, gateway_url: str, email: str, password: str) -> None:
-        auth = Client(gateway_url, load_contract(ROOT / "contracts/auth"))
         self.sales = Client(gateway_url, load_contract(ROOT / "contracts/sales"))
         self.stock_client = Client(gateway_url, load_contract(ROOT / "contracts/stock"))
-        reply = auth.call(
-            "POST",
-            "/api/auth/v1/sessions",
-            content_type="application/json",
-            body=json.dumps(
-                {"email": email, "password": password, "device_label": "parity"}
-            ).encode(),
-        )
-        assert reply.status == 201, reply.body
-        self.token = reply.json()["access_token"]
+        self.token = sign_in(gateway_url, email, password)
 
     def record_sale(self, sale: dict, key: str | None = None):
         return self.sales.call(
@@ -191,6 +208,41 @@ class ServicePath:
                 reply.json()["quantity_on_hand"] if reply.status == 200 else None
             )
         return found
+
+
+class AuditPath:
+    """The administrator as a client of the writing services and of
+    audit-trail (F20-08)."""
+
+    WRITERS = ("categories", "products", "users", "campaigns")
+
+    def __init__(self, gateway_url: str, email: str, password: str) -> None:
+        self.clients = {
+            name: Client(gateway_url, load_contract(ROOT / "contracts" / name))
+            for name in (*self.WRITERS, "audit-trail")
+        }
+        self.token = sign_in(gateway_url, email, password)
+
+    def call(self, service: str, method: str, path: str, body=None):
+        """One request to `service`, `path` relative to its /v1."""
+
+        return self.clients[service].call(
+            method,
+            f"/api/{service}/v1/{path}",
+            token=self.token,
+            content_type=None if body is None else "application/json",
+            body=None if body is None else json.dumps(body).encode(),
+        )
+
+    def audit_entries(self, entity: str, entity_pk: str) -> dict:
+        query = urllib.parse.urlencode(
+            {"entity": entity, "entity_pk": entity_pk, "size": 100}
+        )
+        reply = self.call("audit-trail", "GET", f"audit-entries?{query}")
+        assert (
+            reply.status == 200
+        ), f"{entity} {entity_pk}: {reply.status} {reply.body!r}"
+        return reply.json()
 
 
 def occurred_at() -> datetime:

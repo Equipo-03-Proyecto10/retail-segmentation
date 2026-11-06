@@ -160,13 +160,19 @@ def test_readiness_needs_the_validator_and_both_collections():
 
     def indexes(wanted):
         return [{"name": "_id_", "key": {"_id": 1}}] + [
-            {"name": n, "key": dict(k), **({"unique": True} if u else {})}
-            for n, (k, u) in wanted.items()
+            {
+                "name": n,
+                "key": dict(k),
+                **({"unique": True} if u else {}),
+                **({"partialFilterExpression": p} if p else {}),
+            }
+            for n, (k, u, p) in wanted.items()
         ]
 
     good = {EVENTS: indexes(EVENT_INDEXES), DAILY: indexes(DAILY_INDEXES)}
+    schema = {"properties": {"relay_pending": {}}}
     with_validator = [
-        {"name": EVENTS, "options": {"validator": {"$jsonSchema": {}}}},
+        {"name": EVENTS, "options": {"validator": {"$jsonSchema": schema}}},
         {"name": DAILY, "options": {}},
     ]
 
@@ -178,6 +184,15 @@ def test_readiness_needs_the_validator_and_both_collections():
     assert ready(with_validator, good)
     assert not ready([with_validator[1]], good)
     assert not ready([{"name": EVENTS, "options": {}}, with_validator[1]], good)
+    # The validator of 0.1.x has no relay_pending: init.js is not applied yet.
+    older = {"validator": {"$jsonSchema": {"properties": {}}}}
+    assert not ready([{"name": EVENTS, "options": older}, with_validator[1]], good)
+    # The relay index without its partial filter is not the one init.js makes.
+    whole = [
+        {k: v for k, v in i.items() if k != "partialFilterExpression"}
+        for i in good[EVENTS]
+    ]
+    assert not ready(with_validator, good | {EVENTS: whole})
     assert not ready(with_validator, good | {DAILY: indexes(DAILY_INDEXES)[:1]})
     not_unique = [dict(i) for i in good[EVENTS]]
     for index in not_unique:

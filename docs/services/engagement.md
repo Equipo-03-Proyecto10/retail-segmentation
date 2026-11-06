@@ -3,7 +3,7 @@
 > **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
 > **One rule:** In-store engagement (`QR_SCAN`, `RECO_CLICK`, `STORE_VISIT`, `RECO_IMPRESSION`, `CAMPAIGN_EXPOSURE`, `CART_ADD`, `CART_REMOVE`, `NAVIGATION`) is recorded once per client event as a distinct fact that is never a sale, attributed, voided rather than deleted, and summarized (RN-55)
 >
-> **Contract:** `/v1` is frozen and records `QR_SCAN` and `RECO_CLICK`. `/v2` (engagement 2.0.0, `engagement.v2.xsd`) keeps both with their meaning and adds the six other kinds. Its operations are marked `x-mosaiq-status: planned` until the service serves them (ADR-0073).
+> **Contract:** `/v1` is frozen and records `QR_SCAN` and `RECO_CLICK`. `/v2` (engagement 2.1.0, `engagement.v2.xsd`) keeps both with their meaning and adds the six other kinds. The service serves both since 0.2.0 (#799); a `/v2` kind is invisible to `/v1`.
 
 ## Summary
 
@@ -48,7 +48,7 @@
 | POST | `/v1/engagement-events/{event_id}/void` | Void with a reason | ADMIN |
 | GET | `/v1/engagement-summaries` | Counts by store, day or type (`from`, `to`, `store_id`, `group_by`) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, INVENTORY_PLANNER, AUDITOR |
 
-`/v2` has the same five operations with the same roles, over all eight kinds (planned until served):
+`/v2` has the same five operations with the same roles, over all eight kinds:
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -68,7 +68,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 | Object | Kind | Access | Notes |
 |---|---|---|---|
-| `engagement_event` | MongoDB collection | insert, query, update (void) | Strict `$jsonSchema` validator; unique `client_event_id`; three secondary indexes |
+| `engagement_event` | MongoDB collection | insert, query, update (void, relay `$pull`) | Strict `$jsonSchema` validator, one shape per kind, plus the outbox field `relay_pending` (ADR-0075); unique `client_event_id`; three secondary indexes and the relay's partial index `relay_pending_occurred_at_1` |
 | `engagement_daily` | MongoDB collection | `$inc` upsert, aggregation | Rollup by store, UTC day and type; rebuildable by a maintenance `$merge` |
 | PostgreSQL | — | No table | SELECT on three published views |
 
@@ -82,11 +82,11 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 ## Events
 
-ADR-0075 (proposed in #949, issue #948) decides how the interaction facts leave this service. engagement relays them on one stream, `stream:engagement.v1.interaction_recorded`, from an outbox kept on the `engagement_event` document itself, because a standalone `mongod` cannot write an event and a second document atomically. The facts carried are `RECO_IMPRESSION`, `QR_SCAN`, `RECO_CLICK` and `CAMPAIGN_EXPOSURE`; a void is a later `VOIDED` notice. Delivery is at least once and consumers deduplicate by the entry's `event_id`.
+ADR-0075 (accepted, issue #948) decides how the interaction facts leave this service, and #799 implements it. The stream's contract is [`contracts/streams/engagement.interaction_recorded.v1.md`](../../contracts/streams/engagement.interaction_recorded.v1.md). engagement relays them on one stream, `stream:engagement.v1.interaction_recorded`, from an outbox kept on the `engagement_event` document itself, because a standalone `mongod` cannot write an event and a second document atomically. The facts carried are `RECO_IMPRESSION`, `QR_SCAN`, `RECO_CLICK` and `CAMPAIGN_EXPOSURE`; a void is a later `VOIDED` notice. Delivery is at least once and consumers deduplicate by the entry's `event_id`.
 
 experimentation consumes a `CAMPAIGN_EXPOSURE` (the campaign and the customer) from that stream into its own projection, and counts exposures per campaign and customer from its own schema. It does not call this service and reads none of its stores (ADR-0044). The count is eventually consistent, and a voided exposure stops counting when the `VOIDED` notice arrives. analytics-kpis never consumes the stream: it reads the owners' `api_*` views (ADR-0059).
 
-Not yet implemented. The stream's contract (`contracts/streams/`, with its consumer groups) and this service's Redis ACL grant of `XADD` follow in the story that implements ADR-0075.
+The relay is a thread of the service's container. Every second it reads up to 100 events with a notice pending, through the partial index, publishes them with the kit's `StreamPublisher` (`XADD`, then `WAITAOF 1 0 2000`, kit-py 0.1.8) and only then `$pull`s them. The Redis ACL line grants `+waitaof` and `+xadd` on this one stream. A relay or `redis-state` outage leaves the notices on the documents until it returns.
 
 ## Redis keys
 
@@ -95,7 +95,7 @@ Not yet implemented. The stream's contract (`contracts/streams/`, with its consu
 | cache | `engagement:live:{store_id}:{yyyymmdd}:{type}` | 48 h | Live counters, rebuilt from `engagement_daily` on a miss |
 | state | `engagement:rl:*` | the limit's window | Per-service request rate limit |
 | state | `pub:auth:v1:live:{sid}` | — | `EXISTS` only, to check that the caller's session is live |
-| state | `stream:engagement.v1.interaction_recorded` | none; `MAXLEN ~ 10000` | Interaction facts for experimentation (ADR-0075). Planned: not yet written |
+| state | `stream:engagement.v1.interaction_recorded` | none; `MAXLEN ~ 10000` | Interaction facts for experimentation and recommendations (ADR-0075); `XADD` by the relay only |
 
 ## Service-specific errors
 
@@ -151,16 +151,17 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 | PostgreSQL unreachable | `/health/ready` reports not ready. `POST /v1/engagement-events` answers 503 `database_unavailable`, never 500, because it validates store, product and customer against the three published views; reads, voids and summaries use MongoDB only. `/health/live` stays 200 |
 | MongoDB down | Event operations and summaries that reach MongoDB answer 503 `database_unavailable`, never 500 (ADR-0035); `/health/ready` is 503. Other services are unaffected |
 | `redis-cache` down | A one-store summary of today falls back to `engagement_daily` |
-| `redis-state` unreachable or over 200 ms | Every authenticated request returns 503 `auth_unavailable`; authentication fails closed and never falls back to the signature alone |
+| `redis-state` unreachable or over 200 ms | Every authenticated request returns 503 `auth_unavailable`; authentication fails closed and never falls back to the signature alone. The relay keeps the notices pending and publishes them when it returns |
 | Any other service down | No effect: services never call each other over HTTP |
 
 ## Operations
 
 | Task | Command | Notes |
 |---|---|---|
-| Create the database, user, validator and indexes | `mongo/init.js` in mongosh as root, with `MONGO_ENGAGEMENT_PASSWORD` set | Before the service version that needs it; idempotent, and a later run brings an older validator and the index set back to the definition. The service never creates or alters any of it, and `/health/ready` is 503 until it exists |
+| Create the database, user, validator and indexes | `mongo/init.js` in mongosh as root, with `MONGO_ENGAGEMENT_PASSWORD` set | Before the service version that needs it; idempotent, and a later run brings an older validator and the index set back to the definition. The service never creates or alters any of it, and `/health/ready` is 503 until it exists. **0.2.0 needs it re-applied first** (eight shapes, `relay_pending`, the relay's partial index): its readiness is 503 against the older validator, which would refuse its inserts |
 | Load demonstration data | `mongo/seed.js` in mongosh | 40 `QR_SCAN` and 36 `RECO_CLICK` over stores 1-6, products 1-40 and customers 1-30 on ten fixed UTC days; fixed ids, so a second run inserts nothing; ends by rebuilding `engagement_daily` for those days |
 | Rebuild the rollup | `python -m app rebuild-rollup --from YYYY-MM-DD --to YYYY-MM-DD` in the service's container | Recomputes `engagement_daily` from the events that are not voided for the UTC days, inclusive, and sets the live counters still alive to the rebuilt counts. A crash between an insert and its `$inc` is repaired by it. Not an endpoint |
+| Re-queue the interaction stream | `python -m app requeue-relay --from YYYY-MM-DD --to YYYY-MM-DD` in the service's container | Sets `relay_pending` again on every relayed event of the UTC days, inclusive (`RECORDED`, and `VOIDED` when voided), so the relay publishes them again: for a consumer that fell behind the stream's retention or joined later (ADR-0075). Consumers dedupe by `event_id`. Not an endpoint |
 
 The first request after a counter on `redis-cache` expires or is lost repairs it: the `INCR` or `DECR` returns 1 or -1, so the counter is overwritten with the count the rollup update returned.
 

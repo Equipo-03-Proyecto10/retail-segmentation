@@ -20,10 +20,14 @@ def _unknown(code: str, field: str, message: str) -> ApiError:
 def check_references(
     connection: Connection,
     store_id: int,
-    product_id: int,
+    product_id: int | None,
     customer_id: str | None,
 ) -> None:
-    """Raise 422 unknown_store, unknown_product or unknown_customer, in that order."""
+    """Raise 422 unknown_store, unknown_product or unknown_customer, in that order.
+
+    A kind with no product (STORE_VISIT, CAMPAIGN_EXPOSURE, NAVIGATION) passes
+    None and skips that check.
+    """
 
     if (
         not _in_range(store_id)
@@ -39,7 +43,7 @@ def check_references(
             "store_id",
             f"Store {store_id} does not exist or is not active.",
         )
-    if (
+    if product_id is not None and (
         not _in_range(product_id)
         or connection.execute(
             "SELECT 1 FROM api_products.product_ref_v1 WHERE product_id = %s",

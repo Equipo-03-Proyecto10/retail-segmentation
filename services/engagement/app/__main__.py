@@ -1,4 +1,8 @@
-"""`python -m app rebuild-rollup --from YYYY-MM-DD --to YYYY-MM-DD`."""
+"""Maintenance commands, never endpoints:
+
+`python -m app rebuild-rollup --from YYYY-MM-DD --to YYYY-MM-DD`
+`python -m app requeue-relay --from YYYY-MM-DD --to YYYY-MM-DD` (ADR-0075)
+"""
 
 from __future__ import annotations
 
@@ -12,6 +16,7 @@ from mosaiq_kit import ApiError
 
 from .events import EventStore
 from .live import LiveCounters
+from .relay import requeue
 from .rollup import rebuild
 
 
@@ -31,8 +36,13 @@ def main(argv: list[str] | None = None) -> int:
         "rebuild-rollup",
         help="recompute engagement_daily from engagement_event for UTC days",
     )
-    rollup.add_argument("--from", dest="first", type=parse_day, required=True)
-    rollup.add_argument("--to", dest="last", type=parse_day, required=True)
+    relay = commands.add_parser(
+        "requeue-relay",
+        help="publish the relayed events of UTC days again on the interaction stream",
+    )
+    for command in (rollup, relay):
+        command.add_argument("--from", dest="first", type=parse_day, required=True)
+        command.add_argument("--to", dest="last", type=parse_day, required=True)
     arguments = parser.parse_args(argv)
     if arguments.last < arguments.first:
         parser.error("--to is before --from")
@@ -40,11 +50,14 @@ def main(argv: list[str] | None = None) -> int:
     if store.client is None:
         parser.error("MONGO_URI is not set")
     try:
-        result = rebuild(
-            store, LiveCounters.from_environment(), arguments.first, arguments.last
-        )
+        if arguments.command == "requeue-relay":
+            result = {"events_queued": requeue(store, arguments.first, arguments.last)}
+        else:
+            result = rebuild(
+                store, LiveCounters.from_environment(), arguments.first, arguments.last
+            )
     except ApiError as error:
-        print(f"rebuild-rollup: {error.message}", file=sys.stderr)
+        print(f"{arguments.command}: {error.message}", file=sys.stderr)
         return 1
     print(json.dumps(result, sort_keys=True))
     return 0

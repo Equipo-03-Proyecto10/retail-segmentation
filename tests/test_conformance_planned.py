@@ -58,3 +58,16 @@ def test_an_answered_planned_operation_fails_the_guard(
 ) -> None:
     gaps = planned_gaps(_contract(tmp_path), lambda m, p: status)
     assert gaps and "addThing" in gaps[0]
+
+
+def test_an_xml_reply_is_validated_against_the_xsd_of_its_namespace() -> None:
+    """engagement serves /v1 and /v2 in two namespaces (#799)."""
+
+    root = Path(__file__).resolve().parents[1] / "contracts/engagement"
+    contract = load_contract(root)
+    v2 = "https://mosaiq.maxthecoder.online/xml/engagement/v2"
+    assert contract.xsd_for(v2) == root / "engagement.v2.xsd"
+    v1 = "https://mosaiq.maxthecoder.online/xml/engagement/v1"
+    assert contract.xsd_for(v1) == root / "engagement.xsd"
+    common = "https://mosaiq.maxthecoder.online/xml/common/v1"
+    assert contract.xsd_for(common) == root / "engagement.xsd"

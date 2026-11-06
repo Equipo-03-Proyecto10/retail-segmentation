@@ -8,6 +8,7 @@ seed's events are fixed.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -78,7 +79,12 @@ def snapshot(root: MongoClient) -> dict:
         "validator": info["engagement_event"]["options"],
         "indexes": {
             name: sorted(
-                (i["name"], tuple(i["key"].items()), bool(i.get("unique")))
+                (
+                    i["name"],
+                    tuple(i["key"].items()),
+                    bool(i.get("unique")),
+                    json.dumps(i.get("partialFilterExpression"), sort_keys=True),
+                )
                 for i in database[name].list_indexes()
             )
             for name in info
@@ -109,14 +115,27 @@ def test_init_is_idempotent(mongosh, root_uri, admin):
         "_id_",
         "client_event_id_1",
         "customer_id_1_occurred_at_-1",
+        "relay_pending_occurred_at_1",
         "store_id_1_occurred_at_-1",
         "type_1_occurred_at_-1",
     ]
+    # The relay's partial index (ADR-0075): only events with a notice pending.
+    relay = next(
+        i
+        for i in before["indexes"]["engagement_event"]
+        if i[0] == "relay_pending_occurred_at_1"
+    )
+    assert relay[1:] == (
+        (("occurred_at", 1),),
+        False,
+        json.dumps({"relay_pending.0": {"$exists": True}}),
+    )
     daily = before["indexes"]["engagement_daily"]
     assert (
         "store_id_1_day_1_type_1",
         (("store_id", 1), ("day", 1), ("type", 1)),
         True,
+        "null",
     ) in daily
 
 
@@ -139,6 +158,11 @@ def test_init_brings_a_drifted_shape_back_to_its_definition(mongosh, root_uri, a
         "client_event_id", name="client_event_id_1"
     )  # no longer unique
     database["engagement_event"].create_index("product_id", name="stray")
+    # The relay index rebuilt without its partial filter is not the same index.
+    database["engagement_event"].drop_index("relay_pending_occurred_at_1")
+    database["engagement_event"].create_index(
+        "occurred_at", name="relay_pending_occurred_at_1"
+    )
     database["engagement_daily"].drop_index("store_id_1_day_1_type_1")
     admin["engagement"].command(
         "updateUser", "svc_engagement", roles=[{"role": "read", "db": "engagement"}]
@@ -195,6 +219,37 @@ def event(**overrides):
         {"type": "RECO_CLICK", "label_code": "LOYAL", "rank": 0},
         {"type": "RECO_CLICK", "label_code": "LOYAL", "rank": 1.5},
         {"type": "SCAN"},
+        # The six kinds of the taxonomy (#798): each with its own fields only.
+        {"type": "STORE_VISIT"},
+        {"type": "STORE_VISIT", "product_id": ..., "quantity": 1},
+        {"type": "RECO_IMPRESSION"},
+        {"type": "RECO_IMPRESSION", "label_code": "LOYAL"},
+        {"type": "CAMPAIGN_EXPOSURE", "product_id": ..., "campaign_id": 4},
+        {
+            "type": "CAMPAIGN_EXPOSURE",
+            "product_id": ...,
+            "customer_id": str(uuid.uuid4()),
+        },
+        {"type": "CAMPAIGN_EXPOSURE", "campaign_id": 4, "customer_id": "x"},
+        {
+            "type": "CAMPAIGN_EXPOSURE",
+            "product_id": ...,
+            "campaign_id": 0,
+            "customer_id": str(uuid.uuid4()),
+        },
+        {"type": "CART_ADD"},
+        {"type": "CART_ADD", "quantity": 0},
+        {"type": "CART_ADD", "quantity": 1001},
+        {"type": "CART_REMOVE", "quantity": 1, "label_code": "LOYAL", "rank": 1},
+        {"type": "NAVIGATION", "product_id": ...},
+        {"type": "NAVIGATION", "screen": "HOME"},
+        {"type": "NAVIGATION", "product_id": ..., "screen": "H" * 41},
+        {"quantity": 2},
+        {"campaign_id": 2},
+        {"screen": "HOME"},
+        {"relay_pending": ["SENT"]},
+        {"relay_pending": "RECORDED"},
+        {"relay_pending": ["RECORDED", "VOIDED", "VOIDED"]},
         {"store_id": "1"},
         {"store_id": 1.0},
         {"customer_id": "not-a-uuid"},
@@ -243,13 +298,33 @@ def test_the_validator_refuses_what_is_not_an_event(
     assert "Document failed validation" in str(refused.value)
 
 
-def test_the_validator_accepts_both_shapes(mongosh, root_uri, mongo):
+def test_the_validator_accepts_every_shape(mongosh, root_uri, mongo):
     assert run(mongosh, INIT, root_uri).returncode == 0
     events = mongo.get_default_database(default="engagement").engagement_event
+    customer = str(uuid.uuid4())
     good = [
         event(),
         event(customer_id=str(uuid.uuid4())),
         event(type="RECO_CLICK", label_code="LOYAL", rank=2),
+        event(
+            type="RECO_CLICK",
+            label_code="LOYAL",
+            rank=2,
+            relay_pending=["RECORDED"],
+        ),
+        event(type="RECO_IMPRESSION", label_code="LOYAL", rank=1, relay_pending=[]),
+        event(type="STORE_VISIT", product_id=...),
+        event(type="STORE_VISIT", product_id=..., customer_id=customer),
+        event(
+            type="CAMPAIGN_EXPOSURE",
+            product_id=...,
+            campaign_id=12,
+            customer_id=customer,
+            relay_pending=["RECORDED", "VOIDED"],
+        ),
+        event(type="CART_ADD", quantity=2),
+        event(type="CART_REMOVE", quantity=1000, customer_id=customer),
+        event(type="NAVIGATION", product_id=..., screen="CHECKOUT"),
         event(
             label_code=...,
             history=[

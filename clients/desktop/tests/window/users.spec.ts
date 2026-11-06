@@ -210,7 +210,7 @@ test('the users screen lists, filters and opens a user in XML; roles come from u
   const { app, page } = await launch('ADMIN');
   await open(page, 'users');
   await expect(page.locator('[data-testid=users-table] tbody tr')).toHaveCount(4);
-  await expect(page.locator('#filter-role option')).toHaveCount(8);
+  await expect(page.locator('#filter-role option')).toHaveCount(11);
 
   await page.selectOption('#filter-role', 'ANALYST');
   await page.getByRole('button', { name: 'Search' }).click();
@@ -246,6 +246,9 @@ test('an ADMIN creates a user: the picker has no ADMIN, and the refusals show as
     'INVENTORY_PLANNER',
     'AUDITOR',
     'CUSTOMER',
+    'SALES_ASSOCIATE',
+    'LOYALTY_OFFICER',
+    'COMMERCIAL_SUPERVISOR',
   ]);
 
   // A short password and a bad email are refused by the schema's facets, before sending.
@@ -304,7 +307,7 @@ test('an ADMIN edits name, email and a non-ADMIN role; a forced ADMIN change poi
   const { app, page } = await launch('ADMIN');
   await open(page, 'users');
   await page.getByTestId(`view-user-${ALEX}`).click();
-  await expect(page.locator('[data-testid=user-edit] #c-role_code option')).toHaveCount(6);
+  await expect(page.locator('[data-testid=user-edit] #c-role_code option')).toHaveCount(9);
   await page.fill('[data-testid=user-edit] #c-name', 'Alex Senior Analyst');
   await page.fill('[data-testid=user-edit] #c-email', 'alex.senior@example.com');
   await page.selectOption('[data-testid=user-edit] #c-role_code', 'MARKETING');

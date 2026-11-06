@@ -250,17 +250,27 @@ def build(report: Path) -> int:
     return 1 if failed else 0
 
 
+UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+
+def _outcomes(run: dict) -> dict[tuple[str, str], str]:
+    """Each case's outcome, keyed by suite and id.
+
+    A test parametrized with a random UUID has a new id in every run, so a UUID
+    in an id is replaced by `<uuid>`. Cases that then share an id are compared
+    as the sorted list of their outcomes.
+    """
+    grouped: dict[tuple[str, str], list[str]] = {}
+    for suite, cases in run["cases"].items():
+        for case in cases:
+            key = (suite, UUID.sub("<uuid>", case["id"]))
+            grouped.setdefault(key, []).append(case["outcome"])
+    return {key: ", ".join(sorted(values)) for key, values in grouped.items()}
+
+
 def compare(first: Path, second: Path, out: Path | None) -> int:
     runs = [json.loads(path.read_text()) for path in (first, second)]
-    outcomes = []
-    for run in runs:
-        outcomes.append(
-            {
-                (suite, case["id"]): case["outcome"]
-                for suite, cases in run["cases"].items()
-                for case in cases
-            }
-        )
+    outcomes = [_outcomes(run) for run in runs]
     keys = sorted(set(outcomes[0]) | set(outcomes[1]))
     differing = [
         (

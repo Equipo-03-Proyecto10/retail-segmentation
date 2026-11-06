@@ -238,6 +238,7 @@ suite_web() {
 # SQL checks and the web's database-backed tests.
 suite_database() {
   pg_fresh || { not_run database postgres "PostgreSQL 18 did not start"; return; }
+  mkdir -p test-results && chmod 1777 test-results
   local count i name script envs step
   count=$(yq -r '.jobs.database.steps | length' .github/workflows/ci.yml)
   for ((i = 0; i < count; i++)); do
@@ -250,10 +251,13 @@ suite_database() {
       [[ -n $line ]] && envs+=("$line")
     done < <(yq -r ".jobs.database.steps[$i].env // {} | to_entries[] | \"\(.key)=\(.value)\"" .github/workflows/ci.yml)
     rm -rf test-results/pytest-*.xml
+    # As the runner's unprivileged user: the scratch-cluster tests call
+    # initdb, which refuses root. The environment is kept.
     if grep -q -- '--junitxml' <<<"$script"; then
-      tests database "$step" 'test-results/pytest-*.xml' env "${envs[@]}" bash -eo pipefail -c "$script"
+      tests database "$step" 'test-results/pytest-*.xml' runuser -u runner -- \
+        env "${envs[@]}" bash -eo pipefail -c "$script"
     else
-      check database "$step" env "${envs[@]}" bash -eo pipefail -c "$script"
+      check database "$step" runuser -u runner -- env "${envs[@]}" bash -eo pipefail -c "$script"
     fi
   done
   infra_down
@@ -436,8 +440,9 @@ suite_stack() {
     "${COMPOSE[@]}" exec -T db psql -U postgres -d retail
 }
 
-# tests/negative/README.md, "The local stack". Its last case stops
-# redis-state; every service is restarted afterwards for a clean e2e.
+# tests/negative/README.md, "The local stack". It runs after tests/e2e: its
+# many sign-ins leave auth's sign-in rate limit exhausted, which would refuse
+# every sign-in e2e makes.
 suite_negative() {
   local db
   db=$("${COMPOSE[@]}" ps -q db)
@@ -455,6 +460,8 @@ suite_negative() {
     python3 -m pytest tests/negative -rs -p no:cacheprovider --junitxml=test-results/negative.xml
 }
 
+# tests/e2e stops redis-state; every service is restarted and redis-state
+# brought back before tests/negative.
 restart_services() {
   local services
   services=$(ls services/*/compose.yaml | cut -d/ -f2 | tr '\n' ' ')
@@ -490,9 +497,9 @@ suite_kits
 suite_desktop
 suite_android
 if suite_stack; then
-  suite_negative
-  restart_services
   suite_e2e
+  restart_services
+  suite_negative
 else
   not_run negative suite "the local stack did not come up"
   not_run e2e suite "the local stack did not come up"

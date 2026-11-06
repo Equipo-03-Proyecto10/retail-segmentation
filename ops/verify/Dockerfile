@@ -36,6 +36,10 @@ RUN apt-get update \
       iptables kmod procps \
  && rm -rf /var/lib/apt/lists/*
 
+# initdb refuses to run as root, so the database job's steps run as `runner`,
+# the user a GitHub runner has.
+RUN useradd --create-home --shell /bin/bash runner
+
 # Docker 29.9.3's static binaries and the dind wrapper, from the official image.
 COPY --from=docker /usr/local/bin/ /usr/local/bin/
 COPY --from=docker /usr/local/libexec/docker/cli-plugins/ /usr/local/libexec/docker/cli-plugins/
@@ -62,7 +66,10 @@ RUN curl -fsSLo /tmp/rustup-init "https://static.rust-lang.org/rustup/archive/$R
  && rm /tmp/rustup-init
 
 # The Android command-line tools, with the SDK licenses accepted; Gradle
-# downloads the platform and build tools the app's compileSdk names.
+# downloads the platform and build tools the app's compileSdk names. On an
+# empty SDK `--licenses` can write no file, so platform-tools is installed to
+# write android-sdk-license, the license the platforms and build tools need,
+# and the build fails if it is missing.
 ARG ANDROID_CMDLINE=16111833
 ARG ANDROID_CMDLINE_SHA1=e025545c62a8e64c7559119566a569fb1dec5f60
 ENV ANDROID_HOME=/opt/android-sdk ANDROID_SDK_ROOT=/opt/android-sdk
@@ -72,7 +79,9 @@ RUN curl -fsSLo /tmp/cmdline.zip "https://dl.google.com/android/repository/comma
  && unzip -q /tmp/cmdline.zip -d "$ANDROID_HOME/cmdline-tools" \
  && mv "$ANDROID_HOME/cmdline-tools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest" \
  && rm /tmp/cmdline.zip \
- && yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null
+ && yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null \
+ && yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install platform-tools >/dev/null \
+ && test -s "$ANDROID_HOME/licenses/android-sdk-license"
 
 # uv 0.12.3, as ci.yml and services.yml, in the virtualenv the suites use.
 ENV VIRTUAL_ENV=/opt/venv PATH=/opt/venv/bin:/opt/cargo/bin:$PATH

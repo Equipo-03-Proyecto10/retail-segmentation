@@ -63,13 +63,18 @@ Each step is the step a workflow already runs (named in
 | `desktop` | `npm ci`, lint, Prettier, `tsc`, the contract bundle, Vitest, the ADR-0041 checks | `desktop.yml` `check` |
 | `android` | `ktlintCheck`, `lint`, `testDebugUnitTest`, the ADR-0041 checks | `android.yml` `check` |
 | `stack` | the local stack up from those images, with PostgreSQL built by the three scripts, both Redis instances on the instance's configuration and ACL, MongoDB and the gateway, then every boundary section re-applied | `nightly.yml` |
-| `negative` | `tests/negative` against the gateway, as its README's "The local stack" | — |
 | `e2e` | `tests/e2e`, the demonstration chain | `nightly.yml` |
+| `negative` | `tests/negative` against the gateway, as its README's "The local stack" | — |
 
 The conformance stack and the local stack would both join network `mosaiq`
 under the same names, so the local stack comes up only after the conformance
-runs. `tests/negative` stops `redis-state` last, so every service is restarted
-before `tests/e2e`.
+runs. `tests/e2e` runs on the fresh stack, as in `nightly.yml`: after
+`tests/negative`, auth's sign-in rate limit would refuse its sign-ins.
+`tests/e2e` stops `redis-state`, so every service is restarted before
+`tests/negative`.
+
+The database job's steps run as the unprivileged user `runner`, as on a GitHub
+runner, because `initdb` refuses root.
 
 Not run: the desktop's Playwright window tests, packaging, and the Android
 instrumented tests. All three need a display or an emulator, and they keep
@@ -129,4 +134,6 @@ bash ops/verify/run.sh --compare test-results/verify/a test-results/verify/b
 `--compare` writes `comparison.md` into the second directory. It lists every
 case whose outcome differs between the two runs, including a case present in
 only one of them, and exits 1 if there is any. Those cases are flaky. Each one
-is raised as a defect: a GitHub issue that links both reports.
+is raised as a defect: a GitHub issue that links both reports. A UUID in a
+case's id is read as `<uuid>`, because a test parametrized with a random UUID
+gets a new id each run.

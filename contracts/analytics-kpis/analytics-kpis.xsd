@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:kpi="https://mosaiq.maxthecoder.online/xml/analytics-kpis/v1"
+           xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1"
+           targetNamespace="https://mosaiq.maxthecoder.online/xml/analytics-kpis/v1"
+           elementFormDefault="qualified">
+  <xs:import namespace="https://mosaiq.maxthecoder.online/xml/common/v1"
+             schemaLocation="../common/v1/common.xsd"/>
+
+  <!-- The seven KPIs of v1. A new KPI is a new value, which is an addition
+       to a response type and so a major change (contracts/README.md). -->
+  <xs:simpleType name="KpiCode">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="net-sales"/>
+      <xs:enumeration value="spend"/>
+      <xs:enumeration value="retention"/>
+      <xs:enumeration value="migrations"/>
+      <xs:enumeration value="conversion"/>
+      <xs:enumeration value="recommendation-performance"/>
+      <xs:enumeration value="campaign-performance"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Dimension">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="segment"/>
+      <xs:enumeration value="store"/>
+      <xs:enumeration value="channel"/>
+      <xs:enumeration value="period"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Granularity">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="day"/>
+      <xs:enumeration value="week"/>
+      <xs:enumeration value="month"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- OBSERVED is counted from recorded facts, ATTRIBUTED is a sale credited
+       to a campaign, INCREMENTAL is an effect against a control. A figure of
+       one kind is never presented as another. -->
+  <xs:simpleType name="MeasureKind">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="OBSERVED"/>
+      <xs:enumeration value="ATTRIBUTED"/>
+      <xs:enumeration value="INCREMENTAL"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="MeasureUnit">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="currency"/>
+      <xs:enumeration value="count"/>
+      <xs:enumeration value="ratio"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="SegmentState">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="assigned"/>
+      <xs:enumeration value="unassigned_result"/>
+      <xs:enumeration value="no_open_assignment"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- A decimal string: two places for currency, none for a count, four for
+       a ratio. XSD 1.0 cannot tie the places to the unit; the catalog does. -->
+  <xs:simpleType name="Decimal">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="-?[0-9]+(\.[0-9]+)?"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="ViewName">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="api_[a-z_]+\.[a-z_]+_v[1-9][0-9]*"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Id">
+    <xs:restriction base="xs:positiveInteger">
+      <xs:maxInclusive value="9223372036854775807"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="RoleCode">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[A-Z][A-Z_]*"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- A measure of a catalog entry. value is omitted when the figure cannot
+       be computed (a zero denominator, a window that has not ended, a
+       campaign with no control); lower and upper are present only on a
+       figure the catalog gives an interval. -->
+  <xs:complexType name="MeasureType">
+    <xs:sequence>
+      <xs:element name="code" type="xs:string"/>
+      <xs:element name="kind" type="kpi:MeasureKind"/>
+      <xs:element name="unit" type="kpi:MeasureUnit"/>
+      <xs:element name="value" type="kpi:Decimal" minOccurs="0"/>
+      <xs:element name="lower" type="kpi:Decimal" minOccurs="0"/>
+      <xs:element name="upper" type="kpi:Decimal" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- A dimension the report was not grouped by is omitted. segment_code is
+       omitted unless segment_state is assigned. -->
+  <xs:complexType name="RowType">
+    <xs:sequence>
+      <xs:element name="period_start" type="xs:date" minOccurs="0"/>
+      <xs:element name="period_end" type="xs:date" minOccurs="0"/>
+      <xs:element name="segment_code" type="xs:string" minOccurs="0"/>
+      <xs:element name="segment_state" type="kpi:SegmentState" minOccurs="0"/>
+      <xs:element name="from_segment_code" type="xs:string" minOccurs="0"/>
+      <xs:element name="store_id" type="kpi:Id" minOccurs="0"/>
+      <xs:element name="channel_id" type="kpi:Id" minOccurs="0"/>
+      <xs:element name="campaign_id" type="kpi:Id" minOccurs="0"/>
+      <xs:element name="model_version_id" type="kpi:Id" minOccurs="0"/>
+      <xs:element name="synthetic" type="xs:boolean"/>
+      <xs:element name="measures" type="kpi:MeasureType"
+                  minOccurs="1" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="StoreScopeType">
+    <xs:sequence>
+      <xs:element name="restricted" type="xs:boolean"/>
+      <xs:element name="store_ids" type="kpi:Id" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="DataOriginType">
+    <xs:sequence>
+      <xs:element name="views" type="kpi:ViewName" minOccurs="1" maxOccurs="unbounded"/>
+      <xs:element name="synthetic" type="xs:boolean"/>
+      <xs:element name="spans_model_versions" type="xs:boolean"/>
+      <xs:element name="model_version_ids" type="kpi:Id" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="KpiReportType">
+    <xs:sequence>
+      <xs:element name="kpi" type="kpi:KpiCode"/>
+      <xs:element name="definition_version" type="xs:positiveInteger"/>
+      <xs:element name="from" type="xs:date"/>
+      <xs:element name="to" type="xs:date"/>
+      <xs:element name="granularity" type="kpi:Granularity" minOccurs="0"/>
+      <xs:element name="group_by" type="kpi:Dimension" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="generated_at" type="xs:dateTime"/>
+      <xs:element name="store_scope" type="kpi:StoreScopeType"/>
+      <xs:element name="data_origin" type="kpi:DataOriginType"/>
+      <xs:element name="rows" type="kpi:RowType" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="MeasureDefinitionType">
+    <xs:sequence>
+      <xs:element name="code" type="xs:string"/>
+      <xs:element name="kind" type="kpi:MeasureKind"/>
+      <xs:element name="unit" type="kpi:MeasureUnit"/>
+      <xs:element name="definition" type="xs:string"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="KpiDefinitionType">
+    <xs:sequence>
+      <xs:element name="kpi_code" type="kpi:KpiCode"/>
+      <xs:element name="name" type="xs:string"/>
+      <xs:element name="version" type="xs:positiveInteger"/>
+      <xs:element name="definition" type="xs:string"/>
+      <xs:element name="window" type="xs:string"/>
+      <xs:element name="origin_views" type="kpi:ViewName" minOccurs="1" maxOccurs="unbounded"/>
+      <xs:element name="dimensions" type="kpi:Dimension" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="store_attributable" type="xs:boolean"/>
+      <xs:element name="roles" type="kpi:RoleCode" minOccurs="1" maxOccurs="unbounded"/>
+      <xs:element name="store_scoped_roles" type="kpi:RoleCode" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="measures" type="kpi:MeasureDefinitionType"
+                  minOccurs="1" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="KpiDefinitionsType">
+    <xs:sequence>
+      <xs:element name="KpiDefinition" type="kpi:KpiDefinitionType"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name="KpiReport" type="kpi:KpiReportType"/>
+  <xs:element name="KpiDefinition" type="kpi:KpiDefinitionType"/>
+  <xs:element name="KpiDefinitions" type="kpi:KpiDefinitionsType"/>
+</xs:schema>

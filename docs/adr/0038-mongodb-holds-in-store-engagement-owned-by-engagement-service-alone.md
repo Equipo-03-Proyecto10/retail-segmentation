@@ -1,10 +1,10 @@
 # ADR-0038 — MongoDB holds in-store engagement, owned by engagement-service alone
 
-**Status:** Accepted
+**Status:** Partially superseded by ADR-0071 (the number of collections only) and ADR-0075 (`engagement_event` gains `relay_pending`)
 **Owner:** Marcelo
 **Issue:** #398
 **Supersedes:** —
-**Superseded by:** —
+**Superseded by:** [ADR-0071](0071-android-raises-local-notifications-from-a-periodic-pull-and-a-refused-write-reaches-a-supervisor-as-a-capture-incident.md), in part (the number of collections only), and [ADR-0075](0075-engagement-relays-interaction-facts-on-a-redis-stream-from-an-outbox-kept-on-the-event-document.md), in part (`engagement_event` gains `relay_pending`)
 
 ---
 

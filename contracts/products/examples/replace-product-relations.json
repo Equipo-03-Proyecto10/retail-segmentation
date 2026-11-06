@@ -1,0 +1,18 @@
+{
+  "product_id": 1001,
+  "product_relations": [
+    {
+      "related_product_id": 1003,
+      "kind": "substitute"
+    },
+    {
+      "related_product_id": 1005,
+      "kind": "substitute"
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 2
+  }
+}

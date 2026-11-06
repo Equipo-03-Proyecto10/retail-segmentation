@@ -11,9 +11,12 @@ import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -21,7 +24,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
@@ -103,7 +106,10 @@ fun ScanContent(
     onAddProduct: ((online.maxthecoder.mosaiq.floor.net.Product) -> Unit)? = null,
     camera: @Composable () -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         if (store == null) {
             Text("Pick your store first: a scan shows the stock of the store you are checked in at.")
             Button(onClick = onPickStore) { Text("Pick a store") }
@@ -144,7 +150,7 @@ private fun ManualEntry(model: ScanViewModel) {
 
 @Composable
 private fun ScanAnswer(model: ScanViewModel, onAddProduct: ((online.maxthecoder.mosaiq.floor.net.Product) -> Unit)?) {
-    val result by model.result.collectAsState()
+    val result by model.result.collectAsStateWithLifecycle()
     when (val current = result) {
         ScanResult.Idle -> Unit
         ScanResult.Looking -> Text("Looking up the product…")

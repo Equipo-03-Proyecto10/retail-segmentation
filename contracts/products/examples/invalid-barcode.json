@@ -1,0 +1,11 @@
+{
+  "code": "invalid_barcode",
+  "message": "The barcode is not a valid GTIN.",
+  "correlation_id": "corr-details-422b",
+  "details": [
+    {
+      "field": "barcode",
+      "code": "check_digit"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_query</code>
+  <message>from must be earlier than to, and neither may be in the future.</message>
+  <correlation_id>corr-invalid-migration-window</correlation_id>
+  <details>
+    <field>from</field>
+    <code>not_before_to</code>
+  </details>
+</Error>

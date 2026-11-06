@@ -1,17 +1,21 @@
 openapi: 3.1.0
 info:
   title: customers-service
-  version: 1.4.0
+  version: 1.5.0
   description: >-
     Registers, searches, reads and corrects customers under RN-08. Customers
     are never deleted through services; a mistaken registration is corrected
-    with PATCH.
+    with PATCH. Also issues and revokes loyalty cards, whose QR code is an
+    opaque identifier. Floor roles read customers through the floor view, which
+    carries only the customer's own fields; segment, RFM, interests,
+    restrictions and consent are read from the services that own them.
 servers:
   - url: /api/customers
 security:
   - bearer: []
 tags:
   - name: Customers
+  - name: Loyalty cards
   - name: Meta
 paths:
   /v1/customers:
@@ -255,6 +259,399 @@ paths:
           $ref: '#/components/responses/UnsupportedMediaType'
         '422':
           $ref: '#/components/responses/CorrectionValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/customers/floor-search:
+    get:
+      tags: [Customers]
+      operationId: searchFloorCustomers
+      x-mosaiq-status: planned
+      summary: Search customers as a floor role
+      description: >-
+        The search a floor role uses to find the customer it is serving, in the
+        floor view (`FloorCustomer`: no registration channel or date). `q` is
+        required and must hold at least 3 characters once surrounding
+        whitespace is removed (a shorter or missing `q` returns 422
+        `invalid_query` with the detail code `too_short` or `required`), `size`
+        is at most 20 (a larger `size` returns 422 `invalid_pagination`), and
+        there is no `email` filter, since an exact email probe would reveal an
+        address to a role that may not read it. `SALES_ASSOCIATE` matches `q`
+        over name alone and its items omit `email` and `phone`;
+        `LOYALTY_OFFICER` matches over name, email and phone and its items
+        carry `email` and `phone`. An element a role may not read is absent,
+        not null or masked.
+      x-mosaiq-roles: [SALES_ASSOCIATE, LOYALTY_OFFICER]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 3
+            maxLength: 160
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of matching customers in the floor view.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FloorCustomers'
+              examples:
+                floor_customers:
+                  externalValue: ./examples/search-floor-customers.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/FloorCustomers'
+              examples:
+                floor_customers:
+                  externalValue: ./examples/search-floor-customers.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/CustomerListValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/customers/{customer_id}/floor-view:
+    get:
+      tags: [Customers]
+      operationId: getFloorCustomer
+      x-mosaiq-status: planned
+      summary: Get one customer as a floor role
+      description: >-
+        Returns the customer in the floor view of the token's role, which
+        nothing the caller sends can change. `customer_id` and `name` are
+        present for both roles; `email` and `phone` only for `LOYALTY_OFFICER`.
+        `registration_channel_id` and `registered_on` are never present. The
+        elements are customers' own; segment, RFM, interests, restrictions and
+        consent belong to other services, each of which narrows its own
+        resource by role, and the client composes them. The customer's loyalty
+        state is read from `GET /v1/loyalty-cards?customer_id=`.
+        `COMMERCIAL_SUPERVISOR` reads no customer element and receives 403
+        `forbidden_role`.
+      x-mosaiq-roles: [SALES_ASSOCIATE, LOYALTY_OFFICER]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CustomerId'
+      responses:
+        '200':
+          description: The customer in the caller's floor view.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FloorCustomer'
+              examples:
+                sales_associate:
+                  externalValue: ./examples/get-floor-customer-sales-associate.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/FloorCustomer'
+              examples:
+                sales_associate:
+                  externalValue: ./examples/get-floor-customer-sales-associate.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CustomerNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/loyalty-cards:
+    post:
+      tags: [Loyalty cards]
+      operationId: issueLoyaltyCard
+      x-mosaiq-status: planned
+      summary: Issue a loyalty card to a customer
+      description: >-
+        Issues one card to the customer named in the body. The service
+        generates the card's `code`: 128 random bits from a cryptographically
+        secure source, written as 26 Crockford base32 characters. The code is
+        derived from nothing about the customer, so it carries no personal data
+        and cannot be computed from a customer id, name, email or phone. The
+        QR printed on the card encodes exactly the 26 characters of `code`, and
+        nothing else: no URL, no customer id, no name. A customer has at most
+        one ACTIVE card; issuing a second returns 409 `active_card_exists`, and
+        a replacement is issued only after the first is revoked. A card is
+        never deleted; revocation is its only end. An unknown `customer_id`
+        returns 422 `unknown_customer`.
+      x-mosaiq-roles: [ADMIN, LOYALTY_OFFICER]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueLoyaltyCardRequest'
+            examples:
+              issue:
+                externalValue: ./examples/issue-loyalty-card.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/IssueLoyaltyCardRequest'
+            examples:
+              issue:
+                externalValue: ./examples/issue-loyalty-card.request.xml
+      responses:
+        '201':
+          description: The card was issued.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoyaltyCard'
+              examples:
+                card:
+                  externalValue: ./examples/issue-loyalty-card.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/LoyaltyCard'
+              examples:
+                card:
+                  externalValue: ./examples/issue-loyalty-card.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/ActiveCardExists'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/IssueValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+    get:
+      tags: [Loyalty cards]
+      operationId: listLoyaltyCards
+      x-mosaiq-status: planned
+      summary: List a customer's loyalty cards
+      description: >-
+        Lists every card ever issued to one customer, newest first, active or
+        revoked. `customer_id` is required: there is no way to list the cards of
+        all customers. The response also carries the customer's `loyalty_state`,
+        which is how a client learns it; the customer read does not.
+      x-mosaiq-roles: [ADMIN, LOYALTY_OFFICER]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: customer_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of the customer's cards.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoyaltyCards'
+              examples:
+                cards:
+                  externalValue: ./examples/list-loyalty-cards.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/LoyaltyCards'
+              examples:
+                cards:
+                  externalValue: ./examples/list-loyalty-cards.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/CustomerListValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/loyalty-cards/lookup:
+    post:
+      tags: [Loyalty cards]
+      operationId: lookupLoyaltyCard
+      x-mosaiq-status: planned
+      summary: Look a scanned code up
+      description: >-
+        Resolves the code a scanner read from a QR to the card's id and the
+        customer it belongs to. The code travels in the body, never in the URL,
+        so it stays out of access logs. The response holds two identifiers and
+        no personal data; the caller reads the customer through
+        `GET /v1/customers/{customer_id}`, which applies the role's
+        representation. A code that matches no card returns 404
+        `card_not_found`. A revoked card returns 409 `card_revoked` and names no
+        customer. A body with any member besides `code`, or a `code` that is not
+        26 Crockford base32 characters, returns 422 `invalid_body`. The service
+        applies its request limit to this operation per caller, so a code
+        cannot be guessed by repetition (429 `rate_limited`).
+      x-mosaiq-roles: [ADMIN, SALES_ASSOCIATE, LOYALTY_OFFICER]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LookupLoyaltyCardRequest'
+            examples:
+              lookup:
+                externalValue: ./examples/lookup-loyalty-card.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/LookupLoyaltyCardRequest'
+            examples:
+              lookup:
+                externalValue: ./examples/lookup-loyalty-card.request.xml
+      responses:
+        '200':
+          description: The card the code belongs to.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoyaltyCardLookup'
+              examples:
+                lookup:
+                  externalValue: ./examples/lookup-loyalty-card.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/LoyaltyCardLookup'
+              examples:
+                lookup:
+                  externalValue: ./examples/lookup-loyalty-card.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CardNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/CardRevoked'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/LookupValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/loyalty-cards/{card_id}/revocation:
+    put:
+      tags: [Loyalty cards]
+      operationId: revokeLoyaltyCard
+      x-mosaiq-status: planned
+      summary: Revoke a loyalty card
+      description: >-
+        Revokes the card, records who did it, when and why, and answers with the
+        card. The operation is idempotent: revoking a card that is already
+        revoked answers 200 with the original revocation, unchanged. A revoked
+        card is never reactivated and never deleted. A lookup of its code
+        answers 409 `card_revoked` from the moment this returns.
+      x-mosaiq-roles: [ADMIN, LOYALTY_OFFICER]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: card_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeLoyaltyCardRequest'
+            examples:
+              revocation:
+                externalValue: ./examples/revoke-loyalty-card.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/RevokeLoyaltyCardRequest'
+            examples:
+              revocation:
+                externalValue: ./examples/revoke-loyalty-card.request.xml
+      responses:
+        '200':
+          description: The revoked card.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoyaltyCard'
+              examples:
+                card:
+                  externalValue: ./examples/revoke-loyalty-card.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/LoyaltyCard'
+              examples:
+                card:
+                  externalValue: ./examples/revoke-loyalty-card.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CardNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/LookupValidationFailed'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -530,6 +927,151 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ErrorDetail'
+    LoyaltyCard:
+      type: object
+      additionalProperties: false
+      required: [card_id, customer_id, code, status, issued_at, issued_by, revoked_at, revoked_by, revocation_reason]
+      properties:
+        card_id:
+          type: string
+          format: uuid
+        customer_id:
+          type: string
+          format: uuid
+        code:
+          $ref: '#/components/schemas/CardCode'
+        status:
+          type: string
+          enum: [ACTIVE, REVOKED]
+        issued_at:
+          type: string
+          format: date-time
+        issued_by:
+          type: string
+          format: uuid
+        revoked_at:
+          type: [string, 'null']
+          format: date-time
+        revoked_by:
+          type: [string, 'null']
+          format: uuid
+        revocation_reason:
+          type: [string, 'null']
+          enum: [LOST, STOLEN, REPLACED, CUSTOMER_REQUEST, OTHER, null]
+      xml:
+        name: LoyaltyCard
+        namespace: https://mosaiq.maxthecoder.online/xml/customers/v1
+    CardCode:
+      type: string
+      pattern: '^[0-9A-HJKMNP-TV-Z]{26}$'
+      description: >-
+        An opaque identifier: 128 random bits as 26 Crockford base32
+        characters (digits and uppercase letters except I, L, O and U). It
+        holds no personal data and is derived from none. A QR encodes this
+        string alone.
+    FloorCustomer:
+      type: object
+      additionalProperties: false
+      description: >-
+        A customer in the floor view: `customer_id` and `name` always; `email`
+        and `phone` only for `LOYALTY_OFFICER`, absent for `SALES_ASSOCIATE`.
+      required: [customer_id, name]
+      properties:
+        customer_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 120
+        email:
+          $ref: '#/components/schemas/NullableEmail'
+        phone:
+          type: [string, 'null']
+          maxLength: 20
+      xml:
+        name: FloorCustomer
+        namespace: https://mosaiq.maxthecoder.online/xml/customers/v1
+    FloorCustomers:
+      type: object
+      additionalProperties: false
+      required: [customers, page_info]
+      properties:
+        customers:
+          type: array
+          items:
+            $ref: '#/components/schemas/FloorCustomer'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: FloorCustomers
+        namespace: https://mosaiq.maxthecoder.online/xml/customers/v1
+    LoyaltyCards:
+      type: object
+      additionalProperties: false
+      description: >-
+        The customer's cards and its `loyalty_state`: `ACTIVE` when one card is
+        ACTIVE, `REVOKED` when cards exist and every one is revoked, `NONE`
+        when none was ever issued.
+      required: [loyalty_state, loyalty_cards, page_info]
+      properties:
+        loyalty_state:
+          type: string
+          enum: [NONE, ACTIVE, REVOKED]
+        loyalty_cards:
+          type: array
+          items:
+            $ref: '#/components/schemas/LoyaltyCard'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: LoyaltyCards
+        namespace: https://mosaiq.maxthecoder.online/xml/customers/v1
+    IssueLoyaltyCardRequest:
+      type: object
+      additionalProperties: false
+      required: [customer_id]
+      properties:
+        customer_id:
+          type: string
+          format: uuid
+      xml:
+        name: IssueLoyaltyCardRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/customers/v1
+    RevokeLoyaltyCardRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          enum: [LOST, STOLEN, REPLACED, CUSTOMER_REQUEST, OTHER]
+      xml:
+        name: RevokeLoyaltyCardRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/customers/v1
+    LookupLoyaltyCardRequest:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code:
+          $ref: '#/components/schemas/CardCode'
+      xml:
+        name: LookupLoyaltyCardRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/customers/v1
+    LoyaltyCardLookup:
+      type: object
+      additionalProperties: false
+      required: [card_id, customer_id]
+      properties:
+        card_id:
+          type: string
+          format: uuid
+        customer_id:
+          type: string
+          format: uuid
+      xml:
+        name: LoyaltyCardLookup
+        namespace: https://mosaiq.maxthecoder.online/xml/customers/v1
   examples:
     MalformedBody:
       value:
@@ -645,6 +1187,14 @@ components:
         details:
           - field: registered_on
             code: unexpected_field
+    InvalidLoyaltyBody:
+      value:
+        code: invalid_body
+        message: The parsed body violates the request schema.
+        correlation_id: corr-791-body
+        details:
+          - field: code
+            code: invalid_format
   responses:
     MalformedBody:
       description: malformed_body — the body cannot be parsed safely.
@@ -942,3 +1492,97 @@ components:
           examples:
             schema_not_ready:
               $ref: '#/components/examples/SchemaNotReady'
+    CardNotFound:
+      description: card_not_found — no loyalty card matches the code or the id.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            card_not_found:
+              externalValue: ./examples/card-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            card_not_found:
+              externalValue: ./examples/card-not-found.xml
+    CardRevoked:
+      description: card_revoked — the card was revoked. The response names no customer.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            card_revoked:
+              externalValue: ./examples/card-revoked.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            card_revoked:
+              externalValue: ./examples/card-revoked.xml
+    ActiveCardExists:
+      description: active_card_exists — the customer already has an ACTIVE card.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            active_card_exists:
+              externalValue: ./examples/active-card-exists.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            active_card_exists:
+              externalValue: ./examples/active-card-exists.xml
+    IssueValidationFailed:
+      description: '`invalid_body` or `unknown_customer`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              $ref: '#/components/examples/InvalidLoyaltyBody'
+            unknown_customer:
+              externalValue: ./examples/unknown-customer.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              $ref: '#/components/examples/InvalidLoyaltyBody'
+            unknown_customer:
+              externalValue: ./examples/unknown-customer.xml
+    LookupValidationFailed:
+      description: '`invalid_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              $ref: '#/components/examples/InvalidLoyaltyBody'
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              $ref: '#/components/examples/InvalidLoyaltyBody'

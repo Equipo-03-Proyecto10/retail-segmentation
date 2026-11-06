@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>forbidden_store</code>
+  <message>The authenticated user is not assigned to the requested store.</message>
+  <correlation_id>corr-store-403</correlation_id>
+  <details>
+    <field>store_id</field>
+    <code>not_assigned</code>
+  </details>
+</Error>

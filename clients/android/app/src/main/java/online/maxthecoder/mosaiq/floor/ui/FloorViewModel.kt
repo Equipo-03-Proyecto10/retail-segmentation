@@ -3,6 +3,7 @@ package online.maxthecoder.mosaiq.floor.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -68,15 +69,22 @@ class FloorViewModel(
     fun searchStores(city: String = stores.value.city, page: Int = 1) {
         stores.value = stores.value.copy(city = city, page = page, loading = true, error = null)
         viewModelScope.launch {
+            var failure: Exception? = null
             val answer =
                 try {
                     graph.network.stores.listStores(active = true, city = city.trim().ifEmpty { null }, page = page)
                 } catch (unreachable: IOException) {
                     null
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (unexpected: Exception) {
+                    failure = unexpected
+                    null
                 }
             val body = answer?.body()
             stores.value =
                 when {
+                    failure != null -> stores.value.copy(loading = false, error = ApiError.unexpected())
                     answer == null -> stores.value.copy(loading = false, error = ApiError.unreachable(null))
                     !answer.isSuccessful || body == null ->
                         stores.value.copy(loading = false, error = ApiError.from(answer))
@@ -127,10 +135,16 @@ class FloorViewModel(
     suspend fun pendingForCurrentUser(): Int = graph.session.userId.value?.let { graph.outbox.countPendingFor(it) } ?: 0
 
     companion object {
+        /** Shown when the stored answer to a check-in cannot be read. */
+        const val UNREADABLE_ANSWER = "Check-in sent. The answer could not be read."
+
         /** The server's answer to a check-in, in plain words, once it has arrived. */
         fun resultOf(row: OutboxRow?): String? {
             if (row?.state != RowState.DONE) return null
-            val result = row.responseBody?.let { json.decodeFromString(CheckInResult.serializer(), it) } ?: return null
+            val body = row.responseBody ?: return null
+            val result =
+                runCatching { json.decodeFromString(CheckInResult.serializer(), body) }.getOrNull()
+                    ?: return UNREADABLE_ANSWER
             return describe(result)
         }
     }

@@ -9,11 +9,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 /**
  * The selected customer's segment, exactly as segments-service states it, and
@@ -22,22 +22,25 @@ import androidx.compose.ui.unit.dp
  */
 @Composable
 fun CustomerInsights(model: CustomerInsightsViewModel, onOpenProduct: (Int) -> Unit) {
-    val state by model.state.collectAsState()
+    val state by model.state.collectAsStateWithLifecycle()
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Segment", style = MaterialTheme.typography.titleMedium)
+        val assignment = state.assignment
+        val assignmentError = state.assignmentError
         when {
             state.loading -> Text("Loading the segment and recommendations…")
-            state.assignment != null ->
+            assignment != null ->
                 Text(
-                    CustomerInsightsViewModel.segmentLine(state.assignment!!),
+                    CustomerInsightsViewModel.segmentLine(assignment),
                     modifier = Modifier.testTag("segment")
                 )
-            state.assignmentError != null -> ErrorPanel(state.assignmentError!!)
+            assignmentError != null -> ErrorPanel(assignmentError)
         }
         Text("Recommendations", style = MaterialTheme.typography.titleMedium)
         val result = state.recommendations
+        val recommendationsError = state.recommendationsError
         when {
-            state.recommendationsError != null -> ErrorPanel(state.recommendationsError!!)
+            recommendationsError != null -> ErrorPanel(recommendationsError)
             result != null && state.items.isEmpty() ->
                 Text(CustomerInsightsViewModel.whyNone(result.status), modifier = Modifier.testTag("why-none"))
         }

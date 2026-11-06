@@ -9,6 +9,7 @@ from a seed, with its results in [`docs/evidence/`](../docs/evidence/).
 | `dataset.py` | A deterministic generator with planted behaviour. It writes no file: `data/` and `*.csv` are gitignored |
 | `load.py` | Loads that dataset into a local throwaway database, after the three SQL scripts |
 | `normalization_study.py` | F23-02: regenerates the tables of the variables, normalization and extreme-value study. Reads no database |
+| `k_study.py` | F23-03: inertia, sampled silhouette, stability and the labels each k can produce, for k from 2 to 12. Reads no database |
 
 ## The evaluation dataset
 

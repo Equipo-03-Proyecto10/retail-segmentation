@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: campaigns-service
-  version: 1.1.0
+  version: 1.2.1
   description: >-
     Owns the campaign lifecycle rule. A campaign is created as DRAFT, may be
     edited only while it remains DRAFT, and moves only DRAFT to ACTIVE or
@@ -359,6 +359,768 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/campaigns/{campaign_id}/audience:
+    get:
+      operationId: getCampaignAudience
+      x-mosaiq-status: planned
+      summary: Get a campaign's audience
+      description: >-
+        Returns who the campaign targets: the campaign's `label_code`, an optional
+        cap on the number of customers, and `audience_size`, computed when the
+        request is served as of `as_of`. `audience_size` counts the customers
+        whose current segment label is `label_code` (`api_segments.current_label_v1`,
+        state `assigned`), registered in `api_customers.customer_ref_v1`, who are
+        not excluded and who satisfy every eligibility rule, reduced to
+        `max_customers` when a cap is set. A campaign whose audience was never
+        written has no cap.
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - MARKETING
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The campaign's audience.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignAudience'
+              examples:
+                example:
+                  externalValue: ./examples/campaign-audience.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CampaignAudience'
+              examples:
+                example:
+                  externalValue: ./examples/campaign-audience.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/CampaignNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+    put:
+      operationId: putCampaignAudience
+      x-mosaiq-status: planned
+      summary: Replace a draft campaign's audience
+      description: >-
+        Replaces the audience's settings while the campaign is DRAFT. The only
+        writable member is `max_customers`; an empty body removes the cap.
+        `label_code`, `audience_size` and `as_of` are read-only, and sending one
+        returns 422 `invalid_body`. The label is changed through `updateCampaign`.
+      x-mosaiq-roles:
+        - ADMIN
+        - MARKETING
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutCampaignAudienceRequest'
+            examples:
+              example:
+                externalValue: ./examples/put-campaign-audience.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/PutCampaignAudienceRequest'
+            examples:
+              example:
+                externalValue: ./examples/put-campaign-audience.request.xml
+      responses:
+        '200':
+          description: The audience now stored.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignAudience'
+              examples:
+                example:
+                  externalValue: ./examples/campaign-audience.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CampaignAudience'
+              examples:
+                example:
+                  externalValue: ./examples/campaign-audience.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/CampaignNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/CampaignNotDraft'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/AudienceValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/campaigns/{campaign_id}/budget:
+    get:
+      operationId: getCampaignBudget
+      x-mosaiq-status: planned
+      summary: Get a campaign's budget
+      description: >-
+        Returns the campaign's budget. `total_amount` is the most the campaign may
+        grant in discounts, and `per_customer_cap` the most one customer may
+        receive. A member that was never written is absent, meaning no limit. The
+        contract carries no currency.
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - MARKETING
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The campaign's budget.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignBudget'
+              examples:
+                example:
+                  externalValue: ./examples/campaign-budget.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CampaignBudget'
+              examples:
+                example:
+                  externalValue: ./examples/campaign-budget.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/CampaignNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+    put:
+      operationId: putCampaignBudget
+      x-mosaiq-status: planned
+      summary: Replace a draft campaign's budget
+      description: >-
+        Replaces the budget while the campaign is DRAFT. Both amounts are
+        optional two-decimal strings and an empty body removes the budget.
+        `per_customer_cap` must not exceed `total_amount` when both are present,
+        or the request returns 422 `invalid_body`.
+      x-mosaiq-roles:
+        - ADMIN
+        - MARKETING
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutCampaignBudgetRequest'
+            examples:
+              example:
+                externalValue: ./examples/put-campaign-budget.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/PutCampaignBudgetRequest'
+            examples:
+              example:
+                externalValue: ./examples/put-campaign-budget.request.xml
+      responses:
+        '200':
+          description: The budget now stored.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignBudget'
+              examples:
+                example:
+                  externalValue: ./examples/campaign-budget.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CampaignBudget'
+              examples:
+                example:
+                  externalValue: ./examples/campaign-budget.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/CampaignNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/CampaignNotDraft'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/PlanValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/campaigns/{campaign_id}/eligibility-rules:
+    get:
+      operationId: getCampaignEligibilityRules
+      x-mosaiq-status: planned
+      summary: Get a campaign's eligibility rules
+      description: >-
+        Returns the conditions a customer in the audience must satisfy. A customer
+        is eligible when every rule that is present holds: registered on or before
+        `registered_on_or_before` (`api_customers.customer_ref_v1.registered_on`),
+        and having at least `min_purchases` net purchases in the
+        `purchase_window_days` days before the request. A purchase is a sale
+        counted net of reversals (ADR-0062): its net amount is the sum of
+        `(quantity - returned_quantity) * unit_price` over its lines, and a sale
+        whose net amount is zero, such as a cancelled one, does not count. The
+        count reads `api_sales.net_purchase_line_v1`, never gross
+        lines. A campaign with no rules written has none.
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - MARKETING
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The campaign's eligibility rules.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignEligibilityRules'
+              examples:
+                example:
+                  externalValue: ./examples/campaign-eligibility-rules.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CampaignEligibilityRules'
+              examples:
+                example:
+                  externalValue: ./examples/campaign-eligibility-rules.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/CampaignNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+    put:
+      operationId: putCampaignEligibilityRules
+      x-mosaiq-status: planned
+      summary: Replace a draft campaign's eligibility rules
+      description: >-
+        Replaces the rules while the campaign is DRAFT. An empty body removes
+        them. `min_purchases` and `purchase_window_days` are given together or
+        not at all, or the request returns 422 `invalid_body`.
+      x-mosaiq-roles:
+        - ADMIN
+        - MARKETING
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutCampaignEligibilityRulesRequest'
+            examples:
+              example:
+                externalValue: ./examples/put-campaign-eligibility-rules.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/PutCampaignEligibilityRulesRequest'
+            examples:
+              example:
+                externalValue: ./examples/put-campaign-eligibility-rules.request.xml
+      responses:
+        '200':
+          description: The eligibility rules now stored.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignEligibilityRules'
+              examples:
+                example:
+                  externalValue: ./examples/campaign-eligibility-rules.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CampaignEligibilityRules'
+              examples:
+                example:
+                  externalValue: ./examples/campaign-eligibility-rules.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/CampaignNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/CampaignNotDraft'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/PlanValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/campaigns/{campaign_id}/exclusions:
+    get:
+      operationId: getCampaignExclusions
+      x-mosaiq-status: planned
+      summary: Get a campaign's exclusions
+      description: >-
+        Returns who is removed from the audience: customers named by id, and the
+        holders of the listed segment labels. Both lists are empty when nothing
+        was written.
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - MARKETING
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The campaign's exclusions.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignExclusions'
+              examples:
+                example:
+                  externalValue: ./examples/campaign-exclusions.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CampaignExclusions'
+              examples:
+                example:
+                  externalValue: ./examples/campaign-exclusions.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/CampaignNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+    put:
+      operationId: putCampaignExclusions
+      x-mosaiq-status: planned
+      summary: Replace a draft campaign's exclusions
+      description: >-
+        Replaces both lists while the campaign is DRAFT, with at most 1000
+        customer ids and 20 label codes, each without duplicates. A customer id
+        must exist in `api_customers.customer_ref_v1` (422 `unknown_customer`) and
+        a label code in the segment label vocabulary (422 `unknown_label`).
+      x-mosaiq-roles:
+        - ADMIN
+        - MARKETING
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutCampaignExclusionsRequest'
+            examples:
+              example:
+                externalValue: ./examples/put-campaign-exclusions.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/PutCampaignExclusionsRequest'
+            examples:
+              example:
+                externalValue: ./examples/put-campaign-exclusions.request.xml
+      responses:
+        '200':
+          description: The exclusions now stored.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignExclusions'
+              examples:
+                example:
+                  externalValue: ./examples/campaign-exclusions.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CampaignExclusions'
+              examples:
+                example:
+                  externalValue: ./examples/campaign-exclusions.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/CampaignNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/CampaignNotDraft'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ExclusionsValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/promotions:
+    get:
+      operationId: listPromotions
+      x-mosaiq-status: planned
+      summary: List promotions
+      description: >-
+        Returns promotions ordered by `promotion_id`. `campaign_id`, `store_id`,
+        `channel_id` and `active` filter, and pagination applies after filtering.
+        A promotion is active when its campaign is ACTIVE and today, in the
+        database's date, lies within its validity. The four floor roles
+        (`STORE_MANAGER`, `SALES_ASSOCIATE`, `LOYALTY_OFFICER`,
+        `COMMERCIAL_SUPERVISOR`, ADR-0060) read active promotions only, and only
+        for their assigned stores (`api_users.store_assignment_v1`, read per
+        request): `active` defaults to true for them and `active=false` returns
+        403 `forbidden_role`; a `store_id` that is not assigned returns 403
+        `forbidden_store`; without `store_id` the list is limited to the assigned
+        stores. The other four roles read every promotion, and `active` is
+        unset by default for them.
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - MARKETING
+        - AUDITOR
+        - STORE_MANAGER
+        - SALES_ASSOCIATE
+        - LOYALTY_OFFICER
+        - COMMERCIAL_SUPERVISOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CampaignIdQuery'
+        - $ref: '#/components/parameters/StoreIdQuery'
+        - $ref: '#/components/parameters/ChannelIdQuery'
+        - $ref: '#/components/parameters/ActiveQuery'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of promotions.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Promotions'
+              examples:
+                example:
+                  externalValue: ./examples/promotions.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Promotions'
+              examples:
+                example:
+                  externalValue: ./examples/promotions.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/PromotionReadForbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/PromotionListValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+    post:
+      operationId: createPromotion
+      x-mosaiq-status: planned
+      summary: Create a promotion
+      description: >-
+        Creates a promotion of a DRAFT campaign. The server allocates
+        `promotion_id`; `promotion_id` and `is_active` are forbidden in the body
+        and return 422 `invalid_body`. `campaign_id` must name an existing
+        campaign (422 `unknown_campaign`) that is DRAFT (409 `campaign_not_draft`).
+        The validity must not end before it starts (422 `ends_before_start`) and
+        must lie within the campaign's validity (422 `promotion_outside_campaign`).
+        `store_ids` must exist in `api_stores.store_directory_v2` (422
+        `unknown_store`), and each channel id must be enabled at one of the listed
+        stores, from the same view's `channel_ids` (422 `unknown_channel`).
+        `discount_percent` is a two-decimal string above 0.00 and at most 100.00.
+        Whether a store's own cap applies is decided where a sale is recorded,
+        not here.
+      x-mosaiq-roles:
+        - ADMIN
+        - MARKETING
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePromotionRequest'
+            examples:
+              example:
+                externalValue: ./examples/create-promotion.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/CreatePromotionRequest'
+            examples:
+              example:
+                externalValue: ./examples/create-promotion.request.xml
+      responses:
+        '201':
+          description: Promotion created.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            Location:
+              description: Canonical URI of the new promotion.
+              required: true
+              schema:
+                type: string
+                format: uri-reference
+                example: /v1/promotions/41
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Promotion'
+              examples:
+                example:
+                  externalValue: ./examples/promotion.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Promotion'
+              examples:
+                example:
+                  externalValue: ./examples/promotion.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/CampaignNotDraft'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/PromotionValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/promotions/{promotion_id}:
+    get:
+      operationId: getPromotion
+      x-mosaiq-status: planned
+      summary: Get a promotion
+      description: >-
+        Returns one promotion. For the four floor roles a promotion that is not
+        active, or applies to none of their assigned stores, is 404
+        `promotion_not_found`, so a floor role cannot learn that it exists.
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - MARKETING
+        - AUDITOR
+        - STORE_MANAGER
+        - SALES_ASSOCIATE
+        - LOYALTY_OFFICER
+        - COMMERCIAL_SUPERVISOR
+      parameters:
+        - $ref: '#/components/parameters/PromotionId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The promotion.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Promotion'
+              examples:
+                example:
+                  externalValue: ./examples/promotion.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Promotion'
+              examples:
+                example:
+                  externalValue: ./examples/promotion.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/PromotionNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+    put:
+      operationId: replacePromotion
+      x-mosaiq-status: planned
+      summary: Replace a promotion of a draft campaign
+      description: >-
+        Replaces `name`, `discount_percent`, `starts_on`, `ends_on`, `store_ids`
+        and `channel_ids` while the promotion's campaign is DRAFT. `campaign_id`,
+        `promotion_id` and `is_active` are forbidden in the body and return 422
+        `invalid_body`: a promotion never moves to another campaign. Every other
+        check is the one of `createPromotion`. Once the campaign has left DRAFT
+        the promotion is frozen and a replacement is 409 `campaign_not_draft`.
+      x-mosaiq-roles:
+        - ADMIN
+        - MARKETING
+      parameters:
+        - $ref: '#/components/parameters/PromotionId'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplacePromotionRequest'
+            examples:
+              example:
+                externalValue: ./examples/replace-promotion.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/ReplacePromotionRequest'
+            examples:
+              example:
+                externalValue: ./examples/replace-promotion.request.xml
+      responses:
+        '200':
+          description: Promotion replaced.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Promotion'
+              examples:
+                example:
+                  externalValue: ./examples/promotion.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Promotion'
+              examples:
+                example:
+                  externalValue: ./examples/promotion.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/PromotionNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/CampaignNotDraft'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/PromotionValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
   /health/live:
     get:
       operationId: getLiveness
@@ -445,6 +1207,43 @@ components:
       description: Positive integer campaign identifier allocated by the server.
       schema:
         $ref: '#/components/schemas/CampaignId'
+    PromotionId:
+      name: promotion_id
+      in: path
+      required: true
+      description: Positive integer promotion identifier allocated by the server.
+      schema:
+        $ref: '#/components/schemas/PromotionId'
+    CampaignIdQuery:
+      name: campaign_id
+      in: query
+      required: false
+      description: Exact campaign whose promotions to return.
+      schema:
+        $ref: '#/components/schemas/CampaignId'
+    StoreIdQuery:
+      name: store_id
+      in: query
+      required: false
+      description: Only promotions that apply to this store.
+      schema:
+        $ref: '#/components/schemas/StoreId'
+    ChannelIdQuery:
+      name: channel_id
+      in: query
+      required: false
+      description: Only promotions that apply to this channel.
+      schema:
+        $ref: '#/components/schemas/ChannelId'
+    ActiveQuery:
+      name: active
+      in: query
+      required: false
+      description: >-
+        true returns active promotions, false the others. The four floor roles
+        may send only true.
+      schema:
+        type: boolean
     Page:
       name: page
       in: query
@@ -458,7 +1257,7 @@ components:
       name: size
       in: query
       required: false
-      description: Number of campaigns per page.
+      description: Number of items per page.
       schema:
         type: integer
         minimum: 1
@@ -606,6 +1405,343 @@ components:
           $ref: '#/components/schemas/CampaignStatus'
       xml:
         name: TransitionCampaignRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/campaigns/v1
+    Uuid:
+      type: string
+      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    Money:
+      type: string
+      description: A non-negative amount with exactly two decimals; no currency.
+      pattern: '^[0-9]+\.[0-9]{2}$'
+    DiscountPercent:
+      type: string
+      description: >-
+        Percentage with exactly two decimals, above 0.00 and at most 100.00.
+        The zero case is refused by the service as 422 `invalid_body`.
+      pattern: '^(100\.00|[0-9]{1,2}\.[0-9]{2})$'
+    PromotionId:
+      type: integer
+      minimum: 1
+      maximum: 2147483647
+      readOnly: true
+    PromotionName:
+      type: string
+      minLength: 1
+      maxLength: 120
+    StoreId:
+      type: integer
+      minimum: 1
+      maximum: 32767
+    ChannelId:
+      type: integer
+      minimum: 1
+      maximum: 32767
+    MaxCustomers:
+      type: integer
+      minimum: 1
+      maximum: 10000000
+    CampaignAudience:
+      type: object
+      additionalProperties: false
+      required:
+        - campaign_id
+        - label_code
+        - audience_size
+        - as_of
+      properties:
+        campaign_id:
+          $ref: '#/components/schemas/CampaignId'
+        label_code:
+          $ref: '#/components/schemas/LabelCode'
+        max_customers:
+          $ref: '#/components/schemas/MaxCustomers'
+        audience_size:
+          type: integer
+          minimum: 0
+          readOnly: true
+        as_of:
+          type: string
+          format: date-time
+          readOnly: true
+      xml:
+        name: CampaignAudience
+        namespace: https://mosaiq.maxthecoder.online/xml/campaigns/v1
+    PutCampaignAudienceRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        max_customers:
+          $ref: '#/components/schemas/MaxCustomers'
+      xml:
+        name: PutCampaignAudienceRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/campaigns/v1
+    CampaignBudget:
+      type: object
+      additionalProperties: false
+      required:
+        - campaign_id
+      properties:
+        campaign_id:
+          $ref: '#/components/schemas/CampaignId'
+        total_amount:
+          $ref: '#/components/schemas/Money'
+        per_customer_cap:
+          $ref: '#/components/schemas/Money'
+      xml:
+        name: CampaignBudget
+        namespace: https://mosaiq.maxthecoder.online/xml/campaigns/v1
+    PutCampaignBudgetRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        total_amount:
+          $ref: '#/components/schemas/Money'
+        per_customer_cap:
+          $ref: '#/components/schemas/Money'
+      xml:
+        name: PutCampaignBudgetRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/campaigns/v1
+    CampaignEligibilityRules:
+      type: object
+      additionalProperties: false
+      required:
+        - campaign_id
+      properties:
+        campaign_id:
+          $ref: '#/components/schemas/CampaignId'
+        registered_on_or_before:
+          type: string
+          format: date
+        min_purchases:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        purchase_window_days:
+          type: integer
+          minimum: 1
+          maximum: 731
+      xml:
+        name: CampaignEligibilityRules
+        namespace: https://mosaiq.maxthecoder.online/xml/campaigns/v1
+    PutCampaignEligibilityRulesRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        registered_on_or_before:
+          type: string
+          format: date
+        min_purchases:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        purchase_window_days:
+          type: integer
+          minimum: 1
+          maximum: 731
+      xml:
+        name: PutCampaignEligibilityRulesRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/campaigns/v1
+    CampaignExclusions:
+      type: object
+      additionalProperties: false
+      required:
+        - campaign_id
+        - customer_ids
+        - label_codes
+      properties:
+        campaign_id:
+          $ref: '#/components/schemas/CampaignId'
+        customer_ids:
+          type: array
+          description: Customers removed from the audience.
+          uniqueItems: true
+          minItems: 0
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/Uuid'
+        label_codes:
+          type: array
+          description: Segment labels whose holders are removed.
+          uniqueItems: true
+          minItems: 0
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/LabelCode'
+      xml:
+        name: CampaignExclusions
+        namespace: https://mosaiq.maxthecoder.online/xml/campaigns/v1
+    PutCampaignExclusionsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        customer_ids:
+          type: array
+          description: Customers removed from the audience.
+          uniqueItems: true
+          minItems: 0
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/Uuid'
+        label_codes:
+          type: array
+          description: Segment labels whose holders are removed.
+          uniqueItems: true
+          minItems: 0
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/LabelCode'
+      xml:
+        name: PutCampaignExclusionsRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/campaigns/v1
+    Promotion:
+      type: object
+      additionalProperties: false
+      required:
+        - promotion_id
+        - campaign_id
+        - name
+        - discount_percent
+        - starts_on
+        - ends_on
+        - store_ids
+        - channel_ids
+        - is_active
+      properties:
+        promotion_id:
+          $ref: '#/components/schemas/PromotionId'
+        campaign_id:
+          $ref: '#/components/schemas/CampaignId'
+        name:
+          $ref: '#/components/schemas/PromotionName'
+        discount_percent:
+          $ref: '#/components/schemas/DiscountPercent'
+        starts_on:
+          type: string
+          format: date
+        ends_on:
+          type: string
+          format: date
+        store_ids:
+          type: array
+          description: Stores where the promotion applies.
+          uniqueItems: true
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/StoreId'
+        channel_ids:
+          type: array
+          description: Channels on which the promotion applies.
+          uniqueItems: true
+          minItems: 1
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/ChannelId'
+        is_active:
+          type: boolean
+          readOnly: true
+          description: The campaign is ACTIVE and today lies within the validity.
+      xml:
+        name: Promotion
+        namespace: https://mosaiq.maxthecoder.online/xml/campaigns/v1
+    Promotions:
+      type: object
+      additionalProperties: false
+      required:
+        - promotions
+        - page_info
+      properties:
+        promotions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Promotion'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: Promotions
+        namespace: https://mosaiq.maxthecoder.online/xml/campaigns/v1
+    CreatePromotionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - campaign_id
+        - name
+        - discount_percent
+        - starts_on
+        - ends_on
+        - store_ids
+        - channel_ids
+      properties:
+        campaign_id:
+          $ref: '#/components/schemas/CampaignId'
+        name:
+          $ref: '#/components/schemas/PromotionName'
+        discount_percent:
+          $ref: '#/components/schemas/DiscountPercent'
+        starts_on:
+          type: string
+          format: date
+        ends_on:
+          type: string
+          format: date
+        store_ids:
+          type: array
+          description: Stores where the promotion applies.
+          uniqueItems: true
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/StoreId'
+        channel_ids:
+          type: array
+          description: Channels on which the promotion applies.
+          uniqueItems: true
+          minItems: 1
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/ChannelId'
+      xml:
+        name: CreatePromotionRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/campaigns/v1
+    ReplacePromotionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - discount_percent
+        - starts_on
+        - ends_on
+        - store_ids
+        - channel_ids
+      properties:
+        name:
+          $ref: '#/components/schemas/PromotionName'
+        discount_percent:
+          $ref: '#/components/schemas/DiscountPercent'
+        starts_on:
+          type: string
+          format: date
+        ends_on:
+          type: string
+          format: date
+        store_ids:
+          type: array
+          description: Stores where the promotion applies.
+          uniqueItems: true
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/StoreId'
+        channel_ids:
+          type: array
+          description: Channels on which the promotion applies.
+          uniqueItems: true
+          minItems: 1
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/ChannelId'
+      xml:
+        name: ReplacePromotionRequest
         namespace: https://mosaiq.maxthecoder.online/xml/campaigns/v1
     PageInfo:
       type: object
@@ -1056,3 +2192,165 @@ components:
             schema_not_ready:
               value: |-
                 <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>schema_not_ready</code><message>The required campaign schema has not been applied.</message><correlation_id>corr-ready-503</correlation_id></Error>
+    PromotionNotFound:
+      description: '`promotion_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            promotion_not_found:
+              externalValue: ./examples/promotion-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            promotion_not_found:
+              externalValue: ./examples/promotion-not-found.xml
+    PromotionReadForbidden:
+      description: '`forbidden_role` or `forbidden_store`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.json
+            forbidden_store:
+              externalValue: ./examples/forbidden-store.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.xml
+            forbidden_store:
+              externalValue: ./examples/forbidden-store.xml
+    PlanValidation:
+      description: '`invalid_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-plan-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-plan-body.xml
+    AudienceValidation:
+      description: '`invalid_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-audience-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-audience-body.xml
+    ExclusionsValidation:
+      description: '`invalid_body`, `unknown_label` or `unknown_customer`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-exclusions-body.json
+            unknown_label:
+              externalValue: ./examples/unknown-label.json
+            unknown_customer:
+              externalValue: ./examples/unknown-customer.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-exclusions-body.xml
+            unknown_label:
+              externalValue: ./examples/unknown-label.xml
+            unknown_customer:
+              externalValue: ./examples/unknown-customer.xml
+    PromotionValidation:
+      description: '`invalid_body`, `unknown_campaign`, `ends_before_start`, `promotion_outside_campaign`, `unknown_store` or `unknown_channel`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-promotion-body.json
+            unknown_campaign:
+              externalValue: ./examples/unknown-campaign.json
+            ends_before_start:
+              externalValue: ./examples/ends-before-start.json
+            promotion_outside_campaign:
+              externalValue: ./examples/promotion-outside-campaign.json
+            unknown_store:
+              externalValue: ./examples/unknown-store.json
+            unknown_channel:
+              externalValue: ./examples/unknown-channel.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-promotion-body.xml
+            unknown_campaign:
+              externalValue: ./examples/unknown-campaign.xml
+            ends_before_start:
+              externalValue: ./examples/ends-before-start.xml
+            promotion_outside_campaign:
+              externalValue: ./examples/promotion-outside-campaign.xml
+            unknown_store:
+              externalValue: ./examples/unknown-store.xml
+            unknown_channel:
+              externalValue: ./examples/unknown-channel.xml
+    PromotionListValidation:
+      description: '`invalid_pagination` or `invalid_query`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.json
+            invalid_query:
+              externalValue: ./examples/invalid-query.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.xml
+            invalid_query:
+              externalValue: ./examples/invalid-query.xml

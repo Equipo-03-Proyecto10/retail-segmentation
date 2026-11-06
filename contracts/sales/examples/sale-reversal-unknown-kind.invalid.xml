@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SaleReversalRequest xmlns="https://mosaiq.maxthecoder.online/xml/sales/v1">
+  <sale_id>4811</sale_id>
+  <kind>REFUND</kind>
+</SaleReversalRequest>

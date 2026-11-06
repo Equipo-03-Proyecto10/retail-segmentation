@@ -1,6 +1,7 @@
+import { appendFileSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { CHANNELS } from '../shared/api';
 import { Audit } from './audit';
 import { Backoffice } from './backoffice';
@@ -8,6 +9,7 @@ import { loadBundle } from './bundle';
 import { Campaigns } from './campaigns';
 import { Catalog } from './catalog';
 import { Customers } from './customers';
+import { Exporter, type ExportEnv } from './exports';
 import { Floor } from './floor';
 import { loadSettings } from './settings';
 import { Stores } from './stores';
@@ -57,6 +59,27 @@ function start(): void {
           error: { code: 'invalid_input', message: 'Unknown service.', correlation_id: '-', details: [] },
         },
   );
+  ipcMain.handle(CHANNELS.exportTable, (_e, request: unknown) => {
+    const owner = BrowserWindow.fromWebContents(_e.sender) ?? undefined;
+    const choose = async (name: string): Promise<string | undefined> => {
+      const options = {
+        defaultPath: join(app.getPath('documents'), name),
+        filters: [{ name: 'CSV', extensions: ['csv'] }],
+      };
+      const picked = owner
+        ? await dialog.showSaveDialog(owner, options)
+        : await dialog.showSaveDialog(options);
+      return picked.canceled ? undefined : picked.filePath;
+    };
+    // The only file an export writes is the one the save dialog above returned.
+    const env: ExportEnv = {
+      chooseFile: choose,
+      saveCsv: (path, text) => writeFileSync(path, text, { encoding: 'utf8', mode: 0o600 }),
+      appendLine: (path, line) => appendFileSync(path, line, { encoding: 'utf8', mode: 0o600 }),
+      now: () => new Date(),
+    };
+    return new Exporter(office, env, dir).exportTable(request);
+  });
   // Each handler passes the renderer's values on unchanged; Catalog checks every one of them.
   const catalog = new Catalog(office);
   ipcMain.handle(CHANNELS.listProducts, (_e, query: unknown) => catalog.listProducts(query));

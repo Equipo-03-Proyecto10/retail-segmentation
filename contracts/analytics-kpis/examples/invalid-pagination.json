@@ -1,0 +1,11 @@
+{
+  "code": "invalid_pagination",
+  "message": "Pagination values are outside their allowed ranges.",
+  "correlation_id": "corr-kpi-422b",
+  "details": [
+    {
+      "field": "page",
+      "code": "minimum"
+    }
+  ]
+}

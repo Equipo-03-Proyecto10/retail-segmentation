@@ -311,9 +311,14 @@ sales in the window are clustered; the rest are the unassigned result (RN-21).
 | A customer is equidistant from two centroids | They go to the lower-numbered cluster | `tie_break` |
 | Fewer customers have sales than k | The run is refused and nothing is written | — |
 
-Quality is recorded as inertia, mean silhouette (absent above 2,000 customers,
-where it would be quadratic in pure Python, and for a single cluster, where it is
-undefined) and the cluster sizes, largest first. Sizes are a list and not a mapping
+Quality is recorded as inertia, mean silhouette and the cluster sizes, largest
+first. The silhouette is absent only for a single cluster, where it is undefined.
+Up to 2,000 customers it compares every customer with every other. Above 2,000,
+where that would be quadratic in pure Python, it is the mean over a sample of 1,000
+customers, each still compared with every clustered customer, chosen by a shuffle
+seeded from the run's seed, so the same run gives the same figure; the run records
+`quality.silhouette_sampled`, `quality.silhouette_sample_size` and
+`quality.silhouette_sample_seed`, and an exact silhouette records none of them (#815). Sizes are a list and not a mapping
 by cluster number: a raw cluster number means something only inside one fit and is
 never something a report can key on (ADR-0018). A clustered customer carries their
 raw recency, frequency and monetary values and no quintile scores, which are
@@ -1236,14 +1241,18 @@ replacement runs in one transaction that takes
 and inserting the set; the foreign keys refuse an unknown channel or category.
 · #398
 
-### RN-55 — In-store engagement is recorded once per client event, attributed, voided rather than deleted, and summarized
-A `QR_SCAN` or `RECO_CLICK` from the floor is stored once per client event id,
-with the user who recorded it. A wrong event is voided with a reason and kept,
-and summaries count only events that are not voided.
+### RN-55 — In-store engagement is recorded once per client event as a distinct fact that is never a sale, attributed, voided rather than deleted, and summarized
+An engagement event from the floor is one of eight kinds: `QR_SCAN`,
+`RECO_CLICK`, `STORE_VISIT`, `RECO_IMPRESSION`, `CAMPAIGN_EXPOSURE`, `CART_ADD`,
+`CART_REMOVE` and `NAVIGATION`. It is stored once per client event id, with the
+user who recorded it. Each kind is its own fact: an impression is never read as
+a visit or a click, and a cart is intent, never a sale. A confirmed transaction
+exists only in sales-service. A wrong event is voided with a reason and kept,
+and summaries count only events that are not voided, each kind under its own key.
 
 **Enforced:** engagement-service (planned), ADR-0038 — the unique
 `client_event_id` index and the `$jsonSchema` validator on `engagement_event`
-in MongoDB, and a void operation that never deletes. · #398
+in MongoDB, and a void operation that never deletes. · #398, #798
 
 ### RN-56 — A staff check-in is verified only within the store's geofence at acceptable accuracy, and overrides are append-only reviews
 The server computes the distance from the reported position to the store's
@@ -1299,6 +1308,75 @@ is append-only. The contract of F22-10 (#805) specifies versions, training runs,
 metrics, publications and rollbacks; drift reports and alerts follow with F23. ·
 #743
 
+### RN-68 — A KPI is reported only under its published definition, window and data origin, and only to the roles and stores allowed to read it
+A KPI has one published definition, one window and one data origin, and a report
+names the version of the definition it follows, so a figure cannot mean two
+things. Its figures are read only from the `api_*` views the producers publish,
+never from another boundary's table, and sales figures are net of reversals
+([ADR-0062](adr/0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md)).
+A figure counted from facts, a sale credited to a campaign and an effect against
+a control are labelled `OBSERVED`, `ATTRIBUTED` and `INCREMENTAL`, and one kind
+is never presented as another. A report whose window holds a change of model
+version is marked, because the change is methodological and not behaviour
+([ADR-0064](adr/0064-a-model-version-is-immutable-and-a-change-of-version-is-never-reported-as-behaviour.md)),
+and a figure that aggregates a seeded sale is marked synthetic
+([ADR-0052](adr/0052-data-provenance-is-recorded-per-sale-and-per-segmentation-run.md)).
+A role confined to its stores ([ADR-0060](adr/0060-four-store-profiles-map-to-four-roles-and-services-read-each-users-stores-per-request.md))
+reads only those stores, a store it is not assigned to is refused, and a KPI whose
+figure has no store is not readable by it. No report carries a customer.
+
+**Enforced:** analytics-kpis (planned), ADR-0059 — the catalog served at
+`GET /v1/kpi-reports/definitions` is the only statement of a figure, the service
+holds `SELECT` on `api_*` views only, and the store scope is read from
+`api_users.store_assignment_v1` on each request. · #747
+
+### RN-69 — Stock changes only through a sale, its reversal or a recorded movement with a reason, and is never negative
+`inventory` keeps one on-hand quantity per store and product, and it is never
+negative ([ADR-0061](adr/0061-stock-keeps-one-quantity-per-store-and-changes-only-through-a-sale-a-reversal-or-a-recorded-movement.md)).
+Beyond an accepted sale (RN-14), it changes only through a sale's reversal or a
+recorded movement: a receipt with its reference, a transfer between two stores, a
+count with who counted, an adjustment with a reason of damage, loss, expiry or
+correction, or a restock from a reversal. A transfer subtracts at the origin and adds
+at the destination in one transaction. A movement is never edited or deleted, and a
+repeated `Idempotency-Key` records nothing new. A product is available in a store and
+channel when its commercial status allows the sale, the store enables the channel,
+and its on-hand quantity is above zero.
+
+**Enforced:** stock-service (planned) and ADR-0061 — `stock.stock_movement` is
+insert-only, `definer_stock` applies a movement and its `inventory` change in one
+transaction, and quantities change by a conditional `UPDATE`, so two movements on
+one row add up. · #772
+
+### RN-70 — A sale is never edited or deleted: a cancellation or return is recorded beside it, and every reader counts net units
+A cancellation or a return is an append-only reversal recorded beside the sale
+([ADR-0062](adr/0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md)).
+It never edits or deletes the sale. A cancellation covers the whole sale on its
+calendar day, a return covers one or more lines within 30 days of the sale (both are
+configuration defaults), and each states a reason. Returning more units than remain is
+refused. A line's returned units are restored to stock in the same transaction unless
+the line says the goods cannot be resold. Every reader of accepted sales counts net
+units, `quantity - returned_quantity`, and a sale whose net amount is zero stops
+counting as a purchase. A repeated `Idempotency-Key` or `source_transaction_id`
+records nothing new.
+
+**Enforced:** sales-service (planned) and ADR-0062 — `sales.sale_reversal` and
+`sales.sale_reversal_line` are insert-only; `transaction_line.returned_quantity` is
+written only by `svc_sales`, with `CHECK (returned_quantity BETWEEN 0 AND quantity)`;
+the `net_sale_line` and `net_sale` views carry the one definition of net. · #770
+
+### RN-71 — A promotion belongs to one campaign, discounts by a percentage above zero, and is valid only within its campaign's dates
+A promotion names exactly one campaign, a discount percentage greater than zero
+and at most 100, the stores and channels where it applies, and a validity that
+begins no earlier than its campaign's start and ends no later than its end
+(`starts_on` is never after `ends_on`). It is created and replaced only while its
+campaign is a draft (RN-32), and it is usable for a discount only while the
+campaign is `ACTIVE` and today lies within its validity, both ends inclusive. A
+promotion outside its campaign's dates is refused as `promotion_outside_campaign`.
+
+**Enforced:** campaigns-service (planned), ADR-0059 and ADR-0034 — the service
+checks the rule on every write, and `api_campaigns.active_promotion_v1` publishes
+only promotions of an `ACTIVE` campaign whose validity contains `CURRENT_DATE`. · #834
+
 ---
 
 ## Where the gaps are
@@ -1321,6 +1399,9 @@ engagement-service and RN-56 on check-ins-service. RN-57 belongs to the
 experiment dashboard; RN-58 to RN-60 uniquely identify the K-means,
 migration-matrix and migration-explanation rules. RN-65 belongs to rfm-engine
 (#743) and waits on its implementation story, F22-05 (#779).
+
+migration-matrix and migration-explanation rules. RN-68 belongs to analytics-kpis (#747) and waits on its
+implementation story, F26-02 (#847).
 
 RN-01 was the one to watch — a hard rule in `AGENTS.md` and a success criterion
 in [`scope.md`](scope.md) §7 that held only because the seed happened to contain

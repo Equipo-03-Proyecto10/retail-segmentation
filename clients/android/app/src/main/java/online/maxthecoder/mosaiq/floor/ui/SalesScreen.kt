@@ -16,13 +16,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.outbox.OutboxRow
 import online.maxthecoder.mosaiq.floor.outbox.RowState
@@ -37,12 +37,12 @@ fun SalesScreen(
     insights: CustomerInsightsViewModel,
     onOpenProduct: (Int) -> Unit
 ) {
-    val customer by model.selectedCustomer.collectAsState()
-    val sale by model.sale.collectAsState()
-    val registration by model.registration.collectAsState()
-    val history by model.history.collectAsState()
-    val status by model.statusMessage.collectAsState()
-    val statusError by model.statusError.collectAsState()
+    val customer by model.selectedCustomer.collectAsStateWithLifecycle()
+    val sale by model.sale.collectAsStateWithLifecycle()
+    val registration by model.registration.collectAsStateWithLifecycle()
+    val history by model.history.collectAsStateWithLifecycle()
+    val status by model.statusMessage.collectAsStateWithLifecycle()
+    val statusError by model.statusError.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { model.loadChannels() }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
         item { Text("Customer", style = MaterialTheme.typography.titleLarge) }
@@ -117,7 +117,7 @@ private fun SaleProgress(model: SalesViewModel, row: OutboxRow) {
 
 @Composable
 private fun CustomerSearch(model: SalesViewModel) {
-    val state by model.customers.collectAsState()
+    val state by model.customers.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf(state.query) }
     var email by rememberSaveable { mutableStateOf(state.email) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -156,7 +156,7 @@ private fun CustomerSearch(model: SalesViewModel) {
 
 @Composable
 private fun Registration(model: SalesViewModel) {
-    val state by model.registration.collectAsState()
+    val state by model.registration.collectAsStateWithLifecycle()
     var name by rememberSaveable { mutableStateOf("") }
     var email by rememberSaveable { mutableStateOf("") }
     var phone by rememberSaveable { mutableStateOf("") }
@@ -206,7 +206,7 @@ private fun RegistrationField(label: String, field: String, value: String, chang
 
 @Composable
 private fun Interests(model: SalesViewModel) {
-    val state by model.interests.collectAsState()
+    val state by model.interests.collectAsStateWithLifecycle()
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("Interests", style = MaterialTheme.typography.titleMedium)
         state.categories.forEach { category ->
@@ -230,7 +230,7 @@ private fun Interests(model: SalesViewModel) {
 
 @Composable
 private fun ProductSearch(model: SalesViewModel) {
-    val state by model.sale.collectAsState()
+    val state by model.sale.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf(state.query) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Search products, or use Scan a product and tap Add to sale.")

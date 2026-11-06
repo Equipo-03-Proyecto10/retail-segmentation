@@ -2,9 +2,10 @@
 
 The outbox is `relay_pending` on each event document, written in the same
 single-document insert or void as the fact. A thread of the service polls it
-every second, publishes the notices through the kit's StreamPublisher (XADD,
-then WAITAOF) and only then `$pull`s them, so delivery is at least once and a
-relay or Redis outage loses nothing. The request path never runs XADD.
+every second, publishes the notices through the kit's StreamPublisher (the
+stream append, then WAITAOF) and only then `$pull`s them, so delivery is at
+least once and a relay or Redis outage loses nothing. The request path never
+appends to the stream; only the kit does (ADR-0044's guard).
 """
 
 from __future__ import annotations

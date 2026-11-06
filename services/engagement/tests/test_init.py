@@ -8,6 +8,7 @@ seed's events are fixed.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -82,7 +83,7 @@ def snapshot(root: MongoClient) -> dict:
                     i["name"],
                     tuple(i["key"].items()),
                     bool(i.get("unique")),
-                    repr(i.get("partialFilterExpression")),
+                    json.dumps(i.get("partialFilterExpression"), sort_keys=True),
                 )
                 for i in database[name].list_indexes()
             )
@@ -127,14 +128,14 @@ def test_init_is_idempotent(mongosh, root_uri, admin):
     assert relay[1:] == (
         (("occurred_at", 1),),
         False,
-        repr({"relay_pending.0": {"$exists": True}}),
+        json.dumps({"relay_pending.0": {"$exists": True}}),
     )
     daily = before["indexes"]["engagement_daily"]
     assert (
         "store_id_1_day_1_type_1",
         (("store_id", 1), ("day", 1), ("type", 1)),
         True,
-        "None",
+        "null",
     ) in daily
 
 

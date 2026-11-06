@@ -397,36 +397,36 @@ paths:
             X-Correlation-ID:
               $ref: '#/components/headers/CorrelationId'
           content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CaptureIncident'
-            examples:
-              replay:
-                externalValue: ./examples/capture-incident.json
-          application/xml:
-            schema:
-              $ref: '#/components/schemas/CaptureIncident'
-            examples:
-              replay:
-                externalValue: ./examples/capture-incident.xml
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureIncident'
+              examples:
+                replay:
+                  externalValue: ./examples/capture-incident.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CaptureIncident'
+              examples:
+                replay:
+                  externalValue: ./examples/capture-incident.xml
         '201':
           description: The recorded incident.
           headers:
             X-Correlation-ID:
               $ref: '#/components/headers/CorrelationId'
           content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CaptureIncident'
-            examples:
-              open:
-                externalValue: ./examples/capture-incident.json
-          application/xml:
-            schema:
-              $ref: '#/components/schemas/CaptureIncident'
-            examples:
-              open:
-                externalValue: ./examples/capture-incident.xml
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureIncident'
+              examples:
+                open:
+                  externalValue: ./examples/capture-incident.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CaptureIncident'
+              examples:
+                open:
+                  externalValue: ./examples/capture-incident.xml
         '400':
           $ref: '#/components/responses/MalformedBody'
         '401':
@@ -476,18 +476,18 @@ paths:
             X-Correlation-ID:
               $ref: '#/components/headers/CorrelationId'
           content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CaptureIncidentPage'
-            examples:
-              page:
-                externalValue: ./examples/capture-incidents-page.json
-          application/xml:
-            schema:
-              $ref: '#/components/schemas/CaptureIncidentPage'
-            examples:
-              page:
-                externalValue: ./examples/capture-incidents-page.xml
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureIncidentPage'
+              examples:
+                page:
+                  externalValue: ./examples/capture-incidents-page.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CaptureIncidentPage'
+              examples:
+                page:
+                  externalValue: ./examples/capture-incidents-page.xml
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -522,22 +522,22 @@ paths:
             X-Correlation-ID:
               $ref: '#/components/headers/CorrelationId'
           content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CaptureIncident'
-            examples:
-              resolved:
-                externalValue: ./examples/capture-incident-resolved.json
-              open:
-                externalValue: ./examples/capture-incident.json
-          application/xml:
-            schema:
-              $ref: '#/components/schemas/CaptureIncident'
-            examples:
-              resolved:
-                externalValue: ./examples/capture-incident-resolved.xml
-              open:
-                externalValue: ./examples/capture-incident.xml
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureIncident'
+              examples:
+                resolved:
+                  externalValue: ./examples/capture-incident-resolved.json
+                open:
+                  externalValue: ./examples/capture-incident.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CaptureIncident'
+              examples:
+                resolved:
+                  externalValue: ./examples/capture-incident-resolved.xml
+                open:
+                  externalValue: ./examples/capture-incident.xml
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -595,22 +595,22 @@ paths:
             X-Correlation-ID:
               $ref: '#/components/headers/CorrelationId'
           content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CaptureIncident'
-            examples:
-              resolved:
-                externalValue: ./examples/capture-incident-resolved.json
-              acknowledged:
-                externalValue: ./examples/capture-incident-acknowledged.json
-          application/xml:
-            schema:
-              $ref: '#/components/schemas/CaptureIncident'
-            examples:
-              resolved:
-                externalValue: ./examples/capture-incident-resolved.xml
-              acknowledged:
-                externalValue: ./examples/capture-incident-acknowledged.xml
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureIncident'
+              examples:
+                resolved:
+                  externalValue: ./examples/capture-incident-resolved.json
+                acknowledged:
+                  externalValue: ./examples/capture-incident-acknowledged.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CaptureIncident'
+              examples:
+                resolved:
+                  externalValue: ./examples/capture-incident-resolved.xml
+                acknowledged:
+                  externalValue: ./examples/capture-incident-acknowledged.xml
         '400':
           $ref: '#/components/responses/MalformedBody'
         '401':
@@ -659,30 +659,30 @@ paths:
             X-Correlation-ID:
               $ref: '#/components/headers/CorrelationId'
           content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CaptureIncidentSummary'
-            examples:
-              by_store:
-                externalValue: ./examples/capture-incident-summary-by-store.json
-              by_day:
-                externalValue: ./examples/capture-incident-summary-by-day.json
-              by_source_type:
-                externalValue: ./examples/capture-incident-summary-by-source-type.json
-              by_refused_code:
-                externalValue: ./examples/capture-incident-summary-by-refused-code.json
-          application/xml:
-            schema:
-              $ref: '#/components/schemas/CaptureIncidentSummary'
-            examples:
-              by_store:
-                externalValue: ./examples/capture-incident-summary-by-store.xml
-              by_day:
-                externalValue: ./examples/capture-incident-summary-by-day.xml
-              by_source_type:
-                externalValue: ./examples/capture-incident-summary-by-source-type.xml
-              by_refused_code:
-                externalValue: ./examples/capture-incident-summary-by-refused-code.xml
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureIncidentSummary'
+              examples:
+                by_store:
+                  externalValue: ./examples/capture-incident-summary-by-store.json
+                by_day:
+                  externalValue: ./examples/capture-incident-summary-by-day.json
+                by_source_type:
+                  externalValue: ./examples/capture-incident-summary-by-source-type.json
+                by_refused_code:
+                  externalValue: ./examples/capture-incident-summary-by-refused-code.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CaptureIncidentSummary'
+              examples:
+                by_store:
+                  externalValue: ./examples/capture-incident-summary-by-store.xml
+                by_day:
+                  externalValue: ./examples/capture-incident-summary-by-day.xml
+                by_source_type:
+                  externalValue: ./examples/capture-incident-summary-by-source-type.xml
+                by_refused_code:
+                  externalValue: ./examples/capture-incident-summary-by-refused-code.xml
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':

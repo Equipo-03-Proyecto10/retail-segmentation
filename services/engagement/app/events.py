@@ -68,29 +68,30 @@ SERVER_SELECTION_TIMEOUT_MS = 2000
 # What mongo/init.js creates, as the service reads it back. Index name, key and
 # uniqueness; init.js is the one definition, this is its mirror for readiness.
 EVENT_INDEXES = {
-    "client_event_id_1": ([("client_event_id", ASCENDING)], True),
+    "client_event_id_1": ([("client_event_id", ASCENDING)], True, None),
     "store_id_1_occurred_at_-1": (
         [("store_id", ASCENDING), ("occurred_at", DESCENDING)],
         False,
+        None,
     ),
     "type_1_occurred_at_-1": (
         [("type", ASCENDING), ("occurred_at", DESCENDING)],
         False,
+        None,
     ),
     "customer_id_1_occurred_at_-1": (
         [("customer_id", ASCENDING), ("occurred_at", DESCENDING)],
         False,
+        None,
     ),
-    "relay_pending_occurred_at_1": (
-        [("occurred_at", ASCENDING)],
-        False,
-        RELAY_PENDING,
-    ),
+    # The relay's partial index (ADR-0075).
+    "relay_pending_occurred_at_1": ([("occurred_at", ASCENDING)], False, RELAY_PENDING),
 }
 DAILY_INDEXES = {
     "store_id_1_day_1_type_1": (
         [("store_id", ASCENDING), ("day", ASCENDING), ("type", ASCENDING)],
         True,
+        None,
     ),
 }
 
@@ -273,8 +274,8 @@ class EventStore:
             if index["name"] != "_id_"
         }
         return found == {
-            name: (list(spec[0]), spec[1], spec[2] if len(spec) > 2 else None)
-            for name, spec in wanted.items()
+            name: (list(key), unique, partial)
+            for name, (key, unique, partial) in wanted.items()
         }
 
     # -- events ------------------------------------------------------------

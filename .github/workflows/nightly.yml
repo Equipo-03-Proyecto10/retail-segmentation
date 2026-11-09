@@ -51,6 +51,32 @@ jobs:
       - name: The demonstration chain
         run: python3 -m pytest tests/e2e -rs --junitxml=test-results/e2e.xml
 
+      - name: The web-to-service parity harness (F20-07)
+        # The web is not part of the compose stack (Q-12 keeps it off the
+        # mosaiq network), so gunicorn runs on the runner against the db
+        # container's bridge IP. The accounts are the seed's demo accounts;
+        # a PARITY_*_PASSWORD secret overrides the seeded password.
+        env:
+          PARITY_WEB_EMAIL: ${{ secrets.PARITY_WEB_EMAIL || 'admin@mosaiq-demo.com' }}
+          PARITY_WEB_PASSWORD: ${{ secrets.PARITY_WEB_PASSWORD || 'Password123!' }}
+          PARITY_SERVICE_EMAIL: ${{ secrets.PARITY_SERVICE_EMAIL || 'user3@mosaiq-demo.com' }}
+          PARITY_SERVICE_PASSWORD: ${{ secrets.PARITY_SERVICE_PASSWORD || 'Password123!' }}
+        run: |
+          set -euo pipefail
+          db_ip=$(docker inspect "$($COMPOSE ps -q db)" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
+          mkdir -p test-results "$RUNNER_TEMP/uploads"
+          DATABASE_URL="postgresql://retail_app:retail_app@${db_ip}:5432/retail" \
+          FLASK_ENV=development FLASK_SECRET_KEY="$(openssl rand -hex 32)" \
+          UPLOAD_DIR="$RUNNER_TEMP/uploads" \
+            gunicorn --bind 127.0.0.1:5000 'web.app:create_app()' >test-results/web.log 2>&1 &
+          for _ in $(seq 60); do
+            curl -fsS -o /dev/null http://127.0.0.1:5000/ && break || sleep 1
+          done
+          export PARITY_WEB_URL=http://127.0.0.1:5000
+          export PARITY_GATEWAY_URL=http://127.0.0.1:8080
+          export PARITY_DATABASE_URL="postgresql://postgres:postgres@${db_ip}:5432/retail"
+          python3 -m pytest tests/parity -rs --junitxml=test-results/parity.xml
+
       - name: Collect the stack's compose logs
         if: failure()
         run: |

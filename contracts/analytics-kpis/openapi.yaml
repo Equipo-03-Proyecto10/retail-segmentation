@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: analytics-kpis-service
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     Reports the commercial KPIs of the platform under their published
     definition, window and data origin, and only to the roles and stores
@@ -66,6 +66,12 @@ info:
     window, arm sizes, attributed amount, effect and interval, data origin).
     This contract invents none of their columns; each producer's story fixes
     them, and the service does not deploy before they exist.
+
+
+    `getDemandCoverageReport` also consumes two published views, contracted
+    by their producers: `api_stock.stock_level_v1` and
+    `api_products.product_ref_v1`. The story that implements it adds their
+    grant rows for `svc_kpis` and names analytics-kpis as their consumer.
 security:
   - bearer: []
 paths:
@@ -477,6 +483,108 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/kpi-reports/demand-coverage:
+    get:
+      summary: Report demand by segment beside stock on hand
+      description: >-
+        For inventory planning: one row per store and category, with the net
+        units demanded in the window, the units on hand now, days of cover and
+        the units needed to reach `target_cover_days`, and the demand split by
+        segment. It is not a catalog KPI and has no `kpi` code; the
+        calculation is stated in every response's `calculation` and here.
+
+
+        **Demand.** `net_units` is the sum of `net_quantity` in
+        `api_sales.net_purchase_line_v1` for lines with `occurred_at` in the
+        window (ADR-0062: reversals are subtracted), placed in the category the
+        product has now (`api_products.product_ref_v1.category_id`).
+        `daily_demand` = `net_units` / `window_days`, four places, where
+        `window_days` = `to` − `from` + 1. Each row's `segments` split
+        `net_units` by the label the buyer holds at `generated_at`
+        (`api_segments.current_label_v1`; unlabelled buyers are reported by
+        `segment_state`, RN-21), with `share` = segment units / `net_units`,
+        four places. Segment units add up to `net_units`.
+
+
+        **Stock.** `on_hand` is the sum of `quantity_on_hand` in
+        `api_stock.stock_level_v1` at `generated_at` over the category's
+        products held at the store. A product with no stock record adds
+        nothing. Stock is not split by segment, so `on_hand` appears once per
+        row and the segments carry demand only.
+
+
+        **Cover and need.** `days_of_cover` = `on_hand` / `daily_demand`, two
+        places, null when `net_units` is 0. `replenishment_units` =
+        max(0, ⌈`net_units` × `target_cover_days` / `window_days`⌉ −
+        `on_hand`), computed from the unrounded demand. Only products with
+        `is_active` true count, in demand and in stock: a retired product is
+        not replenished.
+
+
+        **Rows.** A store and category pair appears when it has demand in the
+        window or stock on hand, ordered by `store_id`, then `category_id`.
+        No row, segment or field carries a customer identifier.
+
+
+        **Window.** As every report, `from` and `to` are UTC dates and `to` is
+        inclusive. `to` must be before the UTC date of `generated_at`, so a
+        day still running never lowers daily demand: otherwise 422
+        `invalid_query` (`window_not_ended`).
+
+
+        **Stores.** `STORE_MANAGER` reads its assigned stores only (ADR-0060),
+        as on every report. `INVENTORY_PLANNER`, which reads no other report,
+        reads this one over every store.
+      operationId: getDemandCoverageReport
+      x-mosaiq-status: planned
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - INVENTORY_PLANNER
+        - AUDITOR
+        - STORE_MANAGER
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/StoreId'
+        - $ref: '#/components/parameters/CategoryId'
+        - $ref: '#/components/parameters/TargetCoverDays'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: The report, ordered by store, then category.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DemandCoverageReport'
+              examples:
+                one_store:
+                  summary: One store's categories, one with no demand and one with no stock record.
+                  externalValue: ./examples/demand-coverage.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/DemandCoverageReport'
+              examples:
+                one_store:
+                  summary: One store's categories, one with no demand and one with no stock record.
+                  externalValue: ./examples/demand-coverage.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRoleOrStore'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/DemandCoverageQueryValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
   /v1/kpi-reports/definitions:
     get:
       summary: List the KPI definitions
@@ -712,6 +820,28 @@ components:
         type: integer
         format: int64
         minimum: 1
+    CategoryId:
+      name: category_id
+      in: query
+      required: false
+      description: Keeps one category, as `categories` identifies it. Its subcategories are not included.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+    TargetCoverDays:
+      name: target_cover_days
+      in: query
+      required: false
+      description: >-
+        The days of demand the stock should cover, from which
+        `replenishment_units` is computed. Outside 1 to 180 is 422
+        `invalid_query` (`out_of_range`).
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 180
+        default: 14
     Page:
       name: page
       in: query
@@ -1078,6 +1208,122 @@ components:
       xml:
         name: KpiDefinitions
         namespace: https://mosaiq.maxthecoder.online/xml/analytics-kpis/v1
+    SegmentDemand:
+      type: object
+      additionalProperties: false
+      required: [segment_code, segment_state, net_units, share]
+      properties:
+        segment_code:
+          type: [string, 'null']
+          description: The label code, only when `segment_state` is `assigned`. Omitted in XML when null.
+        segment_state:
+          $ref: '#/components/schemas/SegmentState'
+        net_units:
+          type: integer
+          minimum: 1
+          description: The row's net units bought by holders of this label, or in this state.
+        share:
+          $ref: '#/components/schemas/Decimal'
+      xml:
+        name: segments
+    DemandCoverageRow:
+      type: object
+      additionalProperties: false
+      required:
+        - store_id
+        - category_id
+        - net_units
+        - daily_demand
+        - on_hand
+        - days_of_cover
+        - replenishment_units
+        - synthetic
+        - segments
+      properties:
+        store_id:
+          type: integer
+          format: int32
+          minimum: 1
+        category_id:
+          type: integer
+          format: int32
+          minimum: 1
+          description: As `categories` identifies it.
+        net_units:
+          type: integer
+          minimum: 0
+        daily_demand:
+          $ref: '#/components/schemas/Decimal'
+        on_hand:
+          type: integer
+          minimum: 0
+        days_of_cover:
+          description: Null, and omitted in XML, when `net_units` is 0.
+          oneOf:
+            - $ref: '#/components/schemas/Decimal'
+            - type: 'null'
+        replenishment_units:
+          type: integer
+          minimum: 0
+        synthetic:
+          type: boolean
+          description: True when any sale aggregated into the row is `SEEDED` (ADR-0052).
+        segments:
+          type: array
+          description: Ordered by `net_units` descending, then `segment_code`; empty when `net_units` is 0.
+          items:
+            $ref: '#/components/schemas/SegmentDemand'
+      xml:
+        name: rows
+    DemandCoverageReport:
+      type: object
+      additionalProperties: false
+      required:
+        - from
+        - to
+        - window_days
+        - target_cover_days
+        - generated_at
+        - calculation
+        - store_scope
+        - data_origin
+        - rows
+        - page_info
+      properties:
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        window_days:
+          type: integer
+          minimum: 1
+          maximum: 731
+        target_cover_days:
+          type: integer
+          minimum: 1
+          maximum: 180
+        generated_at:
+          type: string
+          format: date-time
+          description: The instant stock and labels are read at.
+        calculation:
+          type: string
+          description: The calculation of `daily_demand`, `days_of_cover` and `replenishment_units`, in words, as the operation states it.
+        store_scope:
+          $ref: '#/components/schemas/StoreScope'
+        data_origin:
+          $ref: '#/components/schemas/DataOrigin'
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/DemandCoverageRow'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: DemandCoverageReport
+        namespace: https://mosaiq.maxthecoder.online/xml/analytics-kpis/v1
     PageInfo:
       type: object
       additionalProperties: false
@@ -1226,6 +1472,28 @@ components:
           examples:
             invalid_query:
               externalValue: ./examples/invalid-query.xml
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.xml
+    DemandCoverageQueryValidation:
+      description: '`invalid_query` or `invalid_pagination`. `invalid_query` details name the parameter and a code: `required`, `invalid_format`, `to_before_from`, `window_too_long`, `window_not_ended` or `out_of_range`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            window_not_ended:
+              externalValue: ./examples/demand-coverage-window-not-ended.json
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            window_not_ended:
+              externalValue: ./examples/demand-coverage-window-not-ended.xml
             invalid_pagination:
               externalValue: ./examples/invalid-pagination.xml
     InvalidPagination:

@@ -1,0 +1,49 @@
+{
+  "restriction_decisions": [
+    {
+      "decision_id": 14,
+      "customer_id": "7b3ad781-c5de-4f40-ae50-1fa825ce2b25",
+      "kind": "INTEREST_CATEGORY",
+      "target_id": 12,
+      "decision": "LIFTED",
+      "recorded_at": "2026-11-05T11:02:31Z",
+      "recorded_by": "b5d0a6f2-18c3-4e7a-9f64-0d2e7c1a3b58",
+      "source": "STAFF_ON_BEHALF"
+    },
+    {
+      "decision_id": 13,
+      "customer_id": "7b3ad781-c5de-4f40-ae50-1fa825ce2b25",
+      "kind": "INTEREST_CATEGORY",
+      "target_id": 9,
+      "decision": "IMPOSED",
+      "recorded_at": "2026-11-05T11:02:31Z",
+      "recorded_by": "b5d0a6f2-18c3-4e7a-9f64-0d2e7c1a3b58",
+      "source": "STAFF_ON_BEHALF"
+    },
+    {
+      "decision_id": 12,
+      "customer_id": "7b3ad781-c5de-4f40-ae50-1fa825ce2b25",
+      "kind": "CHANNEL",
+      "target_id": 5,
+      "decision": "IMPOSED",
+      "recorded_at": "2026-11-05T11:02:31Z",
+      "recorded_by": "b5d0a6f2-18c3-4e7a-9f64-0d2e7c1a3b58",
+      "source": "STAFF_ON_BEHALF"
+    },
+    {
+      "decision_id": 7,
+      "customer_id": "7b3ad781-c5de-4f40-ae50-1fa825ce2b25",
+      "kind": "INTEREST_CATEGORY",
+      "target_id": 12,
+      "decision": "IMPOSED",
+      "recorded_at": "2026-11-03T16:25:02Z",
+      "recorded_by": "b5d0a6f2-18c3-4e7a-9f64-0d2e7c1a3b58",
+      "source": "STAFF_ON_BEHALF"
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 4
+  }
+}

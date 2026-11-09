@@ -1,0 +1,49 @@
+{
+  "consent_decisions": [
+    {
+      "decision_id": 188,
+      "customer_id": "2e6c9d14-83a0-4b7f-a915-6d0c4f3e8b27",
+      "purpose": "PERSONALIZATION",
+      "decision": "WITHDRAWN",
+      "recorded_at": "2026-11-05T10:12:44Z",
+      "recorded_by": "b5d0a6f2-18c3-4e7a-9f64-0d2e7c1a3b58",
+      "source": "STAFF_ON_BEHALF",
+      "basis": "EXPLICIT"
+    },
+    {
+      "decision_id": 98,
+      "customer_id": "2e6c9d14-83a0-4b7f-a915-6d0c4f3e8b27",
+      "purpose": "PROFILING",
+      "decision": "GRANTED",
+      "recorded_at": "2026-11-02T08:00:00Z",
+      "recorded_by": null,
+      "source": "MIGRATION",
+      "basis": "PROGRAMME_DEFAULT"
+    },
+    {
+      "decision_id": 97,
+      "customer_id": "2e6c9d14-83a0-4b7f-a915-6d0c4f3e8b27",
+      "purpose": "MARKETING_CONTACT",
+      "decision": "WITHDRAWN",
+      "recorded_at": "2026-11-02T08:00:00Z",
+      "recorded_by": null,
+      "source": "MIGRATION",
+      "basis": "PROGRAMME_DEFAULT"
+    },
+    {
+      "decision_id": 96,
+      "customer_id": "2e6c9d14-83a0-4b7f-a915-6d0c4f3e8b27",
+      "purpose": "PERSONALIZATION",
+      "decision": "GRANTED",
+      "recorded_at": "2026-11-02T08:00:00Z",
+      "recorded_by": null,
+      "source": "MIGRATION",
+      "basis": "PROGRAMME_DEFAULT"
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 4
+  }
+}

@@ -280,7 +280,10 @@ def verdict(a: list[float], b: list[float]) -> str:
         if statistics.median(a)
         else float("inf")
     )
-    return f"Rust {abs(1 - ratio) * 100:.0f}% {'lower' if ratio < 1 else 'higher'}"
+    percent = abs(1 - ratio) * 100
+    # Below 1% a whole number would read "Rust 0% higher" for ranges that do not overlap.
+    shown = f"{percent:.0f}" if percent >= 1 else f"{percent:.1f}"
+    return f"Rust {shown}% {'lower' if ratio < 1 else 'higher'}"
 
 
 def column(rows: list[dict], key: str, scale: float = 1.0) -> list[float]:
@@ -396,6 +399,16 @@ def cmd_report(run: Path) -> None:
             "difference": [verdict(data["flask"]["sat"], data["rust"]["sat"])],
         }
         print_table(data, latency, sat)
+        # A build that sustained the ramp's top step in some pass has a
+        # saturation rate that is a lower bound, not a measurement.
+        top = max(int(r) for r in facts(shard)["cal_rates"].split(","))
+        for build in BUILDS:
+            if top in data[build]["sat"]:
+                print(
+                    f"{LABEL[build]} sustained the top of the ramp ({top} req/s) in "
+                    f"{data[build]['sat'].count(top)} of {len(data[build]['sat'])} passes: "
+                    "its saturation rate is a lower bound.\n"
+                )
         if any(data[b]["cpu"] for b in BUILDS):
             have_resources = True
             print_table(data, resources)

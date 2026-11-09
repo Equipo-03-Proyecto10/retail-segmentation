@@ -211,3 +211,17 @@ def test_a_run_with_no_requests_is_refused(tmp_path):
     )
     with pytest.raises(SystemExit):
         aggregate.runs(run, "flask", "json", "detail")
+
+
+def test_a_saturation_at_the_top_of_the_ramp_is_a_lower_bound(tmp_path, capsys):
+    run = tmp_path / "run"
+    write_run(run, sustained={"flask": [1] * 5, "rust": [3] * 5})
+    aggregate.cmd_report(run)
+    out = capsys.readouterr().out
+    assert "Rust twin sustained the top of the ramp (40 req/s) in 5 of 5 passes" in out
+    assert "Flask sustained the top of the ramp" not in out
+
+
+def test_a_difference_under_one_percent_keeps_its_decimal():
+    assert aggregate.verdict([100.0, 100.1], [100.4, 100.5]) == "Rust 0.4% higher"
+    assert aggregate.verdict([100.0, 101.0], [50.0, 51.0]) == "Rust 50% lower"

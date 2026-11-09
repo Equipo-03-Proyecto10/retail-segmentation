@@ -11,6 +11,7 @@ import { Catalog } from './catalog';
 import { Customers } from './customers';
 import { Exporter, type ExportEnv } from './exports';
 import { Floor } from './floor';
+import { Reports, type ReportExportEnv } from './reports';
 import { loadSettings } from './settings';
 import { Stores } from './stores';
 import { Transport } from './transport';
@@ -79,6 +80,29 @@ function start(): void {
       now: () => new Date(),
     };
     return new Exporter(office, env, dir).exportTable(request);
+  });
+  let reportOwner: BrowserWindow | undefined;
+  const reportEnv: ReportExportEnv = {
+    chooseFile: async (name, format) => {
+      const options = {
+        defaultPath: join(app.getPath('documents'), name),
+        filters: [{ name: { pdf: 'PDF', csv: 'CSV', xlsx: 'Excel' }[format], extensions: [format] }],
+      };
+      const picked = reportOwner
+        ? await dialog.showSaveDialog(reportOwner, options)
+        : await dialog.showSaveDialog(options);
+      return picked.canceled ? undefined : picked.filePath;
+    },
+    write: (path, data) => writeFileSync(path, data, { mode: 0o600 }),
+    appendLine: (path, line) => appendFileSync(path, line, { encoding: 'utf8', mode: 0o600 }),
+    now: () => new Date(),
+  };
+  const reports = new Reports(office, reportEnv, dir);
+  ipcMain.handle(CHANNELS.kpiDefinitions, () => reports.definitions());
+  ipcMain.handle(CHANNELS.kpiReport, (_e, query: unknown) => reports.report(query));
+  ipcMain.handle(CHANNELS.exportReport, (_e, format: unknown) => {
+    reportOwner = BrowserWindow.fromWebContents(_e.sender) ?? undefined;
+    return reports.exportReport(format);
   });
   // Each handler passes the renderer's values on unchanged; Catalog checks every one of them.
   const catalog = new Catalog(office);

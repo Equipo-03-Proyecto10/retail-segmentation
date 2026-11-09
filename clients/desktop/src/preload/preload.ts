@@ -75,6 +75,9 @@ const bridge: MosaiqBridge = {
   currentAssignment: (customerId) => ipcRenderer.invoke(CHANNELS.currentAssignment, customerId),
   listAssignments: (query) => ipcRenderer.invoke(CHANNELS.listAssignments, query),
   getRecommendations: (customerId) => ipcRenderer.invoke(CHANNELS.getRecommendations, customerId),
+  kpiDefinitions: () => ipcRenderer.invoke(CHANNELS.kpiDefinitions),
+  kpiReport: (query) => ipcRenderer.invoke(CHANNELS.kpiReport, query),
+  exportReport: (format) => ipcRenderer.invoke(CHANNELS.exportReport, format),
 };
 
 contextBridge.exposeInMainWorld('mosaiq', bridge);

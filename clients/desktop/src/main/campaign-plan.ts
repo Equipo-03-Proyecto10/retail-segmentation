@@ -1,4 +1,6 @@
 import type {
+  AudienceBreakdownView,
+  AudienceReasonCode,
   AudiencePreviewView,
   AudienceView,
   BudgetView,
@@ -6,6 +8,7 @@ import type {
   ExclusionsView,
   Result,
 } from '../shared/api';
+import { endsSession } from '../shared/modules';
 import type { Backoffice } from './backoffice';
 import { refused } from './campaigns';
 import { checked, FieldChecks, id, invalidInput, record } from './checks';
@@ -61,6 +64,15 @@ interface ExclusionsXml {
   label_codes?: string[];
 }
 
+interface BreakdownXml {
+  campaign_id: string;
+  label_code: string;
+  label_holders: string;
+  reasons?: { code: string; excluded: string }[];
+  audience_size: string;
+  as_of: string;
+}
+
 interface SegmentXml {
   label_code: string;
   size: string;
@@ -107,6 +119,21 @@ export function exclusionsOf(x: ExclusionsXml): ExclusionsView {
     campaign_id: Number(x.campaign_id),
     customer_ids: x.customer_ids ?? [],
     label_codes: x.label_codes ?? [],
+  };
+}
+
+/** The breakdown as the contract fixes it: six reasons, each a code the contract names. */
+export function breakdownOf(x: BreakdownXml): AudienceBreakdownView {
+  return {
+    campaign_id: Number(x.campaign_id),
+    label_code: x.label_code,
+    label_holders: Number(x.label_holders),
+    reasons: (x.reasons ?? []).map((r) => ({
+      code: r.code as AudienceReasonCode,
+      excluded: Number(r.excluded),
+    })),
+    audience_size: Number(x.audience_size),
+    as_of: x.as_of,
   };
 }
 
@@ -358,30 +385,55 @@ export class CampaignPlan {
   // ---------- preview ----------
 
   /**
-   * What the audience is now, and why it is that size: the audience campaigns-service counts, the rules
-   * and exclusions it counts under, and (from segments-service, ADR-0041: the client composes related
-   * data itself) how many customers hold the label. The holders are optional: a segments-service that
-   * refuses the read, or no longer lists the label, leaves the preview without them, as names.ts leaves
-   * a name unavailable.
+   * The audience with the customers it leaves out counted by reason, each under the first reason that
+   * applies (getCampaignAudienceBreakdown). Read through the preview, not through the bridge on its own.
+   */
+  getAudienceBreakdown(campaignId: unknown): Promise<Result<AudienceBreakdownView>> {
+    return this.run(async () =>
+      this.breakdownResult(
+        await this.office.authed({ method: 'GET', path: this.path(campaignId, 'audience/breakdown') }),
+      ),
+    );
+  }
+
+  /**
+   * What the audience is now, and why it is that size: the breakdown by reason, and the audience, the
+   * conditions and the exclusions it was counted under, to word each reason.
+   *
+   * The breakdown is campaigns-service's, and an operation published ahead of its implementation
+   * (ADR-0073) may not be answered yet. When it is not, for any reason but an ended session, the preview
+   * falls back to what the audience read says: its one total, and (from segments-service, ADR-0041: the
+   * client composes related data itself) how many customers hold the label, so the number left out is a
+   * difference that is not split by reason. The screen says so, and carries why in `breakdown_error`.
+   * The holders are optional in that fallback: a segments-service that refuses the read, or no longer
+   * lists the label, leaves the preview without them, as names.ts leaves a name unavailable.
    */
   preview(campaignId: unknown): Promise<Result<AudiencePreviewView>> {
     return this.run(async () => {
+      const breakdown = await this.getAudienceBreakdown(campaignId);
+      if (!breakdown.ok && endsSession(breakdown.error.code)) return breakdown;
       const audience = await this.getAudience(campaignId);
       if (!audience.ok) return audience;
       const eligibility = await this.getEligibility(campaignId);
       if (!eligibility.ok) return eligibility;
       const exclusions = await this.getExclusions(campaignId);
       if (!exclusions.ok) return exclusions;
-      const holders = await this.labelHolders(audience.value.label_code);
-      return {
-        ok: true,
-        value: present({
-          audience: audience.value,
-          eligibility: eligibility.value,
-          exclusions: exclusions.value,
-          label_holders: holders,
-        }),
+      const rules = {
+        audience: audience.value,
+        eligibility: eligibility.value,
+        exclusions: exclusions.value,
       };
+      if (breakdown.ok) {
+        const view: AudiencePreviewView = { ...rules, breakdown: breakdown.value };
+        return { ok: true, value: view };
+      }
+      const holders = await this.labelHolders(audience.value.label_code);
+      const view: AudiencePreviewView = present({
+        ...rules,
+        breakdown_error: breakdown.error,
+        label_holders: holders,
+      });
+      return { ok: true, value: view };
     });
   }
 
@@ -398,6 +450,11 @@ export class CampaignPlan {
   private audienceResult(res: CallResult): Result<AudienceView> {
     if (!res.ok) return refused(res);
     return { ok: true, value: audienceOf(res.data?.CampaignAudience as AudienceXml) };
+  }
+
+  private breakdownResult(res: CallResult): Result<AudienceBreakdownView> {
+    if (!res.ok) return refused(res);
+    return { ok: true, value: breakdownOf(res.data?.CampaignAudienceBreakdown as BreakdownXml) };
   }
 
   private budgetResult(res: CallResult): Result<BudgetView> {

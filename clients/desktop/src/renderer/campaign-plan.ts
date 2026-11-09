@@ -1,5 +1,12 @@
-import type { AudiencePreviewView, CampaignView, ExclusionsView, LabelView, Result } from '../shared/api';
-import { leftOut, plainDetail, reasonsOf } from '../shared/campaign-messages';
+import type {
+  AudienceBreakdownView,
+  AudiencePreviewView,
+  CampaignView,
+  ExclusionsView,
+  LabelView,
+  Result,
+} from '../shared/api';
+import { leftOut, plainDetail, reasonsOf, reasonText } from '../shared/campaign-messages';
 import type { ScreenContext } from './catalog';
 import { button, el, errorBox, formField, markDetails, show, testid, textInput } from './dom';
 import { latestRequest } from './latest-request';
@@ -451,31 +458,86 @@ function previewSection(
 }
 
 function previewOf(screen: PlanScreen, p: AudiencePreviewView): HTMLElement {
+  return p.breakdown === undefined ? totalOnly(screen, p) : byReason(screen, p, p.breakdown);
+}
+
+/** The label's name with its code, for a row that is about the campaign's label. */
+const holdersName = (screen: PlanScreen, code: string): string =>
+  `Customers holding ${screen.labelName(code)}`;
+
+/** The audience with its exclusions counted by reason, each customer under the first reason that applies. */
+function byReason(screen: PlanScreen, p: AudiencePreviewView, b: AudienceBreakdownView): HTMLElement {
+  const wrap = el('div');
+  wrap.append(
+    facts([
+      ['Estimated audience', `${b.audience_size} customers`, 'preview-size'],
+      ['Counted as of', b.as_of, 'preview-as-of'],
+      [holdersName(screen, b.label_code), String(b.label_holders), 'preview-holders'],
+      ['Left out of the audience', String(leftOut(p)), 'preview-left-out'],
+    ]),
+    el('h5', { text: 'Why customers are left out' }),
+    testid(
+      facts(
+        b.reasons.map((r): [string, string, string] => [
+          reasonText(r.code, p, (code) => screen.labelName(code)),
+          String(r.excluded),
+          `preview-reason-${r.code}`,
+        ]),
+      ),
+      'preview-reasons',
+    ),
+    testid(
+      el('p', {
+        text: 'Each customer is counted once, under the first reason that applies, in the order shown. The reasons and the audience add up to the customers holding the label.',
+      }),
+      'preview-note',
+    ),
+  );
+  return wrap;
+}
+
+/**
+ * What the audience read alone can say, when the breakdown could not be read: the total, the number left
+ * out as a difference, and the rules that can leave customers out. The screen says that it is a fallback.
+ */
+function totalOnly(screen: PlanScreen, p: AudiencePreviewView): HTMLElement {
   const left = leftOut(p);
   const unavailable = 'Unavailable';
   const wrap = el('div');
+  const why = p.breakdown_error;
+  const notice = testid(
+    el('p', {
+      cls: 'warning',
+      text: `The breakdown by reason could not be read, so this preview shows the total only${
+        why === undefined ? '' : `: ${why.message} (${why.code})`
+      }.`,
+    }),
+    'preview-fallback',
+  );
+  notice.setAttribute('role', 'status');
   wrap.append(
+    notice,
     facts([
       ['Estimated audience', `${p.audience.audience_size} customers`, 'preview-size'],
       ['Counted as of', p.audience.as_of, 'preview-as-of'],
       [
-        `Customers holding ${screen.labelName(p.audience.label_code)}`,
+        holdersName(screen, p.audience.label_code),
         p.label_holders === undefined ? unavailable : String(p.label_holders),
         'preview-holders',
       ],
       ['Left out of the audience', left === undefined ? unavailable : String(left), 'preview-left-out'],
     ]),
   );
-  const why = el('ul');
-  why.dataset.testid = 'preview-reasons';
+  const rules = el('ul');
+  rules.dataset.testid = 'preview-reasons';
   for (const r of reasonsOf(p, (code) => screen.labelName(code)))
-    why.append(testid(el('li', { text: r.text }), `preview-reason-${r.id}`));
+    rules.append(testid(el('li', { text: r.text }), `preview-reason-${r.id}`));
   wrap.append(
-    el('h5', { text: 'Why customers are left out' }),
-    why,
+    el('h5', { text: 'Rules that can leave customers out' }),
+    rules,
     testid(
       el('p', {
-        text: 'The service counts one total. The number left out is the customers holding the label minus the audience; it is not split by reason.',
+        text: 'Without the breakdown, the number left out is the customers holding the label minus the audience; it is not split by reason.',
       }),
       'preview-note',
     ),

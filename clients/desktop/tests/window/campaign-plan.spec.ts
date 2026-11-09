@@ -15,6 +15,7 @@ import { shot } from '../support/evidence';
 const CONTRACTS = join(__dirname, '..', '..', '..', '..', 'contracts');
 const NS = 'https://mosaiq.maxthecoder.online/xml';
 const AUTH = `${NS}/auth/v1`;
+const COMMON = `${NS}/common/v1`;
 
 const example = (service: string, name: string): string =>
   readFileSync(join(CONTRACTS, service, 'examples', `${name}.xml`), 'utf8');
@@ -50,9 +51,8 @@ const LEGAL: Record<Status, Status[]> = {
 const CUSTOMER_A = '6f1c2a9e-3b44-4d1e-9a52-0c7d8e1f2a3b';
 const CUSTOMER_B = 'b7d9e0f4-52a1-4c38-8e6d-1f2a3b4c5d6e';
 const UNKNOWN_CUSTOMER = '00000000-0000-4000-8000-000000000000';
-/** Customers holding LOYAL in the segments example; the audience can never exceed it in this fake. */
+/** Customers holding LOYAL in the segments example: the starting point of the fake's breakdown. */
 const HOLDERS = 31;
-const IN_AUDIENCE = 25;
 
 interface Plan {
   cap?: string;
@@ -92,8 +92,11 @@ let plan: Plan = recordedPlan();
 let nextRefusal: { file: string; status: number } | null = null;
 /** A sub-resource whose reads are refused with 403 forbidden_role, to show one section failing alone. */
 let unreadable: string | null = null;
+/** How the fake answers the breakdown: as the contract says, or in a way that makes the preview fall back. */
+let breakdownAnswer: 'ok' | 'forbidden' | 'no-route' | 'off-contract' = 'ok';
 
 function reset(): void {
+  breakdownAnswer = 'ok';
   seen = [];
   stored = 'DRAFT';
   plan = recordedPlan();
@@ -101,12 +104,43 @@ function reset(): void {
   unreadable = null;
 }
 
-const audienceXml = (): string => {
-  const size = plan.cap === undefined ? IN_AUDIENCE : Math.min(IN_AUDIENCE, Number(plan.cap));
-  return `<CampaignAudience xmlns="${NS}/campaigns/v1"><campaign_id>301</campaign_id><label_code>LOYAL</label_code>${
+/**
+ * The fake counts the label's holders the way the contract says: each customer once, under the first
+ * reason that applies, so the holders are the reasons plus the audience. The numbers it takes from the
+ * plan are small and fixed: one holder is not in the customer list, three registered after a cutoff,
+ * four have too few purchases.
+ */
+function counted(): { reasons: [string, number][]; size: number } {
+  let left = HOLDERS;
+  const take = (n: number): number => {
+    const taken = Math.min(n, left);
+    left -= taken;
+    return taken;
+  };
+  const reasons: [string, number][] = [
+    ['not_in_customer_reference', take(1)],
+    ['excluded_customer', take(plan.customers.length)],
+    ['excluded_label', plan.labels.includes('LOYAL') ? take(left) : 0],
+    ['registered_after_cutoff', plan.registered === undefined ? 0 : take(3)],
+    ['too_few_purchases', plan.min === undefined ? 0 : take(4)],
+    [
+      'over_max_customers',
+      plan.cap !== undefined && Number(plan.cap) < left ? take(left - Number(plan.cap)) : 0,
+    ],
+  ];
+  return { reasons, size: left };
+}
+
+const audienceXml = (): string =>
+  `<CampaignAudience xmlns="${NS}/campaigns/v1"><campaign_id>301</campaign_id><label_code>LOYAL</label_code>${
     plan.cap === undefined ? '' : `<max_customers>${xmlText(plan.cap)}</max_customers>`
-  }<audience_size>${size}</audience_size><as_of>2026-11-02T15:04:05Z</as_of></CampaignAudience>`;
-};
+  }<audience_size>${counted().size}</audience_size><as_of>2026-11-02T15:04:05Z</as_of></CampaignAudience>`;
+const breakdownXml = (): string =>
+  `<CampaignAudienceBreakdown xmlns="${NS}/campaigns/v1"><campaign_id>301</campaign_id><label_code>LOYAL</label_code><label_holders>${HOLDERS}</label_holders>${counted()
+    .reasons.map(([code, n]) => `<reasons><code>${code}</code><excluded>${n}</excluded></reasons>`)
+    .join(
+      '',
+    )}<audience_size>${counted().size}</audience_size><as_of>2026-11-02T15:04:05Z</as_of></CampaignAudienceBreakdown>`;
 const budgetXml = (): string =>
   `<CampaignBudget xmlns="${NS}/campaigns/v1"><campaign_id>301</campaign_id>${
     plan.total === undefined ? '' : `<total_amount>${xmlText(plan.total)}</total_amount>`
@@ -153,7 +187,7 @@ test.beforeAll(async () => {
       const writer = role === 'ADMIN' || role === 'MARKETING';
       if (method !== 'GET' && !writer) return reply(403, example('campaigns', 'forbidden-role'));
       if (path === '/api/campaigns/v1/campaigns') return reply(200, example('campaigns', 'campaigns'));
-      const match = /^\/api\/campaigns\/v1\/campaigns\/(\d+)(?:\/([a-z-]+))?$/.exec(path);
+      const match = /^\/api\/campaigns\/v1\/campaigns\/(\d+)(?:\/([a-z-]+(?:\/[a-z-]+)?))?$/.exec(path);
       if (!match || match[1] !== '301') return reply(404, example('campaigns', 'campaign-not-found'));
       const part = match[2];
       if (part === undefined && method === 'PATCH') {
@@ -177,6 +211,17 @@ test.beforeAll(async () => {
         const file = `${stored.toLowerCase()}-to-${to.toLowerCase()}`;
         stored = to;
         return reply(200, example('campaigns', file));
+      }
+      if (part === 'audience/breakdown') {
+        if (method !== 'GET') return reply(405, example('campaigns', 'campaign-not-found'));
+        if (breakdownAnswer === 'forbidden') return reply(403, example('campaigns', 'forbidden-role'));
+        if (breakdownAnswer === 'no-route')
+          return reply(
+            404,
+            `<Error xmlns="${COMMON}"><code>not_found</code><message>No route matches.</message><correlation_id>corr-no-route</correlation_id></Error>`,
+          );
+        if (breakdownAnswer === 'off-contract') return reply(404, '<html><body>Not found</body></html>');
+        return reply(200, breakdownXml());
       }
       const render = PARTS[part];
       if (render === undefined) return reply(404, example('campaigns', 'campaign-not-found'));
@@ -269,56 +314,121 @@ test('a DRAFT shows what is stored in each section, for a role that writes', asy
   await app.close();
 });
 
-test('the preview shows the estimated population, how many were left out and why, and follows a save', async () => {
+/** The reasons of the preview, as text by code, for a comparison with what the fake counted. */
+const reasonCounts = async (page: Page): Promise<[string, string][]> =>
+  Promise.all(
+    [
+      'not_in_customer_reference',
+      'excluded_customer',
+      'excluded_label',
+      'registered_after_cutoff',
+      'too_few_purchases',
+      'over_max_customers',
+    ].map(async (code): Promise<[string, string]> => [
+      code,
+      (await page.getByTestId(`preview-reason-${code}`).textContent()) ?? '',
+    ]),
+  );
+
+test('the preview shows the estimated population, how many were left out and each reason with its count, and follows a save', async () => {
   const { app, page } = await launch('MARKETING');
   await openPlan(page);
   await expect(page.getByTestId('preview-result')).toBeEmpty();
+  const beforePreview = seen.length;
   await page.getByTestId('preview-run').click();
-  await expect(page.getByTestId('preview-size')).toHaveText(`${IN_AUDIENCE} customers`);
+  // 31 holders: 1 not in the customer list, 2 excluded by id, 3 registered late, 4 with too few purchases.
+  await expect(page.getByTestId('preview-size')).toHaveText('21 customers');
   await expect(page.getByTestId('preview-as-of')).toHaveText('2026-11-02T15:04:05Z');
-  await expect(page.getByTestId('preview-holders')).toHaveText(String(HOLDERS));
-  await expect(page.getByTestId('preview-left-out')).toHaveText(String(HOLDERS - IN_AUDIENCE));
+  await expect(page.getByTestId('preview-holders')).toHaveText('31');
+  await expect(page.getByTestId('preview-left-out')).toHaveText('10');
+  expect(await reasonCounts(page)).toEqual([
+    ['not_in_customer_reference', '1'],
+    ['excluded_customer', '2'],
+    ['excluded_label', '0'],
+    ['registered_after_cutoff', '3'],
+    ['too_few_purchases', '4'],
+    ['over_max_customers', '0'],
+  ]);
   const why = page.getByTestId('preview-reasons');
-  await expect(why.getByTestId('preview-reason-customers')).toHaveText(
-    'Excluded by id: 2 customers are listed and left out.',
-  );
-  await expect(why.getByTestId('preview-reason-labels')).toHaveText(
-    'Excluded by label: holders of DORMANT are left out.',
-  );
-  await expect(why.getByTestId('preview-reason-registered')).toContainText(
-    'registered on or before 2026-06-30',
-  );
-  await expect(why.getByTestId('preview-reason-purchases')).toContainText(
-    'at least 2 net purchases in the 180 days before the preview',
-  );
-  await expect(why.getByTestId('preview-reason-cap')).toHaveText(
-    'Cap: the audience is cut to at most 5000 customers.',
-  );
-  await expect(page.getByTestId('preview-note')).toContainText('not split by reason');
+  await expect(why).toContainText('Not in the customer list');
+  await expect(why).toContainText('Excluded by id (2 listed)');
+  await expect(why).toContainText('Excluded by label (DORMANT)');
+  await expect(why).toContainText('Registered after 2026-06-30');
+  await expect(why).toContainText('Fewer than 2 net purchases in the 180 days before the preview');
+  await expect(why).toContainText('Above the cap of 5000 customers');
+  await expect(page.getByTestId('preview-note')).toContainText('counted once');
+  await expect(page.getByTestId('preview-fallback')).toHaveCount(0);
   await shot(page, '878-desktop-campaign-plan-02-preview');
+  // It is the breakdown that was read, and the label's holders were not asked of segments-service.
+  const reads = seen.slice(beforePreview).map((s) => s.url.split('/api/')[1]);
+  expect(reads).toContain('campaigns/v1/campaigns/301/audience/breakdown');
+  expect(reads.some((r) => r?.startsWith('segments/'))).toBe(false);
+  const before = seen.length;
 
   // A save is followed by a new count, because the preview on screen would otherwise be stale.
   await page.locator('#audience-max_customers').fill('10');
   await page.getByTestId('audience-save').click();
   await expect(section(page, 'audience').getByTestId('notice')).toHaveText('Audience saved.');
   await expect(page.getByTestId('preview-size')).toHaveText('10 customers');
-  await expect(page.getByTestId('preview-left-out')).toHaveText(String(HOLDERS - 10));
-  await expect(page.getByTestId('preview-reason-cap')).toContainText('at most 10 customers');
+  await expect(page.getByTestId('preview-left-out')).toHaveText('21');
+  await expect(page.getByTestId('preview-reason-over_max_customers')).toHaveText('11');
+  await expect(why).toContainText('Above the cap of 10 customers');
+  expect(seen.slice(before).some((s) => s.url.endsWith('/audience/breakdown'))).toBe(true);
   await app.close();
 });
 
-test('a preview of a plan with no rule says that no rule leaves anyone out', async () => {
+test('a preview of a plan with no rule shows every reason, each rule that is not set saying so', async () => {
   plan = { customers: [], labels: [] };
   const { app, page } = await launch('ADMIN');
   await openPlan(page);
   await page.getByTestId('preview-run').click();
-  await expect(page.getByTestId('preview-size')).toHaveText(`${IN_AUDIENCE} customers`);
-  await expect(page.getByTestId('preview-reason-none')).toHaveText(
-    'No exclusion, condition or cap is set, so no rule leaves anyone out.',
-  );
-  await expect(page.getByTestId('preview-reasons').locator('li')).toHaveCount(1);
+  await expect(page.getByTestId('preview-size')).toHaveText('30 customers');
+  await expect(page.getByTestId('preview-left-out')).toHaveText('1');
+  expect(await reasonCounts(page)).toEqual([
+    ['not_in_customer_reference', '1'],
+    ['excluded_customer', '0'],
+    ['excluded_label', '0'],
+    ['registered_after_cutoff', '0'],
+    ['too_few_purchases', '0'],
+    ['over_max_customers', '0'],
+  ]);
+  const why = page.getByTestId('preview-reasons');
+  await expect(why).toContainText('Excluded by id (none listed)');
+  await expect(why).toContainText('Registered after the cutoff (no cutoff set)');
+  await expect(why).toContainText('Too few purchases (no purchase condition set)');
+  await expect(why).toContainText('Above the cap (no cap set)');
   await app.close();
 });
+
+for (const [answer, text] of [
+  ['forbidden', 'forbidden_role'],
+  ['no-route', 'not_found'],
+  ['off-contract', 'contract_defect'],
+] as const) {
+  test(`when the breakdown is not answered (${answer}) the preview says so and shows the total only`, async () => {
+    breakdownAnswer = answer;
+    const { app, page } = await launch('MARKETING');
+    await openPlan(page);
+    const beforePreview = seen.length;
+    await page.getByTestId('preview-run').click();
+    const notice = page.getByTestId('preview-fallback');
+    await expect(notice).toContainText('The breakdown by reason could not be read');
+    await expect(notice).toContainText(`(${text})`);
+    // The audience read and the label's holders give the total and a difference, not counts by reason.
+    await expect(page.getByTestId('preview-size')).toHaveText('21 customers');
+    await expect(page.getByTestId('preview-holders')).toHaveText('31');
+    await expect(page.getByTestId('preview-left-out')).toHaveText('10');
+    await expect(page.getByTestId('preview-note')).toContainText('not split by reason');
+    await expect(page.getByTestId('preview-reason-customers')).toHaveText(
+      'Excluded by id: 2 customers are listed and left out.',
+    );
+    await expect(page.getByTestId('preview-reason-excluded_customer')).toHaveCount(0);
+    // The label's holders came from segments-service.
+    expect(seen.slice(beforePreview).some((s) => s.url.endsWith('/api/segments/v1/segments'))).toBe(true);
+    await shot(page, `878-desktop-campaign-plan-02b-preview-fallback-${answer}`);
+    await app.close();
+  });
+}
 
 test('each section saves the recorded request and then shows what the service stored', async () => {
   plan = { customers: [], labels: ['DORMANT'] };
@@ -555,7 +665,8 @@ for (const as of ['ANALYST', 'AUDITOR']) {
       0,
     );
     await page.getByTestId('preview-run').click();
-    await expect(page.getByTestId('preview-size')).toHaveText(`${IN_AUDIENCE} customers`);
+    await expect(page.getByTestId('preview-size')).toHaveText('21 customers');
+    await expect(page.getByTestId('preview-reason-excluded_customer')).toHaveText('2');
     await shot(page, `878-desktop-campaign-plan-05-${as.toLowerCase()}-read-only`);
     const forced = await page.evaluate(() =>
       window.mosaiq.putCampaignExclusions(301, { customer_ids: [], label_codes: [] }),
@@ -616,7 +727,7 @@ test('what a service returns is shown as text, never as markup', async () => {
   const { app, page } = await launch('MARKETING');
   await openPlan(page);
   await page.getByTestId('preview-run').click();
-  await expect(page.getByTestId('preview-reason-labels')).toBeVisible();
+  await expect(page.getByTestId('preview-reasons')).toContainText('onerror');
   await expect(page.locator('[data-testid=campaign-plan] img')).toHaveCount(0);
   expect(await page.getByTestId('plan-exclusions').locator('label', { hasText: 'onerror' }).count()).toBe(1);
   await app.close();

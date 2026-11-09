@@ -4,14 +4,16 @@ import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { CampaignPlan } from '../../src/main/campaign-plan';
 import { XsdValidator } from '../../src/main/xml';
+import { AUDIENCE_REASONS } from '../../src/shared/api';
 import {
   leftOut,
   PLAIN_MESSAGES,
   plainDetail,
   plainRefusal,
   reasonsOf,
+  reasonText,
 } from '../../src/shared/campaign-messages';
-import { bundle, claims, example, makeOffice, MemoryVault, tokenResult } from '../support/fake';
+import { bundle, claims, errorXml, example, makeOffice, MemoryVault, tokenResult } from '../support/fake';
 import type { Reply, Responder, Seen } from '../support/fake';
 
 // A campaign's audience, budget, conditions and exclusions (F28-09, #878), against the recorded
@@ -48,6 +50,7 @@ const STORED: Record<string, string> = {
   budget: 'campaign-budget',
   'eligibility-rules': 'campaign-eligibility-rules',
   exclusions: 'campaign-exclusions',
+  breakdown: 'campaign-audience-breakdown',
 };
 const stored = (r: Seen): Reply => {
   const part = new URL(r.url).pathname.split('/').pop() as string;
@@ -502,39 +505,188 @@ describe('every code of the contract', () => {
 });
 
 describe('the preview', () => {
-  const small = (body: string): string =>
-    body.replace('<audience_size>3120</audience_size>', '<audience_size>25</audience_size>');
+  const BREAKDOWN = 'GET /api/campaigns/v1/campaigns/12/audience/breakdown';
+  const READS = [
+    'GET /api/campaigns/v1/campaigns/12/audience',
+    'GET /api/campaigns/v1/campaigns/12/eligibility-rules',
+    'GET /api/campaigns/v1/campaigns/12/exclusions',
+  ];
+  const name = (code: string): string => (code === 'DORMANT' ? 'Dormant (DORMANT)' : code);
+  /** Everything answered from the recorded examples, except an audience that is 25 customers strong. */
   const previewResponder: Responder = (r) => {
     const reply = stored(r);
     return reply.body !== undefined && r.url.endsWith('/audience')
-      ? { ...reply, body: small(reply.body) }
+      ? { ...reply, body: reply.body.replace('<audience_size>3120', '<audience_size>25') }
       : reply;
   };
+  /** The breakdown is answered as given, and everything else as above. */
+  const breakdownAnswers =
+    (reply: Reply | ((r: Seen) => Reply)): Responder =>
+    (r) =>
+      r.url.endsWith('/audience/breakdown')
+        ? typeof reply === 'function'
+          ? reply(r)
+          : reply
+        : previewResponder(r);
 
-  it('reads the audience, the conditions and the exclusions, and how many hold the label', async () => {
-    const { plan, seen } = await signedIn('MARKETING', previewResponder);
+  it('shows each reason with its count, read from the breakdown, and no longer reads the label holders', async () => {
+    const { plan, seen } = await signedIn('MARKETING', stored);
     const res = await plan.preview(12);
-    expect(paths(seen)).toEqual([
-      'GET /api/campaigns/v1/campaigns/12/audience',
-      'GET /api/campaigns/v1/campaigns/12/eligibility-rules',
-      'GET /api/campaigns/v1/campaigns/12/exclusions',
-      'GET /api/segments/v1/segments',
-    ]);
-    expect(res.ok && res.value).toMatchObject({
-      audience: { audience_size: 25, max_customers: 5000, label_code: 'LOYAL' },
+    expect(paths(seen)).toEqual([BREAKDOWN, ...READS]);
+    if (!res.ok) throw new Error('a preview was expected');
+    expect(res.value.breakdown).toEqual({
+      campaign_id: 12,
+      label_code: 'LOYAL',
+      label_holders: 4000,
+      reasons: [
+        { code: 'not_in_customer_reference', excluded: 12 },
+        { code: 'excluded_customer', excluded: 2 },
+        { code: 'excluded_label', excluded: 0 },
+        { code: 'registered_after_cutoff', excluded: 310 },
+        { code: 'too_few_purchases', excluded: 556 },
+        { code: 'over_max_customers', excluded: 0 },
+      ],
+      audience_size: 3120,
+      as_of: '2026-11-02T15:04:05Z',
+    });
+    expect(res.value).toMatchObject({
+      audience: { max_customers: 5000 },
       eligibility: { min_purchases: 2 },
       exclusions: { label_codes: ['DORMANT'] },
-      label_holders: 31,
     });
-    // 31 customers hold LOYAL and 25 are in the audience: 6 are left out.
-    expect(res.ok && leftOut(res.value)).toBe(6);
+    expect('breakdown_error' in res.value).toBe(false);
+    expect('label_holders' in res.value).toBe(false);
   });
 
-  it('states each rule that can leave customers out, and none when nothing is set', async () => {
-    const { plan } = await signedIn('MARKETING', previewResponder);
+  it('keeps the contract identity: the label holders are the reasons plus the audience, once each', async () => {
+    const { plan } = await signedIn('MARKETING', stored);
+    const res = await plan.preview(12);
+    const b = res.ok ? res.value.breakdown : undefined;
+    if (b === undefined) throw new Error('a breakdown was expected');
+    expect(b.reasons.map((r) => r.code)).toEqual([...AUDIENCE_REASONS]);
+    expect(b.reasons.reduce((sum, r) => sum + r.excluded, 0) + b.audience_size).toBe(b.label_holders);
+    expect(res.ok && leftOut(res.value)).toBe(880);
+  });
+
+  it('words each reason with the rule it applies, and says when that rule is not set', async () => {
+    const { plan } = await signedIn('MARKETING', stored);
     const res = await plan.preview(12);
     if (!res.ok) throw new Error('a preview was expected');
-    const name = (code: string): string => (code === 'DORMANT' ? 'Dormant (DORMANT)' : code);
+    expect(AUDIENCE_REASONS.map((code) => reasonText(code, res.value, name))).toEqual([
+      'Not in the customer list',
+      'Excluded by id (2 listed)',
+      'Excluded by label (Dormant (DORMANT))',
+      'Registered after 2026-06-30',
+      'Fewer than 2 net purchases in the 180 days before the preview',
+      'Above the cap of 5000 customers',
+    ]);
+    const unset = {
+      ...res.value,
+      audience: { campaign_id: 12, label_code: 'LOYAL', audience_size: 31, as_of: 'x' },
+      eligibility: { campaign_id: 12 },
+      exclusions: { campaign_id: 12, customer_ids: [], label_codes: [] },
+    };
+    expect(AUDIENCE_REASONS.map((code) => reasonText(code, unset, name))).toEqual([
+      'Not in the customer list',
+      'Excluded by id (none listed)',
+      'Excluded by label (none listed)',
+      'Registered after the cutoff (no cutoff set)',
+      'Too few purchases (no purchase condition set)',
+      'Above the cap (no cap set)',
+    ]);
+    const one = {
+      ...res.value,
+      eligibility: { campaign_id: 12, min_purchases: 1, purchase_window_days: 30 },
+    };
+    expect(reasonText('too_few_purchases', one, name)).toBe(
+      'Fewer than 1 net purchase in the 30 days before the preview',
+    );
+  });
+
+  it('falls back to the audience total and the label holders when the breakdown is refused, and says why', async () => {
+    const { plan, seen } = await signedIn(
+      'MARKETING',
+      breakdownAnswers({ status: 403, body: example('campaigns', 'forbidden-role') }),
+    );
+    const res = await plan.preview(12);
+    expect(paths(seen)).toEqual([BREAKDOWN, ...READS, 'GET /api/segments/v1/segments']);
+    if (!res.ok) throw new Error('a preview was expected');
+    expect('breakdown' in res.value).toBe(false);
+    expect(res.value.breakdown_error).toMatchObject({
+      code: 'forbidden_role',
+      message: PLAIN_MESSAGES.forbidden_role,
+      correlation_id: 'corr-role-001',
+    });
+    expect(res.value).toMatchObject({ audience: { audience_size: 25 }, label_holders: 31 });
+    // 31 customers hold LOYAL and 25 are in the audience: 6 are left out, in one total.
+    expect(leftOut(res.value)).toBe(6);
+  });
+
+  it('falls back the same way while the operation is not implemented, whatever the service answers', async () => {
+    const notFound = await signedIn(
+      'MARKETING',
+      breakdownAnswers({ status: 404, body: errorXml('not_found', 'No route matches.') }),
+    );
+    const missing = await notFound.plan.preview(12);
+    expect(missing.ok && missing.value.breakdown_error?.code).toBe('not_found');
+    expect(missing.ok && leftOut(missing.value)).toBe(6);
+
+    // Not the contract's XML at all: a contract defect, which is also a reason to fall back.
+    const html = await signedIn('MARKETING', breakdownAnswers({ status: 404, body: '<html>nope</html>' }));
+    const defect = await html.plan.preview(12);
+    expect(defect.ok && defect.value.breakdown_error?.code).toBe('contract_defect');
+    expect(defect.ok && 'breakdown' in defect.value).toBe(false);
+    expect(defect.ok && leftOut(defect.value)).toBe(6);
+  });
+
+  it('does not fall back when the session has ended', async () => {
+    const { plan, seen } = await signedIn(
+      'MARKETING',
+      breakdownAnswers({
+        status: 401,
+        body: errorXml('session_revoked', 'The token session is no longer live.'),
+      }),
+    );
+    expect(await plan.preview(12)).toMatchObject({ ok: false, error: { code: 'session_revoked' } });
+    expect(paths(seen)).toEqual([BREAKDOWN]);
+  });
+
+  it('never reports a negative number left out in the fallback, and may lack the label holders', async () => {
+    const refused = { status: 403, body: example('campaigns', 'forbidden-role') };
+    const larger = await signedIn('MARKETING', (r) =>
+      r.url.endsWith('/audience/breakdown') ? refused : stored(r),
+    );
+    const res = await larger.plan.preview(12);
+    // The audience was counted after the label changed: 3120 against 31 holders.
+    expect(res.ok && res.value.audience.audience_size).toBe(3120);
+    expect(res.ok && leftOut(res.value)).toBe(0);
+
+    const down = await signedIn('MARKETING', (r) =>
+      r.url.endsWith('/audience/breakdown') || r.url.endsWith('/segments')
+        ? { status: 403, body: example('segments', 'forbidden-role') }
+        : previewResponder(r),
+    );
+    const noHolders = await down.plan.preview(12);
+    expect(noHolders.ok && 'label_holders' in noHolders.value).toBe(false);
+    expect(noHolders.ok && leftOut(noHolders.value)).toBeUndefined();
+    const unknown = await signedIn('MARKETING', (r) =>
+      r.url.endsWith('/audience/breakdown')
+        ? refused
+        : r.url.endsWith('/segments')
+          ? { status: 200, body: example('segments', 'list-segments').replace(/LOYAL/g, 'ELSEWHERE') }
+          : previewResponder(r),
+    );
+    const other = await unknown.plan.preview(12);
+    expect(other.ok && 'label_holders' in other.value).toBe(false);
+  });
+
+  it('states each rule that can leave customers out in the fallback, and none when nothing is set', async () => {
+    const { plan } = await signedIn(
+      'MARKETING',
+      breakdownAnswers({ status: 403, body: example('campaigns', 'forbidden-role') }),
+    );
+    const res = await plan.preview(12);
+    if (!res.ok) throw new Error('a preview was expected');
     expect(reasonsOf(res.value, name).map((r) => [r.id, r.text])).toEqual([
       ['customers', 'Excluded by id: 2 customers are listed and left out.'],
       ['labels', 'Excluded by label: holders of Dormant (DORMANT) are left out.'],
@@ -555,34 +707,20 @@ describe('the preview', () => {
     expect(leftOut(empty)).toBe(0);
   });
 
-  it('never reports a negative number left out, when the audience was counted after the label changed', async () => {
-    const { plan } = await signedIn('MARKETING', stored);
-    const res = await plan.preview(12);
-    expect(res.ok && res.value.label_holders).toBe(31);
-    expect(res.ok && res.value.audience.audience_size).toBe(3120);
-    expect(res.ok && leftOut(res.value)).toBe(0);
-  });
-
-  it('still previews when segments-service cannot say how many hold the label', async () => {
-    const { plan } = await signedIn('MARKETING', (r) =>
-      r.url.endsWith('/segments') ? { status: 403, body: example('segments', 'forbidden-role') } : stored(r),
-    );
-    const res = await plan.preview(12);
-    expect(res.ok && 'label_holders' in res.value).toBe(false);
-    expect(res.ok && leftOut(res.value)).toBeUndefined();
-    const unknown = await signedIn('MARKETING', (r) =>
-      r.url.endsWith('/segments')
-        ? { status: 200, body: example('segments', 'list-segments').replace(/LOYAL/g, 'ELSEWHERE') }
-        : stored(r),
-    );
-    const other = await unknown.plan.preview(12);
-    expect(other.ok && 'label_holders' in other.value).toBe(false);
-  });
-
-  it('shows the first refusal as returned and reads nothing more', async () => {
+  it('shows a refusal of the audience as returned when the breakdown was refused too, and reads nothing more', async () => {
     const { plan, seen } = await signedIn('MARKETING', answer(404, 'campaign-not-found'));
     expect(await plan.preview(99)).toMatchObject({ ok: false, error: { code: 'campaign_not_found' } });
-    expect(paths(seen)).toEqual(['GET /api/campaigns/v1/campaigns/99/audience']);
+    expect(paths(seen)).toEqual([
+      'GET /api/campaigns/v1/campaigns/99/audience/breakdown',
+      'GET /api/campaigns/v1/campaigns/99/audience',
+    ]);
+  });
+
+  it('refuses a malformed campaign id before sending', async () => {
+    const { plan, seen } = await signedIn('MARKETING', stored);
+    expect(await plan.preview('12/budget')).toMatchObject({ ok: false, error: { code: 'invalid_input' } });
+    expect(await plan.getAudienceBreakdown(0)).toMatchObject({ ok: false, error: { code: 'invalid_input' } });
+    expect(seen).toHaveLength(0);
   });
 });
 
@@ -594,12 +732,22 @@ describe('the XSD', () => {
       'campaign-budget',
       'campaign-eligibility-rules',
       'campaign-exclusions',
+      'campaign-audience-breakdown',
       'put-campaign-audience.request',
       'put-campaign-budget.request',
       'put-campaign-eligibility-rules.request',
       'put-campaign-exclusions.request',
     ])
       expect((await validator.validate(example('campaigns', f), NS)).valid, f).toBe(true);
+  });
+
+  it('refuses a breakdown with a reason the contract does not name, and one with a reason missing', async () => {
+    const validator = new XsdValidator(bundle);
+    for (const f of [
+      'campaign-audience-breakdown-unknown-reason.invalid',
+      'campaign-audience-breakdown-missing-reason.invalid',
+    ])
+      expect((await validator.validate(example('campaigns', f), NS)).valid, f).toBe(false);
   });
 });
 
@@ -616,6 +764,19 @@ describe('the roles', () => {
       ]);
       expect(operation(`putCampaign${part}`)?.roles?.slice().sort()).toEqual(['ADMIN', 'MARKETING']);
     }
+  });
+
+  it('reads the breakdown for the same four roles as the audience', () => {
+    expect(operation('getCampaignAudienceBreakdown')?.roles?.slice().sort()).toEqual([
+      'ADMIN',
+      'ANALYST',
+      'AUDITOR',
+      'MARKETING',
+    ]);
+    expect(operation('getCampaignAudienceBreakdown')).toMatchObject({
+      method: 'GET',
+      path: '/v1/campaigns/{campaign_id}/audience/breakdown',
+    });
   });
 
   it('is asked about only operations the contract has, by the id it gives them', () => {

@@ -242,18 +242,25 @@ own: one that is refused shows its refusal in place and the others stay usable.
   Whether a customer id or a label exists is the service's answer: `unknown_customer`, `unknown_label`.
 - **Only a DRAFT changes.** Outside `DRAFT` every control is drawn disabled, and a forced write gets 409
   `campaign_not_draft`. Activation is unchanged: the moves are the service's `allowed_transitions`.
-- **Preview.** "Preview audience" reads the audience, the conditions and the exclusions as saved, and
-  how many customers hold the campaign's label (`GET /v1/segments`, `size`, optional). It shows the
-  estimated audience and when it was counted, how many customers holding the label are left out, and
-  the rules that can leave them out. campaigns-service answers with one total, so the number left out is
-  the difference and is not split by reason. A preview already on screen is read again after a save.
+- **Preview.** "Preview audience" reads the audience's breakdown by reason
+  (`GET /v1/campaigns/{id}/audience/breakdown`, `getCampaignAudienceBreakdown`), and the audience, the
+  conditions and the exclusions as saved, to word each reason. It shows the estimated audience and when it
+  was counted, the customers holding the campaign's label, how many were left out, and each of the six
+  reasons with its count, in the contract's order of precedence: a customer is counted once, under the
+  first reason that applies, so the holders are the reasons plus the audience. A reason whose rule is not
+  set shows 0 and says so. A preview already on screen is read again after a save.
+- **When the breakdown is not answered** (the operation is planned until F25-04, #835, and a service
+  that does not have it answers a refusal, a missing route or something off contract), the preview says
+  so on screen and falls back to the audience's one total: the number left out is then the customers
+  holding the label (`GET /v1/segments`, `size`, optional) minus the audience, not split by reason, and
+  the rules that can leave customers out are listed without counts. An ended session is not a fallback.
 - **Plain words.** Every code the campaigns contract can answer has one sentence
   (`shared/campaign-messages.ts`); the code, the correlation id and each detail stay behind the
   "Details" disclosure. A unit test reads `contracts/campaigns/openapi.yaml` and fails when a code of
   its `/v1/campaigns` operations has no sentence.
 - The operations are marked planned in the contract (ADR-0073) until campaigns-service implements them
   (F25-04, #835). Until then a deployed service does not answer them as the contract says, and each
-  section shows the failure in place without taking the screen down.
+  section shows the failure in place without taking the screen down; the preview falls back as above.
 
 The window tests (`tests/window/campaign-plan.spec.ts`) keep the plan they are given and answer with
 the same recorded examples.

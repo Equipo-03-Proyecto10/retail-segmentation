@@ -3,7 +3,7 @@
 // can check them against the contract. A code and a correlation id are never replaced: only the
 // sentence a person reads is.
 
-import type { AudiencePreviewView, ErrorView, FieldDetail } from './api';
+import type { AudienceReasonCode, AudiencePreviewView, ErrorView, FieldDetail } from './api';
 
 /**
  * One sentence for each code a /v1/campaigns operation can answer with, in contracts/campaigns/
@@ -82,10 +82,53 @@ export function plainDetail(detail: FieldDetail): string {
   return `${field} ${phrase}.`;
 }
 
-/** Customers that hold the label and are not in the audience; absent when the label's holders are unknown. */
+/**
+ * Customers that hold the label and are not in the audience. With the breakdown it is the sum of the
+ * reasons' counts; without it, the difference between the label's holders and the audience, which is
+ * absent when the holders are unknown.
+ */
 export function leftOut(preview: AudiencePreviewView): number | undefined {
+  if (preview.breakdown !== undefined)
+    return preview.breakdown.reasons.reduce((sum, r) => sum + r.excluded, 0);
   if (preview.label_holders === undefined) return undefined;
   return Math.max(0, preview.label_holders - preview.audience.audience_size);
+}
+
+/**
+ * One reason of the breakdown in words, with the rule it applies when that rule is set. A reason
+ * whose rule is not set still has a row, with its count of 0, and says so.
+ */
+export function reasonText(
+  code: AudienceReasonCode,
+  preview: AudiencePreviewView,
+  labelName: (code: string) => string,
+): string {
+  const { exclusions, eligibility, audience } = preview;
+  const plural = (n: number, one: string, many: string): string => (n === 1 ? one : many);
+  switch (code) {
+    case 'not_in_customer_reference':
+      return 'Not in the customer list';
+    case 'excluded_customer':
+      return exclusions.customer_ids.length === 0
+        ? 'Excluded by id (none listed)'
+        : `Excluded by id (${exclusions.customer_ids.length} listed)`;
+    case 'excluded_label':
+      return exclusions.label_codes.length === 0
+        ? 'Excluded by label (none listed)'
+        : `Excluded by label (${exclusions.label_codes.map(labelName).join(', ')})`;
+    case 'registered_after_cutoff':
+      return eligibility.registered_on_or_before === undefined
+        ? 'Registered after the cutoff (no cutoff set)'
+        : `Registered after ${eligibility.registered_on_or_before}`;
+    case 'too_few_purchases':
+      return eligibility.min_purchases === undefined || eligibility.purchase_window_days === undefined
+        ? 'Too few purchases (no purchase condition set)'
+        : `Fewer than ${eligibility.min_purchases} net ${plural(eligibility.min_purchases, 'purchase', 'purchases')} in the ${eligibility.purchase_window_days} days before the preview`;
+    case 'over_max_customers':
+      return audience.max_customers === undefined
+        ? 'Above the cap (no cap set)'
+        : `Above the cap of ${audience.max_customers} customers`;
+  }
 }
 
 export interface Reason {
@@ -94,8 +137,9 @@ export interface Reason {
 }
 
 /**
- * Why customers can be left out, from the rules stored. The service answers with one total, so each
- * reason is a rule in force, not a count of its own.
+ * Why customers can be left out, from the rules stored. Used only when the breakdown could not be
+ * read: the audience's one total is then all the service said, so each reason is a rule in force, not
+ * a count of its own.
  */
 export function reasonsOf(preview: AudiencePreviewView, labelName: (code: string) => string): Reason[] {
   const out: Reason[] = [];

@@ -287,16 +287,55 @@ export interface ExclusionsDraft {
   label_codes: string[];
 }
 
+/** Why a customer holding the campaign's label is not in its audience, in the order of precedence the contract fixes. */
+export const AUDIENCE_REASONS = [
+  'not_in_customer_reference',
+  'excluded_customer',
+  'excluded_label',
+  'registered_after_cutoff',
+  'too_few_purchases',
+  'over_max_customers',
+] as const;
+export type AudienceReasonCode = (typeof AUDIENCE_REASONS)[number];
+
+export interface AudienceReasonView {
+  code: AudienceReasonCode;
+  /** Customers left out for this reason and no earlier one. */
+  excluded: number;
+}
+
 /**
- * What a preview shows: the audience campaigns-service counted, the rules it counted it under,
- * and how many customers hold the campaign's label now. The service reports one total, so the
- * customers left out are the difference; it does not split them by reason.
+ * The audience with the customers it leaves out counted by reason (getCampaignAudienceBreakdown).
+ * Each customer is counted once, under the first reason that applies, so label_holders is the sum of
+ * the reasons' counts plus audience_size.
+ */
+export interface AudienceBreakdownView {
+  campaign_id: number;
+  label_code: string;
+  /** Customers holding the label before any reason is applied. */
+  label_holders: number;
+  /** Always six, in the contract's order. */
+  reasons: AudienceReasonView[];
+  audience_size: number;
+  as_of: string;
+}
+
+/**
+ * What a preview shows: the audience with its exclusions counted by reason, and the rules it was
+ * counted under (the cap, the conditions and the exclusions, to word each reason).
+ *
+ * When campaigns-service does not answer the breakdown, `breakdown` is absent, `breakdown_error` says
+ * why, and the preview falls back to the audience's one total: the number left out is then the
+ * customers holding the label now (segments-service, `label_holders`) minus the audience, and it is
+ * not split by reason.
  */
 export interface AudiencePreviewView {
   audience: AudienceView;
   eligibility: EligibilityView;
   exclusions: ExclusionsView;
-  /** Customers holding the label now, from segments-service; absent when that read failed. */
+  breakdown?: AudienceBreakdownView;
+  breakdown_error?: ErrorView;
+  /** Fallback only: customers holding the label now, from segments-service; absent when that read failed. */
   label_holders?: number;
 }
 

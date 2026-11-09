@@ -486,14 +486,31 @@ threshold's edge, the rank-only case, K-means rows without scores, absent versus
 unassigned), `tests/test_migration_explanation_route.py`, and
 `tests/test_customer_timeline_route.py` for the links. · `F7-08`
 
-### RN-40 — A recommendation is in stock at the customer's usual store, matches a stated signal, and says why
+### RN-40 — A recommendation is available at the reference store and channel, matches a stated signal, and says why
 A product is recommended to a customer only when all of these hold:
 
-* **It is eligible.** It is active, has a *positive* quantity on hand in the customer's
-  **usual store**, and the customer has not already bought it in the window. The usual
-  store is the consumption profile's dominant store (RN-35), so it is the store the
-  profile names. A product with no stock there never appears, whatever it scores, and
-  neither does one that only another store holds.
+* **It is eligible.** It is active, has a *positive* quantity on hand in the **reference
+  store**, and the customer has not already bought it in the window. By default the
+  reference store is the customer's **usual store**, the consumption profile's dominant
+  store (RN-35), so it is the store the profile names. A product with no stock there
+  never appears, whatever it scores, and neither does one that only another store holds.
+  The web implements this default path and nothing else.
+* **It is available where it is judged** (ADR-0067, extending ADR-0061). The caller of
+  recommendations-service may name the reference store, which then takes precedence over
+  the usual store, and a reference channel, which is never defaulted from the customer's
+  habits. A product is available when its commercial status allows the sale, the store's
+  status permits sales, the store enables the channel when one is given, and on-hand is
+  above zero; hours are not part of it. A product that matches a signal and fails is
+  excluded for exactly one reason, taken in this order: `already_bought`, `inactive`,
+  `not_sellable`, `store_not_selling`, `channel_not_enabled`, `out_of_stock`,
+  `PERSONALIZATION_WITHDRAWN`. A customer who objected to personalization is not
+  recommended to and nothing about them is read. When the reason is `not_sellable`,
+  `channel_not_enabled` or `out_of_stock`, one substitute (a declared substitute relation,
+  itself available and not bought) may be offered in its place, marked as an alternative
+  and naming the product it replaces; another store holding the product is reported only
+  as `elsewhere`, never as a recommendation. Each decision is recorded with its
+  explanation. Decided in ADR-0067; parity with the web holds on the default path only
+  (E-17). Published in `contracts/recommendations/` (F24-03).
 * **It is relevant.** At least one of three signals says why *this* customer: other
   customers whose **open** assignment carries the same label bought it in the window
   (*segment*); it is in a category the customer registered an interest in (*preferred

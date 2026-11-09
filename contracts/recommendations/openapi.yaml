@@ -1,15 +1,40 @@
 openapi: 3.1.0
 info:
   title: recommendations-service
-  version: 1.0.0
-  description: 'Answers what to recommend to one customer, and why, or why nothing
-    qualifies (RN-40). The service owns no table. It reads seven published views
-    (E-07): `api_products.product_ref_v1`, `api_categories.category_tree_v1`, `api_stock.stock_level_v1`,
-    `api_customers.customer_ref_v1`, `api_preferences.interest_category_v1`, `api_sales.purchase_line_v1`
-    and `api_segments.current_label_v1`, and keeps a result cache. Staleness bound:
-    a result may be served from cache for at most 120 s after the facts behind it
-    change, and normally within the relay''s 5 s plus the consumer''s turn. Items
-    carry ids and figures only: clients fetch names with `GET /v1/products?ids=`.'
+  version: 2.0.0
+  description: >-
+    Answers what to recommend to one customer, and why, or why nothing qualifies
+    (RN-40, restated by ADR-0067).
+
+    `/v1` is frozen: `GET /v1/recommendations` keeps its request, its response and
+    its XSD (`recommendations.xsd`, namespace `.../xml/recommendations/v1`) exactly
+    as 1.0.0 published them, judged at the customer's usual store, so every
+    existing caller keeps working. It never carries a store or channel the caller
+    named, an alternative, an `elsewhere` entry or a decision id, and an old client
+    would show any of them as stock in this store. ADR-0035 makes an element added
+    to an XML response type a breaking change, so the new behaviour ships as `/v2`
+    beside `/v1`, with `recommendations.v2.xsd` (namespace
+    `.../xml/recommendations/v2`, served at `/schema.v2.xsd`).
+
+    `/v2` judges a recommendation at a reference store and an optional reference
+    channel the caller may name, gives each item its score factors, its availability
+    and its reasons, offers a marked alternative for a product that is unavailable,
+    and gives each answer a decision id. The decision is recorded, and
+    `recommendation-decisions` (a top-level resource of this service, `/v2` only)
+    reads it back: what was offered, what was excluded and why. A `/v1` answer is
+    recorded too, but carries no decision id.
+
+    The service reads published `api_*` views only (E-07): the seven of 1.0.0
+    (`api_products.product_ref_v1`, `api_categories.category_tree_v1`,
+    `api_stock.stock_level_v1`, `api_customers.customer_ref_v1`,
+    `api_preferences.interest_category_v1`, `api_sales.purchase_line_v1` and
+    `api_segments.current_label_v1`) and, for `/v2`, `api_stock.availability_v1`
+    and the commercial-status, product-relation and store views that F21-09 to
+    F21-12 publish. It keeps a result cache, and since ADR-0067 it records each
+    decision in a schema it owns (ADR-0046). Staleness bound: a result may be
+    served from cache for at most 120 s after the facts behind it change, and
+    normally within the relay's 5 s plus the consumer's turn. Items carry ids and
+    figures only: clients fetch names with `GET /v1/products?ids=`.
 security:
 - bearer: []
 tags:
@@ -88,6 +113,288 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/OperationUnavailable'
+  /v2/recommendations:
+    get:
+      tags:
+      - Recommendations
+      summary: Get a customer's recommendations at a reference store and channel
+      description: >-
+        Judges every recommendation at a reference store and an optional reference
+        channel (ADR-0067). The caller may name `store_id` and `channel_id`; the
+        service never guesses either. With no `store_id` the reference store is the
+        customer's usual store (RN-35), exactly as `/v1` judges it, and `store_source`
+        says `usual_store`. A given `store_id` takes precedence over the usual store
+        and `store_source` says `given`. The channel is never defaulted from the
+        customer's habits: with no `channel_id` it is null, and availability is
+        judged at the store over any channel the store enables. A customer with no
+        usual store and no `store_id` answers `no_usual_store`: no store, default or
+        "all stores" is substituted.
+
+        A product is available at the reference store (and channel, when given) when
+        its commercial status allows the sale, the store's status permits sales, the
+        store enables the channel when one is given, and its on-hand quantity there
+        is above zero (ADR-0061 and ADR-0067). Opening hours are not part of it. This
+        is RN-40's own eligibility test, not stock-service's `availabilities`
+        resource: an item carries only the store, the channel and the quantity the
+        decision used (E-06), and a client that needs stock's own representation asks
+        stock. Product, category, store and channel names are fetched from their own
+        services by id (ADR-0035).
+
+        A product that matches a stated signal and fails is excluded for exactly one
+        reason, the first that applies in this order: `already_bought`, `inactive`,
+        `not_sellable`, `store_not_selling`, `channel_not_enabled`, `out_of_stock`,
+        `PERSONALIZATION_WITHDRAWN`. `exclusions` counts them per reason, only the
+        reasons with a count above zero, in that order. A product with no signal is
+        a failure of relevance (RN-40), is not an exclusion and is not counted. A
+        product replaced by an alternative or reported elsewhere is still counted.
+        Excluded products are not listed; the only product named is the one an
+        `alternative` stands in for.
+
+        `items` holds, in this order, the `primary` items by RN-40's order (number of
+        signals matched, then segment buyers, then the category's share of the
+        customer's buying, then product id), then the `alternative` and `elsewhere`
+        entries. `position` counts from 1 in that order. `limit` bounds `items` as a
+        whole: alternatives and elsewhere entries only fill what the primary items
+        leave, and never take a place an available matching product could fill. When
+        a matching product fails only for `not_sellable`, `channel_not_enabled` or
+        `out_of_stock`, the service may add at most one `alternative` for it: a
+        product related to it by a declared substitute relation, itself available at
+        the reference store and channel, not already bought in the window, not
+        already in the result and not itself excluded by consent. It carries
+        `kind: alternative`, `alternative_for` (the unavailable product),
+        `unavailable_reason` (why that product is unavailable) and one reason,
+        `relation_substitute`. When no substitute qualifies, the nearest store that
+        is selling the product on the given channel may be reported as one
+        `elsewhere` entry for the same product, at most one per product: `kind:
+        elsewhere`, with that store in `availability`. An `elsewhere` entry is
+        never a recommendation for this store and is never stock here. Nothing is
+        invented when neither exists.
+
+        `status` is `recommended` when at least one `primary` item exists. It is
+        `none_match` when a segment and a reference store are known and no product
+        qualifies as a primary item; `items` may then still hold `alternative` and
+        `elsewhere` entries. `no_open_assignment` and `unassigned_result` are as in
+        `/v1`, and the segment is checked before the store. `no_usual_store` is as
+        in `/v1`. `PERSONALIZATION_WITHDRAWN` means the customer objected to
+        personalization: `items` is empty, nothing about the customer is read
+        (no segment, history or interest), so `label_code`, `run_id`,
+        `model_version_id` and `usual_store_id` are null, and `store_id` is only
+        what the caller named.
+
+        Every 200 answer carries a `decision_id` naming the decision recorded for it
+        (ADR-0067), which `GET /v2/recommendation-decisions/{decision_id}` reads
+        back. A result served from the 120 s cache is still attributable to a
+        stored decision.
+
+        A floor role (`SALES_ASSOCIATE`, `STORE_MANAGER`, `LOYALTY_OFFICER`) that
+        names a `store_id` it is not assigned to (ADR-0060) gets 403
+        `forbidden_store`; with no `store_id` it is not narrowed. A role that is
+        not a floor role, and `ADMIN`, may name any store. A `store_id` that does not
+        exist answers 422 `unknown_store`, and a `channel_id` that does not exist
+        answers 422 `unknown_channel`.
+      operationId: getRecommendationsV2
+      x-mosaiq-status: planned
+      x-mosaiq-roles:
+      - ADMIN
+      - ANALYST
+      - STORE_MANAGER
+      - MARKETING
+      - AUDITOR
+      - SALES_ASSOCIATE
+      - LOYALTY_OFFICER
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/CustomerId'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/StoreId'
+      - $ref: '#/components/parameters/ChannelId'
+      responses:
+        '200':
+          description: 'The result: items, or the status that says why there are
+            none, with the decision recorded for it.'
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema: &recommendationV2Schema
+                $ref: '#/components/schemas/RecommendationV2'
+              examples:
+                recommended:
+                  externalValue: ./examples/v2/recommended.json
+                recommended_with_alternatives:
+                  externalValue: ./examples/v2/recommended-with-alternatives.json
+                none_match:
+                  externalValue: ./examples/v2/none-match.json
+                no_open_assignment:
+                  externalValue: ./examples/v2/no-open-assignment.json
+                unassigned_result:
+                  externalValue: ./examples/v2/unassigned-result.json
+                no_usual_store:
+                  externalValue: ./examples/v2/no-usual-store.json
+                personalization_withdrawn:
+                  externalValue: ./examples/v2/personalization-withdrawn.json
+            application/xml:
+              schema: *recommendationV2Schema
+              examples:
+                recommended:
+                  externalValue: ./examples/v2/recommended.xml
+                recommended_with_alternatives:
+                  externalValue: ./examples/v2/recommended-with-alternatives.xml
+                none_match:
+                  externalValue: ./examples/v2/none-match.xml
+                no_open_assignment:
+                  externalValue: ./examples/v2/no-open-assignment.xml
+                unassigned_result:
+                  externalValue: ./examples/v2/unassigned-result.xml
+                no_usual_store:
+                  externalValue: ./examples/v2/no-usual-store.xml
+                personalization_withdrawn:
+                  externalValue: ./examples/v2/personalization-withdrawn.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenStore'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/UnprocessableV2'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v2/recommendation-decisions:
+    get:
+      tags:
+      - Recommendations
+      summary: List recorded recommendation decisions
+      description: >-
+        Lists the decisions the service recorded (ADR-0067), newest `computed_at`
+        first, each as a summary: its reference store and channel, its status, how
+        many items it offered and its exclusion counts. `GET
+        /v2/recommendation-decisions/{decision_id}` reads one in full. Every filter
+        is optional and they combine. `customer_id` keeps one customer's decisions,
+        `store_id` the decisions made at one reference store, `status` one status,
+        and `from` and `to` bound `computed_at` (RFC 3339, `from` inclusive and `to`
+        exclusive). A decision keeps identifiers and figures only: no name, email,
+        phone, SKU, price or free text. Decisions are kept for the period ADR-0067
+        sets (90 days, until F21-15 agrees or changes it) and are then deleted by the
+        service, so an older decision is not listed. When a customer is anonymized
+        the customer id is removed from the row and the figures stay, so
+        `customer_id` is null and such a decision matches no `customer_id` filter.
+        `STORE_MANAGER` reads only decisions whose reference store is one of its
+        assigned stores (ADR-0060): with no `store_id` the list is narrowed to those
+        stores, a decision with no reference store is not listed, and a `store_id`
+        outside them answers 403 `forbidden_store`.
+      operationId: listRecommendationDecisions
+      x-mosaiq-status: planned
+      x-mosaiq-roles:
+      - ADMIN
+      - ANALYST
+      - AUDITOR
+      - STORE_MANAGER
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/DecisionCustomerId'
+      - $ref: '#/components/parameters/DecisionStoreId'
+      - $ref: '#/components/parameters/DecisionStatus'
+      - $ref: '#/components/parameters/From'
+      - $ref: '#/components/parameters/To'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of decision summaries.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema: &decisionPageSchema
+                $ref: '#/components/schemas/RecommendationDecisionPage'
+              examples:
+                decisions_page:
+                  externalValue: ./examples/v2/decisions-page.json
+                decisions_none:
+                  externalValue: ./examples/v2/decisions-none.json
+            application/xml:
+              schema: *decisionPageSchema
+              examples:
+                decisions_page:
+                  externalValue: ./examples/v2/decisions-page.xml
+                decisions_none:
+                  externalValue: ./examples/v2/decisions-none.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenStore'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/InvalidDecisionQuery'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v2/recommendation-decisions/{decision_id}:
+    get:
+      tags:
+      - Recommendations
+      summary: Read one recorded recommendation decision
+      description: >-
+        Reads back what the service offered and why, as recorded: the customer (null
+        once anonymized), the reference store and channel as given or derived, the
+        segmentation run and model version that produced it, the status, the
+        exclusion counts per reason, and every item offered with its kind, position,
+        factors, availability, reasons and, for an alternative, the product it
+        replaces and why that product was unavailable. It matches what the client
+        received for that `decision_id`, even after stock or rules changed, because
+        the record is the explanation and the response was only a view of it. It
+        holds identifiers and figures only. An id the service does not hold, or
+        whose retention has passed, answers 404 `decision_not_found`.
+        `STORE_MANAGER` reads only a decision whose reference store is one of its
+        assigned stores (ADR-0060), and any other, including one with no reference
+        store, answers 403 `forbidden_store`.
+      operationId: getRecommendationDecision
+      x-mosaiq-status: planned
+      x-mosaiq-roles:
+      - ADMIN
+      - ANALYST
+      - AUDITOR
+      - STORE_MANAGER
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/DecisionId'
+      responses:
+        '200':
+          description: The recorded decision.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema: &decisionSchema
+                $ref: '#/components/schemas/RecommendationDecision'
+              examples:
+                decision:
+                  externalValue: ./examples/v2/decision.json
+            application/xml:
+              schema: *decisionSchema
+              examples:
+                decision:
+                  externalValue: ./examples/v2/decision.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenStore'
+        '404':
+          $ref: '#/components/responses/DecisionNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
   /health/live:
     get:
       tags:
@@ -153,6 +460,27 @@ paths:
                 type: string
         '406':
           $ref: '#/components/responses/NotAcceptable'
+  /schema.v2.xsd:
+    get:
+      tags:
+      - Meta
+      summary: Get the recommendations v2 XML Schema
+      operationId: getSchemaV2
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The recommendations v2 XSD, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/xml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
 components:
   securitySchemes:
     bearer:
@@ -206,6 +534,96 @@ components:
         minimum: 1
         maximum: 50
         default: 10
+    StoreId:
+      name: store_id
+      in: query
+      required: false
+      description: >-
+        The reference store the products are judged at, the seller's declared
+        position. It takes precedence over the customer's usual store. A value that
+        is not a positive integer answers 422 `invalid_query`, a store that does
+        not exist answers 422 `unknown_store`, and a floor role naming a store it is
+        not assigned to answers 403 `forbidden_store` (ADR-0060, ADR-0067). A foreign
+        id, so it is a query field and never a path segment (ADR-0035).
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+    ChannelId:
+      name: channel_id
+      in: query
+      required: false
+      description: >-
+        The reference channel. With none, availability is judged at the
+        store over any channel it enables; it is never taken from the customer's
+        dominant channel. A value that is not a positive integer answers 422
+        `invalid_query`, and a channel that does not exist answers 422 `unknown_channel`.
+        Channel ids are sales' and are filters only.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+    DecisionId:
+      name: decision_id
+      in: path
+      required: true
+      description: >-
+        The decision id a `/v2/recommendations` answer carried.
+      schema:
+        type: string
+        format: uuid
+    DecisionCustomerId:
+      name: customer_id
+      in: query
+      required: false
+      description: >-
+        Keep one customer's decisions. A malformed value answers 422
+        `invalid_query`.
+      schema:
+        type: string
+        format: uuid
+    DecisionStoreId:
+      name: store_id
+      in: query
+      required: false
+      description: >-
+        Keep the decisions whose reference store is this store. A value
+        that is not a positive integer answers 422 `invalid_query`, and a
+        `STORE_MANAGER` naming a store it is not assigned to answers 403
+        `forbidden_store`.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+    DecisionStatus:
+      name: status
+      in: query
+      required: false
+      description: >-
+        Keep the decisions with this status. Any other value answers 422
+        `invalid_query`.
+      schema:
+        $ref: '#/components/schemas/StatusV2'
+    From:
+      name: from
+      in: query
+      required: false
+      description: >-
+        Keep the decisions computed at or after this instant (RFC 3339).
+        A malformed value answers 422 `invalid_query`.
+      schema:
+        type: string
+        format: date-time
+    To:
+      name: to
+      in: query
+      required: false
+      description: >-
+        Keep the decisions computed before this instant (RFC 3339). A
+        malformed value, or one not after `from`, answers 422 `invalid_query`.
+      schema:
+        type: string
+        format: date-time
   headers:
     CorrelationId:
       description: The effective correlation id for this request.
@@ -363,6 +781,506 @@ components:
       xml:
         name: Recommendation
         namespace: https://mosaiq.maxthecoder.online/xml/recommendations/v1
+    StatusV2:
+      type: string
+      description: '`recommended`: at least one `primary` item. `none_match`: a segment
+        and a reference store are known, but no product qualifies as a primary item;
+        `alternative` and `elsewhere` entries may still be offered. `no_open_assignment`:
+        the customer has no open segment assignment. `unassigned_result`: the latest
+        assignment is the unassigned result (RN-21). `no_usual_store`: no reference
+        store was given and the customer has no usual store. `PERSONALIZATION_WITHDRAWN`:
+        the customer objected to personalization, so nothing about them was read. The
+        segment is checked first. `PERSONALIZATION_WITHDRAWN` keeps the spelling
+        ADR-0067 gives it.'
+      enum:
+      - recommended
+      - none_match
+      - no_open_assignment
+      - unassigned_result
+      - no_usual_store
+      - PERSONALIZATION_WITHDRAWN
+    StoreSource:
+      type: string
+      description: '`given`: the caller named the store. `usual_store`: the caller
+        named none and the customer''s usual store (RN-35) was used.'
+      enum:
+      - given
+      - usual_store
+    ExclusionReason:
+      type: string
+      description: 'Why a product that matches a signal was excluded, in the order the
+        service applies them (ADR-0067): `already_bought` (bought in the window),
+        `inactive`, `not_sellable` (its commercial status does not allow the sale,
+        such as discontinued), `store_not_selling` (the reference store''s status
+        does not permit sales), `channel_not_enabled` (a reference channel is given
+        and the store does not enable it), `out_of_stock` (no unit on hand at the
+        reference store, a missing stock record included) and
+        `PERSONALIZATION_WITHDRAWN` (the customer''s consent or restrictions forbid
+        it).'
+      enum:
+      - already_bought
+      - inactive
+      - not_sellable
+      - store_not_selling
+      - channel_not_enabled
+      - out_of_stock
+      - PERSONALIZATION_WITHDRAWN
+    UnavailableReason:
+      type: string
+      description: 'Why the product an `alternative` stands in for, or an `elsewhere`
+        entry, is not available at the reference store and channel. The only three
+        exclusions an alternative may answer (ADR-0067).'
+      enum:
+      - not_sellable
+      - channel_not_enabled
+      - out_of_stock
+    Exclusion:
+      type: object
+      additionalProperties: false
+      required:
+      - reason
+      - count
+      description: >-
+        How many products that matched a signal were excluded for one
+        reason. Products are counted, never listed.
+      properties:
+        reason:
+          $ref: '#/components/schemas/ExclusionReason'
+        count:
+          type: integer
+          minimum: 1
+    ReasonV2:
+      type: object
+      additionalProperties: false
+      required:
+      - signal
+      - segment_buyers
+      - category_id
+      - share
+      description: >-
+        Why an item was chosen, with the figures behind it. A figure that
+        does not belong to the signal is null in JSON and omitted in XML. The
+        three signals are `/v1`'s; `relation_substitute` is the one reason an
+        `alternative` carries and has no figure, because the product it replaces is
+        in `alternative_for`.
+      properties:
+        signal:
+          type: string
+          enum:
+          - segment
+          - preferred_category
+          - purchase_history
+          - relation_substitute
+        segment_buyers:
+          anyOf:
+          - type: integer
+            minimum: 1
+          - type: 'null'
+          description: '`segment` only: other customers with the same open label who
+            bought the product in the window.'
+        category_id:
+          anyOf:
+          - type: integer
+            format: int32
+          - type: 'null'
+          description: '`preferred_category` and `purchase_history`: the nearest
+            category of that signal in the product''s lineage.'
+        share:
+          anyOf:
+          - type: number
+            minimum: 0
+            maximum: 1
+          - type: 'null'
+          description: '`purchase_history` only: the fraction of the customer''s
+            purchases in the window that were in `category_id`.'
+    Factors:
+      type: object
+      additionalProperties: false
+      required:
+      - signals_matched
+      - segment_buyers
+      - category_share
+      description: >-
+        The figures RN-40 orders by, in its tie-break order and before the
+        product id. There are no weights: nothing is tuned, and every position can be
+        explained by these figures and the reasons beside them.
+      properties:
+        signals_matched:
+          type: integer
+          minimum: 1
+          maximum: 3
+          description: >-
+            How many of the three signals matched.
+        segment_buyers:
+          anyOf:
+          - type: integer
+            minimum: 1
+          - type: 'null'
+          description: >-
+            Segment buyers of the product; null when the `segment` signal
+            did not match.
+        category_share:
+          anyOf:
+          - type: number
+            minimum: 0
+            maximum: 1
+          - type: 'null'
+          description: >-
+            The category's share of the customer's buying; null when the
+            `purchase_history` signal did not match.
+    Availability:
+      type: object
+      additionalProperties: false
+      required:
+      - store_id
+      - channel_id
+      - quantity_on_hand
+      description: >-
+        Where the item is available, and the stock figure the decision used
+        (E-06). An item exists only where it is available, so this is never an
+        "unavailable" state; a product that is not available is named by
+        `alternative_for` or counted in `exclusions`. It is the service's own
+        judgement at one store and channel, not stock's `availabilities` resource.
+      properties:
+        store_id:
+          type: integer
+          format: int32
+          description: >-
+            The store whose shelf the figure comes from. It is the
+            reference store, except on an `elsewhere` entry, where it is the other
+            store.
+        channel_id:
+          anyOf:
+          - type: integer
+            format: int32
+          - type: 'null'
+          description: >-
+            The reference channel; null when the caller named none.
+        quantity_on_hand:
+          type: integer
+          minimum: 1
+          description: >-
+            Units held at `store_id` when the result was computed.
+    RecommendationItemV2:
+      type: object
+      additionalProperties: false
+      description: 'Ids and figures only: no product name, SKU, price, store name or
+        category name. Clients fetch names with `GET /v1/products?ids=` and from the
+        categories, stores and sales contracts. What each `kind` carries: a `primary`
+        item has `factors`, an `availability` at the reference store and channel,
+        no `alternative_for` and no `unavailable_reason`, and the reasons that
+        matched, in the fixed order `segment`, `preferred_category`,
+        `purchase_history`. An `alternative` has no `factors`, an `availability` at
+        the reference store and channel, the `alternative_for` product, the
+        `unavailable_reason` of that product and exactly one reason,
+        `relation_substitute`. An `elsewhere` entry is the unavailable product itself:
+        it has `factors` and its matched reasons, an `availability` whose `store_id`
+        is another store, the `unavailable_reason` here and no `alternative_for`. A
+        field that does not belong to the kind is null in JSON and omitted in XML.'
+      required:
+      - product_id
+      - category_id
+      - kind
+      - position
+      - factors
+      - availability
+      - alternative_for
+      - unavailable_reason
+      - reasons
+      properties:
+        product_id:
+          type: integer
+          format: int32
+        category_id:
+          type: integer
+          format: int32
+          description: >-
+            The product's own category.
+        kind:
+          type: string
+          enum:
+          - primary
+          - alternative
+          - elsewhere
+        position:
+          type: integer
+          minimum: 1
+          description: >-
+            The place in `items`, from 1.
+        factors:
+          anyOf:
+          - $ref: '#/components/schemas/Factors'
+          - type: 'null'
+          description: >-
+            Null on an `alternative`, which is not scored.
+        availability:
+          $ref: '#/components/schemas/Availability'
+        alternative_for:
+          anyOf:
+          - type: integer
+            format: int32
+          - type: 'null'
+          description: '`alternative` only: the id of the unavailable product this one
+            stands in for.'
+        unavailable_reason:
+          anyOf:
+          - $ref: '#/components/schemas/UnavailableReason'
+          - type: 'null'
+          description: '`alternative` and `elsewhere` only: why the product is not
+            available at the reference store and channel.'
+        reasons:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ReasonV2'
+    RecommendationV2:
+      type: object
+      additionalProperties: false
+      required:
+      - decision_id
+      - customer_id
+      - status
+      - computed_at
+      - window
+      - label_code
+      - run_id
+      - model_version_id
+      - usual_store_id
+      - store_id
+      - store_source
+      - channel_id
+      - exclusions
+      - items
+      description: '`items` is empty for `no_open_assignment`, `unassigned_result`,
+        `no_usual_store` and `PERSONALIZATION_WITHDRAWN`. `label_code`, `run_id`,
+        `model_version_id`, `usual_store_id`, `store_id` and `channel_id` are the
+        figures the rule used to decide (E-06), each null until known.'
+      properties:
+        decision_id:
+          type: string
+          format: uuid
+          description: >-
+            The decision recorded for this answer (ADR-0067), read back
+            with `GET /v2/recommendation-decisions/{decision_id}`.
+        customer_id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/StatusV2'
+        computed_at:
+          type: string
+          format: date-time
+        window:
+          $ref: '#/components/schemas/Window'
+        label_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: >-
+            Null until a segment is known.
+        run_id:
+          anyOf:
+          - type: integer
+            format: int64
+          - type: 'null'
+          description: >-
+            The segmentation run of the open assignment; null until a
+            segment is known.
+        model_version_id:
+          anyOf:
+          - type: integer
+            format: int64
+            minimum: 1
+          - type: 'null'
+          description: >-
+            The model version the run was scored under (ADR-0064); null
+            until a segment is known, and null while the run has no version yet.
+        usual_store_id:
+          anyOf:
+          - type: integer
+            format: int32
+          - type: 'null'
+          description: >-
+            The customer's usual store (RN-35), as in `/v1`. Null until it
+            is known, and always null for `PERSONALIZATION_WITHDRAWN`.
+        store_id:
+          anyOf:
+          - type: integer
+            format: int32
+          - type: 'null'
+          description: >-
+            The reference store. Null only when the caller named none and
+            there is no usual store, or for `PERSONALIZATION_WITHDRAWN` with no
+            `store_id` named.
+        store_source:
+          anyOf:
+          - $ref: '#/components/schemas/StoreSource'
+          - type: 'null'
+          description: >-
+            Which of the two gave `store_id`; null with it.
+        channel_id:
+          anyOf:
+          - type: integer
+            format: int32
+          - type: 'null'
+          description: >-
+            The reference channel as given; never derived.
+        exclusions:
+          type: array
+          description: >-
+            Counts per reason, in the order of `ExclusionReason`, only the
+            reasons above zero.
+          items:
+            $ref: '#/components/schemas/Exclusion'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecommendationItemV2'
+      xml:
+        name: Recommendation
+        namespace: https://mosaiq.maxthecoder.online/xml/recommendations/v2
+    RecommendationDecision:
+      type: object
+      additionalProperties: false
+      required:
+      - decision_id
+      - customer_id
+      - status
+      - computed_at
+      - run_id
+      - model_version_id
+      - store_id
+      - store_source
+      - channel_id
+      - exclusions
+      - items
+      description: >-
+        One recorded decision (ADR-0067): what was offered, in `items`,
+        and what was excluded and why, in `exclusions` and in the
+        `unavailable_reason` of each alternative. It holds identifiers and figures
+        only, and its `items` equal what the client received for that `decision_id`.
+      properties:
+        decision_id:
+          type: string
+          format: uuid
+        customer_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          description: >-
+            Null once the customer was anonymized (F21-19); the figures stay.
+        status:
+          $ref: '#/components/schemas/StatusV2'
+        computed_at:
+          type: string
+          format: date-time
+        run_id:
+          anyOf:
+          - type: integer
+            format: int64
+          - type: 'null'
+        model_version_id:
+          anyOf:
+          - type: integer
+            format: int64
+            minimum: 1
+          - type: 'null'
+        store_id:
+          anyOf:
+          - type: integer
+            format: int32
+          - type: 'null'
+        store_source:
+          anyOf:
+          - $ref: '#/components/schemas/StoreSource'
+          - type: 'null'
+        channel_id:
+          anyOf:
+          - type: integer
+            format: int32
+          - type: 'null'
+        exclusions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Exclusion'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecommendationItemV2'
+      xml:
+        name: RecommendationDecision
+        namespace: https://mosaiq.maxthecoder.online/xml/recommendations/v2
+    RecommendationDecisionSummary:
+      type: object
+      additionalProperties: false
+      required:
+      - decision_id
+      - customer_id
+      - status
+      - computed_at
+      - store_id
+      - store_source
+      - channel_id
+      - item_count
+      - exclusions
+      description: >-
+        A decision without its items, for a list.
+      properties:
+        decision_id:
+          type: string
+          format: uuid
+        customer_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          description: >-
+            Null once the customer was anonymized (F21-19).
+        status:
+          $ref: '#/components/schemas/StatusV2'
+        computed_at:
+          type: string
+          format: date-time
+        store_id:
+          anyOf:
+          - type: integer
+            format: int32
+          - type: 'null'
+        store_source:
+          anyOf:
+          - $ref: '#/components/schemas/StoreSource'
+          - type: 'null'
+        channel_id:
+          anyOf:
+          - type: integer
+            format: int32
+          - type: 'null'
+        item_count:
+          type: integer
+          minimum: 0
+          description: >-
+            How many items the decision offered, of every kind.
+        exclusions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Exclusion'
+    RecommendationDecisionPage:
+      type: object
+      additionalProperties: false
+      required:
+      - recommendation_decisions
+      - page_info
+      properties:
+        recommendation_decisions:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecommendationDecisionSummary'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: RecommendationDecisions
+        namespace: https://mosaiq.maxthecoder.online/xml/recommendations/v2
     PageInfo:
       type: object
       additionalProperties: false
@@ -559,3 +1477,97 @@ components:
               externalValue: ./examples/unknown-customer.xml
             invalid_query:
               externalValue: ./examples/invalid-query.xml
+    ForbiddenStore:
+      description: '`forbidden_role`, or `forbidden_store` when a floor role names a
+        store it is not assigned to, or a `STORE_MANAGER` reads a decision made at
+        another store (ADR-0060).'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.json
+            forbidden_store:
+              externalValue: ./examples/forbidden-store.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.xml
+            forbidden_store:
+              externalValue: ./examples/forbidden-store.xml
+    UnprocessableV2:
+      description: '`unknown_customer`, `unknown_store`, `unknown_channel` or `invalid_query`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unknown_customer:
+              externalValue: ./examples/unknown-customer.json
+            unknown_store:
+              externalValue: ./examples/unknown-store.json
+            unknown_channel:
+              externalValue: ./examples/unknown-channel.json
+            invalid_query:
+              externalValue: ./examples/invalid-query.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unknown_customer:
+              externalValue: ./examples/unknown-customer.xml
+            unknown_store:
+              externalValue: ./examples/unknown-store.xml
+            unknown_channel:
+              externalValue: ./examples/unknown-channel.xml
+            invalid_query:
+              externalValue: ./examples/invalid-query.xml
+    InvalidDecisionQuery:
+      description: '`invalid_query` or `invalid_pagination`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query-decisions.json
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query-decisions.xml
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.xml
+    DecisionNotFound:
+      description: '`decision_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            decision_not_found:
+              externalValue: ./examples/decision-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            decision_not_found:
+              externalValue: ./examples/decision-not-found.xml

@@ -6,6 +6,7 @@ import { CHANNELS } from '../shared/api';
 import { Audit } from './audit';
 import { Backoffice } from './backoffice';
 import { loadBundle } from './bundle';
+import { CampaignPlan } from './campaign-plan';
 import { Campaigns } from './campaigns';
 import { Catalog } from './catalog';
 import { Customers } from './customers';
@@ -179,6 +180,26 @@ function start(): void {
     campaigns.transitionCampaign(campaignId, to, expected),
   );
   ipcMain.handle(CHANNELS.listCampaignLabels, () => campaigns.listLabels());
+  const plan = new CampaignPlan(office);
+  ipcMain.handle(CHANNELS.getCampaignAudience, (_e, campaignId: unknown) => plan.getAudience(campaignId));
+  ipcMain.handle(CHANNELS.putCampaignAudience, (_e, campaignId: unknown, draft: unknown) =>
+    plan.putAudience(campaignId, draft),
+  );
+  ipcMain.handle(CHANNELS.getCampaignBudget, (_e, campaignId: unknown) => plan.getBudget(campaignId));
+  ipcMain.handle(CHANNELS.putCampaignBudget, (_e, campaignId: unknown, draft: unknown) =>
+    plan.putBudget(campaignId, draft),
+  );
+  ipcMain.handle(CHANNELS.getCampaignEligibilityRules, (_e, campaignId: unknown) =>
+    plan.getEligibility(campaignId),
+  );
+  ipcMain.handle(CHANNELS.putCampaignEligibilityRules, (_e, campaignId: unknown, draft: unknown) =>
+    plan.putEligibility(campaignId, draft),
+  );
+  ipcMain.handle(CHANNELS.getCampaignExclusions, (_e, campaignId: unknown) => plan.getExclusions(campaignId));
+  ipcMain.handle(CHANNELS.putCampaignExclusions, (_e, campaignId: unknown, draft: unknown) =>
+    plan.putExclusions(campaignId, draft),
+  );
+  ipcMain.handle(CHANNELS.previewCampaignAudience, (_e, campaignId: unknown) => plan.preview(campaignId));
   const audit = new Audit(office);
   ipcMain.handle(CHANNELS.listAuditEntries, (_e, query: unknown) => audit.listEntries(query));
   ipcMain.handle(CHANNELS.getAuditEntry, (_e, auditId: unknown) => audit.getEntry(auditId));

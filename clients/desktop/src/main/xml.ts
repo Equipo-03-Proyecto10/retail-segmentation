@@ -68,6 +68,8 @@ const REPEATED = new Set([
   'Users.User',
   'Roles.Role',
   'Campaigns.Campaign',
+  'CampaignExclusions.customer_ids',
+  'CampaignExclusions.label_codes',
   'Segments.Segment',
   'AuditEntries.AuditEntry',
   'Customers.Customer',

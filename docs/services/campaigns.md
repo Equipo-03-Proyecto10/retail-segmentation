@@ -15,7 +15,7 @@
 | Redis ACL user | `svc_campaigns`, same user line on `redis-state` and `redis-cache` |
 | MongoDB | — |
 | Compose project / image | `mosaiq-campaigns` / `ghcr.io/equipo-03-proyecto10/mosaiq-campaigns` |
-| Used by | Electron: campaigns (second wave, F16-08). |
+| Used by | Electron: campaigns (second wave, F16-08), and a campaign's audience, conditions, exclusions and budget (F28-09). |
 | Governing ADRs | [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md), [ADR-0043](../adr/0043-at-least-ten-microservices-each-implementing-one-business-rule.md), [ADR-0045](../adr/0045-services-never-import-the-web-system.md) |
 
 ## Business rule

@@ -62,6 +62,9 @@ being ignored. `MOSAIQ_DESKTOP_CONFIG_DIR` overrides the directory (the window t
   - store locations: `listStores`, `getStore`, `setStoreLocation`, `removeStoreLocation`.
   - campaigns: `listCampaigns`, `getCampaign`, `createCampaign`, `updateCampaign`, `transitionCampaign`,
     `listCampaignLabels`.
+  - a campaign's plan: `getCampaignAudience`, `putCampaignAudience`, `getCampaignBudget`,
+    `putCampaignBudget`, `getCampaignEligibilityRules`, `putCampaignEligibilityRules`,
+    `getCampaignExclusions`, `putCampaignExclusions`, `previewCampaignAudience`.
   - audit trail: `listAuditEntries`, `getAuditEntry` (read only).
 
   There is no generic fetch and no `ipcRenderer`. The main process checks every value a screen sends
@@ -206,14 +209,54 @@ Through campaigns-service (`contracts/campaigns/`). The **Campaigns** screen is 
   `CANCELLED` offer none. The client does not decide whether a move is legal, so a forced one is
   answered by the service.
 - The lifecycle and the dates are the service's: the client checks only types and lengths. Refusals are
-  shown as returned (code, message, correlation id): `ends_before_start` with its `ends_on` detail next
-  to the dates, `duplicate_draft` and `unknown_label`, `illegal_transition`, `status_changed`,
-  `campaign_ended` and `experiment_not_ready`. After `status_changed` the campaign is read again and
-  the move is not retried.
+  shown with their code and correlation id as returned, and a plain sentence for the code (F28-09):
+  `ends_before_start` with its `ends_on` detail next to the dates, `duplicate_draft` and
+  `unknown_label`, `illegal_transition`, `status_changed`, `campaign_ended` and `experiment_not_ready`.
+  After `status_changed` the campaign is read again and the move is not retried.
 
 The window tests (`tests/window/campaigns.spec.ts`) answer with the recorded examples in
 `contracts/campaigns/examples/` and `contracts/segments/examples/`, read from disk, and keep the status
 of the campaign they transition.
+
+### Audience, conditions, exclusions, budget and validity (F28-09)
+
+An open campaign also shows its plan, under the edit form (`renderer/campaign-plan.ts`,
+`main/campaign-plan.ts`). Each section is a sub-resource of the campaign's own path in
+`contracts/campaigns/`, read with `GET` and replaced whole with `PUT`, and each reads and saves on its
+own: one that is refused shows its refusal in place and the others stay usable.
+
+| Section    | Path                                   | Writable members                                                                                                          |
+| ---------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Audience   | `/v1/campaigns/{id}/audience`          | `max_customers`, a cap of 1 to 10,000,000 (empty for none)                                                                |
+| Conditions | `/v1/campaigns/{id}/eligibility-rules` | `registered_on_or_before`, and `min_purchases` (1 to 1000) with `purchase_window_days` (1 to 731), given together         |
+| Exclusions | `/v1/campaigns/{id}/exclusions`        | up to 1000 customer ids and 20 label codes, none twice                                                                    |
+| Budget     | `/v1/campaigns/{id}/budget`            | `total_amount` and `per_customer_cap`, two-decimal text with no currency; the per-customer limit may not exceed the total |
+
+- **Validity** is the campaign's own `starts_on` and `ends_on`, saved by the edit form through
+  `PATCH /v1/campaigns/{id}`. Both are checked as dates before sending; whether the end precedes the
+  start is the service's (`ends_before_start`), as before.
+- **Roles.** `ADMIN` and `MARKETING` write; `ANALYST` and `AUDITOR` read and preview, and are drawn no
+  control. The roles are the bundled `x-mosaiq-roles` of `putCampaign*` and `getCampaign*`.
+- **Validated when saved.** The main process checks every value against the XSD and the contract's
+  bounds and sends nothing when one fails; each reason is shown next to its field in plain words.
+  Whether a customer id or a label exists is the service's answer: `unknown_customer`, `unknown_label`.
+- **Only a DRAFT changes.** Outside `DRAFT` every control is drawn disabled, and a forced write gets 409
+  `campaign_not_draft`. Activation is unchanged: the moves are the service's `allowed_transitions`.
+- **Preview.** "Preview audience" reads the audience, the conditions and the exclusions as saved, and
+  how many customers hold the campaign's label (`GET /v1/segments`, `size`, optional). It shows the
+  estimated audience and when it was counted, how many customers holding the label are left out, and
+  the rules that can leave them out. campaigns-service answers with one total, so the number left out is
+  the difference and is not split by reason. A preview already on screen is read again after a save.
+- **Plain words.** Every code the campaigns contract can answer has one sentence
+  (`shared/campaign-messages.ts`); the code, the correlation id and each detail stay behind the
+  "Details" disclosure. A unit test reads `contracts/campaigns/openapi.yaml` and fails when a code of
+  its `/v1/campaigns` operations has no sentence.
+- The operations are marked planned in the contract (ADR-0073) until campaigns-service implements them
+  (F25-04, #835). Until then a deployed service does not answer them as the contract says, and each
+  section shows the failure in place without taking the screen down.
+
+The window tests (`tests/window/campaign-plan.spec.ts`) keep the plan they are given and answer with
+the same recorded examples.
 
 ## Audit trail (F16-09)
 

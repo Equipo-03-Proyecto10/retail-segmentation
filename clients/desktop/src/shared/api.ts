@@ -228,6 +228,78 @@ export interface LabelView {
   name: string;
 }
 
+/**
+ * A campaign's plan: four sub-resources of its own path (F25-03, #834), each read on its own and
+ * replaced whole while the campaign is DRAFT. Optional members are absent when never written.
+ */
+export interface AudienceView {
+  campaign_id: number;
+  label_code: string;
+  /** The cap on the number of customers; absent when there is none. */
+  max_customers?: number;
+  /** Counted by campaigns-service when it answered, as of as_of; never stored by the client. */
+  audience_size: number;
+  as_of: string;
+}
+
+/** Typed values, sent as written: the main process checks them. Empty text removes the cap. */
+export interface AudienceDraft {
+  max_customers: string;
+}
+
+export interface BudgetView {
+  campaign_id: number;
+  /** Two-decimal text, no currency: the most the campaign may grant in discounts. */
+  total_amount?: string;
+  /** Two-decimal text, no currency: the most one customer may receive. */
+  per_customer_cap?: string;
+}
+
+/** Two-decimal amounts as typed; empty text removes that limit. */
+export interface BudgetDraft {
+  total_amount: string;
+  per_customer_cap: string;
+}
+
+/** The conditions (eligibility rules) a customer in the audience must satisfy. */
+export interface EligibilityView {
+  campaign_id: number;
+  registered_on_or_before?: string;
+  min_purchases?: number;
+  purchase_window_days?: number;
+}
+
+/** As typed; empty text removes a rule, and the two purchase members go together. */
+export interface EligibilityDraft {
+  registered_on_or_before: string;
+  min_purchases: string;
+  purchase_window_days: string;
+}
+
+export interface ExclusionsView {
+  campaign_id: number;
+  customer_ids: string[];
+  label_codes: string[];
+}
+
+export interface ExclusionsDraft {
+  customer_ids: string[];
+  label_codes: string[];
+}
+
+/**
+ * What a preview shows: the audience campaigns-service counted, the rules it counted it under,
+ * and how many customers hold the campaign's label now. The service reports one total, so the
+ * customers left out are the difference; it does not split them by reason.
+ */
+export interface AudiencePreviewView {
+  audience: AudienceView;
+  eligibility: EligibilityView;
+  exclusions: ExclusionsView;
+  /** Customers holding the label now, from segments-service; absent when that read failed. */
+  label_holders?: number;
+}
+
 /** One append-only entry. audit_id is text: it can exceed 2^53. The payloads are JSON text, as returned. */
 export interface AuditEntryView {
   audit_id: string;
@@ -653,6 +725,15 @@ export interface MosaiqBridge {
     expectedStatus: CampaignStatus,
   ): Promise<Result<CampaignView>>;
   listCampaignLabels(): Promise<Result<LabelView[]>>;
+  getCampaignAudience(campaignId: number): Promise<Result<AudienceView>>;
+  putCampaignAudience(campaignId: number, draft: AudienceDraft): Promise<Result<AudienceView>>;
+  getCampaignBudget(campaignId: number): Promise<Result<BudgetView>>;
+  putCampaignBudget(campaignId: number, draft: BudgetDraft): Promise<Result<BudgetView>>;
+  getCampaignEligibilityRules(campaignId: number): Promise<Result<EligibilityView>>;
+  putCampaignEligibilityRules(campaignId: number, draft: EligibilityDraft): Promise<Result<EligibilityView>>;
+  getCampaignExclusions(campaignId: number): Promise<Result<ExclusionsView>>;
+  putCampaignExclusions(campaignId: number, draft: ExclusionsDraft): Promise<Result<ExclusionsView>>;
+  previewCampaignAudience(campaignId: number): Promise<Result<AudiencePreviewView>>;
   listAuditEntries(query: AuditQuery): Promise<Result<Paged<AuditEntryView>>>;
   getAuditEntry(auditId: string): Promise<Result<AuditEntryView>>;
   stockLevels(query: StockQuery): Promise<Result<Paged<StockLevelView>>>;
@@ -723,6 +804,15 @@ export const CHANNELS = {
   updateCampaign: 'mosaiq:update-campaign',
   transitionCampaign: 'mosaiq:transition-campaign',
   listCampaignLabels: 'mosaiq:list-campaign-labels',
+  getCampaignAudience: 'mosaiq:get-campaign-audience',
+  putCampaignAudience: 'mosaiq:put-campaign-audience',
+  getCampaignBudget: 'mosaiq:get-campaign-budget',
+  putCampaignBudget: 'mosaiq:put-campaign-budget',
+  getCampaignEligibilityRules: 'mosaiq:get-campaign-eligibility-rules',
+  putCampaignEligibilityRules: 'mosaiq:put-campaign-eligibility-rules',
+  getCampaignExclusions: 'mosaiq:get-campaign-exclusions',
+  putCampaignExclusions: 'mosaiq:put-campaign-exclusions',
+  previewCampaignAudience: 'mosaiq:preview-campaign-audience',
   listAuditEntries: 'mosaiq:list-audit-entries',
   getAuditEntry: 'mosaiq:get-audit-entry',
   stockLevels: 'mosaiq:stock-levels',

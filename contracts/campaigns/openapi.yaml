@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: campaigns-service
-  version: 1.2.1
+  version: 1.3.0
   description: >-
     Owns the campaign lifecycle rule. A campaign is created as DRAFT, may be
     edited only while it remains DRAFT, and moves only DRAFT to ACTIVE or
@@ -479,6 +479,71 @@ paths:
           $ref: '#/components/responses/UnsupportedMediaType'
         '422':
           $ref: '#/components/responses/AudienceValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/campaigns/{campaign_id}/audience/breakdown:
+    get:
+      operationId: getCampaignAudienceBreakdown
+      x-mosaiq-status: planned
+      summary: Get a campaign's audience with its exclusions counted by reason
+      description: >-
+        Returns the audience `getCampaignAudience` counts, with the customers it
+        leaves out counted by reason, computed when the request is served as of
+        `as_of`; nothing is stored. `label_holders` counts the customers whose
+        current segment label is `label_code` (`api_segments.current_label_v1`,
+        state `assigned`). `reasons` always holds six entries, in this order, and
+        a customer who fails several reasons is counted once, under the first
+        that applies: `not_in_customer_reference` (the holder is absent from
+        `api_customers.customer_ref_v1`), `excluded_customer` (named in the
+        campaign's exclusions), `excluded_label` (holds a label listed in the
+        campaign's exclusions; a customer holds one current label, so this
+        removes customers only when the campaign's own label is listed),
+        `registered_after_cutoff` (registered after `registered_on_or_before`),
+        `too_few_purchases` (fewer than `min_purchases` net purchases in the
+        `purchase_window_days` days before the request, counted as
+        `getCampaignEligibilityRules` states), and `over_max_customers` (the
+        customers above `max_customers` once every earlier reason is applied). A
+        reason whose rule is not set counts 0. The counts add up:
+        `label_holders` equals the sum of `excluded` over `reasons` plus
+        `audience_size`, and `audience_size` equals the one `getCampaignAudience`
+        returns when computed at the same `as_of`.
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - MARKETING
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The campaign's audience and what it leaves out, by reason.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignAudienceBreakdown'
+              examples:
+                example:
+                  externalValue: ./examples/campaign-audience-breakdown.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CampaignAudienceBreakdown'
+              examples:
+                example:
+                  externalValue: ./examples/campaign-audience-breakdown.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/CampaignNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -1474,6 +1539,73 @@ components:
           $ref: '#/components/schemas/MaxCustomers'
       xml:
         name: PutCampaignAudienceRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/campaigns/v1
+    AudienceExclusionReason:
+      type: string
+      description: >-
+        Why a customer who holds the campaign's label is not in its audience. The
+        order of the enumeration is the order of precedence.
+      enum:
+        - not_in_customer_reference
+        - excluded_customer
+        - excluded_label
+        - registered_after_cutoff
+        - too_few_purchases
+        - over_max_customers
+    AudienceReason:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - excluded
+      properties:
+        code:
+          $ref: '#/components/schemas/AudienceExclusionReason'
+        excluded:
+          type: integer
+          description: Customers left out for this reason and no earlier one.
+          minimum: 0
+    CampaignAudienceBreakdown:
+      type: object
+      additionalProperties: false
+      required:
+        - campaign_id
+        - label_code
+        - label_holders
+        - reasons
+        - audience_size
+        - as_of
+      properties:
+        campaign_id:
+          $ref: '#/components/schemas/CampaignId'
+        label_code:
+          $ref: '#/components/schemas/LabelCode'
+        label_holders:
+          type: integer
+          description: >-
+            Customers whose current segment label is `label_code`, before any
+            reason is applied.
+          minimum: 0
+        reasons:
+          type: array
+          description: >-
+            One entry per reason, always six, in the order of
+            `AudienceExclusionReason`.
+          minItems: 6
+          maxItems: 6
+          items:
+            $ref: '#/components/schemas/AudienceReason'
+        audience_size:
+          type: integer
+          description: >-
+            `label_holders` minus the sum of `excluded` over `reasons`; equal to
+            `getCampaignAudience`'s at the same `as_of`.
+          minimum: 0
+        as_of:
+          type: string
+          format: date-time
+      xml:
+        name: CampaignAudienceBreakdown
         namespace: https://mosaiq.maxthecoder.online/xml/campaigns/v1
     CampaignBudget:
       type: object

@@ -5,6 +5,8 @@ name: Service template
 # quality job (tests/test_service_template.py); this workflow runs them in
 # Docker: ADR-0040's loop against rendered projects, `nginx -t`, the gateway's
 # 413 envelope, and the kit example as a real project on the mosaiq network.
+# The whole local stack comes up on a push to develop or main, not on a pull
+# request (#962).
 on:
   pull_request:
     paths:
@@ -171,7 +173,12 @@ jobs:
       # The command compose.distributed.yaml documents, whole: every one-shot
       # step must complete and every container come up (#522 missed
       # mongo-init's network because the step above starts the gateway alone).
+      # On a push only: building the 15 images from scratch took 598 to 723 s
+      # of each run, and nightly.yml runs the same command against develop
+      # every day, so a pull request that breaks it is caught after it
+      # merges (#962).
       - name: The documented command brings the whole stack up
+        if: github.event_name == 'push'
         run: |
           set -uo pipefail
           compose="docker compose -f compose.distributed.yaml"

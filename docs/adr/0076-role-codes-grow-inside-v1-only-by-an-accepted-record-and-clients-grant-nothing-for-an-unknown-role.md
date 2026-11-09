@@ -1,6 +1,6 @@
 # ADR-0076 — Role codes grow inside v1 only by an accepted record, and clients grant nothing for an unknown role
 
-**Status:** Proposed
+**Status:** Accepted (2026-11-09)
 **Owner:** Raquel
 **Issue:** #754
 **Supersedes:** —

@@ -215,7 +215,7 @@ Later runtime events must be preserved.
 | [0073](0073-an-operation-published-ahead-of-its-implementation-is-marked-planned-and-skipped-by-conformance.md) | An operation published ahead of its implementation is marked planned and skipped by conformance | Accepted |
 | [0074](0074-the-desktop-console-exports-through-the-main-process-and-records-each-export-locally.md) | The desktop console exports tables through the main process and records each export locally | Accepted |
 | [0075](0075-engagement-relays-interaction-facts-on-a-redis-stream-from-an-outbox-kept-on-the-event-document.md) | engagement relays interaction facts on a Redis stream, from an outbox kept on the event document | Accepted |
-| [0076](0076-role-codes-grow-inside-v1-only-by-an-accepted-record-and-clients-grant-nothing-for-an-unknown-role.md) | Role codes grow inside v1 only by an accepted record, and clients grant nothing for an unknown role | Proposed |
+| [0076](0076-role-codes-grow-inside-v1-only-by-an-accepted-record-and-clients-grant-nothing-for-an-unknown-role.md) | Role codes grow inside v1 only by an accepted record, and clients grant nothing for an unknown role | Accepted |
 
 ## Writing one
 

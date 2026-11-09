@@ -78,6 +78,13 @@ const bridge: MosaiqBridge = {
   kpiDefinitions: () => ipcRenderer.invoke(CHANNELS.kpiDefinitions),
   kpiReport: (query) => ipcRenderer.invoke(CHANNELS.kpiReport, query),
   exportReport: (format) => ipcRenderer.invoke(CHANNELS.exportReport, format),
+  listModelVersions: (query) => ipcRenderer.invoke(CHANNELS.listModelVersions, query),
+  getModelVersion: (versionId) => ipcRenderer.invoke(CHANNELS.getModelVersion, versionId),
+  listTrainings: (query) => ipcRenderer.invoke(CHANNELS.listTrainings, query),
+  getTraining: (trainingId) => ipcRenderer.invoke(CHANNELS.getTraining, trainingId),
+  startTraining: (draft) => ipcRenderer.invoke(CHANNELS.startTraining, draft),
+  publishModelVersion: (versionId, reason) =>
+    ipcRenderer.invoke(CHANNELS.publishModelVersion, versionId, reason),
 };
 
 contextBridge.exposeInMainWorld('mosaiq', bridge);

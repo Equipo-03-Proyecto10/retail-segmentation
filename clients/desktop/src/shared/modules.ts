@@ -9,6 +9,7 @@ export type ModuleName =
   | 'engagement'
   | 'check-ins'
   | 'reports'
+  | 'kmeans'
   | 'stores'
   | 'campaigns'
   | 'customers'
@@ -40,6 +41,7 @@ export const MODULE_GROUPS: readonly ModuleGroup[] = [
       { name: 'engagement', label: 'Engagement', operation: 'getEngagementSummary' },
       { name: 'check-ins', label: 'Check-ins', operation: 'listCheckIns' },
       { name: 'reports', label: 'Reports', operation: 'listKpiDefinitions' },
+      { name: 'kmeans', label: 'K-means', operation: 'listModelVersions' },
     ],
   },
   {

@@ -5,6 +5,7 @@ import { renderCampaigns } from './campaigns';
 import { renderCategories, renderProducts } from './catalog';
 import { el, errorBox } from './dom';
 import { renderCustomers } from './customers';
+import { renderKmeans } from './kmeans';
 import { renderCheckIns, renderEngagement, renderSales, renderStock } from './floor';
 import { latestRequest } from './latest-request';
 import { exportAction } from './export';
@@ -146,6 +147,7 @@ function renderHome(state: Extract<AppState, { status: 'signed_in' }>): void {
     else if (next === 'engagement') renderEngagement(body, ctx);
     else if (next === 'check-ins') renderCheckIns(body, ctx);
     else if (next === 'reports') renderReports(body, { ...ctx, canExport: state.canExport });
+    else if (next === 'kmeans') renderKmeans(body, ctx);
     else if (next === 'stores') renderStores(body, ctx);
     else if (next === 'campaigns') renderCampaigns(body, ctx);
     else if (next === 'customers') renderCustomers(body, ctx);

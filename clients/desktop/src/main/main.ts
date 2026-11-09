@@ -11,6 +11,7 @@ import { Catalog } from './catalog';
 import { Customers } from './customers';
 import { Exporter, type ExportEnv } from './exports';
 import { Floor } from './floor';
+import { Models } from './models';
 import { Reports, type ReportExportEnv } from './reports';
 import { loadSettings } from './settings';
 import { Stores } from './stores';
@@ -201,6 +202,15 @@ function start(): void {
   ipcMain.handle(CHANNELS.listAssignments, (_e, query: unknown) => customers.assignments(query));
   ipcMain.handle(CHANNELS.getRecommendations, (_e, customerId: unknown) =>
     customers.recommendations(customerId),
+  );
+  const models = new Models(office);
+  ipcMain.handle(CHANNELS.listModelVersions, (_e, query: unknown) => models.listVersions(query));
+  ipcMain.handle(CHANNELS.getModelVersion, (_e, versionId: unknown) => models.getVersion(versionId));
+  ipcMain.handle(CHANNELS.listTrainings, (_e, query: unknown) => models.listTrainings(query));
+  ipcMain.handle(CHANNELS.getTraining, (_e, trainingId: unknown) => models.getTraining(trainingId));
+  ipcMain.handle(CHANNELS.startTraining, (_e, draft: unknown) => models.startTraining(draft));
+  ipcMain.handle(CHANNELS.publishModelVersion, (_e, versionId: unknown, reason: unknown) =>
+    models.publish(versionId, reason),
   );
   office.onStateChange((state) => {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(CHANNELS.stateChanged, state);

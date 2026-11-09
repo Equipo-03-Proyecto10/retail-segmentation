@@ -34,6 +34,7 @@
 | PATCH | `/v1/campaigns/{campaign_id}` | Edit (DRAFT only) | ADMIN, MARKETING |
 | POST | `/v1/campaigns/{campaign_id}/transitions` | Change status (`to`, `expected_status`) | ADMIN, MARKETING |
 | GET, PUT | `/v1/campaigns/{campaign_id}/audience` | Audience: optional `max_customers` and the computed `audience_size` (PUT only in DRAFT) | GET: ADMIN, ANALYST, MARKETING, AUDITOR; PUT: ADMIN, MARKETING |
+| GET | `/v1/campaigns/{campaign_id}/audience/breakdown` | The audience with the customers it leaves out counted by reason (not in the customer reference, excluded by id, excluded by label, registered after the cutoff, too few net purchases, over the cap), each customer under the first reason that applies, so label holders equal the reasons' counts plus `audience_size` | ADMIN, ANALYST, MARKETING, AUDITOR |
 | GET, PUT | `/v1/campaigns/{campaign_id}/budget` | Budget: `total_amount`, `per_customer_cap` (PUT only in DRAFT) | GET: ADMIN, ANALYST, MARKETING, AUDITOR; PUT: ADMIN, MARKETING |
 | GET, PUT | `/v1/campaigns/{campaign_id}/eligibility-rules` | Eligibility: `registered_on_or_before`, `min_purchases` net purchases (ADR-0062: a sale with a zero net amount does not count) within `purchase_window_days` (PUT only in DRAFT) | GET: ADMIN, ANALYST, MARKETING, AUDITOR; PUT: ADMIN, MARKETING |
 | GET, PUT | `/v1/campaigns/{campaign_id}/exclusions` | Exclusions: `customer_ids`, `label_codes` (PUT only in DRAFT) | GET: ADMIN, ANALYST, MARKETING, AUDITOR; PUT: ADMIN, MARKETING |

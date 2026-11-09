@@ -97,6 +97,17 @@
     </xs:restriction>
   </xs:simpleType>
 
+  <xs:simpleType name="AudienceExclusionReason">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="not_in_customer_reference"/>
+      <xs:enumeration value="excluded_customer"/>
+      <xs:enumeration value="excluded_label"/>
+      <xs:enumeration value="registered_after_cutoff"/>
+      <xs:enumeration value="too_few_purchases"/>
+      <xs:enumeration value="over_max_customers"/>
+    </xs:restriction>
+  </xs:simpleType>
+
   <xs:complexType name="CampaignType">
     <xs:sequence>
       <xs:element name="campaign_id" type="campaigns:CampaignId"/>
@@ -172,6 +183,25 @@
     <xs:sequence>
       <xs:element name="max_customers" type="campaigns:MaxCustomers"
                   minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="AudienceReasonType">
+    <xs:sequence>
+      <xs:element name="code" type="campaigns:AudienceExclusionReason"/>
+      <xs:element name="excluded" type="xs:nonNegativeInteger"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="CampaignAudienceBreakdownType">
+    <xs:sequence>
+      <xs:element name="campaign_id" type="campaigns:CampaignId"/>
+      <xs:element name="label_code" type="campaigns:LabelCode"/>
+      <xs:element name="label_holders" type="xs:nonNegativeInteger"/>
+      <xs:element name="reasons" type="campaigns:AudienceReasonType"
+                  minOccurs="6" maxOccurs="6"/>
+      <xs:element name="audience_size" type="xs:nonNegativeInteger"/>
+      <xs:element name="as_of" type="xs:dateTime"/>
     </xs:sequence>
   </xs:complexType>
 
@@ -296,6 +326,8 @@
   <xs:element name="CampaignAudience" type="campaigns:CampaignAudienceType"/>
   <xs:element name="PutCampaignAudienceRequest"
               type="campaigns:PutCampaignAudienceRequestType"/>
+  <xs:element name="CampaignAudienceBreakdown"
+              type="campaigns:CampaignAudienceBreakdownType"/>
   <xs:element name="CampaignBudget" type="campaigns:CampaignBudgetType"/>
   <xs:element name="PutCampaignBudgetRequest"
               type="campaigns:PutCampaignBudgetRequestType"/>

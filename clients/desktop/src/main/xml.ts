@@ -76,6 +76,13 @@ const REPEATED = new Set([
   'PreferenceProfile.interest_category_ids',
   'Recommendation.items',
   'Recommendation.items.reasons',
+  'KpiReport.group_by',
+  'KpiReport.rows',
+  'KpiReport.rows.measures',
+  'KpiReport.data_origin.views',
+  'KpiDefinitions.KpiDefinition',
+  'KpiDefinitions.KpiDefinition.dimensions',
+  'KpiDefinitions.KpiDefinition.measures',
 ]);
 /** Child elements that repeat wherever they appear: error details, sale lines, summary groups, event history, check-in reviews, a campaign's allowed transitions. */
 const REPEATED_CHILDREN = new Set([

@@ -1,0 +1,1 @@
+cold_start_ms=228 idle_rss_kb=34940 idle_pss_kb=32823

@@ -82,16 +82,22 @@ def junit(
     target = _suite_dir(report, suite)
     found = [path for path in files if path.is_file()]
     cases: list[ET.Element] = []
+    unreadable: list[ET.Element] = []
     for index, path in enumerate(found):
         try:
             parsed = _cases(path)
         except ET.ParseError as error:
-            cases.append(
+            unreadable.append(
                 _case(f"{suite}.{step}", path.name, f"unreadable JUnit: {error}")
             )
             continue
         cases.extend(parsed)
         (target / f"{step}-{index}.xml").write_bytes(path.read_bytes())
+    # A file the report cannot read is a failure the report must show; kept
+    # only in memory, it would leave the step looking clean.
+    if unreadable:
+        _write(target / f"{step}-unreadable.xml", suite, unreadable)
+        cases.extend(unreadable)
     if not found:
         reason = f"could not run: exited {status} and wrote no JUnit file"
         _write(

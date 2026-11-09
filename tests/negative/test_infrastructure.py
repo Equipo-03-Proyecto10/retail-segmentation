@@ -31,11 +31,12 @@ from tests.negative.stack import (
     Service,
     Stack,
     env_bool,
-    registry_names,
+    implemented_names,
     run_last,
 )
 
-NAMES = registry_names()
+# The services a case that loops over all of them can call.
+IMPLEMENTED = implemented_names()
 
 
 @run_last
@@ -54,7 +55,7 @@ def test_redis_state_stopped_fails_closed(
 
     # Tokens first: nothing can be signed in or refreshed once it is stopped.
     probes = {}
-    for name in NAMES:
+    for name in IMPLEMENTED:
         probe = services[name].probe()
         probes[name] = (probe, deployed_stack.token(probe.allowed_role))
     subprocess.run(["docker", "stop", container], capture_output=True, check=True)

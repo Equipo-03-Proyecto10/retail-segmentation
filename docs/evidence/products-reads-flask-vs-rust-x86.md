@@ -297,4 +297,4 @@ BENCH_SCENARIOS=detail BENCH_FORMATS=json BENCH_WARMUP_SECONDS=15 BENCH_MEASURE_
 python3 bench/aggregate.py report bench/results/2026-11-09-gha-x86
 ```
 
-In CI: Actions > Bench > Run workflow (once `bench.yml` is on the default branch), or a pull request from a branch whose name contains `bench-rerun`. `bench/README.md` describes the settings.
+The artifact of the run reported here, `bench-results` (the shards and `report.md`), is kept for 30 days: `gh run download 42658673709 -n bench-results`; the files this report reads are committed. In CI: Actions > Bench > Run workflow (once `bench.yml` is on the default branch), or a pull request from a branch whose name contains `bench-rerun`. `bench/README.md` describes the settings.

@@ -1,0 +1,2895 @@
+openapi: 3.1.0
+info:
+  title: experimentation-service
+  version: 1.0.0
+  description: >-
+    Plans experiments, assigns customers to their arms, evaluates conversions, credits sales to campaigns
+    and reports results (RN-67). An experiment's frame and arms are fixed before measurement, assignment,
+    exposure and conversion are separate append-only facts, a sale is attributed at most once, and an
+    effect is reported only against a control, with its uncertainty (ADR-0059, ADR-0068, ADR-0069). experimentation
+    serves `experiments`, with their conversions beneath them, `experiment-assignments`, `experiment-results`
+    and `sale-attributions`.
+
+
+
+    **A plan is frozen before anyone is assigned (ADR-0068).** `POST /v1/experiments` takes the frame
+    at one recorded instant, estimates the baseline from it, computes the customers each arm needs, draws
+    the salt and stores all of it immutably in one transaction. `POST /v1/experiment-assignments` then
+    assigns the whole frame once, as a pure function of that plan: a customer's key is an HMAC of the
+    published salt, so a third party can recompute every arm. An experiment whose frame cannot supply
+    the customers per arm is flagged UNDERPOWERED and is assigned only on an explicit, recorded acknowledgement.
+    An experiment is read once, at its analysis instant: before it a result shows counts and the elapsed
+    share of the window and no interval, p-value or direction.
+
+
+
+    **Effect needs a control.** No field of any representation states an effect, an incremental amount
+    or an uplift for an experiment without a control. Such an experiment (`design_kind` OFFER_COMPARISON)
+    compares two offers: its result states a `TREATMENT_DIFFERENCE` with its interval and an `effect_refusal`,
+    never an effect against no treatment. A non-significant result of an underpowered experiment is INCONCLUSIVE,
+    never "no effect".
+
+
+
+    **Attribution and effect are two measurements, named apart (ADR-0069).** Attribution is commercial:
+    which campaign a sale is credited to, counted once. It is read as `sale-attributions` and as the `attribution`
+    section of a result, every figure labelled ATTRIBUTION, and none of its fields says incremental, uplift
+    or caused. An effect is causal: a treatment's difference against the control over every assigned customer,
+    with its interval, read as the `comparisons` of a result labelled EFFECT. Revenue of a treatment arm
+    and attributed revenue are not effects.
+
+
+
+    **Net, and as of a time.** Conversions and revenue are read net of reversals (ADR-0062). A conversion
+    row stays when its sale is reversed and stops counting. Every figure that depends on net sales carries
+    `as_of`. The primary result is stored once at its analysis instant and is never rewritten; a later
+    read (`basis=RE_READ`) is labelled as of its own time.
+
+
+
+    **Exposure is not an endpoint of this service.** A real exposure is a `CAMPAIGN_EXPOSURE` of engagement,
+    which reaches experimentation on the Redis Stream `stream:engagement.v1.interaction_recorded` into
+    its own projection (ADR-0075). The projection only counts: `exposure_count` of an assignment and `exposed`
+    of an arm. This service never calls engagement and never re-serves its events. A control is never
+    exposed (ADR-0027).
+
+
+
+    **The floor reads one customer.** `GET /v1/experiment-assignments/current` answers for one customer
+    and one campaign, so a seller never reads the whole assignment. Reading the assignment of an experiment,
+    which names every customer, is for the roles that read campaigns.
+
+
+
+    **Not yet implemented.** Every operation is marked `x-mosaiq-status: planned` (ADR-0073): the contract
+    merges first (ADR-0035), and the implementing story removes the marker. The experiment tables the
+    web writes are taken over by the stand-up story; this contract moves none of them.
+security:
+- bearer: []
+tags:
+- name: Experiments
+- name: Assignments
+- name: Conversions
+- name: Results
+- name: Attributions
+- name: Meta
+paths:
+  /v1/experiments:
+    get:
+      tags:
+      - Experiments
+      summary: List experiments
+      description: >-
+        Returns a page of experiments, newest first by `experiment_id`. `campaign_id`, `state` and `data_origin`
+        filter on the stored values. Each experiment carries its arms, design values, frame summary, assignment
+        summary and flags, and never a customer.
+      operationId: listExperiments
+      x-mosaiq-roles:
+      - ADMIN
+      - ANALYST
+      - MARKETING
+      - AUDITOR
+      x-mosaiq-status: planned
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/CampaignIdFilter'
+      - $ref: '#/components/parameters/ExperimentStateFilter'
+      - $ref: '#/components/parameters/DataOriginFilter'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of experiments.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExperimentPage'
+              examples:
+                page:
+                  externalValue: ./examples/experiments-page.json
+                none:
+                  externalValue: ./examples/experiments-none.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/ExperimentPage'
+              examples:
+                page:
+                  externalValue: ./examples/experiments-page.xml
+                none:
+                  externalValue: ./examples/experiments-none.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/ListInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+    post:
+      tags:
+      - Experiments
+      summary: Plan an experiment
+      description: >-
+        Plans an experiment and freezes the plan in one transaction (ADR-0068): the frame, taken at one
+        instant of the PostgreSQL clock from the campaign's target label, consent, exclusions and the
+        other experiments' frames; the baseline, estimated from the frame's own net sales before that
+        instant; the customers per arm, from the minimum detectable effect, alpha and power; and a salt
+        drawn once after the frame is fixed. Nothing is editable afterwards, and there is no operation
+        to edit or delete an experiment: the absent routes answer 405 `method_not_allowed`. Nobody is
+        assigned yet (state PLANNED). If the frame divided by the arms is below the customers per arm,
+        the experiment is stored with the UNDERPOWERED flag and the smallest effect the frame can detect.
+        `arms` hold at most one CONTROL and at least one TREATMENT; a plan with no control holds exactly
+        two treatments and is an OFFER_COMPARISON that can state no effect (RN-24, ADR-0068). A body that
+        breaks these rules is 422 `invalid_body` with a detail code `control_count`, `treatment_count`,
+        `unknown_campaign` or `out_of_range`. An experiment cannot be attached to a campaign that is finished
+        or cancelled: 409 `campaign_closed` (RN-49).
+      operationId: planExperiment
+      x-mosaiq-roles:
+      - ADMIN
+      - MARKETING
+      x-mosaiq-status: planned
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExperimentRequest'
+            examples:
+              conversion:
+                externalValue: ./examples/experiment.request.json
+              revenue:
+                externalValue: ./examples/experiment-revenue.request.json
+              offer_comparison:
+                externalValue: ./examples/experiment-offer-comparison.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/ExperimentRequest'
+            examples:
+              conversion:
+                externalValue: ./examples/experiment.request.xml
+              revenue:
+                externalValue: ./examples/experiment-revenue.request.xml
+              offer_comparison:
+                externalValue: ./examples/experiment-offer-comparison.request.xml
+      responses:
+        '201':
+          description: The plan was frozen.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Experiment'
+              examples:
+                controlled:
+                  externalValue: ./examples/experiment-planned.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Experiment'
+              examples:
+                controlled:
+                  externalValue: ./examples/experiment-planned.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/CampaignClosed'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/InvalidBody'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/experiments/{experiment_id}:
+    get:
+      tags:
+      - Experiments
+      summary: Get one experiment
+      description: >-
+        Returns the experiment with its arms, design values, frame, salt, assignment summary and flags.
+        Before assignment `assignment` is null and `design.analysis_at` is null. An experiment under assignment
+        rule V0 (the web's earlier shuffle) has no frame, salt or key and is not called verified.
+      operationId: getExperiment
+      x-mosaiq-roles:
+      - ADMIN
+      - ANALYST
+      - MARKETING
+      - AUDITOR
+      x-mosaiq-status: planned
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/ExperimentId'
+      responses:
+        '200':
+          description: The experiment.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Experiment'
+              examples:
+                controlled:
+                  externalValue: ./examples/experiment-controlled.json
+                planned_underpowered:
+                  externalValue: ./examples/experiment-planned.json
+                offer_comparison:
+                  externalValue: ./examples/experiment-offer-comparison.json
+                legacy:
+                  externalValue: ./examples/experiment-legacy.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Experiment'
+              examples:
+                controlled:
+                  externalValue: ./examples/experiment-controlled.xml
+                planned_underpowered:
+                  externalValue: ./examples/experiment-planned.xml
+                offer_comparison:
+                  externalValue: ./examples/experiment-offer-comparison.xml
+                legacy:
+                  externalValue: ./examples/experiment-legacy.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ExperimentNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/experiments/{experiment_id}/conversions:
+    get:
+      tags:
+      - Conversions
+      summary: List an experiment's conversions
+      description: >-
+        Returns a page of conversions, oldest first by `conversion_id`. A conversion is a qualifying sale
+        of an assigned customer made at or after the assignment instant and before it plus the conversion
+        window (RN-27). `customer_id`, `arm_id` and `counts` filter. `counts` false lists the conversions
+        whose sale is fully reversed: the rows stay and stop counting (ADR-0069, ADR-0050). A row names
+        a customer.
+      operationId: listConversions
+      x-mosaiq-roles:
+      - ADMIN
+      - ANALYST
+      - MARKETING
+      - AUDITOR
+      x-mosaiq-status: planned
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/ExperimentId'
+      - $ref: '#/components/parameters/CustomerIdFilter'
+      - $ref: '#/components/parameters/ArmIdFilter'
+      - $ref: '#/components/parameters/CountsFilter'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of conversions.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversionPage'
+              examples:
+                page:
+                  externalValue: ./examples/conversions-page.json
+                none:
+                  externalValue: ./examples/conversions-none.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/ConversionPage'
+              examples:
+                page:
+                  externalValue: ./examples/conversions-page.xml
+                none:
+                  externalValue: ./examples/conversions-none.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ExperimentNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/ListInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+    post:
+      tags:
+      - Conversions
+      summary: Evaluate an experiment's conversions
+      description: >-
+        Records, for every assigned customer, each qualifying sale in the experiment's window that is
+        not recorded yet. It records the same conversions however often it runs, and a conversion already
+        recorded is never changed or deleted (ADR-0050). It reads sales net of reversals (ADR-0062) and
+        writes no attribution: attribution is written by the service when the window has closed. Answers
+        200 with what it added, including when that is nothing. An experiment that is not assigned has
+        nothing to evaluate: 409 `experiment_not_assigned`.
+      operationId: evaluateConversions
+      x-mosaiq-roles:
+      - ADMIN
+      - MARKETING
+      x-mosaiq-status: planned
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/ExperimentId'
+      responses:
+        '200':
+          description: The evaluation ran.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversionEvaluation'
+              examples:
+                evaluated:
+                  externalValue: ./examples/conversion-evaluation.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/ConversionEvaluation'
+              examples:
+                evaluated:
+                  externalValue: ./examples/conversion-evaluation.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ExperimentNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/NotAssigned'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/experiment-assignments:
+    get:
+      tags:
+      - Assignments
+      summary: List assignments
+      description: >-
+        Returns a page of assignments ordered by `assignment_id`, each naming a customer. `experiment_id`,
+        `campaign_id`, `customer_id`, `arm_id` and `arm_kind` filter. With `experiment_id` alone it reads
+        the whole assignment of an experiment, which is why only the roles that read campaigns hold it.
+        A verifier recomputes every `arm_id` from the experiment's salt, the experiment id, the arm order
+        and each customer's `assignment_key`. The frame and the assignment are the same set of customers
+        once the experiment is assigned.
+      operationId: listExperimentAssignments
+      x-mosaiq-roles:
+      - ADMIN
+      - ANALYST
+      - MARKETING
+      - AUDITOR
+      x-mosaiq-status: planned
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/ExperimentIdFilter'
+      - $ref: '#/components/parameters/CampaignIdFilter'
+      - $ref: '#/components/parameters/CustomerIdFilter'
+      - $ref: '#/components/parameters/ArmIdFilter'
+      - $ref: '#/components/parameters/ArmKindFilter'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of assignments.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExperimentAssignmentPage'
+              examples:
+                page:
+                  externalValue: ./examples/assignments-page.json
+                none:
+                  externalValue: ./examples/assignments-none.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/ExperimentAssignmentPage'
+              examples:
+                page:
+                  externalValue: ./examples/assignments-page.xml
+                none:
+                  externalValue: ./examples/assignments-none.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/ListInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+    post:
+      tags:
+      - Assignments
+      summary: Assign an experiment's frame
+      description: >-
+        Assigns every customer of the experiment's stored frame in one transaction, or none (RN-42): the
+        frame is ordered by each customer's assignment key and dealt round-robin in arm order, so arms
+        differ by at most one. The assignment is written once and never rewritten: a second request is
+        409 `already_assigned`, and the database's refusal of a second assignment of a customer in an
+        experiment (RN-23) is 409 `assignment_conflict`, never a 500. An UNDERPOWERED plan is assigned
+        only with `acknowledge_underpowered` true, else 409 `underpowered_not_acknowledged`; the acknowledgement
+        is recorded. An empty frame has nothing to assign: 409 `empty_frame`. The response carries the
+        checks stored with the assignment: the recomputation, the sample ratio check and the balance checks.
+        The analysis instant is fixed here, from this transaction's instant. An experiment of this service
+        is named in the body: an unknown id is 404 `experiment_not_found`.
+      operationId: assignExperiment
+      x-mosaiq-roles:
+      - ADMIN
+      - MARKETING
+      x-mosaiq-status: planned
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignmentRequest'
+            examples:
+              plain:
+                externalValue: ./examples/assignment.request.json
+              acknowledged:
+                externalValue: ./examples/assignment-acknowledged.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/AssignmentRequest'
+            examples:
+              plain:
+                externalValue: ./examples/assignment.request.xml
+              acknowledged:
+                externalValue: ./examples/assignment-acknowledged.request.xml
+      responses:
+        '201':
+          description: The frame was assigned.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentSummary'
+              examples:
+                assigned:
+                  externalValue: ./examples/assignment-summary.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/AssignmentSummary'
+              examples:
+                assigned:
+                  externalValue: ./examples/assignment-summary.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ExperimentNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/AssignConflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/InvalidBody'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/experiment-assignments/current:
+    get:
+      tags:
+      - Assignments
+      summary: Get one customer's arm in a campaign
+      description: >-
+        Answers for one customer and one campaign: the arm the customer holds in the campaign's experiment
+        that is in state ASSIGNED, so a seller learns whether to show a treatment without reading the
+        whole assignment. A customer is in at most one experiment of overlapping periods (ADR-0068, rule
+        6), so the answer is unique; if earlier data holds two, the later `assigned_at` answers, then
+        the lower `assignment_id`. A customer outside the experiment's frame, or an experiment already
+        analysed or not yet assigned, is 404 `assignment_not_found`: no arm applies and the floor applies
+        no experiment rule. A control is told apart by `arm_kind`: the app does not show the treatment
+        to it (F25-01). Reading it records nothing: an exposure is recorded only when the seller shows
+        an offer, through engagement. `customer_id` and `campaign_id` are query fields: both are another
+        boundary's resources.
+      operationId: getCurrentAssignment
+      x-mosaiq-roles:
+      - ADMIN
+      - STORE_MANAGER
+      - SALES_ASSOCIATE
+      x-mosaiq-status: planned
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/CustomerIdRequired'
+      - $ref: '#/components/parameters/CampaignIdRequired'
+      responses:
+        '200':
+          description: The customer's arm.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExperimentAssignment'
+              examples:
+                treatment:
+                  externalValue: ./examples/assignment-current-treatment.json
+                control:
+                  externalValue: ./examples/assignment-current-control.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/ExperimentAssignment'
+              examples:
+                treatment:
+                  externalValue: ./examples/assignment-current-treatment.xml
+                control:
+                  externalValue: ./examples/assignment-current-control.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/AssignmentNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/InvalidQuery'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/experiment-results/{experiment_id}:
+    get:
+      tags:
+      - Results
+      summary: Get an experiment's result
+      description: >-
+        Returns the result of one experiment: each arm's counts over every assigned customer, the difference
+        between arms with its interval and test, the assumptions, the design values it was planned under
+        and the checks, with attribution and effect in separate sections (ADR-0068, ADR-0069). The default
+        `basis=PRIMARY` is the result computed once at `design.analysis_at` and stored: it is never rewritten,
+        however often it is read. Until then, or while it is not stored yet, the status is PENDING and
+        the body holds counts and the elapsed share of the window and no interval, p-value or direction.
+        `basis=RE_READ` computes the figures again as of the request, labelled with its `as_of`; it never
+        replaces the primary result and gives no estimate before the analysis instant. A failed sample
+        ratio check makes the status INVALID and withholds the estimate. An experiment that is not assigned
+        has no result: 409 `experiment_not_assigned`.
+      operationId: getExperimentResult
+      x-mosaiq-roles:
+      - ADMIN
+      - ANALYST
+      - MARKETING
+      - AUDITOR
+      x-mosaiq-status: planned
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/ExperimentId'
+      - $ref: '#/components/parameters/ResultBasisParam'
+      responses:
+        '200':
+          description: The result.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExperimentResult'
+              examples:
+                complete:
+                  externalValue: ./examples/result-complete.json
+                revenue:
+                  externalValue: ./examples/result-revenue.json
+                inconclusive:
+                  externalValue: ./examples/result-inconclusive.json
+                pending:
+                  externalValue: ./examples/result-pending.json
+                invalid:
+                  externalValue: ./examples/result-invalid.json
+                offer_comparison:
+                  externalValue: ./examples/result-offer-comparison.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/ExperimentResult'
+              examples:
+                complete:
+                  externalValue: ./examples/result-complete.xml
+                revenue:
+                  externalValue: ./examples/result-revenue.xml
+                inconclusive:
+                  externalValue: ./examples/result-inconclusive.xml
+                pending:
+                  externalValue: ./examples/result-pending.xml
+                invalid:
+                  externalValue: ./examples/result-invalid.xml
+                offer_comparison:
+                  externalValue: ./examples/result-offer-comparison.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ExperimentNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/NotAssigned'
+        '422':
+          $ref: '#/components/responses/InvalidQuery'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/sale-attributions:
+    get:
+      tags:
+      - Attributions
+      summary: List sale attributions
+      description: >-
+        Returns a page of attributions ordered by `attribution_id`. A sale is attributed to at most one
+        campaign (ADR-0069), so `sale_id` returns at most one row. `experiment_id`, `campaign_id`, `customer_id`
+        and `counts` filter. Summing `net_amount` over the rows that count, for every campaign in a period,
+        never exceeds the period's net sales. These are attributions, not effects: no row says the campaign
+        caused the sale. A row names a customer.
+      operationId: listSaleAttributions
+      x-mosaiq-roles:
+      - ADMIN
+      - ANALYST
+      - MARKETING
+      - AUDITOR
+      x-mosaiq-status: planned
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/ExperimentIdFilter'
+      - $ref: '#/components/parameters/CampaignIdFilter'
+      - $ref: '#/components/parameters/CustomerIdFilter'
+      - $ref: '#/components/parameters/SaleIdFilter'
+      - $ref: '#/components/parameters/CountsFilter'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of attributions.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleAttributionPage'
+              examples:
+                page:
+                  externalValue: ./examples/sale-attributions-page.json
+                none:
+                  externalValue: ./examples/sale-attributions-none.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/SaleAttributionPage'
+              examples:
+                page:
+                  externalValue: ./examples/sale-attributions-page.xml
+                none:
+                  externalValue: ./examples/sale-attributions-none.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/ListInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/sale-attributions/{attribution_id}:
+    get:
+      tags:
+      - Attributions
+      summary: Get one sale attribution
+      description: >-
+        Returns the attribution of one sale. The holder is written once when the experiment's window has
+        closed, over the exposures that exist then, and is never reassigned. A sale that is later reversed
+        keeps its row and its holder; `net_amount` and `counts` follow the net sale as of `as_of`.
+      operationId: getSaleAttribution
+      x-mosaiq-roles:
+      - ADMIN
+      - ANALYST
+      - MARKETING
+      - AUDITOR
+      x-mosaiq-status: planned
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/AttributionId'
+      responses:
+        '200':
+          description: The attribution.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleAttribution'
+              examples:
+                attributed:
+                  externalValue: ./examples/sale-attribution.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/SaleAttribution'
+              examples:
+                attributed:
+                  externalValue: ./examples/sale-attribution.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/SaleAttributionNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /health/live:
+    get:
+      tags:
+      - Meta
+      summary: Check process liveness
+      operationId: getLiveness
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The process is live.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+  /health/ready:
+    get:
+      tags:
+      - Meta
+      summary: Check schema readiness
+      operationId: getReadiness
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The required schema is ready.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '503':
+          $ref: '#/components/responses/SchemaNotReady'
+  /openapi.yaml:
+    get:
+      tags:
+      - Meta
+      summary: Get this OpenAPI document
+      operationId: getOpenApi
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The OpenAPI document, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/yaml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+  /schema.xsd:
+    get:
+      tags:
+      - Meta
+      summary: Get the experimentation XML Schema
+      operationId: getSchema
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The experimentation XSD, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/xml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      description: >-
+        Caller-supplied correlation id. A missing or invalid value is replaced by the service, and the
+        effective value is returned on every response.
+      schema:
+        type: string
+        pattern: ^[0-9A-Za-z-]{1,64}$
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Size:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    ExperimentId:
+      name: experiment_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    AttributionId:
+      name: attribution_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    ExperimentStateFilter:
+      name: state
+      in: query
+      required: false
+      description: Keep only experiments in this state.
+      schema:
+        $ref: '#/components/schemas/ExperimentState'
+    DataOriginFilter:
+      name: data_origin
+      in: query
+      required: false
+      description: Keep only experiments of this origin.
+      schema:
+        $ref: '#/components/schemas/DataOrigin'
+    CampaignIdFilter:
+      name: campaign_id
+      in: query
+      required: false
+      description: >-
+        Keep only what belongs to this campaign. A campaign is another boundary's resource, so its id
+        is a query field.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    ExperimentIdFilter:
+      name: experiment_id
+      in: query
+      required: false
+      description: Keep only this experiment's rows.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    CustomerIdFilter:
+      name: customer_id
+      in: query
+      required: false
+      description: >-
+        Keep only this customer's rows. A customer is another boundary's resource, so its id is a query
+        field.
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    ArmIdFilter:
+      name: arm_id
+      in: query
+      required: false
+      description: Keep only this arm's rows.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    ArmKindFilter:
+      name: arm_kind
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/ArmKind'
+    SaleIdFilter:
+      name: sale_id
+      in: query
+      required: false
+      description: A sale is held by at most one campaign, so this returns at most one row.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    CountsFilter:
+      name: counts
+      in: query
+      required: false
+      description: '`true` keeps the rows that count now, `false` the ones whose sale is fully reversed.'
+      schema:
+        type: boolean
+    CustomerIdRequired:
+      name: customer_id
+      in: query
+      required: true
+      description: The customer whose arm is asked.
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    CampaignIdRequired:
+      name: campaign_id
+      in: query
+      required: true
+      description: The campaign whose experiment is asked.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    ResultBasisParam:
+      name: basis
+      in: query
+      required: false
+      description: '`PRIMARY` (the default) is the stored result; `RE_READ` is computed as of the request.'
+      schema:
+        $ref: '#/components/schemas/ResultBasis'
+        default: PRIMARY
+  headers:
+    CorrelationId:
+      description: The effective correlation id for this request.
+      required: true
+      schema:
+        type: string
+        pattern: ^[0-9A-Za-z-]{1,64}$
+    RetryAfter:
+      description: Seconds until the caller should retry.
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  schemas:
+    Uuid:
+      type: string
+      pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+    PosNumber:
+      type: number
+      exclusiveMinimum: 0
+    Fraction:
+      type: number
+      minimum: 0
+      maximum: 1
+    Probability:
+      type: number
+      exclusiveMinimum: 0
+      exclusiveMaximum: 1
+    Money:
+      type: string
+      pattern: ^[0-9]+\.[0-9]{2}$
+    SignedMoney:
+      type: string
+      pattern: ^-?[0-9]+\.[0-9]{2}$
+    Sha256:
+      type: string
+      pattern: ^[0-9a-f]{64}$
+    Name:
+      type: string
+      minLength: 1
+      maxLength: 120
+    Description:
+      type: string
+      minLength: 1
+      maxLength: 500
+    Code:
+      type: string
+      pattern: ^[A-Z][A-Z0-9_]*$
+    WindowDays:
+      type: integer
+      minimum: 1
+      maximum: 365
+    ExperimentState:
+      type: string
+      description: >-
+        PLANNED: the plan is frozen and nobody is assigned. ASSIGNED: the whole frame is assigned and
+        the primary result is not stored yet. ANALYZED: the primary result was stored at the analysis
+        instant.
+      enum:
+      - PLANNED
+      - ASSIGNED
+      - ANALYZED
+    DesignKind:
+      type: string
+      description: >-
+        CONTROLLED: one control and one or more treatments, the only design that may state an effect.
+        OFFER_COMPARISON: two treatments and no control (ADR-0028), a comparison of two offers that states
+        a difference between treatments and never an effect (ADR-0068).
+      enum:
+      - CONTROLLED
+      - OFFER_COMPARISON
+    ArmKind:
+      type: string
+      description: Whether the arm is the untreated control.
+      enum:
+      - CONTROL
+      - TREATMENT
+    DataOrigin:
+      type: string
+      description: >-
+        OBSERVED is a real experiment over real assignments. SEEDED and INJECTED are the A/A and injected-effect
+        validations (ADR-0019); their figures are Synthetic (RN-26).
+      enum:
+      - OBSERVED
+      - SEEDED
+      - INJECTED
+    SaleOrigin:
+      type: string
+      description: The provenance of the sale itself (ADR-0052).
+      enum:
+      - OBSERVED
+      - SEEDED
+    AssignmentRule:
+      type: string
+      description: >-
+        V1 is ADR-0068's rule: a stored frame, a published salt and an HMAC key, so anyone can recompute
+        the assignment. V0 is the web's earlier shuffle: such an experiment is readable but has no frame,
+        salt or key, cannot be recomputed and is not called verified.
+      enum:
+      - V0
+      - V1
+    Allocation:
+      type: string
+      description: >-
+        Arms are dealt round-robin, so their sizes differ by at most one. Unequal allocation is out of
+        scope until an ADR asks for it.
+      enum:
+      - EQUAL
+    Metric:
+      type: string
+      description: >-
+        CONVERSION: the share of assigned customers with a qualifying sale in their window. REVENUE_PER_CUSTOMER:
+        the net sales total per assigned customer in the window, zero for a customer who bought nothing.
+        Both are intent to treat. AVERAGE_TICKET is not a metric (ADR-0053, ADR-0068).
+      enum:
+      - CONVERSION
+      - REVENUE_PER_CUSTOMER
+    Estimator:
+      type: string
+      description: >-
+        DIFFERENCE_OF_PROPORTIONS: the unpooled Wald interval and the pooled two-sided test (CONVERSION).
+        DIFFERENCE_OF_MEANS: the Welch interval and two-sided test, with a seeded percentile bootstrap
+        beside it (REVENUE_PER_CUSTOMER).
+      enum:
+      - DIFFERENCE_OF_PROPORTIONS
+      - DIFFERENCE_OF_MEANS
+    ExperimentFlag:
+      type: string
+      description: >-
+        UNDERPOWERED: the frame cannot supply the planned customers per arm. SAMPLE_RATIO_FAILED: the
+        sample ratio check failed, so the result is INVALID. BALANCE_FLAGGED: a balance check is above
+        its threshold; it is a diagnostic and never changes an estimate. RECOMPUTATION_MISMATCH: recomputing
+        the assignment from the plan did not give the stored one.
+      enum:
+      - UNDERPOWERED
+      - SAMPLE_RATIO_FAILED
+      - BALANCE_FLAGGED
+      - RECOMPUTATION_MISMATCH
+    CheckStatus:
+      type: string
+      description: The outcome of a stored check.
+      enum:
+      - PASSED
+      - FAILED
+    BalanceMeasure:
+      type: string
+      description: >-
+        A pre-assignment measure compared between arms: days since the last net purchase, the count of
+        net purchases, and the net spend, all over the period before the frame instant.
+      enum:
+      - PRE_RECENCY_DAYS
+      - PRE_PURCHASE_COUNT
+      - PRE_NET_SPEND
+    ResultBasis:
+      type: string
+      description: >-
+        PRIMARY is the result computed once at the analysis instant and stored. RE_READ is a labelled
+        read computed at the time of the request; it never replaces the primary result.
+      enum:
+      - PRIMARY
+      - RE_READ
+    ResultStatus:
+      type: string
+      description: >-
+        PENDING: counts only, no interval, p-value or direction, because the analysis instant has not
+        been reached or its result is not stored yet. COMPLETE: the estimate is present. INVALID: the
+        sample ratio check failed and the estimate is withheld.
+      enum:
+      - PENDING
+      - COMPLETE
+      - INVALID
+    ComparisonLabel:
+      type: string
+      description: >-
+        EFFECT: a treatment against the control. TREATMENT_DIFFERENCE: one treatment against another,
+        which is never an effect of the campaign against no treatment.
+      enum:
+      - EFFECT
+      - TREATMENT_DIFFERENCE
+    AttributionLabel:
+      type: string
+      description: >-
+        Every attributed figure carries this label. Attribution is commercial: which campaign a sale is
+        credited to. It is not a claim that the campaign caused the sale (ADR-0069).
+      enum:
+      - ATTRIBUTION
+    MetricRole:
+      type: string
+      description: >-
+        The primary metric is declared before assignment and carries the conclusion. The other metric
+        is secondary: reported with its interval and no claim.
+      enum:
+      - PRIMARY
+      - SECONDARY
+    Conclusion:
+      type: string
+      description: >-
+        The primary comparison's reading at its alpha. A non-significant result of an underpowered experiment
+        is INCONCLUSIVE, never 'no effect' (ADR-0068).
+      enum:
+      - SIGNIFICANT
+      - NOT_SIGNIFICANT
+      - INCONCLUSIVE
+    TestName:
+      type: string
+      description: >-
+        POOLED_Z: the pooled two-proportion two-sided test. WELCH_T: the unequal-variance two-sided test.
+      enum:
+      - POOLED_Z
+      - WELCH_T
+    Arm:
+      type: object
+      additionalProperties: false
+      description: >-
+        One arm of an experiment, fixed at planning. Arms are dealt in `position` order: the control first,
+        then the treatments by `arm_id`.
+      required:
+      - arm_id
+      - position
+      - kind
+      - name
+      - treatment_description
+      properties:
+        arm_id:
+          type: integer
+          format: int64
+          minimum: 1
+        position:
+          type: integer
+          minimum: 0
+          description: 0-based place in the deal order.
+        kind:
+          $ref: '#/components/schemas/ArmKind'
+        name:
+          $ref: '#/components/schemas/Name'
+        treatment_description:
+          $ref: '#/components/schemas/Description'
+    ArmRequest:
+      type: object
+      additionalProperties: false
+      description: An arm as planned. The service allocates `arm_id` and `position`.
+      required:
+      - kind
+      - name
+      - treatment_description
+      properties:
+        kind:
+          $ref: '#/components/schemas/ArmKind'
+        name:
+          $ref: '#/components/schemas/Name'
+        treatment_description:
+          $ref: '#/components/schemas/Description'
+          description: What the arm receives. For the control, what it is held back from.
+    ExperimentRequest:
+      type: object
+      additionalProperties: false
+      description: >-
+        The inputs of a plan. The service takes the frame at one recorded instant, estimates the baseline
+        from it, computes the customers per arm, draws the salt and stores all of it immutably in one
+        transaction (ADR-0068). The baseline, the sample size, the frame and the salt are never inputs.
+      required:
+      - name
+      - campaign_id
+      - primary_metric
+      - starts_on
+      - conversion_window_days
+      - minimum_detectable_effect
+      - arms
+      properties:
+        name:
+          $ref: '#/components/schemas/Name'
+        campaign_id:
+          type: integer
+          format: int64
+          minimum: 1
+          description: >-
+            The campaign whose target label and eligibility define the frame. A body field: a campaign
+            is another boundary's resource.
+        primary_metric:
+          $ref: '#/components/schemas/Metric'
+          description: Declared before assignment; one only.
+        starts_on:
+          type: string
+          format: date
+        conversion_window_days:
+          $ref: '#/components/schemas/WindowDays'
+          description: >-
+            W: the window, from each customer's assignment, in which a sale counts. Fixed here and never
+            changed (RN-25).
+        minimum_detectable_effect:
+          $ref: '#/components/schemas/PosNumber'
+          description: >-
+            An absolute difference in the intent-to-treat metric: a rate difference for CONVERSION (0.02
+            is two points), money for REVENUE_PER_CUSTOMER.
+        alpha:
+          $ref: '#/components/schemas/Probability'
+          description: Two-sided, family-wise. Default 0.05.
+        power:
+          $ref: '#/components/schemas/Probability'
+          description: Default 0.80.
+        data_origin:
+          $ref: '#/components/schemas/DataOrigin'
+          description: Default OBSERVED.
+        arms:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArmRequest'
+          minItems: 2
+          maxItems: 5
+      xml:
+        name: ExperimentRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/experimentation/v1
+    Design:
+      type: object
+      additionalProperties: false
+      description: >-
+        The experiment's design values: what was fixed before anyone was assigned (ADR-0068). The same
+        object is read on the experiment and on every result, so a result is never read without the design
+        it was planned under. Every value but the metric, the window and the start is absent for assignment
+        rule V0, which planned none of them.
+      required:
+      - primary_metric
+      - secondary_metric
+      - estimator
+      - alpha
+      - comparison_alpha
+      - power
+      - minimum_detectable_effect
+      - baseline
+      - baseline_std_dev
+      - required_per_arm
+      - smallest_detectable_effect
+      - allocation
+      - conversion_window_days
+      - settle_days
+      - starts_on
+      - analysis_at
+      properties:
+        primary_metric:
+          $ref: '#/components/schemas/Metric'
+        secondary_metric:
+          description: 'The other metric: reported with its interval and no claim.'
+          oneOf:
+          - $ref: '#/components/schemas/Metric'
+          - type: 'null'
+        estimator:
+          oneOf:
+          - $ref: '#/components/schemas/Estimator'
+          - type: 'null'
+        alpha:
+          description: Two-sided, family-wise.
+          oneOf:
+          - $ref: '#/components/schemas/Probability'
+          - type: 'null'
+        comparison_alpha:
+          description: >-
+            The level of each comparison: `alpha` divided by the number of treatments compared with the
+            control (Bonferroni), or `alpha` itself for the one comparison of an OFFER_COMPARISON. Each
+            interval is at `1 - comparison_alpha`.
+          oneOf:
+          - $ref: '#/components/schemas/Probability'
+          - type: 'null'
+        power:
+          oneOf:
+          - $ref: '#/components/schemas/Probability'
+          - type: 'null'
+        minimum_detectable_effect:
+          description: >-
+            In intent-to-treat terms. If only part of a treatment arm is reached, the effect among the
+            reached is diluted by that share.
+          oneOf:
+          - $ref: '#/components/schemas/PosNumber'
+          - type: 'null'
+        baseline:
+          type:
+          - number
+          - 'null'
+          description: >-
+            The metric among the frame's own customers over the period of equal length before the frame
+            instant.
+        baseline_std_dev:
+          type:
+          - number
+          - 'null'
+          description: >-
+            The standard deviation of the metric in that period. Present for REVENUE_PER_CUSTOMER only.
+        required_per_arm:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          description: The customers each arm needs to detect the minimum effect.
+        smallest_detectable_effect:
+          type:
+          - number
+          - 'null'
+          description: >-
+            The smallest effect this frame can detect at `alpha` and `power`, in the metric's own unit.
+            Above `minimum_detectable_effect` exactly when the experiment is UNDERPOWERED.
+        allocation:
+          oneOf:
+          - $ref: '#/components/schemas/Allocation'
+          - type: 'null'
+        conversion_window_days:
+          $ref: '#/components/schemas/WindowDays'
+        settle_days:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+          description: >-
+            Days between the window's close and the analysis instant, for late sales and reversals. Fixed
+            at 7.
+        starts_on:
+          type: string
+          format: date
+        analysis_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: >-
+            A: `assigned_at + conversion_window_days + settle_days`. The one instant of the primary look.
+            Null until the experiment is assigned, and never changed after.
+    FrameExclusion:
+      type: object
+      additionalProperties: false
+      description: >-
+        How many customers one exclusion reason removed from the frame. The reasons are decided at the
+        frame instant, before randomization, so they apply to every arm alike.
+      required:
+      - reason
+      - count
+      properties:
+        reason:
+          $ref: '#/components/schemas/Code'
+          description: >-
+            An open vocabulary; a client shows an unknown code as it is. Today: NO_PERSONALIZATION_CONSENT,
+            NO_MARKETING_CONTACT_CONSENT, CHANNEL_RESTRICTED, ANONYMIZED, INACTIVE, CAMPAIGN_EXCLUSION
+            and OVERLAPPING_EXPERIMENT.
+        count:
+          type: integer
+          minimum: 0
+    Frame:
+      type: object
+      additionalProperties: false
+      description: >-
+        The stored eligible population (ADR-0068). One row per customer is kept, and a customer who later
+        acquires the label is never added. The customers themselves are read as the assignment, which
+        holds the same set once the experiment is assigned.
+      required:
+      - taken_at
+      - size
+      - digest
+      - label_code
+      - model_version_id
+      - exclusions
+      properties:
+        taken_at:
+          type: string
+          format: date-time
+          description: 'T: read from the PostgreSQL clock in the transaction that drew the salt.'
+        size:
+          type: integer
+          minimum: 0
+        digest:
+          $ref: '#/components/schemas/Sha256'
+          description: SHA-256 over the sorted customer ids and the criteria as canonical JSON.
+        label_code:
+          type: string
+          minLength: 1
+          maxLength: 40
+          description: The campaign's target label.
+        model_version_id:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 1
+          description: The segmentation model version published at `taken_at`, under which the label is
+            held.
+        exclusions:
+          type: array
+          items:
+            $ref: '#/components/schemas/FrameExclusion'
+    ArmCount:
+      type: object
+      additionalProperties: false
+      description: The customers dealt to one arm.
+      required:
+      - arm_id
+      - kind
+      - assigned
+      properties:
+        arm_id:
+          type: integer
+          format: int64
+          minimum: 1
+        kind:
+          $ref: '#/components/schemas/ArmKind'
+        assigned:
+          type: integer
+          minimum: 0
+    SampleRatioCheck:
+      type: object
+      additionalProperties: false
+      description: >-
+        A chi-square goodness-of-fit test of the arm counts against the planned allocation. The deal is
+        exact, so it detects pipeline faults, not randomization. `p_value` below `threshold` fails the
+        check.
+      required:
+      - status
+      - p_value
+      - threshold
+      properties:
+        status:
+          $ref: '#/components/schemas/CheckStatus'
+        p_value:
+          $ref: '#/components/schemas/Fraction'
+        threshold:
+          $ref: '#/components/schemas/Fraction'
+          description: 0.001.
+    BalanceCheck:
+      type: object
+      additionalProperties: false
+      description: >-
+        The standardized mean difference of one pre-assignment measure between an arm and the reference
+        arm. A diagnostic: it never changes an estimate and is never used to redraw an assignment.
+      required:
+      - measure
+      - arm_id
+      - reference_arm_id
+      - standardized_mean_difference
+      - flagged
+      - threshold
+      properties:
+        measure:
+          $ref: '#/components/schemas/BalanceMeasure'
+        arm_id:
+          type: integer
+          format: int64
+          minimum: 1
+        reference_arm_id:
+          type: integer
+          format: int64
+          minimum: 1
+          description: The control, or the first treatment when there is none.
+        standardized_mean_difference:
+          type: number
+        flagged:
+          type: boolean
+          description: True above `threshold`.
+        threshold:
+          type: number
+          description: 0.25.
+    AssignmentChecks:
+      type: object
+      additionalProperties: false
+      description: What was checked when the assignment completed (F25-08).
+      required:
+      - recomputation_matches
+      - sample_ratio
+      - balance
+      properties:
+        recomputation_matches:
+          type: boolean
+          description: >-
+            Recomputing every assignment from the frame, the salt, the experiment id and the arm order
+            gave the stored arms.
+        sample_ratio:
+          $ref: '#/components/schemas/SampleRatioCheck'
+        balance:
+          type: array
+          items:
+            $ref: '#/components/schemas/BalanceCheck'
+    AssignmentSummary:
+      type: object
+      additionalProperties: false
+      description: >-
+        The whole assignment of one experiment, written once in one transaction and never rewritten (RN-42).
+        The customers are read as `experiment-assignments`.
+      required:
+      - experiment_id
+      - assigned_at
+      - assigned_by
+      - assigned_total
+      - acknowledged_underpowered
+      - arms
+      - checks
+      properties:
+        experiment_id:
+          type: integer
+          format: int64
+          minimum: 1
+        assigned_at:
+          type: string
+          format: date-time
+          description: 'The one instant of the transaction: every customer''s assignment instant.'
+        assigned_by:
+          description: Null for an assignment the web recorded.
+          oneOf:
+          - $ref: '#/components/schemas/Uuid'
+          - type: 'null'
+        assigned_total:
+          type: integer
+          minimum: 0
+        acknowledged_underpowered:
+          type: boolean
+          description: Whether an UNDERPOWERED plan was assigned on an explicit, recorded acknowledgement.
+        arms:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArmCount'
+          minItems: 1
+        checks:
+          description: Absent for assignment rule V0.
+          oneOf:
+          - $ref: '#/components/schemas/AssignmentChecks'
+          - type: 'null'
+      xml:
+        name: AssignmentSummary
+        namespace: https://mosaiq.maxthecoder.online/xml/experimentation/v1
+    Experiment:
+      type: object
+      additionalProperties: false
+      description: >-
+        A frozen plan and what became of it. Arms are part of the experiment and are fixed at planning
+        (RN-24). Exposures are not part of it: they arrive from engagement's stream (ADR-0075) and are
+        counted per assignment.
+      required:
+      - experiment_id
+      - name
+      - campaign_id
+      - state
+      - design_kind
+      - assignment_rule
+      - data_origin
+      - arms
+      - design
+      - frame
+      - salt
+      - assignment
+      - flags
+      - planned_at
+      - planned_by
+      properties:
+        experiment_id:
+          type: integer
+          format: int64
+          minimum: 1
+        name:
+          $ref: '#/components/schemas/Name'
+        campaign_id:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 1
+          description: >-
+            Null for an experiment whose campaign was removed: it has conversions and an effect but no
+            attribution (ADR-0069).
+        state:
+          $ref: '#/components/schemas/ExperimentState'
+        design_kind:
+          $ref: '#/components/schemas/DesignKind'
+        assignment_rule:
+          $ref: '#/components/schemas/AssignmentRule'
+        data_origin:
+          $ref: '#/components/schemas/DataOrigin'
+        arms:
+          type: array
+          items:
+            $ref: '#/components/schemas/Arm'
+          minItems: 2
+          maxItems: 5
+        design:
+          $ref: '#/components/schemas/Design'
+        frame:
+          description: Absent for assignment rule V0.
+          oneOf:
+          - $ref: '#/components/schemas/Frame'
+          - type: 'null'
+        salt:
+          description: >-
+            32 bytes from the operating system's CSPRNG as 64 lowercase hexadecimal characters, drawn
+            once after the frame was fixed and published with the plan. It is not a secret: it separates
+            experiments and makes the draw independent of anything chosen in advance. Absent for assignment
+            rule V0.
+          oneOf:
+          - $ref: '#/components/schemas/Sha256'
+          - type: 'null'
+        assignment:
+          description: Null until the experiment is assigned.
+          oneOf:
+          - $ref: '#/components/schemas/AssignmentSummary'
+          - type: 'null'
+        flags:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExperimentFlag'
+          description: Every flag that applies. A result of this experiment carries them too.
+        planned_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        planned_by:
+          oneOf:
+          - $ref: '#/components/schemas/Uuid'
+          - type: 'null'
+      xml:
+        name: Experiment
+        namespace: https://mosaiq.maxthecoder.online/xml/experimentation/v1
+    AssignmentRequest:
+      type: object
+      additionalProperties: false
+      description: Assigns the whole frame of one experiment, once.
+      required:
+      - experiment_id
+      properties:
+        experiment_id:
+          type: integer
+          format: int64
+          minimum: 1
+          description: An experiment of this service.
+        acknowledge_underpowered:
+          type: boolean
+          description: >-
+            Default false. An UNDERPOWERED plan is assigned only when this is true, and the acknowledgement
+            is recorded with the user and the time (ADR-0068).
+      xml:
+        name: AssignmentRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/experimentation/v1
+    ExperimentAssignment:
+      type: object
+      additionalProperties: false
+      description: >-
+        One customer's place in one experiment, written once and never rewritten (RN-23, RN-42). Assignment,
+        exposure and sale are three separate facts: `exposure_count` is read from this service's own projection
+        of engagement's `CAMPAIGN_EXPOSURE` notices and is eventually consistent; the control is never
+        exposed (ADR-0027).
+      required:
+      - assignment_id
+      - experiment_id
+      - campaign_id
+      - customer_id
+      - arm_id
+      - arm_kind
+      - arm_name
+      - assignment_key
+      - assigned_at
+      - exposure_count
+      - first_exposed_at
+      properties:
+        assignment_id:
+          type: integer
+          format: int64
+          minimum: 1
+        experiment_id:
+          type: integer
+          format: int64
+          minimum: 1
+        campaign_id:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 1
+        customer_id:
+          $ref: '#/components/schemas/Uuid'
+        arm_id:
+          type: integer
+          format: int64
+          minimum: 1
+        arm_kind:
+          $ref: '#/components/schemas/ArmKind'
+        arm_name:
+          $ref: '#/components/schemas/Name'
+        assignment_key:
+          description: >-
+            Lowercase hexadecimal `HMAC-SHA-256(key = salt, message = "mosaiq-assign-v1|" + experiment_id
+            + "|" + customer_id)`, with the salt as its 32 bytes, `experiment_id` as decimal digits and
+            `customer_id` as its lowercase hyphenated text. The frame is ordered by this key, then by
+            `customer_id`, and dealt round-robin in arm order. Null for assignment rule V0.
+          oneOf:
+          - $ref: '#/components/schemas/Sha256'
+          - type: 'null'
+        assigned_at:
+          type: string
+          format: date-time
+        exposure_count:
+          type: integer
+          minimum: 0
+          description: Exposures that are not voided. Always 0 for a control.
+        first_exposed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+      xml:
+        name: ExperimentAssignment
+        namespace: https://mosaiq.maxthecoder.online/xml/experimentation/v1
+    Conversion:
+      type: object
+      additionalProperties: false
+      description: >-
+        A qualifying sale of an assigned customer inside the experiment's window (RN-27). The row is append-only
+        (ADR-0050) and stays when its sale is reversed; `counts` says whether it counts now (ADR-0069).
+      required:
+      - conversion_id
+      - experiment_id
+      - arm_id
+      - customer_id
+      - sale_id
+      - sold_at
+      - converted_at
+      - sale_data_origin
+      - counts
+      - net_amount
+      - as_of
+      properties:
+        conversion_id:
+          type: integer
+          format: int64
+          minimum: 1
+        experiment_id:
+          type: integer
+          format: int64
+          minimum: 1
+        arm_id:
+          type: integer
+          format: int64
+          minimum: 1
+        customer_id:
+          $ref: '#/components/schemas/Uuid'
+        sale_id:
+          type: integer
+          format: int64
+          minimum: 1
+          description: The sale, as `sale_id` of the sales contract.
+        sold_at:
+          type: string
+          format: date-time
+          description: When the sale happened. It lies in [assignment instant, + window).
+        converted_at:
+          type: string
+          format: date-time
+          description: When an evaluation recorded the conversion.
+        sale_data_origin:
+          $ref: '#/components/schemas/SaleOrigin'
+        counts:
+          type: boolean
+          description: >-
+            True while the sale's net amount is above zero, as of `as_of`. A fully reversed sale stays
+            recorded and stops counting.
+        net_amount:
+          $ref: '#/components/schemas/Money'
+          description: The sale's net amount as of `as_of` (ADR-0062).
+        as_of:
+          type: string
+          format: date-time
+          description: When `counts` and `net_amount` were read.
+      xml:
+        name: Conversion
+        namespace: https://mosaiq.maxthecoder.online/xml/experimentation/v1
+    ConversionEvaluation:
+      type: object
+      additionalProperties: false
+      description: >-
+        What one evaluation did. Evaluating again adds nothing that was recorded, so repeating it records
+        the same conversions (F25-11).
+      required:
+      - experiment_id
+      - evaluated_at
+      - recorded
+      - already_recorded
+      properties:
+        experiment_id:
+          type: integer
+          format: int64
+          minimum: 1
+        evaluated_at:
+          type: string
+          format: date-time
+        recorded:
+          type: integer
+          minimum: 0
+          description: Conversions this evaluation added.
+        already_recorded:
+          type: integer
+          minimum: 0
+      xml:
+        name: ConversionEvaluation
+        namespace: https://mosaiq.maxthecoder.online/xml/experimentation/v1
+    ArmOutcome:
+      type: object
+      additionalProperties: false
+      description: >-
+        One arm's counts over every assigned customer, exposed or not (intent to treat). `converted +
+        pending + not_converted` is `analysed`. A customer whose only qualifying sale is fully reversed
+        is not converted, or pending while the window is open (ADR-0069).
+      required:
+      - arm_id
+      - kind
+      - name
+      - assigned
+      - analysed
+      - exposed
+      - converted
+      - pending
+      - not_converted
+      - conversion_rate
+      - exposed_conversion_rate
+      - net_revenue
+      - revenue_per_customer
+      - revenue_std_dev
+      properties:
+        arm_id:
+          type: integer
+          format: int64
+          minimum: 1
+        kind:
+          $ref: '#/components/schemas/ArmKind'
+        name:
+          $ref: '#/components/schemas/Name'
+        assigned:
+          type: integer
+          minimum: 0
+        analysed:
+          type: integer
+          minimum: 0
+          description: >-
+            Assigned customers that reached the analysis. Equal to `assigned` unless the pipeline lost
+            some, which fails the sample ratio check.
+        exposed:
+          type: integer
+          minimum: 0
+          description: Customers with at least one exposure that is not voided. 0 for a control.
+        converted:
+          type: integer
+          minimum: 0
+        pending:
+          type: integer
+          minimum: 0
+          description: No conversion yet, and the window is still open.
+        not_converted:
+          type: integer
+          minimum: 0
+          description: No conversion, and the window has closed.
+        conversion_rate:
+          $ref: '#/components/schemas/Fraction'
+          description: '`converted / analysed`.'
+        exposed_conversion_rate:
+          description: >-
+            Of the exposed, the share who bought within the window counted from their first exposure (RN-48).
+            Descriptive and non-causal: the exposed are a self-selected part of their arm. Null for a
+            control.
+          oneOf:
+          - $ref: '#/components/schemas/Fraction'
+          - type: 'null'
+        net_revenue:
+          $ref: '#/components/schemas/Money'
+          description: The arm's observed net sales in the window. Not an effect.
+        revenue_per_customer:
+          $ref: '#/components/schemas/Money'
+          description: '`net_revenue / analysed`, zeros included.'
+        revenue_std_dev:
+          type: number
+          description: >-
+            The standard deviation of the per-customer revenue, zeros included, so the Welch interval
+            can be recomputed.
+    RevenueEffect:
+      type: object
+      additionalProperties: false
+      description: >-
+        An effect in money, derived only from the difference against the control, with its interval: the
+        difference in revenue per assigned customer times the customers assigned to the compared treatment.
+      required:
+      - amount
+      - lower
+      - upper
+      properties:
+        amount:
+          $ref: '#/components/schemas/SignedMoney'
+        lower:
+          $ref: '#/components/schemas/SignedMoney'
+        upper:
+          $ref: '#/components/schemas/SignedMoney'
+    BootstrapCheck:
+      type: object
+      additionalProperties: false
+      description: >-
+        The seeded percentile bootstrap that runs beside the Welch interval. It must agree with it on
+        the sign and on whether the interval excludes zero; a disagreement is reported here, not hidden.
+      required:
+      - resamples
+      - lower
+      - upper
+      - agrees
+      properties:
+        resamples:
+          type: integer
+          minimum: 1
+          description: 10,000.
+        lower:
+          type: number
+        upper:
+          type: number
+        agrees:
+          type: boolean
+    Comparison:
+      type: object
+      additionalProperties: false
+      description: >-
+        A difference between two arms with its interval and its test. An effect is only ever a treatment's
+        difference against the control, and every field that carries one has its interval beside it.
+      required:
+      - label
+      - metric
+      - role
+      - arm_id
+      - against_arm_id
+      - difference
+      - lower
+      - upper
+      - confidence_level
+      - test
+      - p_value
+      - degrees_of_freedom
+      - conclusion
+      - incremental_revenue
+      - bootstrap
+      properties:
+        label:
+          $ref: '#/components/schemas/ComparisonLabel'
+        metric:
+          $ref: '#/components/schemas/Metric'
+        role:
+          $ref: '#/components/schemas/MetricRole'
+        arm_id:
+          type: integer
+          format: int64
+          minimum: 1
+          description: The treatment.
+        against_arm_id:
+          type: integer
+          format: int64
+          minimum: 1
+          description: The control for an EFFECT, the other treatment for a TREATMENT_DIFFERENCE.
+        difference:
+          type: number
+          description: >-
+            `arm_id` minus `against_arm_id`, in the metric's unit: a rate difference, or money per assigned
+            customer.
+        lower:
+          type: number
+          description: Lower end of the interval at `confidence_level`.
+        upper:
+          type: number
+        confidence_level:
+          $ref: '#/components/schemas/Probability'
+          description: '`1 - design.comparison_alpha`.'
+        test:
+          $ref: '#/components/schemas/TestName'
+        p_value:
+          $ref: '#/components/schemas/Fraction'
+          description: Two-sided.
+        degrees_of_freedom:
+          type:
+          - number
+          - 'null'
+          description: Satterthwaite, for WELCH_T only.
+        conclusion:
+          description: Present on the primary comparison only. A secondary comparison makes no claim.
+          oneOf:
+          - $ref: '#/components/schemas/Conclusion'
+          - type: 'null'
+        incremental_revenue:
+          description: >-
+            Present only on the primary comparison of an EFFECT when the primary metric is REVENUE_PER_CUSTOMER.
+            A secondary comparison makes no claim.
+          oneOf:
+          - $ref: '#/components/schemas/RevenueEffect'
+          - type: 'null'
+        bootstrap:
+          description: Present for REVENUE_PER_CUSTOMER only.
+          oneOf:
+          - $ref: '#/components/schemas/BootstrapCheck'
+          - type: 'null'
+    ResultChecks:
+      type: object
+      additionalProperties: false
+      description: The checks of the counts that reach the analysis.
+      required:
+      - sample_ratio
+      - balance
+      properties:
+        sample_ratio:
+          $ref: '#/components/schemas/SampleRatioCheck'
+        balance:
+          type: array
+          items:
+            $ref: '#/components/schemas/BalanceCheck'
+    EffectRefusal:
+      type: object
+      additionalProperties: false
+      description: >-
+        Why no effect is stated. An experiment with no control holds no untreated population, so it cannot
+        separate a campaign's effect from seasonality, price changes or a general rise in traffic (ADR-0019,
+        ADR-0068).
+      required:
+      - code
+      - message
+      properties:
+        code:
+          $ref: '#/components/schemas/Code'
+          description: NO_CONTROL.
+        message:
+          type: string
+          minLength: 1
+    ArmAttribution:
+      type: object
+      additionalProperties: false
+      description: The sales one treatment arm holds for the campaign.
+      required:
+      - arm_id
+      - attributed_sales
+      - attributed_customers
+      - attributed_revenue
+      properties:
+        arm_id:
+          type: integer
+          format: int64
+          minimum: 1
+        attributed_sales:
+          type: integer
+          minimum: 0
+        attributed_customers:
+          type: integer
+          minimum: 0
+        attributed_revenue:
+          $ref: '#/components/schemas/Money'
+    Attribution:
+      type: object
+      additionalProperties: false
+      description: >-
+        Commercial attribution: which campaign a sale is credited to. A sale is credited to at most one
+        campaign, so campaign totals can be summed. It is not an effect: a treated customer who bought
+        without a recorded exposure is a conversion and is counted in the comparison, but is attributed
+        to nothing, so attributed revenue is below the arm's revenue by design (ADR-0069).
+      required:
+      - label
+      - window_days
+      - arms
+      - attributed_sales
+      - attributed_revenue
+      - unattributed_conversions
+      - as_of
+      properties:
+        label:
+          $ref: '#/components/schemas/AttributionLabel'
+        window_days:
+          $ref: '#/components/schemas/WindowDays'
+          description: >-
+            The conversion window: the attribution window opens at the exposure and closes where the conversion
+            window does.
+        arms:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArmAttribution'
+          description: 'Treatment arms only: a control is never exposed and never attributed.'
+        attributed_sales:
+          type: integer
+          minimum: 0
+        attributed_revenue:
+          $ref: '#/components/schemas/Money'
+          description: Net of reversals as of `as_of`.
+        unattributed_conversions:
+          type: integer
+          minimum: 0
+          description: Treatment-arm conversions whose sale this experiment's campaign does not hold.
+        as_of:
+          type: string
+          format: date-time
+    Assumption:
+      type: object
+      additionalProperties: false
+      description: One statement the estimate depends on.
+      required:
+      - code
+      - statement
+      properties:
+        code:
+          $ref: '#/components/schemas/Code'
+          description: >-
+            Open vocabulary. Today: INTENT_TO_TREAT, NET_OF_REVERSALS, SINGLE_LOOK, FAMILY_WISE_ALPHA,
+            LARGE_SAMPLE_APPROXIMATION, NO_CONTAMINATION, CONTROL_NEVER_EXPOSED and ZERO_FOR_NON_BUYERS.
+        statement:
+          type: string
+          minLength: 1
+    ExperimentResult:
+      type: object
+      additionalProperties: false
+      description: >-
+        A result, with the design it was planned under. Attribution and effect are separate sections and
+        are never merged: `attribution` says which campaign a sale is credited to, and `comparisons` say
+        what an arm did against another, with its interval. Only a `comparisons` entry labelled EFFECT,
+        and `incremental_revenue` inside it, may be called an effect.
+      required:
+      - experiment_id
+      - campaign_id
+      - basis
+      - status
+      - as_of
+      - elapsed_share
+      - data_origin
+      - synthetic
+      - design_kind
+      - design
+      - arms
+      - checks
+      - comparisons
+      - effect_refusal
+      - attribution
+      - assumptions
+      - flags
+      properties:
+        experiment_id:
+          type: integer
+          format: int64
+          minimum: 1
+        campaign_id:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          minimum: 1
+        basis:
+          $ref: '#/components/schemas/ResultBasis'
+        status:
+          $ref: '#/components/schemas/ResultStatus'
+        as_of:
+          type: string
+          format: date-time
+          description: >-
+            When the net sales were read. For PRIMARY, the instant the result was stored, at or after
+            `design.analysis_at`; for RE_READ, the request. Two reads at different times are not a contradiction
+            (ADR-0069).
+        elapsed_share:
+          $ref: '#/components/schemas/Fraction'
+          description: The share of the conversion window elapsed at `as_of`; 1 once it has closed.
+        data_origin:
+          $ref: '#/components/schemas/DataOrigin'
+        synthetic:
+          type: boolean
+          description: >-
+            True when the experiment is not OBSERVED or a conversion it records links a SEEDED sale (RN-26,
+            ADR-0052). A client labels the figure Synthetic.
+        design_kind:
+          $ref: '#/components/schemas/DesignKind'
+        design:
+          $ref: '#/components/schemas/Design'
+        arms:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArmOutcome'
+          minItems: 2
+          maxItems: 5
+        checks:
+          description: Absent while PENDING.
+          oneOf:
+          - $ref: '#/components/schemas/ResultChecks'
+          - type: 'null'
+        comparisons:
+          type: array
+          items:
+            $ref: '#/components/schemas/Comparison'
+          description: >-
+            Empty while PENDING or INVALID. Otherwise the primary metric's comparison of each treatment,
+            then the secondary metric's.
+        effect_refusal:
+          description: Present for an OFFER_COMPARISON.
+          oneOf:
+          - $ref: '#/components/schemas/EffectRefusal'
+          - type: 'null'
+        attribution:
+          description: Null when the experiment has no campaign, or while no attribution is written yet.
+          oneOf:
+          - $ref: '#/components/schemas/Attribution'
+          - type: 'null'
+        assumptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Assumption'
+        flags:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExperimentFlag'
+      xml:
+        name: ExperimentResult
+        namespace: https://mosaiq.maxthecoder.online/xml/experimentation/v1
+    SaleAttribution:
+      type: object
+      additionalProperties: false
+      description: >-
+        The one campaign that holds a sale (ADR-0069). The sale is unique here, a holder is never reassigned
+        and is never reopened when the sale is reversed. Nothing in this resource is an effect.
+      required:
+      - attribution_id
+      - sale_id
+      - experiment_id
+      - campaign_id
+      - assignment_id
+      - customer_id
+      - arm_id
+      - exposed_at
+      - sold_at
+      - window_closes_at
+      - net_amount
+      - counts
+      - attributed_at
+      - label
+      - as_of
+      properties:
+        attribution_id:
+          type: integer
+          format: int64
+          minimum: 1
+        sale_id:
+          type: integer
+          format: int64
+          minimum: 1
+          description: 'Unique: one holder per sale.'
+        experiment_id:
+          type: integer
+          format: int64
+          minimum: 1
+        campaign_id:
+          type: integer
+          format: int64
+          minimum: 1
+        assignment_id:
+          type: integer
+          format: int64
+          minimum: 1
+          description: 'A treatment assignment: a control is never attributed.'
+        customer_id:
+          $ref: '#/components/schemas/Uuid'
+        arm_id:
+          type: integer
+          format: int64
+          minimum: 1
+        exposed_at:
+          type: string
+          format: date-time
+          description: >-
+            The exposure that earned the credit: the latest eligible one before the sale (last touch),
+            the lower `assignment_id` breaking a tie.
+        sold_at:
+          type: string
+          format: date-time
+        window_closes_at:
+          type: string
+          format: date-time
+          description: The assignment instant plus the conversion window.
+        net_amount:
+          $ref: '#/components/schemas/Money'
+          description: The sale's net amount as of `as_of`.
+        counts:
+          type: boolean
+          description: >-
+            False once the sale's net amount is zero: it stops counting as an attributed sale but is still
+            held.
+        attributed_at:
+          type: string
+          format: date-time
+        label:
+          $ref: '#/components/schemas/AttributionLabel'
+        as_of:
+          type: string
+          format: date-time
+      xml:
+        name: SaleAttribution
+        namespace: https://mosaiq.maxthecoder.online/xml/experimentation/v1
+    ExperimentPage:
+      type: object
+      additionalProperties: false
+      required:
+      - experiments
+      - page_info
+      properties:
+        experiments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Experiment'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: Experiments
+        namespace: https://mosaiq.maxthecoder.online/xml/experimentation/v1
+    ExperimentAssignmentPage:
+      type: object
+      additionalProperties: false
+      required:
+      - assignments
+      - page_info
+      properties:
+        assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExperimentAssignment'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: ExperimentAssignments
+        namespace: https://mosaiq.maxthecoder.online/xml/experimentation/v1
+    ConversionPage:
+      type: object
+      additionalProperties: false
+      required:
+      - conversions
+      - page_info
+      properties:
+        conversions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Conversion'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: Conversions
+        namespace: https://mosaiq.maxthecoder.online/xml/experimentation/v1
+    SaleAttributionPage:
+      type: object
+      additionalProperties: false
+      required:
+      - attributions
+      - page_info
+      properties:
+        attributions:
+          type: array
+          items:
+            $ref: '#/components/schemas/SaleAttribution'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: SaleAttributions
+        namespace: https://mosaiq.maxthecoder.online/xml/experimentation/v1
+    PageInfo:
+      type: object
+      additionalProperties: false
+      required:
+      - page
+      - size
+      - total
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+      xml:
+        name: PageInfo
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required:
+      - field
+      - code
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+    Error:
+      type: object
+      additionalProperties: false
+      required:
+      - code
+      - message
+      - correlation_id
+      - details
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        correlation_id:
+          type: string
+          pattern: ^[0-9A-Za-z-]{1,64}$
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+      xml:
+        name: Error
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+  responses:
+    Unauthorized:
+      description: '`invalid_token` or `session_revoked`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              externalValue: ./examples/invalid-token.json
+            session_revoked:
+              externalValue: ./examples/session-revoked.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              externalValue: ./examples/invalid-token.xml
+            session_revoked:
+              externalValue: ./examples/session-revoked.xml
+    Forbidden:
+      description: '`forbidden_role`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.xml
+    NotAcceptable:
+      description: '`not_acceptable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              externalValue: ./examples/not-acceptable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              externalValue: ./examples/not-acceptable.xml
+    RateLimited:
+      description: '`rate_limited`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              externalValue: ./examples/rate-limited.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              externalValue: ./examples/rate-limited.xml
+    OperationUnavailable:
+      description: '`auth_unavailable` or `database_unavailable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.json
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.xml
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.xml
+    SchemaNotReady:
+      description: '`schema_not_ready`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              externalValue: ./examples/schema-not-ready.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              externalValue: ./examples/schema-not-ready.xml
+    MalformedBody:
+      description: '`malformed_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            malformed_body:
+              externalValue: ./examples/malformed-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            malformed_body:
+              externalValue: ./examples/malformed-body.xml
+    PayloadTooLarge:
+      description: '`payload_too_large`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            payload_too_large:
+              externalValue: ./examples/payload-too-large.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            payload_too_large:
+              externalValue: ./examples/payload-too-large.xml
+    UnsupportedMediaType:
+      description: '`unsupported_media_type`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unsupported_media_type:
+              externalValue: ./examples/unsupported-media-type.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unsupported_media_type:
+              externalValue: ./examples/unsupported-media-type.xml
+    InvalidBody:
+      description: '`invalid_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-body.xml
+    InvalidPagination:
+      description: '`invalid_pagination`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.xml
+    InvalidQuery:
+      description: '`invalid_query`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.xml
+    ListInvalid:
+      description: '`invalid_query` or `invalid_pagination`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.json
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.xml
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.xml
+    ExperimentNotFound:
+      description: '`experiment_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            experiment_not_found:
+              externalValue: ./examples/experiment-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            experiment_not_found:
+              externalValue: ./examples/experiment-not-found.xml
+    AssignmentNotFound:
+      description: '`assignment_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            assignment_not_found:
+              externalValue: ./examples/assignment-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            assignment_not_found:
+              externalValue: ./examples/assignment-not-found.xml
+    SaleAttributionNotFound:
+      description: '`sale_attribution_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            sale_attribution_not_found:
+              externalValue: ./examples/sale-attribution-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            sale_attribution_not_found:
+              externalValue: ./examples/sale-attribution-not-found.xml
+    CampaignClosed:
+      description: '`campaign_closed`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            campaign_closed:
+              externalValue: ./examples/campaign-closed.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            campaign_closed:
+              externalValue: ./examples/campaign-closed.xml
+    AssignConflict:
+      description: >-
+        `already_assigned`, `underpowered_not_acknowledged`, `empty_frame` or `assignment_conflict`.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            already_assigned:
+              externalValue: ./examples/already-assigned.json
+            underpowered_not_acknowledged:
+              externalValue: ./examples/underpowered-not-acknowledged.json
+            empty_frame:
+              externalValue: ./examples/empty-frame.json
+            assignment_conflict:
+              externalValue: ./examples/assignment-conflict.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            already_assigned:
+              externalValue: ./examples/already-assigned.xml
+            underpowered_not_acknowledged:
+              externalValue: ./examples/underpowered-not-acknowledged.xml
+            empty_frame:
+              externalValue: ./examples/empty-frame.xml
+            assignment_conflict:
+              externalValue: ./examples/assignment-conflict.xml
+    NotAssigned:
+      description: '`experiment_not_assigned`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            experiment_not_assigned:
+              externalValue: ./examples/experiment-not-assigned.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            experiment_not_assigned:
+              externalValue: ./examples/experiment-not-assigned.xml

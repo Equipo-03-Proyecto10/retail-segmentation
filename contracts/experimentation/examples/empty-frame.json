@@ -1,0 +1,6 @@
+{
+  "code": "empty_frame",
+  "message": "The frame holds no customer, so there is nothing to assign.",
+  "correlation_id": "corr-empty-frame",
+  "details": []
+}

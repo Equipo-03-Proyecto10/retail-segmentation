@@ -2,8 +2,10 @@ openapi: 3.1.0
 info:
   title: engagement-service
   version: 2.1.0
-  description: 'Records in-store engagement: QR scans and recommendation clicks
-    (RN-55). Events live in MongoDB, are recorded once per client event, attributed
+  description: 'Records client-originated field events (RN-55): in-store engagement
+    events and capture incidents, the device''s reports of a refused queued write
+    (ADR-0071). Both live in MongoDB, in `engagement_event` and `capture_incident`.
+    Engagement events live in MongoDB, are recorded once per client event, attributed
     to the caller, voided rather than deleted, and summarized. Only `POST /v1/engagement-events`
     reads PostgreSQL, through the published store, product and customer views, to
     check references. Every `/v1` operation answers 503 `database_unavailable` when

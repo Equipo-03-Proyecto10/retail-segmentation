@@ -1,7 +1,7 @@
 # check-ins
 
 > **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
-> **One rule:** A staff check-in is verified only when the server-computed distance lies within the store's geofence at acceptable accuracy, and overrides are append-only reviews (RN-56)
+> **One rule:** A staff check-in is verified only when the server-computed distance lies within the store's geofence at acceptable accuracy, and overrides are append-only reviews (RN-56); a customer visit is a separate fact that never holds a position, recorded only for an active loyalty code and a customer who has not withdrawn profiling, once per duplicate window (RN-72)
 
 ## Summary
 
@@ -15,14 +15,20 @@
 | Redis ACL user | `svc_checkins`, same user line on `redis-state` and `redis-cache` |
 | MongoDB | — |
 | Compose project / image | `mosaiq-check-ins` / `ghcr.io/equipo-03-proyecto10/mosaiq-check-ins` |
-| Used by | Android: GPS check-in (F17-03). Electron: review (F16-04). |
-| Governing ADRs | [ADR-0046](../adr/0046-service-owned-data-lives-in-service-schemas.md), [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md), [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) |
+| Used by | Android: GPS check-in (F17-03); the floor screens' customer visit (contract #800, F21-22). Electron: review (F16-04). |
+| Governing ADRs | [ADR-0046](../adr/0046-service-owned-data-lives-in-service-schemas.md), [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md), [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md), [ADR-0066](../adr/0066-consent-is-an-append-only-record-by-purpose-and-anonymization-replaces-deletion.md), [ADR-0060](../adr/0060-four-store-profiles-map-to-four-roles-and-services-read-each-users-stores-per-request.md) |
 
 ## Business rule
 
 - The server computes the distance from the reported fix to the store's location (`api_stores.store_directory_v1`) and records a `reason`: `within_geofence`, `outside_geofence`, `low_accuracy`, `store_location_unknown` or `no_fix`. A check-in is auto-verified exactly when its reason is `within_geofence`; a later review's verdict overrides it. `verified` is derived on read and never stored: the latest review's verdict when a review exists, else `auto_verified`.
 - The reason is decided by the first matching case, with the distance computed as the haversine distance on a sphere of radius 6,371,008.8 m from the fix to the store's location, in metres with one decimal: `no_fix` (no fix sent), `store_location_unknown` (the store has no location), `low_accuracy` (`accuracy_m` greater than the store's `geofence_radius_m`), `within_geofence` (distance at most `geofence_radius_m`), otherwise `outside_geofence`. Each is a 201 answer, not an error.
 - An override is a row in `checkins.check_in_review` (verified, a required reason, the reviewer). Reviews are append-only; a check-in is never updated or deleted.
+- A **customer visit** is a different fact with a different subject (RN-72). A check-in says where a staff member was and carries a position; a visit says that an identified customer came to a store and carries none, so the two never share a resource, a table or a representation. Engagement's `STORE_VISIT` is another thing again: an anonymous arrival counted in summaries, with no customer, no consent and no loyalty code.
+- A visit is recorded only when all of these hold, checked in this order, and on any refusal nothing is stored: the body is valid and closed (a `latitude`, `longitude` or `accuracy_m` is refused as `invalid_body` with detail `location_not_stored`); `occurred_at` is not more than five minutes ahead; a `STORE_MANAGER` or `SALES_ASSOCIATE` is assigned to the store (403 `forbidden_store`); the store exists and is active; the optional campaign exists; the `loyalty_code` resolves to an ACTIVE card (one 422 for an unknown and a revoked code); and the customer's latest `PROFILING` decision is `GRANTED`. A decision that was withdrawn or never recorded is 409 `consent_required`, which does not say which, because a seller does not read the consent record (ADR-0060). A consent that cannot be read fails closed as 503 `consent_unavailable`, which the phone may retry.
+- **Duplicate window.** A post is the same visit as a stored one when the customer and the store are the same and `occurred_at` differs by strictly less than 7200 seconds, earlier or later. The window is anchored at the stored visit and a repeat never moves it; with several matches the earliest visit is the one. A repeat answers 200 with the stored visit exactly as it was, its campaign included, and writes nothing; a new visit answers 201. Concurrent posts are serialized per customer and store, so one visit exists. There is no client identifier: the window is the idempotency rule.
+- **What a visit holds.** Visit id, customer, store, optional campaign, `occurred_at`, server `recorded_at` and `recorded_by` (the token's `sub`). It holds no coordinate, accuracy, address, device or network identifier, and not the loyalty code: the code is resolved and dropped.
+- **Who reads it.** `ADMIN` and `AUDITOR`, and `STORE_MANAGER` and `SALES_ASSOCIATE` in their assigned stores only. Who records it: `ADMIN`, `STORE_MANAGER` and `SALES_ASSOCIATE`. `COMMERCIAL_SUPERVISOR`, `LOYALTY_OFFICER`, `ANALYST`, `MARKETING` and `INVENTORY_PLANNER` do not read or write per-customer visits.
+- **How long it is kept.** 36 months from `occurred_at`, the period of ADR-0066. Then the row stops naming the customer (`customer_id` null, omitted in XML) and keeps store, time and campaign. No operation edits or deletes a visit. A later withdrawal of `PROFILING` stops new visits and does not rewrite recorded ones; anonymizing the customer changes nothing here, since a visit keys on the UUID alone.
 
 ## Endpoints
 
@@ -32,8 +38,11 @@
 | GET | `/v1/check-ins` | List (`store_id`, `user_id`, `verified`, `from`, `to`, `page`, `size`) | ADMIN, STORE_MANAGER, AUDITOR |
 | GET | `/v1/check-ins/{check_in_id}` | One check-in, with its reviews | ADMIN, STORE_MANAGER, AUDITOR |
 | POST | `/v1/check-ins/{check_in_id}/reviews` | Append a manual review | ADMIN |
+| POST | `/v1/customer-visits` | Record an authorized customer visit (`loyalty_code`, `store_id`, `occurred_at`, optional `campaign_id`); 201 for a new visit, 200 for a repeat within the duplicate window. Planned | ADMIN, STORE_MANAGER, SALES_ASSOCIATE |
+| GET | `/v1/customer-visits` | List visits (`store_id`, `customer_id`, `campaign_id`, `from`, `to`, `page`, `size`), narrowed to the caller's stores. Planned | ADMIN, AUDITOR, STORE_MANAGER, SALES_ASSOCIATE |
+| GET | `/v1/customer-visits/{visit_id}` | One visit. Planned | ADMIN, AUDITOR, STORE_MANAGER, SALES_ASSOCIATE |
 
-Roles follow the [service operation policy](../requirements.md#service-operation-policy-distributed-stage). Meta routes (no token): `GET /health/live`, `GET /health/ready`, `GET /openapi.yaml`, `GET /schema.xsd`.
+Roles follow the [service operation policy](../requirements.md#service-operation-policy-distributed-stage). The three `customer-visits` operations carry `x-mosaiq-status: planned` ([ADR-0073](../adr/0073-an-operation-published-ahead-of-its-implementation-is-marked-planned-and-skipped-by-conformance.md)) until F21-23 (#801) implements them and removes the marker. Meta routes (no token): `GET /health/live`, `GET /health/ready`, `GET /openapi.yaml`, `GET /schema.xsd`.
 
 ## Data it owns
 
@@ -43,12 +52,17 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 |---|---|---|---|
 | `checkins.store_check_in` | Table (`checkins`) | S: SELECT, INSERT | New; 30 seed rows; `client_check_in_id` unique; FKs to `store` and `app_user` ON DELETE RESTRICT (E-11) |
 | `checkins.check_in_review` | Table (`checkins`) | S: SELECT, INSERT (append-only) | New; 30 seed rows; FKs to the check-in and `app_user` |
+| A customer-visit table in `checkins` (working name `checkins.customer_visit`) | Table (`checkins`) | S: SELECT, INSERT, and the retention step that clears `customer_id` | Created by F21-23 (#801) in `sql/01_schema.sql` with 30 seed rows and its 4NF justification; no coordinate column; no `UPDATE` or `DELETE` otherwise. This contract story changes no schema |
 
 ## Database contracts
 
 | Direction | Object | Counterpart |
 |---|---|---|
 | Consumes | `api_stores.store_directory_v1` | stores |
+| Consumes | `api_users.store_assignment_v1` | users (narrows customer visits to the caller's stores, ADR-0060) |
+| Consumes | [`api_customers.resolve_loyalty_code_v1`](../../contracts/db/api_customers.resolve_loyalty_code.v1.md) | customers (a function of one code, never the list of codes) |
+| Consumes | [`api_campaigns.campaign_ref_v1`](../../contracts/db/api_campaigns.campaign_ref.v1.md) | campaigns (existence of the optional campaign) |
+| Consumes | `api_preferences.consent_state_v1` | customer-preferences (the `PROFILING` decision, ADR-0066 section 2). Its contract is published by F21-16 (#794), not here |
 
 ## Events
 
@@ -75,6 +89,14 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | 404 | `check_in_not_found` | An unknown `{check_in_id}` on a read or a review |
 | 422 | `invalid_query` | `to` before `from`, with `details` naming the parameter |
 | 503 | `database_unavailable` | Every `/v1` operation reads or writes PostgreSQL; the phone retries a refused check-in under the same `client_check_in_id` |
+| 200 | n/a (not an error) | A customer visit repeated within the duplicate window: the stored visit, nothing written |
+| 403 | `forbidden_store` | `STORE_MANAGER` or `SALES_ASSOCIATE` names a store that is not assigned to them (ADR-0060) |
+| 409 | `consent_required` | The customer has withdrawn `PROFILING` or never granted it; the answer does not say which |
+| 422 | `loyalty_code_not_usable` | The code matches no card or its card is revoked; one answer for both, naming no customer |
+| 422 | `unknown_campaign` | The optional `campaign_id` is not in `api_campaigns.campaign_ref_v1` |
+| 422 | `invalid_body` (detail `location_not_stored`) | A customer visit carries a `latitude`, `longitude` or `accuracy_m` |
+| 404 | `customer_visit_not_found` | An unknown `{visit_id}` |
+| 503 | `consent_unavailable` | The consent of the customer cannot be read; the visit is refused, nothing is stored, and the phone may retry |
 
 The five reasons are 201 answers, not errors.
 
@@ -116,6 +138,7 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 |---|---|
 | PostgreSQL unreachable | `/health/ready` reports not ready, and every operation that reads or writes PostgreSQL answers 503 `database_unavailable`, never 500 (ADR-0035). `/health/live` stays 200 |
 | A store without a location | The check-in is recorded with reason `store_location_unknown`, unverified; it is not refused |
+| `api_preferences.consent_state_v1` cannot be read | A customer visit is refused as 503 `consent_unavailable` and nothing is stored: the purpose is treated as not granted (ADR-0066). Staff check-ins are unaffected |
 | `redis-state` unreachable or over 200 ms | Every authenticated request returns 503 `auth_unavailable`; authentication fails closed and never falls back to the signature alone |
 | Any other service down | No effect: services never call each other over HTTP |
 
@@ -127,4 +150,4 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 ## Backlog
 
-F14-25 contract, F14-26 implementation; consumed by F17-03, F16-04. Issue numbers live in [`docs/backlog.md`](../backlog.md).
+F14-25 contract, F14-26 implementation; consumed by F17-03, F16-04. Customer visits: F21-22 contract (#800), F21-23 implementation (#801). Issue numbers live in [`docs/backlog.md`](../backlog.md).

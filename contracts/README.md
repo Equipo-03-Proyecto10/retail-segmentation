@@ -82,7 +82,9 @@ and `total`. Invalid values get 422 `invalid_pagination`.
 the service generates one, and always echoes it. A 429 carries `Retry-After`.
 Retried mobile writes use the identifier declared by their operation:
 `Idempotency-Key` for sales, `client_event_id` for engagement, and
-`client_check_in_id` for check-ins.
+`client_check_in_id` for check-ins. A customer visit carries no identifier: a
+repeat for the same customer and store within its duplicate window is the same
+visit and answers 200 with the stored one.
 
 ## Authentication and routes
 

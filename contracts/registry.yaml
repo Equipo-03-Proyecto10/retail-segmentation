@@ -100,7 +100,7 @@ services:
     rule: "A model version is immutable once published, carries its dataset, parameters, metrics and reference distribution, changes state only by an explicit publication or rollback, and every drift alert is judged against that reference (RN-66)"
     rn: [RN-66]
     wave: third
-    resources: [model-versions, model-trainings]
+    resources: [model-versions, model-trainings, drift-reports, drift-alerts]
   - name: analytics-kpis
     port: 5022
     rule: "A KPI is reported only under its published definition, window and data origin, from `api_*` objects, and only to the roles and stores allowed to read it (RN-68)"

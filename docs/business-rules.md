@@ -1299,13 +1299,17 @@ names its version, the one it replaced, who made it and why. A comparison across
 versions is marked methodological and is never counted as behaviour
 ([ADR-0064](adr/0064-a-model-version-is-immutable-and-a-change-of-version-is-never-reported-as-behaviour.md)).
 Every drift alert is judged against the reference distribution of the version
-it concerns (F23-07).
+it concerns (F23-07). A report carries the statistic, the reference, the current
+window, the threshold and the version; a window that crosses a change of version is
+not compared, and "concept drift" is said only of an outcome-test result
+([ADR-0065](adr/0065-drift-is-claimed-in-three-separate-kinds-and-concept-drift-only-from-a-predictive-outcome.md)).
 
 **Enforced:** model-registry (planned), ADR-0059 and ADR-0064 —
 `models.model_version` is insert-only for `svc_models` apart from its state, a
 partial unique index allows one `PUBLISHED` row, and `models.model_publication`
 is append-only. The contract of F22-10 (#805) specifies versions, training runs,
-metrics, publications and rollbacks; drift reports and alerts follow with F23. ·
+metrics, publications and rollbacks, and that of F23-08 (#820) drift reports and
+alerts. ·
 #743
 
 ### RN-68 — A KPI is reported only under its published definition, window and data origin, and only to the roles and stores allowed to read it

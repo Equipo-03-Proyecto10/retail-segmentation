@@ -213,6 +213,16 @@ suite_images() {
   fi
   check images postgres-18 docker pull -q postgres:18
   check images postgres-16 docker pull -q postgres:16
+  # The images compose.distributed.yaml does not reach, each as its workflow
+  # builds it: the web (ci.yml), the ops console (ops-console.yml) and the
+  # bench twin (bench.yml).
+  check images build-web docker build --network=host -t mosaiq-web:verify .
+  check images build-ops-console bash -c 'cp contracts/registry.yaml ops/console/registry.yaml &&
+    docker build --network=host -t mosaiq-ops-console:verify ops/console'
+  check images build-bench bash -c 'd=bench/products-service-rs && rm -rf "$d/contracts" &&
+    mkdir -p "$d/contracts/common" && cp -R contracts/products "$d/contracts/products" &&
+    cp -R contracts/common/v1 "$d/contracts/common/v1" &&
+    docker build --network=host -t products-service-rs:verify "$d"'
 }
 
 # ci.yml `contracts` and `guards`.
@@ -223,14 +233,15 @@ suite_contracts() {
   check contracts memory-gate python3 .github/scripts/memory_gate.py
 }
 
-# ci.yml `quality`: format, lint and the repository pytest. The four suites
+# ci.yml `quality`: format, lint and the repository pytest. The five suites
 # that get their own section of the report are left to it.
 suite_web() {
   check web black black --check .
   check web ruff ruff check .
   tests web pytest test-results/pytest.xml \
     python3 -m pytest -rs -p no:cacheprovider --junitxml=test-results/pytest.xml \
-    --ignore=tests/golden --ignore=tests/e2e --ignore=tests/negative --ignore=tests/conformance
+    --ignore=tests/golden --ignore=tests/e2e --ignore=tests/negative --ignore=tests/conformance \
+    --ignore=tests/parity
 }
 
 # ci.yml `database`: every `run` step of that job, read from the workflow
@@ -405,6 +416,45 @@ suite_kits() {
     bash tests/conformance/run.sh mosaiq-kit-rs-example tests/conformance/kit-example 8000
 }
 
+# ops-console.yml `check`: the console's own lock, format, lint and tests,
+# and the host snapshot script. Its image is built with the others.
+suite_ops_console() {
+  (
+    cd ops/console || exit 1
+    check ops-console uv-sync uv sync --frozen
+    check ops-console black uv run black --check .
+    check ops-console ruff uv run ruff check .
+    tests ops-console pytest "$R/tmp/ops-console.xml" \
+      uv run pytest -rs -p no:cacheprovider --junitxml="$R/tmp/ops-console.xml"
+  )
+  check ops-console snapshot-parses bash -n ops/console/host/mosaiq-ops-snapshot.sh
+}
+
+# bench.yml `twin`: ADR-0042's checks, read from the workflow so the two never
+# drift, the twin's Rust gates on a loaded PostgreSQL 18, and the shared
+# conformance suite against the image built with the others.
+suite_bench() {
+  local dir=bench/products-service-rs channel guard staged=$R/tmp/products-bench
+  guard=$(yq -r '.jobs.twin.steps[] | select(.name | test("^Never registered")) | .run' .github/workflows/bench.yml)
+  check bench adr-0042 env TWIN=products-service-rs bash -eo pipefail -c "$guard"
+  pg_fresh && pg_load >"$(log_of bench load)" 2>&1 || { not_run bench load "the database did not load"; return; }
+  channel=$(sed -n 's/^FROM rust:\([0-9.]*\)-.*/\1/p' "$dir/Dockerfile" | head -1)
+  check bench toolchain rustup toolchain install "$channel" --profile minimal --component clippy,rustfmt
+  check bench fmt bash -c "cd $dir && cargo +$channel fmt --check"
+  check bench clippy bash -c "cd $dir && cargo +$channel clippy --locked --all-targets -- -D warnings"
+  cargo_tests bench cargo-test env TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/retail \
+    MOSAIQ_REQUIRE_POSTGRES=1 bash -c "cd $dir && cargo +$channel test --locked"
+  rm -rf "$dir/target"
+  infra_down
+  docker image inspect products-service-rs:verify >/dev/null 2>&1 \
+    || { not_run bench conformance "products-service-rs:verify was not built"; return; }
+  rm -rf "$staged" && mkdir -p "$staged/redis" && cp bench/redis/products-bench.acl "$staged/redis/"
+  rm -f test-results/conformance-products-bench.xml
+  CONFORMANCE_CONTRACT_DIR=contracts/products \
+    tests bench conformance test-results/conformance-products-bench.xml \
+    bash tests/conformance/run.sh products-service-rs:verify "$staged" 5103
+}
+
 # desktop.yml `check`, without the Playwright window tests and packaging.
 suite_desktop() {
   (
@@ -469,6 +519,44 @@ restart_services() {
   check stack restart-services bash -c "${COMPOSE[*]} restart $services && ${COMPOSE[*]} up --wait --wait-timeout 600"
 }
 
+# nightly.yml's parity step (F20-07, #765): tests/parity against the stack.
+# The web system is not part of the stack (Q-12 keeps it off network
+# `mosaiq`), so gunicorn runs in the toolbox against the db container's bridge
+# IP, as on the nightly runner. The accounts are the seed's demonstration
+# accounts. The harness's differences go to parity.json beside the report.
+# It runs before tests/negative, whose sign-ins exhaust auth's rate limit.
+suite_parity() {
+  local db_ip pid up=1
+  db_ip=$(docker inspect "$("${COMPOSE[@]}" ps -q db)" \
+    --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
+  mkdir -p "$R/tmp/web-uploads"
+  DATABASE_URL="postgresql://retail_app:retail_app@$db_ip:5432/retail" \
+    FLASK_ENV=development FLASK_SECRET_KEY="$(openssl rand -hex 32)" \
+    UPLOAD_DIR="$R/tmp/web-uploads" \
+    gunicorn --bind 127.0.0.1:5000 'web.app:create_app()' >"$(log_of parity web)" 2>&1 &
+  pid=$!
+  for _ in $(seq 1 60); do
+    curl -fsS -o /dev/null http://127.0.0.1:5000/ && { up=0; break; }
+    sleep 1
+  done
+  if ((up)); then
+    kill "$pid" 2>/dev/null
+    not_run parity suite "the web system did not answer on 127.0.0.1:5000"
+    return
+  fi
+  rm -f test-results/parity.xml
+  tests parity suite test-results/parity.xml env \
+    PARITY_WEB_URL=http://127.0.0.1:5000 PARITY_GATEWAY_URL=http://127.0.0.1:8080 \
+    "PARITY_DATABASE_URL=postgresql://postgres:postgres@$db_ip:5432/retail" \
+    PARITY_WEB_EMAIL=admin@mosaiq-demo.com PARITY_WEB_PASSWORD='Password123!' \
+    PARITY_SERVICE_EMAIL=user3@mosaiq-demo.com PARITY_SERVICE_PASSWORD='Password123!' \
+    "PARITY_RESULTS=$R/parity.json" \
+    python3 -m pytest tests/parity -rs -p no:cacheprovider --junitxml=test-results/parity.xml
+  kill "$pid" 2>/dev/null
+  wait "$pid" 2>/dev/null
+  return 0
+}
+
 suite_e2e() {
   rm -f test-results/e2e.xml
   tests e2e suite test-results/e2e.xml env E2E_BASE_URL=http://127.0.0.1:8080 E2E_COMPOSE=compose.distributed.yaml \
@@ -494,15 +582,19 @@ suite_database
 suite_golden
 suite_services
 suite_kits
+suite_bench
+suite_ops_console
 suite_desktop
 suite_android
 if suite_stack; then
   suite_e2e
   restart_services
+  suite_parity
   suite_negative
 else
-  not_run negative suite "the local stack did not come up"
   not_run e2e suite "the local stack did not come up"
+  not_run parity suite "the local stack did not come up"
+  not_run negative suite "the local stack did not come up"
 fi
 collect_stack_logs
 "${COMPOSE[@]}" down --volumes >/dev/null 2>&1 || true

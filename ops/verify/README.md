@@ -52,18 +52,21 @@ Each step is the step a workflow already runs (named in
 | Suite | What | Mirrors |
 |---|---|---|
 | `toolbox` | the commit's Python requirements and `contracts/install-tools.sh` | `ci.yml` |
-| `images` | `stage-contracts.sh --all`, `auth-keys.sh`, and `docker compose -f compose.distributed.yaml build`: every image at this commit | `nightly.yml` |
+| `images` | `stage-contracts.sh --all`, `auth-keys.sh`, `docker compose -f compose.distributed.yaml build`, and the three images compose does not reach: the web (`Dockerfile`), the ops console and the bench twin. Every image at this commit | `nightly.yml`, `ci.yml`, `ops-console.yml`, `bench.yml` |
 | `contracts` | `contracts/check.sh`, `check_streams.sh`, `guards.sh`, the memory gate | `ci.yml` `contracts`, `guards` |
-| `web` | `black`, `ruff`, the repository `pytest` without the four directories below | `ci.yml` `quality` |
+| `web` | `black`, `ruff`, the repository `pytest` without the five directories below | `ci.yml` `quality` |
 | `database` | every `run` step of `ci.yml`'s `database` job, read from the workflow: the three scripts from empty, the seed's compliance queries, 30 rows per table, the boundary sections, the grants, and the web's database-backed tests | `ci.yml` `database` |
 | `golden` | `tests/golden`, then the capture and drift comparison | `golden-drift.yml` |
 | `service-<name>` | per service, on its own fresh PostgreSQL, Redis and MongoDB: VERSION, then `uv sync`, `black`, `ruff`, `pytest`, or `fmt`, `clippy`, `cargo test` | `services.yml` `service` |
 | `conformance-<name>` | `tests/conformance/run.sh` against the image the stack runs | `services.yml` `service` |
 | `kit-py`, `kit-rs` | each kit's suite, its example image, the example's conformance, and the proof that the suite is not vacuous | `ci.yml` `kit-*`, `services.yml` `kits` |
+| `bench` | ADR-0042's checks read from the workflow, the twin's `fmt`, `clippy` and `cargo test` on a loaded PostgreSQL, and the shared conformance suite against its image | `bench.yml` `twin` |
+| `ops-console` | `uv sync`, `black`, `ruff`, `pytest`, and the host snapshot script parses | `ops-console.yml` `check` |
 | `desktop` | `npm ci`, lint, Prettier, `tsc`, the contract bundle, Vitest, the ADR-0041 checks | `desktop.yml` `check` |
 | `android` | `ktlintCheck`, `lint`, `testDebugUnitTest`, the ADR-0041 checks | `android.yml` `check` |
 | `stack` | the local stack up from those images, with PostgreSQL built by the three scripts, both Redis instances on the instance's configuration and ACL, MongoDB and the gateway, then every boundary section re-applied | `nightly.yml` |
 | `e2e` | `tests/e2e`, the demonstration chain | `nightly.yml` |
+| `parity` | `tests/parity` against the stack, with the web system started in the toolbox on the database's bridge IP and the seed's demonstration accounts (#765) | `nightly.yml` |
 | `negative` | `tests/negative` against the gateway, as its README's "The local stack" | — |
 
 The conformance stack and the local stack would both join network `mosaiq`
@@ -71,7 +74,8 @@ under the same names, so the local stack comes up only after the conformance
 runs. `tests/e2e` runs on the fresh stack, as in `nightly.yml`: after
 `tests/negative`, auth's sign-in rate limit would refuse its sign-ins.
 `tests/e2e` stops `redis-state`, so every service is restarted before
-`tests/negative`.
+`tests/parity` and `tests/negative`. `tests/parity` runs before
+`tests/negative` for the same reason as `tests/e2e`: it signs in.
 
 The database job's steps run as the unprivileged user `runner`, as on a GitHub
 runner, because `initdb` refuses root.
@@ -91,6 +95,8 @@ A run writes one directory, by default `test-results/verify/<sha>-<UTC time>/`:
 | `results/<suite>/*.xml` | every step's JUnit, as the report read it |
 | `logs/<suite>/<step>.log` | every step's output; `logs/stack/compose.log` holds the stack's logs |
 | `negative-evidence.md` | what `tests/negative` records for this run |
+| `parity.json` | every difference `tests/parity` printed, per case (`PARITY_RESULTS`) |
+| `logs/parity/web.log` | the web system's log while `tests/parity` ran |
 | `meta.json`, `tools.txt`, `images.txt` | the raw inputs of the header |
 
 `report.md` holds, in order:

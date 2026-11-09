@@ -111,11 +111,33 @@ def test_concurrent_sales_on_the_last_unit_succeed_once(
 ) -> None:
     [pair], customer, channel, prices = _pick(db, 1, 1)
     store, product = pair
+    [[original]] = db(
+        "SELECT quantity_on_hand FROM inventory "
+        "WHERE store_id = %s AND product_id = %s",
+        (store, product),
+    )
     db(
         "UPDATE inventory SET quantity_on_hand = 1 "
         "WHERE store_id = %s AND product_id = %s",
         (store, product),
     )
+    try:
+        _sell_the_last_unit(
+            db, web, service, differences, pair, customer, channel, prices
+        )
+    finally:
+        # Give back the units this case took by hand, so the suites that run
+        # after it on the same stack (F20-03: tests/negative) find the seed's
+        # stock less only the one unit really sold.
+        db(
+            "UPDATE inventory SET quantity_on_hand = quantity_on_hand + %s "
+            "WHERE store_id = %s AND product_id = %s",
+            (original - 1, store, product),
+        )
+
+
+def _sell_the_last_unit(db, web, service, differences, pair, customer, channel, prices):
+    store, product = pair
     price = prices[pair]
     source_id = "parity-" + uuid.uuid4().hex
 

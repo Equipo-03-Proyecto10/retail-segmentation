@@ -219,18 +219,20 @@ jobs:
       # step of 10 s; five calibration passes and five repetitions of those
       # would take hours on one runner, so a shard runs 15 s and 60 s, and
       # steps of 5 s (docs/evidence/products-reads-flask-vs-rust-x86.md).
-      BENCH_REPS: ${{ inputs.reps || '5' }}
-      BENCH_WARMUP_SECONDS: ${{ inputs.warmup_seconds || '15' }}
-      BENCH_MEASURE_SECONDS: ${{ inputs.measure_seconds || '60' }}
-      BENCH_CAL_PASSES: ${{ inputs.cal_passes || '5' }}
+      BENCH_REPS: ${{ inputs.reps || '1' }}
+      BENCH_WARMUP_SECONDS: ${{ inputs.warmup_seconds || '5' }}
+      BENCH_MEASURE_SECONDS: ${{ inputs.measure_seconds || '20' }}
+      BENCH_CAL_PASSES: ${{ inputs.cal_passes || '1' }}
       BENCH_CAL_STEP_SECONDS: ${{ inputs.cal_step_seconds || '5' }}
-      BENCH_COLDSTART_RUNS: "3"
+      BENCH_COLDSTART_RUNS: "1"
       BENCH_SETTLE_SECONDS: "3"
       BENCH_SCENARIOS: ${{ matrix.scenario }}
       BENCH_FORMATS: ${{ matrix.format }}
       BENCH_OUT: bench/results/${{ matrix.scenario }}-${{ matrix.format }}
       # The images were built and loaded; nothing is rebuilt here.
       BENCH_NO_BUILD: "1"
+      # The default full ramp, to see where each build saturates on this runner.
+      BENCH_CAL_RATES: "10,20,40,60,80,120,160,240,320,480,640,960,1280,1920"
       # Never BENCH_ALLOW_NO_MEMLIMIT: this job fails if the limit is not enforced.
     steps:
       - uses: actions/checkout@v5

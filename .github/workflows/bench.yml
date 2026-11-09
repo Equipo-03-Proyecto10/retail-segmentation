@@ -1,22 +1,66 @@
-# The bench-only Rust twin of the products reads (F15-01, ADR-0042). It runs on
-# changes to bench/ or to the contract the twin follows, and is not a required
-# check: a benchmark must never block a products-service release. It builds the
-# twin's image to test it and pushes nothing.
+# The bench-only Rust twin of the products reads (F15-01, ADR-0042). Two things
+# run here, and neither is a required check: a benchmark must never block a
+# products-service release. Nothing here pushes an image.
+#
+# 1. `twin`: the twin's Rust gates, conformance and ADR-0042's compliance
+#    checks, on every pull request that touches bench/ or the contract the twin
+#    follows.
+# 2. The full comparison of Flask and the twin (F15-03, #751): `images` builds
+#    the three images once, `bench` runs the benchmark on a GitHub-hosted
+#    ubuntu-24.04 runner (x86-64, 4 vCPU, cgroup v2 with the memory controller),
+#    where ADR-0042's 160 MB limit is enforced and read back for both builds,
+#    and `report` gathers the raw results and the tables into one artifact.
+#    It takes about 40 minutes of wall clock, so it does not run on every bench
+#    pull request. It runs
+#    - on `workflow_dispatch` (Actions > Bench > Run workflow, once this file is
+#      on the default branch), with the settings below as inputs, and
+#    - on a pull request whose head branch name contains `bench-rerun`: the
+#      way to run it from a branch before it is merged, since a workflow can
+#      only be dispatched from the default branch.
+#    One shard per scenario and format, each on its own runner, so five
+#    calibration passes and five repetitions fit the time. Both builds always
+#    share a shard's runner, in alternating order.
 name: Bench
 
 on:
   pull_request:
     paths:
       - bench/**
+      # The raw results and the report are committed after a run; they are not
+      # a reason to run it again.
+      - "!bench/results/**"
       - contracts/products/**
       - .github/workflows/bench.yml
+  workflow_dispatch:
+    inputs:
+      reps:
+        description: Measured repetitions per build, format and scenario
+        default: "5"
+      warmup_seconds:
+        description: Warm-up before each measured run
+        default: "15"
+      measure_seconds:
+        description: Measured phase of each run
+        default: "60"
+      cal_passes:
+        description: Times the saturation calibration is repeated
+        default: "5"
+      cal_step_seconds:
+        description: Seconds per calibration step
+        default: "5"
 
 permissions:
   contents: read
 
+# A newer push to the same branch replaces a run in flight.
+concurrency:
+  group: bench-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   twin:
     name: Products twin — Rust gates, conformance and ADR-0042 checks
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     services:
       postgres:
@@ -111,3 +155,154 @@ jobs:
           mkdir -p "$staged/redis"
           cp bench/redis/products-bench.acl "$staged/redis/products-bench.acl"
           bash tests/conformance/run.sh products-service-rs:ci "$staged" 5103
+
+  # The full comparison (see the head of this file for when it runs). The three
+  # images are built once from the commit under test and handed to every shard,
+  # so both builds are the same bytes everywhere. Their names come from
+  # bench/compose.yaml; the twin's image is never pushed.
+  images:
+    name: Full comparison — build the three images
+    if: github.event_name == 'workflow_dispatch' || contains(github.head_ref, 'bench-rerun')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      TWIN: products-service-rs
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build the images in parallel and save them
+        run: |
+          set -euo pipefail
+          export AUTH_TAG=$(cat services/auth/VERSION) PRODUCTS_TAG=$(cat services/products/VERSION)
+          config=$(docker compose -f bench/compose.yaml --profile bench config --format json)
+          pids=()
+          images=()
+          for svc in auth products; do
+            bash .github/scripts/stage-contracts.sh "$svc"
+            image=$(jq -r --arg s "$svc" '.services[$s].image' <<<"$config")
+            docker build --quiet -t "$image" "services/$svc" &
+            pids+=($!)
+            images+=("$image")
+          done
+          # The twin's build context carries its contract (ADR-0045), as bench/conformance.sh stages it.
+          rm -rf "bench/$TWIN/contracts"
+          mkdir -p "bench/$TWIN/contracts/common"
+          cp -R contracts/products "bench/$TWIN/contracts/products"
+          cp -R contracts/common/v1 "bench/$TWIN/contracts/common/v1"
+          docker compose -f bench/compose.yaml --profile bench build --quiet "$TWIN" &
+          pids+=($!)
+          images+=("$(jq -r --arg s "$TWIN" '.services[$s].image' <<<"$config")")
+          for pid in "${pids[@]}"; do wait "$pid"; done
+          docker image ls
+          docker save "${images[@]}" | gzip -1 >images.tar.gz
+          ls -lh images.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-images
+          path: images.tar.gz
+          compression-level: 0
+          retention-days: 1
+
+  bench:
+    name: Full comparison — ${{ matrix.scenario }} ${{ matrix.format }}
+    needs: images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [list, search, filter, detail]
+        format: [json, xml]
+    env:
+      # ADR-0042 asks for 30 s of warm-up, 2 minutes measured and a calibration
+      # step of 10 s; five calibration passes and five repetitions of those
+      # would take hours on one runner, so a shard runs 15 s and 60 s, and
+      # steps of 5 s (docs/evidence/products-reads-flask-vs-rust-x86.md).
+      BENCH_REPS: ${{ inputs.reps || '5' }}
+      BENCH_WARMUP_SECONDS: ${{ inputs.warmup_seconds || '15' }}
+      BENCH_MEASURE_SECONDS: ${{ inputs.measure_seconds || '60' }}
+      BENCH_CAL_PASSES: ${{ inputs.cal_passes || '5' }}
+      BENCH_CAL_STEP_SECONDS: ${{ inputs.cal_step_seconds || '5' }}
+      BENCH_COLDSTART_RUNS: "3"
+      BENCH_SETTLE_SECONDS: "3"
+      BENCH_SCENARIOS: ${{ matrix.scenario }}
+      BENCH_FORMATS: ${{ matrix.format }}
+      BENCH_OUT: bench/results/${{ matrix.scenario }}-${{ matrix.format }}
+      # The images were built and loaded; nothing is rebuilt here.
+      BENCH_NO_BUILD: "1"
+      # Never BENCH_ALLOW_NO_MEMLIMIT: this job fails if the limit is not enforced.
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install the suite's requirements and tools
+        run: |
+          pip install -r web/requirements-dev.txt -r contracts/requirements.txt
+          bash contracts/install-tools.sh
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: bench-images
+
+      - name: Load the images
+        run: |
+          set -euo pipefail
+          gunzip -c images.tar.gz | docker load
+          rm images.tar.gz
+
+      - name: The machine the numbers come from
+        run: |
+          set -euo pipefail
+          uname -a
+          lscpu
+          lscpu -e
+          echo "cgroup controllers: $(cat /sys/fs/cgroup/cgroup.controllers)"
+          docker info --format 'driver {{.CgroupDriver}}, cgroup v{{.CgroupVersion}}, {{.NCPU}} CPUs, {{.MemTotal}} bytes'
+          free -m
+          swapon --show || true
+
+      - name: Conformance, fairness settings, calibration and measured runs
+        run: bash bench/run.sh
+
+      - name: What the containers logged
+        if: failure()
+        run: |
+          docker compose -f bench/compose.yaml -f bench/compose.pinned.yaml --profile bench logs --no-color --tail 100 || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shard-${{ matrix.scenario }}-${{ matrix.format }}
+          path: bench/results/${{ matrix.scenario }}-${{ matrix.format }}
+          retention-days: 30
+
+  report:
+    name: Full comparison — the tables
+    needs: [images, bench]
+    if: ${{ !cancelled() && needs.images.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: shard-*
+          path: shards
+
+      - name: Tables, from the raw results of every shard
+        run: |
+          set -euo pipefail
+          mkdir results
+          for dir in shards/shard-*; do mv "$dir" "results/${dir#shards/shard-}"; done
+          python3 bench/aggregate.py report results | tee results/report.md >>"$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: results
+          retention-days: 30

@@ -17,6 +17,8 @@
 #    - on a pull request whose head branch name contains `bench-rerun`: the
 #      way to run it from a branch before it is merged, since a workflow can
 #      only be dispatched from the default branch.
+#    A later push to such a branch that touches only bench/results/, docs/ or
+#    the README does not repeat it (the `gate` job).
 #    One shard per scenario and format, each on its own runner, so five
 #    calibration passes and five repetitions fit the time. Both builds always
 #    share a shard's runner, in alternating order.
@@ -160,9 +162,40 @@ jobs:
   # images are built once from the commit under test and handed to every shard,
   # so both builds are the same bytes everywhere. Their names come from
   # bench/compose.yaml; the twin's image is never pushed.
+  # A push to a bench-rerun branch that changes nothing but the committed
+  # results, the documentation or the README does not start the 35 minutes
+  # again: the comparison it would repeat is the one those files report.
+  gate:
+    name: Full comparison — is it due?
+    if: github.event_name == 'workflow_dispatch' || contains(github.head_ref, 'bench-rerun')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      due: ${{ steps.due.outputs.due }}
+    steps:
+      - id: due
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+        run: |
+          set -euo pipefail
+          due=true
+          if [ "$EVENT" = pull_request ] && [ "$ACTION" = synchronize ]; then
+            # If the comparison cannot be made, run.
+            if files=$(gh api "repos/$GITHUB_REPOSITORY/compare/$BEFORE...$AFTER" --jq '.files[].filename'); then
+              echo "$files"
+              if [ -n "$files" ] && ! grep -qvE '^(bench/results/|docs/|README\.md$)' <<<"$files"; then due=false; fi
+            fi
+          fi
+          echo "due=$due" | tee -a "$GITHUB_OUTPUT"
+
   images:
     name: Full comparison — build the three images
-    if: github.event_name == 'workflow_dispatch' || contains(github.head_ref, 'bench-rerun')
+    needs: gate
+    if: needs.gate.outputs.due == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:

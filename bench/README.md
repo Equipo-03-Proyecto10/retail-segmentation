@@ -112,7 +112,7 @@ The reported run of F15-03 (#751) is `.github/workflows/bench.yml`, on a GitHub-
 - `bench` is a matrix, one shard per scenario and format, each on its own runner with both builds in alternating order, because five calibration passes and five repetitions do not fit one runner in an hour. A shard runs `bench/run.sh` with 15 s of warm-up, 60 s measured and 5 s calibration steps (ADR-0042's 30 s, 2 min and 10 s would take hours; the report says so), `BENCH_NO_BUILD=1`, and never `BENCH_ALLOW_NO_MEMLIMIT`. It fails if the limit is not enforced.
 - `report` gathers every shard's raw results and `aggregate.py`'s tables into one artifact, `bench-results`, and the job summary.
 
-It takes about 40 minutes, so it is not run for every bench pull request: it runs on `workflow_dispatch` (Actions > Bench > Run workflow, with the settings as inputs, once the workflow is on the default branch), and on a pull request whose head branch name contains `bench-rerun`. It is never a required check and never blocks a release. Download the results with `gh run download <run-id> -n bench-results`, and commit them under `bench/results/<date>-gha-x86/`.
+It takes about 40 minutes, so it is not run for every bench pull request: it runs on `workflow_dispatch` (Actions > Bench > Run workflow, with the settings as inputs, once the workflow is on the default branch), and on a pull request whose head branch name contains `bench-rerun`. A later push to such a branch that changes only `bench/results/`, `docs/` or the README does not repeat it. It is never a required check and never blocks a release. Download the results with `gh run download <run-id> -n bench-results`, and commit them under `bench/results/<date>-gha-x86/`.
 
 ## The twin's own checks
 

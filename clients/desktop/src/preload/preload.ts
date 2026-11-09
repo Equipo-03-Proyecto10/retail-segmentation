@@ -78,6 +78,7 @@ const bridge: MosaiqBridge = {
   kpiDefinitions: () => ipcRenderer.invoke(CHANNELS.kpiDefinitions),
   kpiReport: (query) => ipcRenderer.invoke(CHANNELS.kpiReport, query),
   exportReport: (format) => ipcRenderer.invoke(CHANNELS.exportReport, format),
+  planningReport: (query) => ipcRenderer.invoke(CHANNELS.planningReport, query),
 };
 
 contextBridge.exposeInMainWorld('mosaiq', bridge);

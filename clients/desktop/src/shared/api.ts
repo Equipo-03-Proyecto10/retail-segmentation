@@ -618,6 +618,56 @@ export interface ReportView {
 
 export type ReportFormat = 'pdf' | 'csv' | 'xlsx';
 
+/** What the inventory planning screen asks for (F28-12, #881). */
+export interface PlanningQuery {
+  from: string;
+  to: string;
+  store_id?: number;
+  category_id?: number;
+  /** Days of demand the stock should cover; the service defaults to 14. */
+  target_cover_days?: number;
+  page?: number;
+  size?: number;
+}
+
+/** One segment's share of a row's demand. Counts only: no customer is named. */
+export interface PlanningSegmentView {
+  /** The label code, or the unlabelled state in words. */
+  segment: string;
+  net_units: number;
+  share: string;
+}
+
+/** One store and category: demand in the window beside stock on hand now. */
+export interface PlanningRowView {
+  store_id: number;
+  store: string;
+  category_id: number;
+  category: string;
+  net_units: number;
+  daily_demand: string;
+  on_hand: number;
+  /** null when nothing was demanded in the window. */
+  days_of_cover: string | null;
+  replenishment_units: number;
+  synthetic: boolean;
+  segments: PlanningSegmentView[];
+}
+
+export interface PlanningView {
+  from: string;
+  to: string;
+  window_days: number;
+  target_cover_days: number;
+  generated_at: string;
+  /** The service's own statement of how cover and needs are computed. */
+  calculation: string;
+  store_restricted: boolean;
+  synthetic: boolean;
+  rows: PlanningRowView[];
+  page: PageView;
+}
+
 /** The named operations the renderer may call; there is no generic transport. */
 export interface MosaiqBridge {
   getState(): Promise<AppState>;
@@ -692,6 +742,7 @@ export interface MosaiqBridge {
   kpiDefinitions(): Promise<Result<KpiDefinitionView[]>>;
   kpiReport(query: ReportQuery): Promise<Result<ReportView>>;
   exportReport(format: ReportFormat): Promise<Result<ExportOutcome>>;
+  planningReport(query: PlanningQuery): Promise<Result<PlanningView>>;
 }
 
 export const CHANNELS = {
@@ -758,4 +809,5 @@ export const CHANNELS = {
   kpiDefinitions: 'mosaiq:kpi-definitions',
   kpiReport: 'mosaiq:kpi-report',
   exportReport: 'mosaiq:export-report',
+  planningReport: 'mosaiq:planning-report',
 } as const;

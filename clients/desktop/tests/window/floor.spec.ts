@@ -328,7 +328,15 @@ test('check-ins show reason and verified; an ADMIN appends a review below the ea
 
 test('screens and controls follow each role', async () => {
   let { app, page } = await launch('INVENTORY_PLANNER');
-  expect(await nav(page)).toEqual(['engagement', 'products', 'categories', 'stock', 'stores', 'services']);
+  expect(await nav(page)).toEqual([
+    'engagement',
+    'products',
+    'categories',
+    'stock',
+    'planning',
+    'stores',
+    'services',
+  ]);
   await open(page, 'engagement');
   await expect(page.locator('[data-testid=summary-table] tbody tr')).toHaveCount(3);
   await expect(page.getByTestId('event-filters')).toHaveCount(0);
@@ -344,6 +352,7 @@ test('screens and controls follow each role', async () => {
     'products',
     'categories',
     'stock',
+    'planning',
     'stores',
     'services',
   ]);

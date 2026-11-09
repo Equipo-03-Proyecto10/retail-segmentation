@@ -83,6 +83,9 @@ const REPEATED = new Set([
   'KpiDefinitions.KpiDefinition',
   'KpiDefinitions.KpiDefinition.dimensions',
   'KpiDefinitions.KpiDefinition.measures',
+  'DemandCoverageReport.rows',
+  'DemandCoverageReport.rows.segments',
+  'DemandCoverageReport.data_origin.views',
 ]);
 /** Child elements that repeat wherever they appear: error details, sale lines, summary groups, event history, check-in reviews, a campaign's allowed transitions. */
 const REPEATED_CHILDREN = new Set([

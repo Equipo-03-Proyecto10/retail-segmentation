@@ -9,6 +9,7 @@ export type ModuleName =
   | 'engagement'
   | 'check-ins'
   | 'reports'
+  | 'planning'
   | 'stores'
   | 'campaigns'
   | 'customers'
@@ -54,6 +55,7 @@ export const MODULE_GROUPS: readonly ModuleGroup[] = [
       { name: 'products', label: 'Products', operation: 'listProducts' },
       { name: 'categories', label: 'Categories', operation: 'listCategories' },
       { name: 'stock', label: 'Stock', operation: 'listStockLevels' },
+      { name: 'planning', label: 'Inventory planning', operation: 'getDemandCoverageReport' },
       { name: 'stores', label: 'Stores', operation: 'listStores' },
     ],
   },

@@ -11,6 +11,7 @@ import { Catalog } from './catalog';
 import { Customers } from './customers';
 import { Exporter, type ExportEnv } from './exports';
 import { Floor } from './floor';
+import { Planning } from './planning';
 import { Reports, type ReportExportEnv } from './reports';
 import { loadSettings } from './settings';
 import { Stores } from './stores';
@@ -104,6 +105,8 @@ function start(): void {
     reportOwner = BrowserWindow.fromWebContents(_e.sender) ?? undefined;
     return reports.exportReport(format);
   });
+  const planning = new Planning(office);
+  ipcMain.handle(CHANNELS.planningReport, (_e, query: unknown) => planning.report(query));
   // Each handler passes the renderer's values on unchanged; Catalog checks every one of them.
   const catalog = new Catalog(office);
   ipcMain.handle(CHANNELS.listProducts, (_e, query: unknown) => catalog.listProducts(query));

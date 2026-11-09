@@ -135,6 +135,7 @@ test('window is locked down', async () => {
     'listStores',
     'listUsers',
     'onStateChange',
+    'planningReport',
     'probeService',
     'reactivateUser',
     'removeStoreLocation',

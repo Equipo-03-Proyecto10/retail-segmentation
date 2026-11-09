@@ -207,3 +207,10 @@ dialog {
 .scroll {
   overflow-x: auto;
 }
+/* Inventory planning: a row short of its target cover. Marked by weight and a bar, not colour alone. */
+tr.short td {
+  font-weight: 600;
+}
+tr.short td:first-child {
+  border-left: 3px solid #8a6d00;
+}

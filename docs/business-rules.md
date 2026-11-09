@@ -910,10 +910,20 @@ transaction id names a `SEEDED` sale is refused as
 `duplicate: <id> is a seeded sale`, even when it repeats that sale's header
 exactly, so a sale's lines always share its one origin.
 
+The service import is a second enforcer of this rule
+([ADR-0070](adr/0070-a-sales-import-reaches-sales-service-as-numbered-row-chunks-under-the-64-kib-cap-and-is-processed-by-a-worker.md)).
+sales-service takes a file's rows as numbered chunks and applies each one through the
+same checks as `POST /v1/sales`, one row and one transaction at a time. Every refusal
+is reported by line, column and reason, and a repeat inside the file is told apart
+from a sale already recorded. Its sales carry the source id prefix `svc-sales:imp:`,
+and the database refuses the same file through both paths. The web's page does not
+change.
+
 **Enforced:** application — `web/services/ingestion.py` and
 `web/services/sales_csv.py`; parameterized reads in `web/db/sales.py`; the
 header lock in `get_transaction_by_source_id`; and the upper bound in
-`web/db/segments.py`. Database — `transaction.data_origin` is `NOT NULL` with
+`web/db/segments.py`. The service import's contract is
+`contracts/sales/openapi.yaml` (planned, #852) and its worker follows in #853. Database — `transaction.data_origin` is `NOT NULL` with
 no default and `CHECK IN ('OBSERVED','SEEDED')`. **Verified** — by
 `tests/test_ingestion_service.py`, `tests/test_sales_csv.py`,
 `tests/test_sales_db.py`, `tests/test_segments_pipeline_db.py` and

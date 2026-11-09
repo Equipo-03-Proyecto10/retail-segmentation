@@ -20,7 +20,7 @@ on:
   # on the default branch, so PR #953 runs it twice on its own branch.
   push:
     branches: [chore/761-one-command-all-suites]
-    paths: [.github/workflows/verify.yml]
+    paths: [.github/workflows/verify.yml, ops/verify/**]
 
 permissions:
   contents: read

@@ -152,6 +152,11 @@ def test_report_gives_cpu_pss_and_the_calibration_range(tmp_path, capsys):
     assert "Rust 100% higher" in out
     assert "| Flask | 40.0 (40.0-40.0) |" not in out
     assert "saturation per pass [20, 20, 10, 20, 20], median 20, range 10-20" in out
+    # The summary row gives Flask / twin medians, and `=` only where ranges overlap.
+    assert (
+        "| detail JSON | 14 | 2.0 / 1.0 | 4.0 / 2.0 | 6.0 / 3.0 | 20.0 / 5.0 "
+        "| 10000 / 2500 | 100 / 20 | 80 / 18 | 20 / 40 |"
+    ) in out
 
 
 def test_overlapping_ranges_are_reported_as_no_difference(tmp_path, capsys):

@@ -341,6 +341,41 @@ def print_machines(run: Path) -> None:
     print()
 
 
+def print_summary(gathered: list) -> None:
+    """One row per cell: Flask / Rust twin medians, and `=` where the ranges overlap."""
+    columns = [
+        ("p50 (ms)", "p50", 1),
+        ("p95 (ms)", "p95", 1),
+        ("p99 (ms)", "p99", 1),
+        ("CPU (% of one CPU)", "cpu", 1),
+        ("CPU (us per request)", "cpu_req", 0),
+        ("RSS peak (MiB)", "rss", 0),
+        ("PSS peak (MiB)", "pss", 0),
+        ("saturation (req/s)", "sat", 0),
+    ]
+    print("### Summary: medians, Flask / Rust twin\n")
+    print(
+        "`=` marks a measure whose Flask and Rust ranges overlap over the repetitions"
+        " (the calibration passes for saturation): no difference. The tables below give"
+        " every range.\n"
+    )
+    print("| Cell | offered (req/s) | " + " | ".join(c[0] for c in columns) + " |")
+    print("|---|---|" + "---|" * len(columns))
+    for scn, fmt, _shard, rate, data in gathered:
+        cols = []
+        for _, key, digits in columns:
+            flask, rust = data["flask"][key], data["rust"][key]
+            if not flask or not rust:
+                cols.append("n/a")
+                continue
+            mark = " =" if verdict(flask, rust) == "no difference" else ""
+            cols.append(
+                f"{statistics.median(flask):.{digits}f} / {statistics.median(rust):.{digits}f}{mark}"
+            )
+        print(f"| {scn} {fmt.upper()} | {rate} | " + " | ".join(cols) + " |")
+    print()
+
+
 def cmd_report(run: Path) -> None:
     first = facts(shards(run)[0])
     percent = float(settings(first)["fraction"])
@@ -370,6 +405,7 @@ def cmd_report(run: Path) -> None:
         ("PSS peak (MiB)", "pss", 1),
     ]
     have_resources = False
+    gathered = []
     for scn, fmt in cells(run):
         shard = locate(run, fmt, scn)
         measure_s = float(settings(facts(shard))["measure"])
@@ -392,6 +428,10 @@ def cmd_report(run: Path) -> None:
                 "sat": cal[build]["saturations"],
                 "n": len(rows),
             }
+        gathered.append((scn, fmt, shard, rate, data))
+    if any(data[b]["cpu"] for *_, data in gathered for b in BUILDS):
+        print_summary(gathered)
+    for scn, fmt, shard, rate, data in gathered:
         print(f"### {scn}, {fmt.upper()} (offered {rate} req/s)\n")
         sat = {
             "heads": ["saturation (req/s)"],

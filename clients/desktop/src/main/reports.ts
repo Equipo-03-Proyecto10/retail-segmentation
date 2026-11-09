@@ -173,6 +173,8 @@ const fail = (code: string, message: string): Result<never> => ({
 
 export class Reports {
   private last: { userId: string; report: ReportView } | null = null;
+  /** Counts report requests, so only the newest may become `last` (ADR-0077). */
+  private requests = 0;
 
   constructor(
     private readonly office: Backoffice,
@@ -194,6 +196,8 @@ export class Reports {
   }
 
   report(raw: unknown): Promise<Result<ReportView>> {
+    this.requests += 1;
+    const request = this.requests;
     this.last = null;
     return checked(this.office, async () => {
       const query = checkedQuery(raw);
@@ -261,7 +265,9 @@ export class Reports {
         rows: views,
         rows_total: Math.max(total, views.length),
       };
-      this.last = { userId: who.userId, report };
+      // An older request that finishes after a newer one must not replace it:
+      // the screen shows the newest, and the export must match the screen.
+      if (request === this.requests) this.last = { userId: who.userId, report };
       return { ok: true, value: report };
     });
   }

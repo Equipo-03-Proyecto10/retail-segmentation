@@ -196,6 +196,52 @@ describe('exporting a report', () => {
     expect(pdf).toContain('SYNTHETIC');
   });
 
+  it('exports the newest report when an older request finishes after it', async () => {
+    const base = responder('AUDITOR');
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const slow: Responder = async (r) => {
+      if (!r.url.includes('/kpi-reports/net-sales')) return base(r);
+      // The older request (September) is held until the newer one has finished;
+      // the newer one (October) answers for its own period.
+      if (r.url.includes('from=2026-09-01')) {
+        await held;
+        return base(r);
+      }
+      const october = example('analytics-kpis', 'net-sales').replace(
+        '<from>2026-09-01</from>',
+        '<from>2026-10-01</from>',
+      );
+      return { status: 200, body: october };
+    };
+    const { office } = makeOffice(
+      slow,
+      new MemoryVault({ access: 'a1', refresh: 'r1', expiresAt: Date.parse('2099-01-01') }),
+    );
+    await office.signIn({ email: 'a@b.c', password: 'pw' });
+    const asked: string[] = [];
+    const env: ReportExportEnv = {
+      chooseFile: (name: string, format: ReportFormat) => {
+        asked.push(name);
+        return Promise.resolve(`/tmp/out.${format}`);
+      },
+      write: () => undefined,
+      appendLine: () => undefined,
+      now: () => new Date('2026-11-03T10:00:00Z'),
+    };
+    const reports = new Reports(office, env, '/cfg');
+    const older = reports.report(query);
+    const newer = await reports.report({ ...query, from: '2026-10-01' });
+    release();
+    expect(await older).toMatchObject({ ok: true });
+    if (!newer.ok) throw new Error('report');
+    expect(newer.value.from).toBe('2026-10-01');
+    expect(await reports.exportReport('csv')).toMatchObject({ ok: true });
+    // The file is the newest report, the one on screen, not the older one that finished last.
+    expect(asked).toEqual([`${reportFileStem(newer.value)}.csv`]);
+    expect(asked[0]).toContain('2026-10-01');
+  });
+
   it('exports nothing before a report is open, or after it failed', async () => {
     const { reports, files } = await setup('AUDITOR');
     expect(await reports.exportReport('csv')).toMatchObject({

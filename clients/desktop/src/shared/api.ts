@@ -618,6 +618,86 @@ export interface ReportView {
 
 export type ReportFormat = 'pdf' | 'csv' | 'xlsx';
 
+// ---------- sales import and data quality (F28-02, #871) ----------
+
+export type ImportStatus = 'RECEIVING' | 'PROCESSING' | 'COMPLETED' | 'CANCELLED' | 'EXPIRED';
+
+/** One import as sales-service returned it (SaleImport). The counts reconcile in every status. */
+export interface SaleImportView {
+  import_id: number;
+  status: ImportStatus;
+  contract_version: number;
+  total_rows: number;
+  chunk_count: number;
+  /** The lowest chunk the service has not staged: where a client resumes. */
+  next_sequence: number;
+  /** Rows staged: received = accepted + rejected + pending. */
+  received: number;
+  accepted: number;
+  rejected: number;
+  pending: number;
+  created_at: string;
+  /** Set in COMPLETED, CANCELLED and EXPIRED. */
+  finished_at?: string;
+  created_by: string;
+}
+
+export interface ImportQuery {
+  page?: number;
+  size?: number;
+}
+
+export type DuplicateKind = 'FILE' | 'RECORDED_SALE';
+
+/** A row the import refused. field is absent when the row as a whole is at fault. */
+export interface ImportRejectionView {
+  line: number;
+  field?: string;
+  code: string;
+  message: string;
+  /** On duplicate_row only: a repeat inside the file, or a sale recorded before this import began. */
+  duplicate_of?: DuplicateKind;
+  /** With FILE: the first line of the file, an accepted one, that the row repeats. */
+  first_line?: number;
+  /** With RECORDED_SALE: the recorded sale, when the service knows it. */
+  sale_id?: number;
+}
+
+export interface ImportRejectionQuery {
+  import_id: number;
+  page?: number;
+  size?: number;
+}
+
+/** What the main process read from the chosen file. The renderer never receives its rows. */
+export interface ImportFileView {
+  /** The file's name, without its folder. */
+  name: string;
+  size_bytes: number;
+  /** Data lines sent, the header excluded. */
+  total_rows: number;
+  chunk_count: number;
+  /** Empty lines in the file; they are not rows and are not sent. */
+  blank_lines: number;
+}
+
+export type ImportPhase = 'creating' | 'sending' | 'processing' | 'paused' | 'failed' | 'finished';
+
+/** The import this console is running, as the main process holds it. */
+export interface ImportRunView {
+  phase: ImportPhase;
+  file_name: string;
+  total_rows: number;
+  chunk_count: number;
+  /** Chunks the service has staged. */
+  chunks_staged: number;
+  import?: SaleImportView;
+  /** Why the run stopped, as returned. */
+  error?: ErrorView;
+  /** The file is still held and the import can continue where the service says. */
+  can_resume: boolean;
+}
+
 /** The named operations the renderer may call; there is no generic transport. */
 export interface MosaiqBridge {
   getState(): Promise<AppState>;
@@ -692,6 +772,17 @@ export interface MosaiqBridge {
   kpiDefinitions(): Promise<Result<KpiDefinitionView[]>>;
   kpiReport(query: ReportQuery): Promise<Result<ReportView>>;
   exportReport(format: ReportFormat): Promise<Result<ExportOutcome>>;
+  /** Opens the file dialog in the main process, which reads and checks the file; null when it is cancelled. */
+  chooseImportFile(): Promise<Result<ImportFileView | null>>;
+  startImport(): Promise<Result<ImportRunView>>;
+  /** Continues an import at the chunk the service expects next, with the same file chosen again. */
+  resumeImport(importId: number): Promise<Result<ImportRunView>>;
+  /** The running import, or null. Asks no service. */
+  importProgress(): Promise<Result<ImportRunView | null>>;
+  cancelImport(importId: number): Promise<Result<SaleImportView>>;
+  listImports(query: ImportQuery): Promise<Result<Paged<SaleImportView>>>;
+  getImport(importId: number): Promise<Result<SaleImportView>>;
+  listImportRejections(query: ImportRejectionQuery): Promise<Result<Paged<ImportRejectionView>>>;
 }
 
 export const CHANNELS = {
@@ -758,4 +849,12 @@ export const CHANNELS = {
   kpiDefinitions: 'mosaiq:kpi-definitions',
   kpiReport: 'mosaiq:kpi-report',
   exportReport: 'mosaiq:export-report',
+  chooseImportFile: 'mosaiq:choose-import-file',
+  startImport: 'mosaiq:start-import',
+  resumeImport: 'mosaiq:resume-import',
+  importProgress: 'mosaiq:import-progress',
+  cancelImport: 'mosaiq:cancel-import',
+  listImports: 'mosaiq:list-imports',
+  getImport: 'mosaiq:get-import',
+  listImportRejections: 'mosaiq:list-import-rejections',
 } as const;

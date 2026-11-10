@@ -207,3 +207,29 @@ dialog {
 .scroll {
   overflow-x: auto;
 }
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+progress {
+  display: block;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+.imports {
+  list-style: none;
+  padding: 0;
+}
+.imports li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  align-items: center;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid GrayText;
+}
+.imports button {
+  margin: 0;
+}

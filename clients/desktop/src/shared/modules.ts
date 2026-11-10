@@ -15,7 +15,8 @@ export type ModuleName =
   | 'users'
   | 'audit'
   | 'transfer'
-  | 'services';
+  | 'services'
+  | 'imports';
 
 export interface ConsoleModule {
   name: ModuleName;
@@ -40,6 +41,7 @@ export const MODULE_GROUPS: readonly ModuleGroup[] = [
       { name: 'engagement', label: 'Engagement', operation: 'getEngagementSummary' },
       { name: 'check-ins', label: 'Check-ins', operation: 'listCheckIns' },
       { name: 'reports', label: 'Reports', operation: 'listKpiDefinitions' },
+      { name: 'imports', label: 'Import and data quality', operation: 'listSaleImports' },
     ],
   },
   {

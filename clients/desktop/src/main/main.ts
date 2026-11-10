@@ -11,6 +11,7 @@ import { Catalog } from './catalog';
 import { Customers } from './customers';
 import { Exporter, type ExportEnv } from './exports';
 import { Floor } from './floor';
+import { Imports, systemImportEnv } from './imports';
 import { Reports, type ReportExportEnv } from './reports';
 import { loadSettings } from './settings';
 import { Stores } from './stores';
@@ -104,6 +105,33 @@ function start(): void {
     reportOwner = BrowserWindow.fromWebContents(_e.sender) ?? undefined;
     return reports.exportReport(format);
   });
+  let importOwner: BrowserWindow | undefined;
+  // The file the import reads is the one this dialog returns; the renderer names no file.
+  const imports = new Imports(
+    office,
+    systemImportEnv(async () => {
+      const options = {
+        properties: ['openFile' as const],
+        filters: [{ name: 'CSV', extensions: ['csv'] }],
+      };
+      const picked = importOwner
+        ? await dialog.showOpenDialog(importOwner, options)
+        : await dialog.showOpenDialog(options);
+      return picked.canceled ? undefined : picked.filePaths[0];
+    }),
+    bundle,
+  );
+  ipcMain.handle(CHANNELS.chooseImportFile, (_e) => {
+    importOwner = BrowserWindow.fromWebContents(_e.sender) ?? undefined;
+    return imports.chooseFile();
+  });
+  ipcMain.handle(CHANNELS.startImport, () => imports.startImport());
+  ipcMain.handle(CHANNELS.resumeImport, (_e, importId: unknown) => imports.resumeImport(importId));
+  ipcMain.handle(CHANNELS.importProgress, () => imports.importProgress());
+  ipcMain.handle(CHANNELS.cancelImport, (_e, importId: unknown) => imports.cancelImport(importId));
+  ipcMain.handle(CHANNELS.listImports, (_e, query: unknown) => imports.listImports(query));
+  ipcMain.handle(CHANNELS.getImport, (_e, importId: unknown) => imports.getImport(importId));
+  ipcMain.handle(CHANNELS.listImportRejections, (_e, query: unknown) => imports.listRejections(query));
   // Each handler passes the renderer's values on unchanged; Catalog checks every one of them.
   const catalog = new Catalog(office);
   ipcMain.handle(CHANNELS.listProducts, (_e, query: unknown) => catalog.listProducts(query));

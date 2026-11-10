@@ -358,10 +358,13 @@ class SegmentsPath:
             token=self.token,
             content_type="application/json",
             body=json.dumps(
+                # email and phone are required and nullable; the server dates
+                # the registration.
                 {
                     "name": name,
+                    "email": None,
+                    "phone": None,
                     "registration_channel_id": channel_id,
-                    "registered_on": datetime.now(UTC).date().isoformat(),
                 }
             ).encode(),
         )

@@ -68,6 +68,24 @@ That every event is applied once, even when it is duplicated, is a property of
 the consumer kit. It is tested in
 `packages/kit-py/tests/test_streams.py::test_consumer_restarted_after_a_backlog_loses_nothing_and_applies_once`.
 
+## Before a run
+
+- **What it writes.** The tool writes as `postgres`. Its writes are test
+  writes, not business data:
+  - no-op updates such as `SET name = name`;
+  - a preference interest deleted and inserted again in one transaction;
+  - with the local-only options, empty segmentation runs, and touches of active
+    accounts that end their sessions.
+
+  No value a reader sees changes. When #764 says "Writes: none", it means
+  business data. Each touch still raises a real event that every consumer
+  group handles.
+- **Redis memory.** Look at redis-state's memory on the ops console's Redis
+  panel first. redis-state does not evict (ADR-0037), so when it is full, writes
+  fail, sessions included. A run adds about `--events` entries to each stream,
+  and the relays cap every stream at `MAXLEN ~ 10000`. Do not start a run on an
+  instance that is already close to its `maxmemory`.
+
 ## Run it on the instance
 
 From the checkout, as an operator who can run Docker:
@@ -79,8 +97,11 @@ PROPAGATION_OUT=~/propagation ops/propagation/run.sh measure --check
 ```
 
 `DATABASE_URL` must name a role that can update the captured tables and read
-every `<suffix>_events.outbox`. `ops_console` can read the streams it needs to
-read after this change's ACL line has been assembled into the aclfile.
+every `<suffix>_events.outbox`. `ops_console` can send every command the tool
+sends (`EXISTS`, `XRANGE`, `XREVRANGE`, `XINFO GROUPS`, `XPENDING`) once this
+change's ACL line has been assembled into the aclfile.
+`ops/console/tests/test_acl.py` drives the tool's real Redis calls and fails
+if one is not granted.
 
 The backlog test against `recommendations`, whose unit is `mosaiq-recommendations`:
 

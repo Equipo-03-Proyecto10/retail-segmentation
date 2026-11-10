@@ -161,10 +161,7 @@ class _StandIn(BaseHTTPRequestHandler):
         raw = json.dumps(body).encode() if body is not None else b""
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
-        correlation = self.headers.get("X-Correlation-ID") or ""
-        if not re.fullmatch(r"[A-Za-z0-9-]{1,64}", correlation):
-            correlation = str(uuid.uuid4())
-        self.send_header("X-Correlation-ID", correlation)
+        self.send_header("X-Correlation-ID", str(uuid.uuid4()))
         self.end_headers()
         self.wfile.write(raw)
 

@@ -293,7 +293,7 @@ Request:
 ```http
 ‹fill: POST /api/sales/v1/sales HTTP/2.0
 host: mosaiq.maxthecoder.online
-authorization: Bearer <masked hmac:…>
+authorization: Bearer <masked #n>
 accept: application/json
 x-correlation-id: …
 idempotency-key: …

@@ -19,7 +19,7 @@ Two commands, both printing Markdown for docs/evidence/f20-01-android-sale.md:
     MOSAIQ_F20_PASSWORD is set in the process environment.
 
 Tokens never reach the output. An ``Authorization`` value, a cookie, and any
-token or password field of a JSON body become ``<masked hmac:xxxxxxxx>``, a
+token or password field of a JSON body become ``<masked #n>``, a
 fingerprint that shows two requests carried the same token without revealing
 it. As a last guard, output that still holds something shaped like a JWT is
 refused with exit status 3. The raw HAR holds live tokens: keep it outside the
@@ -38,12 +38,9 @@ from __future__ import annotations
 import argparse
 import base64
 import getpass
-import hashlib
-import hmac
 import json
 import os
 import re
-import secrets
 import sys
 import urllib.error
 import urllib.request
@@ -91,14 +88,14 @@ class Exchange:
     response: Message
 
 
-# Random per process: fingerprints match within one run and cannot be
-# brute-forced or compared across runs.
-_FINGERPRINT_KEY = secrets.token_bytes(32)
+# Each distinct secret gets the next ordinal in this run: two requests that
+# carried the same secret show the same mark, and nothing is derived from it.
+_SEEN_SECRETS: dict[str, int] = {}
 
 
 def fingerprint(secret: str) -> str:
-    digest = hmac.new(_FINGERPRINT_KEY, secret.encode(), hashlib.sha256)
-    return f"<masked hmac:{digest.hexdigest()[:8]}>"
+    ordinal = _SEEN_SECRETS.setdefault(secret, len(_SEEN_SECRETS) + 1)
+    return f"<masked #{ordinal}>"
 
 
 def mask_header(name: str, value: str) -> str:

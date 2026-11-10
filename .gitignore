@@ -21,6 +21,11 @@ services/*/contracts/
 !.env.example
 *.pem
 service-account*.json
+# HTTP captures hold live tokens, and signing keys are never shared
+# (docs/evidence/f20-01-android-sale.md).
+*.har
+*.jks
+*.keystore
 
 # Uploaded files. The database stores the path; the bytes are not versioned.
 web/uploads/

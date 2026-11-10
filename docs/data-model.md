@@ -556,6 +556,29 @@ The sales boundary (ADR-0039, ADR-0046, F14-18) adds one relation, also in 4NF:
 
 `sales_events.outbox` is one more boundary outbox, under the outbox note above.
 
+The stock boundary (ADR-0061, ADR-0046, F21-06) adds two relations, both in 4NF:
+- **`stock.movement_request`** is keyed by `idempotency_key`, which determines
+  `request_sha256`, `recorded_by` and `accepted_at`. A request yields one
+  movement or, for a transfer, two, so these columns cannot live in
+  `stock.stock_movement` without repeating them on both rows of a transfer
+  (a 2NF/3NF anomaly: one request fact stored twice, free to disagree). The
+  key is the request's own identity, so the relation is in BCNF and has no
+  multivalued dependency.
+- **`stock.stock_movement`** is keyed by `movement_id`; every other column is a
+  fact of that one row. `quantity_before` and `quantity_after` look derivable
+  from `inventory`, but they are what the row held at `recorded_at`, and a
+  later movement must not rewrite them, so they are facts of the movement and
+  not functions of current data. `quantity_after = quantity_before +
+  quantity_delta` is a CHECK, not a stored transitive dependency to remove:
+  `quantity_after` is kept for history reads, and the CHECK stops it from
+  disagreeing. The nullable `reference`, `reason`, `counted_by`, `transfer_id`
+  and `reversal_id` are each one value for the row and apply to some types
+  only. They are not independent multivalued facts, so no 4NF decomposition
+  applies. `stock_movement_shape_check` states which each type needs and
+  forbids. A transfer's two rows share `transfer_id` and differ in store, so
+  `(transfer_id, store_id)` is unique. `reversal_id` names a sale reversal
+  without a foreign key, because reversals belong to the sales boundary.
+
 ---
 
 ## 3. Logical model
@@ -732,6 +755,41 @@ has no privilege on `sales`. A CSV header has no row here.
 | `request_sha256` | `BYTEA` | NN | `CHECK octet_length = 32` (`sale_capture_request_sha256_check`) | SHA-256 of the canonical request (the caller's `sub`, the ids, `occurred_at` in UTC, the lines sorted with two-decimal prices); a retry with the same key is compared with it |
 | `recorded_by` | `UUID` | NN | FK → `public.app_user`, `ON DELETE RESTRICT` | The token's `sub`: who recorded the sale |
 | `captured_at` | `TIMESTAMPTZ` | NN | default `now()` | When the sale was accepted |
+
+#### `stock.movement_request`
+
+One row per accepted `POST /v1/stock-movements`, written in the movement's own
+transaction. A refused request leaves no row, so it may be retried with the same key.
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `idempotency_key` | `UUID` | NN | PK | The caller's `Idempotency-Key` |
+| `request_sha256` | `BYTEA` | NN | `CHECK octet_length = 32` | SHA-256 of the caller's `sub` and the movement's fields in canonical form |
+| `recorded_by` | `UUID` | NN | FK → `public.app_user`, `ON DELETE RESTRICT` | The token's `sub` |
+| `accepted_at` | `TIMESTAMPTZ` | NN | default `now()` | When it was accepted |
+
+#### `stock.stock_movement`
+
+Append-only history of every change to `inventory` beyond a sale: `svc_stock`
+reads it, `definer_stock` inserts, nobody updates or deletes.
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `movement_id` | `BIGINT` | NN | PK, identity | Movement identifier |
+| `idempotency_key` | `UUID` | NULL | FK → `stock.movement_request`; NULL only for `RESTOCK` | The request that made it |
+| `movement_type` | `TEXT` | NN | `RECEIPT`, `TRANSFER`, `COUNT`, `ADJUSTMENT`, `RESTOCK` | What kind of change |
+| `store_id` | `SMALLINT` | NN | FK → `public.store`, `ON DELETE CASCADE` | The store whose quantity changed |
+| `product_id` | `INT` | NN | FK → `public.product`, `ON DELETE CASCADE` | The product |
+| `quantity_delta` | `INT` | NN | per-type CHECK | The change this row applied |
+| `quantity_before`, `quantity_after` | `INT` | NN | `>= 0`; after = before + delta | On-hand around the change |
+| `transfer_id` | `UUID` | NULL | unique with `store_id` | Shared by a transfer's two rows |
+| `reference` | `TEXT` | NULL | not blank for a receipt | Delivery note |
+| `reason` | `TEXT` | NULL | `DAMAGE`, `LOSS`, `EXPIRY`, `CORRECTION`; required for an adjustment | Why |
+| `counted_by` | `TEXT` | NULL | not blank for a count | Who counted |
+| `note` | `TEXT` | NULL | — | Free note |
+| `reversal_id` | `BIGINT` | NULL | required for `RESTOCK` | The sale reversal that returned the units |
+| `recorded_by` | `UUID` | NULL | FK → `public.app_user`; NULL only for `RESTOCK` | Who posted it |
+| `recorded_at` | `TIMESTAMPTZ` | NN | default `now()` | When |
 
 #### `segment_rule`
 

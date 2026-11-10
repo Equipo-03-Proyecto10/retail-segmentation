@@ -29,6 +29,8 @@
 |---|---|---|---|
 | GET | `/v1/stock-levels` | Stock levels (`store_id`, `product_id`, `below`, `page`, `size`) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, INVENTORY_PLANNER, AUDITOR |
 | GET | `/v1/stock-levels/{store_id}/{product_id}` | One level (E-03) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, INVENTORY_PLANNER, AUDITOR |
+| POST | `/v1/stock-movements` | Record a receipt, transfer, count or adjustment (`Idempotency-Key` required; ADR-0061) | ADMIN, INVENTORY_PLANNER |
+| GET | `/v1/stock-movements`, `/v1/stock-movements/{movement_id}` | Movement history | ADMIN, INVENTORY_PLANNER, AUDITOR |
 
 Roles follow the [service operation policy](../requirements.md#service-operation-policy-distributed-stage). Meta routes (no token): `GET /health/live`, `GET /health/ready`, `GET /openapi.yaml`, `GET /schema.xsd`.
 
@@ -38,8 +40,10 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 | Object | Kind | Access | Notes |
 |---|---|---|---|
-| `inventory` | Table (`public`) | R: SELECT. The web's CSV path is a writer (E-09) | `consume_v1` is the only service write |
+| `inventory` | Table (`public`) | R: SELECT. The web's CSV path is a writer (E-09) | Services write it only through `consume_v1` and `stock.record_movement` (ADR-0061) |
 | `api_stock.consume_v1` | Function | Owned by `definer_stock`: SELECT on `inventory`, UPDATE of `quantity_on_hand` and `updated_at` | EXECUTE to `svc_sales` only |
+| `stock.stock_movement`, `stock.movement_request` | Tables (`stock` schema) | `svc_stock` reads movements; `definer_stock` inserts through `stock.record_movement` | Append-only history and idempotency memory (F21-06) |
+| `stock.record_movement` | Function | Owned by `definer_stock`: INSERT and SELECT on both movement tables, INSERT on `inventory` plus the UPDATE above | EXECUTE to `svc_stock` only |
 | `stock_events.outbox` | Table (outbox) | SELECT, UPDATE of `relayed_at`, DELETE (7-day purge) | Filled by `definer_stock`; seed-exempt runtime state |
 
 ## Database contracts

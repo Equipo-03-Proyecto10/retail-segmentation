@@ -702,6 +702,49 @@ SELECT s, p, 10 + ((s+p) % 90)
 FROM generate_series(1,30) s
 CROSS JOIN generate_series(1,5) p;
 
+-- ---------- stock.movement_request, stock.stock_movement (30 requests, 35 rows) ----------
+-- The movements of the last thirty days, applied through the function the
+-- service calls, so each row and its inventory change are consistent: fifteen
+-- receipts of product 1, five transfers of product 2 (two rows each, so thirty
+-- requests make thirty-five movements), five counts of product 3 and five
+-- adjustments of product 4. They are on top of the opening stock above, so
+-- on-hand equals opening stock plus movements (ADR-0061).
+DO $seed$
+DECLARE
+    admin constant uuid := '11111111-1111-1111-1111-000000000001';
+    reasons constant text[] := ARRAY['DAMAGE', 'LOSS', 'EXPIRY', 'CORRECTION', 'DAMAGE'];
+    n integer;
+    k uuid;
+BEGIN
+    FOR n IN 1..30 LOOP
+        k := md5('seed-stock-request-' || n)::uuid;
+        IF n <= 15 THEN
+            PERFORM stock.record_movement(k, 'seed-' || n, admin, 'RECEIPT',
+                n::smallint, NULL, 1, 20, 'DN-2026-' || lpad(n::text, 4, '0'), NULL, NULL,
+                'Delivery received at the dock');
+        ELSIF n <= 20 THEN
+            PERFORM stock.record_movement(k, 'seed-' || n, admin, 'TRANSFER',
+                (n - 15)::smallint, (n - 5)::smallint, 2, 5, NULL, NULL, NULL,
+                'Rebalancing between stores');
+        ELSIF n <= 25 THEN
+            PERFORM stock.record_movement(k, 'seed-' || n, admin, 'COUNT',
+                (n - 20)::smallint, NULL, 3, 40 + n, NULL, NULL, 'Seed counter',
+                'Quarterly count');
+        ELSE
+            PERFORM stock.record_movement(k, 'seed-' || n, admin, 'ADJUSTMENT',
+                (n - 25)::smallint, NULL, 4, -2, NULL, reasons[n - 25], NULL,
+                'Written off after inspection');
+        END IF;
+        UPDATE stock.movement_request
+           SET accepted_at = now() - make_interval(days => 31 - n)
+         WHERE idempotency_key = k;
+        UPDATE stock.stock_movement
+           SET recorded_at = now() - make_interval(days => 31 - n)
+         WHERE idempotency_key = k;
+    END LOOP;
+END
+$seed$;
+
 -- ---------- sales_load (30 uploads of 10 accepted sales each) ----------
 -- Sales CSV uploads by the administrator (F8-01, #334): one a day for the last
 -- thirty days, version 1 of the contract. Each accepted ten sales, 300 in all,

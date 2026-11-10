@@ -163,7 +163,6 @@ paths:
 
         Roles. Only `ADMIN` and `INVENTORY_PLANNER` write.'
       operationId: recordStockMovement
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - INVENTORY_PLANNER
@@ -276,7 +275,6 @@ paths:
         descending). `store_id` matches the movement's own store, so a transfer shows under both stores.
         `from` and `to` bound `recorded_at` (RFC 3339 with an offset, `from` inclusive, `to` exclusive).
       operationId: listStockMovements
-      x-mosaiq-status: planned
       x-mosaiq-roles: &id008
       - ADMIN
       - INVENTORY_PLANNER
@@ -327,7 +325,6 @@ paths:
       summary: Get one stock movement
       description: Returns one movement row. A transfer's two rows are two movements sharing a `transfer_id`.
       operationId: getStockMovement
-      x-mosaiq-status: planned
       x-mosaiq-roles: *id008
       parameters:
       - *id006

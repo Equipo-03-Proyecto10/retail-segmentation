@@ -15,6 +15,8 @@ use mosaiq_kit::{
 use redis::aio::MultiplexedConnection;
 use tokio_postgres::{GenericClient, Row};
 
+pub mod movements;
+
 const SERVICE: &str = "stock";
 pub const SUFFIX: &str = "stock";
 pub const STREAM: &str = "stream:stock.v1.changed";
@@ -67,6 +69,7 @@ pub struct StockPage {
 
 tokio::task_local! {
     static QUERY: HashMap<String, String>;
+    static IDEMPOTENCY_KEY: Option<String>;
 }
 
 fn invalid_query(fields: Vec<&str>) -> ApiError {
@@ -125,7 +128,14 @@ async fn capture_query(request: Request, next: Next) -> Response {
                 .collect()
         })
         .unwrap_or_default();
-    QUERY.scope(values, next.run(request)).await
+    let key = request
+        .headers()
+        .get("Idempotency-Key")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    QUERY
+        .scope(values, IDEMPOTENCY_KEY.scope(key, next.run(request)))
+        .await
 }
 
 pub async fn read_stock_levels<C>(
@@ -248,6 +258,66 @@ fn stock_level_not_found() -> ApiError {
     )
 }
 
+async fn record_stock_movement(ctx: Ctx) -> Result<Reply, ApiError> {
+    let key = IDEMPOTENCY_KEY.try_with(Clone::clone).unwrap_or_default();
+    let key = movements::parse_idempotency_key(key.as_deref())?;
+    let principal = ctx
+        .principal()
+        .ok_or_else(|| ApiError::new(401, "invalid_token", "The bearer token is invalid."))?;
+    let sub = movements::caller(&principal.sub)?;
+    let body = ctx.body.as_ref().expect("contract requires a body");
+    let request = movements::parse_movement(body)?;
+    let mut connection = ctx.db().connection().await?;
+    let transaction = connection.transaction(Some(principal)).await?;
+    let (recorded, replayed) =
+        movements::record_movement(&*transaction, key, sub, &request).await?;
+    transaction.commit().await?;
+    let items: Vec<Value> = recorded
+        .iter()
+        .map(|movement| Value::Object(movement.representation()))
+        .collect();
+    let mut reply = Representation::new("StockMovementRecord", [("movements", Value::List(items))]);
+    reply = if replayed {
+        reply.status(200).header("Idempotent-Replayed", "true")
+    } else {
+        reply.status(201)
+    };
+    Ok(reply.into())
+}
+
+async fn list_stock_movements(ctx: Ctx) -> Result<Reply, ApiError> {
+    let query = QUERY.try_with(Clone::clone).unwrap_or_default();
+    let filters = movements::parse_movement_filters(&query)?;
+    let connection = ctx.db().connection().await?;
+    let result = movements::read_movements(&***connection, &filters, ctx.page, ctx.size).await?;
+    let items = result
+        .movements
+        .iter()
+        .map(movements::Movement::representation)
+        .collect();
+    Ok(Page::new(
+        "StockMovements",
+        "StockMovement",
+        "stock_movements",
+        items,
+        ctx.page,
+        result.total,
+    )
+    .size(ctx.size)
+    .into())
+}
+
+async fn get_stock_movement(ctx: Ctx) -> Result<Reply, ApiError> {
+    let movement_id = ctx.path_i64("movement_id");
+    let connection = ctx.db().connection().await?;
+    let movement = match movement_id {
+        Some(id) => movements::read_movement(&***connection, id).await?,
+        None => None,
+    };
+    let movement = movement.ok_or_else(|| movements::stock_movement_not_found(movement_id))?;
+    Ok(Representation::new("StockMovement", movement.representation()).into())
+}
+
 async fn database_ready(db: Arc<Database>) -> bool {
     let Ok(connection) = db.connection().await else {
         return false;
@@ -265,6 +335,9 @@ pub fn router(config: KitConfig, contracts: &str) -> Result<Router, Box<dyn std:
     Ok(Kit::new(SERVICE, SUFFIX, contracts, config)?
         .operation("listStockLevels", list_stock_levels)?
         .operation("getStockLevel", get_stock_level)?
+        .operation("recordStockMovement", record_stock_movement)?
+        .operation("listStockMovements", list_stock_movements)?
+        .operation("getStockMovement", get_stock_movement)?
         .ready_check(database_ready)
         .into_router()
         .layer(middleware::from_fn(capture_query)))

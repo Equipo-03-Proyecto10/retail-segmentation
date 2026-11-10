@@ -77,6 +77,8 @@ svc_stock,stock_events.outbox(relayed_at),UPDATE
 svc_stock,stock_events.outbox,DELETE
 svc_stock,api_stock,USAGE
 svc_stock,api_stock.stock_level_v1,SELECT
+svc_stock,stock,USAGE
+svc_stock,stock.stock_movement,SELECT
 svc_recommendations,api_stock,USAGE
 svc_recommendations,api_stock.stock_level_v1,SELECT
 svc_sales,api_stock,USAGE
@@ -87,6 +89,12 @@ definer_stock,public.inventory(updated_at),UPDATE
 definer_stock,stock_events,USAGE
 definer_stock,stock_events.outbox,INSERT
 definer_stock,"api_stock.consume_v1(smallint,integer,integer)",EXECUTE
+definer_stock,public.inventory,INSERT
+definer_stock,stock,USAGE
+definer_stock,stock.movement_request,INSERT
+definer_stock,stock.movement_request,SELECT
+definer_stock,stock.stock_movement,INSERT
+definer_stock,stock.stock_movement,SELECT
 svc_stores,public.store,SELECT
 svc_stores,stores,USAGE
 svc_stores,stores.store_location,SELECT

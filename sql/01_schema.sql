@@ -1771,6 +1771,319 @@ GRANT UPDATE (relayed_at) ON stock_events.outbox TO svc_stock;
 GRANT USAGE ON SCHEMA api_stock TO svc_stock, svc_recommendations, svc_sales;
 GRANT SELECT ON api_stock.stock_level_v1 TO svc_stock, svc_recommendations;
 GRANT EXECUTE ON FUNCTION api_stock.consume_v1(smallint, integer, integer) TO svc_sales;
+-- ---------- stock movements (F21-06, ADR-0061, ADR-0046) ----------
+-- A recorded movement is the only way beyond a sale or its reversal to change
+-- on-hand, so the movement and its inventory change commit together or not at
+-- all. Tables live in the stock service schema, never in public.
+CREATE SCHEMA IF NOT EXISTS stock;
+REVOKE ALL ON SCHEMA stock FROM PUBLIC;
+
+-- One row per accepted request, kept so a retry is recognised. The key is a
+-- UUID the caller makes once per movement; request_sha256 is the hash of the
+-- caller's sub and the movement's fields in canonical form, so the same key
+-- with other fields is refused. Only accepted requests are written: a refused
+-- one rolls this row back with everything else (ADR-0061).
+CREATE TABLE IF NOT EXISTS stock.movement_request (
+    idempotency_key uuid PRIMARY KEY,
+    request_sha256  bytea NOT NULL
+        CONSTRAINT movement_request_sha256_check
+        CHECK (octet_length(request_sha256) = 32),
+    recorded_by     uuid NOT NULL
+        REFERENCES public.app_user (user_id) ON DELETE RESTRICT,
+    accepted_at     timestamptz NOT NULL DEFAULT now()
+);
+
+-- Append-only: no service role holds UPDATE or DELETE. A mistake is corrected
+-- by a later movement. A transfer is two rows sharing transfer_id and one
+-- request. before and after are facts of the moment, not functions of current
+-- inventory, so they are stored. reversal_id names a sale reversal without a
+-- foreign key: reversals are recorded by sales, in its own boundary.
+CREATE TABLE IF NOT EXISTS stock.stock_movement (
+    movement_id      bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    idempotency_key  uuid
+        REFERENCES stock.movement_request (idempotency_key) ON DELETE RESTRICT,
+    movement_type    text NOT NULL
+        CONSTRAINT stock_movement_type_check
+        CHECK (movement_type IN ('RECEIPT', 'TRANSFER', 'COUNT', 'ADJUSTMENT', 'RESTOCK')),
+    store_id         smallint NOT NULL
+        REFERENCES public.store (store_id) ON DELETE CASCADE,
+    product_id       integer NOT NULL
+        REFERENCES public.product (product_id) ON DELETE CASCADE,
+    quantity_delta   integer NOT NULL,
+    quantity_before  integer NOT NULL
+        CONSTRAINT stock_movement_before_check CHECK (quantity_before >= 0),
+    quantity_after   integer NOT NULL
+        CONSTRAINT stock_movement_after_check CHECK (quantity_after >= 0),
+    transfer_id      uuid,
+    reference        text,
+    reason           text
+        CONSTRAINT stock_movement_reason_check
+        CHECK (reason IS NULL OR reason IN ('DAMAGE', 'LOSS', 'EXPIRY', 'CORRECTION')),
+    counted_by       text,
+    note             text,
+    reversal_id      bigint,
+    recorded_by      uuid
+        REFERENCES public.app_user (user_id) ON DELETE RESTRICT,
+    recorded_at      timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT stock_movement_balance_check
+        CHECK (quantity_after::bigint = quantity_before::bigint + quantity_delta::bigint),
+    -- What each type must state, and what it must not carry.
+    CONSTRAINT stock_movement_shape_check CHECK (
+        CASE movement_type
+            WHEN 'RECEIPT' THEN quantity_delta > 0 AND btrim(coalesce(reference, '')) <> ''
+                AND transfer_id IS NULL AND reason IS NULL AND counted_by IS NULL
+                AND reversal_id IS NULL AND recorded_by IS NOT NULL
+            WHEN 'TRANSFER' THEN quantity_delta <> 0 AND transfer_id IS NOT NULL
+                AND reference IS NULL AND reason IS NULL AND counted_by IS NULL
+                AND reversal_id IS NULL AND recorded_by IS NOT NULL
+            WHEN 'COUNT' THEN btrim(coalesce(counted_by, '')) <> ''
+                AND transfer_id IS NULL AND reference IS NULL AND reason IS NULL
+                AND reversal_id IS NULL AND recorded_by IS NOT NULL
+            WHEN 'ADJUSTMENT' THEN quantity_delta <> 0 AND reason IS NOT NULL
+                AND transfer_id IS NULL AND reference IS NULL AND counted_by IS NULL
+                AND reversal_id IS NULL AND recorded_by IS NOT NULL
+            WHEN 'RESTOCK' THEN quantity_delta > 0 AND reversal_id IS NOT NULL
+                AND transfer_id IS NULL AND reference IS NULL AND reason IS NULL
+                AND counted_by IS NULL AND recorded_by IS NULL
+        END
+    ),
+    -- Every row but a restock came from an accepted request.
+    CONSTRAINT stock_movement_request_check
+        CHECK ((movement_type = 'RESTOCK') = (idempotency_key IS NULL))
+);
+
+-- A transfer holds one row per store, and a reversal restocks a pair once
+-- (api_stock.restock_v1 names the second index in its error contract).
+CREATE UNIQUE INDEX IF NOT EXISTS stock_movement_transfer_store
+    ON stock.stock_movement (transfer_id, store_id) WHERE transfer_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS restock_already_recorded
+    ON stock.stock_movement (reversal_id, store_id, product_id) WHERE movement_type = 'RESTOCK';
+CREATE INDEX IF NOT EXISTS stock_movement_recorded
+    ON stock.stock_movement (recorded_at DESC, movement_id DESC);
+CREATE INDEX IF NOT EXISTS stock_movement_pair_recorded
+    ON stock.stock_movement (store_id, product_id, recorded_at DESC);
+CREATE INDEX IF NOT EXISTS stock_movement_request
+    ON stock.stock_movement (idempotency_key) WHERE idempotency_key IS NOT NULL;
+
+-- Changes one inventory row by delta and says what it held before and after.
+-- Subtracting is a conditional UPDATE, as consume_v1 does, so two movements on
+-- one row add up and nothing goes below zero. Adding is one upsert, so the
+-- record is created when absent and a concurrent add cannot be lost. Not
+-- SECURITY DEFINER itself: it runs only inside record_movement, as its owner.
+CREATE OR REPLACE FUNCTION stock.apply_delta(
+    p_store_id smallint,
+    p_product_id integer,
+    p_delta integer,
+    OUT quantity_before integer,
+    OUT quantity_after integer
+) RETURNS record
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $apply$
+BEGIN
+    IF p_delta > 0 THEN
+        INSERT INTO inventory AS i (store_id, product_id, quantity_on_hand)
+        VALUES (p_store_id, p_product_id, p_delta)
+        ON CONFLICT (store_id, product_id) DO UPDATE
+           SET quantity_on_hand = i.quantity_on_hand + EXCLUDED.quantity_on_hand,
+               updated_at = now()
+        RETURNING i.quantity_on_hand INTO quantity_after;
+        quantity_before := quantity_after - p_delta;
+        RETURN;
+    END IF;
+
+    UPDATE inventory AS i
+       SET quantity_on_hand = i.quantity_on_hand + p_delta,
+           updated_at = now()
+     WHERE i.store_id = p_store_id
+       AND i.product_id = p_product_id
+       AND i.quantity_on_hand >= -p_delta
+     RETURNING i.quantity_on_hand INTO quantity_after;
+    IF FOUND THEN
+        quantity_before := quantity_after - p_delta;
+        RETURN;
+    END IF;
+
+    SELECT i.quantity_on_hand INTO quantity_before
+      FROM inventory AS i
+     WHERE i.store_id = p_store_id AND i.product_id = p_product_id
+       FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'no stock record for store % and product %', p_store_id, p_product_id
+            USING ERRCODE = '23514', CONSTRAINT = 'no_stock_record';
+    END IF;
+    RAISE EXCEPTION 'only % units are available', quantity_before
+        USING ERRCODE = '23514', CONSTRAINT = 'stock_unavailable';
+END
+$apply$;
+ALTER FUNCTION stock.apply_delta(smallint, integer, integer) OWNER TO definer_stock;
+REVOKE EXECUTE ON FUNCTION stock.apply_delta(smallint, integer, integer) FROM PUBLIC;
+
+-- Applies one request: the movement row(s) and the inventory change in the
+-- caller's one transaction. Returns the movement ids, a transfer's origin
+-- first, and whether the key had already been accepted. A replay with the same
+-- canonical request changes nothing; the same key with another one is refused
+-- (23505, idempotency_key_reused). The caller validates what each type must
+-- state; the table's CHECKs are the second line. A transfer touches its two
+-- rows in ascending store order, so two opposite transfers cannot deadlock.
+CREATE OR REPLACE FUNCTION stock.record_movement(
+    p_idempotency_key uuid,
+    p_request text,
+    p_recorded_by uuid,
+    p_movement_type text,
+    p_store_id smallint,
+    p_destination_store_id smallint,
+    p_product_id integer,
+    p_quantity integer,
+    p_reference text,
+    p_reason text,
+    p_counted_by text,
+    p_note text,
+    OUT movement_ids bigint[],
+    OUT replayed boolean
+) RETURNS record
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $record$
+DECLARE
+    hash bytea := sha256(convert_to(p_request, 'UTF8'));
+    stored bytea;
+    before_quantity integer;
+    applied record;
+    destination record;
+    origin record;
+    transfer uuid;
+    id bigint;
+BEGIN
+    IF p_idempotency_key IS NULL OR p_recorded_by IS NULL OR p_request IS NULL
+       OR p_store_id IS NULL OR p_product_id IS NULL OR p_quantity IS NULL THEN
+        RAISE EXCEPTION 'a movement needs its key, author, store, product and quantity'
+            USING ERRCODE = '22023';
+    END IF;
+
+    INSERT INTO stock.movement_request (idempotency_key, request_sha256, recorded_by)
+    VALUES (p_idempotency_key, hash, p_recorded_by)
+    ON CONFLICT (idempotency_key) DO NOTHING;
+    IF NOT FOUND THEN
+        SELECT r.request_sha256 INTO stored
+          FROM stock.movement_request AS r
+         WHERE r.idempotency_key = p_idempotency_key;
+        IF stored IS DISTINCT FROM hash THEN
+            RAISE EXCEPTION 'the idempotency key was used for a different movement'
+                USING ERRCODE = '23505', CONSTRAINT = 'idempotency_key_reused';
+        END IF;
+        SELECT array_agg(m.movement_id ORDER BY m.movement_id) INTO movement_ids
+          FROM stock.stock_movement AS m
+         WHERE m.idempotency_key = p_idempotency_key;
+        replayed := true;
+        RETURN;
+    END IF;
+
+    movement_ids := ARRAY[]::bigint[];
+    replayed := false;
+
+    IF p_movement_type = 'RECEIPT' THEN
+        IF p_quantity <= 0 THEN
+            RAISE EXCEPTION 'quantity must be greater than zero' USING ERRCODE = '22023';
+        END IF;
+        applied := stock.apply_delta(p_store_id, p_product_id, p_quantity);
+        INSERT INTO stock.stock_movement (idempotency_key, movement_type, store_id, product_id,
+               quantity_delta, quantity_before, quantity_after, reference, note, recorded_by)
+        VALUES (p_idempotency_key, 'RECEIPT', p_store_id, p_product_id, p_quantity,
+                applied.quantity_before, applied.quantity_after, p_reference, p_note,
+                p_recorded_by)
+        RETURNING movement_id INTO id;
+        movement_ids := movement_ids || id;
+
+    ELSIF p_movement_type = 'ADJUSTMENT' THEN
+        IF p_quantity = 0 THEN
+            RAISE EXCEPTION 'an adjustment changes the quantity' USING ERRCODE = '22023';
+        END IF;
+        applied := stock.apply_delta(p_store_id, p_product_id, p_quantity);
+        INSERT INTO stock.stock_movement (idempotency_key, movement_type, store_id, product_id,
+               quantity_delta, quantity_before, quantity_after, reason, note, recorded_by)
+        VALUES (p_idempotency_key, 'ADJUSTMENT', p_store_id, p_product_id, p_quantity,
+                applied.quantity_before, applied.quantity_after, p_reason, p_note,
+                p_recorded_by)
+        RETURNING movement_id INTO id;
+        movement_ids := movement_ids || id;
+
+    ELSIF p_movement_type = 'COUNT' THEN
+        IF p_quantity < 0 THEN
+            RAISE EXCEPTION 'a count is zero or more' USING ERRCODE = '22023';
+        END IF;
+        INSERT INTO inventory (store_id, product_id, quantity_on_hand)
+        VALUES (p_store_id, p_product_id, p_quantity)
+        ON CONFLICT (store_id, product_id) DO NOTHING;
+        IF FOUND THEN
+            before_quantity := 0;
+        ELSE
+            SELECT i.quantity_on_hand INTO before_quantity
+              FROM inventory AS i
+             WHERE i.store_id = p_store_id AND i.product_id = p_product_id
+               FOR UPDATE;
+            UPDATE inventory AS i
+               SET quantity_on_hand = p_quantity, updated_at = now()
+             WHERE i.store_id = p_store_id AND i.product_id = p_product_id;
+        END IF;
+        INSERT INTO stock.stock_movement (idempotency_key, movement_type, store_id, product_id,
+               quantity_delta, quantity_before, quantity_after, counted_by, note, recorded_by)
+        VALUES (p_idempotency_key, 'COUNT', p_store_id, p_product_id,
+                p_quantity - before_quantity, before_quantity, p_quantity, p_counted_by, p_note,
+                p_recorded_by)
+        RETURNING movement_id INTO id;
+        movement_ids := movement_ids || id;
+
+    ELSIF p_movement_type = 'TRANSFER' THEN
+        IF p_destination_store_id IS NULL OR p_quantity <= 0 THEN
+            RAISE EXCEPTION 'a transfer needs a destination and a positive quantity'
+                USING ERRCODE = '22023';
+        END IF;
+        IF p_destination_store_id = p_store_id THEN
+            RAISE EXCEPTION 'a transfer needs two different stores' USING ERRCODE = '22023';
+        END IF;
+        transfer := gen_random_uuid();
+        IF p_store_id < p_destination_store_id THEN
+            origin := stock.apply_delta(p_store_id, p_product_id, -p_quantity);
+            destination := stock.apply_delta(p_destination_store_id, p_product_id, p_quantity);
+        ELSE
+            destination := stock.apply_delta(p_destination_store_id, p_product_id, p_quantity);
+            origin := stock.apply_delta(p_store_id, p_product_id, -p_quantity);
+        END IF;
+        INSERT INTO stock.stock_movement (idempotency_key, movement_type, store_id, product_id,
+               quantity_delta, quantity_before, quantity_after, transfer_id, note, recorded_by)
+        VALUES (p_idempotency_key, 'TRANSFER', p_store_id, p_product_id, -p_quantity,
+                origin.quantity_before, origin.quantity_after, transfer, p_note, p_recorded_by)
+        RETURNING movement_id INTO id;
+        movement_ids := movement_ids || id;
+        INSERT INTO stock.stock_movement (idempotency_key, movement_type, store_id, product_id,
+               quantity_delta, quantity_before, quantity_after, transfer_id, note, recorded_by)
+        VALUES (p_idempotency_key, 'TRANSFER', p_destination_store_id, p_product_id, p_quantity,
+                destination.quantity_before, destination.quantity_after, transfer, p_note,
+                p_recorded_by)
+        RETURNING movement_id INTO id;
+        movement_ids := movement_ids || id;
+
+    ELSE
+        RAISE EXCEPTION 'unknown movement type %', p_movement_type USING ERRCODE = '22023';
+    END IF;
+END
+$record$;
+ALTER FUNCTION stock.record_movement(uuid, text, uuid, text, smallint, smallint, integer, integer,
+    text, text, text, text) OWNER TO definer_stock;
+REVOKE EXECUTE ON FUNCTION stock.record_movement(uuid, text, uuid, text, smallint, smallint,
+    integer, integer, text, text, text, text) FROM PUBLIC;
+
+-- A movement is stock-service's own: only svc_stock reads the history, and
+-- only definer_stock writes it. Each is a row of contracts/db/grants.csv.
+GRANT USAGE ON SCHEMA stock TO svc_stock, definer_stock;
+GRANT SELECT ON stock.stock_movement TO svc_stock;
+GRANT SELECT, INSERT ON stock.stock_movement, stock.movement_request TO definer_stock;
+GRANT INSERT ON public.inventory TO definer_stock;
+GRANT EXECUTE ON FUNCTION stock.record_movement(uuid, text, uuid, text, smallint, smallint,
+    integer, integer, text, text, text, text) TO svc_stock;
+GRANT EXECUTE ON FUNCTION stock.apply_delta(smallint, integer, integer) TO definer_stock;
 -- END BOUNDARY stock
 
 -- BEGIN BOUNDARY stores

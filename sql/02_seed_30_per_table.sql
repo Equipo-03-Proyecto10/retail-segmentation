@@ -708,11 +708,16 @@ CROSS JOIN generate_series(1,5) p;
 -- receipts of product 1, five transfers of product 2 (two rows each, so thirty
 -- requests make thirty-five movements), five counts of product 3 and five
 -- adjustments of product 4. They are on top of the opening stock above, so
--- on-hand equals opening stock plus movements (ADR-0061).
+-- on-hand equals opening stock plus movements (ADR-0061). The movements go to
+-- the twenty stores no golden case reads: stores 1, 2, 5, 11, 14, 17, 20, 24,
+-- 26 and 29 keep their opening stock, which the sales and recommendations
+-- fixtures were captured against (ADR-0045, tests/golden/).
 DO $seed$
 DECLARE
     admin constant uuid := '11111111-1111-1111-1111-000000000001';
     reasons constant text[] := ARRAY['DAMAGE', 'LOSS', 'EXPIRY', 'CORRECTION', 'DAMAGE'];
+    stores constant smallint[] := ARRAY[3, 4, 6, 7, 8, 9, 10, 12, 13, 15, 16, 18, 19, 21, 22,
+        23, 25, 27, 28, 30];
     n integer;
     k uuid;
 BEGIN
@@ -720,19 +725,19 @@ BEGIN
         k := md5('seed-stock-request-' || n)::uuid;
         IF n <= 15 THEN
             PERFORM stock.record_movement(k, 'seed-' || n, admin, 'RECEIPT',
-                n::smallint, NULL, 1, 20, 'DN-2026-' || lpad(n::text, 4, '0'), NULL, NULL,
+                stores[n], NULL, 1, 20, 'DN-2026-' || lpad(n::text, 4, '0'), NULL, NULL,
                 'Delivery received at the dock');
         ELSIF n <= 20 THEN
             PERFORM stock.record_movement(k, 'seed-' || n, admin, 'TRANSFER',
-                (n - 15)::smallint, (n - 5)::smallint, 2, 5, NULL, NULL, NULL,
+                stores[n - 15], stores[n - 5], 2, 5, NULL, NULL, NULL,
                 'Rebalancing between stores');
         ELSIF n <= 25 THEN
             PERFORM stock.record_movement(k, 'seed-' || n, admin, 'COUNT',
-                (n - 20)::smallint, NULL, 3, 40 + n, NULL, NULL, 'Seed counter',
+                stores[n - 20], NULL, 3, 40 + n, NULL, NULL, 'Seed counter',
                 'Quarterly count');
         ELSE
             PERFORM stock.record_movement(k, 'seed-' || n, admin, 'ADJUSTMENT',
-                (n - 25)::smallint, NULL, 4, -2, NULL, reasons[n - 25], NULL,
+                stores[n - 25], NULL, 4, -2, NULL, reasons[n - 25], NULL,
                 'Written off after inspection');
         END IF;
         UPDATE stock.movement_request

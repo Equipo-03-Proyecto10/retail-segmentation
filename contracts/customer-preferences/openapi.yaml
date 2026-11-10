@@ -448,7 +448,8 @@ paths:
         recorded as a `HISTORY_READ` domain event of `history` `CONSENT` with the
         actor, the customer and the time, never the rows returned, and so is each 403
         (ADR-0066 section 4, ADR-0072). If that event cannot be recorded the call
-        answers 503 `database_unavailable` and returns nothing.
+        answers 503 `audit_unavailable` and returns nothing; a database that is
+        down is 503 `database_unavailable`, as for any operation.
       operationId: listConsentDecisions
       x-mosaiq-status: planned
       x-mosaiq-roles: [ADMIN, AUDITOR, STORE_MANAGER, LOYALTY_OFFICER]
@@ -494,7 +495,7 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
-          $ref: '#/components/responses/OperationUnavailable'
+          $ref: '#/components/responses/LoggedReadUnavailable'
     post:
       tags: [Preferences]
       summary: Record consent decisions
@@ -602,7 +603,8 @@ paths:
         customer: each call, and each 403, is recorded as a `HISTORY_READ` domain event
         of `history` `CONSENT` with the actor, the customer and the time, never the rows
         (ADR-0066 section 4, ADR-0072), and if the event cannot be recorded the call
-        answers 503 `database_unavailable` and returns nothing. The current restrictions
+        answers 503 `audit_unavailable` and returns nothing; a database that is down
+        is 503 `database_unavailable`, as for any operation. The current restrictions
         are `GET .../restrictions`.
       operationId: listRestrictionDecisions
       x-mosaiq-status: planned
@@ -645,7 +647,7 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
-          $ref: '#/components/responses/OperationUnavailable'
+          $ref: '#/components/responses/LoggedReadUnavailable'
     post:
       tags: [Preferences]
       summary: Record restriction decisions
@@ -1623,6 +1625,35 @@ components:
               externalValue: ./examples/auth-unavailable.xml
             database_unavailable:
               externalValue: ./examples/database-unavailable.xml
+    LoggedReadUnavailable:
+      description: >-
+        `auth_unavailable`, `database_unavailable`, or `audit_unavailable` when
+        the `HISTORY_READ` domain event of a logged read cannot be recorded
+        (ADR-0072).
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.json
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.json
+            audit_unavailable:
+              externalValue: ./examples/audit-unavailable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.xml
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.xml
+            audit_unavailable:
+              externalValue: ./examples/audit-unavailable.xml
     SchemaNotReady:
       description: '`schema_not_ready`.'
       headers:

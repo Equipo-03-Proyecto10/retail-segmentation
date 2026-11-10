@@ -87,6 +87,7 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 |---|---|---|
 | 404 | `customer_not_found` | The customer does not exist in `api_customers.customer_ref_v1` |
 | 409 | `customer_anonymized` | A decision is recorded for an anonymized customer (planned) |
+| 503 | `audit_unavailable` | A read of the consent or restriction log cannot record its `HISTORY_READ` event (planned) |
 | 422 | `invalid_query` | `as_of` or a filter is malformed, or `as_of` is in the future (planned) |
 | 422 | `unknown_channel` | A channel id references no channel (23503) |
 | 422 | `unknown_category` | A category id references no category (23503) |
@@ -136,7 +137,7 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 |---|---|
 | PostgreSQL unreachable | `/health/ready` reports not ready, and every operation that reads or writes PostgreSQL answers 503 `database_unavailable`, never 500 (ADR-0035). `/health/live` stays 200 |
 | `redis-state` full | `XADD` of `stream:preferences.v1.changed` or `stream:preferences.v1.consent_changed` fails; the outbox keeps the rows until there is room |
-| The domain event of an audited read cannot be recorded | A read of the consent or restriction log answers 503 `database_unavailable` and returns nothing (ADR-0072) |
+| The domain event of an audited read cannot be recorded | A read of the consent or restriction log answers 503 `audit_unavailable` and returns nothing (ADR-0072 section 4); a database that is down stays 503 `database_unavailable` |
 | `redis-state` unreachable or over 200 ms | Every authenticated request returns 503 `auth_unavailable`; authentication fails closed and never falls back to the signature alone |
 | Any other service down | No effect: services never call each other over HTTP |
 

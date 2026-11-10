@@ -83,6 +83,8 @@ const REPEATED = new Set([
   'KpiDefinitions.KpiDefinition',
   'KpiDefinitions.KpiDefinition.dimensions',
   'KpiDefinitions.KpiDefinition.measures',
+  'SaleImports.SaleImport',
+  'SaleImportRejections.SaleImportRejection',
 ]);
 /** Child elements that repeat wherever they appear: error details, sale lines, summary groups, event history, check-in reviews, a campaign's allowed transitions. */
 const REPEATED_CHILDREN = new Set([
@@ -124,11 +126,18 @@ const XSI = 'http://www.w3.org/2001/XMLSchema-instance';
 /** A request field: text, or null for an explicit xsi:nil (for example, make a category a root). */
 export type FieldValue = string | null;
 
-/** Builds a request body, in the given order. A list repeats its element once per value, and an empty list sends none. */
+/** One repeated child element that has children of its own (a chunk's rows). */
+export type FieldGroup = Record<string, string | string[]>;
+
+/**
+ * Builds a request body, in the given order. A list repeats its element once per value, and an
+ * empty list sends none. A list of groups repeats the element once per group, each with its own
+ * children; an empty string is sent as an empty element, so a cell keeps its position.
+ */
 export function buildXml(
   root: string,
   namespace: string,
-  fields: Record<string, FieldValue | string[]>,
+  fields: Record<string, FieldValue | string[] | FieldGroup[]>,
 ): string {
   const element: Record<string, unknown> = { '@_xmlns': namespace };
   let nil = false;

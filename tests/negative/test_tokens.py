@@ -25,6 +25,7 @@ from tests.negative.stack import (
     claims_of,
     header_of,
     hs256_with_public_key,
+    implemented_names,
     registry_names,
     resigned,
     run_last,
@@ -34,6 +35,8 @@ from tests.negative.stack import (
 )
 
 NAMES = registry_names()
+# The services a case that loops over all of them can call.
+IMPLEMENTED = implemented_names()
 
 
 @pytest.fixture(scope="session")
@@ -116,7 +119,7 @@ def test_an_access_token_past_its_exp_is_invalid_token(
     if wait > 0:
         time.sleep(wait)
     held = True
-    for name in NAMES:
+    for name in IMPLEMENTED:
         reply = _call(deployed_stack, services[name], first_token)
         held &= evidence.check(
             name, "a token auth signed, after its exp", reply, 401, "invalid_token"

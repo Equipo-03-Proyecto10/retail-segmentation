@@ -25,6 +25,7 @@ The design is governed by ADR-0034 to ADR-0046. Every service implements exactly
 | [audit-trail](./audit-trail.md) | Rust (axum) | 5015 | second | An append-only, attributed, credential-free audit readable by ADMIN and AUDITOR only | RN-28, RN-29, RN-30 |
 | [rfm-engine](./rfm-engine.md) | Flask | 5016 | third | A customer's R, F and M follow their net purchases under one rule-set version, change only for the customers an event touched, and equal a full recalculation | RN-65 |
 | [model-registry](./model-registry.md) | Flask | 5019 | third | A model version is immutable once published, carries what it was fitted on, and changes state only by an explicit publication or rollback | RN-66 |
+| [experimentation](./experimentation.md) | Flask | 5020 | third | An experiment is frozen before it assigns anyone, assignment, exposure and conversion are separate append-only facts, a sale is attributed at most once, and an effect is reported only against a control, with its uncertainty | RN-23, RN-24, RN-25, RN-27, RN-42, RN-48, RN-49, RN-67 |
 | [analytics-kpis](./analytics-kpis.md) | Rust (axum) | 5022 | third | A KPI is reported only under its published definition, window and data origin, from `api_*` objects, and only to the roles and stores allowed to read it | RN-68 |
 
 The full one-sentence rule of each service is in its sheet and in the registry of [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md).

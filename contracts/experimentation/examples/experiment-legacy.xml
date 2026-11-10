@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Experiment xmlns="https://mosaiq.maxthecoder.online/xml/experimentation/v1">
+  <experiment_id>3</experiment_id>
+  <name>Seeded A/A split</name>
+  <campaign_id>1</campaign_id>
+  <state>ASSIGNED</state>
+  <design_kind>CONTROLLED</design_kind>
+  <assignment_rule>V0</assignment_rule>
+  <data_origin>SEEDED</data_origin>
+  <arms>
+    <arm_id>7</arm_id>
+    <position>0</position>
+    <kind>CONTROL</kind>
+    <name>Control</name>
+    <treatment_description>Held back.</treatment_description>
+  </arms>
+  <arms>
+    <arm_id>8</arm_id>
+    <position>1</position>
+    <kind>TREATMENT</kind>
+    <name>Offer A</name>
+    <treatment_description>First offer.</treatment_description>
+  </arms>
+  <arms>
+    <arm_id>9</arm_id>
+    <position>2</position>
+    <kind>TREATMENT</kind>
+    <name>Offer B</name>
+    <treatment_description>Second offer.</treatment_description>
+  </arms>
+  <design>
+    <primary_metric>CONVERSION</primary_metric>
+    <conversion_window_days>14</conversion_window_days>
+    <starts_on>2026-09-01</starts_on>
+  </design>
+  <assignment>
+    <experiment_id>3</experiment_id>
+    <assigned_at>2026-09-01T09:00:00Z</assigned_at>
+    <assigned_total>30</assigned_total>
+    <acknowledged_underpowered>false</acknowledged_underpowered>
+    <arms>
+      <arm_id>7</arm_id>
+      <kind>CONTROL</kind>
+      <assigned>10</assigned>
+    </arms>
+    <arms>
+      <arm_id>8</arm_id>
+      <kind>TREATMENT</kind>
+      <assigned>10</assigned>
+    </arms>
+    <arms>
+      <arm_id>9</arm_id>
+      <kind>TREATMENT</kind>
+      <assigned>10</assigned>
+    </arms>
+  </assignment>
+</Experiment>

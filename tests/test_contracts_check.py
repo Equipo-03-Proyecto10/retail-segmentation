@@ -7,6 +7,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 CHECK = ROOT / "contracts/check.sh"
 FIXTURES = ROOT / "tests/fixtures/contracts"
@@ -524,6 +526,19 @@ def test_an_entry_excuses_only_the_values_it_lists(tmp_path: Path) -> None:
     _assert_fails(
         result, "XML response changed in v1: contracts/alpha/examples/alpha.xml"
     )
+
+
+@pytest.mark.parametrize("unlisted", ["sneaky_role", "Rogue-Role"])
+def test_an_unlisted_value_in_any_spelling_is_still_breaking(
+    tmp_path: Path, unlisted: str
+) -> None:
+    """A value the entry does not list fails whatever its case or characters."""
+    repo, base = _vocabulary_repository(tmp_path)
+    _grow(repo, "SALES_ASSOCIATE", unlisted)
+    _entry(repo, "SALES_ASSOCIATE")
+    _commit(repo, "an unlisted value outside the code pattern")
+
+    _assert_fails(_run(repo, base), "breaking OpenAPI change in v1: alpha")
 
 
 def test_an_entry_must_name_an_existing_record(tmp_path: Path) -> None:

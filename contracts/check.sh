@@ -367,8 +367,9 @@ for service in "${service_names[@]}"; do
         | [.[] | select(.level == 3)
            | select(
                .id != "response-property-enum-value-added"
-               or ([.text | scan("`([A-Z][A-Z0-9_]*)` enum value")[0]]
-                   | all(. as $v | $listed | index($v)) | not)
+               or ([.text | scan("`([^`]*)` enum value")[0]] as $found
+                   | ($found | length) == 0
+                     or ($found | all(. as $v | $listed | any(. == $v)) | not))
              )]
         | length' <<<"$breaking" 2>/dev/null
     ) || [[ $remaining != 0 ]]; then

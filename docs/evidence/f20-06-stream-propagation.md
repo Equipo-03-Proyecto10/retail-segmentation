@@ -116,16 +116,41 @@ Raw reports:
 
 - **No event was lost.** Every event committed while the consumer was down was
   acknowledged after the restart.
-- **None was applied twice.** The tool can see deliveries but not
-  applications:
-  - No entry was delivered more than once (`Max deliveries` 1).
-  - The five duplicated events were acknowledged without error.
-  - That each event is applied exactly once, across a restart and with
-    duplicates in the backlog, is tested in the consumer kit:
-    `packages/kit-py/tests/test_streams.py::test_consumer_restarted_after_a_backlog_loses_nothing_and_applies_once`.
-    The test's backlog holds an entry the old process read but never
-    acknowledged, 50 new events and 5 duplicates. The restarted consumer
-    applies each event once and leaves nothing pending or undelivered.
+- **Re-applying an event leaves the same state.** Criterion 3 was changed on
+  2026-11-09 with the owner's agreement (see #764). It no longer says "none is
+  applied twice (dedupe by `event_id`)". It now says "re-applying an event
+  leaves the same state (idempotent by re-read, ADR-0044)".
+  - Why: an event carries keys only, and every consumer re-reads state from
+    the producer's contract. Applying the same event again therefore reaches
+    the same state. Deduplication by `event_id` is in memory only, so a crash
+    after the effect and before `XACK` re-applies the event.
+  - In this run, no entry was delivered more than once (`Max deliveries` 1),
+    and the five duplicated events were acknowledged without error.
+  - Each consumer group has a test that applies the same event three times:
+    1. in a process that dies after the effect and before `XACK`;
+    2. in the restarted process, from its pending list, with an empty
+       `event_id` memory;
+    3. as a duplicate entry, the way a relay appends one when it crashed
+       between `XADD` and marking its rows relayed.
+
+    After each application, what a reader observes is identical.
+
+    | Group | Streams | Test | State compared |
+    |---|---|---|---|
+    | `categories` | `categories.changed` | `services/categories/tests/test_redis.py::test_reapplying_an_event_leaves_the_same_state` | the category read |
+    | `products` | `products.changed` | `services/products/tests/test_redis.py::test_reapplying_an_event_leaves_the_same_state` | the product read, with the production handler |
+    | `recommendations` | all six of its streams | `services/recommendations/tests/test_redis.py::test_reapplying_an_event_leaves_the_same_state[...]` | the cache key, and the recommendation recomputed from PostgreSQL, without its computation instant |
+    | `auth` | `users.access_changed` | `services/auth/tests/test_background.py::test_reapplying_an_access_change_leaves_the_same_sessions` | every live session and session key |
+    | `stores` | `stores.changed` | `services/stores/tests/cache.rs::reapplying_an_event_leaves_the_same_directory` | the directory cache and the directory read |
+    | `segments` | `segments.run_recorded` | `services/segments/tests/cache.rs::reapplying_an_event_leaves_the_same_run_and_list` | the tracked run and the segment list |
+
+    The groups that are not deployed yet (`rfm-engine`, `model-registry`,
+    `analytics-kpis`, `experimentation`) have no handler to test. Each one owes
+    the same test with its implementation.
+  - The kit's own restart test,
+    `packages/kit-py/tests/test_streams.py::test_consumer_restarted_after_a_backlog_loses_nothing_and_applies_once`,
+    shows the delivery side: after a restart nothing is lost, and a duplicate
+    within one process is skipped.
 - **Catch-up.** Catch-up is timed from the restart command until the last
   entry is acknowledged, so it includes container start-up.
   - When the backlog had been relayed, `recommendations` caught up in 3.6 s.
@@ -146,13 +171,12 @@ Raw reports:
 2. **Deduplication by `event_id` lives in memory** (`StreamConsumer._handled`
    in both kits).
    - Within one process, duplicates are skipped.
-   - The case left open: the process handles an entry and stops before its
-     `XACK`. After the restart, that entry is delivered again and applied
-     again. This is at-least-once delivery, as every stream contract states,
-     and today's handlers are idempotent: they invalidate caches, end
-     sessions or move to the latest run.
-   - What would need more: a consumer whose effect is not idempotent would
-     need durable deduplication.
+   - After a crash between the effect and `XACK`, the event is applied again.
+     That is why criterion 3 now asks for idempotence by re-read, not for a
+     single application. The tests above prove idempotence for every deployed
+     group.
+   - A future consumer whose effect is not idempotent would need durable
+     deduplication in its own schema, in the same transaction as its effect.
 
 ## Console
 

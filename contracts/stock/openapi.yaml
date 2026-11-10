@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: stock-service
-  version: 1.1.0
+  version: 1.1.1
   description: 'Publishes the quantity held for each store and product pair, records the movements that
     change it, and states in which channels a product can be sold (RN-14, ADR-0061). A level, movement
     or availability carries ids and quantities only: no product name, price, store name or channel name,

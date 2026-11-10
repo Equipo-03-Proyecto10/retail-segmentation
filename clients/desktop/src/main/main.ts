@@ -11,6 +11,7 @@ import { Catalog } from './catalog';
 import { Customers } from './customers';
 import { Exporter, type ExportEnv } from './exports';
 import { Floor } from './floor';
+import { Recommendations } from './recommendations';
 import { Reports, type ReportExportEnv } from './reports';
 import { loadSettings } from './settings';
 import { Stores } from './stores';
@@ -201,6 +202,14 @@ function start(): void {
   ipcMain.handle(CHANNELS.listAssignments, (_e, query: unknown) => customers.assignments(query));
   ipcMain.handle(CHANNELS.getRecommendations, (_e, customerId: unknown) =>
     customers.recommendations(customerId),
+  );
+  const recommendations = new Recommendations(office);
+  ipcMain.handle(CHANNELS.inspectRecommendation, (_e, query: unknown) => recommendations.inspect(query));
+  ipcMain.handle(CHANNELS.listRecommendationDecisions, (_e, query: unknown) =>
+    recommendations.listDecisions(query),
+  );
+  ipcMain.handle(CHANNELS.openRecommendationDecision, (_e, decisionId: unknown) =>
+    recommendations.openDecision(decisionId),
   );
   office.onStateChange((state) => {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(CHANNELS.stateChanged, state);

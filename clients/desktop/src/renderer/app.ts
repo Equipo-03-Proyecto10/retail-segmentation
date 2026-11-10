@@ -10,6 +10,7 @@ import { latestRequest } from './latest-request';
 import { exportAction } from './export';
 import { guardBridge } from './session';
 import { reconcileRender, type RenderState } from './render-state';
+import { renderRecommendations } from './recommendations';
 import { renderReports } from './reports';
 import { renderStores } from './stores';
 import { renderAccount, renderTransfer, renderUsers } from './users';
@@ -146,6 +147,7 @@ function renderHome(state: Extract<AppState, { status: 'signed_in' }>): void {
     else if (next === 'engagement') renderEngagement(body, ctx);
     else if (next === 'check-ins') renderCheckIns(body, ctx);
     else if (next === 'reports') renderReports(body, { ...ctx, canExport: state.canExport });
+    else if (next === 'recommendations') renderRecommendations(body, ctx);
     else if (next === 'stores') renderStores(body, ctx);
     else if (next === 'campaigns') renderCampaigns(body, ctx);
     else if (next === 'customers') renderCustomers(body, ctx);

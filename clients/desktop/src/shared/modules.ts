@@ -9,6 +9,7 @@ export type ModuleName =
   | 'engagement'
   | 'check-ins'
   | 'reports'
+  | 'recommendations'
   | 'stores'
   | 'campaigns'
   | 'customers'
@@ -40,6 +41,7 @@ export const MODULE_GROUPS: readonly ModuleGroup[] = [
       { name: 'engagement', label: 'Engagement', operation: 'getEngagementSummary' },
       { name: 'check-ins', label: 'Check-ins', operation: 'listCheckIns' },
       { name: 'reports', label: 'Reports', operation: 'listKpiDefinitions' },
+      { name: 'recommendations', label: 'Recommendations', operation: 'getRecommendationsV2' },
     ],
   },
   {
@@ -94,6 +96,16 @@ export const KPI_OPERATIONS: Readonly<Record<string, string>> = {
   'recommendation-performance': 'getRecommendationPerformanceReport',
   'campaign-performance': 'getCampaignPerformanceReport',
 };
+
+/**
+ * The read operations the recommendations module calls (recommendations x-mosaiq-roles); each is checked before
+ * its call. Decisions are open to fewer roles than the recommendation itself.
+ */
+export const RECOMMENDATION_OPERATIONS = {
+  inspect: 'getRecommendationsV2',
+  decisions: 'listRecommendationDecisions',
+  decision: 'getRecommendationDecision',
+} as const;
 
 /** Error codes that mean the session is over; the user goes back to sign-in. */
 export const SESSION_ENDED_CODES: readonly string[] = [

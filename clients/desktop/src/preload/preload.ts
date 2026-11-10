@@ -78,6 +78,10 @@ const bridge: MosaiqBridge = {
   kpiDefinitions: () => ipcRenderer.invoke(CHANNELS.kpiDefinitions),
   kpiReport: (query) => ipcRenderer.invoke(CHANNELS.kpiReport, query),
   exportReport: (format) => ipcRenderer.invoke(CHANNELS.exportReport, format),
+  inspectRecommendation: (query) => ipcRenderer.invoke(CHANNELS.inspectRecommendation, query),
+  listRecommendationDecisions: (query) => ipcRenderer.invoke(CHANNELS.listRecommendationDecisions, query),
+  openRecommendationDecision: (decisionId) =>
+    ipcRenderer.invoke(CHANNELS.openRecommendationDecision, decisionId),
 };
 
 contextBridge.exposeInMainWorld('mosaiq', bridge);

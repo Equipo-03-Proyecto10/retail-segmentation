@@ -83,6 +83,12 @@ const REPEATED = new Set([
   'KpiDefinitions.KpiDefinition',
   'KpiDefinitions.KpiDefinition.dimensions',
   'KpiDefinitions.KpiDefinition.measures',
+  'SegmentMigrationMatrix.MigrationTotal',
+  'SegmentMigrationMatrix.MigrationCell',
+  'SegmentMigrations.SegmentMigration',
+  'SegmentMigrations.SegmentMigration.responsible_variables',
+  'SegmentMigrationExplanation.migration.responsible_variables',
+  'SegmentMigrationExplanation.MigrationMeasure',
 ]);
 /** Child elements that repeat wherever they appear: error details, sale lines, summary groups, event history, check-in reviews, a campaign's allowed transitions. */
 const REPEATED_CHILDREN = new Set([

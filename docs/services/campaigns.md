@@ -34,7 +34,7 @@
 | PATCH | `/v1/campaigns/{campaign_id}` | Edit (DRAFT only) | ADMIN, MARKETING |
 | POST | `/v1/campaigns/{campaign_id}/transitions` | Change status (`to`, `expected_status`) | ADMIN, MARKETING |
 | GET, PUT | `/v1/campaigns/{campaign_id}/audience` | Audience: optional `max_customers` and the computed `audience_size` (PUT only in DRAFT) | GET: ADMIN, ANALYST, MARKETING, AUDITOR; PUT: ADMIN, MARKETING |
-| GET | `/v1/campaigns/{campaign_id}/audience/breakdown` | The audience with the customers it leaves out counted by reason (not in the customer reference, excluded by id, excluded by label, registered after the cutoff, too few net purchases, over the cap), each customer under the first reason that applies, so label holders equal the reasons' counts plus `audience_size` | ADMIN, ANALYST, MARKETING, AUDITOR |
+| GET | `/v1/campaigns/{campaign_id}/audience/breakdown` | The audience with the customers it leaves out counted by reason (not in the customer reference or anonymized, `PERSONALIZATION` or `MARKETING_CONTACT` not granted, excluded by id, excluded by label, registered after the cutoff, too few net purchases, over the cap), each customer under the first reason that applies, so label holders equal the reasons' counts plus `audience_size` | ADMIN, ANALYST, MARKETING, AUDITOR |
 | GET, PUT | `/v1/campaigns/{campaign_id}/budget` | Budget: `total_amount`, `per_customer_cap` (PUT only in DRAFT) | GET: ADMIN, ANALYST, MARKETING, AUDITOR; PUT: ADMIN, MARKETING |
 | GET, PUT | `/v1/campaigns/{campaign_id}/eligibility-rules` | Eligibility: `registered_on_or_before`, `min_purchases` net purchases (ADR-0062: a sale with a zero net amount does not count) within `purchase_window_days` (PUT only in DRAFT) | GET: ADMIN, ANALYST, MARKETING, AUDITOR; PUT: ADMIN, MARKETING |
 | GET, PUT | `/v1/campaigns/{campaign_id}/exclusions` | Exclusions: `customer_ids`, `label_codes` (PUT only in DRAFT) | GET: ADMIN, ANALYST, MARKETING, AUDITOR; PUT: ADMIN, MARKETING |
@@ -57,7 +57,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 Published: [`api_campaigns.active_promotion_v1`](../../contracts/db/api_campaigns.active_promotion.v1.md), read by sales to validate a discount.
 
-Consumed, by name: `api_segments.current_label_v1` (audience size, label exclusions), `api_customers.customer_ref_v1` (customer ids, `registered_on`), `api_sales.net_purchase_line_v1` (net purchase-count eligibility, ADR-0062), `api_stores.store_directory_v2` (store and channel ids of a promotion), and `api_users.store_assignment_v1` (the stores a floor role may read promotions of).
+Consumed, by name: `api_segments.current_label_v1` (audience size, label exclusions), `api_customers.customer_ref_v1` (customer ids, `registered_on`, and the anonymized flag ADR-0066 section 3 adds), `api_preferences.consent_state_v1` (the `PERSONALIZATION` and `MARKETING_CONTACT` a customer's audience membership needs, ADR-0066 section 2: a purpose not granted, or that cannot be read, excludes them), `api_sales.net_purchase_line_v1` (net purchase-count eligibility, ADR-0062), `api_stores.store_directory_v2` (store and channel ids of a promotion), and `api_users.store_assignment_v1` (the stores a floor role may read promotions of).
 
 ## Events
 

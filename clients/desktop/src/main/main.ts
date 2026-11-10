@@ -13,6 +13,7 @@ import { Exporter, type ExportEnv } from './exports';
 import { Floor } from './floor';
 import { Models } from './models';
 import { Reports, type ReportExportEnv } from './reports';
+import { Migrations } from './migrations';
 import { loadSettings } from './settings';
 import { Stores } from './stores';
 import { Transport } from './transport';
@@ -203,6 +204,10 @@ function start(): void {
   ipcMain.handle(CHANNELS.getRecommendations, (_e, customerId: unknown) =>
     customers.recommendations(customerId),
   );
+  const migrations = new Migrations(office);
+  ipcMain.handle(CHANNELS.migrationMatrix, (_e, query: unknown) => migrations.matrix(query));
+  ipcMain.handle(CHANNELS.listMigrations, (_e, query: unknown) => migrations.list(query));
+  ipcMain.handle(CHANNELS.explainMigration, (_e, query: unknown) => migrations.explain(query));
   const models = new Models(office);
   ipcMain.handle(CHANNELS.listModelVersions, (_e, query: unknown) => models.listVersions(query));
   ipcMain.handle(CHANNELS.getModelVersion, (_e, versionId: unknown) => models.getVersion(versionId));

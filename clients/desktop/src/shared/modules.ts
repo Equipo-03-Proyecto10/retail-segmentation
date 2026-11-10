@@ -8,6 +8,7 @@ export type ModuleName =
   | 'sales'
   | 'engagement'
   | 'check-ins'
+  | 'migrations'
   | 'reports'
   | 'kmeans'
   | 'stores'
@@ -40,6 +41,7 @@ export const MODULE_GROUPS: readonly ModuleGroup[] = [
       { name: 'sales', label: 'Sales', operation: 'listSales' },
       { name: 'engagement', label: 'Engagement', operation: 'getEngagementSummary' },
       { name: 'check-ins', label: 'Check-ins', operation: 'listCheckIns' },
+      { name: 'migrations', label: 'Migration matrix', operation: 'getSegmentMigrationMatrix' },
       { name: 'reports', label: 'Reports', operation: 'listKpiDefinitions' },
       { name: 'kmeans', label: 'K-means', operation: 'listModelVersions' },
     ],
@@ -96,6 +98,13 @@ export const KPI_OPERATIONS: Readonly<Record<string, string>> = {
   'recommendation-performance': 'getRecommendationPerformanceReport',
   'campaign-performance': 'getCampaignPerformanceReport',
 };
+
+/** The read operations the migration matrix module calls (segments x-mosaiq-roles); each is checked before its call. */
+export const MIGRATION_OPERATIONS = {
+  matrix: 'getSegmentMigrationMatrix',
+  list: 'listSegmentMigrations',
+  explanation: 'getSegmentMigrationExplanation',
+} as const;
 
 /** Error codes that mean the session is over; the user goes back to sign-in. */
 export const SESSION_ENDED_CODES: readonly string[] = [

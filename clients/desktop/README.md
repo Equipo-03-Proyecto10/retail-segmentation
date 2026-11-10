@@ -63,6 +63,7 @@ being ignored. `MOSAIQ_DESKTOP_CONFIG_DIR` overrides the directory (the window t
   - campaigns: `listCampaigns`, `getCampaign`, `createCampaign`, `updateCampaign`, `transitionCampaign`,
     `listCampaignLabels`.
   - audit trail: `listAuditEntries`, `getAuditEntry` (read only).
+  - migration matrix: `migrationMatrix`, `listMigrations`, `explainMigration` (read only).
   - K-means models: `listModelVersions`, `getModelVersion`, `listTrainings`, `getTraining`,
     `startTraining`, `publishModelVersion`.
 
@@ -275,6 +276,46 @@ customer opened earlier is dropped.
 The window tests (`tests/window/customers.spec.ts`) answer with the recorded examples of the seven
 contracts, read from disk, including the `unassigned_result` and `no_open_assignment` examples that no
 seeded customer has.
+
+## Migration matrix (F28-06)
+
+Through segments-service (`contracts/segments/`). The **Migration matrix** screen, in the Analysis group,
+is offered to the roles whose `x-mosaiq-roles` allow `getSegmentMigrationMatrix`: `ADMIN`, `ANALYST`,
+`STORE_MANAGER`, `MARKETING` and `AUDITOR`. Any other role has no entry in the navigation, and the main
+process refuses a forced call with `forbidden_role` before sending anything. Each of the three reads is
+checked against its own operation (`MIGRATION_OPERATIONS`). The three operations are published ahead of
+their implementation and marked planned (ADR-0073), so the window and unit tests answer with the recorded
+examples of `contracts/segments/examples/`; a service that does not answer yet is shown as it answers.
+
+- **Two dates.** The screen compares the segment each customer held at two instants
+  (`GET /v1/segment-migrations/matrix`, `from` and `to`, entered in UTC). The earlier date is always the
+  before state, whatever order they are entered in (RN-59); two equal dates are refused first.
+- **The grid.** Rows are the state before and columns the state after. The axes come from the label
+  vocabulary (`GET /v1/segments`) in business order, then Unassigned and New (New is "Not in later run" on
+  the after side), so a pair with no customers, which the service leaves out, is still a cell that can be
+  opened. Each cell shows its count and the service's `movement`; the client never classifies a customer.
+- **Totals reconcile.** The grid adds a row total and a column total from the cells, and the screen checks
+  them against the service's figures: each row against its before count, each column against its after
+  count, the customers who entered a state against its column less those who stayed, those who left against
+  its row less the same, and all of them against the customers compared. It says "Totals reconcile", or
+  lists every figure that does not (`reconcile` in `src/shared/migration-matrix.ts`).
+- **Each cell opens its customers** (`GET /v1/segment-migrations` with the cell's two states and label
+  codes), twenty to a page, and so does a label's entries or exits (`direction` and `label_code`). The list
+  is compared with the count the matrix gave for it. "Behaviour only" and "Methodological only" send
+  `methodological`.
+- **Two versions are methodological.** When the service marks the matrix methodological, a banner says that
+  a difference may come from the model and is not shown as behaviour, the versions are named (or said to be
+  unknown), the grid is drawn with a dashed outline, and each customer carries "Methodological: may come
+  from the model" (ADR-0064). The mark is the service's; the screen never derives or clears it.
+- **A move names its responsible variables.** Each customer lists the variables the service judged changed;
+  **Explain** opens `GET /v1/segment-migrations/explanation` with each variable's values on both sides, its
+  judgement and the service's sentence (RN-60), "Only the rank moved" when the label changed and no variable
+  did, and the reason when a variable is not compared.
+- Export is the shell's: the first table, the grid, as CSV, for the roles that may export (ADR-0074).
+
+The window tests (`tests/window/migrations.spec.ts`) answer with `tests/support/segments.ts`, which serves
+the recorded matrices and explanations and generates the customers behind a cell from the matrix's own
+cells, so a list holds exactly as many customers as its cell counted.
 
 ## K-means models (F28-05)
 

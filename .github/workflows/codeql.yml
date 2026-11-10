@@ -1,0 +1,70 @@
+name: CodeQL
+
+# Code scanning as an advanced setup, in place of GitHub's default setup
+# (#962): the same four languages, build mode, default query suite, categories
+# and weekly scan, with one difference. A pull request analyzes Rust only when
+# it changes a Rust file or this workflow, because a Rust finding can only come
+# from Rust files and the Rust analysis took a median of 366 s on every pull
+# request. Every push to develop or main and the weekly scan analyze all four.
+# GitHub refuses this workflow's results while default setup is on, so default
+# setup is switched off in the repository settings when this merges.
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+  schedule:
+    # Mondays at 04:23 in Monterrey (UTC-6), clear of the nightly chain.
+    - cron: "23 10 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  languages:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.derive.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: The languages this event analyzes
+        id: derive
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          languages='"actions","javascript-typescript","python"'
+          rust=true
+          if [ "$EVENT" = pull_request ]; then
+            files=$(git diff --name-only "origin/$BASE_REF...HEAD")
+            grep -qE '(\.rs|(^|/)Cargo\.(toml|lock)|(^|/)rust-toolchain(\.toml)?)$|^\.github/workflows/codeql\.yml$' \
+              <<<"$files" || rust=false
+          fi
+          if [ "$rust" = true ]; then languages+=',"rust"'; fi
+          echo "matrix=[$languages]" | tee -a "$GITHUB_OUTPUT"
+
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    needs: languages
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ${{ fromJSON(needs.languages.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          dependency-caching: true
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}

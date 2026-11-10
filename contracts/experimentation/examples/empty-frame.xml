@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>empty_frame</code>
+  <message>The frame holds no customer, so there is nothing to assign.</message>
+  <correlation_id>corr-empty-frame</correlation_id>
+</Error>

@@ -1,0 +1,22 @@
+{
+  "event_id": "c7ddc637-dcf7-5d3c-818f-b803953866ac",
+  "kind": "AUDIT_READ",
+  "outcome": "SUCCESS",
+  "occurred_at": "2026-11-09T08:58:31.623Z",
+  "recorded_at": "2026-11-09T08:58:31.664Z",
+  "actor_type": "USER",
+  "actor_user_id": "7c2e5a90-1b3d-4f68-8a47-d09e3c5b1f72",
+  "actor_role": "AUDITOR",
+  "source": "svc_audit_trail",
+  "store_id": null,
+  "subject_type": "DOMAIN_EVENT",
+  "subject_id": "bad44382-0311-5737-9533-e7739e6527a9",
+  "model_version_id": null,
+  "rule_set_version": null,
+  "correlation_id": "corr-evt-10",
+  "details": {
+    "filters": []
+  },
+  "prev_hash": "e5367ed779bfaa432494c12dec1df9062fb56b442af27d6007ae687db8ebbd79",
+  "entry_hash": "d40fb961b4c1931a5a19a339c470271a9e55c49dc927b94bf160ceb2c66a3d83"
+}

@@ -213,6 +213,7 @@ The web's matrix does not change.
 | KPI reports with a store (`net-sales`, `spend`, `retention`, `conversion`, `recommendation-performance`) | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR`, and `STORE_MANAGER`, `COMMERCIAL_SUPERVISOR` narrowed to their assigned stores | Reports: read. Narrowed as ADR-0060 decides: another store is 403 `forbidden_store` |
 | KPI reports with no store (`migrations`, `campaign-performance`) | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Reports: read. A figure with no store cannot be narrowed, so the two store roles do not read it |
 | `GET /v1/audit-entries` | `ADMIN`, `AUDITOR` | Audit log: read |
+| `GET /v1/domain-events`, `GET /v1/domain-events/{event_id}`, `GET /v1/domain-events/verification` | `ADMIN`, `AUDITOR` | Audit log: read. A domain event names an actor and the fact that a customer's history was read, so a floor role is never given it, and neither role is narrowed by store (ADR-0072, ADR-0060) |
 | `POST /v1/sessions`, `POST /v1/sessions/refresh`, `GET /v1/jwks.json`, meta routes | No token | — |
 
 - `CUSTOMER` reaches only sign-in, refresh, its own session, `GET /v1/users/me`

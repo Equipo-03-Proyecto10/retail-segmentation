@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DomainEvent xmlns="https://mosaiq.maxthecoder.online/xml/audit-trail/v1"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xsi:type="CalculationRunEvent">
+  <event_id>d57a9d05-b470-5e8f-b14c-198bf819f9cb</event_id>
+  <kind>CALCULATION_RUN</kind>
+  <outcome>SUCCESS</outcome>
+  <occurred_at>2026-11-04T10:02:11.299Z</occurred_at>
+  <recorded_at>2026-11-04T10:02:11.340Z</recorded_at>
+  <actor_type>USER</actor_type>
+  <actor_user_id>11111111-1111-1111-1111-000000000001</actor_user_id>
+  <actor_role>ADMIN</actor_role>
+  <source>svc_rfm</source>
+  <subject_type>RFM_RECALCULATION</subject_type>
+  <subject_id>128</subject_id>
+  <rule_set_version>4</rule_set_version>
+  <correlation_id>corr-evt-01</correlation_id>
+  <details>
+    <calculation>RFM</calculation>
+    <window_from>2025-11-04</window_from>
+    <window_to>2026-11-03</window_to>
+    <data_origin>OBSERVED</data_origin>
+    <input_count>3412</input_count>
+    <output_count>3412</output_count>
+    <status>COMPLETED</status>
+  </details>
+  <prev_hash>87a4b3a84f2404a70875719bac335b24d5c994555108db3d72abc71e2cc3fb5d</prev_hash>
+  <entry_hash>efaab566ec4a752dae0f00ace4b83c5688a67a37f4981303390c6fe211abaa79</entry_hash>
+</DomainEvent>

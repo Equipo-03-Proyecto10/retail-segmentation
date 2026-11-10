@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DomainEvent xmlns="https://mosaiq.maxthecoder.online/xml/audit-trail/v1"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xsi:type="AuditReadEvent">
+  <event_id>c7ddc637-dcf7-5d3c-818f-b803953866ac</event_id>
+  <kind>AUDIT_READ</kind>
+  <outcome>SUCCESS</outcome>
+  <occurred_at>2026-11-09T08:58:31.623Z</occurred_at>
+  <recorded_at>2026-11-09T08:58:31.664Z</recorded_at>
+  <actor_type>USER</actor_type>
+  <actor_user_id>7c2e5a90-1b3d-4f68-8a47-d09e3c5b1f72</actor_user_id>
+  <actor_role>AUDITOR</actor_role>
+  <source>svc_audit_trail</source>
+  <subject_type>DOMAIN_EVENT</subject_type>
+  <subject_id>bad44382-0311-5737-9533-e7739e6527a9</subject_id>
+  <correlation_id>corr-evt-10</correlation_id>
+  <details/>
+  <prev_hash>e5367ed779bfaa432494c12dec1df9062fb56b442af27d6007ae687db8ebbd79</prev_hash>
+  <entry_hash>d40fb961b4c1931a5a19a339c470271a9e55c49dc927b94bf160ceb2c66a3d83</entry_hash>
+</DomainEvent>

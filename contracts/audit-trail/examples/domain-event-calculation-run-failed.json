@@ -1,0 +1,29 @@
+{
+  "event_id": "d7aee3eb-b1ad-52c9-813e-a92b721defc6",
+  "kind": "CALCULATION_RUN",
+  "outcome": "SUCCESS",
+  "occurred_at": "2026-11-05T06:00:09.471Z",
+  "recorded_at": "2026-11-05T06:00:09.512Z",
+  "actor_type": "SYSTEM",
+  "actor_user_id": null,
+  "actor_role": null,
+  "source": "svc_segments",
+  "store_id": null,
+  "subject_type": "SEGMENT_RUN",
+  "subject_id": "57",
+  "model_version_id": 9,
+  "rule_set_version": null,
+  "correlation_id": "corr-evt-02",
+  "details": {
+    "calculation": "SEGMENTATION",
+    "parameters_digest": "a170624f811bf32fb0b35876d29ddb618b6593f5d08646b13eeca9884c132f3b",
+    "window_from": "2026-08-06",
+    "window_to": "2026-11-04",
+    "data_origin": "OBSERVED",
+    "input_count": 3412,
+    "output_count": 0,
+    "status": "FAILED"
+  },
+  "prev_hash": "efaab566ec4a752dae0f00ace4b83c5688a67a37f4981303390c6fe211abaa79",
+  "entry_hash": "e0be1359b4c90449ea8dda48576edd3cd7eada8be3b9ae69849f29b587d43c2d"
+}

@@ -1,0 +1,23 @@
+{
+  "event_id": "be1fb0f6-f7c4-5d24-bfdf-4eb618e93d55",
+  "kind": "HISTORY_READ",
+  "outcome": "REFUSED",
+  "occurred_at": "2026-11-08T13:41:02.116Z",
+  "recorded_at": "2026-11-08T13:41:02.157Z",
+  "actor_type": "USER",
+  "actor_user_id": "2e8f4c1a-6b97-4d03-a5e2-7c9d0b3f8a16",
+  "actor_role": "INVENTORY_PLANNER",
+  "source": "svc_segments",
+  "store_id": null,
+  "subject_type": "CUSTOMER",
+  "subject_id": "3f6c1d52-8e4a-4b7d-a0c9-5d2e7b1f4a68",
+  "model_version_id": null,
+  "rule_set_version": null,
+  "correlation_id": "corr-evt-09",
+  "details": {
+    "history": "SEGMENT",
+    "customer_id": "3f6c1d52-8e4a-4b7d-a0c9-5d2e7b1f4a68"
+  },
+  "prev_hash": "cc5e4eb1789167defdf14e05b6546101b1e0a0917b70aec7a4ceaed7038bfe62",
+  "entry_hash": "e5367ed779bfaa432494c12dec1df9062fb56b442af27d6007ae687db8ebbd79"
+}

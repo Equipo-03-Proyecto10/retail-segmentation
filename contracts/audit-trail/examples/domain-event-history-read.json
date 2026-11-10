@@ -1,0 +1,23 @@
+{
+  "event_id": "5c4fd25e-a4fa-5920-b431-a0076c1ca13f",
+  "kind": "HISTORY_READ",
+  "outcome": "SUCCESS",
+  "occurred_at": "2026-11-08T13:05:44.685Z",
+  "recorded_at": "2026-11-08T13:05:44.726Z",
+  "actor_type": "USER",
+  "actor_user_id": "9b3c6a2e-7d14-4e58-b0f1-3a8c5d2e9f40",
+  "actor_role": "LOYALTY_OFFICER",
+  "source": "svc_preferences",
+  "store_id": 3,
+  "subject_type": "CUSTOMER",
+  "subject_id": "3f6c1d52-8e4a-4b7d-a0c9-5d2e7b1f4a68",
+  "model_version_id": null,
+  "rule_set_version": null,
+  "correlation_id": "corr-evt-08",
+  "details": {
+    "history": "CONSENT",
+    "customer_id": "3f6c1d52-8e4a-4b7d-a0c9-5d2e7b1f4a68"
+  },
+  "prev_hash": "5d343c27f10051c27fc455c651dec34a6eb618b41f48d56b11f40e6813984f6c",
+  "entry_hash": "cc5e4eb1789167defdf14e05b6546101b1e0a0917b70aec7a4ceaed7038bfe62"
+}

@@ -85,10 +85,10 @@ services:
     resources: [campaigns, promotions]
   - name: audit-trail
     port: 5015
-    rule: "The audit trail is append-only, attributed, free of credentials, and readable by ADMIN and AUDITOR only (RN-28, RN-29, RN-30)"
+    rule: "The audit trail is append-only, attributed, free of credentials, and readable by ADMIN and AUDITOR only, and it also reports the domain events recorded under that same append-only, attributed, credential-free discipline (RN-28, RN-29, RN-30)"
     rn: [RN-28, RN-29, RN-30]
     wave: second
-    resources: [audit-entries]
+    resources: [audit-entries, domain-events]
   - name: rfm-engine
     port: 5016
     rule: "A customer's R, F and M are a function of their accepted, unreversed purchases under one rule-set version, change only for the customers an event touched, and equal a full recalculation of that version at the same instant (RN-65)"

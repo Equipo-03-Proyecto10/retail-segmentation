@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>domain_event_not_found</code>
+  <message>No domain event has this identifier.</message>
+  <correlation_id>corr-event-404</correlation_id>
+</Error>

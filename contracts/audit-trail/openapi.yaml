@@ -1,17 +1,26 @@
 openapi: 3.1.0
 info:
   title: audit-trail-service
-  version: 1.1.0
+  version: 1.2.0
   description: >-
-    Reads the audit trail: the append-only entries `fn_audit` writes for every
-    insert, update and delete on an audited table (RN-28, RN-30). An entry is
-    attributed to the actor the writer's connection identified in
+    Reads the audit trail in two resources, both append-only, attributed and
+    free of credentials (RN-28, RN-29, RN-30). `audit-entries` are the entries
+    `fn_audit` writes for every insert, update and delete on an audited table.
+    An entry is attributed to the actor the writer's connection identified in
     `mosaiq.user_id`; `user_id` is null when none was known, as for the seed or
     a maintenance script. An entry never carries a credential: `password_hash`
     is stripped from both payloads before the entry is written, and the service
-    strips it again (RN-29). The service has no write operation, because
-    `fn_audit` is the only writer of an entry (ADR-0035). Only ADMIN and
-    AUDITOR read it.
+    strips it again (RN-29). `domain-events` (ADR-0072) are the decisions a row
+    change cannot say: a calculation that ran, a model version published or
+    rolled back, a permission changed, a critical act, a read of one customer's
+    history and a read of this trail. Each is one of a closed list of kinds and
+    carries ids, codes, versions and counts only, in a hash chain that
+    `/v1/domain-events/verification` recomputes. The service has no write
+    operation, because `fn_audit` is the only writer of an entry and
+    `api_audit.record_event_v1` the only writer of an event (ADR-0035,
+    ADR-0072); what it records itself, through that function, is an
+    `AUDIT_READ` event for each request that reads either resource. Only ADMIN
+    and AUDITOR read the trail, and a floor role is never given it.
 security:
   - bearer: []
 paths:
@@ -130,6 +139,234 @@ paths:
           $ref: '#/components/responses/ForbiddenRole'
         '404':
           $ref: '#/components/responses/AuditEntryNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/domain-events:
+    get:
+      summary: List domain events
+      description: >-
+        Returns the domain events that match every filter given (ADR-0072): the
+        decisions the audit trail records besides row changes, which
+        `/v1/audit-entries` cannot say. Ordered by `recorded_at` and then
+        `event_id`, both descending, so the newest event is first. Pagination
+        applies after filtering. `from` and `to` bound `recorded_at`, the
+        server's clock, which no producer sets. A `kind`, `outcome` or
+        `subject_type` that is not one of its listed values is 422
+        `invalid_query` and `details` names the rejected parameter; so is a
+        `to` before `from` (`before_from`) and a value that is not of the
+        parameter's format (`invalid_format`). A well-formed `actor_role`,
+        `source`, `subject_id`, `model_version_id` or `store_id` that matches
+        no event returns an empty page.
+
+
+        Reading is recorded as an `AUDIT_READ` event that names the filters
+        used and never their values or the rows returned. If that event cannot
+        be recorded the answer is 503 `database_unavailable` and no event is
+        returned, because a log that holds only the reads that happened to be
+        recorded is not evidence (ADR-0072).
+      operationId: listDomainEvents
+      x-mosaiq-status: planned
+      x-mosaiq-roles:
+        - ADMIN
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/Kind'
+        - $ref: '#/components/parameters/ActorUserId'
+        - $ref: '#/components/parameters/ActorRole'
+        - $ref: '#/components/parameters/ModelVersionId'
+        - $ref: '#/components/parameters/SubjectType'
+        - $ref: '#/components/parameters/SubjectId'
+        - $ref: '#/components/parameters/StoreId'
+        - $ref: '#/components/parameters/Outcome'
+        - $ref: '#/components/parameters/Source'
+        - $ref: '#/components/parameters/EventFrom'
+        - $ref: '#/components/parameters/EventTo'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of domain events, newest first.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainEvents'
+              examples:
+                page:
+                  externalValue: ./examples/domain-events-page.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/DomainEvents'
+              examples:
+                page:
+                  externalValue: ./examples/domain-events-page.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/DomainEventQueryValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/domain-events/verification:
+    get:
+      summary: Verify the hash chain of the domain events
+      description: >-
+        Recomputes the hash chain over the events whose `recorded_at` falls in
+        the range (`from` and `to`, both optional, so no range verifies the
+        whole table) and answers `OK`, or `BROKEN` with the first event whose
+        `entry_hash` or link to the previous event does not match. The first
+        event of the range is linked to the event recorded just before it. The
+        answer carries the number of events checked and `head_hash`, the stored
+        `entry_hash` of the newest event in the range, which an auditor records
+        outside the database: without that copy, whoever can rewrite every
+        later row can rewrite the chain, so the chain detects an edit and does
+        not prevent one (ADR-0072). `head_hash` is absent for a range with no
+        event. A `to` before `from` is 422 `invalid_query` (`before_from`), and
+        a `from` or `to` that is not an RFC 3339 timestamp with an offset is
+        422 `invalid_query` (`invalid_format`).
+
+
+        The read is recorded as an `AUDIT_READ` event, and fails as the list
+        does when it cannot be recorded. The path segment `verification` is
+        never an event id: an `event_id` is a UUID.
+      operationId: verifyDomainEvents
+      x-mosaiq-status: planned
+      x-mosaiq-roles:
+        - ADMIN
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/EventFrom'
+        - $ref: '#/components/parameters/EventTo'
+      responses:
+        '200':
+          description: The result of the verification.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainEventVerification'
+              examples:
+                ok:
+                  externalValue: ./examples/domain-event-verification-ok.json
+                broken:
+                  externalValue: ./examples/domain-event-verification-broken.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/DomainEventVerification'
+              examples:
+                ok:
+                  externalValue: ./examples/domain-event-verification-ok.xml
+                broken:
+                  externalValue: ./examples/domain-event-verification-broken.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/DomainEventVerificationValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/domain-events/{event_id}:
+    get:
+      summary: Get one domain event
+      description: >-
+        Returns the event identified by `event_id`. An event is never changed
+        once recorded, so the representation of an existing `event_id` is
+        stable. An unknown `event_id` is 404 `domain_event_not_found`. A path
+        segment that is not a UUID matches no route and is the kit's 404
+        `not_found`.
+
+
+        Reading is recorded as an `AUDIT_READ` event that names the event read
+        and no filter, and fails as the list does when it cannot be recorded.
+      operationId: getDomainEvent
+      x-mosaiq-status: planned
+      x-mosaiq-roles:
+        - ADMIN
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The requested domain event.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainEvent'
+              examples:
+                calculation_run:
+                  externalValue: ./examples/domain-event-calculation-run.json
+                calculation_run_failed:
+                  externalValue: ./examples/domain-event-calculation-run-failed.json
+                model_published:
+                  externalValue: ./examples/domain-event-model-published.json
+                model_rolled_back:
+                  externalValue: ./examples/domain-event-model-rolled-back.json
+                permission_role:
+                  externalValue: ./examples/domain-event-permission-role.json
+                permission_stores:
+                  externalValue: ./examples/domain-event-permission-stores.json
+                critical_action:
+                  externalValue: ./examples/domain-event-critical-action.json
+                history_read:
+                  externalValue: ./examples/domain-event-history-read.json
+                history_read_refused:
+                  externalValue: ./examples/domain-event-history-read-refused.json
+                audit_read:
+                  externalValue: ./examples/domain-event-audit-read.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/DomainEvent'
+              examples:
+                calculation_run:
+                  externalValue: ./examples/domain-event-calculation-run.xml
+                calculation_run_failed:
+                  externalValue: ./examples/domain-event-calculation-run-failed.xml
+                model_published:
+                  externalValue: ./examples/domain-event-model-published.xml
+                model_rolled_back:
+                  externalValue: ./examples/domain-event-model-rolled-back.xml
+                permission_role:
+                  externalValue: ./examples/domain-event-permission-role.xml
+                permission_stores:
+                  externalValue: ./examples/domain-event-permission-stores.xml
+                critical_action:
+                  externalValue: ./examples/domain-event-critical-action.xml
+                history_read:
+                  externalValue: ./examples/domain-event-history-read.xml
+                history_read_refused:
+                  externalValue: ./examples/domain-event-history-read-refused.xml
+                audit_read:
+                  externalValue: ./examples/domain-event-audit-read.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/DomainEventNotFound'
         '406':
           $ref: '#/components/responses/NotAcceptable'
         '429':
@@ -308,6 +545,119 @@ components:
         minimum: 1
         maximum: 100
         default: 20
+    EventId:
+      name: event_id
+      in: path
+      required: true
+      description: Identifier of the domain event, the idempotency key its producer sent.
+      schema:
+        type: string
+        format: uuid
+    Kind:
+      name: kind
+      in: query
+      required: false
+      description: >-
+        The kind of event. A value outside the closed list is 422
+        `invalid_query`, and `details` names `kind`.
+      schema:
+        $ref: '#/components/schemas/DomainEventKind'
+    ActorUserId:
+      name: actor_user_id
+      in: query
+      required: false
+      description: >-
+        Exact identifier of the user the event is attributed to. A value that
+        is not a UUID is 422 `invalid_query` (`invalid_format`).
+      schema:
+        type: string
+        format: uuid
+    ActorRole:
+      name: actor_role
+      in: query
+      required: false
+      description: >-
+        The role code the actor held. A value that is not an upper-case code of
+        at most 40 characters is 422 `invalid_query` (`invalid_format`).
+      schema:
+        $ref: '#/components/schemas/RoleCode'
+    ModelVersionId:
+      name: model_version_id
+      in: query
+      required: false
+      description: >-
+        The model version the event is about or was computed under, the
+        `version_id` of a model-registry version. A value that is not a
+        positive integer is 422 `invalid_query` (`invalid_format`).
+      schema:
+        $ref: '#/components/schemas/ModelVersionId'
+    SubjectType:
+      name: subject_type
+      in: query
+      required: false
+      description: >-
+        What the event is about. A value outside the closed list is 422
+        `invalid_query`.
+      schema:
+        $ref: '#/components/schemas/DomainEventSubjectType'
+    SubjectId:
+      name: subject_id
+      in: query
+      required: false
+      description: Exact identifier of the subject, as text.
+      schema:
+        $ref: '#/components/schemas/SubjectId'
+    StoreId:
+      name: store_id
+      in: query
+      required: false
+      description: >-
+        The store where the act happened. A value that is not an integer from 1
+        through 32767 is 422 `invalid_query` (`invalid_format`).
+      schema:
+        $ref: '#/components/schemas/StoreId'
+    Outcome:
+      name: outcome
+      in: query
+      required: false
+      description: >-
+        Whether the act was done or refused. A value outside the list is 422
+        `invalid_query`.
+      schema:
+        $ref: '#/components/schemas/DomainEventOutcome'
+    Source:
+      name: source
+      in: query
+      required: false
+      description: >-
+        The database role of the producer, as the recording function took it
+        from `session_user` (`svc_models`, `svc_rfm`, ...). A value that is not
+        a lower-case identifier is 422 `invalid_query` (`invalid_format`).
+      schema:
+        $ref: '#/components/schemas/SourceName'
+    EventFrom:
+      name: from
+      in: query
+      required: false
+      description: >-
+        Inclusive lower bound on `recorded_at`, an RFC 3339 timestamp with an
+        offset. Write the offset as `Z`, or percent-encode a `+`. Any other
+        value is 422 `invalid_query` (`invalid_format`).
+      schema:
+        type: string
+        format: date-time
+    EventTo:
+      name: to
+      in: query
+      required: false
+      description: >-
+        Inclusive upper bound on `recorded_at`, an RFC 3339 timestamp with an
+        offset. A `to` before `from` is 422 `invalid_query` (`before_from`); a
+        value that is not such a timestamp is 422 `invalid_query`
+        (`invalid_format`).
+      schema:
+        type: string
+        format: date-time
   headers:
     CorrelationId:
       description: Correlation id used for this response.
@@ -460,6 +810,1077 @@ components:
       xml:
         name: PageInfo
         namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+    DomainEventKind:
+      type: string
+      description: >-
+        The closed list of event kinds (ADR-0072). Adding one is a contract
+        change, never a free string.
+      enum:
+        - CALCULATION_RUN
+        - MODEL_PUBLISHED
+        - MODEL_ROLLED_BACK
+        - PERMISSION_CHANGED
+        - CRITICAL_ACTION
+        - HISTORY_READ
+        - AUDIT_READ
+    DomainEventOutcome:
+      type: string
+      description: >-
+        `SUCCESS` when the act was done, `REFUSED` when it was refused. Only a
+        read of one customer's history is recorded as refused (ADR-0066): a
+        permission change, a critical action or a model publication that was
+        refused did not happen, so it is not an event. A calculation that ran
+        and failed is `SUCCESS` with `details.status` `FAILED`.
+      enum:
+        - SUCCESS
+        - REFUSED
+    DomainEventActorType:
+      type: string
+      description: >-
+        `USER` with the id and role from the verified token, or `SYSTEM` for a
+        schedule or a stream consumer, which has no id and no role.
+      enum:
+        - USER
+        - SYSTEM
+    DomainEventSubjectType:
+      type: string
+      description: >-
+        What the event is about. The values a kind may carry are listed under
+        `subject_type` of each shape.
+      enum:
+        - RFM_RECALCULATION
+        - SEGMENT_RUN
+        - KPI_REPORT
+        - MODEL_VERSION
+        - USER
+        - SALE
+        - STOCK_LEVEL
+        - CUSTOMER
+        - AUDIT_ENTRY
+        - EXPERIMENT
+        - CAMPAIGN
+        - DOMAIN_EVENT
+    RoleCode:
+      type: string
+      description: >-
+        A role code as the token carries it. The list of roles is users'
+        (ADR-0060), so it is not repeated here.
+      pattern: '^[A-Z][A-Z0-9_]{0,39}$'
+    SourceName:
+      type: string
+      pattern: '^[a-z][a-z0-9_]{0,39}$'
+    StoreId:
+      type: integer
+      format: int32
+      minimum: 1
+      maximum: 32767
+    SubjectId:
+      type: string
+      minLength: 1
+      maxLength: 80
+    ModelVersionId:
+      type: integer
+      format: int64
+      minimum: 1
+      maximum: 9223372036854775807
+    RuleSetVersion:
+      type: integer
+      format: int64
+      minimum: 1
+      maximum: 9223372036854775807
+      description: >-
+        The `rule_set_id` of the rfm-engine rule set the figure was computed
+        under. A rule set is immutable, so its id is its version.
+    CorrelationIdValue:
+      type: string
+      pattern: '^[0-9A-Za-z-]{1,64}$'
+    Sha256Hex:
+      type: string
+      pattern: '^[0-9a-f]{64}$'
+    ReasonCode:
+      type: string
+      description: A code, never free text.
+      pattern: '^[A-Z][A-Z0-9_]{0,39}$'
+    Count:
+      type: integer
+      format: int64
+      minimum: 0
+    CalculationDetails:
+      type: object
+      additionalProperties: false
+      description: >-
+        What a finished calculation recorded. The ids of the figures it produced
+        are not here: a count is.
+      required:
+        - calculation
+        - parameters_digest
+        - window_from
+        - window_to
+        - data_origin
+        - input_count
+        - output_count
+        - status
+      properties:
+        calculation:
+          type: string
+          enum:
+            - RFM
+            - SEGMENTATION
+            - KPI
+        parameters_digest:
+          description: >-
+            SHA-256 of the canonical parameters of a run that has no rule set
+            (a K-means segmentation); null for a run under a rule set, whose
+            version is `rule_set_version`. Named a digest because the recording
+            function refuses any key that contains `hash`.
+          oneOf:
+            - $ref: '#/components/schemas/Sha256Hex'
+            - type: 'null'
+        window_from:
+          type:
+            - string
+            - 'null'
+          format: date
+          description: First day of the window the run read, or null when it read no window.
+        window_to:
+          type:
+            - string
+            - 'null'
+          format: date
+          description: Last day of the window the run read, or null when it read no window.
+        data_origin:
+          type: string
+          description: >-
+            `SEEDED` when any input was seeded, `OBSERVED` otherwise (ADR-0052).
+          enum:
+            - OBSERVED
+            - SEEDED
+        input_count:
+          $ref: '#/components/schemas/Count'
+        output_count:
+          $ref: '#/components/schemas/Count'
+        status:
+          type: string
+          enum:
+            - COMPLETED
+            - FAILED
+    ModelStateDetails:
+      type: object
+      additionalProperties: false
+      description: >-
+        The change of state of a model version (ADR-0064). The version is the
+        event's `model_version_id`.
+      required:
+        - previous_version_id
+        - reason_code
+      properties:
+        previous_version_id:
+          type:
+            - integer
+            - 'null'
+          format: int64
+          minimum: 1
+          description: >-
+            The version that was published before this change and is retired by
+            it: the one replaced by a publication, or the one rolled back from;
+            null for the first publication.
+        reason_code:
+          $ref: '#/components/schemas/ReasonCode'
+    PermissionDetails:
+      type: object
+      additionalProperties: false
+      description: >-
+        A change of what a user may do. It names the user and the change, and
+        never a password or a token. A transfer of the administrator is two
+        events, one for each user whose role changed, recorded together.
+      required:
+        - change
+        - subject_user_id
+        - from_role
+        - to_role
+        - store_ids
+      properties:
+        change:
+          type: string
+          description: >-
+            `ROLE_ASSIGNED` and `ADMINISTRATOR_TRANSFERRED` carry `from_role`
+            and `to_role`; `STORE_ASSIGNED` and `STORE_UNASSIGNED` carry the
+            `store_ids` added or removed; `USER_DEACTIVATED` and
+            `USER_REACTIVATED` carry none of them.
+          enum:
+            - ROLE_ASSIGNED
+            - ADMINISTRATOR_TRANSFERRED
+            - USER_DEACTIVATED
+            - USER_REACTIVATED
+            - STORE_ASSIGNED
+            - STORE_UNASSIGNED
+        subject_user_id:
+          type: string
+          format: uuid
+          description: The user whose permissions changed, equal to `subject_id`.
+        from_role:
+          oneOf:
+            - $ref: '#/components/schemas/RoleCode'
+            - type: 'null'
+        to_role:
+          oneOf:
+            - $ref: '#/components/schemas/RoleCode'
+            - type: 'null'
+        store_ids:
+          type: array
+          description: >-
+            Empty unless `change` is `STORE_ASSIGNED` or `STORE_UNASSIGNED`. In
+            XML, the element repeated; absent when empty.
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/StoreId'
+    CriticalActionDetails:
+      type: object
+      additionalProperties: false
+      description: >-
+        A critical act on one subject. The subject is the event's
+        `subject_type` and `subject_id`.
+      required:
+        - action
+        - reason_code
+      properties:
+        action:
+          type: string
+          description: >-
+            Each action fixes the subject type: `SALE_REVERSED` is a `SALE`,
+            `STOCK_ADJUSTED` a `STOCK_LEVEL`, `CUSTOMER_ANONYMIZED` a
+            `CUSTOMER`, `AUDIT_PAYLOAD_REDACTED` an `AUDIT_ENTRY`,
+            `EXPERIMENT_FROZEN` an `EXPERIMENT` and `CAMPAIGN_ACTIVATED` a
+            `CAMPAIGN`.
+          enum:
+            - SALE_REVERSED
+            - STOCK_ADJUSTED
+            - CUSTOMER_ANONYMIZED
+            - AUDIT_PAYLOAD_REDACTED
+            - EXPERIMENT_FROZEN
+            - CAMPAIGN_ACTIVATED
+        reason_code:
+          $ref: '#/components/schemas/ReasonCode'
+    HistoryReadDetails:
+      type: object
+      additionalProperties: false
+      description: >-
+        A read of one named customer's history: who read it is the actor, what
+        was read is never here (ADR-0066).
+      required:
+        - history
+        - customer_id
+      properties:
+        history:
+          type: string
+          enum:
+            - CONSENT
+            - SEGMENT
+            - SALES
+        customer_id:
+          type: string
+          format: uuid
+          description: The customer whose history was read, equal to `subject_id`.
+    AuditReadDetails:
+      type: object
+      additionalProperties: false
+      description: >-
+        A read of the audit trail by `ADMIN` or `AUDITOR`. It names the query
+        parameters used and never their values or the rows returned.
+      required:
+        - filters
+      properties:
+        filters:
+          type: array
+          description: >-
+            The names of the query parameters the request carried, without
+            `page` and `size`, each once, in ascending order. In XML, the
+            element repeated; absent when the request had none.
+          uniqueItems: true
+          maxItems: 20
+          items:
+            type: string
+            pattern: '^[a-z][a-z_]{0,39}$'
+    CalculationRunEvent:
+      type: object
+      additionalProperties: false
+      description: >-
+        An RFM recalculation, a segmentation run (RFM rules or K-means) or a published KPI recomputation that finished or failed, recorded by rfm-engine, segments or analytics-kpis. In XML the element is `DomainEvent` with `xsi:type` `CalculationRunEvent`. `model_version_id` or `rule_set_version` is set when the run was scored under one.
+      required:
+        - event_id
+        - kind
+        - outcome
+        - occurred_at
+        - recorded_at
+        - actor_type
+        - actor_user_id
+        - actor_role
+        - source
+        - store_id
+        - subject_type
+        - subject_id
+        - model_version_id
+        - rule_set_version
+        - correlation_id
+        - details
+        - prev_hash
+        - entry_hash
+      properties:
+        event_id:
+          type: string
+          format: uuid
+          description: >-
+            The producer's idempotency key: a repeat returns the stored event,
+            so a retry cannot double-count.
+        kind:
+          type: string
+          const: CALCULATION_RUN
+          description: The kind, `CALCULATION_RUN`.
+        outcome:
+          $ref: '#/components/schemas/DomainEventOutcome'
+        occurred_at:
+          type: string
+          format: date-time
+          description: The moment of the act, as the producer reported it.
+        recorded_at:
+          type: string
+          format: date-time
+          description: The moment the database recorded the event, never supplied by a producer.
+        actor_type:
+          $ref: '#/components/schemas/DomainEventActorType'
+        actor_user_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          description: >-
+            The user the producer states acted, from the verified token; null for
+            a `SYSTEM` actor. Omitted in XML when null. A producer is trusted
+            for the actor it passes, bounded by `source`.
+        actor_role:
+          oneOf:
+            - $ref: '#/components/schemas/RoleCode'
+            - type: 'null'
+          description: The actor's role code; null for a `SYSTEM` actor. Omitted in XML when null.
+        source:
+          $ref: '#/components/schemas/SourceName'
+        store_id:
+          oneOf:
+            - $ref: '#/components/schemas/StoreId'
+            - type: 'null'
+          description: The store where the act happened, or null. Omitted in XML when null.
+        subject_type:
+          type: string
+          enum:
+            - RFM_RECALCULATION
+            - SEGMENT_RUN
+            - KPI_REPORT
+          description: >-
+            `RFM_RECALCULATION`, `SEGMENT_RUN` or `KPI_REPORT`, matching `details.calculation` `RFM`, `SEGMENTATION` or `KPI`. `subject_id` is the id of the run or report as its owner names it.
+        subject_id:
+          $ref: '#/components/schemas/SubjectId'
+          description: What the event is about, as text; see `subject_type`.
+        model_version_id:
+          oneOf:
+            - $ref: '#/components/schemas/ModelVersionId'
+            - type: 'null'
+          description: >-
+            The model version the event was computed or scored under, or null.
+            Omitted in XML when null.
+        rule_set_version:
+          oneOf:
+            - $ref: '#/components/schemas/RuleSetVersion'
+            - type: 'null'
+          description: >-
+            The rule set the event was computed under, or null. Omitted in XML
+            when null.
+        correlation_id:
+          $ref: '#/components/schemas/CorrelationIdValue'
+        details:
+          $ref: '#/components/schemas/CalculationDetails'
+        prev_hash:
+          allOf:
+            - $ref: '#/components/schemas/Sha256Hex'
+          description: >-
+            The `entry_hash` of the event recorded before this one; for the
+            first event, the fixed genesis value.
+        entry_hash:
+          allOf:
+            - $ref: '#/components/schemas/Sha256Hex'
+          description: >-
+            SHA-256 of the canonical JSON of every other column plus
+            `prev_hash`, computed by the recording function under a lock that
+            gives the chain one head.
+      xml:
+        name: DomainEvent
+        namespace: https://mosaiq.maxthecoder.online/xml/audit-trail/v1
+    ModelStateEvent:
+      type: object
+      additionalProperties: false
+      description: >-
+        A model version published or rolled back (ADR-0064), recorded by model-registry. `model_version_id` is the version that became published: the one published, or the one restored by a rollback. In XML the element is `DomainEvent` with `xsi:type` `ModelStateEvent`.
+      required:
+        - event_id
+        - kind
+        - outcome
+        - occurred_at
+        - recorded_at
+        - actor_type
+        - actor_user_id
+        - actor_role
+        - source
+        - store_id
+        - subject_type
+        - subject_id
+        - model_version_id
+        - rule_set_version
+        - correlation_id
+        - details
+        - prev_hash
+        - entry_hash
+      properties:
+        event_id:
+          type: string
+          format: uuid
+          description: >-
+            The producer's idempotency key: a repeat returns the stored event,
+            so a retry cannot double-count.
+        kind:
+          type: string
+          enum:
+            - MODEL_PUBLISHED
+            - MODEL_ROLLED_BACK
+          description: The kind, `MODEL_PUBLISHED` or `MODEL_ROLLED_BACK`.
+        outcome:
+          $ref: '#/components/schemas/DomainEventOutcome'
+        occurred_at:
+          type: string
+          format: date-time
+          description: The moment of the act, as the producer reported it.
+        recorded_at:
+          type: string
+          format: date-time
+          description: The moment the database recorded the event, never supplied by a producer.
+        actor_type:
+          $ref: '#/components/schemas/DomainEventActorType'
+        actor_user_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          description: >-
+            The user the producer states acted, from the verified token; null for
+            a `SYSTEM` actor. Omitted in XML when null. A producer is trusted
+            for the actor it passes, bounded by `source`.
+        actor_role:
+          oneOf:
+            - $ref: '#/components/schemas/RoleCode'
+            - type: 'null'
+          description: The actor's role code; null for a `SYSTEM` actor. Omitted in XML when null.
+        source:
+          $ref: '#/components/schemas/SourceName'
+        store_id:
+          oneOf:
+            - $ref: '#/components/schemas/StoreId'
+            - type: 'null'
+          description: The store where the act happened, or null. Omitted in XML when null.
+        subject_type:
+          type: string
+          const: MODEL_VERSION
+          description: >-
+            `MODEL_VERSION`; `subject_id` is the version id, equal to `model_version_id`.
+        subject_id:
+          $ref: '#/components/schemas/SubjectId'
+          description: What the event is about, as text; see `subject_type`.
+        model_version_id:
+          $ref: '#/components/schemas/ModelVersionId'
+          description: >-
+            The version that became published: the one published, or the one
+            restored by a rollback.
+        rule_set_version:
+          oneOf:
+            - $ref: '#/components/schemas/RuleSetVersion'
+            - type: 'null'
+          description: >-
+            The rule set the event was computed under, or null. Omitted in XML
+            when null.
+        correlation_id:
+          $ref: '#/components/schemas/CorrelationIdValue'
+        details:
+          $ref: '#/components/schemas/ModelStateDetails'
+        prev_hash:
+          allOf:
+            - $ref: '#/components/schemas/Sha256Hex'
+          description: >-
+            The `entry_hash` of the event recorded before this one; for the
+            first event, the fixed genesis value.
+        entry_hash:
+          allOf:
+            - $ref: '#/components/schemas/Sha256Hex'
+          description: >-
+            SHA-256 of the canonical JSON of every other column plus
+            `prev_hash`, computed by the recording function under a lock that
+            gives the chain one head.
+      xml:
+        name: DomainEvent
+        namespace: https://mosaiq.maxthecoder.online/xml/audit-trail/v1
+    PermissionChangedEvent:
+      type: object
+      additionalProperties: false
+      description: >-
+        A role assigned, an administrator transferred, a user deactivated or reactivated, or a store assignment added or removed, recorded by users. In XML the element is `DomainEvent` with `xsi:type` `PermissionChangedEvent`.
+      required:
+        - event_id
+        - kind
+        - outcome
+        - occurred_at
+        - recorded_at
+        - actor_type
+        - actor_user_id
+        - actor_role
+        - source
+        - store_id
+        - subject_type
+        - subject_id
+        - model_version_id
+        - rule_set_version
+        - correlation_id
+        - details
+        - prev_hash
+        - entry_hash
+      properties:
+        event_id:
+          type: string
+          format: uuid
+          description: >-
+            The producer's idempotency key: a repeat returns the stored event,
+            so a retry cannot double-count.
+        kind:
+          type: string
+          const: PERMISSION_CHANGED
+          description: The kind, `PERMISSION_CHANGED`.
+        outcome:
+          $ref: '#/components/schemas/DomainEventOutcome'
+        occurred_at:
+          type: string
+          format: date-time
+          description: The moment of the act, as the producer reported it.
+        recorded_at:
+          type: string
+          format: date-time
+          description: The moment the database recorded the event, never supplied by a producer.
+        actor_type:
+          $ref: '#/components/schemas/DomainEventActorType'
+        actor_user_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          description: >-
+            The user the producer states acted, from the verified token; null for
+            a `SYSTEM` actor. Omitted in XML when null. A producer is trusted
+            for the actor it passes, bounded by `source`.
+        actor_role:
+          oneOf:
+            - $ref: '#/components/schemas/RoleCode'
+            - type: 'null'
+          description: The actor's role code; null for a `SYSTEM` actor. Omitted in XML when null.
+        source:
+          $ref: '#/components/schemas/SourceName'
+        store_id:
+          oneOf:
+            - $ref: '#/components/schemas/StoreId'
+            - type: 'null'
+          description: The store where the act happened, or null. Omitted in XML when null.
+        subject_type:
+          type: string
+          const: USER
+          description: >-
+            `USER`; `subject_id` is the user id, equal to `details.subject_user_id`.
+        subject_id:
+          $ref: '#/components/schemas/SubjectId'
+          description: What the event is about, as text; see `subject_type`.
+        model_version_id:
+          oneOf:
+            - $ref: '#/components/schemas/ModelVersionId'
+            - type: 'null'
+          description: >-
+            The model version the event was computed or scored under, or null.
+            Omitted in XML when null.
+        rule_set_version:
+          oneOf:
+            - $ref: '#/components/schemas/RuleSetVersion'
+            - type: 'null'
+          description: >-
+            The rule set the event was computed under, or null. Omitted in XML
+            when null.
+        correlation_id:
+          $ref: '#/components/schemas/CorrelationIdValue'
+        details:
+          $ref: '#/components/schemas/PermissionDetails'
+        prev_hash:
+          allOf:
+            - $ref: '#/components/schemas/Sha256Hex'
+          description: >-
+            The `entry_hash` of the event recorded before this one; for the
+            first event, the fixed genesis value.
+        entry_hash:
+          allOf:
+            - $ref: '#/components/schemas/Sha256Hex'
+          description: >-
+            SHA-256 of the canonical JSON of every other column plus
+            `prev_hash`, computed by the recording function under a lock that
+            gives the chain one head.
+      xml:
+        name: DomainEvent
+        namespace: https://mosaiq.maxthecoder.online/xml/audit-trail/v1
+    CriticalActionEvent:
+      type: object
+      additionalProperties: false
+      description: >-
+        A sale reversed, stock adjusted, a customer anonymized (ADR-0066), audit payloads redacted, an experiment's frame frozen or a campaign activated, recorded by sales, stock, customers, experimentation or campaigns. In XML the element is `DomainEvent` with `xsi:type` `CriticalActionEvent`.
+      required:
+        - event_id
+        - kind
+        - outcome
+        - occurred_at
+        - recorded_at
+        - actor_type
+        - actor_user_id
+        - actor_role
+        - source
+        - store_id
+        - subject_type
+        - subject_id
+        - model_version_id
+        - rule_set_version
+        - correlation_id
+        - details
+        - prev_hash
+        - entry_hash
+      properties:
+        event_id:
+          type: string
+          format: uuid
+          description: >-
+            The producer's idempotency key: a repeat returns the stored event,
+            so a retry cannot double-count.
+        kind:
+          type: string
+          const: CRITICAL_ACTION
+          description: The kind, `CRITICAL_ACTION`.
+        outcome:
+          $ref: '#/components/schemas/DomainEventOutcome'
+        occurred_at:
+          type: string
+          format: date-time
+          description: The moment of the act, as the producer reported it.
+        recorded_at:
+          type: string
+          format: date-time
+          description: The moment the database recorded the event, never supplied by a producer.
+        actor_type:
+          $ref: '#/components/schemas/DomainEventActorType'
+        actor_user_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          description: >-
+            The user the producer states acted, from the verified token; null for
+            a `SYSTEM` actor. Omitted in XML when null. A producer is trusted
+            for the actor it passes, bounded by `source`.
+        actor_role:
+          oneOf:
+            - $ref: '#/components/schemas/RoleCode'
+            - type: 'null'
+          description: The actor's role code; null for a `SYSTEM` actor. Omitted in XML when null.
+        source:
+          $ref: '#/components/schemas/SourceName'
+        store_id:
+          oneOf:
+            - $ref: '#/components/schemas/StoreId'
+            - type: 'null'
+          description: The store where the act happened, or null. Omitted in XML when null.
+        subject_type:
+          type: string
+          enum:
+            - SALE
+            - STOCK_LEVEL
+            - CUSTOMER
+            - AUDIT_ENTRY
+            - EXPERIMENT
+            - CAMPAIGN
+          description: >-
+            What the act was done to, fixed by `details.action`.
+        subject_id:
+          $ref: '#/components/schemas/SubjectId'
+          description: What the event is about, as text; see `subject_type`.
+        model_version_id:
+          oneOf:
+            - $ref: '#/components/schemas/ModelVersionId'
+            - type: 'null'
+          description: >-
+            The model version the event was computed or scored under, or null.
+            Omitted in XML when null.
+        rule_set_version:
+          oneOf:
+            - $ref: '#/components/schemas/RuleSetVersion'
+            - type: 'null'
+          description: >-
+            The rule set the event was computed under, or null. Omitted in XML
+            when null.
+        correlation_id:
+          $ref: '#/components/schemas/CorrelationIdValue'
+        details:
+          $ref: '#/components/schemas/CriticalActionDetails'
+        prev_hash:
+          allOf:
+            - $ref: '#/components/schemas/Sha256Hex'
+          description: >-
+            The `entry_hash` of the event recorded before this one; for the
+            first event, the fixed genesis value.
+        entry_hash:
+          allOf:
+            - $ref: '#/components/schemas/Sha256Hex'
+          description: >-
+            SHA-256 of the canonical JSON of every other column plus
+            `prev_hash`, computed by the recording function under a lock that
+            gives the chain one head.
+      xml:
+        name: DomainEvent
+        namespace: https://mosaiq.maxthecoder.online/xml/audit-trail/v1
+    HistoryReadEvent:
+      type: object
+      additionalProperties: false
+      description: >-
+        A read of one customer's consent log, segment history or sales list, recorded by customer-preferences, segments or sales, whether the read was done or refused (ADR-0066). In XML the element is `DomainEvent` with `xsi:type` `HistoryReadEvent`.
+      required:
+        - event_id
+        - kind
+        - outcome
+        - occurred_at
+        - recorded_at
+        - actor_type
+        - actor_user_id
+        - actor_role
+        - source
+        - store_id
+        - subject_type
+        - subject_id
+        - model_version_id
+        - rule_set_version
+        - correlation_id
+        - details
+        - prev_hash
+        - entry_hash
+      properties:
+        event_id:
+          type: string
+          format: uuid
+          description: >-
+            The producer's idempotency key: a repeat returns the stored event,
+            so a retry cannot double-count.
+        kind:
+          type: string
+          const: HISTORY_READ
+          description: The kind, `HISTORY_READ`.
+        outcome:
+          $ref: '#/components/schemas/DomainEventOutcome'
+        occurred_at:
+          type: string
+          format: date-time
+          description: The moment of the act, as the producer reported it.
+        recorded_at:
+          type: string
+          format: date-time
+          description: The moment the database recorded the event, never supplied by a producer.
+        actor_type:
+          $ref: '#/components/schemas/DomainEventActorType'
+        actor_user_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          description: >-
+            The user the producer states acted, from the verified token; null for
+            a `SYSTEM` actor. Omitted in XML when null. A producer is trusted
+            for the actor it passes, bounded by `source`.
+        actor_role:
+          oneOf:
+            - $ref: '#/components/schemas/RoleCode'
+            - type: 'null'
+          description: The actor's role code; null for a `SYSTEM` actor. Omitted in XML when null.
+        source:
+          $ref: '#/components/schemas/SourceName'
+        store_id:
+          oneOf:
+            - $ref: '#/components/schemas/StoreId'
+            - type: 'null'
+          description: The store where the act happened, or null. Omitted in XML when null.
+        subject_type:
+          type: string
+          const: CUSTOMER
+          description: >-
+            `CUSTOMER`; `subject_id` is the customer id, equal to `details.customer_id`.
+        subject_id:
+          $ref: '#/components/schemas/SubjectId'
+          description: What the event is about, as text; see `subject_type`.
+        model_version_id:
+          oneOf:
+            - $ref: '#/components/schemas/ModelVersionId'
+            - type: 'null'
+          description: >-
+            The model version the event was computed or scored under, or null.
+            Omitted in XML when null.
+        rule_set_version:
+          oneOf:
+            - $ref: '#/components/schemas/RuleSetVersion'
+            - type: 'null'
+          description: >-
+            The rule set the event was computed under, or null. Omitted in XML
+            when null.
+        correlation_id:
+          $ref: '#/components/schemas/CorrelationIdValue'
+        details:
+          $ref: '#/components/schemas/HistoryReadDetails'
+        prev_hash:
+          allOf:
+            - $ref: '#/components/schemas/Sha256Hex'
+          description: >-
+            The `entry_hash` of the event recorded before this one; for the
+            first event, the fixed genesis value.
+        entry_hash:
+          allOf:
+            - $ref: '#/components/schemas/Sha256Hex'
+          description: >-
+            SHA-256 of the canonical JSON of every other column plus
+            `prev_hash`, computed by the recording function under a lock that
+            gives the chain one head.
+      xml:
+        name: DomainEvent
+        namespace: https://mosaiq.maxthecoder.online/xml/audit-trail/v1
+    AuditReadEvent:
+      type: object
+      additionalProperties: false
+      description: >-
+        A read of `domain-events` or `audit-entries` by `ADMIN` or `AUDITOR`, recorded by audit-trail: one event per request, including a request that lists `AUDIT_READ` events. In XML the element is `DomainEvent` with `xsi:type` `AuditReadEvent`.
+      required:
+        - event_id
+        - kind
+        - outcome
+        - occurred_at
+        - recorded_at
+        - actor_type
+        - actor_user_id
+        - actor_role
+        - source
+        - store_id
+        - subject_type
+        - subject_id
+        - model_version_id
+        - rule_set_version
+        - correlation_id
+        - details
+        - prev_hash
+        - entry_hash
+      properties:
+        event_id:
+          type: string
+          format: uuid
+          description: >-
+            The producer's idempotency key: a repeat returns the stored event,
+            so a retry cannot double-count.
+        kind:
+          type: string
+          const: AUDIT_READ
+          description: The kind, `AUDIT_READ`.
+        outcome:
+          $ref: '#/components/schemas/DomainEventOutcome'
+        occurred_at:
+          type: string
+          format: date-time
+          description: The moment of the act, as the producer reported it.
+        recorded_at:
+          type: string
+          format: date-time
+          description: The moment the database recorded the event, never supplied by a producer.
+        actor_type:
+          $ref: '#/components/schemas/DomainEventActorType'
+        actor_user_id:
+          type:
+            - string
+            - 'null'
+          format: uuid
+          description: >-
+            The user the producer states acted, from the verified token; null for
+            a `SYSTEM` actor. Omitted in XML when null. A producer is trusted
+            for the actor it passes, bounded by `source`.
+        actor_role:
+          oneOf:
+            - $ref: '#/components/schemas/RoleCode'
+            - type: 'null'
+          description: The actor's role code; null for a `SYSTEM` actor. Omitted in XML when null.
+        source:
+          $ref: '#/components/schemas/SourceName'
+        store_id:
+          oneOf:
+            - $ref: '#/components/schemas/StoreId'
+            - type: 'null'
+          description: The store where the act happened, or null. Omitted in XML when null.
+        subject_type:
+          type: string
+          enum:
+            - DOMAIN_EVENT
+            - AUDIT_ENTRY
+          description: >-
+            The resource read: `DOMAIN_EVENT` or `AUDIT_ENTRY`. `subject_id` is the `event_id` or `audit_id` of a read of one item, and null for a list or a verification (omitted in XML).
+        subject_id:
+          oneOf:
+            - $ref: '#/components/schemas/SubjectId'
+            - type: 'null'
+        model_version_id:
+          oneOf:
+            - $ref: '#/components/schemas/ModelVersionId'
+            - type: 'null'
+          description: >-
+            The model version the event was computed or scored under, or null.
+            Omitted in XML when null.
+        rule_set_version:
+          oneOf:
+            - $ref: '#/components/schemas/RuleSetVersion'
+            - type: 'null'
+          description: >-
+            The rule set the event was computed under, or null. Omitted in XML
+            when null.
+        correlation_id:
+          $ref: '#/components/schemas/CorrelationIdValue'
+        details:
+          $ref: '#/components/schemas/AuditReadDetails'
+        prev_hash:
+          allOf:
+            - $ref: '#/components/schemas/Sha256Hex'
+          description: >-
+            The `entry_hash` of the event recorded before this one; for the
+            first event, the fixed genesis value.
+        entry_hash:
+          allOf:
+            - $ref: '#/components/schemas/Sha256Hex'
+          description: >-
+            SHA-256 of the canonical JSON of every other column plus
+            `prev_hash`, computed by the recording function under a lock that
+            gives the chain one head.
+      xml:
+        name: DomainEvent
+        namespace: https://mosaiq.maxthecoder.online/xml/audit-trail/v1
+    DomainEvent:
+      description: >-
+        One domain event, in one of six shapes discriminated by `kind`
+        (ADR-0072). Each shape fixes its kind, its subject types and the keys of
+        its `details`, so a key that the kind does not list is not valid. No
+        key of `details` contains `password`, `hash`, `secret`, `token`, `key`
+        or `credential`, and no value is shaped like a token or a password hash
+        (RN-29). In XML the element is `DomainEvent` carrying `xsi:type` set to
+        the shape's name (`CalculationRunEvent`, `ModelStateEvent`,
+        `PermissionChangedEvent`, `CriticalActionEvent`, `HistoryReadEvent` or
+        `AuditReadEvent`); a member that is null in JSON is omitted.
+      oneOf:
+        - $ref: '#/components/schemas/CalculationRunEvent'
+        - $ref: '#/components/schemas/ModelStateEvent'
+        - $ref: '#/components/schemas/PermissionChangedEvent'
+        - $ref: '#/components/schemas/CriticalActionEvent'
+        - $ref: '#/components/schemas/HistoryReadEvent'
+        - $ref: '#/components/schemas/AuditReadEvent'
+      discriminator:
+        propertyName: kind
+        mapping:
+          CALCULATION_RUN: '#/components/schemas/CalculationRunEvent'
+          MODEL_PUBLISHED: '#/components/schemas/ModelStateEvent'
+          MODEL_ROLLED_BACK: '#/components/schemas/ModelStateEvent'
+          PERMISSION_CHANGED: '#/components/schemas/PermissionChangedEvent'
+          CRITICAL_ACTION: '#/components/schemas/CriticalActionEvent'
+          HISTORY_READ: '#/components/schemas/HistoryReadEvent'
+          AUDIT_READ: '#/components/schemas/AuditReadEvent'
+    DomainEvents:
+      type: object
+      additionalProperties: false
+      required:
+        - domain_events
+        - page_info
+      properties:
+        domain_events:
+          type: array
+          description: >-
+            Events ordered by `recorded_at` descending, then `event_id`
+            descending.
+          items:
+            $ref: '#/components/schemas/DomainEvent'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: DomainEvents
+        namespace: https://mosaiq.maxthecoder.online/xml/audit-trail/v1
+    VerificationResult:
+      type: string
+      enum:
+        - OK
+        - BROKEN
+    VerificationFault:
+      type: string
+      description: >-
+        `HASH_MISMATCH` when the event's recomputed hash is not its
+        `entry_hash`; `LINK_MISMATCH` when its `prev_hash` is not the
+        `entry_hash` of the event before it.
+      enum:
+        - HASH_MISMATCH
+        - LINK_MISMATCH
+    FirstInvalidEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - event_id
+        - fault
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        fault:
+          $ref: '#/components/schemas/VerificationFault'
+    DomainEventVerification:
+      type: object
+      additionalProperties: false
+      description: >-
+        The result of recomputing the chain over a range. The audit module
+        shows `head_hash` so an auditor can record it outside the database.
+      required:
+        - result
+        - row_count
+        - head_hash
+        - first_invalid
+      properties:
+        result:
+          $ref: '#/components/schemas/VerificationResult'
+        row_count:
+          allOf:
+            - $ref: '#/components/schemas/Count'
+          description: The number of events in the range.
+        head_hash:
+          description: >-
+            The stored `entry_hash` of the newest event in the range; null, and
+            omitted in XML, for a range with no event.
+          oneOf:
+            - $ref: '#/components/schemas/Sha256Hex'
+            - type: 'null'
+        first_invalid:
+          description: >-
+            The first event, oldest first, whose hash or link does not match;
+            null, and omitted in XML, when `result` is `OK`.
+          oneOf:
+            - $ref: '#/components/schemas/FirstInvalidEvent'
+            - type: 'null'
+      xml:
+        name: DomainEventVerification
+        namespace: https://mosaiq.maxthecoder.online/xml/audit-trail/v1
     ErrorDetail:
       type: object
       additionalProperties: false
@@ -701,3 +2122,70 @@ components:
             schema_not_ready:
               value: |-
                 <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>schema_not_ready</code><message>The required database schema is not applied.</message><correlation_id>corr-ready-503</correlation_id></Error>
+    DomainEventNotFound:
+      description: >-
+        `domain_event_not_found`, or the kit's `not_found` for an `event_id`
+        that is not a UUID.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            domain_event_not_found:
+              externalValue: ./examples/domain-event-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            domain_event_not_found:
+              externalValue: ./examples/domain-event-not-found.xml
+    DomainEventQueryValidation:
+      description: '`invalid_query` or `invalid_pagination`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/domain-event-invalid-query.json
+            invalid_pagination:
+              value:
+                code: invalid_pagination
+                message: Pagination values are outside their allowed ranges.
+                correlation_id: corr-event-list-001
+                details:
+                  - field: size
+                    code: maximum
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/domain-event-invalid-query.xml
+            invalid_pagination:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>invalid_pagination</code><message>Pagination values are outside their allowed ranges.</message><correlation_id>corr-event-list-001</correlation_id><details><field>size</field><code>maximum</code></details></Error>
+    DomainEventVerificationValidation:
+      description: '`invalid_query`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/domain-event-verification-invalid-query.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/domain-event-verification-invalid-query.xml

@@ -1,0 +1,23 @@
+{
+  "event_id": "bad44382-0311-5737-9533-e7739e6527a9",
+  "kind": "MODEL_ROLLED_BACK",
+  "outcome": "SUCCESS",
+  "occurred_at": "2026-11-06T09:12:03.830Z",
+  "recorded_at": "2026-11-06T09:12:03.871Z",
+  "actor_type": "USER",
+  "actor_user_id": "11111111-1111-1111-1111-000000000001",
+  "actor_role": "ADMIN",
+  "source": "svc_models",
+  "store_id": null,
+  "subject_type": "MODEL_VERSION",
+  "subject_id": "8",
+  "model_version_id": 8,
+  "rule_set_version": null,
+  "correlation_id": "corr-evt-04",
+  "details": {
+    "previous_version_id": 9,
+    "reason_code": "SEGMENTS_UNSTABLE"
+  },
+  "prev_hash": "696045c9f5d92030c08491f3503d6321e33bda67c05bc96b1476df3f2bb81c52",
+  "entry_hash": "3d3392a652c790d81c6dc53d0e326d2a1bceb3739b5f19c58dfb735fa2f27bc8"
+}

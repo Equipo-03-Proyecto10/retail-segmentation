@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DomainEventVerification xmlns="https://mosaiq.maxthecoder.online/xml/audit-trail/v1">
+  <result>BROKEN</result>
+  <row_count>11</row_count>
+  <head_hash>ba1b98302db305656fedeb97e97f5978de314ad449f98b40b8ecaba551b0802f</head_hash>
+  <first_invalid>
+    <event_id>fec1df3c-ad60-5abe-8b63-575d011303a4</event_id>
+    <fault>HASH_MISMATCH</fault>
+  </first_invalid>
+</DomainEventVerification>

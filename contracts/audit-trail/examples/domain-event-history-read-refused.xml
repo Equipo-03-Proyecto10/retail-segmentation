@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DomainEvent xmlns="https://mosaiq.maxthecoder.online/xml/audit-trail/v1"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xsi:type="HistoryReadEvent">
+  <event_id>be1fb0f6-f7c4-5d24-bfdf-4eb618e93d55</event_id>
+  <kind>HISTORY_READ</kind>
+  <outcome>REFUSED</outcome>
+  <occurred_at>2026-11-08T13:41:02.116Z</occurred_at>
+  <recorded_at>2026-11-08T13:41:02.157Z</recorded_at>
+  <actor_type>USER</actor_type>
+  <actor_user_id>2e8f4c1a-6b97-4d03-a5e2-7c9d0b3f8a16</actor_user_id>
+  <actor_role>INVENTORY_PLANNER</actor_role>
+  <source>svc_segments</source>
+  <subject_type>CUSTOMER</subject_type>
+  <subject_id>3f6c1d52-8e4a-4b7d-a0c9-5d2e7b1f4a68</subject_id>
+  <correlation_id>corr-evt-09</correlation_id>
+  <details>
+    <history>SEGMENT</history>
+    <customer_id>3f6c1d52-8e4a-4b7d-a0c9-5d2e7b1f4a68</customer_id>
+  </details>
+  <prev_hash>cc5e4eb1789167defdf14e05b6546101b1e0a0917b70aec7a4ceaed7038bfe62</prev_hash>
+  <entry_hash>e5367ed779bfaa432494c12dec1df9062fb56b442af27d6007ae687db8ebbd79</entry_hash>
+</DomainEvent>

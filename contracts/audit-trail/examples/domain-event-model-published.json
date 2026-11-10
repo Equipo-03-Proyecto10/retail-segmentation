@@ -1,0 +1,23 @@
+{
+  "event_id": "90f230f4-7065-50e2-a542-d18a0025b497",
+  "kind": "MODEL_PUBLISHED",
+  "outcome": "SUCCESS",
+  "occurred_at": "2026-11-05T14:21:40.164Z",
+  "recorded_at": "2026-11-05T14:21:40.205Z",
+  "actor_type": "USER",
+  "actor_user_id": "11111111-1111-1111-1111-000000000001",
+  "actor_role": "ADMIN",
+  "source": "svc_models",
+  "store_id": null,
+  "subject_type": "MODEL_VERSION",
+  "subject_id": "9",
+  "model_version_id": 9,
+  "rule_set_version": null,
+  "correlation_id": "corr-evt-03",
+  "details": {
+    "previous_version_id": 8,
+    "reason_code": "DRIFT_REVIEW"
+  },
+  "prev_hash": "e0be1359b4c90449ea8dda48576edd3cd7eada8be3b9ae69849f29b587d43c2d",
+  "entry_hash": "696045c9f5d92030c08491f3503d6321e33bda67c05bc96b1476df3f2bb81c52"
+}

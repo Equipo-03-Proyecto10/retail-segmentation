@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DomainEvent xmlns="https://mosaiq.maxthecoder.online/xml/audit-trail/v1"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xsi:type="CriticalActionEvent">
+  <event_id>895aeef4-5071-5056-8bb7-41ed825af9bd</event_id>
+  <kind>CRITICAL_ACTION</kind>
+  <outcome>SUCCESS</outcome>
+  <occurred_at>2026-11-07T08:30:55.377Z</occurred_at>
+  <recorded_at>2026-11-07T08:30:55.418Z</recorded_at>
+  <actor_type>USER</actor_type>
+  <actor_user_id>5d1e7a9b-3c64-4f6c-8a3e-1d524b179c20</actor_user_id>
+  <actor_role>MARKETING</actor_role>
+  <source>svc_campaigns</source>
+  <subject_type>CAMPAIGN</subject_type>
+  <subject_id>12</subject_id>
+  <correlation_id>corr-evt-07</correlation_id>
+  <details>
+    <action>CAMPAIGN_ACTIVATED</action>
+    <reason_code>PLANNED_LAUNCH</reason_code>
+  </details>
+  <prev_hash>cedfb709a9510135ed09d02a12eab72148037d67d75b86cb9451221c936f3267</prev_hash>
+  <entry_hash>5d343c27f10051c27fc455c651dec34a6eb618b41f48d56b11f40e6813984f6c</entry_hash>
+</DomainEvent>

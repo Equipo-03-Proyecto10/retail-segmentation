@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DomainEvent xmlns="https://mosaiq.maxthecoder.online/xml/audit-trail/v1"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xsi:type="CalculationRunEvent">
+  <event_id>d7aee3eb-b1ad-52c9-813e-a92b721defc6</event_id>
+  <kind>CALCULATION_RUN</kind>
+  <outcome>SUCCESS</outcome>
+  <occurred_at>2026-11-05T06:00:09.471Z</occurred_at>
+  <recorded_at>2026-11-05T06:00:09.512Z</recorded_at>
+  <actor_type>SYSTEM</actor_type>
+  <source>svc_segments</source>
+  <subject_type>SEGMENT_RUN</subject_type>
+  <subject_id>57</subject_id>
+  <model_version_id>9</model_version_id>
+  <correlation_id>corr-evt-02</correlation_id>
+  <details>
+    <calculation>SEGMENTATION</calculation>
+    <parameters_digest>a170624f811bf32fb0b35876d29ddb618b6593f5d08646b13eeca9884c132f3b</parameters_digest>
+    <window_from>2026-08-06</window_from>
+    <window_to>2026-11-04</window_to>
+    <data_origin>OBSERVED</data_origin>
+    <input_count>3412</input_count>
+    <output_count>0</output_count>
+    <status>FAILED</status>
+  </details>
+  <prev_hash>efaab566ec4a752dae0f00ace4b83c5688a67a37f4981303390c6fe211abaa79</prev_hash>
+  <entry_hash>e0be1359b4c90449ea8dda48576edd3cd7eada8be3b9ae69849f29b587d43c2d</entry_hash>
+</DomainEvent>

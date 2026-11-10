@@ -1,0 +1,23 @@
+{
+  "event_id": "895aeef4-5071-5056-8bb7-41ed825af9bd",
+  "kind": "CRITICAL_ACTION",
+  "outcome": "SUCCESS",
+  "occurred_at": "2026-11-07T08:30:55.377Z",
+  "recorded_at": "2026-11-07T08:30:55.418Z",
+  "actor_type": "USER",
+  "actor_user_id": "5d1e7a9b-3c64-4f6c-8a3e-1d524b179c20",
+  "actor_role": "MARKETING",
+  "source": "svc_campaigns",
+  "store_id": null,
+  "subject_type": "CAMPAIGN",
+  "subject_id": "12",
+  "model_version_id": null,
+  "rule_set_version": null,
+  "correlation_id": "corr-evt-07",
+  "details": {
+    "action": "CAMPAIGN_ACTIVATED",
+    "reason_code": "PLANNED_LAUNCH"
+  },
+  "prev_hash": "cedfb709a9510135ed09d02a12eab72148037d67d75b86cb9451221c936f3267",
+  "entry_hash": "5d343c27f10051c27fc455c651dec34a6eb618b41f48d56b11f40e6813984f6c"
+}

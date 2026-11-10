@@ -20,8 +20,8 @@
 
 ## Business rule
 
-- `quantity_on_hand >= 0` is a CHECK. The only service write is `api_stock.consume_v1`, a SECURITY DEFINER function that runs the web's conditional `UPDATE ... WHERE quantity_on_hand >= q RETURNING` (E-05).
-- Availability is a primary-key read and is never cached, so a phone sale and a CSV sale show on the next read. Receipts, transfers and adjustments (`inventory.write`) stay deferred in the roadmap.
+- `quantity_on_hand >= 0` is a CHECK. Beyond a sale, stock changes only through a recorded movement or a sale's reversal (ADR-0061). Services write `inventory` through three SECURITY DEFINER functions owned by `definer_stock`: `api_stock.consume_v1` for a sale and `api_stock.restock_v1` for a reversal, both called by sales (E-05), and `stock.record_movement` for a receipt, transfer, count or adjustment. Each subtraction is a conditional `UPDATE ... WHERE quantity_on_hand >= q RETURNING`.
+- Availability is a primary-key read and is never cached, so a phone sale and a CSV sale show on the next read.
 
 ## Endpoints
 
@@ -42,6 +42,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 |---|---|---|---|
 | `inventory` | Table (`public`) | R: SELECT. The web's CSV path is a writer (E-09) | Services write it only through `consume_v1` and `stock.record_movement` (ADR-0061) |
 | `api_stock.consume_v1` | Function | Owned by `definer_stock`: SELECT on `inventory`, UPDATE of `quantity_on_hand` and `updated_at` | EXECUTE to `svc_sales` only |
+| `api_stock.restock_v1` | Function | Owned by `definer_stock`: the UPDATE above, and INSERT of a `RESTOCK` row in `stock.stock_movement` | EXECUTE to `svc_sales` only |
 | `stock.stock_movement`, `stock.movement_request` | Tables (`stock` schema) | `svc_stock` reads movements; `definer_stock` inserts through `stock.record_movement` | Append-only history and idempotency memory (F21-06) |
 | `stock.record_movement` | Function | Owned by `definer_stock`: INSERT and SELECT on both movement tables, INSERT on `inventory` plus the UPDATE above | EXECUTE to `svc_stock` only |
 | `stock_events.outbox` | Table (outbox) | SELECT, UPDATE of `relayed_at`, DELETE (7-day purge) | Filled by `definer_stock`; seed-exempt runtime state |
@@ -52,6 +53,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 |---|---|---|
 | Publishes | `api_stock.stock_level_v1` | recommendations |
 | Publishes | `api_stock.consume_v1(smallint, int, int)` | sales (EXECUTE only) |
+| Publishes | `api_stock.restock_v1(smallint, int, int, bigint)` | sales (EXECUTE only) |
 
 ## Events
 
@@ -72,13 +74,18 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 
 | HTTP | Code | When |
 |---|---|---|
-| 422 | `invalid_quantity` | `consume_v1` raised SQLSTATE 22023 (NULL or ≤ 0), seen by sales |
-| 409 | `stock_unavailable` | `consume_v1` raised 23514: not enough stock, seen by sales |
-| 422 | `no_stock_record` | `consume_v1` raised 23514: no inventory row, seen by sales |
+| 422 | `invalid_quantity` | `consume_v1` or `restock_v1` raised SQLSTATE 22023 (NULL or ≤ 0), seen by sales; or a movement's quantity is out of range |
+| 409 | `stock_unavailable` | Not enough stock: `consume_v1` raised 23514, seen by sales; or a movement would leave on-hand negative |
+| 422 | `no_stock_record` | No inventory row: `consume_v1` or `restock_v1` raised 23514, seen by sales; or a movement subtracts from a pair with none |
+| — | `restock_already_recorded` | `restock_v1` raised 23505: that reversal already restocked the pair. Seen by sales, whose contract sets its status (#774) |
+| 400 | `idempotency_key_required` | `POST /v1/stock-movements` without a UUID `Idempotency-Key` |
+| 409 | `idempotency_key_reused` | The `Idempotency-Key` was accepted for a different movement |
+| 422 | `invalid_body` | A movement misses or misstates a field its type requires; `details` names it |
+| 404 | `stock_movement_not_found` | No movement has that id |
 | 404 | `stock_level_not_found` | A store and product pair with no `inventory` row, on the read endpoint |
 | 422 | `invalid_query` | `below`, `store_id` or `product_id` is not a positive integer; `details` names the parameter |
 
-`invalid_quantity`, `stock_unavailable` and `no_stock_record` are database-contract outcomes of `consume_v1`: sales maps them to HTTP, and stock-service never answers them.
+From `consume_v1` and `restock_v1`, `invalid_quantity`, `stock_unavailable`, `no_stock_record` and `restock_already_recorded` are database-contract outcomes: sales maps them to HTTP. stock-service answers `invalid_quantity`, `stock_unavailable` and `no_stock_record` only for its own movements.
 
 ## Accepted exceptions
 
@@ -93,9 +100,9 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 ### E-05 — one synchronous cross-boundary call, inside the database
 
-- **What:** sales-service calls `api_stock.consume_v1` once per sale line, inside its own transaction. It is the only place where one boundary calls into another.
-- **Why it is acceptable:** A sale and its stock decrement must commit together (RN-14, ADR-0031). A saga or an HTTP call to stock could leave a sale without its decrement, or the reverse. A SECURITY DEFINER function owned by `definer_stock` gives atomicity without a stock write privilege for sales.
-- **Guard:** EXECUTE goes to `svc_sales` only, and the grant check compares it both ways. It is in the database and never HTTP. ADR-0044 states that a second cross-boundary write needs its own record.
+- **What:** sales-service calls `api_stock.consume_v1` once per sale line, inside the sale's transaction, and `api_stock.restock_v1` once per resalable reversed line, inside the reversal's transaction (ADR-0061, ADR-0062). They are the only places where sales calls into another boundary.
+- **Why it is acceptable:** A sale and its stock decrement must commit together (RN-14, ADR-0031), and so must a reversal and its restock (ADR-0061). A saga or an HTTP call to stock could leave a sale without its decrement, a reversal without its restock, or the reverse. A SECURITY DEFINER function owned by `definer_stock` gives atomicity without a stock write privilege for sales.
+- **Guard:** EXECUTE on both goes to `svc_sales` only, and the grant check compares it both ways. Both are in the database and never HTTP. ADR-0044 states that a further cross-boundary write needs its own record; for `restock_v1`, that record is ADR-0061.
 - **Decided in:** [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) (The one synchronous call); [ADR-0039](../adr/0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) (The transaction). Register: [E-05](./README.md#e-05--one-synchronous-cross-boundary-call-inside-the-database).
 
 ### E-08 — read-rule services count as one-rule services

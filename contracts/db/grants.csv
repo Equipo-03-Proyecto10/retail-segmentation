@@ -83,12 +83,14 @@ svc_recommendations,api_stock,USAGE
 svc_recommendations,api_stock.stock_level_v1,SELECT
 svc_sales,api_stock,USAGE
 svc_sales,"api_stock.consume_v1(smallint,integer,integer)",EXECUTE
+svc_sales,"api_stock.restock_v1(smallint,integer,integer,bigint)",EXECUTE
 definer_stock,public.inventory,SELECT
 definer_stock,public.inventory(quantity_on_hand),UPDATE
 definer_stock,public.inventory(updated_at),UPDATE
 definer_stock,stock_events,USAGE
 definer_stock,stock_events.outbox,INSERT
 definer_stock,"api_stock.consume_v1(smallint,integer,integer)",EXECUTE
+definer_stock,"api_stock.restock_v1(smallint,integer,integer,bigint)",EXECUTE
 definer_stock,public.inventory,INSERT
 definer_stock,stock,USAGE
 definer_stock,stock.movement_request,INSERT

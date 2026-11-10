@@ -252,3 +252,237 @@ async fn concurrent_consumers_cannot_make_stock_negative() {
         .await
         .unwrap();
 }
+
+// ---------- api_stock.restock_v1 (contracts/db/api_stock.restock.v1.md) ----------
+
+/// Reversal ids no seed or other test uses, removed before and after.
+const RESTOCK_REVERSAL: i64 = 9_000_000_001;
+const RESTOCK_REPEATED: i64 = 9_000_000_002;
+
+async fn forget_restocks(owner: &Client, store_id: i16, product_id: i32, quantity: i32) {
+    owner
+        .execute(
+            "DELETE FROM stock.stock_movement \
+             WHERE movement_type = 'RESTOCK' AND reversal_id = ANY($1)",
+            &[&vec![RESTOCK_REVERSAL, RESTOCK_REPEATED]],
+        )
+        .await
+        .unwrap();
+    owner
+        .execute(
+            "UPDATE public.inventory SET quantity_on_hand = $3 \
+             WHERE store_id = $1 AND product_id = $2",
+            &[&store_id, &product_id, &quantity],
+        )
+        .await
+        .unwrap();
+}
+
+async fn on_hand(owner: &Client, store_id: i16, product_id: i32) -> i32 {
+    owner
+        .query_one(
+            "SELECT quantity_on_hand FROM public.inventory \
+             WHERE store_id = $1 AND product_id = $2",
+            &[&store_id, &product_id],
+        )
+        .await
+        .unwrap()
+        .get(0)
+}
+
+/// Calls restock_v1 as `role` in its own transaction, committed on success.
+async fn restock_as(
+    url: &str,
+    role: &str,
+    store_id: i16,
+    product_id: i32,
+    quantity: Option<i32>,
+    reversal_id: Option<i64>,
+) -> Result<i32, tokio_postgres::Error> {
+    let client = connect(url).await;
+    let role = match role {
+        "svc_sales" => "BEGIN; SET LOCAL ROLE svc_sales",
+        "svc_stock" => "BEGIN; SET LOCAL ROLE svc_stock",
+        other => panic!("no such test role {other}"),
+    };
+    client.batch_execute(role).await.unwrap();
+    let result = client
+        .query_one(
+            "SELECT api_stock.restock_v1($1::smallint, $2, $3, $4)",
+            &[&store_id, &product_id, &quantity, &reversal_id],
+        )
+        .await;
+    match result {
+        Ok(row) => {
+            client.batch_execute("COMMIT").await.unwrap();
+            Ok(row.get(0))
+        }
+        Err(error) => {
+            client.batch_execute("ROLLBACK").await.unwrap();
+            Err(error)
+        }
+    }
+}
+
+#[tokio::test]
+async fn restock_adds_units_and_records_one_movement() {
+    let _guard = test_lock().await;
+    let Some(url) = database_url() else {
+        return;
+    };
+    let owner = connect(&url).await;
+    let (store_id, product_id, original) = seeded_pair(&owner).await;
+    forget_restocks(&owner, store_id, product_id, original).await;
+    let entity_id = format!("{store_id}:{product_id}");
+    let events_before: i64 = owner
+        .query_one(
+            "SELECT count(*) FROM stock_events.outbox WHERE entity_id = $1",
+            &[&entity_id],
+        )
+        .await
+        .unwrap()
+        .get(0);
+
+    let restored = restock_as(
+        &url,
+        "svc_sales",
+        store_id,
+        product_id,
+        Some(3),
+        Some(RESTOCK_REVERSAL),
+    )
+    .await
+    .unwrap();
+    assert_eq!(restored, original + 3);
+    assert_eq!(on_hand(&owner, store_id, product_id).await, original + 3);
+
+    let row = owner
+        .query_one(
+            "SELECT quantity_delta, quantity_before, quantity_after, \
+                    idempotency_key IS NULL, recorded_by IS NULL \
+             FROM stock.stock_movement \
+             WHERE movement_type = 'RESTOCK' AND reversal_id = $1 \
+               AND store_id = $2 AND product_id = $3",
+            &[&RESTOCK_REVERSAL, &store_id, &product_id],
+        )
+        .await
+        .unwrap();
+    assert_eq!(row.get::<_, i32>(0), 3);
+    assert_eq!(row.get::<_, i32>(1), original);
+    assert_eq!(row.get::<_, i32>(2), original + 3);
+    assert!(row.get::<_, bool>(3), "a restock has no idempotency key");
+    assert!(row.get::<_, bool>(4), "a restock has no author of its own");
+
+    let events_after: i64 = owner
+        .query_one(
+            "SELECT count(*) FROM stock_events.outbox WHERE entity_id = $1",
+            &[&entity_id],
+        )
+        .await
+        .unwrap()
+        .get(0);
+    assert_eq!(events_after, events_before + 1);
+
+    forget_restocks(&owner, store_id, product_id, original).await;
+}
+
+#[tokio::test]
+async fn restock_contract_refuses_invalid_missing_and_repeated() {
+    let _guard = test_lock().await;
+    let Some(url) = database_url() else {
+        return;
+    };
+    let owner = connect(&url).await;
+    let (store_id, product_id, original) = seeded_pair(&owner).await;
+    forget_restocks(&owner, store_id, product_id, original).await;
+
+    // 22023 before any row is touched.
+    for (quantity, reversal_id) in [
+        (Some(0), Some(RESTOCK_REVERSAL)),
+        (Some(-1), Some(RESTOCK_REVERSAL)),
+        (None, Some(RESTOCK_REVERSAL)),
+        (Some(1), None),
+    ] {
+        let error = restock_as(
+            &url,
+            "svc_sales",
+            store_id,
+            product_id,
+            quantity,
+            reversal_id,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.code().unwrap().code(), "22023");
+        assert_eq!(on_hand(&owner, store_id, product_id).await, original);
+    }
+
+    // No inventory row: refused, and no row is created.
+    let error = restock_as(
+        &url,
+        "svc_sales",
+        32767,
+        i32::MAX,
+        Some(1),
+        Some(RESTOCK_REVERSAL),
+    )
+    .await
+    .unwrap_err();
+    let db_error = error.as_db_error().unwrap();
+    assert_eq!(db_error.code().code(), "23514");
+    assert_eq!(db_error.constraint(), Some("no_stock_record"));
+
+    // The same unit of work twice: the second changes nothing.
+    restock_as(
+        &url,
+        "svc_sales",
+        store_id,
+        product_id,
+        Some(2),
+        Some(RESTOCK_REPEATED),
+    )
+    .await
+    .unwrap();
+    let error = restock_as(
+        &url,
+        "svc_sales",
+        store_id,
+        product_id,
+        Some(2),
+        Some(RESTOCK_REPEATED),
+    )
+    .await
+    .unwrap_err();
+    let db_error = error.as_db_error().unwrap();
+    assert_eq!(db_error.code().code(), "23505");
+    assert_eq!(db_error.constraint(), Some("restock_already_recorded"));
+    assert_eq!(on_hand(&owner, store_id, product_id).await, original + 2);
+
+    // Only sales may call it.
+    let error = restock_as(
+        &url,
+        "svc_stock",
+        store_id,
+        product_id,
+        Some(1),
+        Some(RESTOCK_REVERSAL),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.code().unwrap().code(), "42501");
+
+    // An uncast store id finds no function.
+    let uncast = connect(&url).await;
+    uncast
+        .batch_execute("BEGIN; SET LOCAL ROLE svc_sales")
+        .await
+        .unwrap();
+    let error = uncast
+        .query_one("SELECT api_stock.restock_v1(1, 1, 1, 1)", &[])
+        .await
+        .unwrap_err();
+    assert_eq!(error.code().unwrap().code(), "42883");
+    uncast.batch_execute("ROLLBACK").await.unwrap();
+
+    forget_restocks(&owner, store_id, product_id, original).await;
+}

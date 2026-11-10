@@ -2075,6 +2075,52 @@ ALTER FUNCTION stock.record_movement(uuid, text, uuid, text, smallint, smallint,
 REVOKE EXECUTE ON FUNCTION stock.record_movement(uuid, text, uuid, text, smallint, smallint,
     integer, integer, text, text, text, text) FROM PUBLIC;
 
+-- contracts/db/api_stock.restock.v1.md. Sales calls it once per resalable
+-- reversed line, inside the reversal's transaction (ADR-0061, ADR-0062, E-05).
+-- It only adds, and only to an existing row: a missing pair is no_stock_record,
+-- never a new record. The RESTOCK row and the quantity change are one
+-- statement block, so a second restock of the same (reversal, store, product)
+-- fails on restock_already_recorded and takes its UPDATE with it.
+CREATE OR REPLACE FUNCTION api_stock.restock_v1(
+    requested_store_id smallint,
+    requested_product_id integer,
+    requested_quantity integer,
+    requested_reversal_id bigint
+) RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $restock$
+DECLARE
+    restored integer;
+BEGIN
+    IF $3 IS NULL OR $3 <= 0 OR $4 IS NULL THEN
+        RAISE EXCEPTION 'quantity must be greater than zero and the reversal named'
+            USING ERRCODE = '22023';
+    END IF;
+
+    UPDATE inventory
+       SET quantity_on_hand = quantity_on_hand + $3,
+           updated_at = now()
+     WHERE store_id = $1
+       AND product_id = $2
+     RETURNING quantity_on_hand INTO restored;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'no stock record for store % and product %', $1, $2
+            USING ERRCODE = '23514', CONSTRAINT = 'no_stock_record';
+    END IF;
+
+    INSERT INTO stock.stock_movement (movement_type, store_id, product_id, quantity_delta,
+           quantity_before, quantity_after, reversal_id)
+    VALUES ('RESTOCK', $1, $2, $3, restored - $3, restored, $4);
+
+    RETURN restored;
+END
+$restock$;
+ALTER FUNCTION api_stock.restock_v1(smallint, integer, integer, bigint) OWNER TO definer_stock;
+REVOKE EXECUTE ON FUNCTION api_stock.restock_v1(smallint, integer, integer, bigint) FROM PUBLIC;
+
 -- A movement is stock-service's own: only svc_stock reads the history, and
 -- only definer_stock writes it. Each is a row of contracts/db/grants.csv.
 GRANT USAGE ON SCHEMA stock TO svc_stock, definer_stock;
@@ -2084,6 +2130,7 @@ GRANT INSERT ON public.inventory TO definer_stock;
 GRANT EXECUTE ON FUNCTION stock.record_movement(uuid, text, uuid, text, smallint, smallint,
     integer, integer, text, text, text, text) TO svc_stock;
 GRANT EXECUTE ON FUNCTION stock.apply_delta(smallint, integer, integer) TO definer_stock;
+GRANT EXECUTE ON FUNCTION api_stock.restock_v1(smallint, integer, integer, bigint) TO svc_sales;
 -- END BOUNDARY stock
 
 -- BEGIN BOUNDARY stores

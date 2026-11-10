@@ -9,6 +9,7 @@ import { loadBundle } from './bundle';
 import { Campaigns } from './campaigns';
 import { Catalog } from './catalog';
 import { Customers } from './customers';
+import { Drift } from './drift';
 import { Exporter, type ExportEnv } from './exports';
 import { Floor } from './floor';
 import { Reports, type ReportExportEnv } from './reports';
@@ -202,6 +203,11 @@ function start(): void {
   ipcMain.handle(CHANNELS.getRecommendations, (_e, customerId: unknown) =>
     customers.recommendations(customerId),
   );
+  const drift = new Drift(office);
+  ipcMain.handle(CHANNELS.listDriftReports, (_e, query: unknown) => drift.listReports(query));
+  ipcMain.handle(CHANNELS.getDriftReport, (_e, reportId: unknown) => drift.getReport(reportId));
+  ipcMain.handle(CHANNELS.listDriftAlerts, (_e, query: unknown) => drift.listAlerts(query));
+  ipcMain.handle(CHANNELS.getDriftAlert, (_e, alertId: unknown) => drift.getAlert(alertId));
   office.onStateChange((state) => {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(CHANNELS.stateChanged, state);
   });

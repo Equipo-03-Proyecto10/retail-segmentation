@@ -9,6 +9,7 @@ export type ModuleName =
   | 'engagement'
   | 'check-ins'
   | 'reports'
+  | 'drift'
   | 'stores'
   | 'campaigns'
   | 'customers'
@@ -40,6 +41,7 @@ export const MODULE_GROUPS: readonly ModuleGroup[] = [
       { name: 'engagement', label: 'Engagement', operation: 'getEngagementSummary' },
       { name: 'check-ins', label: 'Check-ins', operation: 'listCheckIns' },
       { name: 'reports', label: 'Reports', operation: 'listKpiDefinitions' },
+      { name: 'drift', label: 'Drift', operation: 'listDriftReports' },
     ],
   },
   {
@@ -94,6 +96,14 @@ export const KPI_OPERATIONS: Readonly<Record<string, string>> = {
   'recommendation-performance': 'getRecommendationPerformanceReport',
   'campaign-performance': 'getCampaignPerformanceReport',
 };
+
+/** The read operations the drift module calls (model-registry x-mosaiq-roles); each is checked before its call. */
+export const DRIFT_OPERATIONS = {
+  reports: 'listDriftReports',
+  report: 'getDriftReport',
+  alerts: 'listDriftAlerts',
+  alert: 'getDriftAlert',
+} as const;
 
 /** Error codes that mean the session is over; the user goes back to sign-in. */
 export const SESSION_ENDED_CODES: readonly string[] = [

@@ -618,6 +618,163 @@ export interface ReportView {
 
 export type ReportFormat = 'pdf' | 'csv' | 'xlsx';
 
+// ---------- drift analysis (F28-07, #876) ----------
+
+/** DATA_DRIFT compares distributions with the version's reference; OUTCOME_TEST tests a matured cohort (ADR-0065). */
+export type DriftKind = 'DATA_DRIFT' | 'OUTCOME_TEST';
+
+/** Whether a number exists: INSUFFICIENT_DATA and NOT_COMPARED carry no statistic (ADR-0064, ADR-0065). */
+export type DriftComparison = 'COMPARED' | 'INSUFFICIENT_DATA' | 'NOT_COMPARED';
+
+export type DistributionVariable = 'SEGMENT_SHARES' | 'R' | 'F' | 'M';
+export type DriftVariable = DistributionVariable | 'REPURCHASE_RATE';
+export type VariableState = 'NORMAL' | 'WATCH' | 'ALARM_PENDING' | 'ALARM';
+export type StatisticLevel = 'NORMAL' | 'WATCH' | 'ALARM';
+export type OutcomeResult = 'PASSED' | 'NOT_PASSED' | 'NOT_TESTED';
+
+/** The only wording a screen may use for a finding. CONCEPT_DRIFT belongs to an outcome-test alert alone. */
+export type DriftClaim = 'DISTRIBUTION_CHANGE' | 'CONCEPT_DRIFT';
+
+export type ReviewCode = 'REVIEW_SEGMENT_MIX' | 'REVIEW_FEATURE_DISTRIBUTION' | 'REVIEW_PREDICTIVE_RELATION';
+
+export interface ModelVersionRefView {
+  version_id: number;
+  name: string;
+  method: string;
+}
+
+/** DATA_DRIFT: the trailing days ending at end. OUTCOME_TEST: the outcome window (start, end] of one cohort. */
+export interface DriftWindowView {
+  start: string;
+  end: string;
+  days: number;
+  customer_count: number;
+}
+
+export interface DriftReferenceView {
+  sample_size: number;
+  captured_at: string;
+}
+
+/** Decimals are kept exactly as the service sent them. lower and upper are absent for a segment and for NO_VALUE. */
+export interface DriftBinView {
+  label: string;
+  lower?: string;
+  upper?: string;
+  reference_share: string;
+  current_share: string;
+  contribution: string;
+}
+
+export interface DriftStatisticView {
+  statistic: 'PSI' | 'CHI_SQUARE';
+  value: string;
+  /** CHI_SQUARE only. */
+  p_value?: string;
+  degrees_of_freedom?: number;
+  /** VALUE: reached at or above a threshold (PSI). P_VALUE: below it (CHI_SQUARE). */
+  threshold_basis: 'VALUE' | 'P_VALUE';
+  watch_threshold: string;
+  alarm_threshold: string;
+  level: StatisticLevel;
+}
+
+export interface VariableDriftView {
+  variable: DistributionVariable;
+  state: VariableState;
+  statistics: DriftStatisticView[];
+  bins: DriftBinView[];
+}
+
+export interface OutcomeRatesView {
+  customers: number;
+  repurchasers: number;
+  /** Absent when there are no customers. */
+  rate?: string;
+}
+
+export interface OutcomeSegmentView {
+  label_code: string;
+  reference: OutcomeRatesView;
+  current: OutcomeRatesView;
+  difference_points?: string;
+  /** z, p_value and adjusted_p_value are absent when result is NOT_TESTED. */
+  z?: string;
+  p_value?: string;
+  adjusted_p_value?: string;
+  result: OutcomeResult;
+  persisted: boolean;
+}
+
+export interface OutcomeTestView {
+  relation: 'REPURCHASE_GIVEN_SEGMENT';
+  horizon_days: number;
+  cohort_as_of: string;
+  thresholds: { alpha: string; min_difference_points: string; min_customers_per_side: number };
+  segments: OutcomeSegmentView[];
+  /** Present only when a segment persisted; the one place the phrase concept drift may come from. */
+  claim?: 'CONCEPT_DRIFT';
+}
+
+export interface SuggestedReviewView {
+  code: ReviewCode;
+  /** English text from the service, shown as it is. */
+  text: string;
+}
+
+export interface DriftReportView {
+  report_id: number;
+  kind: DriftKind;
+  model_version: ModelVersionRefView;
+  comparison: DriftComparison;
+  not_compared_reason?: 'VERSION_CHANGE';
+  window: DriftWindowView;
+  reference: DriftReferenceView;
+  previous_report_id?: number;
+  /** Empty unless the report is a COMPARED DATA_DRIFT. */
+  variables: VariableDriftView[];
+  /** Present only on a COMPARED OUTCOME_TEST. */
+  outcome_test?: OutcomeTestView;
+  alert_ids: number[];
+  computed_at: string;
+}
+
+export interface DriftAlertView {
+  alert_id: number;
+  report_id: number;
+  previous_report_id: number;
+  kind: DriftKind;
+  claim: DriftClaim;
+  model_version: ModelVersionRefView;
+  variable: DriftVariable;
+  window: DriftWindowView;
+  reference: DriftReferenceView;
+  /** A DATA_DRIFT alert: its statistics against their thresholds. Empty for an outcome test. */
+  statistics: DriftStatisticView[];
+  /** A DATA_DRIFT alert: the (at most three) bins that moved most, largest contribution first. */
+  bins: DriftBinView[];
+  /** An OUTCOME_TEST alert: the segments that persisted. */
+  outcome_test?: OutcomeTestView;
+  suggested_review: SuggestedReviewView;
+  raised_at: string;
+}
+
+export interface DriftReportQuery {
+  kind?: DriftKind;
+  model_version_id?: number;
+  comparison?: DriftComparison;
+  page?: number;
+  size?: number;
+}
+
+export interface DriftAlertQuery {
+  kind?: DriftKind;
+  model_version_id?: number;
+  variable?: DriftVariable;
+  page?: number;
+  size?: number;
+}
+
 /** The named operations the renderer may call; there is no generic transport. */
 export interface MosaiqBridge {
   getState(): Promise<AppState>;
@@ -692,6 +849,10 @@ export interface MosaiqBridge {
   kpiDefinitions(): Promise<Result<KpiDefinitionView[]>>;
   kpiReport(query: ReportQuery): Promise<Result<ReportView>>;
   exportReport(format: ReportFormat): Promise<Result<ExportOutcome>>;
+  listDriftReports(query: DriftReportQuery): Promise<Result<Paged<DriftReportView>>>;
+  getDriftReport(reportId: number): Promise<Result<DriftReportView>>;
+  listDriftAlerts(query: DriftAlertQuery): Promise<Result<Paged<DriftAlertView>>>;
+  getDriftAlert(alertId: number): Promise<Result<DriftAlertView>>;
 }
 
 export const CHANNELS = {
@@ -758,4 +919,8 @@ export const CHANNELS = {
   kpiDefinitions: 'mosaiq:kpi-definitions',
   kpiReport: 'mosaiq:kpi-report',
   exportReport: 'mosaiq:export-report',
+  listDriftReports: 'mosaiq:list-drift-reports',
+  getDriftReport: 'mosaiq:get-drift-report',
+  listDriftAlerts: 'mosaiq:list-drift-alerts',
+  getDriftAlert: 'mosaiq:get-drift-alert',
 } as const;

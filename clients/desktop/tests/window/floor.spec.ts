@@ -340,6 +340,7 @@ test('screens and controls follow each role', async () => {
     'sales',
     'engagement',
     'reports',
+    'drift',
     'campaigns',
     'products',
     'categories',

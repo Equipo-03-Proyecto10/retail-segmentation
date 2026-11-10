@@ -63,6 +63,7 @@ being ignored. `MOSAIQ_DESKTOP_CONFIG_DIR` overrides the directory (the window t
   - campaigns: `listCampaigns`, `getCampaign`, `createCampaign`, `updateCampaign`, `transitionCampaign`,
     `listCampaignLabels`.
   - audit trail: `listAuditEntries`, `getAuditEntry` (read only).
+  - drift analysis: `listDriftReports`, `getDriftReport`, `listDriftAlerts`, `getDriftAlert` (read only).
 
   There is no generic fetch and no `ipcRenderer`. The main process checks every value a screen sends
   (`src/main/checks.ts`, used by `catalog.ts` and `floor.ts`) before it builds a path or a body from it.
@@ -273,6 +274,52 @@ customer opened earlier is dropped.
 The window tests (`tests/window/customers.spec.ts`) answer with the recorded examples of the seven
 contracts, read from disk, including the `unassigned_result` and `no_open_assignment` examples that no
 seeded customer has.
+
+## Drift analysis (F28-07)
+
+Through model-registry (`contracts/model-registry/`, version 1.1.0). The **Drift** screen, in the Analysis
+group, is offered to the roles whose `x-mosaiq-roles` allow `listDriftReports`: `ADMIN`, `ANALYST`,
+`MARKETING` and `AUDITOR`. Any other role has no entry in the navigation, and the main process refuses a
+forced call with `forbidden_role` before sending anything. Each of the four reads is checked against its own
+operation (`DRIFT_OPERATIONS`). The four operations are published ahead of their implementation and marked
+planned (ADR-0073), so the window and unit tests answer with the recorded examples of
+`contracts/model-registry/examples/`; a service that does not answer yet is shown as it answers. The screen
+writes nothing: there is no operation that starts a run or acknowledges an alert.
+
+- **Reports.** A list (`GET /v1/drift-reports`: kind, model version and comparison filters, twenty to a
+  page), and a report opens from it (`GET /v1/drift-reports/{report_id}`). A `DATA_DRIFT` report charts, for
+  each of the segment shares and R, F and M, the reference and the current share of every bin side by side,
+  with the statistic (PSI, and the chi-square on the segment shares) beside the thresholds it is judged by
+  (0.10 and 0.25; p below 0.05 and 0.01), the variable's state (`NORMAL`, `WATCH`, `ALARM_PENDING`,
+  `ALARM`), a meter of each PSI against its two thresholds, and a table of every bin with its PSI
+  contribution. An `OUTCOME_TEST` report names its relation, horizon and cohort, and charts each segment's
+  reference and current repurchase rate with the two-proportion z, the Holm-adjusted p-value and the result.
+- **Alerts.** A list (`GET /v1/drift-alerts`: kind, model version and variable filters) and an alert opens
+  with its explanation first: what changed, the variable, the model version, and the suggested review
+  (the service's text, shown as sent, with "A suggestion to review, not a verdict."), then how much: the
+  statistics against their thresholds and the three bins that moved most, or the segments that persisted.
+  An alert opens the report that raised it and the report before it, and a report opens its alerts.
+- **No number, no guess.** An `INSUFFICIENT_DATA` report says that the window holds fewer than 200
+  customers (or that no segment has 100 on both sides) and shows no statistic. A `NOT_COMPARED` report says
+  that the window crosses a change of model version, that this is a methodological difference, and that
+  nothing in it was compared (ADR-0064, ADR-0065). The screen never fills the gap.
+- **The wording of F23-07.** A finding about a distribution is a "distribution change". The phrase of a
+  change in the relation between a segment and an outcome is written in one function
+  (`claimText` in `src/shared/drift.ts`), only for an outcome-test result that persisted, with the
+  relation, the horizon and the cohort beside it; no other screen, list, chart or message says it, and no
+  sentence about a window that crosses a version uses a word of behaviour. The main process also refuses an
+  answer that says more than its own evidence supports (a claim without a persisted outcome result, a
+  statistic in a report that holds no number, distribution evidence in an outcome-test alert, the phrase in
+  a distribution alert's review): a contract defect, nothing of it used (`reportFault` and `alertFault` in
+  `src/main/drift.ts`). `src/shared/drift-wording.ts` holds the rules, `tests/unit/drift.test.ts` scans the
+  module's strings against them, and `tests/window/drift.spec.ts` reads back the text of every screen.
+- **Charts** are SVG built element by element (`src/renderer/drift-chart.ts`): no markup string, no
+  `innerHTML`, no chart library and nothing loaded from outside, so they run under the CSP as it is
+  (`script-src 'self'`, `style-src 'self'`). The reference and the current are the first two categorical
+  colours of the data-visualisation palette, in light and dark, with a legend; every pair also gives its
+  values on hover and on keyboard focus and in the table beside the chart.
+- Export is the shell's: the first table on the screen (the list of reports or alerts), as CSV, for the
+  roles that may export (ADR-0074).
 
 ## Packages and CI (F16-05)
 

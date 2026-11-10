@@ -8,15 +8,18 @@ GET /v1/segment-assignments/current, and a label's open members on
 /segment-history-report/?label= against GET /v1/segment-assignments?label_code=.
 Differences are printed in full.
 
-The second case adds a customer with no sales and runs a segmentation through
-the web, on the throwaway stack named by PARITY_DATABASE_URL; never point it
-at the instance. That customer is how the case sees both states the seed has
-none of: no open row before the run, and the run's unassigned result after it
-(RN-21).
+The second case registers a customer with no sales through POST
+/v1/customers and runs a segmentation through the web, on the throwaway stack
+named by PARITY_DATABASE_URL; never point it at the instance. That customer is
+how the case sees both states the seed has none of: no open row before the
+run, and the run's unassigned result after it (RN-21). The service must agree
+within the maximum the stream's contract states for its `segments` group
+(contracts/streams/segments.run_recorded.v1.md, `## Propagation bound`).
 """
 
 from __future__ import annotations
 
+import time
 import uuid
 
 from tests.parity.compare import (
@@ -25,7 +28,7 @@ from tests.parity.compare import (
     diff_assignments,
     diff_members,
 )
-from tests.parity.stack import SEGMENTS_RUN_RECORDED_BOUND_SECONDS, poll
+from tests.parity.stack import poll, run_recorded_bound
 
 RUN_RECORDED = "stream:segments.v1.run_recorded"
 
@@ -58,11 +61,9 @@ def test_every_customer_has_the_same_current_segment(
 def test_a_web_run_reaches_the_service_within_the_bound(
     db, web, segments, differences
 ) -> None:
-    [[newcomer]] = db(
-        "INSERT INTO customer (name, registration_channel_id) "
-        "SELECT %s, min(channel_id) FROM channel RETURNING customer_id::text",
-        ("Parity " + uuid.uuid4().hex[:8],),
-    )
+    bound = run_recorded_bound()
+    [[channel]] = db("SELECT min(channel_id) FROM channel")
+    newcomer = segments.register_customer("Parity " + uuid.uuid4().hex[:8], channel)
     customers = _customers(db)
     # Read through the service first, so whatever it caches is from before.
     before_run = _read_all(web, customers)
@@ -71,6 +72,8 @@ def test_a_web_run_reaches_the_service_within_the_bound(
     [[before]] = db("SELECT coalesce(max(run_id), 0) FROM segmentation_run")
 
     web.run_segmentation()
+    # The bound runs from the run's commit, which the form's answer follows.
+    deadline = time.monotonic() + bound
 
     [[run_id]] = db("SELECT max(run_id) FROM segmentation_run")
     assert run_id > before, "the web recorded no run"
@@ -83,7 +86,7 @@ def test_a_web_run_reaches_the_service_within_the_bound(
     seen_by_service = poll(
         lambda: _read_all(segments, customers),
         seen_by_web,
-        SEGMENTS_RUN_RECORDED_BOUND_SECONDS,
+        max(0.0, deadline - time.monotonic()),
     )
     differences.extend(diff_assignments(seen_by_web, seen_by_service))
     # The event the service flushes on: relayed means it reached the stream.
@@ -94,7 +97,7 @@ def test_a_web_run_reaches_the_service_within_the_bound(
             (RUN_RECORDED, str(run_id)),
         ),
         [(True,)],
-        SEGMENTS_RUN_RECORDED_BOUND_SECONDS,
+        max(0.0, deadline - time.monotonic()),
     )
     print("\n" + _report(differences) if differences else "\nno difference")
     assert not differences, _report(differences)

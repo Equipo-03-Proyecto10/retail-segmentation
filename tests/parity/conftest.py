@@ -1,4 +1,4 @@
-"""Fixtures and the results file of the parity harness (F20-07, F20-09).
+"""Fixtures and the results file of the parity harness (F20-07, F20-08, F20-09).
 
 Each path is skipped, with its reason, when its configuration or its service
 is missing; nothing is faked. At the end of the session the cases are written
@@ -15,6 +15,7 @@ import pytest
 
 from tests.parity import stack
 from tests.parity.compare import (
+    AuditDifference,
     CaseResult,
     Difference,
     SegmentDifference,
@@ -23,9 +24,9 @@ from tests.parity.compare import (
 
 ROOT = Path(__file__).resolve().parents[2]
 _results: list[CaseResult] = []
-_differences: dict[str, list[Difference | SegmentDifference]] = {}
+_differences: dict[str, list[Difference | SegmentDifference | AuditDifference]] = {}
 # The files whose cases are parity cases; test_compare.py is not one.
-_CASE_FILES = {"test_parity.py", "test_segment_parity.py"}
+_CASE_FILES = {"test_parity.py", "test_segment_parity.py", "test_audit_parity.py"}
 
 
 def _missing(*names: str) -> list[str]:
@@ -84,6 +85,26 @@ def service() -> stack.ServicePath:
 
 
 @pytest.fixture(scope="session")
+def audit() -> stack.AuditPath:
+    absent = [
+        f"services/{n}/"
+        for n in ("auth", "audit-trail", *stack.AuditPath.WRITERS)
+        if not (ROOT / "services" / n).is_dir()
+    ]
+    if absent:
+        pytest.skip("audit path: waiting for " + ", ".join(absent))
+    if missing := _missing(
+        "PARITY_GATEWAY_URL", "PARITY_WEB_EMAIL", "PARITY_WEB_PASSWORD"
+    ):
+        pytest.skip("audit path: not set: " + ", ".join(missing))
+    return stack.AuditPath(
+        stack.env("PARITY_GATEWAY_URL"),
+        stack.env("PARITY_WEB_EMAIL"),
+        stack.env("PARITY_WEB_PASSWORD"),
+    )
+
+
+@pytest.fixture(scope="session")
 def segments() -> stack.SegmentsPath:
     absent = [
         f"services/{n}/"
@@ -107,7 +128,7 @@ def segments() -> stack.SegmentsPath:
 def differences(request) -> list[Difference]:
     """Where a case collects what differs, so it is printed and recorded."""
 
-    found: list[Difference | SegmentDifference] = []
+    found: list[Difference | SegmentDifference | AuditDifference] = []
     _differences[request.node.name] = found
     return found
 

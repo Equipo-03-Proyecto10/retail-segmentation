@@ -1,21 +1,26 @@
-"""Drivers for the two paths of the parity harness (F20-07, F20-09): HTTP and
-SQL only.
+"""Drivers for the two paths of the parity harness (F20-07, F20-08, F20-09):
+HTTP and SQL only.
 
 The web path is the browser's: sign in, upload a sales CSV, read /catalog/stock,
-read a customer's segment timeline and the segment history report, run a
-segmentation. The service path is a client's: sign in to auth-service, POST
-/v1/sales, GET /v1/stock-levels/{store_id}/{product_id}, and the two reads of
+submit the administrator's forms, read a customer's segment timeline and the
+segment history report, run a segmentation. The service path is a client's:
+sign in to auth-service, POST /v1/sales, GET
+/v1/stock-levels/{store_id}/{product_id}, write through a service's contract,
+read GET /v1/audit-entries, register a customer and read the two reads of
 /v1/segment-assignments. Neither imports web/ or services/ (ADR-0045). Every
 SQL statement is parameterized.
 
 Configuration (all optional; a path without its settings is skipped):
 
     PARITY_WEB_URL            the web system, http://127.0.0.1:5000
-    PARITY_WEB_EMAIL/PASSWORD an administrator, who imports CSVs, reads stock
-                              and runs a segmentation (RN-05)
+    PARITY_WEB_EMAIL/PASSWORD the administrator, who imports CSVs, reads stock
+                              and, on both paths, makes the audited changes
+                              (F20-08: every service write it uses is ADMIN's)
+                              and runs a segmentation (RN-05, F20-09)
     PARITY_GATEWAY_URL        the services' gateway, http://127.0.0.1:8080
-    PARITY_SERVICE_EMAIL/PASSWORD  a STORE_MANAGER, who records sales and reads
-                              segment assignments
+    PARITY_SERVICE_EMAIL/PASSWORD  a STORE_MANAGER, who records sales,
+                              registers a customer and reads segment
+                              assignments
     PARITY_DATABASE_URL       the throwaway stack's PostgreSQL, as its owner
     PARITY_PROPAGATION_BOUND_SECONDS  how long a change may take to show (5)
 """
@@ -44,6 +49,7 @@ from tests.parity.compare import (
     Pair,
     assignment_from_service,
     parse_customer_current,
+    parse_propagation_bound,
     parse_report_open_members,
     parse_stock_page,
 )
@@ -51,13 +57,7 @@ from tests.parity.compare import (
 ROOT = Path(__file__).resolve().parents[2]
 _CSRF = re.compile(r'name="csrf_token"\s+value="([^"]+)"')
 _WINDOW = re.compile(r'name="window"\s+value="(\d+)"')
-
-# How long after a web run segments-service may keep answering from before it
-# (F20-09). stream:segments.v1.run_recorded states no delivery bound yet: its
-# relay polls at least every five seconds, so this is that poll plus margin.
-# When #764 states the stream's bound in contracts/streams/, this constant
-# becomes that bound.
-SEGMENTS_RUN_RECORDED_BOUND_SECONDS = 10.0
+RUN_RECORDED_CONTRACT = ROOT / "contracts/streams/segments.run_recorded.v1.md"
 
 
 def env(name: str, default: str = "") -> str:
@@ -66,6 +66,15 @@ def env(name: str, default: str = "") -> str:
 
 def propagation_bound() -> float:
     return float(env("PARITY_PROPAGATION_BOUND_SECONDS", "5"))
+
+
+def run_recorded_bound() -> float:
+    """Seconds segments-service may take to reflect a run (F20-09): the
+    maximum its `segments` group is contracted to take, from the outbox commit
+    to the acknowledgement, in the stream's `## Propagation bound` table."""
+
+    _, maximum = parse_propagation_bound(RUN_RECORDED_CONTRACT.read_text(), "segments")
+    return maximum / 1000
 
 
 def poll(read, expected, bound: float | None = None):
@@ -168,6 +177,13 @@ class WebPath:
                 (q for name, s, q in rows if s == sku and name == store_name), None
             )
         return found
+
+    def submit(self, form_path: str, fields: dict[str, str], action=None) -> str:
+        """Fill the form served at `form_path` and post it to `action` (the
+        form's own path by default), as a browser does, CSRF token included."""
+
+        token = _token(self._get(form_path))
+        return self._post(action or form_path, {"csrf_token": token} | fields)
 
     # ---------- segments (F20-09) ----------
 
@@ -278,11 +294,49 @@ class ServicePath:
         return found
 
 
+class AuditPath:
+    """The administrator as a client of the writing services and of
+    audit-trail (F20-08)."""
+
+    WRITERS = ("categories", "products", "users", "campaigns")
+
+    def __init__(self, gateway_url: str, email: str, password: str) -> None:
+        self.clients = {
+            name: Client(gateway_url, load_contract(ROOT / "contracts" / name))
+            for name in (*self.WRITERS, "audit-trail")
+        }
+        self.token = sign_in(gateway_url, email, password)
+
+    def call(self, service: str, method: str, path: str, body=None):
+        """One request to `service`, `path` relative to its /v1."""
+
+        return self.clients[service].call(
+            method,
+            f"/api/{service}/v1/{path}",
+            token=self.token,
+            content_type=None if body is None else "application/json",
+            body=None if body is None else json.dumps(body).encode(),
+        )
+
+    def audit_entries(self, entity: str, entity_pk: str) -> dict:
+        query = urllib.parse.urlencode(
+            {"entity": entity, "entity_pk": entity_pk, "size": 100}
+        )
+        reply = self.call("audit-trail", "GET", f"audit-entries?{query}")
+        assert (
+            reply.status == 200
+        ), f"{entity} {entity_pk}: {reply.status} {reply.body!r}"
+        return reply.json()
+
+
 class SegmentsPath:
     """segments-service as a client reads it (F20-09)."""
 
     def __init__(self, gateway_url: str, email: str, password: str) -> None:
         self.client = Client(gateway_url, load_contract(ROOT / "contracts/segments"))
+        self.customers = Client(
+            gateway_url, load_contract(ROOT / "contracts/customers")
+        )
         self.token = sign_in(gateway_url, email, password)
 
     def _get(self, path: str, query: dict) -> dict:
@@ -293,6 +347,26 @@ class SegmentsPath:
         )
         assert reply.status == 200, f"{path} {query}: {reply.status} {reply.body!r}"
         return reply.json()
+
+    def register_customer(self, name: str, channel_id: int) -> str:
+        """A customer as a client registers one, POST /v1/customers, so the
+        customers boundary records it as it records any other."""
+
+        reply = self.customers.call(
+            "POST",
+            "/api/customers/v1/customers",
+            token=self.token,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "name": name,
+                    "registration_channel_id": channel_id,
+                    "registered_on": datetime.now(UTC).date().isoformat(),
+                }
+            ).encode(),
+        )
+        assert reply.status == 201, f"{reply.status} {reply.body!r}"
+        return reply.json()["customer_id"]
 
     def current_segment(self, customer_id: str) -> Assignment:
         return assignment_from_service(

@@ -2,19 +2,26 @@
 
 import json
 
+import pytest
+
 from tests.parity.compare import (
     ASSIGNED,
     NO_OPEN_ASSIGNMENT,
     UNASSIGNED_RESULT,
     Assignment,
+    AuditShape,
     CaseResult,
     Difference,
     SegmentDifference,
     assignment_from_service,
+    audit_shape,
+    credentials_in,
     diff_assignments,
+    diff_audit,
     diff_levels,
     diff_members,
     parse_customer_current,
+    parse_propagation_bound,
     parse_report_open_members,
     parse_stock_page,
     write_results,
@@ -187,3 +194,118 @@ def test_members_on_one_side_only_are_reported() -> None:
         SegmentDifference("LOYAL", "member on the service only", None, "c"),
     ]
     assert "LOYAL: member on the web only" in str(found[0])
+
+
+# ---------- audit (F20-08) ----------
+
+ACTOR = "11111111-1111-1111-1111-000000000001"
+
+
+def _audit_row(action, before, after, user=ACTOR, entity="category") -> dict:
+    return {
+        "entity": entity,
+        "action": action,
+        "user_id": user,
+        "data_before": before,
+        "data_after": after,
+    }
+
+
+def test_an_audit_shape_keeps_columns_and_changes_not_values() -> None:
+    shape = audit_shape(
+        _audit_row(
+            "UPDATE", {"category_id": 7, "name": "A"}, {"category_id": 7, "name": "B"}
+        ),
+        ACTOR,
+    )
+    assert shape == AuditShape(
+        "category",
+        "UPDATE",
+        ("category_id", "name"),
+        ("category_id", "name"),
+        ("name",),
+        True,
+    )
+    assert (
+        audit_shape(_audit_row("INSERT", None, {"category_id": 8}), ACTOR).before
+        is None
+    )
+
+
+def test_the_same_change_by_two_writers_has_no_difference() -> None:
+    web = [
+        audit_shape(
+            _audit_row("UPDATE", {"id": 1, "n": "a"}, {"id": 1, "n": "b"}), ACTOR
+        )
+    ]
+    service = [
+        audit_shape(
+            _audit_row("UPDATE", {"id": 2, "n": "c"}, {"id": 2, "n": "d"}), ACTOR
+        )
+    ]
+    assert diff_audit("category UPDATE", web, service) == []
+
+
+def test_an_unattributed_or_differently_shaped_row_is_reported() -> None:
+    web = [
+        audit_shape(
+            _audit_row("UPDATE", {"id": 1, "n": "a"}, {"id": 1, "n": "b"}), ACTOR
+        )
+    ]
+    service = [
+        audit_shape(
+            _audit_row("UPDATE", {"id": 2, "n": "c"}, {"id": 2, "n": "c"}, user=None),
+            ACTOR,
+        ),
+        audit_shape(_audit_row("INSERT", None, {"id": 2}), ACTOR),
+    ]
+    found = diff_audit("category UPDATE", web, service)
+    assert [d.what for d in found] == [
+        "number of audit rows",
+        "changed",
+        "row 0 attributed to the actor",
+    ]
+    assert "category UPDATE: changed" in str(found[1])
+    assert diff_audit("x", [], [])[0].what == "no audit row on either side"
+
+
+def test_credentials_are_found_by_key_and_by_hash_shape() -> None:
+    clean = {"audit_entries": [{"data_after": {"email": "a@b.co", "name": "A"}}]}
+    assert credentials_in(clean) == []
+    leaked = {
+        "audit_entries": [
+            {"data_after": {"password_hash": "x"}},
+            {"data_before": {"note": "$argon2id$v=19$m=65536"}},
+        ]
+    }
+    assert credentials_in(leaked) == [
+        "audit_entries[0].data_after.password_hash",
+        "audit_entries[1].data_before.note",
+    ]
+
+
+# ---------- stream bounds (F20-09) ----------
+
+CONTRACT = """# `stream:segments.v1.run_recorded`
+
+## Propagation bound
+
+| Group | p95 (ms) | Max (ms) |
+|---|---:|---:|
+| `segments` | 3000 | 5000 |
+| `recommendations` | 2500 | 4000 |
+
+## Failure and compatibility
+"""
+
+
+def test_a_group_bound_is_read_from_its_stream_contract() -> None:
+    assert parse_propagation_bound(CONTRACT, "segments") == (3000, 5000)
+    assert parse_propagation_bound(CONTRACT, "recommendations") == (2500, 4000)
+
+
+def test_a_contract_without_a_bound_states_none() -> None:
+    with pytest.raises(ValueError, match="no '## Propagation bound' section"):
+        parse_propagation_bound("# `stream:x`\n\n## Consumers\n", "segments")
+    with pytest.raises(ValueError, match="no row for 'campaigns'"):
+        parse_propagation_bound(CONTRACT, "campaigns")

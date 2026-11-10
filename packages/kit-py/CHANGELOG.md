@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.8 - 2026-11-06
+
+- Load every versioned XSD beside the service's own (`<service>.v2.xsd`) under
+  its `targetNamespace`. An operation's XML request is validated against the
+  XSD of the namespace its schema names, and its XML response is rendered in
+  the namespace its 2xx schema names, so a `/v2` and a frozen `/v1` share no
+  root. A repeated namespace is refused at start-up (#799).
+- Add `StreamPublisher`, a source-agnostic publisher for a producer whose
+  outbox is not the PostgreSQL template: `XADD ... MAXLEN ~ 10000` per entry,
+  then one `WAITAOF 1 0 2000`, raising when the AOF does not confirm
+  (ADR-0075, #799).
+
 ## 0.1.7 - 2026-10-22
 
 - Answer 413 `payload_too_large` for a chunked body over 64 KiB. Werkzeug's

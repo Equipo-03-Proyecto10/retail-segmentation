@@ -207,3 +207,14 @@ dialog {
 .scroll {
   overflow-x: auto;
 }
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.tabs button[aria-current='true'] {
+  font-weight: 700;
+}
+.hint {
+  margin: 0.75rem 0 0;
+}

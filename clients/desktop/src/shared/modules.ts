@@ -95,6 +95,14 @@ export const KPI_OPERATIONS: Readonly<Record<string, string>> = {
   'campaign-performance': 'getCampaignPerformanceReport',
 };
 
+/** The read operations the audit module calls (audit-trail x-mosaiq-roles: ADMIN, AUDITOR); each is checked before its call. */
+export const AUDIT_OPERATIONS = {
+  entries: 'listAuditEntries',
+  entry: 'getAuditEntry',
+  events: 'listDomainEvents',
+  event: 'getDomainEvent',
+} as const;
+
 /** Error codes that mean the session is over; the user goes back to sign-in. */
 export const SESSION_ENDED_CODES: readonly string[] = [
   'signed_out',

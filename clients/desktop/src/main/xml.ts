@@ -83,6 +83,11 @@ const REPEATED = new Set([
   'KpiDefinitions.KpiDefinition',
   'KpiDefinitions.KpiDefinition.dimensions',
   'KpiDefinitions.KpiDefinition.measures',
+  'DomainEvents.DomainEvent',
+  'DomainEvents.DomainEvent.details.store_ids',
+  'DomainEvent.details.store_ids',
+  'DomainEvents.DomainEvent.details.filters',
+  'DomainEvent.details.filters',
 ]);
 /** Child elements that repeat wherever they appear: error details, sale lines, summary groups, event history, check-in reviews, a campaign's allowed transitions. */
 const REPEATED_CHILDREN = new Set([

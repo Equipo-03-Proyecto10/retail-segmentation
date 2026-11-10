@@ -182,6 +182,8 @@ function start(): void {
   const audit = new Audit(office);
   ipcMain.handle(CHANNELS.listAuditEntries, (_e, query: unknown) => audit.listEntries(query));
   ipcMain.handle(CHANNELS.getAuditEntry, (_e, auditId: unknown) => audit.getEntry(auditId));
+  ipcMain.handle(CHANNELS.listDomainEvents, (_e, query: unknown) => audit.listEvents(query));
+  ipcMain.handle(CHANNELS.getDomainEvent, (_e, eventId: unknown) => audit.getEvent(eventId));
   const customers = new Customers(office);
   ipcMain.handle(CHANNELS.searchCustomers, (_e, query: unknown) => customers.search(query));
   ipcMain.handle(CHANNELS.getCustomer, (_e, customerId: unknown) => customers.get(customerId));

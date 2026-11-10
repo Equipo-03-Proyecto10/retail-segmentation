@@ -29,6 +29,12 @@ const ENTITIES = [
   'store_location',
 ];
 const ACTOR = '5b0c2f3e-8a41-4d6b-9c10-2e7a1f4d9b33';
+const XSI = 'http://www.w3.org/2001/XMLSchema-instance';
+const AUDITOR_ID = '7c2e5a90-1b3d-4f68-8a47-d09e3c5b1f72';
+const ADMIN_ID = '11111111-1111-1111-1111-000000000001';
+/** An event the fake answers outside its contract: a credential key the XSD does not allow. */
+const DEFECT_ID = '00000000-0000-4000-8000-000000000bad';
+const BEFORE_FROM = `<Error xmlns="${COMMON}"><code>invalid_query</code><message>A query parameter is not an allowed value.</message><correlation_id>corr-event-422</correlation_id><details><field>to</field><code>before_from</code></details></Error>`;
 
 const example = (service: string, name: string): string =>
   readFileSync(join(CONTRACTS, service, 'examples', `${name}.xml`), 'utf8');
@@ -43,6 +49,13 @@ const blocks = (xml: string): string[] => xml.match(/<AuditEntry>[\s\S]*?<\/Audi
 const field = (block: string, name: string): string =>
   new RegExp(`<${name}>([^<]*)</${name}>`).exec(block)?.[1] ?? '';
 const withNs = (block: string): string => block.replace('<AuditEntry>', `<AuditEntry xmlns="${AUDIT}">`);
+/** The DomainEvent elements of a recorded page, as text. */
+const eventBlocks = (xml: string): string[] =>
+  xml.match(/<DomainEvent xsi:type="[^"]*">[\s\S]*?<\/DomainEvent>/g) ?? [];
+const withEventNs = (block: string): string =>
+  block.replace('<DomainEvent ', `<DomainEvent xmlns="${AUDIT}" xmlns:xsi="${XSI}" `);
+const eventPage = (list: string[]): string =>
+  `<DomainEvents xmlns="${AUDIT}" xmlns:common="${COMMON}" xmlns:xsi="${XSI}">${list.join('')}<common:PageInfo><common:page>1</common:page><common:size>20</common:size><common:total>${list.length}</common:total></common:PageInfo></DomainEvents>`;
 const page = (list: string[]): string =>
   `<AuditEntries xmlns="${AUDIT}" xmlns:common="${COMMON}">${list.join('')}<common:PageInfo><common:page>1</common:page><common:size>20</common:size><common:total>${list.length}</common:total></common:PageInfo></AuditEntries>`;
 
@@ -86,6 +99,35 @@ test.beforeAll(async () => {
           `<AuditEntry><audit_id>2001</audit_id><user_id>${ACTOR}</user_id><entity>product</entity><entity_pk>${product[1]}</entity_pk><action>UPDATE</action><data_before>{"name":"Old name","product_id":${product[1]}}</data_before><data_after>{"name":"New name","product_id":${product[1]}}</data_after><executed_at>2026-10-20T10:00:00.000Z</executed_at></AuditEntry>`,
         );
         return reply(200, example('products', 'update-product'));
+      }
+      if (path.startsWith('/api/audit-trail/v1/domain-events')) {
+        if (role !== 'ADMIN' && role !== 'AUDITOR') return reply(403, forbidden);
+        const recordedEvents = eventBlocks(example('audit-trail', 'domain-events-page'));
+        const one = /\/domain-events\/([0-9a-f-]{36})$/.exec(path);
+        if (one) {
+          if (one[1] === DEFECT_ID)
+            return reply(200, example('audit-trail', 'domain-event-credential-key.invalid'));
+          const found = recordedEvents.find((b) => field(b, 'event_id') === one[1]);
+          return found
+            ? reply(200, withEventNs(found))
+            : reply(404, example('audit-trail', 'domain-event-not-found'));
+        }
+        const e = url.searchParams;
+        const [since, until] = [e.get('from'), e.get('to')];
+        if (since && until && Date.parse(until) < Date.parse(since)) return reply(422, BEFORE_FROM);
+        const listed = recordedEvents.filter((b) => {
+          const at = Date.parse(field(b, 'recorded_at'));
+          return (
+            (e.get('kind') === null || field(b, 'kind') === e.get('kind')) &&
+            (e.get('actor_user_id') === null || field(b, 'actor_user_id') === e.get('actor_user_id')) &&
+            (e.get('actor_role') === null || field(b, 'actor_role') === e.get('actor_role')) &&
+            (e.get('subject_type') === null || field(b, 'subject_type') === e.get('subject_type')) &&
+            (e.get('outcome') === null || field(b, 'outcome') === e.get('outcome')) &&
+            (since === null || at >= Date.parse(since)) &&
+            (until === null || at <= Date.parse(until))
+          );
+        });
+        return reply(200, eventPage(listed));
       }
       if (!path.startsWith('/api/audit-trail/v1/audit-entries'))
         return reply(404, example('audit-trail', 'audit-entry-not-found'));
@@ -256,5 +298,216 @@ test('a product edited in the desktop client appears in the trail and names the 
   await p.getByTestId('view-audit-2001').click();
   await expect(p.getByTestId('audit-user')).toHaveText(ACTOR);
   await expect(p.getByTestId('audit-after')).toContainText('"name": "New name"');
+  await app.close();
+});
+
+// The decisions and versions of the trail (F28-15, #884, ADR-0072): model versions, calculations,
+// permissions, critical acts and reads of the trail, found by kind, actor and date.
+
+const openEvents = async (p: Page): Promise<void> => {
+  await open(p);
+  await p.getByTestId('audit-tab-events').click();
+  await expect(p.locator('[data-testid=events-table] tbody tr')).toHaveCount(11);
+};
+const eventsRequests = (): string[] => seen.map((s) => s.url).filter((u) => u.includes('/domain-events'));
+const recordedEvents = (): string[] => eventBlocks(example('audit-trail', 'domain-events-page'));
+const idOf = (kind: string): string =>
+  field(recordedEvents().find((b) => field(b, 'kind') === kind) ?? '', 'event_id');
+
+for (const as of ['ADMIN', 'AUDITOR']) {
+  test(`${as} finds decisions by kind, actor and date, and opens one; the list has no write control`, async () => {
+    const { app, page: p } = await launch(as);
+    await openEvents(p);
+    await shot(p, '884-desktop-audit-01-decisions');
+    expect(eventsRequests().at(-1)).toContain('size=20');
+    // Who: the auditor's two reads of the trail.
+    await p.locator('#filter-actor_user_id').fill(AUDITOR_ID);
+    await p.getByRole('button', { name: 'Search' }).click();
+    await expect(p.locator('[data-testid=events-table] tbody tr')).toHaveCount(2);
+    await expect(p.locator('[data-testid=events-table] tbody tr').first()).toContainText('AUDIT_READ');
+    expect(eventsRequests().at(-1)).toContain(`actor_user_id=${AUDITOR_ID}`);
+
+    // What and when: one administrator's decisions on the sixth.
+    await p.locator('#filter-actor_user_id').fill(ADMIN_ID);
+    await p.locator('#filter-from').fill('2026-11-06T00:00:00Z');
+    await p.locator('#filter-to').fill('2026-11-06T23:59:59Z');
+    await p.getByRole('button', { name: 'Search' }).click();
+    await expect(p.locator('[data-testid=events-table] tbody tr')).toHaveCount(3);
+    const query = eventsRequests().at(-1)!;
+    expect(query).toContain('from=2026-11-06T00%3A00%3A00Z');
+    expect(query).toContain('to=2026-11-06T23%3A59%3A59Z');
+    await p.locator('#filter-kind').selectOption('PERMISSION_CHANGED');
+    await p.getByRole('button', { name: 'Search' }).click();
+    await expect(p.locator('[data-testid=events-table] tbody tr')).toHaveCount(2);
+    await shot(p, '884-desktop-audit-02-decisions-filtered');
+
+    // An owner and a version: the publication of model version 9 by the administrator.
+    await p.locator('#filter-kind').selectOption('MODEL_PUBLISHED');
+    await p.locator('#filter-from').fill('');
+    await p.locator('#filter-to').fill('');
+    await p.getByRole('button', { name: 'Search' }).click();
+    await expect(p.locator('[data-testid=events-table] tbody tr')).toHaveCount(1);
+    const id = idOf('MODEL_PUBLISHED');
+    await expect(p.getByTestId(`event-actor-${id}`)).toHaveText(`ADMIN ${ADMIN_ID}`);
+    await expect(p.getByTestId(`event-version-${id}`)).toHaveText('model 9');
+    await p.getByTestId(`view-event-${id}`).click();
+    await expect(p.getByTestId('event-kind')).toHaveText('MODEL_PUBLISHED');
+    await expect(p.getByTestId('event-actor')).toHaveText(`ADMIN ${ADMIN_ID}`);
+    await expect(p.getByTestId('event-source')).toHaveText('svc_models');
+    await expect(p.getByTestId('event-version')).toHaveText('model 9');
+    await expect(p.getByTestId('event-detail-previous_version_id')).toHaveText('8');
+    await expect(p.getByTestId('event-detail-reason_code')).toHaveText('DRIFT_REVIEW');
+    await expect(p.getByTestId('event-entry-hash')).toHaveText(/^[0-9a-f]{64}$/);
+    await shot(p, '884-desktop-audit-03-decision-detail');
+
+    // Append-only: the screen offers nothing to create, edit or delete, and no write reaches the service.
+    const screen = p.locator('div:has(> h2:text-is("Audit trail"))');
+    const labels = await screen.locator('button').allTextContents();
+    expect(labels.filter((t) => /create|add|new|edit|save|delete|remove|void|update/i.test(t))).toEqual([]);
+    expect(seen.filter((s) => s.method !== 'GET' && s.url.includes('audit'))).toEqual([]);
+    await app.close();
+  });
+}
+
+test('the four shortcuts fill in the filters and find the decisions of the story', async () => {
+  const { app, page: p } = await launch('AUDITOR');
+  await open(p);
+  // Model versions: both kinds that concern a version, found by what they are about.
+  await p.getByTestId('audit-topic-model-versions').click();
+  await expect(p.locator('[data-testid=events-table] tbody tr')).toHaveCount(2);
+  await expect(p.locator('#filter-subject_type')).toHaveValue('MODEL_VERSION');
+  await expect(p.locator('#filter-kind')).toHaveValue('');
+  expect(eventsRequests().at(-1)).toContain('subject_type=MODEL_VERSION');
+  const kinds = await p.locator('[data-testid=events-table] tbody tr td:nth-child(2)').allTextContents();
+  expect(kinds.sort()).toEqual(['MODEL_PUBLISHED', 'MODEL_ROLLED_BACK']);
+  await shot(p, '884-desktop-audit-04-model-versions');
+
+  // Campaign decisions.
+  await p.getByTestId('audit-topic-campaign-decisions').click();
+  await expect(p.locator('[data-testid=events-table] tbody tr')).toHaveCount(1);
+  await expect(p.locator('#filter-kind')).toHaveValue('CRITICAL_ACTION');
+  await expect(p.locator('#filter-subject_type')).toHaveValue('CAMPAIGN');
+  const campaign = idOf('CRITICAL_ACTION');
+  await p.getByTestId(`view-event-${campaign}`).click();
+  await expect(p.getByTestId('event-subject')).toHaveText('CAMPAIGN 12');
+  await expect(p.getByTestId('event-detail-action')).toHaveText('CAMPAIGN_ACTIVATED');
+
+  // Permissions, then narrowed by actor and date from the same filters.
+  await p.getByTestId('audit-topic-permissions').click();
+  await expect(p.locator('[data-testid=events-table] tbody tr')).toHaveCount(2);
+  await expect(p.locator('#filter-kind')).toHaveValue('PERMISSION_CHANGED');
+  await p.locator('#filter-from').fill('2026-11-06T11:50:00Z');
+  await p.getByRole('button', { name: 'Search' }).click();
+  await expect(p.locator('[data-testid=events-table] tbody tr')).toHaveCount(1);
+  await p
+    .locator('[data-testid=events-table] tbody tr')
+    .first()
+    .getByRole('button', { name: 'View' })
+    .click();
+  await expect(p.getByTestId('event-detail-change')).toHaveText('STORE_ASSIGNED');
+  await expect(p.getByTestId('event-detail-store_ids')).toHaveText('3, 7');
+  await shot(p, '884-desktop-audit-05-permissions');
+
+  // Rule changes are row changes of a rule (RN-28): the shortcut switches to that list, filtered.
+  recorded.unshift(
+    `<AuditEntry><audit_id>2002</audit_id><user_id>${ADMIN_ID}</user_id><entity>segment_rule</entity><entity_pk>14</entity_pk><action>UPDATE</action><data_before>{"min_value":3}</data_before><data_after>{"min_value":4}</data_after><executed_at>2026-11-06T10:00:00.000Z</executed_at></AuditEntry>`,
+  );
+  await p.getByTestId('audit-topic-rule-changes').click();
+  await expect(p.locator('[data-testid=audit-table] tbody tr')).toHaveCount(1);
+  await expect(p.locator('#filter-entity')).toHaveValue('segment_rule');
+  await expect(p.getByTestId('audit-user-2002')).toHaveText(ADMIN_ID);
+  expect(seen.filter((s) => s.url.includes('/audit-entries?')).at(-1)!.url).toContain('entity=segment_rule');
+  await p.locator('#filter-user_id').fill(AUDITOR_ID);
+  await p.getByRole('button', { name: 'Search' }).click();
+  await expect(p.locator('[data-testid=audit-table] tbody tr')).toHaveCount(0);
+  await shot(p, '884-desktop-audit-06-rule-changes');
+  await app.close();
+});
+
+test('a role other than ADMIN or AUDITOR has no way into the module; a forced call never leaves the main process', async () => {
+  const { app, page: p } = await launch('MARKETING');
+  await expect(p.locator('nav.nav button[data-view="audit"]')).toHaveCount(0);
+  await expect(p.getByTestId('audit-tabs')).toHaveCount(0);
+  const before = seen.length;
+  const calls = await p.evaluate(async () => {
+    const id = 'fec1df3c-ad60-5abe-8b63-575d011303a4';
+    return [
+      await window.mosaiq.listDomainEvents({}),
+      await window.mosaiq.getDomainEvent(id),
+      await window.mosaiq.listAuditEntries({}),
+      await window.mosaiq.getAuditEntry('1198'),
+    ];
+  });
+  for (const r of calls) expect(r).toMatchObject({ ok: false, error: { code: 'forbidden_role' } });
+  // Refused in the main process: the gateway saw none of the four.
+  expect(seen).toHaveLength(before);
+  expect(eventsRequests()).toEqual([]);
+  await app.close();
+});
+
+test('the main process refuses a malformed event filter before anything is sent', async () => {
+  const { app, page: p } = await launch('AUDITOR');
+  await openEvents(p);
+  const before = seen.length;
+  for (const q of [
+    { kind: 'nope' },
+    { actor_user_id: 'x' },
+    { model_version_id: '0' },
+    { from: 'yesterday' },
+  ])
+    expect(await p.evaluate((query) => window.mosaiq.listDomainEvents(query), q)).toMatchObject({
+      ok: false,
+      error: { code: 'invalid_input' },
+    });
+  expect(await p.evaluate(() => window.mosaiq.getDomainEvent('1/../2'))).toMatchObject({
+    ok: false,
+    error: { code: 'invalid_input' },
+  });
+  expect(seen).toHaveLength(before);
+  await app.close();
+});
+
+test('a refusal by the service reaches the decisions screen with its detail', async () => {
+  const { app, page: p } = await launch('AUDITOR');
+  await openEvents(p);
+  await p.locator('#filter-from').fill('2026-11-07T00:00:00Z');
+  await p.locator('#filter-to').fill('2026-11-06T00:00:00Z');
+  await p.getByRole('button', { name: 'Search' }).click();
+  await expect(p.getByTestId('error-code')).toHaveText('invalid_query');
+  await expect(p.getByTestId('error-correlation')).toHaveText('corr-event-422');
+  await expect(p.getByTestId('error-detail')).toHaveText('before_from');
+  await shot(p, '884-desktop-audit-07-decisions-invalid-query');
+
+  // An unknown event is domain_event_not_found, as returned.
+  const unknown = await p.evaluate(() =>
+    window.mosaiq.getDomainEvent('3a5c8d1e-0b47-5c2f-9e6a-1d4b7f2c8e90'),
+  );
+  expect(unknown).toMatchObject({
+    ok: false,
+    error: { code: 'domain_event_not_found', correlation_id: 'corr-event-404' },
+  });
+
+  // The role changed on the server after sign-in: forbidden_role is shown as a message.
+  role = 'MARKETING';
+  await p.getByRole('button', { name: 'Search' }).click();
+  await expect(p.getByTestId('error-code')).toHaveText('forbidden_role');
+  await expect(p.getByTestId('error-correlation')).toHaveText('corr-role-001');
+  await app.close();
+});
+
+test('an event the service sends outside its contract is a defect, and none of it is shown', async () => {
+  const { app, page: p } = await launch('ADMIN');
+  await openEvents(p);
+  const outside = await p.evaluate((id) => window.mosaiq.getDomainEvent(id), DEFECT_ID);
+  expect(outside).toMatchObject({ ok: false, error: { code: 'contract_defect' } });
+  expect(JSON.stringify(outside).toLowerCase()).not.toMatch(/password|argon2/);
+  // Nothing the trail shows, in either list, carries a credential or a token.
+  for (const tab of ['audit-tab-events', 'audit-tab-rows']) {
+    await p.getByTestId(tab).click();
+    const text = (await p.locator('div:has(> h2:text-is("Audit trail"))').innerText()).toLowerCase();
+    expect(text).not.toMatch(/password|argon2|token|secret|credential/);
+  }
+  for (const name of ['domain-events-page', 'domain-event-permission-role', 'domain-event-history-read'])
+    expect(example('audit-trail', name).toLowerCase()).not.toMatch(/password|argon2|token|secret/);
   await app.close();
 });

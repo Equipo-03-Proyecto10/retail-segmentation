@@ -62,7 +62,7 @@ being ignored. `MOSAIQ_DESKTOP_CONFIG_DIR` overrides the directory (the window t
   - store locations: `listStores`, `getStore`, `setStoreLocation`, `removeStoreLocation`.
   - campaigns: `listCampaigns`, `getCampaign`, `createCampaign`, `updateCampaign`, `transitionCampaign`,
     `listCampaignLabels`.
-  - audit trail: `listAuditEntries`, `getAuditEntry` (read only).
+  - audit trail: `listAuditEntries`, `getAuditEntry`, `listDomainEvents`, `getDomainEvent` (read only).
 
   There is no generic fetch and no `ipcRenderer`. The main process checks every value a screen sends
   (`src/main/checks.ts`, used by `catalog.ts` and `floor.ts`) before it builds a path or a body from it.
@@ -234,9 +234,43 @@ navigation, and a forced call gets 403 `forbidden_role`, shown as returned.
 - The trail is append-only: the screen has no create, edit or delete control and the bridge has no
   operation for one.
 
+### Decisions and versions (F28-15)
+
+The same screen has a second list, **Decisions and versions**, from the domain events audit-trail
+publishes (ADR-0072, `GET /v1/domain-events` and `GET /v1/domain-events/{event_id}`): a calculation that
+ran, a model version published or rolled back, a permission changed, a critical act such as a campaign
+activated, a read of one customer's history and a read of the trail. Each row names its actor (role and
+user id, or the system), its subject, the version it concerns (`model_version_id`, `rule_set_version`),
+when it was recorded and its outcome. One opens to show the closed keys of its `details` and its place
+in the hash chain.
+
+- **Filters.** Kind, actor (user id), actor role, model version, subject type and id, outcome, and a
+  range of `recorded_at`, which the server's clock sets and no producer can move. The main process also
+  accepts `store_id` and `source`; the screen does not offer them. Every filter is checked before a
+  query string is built (the closed kinds, outcomes and subject types, a UUID, a role code, a positive
+  64-bit version id kept as text, RFC 3339 timestamps with an offset).
+- **Four shortcuts** fill in those filters, which stay visible and editable, so what is sent is what is
+  shown: _Model versions_ (`subject_type=MODEL_VERSION`, which finds both `MODEL_PUBLISHED` and
+  `MODEL_ROLLED_BACK`), _Campaign decisions_ (`kind=CRITICAL_ACTION`, `subject_type=CAMPAIGN`) and
+  _Permissions_ (`kind=PERMISSION_CHANGED`) read domain events. _Rule changes_ reads the row changes of
+  `audit-entries` with `entity=segment_rule`, because ADR-0072 has no event kind for editing a rule and
+  RN-28 records every change to one there. All four then take an actor and dates.
+- **XML only, validated.** The answer is validated against the audit-trail XSD, whose shape per kind
+  (`xsi:type`) allows only that kind's keys. A document with a key the kind does not list, a credential
+  among them, fails validation and is shown as a contract defect, with none of its content.
+- **Who reaches it.** `ADMIN` and `AUDITOR`, by the `x-mosaiq-roles` of all four operations. The
+  main process refuses any other role with `forbidden_role` before anything is sent, for the row list
+  as well as for the decisions, and the renderer offers such a role no entry in the navigation.
+- Not built: `GET /v1/domain-events/verification` (the hash-chain check), which no story of this
+  module asks for.
+
+The three operations of domain events are marked planned in the contract (ADR-0073): until F21-25
+implements them a real service answers 404, which the screen shows as returned.
+
 The window tests (`tests/window/audit.spec.ts`) answer with the recorded examples in
 `contracts/audit-trail/examples/`. The fake gateway records a product edit and then answers the audit
-query with an entry for that entity, key and the signed-in user.
+query with an entry for that entity, key and the signed-in user, and answers the domain-event queries
+by filtering the recorded page by kind, actor, role, subject type, outcome and `recorded_at`.
 
 ## Customers, preferences, segments and recommendations (F16-03)
 

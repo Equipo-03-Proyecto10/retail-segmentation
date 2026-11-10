@@ -240,6 +240,84 @@ export interface AuditEntryView {
   executed_at: string;
 }
 
+/** The closed list of domain-event kinds (audit-trail.xsd, ADR-0072). Adding one is a contract change. */
+export const DOMAIN_EVENT_KINDS = [
+  'CALCULATION_RUN',
+  'MODEL_PUBLISHED',
+  'MODEL_ROLLED_BACK',
+  'PERMISSION_CHANGED',
+  'CRITICAL_ACTION',
+  'HISTORY_READ',
+  'AUDIT_READ',
+] as const;
+export const DOMAIN_EVENT_OUTCOMES = ['SUCCESS', 'REFUSED'] as const;
+/** What a domain event is about (the closed `DomainEventSubjectType` of the contract). */
+export const DOMAIN_EVENT_SUBJECT_TYPES = [
+  'RFM_RECALCULATION',
+  'SEGMENT_RUN',
+  'KPI_REPORT',
+  'MODEL_VERSION',
+  'USER',
+  'SALE',
+  'STOCK_LEVEL',
+  'CUSTOMER',
+  'AUDIT_ENTRY',
+  'EXPERIMENT',
+  'CAMPAIGN',
+  'DOMAIN_EVENT',
+] as const;
+
+export interface DomainEventQuery {
+  kind?: string;
+  actor_user_id?: string;
+  actor_role?: string;
+  /** A positive 64-bit integer, kept as text. */
+  model_version_id?: string;
+  subject_type?: string;
+  subject_id?: string;
+  store_id?: number;
+  outcome?: string;
+  /** The producer's database role, for example svc_models. */
+  source?: string;
+  /** RFC 3339 timestamps with an offset, bounding when the event was recorded. */
+  from?: string;
+  to?: string;
+  page?: number;
+  size?: number;
+}
+
+/** One closed key of an event's details and its value as text; a list is joined with commas. */
+export interface EventDetailView {
+  key: string;
+  value: string;
+}
+
+/**
+ * One domain event: a decision the trail records besides a row change (F28-15, ADR-0072). Ids that
+ * can exceed 2^53 are text. The details carry ids, codes, versions and counts only; their keys are
+ * closed per kind by the XSD, so a key that is not in the contract never reaches the screen.
+ */
+export interface DomainEventView {
+  event_id: string;
+  kind: string;
+  outcome: string;
+  occurred_at: string;
+  recorded_at: string;
+  actor_type: string;
+  actor_user_id: string | null;
+  actor_role: string | null;
+  source: string;
+  store_id: number | null;
+  subject_type: string;
+  subject_id: string | null;
+  model_version_id: string | null;
+  rule_set_version: string | null;
+  correlation_id: string;
+  details: EventDetailView[];
+  prev_hash: string;
+  entry_hash: string;
+}
+
 export interface StockQuery {
   store_id?: number;
   below?: number;
@@ -655,6 +733,8 @@ export interface MosaiqBridge {
   listCampaignLabels(): Promise<Result<LabelView[]>>;
   listAuditEntries(query: AuditQuery): Promise<Result<Paged<AuditEntryView>>>;
   getAuditEntry(auditId: string): Promise<Result<AuditEntryView>>;
+  listDomainEvents(query: DomainEventQuery): Promise<Result<Paged<DomainEventView>>>;
+  getDomainEvent(eventId: string): Promise<Result<DomainEventView>>;
   stockLevels(query: StockQuery): Promise<Result<Paged<StockLevelView>>>;
   listSales(query: SalesQuery): Promise<Result<Paged<SaleView>>>;
   getSale(saleId: number): Promise<Result<SaleView>>;
@@ -725,6 +805,8 @@ export const CHANNELS = {
   listCampaignLabels: 'mosaiq:list-campaign-labels',
   listAuditEntries: 'mosaiq:list-audit-entries',
   getAuditEntry: 'mosaiq:get-audit-entry',
+  listDomainEvents: 'mosaiq:list-domain-events',
+  getDomainEvent: 'mosaiq:get-domain-event',
   stockLevels: 'mosaiq:stock-levels',
   listSales: 'mosaiq:list-sales',
   getSale: 'mosaiq:get-sale',

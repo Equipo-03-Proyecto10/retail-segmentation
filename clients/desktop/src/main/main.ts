@@ -10,6 +10,7 @@ import { Campaigns } from './campaigns';
 import { Catalog } from './catalog';
 import { Customers } from './customers';
 import { Exporter, type ExportEnv } from './exports';
+import { Experiments } from './experiments';
 import { Floor } from './floor';
 import { Reports, type ReportExportEnv } from './reports';
 import { loadSettings } from './settings';
@@ -201,6 +202,13 @@ function start(): void {
   ipcMain.handle(CHANNELS.listAssignments, (_e, query: unknown) => customers.assignments(query));
   ipcMain.handle(CHANNELS.getRecommendations, (_e, customerId: unknown) =>
     customers.recommendations(customerId),
+  );
+  const experiments = new Experiments(office);
+  ipcMain.handle(CHANNELS.listExperiments, (_e, query: unknown) => experiments.list(query));
+  ipcMain.handle(CHANNELS.getExperiment, (_e, experimentId: unknown) => experiments.get(experimentId));
+  ipcMain.handle(CHANNELS.planExperiment, (_e, draft: unknown) => experiments.plan(draft));
+  ipcMain.handle(CHANNELS.assignExperiment, (_e, experimentId: unknown, acknowledge: unknown) =>
+    experiments.assign(experimentId, acknowledge),
   );
   office.onStateChange((state) => {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(CHANNELS.stateChanged, state);

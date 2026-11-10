@@ -11,6 +11,7 @@ export type ModuleName =
   | 'reports'
   | 'stores'
   | 'campaigns'
+  | 'experiments'
   | 'customers'
   | 'users'
   | 'audit'
@@ -45,7 +46,10 @@ export const MODULE_GROUPS: readonly ModuleGroup[] = [
   {
     id: 'marketing',
     label: 'Marketing',
-    modules: [{ name: 'campaigns', label: 'Campaigns', operation: 'listCampaigns' }],
+    modules: [
+      { name: 'campaigns', label: 'Campaigns', operation: 'listCampaigns' },
+      { name: 'experiments', label: 'A/B experiments', operation: 'listExperiments' },
+    ],
   },
   {
     id: 'planning',
@@ -94,6 +98,14 @@ export const KPI_OPERATIONS: Readonly<Record<string, string>> = {
   'recommendation-performance': 'getRecommendationPerformanceReport',
   'campaign-performance': 'getCampaignPerformanceReport',
 };
+
+/** The operations the A/B experiment module calls (experimentation x-mosaiq-roles); each is checked before its call. */
+export const EXPERIMENT_OPERATIONS = {
+  list: 'listExperiments',
+  get: 'getExperiment',
+  plan: 'planExperiment',
+  assign: 'assignExperiment',
+} as const;
 
 /** Error codes that mean the session is over; the user goes back to sign-in. */
 export const SESSION_ENDED_CODES: readonly string[] = [

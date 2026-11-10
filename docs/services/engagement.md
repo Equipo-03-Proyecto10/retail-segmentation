@@ -1,7 +1,9 @@
 # engagement
 
 > **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
-> **One rule:** In-store engagement (`QR_SCAN`, `RECO_CLICK`) is recorded once per client event, attributed, voided rather than deleted, and summarized (RN-55)
+> **One rule:** In-store engagement (`QR_SCAN`, `RECO_CLICK`, `STORE_VISIT`, `RECO_IMPRESSION`, `CAMPAIGN_EXPOSURE`, `CART_ADD`, `CART_REMOVE`, `NAVIGATION`) is recorded once per client event as a distinct fact that is never a sale, attributed, voided rather than deleted, and summarized (RN-55)
+>
+> **Contract:** `/v1` is frozen and records `QR_SCAN` and `RECO_CLICK`. `/v2` (engagement 2.0.0, `engagement.v2.xsd`) keeps both with their meaning and adds the six other kinds. Its operations are marked `x-mosaiq-status: planned` until the service serves them (ADR-0073).
 
 ## Summary
 
@@ -15,23 +17,48 @@
 | Redis ACL user | `svc_engagement`, same user line on `redis-state` and `redis-cache` |
 | MongoDB | Database `engagement`, user `svc_engagement` (`readWrite` on it only) |
 | Compose project / image | `mosaiq-engagement` / `ghcr.io/equipo-03-proyecto10/mosaiq-engagement` |
-| Used by | Android: `QR_SCAN` after each decoded scan, one `RECO_CLICK` per tap (F17-02, F17-05). Electron: summaries and voids (F16-04). |
+| Used by | Android: `QR_SCAN` after each decoded scan, one `RECO_CLICK` per tap (F17-02, F17-05). Electron: summaries and voids (F16-04). Experimentation and analytics-kpis: the interaction facts, through the stream decided in ADR-0075, never through this service's API. |
 | Governing ADRs | [ADR-0038](../adr/0038-mongodb-holds-in-store-engagement-owned-by-engagement-service-alone.md), [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md), [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md), [ADR-0037](../adr/0037-two-redis-instances-carry-sessions-caches-limits-and-inter-service-streams.md) |
 
 ## Business rule
 
 - Each event is recorded once per `client_event_id` (unique index; a retry hits `E11000`), attributed to the token's `sub`, and never deleted: a void adds a history entry. Summaries count only events that are not voided.
 - Before writing, the service validates store, product and customer against three published views. engagement is the only owner of the recommendation-click fact. Check-ins and purchases stay in PostgreSQL.
+- There are eight kinds of event, each a distinct fact (taxonomy of #798, `/v2`). Every kind carries `client_event_id`, `type`, `store_id` and `occurred_at`; the rest is per kind:
+
+  | Kind | Also required | Meaning |
+  |---|---|---|
+  | `QR_SCAN` | `product_id` | A product QR decoded on the floor |
+  | `RECO_CLICK` | `product_id`, `label_code`, `rank` | A tap on a shown recommendation |
+  | `RECO_IMPRESSION` | `product_id`, `label_code`, `rank` | A recommendation shown on screen, before any tap |
+  | `STORE_VISIT` | none | A customer or visitor arriving at a store |
+  | `CAMPAIGN_EXPOSURE` | `campaign_id`, `customer_id` | A customer shown a campaign |
+  | `CART_ADD`, `CART_REMOVE` | `product_id`, `quantity` | A product added to or removed from a cart |
+  | `NAVIGATION` | `screen` | A screen opened in a client |
+
+- No event is a sale. A cart is intent, an exposure is not a conversion, and a confirmed transaction exists only in sales-service. A summary counts events that are not voided and gives each kind its own key.
 
 ## Endpoints
 
 | Method | Path | Purpose | Roles (`x-mosaiq-roles`) |
 |---|---|---|---|
-| POST | `/v1/engagement-events` | Record a `QR_SCAN` or `RECO_CLICK` (`client_event_id`, store, product; `label_code` and `rank` for a click) | ADMIN, STORE_MANAGER |
+| POST | `/v1/engagement-events` | Record a `QR_SCAN` or `RECO_CLICK` (`client_event_id`, store, product; `label_code` and `rank` for a click). Frozen | ADMIN, STORE_MANAGER |
 | GET | `/v1/engagement-events` | List events (`type`, `store_id`, `customer_id`, `voided`, `from`, `to`, `page`, `size`) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | GET | `/v1/engagement-events/{event_id}` | One event | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | POST | `/v1/engagement-events/{event_id}/void` | Void with a reason | ADMIN |
 | GET | `/v1/engagement-summaries` | Counts by store, day or type (`from`, `to`, `store_id`, `group_by`) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, INVENTORY_PLANNER, AUDITOR |
+
+`/v2` has the same five operations with the same roles, over all eight kinds (planned until served):
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/v2/engagement-events` | Record any of the eight kinds, one shape per `type` |
+| GET | `/v2/engagement-events` | List events (`type` may be any of the eight) |
+| GET | `/v2/engagement-events/{event_id}` | One event |
+| POST | `/v2/engagement-events/{event_id}/void` | Void with a reason |
+| GET | `/v2/engagement-summaries` | Counts by store, day or type, every kind under its own key |
+
+`GET /schema.v2.xsd` serves `engagement.v2.xsd` and is already served.
 
 Roles follow the [service operation policy](../requirements.md#service-operation-policy-distributed-stage). Meta routes (no token): `GET /health/live`, `GET /health/ready`, `GET /openapi.yaml`, `GET /schema.xsd`.
 
@@ -55,7 +82,11 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 ## Events
 
-None.
+ADR-0075 (proposed in #949, issue #948) decides how the interaction facts leave this service. engagement relays them on one stream, `stream:engagement.v1.interaction_recorded`, from an outbox kept on the `engagement_event` document itself, because a standalone `mongod` cannot write an event and a second document atomically. The facts carried are `RECO_IMPRESSION`, `QR_SCAN`, `RECO_CLICK` and `CAMPAIGN_EXPOSURE`; a void is a later `VOIDED` notice. Delivery is at least once and consumers deduplicate by the entry's `event_id`.
+
+experimentation consumes a `CAMPAIGN_EXPOSURE` (the campaign and the customer) from that stream into its own projection, and counts exposures per campaign and customer from its own schema. It does not call this service and reads none of its stores (ADR-0044). The count is eventually consistent, and a voided exposure stops counting when the `VOIDED` notice arrives. analytics-kpis never consumes the stream: it reads the owners' `api_*` views (ADR-0059).
+
+Not yet implemented. The stream's contract (`contracts/streams/`, with its consumer groups) and this service's Redis ACL grant of `XADD` follow in the story that implements ADR-0075.
 
 ## Redis keys
 
@@ -64,6 +95,7 @@ None.
 | cache | `engagement:live:{store_id}:{yyyymmdd}:{type}` | 48 h | Live counters, rebuilt from `engagement_daily` on a miss |
 | state | `engagement:rl:*` | the limit's window | Per-service request rate limit |
 | state | `pub:auth:v1:live:{sid}` | — | `EXISTS` only, to check that the caller's session is live |
+| state | `stream:engagement.v1.interaction_recorded` | none; `MAXLEN ~ 10000` | Interaction facts for experimentation (ADR-0075). Planned: not yet written |
 
 ## Service-specific errors
 

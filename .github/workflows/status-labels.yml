@@ -1,0 +1,28 @@
+# Keeps status:blocked and status:blocking equal to the native relationships
+# (F19-09, docs/process.md §8). Closing or reopening an issue changes what it blocks.
+# Adding or removing a relationship raises no issue event, so the schedule catches it.
+name: Status labels
+
+on:
+  issues:
+    types: [closed, reopened]
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+concurrency:
+  group: status-labels
+
+jobs:
+  sync:
+    name: Mirror the relationships in the labels
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Correct the labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/sync_status_labels.py

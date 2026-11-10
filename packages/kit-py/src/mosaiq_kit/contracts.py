@@ -108,6 +108,9 @@ class Operation:
     request_schema: dict[str, Any] | None
     xml_name: str | None
     xml_namespace: str | None
+    # The namespace its XML responses are rendered in: the one its 2xx schema
+    # names when a loaded XSD declares it, else None (the service's own).
+    response_namespace: str | None = None
 
     @property
     def paginated(self) -> bool:
@@ -139,6 +142,18 @@ class Contract:
         if not self.namespace:
             raise ValueError("The service XSD has no targetNamespace.")
         self.xml_schema = etree.XMLSchema(xsd_document)
+        # A versioned XSD beside the service's own (`<service>.v2.xsd`) has its
+        # own namespace; an operation is validated and rendered in the one its
+        # schema names, so /v1 and /v2 never share an XML root.
+        self.xml_schemas: dict[str, etree.XMLSchema] = {self.namespace: self.xml_schema}
+        for path in sorted(self.xsd_path.parent.glob(f"{service}.v*.xsd")):
+            versioned = etree.parse(str(path), parser)
+            namespace = versioned.getroot().get("targetNamespace")
+            if not namespace:
+                raise ValueError(f"{path.name} has no targetNamespace.")
+            if namespace in self.xml_schemas:
+                raise ValueError(f"{path.name} repeats namespace {namespace!r}.")
+            self.xml_schemas[namespace] = etree.XMLSchema(versioned)
         self.operations = self._load_operations()
 
     def _resolve_ref(self, reference: str) -> Any:
@@ -234,8 +249,24 @@ class Contract:
                     request_schema=request_schema,
                     xml_name=xml_name,
                     xml_namespace=xml_namespace,
+                    response_namespace=self._response_namespace(raw),
                 )
         return operations
+
+    def _response_namespace(self, raw: dict[str, Any]) -> str | None:
+        """The loaded namespace a 2xx XML response schema names, if any."""
+
+        for status, response in raw.get("responses", {}).items():
+            if not str(status).startswith("2"):
+                continue
+            media = (
+                self.resolve(response).get("content", {}).get("application/xml") or {}
+            )
+            xml = self._shared_xml(media.get("schema") or {})
+            namespace = xml.get("namespace") if xml else None
+            if namespace in self.xml_schemas:
+                return namespace
+        return None
 
     def _request_body_source(self, value: Any) -> dict[str, Any]:
         seen = set()
@@ -327,9 +358,10 @@ class Contract:
                 "The request body violates the service schema.",
                 [{"field": "$", "code": "invalid"}],
             )
-        if not self.xml_schema.validate(root):
+        schema = self.xml_schemas.get(operation.xml_namespace or "", self.xml_schema)
+        if not schema.validate(root):
             details = []
-            for error in self.xml_schema.error_log:
+            for error in schema.error_log:
                 detail = self._xsd_detail(error)
                 if detail not in details:
                     details.append(detail)

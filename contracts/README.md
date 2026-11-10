@@ -98,6 +98,12 @@ that takes exactly one of several filters, declares
 shared conformance suite (`tests/conformance`) calls it with. It changes nothing
 the service accepts; `listSegmentAssignments` is the first.
 
+An operation published before its implementation (ADR-0035) declares
+`x-mosaiq-status: planned` (ADR-0073), the only value allowed. The conformance
+suite runs no case against it, and a guard case fails once the image answers
+the route with anything but 404 or 405. The implementing pull request removes
+the marker, and the operation then joins every case.
+
 The meta routes are `/health/live`, `/health/ready`, `/openapi.yaml`, and
 `/schema.xsd`. They sit outside `/v1`, do not appear in the registry, and need
 no token. Versioned schemas add `/schema.vN.xsd`.

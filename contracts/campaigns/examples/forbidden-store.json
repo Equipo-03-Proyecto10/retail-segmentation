@@ -1,0 +1,11 @@
+{
+  "code": "forbidden_store",
+  "message": "The authenticated user is not assigned to the requested store.",
+  "correlation_id": "corr-store-403",
+  "details": [
+    {
+      "field": "store_id",
+      "code": "not_assigned"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "code": "card_revoked",
+  "message": "The loyalty card was revoked.",
+  "correlation_id": "corr-791-revoked",
+  "details": [
+    {
+      "field": "code",
+      "code": "revoked"
+    }
+  ]
+}

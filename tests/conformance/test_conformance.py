@@ -96,6 +96,36 @@ def test_the_served_schemas_are_the_repository_files_byte_for_byte(
         assert served.body == path.read_bytes(), route
 
 
+def planned_gaps(contract: Contract, call) -> list[str]:
+    """The planned operations the image already answers (ADR-0073).
+
+    `call(method, path)` returns a status. An unimplemented route answers 404
+    or 405 before authentication; a 401 or anything else means the route
+    exists, so the marker must go and the operation join every case.
+    """
+
+    return [
+        f"{op.operation_id} ({op.method} {op.path}) answered {status}"
+        for op in contract.planned
+        if (status := call(op.method, op.url())) not in (404, 405)
+    ]
+
+
+def test_planned_operations_are_not_answered_yet(
+    client: Client, contract: Contract
+) -> None:
+    for op in contract.planned:
+        print(f"planned, not tested: {op.operation_id} {op.method} {op.path}")
+    gaps = planned_gaps(
+        contract,
+        lambda method, path: client.call(method, path, accept=None).status,
+    )
+    assert not gaps, (
+        "remove `x-mosaiq-status: planned` from the operations the image now "
+        "answers: " + "; ".join(gaps)
+    )
+
+
 def test_liveness_answers_without_a_token(client: Client) -> None:
     assert client.call("GET", "/health/live", accept=None).status in (200, 204)
 

@@ -1,4 +1,5 @@
 import type { AppState, ErrorView, MosaiqBridge } from '../shared/api';
+import { visibleGroups, type ModuleName } from '../shared/modules';
 import { renderAudit } from './audit';
 import { renderCampaigns } from './campaigns';
 import { renderCategories, renderProducts } from './catalog';
@@ -6,7 +7,10 @@ import { el, errorBox } from './dom';
 import { renderCustomers } from './customers';
 import { renderCheckIns, renderEngagement, renderSales, renderStock } from './floor';
 import { latestRequest } from './latest-request';
+import { exportAction } from './export';
+import { guardBridge } from './session';
 import { reconcileRender, type RenderState } from './render-state';
+import { renderReports } from './reports';
 import { renderStores } from './stores';
 import { renderAccount, renderTransfer, renderUsers } from './users';
 
@@ -17,7 +21,17 @@ declare global {
 }
 
 const root = document.getElementById('app') as HTMLElement;
-const api = window.mosaiq;
+const busy = el('p', { cls: 'busy', text: 'Loading…' });
+busy.setAttribute('role', 'status');
+busy.dataset.testid = 'loading';
+busy.hidden = true;
+const api = guardBridge(window.mosaiq, {
+  onBusy: (on) => {
+    busy.hidden = !on;
+  },
+  // The main process has already ended the session; show what it now says (sign-in and the reason).
+  onSessionEnded: () => void window.mosaiq.getState().then((state) => render(state)),
+});
 
 function field(
   name: string,
@@ -80,38 +94,7 @@ function renderSignIn(state: Extract<AppState, { status: 'signed_out' }>, error?
   root.replaceChildren(...parts);
 }
 
-type View =
-  | 'products'
-  | 'categories'
-  | 'stock'
-  | 'sales'
-  | 'engagement'
-  | 'check-ins'
-  | 'stores'
-  | 'campaigns'
-  | 'customers'
-  | 'users'
-  | 'audit'
-  | 'transfer'
-  | 'services';
-
-/** Each screen, and the read operation the role must be allowed to call to see it (x-mosaiq-roles). */
-const VIEWS: { name: View; label: string; operation: string | null }[] = [
-  { name: 'products', label: 'Products', operation: 'listProducts' },
-  { name: 'categories', label: 'Categories', operation: 'listCategories' },
-  { name: 'stock', label: 'Stock', operation: 'listStockLevels' },
-  { name: 'sales', label: 'Sales', operation: 'listSales' },
-  { name: 'engagement', label: 'Engagement', operation: 'getEngagementSummary' },
-  { name: 'check-ins', label: 'Check-ins', operation: 'listCheckIns' },
-  { name: 'stores', label: 'Stores', operation: 'listStores' },
-  { name: 'campaigns', label: 'Campaigns', operation: 'listCampaigns' },
-  { name: 'customers', label: 'Customers', operation: 'searchCustomers' },
-  { name: 'users', label: 'Users', operation: 'listUsers' },
-  { name: 'audit', label: 'Audit trail', operation: 'listAuditEntries' },
-  { name: 'transfer', label: 'Transfer administrator', operation: 'transferAdministrator' },
-  { name: 'services', label: 'Services', operation: null },
-];
-let view: View = 'products';
+let view: ModuleName = 'products';
 
 function renderServices(host: HTMLElement, state: Extract<AppState, { status: 'signed_in' }>): void {
   const result = el('div');
@@ -146,33 +129,46 @@ function renderServices(host: HTMLElement, state: Extract<AppState, { status: 's
 function renderHome(state: Extract<AppState, { status: 'signed_in' }>): void {
   const screen = el('div');
   const ctx = { api, can: (operationId: string) => state.operations.includes(operationId) };
-  const allowed = VIEWS.filter((v) => v.operation === null || ctx.can(v.operation));
-  const show = (next: View): void => {
+  const groups = visibleGroups(state.operations);
+  const allowed = groups.flatMap((g) => g.modules);
+  const nav = el('nav', { cls: 'nav' });
+  nav.setAttribute('aria-label', 'Modules');
+  const show = (next: ModuleName): void => {
     view = next;
     nav
       .querySelectorAll('button')
       .forEach((b) => b.setAttribute('aria-current', String(b.dataset.view === next)));
-    if (next === 'products') renderProducts(screen, ctx);
-    else if (next === 'categories') renderCategories(screen, ctx);
-    else if (next === 'stock') renderStock(screen, ctx);
-    else if (next === 'sales') renderSales(screen, ctx);
-    else if (next === 'engagement') renderEngagement(screen, ctx);
-    else if (next === 'check-ins') renderCheckIns(screen, ctx);
-    else if (next === 'stores') renderStores(screen, ctx);
-    else if (next === 'campaigns') renderCampaigns(screen, ctx);
-    else if (next === 'customers') renderCustomers(screen, ctx);
-    else if (next === 'users') renderUsers(screen, ctx);
-    else if (next === 'audit') renderAudit(screen, ctx);
-    else if (next === 'transfer') renderTransfer(screen, ctx);
-    else renderServices(screen, state);
+    const body = el('div');
+    if (next === 'products') renderProducts(body, ctx);
+    else if (next === 'categories') renderCategories(body, ctx);
+    else if (next === 'stock') renderStock(body, ctx);
+    else if (next === 'sales') renderSales(body, ctx);
+    else if (next === 'engagement') renderEngagement(body, ctx);
+    else if (next === 'check-ins') renderCheckIns(body, ctx);
+    else if (next === 'reports') renderReports(body, { ...ctx, canExport: state.canExport });
+    else if (next === 'stores') renderStores(body, ctx);
+    else if (next === 'campaigns') renderCampaigns(body, ctx);
+    else if (next === 'customers') renderCustomers(body, ctx);
+    else if (next === 'users') renderUsers(body, ctx);
+    else if (next === 'audit') renderAudit(body, ctx);
+    else if (next === 'transfer') renderTransfer(body, ctx);
+    else renderServices(body, state);
+    screen.replaceChildren(
+      ...(state.canExport && next !== 'reports' ? [exportAction(api, next, body)] : []),
+      body,
+    );
   };
-  const nav = el('nav', { cls: 'nav' });
-  for (const v of allowed) {
-    const b = el('button', { text: v.label });
-    b.type = 'button';
-    b.dataset.view = v.name;
-    b.addEventListener('click', () => show(v.name));
-    nav.append(b);
+  for (const g of groups) {
+    const group = el('div', { cls: 'nav-group' }, el('strong', { text: g.label }));
+    group.dataset.group = g.id;
+    for (const m of g.modules) {
+      const b = el('button', { text: m.label });
+      b.type = 'button';
+      b.dataset.view = m.name;
+      b.addEventListener('click', () => show(m.name));
+      group.append(b);
+    }
+    nav.append(group);
   }
   const out = el('button', { text: 'Sign out' });
   out.addEventListener('click', () => {
@@ -186,10 +182,11 @@ function renderHome(state: Extract<AppState, { status: 'signed_in' }>): void {
     role,
     renderAccount(ctx),
     nav,
+    busy,
     screen,
     out,
   );
-  show(allowed.some((v) => v.name === view) ? view : (allowed[0]?.name ?? 'services'));
+  show(allowed.some((m) => m.name === view) ? view : (allowed[0]?.name ?? 'services'));
 }
 
 let rendered: RenderState | undefined;

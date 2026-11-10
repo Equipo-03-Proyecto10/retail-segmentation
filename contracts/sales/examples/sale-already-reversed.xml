@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>sale_already_reversed</code>
+  <message>The sale already has a reversal, so it can no longer be cancelled as a whole.</message>
+  <correlation_id>corr-sale-already-reversed</correlation_id>
+  <details>
+    <field>sale_id</field>
+    <code>already_reversed</code>
+  </details>
+</Error>

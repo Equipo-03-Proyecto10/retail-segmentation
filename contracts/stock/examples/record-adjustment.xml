@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<StockMovementRecord xmlns="https://mosaiq.maxthecoder.online/xml/stock/v1">
+  <movements>
+    <movement_id>9124</movement_id>
+    <movement_type>ADJUSTMENT</movement_type>
+    <store_id>3</store_id>
+    <product_id>120</product_id>
+    <quantity_delta>-3</quantity_delta>
+    <quantity_before>42</quantity_before>
+    <quantity_after>39</quantity_after>
+    <reason>DAMAGE</reason>
+    <note>Crushed in the stockroom.</note>
+    <recorded_by>3f0c9e1a-6a7b-4c52-9d1e-2b8f5a7d4c10</recorded_by>
+    <recorded_at>2026-10-18T08:45:12Z</recorded_at>
+  </movements>
+</StockMovementRecord>

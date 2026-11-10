@@ -1,0 +1,5 @@
+{
+  "code": "forbidden_role",
+  "message": "The authenticated role cannot perform this operation.",
+  "correlation_id": "corr-forbidden-role"
+}

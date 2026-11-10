@@ -5,6 +5,8 @@ name: Service template
 # quality job (tests/test_service_template.py); this workflow runs them in
 # Docker: ADR-0040's loop against rendered projects, `nginx -t`, the gateway's
 # 413 envelope, and the kit example as a real project on the mosaiq network.
+# The whole local stack comes up on a push to develop or main, not on a pull
+# request (#962).
 on:
   pull_request:
     paths:
@@ -171,7 +173,12 @@ jobs:
       # The command compose.distributed.yaml documents, whole: every one-shot
       # step must complete and every container come up (#522 missed
       # mongo-init's network because the step above starts the gateway alone).
+      # On a push only: building the 15 images from scratch took 598 to 723 s
+      # of each run, and nightly.yml runs the same command against develop
+      # every day, so a pull request that breaks it is caught after it
+      # merges (#962).
       - name: The documented command brings the whole stack up
+        if: github.event_name == 'push'
         run: |
           set -uo pipefail
           compose="docker compose -f compose.distributed.yaml"
@@ -264,8 +271,10 @@ jobs:
           bash deploy/infra/redis/assemble-acl.sh --write-only
           $INFRA up -d
           docker run -d --name ci-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=retail \
-            -v "$RUNNER_TEMP/pgsock:/var/run/postgresql" postgres:16
-          for _ in $(seq 1 60); do docker exec ci-postgres pg_isready -q && break; sleep 1; done
+            -v "$RUNNER_TEMP/pgsock:/var/run/postgresql" postgres:18
+          # Over TCP: the image's first-boot server listens on no address, so
+          # only the real server can answer here.
+          for _ in $(seq 1 60); do docker exec ci-postgres pg_isready -q -h 127.0.0.1 && break; sleep 1; done
           # A test role, reached through the socket as a service reaches its own.
           docker exec ci-postgres psql -U postgres -d retail -v ON_ERROR_STOP=1 \
             -c 'CREATE ROLE svc_kit_example LOGIN'

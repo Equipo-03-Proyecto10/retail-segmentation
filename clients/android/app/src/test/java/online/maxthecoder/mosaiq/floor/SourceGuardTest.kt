@@ -75,7 +75,8 @@ class SourceGuardTest {
             "ui/checkin/StorePicker.kt",
             "ui/outbox/OutboxScreen.kt",
             "ui/SalesScreen.kt",
-            "ui/CustomerInsights.kt"
+            "ui/CustomerInsights.kt",
+            "ui/ScanScreen.kt"
         )) {
             assertTrue("$path uses collectAsState", ".collectAsState()" !in File(floor, path).readText())
         }

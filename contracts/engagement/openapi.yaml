@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: engagement-service
-  version: 1.0.1
+  version: 2.0.0
   description: 'Records in-store engagement: QR scans and recommendation clicks
     (RN-55). Events live in MongoDB, are recorded once per client event, attributed
     to the caller, voided rather than deleted, and summarized. Only `POST /v1/engagement-events`
@@ -10,7 +10,18 @@ info:
     its database is unreachable, MongoDB included. XML events are polymorphic: the
     root carries `xsi:type` `QrScanEvent` or `RecoClickEvent` (`QrScanRequest` or
     `RecoClickRequest` for a request), so the schema allows `label_code` and `rank`
-    only on a `RECO_CLICK`.'
+    only on a `RECO_CLICK`. `/v1` is frozen. `/v2` (XSD `engagement.v2.xsd`, namespace
+    `.../xml/engagement/v2`, served at `/schema.v2.xsd`) keeps `QR_SCAN` and `RECO_CLICK`
+    with their meaning and adds `STORE_VISIT`, `RECO_IMPRESSION`, `CAMPAIGN_EXPOSURE`,
+    `CART_ADD`, `CART_REMOVE` and `NAVIGATION`, each a distinct fact. None of these events
+    is a sale: a confirmed transaction exists only in sales-service. A `CAMPAIGN_EXPOSURE`
+    carries the campaign and the customer. experimentation does not call this service:
+    engagement relays the exposure on the Redis Stream `stream:engagement.v1.interaction_recorded`
+    from an outbox kept on the event document (ADR-0075), and experimentation keeps its own
+    projection and counts exposures per campaign and customer from it, never as a conversion.
+    A void reaches that projection as a later notice, so the count is eventually consistent.
+    The contract of that stream follows in its own story. The v2 summary
+    counts every type.'
 security:
 - bearer: []
 tags:
@@ -401,6 +412,399 @@ paths:
                 type: string
         '406':
           $ref: '#/components/responses/NotAcceptable'
+  /v2/engagement-events:
+    post:
+      tags:
+      - Engagement
+      summary: Record an engagement event (never a sale)
+      description: 'Records the event once per `client_event_id`, attributed to the token''s `sub` (`recorded_by`). The body has eight shapes, one per `type`. The event is never a sale. Store, product and customer are checked against the published store, product and customer views: the store must exist and be active. A new event answers 201. The same `client_event_id` arriving again with the same `type`, `store_id` and `product_id` answers 200 with the original event and writes nothing; with any other type, store or product it answers 409 `client_event_conflict`. `occurred_at` more than five minutes ahead of the server answers 422 `occurred_in_future`.'
+      operationId: createEngagementEventV2
+      x-mosaiq-status: planned
+      x-mosaiq-roles:
+      - ADMIN
+      - STORE_MANAGER
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EngagementEventRequestV2'
+            examples:
+              qr_scan:
+                externalValue: ./examples/v2/qr-scan.request.json
+              reco_click:
+                externalValue: ./examples/v2/reco-click.request.json
+              store_visit:
+                externalValue: ./examples/v2/store-visit.request.json
+              reco_impression:
+                externalValue: ./examples/v2/reco-impression.request.json
+              campaign_exposure:
+                externalValue: ./examples/v2/campaign-exposure.request.json
+              cart_add:
+                externalValue: ./examples/v2/cart-add.request.json
+              cart_remove:
+                externalValue: ./examples/v2/cart-remove.request.json
+              navigation:
+                externalValue: ./examples/v2/navigation.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/EngagementEventRequestV2'
+            examples:
+              qr_scan:
+                externalValue: ./examples/v2/qr-scan.request.xml
+              reco_click:
+                externalValue: ./examples/v2/reco-click.request.xml
+              store_visit:
+                externalValue: ./examples/v2/store-visit.request.xml
+              reco_impression:
+                externalValue: ./examples/v2/reco-impression.request.xml
+              campaign_exposure:
+                externalValue: ./examples/v2/campaign-exposure.request.xml
+              cart_add:
+                externalValue: ./examples/v2/cart-add.request.xml
+              cart_remove:
+                externalValue: ./examples/v2/cart-remove.request.xml
+              navigation:
+                externalValue: ./examples/v2/navigation.request.xml
+      responses:
+        '200':
+          description: 'A replay: the original event, nothing written.'
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EngagementEventV2'
+              examples:
+                replay:
+                  externalValue: ./examples/v2/replay.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/EngagementEventV2'
+              examples:
+                replay:
+                  externalValue: ./examples/v2/replay.xml
+        '201':
+          description: The event was recorded.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EngagementEventV2'
+              examples:
+                qr_scan:
+                  externalValue: ./examples/v2/qr-scan.json
+                reco_click:
+                  externalValue: ./examples/v2/reco-click.json
+                store_visit:
+                  externalValue: ./examples/v2/store-visit.json
+                reco_impression:
+                  externalValue: ./examples/v2/reco-impression.json
+                campaign_exposure:
+                  externalValue: ./examples/v2/campaign-exposure.json
+                cart_add:
+                  externalValue: ./examples/v2/cart-add.json
+                cart_remove:
+                  externalValue: ./examples/v2/cart-remove.json
+                navigation:
+                  externalValue: ./examples/v2/navigation.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/EngagementEventV2'
+              examples:
+                qr_scan:
+                  externalValue: ./examples/v2/qr-scan.xml
+                reco_click:
+                  externalValue: ./examples/v2/reco-click.xml
+                store_visit:
+                  externalValue: ./examples/v2/store-visit.xml
+                reco_impression:
+                  externalValue: ./examples/v2/reco-impression.xml
+                campaign_exposure:
+                  externalValue: ./examples/v2/campaign-exposure.xml
+                cart_add:
+                  externalValue: ./examples/v2/cart-add.xml
+                cart_remove:
+                  externalValue: ./examples/v2/cart-remove.xml
+                navigation:
+                  externalValue: ./examples/v2/navigation.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/CreateConflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/CreateInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+    get:
+      tags:
+      - Engagement
+      summary: List engagement events
+      description: Returns a page ordered by `occurred_at`, newest first. `from` and `to` are RFC 3339 timestamps bounding `occurred_at`. Voided events are listed unless `voided=false`.
+      operationId: listEngagementEventsV2
+      x-mosaiq-status: planned
+      x-mosaiq-roles:
+      - ADMIN
+      - ANALYST
+      - STORE_MANAGER
+      - MARKETING
+      - AUDITOR
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/TypeV2'
+      - $ref: '#/components/parameters/StoreId'
+      - $ref: '#/components/parameters/CustomerId'
+      - $ref: '#/components/parameters/Voided'
+      - $ref: '#/components/parameters/From'
+      - $ref: '#/components/parameters/To'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of events.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EngagementEventPageV2'
+              examples:
+                page:
+                  externalValue: ./examples/v2/events-page.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/EngagementEventPageV2'
+              examples:
+                page:
+                  externalValue: ./examples/v2/events-page.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/InvalidQuery'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v2/engagement-events/{event_id}:
+    get:
+      tags:
+      - Engagement
+      summary: Get one engagement event
+      description: Returns the event with its `history`.
+      operationId: getEngagementEventV2
+      x-mosaiq-status: planned
+      x-mosaiq-roles:
+      - ADMIN
+      - ANALYST
+      - STORE_MANAGER
+      - MARKETING
+      - AUDITOR
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: The event.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EngagementEventV2'
+              examples:
+                voided:
+                  externalValue: ./examples/v2/voided-event.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/EngagementEventV2'
+              examples:
+                voided:
+                  externalValue: ./examples/v2/voided-event.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v2/engagement-events/{event_id}/void:
+    post:
+      tags:
+      - Engagement
+      summary: Void an engagement event
+      description: 'Voids the event: it is never deleted, a `VOIDED` entry is added to its `history`, and summaries stop counting it.'
+      operationId: voidEngagementEventV2
+      x-mosaiq-status: planned
+      x-mosaiq-roles:
+      - ADMIN
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/EventId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VoidRequest'
+            examples:
+              void:
+                externalValue: ./examples/v2/void.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/VoidRequest'
+            examples:
+              void:
+                externalValue: ./examples/v2/void.request.xml
+      responses:
+        '200':
+          description: The voided event.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EngagementEventV2'
+              examples:
+                voided:
+                  externalValue: ./examples/v2/voided-event.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/EngagementEventV2'
+              examples:
+                voided:
+                  externalValue: ./examples/v2/voided-event.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/VoidConflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/InvalidBody'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v2/engagement-summaries:
+    get:
+      tags:
+      - Engagement
+      summary: Summarize engagement
+      description: Counts events that are not voided, grouped by `store`, `day` or `type`. `from` and `to` are UTC dates (`YYYY-MM-DD`), both inclusive, and a day is a UTC day. Every event type is counted, including `STORE_VISIT`, `RECO_IMPRESSION`, `CAMPAIGN_EXPOSURE`, `CART_ADD`, `CART_REMOVE` and `NAVIGATION`; grouped by `type` each is its own key and none is folded into another or read as a sale.
+      operationId: getEngagementSummaryV2
+      x-mosaiq-status: planned
+      x-mosaiq-roles:
+      - ADMIN
+      - ANALYST
+      - STORE_MANAGER
+      - MARKETING
+      - INVENTORY_PLANNER
+      - AUDITOR
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/SummaryFrom'
+      - $ref: '#/components/parameters/SummaryTo'
+      - $ref: '#/components/parameters/SummaryStoreId'
+      - $ref: '#/components/parameters/GroupBy'
+      responses:
+        '200':
+          description: The counts.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EngagementSummaryV2'
+              examples:
+                by_store:
+                  externalValue: ./examples/v2/summary-by-store.json
+                by_day:
+                  externalValue: ./examples/v2/summary-by-day.json
+                by_type:
+                  externalValue: ./examples/v2/summary-by-type.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/EngagementSummaryV2'
+              examples:
+                by_store:
+                  externalValue: ./examples/v2/summary-by-store.xml
+                by_day:
+                  externalValue: ./examples/v2/summary-by-day.xml
+                by_type:
+                  externalValue: ./examples/v2/summary-by-type.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/InvalidSummaryQuery'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /schema.v2.xsd:
+    get:
+      tags:
+      - Meta
+      summary: Get the engagement v2 XML Schema
+      operationId: getSchemaV2
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The engagement XSD, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/xml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
 components:
   securitySchemes:
     bearer:
@@ -523,6 +927,21 @@ components:
         - store
         - day
         - type
+    TypeV2:
+      name: type
+      in: query
+      required: false
+      schema:
+        type: string
+        enum:
+        - QR_SCAN
+        - RECO_CLICK
+        - STORE_VISIT
+        - RECO_IMPRESSION
+        - CAMPAIGN_EXPOSURE
+        - CART_ADD
+        - CART_REMOVE
+        - NAVIGATION
   headers:
     CorrelationId:
       description: The effective correlation id for this request.
@@ -812,6 +1231,573 @@ components:
       xml:
         name: Error
         namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+    RecoClickRequestV2:
+      type: object
+      additionalProperties: false
+      description: 'A tap on a recommendation: the QR scan fields plus the segment label and the item''s position.'
+      required:
+      - client_event_id
+      - type
+      - store_id
+      - product_id
+      - label_code
+      - rank
+      - occurred_at
+      properties:
+        client_event_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          const: RECO_CLICK
+        store_id:
+          type: integer
+          format: int32
+        product_id:
+          type: integer
+          format: int32
+        customer_id:
+          type: string
+          format: uuid
+        label_code:
+          type: string
+          pattern: ^[A-Z][A-Z0-9_]{0,39}$
+        rank:
+          type: integer
+          minimum: 1
+        occurred_at:
+          type: string
+          format: date-time
+      xml:
+        name: EngagementEventRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/engagement/v2
+    EngagementEventItemV2:
+      type: object
+      additionalProperties: false
+      required:
+      - event_id
+      - client_event_id
+      - type
+      - store_id
+      - product_id
+      - customer_id
+      - label_code
+      - rank
+      - campaign_id
+      - quantity
+      - screen
+      - recorded_by
+      - occurred_at
+      - recorded_at
+      - voided
+      - history
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        client_event_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum:
+          - QR_SCAN
+          - RECO_CLICK
+          - STORE_VISIT
+          - RECO_IMPRESSION
+          - CAMPAIGN_EXPOSURE
+          - CART_ADD
+          - CART_REMOVE
+          - NAVIGATION
+        store_id:
+          type: integer
+          format: int32
+        product_id:
+          anyOf:
+          - type: integer
+            format: int32
+          - type: 'null'
+          description: Null for a STORE_VISIT, CAMPAIGN_EXPOSURE and NAVIGATION.
+        customer_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+        label_code:
+          anyOf:
+          - type: string
+            pattern: ^[A-Z][A-Z0-9_]{0,39}$
+          - type: 'null'
+          description: Set only on a RECO_CLICK or RECO_IMPRESSION.
+        rank:
+          anyOf:
+          - type: integer
+            minimum: 1
+          - type: 'null'
+          description: Set only on a RECO_CLICK or RECO_IMPRESSION.
+        campaign_id:
+          anyOf:
+          - type: integer
+            minimum: 1
+            maximum: 2147483647
+          - type: 'null'
+          description: Set only on a CAMPAIGN_EXPOSURE.
+        quantity:
+          anyOf:
+          - type: integer
+            minimum: 1
+            maximum: 1000
+          - type: 'null'
+          description: Set only on a CART_ADD or CART_REMOVE.
+        screen:
+          anyOf:
+          - type: string
+            pattern: ^[A-Z][A-Z0-9_]{0,39}$
+          - type: 'null'
+          description: Set only on a NAVIGATION.
+        recorded_by:
+          type: string
+          format: uuid
+          description: The token's `sub` when the event was recorded.
+        occurred_at:
+          type: string
+          format: date-time
+        recorded_at:
+          type: string
+          format: date-time
+        voided:
+          type: boolean
+        history:
+          type: array
+          description: One `VOIDED` entry once the event is voided; empty before.
+          items:
+            $ref: '#/components/schemas/HistoryEntry'
+    StoreVisitRequestV2:
+      type: object
+      additionalProperties: false
+      description: A customer or visitor arriving at a store. Not a sale.
+      required:
+      - client_event_id
+      - type
+      - store_id
+      - occurred_at
+      properties:
+        client_event_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          const: STORE_VISIT
+        store_id:
+          type: integer
+          format: int32
+        customer_id:
+          type: string
+          format: uuid
+        occurred_at:
+          type: string
+          format: date-time
+      xml:
+        name: EngagementEventRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/engagement/v2
+    EngagementSummaryV2:
+      type: object
+      additionalProperties: false
+      required:
+      - from
+      - to
+      - group_by
+      - groups
+      description: Counts only events that are not voided. A day is a UTC day.
+      properties:
+        from:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+        to:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+        group_by:
+          type: string
+          enum:
+          - store
+          - day
+          - type
+        groups:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - key
+            - count
+            properties:
+              key:
+                type: string
+                description: The store id, the UTC date, or the event type.
+              count:
+                type: integer
+                minimum: 0
+      xml:
+        name: EngagementSummary
+        namespace: https://mosaiq.maxthecoder.online/xml/engagement/v2
+    CampaignExposureRequestV2:
+      type: object
+      additionalProperties: false
+      description: A customer shown a campaign. It carries the campaign and the customer. Experimentation consumes it from the Redis Stream `stream:engagement.v1.interaction_recorded` that this service relays from its own outbox (ADR-0075), into its own projection, as the exposure count of a campaign per customer; it never calls this service. A void reaches the projection as a later notice. The stream's own contract follows in its own story. An exposure is not a conversion and not a sale.
+      required:
+      - client_event_id
+      - type
+      - store_id
+      - campaign_id
+      - customer_id
+      - occurred_at
+      properties:
+        client_event_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          const: CAMPAIGN_EXPOSURE
+        store_id:
+          type: integer
+          format: int32
+        campaign_id:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        customer_id:
+          type: string
+          format: uuid
+        occurred_at:
+          type: string
+          format: date-time
+      xml:
+        name: EngagementEventRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/engagement/v2
+    EngagementEventV2:
+      type: object
+      additionalProperties: false
+      required:
+      - event_id
+      - client_event_id
+      - type
+      - store_id
+      - product_id
+      - customer_id
+      - label_code
+      - rank
+      - campaign_id
+      - quantity
+      - screen
+      - recorded_by
+      - occurred_at
+      - recorded_at
+      - voided
+      - history
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        client_event_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum:
+          - QR_SCAN
+          - RECO_CLICK
+          - STORE_VISIT
+          - RECO_IMPRESSION
+          - CAMPAIGN_EXPOSURE
+          - CART_ADD
+          - CART_REMOVE
+          - NAVIGATION
+        store_id:
+          type: integer
+          format: int32
+        product_id:
+          anyOf:
+          - type: integer
+            format: int32
+          - type: 'null'
+          description: Null for a STORE_VISIT, CAMPAIGN_EXPOSURE and NAVIGATION.
+        customer_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+        label_code:
+          anyOf:
+          - type: string
+            pattern: ^[A-Z][A-Z0-9_]{0,39}$
+          - type: 'null'
+          description: Set only on a RECO_CLICK or RECO_IMPRESSION.
+        rank:
+          anyOf:
+          - type: integer
+            minimum: 1
+          - type: 'null'
+          description: Set only on a RECO_CLICK or RECO_IMPRESSION.
+        campaign_id:
+          anyOf:
+          - type: integer
+            minimum: 1
+            maximum: 2147483647
+          - type: 'null'
+          description: Set only on a CAMPAIGN_EXPOSURE.
+        quantity:
+          anyOf:
+          - type: integer
+            minimum: 1
+            maximum: 1000
+          - type: 'null'
+          description: Set only on a CART_ADD or CART_REMOVE.
+        screen:
+          anyOf:
+          - type: string
+            pattern: ^[A-Z][A-Z0-9_]{0,39}$
+          - type: 'null'
+          description: Set only on a NAVIGATION.
+        recorded_by:
+          type: string
+          format: uuid
+          description: The token's `sub` when the event was recorded.
+        occurred_at:
+          type: string
+          format: date-time
+        recorded_at:
+          type: string
+          format: date-time
+        voided:
+          type: boolean
+        history:
+          type: array
+          description: One `VOIDED` entry once the event is voided; empty before.
+          items:
+            $ref: '#/components/schemas/HistoryEntry'
+      xml:
+        name: EngagementEvent
+        namespace: https://mosaiq.maxthecoder.online/xml/engagement/v2
+    RecoImpressionRequestV2:
+      type: object
+      additionalProperties: false
+      description: A recommendation shown on screen, before any tap. Distinct from `RECO_CLICK`. Not a sale.
+      required:
+      - client_event_id
+      - type
+      - store_id
+      - product_id
+      - label_code
+      - rank
+      - occurred_at
+      properties:
+        client_event_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          const: RECO_IMPRESSION
+        store_id:
+          type: integer
+          format: int32
+        product_id:
+          type: integer
+          format: int32
+        label_code:
+          type: string
+          pattern: ^[A-Z][A-Z0-9_]{0,39}$
+        rank:
+          type: integer
+          minimum: 1
+        customer_id:
+          type: string
+          format: uuid
+        occurred_at:
+          type: string
+          format: date-time
+      xml:
+        name: EngagementEventRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/engagement/v2
+    CartAddRequestV2:
+      type: object
+      additionalProperties: false
+      description: A product added to a cart. A cart is intent, never a sale. Not a sale.
+      required:
+      - client_event_id
+      - type
+      - store_id
+      - product_id
+      - quantity
+      - occurred_at
+      properties:
+        client_event_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          const: CART_ADD
+        store_id:
+          type: integer
+          format: int32
+        product_id:
+          type: integer
+          format: int32
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        customer_id:
+          type: string
+          format: uuid
+        occurred_at:
+          type: string
+          format: date-time
+      xml:
+        name: EngagementEventRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/engagement/v2
+    EngagementEventPageV2:
+      type: object
+      additionalProperties: false
+      required:
+      - engagement_events
+      - page_info
+      properties:
+        engagement_events:
+          type: array
+          items:
+            $ref: '#/components/schemas/EngagementEventItemV2'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: EngagementEvents
+        namespace: https://mosaiq.maxthecoder.online/xml/engagement/v2
+    CartRemoveRequestV2:
+      type: object
+      additionalProperties: false
+      description: A product removed from a cart. A cart is intent, never a sale. Not a sale.
+      required:
+      - client_event_id
+      - type
+      - store_id
+      - product_id
+      - quantity
+      - occurred_at
+      properties:
+        client_event_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          const: CART_REMOVE
+        store_id:
+          type: integer
+          format: int32
+        product_id:
+          type: integer
+          format: int32
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        customer_id:
+          type: string
+          format: uuid
+        occurred_at:
+          type: string
+          format: date-time
+      xml:
+        name: EngagementEventRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/engagement/v2
+    QrScanRequestV2:
+      type: object
+      additionalProperties: false
+      description: A QR scan. `label_code` and `rank` are forbidden.
+      required:
+      - client_event_id
+      - type
+      - store_id
+      - product_id
+      - occurred_at
+      properties:
+        client_event_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          const: QR_SCAN
+        store_id:
+          type: integer
+          format: int32
+        product_id:
+          type: integer
+          format: int32
+        customer_id:
+          type: string
+          format: uuid
+        occurred_at:
+          type: string
+          format: date-time
+      xml:
+        name: EngagementEventRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/engagement/v2
+    EngagementEventRequestV2:
+      description: Eight shapes, discriminated by `type`, mirroring ADR-0038's validator. Any other property answers 422 `invalid_body`. In XML the root is `EngagementEventRequest` carrying `xsi:type` `<Type>Request`, for example `QrScanRequest`, `RecoClickRequest` or `CartAddRequest`.
+      oneOf:
+      - $ref: '#/components/schemas/QrScanRequestV2'
+      - $ref: '#/components/schemas/RecoClickRequestV2'
+      - $ref: '#/components/schemas/StoreVisitRequestV2'
+      - $ref: '#/components/schemas/RecoImpressionRequestV2'
+      - $ref: '#/components/schemas/CampaignExposureRequestV2'
+      - $ref: '#/components/schemas/CartAddRequestV2'
+      - $ref: '#/components/schemas/CartRemoveRequestV2'
+      - $ref: '#/components/schemas/NavigationRequestV2'
+      discriminator:
+        propertyName: type
+        mapping:
+          QR_SCAN: '#/components/schemas/QrScanRequestV2'
+          RECO_CLICK: '#/components/schemas/RecoClickRequestV2'
+          STORE_VISIT: '#/components/schemas/StoreVisitRequestV2'
+          RECO_IMPRESSION: '#/components/schemas/RecoImpressionRequestV2'
+          CAMPAIGN_EXPOSURE: '#/components/schemas/CampaignExposureRequestV2'
+          CART_ADD: '#/components/schemas/CartAddRequestV2'
+          CART_REMOVE: '#/components/schemas/CartRemoveRequestV2'
+          NAVIGATION: '#/components/schemas/NavigationRequestV2'
+    NavigationRequestV2:
+      type: object
+      additionalProperties: false
+      description: A screen opened in a client. Not a sale.
+      required:
+      - client_event_id
+      - type
+      - store_id
+      - screen
+      - occurred_at
+      properties:
+        client_event_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          const: NAVIGATION
+        store_id:
+          type: integer
+          format: int32
+        screen:
+          type: string
+          pattern: ^[A-Z][A-Z0-9_]{0,39}$
+        customer_id:
+          type: string
+          format: uuid
+        occurred_at:
+          type: string
+          format: date-time
+      xml:
+        name: EngagementEventRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/engagement/v2
   responses:
     Unauthorized:
       description: '`invalid_token` or `session_revoked`.'

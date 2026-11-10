@@ -17,7 +17,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +35,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.net.Product
 import online.maxthecoder.mosaiq.floor.session.ChosenStore
@@ -80,7 +80,7 @@ fun ScanScreen(
     }
     var scanning by rememberSaveable { mutableStateOf(false) }
     var cameraError by remember { mutableStateOf(false) }
-    val result by model.result.collectAsState()
+    val result by model.result.collectAsStateWithLifecycle()
     val launcher =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             permission = if (granted) CameraPermission.GRANTED else CameraPermission.DENIED
@@ -155,7 +155,7 @@ fun ScanContent(
     camera: @Composable (onDecoded: (String) -> Unit) -> Unit
 ) {
     var lastCode by rememberSaveable { mutableStateOf("") }
-    val result by model.result.collectAsState()
+    val result by model.result.collectAsStateWithLifecycle()
     ScanBody(
         store = store,
         permission = permission,

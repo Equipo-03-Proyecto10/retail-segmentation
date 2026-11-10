@@ -1,0 +1,1650 @@
+openapi: 3.1.0
+info:
+  title: rfm-engine-service
+  version: 1.0.0
+  description: >-
+    Keeps each customer's R, F and M current. A customer's profile is a function
+    of their accepted, unreversed purchases under one rule-set version; it changes
+    only for the customers an event touched, and equals a full recalculation of
+    that version at the same instant (RN-65). A sale, a reversal, the passing of
+    time, a published version or a verification triggers a recomputation of the
+    customer from net purchases, never a delta, so a replay or a reordering
+    cannot change a result (ADR-0063). Scoring uses the boundaries frozen in the
+    rule set and never the population. rfm-engine serves three resources: the
+    current profiles (`rfm-profiles`), the immutable rule sets they are scored
+    under (`rfm-rule-sets`) and the verification recalculations that compare the
+    incremental result with a full one (`rfm-recalculations`). It does not
+    serve segments: the customer's current segment is segments' resource, and
+    rfm-engine reaches it only through the database function the segments
+    boundary publishes.
+security:
+  - bearer: []
+tags:
+  - name: Profiles
+  - name: RuleSets
+  - name: Recalculations
+  - name: Meta
+paths:
+  /v1/rfm-profiles:
+    get:
+      tags: [Profiles]
+      summary: List current profiles
+      description: >-
+        Returns a page of the stored profiles, ordered by `customer_id`. A
+        profile is never computed by a read: it is what the last event, scheduled
+        pass or version change left (RN-65). `state`, `label_code` and
+        `rule_set_id` filter on the stored values; `label_code` is rfm-engine's
+        own result and is not the customer's current segment, which segments
+        serves. A customer with no stored profile is `pending` and is listed only
+        when `state=pending` is asked for.
+      operationId: listRfmProfiles
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ProfileState'
+        - $ref: '#/components/parameters/LabelCodeFilter'
+        - $ref: '#/components/parameters/RuleSetIdFilter'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of profiles.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RfmProfilePage'
+              examples:
+                page:
+                  externalValue: ./examples/profiles-page.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/RfmProfilePage'
+              examples:
+                page:
+                  externalValue: ./examples/profiles-page.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/ListInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/rfm-profiles/{customer_id}:
+    get:
+      tags: [Profiles]
+      summary: Get a customer's current profile
+      description: >-
+        Returns the customer's stored profile, which is always a 200 answer for
+        a registered customer. `scored` carries the raw recency in whole days,
+        frequency and monetary total, the three scores and the label, all under
+        the rule set named by `rule_set_id` and as of `computed_at`.
+        `via_fallback` is true when no band matched and the rule set's fallback
+        label was taken (RN-46). `unassigned` is a customer with no net purchase
+        in the window (RN-21), whether they never bought or every sale was
+        reversed: `f_count` is 0, `m_total` is `0.00` and nothing else is set.
+        `pending` means no profile has been computed yet and carries nothing
+        more. `next_change_at` is the first instant the profile will change with
+        no new event: when the oldest net purchase leaves the window or the
+        recency crosses a frozen boundary. A customer absent from
+        `api_customers.customer_ref_v1` is 404 `customer_not_found`. The
+        customer id is the resource's own identity, one profile per customer.
+      operationId: getRfmProfile
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CustomerId'
+      responses:
+        '200':
+          description: The customer's profile.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RfmProfile'
+              examples:
+                scored:
+                  externalValue: ./examples/profile-scored.json
+                scored_via_fallback:
+                  externalValue: ./examples/profile-scored-via-fallback.json
+                unassigned:
+                  externalValue: ./examples/profile-unassigned.json
+                pending:
+                  externalValue: ./examples/profile-pending.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/RfmProfile'
+              examples:
+                scored:
+                  externalValue: ./examples/profile-scored.xml
+                scored_via_fallback:
+                  externalValue: ./examples/profile-scored-via-fallback.xml
+                unassigned:
+                  externalValue: ./examples/profile-unassigned.xml
+                pending:
+                  externalValue: ./examples/profile-pending.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CustomerNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/rfm-rule-sets:
+    get:
+      tags: [RuleSets]
+      summary: List rule sets
+      description: >-
+        Returns a page of rule sets, newest first. `published` filters on whether
+        model-registry's published version points at the rule set.
+      operationId: listRfmRuleSets
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - MARKETING
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/PublishedFilter'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of rule sets.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RfmRuleSetPage'
+              examples:
+                page:
+                  externalValue: ./examples/rule-sets-page.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/RfmRuleSetPage'
+              examples:
+                page:
+                  externalValue: ./examples/rule-sets-page.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/ListInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+    post:
+      tags: [RuleSets]
+      summary: Create a rule set
+      description: >-
+        Creates an immutable rule set: its window, the four cut-points of each
+        measure's quintile boundary, its bands and its fallback label. A rule set
+        is never edited or deleted, and a change is a new rule set. Creating one
+        publishes nothing: publication and rollback belong to model-registry
+        (ADR-0064), and `published` stays false here. The boundaries are frozen
+        values that scoring uses without reading the population (ADR-0063).
+        Recency boundaries are non-decreasing days and frequency and monetary
+        boundaries are non-increasing, listed in the order of the scores 5, 4, 3
+        and 2. A violation, a band whose minimum exceeds its maximum, or two bands
+        that overlap is 422 `invalid_body` with a detail code `not_monotonic`,
+        `band_range` or `bands_overlap`. A name already used is 409
+        `rule_set_name_taken`.
+      operationId: createRfmRuleSet
+      x-mosaiq-roles:
+        - ADMIN
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RfmRuleSetRequest'
+            examples:
+              rule_set:
+                externalValue: ./examples/rule-set.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/RfmRuleSetRequest'
+            examples:
+              rule_set:
+                externalValue: ./examples/rule-set.request.xml
+      responses:
+        '201':
+          description: The rule set was created.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RfmRuleSet'
+              examples:
+                created:
+                  externalValue: ./examples/rule-set-created.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/RfmRuleSet'
+              examples:
+                created:
+                  externalValue: ./examples/rule-set-created.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/RuleSetNameTaken'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/InvalidBody'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/rfm-rule-sets/{rule_set_id}:
+    get:
+      tags: [RuleSets]
+      summary: Get one rule set
+      description: >-
+        Returns one rule set with its frozen boundaries and bands.
+      operationId: getRfmRuleSet
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - MARKETING
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/RuleSetId'
+      responses:
+        '200':
+          description: The rule set.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RfmRuleSet'
+              examples:
+                published:
+                  externalValue: ./examples/rule-set.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/RfmRuleSet'
+              examples:
+                published:
+                  externalValue: ./examples/rule-set.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/RuleSetNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/rfm-recalculations:
+    get:
+      tags: [Recalculations]
+      summary: List verification recalculations
+      description: >-
+        Returns a page of verification recalculations, newest first. `state`,
+        `trigger` and `rule_set_id` filter on the stored values.
+      operationId: listRfmRecalculations
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/RecalculationStateFilter'
+        - $ref: '#/components/parameters/RecalculationTriggerFilter'
+        - $ref: '#/components/parameters/RuleSetIdFilter'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of recalculations.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RfmRecalculationPage'
+              examples:
+                page:
+                  externalValue: ./examples/recalculations-page.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/RfmRecalculationPage'
+              examples:
+                page:
+                  externalValue: ./examples/recalculations-page.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/ListInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+    post:
+      tags: [Recalculations]
+      summary: Start a verification recalculation
+      description: >-
+        Starts a verification: a full recomputation of every customer from net
+        purchases under one rule set, at one instant (`as_of`), compared with the
+        profiles held incrementally. It writes no profile and changes no segment
+        (ADR-0063); it records how many customers differ and which. Only ADMIN
+        starts one on demand (RN-05); the weekly pass is started by the system and
+        has no `started_by`. The body may name `rule_set_id`; without it, the
+        published rule set is used. The answer is 201 with the recalculation
+        `RUNNING`; poll `GET /v1/rfm-recalculations/{recalculation_id}`. Two
+        recalculations never run at once: while one runs, a new request is 409
+        `recalculation_in_progress`. With no `rule_set_id` and no published rule
+        set, it is 409 `no_published_rule_set`. A named rule set that does not
+        exist is 404 `rule_set_not_found`.
+      operationId: createRfmRecalculation
+      x-mosaiq-roles:
+        - ADMIN
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RfmRecalculationRequest'
+            examples:
+              named_rule_set:
+                externalValue: ./examples/recalculation.request.json
+              published_rule_set:
+                externalValue: ./examples/recalculation-published.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/RfmRecalculationRequest'
+            examples:
+              named_rule_set:
+                externalValue: ./examples/recalculation.request.xml
+              published_rule_set:
+                externalValue: ./examples/recalculation-published.request.xml
+      responses:
+        '201':
+          description: The recalculation was started.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RfmRecalculation'
+              examples:
+                running:
+                  externalValue: ./examples/recalculation-running.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/RfmRecalculation'
+              examples:
+                running:
+                  externalValue: ./examples/recalculation-running.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/RuleSetNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/RecalculationConflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/InvalidBody'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/rfm-recalculations/{recalculation_id}:
+    get:
+      tags: [Recalculations]
+      summary: Get one recalculation
+      description: >-
+        Returns one recalculation. While it runs, the counts and `outcome` are
+        null (omitted in XML). `EQUIVALENT` means that for every customer the raw
+        R, F and M and the label held incrementally equal the recomputation, with
+        the same rule set at the same instant; `DIFFERENT` means at least one
+        customer does not, and `GET .../differences` lists them. A failed
+        recalculation carries a `failure_code` and no outcome.
+      operationId: getRfmRecalculation
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/RecalculationId'
+      responses:
+        '200':
+          description: The recalculation.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RfmRecalculation'
+              examples:
+                running:
+                  externalValue: ./examples/recalculation-running.json
+                equivalent:
+                  externalValue: ./examples/recalculation-equivalent.json
+                different:
+                  externalValue: ./examples/recalculation-different.json
+                failed:
+                  externalValue: ./examples/recalculation-failed.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/RfmRecalculation'
+              examples:
+                running:
+                  externalValue: ./examples/recalculation-running.xml
+                equivalent:
+                  externalValue: ./examples/recalculation-equivalent.xml
+                different:
+                  externalValue: ./examples/recalculation-different.xml
+                failed:
+                  externalValue: ./examples/recalculation-failed.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/RecalculationNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/rfm-recalculations/{recalculation_id}/differences:
+    get:
+      tags: [Recalculations]
+      summary: List the customers a recalculation found different
+      description: >-
+        Returns the customers whose incrementally held values differ from the
+        recomputation, ordered by `customer_id`. Each item names the differing
+        `fields` and carries both sets of values. A recalculation with outcome
+        `EQUIVALENT` has none. While the recalculation is `RUNNING` or `FAILED`
+        there is nothing final to list, and the answer is 409
+        `recalculation_not_finished`.
+      operationId: listRfmRecalculationDifferences
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/RecalculationId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of differences.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RfmRecalculationDifferencePage'
+              examples:
+                differences:
+                  externalValue: ./examples/differences-page.json
+                none:
+                  externalValue: ./examples/differences-none.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/RfmRecalculationDifferencePage'
+              examples:
+                differences:
+                  externalValue: ./examples/differences-page.xml
+                none:
+                  externalValue: ./examples/differences-none.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/RecalculationNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/RecalculationNotFinished'
+        '422':
+          $ref: '#/components/responses/InvalidPagination'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /health/live:
+    get:
+      tags: [Meta]
+      summary: Check process liveness
+      operationId: getLiveness
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The process is live.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+  /health/ready:
+    get:
+      tags: [Meta]
+      summary: Check schema readiness
+      operationId: getReadiness
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '204':
+          description: The required schema is ready.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+        '503':
+          $ref: '#/components/responses/SchemaNotReady'
+  /openapi.yaml:
+    get:
+      tags: [Meta]
+      summary: Get this OpenAPI document
+      operationId: getOpenApi
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The OpenAPI document, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/yaml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+  /schema.xsd:
+    get:
+      tags: [Meta]
+      summary: Get the rfm-engine XML Schema
+      operationId: getSchema
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The rfm-engine XSD, served byte for byte.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/xml:
+              schema:
+                type: string
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      description: >-
+        Caller-supplied correlation id. A missing or invalid value is replaced
+        by the service, and the effective value is returned on every response.
+      schema:
+        type: string
+        pattern: '^[0-9A-Za-z-]{1,64}$'
+    CustomerId:
+      name: customer_id
+      in: path
+      required: true
+      description: The customer, which is also the identity of its profile.
+      schema:
+        type: string
+        format: uuid
+    RuleSetId:
+      name: rule_set_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    RecalculationId:
+      name: recalculation_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    ProfileState:
+      name: state
+      in: query
+      required: false
+      description: Keep only profiles in this state.
+      schema:
+        $ref: '#/components/schemas/ProfileState'
+    LabelCodeFilter:
+      name: label_code
+      in: query
+      required: false
+      description: Keep only profiles whose own RFM label is this code.
+      schema:
+        type: string
+    RuleSetIdFilter:
+      name: rule_set_id
+      in: query
+      required: false
+      description: Keep only rows computed under this rule set.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    PublishedFilter:
+      name: published
+      in: query
+      required: false
+      description: Keep only rule sets that are, or are not, published.
+      schema:
+        type: boolean
+    RecalculationStateFilter:
+      name: state
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/RecalculationState'
+    RecalculationTriggerFilter:
+      name: trigger
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/RecalculationTrigger'
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Size:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+  headers:
+    CorrelationId:
+      description: The effective correlation id for this request.
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9A-Za-z-]{1,64}$'
+    RetryAfter:
+      description: Seconds until the caller should retry.
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  schemas:
+    ProfileState:
+      type: string
+      enum:
+        - scored
+        - unassigned
+        - pending
+    RecalculationState:
+      type: string
+      enum:
+        - RUNNING
+        - COMPLETED
+        - FAILED
+    RecalculationTrigger:
+      type: string
+      enum:
+        - SCHEDULE
+        - ON_DEMAND
+    Money:
+      type: string
+      pattern: '^[0-9]+\.[0-9]{2}$'
+    Score:
+      type: integer
+      minimum: 1
+      maximum: 5
+    RfmProfile:
+      type: object
+      additionalProperties: false
+      description: >-
+        `pending` sets only `customer_id` and `state`. `unassigned` sets
+        `rule_set_id`, `f_count` 0, `m_total` `0.00` and `computed_at`. `scored`
+        sets every member.
+      required:
+        - customer_id
+        - state
+        - rule_set_id
+        - r_days
+        - f_count
+        - m_total
+        - r_score
+        - f_score
+        - m_score
+        - label_code
+        - via_fallback
+        - computed_at
+        - next_change_at
+      properties:
+        customer_id:
+          type: string
+          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+        state:
+          $ref: '#/components/schemas/ProfileState'
+        rule_set_id:
+          type:
+            - integer
+            - 'null'
+          format: int64
+        r_days:
+          type:
+            - integer
+            - 'null'
+          minimum: 0
+          description: Whole days from the latest net purchase in the window to `computed_at`.
+        f_count:
+          type:
+            - integer
+            - 'null'
+          minimum: 0
+          description: Net purchases in the window.
+        m_total:
+          oneOf:
+            - $ref: '#/components/schemas/Money'
+            - type: 'null'
+          description: The sum of net amounts in the window.
+        r_score:
+          oneOf:
+            - $ref: '#/components/schemas/Score'
+            - type: 'null'
+        f_score:
+          oneOf:
+            - $ref: '#/components/schemas/Score'
+            - type: 'null'
+        m_score:
+          oneOf:
+            - $ref: '#/components/schemas/Score'
+            - type: 'null'
+        label_code:
+          type:
+            - string
+            - 'null'
+        via_fallback:
+          type:
+            - boolean
+            - 'null'
+          description: True when no band matched and the fallback label was taken.
+        computed_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        next_change_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: >-
+            The first instant the profile changes with no new event; null when
+            nothing is due.
+      xml:
+        name: RfmProfile
+        namespace: https://mosaiq.maxthecoder.online/xml/rfm-engine/v1
+    RfmProfilePage:
+      type: object
+      additionalProperties: false
+      required:
+        - profiles
+        - page_info
+      properties:
+        profiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/RfmProfile'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: RfmProfiles
+        namespace: https://mosaiq.maxthecoder.online/xml/rfm-engine/v1
+    Band:
+      type: object
+      additionalProperties: false
+      required:
+        - label_code
+        - r_min
+        - r_max
+        - f_min
+        - f_max
+        - m_min
+        - m_max
+      properties:
+        label_code:
+          type: string
+        r_min:
+          $ref: '#/components/schemas/Score'
+        r_max:
+          $ref: '#/components/schemas/Score'
+        f_min:
+          $ref: '#/components/schemas/Score'
+        f_max:
+          $ref: '#/components/schemas/Score'
+        m_min:
+          $ref: '#/components/schemas/Score'
+        m_max:
+          $ref: '#/components/schemas/Score'
+    RfmRuleSetRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - window_days
+        - recency_boundaries
+        - frequency_boundaries
+        - monetary_boundaries
+        - bands
+        - fallback_label_code
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        window_days:
+          type: integer
+          minimum: 1
+          maximum: 3650
+        recency_boundaries:
+          type: array
+          minItems: 4
+          maxItems: 4
+          description: >-
+            The largest recency, in days, that still scores 5, 4, 3 and 2, in
+            that order and non-decreasing. A larger recency scores 1.
+          items:
+            type: integer
+            minimum: 0
+        frequency_boundaries:
+          type: array
+          minItems: 4
+          maxItems: 4
+          description: >-
+            The smallest net purchase count that scores 5, 4, 3 and 2, in that
+            order and non-increasing. A smaller count scores 1.
+          items:
+            type: integer
+            minimum: 1
+        monetary_boundaries:
+          type: array
+          minItems: 4
+          maxItems: 4
+          description: >-
+            The smallest net total that scores 5, 4, 3 and 2, in that order and
+            non-increasing. A smaller total scores 1.
+          items:
+            $ref: '#/components/schemas/Money'
+        bands:
+          type: array
+          minItems: 1
+          description: >-
+            Boxes of scores that map to a label. No two overlap, so a scored
+            customer matches at most one.
+          items:
+            $ref: '#/components/schemas/Band'
+        fallback_label_code:
+          type: string
+          description: The label taken when no band matches (RN-46).
+      xml:
+        name: RfmRuleSetRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/rfm-engine/v1
+    RfmRuleSet:
+      type: object
+      additionalProperties: false
+      required:
+        - rule_set_id
+        - name
+        - window_days
+        - recency_boundaries
+        - frequency_boundaries
+        - monetary_boundaries
+        - bands
+        - fallback_label_code
+        - published
+        - created_at
+        - created_by
+      properties:
+        rule_set_id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        window_days:
+          type: integer
+          minimum: 1
+          maximum: 3650
+        recency_boundaries:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            type: integer
+            minimum: 0
+        frequency_boundaries:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            type: integer
+            minimum: 1
+        monetary_boundaries:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            $ref: '#/components/schemas/Money'
+        bands:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Band'
+        fallback_label_code:
+          type: string
+        published:
+          type: boolean
+          description: >-
+            True while model-registry's published version points at this rule
+            set. rfm-engine never sets it.
+        created_at:
+          type: string
+          format: date-time
+        created_by:
+          type:
+            - string
+            - 'null'
+          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+          description: The user who created it; null for a seeded rule set.
+      xml:
+        name: RfmRuleSet
+        namespace: https://mosaiq.maxthecoder.online/xml/rfm-engine/v1
+    RfmRuleSetPage:
+      type: object
+      additionalProperties: false
+      required:
+        - rule_sets
+        - page_info
+      properties:
+        rule_sets:
+          type: array
+          items:
+            $ref: '#/components/schemas/RfmRuleSet'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: RfmRuleSets
+        namespace: https://mosaiq.maxthecoder.online/xml/rfm-engine/v1
+    RfmRecalculationRequest:
+      type: object
+      additionalProperties: false
+      description: An empty object asks for the published rule set.
+      properties:
+        rule_set_id:
+          type: integer
+          format: int64
+          minimum: 1
+      xml:
+        name: RfmRecalculationRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/rfm-engine/v1
+    RfmRecalculation:
+      type: object
+      additionalProperties: false
+      required:
+        - recalculation_id
+        - trigger
+        - state
+        - rule_set_id
+        - as_of
+        - started_at
+        - finished_at
+        - started_by
+        - customers_checked
+        - customers_different
+        - outcome
+        - failure_code
+      properties:
+        recalculation_id:
+          type: integer
+          format: int64
+        trigger:
+          $ref: '#/components/schemas/RecalculationTrigger'
+        state:
+          $ref: '#/components/schemas/RecalculationState'
+        rule_set_id:
+          type: integer
+          format: int64
+        as_of:
+          type: string
+          format: date-time
+          description: The one instant both computations are made at.
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        started_by:
+          type:
+            - string
+            - 'null'
+          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+          description: The administrator who started it; null for a scheduled run.
+        customers_checked:
+          type:
+            - integer
+            - 'null'
+          minimum: 0
+        customers_different:
+          type:
+            - integer
+            - 'null'
+          minimum: 0
+        outcome:
+          oneOf:
+            - type: string
+              enum:
+                - EQUIVALENT
+                - DIFFERENT
+            - type: 'null'
+        failure_code:
+          type:
+            - string
+            - 'null'
+          description: Set only when `state` is `FAILED`, such as `source_unavailable`.
+      xml:
+        name: RfmRecalculation
+        namespace: https://mosaiq.maxthecoder.online/xml/rfm-engine/v1
+    RfmRecalculationPage:
+      type: object
+      additionalProperties: false
+      required:
+        - recalculations
+        - page_info
+      properties:
+        recalculations:
+          type: array
+          items:
+            $ref: '#/components/schemas/RfmRecalculation'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: RfmRecalculations
+        namespace: https://mosaiq.maxthecoder.online/xml/rfm-engine/v1
+    RfmValues:
+      type: object
+      additionalProperties: false
+      required:
+        - state
+        - r_days
+        - f_count
+        - m_total
+        - r_score
+        - f_score
+        - m_score
+        - label_code
+      properties:
+        state:
+          $ref: '#/components/schemas/ProfileState'
+        r_days:
+          type:
+            - integer
+            - 'null'
+          minimum: 0
+        f_count:
+          type:
+            - integer
+            - 'null'
+          minimum: 0
+        m_total:
+          oneOf:
+            - $ref: '#/components/schemas/Money'
+            - type: 'null'
+        r_score:
+          oneOf:
+            - $ref: '#/components/schemas/Score'
+            - type: 'null'
+        f_score:
+          oneOf:
+            - $ref: '#/components/schemas/Score'
+            - type: 'null'
+        m_score:
+          oneOf:
+            - $ref: '#/components/schemas/Score'
+            - type: 'null'
+        label_code:
+          type:
+            - string
+            - 'null'
+    RfmRecalculationDifference:
+      type: object
+      additionalProperties: false
+      required:
+        - customer_id
+        - fields
+        - incremental
+        - recomputed
+      properties:
+        customer_id:
+          type: string
+          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+        fields:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum:
+              - state
+              - r_days
+              - f_count
+              - m_total
+              - r_score
+              - f_score
+              - m_score
+              - label_code
+        incremental:
+          $ref: '#/components/schemas/RfmValues'
+        recomputed:
+          $ref: '#/components/schemas/RfmValues'
+    RfmRecalculationDifferencePage:
+      type: object
+      additionalProperties: false
+      required:
+        - differences
+        - page_info
+      properties:
+        differences:
+          type: array
+          items:
+            $ref: '#/components/schemas/RfmRecalculationDifference'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: RfmRecalculationDifferences
+        namespace: https://mosaiq.maxthecoder.online/xml/rfm-engine/v1
+    PageInfo:
+      type: object
+      additionalProperties: false
+      required:
+        - page
+        - size
+        - total
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+      xml:
+        name: PageInfo
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - field
+        - code
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+    Error:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+        - correlation_id
+        - details
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        correlation_id:
+          type: string
+          pattern: '^[0-9A-Za-z-]{1,64}$'
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+      xml:
+        name: Error
+        namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+  responses:
+    Unauthorized:
+      description: '`invalid_token` or `session_revoked`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              externalValue: ./examples/invalid-token.json
+            session_revoked:
+              externalValue: ./examples/session-revoked.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_token:
+              externalValue: ./examples/invalid-token.xml
+            session_revoked:
+              externalValue: ./examples/session-revoked.xml
+    Forbidden:
+      description: '`forbidden_role`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.xml
+    NotAcceptable:
+      description: '`not_acceptable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              externalValue: ./examples/not-acceptable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            not_acceptable:
+              externalValue: ./examples/not-acceptable.xml
+    RateLimited:
+      description: '`rate_limited`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              externalValue: ./examples/rate-limited.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rate_limited:
+              externalValue: ./examples/rate-limited.xml
+    OperationUnavailable:
+      description: '`auth_unavailable` or `database_unavailable`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.json
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.xml
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.xml
+    SchemaNotReady:
+      description: '`schema_not_ready`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              externalValue: ./examples/schema-not-ready.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            schema_not_ready:
+              externalValue: ./examples/schema-not-ready.xml
+    MalformedBody:
+      description: '`malformed_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            malformed_body:
+              externalValue: ./examples/malformed-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            malformed_body:
+              externalValue: ./examples/malformed-body.xml
+    PayloadTooLarge:
+      description: '`payload_too_large`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            payload_too_large:
+              externalValue: ./examples/payload-too-large.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            payload_too_large:
+              externalValue: ./examples/payload-too-large.xml
+    UnsupportedMediaType:
+      description: '`unsupported_media_type`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unsupported_media_type:
+              externalValue: ./examples/unsupported-media-type.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unsupported_media_type:
+              externalValue: ./examples/unsupported-media-type.xml
+    InvalidBody:
+      description: '`invalid_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-body.xml
+    InvalidPagination:
+      description: '`invalid_pagination`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.xml
+    ListInvalid:
+      description: '`invalid_query` or `invalid_pagination`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.json
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.xml
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.xml
+    CustomerNotFound:
+      description: '`customer_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            customer_not_found:
+              externalValue: ./examples/customer-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            customer_not_found:
+              externalValue: ./examples/customer-not-found.xml
+    RuleSetNotFound:
+      description: '`rule_set_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rule_set_not_found:
+              externalValue: ./examples/rule-set-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rule_set_not_found:
+              externalValue: ./examples/rule-set-not-found.xml
+    RecalculationNotFound:
+      description: '`recalculation_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            recalculation_not_found:
+              externalValue: ./examples/recalculation-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            recalculation_not_found:
+              externalValue: ./examples/recalculation-not-found.xml
+    RuleSetNameTaken:
+      description: '`rule_set_name_taken`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rule_set_name_taken:
+              externalValue: ./examples/rule-set-name-taken.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rule_set_name_taken:
+              externalValue: ./examples/rule-set-name-taken.xml
+    RecalculationConflict:
+      description: '`recalculation_in_progress` or `no_published_rule_set`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            recalculation_in_progress:
+              externalValue: ./examples/recalculation-in-progress.json
+            no_published_rule_set:
+              externalValue: ./examples/no-published-rule-set.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            recalculation_in_progress:
+              externalValue: ./examples/recalculation-in-progress.xml
+            no_published_rule_set:
+              externalValue: ./examples/no-published-rule-set.xml
+    RecalculationNotFinished:
+      description: '`recalculation_not_finished`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            recalculation_not_finished:
+              externalValue: ./examples/recalculation-not-finished.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            recalculation_not_finished:
+              externalValue: ./examples/recalculation-not-finished.xml

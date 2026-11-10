@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>unknown_customer</code>
+  <message>A customer id is not in the customer reference.</message>
+  <correlation_id>corr-exclusions-422b</correlation_id>
+  <details>
+    <field>customer_ids</field>
+    <code>unknown_customer</code>
+  </details>
+</Error>

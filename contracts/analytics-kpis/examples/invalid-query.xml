@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_query</code>
+  <message>A query parameter is not an allowed value.</message>
+  <correlation_id>corr-kpi-422a</correlation_id>
+  <details>
+    <field>group_by</field>
+    <code>dimension_not_supported</code>
+  </details>
+</Error>

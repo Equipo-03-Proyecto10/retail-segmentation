@@ -154,3 +154,56 @@ dialog {
   gap: 0.35rem;
   align-items: center;
 }
+.nav {
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.nav-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.nav-group strong {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  margin: 0 0.25rem 0 0;
+}
+.busy {
+  font-style: italic;
+}
+.error-message {
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+}
+.error summary {
+  cursor: pointer;
+}
+.export {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: flex-end;
+}
+.chart {
+  display: grid;
+  gap: 0.25rem;
+}
+.bar {
+  display: grid;
+  grid-template-columns: minmax(8rem, 16rem) 1fr auto;
+  gap: 0.75rem;
+  align-items: center;
+}
+.bar meter {
+  width: 100%;
+}
+.num {
+  text-align: right;
+}
+.synthetic {
+  font-weight: bold;
+}
+.scroll {
+  overflow-x: auto;
+}

@@ -1,4 +1,5 @@
 import type { ActionResult, AppState, ErrorView, ProbeResult, Result } from '../shared/api';
+import { mayExport } from '../shared/modules';
 import { operationsForRole, servicesForRole, type Bundle } from './bundle';
 import {
   ContractDefect,
@@ -103,6 +104,7 @@ export class Backoffice {
       role: this.role,
       services: servicesForRole(this.bundle, this.role),
       operations: operationsForRole(this.bundle, this.role),
+      canExport: mayExport(this.role),
     };
   }
 
@@ -176,6 +178,11 @@ export class Backoffice {
     } catch (e) {
       return { ok: false, error: this.viewOf(e), state: this.state() };
     }
+  }
+
+  /** Who is signed in, for the export audit; null when signed out. */
+  identity(): { userId: string; role: string } | null {
+    return this.role === null || this.subject === null ? null : { userId: this.subject, role: this.role };
   }
 
   /** The signed-in user's own id, or null when signed out. */

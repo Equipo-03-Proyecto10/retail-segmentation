@@ -96,10 +96,119 @@
     </xs:choice>
   </xs:complexType>
 
+  <xs:simpleType name="CommercialStatus">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="active"/>
+      <xs:enumeration value="paused"/>
+      <xs:enumeration value="discontinued"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Barcode">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="([0-9]{8}|[0-9]{12,14})"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="PhotoUrl">
+    <xs:restriction base="xs:anyURI">
+      <xs:maxLength value="512"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="AttributeName">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[a-z][a-z0-9_]{0,39}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="AttributeValue">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:maxLength value="120"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="RelationKind">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="substitute"/>
+      <xs:enumeration value="complement"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="ProductAttributeType">
+    <xs:sequence>
+      <xs:element name="name" type="products:AttributeName"/>
+      <xs:element name="value" type="products:AttributeValue"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ProductDetailsType">
+    <xs:sequence>
+      <xs:element name="product_id" type="products:ProductId"/>
+      <xs:element name="sku" type="products:Sku"/>
+      <xs:element name="name" type="products:ProductName"/>
+      <xs:element name="category_id" type="products:CategoryId"/>
+      <xs:element name="list_price" type="products:ListPrice"/>
+      <xs:element name="is_active" type="xs:boolean"/>
+      <xs:element name="commercial_status" type="products:CommercialStatus"/>
+      <xs:element name="attributes" type="products:ProductAttributeType"
+                  minOccurs="0" maxOccurs="20"/>
+      <xs:element name="photo_url" type="products:PhotoUrl" minOccurs="0"/>
+      <xs:element name="barcode" type="products:Barcode" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="UpdateProductDetailsRequestType">
+    <xs:choice>
+      <xs:sequence>
+        <xs:element name="commercial_status" type="products:CommercialStatus"/>
+        <xs:element name="attributes" type="products:ProductAttributeType"
+                    minOccurs="0" maxOccurs="20"/>
+        <xs:element name="barcode" type="products:Barcode" minOccurs="0"/>
+      </xs:sequence>
+      <xs:sequence>
+        <xs:element name="attributes" type="products:ProductAttributeType"
+                    maxOccurs="20"/>
+        <xs:element name="barcode" type="products:Barcode" minOccurs="0"/>
+      </xs:sequence>
+      <xs:element name="barcode" type="products:Barcode"/>
+    </xs:choice>
+  </xs:complexType>
+
+  <xs:complexType name="ProductRelationType">
+    <xs:sequence>
+      <xs:element name="related_product_id" type="products:ProductId"/>
+      <xs:element name="kind" type="products:RelationKind"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ProductRelationsType">
+    <xs:sequence>
+      <xs:element name="product_id" type="products:ProductId"/>
+      <xs:element name="ProductRelation" type="products:ProductRelationType"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ReplaceProductRelationsRequestType">
+    <xs:sequence>
+      <xs:element name="related_product_ids" type="products:ProductId"
+                  minOccurs="0" maxOccurs="50"/>
+    </xs:sequence>
+  </xs:complexType>
+
   <xs:element name="Product" type="products:ProductType"/>
   <xs:element name="Products" type="products:ProductsType"/>
   <xs:element name="CreateProductRequest"
               type="products:CreateProductRequestType"/>
   <xs:element name="UpdateProductRequest"
               type="products:UpdateProductRequestType"/>
+  <xs:element name="ProductDetails" type="products:ProductDetailsType"/>
+  <xs:element name="UpdateProductDetailsRequest"
+              type="products:UpdateProductDetailsRequestType"/>
+  <xs:element name="ProductRelations" type="products:ProductRelationsType"/>
+  <xs:element name="ReplaceProductRelationsRequest"
+              type="products:ReplaceProductRelationsRequestType"/>
 </xs:schema>

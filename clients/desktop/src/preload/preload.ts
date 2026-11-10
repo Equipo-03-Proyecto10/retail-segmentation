@@ -7,6 +7,7 @@ const bridge: MosaiqBridge = {
   signIn: (credentials) => ipcRenderer.invoke(CHANNELS.signIn, credentials),
   signOut: () => ipcRenderer.invoke(CHANNELS.signOut),
   probeService: (service) => ipcRenderer.invoke(CHANNELS.probeService, service),
+  exportTable: (request) => ipcRenderer.invoke(CHANNELS.exportTable, request),
   onStateChange: (listener) => {
     const handler = (_event: unknown, state: AppState): void => listener(state);
     ipcRenderer.on(CHANNELS.stateChanged, handler);
@@ -74,6 +75,9 @@ const bridge: MosaiqBridge = {
   currentAssignment: (customerId) => ipcRenderer.invoke(CHANNELS.currentAssignment, customerId),
   listAssignments: (query) => ipcRenderer.invoke(CHANNELS.listAssignments, query),
   getRecommendations: (customerId) => ipcRenderer.invoke(CHANNELS.getRecommendations, customerId),
+  kpiDefinitions: () => ipcRenderer.invoke(CHANNELS.kpiDefinitions),
+  kpiReport: (query) => ipcRenderer.invoke(CHANNELS.kpiReport, query),
+  exportReport: (format) => ipcRenderer.invoke(CHANNELS.exportReport, format),
 };
 
 contextBridge.exposeInMainWorld('mosaiq', bridge);

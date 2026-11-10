@@ -33,7 +33,19 @@ export type AppState =
       services: ServiceView[];
       /** operationIds this role may call, from the contracts' x-mosaiq-roles. Screens show a write control only when its operation is here. */
       operations: string[];
+      /** Whether this role may write a table to a file (ADR-0074). */
+      canExport: boolean;
     };
+
+/** A table the user is looking at, sent to the main process to be written through a save dialog. */
+export interface ExportRequest {
+  module: string;
+  columns: string[];
+  rows: string[][];
+}
+
+/** null: the user closed the save dialog and nothing was written. */
+export type ExportOutcome = { rows: number; file: string } | null;
 
 export type ActionResult = { ok: true; state: AppState } | { ok: false; error: ErrorView; state: AppState };
 
@@ -529,12 +541,90 @@ export interface RecommendationView {
   items: RecommendationItemView[];
 }
 
+// ---------- executive reports (F28-14, #883) ----------
+
+export interface MeasureDefinitionView {
+  code: string;
+  kind: string;
+  unit: string;
+  definition: string;
+}
+
+/** One KPI of the analytics-kpis catalog: what a figure means, over which window, by which dimensions. */
+export interface KpiDefinitionView {
+  kpi_code: string;
+  name: string;
+  version: number;
+  definition: string;
+  window: string;
+  dimensions: string[];
+  measures: MeasureDefinitionView[];
+}
+
+export interface ReportQuery {
+  kpi: string;
+  from: string;
+  to: string;
+  group_by?: string[];
+  granularity?: string;
+  store_id?: number;
+  segment_code?: string;
+  channel_id?: number;
+}
+
+export interface ReportMeasureView {
+  code: string;
+  kind: string;
+  unit: string;
+  /** The decimal exactly as the service sent it; null when the figure cannot be computed. */
+  value: string | null;
+  lower?: string;
+  upper?: string;
+}
+
+export interface ReportRowView {
+  period_start?: string;
+  period_end?: string;
+  segment_code?: string;
+  segment_state?: string;
+  from_segment_code?: string;
+  store?: string;
+  channel?: string;
+  campaign_id?: string;
+  model_version_id?: string;
+  synthetic: boolean;
+  measures: ReportMeasureView[];
+}
+
+/** A report as served, with its KPI's definition. Exports are written from this and nothing else. */
+export interface ReportView {
+  kpi: string;
+  name: string;
+  definition_version: number;
+  from: string;
+  to: string;
+  granularity?: string;
+  group_by: string[];
+  generated_at: string;
+  store_restricted: boolean;
+  /** Some figure comes from seeded data (ADR-0052). */
+  synthetic: boolean;
+  spans_model_versions: boolean;
+  definition: KpiDefinitionView;
+  rows: ReportRowView[];
+  /** Rows the service holds for this query; larger than rows.length when the report was cut. */
+  rows_total: number;
+}
+
+export type ReportFormat = 'pdf' | 'csv' | 'xlsx';
+
 /** The named operations the renderer may call; there is no generic transport. */
 export interface MosaiqBridge {
   getState(): Promise<AppState>;
   signIn(credentials: { email: string; password: string }): Promise<ActionResult>;
   signOut(): Promise<ActionResult>;
   probeService(service: string): Promise<ProbeResult>;
+  exportTable(request: ExportRequest): Promise<Result<ExportOutcome>>;
   onStateChange(listener: (state: AppState) => void): () => void;
   listProducts(query: ProductQuery): Promise<Result<Paged<ProductView>>>;
   getProduct(productId: number): Promise<Result<ProductView>>;
@@ -599,6 +689,9 @@ export interface MosaiqBridge {
   currentAssignment(customerId: string): Promise<Result<CurrentAssignmentView>>;
   listAssignments(query: AssignmentQuery): Promise<Result<Paged<AssignmentRowView>>>;
   getRecommendations(customerId: string): Promise<Result<RecommendationView>>;
+  kpiDefinitions(): Promise<Result<KpiDefinitionView[]>>;
+  kpiReport(query: ReportQuery): Promise<Result<ReportView>>;
+  exportReport(format: ReportFormat): Promise<Result<ExportOutcome>>;
 }
 
 export const CHANNELS = {
@@ -607,6 +700,7 @@ export const CHANNELS = {
   signOut: 'mosaiq:sign-out',
   probeService: 'mosaiq:probe-service',
   stateChanged: 'mosaiq:state-changed',
+  exportTable: 'mosaiq:export-table',
   listProducts: 'mosaiq:list-products',
   getProduct: 'mosaiq:get-product',
   createProduct: 'mosaiq:create-product',
@@ -661,4 +755,7 @@ export const CHANNELS = {
   currentAssignment: 'mosaiq:current-assignment',
   listAssignments: 'mosaiq:list-assignments',
   getRecommendations: 'mosaiq:get-recommendations',
+  kpiDefinitions: 'mosaiq:kpi-definitions',
+  kpiReport: 'mosaiq:kpi-report',
+  exportReport: 'mosaiq:export-report',
 } as const;

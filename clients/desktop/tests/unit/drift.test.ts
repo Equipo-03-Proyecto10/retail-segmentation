@@ -351,10 +351,7 @@ describe('an answer outside its contract is never used', () => {
   });
 
   it('refuses a list in which one report breaks the rule, and shows none of it', async () => {
-    const page = example('drift-reports-page').replace(
-      '<claim>CONCEPT_DRIFT</claim>',
-      '<claim>CONCEPT_DRIFT</claim>',
-    );
+    const page = example('drift-reports-page');
     const broken = page.replace(/<persisted>true<\/persisted>/, '<persisted>false</persisted>');
     expect(broken).not.toBe(page);
     const { drift } = await setup('ANALYST', (url) =>

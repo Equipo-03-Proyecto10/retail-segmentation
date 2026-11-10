@@ -16,13 +16,13 @@ Each service pins the annotated kit tag as a git dependency and commits its own
 
 ```toml
 dependencies = [
-  "mosaiq-kit @ git+https://github.com/Equipo-03-Proyecto10/retail-segmentation@kit-py/v0.1.7#subdirectory=packages/kit-py",
+  "mosaiq-kit @ git+https://github.com/Equipo-03-Proyecto10/retail-segmentation@kit-py/v0.1.8#subdirectory=packages/kit-py",
 ]
 ```
 
 Path dependencies on `packages/` are rejected. A kit upgrade is a service pull
 request with an exact new tag, a refreshed lock and that service's own
-`VERSION` bump. The current release is `kit-py/v0.1.7`, matching this package's
+`VERSION` bump. The current release is `kit-py/v0.1.8`, matching this package's
 version.
 
 ## Staged contracts
@@ -41,6 +41,12 @@ reads the XML namespace from the service XSD and operation metadata from the
 OpenAPI document. A request schema component with no `xml` object uses its
 component name as the XML root and the service XSD's target namespace. Explicit
 `xml.name` or `xml.namespace` values override those defaults.
+
+A versioned XSD staged beside it, `<service>/<service>.v2.xsd`, is loaded under
+its own target namespace and served at `/schema.v2.xsd`. An XML request is
+validated against the XSD whose namespace its root names, and an XML response
+is rendered in the namespace of the operation's 2xx schema when a loaded XSD
+declares it, else in the service XSD's. Two XSDs with one namespace are refused.
 
 The verifier reads the mounted JWKS on first use, reloads it for a first unknown
 key id, rate-limits later unknown-key reloads to one per 30 seconds, and always
@@ -101,6 +107,20 @@ consumer.start()
 The relay accepts only the service's configured streams. The consumer always
 uses `MOSAIQ_SERVICE_NAME` as its group; callers cannot select another group.
 Both helpers expose `run_once()` for deterministic tests.
+
+A producer whose outbox is not the PostgreSQL template (engagement's
+`relay_pending`, ADR-0075) polls its own outbox and publishes through
+`StreamPublisher`, which names no database:
+
+```python
+from mosaiq_kit import StreamPublisher
+
+publisher = StreamPublisher(redis_state, "stream:<suffix>.v1.<event>")
+publisher.publish(entries)  # XADD MAXLEN ~ 10000 each, then WAITAOF 1 0 2000
+```
+
+`publish` raises `redis.RedisError` when an `XADD` fails or the local AOF does
+not confirm; the caller then keeps its entries pending and retries later.
 
 ## Configuration
 

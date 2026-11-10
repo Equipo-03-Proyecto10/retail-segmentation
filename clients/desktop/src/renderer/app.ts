@@ -10,6 +10,7 @@ import { latestRequest } from './latest-request';
 import { exportAction } from './export';
 import { guardBridge } from './session';
 import { reconcileRender, type RenderState } from './render-state';
+import { renderReports } from './reports';
 import { renderStores } from './stores';
 import { renderAccount, renderTransfer, renderUsers } from './users';
 
@@ -144,6 +145,7 @@ function renderHome(state: Extract<AppState, { status: 'signed_in' }>): void {
     else if (next === 'sales') renderSales(body, ctx);
     else if (next === 'engagement') renderEngagement(body, ctx);
     else if (next === 'check-ins') renderCheckIns(body, ctx);
+    else if (next === 'reports') renderReports(body, { ...ctx, canExport: state.canExport });
     else if (next === 'stores') renderStores(body, ctx);
     else if (next === 'campaigns') renderCampaigns(body, ctx);
     else if (next === 'customers') renderCustomers(body, ctx);
@@ -151,7 +153,10 @@ function renderHome(state: Extract<AppState, { status: 'signed_in' }>): void {
     else if (next === 'audit') renderAudit(body, ctx);
     else if (next === 'transfer') renderTransfer(body, ctx);
     else renderServices(body, state);
-    screen.replaceChildren(...(state.canExport ? [exportAction(api, next, body)] : []), body);
+    screen.replaceChildren(
+      ...(state.canExport && next !== 'reports' ? [exportAction(api, next, body)] : []),
+      body,
+    );
   };
   for (const g of groups) {
     const group = el('div', { cls: 'nav-group' }, el('strong', { text: g.label }));

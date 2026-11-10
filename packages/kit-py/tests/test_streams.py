@@ -11,7 +11,7 @@ from conftest import TEST_CONSUMED_STREAM, TEST_OWN_STREAM, TEST_SUFFIX
 from psycopg import sql
 from psycopg.conninfo import make_conninfo
 
-from mosaiq_kit import OutboxRelay, StreamConsumer
+from mosaiq_kit import OutboxRelay, StreamConsumer, StreamPublisher
 
 REPOSITORY = Path(__file__).resolve().parents[3]
 SCHEMA = REPOSITORY / "sql/01_schema.sql"
@@ -486,3 +486,70 @@ def test_run_forever_backs_off_on_connection_loss_and_logs_once(
     assert len(infos) == 1
     errors = [r for r in caplog.records if r.levelname == "ERROR"]
     assert len(errors) == 1 and errors[0].exc_info is not None
+
+
+def test_publisher_appends_in_order_and_omits_none(service_redis, redis_admin) -> None:
+    from datetime import UTC, datetime
+
+    stream = "stream:" + TEST_OWN_STREAM
+    redis_admin.delete(stream)
+    publisher = StreamPublisher(service_redis, stream)
+    ids = publisher.publish(
+        [
+            {
+                "event_id": "a:recorded",
+                "v": 1,
+                "rank": None,
+                "occurred_at": datetime(2026, 11, 6, 12, 0, tzinfo=UTC),
+            },
+            {"event_id": "a:voided", "v": 1, "flag": True},
+        ]
+    )
+    entries = redis_admin.xrange(stream)
+    assert [entry_id for entry_id, _ in entries] == ids
+    assert entries[0][1] == {
+        "event_id": "a:recorded",
+        "v": "1",
+        "occurred_at": "2026-11-06T12:00:00Z",
+    }
+    assert entries[1][1] == {"event_id": "a:voided", "v": "1", "flag": "true"}
+    redis_admin.delete(stream)
+
+
+def test_publisher_writes_nothing_for_an_empty_batch() -> None:
+    class Refusing:
+        def __getattr__(self, name):
+            raise AssertionError("no Redis call is expected: " + name)
+
+    assert StreamPublisher(Refusing(), "stream:x.v1.y").publish([]) == []
+
+
+def test_publisher_raises_when_the_aof_does_not_confirm() -> None:
+    class Unconfirmed:
+        def __init__(self) -> None:
+            self.added = 0
+
+        def xadd(self, *args, **kwargs):
+            self.added += 1
+            return b"1-0"
+
+        def execute_command(self, *args):
+            assert args == ("WAITAOF", 1, 0, 2000)
+            return [0, 0]
+
+    client = Unconfirmed()
+    with pytest.raises(redis.RedisError):
+        StreamPublisher(client, "stream:x.v1.y").publish([{"event_id": "e"}])
+    assert client.added == 1
+
+
+def test_publisher_needs_a_stream_key() -> None:
+    with pytest.raises(ValueError):
+        StreamPublisher(None, "x.v1.y")  # type: ignore[arg-type]
+
+
+def test_publisher_names_no_database() -> None:
+    source = inspect.getsource(StreamPublisher)
+    # Source-agnostic (ADR-0075): no SQL, and no database client of any kind.
+    for word in ("psycopg", "sql.", "SELECT", "find_one", "update_one"):
+        assert word not in source

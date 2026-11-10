@@ -8,6 +8,7 @@ export type ModuleName =
   | 'sales'
   | 'engagement'
   | 'check-ins'
+  | 'reports'
   | 'stores'
   | 'campaigns'
   | 'customers'
@@ -38,6 +39,7 @@ export const MODULE_GROUPS: readonly ModuleGroup[] = [
       { name: 'sales', label: 'Sales', operation: 'listSales' },
       { name: 'engagement', label: 'Engagement', operation: 'getEngagementSummary' },
       { name: 'check-ins', label: 'Check-ins', operation: 'listCheckIns' },
+      { name: 'reports', label: 'Reports', operation: 'listKpiDefinitions' },
     ],
   },
   {
@@ -81,6 +83,17 @@ export const EXPORT_ROLES: readonly string[] = ['ADMIN', 'ANALYST', 'MARKETING',
 export function mayExport(role: string): boolean {
   return EXPORT_ROLES.includes(role);
 }
+
+/** The read operation of each KPI report (analytics-kpis x-mosaiq-roles); a role sees a KPI only if it may call this. */
+export const KPI_OPERATIONS: Readonly<Record<string, string>> = {
+  'net-sales': 'getNetSalesReport',
+  spend: 'getSpendReport',
+  retention: 'getRetentionReport',
+  migrations: 'getMigrationReport',
+  conversion: 'getConversionReport',
+  'recommendation-performance': 'getRecommendationPerformanceReport',
+  'campaign-performance': 'getCampaignPerformanceReport',
+};
 
 /** Error codes that mean the session is over; the user goes back to sign-in. */
 export const SESSION_ENDED_CODES: readonly string[] = [

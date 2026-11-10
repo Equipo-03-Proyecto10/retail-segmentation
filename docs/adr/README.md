@@ -213,9 +213,10 @@ Later runtime events must be preserved.
 | [0071](0071-android-raises-local-notifications-from-a-periodic-pull-and-a-refused-write-reaches-a-supervisor-as-a-capture-incident.md) | Android raises local notifications from a periodic pull, and a refused write reaches a supervisor as a capture incident owned by engagement | Accepted |
 | [0072](0072-domain-events-are-recorded-by-one-definer-function-into-a-hash-chained-append-only-table-that-audit-trail-reads.md) | Domain events are recorded by one definer function into an append-only, hash-chained table that audit-trail reads | Accepted |
 | [0073](0073-an-operation-published-ahead-of-its-implementation-is-marked-planned-and-skipped-by-conformance.md) | An operation published ahead of its implementation is marked planned and skipped by conformance | Accepted |
-| [0074](0074-the-desktop-console-exports-through-the-main-process-and-records-each-export-locally.md) | The desktop console exports tables through the main process and records each export locally | Accepted |
+| [0074](0074-the-desktop-console-exports-through-the-main-process-and-records-each-export-locally.md) | The desktop console exports tables through the main process and records each export locally | Partially superseded by [0077](0077-desktop-executive-reports-export-pdf-csv-and-excel-from-the-report-main-served-and-keep-the-data-origin.md) (the Reports module) |
 | [0075](0075-engagement-relays-interaction-facts-on-a-redis-stream-from-an-outbox-kept-on-the-event-document.md) | engagement relays interaction facts on a Redis stream, from an outbox kept on the event document | Accepted |
 | [0076](0076-role-codes-grow-inside-v1-only-by-an-accepted-record-and-clients-grant-nothing-for-an-unknown-role.md) | Role codes grow inside v1 only by an accepted record, and clients grant nothing for an unknown role | Proposed |
+| [0077](0077-desktop-executive-reports-export-pdf-csv-and-excel-from-the-report-main-served-and-keep-the-data-origin.md) | Desktop executive reports export PDF, CSV and Excel from the report main served, and keep the data origin | Accepted |
 
 ## Writing one
 

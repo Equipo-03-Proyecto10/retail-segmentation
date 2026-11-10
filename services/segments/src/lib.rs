@@ -6,6 +6,12 @@
 //! current run id comes from PostgreSQL and moves when the `segments` consumer
 //! group sees `stream:segments.v1.run_recorded`, so the old run's keys are
 //! simply never asked for again and expire by their TTL; nothing scans.
+//!
+//! A customer's assignment history names one person, so its read is logged
+//! (ADR-0072, F21-25): `GET /v1/segment-assignments?customer_id=` records a
+//! `HISTORY_READ` through `api_audit.record_event_v1` in the read's own
+//! transaction, a 403 on it records one with outcome `REFUSED`, and a read
+//! whose event cannot be recorded answers 503 `audit_unavailable` with no rows.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -13,19 +19,23 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use axum::body::Body;
-use axum::extract::Request;
+use axum::extract::{Request, State};
+use axum::http::{header, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::Response;
+use axum::Router;
 use chrono::{DateTime, Utc};
+use mosaiq_kit::auth::{Authenticator, JwksStore, StateRedis};
+use mosaiq_kit::rendering::render_error;
 use mosaiq_kit::{
-    configure_logging, service_redis_info, ApiError, Ctx, Database, Detail, Kit, KitConfig,
-    OutboxRelay, Page, Reply, Representation, StreamConsumer, Value,
+    configure_logging, service_redis_info, ApiError, Ctx, Database, Detail, Format, Kit, KitConfig,
+    OutboxRelay, Page, Principal, Reply, Representation, StreamConsumer, Value,
 };
 use redis::aio::MultiplexedConnection;
 use redis::AsyncCommands;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use tokio_postgres::Row;
+use tokio_postgres::{GenericClient, Row};
 use uuid::Uuid;
 
 pub const SERVICE: &str = "segments";
@@ -501,6 +511,17 @@ pub async fn read_assignments(
     size: u32,
 ) -> Result<(Vec<Assignment>, u64), ApiError> {
     let connection = db.connection().await?;
+    let client: &tokio_postgres::Client = &connection;
+    read_assignments_in(client, filter, page, size).await
+}
+
+/// [`read_assignments`] on a given client, such as a logged read's transaction.
+pub async fn read_assignments_in<C: GenericClient + Sync>(
+    connection: &C,
+    filter: &Filter,
+    page: u32,
+    size: u32,
+) -> Result<(Vec<Assignment>, u64), ApiError> {
     let limit = i64::from(size);
     let offset = i64::from(page - 1) * limit;
     let (total, rows) = match filter {
@@ -574,6 +595,192 @@ pub async fn read_assignments(
         .map(Assignment::from_row)
         .collect::<Result<Vec<_>, _>>()?;
     Ok((assignments, total as u64))
+}
+
+// ---------------------------------------------------------------------------
+// Logged reads (ADR-0072)
+// ---------------------------------------------------------------------------
+
+pub fn audit_unavailable() -> ApiError {
+    ApiError::new(
+        503,
+        "audit_unavailable",
+        "The read could not be recorded, so it was not served.",
+    )
+}
+
+/// Record one `HISTORY_READ` of a customer's segment history, naming who,
+/// which customer and when, never what was read. Any failure is 503
+/// `audit_unavailable`.
+pub async fn record_history_read<C: GenericClient + Sync>(
+    client: &C,
+    principal: &Principal,
+    correlation_id: &str,
+    customer: Uuid,
+    outcome: &str,
+) -> Result<(), ApiError> {
+    let correlation =
+        (!correlation_id.is_empty() && correlation_id != "-").then_some(correlation_id);
+    client
+        .query_one(
+            "SELECT created FROM api_audit.record_event_v1( \
+                 $1, 'HISTORY_READ', $2, now(), 'USER', $3::text::uuid, $4, \
+                 NULL::smallint, 'customer', $5, NULL::bigint, NULL::bigint, $6, \
+                 '{\"history\": \"SEGMENT\"}'::jsonb)",
+            &[
+                &Uuid::new_v4(),
+                &outcome,
+                &principal.sub,
+                &principal.role,
+                &customer.to_string(),
+                &correlation,
+            ],
+        )
+        .await
+        .map(|_| ())
+        .map_err(|error| {
+            tracing::error!(
+                "HISTORY_READ not recorded: sqlstate={:?}",
+                error.code().map(|code| code.code().to_owned())
+            );
+            audit_unavailable()
+        })
+}
+
+/// A customer's history, read in one transaction with its `HISTORY_READ`:
+/// the event is recorded first, so no row leaves without it, and an unknown
+/// customer's 404 rolls it back with the read.
+pub async fn read_logged_history(
+    db: &Database,
+    principal: &Principal,
+    correlation_id: &str,
+    filter: &Filter,
+    page: u32,
+    size: u32,
+) -> Result<(Vec<Assignment>, u64), ApiError> {
+    let Filter::Customer { id, .. } = filter else {
+        return read_assignments(db, filter, page, size).await;
+    };
+    let mut connection = db.connection().await?;
+    let transaction = connection.transaction(Some(principal)).await?;
+    record_history_read(&*transaction, principal, correlation_id, *id, "SUCCESS").await?;
+    let result = read_assignments_in(&*transaction, filter, page, size).await?;
+    transaction
+        .commit()
+        .await
+        .map_err(|_| audit_unavailable())?;
+    Ok(result)
+}
+
+/// What the refusal layer needs: the kit's own verification of the token,
+/// and the database to record in.
+pub struct RefusalLog {
+    auth: Authenticator,
+    db: Arc<Database>,
+}
+
+impl RefusalLog {
+    pub fn new(config: &KitConfig, db: Arc<Database>) -> Result<Self, Box<dyn std::error::Error>> {
+        let info = service_redis_info(
+            &config.redis_state_url,
+            SUFFIX,
+            config.redis_password.clone(),
+        )?;
+        Ok(Self {
+            auth: Authenticator::new(
+                config.issuer.clone(),
+                JwksStore::new(config.jwks_path.clone()),
+                StateRedis::new(info)?,
+            ),
+            db,
+        })
+    }
+
+    async fn record(
+        &self,
+        authorization: Option<&str>,
+        correlation: &str,
+        customer: Uuid,
+    ) -> Result<(), ApiError> {
+        // The kit answered 403 only after verifying this token; it is
+        // verified again here, so the refusal is attributed to a verified
+        // subject. A token that no longer verifies cannot be attributed.
+        let principal = self
+            .auth
+            .verify(authorization)
+            .await
+            .map_err(|_| audit_unavailable())?;
+        let mut connection = self
+            .db
+            .connection()
+            .await
+            .map_err(|_| audit_unavailable())?;
+        let transaction = connection
+            .transaction(Some(&principal))
+            .await
+            .map_err(|_| audit_unavailable())?;
+        record_history_read(&*transaction, &principal, correlation, customer, "REFUSED").await?;
+        transaction.commit().await.map_err(|_| audit_unavailable())
+    }
+}
+
+/// A 403 on a customer's history is itself a logged read, with outcome
+/// `REFUSED`. The kit refuses the role before any handler runs, so the
+/// refusal is recorded around the router; when it cannot be, the answer is
+/// 503, never a plain 403.
+async fn log_refusals(
+    State(log): State<Arc<RefusalLog>>,
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    let customer = (request.method() == Method::GET
+        && request.uri().path() == "/v1/segment-assignments")
+        .then(|| {
+            query_pairs(request.uri().query().unwrap_or_default())
+                .get("customer_id")
+                .and_then(|raw| parse_customer_id(raw))
+        })
+        .flatten();
+    let authorization = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let response = next.run(request).await;
+    let Some(customer) = customer else {
+        return response;
+    };
+    if response.status() != StatusCode::FORBIDDEN {
+        return response;
+    }
+    let correlation = response
+        .headers()
+        .get("X-Correlation-ID")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("-")
+        .to_owned();
+    match log
+        .record(authorization.as_deref(), &correlation, customer)
+        .await
+    {
+        Ok(()) => response,
+        Err(error) => {
+            let xml = response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| value.starts_with("application/xml"));
+            let mut refused = render_error(
+                &error,
+                &correlation,
+                if xml { Format::Xml } else { Format::Json },
+            );
+            if let Ok(value) = correlation.parse() {
+                refused.headers_mut().insert("X-Correlation-ID", value);
+            }
+            refused
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -683,7 +890,22 @@ async fn get_current_assignment(ctx: Ctx) -> Result<Reply, ApiError> {
 
 async fn list_segment_assignments(ctx: Ctx) -> Result<Reply, ApiError> {
     let filter = assignment_filter(&request_info().query)?;
-    let (rows, total) = read_assignments(ctx.db(), &filter, ctx.page, ctx.size).await?;
+    let (rows, total) = match ctx.principal() {
+        Some(principal) => {
+            read_logged_history(
+                ctx.db(),
+                principal,
+                &ctx.correlation_id,
+                &filter,
+                ctx.page,
+                ctx.size,
+            )
+            .await?
+        }
+        // Every operation is protected; without a principal there is no
+        // reader to record, so nothing is read.
+        None => return Err(audit_unavailable()),
+    };
     Ok(assignments_reply(&rows, ctx.page, ctx.size, total))
 }
 
@@ -789,6 +1011,29 @@ async fn capture_request(request: Request<Body>, next: Next) -> Response {
     REQUEST.scope(info, next.run(request)).await
 }
 
+/// The service's router: the kit's operations, the request capture, and the
+/// layer that records a refused history read. Also returns the database.
+pub fn router(
+    config: KitConfig,
+    contracts: &str,
+    reader: Reader,
+) -> Result<(Router, Arc<Database>), Box<dyn std::error::Error>> {
+    let _ = READER.set(reader);
+    let kit = Kit::new(SERVICE, SUFFIX, contracts, config.clone())?;
+    let db = kit.database();
+    let refusals = Arc::new(RefusalLog::new(&config, Arc::clone(&db))?);
+    let router = kit
+        .operation("listSegments", list_segments)?
+        .operation("getSegment", get_segment)?
+        .operation("getCurrentAssignment", get_current_assignment)?
+        .operation("listSegmentAssignments", list_segment_assignments)?
+        .ready_check(database_ready)
+        .into_router()
+        .layer(middleware::from_fn_with_state(refusals, log_refusals))
+        .layer(middleware::from_fn(capture_request));
+    Ok((router, db))
+}
+
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     configure_logging(&std::env::var("LOG_LEVEL").unwrap_or_else(|_| "info".to_owned()));
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -804,17 +1049,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             .and_then(|info| redis::Client::open(info).ok())
             .map(Cache::new);
         let reader = Reader::new(cache);
-        let _ = READER.set(reader.clone());
-        let kit = Kit::new(SERVICE, SUFFIX, "contracts", KitConfig::from_env(SUFFIX))?;
-        spawn_stream_tasks(password, reader, kit.database());
-        let router = kit
-            .operation("listSegments", list_segments)?
-            .operation("getSegment", get_segment)?
-            .operation("getCurrentAssignment", get_current_assignment)?
-            .operation("listSegmentAssignments", list_segment_assignments)?
-            .ready_check(database_ready)
-            .into_router()
-            .layer(middleware::from_fn(capture_request));
+        let (router, db) = router(KitConfig::from_env(SUFFIX), "contracts", reader.clone())?;
+        spawn_stream_tasks(password, reader, db);
         let listener = tokio::net::TcpListener::bind("0.0.0.0:5010").await?;
         mosaiq_kit::serve(listener, router).await?;
         Ok::<(), Box<dyn std::error::Error>>(())

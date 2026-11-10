@@ -12,9 +12,15 @@ import uuid
 
 import psycopg
 
-FUNCTION = (
-    "api_audit.record_event_v1(uuid, text, text, timestamptz, text, uuid, text,"
-    " smallint, text, text, bigint, bigint, text, jsonb)"
+REVOKE = (
+    "REVOKE EXECUTE ON FUNCTION api_audit.record_event_v1("
+    "uuid, text, text, timestamptz, text, uuid, text,"
+    " smallint, text, text, bigint, bigint, text, jsonb) FROM svc_sales"
+)
+GRANT = (
+    "GRANT EXECUTE ON FUNCTION api_audit.record_event_v1("
+    "uuid, text, text, timestamptz, text, uuid, text,"
+    " smallint, text, text, bigint, bigint, text, jsonb) TO svc_sales"
 )
 
 
@@ -122,7 +128,7 @@ def test_a_refused_customer_history_read_is_recorded_as_refused(
 def test_the_read_fails_closed_when_its_event_cannot_be_recorded(client, token, owner):
     customer = _customer(owner)
     headers, correlation = _headers(token, "ADMIN")
-    owner.execute(f"REVOKE EXECUTE ON FUNCTION {FUNCTION} FROM svc_sales")
+    owner.execute(REVOKE)
     try:
         response = client.get(f"/v1/sales?customer_id={customer}", headers=headers)
         xml = client.get(
@@ -132,7 +138,7 @@ def test_the_read_fails_closed_when_its_event_cannot_be_recorded(client, token, 
         refused, refused_correlation = _headers(token, "INVENTORY_PLANNER")
         forbidden = client.get(f"/v1/sales?customer_id={customer}", headers=refused)
     finally:
-        owner.execute(f"GRANT EXECUTE ON FUNCTION {FUNCTION} TO svc_sales")
+        owner.execute(GRANT)
 
     assert response.status_code == 503
     body = response.get_json()

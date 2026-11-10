@@ -207,3 +207,19 @@ dialog {
 .scroll {
   overflow-x: auto;
 }
+.audit-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.audit-tabs button[aria-current='true'] {
+  font-weight: 700;
+}
+.hint {
+  margin: 0.75rem 0 0;
+}
+/* A long id or hash wraps inside a detail instead of widening the page. */
+.panel h3,
+.panel dd {
+  overflow-wrap: anywhere;
+}

@@ -369,10 +369,14 @@ paths:
         cap on the number of customers, and `audience_size`, computed when the
         request is served as of `as_of`. `audience_size` counts the customers
         whose current segment label is `label_code` (`api_segments.current_label_v1`,
-        state `assigned`), registered in `api_customers.customer_ref_v1`, who are
-        not excluded and who satisfy every eligibility rule, reduced to
-        `max_customers` when a cap is set. A campaign whose audience was never
-        written has no cap.
+        state `assigned`), registered in `api_customers.customer_ref_v1` and not
+        anonymized, who have not withdrawn consent (a purpose is granted only when
+        its latest row in `api_preferences.consent_state_v1` says `GRANTED`,
+        ADR-0066 section 2: `PERSONALIZATION`, because the audience is built on a
+        segment, and `MARKETING_CONTACT`), who are not excluded and who satisfy
+        every eligibility rule, reduced to `max_customers` when a cap is set.
+        `getCampaignAudienceBreakdown` counts who is left out, by reason. A
+        campaign whose audience was never written has no cap.
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -493,22 +497,37 @@ paths:
         leaves out counted by reason, computed when the request is served as of
         `as_of`; nothing is stored. `label_holders` counts the customers whose
         current segment label is `label_code` (`api_segments.current_label_v1`,
-        state `assigned`). `reasons` always holds six entries, in this order, and
-        a customer who fails several reasons is counted once, under the first
-        that applies: `not_in_customer_reference` (the holder is absent from
-        `api_customers.customer_ref_v1`), `excluded_customer` (named in the
-        campaign's exclusions), `excluded_label` (holds a label listed in the
-        campaign's exclusions; a customer holds one current label, so this
-        removes customers only when the campaign's own label is listed),
-        `registered_after_cutoff` (registered after `registered_on_or_before`),
+        state `assigned`). `reasons` always holds eight entries, in this order,
+        and a customer who fails several reasons is counted once, under the first
+        that applies:
+        `not_in_customer_reference` (the holder is absent from
+        `api_customers.customer_ref_v1`, or is flagged anonymized there:
+        ADR-0066 section 3 keeps an anonymized customer's key, so this is the
+        reason that counts them, and they are never in the audience);
+        `personalization_withdrawn` (`PERSONALIZATION` is not granted: the
+        audience is built on a segment, so ADR-0066 section 2 excludes the
+        customer);
+        `marketing_contact_withdrawn` (`MARKETING_CONTACT` is not granted: ADR-0066
+        section 2 excludes the customer from every audience, whatever its
+        criterion);
+        `excluded_customer` (named in the campaign's exclusions);
+        `excluded_label` (holds a label listed in the campaign's exclusions; a
+        customer holds one current label, so this removes customers only when the
+        campaign's own label is listed);
+        `registered_after_cutoff` (registered after `registered_on_or_before`);
         `too_few_purchases` (fewer than `min_purchases` net purchases in the
         `purchase_window_days` days before the request, counted as
-        `getCampaignEligibilityRules` states), and `over_max_customers` (the
-        customers above `max_customers` once every earlier reason is applied). A
-        reason whose rule is not set counts 0. The counts add up:
-        `label_holders` equals the sum of `excluded` over `reasons` plus
-        `audience_size`, and `audience_size` equals the one `getCampaignAudience`
-        returns when computed at the same `as_of`.
+        `getCampaignEligibilityRules` states); and `over_max_customers` (the
+        customers above `max_customers` once every earlier reason is applied).
+        A purpose is granted only when its latest row in
+        `api_preferences.consent_state_v1` says `GRANTED`: a purpose with no
+        row, with a `WITHDRAWN` row, or that cannot be read is treated as
+        withdrawn (ADR-0066 section 2), so a customer is counted under the
+        first of the two consent reasons whose purpose is not granted. A reason
+        whose rule is not set counts 0. The counts add up: `label_holders` equals
+        the sum of `excluded` over `reasons` plus `audience_size`, and
+        `audience_size` equals the one `getCampaignAudience` returns when
+        computed at the same `as_of`.
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -1547,6 +1566,8 @@ components:
         order of the enumeration is the order of precedence.
       enum:
         - not_in_customer_reference
+        - personalization_withdrawn
+        - marketing_contact_withdrawn
         - excluded_customer
         - excluded_label
         - registered_after_cutoff
@@ -1589,10 +1610,10 @@ components:
         reasons:
           type: array
           description: >-
-            One entry per reason, always six, in the order of
+            One entry per reason, always eight, in the order of
             `AudienceExclusionReason`.
-          minItems: 6
-          maxItems: 6
+          minItems: 8
+          maxItems: 8
           items:
             $ref: '#/components/schemas/AudienceReason'
         audience_size:

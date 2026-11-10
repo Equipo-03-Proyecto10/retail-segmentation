@@ -8,6 +8,14 @@
       "excluded": 12
     },
     {
+      "code": "personalization_withdrawn",
+      "excluded": 40
+    },
+    {
+      "code": "marketing_contact_withdrawn",
+      "excluded": 220
+    },
+    {
       "code": "excluded_customer",
       "excluded": 2
     },
@@ -17,11 +25,11 @@
     },
     {
       "code": "registered_after_cutoff",
-      "excluded": 310
+      "excluded": 250
     },
     {
       "code": "too_few_purchases",
-      "excluded": 556
+      "excluded": 356
     },
     {
       "code": "over_max_customers",

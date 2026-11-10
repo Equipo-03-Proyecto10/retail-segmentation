@@ -100,6 +100,8 @@
   <xs:simpleType name="AudienceExclusionReason">
     <xs:restriction base="xs:string">
       <xs:enumeration value="not_in_customer_reference"/>
+      <xs:enumeration value="personalization_withdrawn"/>
+      <xs:enumeration value="marketing_contact_withdrawn"/>
       <xs:enumeration value="excluded_customer"/>
       <xs:enumeration value="excluded_label"/>
       <xs:enumeration value="registered_after_cutoff"/>
@@ -199,7 +201,7 @@
       <xs:element name="label_code" type="campaigns:LabelCode"/>
       <xs:element name="label_holders" type="xs:nonNegativeInteger"/>
       <xs:element name="reasons" type="campaigns:AudienceReasonType"
-                  minOccurs="6" maxOccurs="6"/>
+                  minOccurs="8" maxOccurs="8"/>
       <xs:element name="audience_size" type="xs:nonNegativeInteger"/>
       <xs:element name="as_of" type="xs:dateTime"/>
     </xs:sequence>

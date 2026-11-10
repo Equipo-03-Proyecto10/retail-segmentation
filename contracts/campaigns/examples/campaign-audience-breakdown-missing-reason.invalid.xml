@@ -8,6 +8,14 @@
     <excluded>12</excluded>
   </reasons>
   <reasons>
+    <code>personalization_withdrawn</code>
+    <excluded>40</excluded>
+  </reasons>
+  <reasons>
+    <code>marketing_contact_withdrawn</code>
+    <excluded>220</excluded>
+  </reasons>
+  <reasons>
     <code>excluded_customer</code>
     <excluded>2</excluded>
   </reasons>
@@ -17,11 +25,11 @@
   </reasons>
   <reasons>
     <code>registered_after_cutoff</code>
-    <excluded>310</excluded>
+    <excluded>250</excluded>
   </reasons>
   <reasons>
     <code>too_few_purchases</code>
-    <excluded>556</excluded>
+    <excluded>356</excluded>
   </reasons>
   <audience_size>3120</audience_size>
   <as_of>2026-11-02T15:04:05Z</as_of>

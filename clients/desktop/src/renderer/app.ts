@@ -4,6 +4,7 @@ import { renderAudit } from './audit';
 import { renderCampaigns } from './campaigns';
 import { renderCategories, renderProducts } from './catalog';
 import { el, errorBox } from './dom';
+import { renderConversion } from './conversion';
 import { renderCustomers } from './customers';
 import { renderExperiments } from './experiments';
 import { renderCheckIns, renderEngagement, renderSales, renderStock } from './floor';
@@ -147,6 +148,7 @@ function renderHome(state: Extract<AppState, { status: 'signed_in' }>): void {
     else if (next === 'engagement') renderEngagement(body, ctx);
     else if (next === 'check-ins') renderCheckIns(body, ctx);
     else if (next === 'reports') renderReports(body, { ...ctx, canExport: state.canExport });
+    else if (next === 'conversion') renderConversion(body, ctx);
     else if (next === 'stores') renderStores(body, ctx);
     else if (next === 'campaigns') renderCampaigns(body, ctx);
     else if (next === 'experiments') renderExperiments(body, ctx);

@@ -8,6 +8,7 @@ import { Backoffice } from './backoffice';
 import { loadBundle } from './bundle';
 import { Campaigns } from './campaigns';
 import { Catalog } from './catalog';
+import { ConversionResults } from './conversion';
 import { Customers } from './customers';
 import { Exporter, type ExportEnv } from './exports';
 import { Experiments } from './experiments';
@@ -209,6 +210,10 @@ function start(): void {
   ipcMain.handle(CHANNELS.planExperiment, (_e, draft: unknown) => experiments.plan(draft));
   ipcMain.handle(CHANNELS.assignExperiment, (_e, experimentId: unknown, acknowledge: unknown) =>
     experiments.assign(experimentId, acknowledge),
+  );
+  const conversion = new ConversionResults(office);
+  ipcMain.handle(CHANNELS.getExperimentResult, (_e, experimentId: unknown, basis: unknown) =>
+    conversion.result(experimentId, basis),
   );
   office.onStateChange((state) => {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(CHANNELS.stateChanged, state);

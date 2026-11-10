@@ -29,7 +29,7 @@ from mosaiq_kit import (
     configure_logging,
 )
 
-from app import rules
+from app import audit, rules
 from app.passwords import hash_password, verify_password
 
 LOGGER = logging.getLogger(__name__)
@@ -188,6 +188,7 @@ def create_app(*, start_relay: bool = True) -> Flask:
     def update_user(user_id: UUID) -> Representation:
         body = kit.body
         with kit.db.transaction() as connection:
+            before = rules.require_user(connection, user_id)
             user = rules.update_user(
                 connection,
                 user_id,
@@ -195,6 +196,15 @@ def create_app(*, start_relay: bool = True) -> Flask:
                 email=body.get("email"),
                 role_code=body.get("role_code"),
             )
+            if user["role_code"] != before["role_code"]:
+                audit.permission_changed(
+                    connection,
+                    caller(),
+                    user["user_id"],
+                    "ROLE_ASSIGNED",
+                    from_role=before["role_code"],
+                    to_role=user["role_code"],
+                )
         return _user(user)
 
     @kit.operation("changeUserPassword")
@@ -228,15 +238,27 @@ def create_app(*, start_relay: bool = True) -> Flask:
             rules.set_password_hash(connection, user_id, password_hash)
         return NoContent()
 
+    def set_active(user_id: UUID, is_active: bool) -> Representation:
+        with kit.db.transaction() as connection:
+            before = rules.require_user(connection, user_id)
+            user = rules.set_active(connection, user_id, is_active)
+            # Setting the flag it already has changes no permission.
+            if before["is_active"] != user["is_active"]:
+                audit.permission_changed(
+                    connection,
+                    caller(),
+                    user["user_id"],
+                    "USER_REACTIVATED" if is_active else "USER_DEACTIVATED",
+                )
+        return _user(user)
+
     @kit.operation("deactivateUser")
     def deactivate_user(user_id: UUID) -> Representation:
-        with kit.db.transaction() as connection:
-            return _user(rules.set_active(connection, user_id, False))
+        return set_active(user_id, False)
 
     @kit.operation("reactivateUser")
     def reactivate_user(user_id: UUID) -> Representation:
-        with kit.db.transaction() as connection:
-            return _user(rules.set_active(connection, user_id, True))
+        return set_active(user_id, True)
 
     @kit.operation("listRoles")
     def list_roles() -> Page:
@@ -264,11 +286,21 @@ def create_app(*, start_relay: bool = True) -> Flask:
     @kit.operation("transferAdministrator")
     def transfer_administrator() -> NoContent:
         with kit.db.transaction() as connection:
-            rules.transfer_administrator(
+            moved = rules.transfer_administrator(
                 connection,
                 caller=str(caller()["sub"]),
                 successor_id=kit.body["successor_user_id"],
             )
+            # One event per user whose role moved, in the transfer's transaction.
+            for subject, from_role, to_role in moved:
+                audit.permission_changed(
+                    connection,
+                    caller(),
+                    subject,
+                    "ADMINISTRATOR_TRANSFERRED",
+                    from_role=from_role,
+                    to_role=to_role,
+                )
         return NoContent()
 
     dsn = os.environ.get("DATABASE_URL")

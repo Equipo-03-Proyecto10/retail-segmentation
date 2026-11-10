@@ -264,7 +264,7 @@ def set_password_hash(
 
 def transfer_administrator(
     connection: Connection, *, caller: str, successor_id: UUID | str
-) -> None:
+) -> list[tuple[str, str, str]]:
     """Move the ADMIN seat to a successor, under row locks, in one transaction.
 
     The current ADMIN row is locked first, then the successor's, always in
@@ -309,6 +309,11 @@ def transfer_administrator(
         raise translate(error) from None
     if administrator_count(connection) != 1:
         raise single_administrator()
+    # The roles that moved, (user_id, from, to), for the transfer's events.
+    return [
+        (str(incumbent), ADMIN, successor["role_code"]),
+        (str(successor["user_id"]), successor["role_code"], ADMIN),
+    ]
 
 
 def list_users(

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: sales-service
-  version: 1.1.0
+  version: 1.2.0
   description: >-
     Records a sale exactly once, all or nothing, and reads sales and the channel
     vocabulary back (RN-11 to RN-13, RN-37). A sale is never edited or deleted:
@@ -139,6 +139,13 @@ paths:
         (exclusive) are RFC 3339 timestamps with an offset. A malformed filter, or
         `from` after `to`, gets 422 `invalid_query`. A sale carries no product name
         or price from products: clients fetch them with `GET /v1/products?ids=`.
+        With `customer_id`, the read is one named customer's sales history, a
+        logged read (ADR-0072): before it returns, it records one `HISTORY_READ`
+        domain event (`history` `SALES`, the customer as subject) naming who
+        read and when, never what was returned, and a 403 on it records one with
+        outcome `REFUSED`. When that event cannot be recorded the read is 503
+        `audit_unavailable` and returns no sales. A read without `customer_id`
+        records nothing.
       operationId: listSales
       x-mosaiq-roles:
         - ADMIN
@@ -1236,7 +1243,9 @@ components:
             rate_limited:
               externalValue: ./examples/rate-limited.xml
     OperationUnavailable:
-      description: '`auth_unavailable` or `database_unavailable`.'
+      description: >-
+        `auth_unavailable`, `database_unavailable`, or `audit_unavailable` when
+        a logged read's domain event cannot be recorded (ADR-0072).
       headers:
         X-Correlation-ID:
           $ref: '#/components/headers/CorrelationId'
@@ -1249,6 +1258,8 @@ components:
               externalValue: ./examples/auth-unavailable.json
             database_unavailable:
               externalValue: ./examples/database-unavailable.json
+            audit_unavailable:
+              externalValue: ./examples/audit-unavailable.json
         application/xml:
           schema:
             $ref: '#/components/schemas/Error'
@@ -1257,6 +1268,8 @@ components:
               externalValue: ./examples/auth-unavailable.xml
             database_unavailable:
               externalValue: ./examples/database-unavailable.xml
+            audit_unavailable:
+              externalValue: ./examples/audit-unavailable.xml
     SchemaNotReady:
       description: '`schema_not_ready`.'
       headers:

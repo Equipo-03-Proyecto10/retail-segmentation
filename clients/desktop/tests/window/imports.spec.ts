@@ -286,9 +286,13 @@ test('the administrator loads a CSV: progress is shown, the counts add up, and t
   for (const s of seen.filter((x) => x.url.includes('/chunks/')))
     expect(Buffer.byteLength(s.body)).toBeLessThanOrEqual(60_000);
   // No file name, path or CSV text reached the renderer's bridge.
-  expect(await page.evaluate(() => Object.keys(window.mosaiq).filter((k) => /file|path/i.test(k)))).toEqual([
-    'chooseImportFile',
-  ]);
+  // Whole words of the member's name, so `exploreProfile` is not taken for a file.
+  const named = await page.evaluate(() =>
+    Object.keys(window.mosaiq).filter((k) =>
+      k.split(/(?=[A-Z])/).some((word) => /^(files?|paths?)$/i.test(word)),
+    ),
+  );
+  expect(named).toEqual(['chooseImportFile']);
   await app.close();
 });
 

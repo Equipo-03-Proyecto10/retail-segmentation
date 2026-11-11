@@ -22,9 +22,12 @@ npm start        # bundles the contracts, builds, launches Electron
 ```
 
 `npm start` copies `contracts/<name>/<name>.xsd` for every entry of `contracts/registry.yaml`, plus
-`contracts/common/v1/common.xsd`, into `bundled/schemas/`, and writes every operation's
+`contracts/common/v1/common.xsd`, into `bundled/schemas/`, together with each later major a service
+publishes beside `/v1` as `contracts/<name>/<name>.v<N>.xsd` under its own namespace (ADR-0035), and writes every operation's
 `x-mosaiq-roles` to `bundled/operations.json` (`scripts/bundle-contracts.mjs`). The build fails when
-a service has an `openapi.yaml` but no XSD. A registry entry whose contract has not merged yet is
+a service has an `openapi.yaml` but no XSD, or declares `/v<N>` operations without a `<name>.v<N>.xsd`. A
+call's schema follows the major in its path: `/v2/...` is checked against the `v2` namespace and a `/v1`
+answer on it is refused as a contract defect, so `/v1` callers keep the schema they validate against. A registry entry whose contract has not merged yet is
 skipped, listed in the output, and its screens are not offered. `bundled/` and `dist/` are generated
 and git-ignored.
 
@@ -69,6 +72,8 @@ being ignored. `MOSAIQ_DESKTOP_CONFIG_DIR` overrides the directory (the window t
   - conversion analysis: `getExperimentResult` (read only).
   - K-means models: `listModelVersions`, `getModelVersion`, `listTrainings`, `getTraining`,
     `startTraining`, `publishModelVersion`.
+  - recommendations: `inspectRecommendation`, `listRecommendationDecisions`, `openRecommendationDecision`
+    (read only).
 
   There is no generic fetch and no `ipcRenderer`. The main process checks every value a screen sends
   (`src/main/checks.ts`, used by `catalog.ts` and `floor.ts`) before it builds a path or a body from it.
@@ -553,3 +558,44 @@ Compliance greps (both print nothing):
 grep -rn "application/json" src/
 grep -rlE "safeStorage|refresh_token" src/ | grep -i renderer
 ```
+
+## Recommendations inspection (F28-08)
+
+Through recommendations-service (`contracts/recommendations/`, `/v2`, ADR-0067). The **Recommendations**
+screen, in the Analysis group, is offered to the roles whose `x-mosaiq-roles` allow
+`getRecommendationsV2`. Stored decisions are open to fewer roles (`listRecommendationDecisions` and
+`getRecommendationDecision`: `ADMIN`, `ANALYST`, `AUDITOR` and `STORE_MANAGER`, the last only at its assigned
+stores, which the service enforces). A role that may inspect but not read decisions sees the inspection and a
+note that the decisions are closed to it. The main process checks each of the three reads against its own
+operation (`RECOMMENDATION_OPERATIONS`) and refuses a forced call with `forbidden_role` before sending
+anything. The operations are published ahead of their implementation and marked planned (ADR-0073), so the
+tests answer with the recorded examples of `contracts/recommendations/examples/v2/`, validated against
+`recommendations.v2.xsd`; a service that does not answer yet is shown as it answers.
+
+- **Inspect.** A customer (chosen from the customer search for roles that may search, or typed as an id), a
+  store from the stores read and a channel from the channels read, and a limit of 1 to 50. With no store the
+  service uses the customer's usual store, and with no channel any channel the store enables: the screen
+  never fills either in (`GET /v2/recommendations`, `store_id` and `channel_id` are sent only when chosen).
+- **Each item** shows its position, product, kind, factors (signals matched, segment buyers and category share,
+  the figures RN-40 orders by), availability (the quantity on hand and the store and channel it was judged at)
+  and the reasons that matched, each in words with its figures. Product, category, store and channel names are
+  read from their owners within the call (ADR-0035); an id whose name cannot be read is shown with its id and
+  "name unavailable".
+- **Alternatives are marked.** A `kind` of `alternative` reads "Alternative for <product>, which is unavailable
+  here (<reason>)", has no factors ("Not scored") and is drawn with a solid left rule. A `kind` of `elsewhere`
+  reads "Another store: unavailable at <store>, so not recommended there", names the other store that holds it
+  and is drawn in italics with a dashed rule. The words carry the mark, not only the styling.
+- **Excluded.** The exclusion counts of the answer, each with the reason in words. Products are counted and
+  never listed, so the screen lists none. A status with no items (`no_usual_store`, `no_open_assignment`,
+  `unassigned_result`, `PERSONALIZATION_WITHDRAWN`) says in plain words why nothing was offered, and `none_match`
+  says that no product qualified here.
+- **Stored decisions.** The list (`GET /v2/recommendation-decisions`) filters by customer, store, status and a
+  UTC day range (the last day included), twenty to a page. A decision opens from the list, from an inspection
+  ("Open the stored decision") or by its id, and shows what was offered and excluded as the answer does. A
+  decision whose customer was anonymized reads "Anonymized". It keeps no window or usual store, so the screen
+  does not show them.
+- Export is the shell's: the first table on screen as CSV, for the roles that may export (ADR-0074).
+
+The unit tests (`tests/unit/recommendations.test.ts`) and the window tests
+(`tests/window/recommendations.spec.ts`) answer with the recorded v2 examples and with pages of products,
+categories, stores, channels and customers built in `tests/support/recommendations.ts`.

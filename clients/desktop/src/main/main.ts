@@ -14,6 +14,7 @@ import { Drift } from './drift';
 import { Exporter, type ExportEnv } from './exports';
 import { Experiments } from './experiments';
 import { Floor } from './floor';
+import { Recommendations } from './recommendations';
 import { Models } from './models';
 import { Reports, type ReportExportEnv } from './reports';
 import { Migrations } from './migrations';
@@ -206,6 +207,14 @@ function start(): void {
   ipcMain.handle(CHANNELS.listAssignments, (_e, query: unknown) => customers.assignments(query));
   ipcMain.handle(CHANNELS.getRecommendations, (_e, customerId: unknown) =>
     customers.recommendations(customerId),
+  );
+  const recommendations = new Recommendations(office);
+  ipcMain.handle(CHANNELS.inspectRecommendation, (_e, query: unknown) => recommendations.inspect(query));
+  ipcMain.handle(CHANNELS.listRecommendationDecisions, (_e, query: unknown) =>
+    recommendations.listDecisions(query),
+  );
+  ipcMain.handle(CHANNELS.openRecommendationDecision, (_e, decisionId: unknown) =>
+    recommendations.openDecision(decisionId),
   );
   const drift = new Drift(office);
   ipcMain.handle(CHANNELS.listDriftReports, (_e, query: unknown) => drift.listReports(query));

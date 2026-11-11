@@ -207,6 +207,30 @@ dialog {
 .scroll {
   overflow-x: auto;
 }
+dl.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.15rem 1rem;
+}
+dl.facts dd {
+  margin: 0;
+}
+.choices-list {
+  list-style: none;
+  padding: 0;
+}
+.choices-list button {
+  margin: 0.15rem 0;
+}
+table.items tr.kind-alternative > :first-child {
+  border-left: 0.3rem solid Highlight;
+}
+table.items tr.kind-elsewhere > :first-child {
+  border-left: 0.3rem dashed GrayText;
+}
+table.items tr.kind-elsewhere {
+  font-style: italic;
+}
 .tabs {
   display: flex;
   gap: 0.5rem;

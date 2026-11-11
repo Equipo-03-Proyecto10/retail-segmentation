@@ -618,6 +618,108 @@ export interface ReportView {
 
 export type ReportFormat = 'pdf' | 'csv' | 'xlsx';
 
+// ---------- recommendations inspection (F28-08, #877) ----------
+
+/** An id the service sent, with the name its owner gave it; absent when that owner could not be read. */
+export interface NamedView {
+  id: number;
+  name?: string;
+}
+
+export interface FactorsView {
+  signals_matched: number;
+  segment_buyers?: number;
+  /** The decimal as recommendations-service sent it. */
+  category_share?: string;
+}
+
+export interface AvailabilityView {
+  /** The store whose shelf the figure comes from: the reference store, except on an elsewhere entry. */
+  store: NamedView;
+  channel?: NamedView;
+  quantity_on_hand: number;
+}
+
+export interface InspectedReasonView {
+  signal: string;
+  segment_buyers?: number;
+  category?: NamedView;
+  share?: string;
+}
+
+export interface InspectedItemView {
+  product: NamedView;
+  category: NamedView;
+  /** primary: available here and recommended. alternative: a declared substitute for an unavailable product. elsewhere: the unavailable product, held by another store. */
+  kind: string;
+  position: number;
+  /** Absent on an alternative, which is not scored. */
+  factors?: FactorsView;
+  availability: AvailabilityView;
+  /** The unavailable product an alternative stands in for. */
+  alternative_for?: NamedView;
+  unavailable_reason?: string;
+  reasons: InspectedReasonView[];
+}
+
+export interface ExclusionView {
+  reason: string;
+  count: number;
+}
+
+/** What recommendations-service answered for a customer, or what it recorded in a decision: the same shape, since a decision holds what the client received. */
+export interface InspectionView {
+  decision_id: string;
+  /** Absent once the customer was anonymized. */
+  customer_id?: string;
+  status: string;
+  computed_at: string;
+  /** Only on a live answer; a stored decision does not keep the window. */
+  window?: { days: number; start: string; end: string };
+  label_code?: string;
+  run_id?: number;
+  model_version_id?: number;
+  /** Only on a live answer. */
+  usual_store?: NamedView;
+  /** The reference store the products were judged at. */
+  store?: NamedView;
+  /** given: the caller named it. usual_store: the customer's usual store. */
+  store_source?: string;
+  channel?: NamedView;
+  exclusions: ExclusionView[];
+  items: InspectedItemView[];
+}
+
+export interface InspectQuery {
+  customer_id: string;
+  store_id?: number;
+  channel_id?: number;
+  limit?: number;
+}
+
+export interface DecisionQuery {
+  customer_id?: string;
+  store_id?: number;
+  status?: string;
+  /** RFC 3339 instants: from is included, to is not. */
+  from?: string;
+  to?: string;
+  page?: number;
+  size?: number;
+}
+
+export interface DecisionSummaryView {
+  decision_id: string;
+  customer_id?: string;
+  status: string;
+  computed_at: string;
+  store?: NamedView;
+  store_source?: string;
+  channel?: NamedView;
+  item_count: number;
+  exclusions: ExclusionView[];
+}
+
 // ---------- drift analysis (F28-07, #876) ----------
 
 /** DATA_DRIFT compares distributions with the version's reference; OUTCOME_TEST tests a matured cohort (ADR-0065). */
@@ -1376,6 +1478,9 @@ export interface MosaiqBridge {
   kpiDefinitions(): Promise<Result<KpiDefinitionView[]>>;
   kpiReport(query: ReportQuery): Promise<Result<ReportView>>;
   exportReport(format: ReportFormat): Promise<Result<ExportOutcome>>;
+  inspectRecommendation(query: InspectQuery): Promise<Result<InspectionView>>;
+  listRecommendationDecisions(query: DecisionQuery): Promise<Result<Paged<DecisionSummaryView>>>;
+  openRecommendationDecision(decisionId: string): Promise<Result<InspectionView>>;
   listDriftReports(query: DriftReportQuery): Promise<Result<Paged<DriftReportView>>>;
   getDriftReport(reportId: number): Promise<Result<DriftReportView>>;
   listDriftAlerts(query: DriftAlertQuery): Promise<Result<Paged<DriftAlertView>>>;
@@ -1462,6 +1567,9 @@ export const CHANNELS = {
   kpiDefinitions: 'mosaiq:kpi-definitions',
   kpiReport: 'mosaiq:kpi-report',
   exportReport: 'mosaiq:export-report',
+  inspectRecommendation: 'mosaiq:inspect-recommendation',
+  listRecommendationDecisions: 'mosaiq:list-recommendation-decisions',
+  openRecommendationDecision: 'mosaiq:open-recommendation-decision',
   listDriftReports: 'mosaiq:list-drift-reports',
   getDriftReport: 'mosaiq:get-drift-report',
   listDriftAlerts: 'mosaiq:list-drift-alerts',

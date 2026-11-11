@@ -10,6 +10,7 @@ export type ModuleName =
   | 'check-ins'
   | 'migrations'
   | 'reports'
+  | 'recommendations'
   | 'drift'
   | 'kmeans'
   | 'stores'
@@ -46,6 +47,7 @@ export const MODULE_GROUPS: readonly ModuleGroup[] = [
       { name: 'check-ins', label: 'Check-ins', operation: 'listCheckIns' },
       { name: 'migrations', label: 'Migration matrix', operation: 'getSegmentMigrationMatrix' },
       { name: 'reports', label: 'Reports', operation: 'listKpiDefinitions' },
+      { name: 'recommendations', label: 'Recommendations', operation: 'getRecommendationsV2' },
       { name: 'drift', label: 'Drift', operation: 'listDriftReports' },
       { name: 'conversion', label: 'Conversion analysis', operation: 'getExperimentResult' },
       { name: 'kmeans', label: 'K-means', operation: 'listModelVersions' },
@@ -106,6 +108,16 @@ export const KPI_OPERATIONS: Readonly<Record<string, string>> = {
   'recommendation-performance': 'getRecommendationPerformanceReport',
   'campaign-performance': 'getCampaignPerformanceReport',
 };
+
+/**
+ * The read operations the recommendations module calls (recommendations x-mosaiq-roles); each is checked before
+ * its call. Decisions are open to fewer roles than the recommendation itself.
+ */
+export const RECOMMENDATION_OPERATIONS = {
+  inspect: 'getRecommendationsV2',
+  decisions: 'listRecommendationDecisions',
+  decision: 'getRecommendationDecision',
+} as const;
 
 /** The read operations the drift module calls (model-registry x-mosaiq-roles); each is checked before its call. */
 export const DRIFT_OPERATIONS = {

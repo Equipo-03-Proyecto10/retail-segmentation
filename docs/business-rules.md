@@ -1451,6 +1451,23 @@ promotion outside its campaign's dates is refused as `promotion_outside_campaign
 checks the rule on every write, and `api_campaigns.active_promotion_v1` publishes
 only promotions of an `ACTIVE` campaign whose validity contains `CURRENT_DATE`. · #834
 
+### RN-72 — A customer visit is recorded only for an active loyalty code and a customer who has not withdrawn profiling, once per duplicate window, and holds no position
+A customer visit is a fact about a customer, kept apart from a staff check-in
+(RN-56): it names a customer, a store, a time and optionally a campaign, and
+never a position. It is recorded only when the loyalty code resolves to an
+active card and the customer's current `PROFILING` decision is granted
+(ADR-0066); a decision that was withdrawn, never recorded or cannot be read is
+not granted. Anything else is refused and nothing is stored. A second post for
+the same customer and store whose `occurred_at` lies within 2 hours of a
+recorded visit is the same visit, and the stored visit is returned unchanged. A
+visit is kept 36 months from `occurred_at`; after that it stops naming the
+customer and keeps its store, time and campaign.
+
+**Enforced:** check-ins-service (planned), ADR-0034, ADR-0046 and ADR-0066 — the
+service checks the code through `api_customers.resolve_loyalty_code_v1` and the
+consent through `api_preferences.consent_state_v1` on every write, and the table
+that F21-23 creates holds no coordinate column. · #800
+
 ### RN-73 — A customer's consent and restrictions change only by an appended, attributed decision, and a reader that cannot read them treats the purpose as withdrawn
 A customer's consent is recorded per purpose (`PERSONALIZATION`,
 `MARKETING_CONTACT` and `PROFILING`) and their restrictions per channel or
@@ -1473,23 +1490,6 @@ exposes no route that edits or removes a row, and a decision commits with its ou
 row in one transaction. The contract of F21-16 (#794) specifies the operations, the
 two `api_preferences` views and the stream; the log and its grants follow with F21-17
 (#795). · #794
-
-### RN-72 — A customer visit is recorded only for an active loyalty code and a customer who has not withdrawn profiling, once per duplicate window, and holds no position
-A customer visit is a fact about a customer, kept apart from a staff check-in
-(RN-56): it names a customer, a store, a time and optionally a campaign, and
-never a position. It is recorded only when the loyalty code resolves to an
-active card and the customer's current `PROFILING` decision is granted
-(ADR-0066); a decision that was withdrawn, never recorded or cannot be read is
-not granted. Anything else is refused and nothing is stored. A second post for
-the same customer and store whose `occurred_at` lies within 2 hours of a
-recorded visit is the same visit, and the stored visit is returned unchanged. A
-visit is kept 36 months from `occurred_at`; after that it stops naming the
-customer and keeps its store, time and campaign.
-
-**Enforced:** check-ins-service (planned), ADR-0034, ADR-0046 and ADR-0066 — the
-service checks the code through `api_customers.resolve_loyalty_code_v1` and the
-consent through `api_preferences.consent_state_v1` on every write, and the table
-that F21-23 creates holds no coordinate column. · #800
 
 ---
 

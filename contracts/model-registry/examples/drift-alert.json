@@ -1,0 +1,77 @@
+{
+  "alert_id": 41,
+  "report_id": 32,
+  "previous_report_id": 31,
+  "kind": "DATA_DRIFT",
+  "claim": "DISTRIBUTION_CHANGE",
+  "model_version": {
+    "version_id": 5,
+    "name": "kmeans-k4-2026-10",
+    "method": "KMEANS"
+  },
+  "variable": "SEGMENT_SHARES",
+  "window": {
+    "start": "2026-11-06T03:00:00Z",
+    "end": "2026-12-06T03:00:00Z",
+    "days": 30,
+    "customer_count": 2400
+  },
+  "reference": {
+    "sample_size": 18432,
+    "captured_at": "2026-10-29T03:00:00Z"
+  },
+  "statistics": [
+    {
+      "statistic": "PSI",
+      "value": 0.3148,
+      "p_value": null,
+      "degrees_of_freedom": null,
+      "threshold_basis": "VALUE",
+      "watch_threshold": 0.1,
+      "alarm_threshold": 0.25,
+      "level": "ALARM"
+    },
+    {
+      "statistic": "CHI_SQUARE",
+      "value": 676.3754,
+      "p_value": 2.78e-146,
+      "degrees_of_freedom": 3,
+      "threshold_basis": "P_VALUE",
+      "watch_threshold": 0.05,
+      "alarm_threshold": 0.01,
+      "level": "ALARM"
+    }
+  ],
+  "bins": [
+    {
+      "label": "LOYAL",
+      "lower": null,
+      "upper": null,
+      "reference_share": 0.31,
+      "current_share": 0.15,
+      "contribution": 0.1161
+    },
+    {
+      "label": "LOST",
+      "lower": null,
+      "upper": null,
+      "reference_share": 0.24,
+      "current_share": 0.42,
+      "contribution": 0.1007
+    },
+    {
+      "label": "CHAMPIONS",
+      "lower": null,
+      "upper": null,
+      "reference_share": 0.12,
+      "current_share": 0.04,
+      "contribution": 0.0879
+    }
+  ],
+  "outcome_test": null,
+  "suggested_review": {
+    "code": "REVIEW_SEGMENT_MIX",
+    "text": "Customers moved out of CHAMPIONS and LOYAL and into AT_RISK and LOST, against the reference of this version. Check whether its frozen scoring still fits the current customers; if it does not, register a draft version fitted on current data and compare it with this one. A distribution change does not show that the segments stopped predicting anything."
+  },
+  "raised_at": "2026-12-06T03:04:41Z"
+}

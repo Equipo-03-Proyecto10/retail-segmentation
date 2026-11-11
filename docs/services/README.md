@@ -15,12 +15,12 @@ The design is governed by ADR-0034 to ADR-0046. Every service implements exactly
 | [stores](./stores.md) | Rust (axum) | 5005 | core | At most one valid, geofenced location per store, set by ADMIN only | RN-53 |
 | [stock](./stock.md) | Rust (axum) | 5006 | core | Stock never negative, consumed only by an accepted sale, atomically with it | RN-14, RN-69, ADR-0031 |
 | [customers](./customers.md) | Flask | 5007 | core | A customer registered once with valid data, never deleted through services | RN-08 |
-| [customer-preferences](./customer-preferences.md) | Rust (axum) | 5008 | core | Preferred channels and interest categories each replaced only as a whole set | RN-54 |
+| [customer-preferences](./customer-preferences.md) | Rust (axum) | 5008 | core | Preferred channels and interest categories each replaced only as a whole set; consent and restrictions change only by an appended, attributed decision | RN-54, RN-73 |
 | [sales](./sales.md) | Flask | 5009 | core | A sale recorded once, all or nothing, consuming its stock in the same transaction | RN-11 to RN-13, RN-37 (accepted sales), RN-70 |
 | [segments](./segments.md) | Rust (axum) | 5010 | core | At most one current segment per customer, by stable label; unassigned reported as is; a migration compares labels within one model version and a comparison across versions is methodological | RN-20, RN-21, RN-39, RN-59, RN-60 |
 | [recommendations](./recommendations.md) | Flask | 5011 | core | Recommend active, in-stock, not-yet-bought products with reasons, or say why none | RN-40 |
 | [engagement](./engagement.md) | Flask + MongoDB | 5012 | core | Eight kinds of in-store engagement event recorded once, each a distinct fact and never a sale, attributed, voided never deleted | RN-55 |
-| [check-ins](./check-ins.md) | Rust (axum) | 5013 | core | A check-in is verified only within the store's geofence; overrides are append-only reviews | RN-56 |
+| [check-ins](./check-ins.md) | Rust (axum) | 5013 | core | A check-in is verified only within the store's geofence, and overrides are append-only reviews; a customer visit is a separate fact with no position, recorded only for an active loyalty code and a customer who has not withdrawn profiling, once per duplicate window | RN-56, RN-72 |
 | [campaigns](./campaigns.md) | Flask | 5014 | second | A campaign moves only along the allowed states, is edited only in DRAFT, and is activated only before it ends, with its experiments ready | RN-15, RN-16, RN-22, RN-24 (activation), RN-31, RN-32, RN-49 (activation) |
 | [audit-trail](./audit-trail.md) | Rust (axum) | 5015 | second | An append-only, attributed, credential-free audit readable by ADMIN and AUDITOR only | RN-28, RN-29, RN-30 |
 | [rfm-engine](./rfm-engine.md) | Flask | 5016 | third | A customer's R, F and M follow their net purchases under one rule-set version, change only for the customers an event touched, and equal a full recalculation | RN-65 |
@@ -116,23 +116,23 @@ The design accepts a small number of deliberate deviations from the strict readi
 
 ### E-06 — a recommendation carries the stock figure it used
 
-- **What:** Each recommended item includes the quantity held, which belongs to stock.
-- **Why it is acceptable:** The figure is part of the evidence for the service's own decision ("in stock at the customer's usual store"), so it is part of this service's representation, not a re-serving of stock. Dropping it would hide why an item was or was not offered.
-- **Guard:** Only a figure the service used to decide is allowed, never another service's representation. Product names, prices and availability queries stay with products and stock, and clients fetch them by id.
+- **What:** Each recommended item includes the quantity held, which belongs to stock. On `/v2` the item's `availability` also names the store and channel the figure belongs to, and an `elsewhere` entry carries another store's quantity.
+- **Why it is acceptable:** The figure is part of the evidence for the service's own decision ("available at the reference store and channel"), so it is part of this service's representation, not a re-serving of stock. Dropping it would hide why an item was or was not offered.
+- **Guard:** Only a figure the service used to decide is allowed, never another service's representation: `availability` is not stock's `availabilities` resource and carries no `reason` or `updated_at`. Product names, prices and availability queries stay with products and stock, and clients fetch them by id.
 - **Services:** [recommendations](./recommendations.md)
 - **Decided in:** [ADR-0035](../adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md) (Decision (no composition))
 
 ### E-07 — recommendations depends on seven published contracts
 
-- **What:** One service reads seven boundaries: products, categories, stock, customers, preferences, sales and segments.
-- **Why it is acceptable:** RN-40 is a rule over all of them. Splitting it would put one rule in several services, or copy seven datasets into projections that drift.
+- **What:** One service reads seven boundaries: products, categories, stock, customers, preferences, sales and segments. For `/v2` it also reads stock's `availability_v1`, the products and stores views of commercial status, substitute relations, store status and channels, and the customer restriction view (ADR-0067).
+- **Why it is acceptable:** RN-40 is a rule over all of them. Splitting it would put one rule in several services, or copy seven datasets into projections that drift. The number is a consequence of the rule, not a reason to split it.
 - **Guard:** It reads versioned `api_*` views only, never a base table, and names the columns it reads. A breaking change ships `_v2` beside `_v1`, and the old object is dropped only when `grants.csv` shows no consumer.
 - **Services:** [recommendations](./recommendations.md)
 - **Decided in:** [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) (Reads: the published database contracts)
 
 ### E-08 — read-rule services count as one-rule services
 
-- **What:** Four services write no invariant of their own. They enforce a read rule: what they may report, and to whom.
+- **What:** Four services write no invariant of their own. They enforce a read rule: what they may report, and to whom. Since ADR-0067 recommendations also records the explanation of each decision, in a schema of its own (F24-05). That record is its own output and not an invariant other services depend on, so it is still counted as a read-rule service.
 - **Why it is acceptable:** Counting them follows the instructor's wording (one business rule per service), and the domain does not offer more writers: segmentation runs belong to the web (RN-05), and the audit log is written by `fn_audit`.
 - **Guard:** The instructor confirmed that read-only boundaries count (Q-13, 2026-10-15). Even under the strict reading the floor would hold: ten core writers plus campaigns. ADR-0043 forbids cutting any core service.
 - **Services:** [stock](./stock.md), [segments](./segments.md), [recommendations](./recommendations.md), [audit-trail](./audit-trail.md)
@@ -204,9 +204,9 @@ The design accepts a small number of deliberate deviations from the strict readi
 
 ### E-17 — rules ported from the web exist twice
 
-- **What:** Four rules exist in the web and in a service: sale validation, the RN-40 recommendation rule, user outcomes and campaign transitions.
-- **Why it is acceptable:** A service may not import `web/`, which is frozen, loads Flask and has no version to pin. Carrying a rule twice is the price of independence.
-- **Guard:** The database carries what it can (CHECKs, indexes, triggers). The rest is a port pinned by golden fixtures captured once from the web on the seed database, with a drift job. A web bug fix opens an issue to regenerate them.
+- **What:** Four rules exist in the web and in a service: sale validation, the RN-40 recommendation rule, user outcomes and campaign transitions. For RN-40, parity holds on the default path only (ADR-0067): no store and no channel named, every product active and sellable. A given store or channel, `not_sellable`, `store_not_selling`, alternatives, the recorded explanation and consent are not in the web and are outside the parity claim.
+- **Why it is acceptable:** A service may not import `web/`, which is frozen, loads Flask and has no version to pin. Carrying a rule twice is the price of independence. The web cannot read the stock-channel, commercial-status and consent contracts, so it does not adopt the new behaviours.
+- **Guard:** The database carries what it can (CHECKs, indexes, triggers). The rest is a port pinned by golden fixtures captured once from the web on the seed database, with a drift job. A web bug fix opens an issue to regenerate them. Each deliberate difference of RN-40 is a recorded fixture with its reason (ADR-0045).
 - **Services:** [sales](./sales.md), [recommendations](./recommendations.md), [users](./users.md), [campaigns](./campaigns.md)
 - **Decided in:** [ADR-0045](../adr/0045-services-never-import-the-web-system.md) (Decision); [ADR-0039](../adr/0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) (Context)
 

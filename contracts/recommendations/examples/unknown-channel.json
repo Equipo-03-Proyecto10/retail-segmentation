@@ -1,0 +1,11 @@
+{
+  "code": "unknown_channel",
+  "message": "The channel does not exist.",
+  "correlation_id": "corr-unknown-channel",
+  "details": [
+    {
+      "field": "channel_id",
+      "code": "unknown"
+    }
+  ]
+}

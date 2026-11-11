@@ -64,6 +64,7 @@ being ignored. `MOSAIQ_DESKTOP_CONFIG_DIR` overrides the directory (the window t
     `listCampaignLabels`.
   - audit trail: `listAuditEntries`, `getAuditEntry` (read only).
   - migration matrix: `migrationMatrix`, `listMigrations`, `explainMigration` (read only).
+  - A/B experiments: `listExperiments`, `getExperiment`, `planExperiment`, `assignExperiment`.
   - K-means models: `listModelVersions`, `getModelVersion`, `listTrainings`, `getTraining`,
     `startTraining`, `publishModelVersion`.
 
@@ -217,6 +218,49 @@ Through campaigns-service (`contracts/campaigns/`). The **Campaigns** screen is 
 The window tests (`tests/window/campaigns.spec.ts`) answer with the recorded examples in
 `contracts/campaigns/examples/` and `contracts/segments/examples/`, read from disk, and keep the status
 of the campaign they transition.
+
+## A/B experiments (F28-10)
+
+Through experimentation-service (`contracts/experimentation/`, ADR-0068). The **A/B experiments** screen is
+shown to `ADMIN`, `ANALYST`, `MARKETING` and `AUDITOR`, by the `x-mosaiq-roles` of `listExperiments`; `ADMIN`
+and `MARKETING` also plan and assign. The main process checks the operation before every call, so a forced
+call from another role is refused as `forbidden_role` and nothing is sent. The service's operations are
+published ahead of their implementation (ADR-0073); the screen shows whatever the service answers.
+
+- **List and detail.** `GET /v1/experiments` (`state`, `data_origin`, `campaign_id`, paging) and
+  `GET /v1/experiments/{experiment_id}`: arms, design values, frame with each exclusion's count, the published
+  salt, flags and the assignment. An experiment of assignment rule V0 is readable and says it is not verified.
+  Figures from a `SEEDED` or `INJECTED` experiment are labelled Synthetic.
+- **Plan** (`POST /v1/experiments`). The form sends only the inputs of the contract: name, campaign, primary
+  metric, start, conversion window, minimum detectable effect, optional alpha and power, and two to five
+  arms. The baseline, the sample size, the frame and the salt are never inputs: the service takes them in
+  the plan's transaction. A plan is frozen, so a confirmation says it cannot be edited or deleted. While arms
+  are entered the screen reads the design (one control and treatments; two treatments and no control;
+  or one the service would refuse) and disables the button for the last. The arm rules themselves stay the
+  service's: `control_count` and `treatment_count` come back as returned.
+- **Sample size.** Right after the plan, and on every later read, the screen shows the customers each arm
+  needs (`design.required_per_arm`, computed by the service from the plan, never by the client), the frame
+  and what it supplies to each arm, and the **Underpowered** flag the service stored, with the smallest
+  effect the frame can detect. A result that is not significant is said to be inconclusive, never "no
+  effect".
+- **No control.** A design with no control arm says, while it is entered and wherever it is read, that no
+  effect of the campaign against no treatment can be claimed: it compares two offers.
+- **Assign** (`POST /v1/experiment-assignments`). Offered for a `PLANNED` experiment after a confirmation
+  that the assignment is written once. An underpowered plan needs the acknowledgement box ticked, and the
+  acknowledgement is sent only then (`underpowered_not_acknowledged` is the service's answer when it is
+  missing). The assignment's recomputation, **sample ratio check** and **balance checks** (standardized
+  difference per measure against the reference arm, the threshold, and whether it is flagged) are shown from
+  the response and again whenever the experiment is opened.
+- A `<name>` or description from the service is set with `textContent`; entities are not decoded by the
+  client's XML reader, so a name that holds markup is shown as typed.
+
+Not in this screen: the conversion results (the conversion analysis module, F28-11, #880), the list of conversions
+and `POST /v1/experiments/{experiment_id}/conversions`, the whole-assignment list (it names every customer),
+the floor's `GET /v1/experiment-assignments/current`, and the sale attributions.
+
+The window tests (`tests/window/experiments.spec.ts`) answer with the recorded examples of
+`contracts/experimentation/` and `contracts/campaigns/`, read from disk, and keep whether the plan was
+assigned, so `underpowered_not_acknowledged` arises from what is stored.
 
 ## Audit trail (F16-09)
 

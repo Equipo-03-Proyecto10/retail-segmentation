@@ -81,6 +81,11 @@ const bridge: MosaiqBridge = {
   migrationMatrix: (query) => ipcRenderer.invoke(CHANNELS.migrationMatrix, query),
   listMigrations: (query) => ipcRenderer.invoke(CHANNELS.listMigrations, query),
   explainMigration: (query) => ipcRenderer.invoke(CHANNELS.explainMigration, query),
+  listExperiments: (query) => ipcRenderer.invoke(CHANNELS.listExperiments, query),
+  getExperiment: (experimentId) => ipcRenderer.invoke(CHANNELS.getExperiment, experimentId),
+  planExperiment: (draft) => ipcRenderer.invoke(CHANNELS.planExperiment, draft),
+  assignExperiment: (experimentId, acknowledgeUnderpowered) =>
+    ipcRenderer.invoke(CHANNELS.assignExperiment, experimentId, acknowledgeUnderpowered),
   listModelVersions: (query) => ipcRenderer.invoke(CHANNELS.listModelVersions, query),
   getModelVersion: (versionId) => ipcRenderer.invoke(CHANNELS.getModelVersion, versionId),
   listTrainings: (query) => ipcRenderer.invoke(CHANNELS.listTrainings, query),

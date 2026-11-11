@@ -93,6 +93,7 @@ test('window is locked down', async () => {
   expect(await page.evaluate(() => typeof require)).toBe('undefined');
   expect(await page.evaluate(() => typeof process)).toBe('undefined');
   expect(await page.evaluate(() => Object.keys(window.mosaiq).sort())).toEqual([
+    'assignExperiment',
     'categoryDescendants',
     'categoryTree',
     'changeOwnPassword',
@@ -113,6 +114,7 @@ test('window is locked down', async () => {
     'getCampaign',
     'getCheckIn',
     'getCustomer',
+    'getExperiment',
     'getModelVersion',
     'getPreferences',
     'getProduct',
@@ -132,6 +134,7 @@ test('window is locked down', async () => {
     'listChannels',
     'listCheckIns',
     'listEngagementEvents',
+    'listExperiments',
     'listMigrations',
     'listModelVersions',
     'listProducts',
@@ -142,6 +145,7 @@ test('window is locked down', async () => {
     'listUsers',
     'migrationMatrix',
     'onStateChange',
+    'planExperiment',
     'probeService',
     'publishModelVersion',
     'reactivateUser',

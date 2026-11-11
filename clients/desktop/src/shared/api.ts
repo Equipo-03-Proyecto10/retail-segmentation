@@ -730,6 +730,165 @@ export interface MigrationExplanationView extends MigrationWindow {
   measures: MigrationMeasureView[];
 }
 
+// ---------- A/B experiments (F28-10, #879) ----------
+
+export type ExperimentState = 'PLANNED' | 'ASSIGNED' | 'ANALYZED';
+
+/** CONTROLLED is the only design that may state an effect; OFFER_COMPARISON has no control (ADR-0068). */
+export type ExperimentDesignKind = 'CONTROLLED' | 'OFFER_COMPARISON';
+
+export type ArmKind = 'CONTROL' | 'TREATMENT';
+
+export type ExperimentMetric = 'CONVERSION' | 'REVENUE_PER_CUSTOMER';
+
+/** SEEDED and INJECTED figures are Synthetic (RN-26). */
+export type ExperimentDataOrigin = 'OBSERVED' | 'SEEDED' | 'INJECTED';
+
+export type ExperimentFlag =
+  'UNDERPOWERED' | 'SAMPLE_RATIO_FAILED' | 'BALANCE_FLAGGED' | 'RECOMPUTATION_MISMATCH';
+
+export interface ExperimentArmView {
+  arm_id: number;
+  position: number;
+  kind: ArmKind;
+  name: string;
+  treatment_description: string;
+}
+
+/**
+ * What was fixed before anyone was assigned (ADR-0068). Decimals stay as the service sent them. Every
+ * value but the metric, the window and the start is absent for assignment rule V0.
+ */
+export interface ExperimentDesignView {
+  primary_metric: ExperimentMetric;
+  secondary_metric?: ExperimentMetric;
+  estimator?: 'DIFFERENCE_OF_PROPORTIONS' | 'DIFFERENCE_OF_MEANS';
+  alpha?: string;
+  comparison_alpha?: string;
+  power?: string;
+  minimum_detectable_effect?: string;
+  baseline?: string;
+  baseline_std_dev?: string;
+  /** The customers each arm needs to detect the minimum effect; the service computes it at planning. */
+  required_per_arm?: number;
+  /** The smallest effect the frame can detect; above the minimum exactly when the plan is UNDERPOWERED. */
+  smallest_detectable_effect?: string;
+  allocation?: 'EQUAL';
+  conversion_window_days: number;
+  settle_days?: number;
+  starts_on: string;
+  /** Null until the experiment is assigned. */
+  analysis_at?: string;
+}
+
+export interface FrameExclusionView {
+  /** An open vocabulary: an unknown code is shown as it is. */
+  reason: string;
+  count: number;
+}
+
+export interface FrameView {
+  taken_at: string;
+  size: number;
+  digest: string;
+  label_code: string;
+  model_version_id?: number;
+  exclusions: FrameExclusionView[];
+}
+
+export interface SampleRatioView {
+  status: 'PASSED' | 'FAILED';
+  p_value: string;
+  threshold: string;
+}
+
+export type BalanceMeasure = 'PRE_RECENCY_DAYS' | 'PRE_PURCHASE_COUNT' | 'PRE_NET_SPEND';
+
+/** A diagnostic: it never changes an estimate and is never used to redraw an assignment. */
+export interface BalanceView {
+  measure: BalanceMeasure;
+  arm_id: number;
+  reference_arm_id: number;
+  standardized_mean_difference: string;
+  flagged: boolean;
+  threshold: string;
+}
+
+export interface ExperimentChecksView {
+  sample_ratio: SampleRatioView;
+  balance: BalanceView[];
+}
+
+export interface AssignmentChecksView extends ExperimentChecksView {
+  /** Recomputing every assignment from the plan gave the stored arms. */
+  recomputation_matches: boolean;
+}
+
+export interface ArmCountView {
+  arm_id: number;
+  kind: ArmKind;
+  assigned: number;
+}
+
+export interface AssignmentView {
+  experiment_id: number;
+  assigned_at: string;
+  assigned_by?: string;
+  assigned_total: number;
+  acknowledged_underpowered: boolean;
+  arms: ArmCountView[];
+  /** Absent for assignment rule V0, which stored none. */
+  checks?: AssignmentChecksView;
+}
+
+export interface ExperimentView {
+  experiment_id: number;
+  name: string;
+  campaign_id?: number;
+  state: ExperimentState;
+  design_kind: ExperimentDesignKind;
+  /** V1 is recomputable; V0 is the web's earlier shuffle: readable, never called verified. */
+  assignment_rule: 'V0' | 'V1';
+  data_origin: ExperimentDataOrigin;
+  arms: ExperimentArmView[];
+  design: ExperimentDesignView;
+  frame?: FrameView;
+  /** Published with the plan; it is not a secret. */
+  salt?: string;
+  assignment?: AssignmentView;
+  flags: ExperimentFlag[];
+  planned_at?: string;
+  planned_by?: string;
+}
+
+export interface ExperimentQuery {
+  campaign_id?: number;
+  state?: ExperimentState;
+  data_origin?: ExperimentDataOrigin;
+  page?: number;
+  size?: number;
+}
+
+export interface ExperimentArmDraft {
+  kind: ArmKind;
+  name: string;
+  treatment_description: string;
+}
+
+/** The inputs of a plan. The baseline, the sample size, the frame and the salt are never inputs. */
+export interface ExperimentDraft {
+  name: string;
+  campaign_id: number;
+  primary_metric: ExperimentMetric;
+  starts_on: string;
+  conversion_window_days: number;
+  /** A decimal as typed: a rate difference for CONVERSION (0.02 is two points), money for REVENUE_PER_CUSTOMER. */
+  minimum_detectable_effect: string;
+  alpha?: string;
+  power?: string;
+  arms: ExperimentArmDraft[];
+}
+
 // ---------- K-means models (F28-05, #874) ----------
 
 export type ModelMethod = 'RFM_RULES' | 'KMEANS';
@@ -941,6 +1100,10 @@ export interface MosaiqBridge {
   migrationMatrix(query: MigrationWindow): Promise<Result<MigrationMatrixView>>;
   listMigrations(query: MigrationListQuery): Promise<Result<MigrationListView>>;
   explainMigration(query: MigrationExplanationQuery): Promise<Result<MigrationExplanationView>>;
+  listExperiments(query: ExperimentQuery): Promise<Result<Paged<ExperimentView>>>;
+  getExperiment(experimentId: number): Promise<Result<ExperimentView>>;
+  planExperiment(draft: ExperimentDraft): Promise<Result<ExperimentView>>;
+  assignExperiment(experimentId: number, acknowledgeUnderpowered: boolean): Promise<Result<AssignmentView>>;
   listModelVersions(query: ModelVersionQuery): Promise<Result<Paged<ModelVersionView>>>;
   getModelVersion(versionId: number): Promise<Result<ModelVersionView>>;
   listTrainings(query: TrainingQuery): Promise<Result<Paged<TrainingView>>>;
@@ -1018,6 +1181,10 @@ export const CHANNELS = {
   migrationMatrix: 'mosaiq:migration-matrix',
   listMigrations: 'mosaiq:list-migrations',
   explainMigration: 'mosaiq:explain-migration',
+  listExperiments: 'mosaiq:list-experiments',
+  getExperiment: 'mosaiq:get-experiment',
+  planExperiment: 'mosaiq:plan-experiment',
+  assignExperiment: 'mosaiq:assign-experiment',
   listModelVersions: 'mosaiq:list-model-versions',
   getModelVersion: 'mosaiq:get-model-version',
   listTrainings: 'mosaiq:list-trainings',

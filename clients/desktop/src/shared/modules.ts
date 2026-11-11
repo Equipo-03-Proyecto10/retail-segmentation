@@ -13,6 +13,7 @@ export type ModuleName =
   | 'kmeans'
   | 'stores'
   | 'campaigns'
+  | 'experiments'
   | 'customers'
   | 'users'
   | 'audit'
@@ -49,7 +50,10 @@ export const MODULE_GROUPS: readonly ModuleGroup[] = [
   {
     id: 'marketing',
     label: 'Marketing',
-    modules: [{ name: 'campaigns', label: 'Campaigns', operation: 'listCampaigns' }],
+    modules: [
+      { name: 'campaigns', label: 'Campaigns', operation: 'listCampaigns' },
+      { name: 'experiments', label: 'A/B experiments', operation: 'listExperiments' },
+    ],
   },
   {
     id: 'planning',
@@ -104,6 +108,14 @@ export const MIGRATION_OPERATIONS = {
   matrix: 'getSegmentMigrationMatrix',
   list: 'listSegmentMigrations',
   explanation: 'getSegmentMigrationExplanation',
+} as const;
+
+/** The operations the A/B experiment module calls (experimentation x-mosaiq-roles); each is checked before its call. */
+export const EXPERIMENT_OPERATIONS = {
+  list: 'listExperiments',
+  get: 'getExperiment',
+  plan: 'planExperiment',
+  assign: 'assignExperiment',
 } as const;
 
 /** Error codes that mean the session is over; the user goes back to sign-in. */

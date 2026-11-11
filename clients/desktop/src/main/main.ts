@@ -10,6 +10,7 @@ import { Campaigns } from './campaigns';
 import { Catalog } from './catalog';
 import { Customers } from './customers';
 import { Exporter, type ExportEnv } from './exports';
+import { Experiments } from './experiments';
 import { Floor } from './floor';
 import { Models } from './models';
 import { Reports, type ReportExportEnv } from './reports';
@@ -208,6 +209,13 @@ function start(): void {
   ipcMain.handle(CHANNELS.migrationMatrix, (_e, query: unknown) => migrations.matrix(query));
   ipcMain.handle(CHANNELS.listMigrations, (_e, query: unknown) => migrations.list(query));
   ipcMain.handle(CHANNELS.explainMigration, (_e, query: unknown) => migrations.explain(query));
+  const experiments = new Experiments(office);
+  ipcMain.handle(CHANNELS.listExperiments, (_e, query: unknown) => experiments.list(query));
+  ipcMain.handle(CHANNELS.getExperiment, (_e, experimentId: unknown) => experiments.get(experimentId));
+  ipcMain.handle(CHANNELS.planExperiment, (_e, draft: unknown) => experiments.plan(draft));
+  ipcMain.handle(CHANNELS.assignExperiment, (_e, experimentId: unknown, acknowledge: unknown) =>
+    experiments.assign(experimentId, acknowledge),
+  );
   const models = new Models(office);
   ipcMain.handle(CHANNELS.listModelVersions, (_e, query: unknown) => models.listVersions(query));
   ipcMain.handle(CHANNELS.getModelVersion, (_e, versionId: unknown) => models.getVersion(versionId));

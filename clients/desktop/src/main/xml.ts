@@ -100,6 +100,19 @@ const REPEATED = new Set([
   'ModelTrainings.ModelTraining.parameters.features',
   'ModelTraining.parameters.features',
   'ModelPublications.ModelPublication',
+  'Experiments.Experiment',
+  'Experiments.Experiment.arms',
+  'Experiments.Experiment.flags',
+  'Experiments.Experiment.frame.exclusions',
+  'Experiments.Experiment.assignment.arms',
+  'Experiments.Experiment.assignment.checks.balance',
+  'Experiment.arms',
+  'Experiment.flags',
+  'Experiment.frame.exclusions',
+  'Experiment.assignment.arms',
+  'Experiment.assignment.checks.balance',
+  'AssignmentSummary.arms',
+  'AssignmentSummary.checks.balance',
 ]);
 /** Child elements that repeat wherever they appear: error details, sale lines, summary groups, event history, check-in reviews, a campaign's allowed transitions. */
 const REPEATED_CHILDREN = new Set([

@@ -253,6 +253,47 @@ dl.compact {
 dl.compact dd {
   margin: 0;
 }
+/* A/B experiments: the facts of a plan, and the plan form's arms. */
+dl.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+}
+dl.facts dt {
+  font-weight: 600;
+}
+dl.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.arm-row {
+  display: grid;
+  grid-template-columns: 11rem 1fr 2fr auto;
+  gap: 0 1rem;
+  align-items: end;
+}
+.hint {
+  margin: 0.25rem 0 0;
+  font-size: 0.9rem;
+}
+.acknowledge {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.acknowledge input[type='checkbox'] {
+  width: auto;
+  margin: 0;
+}
+.acknowledge label {
+  margin: 0;
+  font-weight: 400;
+}
+.sample-size-required {
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin: 0.5rem 0;
+}
 progress {
   width: 100%;
 }

@@ -208,6 +208,7 @@ The web's matrix does not change.
 | Reads of RFM recalculations and their differences | `ADMIN`, `ANALYST`, `AUDITOR` | Reports: read, narrowed to the roles that verify the model; a difference names a customer |
 | `POST /v1/rfm-rule-sets`, `POST /v1/rfm-recalculations` | `ADMIN` | Segment run: run (RN-05); a rule set changes what every report says |
 | Reads of model versions, their publications and training runs | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Segments and rules: read. A version is configuration and fitted statistics with no customer data |
+| Reads of drift reports and alerts | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Segments and rules: read. A report holds shares, rates and counts per segment and variable, and no customer |
 | `POST /v1/model-versions`, `POST /v1/model-trainings`, `POST /v1/model-versions/{version_id}/publications`, `POST /v1/model-versions/{version_id}/rollbacks` | `ADMIN` | Segment run: run (RN-05); a publication changes every customer's segment |
 | Reads of experiments, their results, assignments, conversions and sale attributions (a row of the last three names a customer) | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Campaigns: read (`campaign.read`), as the web's experiment pages today |
 | `POST /v1/experiments`, `POST /v1/experiment-assignments`, `POST /v1/experiments/{experiment_id}/conversions` | `ADMIN`, `MARKETING` | Campaigns: full (`campaign.write`). A plan is frozen when it is written, and an assignment is written once (RN-42) |

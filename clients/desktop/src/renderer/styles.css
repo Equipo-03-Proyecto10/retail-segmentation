@@ -207,6 +207,160 @@ dialog {
 .scroll {
   overflow-x: auto;
 }
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1rem 0 0;
+}
+.tabs button[aria-current='true'] {
+  font-weight: 700;
+  text-decoration: underline;
+}
+button.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0 0.75rem 0 0;
+  color: LinkText;
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+.viz {
+  --viz-ink-2: #52514e;
+  --viz-grid: #e1e0d9;
+  --viz-axis: #c3c2b7;
+  --viz-ref: #2a78d6;
+  --viz-cur: #eb6834;
+  --viz-warn: #fab219;
+  --viz-crit: #d03b3b;
+  margin: 1rem 0;
+}
+@media (prefers-color-scheme: dark) {
+  .viz {
+    --viz-ink-2: #c3c2b7;
+    --viz-grid: #2c2c2a;
+    --viz-axis: #383835;
+    --viz-ref: #3987e5;
+    --viz-cur: #d95926;
+  }
+}
+.viz figcaption {
+  font-weight: 600;
+}
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.15rem 1rem;
+}
+.facts dd {
+  margin: 0;
+}
+.viz-svg {
+  display: block;
+  width: 100%;
+  min-width: 34rem;
+  max-width: 44rem;
+  height: auto;
+}
+.viz-meter {
+  display: block;
+  width: 100%;
+  max-width: 22rem;
+  height: auto;
+}
+.viz-grid,
+.viz-axis,
+.viz-mark {
+  stroke-width: 1;
+}
+.viz-grid {
+  stroke: var(--viz-grid);
+}
+.viz-axis,
+.viz-mark {
+  stroke: var(--viz-axis);
+}
+.viz-text {
+  fill: CanvasText;
+  font-size: 13px;
+}
+.viz-tick {
+  fill: var(--viz-ink-2);
+  font-size: 12px;
+}
+.viz-ref {
+  fill: var(--viz-ref);
+}
+.viz-cur {
+  fill: var(--viz-cur);
+}
+.viz-hit {
+  fill: transparent;
+}
+.viz-pair:hover .viz-hit,
+.viz-pair:focus .viz-hit {
+  fill: color-mix(in srgb, CanvasText 8%, transparent);
+}
+.viz-pair:focus {
+  outline: 2px solid Highlight;
+}
+.viz-legend {
+  display: flex;
+  gap: 1.25rem;
+  list-style: none;
+  padding: 0;
+  margin: 0.25rem 0;
+}
+.viz-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.swatch {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 2px;
+}
+.swatch.viz-ref {
+  background: var(--viz-ref);
+}
+.swatch.viz-cur {
+  background: var(--viz-cur);
+}
+.viz-readout {
+  min-height: 1.25rem;
+  margin: 0.25rem 0;
+  color: var(--viz-ink-2);
+}
+.viz-track {
+  fill: var(--viz-grid);
+}
+.viz-fill.viz-level-normal {
+  fill: var(--viz-ink-2);
+}
+.viz-fill.viz-level-watch {
+  fill: var(--viz-warn);
+}
+.viz-fill.viz-level-alarm {
+  fill: var(--viz-crit);
+}
+@media (forced-colors: active) {
+  .viz-ref {
+    fill: GrayText;
+  }
+  .viz-cur,
+  .viz-fill {
+    fill: Highlight;
+  }
+  .swatch.viz-ref {
+    background: GrayText;
+  }
+  .swatch.viz-cur {
+    background: Highlight;
+  }
+}
 .matrix th[scope='row'] {
   white-space: nowrap;
 }

@@ -10,6 +10,7 @@ import { Campaigns } from './campaigns';
 import { Catalog } from './catalog';
 import { ConversionResults } from './conversion';
 import { Customers } from './customers';
+import { Drift } from './drift';
 import { Exporter, type ExportEnv } from './exports';
 import { Experiments } from './experiments';
 import { Floor } from './floor';
@@ -206,6 +207,11 @@ function start(): void {
   ipcMain.handle(CHANNELS.getRecommendations, (_e, customerId: unknown) =>
     customers.recommendations(customerId),
   );
+  const drift = new Drift(office);
+  ipcMain.handle(CHANNELS.listDriftReports, (_e, query: unknown) => drift.listReports(query));
+  ipcMain.handle(CHANNELS.getDriftReport, (_e, reportId: unknown) => drift.getReport(reportId));
+  ipcMain.handle(CHANNELS.listDriftAlerts, (_e, query: unknown) => drift.listAlerts(query));
+  ipcMain.handle(CHANNELS.getDriftAlert, (_e, alertId: unknown) => drift.getAlert(alertId));
   const migrations = new Migrations(office);
   ipcMain.handle(CHANNELS.migrationMatrix, (_e, query: unknown) => migrations.matrix(query));
   ipcMain.handle(CHANNELS.listMigrations, (_e, query: unknown) => migrations.list(query));

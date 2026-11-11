@@ -10,6 +10,7 @@ export type ModuleName =
   | 'check-ins'
   | 'migrations'
   | 'reports'
+  | 'drift'
   | 'kmeans'
   | 'stores'
   | 'campaigns'
@@ -45,6 +46,7 @@ export const MODULE_GROUPS: readonly ModuleGroup[] = [
       { name: 'check-ins', label: 'Check-ins', operation: 'listCheckIns' },
       { name: 'migrations', label: 'Migration matrix', operation: 'getSegmentMigrationMatrix' },
       { name: 'reports', label: 'Reports', operation: 'listKpiDefinitions' },
+      { name: 'drift', label: 'Drift', operation: 'listDriftReports' },
       { name: 'conversion', label: 'Conversion analysis', operation: 'getExperimentResult' },
       { name: 'kmeans', label: 'K-means', operation: 'listModelVersions' },
     ],
@@ -104,6 +106,14 @@ export const KPI_OPERATIONS: Readonly<Record<string, string>> = {
   'recommendation-performance': 'getRecommendationPerformanceReport',
   'campaign-performance': 'getCampaignPerformanceReport',
 };
+
+/** The read operations the drift module calls (model-registry x-mosaiq-roles); each is checked before its call. */
+export const DRIFT_OPERATIONS = {
+  reports: 'listDriftReports',
+  report: 'getDriftReport',
+  alerts: 'listDriftAlerts',
+  alert: 'getDriftAlert',
+} as const;
 
 /** The read operations the migration matrix module calls (segments x-mosaiq-roles); each is checked before its call. */
 export const MIGRATION_OPERATIONS = {

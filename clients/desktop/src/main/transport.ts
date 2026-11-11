@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { ErrorView } from '../shared/api';
 import { commonNamespace, serviceForResource, serviceNamespace, type Bundle } from './bundle';
-import { buildXml, parseXml, rootElement, type FieldValue, type XsdValidator } from './xml';
+import { buildXml, parseXml, rootElement, type Fields, type XsdValidator } from './xml';
 
 export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -10,7 +10,7 @@ export interface CallOptions {
   /** Path starting with /v1/<resource>; the service is derived from the registry. */
   path: string;
   /** Root element and fields of the XML request body, when there is one. */
-  body?: { root: string; fields: Record<string, FieldValue | string[]> };
+  body?: { root: string; fields: Fields };
   bearer?: string;
 }
 

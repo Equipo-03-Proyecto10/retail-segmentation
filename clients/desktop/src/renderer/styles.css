@@ -253,3 +253,17 @@ dl.compact {
 dl.compact dd {
   margin: 0;
 }
+progress {
+  width: 100%;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.form-field fieldset {
+  margin-top: 1rem;
+}
+dialog ul {
+  padding-left: 1.25rem;
+}

@@ -64,6 +64,8 @@ being ignored. `MOSAIQ_DESKTOP_CONFIG_DIR` overrides the directory (the window t
     `listCampaignLabels`.
   - audit trail: `listAuditEntries`, `getAuditEntry` (read only).
   - migration matrix: `migrationMatrix`, `listMigrations`, `explainMigration` (read only).
+  - K-means models: `listModelVersions`, `getModelVersion`, `listTrainings`, `getTraining`,
+    `startTraining`, `publishModelVersion`.
 
   There is no generic fetch and no `ipcRenderer`. The main process checks every value a screen sends
   (`src/main/checks.ts`, used by `catalog.ts` and `floor.ts`) before it builds a path or a body from it.
@@ -314,6 +316,58 @@ examples of `contracts/segments/examples/`; a service that does not answer yet i
 The window tests (`tests/window/migrations.spec.ts`) answer with `tests/support/segments.ts`, which serves
 the recorded matrices and explanations and generates the customers behind a cell from the matrix's own
 cells, so a list holds exactly as many customers as its cell counted.
+
+## K-means models (F28-05)
+
+Through model-registry (`contracts/model-registry/`, ADR-0064). The **K-means** screen, in the Analysis
+group, is offered to `ADMIN`, `ANALYST`, `MARKETING` and `AUDITOR` by the `x-mosaiq-roles` of
+`listModelVersions`, and to no other role. Starting a training and publishing a version are `ADMIN` only
+in the contract (RN-05), so the other three roles read and compare and are drawn no write control. The
+main process refuses a write from a role the contract does not allow before anything is sent, and a
+forced one gets `forbidden_role`.
+
+- **Launch.** An `ADMIN` chooses the variables (R, F, M), the normalization (`MIN_MAX` or `NONE`), k (2 to
+  20), the seed, the window in days, the iteration limit and the tolerance, and names the draft version.
+  An empty seed is left out of the request: the service chooses one and records it (RN-58), and the
+  screen shows the seed the training ran with. `POST /v1/model-trainings` answers RUNNING. The main
+  process checks every value first against the contract's facets, so a refusal names its field and
+  nothing is sent; the service's own refusals (`training_in_progress`, `model_version_name_taken`,
+  `invalid_body` with its details) are shown as returned.
+- **Progress.** The contract has no percentage, so the screen shows the state of the run (an indeterminate
+  progress bar and the seconds it has run, polled once a second with `GET /v1/model-trainings/{id}`),
+  and for a finished run its iterations, whether it converged and its inertia and silhouette. A training
+  already running when the screen opens, started by anyone, is followed too. A COMPLETED training
+  registered a DRAFT version: the screen says so, lists it and opens it. A FAILED one says it
+  registered nothing.
+- **Versions.** `GET /v1/model-versions` filtered by method (K-means by default) and state, with
+  paging; the export button writes the table on screen (ADR-0074). A version opens with its parameters,
+  its metrics, its data origin (`Synthetic` when it was fitted on seeded data, ADR-0052), its centroids
+  in raw units and its size under each label. A version is immutable: there is no edit or delete
+  control.
+- **Raw units.** A centroid is stored in the normalized space of the fit. Under `MIN_MAX` the screen puts
+  it back with the bounds the version froze, `min + coordinate * (max - min)`: recency in days since
+  the last purchase, frequency in net purchases, monetary value as a net amount. Under `NONE` the
+  coordinates already are raw. A variable the fit did not use, or a bound the service did not send, shows
+  as a dash rather than as a guess.
+- **Sizes.** A version carries a share per label and the number of customers it was fitted on, and no
+  count per cluster, so a size is the label's: `share * customers fitted`, to the nearest customer.
+- **Compare.** Tick two versions, or compare a version with the published one. Inertia, silhouette and
+  stability, the parameters, the size under each label and the centroids in raw units sit side by side,
+  and what differs is marked. Centroids are lined up by label, never by cluster number (ADR-0018). The
+  comparison is marked methodological (ADR-0064), says that inertia and silhouette do not compare across
+  different data, k, variables or normalization, and never says that one version is better (RN-39).
+- **Publish.** `POST /v1/model-versions/{id}/publications` for a DRAFT, from a dialog that first reads the
+  version published now and states what changes for customers: which version it replaces and retires,
+  that every customer is scored again in a full run that does not finish before the answer, the labels
+  customers will hold, that a change caused by it is recorded as `VERSION_CHANGE` and never counted as
+  behaviour, and that segments already written are not rewritten. The reason (1 to 500 characters) is
+  required and is kept in the append-only publication. If the published version cannot be read, nothing
+  can be confirmed. `version_not_draft` and `publication_conflict` are shown as returned and the version
+  is read again. Rollback is in the contract and is not offered here.
+
+model-registry is not implemented yet (F22-11). The unit tests (`tests/unit/models.test.ts`,
+`tests/unit/kmeans.test.ts`) and the window tests (`tests/window/kmeans.spec.ts`) answer with the
+recorded examples in `contracts/model-registry/examples/`, read from disk.
 
 ## Packages and CI (F16-05)
 

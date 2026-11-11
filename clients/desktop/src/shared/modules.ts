@@ -10,6 +10,7 @@ export type ModuleName =
   | 'check-ins'
   | 'migrations'
   | 'reports'
+  | 'kmeans'
   | 'stores'
   | 'campaigns'
   | 'customers'
@@ -42,6 +43,7 @@ export const MODULE_GROUPS: readonly ModuleGroup[] = [
       { name: 'check-ins', label: 'Check-ins', operation: 'listCheckIns' },
       { name: 'migrations', label: 'Migration matrix', operation: 'getSegmentMigrationMatrix' },
       { name: 'reports', label: 'Reports', operation: 'listKpiDefinitions' },
+      { name: 'kmeans', label: 'K-means', operation: 'listModelVersions' },
     ],
   },
   {

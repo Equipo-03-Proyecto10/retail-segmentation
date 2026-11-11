@@ -730,6 +730,140 @@ export interface MigrationExplanationView extends MigrationWindow {
   measures: MigrationMeasureView[];
 }
 
+// ---------- K-means models (F28-05, #874) ----------
+
+export type ModelMethod = 'RFM_RULES' | 'KMEANS';
+export type VersionState = 'DRAFT' | 'PUBLISHED' | 'RETIRED';
+export type VersionSource = 'REGISTERED' | 'TRAINING' | 'WEB_RUN';
+export type TrainingState = 'RUNNING' | 'COMPLETED' | 'FAILED';
+export type DataOrigin = 'OBSERVED' | 'SEEDED';
+export type ModelFeature = 'R' | 'F' | 'M';
+export type Normalization = 'NONE' | 'MIN_MAX';
+
+/** What a version or a training was defined with. Decimals stay as model-registry sent them. */
+export interface ModelParametersView {
+  k?: number;
+  max_iterations?: number;
+  tolerance?: string;
+  features: ModelFeature[];
+  normalization: Normalization;
+}
+
+/** A coordinate of a centroid, in the normalized space the fit used. */
+export interface CentroidView {
+  cluster_index: number;
+  label_code: string;
+  r: string;
+  f: string;
+  m: string;
+}
+
+/** The raw minimum and maximum of min-max scaling, to put a centroid back into raw units. */
+export interface BoundsView {
+  r_min: string;
+  r_max: string;
+  f_min: string;
+  f_max: string;
+  m_min: string;
+  m_max: string;
+}
+
+/** A label's share of the customers the version was fitted on (0 to 1, as sent). */
+export interface LabelShareView {
+  label_code: string;
+  share: string;
+}
+
+export interface DatasetView {
+  fingerprint: string;
+  origin: DataOrigin;
+  row_count: number;
+}
+
+/** A measure the method does not have is absent. */
+export interface MetricsView {
+  inertia?: string;
+  silhouette?: string;
+  stability?: string;
+}
+
+/** One immutable model version (ADR-0064). Only its state follows publications. */
+export interface ModelVersionView {
+  version_id: number;
+  name: string;
+  method: ModelMethod;
+  state: VersionState;
+  source: VersionSource;
+  window_days: number;
+  seed?: string;
+  parameters: ModelParametersView;
+  centroids: CentroidView[];
+  bounds?: BoundsView;
+  /** Customers the version was fitted on, the base of every label share. */
+  sample_size: number;
+  labels: LabelShareView[];
+  dataset: DatasetView;
+  metrics: MetricsView;
+  training_id?: number;
+  created_at: string;
+  published_at?: string;
+  retired_at?: string;
+}
+
+export interface TrainingView {
+  training_id: number;
+  state: TrainingState;
+  version_name: string;
+  window_days: number;
+  /** Always set: the requested seed, or the one the service chose (RN-58). */
+  seed: string;
+  parameters: ModelParametersView;
+  dataset?: DatasetView;
+  metrics?: MetricsView;
+  iterations?: number;
+  converged?: boolean;
+  /** The DRAFT version a COMPLETED training registered. */
+  version_id?: number;
+  started_at: string;
+  finished_at?: string;
+  failure_code?: string;
+}
+
+export interface PublicationView {
+  publication_id: number;
+  version_id: number;
+  action: 'PUBLISH' | 'ROLLBACK';
+  previous_version_id?: number;
+  reason: string;
+  published_at: string;
+}
+
+export interface ModelVersionQuery {
+  method?: ModelMethod;
+  state?: VersionState;
+  page?: number;
+  size?: number;
+}
+
+export interface TrainingQuery {
+  state?: TrainingState;
+  page?: number;
+  size?: number;
+}
+
+/** What a K-means training is started with. An absent seed is chosen and recorded by the service. */
+export interface TrainingDraft {
+  version_name: string;
+  window_days: number;
+  k: number;
+  max_iterations: number;
+  tolerance: string;
+  features: ModelFeature[];
+  normalization: Normalization;
+  /** Whole number as text, because a 64-bit seed does not fit a JavaScript number. */
+  seed?: string;
+}
+
 /** The named operations the renderer may call; there is no generic transport. */
 export interface MosaiqBridge {
   getState(): Promise<AppState>;
@@ -807,6 +941,14 @@ export interface MosaiqBridge {
   migrationMatrix(query: MigrationWindow): Promise<Result<MigrationMatrixView>>;
   listMigrations(query: MigrationListQuery): Promise<Result<MigrationListView>>;
   explainMigration(query: MigrationExplanationQuery): Promise<Result<MigrationExplanationView>>;
+  listModelVersions(query: ModelVersionQuery): Promise<Result<Paged<ModelVersionView>>>;
+  getModelVersion(versionId: number): Promise<Result<ModelVersionView>>;
+  listTrainings(query: TrainingQuery): Promise<Result<Paged<TrainingView>>>;
+  getTraining(trainingId: number): Promise<Result<TrainingView>>;
+  /** Starts a K-means training; the answer is the run, RUNNING, and its result becomes a DRAFT version. */
+  startTraining(draft: TrainingDraft): Promise<Result<TrainingView>>;
+  /** Publishes a DRAFT with the reason that is kept in the append-only publication. */
+  publishModelVersion(versionId: number, reason: string): Promise<Result<PublicationView>>;
 }
 
 export const CHANNELS = {
@@ -876,4 +1018,10 @@ export const CHANNELS = {
   migrationMatrix: 'mosaiq:migration-matrix',
   listMigrations: 'mosaiq:list-migrations',
   explainMigration: 'mosaiq:explain-migration',
+  listModelVersions: 'mosaiq:list-model-versions',
+  getModelVersion: 'mosaiq:get-model-version',
+  listTrainings: 'mosaiq:list-trainings',
+  getTraining: 'mosaiq:get-training',
+  startTraining: 'mosaiq:start-training',
+  publishModelVersion: 'mosaiq:publish-model-version',
 } as const;

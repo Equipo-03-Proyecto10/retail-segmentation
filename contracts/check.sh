@@ -192,6 +192,23 @@ compile_xsd() {
   fi
 }
 
+# Every XML example of a directory validates against its XSD, except an
+# *.invalid.xml, which must be refused.
+check_xml_examples() {
+  local xsd=$1 dir=$2 example
+  for example in "$dir"/*.xml; do
+    if [[ $example == *.invalid.xml ]]; then
+      if xmllint --noout --nonet --schema "$xsd" "$example" \
+        >/dev/null 2>&1; then
+        fail "invalid example accepted: $example"
+      fi
+    elif ! xmllint --noout --nonet --schema "$xsd" "$example" \
+      >/dev/null 2>&1; then
+      fail "invalid XML example: $example"
+    fi
+  done
+}
+
 compile_xsd contracts/common/v1/common.xsd
 
 # A failed read must stop the run: an empty list would skip every per-contract
@@ -250,16 +267,23 @@ PY
     fi
   done
 
-  for example in contracts/"$service"/examples/*.xml; do
-    if [[ $example == *.invalid.xml ]]; then
-      if xmllint --noout --nonet --schema "$primary_xsd" "$example" \
-        >/dev/null 2>&1; then
-        fail "invalid example accepted: $example"
-      fi
-    elif ! xmllint --noout --nonet --schema "$primary_xsd" "$example" \
-      >/dev/null 2>&1; then
-      fail "invalid XML example: $example"
+  check_xml_examples "$primary_xsd" contracts/"$service"/examples
+
+  # A later major keeps its examples in examples/v<N>/, validated against its
+  # own <service>.v<N>.xsd: the loop above does not recurse, so without this
+  # none of them would be checked.
+  for later in contracts/"$service"/examples/*/; do
+    later=${later%/}
+    if [[ ! ${later##*/} =~ ^v([2-9]|[1-9][0-9]+)$ ]]; then
+      fail "unexpected examples directory: $later"
+      continue
     fi
+    later_xsd="contracts/$service/$service.v${BASH_REMATCH[1]}.xsd"
+    if [[ ! -f $later_xsd ]]; then
+      fail "missing XSD for $later: $later_xsd"
+      continue
+    fi
+    check_xml_examples "$later_xsd" "$later"
   done
 
   if ! openapi-spec-validator "$openapi" >/dev/null 2>&1; then

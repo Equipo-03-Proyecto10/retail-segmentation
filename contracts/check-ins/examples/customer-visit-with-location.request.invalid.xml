@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomerVisitRequest xmlns="https://mosaiq.maxthecoder.online/xml/check-ins/v1">
+  <loyalty_code>7M3QX9T2KD5VHA8R0WBN4ZPCJE</loyalty_code>
+  <store_id>3</store_id>
+  <occurred_at>2026-11-09T10:00:00Z</occurred_at>
+  <latitude>19.432608</latitude>
+  <longitude>-99.133209</longitude>
+  <accuracy_m>12.5</accuracy_m>
+</CustomerVisitRequest>

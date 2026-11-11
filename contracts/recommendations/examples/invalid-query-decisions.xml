@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_query</code>
+  <message>status must be one of the recommendation statuses.</message>
+  <correlation_id>corr-invalid-query-decisions</correlation_id>
+  <details>
+    <field>status</field>
+    <code>invalid_value</code>
+  </details>
+</Error>

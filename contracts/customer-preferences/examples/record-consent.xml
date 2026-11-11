@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ConsentState xmlns="https://mosaiq.maxthecoder.online/xml/customer-preferences/v1">
+  <customer_id>c4a1f0e2-5b7d-4e39-8a62-9d1b3c7e0f54</customer_id>
+  <as_of>2026-11-05T14:31:07Z</as_of>
+  <purposes>
+    <purpose>PERSONALIZATION</purpose>
+    <state>GRANTED</state>
+    <decision_id>189</decision_id>
+    <recorded_at>2026-11-05T14:31:07Z</recorded_at>
+    <recorded_by>b5d0a6f2-18c3-4e7a-9f64-0d2e7c1a3b58</recorded_by>
+    <source>STAFF_ON_BEHALF</source>
+    <basis>EXPLICIT</basis>
+  </purposes>
+  <purposes>
+    <purpose>MARKETING_CONTACT</purpose>
+    <state>WITHDRAWN</state>
+    <decision_id>190</decision_id>
+    <recorded_at>2026-11-05T14:31:07Z</recorded_at>
+    <recorded_by>b5d0a6f2-18c3-4e7a-9f64-0d2e7c1a3b58</recorded_by>
+    <source>STAFF_ON_BEHALF</source>
+    <basis>EXPLICIT</basis>
+  </purposes>
+  <purposes>
+    <purpose>PROFILING</purpose>
+    <state>GRANTED</state>
+    <decision_id>191</decision_id>
+    <recorded_at>2026-11-05T14:31:07Z</recorded_at>
+    <recorded_by>b5d0a6f2-18c3-4e7a-9f64-0d2e7c1a3b58</recorded_by>
+    <source>STAFF_ON_BEHALF</source>
+    <basis>EXPLICIT</basis>
+  </purposes>
+</ConsentState>

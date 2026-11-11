@@ -835,7 +835,8 @@ JOIN app_user AS u ON u.role_id = r.role_id AND u.is_active;
 -- ---------- audit_log ----------
 -- Filled by the triggers as the statements above ran: segment, segment_rule,
 -- campaign, experiment, category, product, store, channel, role, customer,
--- app_user and customer_segment_history. Nothing is inserted here by hand.
+-- app_user, customer_segment_history, stores.store_location and the products
+-- boundary's four tables. Nothing is inserted here by hand.
 
 -- ---------- outboxes (ADR-0054, #597) ----------
 -- Empty-database bootstrap only: remove the events this transaction captured

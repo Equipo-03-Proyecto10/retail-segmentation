@@ -1434,6 +1434,29 @@ promotion outside its campaign's dates is refused as `promotion_outside_campaign
 checks the rule on every write, and `api_campaigns.active_promotion_v1` publishes
 only promotions of an `ACTIVE` campaign whose validity contains `CURRENT_DATE`. · #834
 
+### RN-73 — A customer's consent and restrictions change only by an appended, attributed decision, and a reader that cannot read them treats the purpose as withdrawn
+A customer's consent is recorded per purpose (`PERSONALIZATION`,
+`MARKETING_CONTACT` and `PROFILING`) and their restrictions per channel or
+interest category, each as an append-only log. A decision is a new row with the
+decision (`GRANTED` or `WITHDRAWN`, `IMPOSED` or `LIFTED`), the server's time, the
+app user who took it, read from the verified token and never from the body, and its
+source; a consent decision also says whether the customer said it (`EXPLICIT`) or
+the programme assigned it (`PROGRAMME_DEFAULT`). The current state of a purpose is
+its latest row, a withdrawal never rewrites the grant before it, and no role edits
+or deletes a row. A purpose with no row is not granted. Every boundary reads the
+state through the published views and, when it cannot, treats the purpose as
+withdrawn
+([ADR-0066](adr/0066-consent-is-an-append-only-record-by-purpose-and-anonymization-replaces-deletion.md)).
+Inferred interests are kept apart from declared ones and never overwrite them. The
+two preference sets keep the whole-set replace of RN-54.
+
+**Enforced:** customer-preferences-service (planned), ADR-0066 and ADR-0034 —
+`svc_preferences` holds `SELECT` and `INSERT` only on the two logs, the service
+exposes no route that edits or removes a row, and a decision commits with its outbox
+row in one transaction. The contract of F21-16 (#794) specifies the operations, the
+two `api_preferences` views and the stream; the log and its grants follow with F21-17
+(#795). · #794
+
 ### RN-72 — A customer visit is recorded only for an active loyalty code and a customer who has not withdrawn profiling, once per duplicate window, and holds no position
 A customer visit is a fact about a customer, kept apart from a staff check-in
 (RN-56): it names a customer, a store, a time and optionally a campaign, and

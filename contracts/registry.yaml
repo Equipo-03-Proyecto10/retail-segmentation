@@ -43,8 +43,8 @@ services:
     resources: [customers, loyalty-cards]
   - name: customer-preferences
     port: 5008
-    rule: "A customer's preferred channels and interest categories are each replaced only atomically, as a whole set of existing references (RN-54)"
-    rn: [RN-54]
+    rule: "A customer's preferred channels and interest categories are each replaced only atomically, as a whole set of existing references, and their consent and restrictions change only by appending a recorded, attributed decision that is never edited or removed (RN-54, RN-73)"
+    rn: [RN-54, RN-73]
     wave: core
     resources: [preference-profiles]
   - name: sales

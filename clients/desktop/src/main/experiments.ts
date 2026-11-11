@@ -33,7 +33,7 @@ import {
   pageSize,
   record,
 } from './checks';
-import type { Group } from './xml';
+import type { Fields } from './xml';
 
 // The A/B experiment module (F28-10, #879): experimentation-service's experiments, read through the
 // transport (XML, XSD-validated), and the two writes that module owns, planning an experiment and
@@ -304,7 +304,7 @@ function optionalProbability(f: FieldChecks, field: string, value: unknown): str
 }
 
 /** The inputs of a plan, in the XSD's order. Anything the service computes is never an input. */
-function planFields(draft: unknown): Record<string, string | Group[]> {
+function planFields(draft: unknown): Fields {
   const d = record(draft, 'The experiment');
   const f = new FieldChecks();
   const name = f.text('name', d.name, NAME_MAX);
@@ -328,7 +328,7 @@ function planFields(draft: unknown): Record<string, string | Group[]> {
   const power = optionalProbability(f, 'power', d.power);
 
   const armsRaw = d.arms;
-  const arms: Group[] = [];
+  const arms: Fields[] = [];
   if (!Array.isArray(armsRaw) || armsRaw.length < MIN_ARMS || armsRaw.length > MAX_ARMS) {
     f.details.push({ field: 'arms', code: 'out_of_range' });
   } else {

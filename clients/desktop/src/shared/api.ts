@@ -290,6 +290,8 @@ export interface ExclusionsDraft {
 /** Why a customer holding the campaign's label is not in its audience, in the order of precedence the contract fixes. */
 export const AUDIENCE_REASONS = [
   'not_in_customer_reference',
+  'personalization_withdrawn',
+  'marketing_contact_withdrawn',
   'excluded_customer',
   'excluded_label',
   'registered_after_cutoff',
@@ -314,7 +316,7 @@ export interface AudienceBreakdownView {
   label_code: string;
   /** Customers holding the label before any reason is applied. */
   label_holders: number;
-  /** Always six, in the contract's order. */
+  /** Always eight, in the contract's order. */
   reasons: AudienceReasonView[];
   audience_size: number;
   as_of: string;

@@ -120,7 +120,12 @@ export function renderCampaigns(host: HTMLElement, ctx: ScreenContext): void {
           body.append(row);
         }
         tableArea.replaceChildren(
-          testid(el('table', {}, el('thead', {}, head), body), 'campaigns-table'),
+          // The table scrolls inside its own area in a narrow window, never the page (F28-09: 375 px).
+          el(
+            'div',
+            { cls: 'scroll' },
+            testid(el('table', {}, el('thead', {}, head), body), 'campaigns-table'),
+          ),
           pager(res.value.page, 'campaigns', (page) => {
             query = { ...query, page };
             void load();

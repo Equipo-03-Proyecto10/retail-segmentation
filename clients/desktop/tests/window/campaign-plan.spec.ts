@@ -107,8 +107,9 @@ function reset(): void {
 /**
  * The fake counts the label's holders the way the contract says: each customer once, under the first
  * reason that applies, so the holders are the reasons plus the audience. The numbers it takes from the
- * plan are small and fixed: one holder is not in the customer list, three registered after a cutoff,
- * four have too few purchases.
+ * plan are small and fixed: one holder is not in the customer list, two withdrew personalization and
+ * three marketing contact (consent comes before any rule of the campaign), three registered after a
+ * cutoff, four have too few purchases.
  */
 function counted(): { reasons: [string, number][]; size: number } {
   let left = HOLDERS;
@@ -119,6 +120,8 @@ function counted(): { reasons: [string, number][]; size: number } {
   };
   const reasons: [string, number][] = [
     ['not_in_customer_reference', take(1)],
+    ['personalization_withdrawn', take(2)],
+    ['marketing_contact_withdrawn', take(3)],
     ['excluded_customer', take(plan.customers.length)],
     ['excluded_label', plan.labels.includes('LOYAL') ? take(left) : 0],
     ['registered_after_cutoff', plan.registered === undefined ? 0 : take(3)],
@@ -319,6 +322,8 @@ const reasonCounts = async (page: Page): Promise<[string, string][]> =>
   Promise.all(
     [
       'not_in_customer_reference',
+      'personalization_withdrawn',
+      'marketing_contact_withdrawn',
       'excluded_customer',
       'excluded_label',
       'registered_after_cutoff',
@@ -336,13 +341,16 @@ test('the preview shows the estimated population, how many were left out and eac
   await expect(page.getByTestId('preview-result')).toBeEmpty();
   const beforePreview = seen.length;
   await page.getByTestId('preview-run').click();
-  // 31 holders: 1 not in the customer list, 2 excluded by id, 3 registered late, 4 with too few purchases.
-  await expect(page.getByTestId('preview-size')).toHaveText('21 customers');
+  // 31 holders: 1 not in the customer list, 2 and 3 who withdrew consent, 2 excluded by id, 3 registered
+  // late, 4 with too few purchases: 15 left out.
+  await expect(page.getByTestId('preview-size')).toHaveText('16 customers');
   await expect(page.getByTestId('preview-as-of')).toHaveText('2026-11-02T15:04:05Z');
   await expect(page.getByTestId('preview-holders')).toHaveText('31');
-  await expect(page.getByTestId('preview-left-out')).toHaveText('10');
+  await expect(page.getByTestId('preview-left-out')).toHaveText('15');
   expect(await reasonCounts(page)).toEqual([
     ['not_in_customer_reference', '1'],
+    ['personalization_withdrawn', '2'],
+    ['marketing_contact_withdrawn', '3'],
     ['excluded_customer', '2'],
     ['excluded_label', '0'],
     ['registered_after_cutoff', '3'],
@@ -350,7 +358,9 @@ test('the preview shows the estimated population, how many were left out and eac
     ['over_max_customers', '0'],
   ]);
   const why = page.getByTestId('preview-reasons');
-  await expect(why).toContainText('Not in the customer list');
+  await expect(why).toContainText('Not in the customer list, or anonymized');
+  await expect(why).toContainText('Personalization consent withdrawn or not recorded');
+  await expect(why).toContainText('Marketing contact consent withdrawn or not recorded');
   await expect(why).toContainText('Excluded by id (2 listed)');
   await expect(why).toContainText('Excluded by label (DORMANT)');
   await expect(why).toContainText('Registered after 2026-06-30');
@@ -371,7 +381,7 @@ test('the preview shows the estimated population, how many were left out and eac
   await expect(section(page, 'audience').getByTestId('notice')).toHaveText('Audience saved.');
   await expect(page.getByTestId('preview-size')).toHaveText('10 customers');
   await expect(page.getByTestId('preview-left-out')).toHaveText('21');
-  await expect(page.getByTestId('preview-reason-over_max_customers')).toHaveText('11');
+  await expect(page.getByTestId('preview-reason-over_max_customers')).toHaveText('6');
   await expect(why).toContainText('Above the cap of 10 customers');
   expect(seen.slice(before).some((s) => s.url.endsWith('/audience/breakdown'))).toBe(true);
   await app.close();
@@ -382,10 +392,13 @@ test('a preview of a plan with no rule shows every reason, each rule that is not
   const { app, page } = await launch('ADMIN');
   await openPlan(page);
   await page.getByTestId('preview-run').click();
-  await expect(page.getByTestId('preview-size')).toHaveText('30 customers');
-  await expect(page.getByTestId('preview-left-out')).toHaveText('1');
+  // Consent is not a rule of the plan: it leaves customers out whatever is set.
+  await expect(page.getByTestId('preview-size')).toHaveText('25 customers');
+  await expect(page.getByTestId('preview-left-out')).toHaveText('6');
   expect(await reasonCounts(page)).toEqual([
     ['not_in_customer_reference', '1'],
+    ['personalization_withdrawn', '2'],
+    ['marketing_contact_withdrawn', '3'],
     ['excluded_customer', '0'],
     ['excluded_label', '0'],
     ['registered_after_cutoff', '0'],
@@ -415,9 +428,9 @@ for (const [answer, text] of [
     await expect(notice).toContainText('The breakdown by reason could not be read');
     await expect(notice).toContainText(`(${text})`);
     // The audience read and the label's holders give the total and a difference, not counts by reason.
-    await expect(page.getByTestId('preview-size')).toHaveText('21 customers');
+    await expect(page.getByTestId('preview-size')).toHaveText('16 customers');
     await expect(page.getByTestId('preview-holders')).toHaveText('31');
-    await expect(page.getByTestId('preview-left-out')).toHaveText('10');
+    await expect(page.getByTestId('preview-left-out')).toHaveText('15');
     await expect(page.getByTestId('preview-note')).toContainText('not split by reason');
     await expect(page.getByTestId('preview-reason-customers')).toHaveText(
       'Excluded by id: 2 customers are listed and left out.',
@@ -665,8 +678,8 @@ for (const as of ['ANALYST', 'AUDITOR']) {
       0,
     );
     await page.getByTestId('preview-run').click();
-    await expect(page.getByTestId('preview-size')).toHaveText('21 customers');
-    await expect(page.getByTestId('preview-reason-excluded_customer')).toHaveText('2');
+    await expect(page.getByTestId('preview-size')).toHaveText('16 customers');
+    await expect(page.getByTestId('preview-reason-marketing_contact_withdrawn')).toHaveText('3');
     await shot(page, `878-desktop-campaign-plan-05-${as.toLowerCase()}-read-only`);
     const forced = await page.evaluate(() =>
       window.mosaiq.putCampaignExclusions(301, { customer_ids: [], label_codes: [] }),
@@ -732,3 +745,40 @@ test('what a service returns is shown as text, never as markup', async () => {
   expect(await page.getByTestId('plan-exclusions').locator('label', { hasText: 'onerror' }).count()).toBe(1);
   await app.close();
 });
+
+for (const as of ['MARKETING', 'ANALYST']) {
+  test(`the campaign plan fits a 375 px and a 1440 px window for ${as}, and never scrolls the page sideways`, async () => {
+    const { app, page } = await launch(as);
+    await openPlan(page);
+    // The widest content: the preview with its eight reasons, and the longest lists the plan holds.
+    await page.getByTestId('preview-run').click();
+    await expect(page.getByTestId('preview-size')).toBeVisible();
+    for (const [width, height] of [
+      [375, 900],
+      [1440, 900],
+    ] as const) {
+      await app.evaluate(
+        ({ BrowserWindow }, size) => {
+          BrowserWindow.getAllWindows()[0]?.setSize(size[0], size[1]);
+        },
+        [width, height],
+      );
+      await expect.poll(async () => page.evaluate(() => window.innerWidth)).toBeLessThanOrEqual(width);
+      const fits = await page.evaluate(() => {
+        const limit = window.innerWidth + 1;
+        const wide = Array.from(
+          document.querySelectorAll('[data-testid=campaign-plan], [data-testid=campaign-plan] *'),
+        )
+          .filter((node) => node.getBoundingClientRect().right > limit)
+          .map((node) => node.getAttribute('data-testid') ?? node.tagName.toLowerCase());
+        return { page: document.documentElement.scrollWidth <= limit, plan: wide };
+      });
+      expect(fits).toEqual({ page: true, plan: [] });
+      await page.getByTestId('plan-preview').scrollIntoViewIfNeeded();
+      await shot(page, `878-desktop-campaign-plan-06-${as.toLowerCase()}-${width}px`);
+      await page.getByTestId('campaign-plan').scrollIntoViewIfNeeded();
+      await shot(page, `878-desktop-campaign-plan-07-${as.toLowerCase()}-${width}px-sections`);
+    }
+    await app.close();
+  });
+}

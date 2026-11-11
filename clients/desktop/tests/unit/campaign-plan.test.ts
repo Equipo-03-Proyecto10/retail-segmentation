@@ -540,10 +540,12 @@ describe('the preview', () => {
       label_holders: 4000,
       reasons: [
         { code: 'not_in_customer_reference', excluded: 12 },
+        { code: 'personalization_withdrawn', excluded: 40 },
+        { code: 'marketing_contact_withdrawn', excluded: 220 },
         { code: 'excluded_customer', excluded: 2 },
         { code: 'excluded_label', excluded: 0 },
-        { code: 'registered_after_cutoff', excluded: 310 },
-        { code: 'too_few_purchases', excluded: 556 },
+        { code: 'registered_after_cutoff', excluded: 250 },
+        { code: 'too_few_purchases', excluded: 356 },
         { code: 'over_max_customers', excluded: 0 },
       ],
       audience_size: 3120,
@@ -563,7 +565,14 @@ describe('the preview', () => {
     const res = await plan.preview(12);
     const b = res.ok ? res.value.breakdown : undefined;
     if (b === undefined) throw new Error('a breakdown was expected');
+    expect(b.reasons).toHaveLength(8);
     expect(b.reasons.map((r) => r.code)).toEqual([...AUDIENCE_REASONS]);
+    // Consent comes straight after the customer list: ADR-0066 excludes before any rule of the campaign.
+    expect(AUDIENCE_REASONS.slice(0, 3)).toEqual([
+      'not_in_customer_reference',
+      'personalization_withdrawn',
+      'marketing_contact_withdrawn',
+    ]);
     expect(b.reasons.reduce((sum, r) => sum + r.excluded, 0) + b.audience_size).toBe(b.label_holders);
     expect(res.ok && leftOut(res.value)).toBe(880);
   });
@@ -573,7 +582,9 @@ describe('the preview', () => {
     const res = await plan.preview(12);
     if (!res.ok) throw new Error('a preview was expected');
     expect(AUDIENCE_REASONS.map((code) => reasonText(code, res.value, name))).toEqual([
-      'Not in the customer list',
+      'Not in the customer list, or anonymized',
+      'Personalization consent withdrawn or not recorded',
+      'Marketing contact consent withdrawn or not recorded',
       'Excluded by id (2 listed)',
       'Excluded by label (Dormant (DORMANT))',
       'Registered after 2026-06-30',
@@ -587,7 +598,9 @@ describe('the preview', () => {
       exclusions: { campaign_id: 12, customer_ids: [], label_codes: [] },
     };
     expect(AUDIENCE_REASONS.map((code) => reasonText(code, unset, name))).toEqual([
-      'Not in the customer list',
+      'Not in the customer list, or anonymized',
+      'Personalization consent withdrawn or not recorded',
+      'Marketing contact consent withdrawn or not recorded',
       'Excluded by id (none listed)',
       'Excluded by label (none listed)',
       'Registered after the cutoff (no cutoff set)',
@@ -739,6 +752,16 @@ describe('the XSD', () => {
       'put-campaign-exclusions.request',
     ])
       expect((await validator.validate(example('campaigns', f), NS)).valid, f).toBe(true);
+  });
+
+  it('refuses a breakdown of the first six reasons: the consent reasons are part of the eight', async () => {
+    const validator = new XsdValidator(bundle);
+    const six = example('campaigns', 'campaign-audience-breakdown').replace(
+      /<reasons>\s*<code>(personalization|marketing_contact)_withdrawn<\/code>\s*<excluded>\d+<\/excluded>\s*<\/reasons>\s*/g,
+      '',
+    );
+    expect(six).not.toContain('_withdrawn');
+    expect((await validator.validate(six, NS)).valid).toBe(false);
   });
 
   it('refuses a breakdown with a reason the contract does not name, and one with a reason missing', async () => {

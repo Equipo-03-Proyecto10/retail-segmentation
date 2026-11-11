@@ -245,10 +245,12 @@ own: one that is refused shows its refusal in place and the others stay usable.
 - **Preview.** "Preview audience" reads the audience's breakdown by reason
   (`GET /v1/campaigns/{id}/audience/breakdown`, `getCampaignAudienceBreakdown`), and the audience, the
   conditions and the exclusions as saved, to word each reason. It shows the estimated audience and when it
-  was counted, the customers holding the campaign's label, how many were left out, and each of the six
-  reasons with its count, in the contract's order of precedence: a customer is counted once, under the
-  first reason that applies, so the holders are the reasons plus the audience. A reason whose rule is not
-  set shows 0 and says so. A preview already on screen is read again after a save.
+  was counted, the customers holding the campaign's label, how many were left out, and each of the eight
+  reasons with its count, in the contract's order of precedence: not in the customer list or anonymized,
+  personalization consent withdrawn or not recorded, marketing contact consent withdrawn or not recorded
+  (ADR-0066), excluded by id, excluded by label, registered after the cutoff, too few purchases, over the
+  cap. A customer is counted once, under the first reason that applies, so the holders are the reasons
+  plus the audience. A reason whose rule is not set shows 0 and says so. A preview already on screen is read again after a save.
 - **When the breakdown is not answered** (the operation is planned until F25-04, #835, and a service
   that does not have it answers a refusal, a missing route or something off contract), the preview says
   so on screen and falls back to the audience's one total: the number left out is then the customers

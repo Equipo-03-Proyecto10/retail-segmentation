@@ -122,7 +122,7 @@ export function exclusionsOf(x: ExclusionsXml): ExclusionsView {
   };
 }
 
-/** The breakdown as the contract fixes it: six reasons, each a code the contract names. */
+/** The breakdown as the contract fixes it: eight reasons, each a code the contract names. */
 export function breakdownOf(x: BreakdownXml): AudienceBreakdownView {
   return {
     campaign_id: Number(x.campaign_id),

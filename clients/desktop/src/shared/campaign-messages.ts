@@ -107,7 +107,11 @@ export function reasonText(
   const plural = (n: number, one: string, many: string): string => (n === 1 ? one : many);
   switch (code) {
     case 'not_in_customer_reference':
-      return 'Not in the customer list';
+      return 'Not in the customer list, or anonymized';
+    case 'personalization_withdrawn':
+      return 'Personalization consent withdrawn or not recorded';
+    case 'marketing_contact_withdrawn':
+      return 'Marketing contact consent withdrawn or not recorded';
     case 'excluded_customer':
       return exclusions.customer_ids.length === 0
         ? 'Excluded by id (none listed)'

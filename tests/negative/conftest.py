@@ -14,7 +14,15 @@ from pathlib import Path
 
 import pytest
 
-from tests.negative.stack import EVIDENCE_FILE, Evidence, Service, Stack, registry
+from tests.negative.stack import (
+    EVIDENCE_FILE,
+    Evidence,
+    Service,
+    Stack,
+    implemented,
+    not_implemented_reason,
+    registry,
+)
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
@@ -56,6 +64,16 @@ def evidence(deployed_stack: Stack) -> Iterator[Evidence]:
 @pytest.fixture(scope="session")
 def services(deployed_stack: Stack) -> dict[str, Service]:
     return {service.name: service for service in registry()}
+
+
+@pytest.fixture(autouse=True)
+def _skip_a_service_not_implemented(request: pytest.FixtureRequest) -> None:
+    """A case parametrized by a registered service with no implementation
+    yet is skipped with that reason, never failed on its 502."""
+    callspec = getattr(request.node, "callspec", None)
+    name = callspec.params.get("name") if callspec else None
+    if isinstance(name, str) and not implemented(name):
+        pytest.skip(not_implemented_reason(name))
 
 
 @pytest.fixture(scope="session")

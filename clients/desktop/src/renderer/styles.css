@@ -207,6 +207,52 @@ dialog {
 .scroll {
   overflow-x: auto;
 }
+.matrix th[scope='row'] {
+  white-space: nowrap;
+}
+.matrix td button {
+  min-width: 2.5rem;
+}
+.matrix td.zero button {
+  color: GrayText;
+}
+.matrix td[data-movement]::after {
+  content: attr(data-label);
+  display: block;
+  font-size: 0.75rem;
+}
+.matrix td.move-improved {
+  border-left: 4px solid #1b6e2f;
+}
+.matrix td.move-declined {
+  border-left: 4px solid #b00020;
+}
+.matrix td.move-unchanged {
+  border-left: 4px solid GrayText;
+}
+.matrix td.move-not_ranked {
+  border-left: 4px dotted GrayText;
+}
+.matrix.methodological td[data-movement] {
+  outline: 1px dashed #8a6d00;
+  outline-offset: -2px;
+}
+.matrix tr.total th,
+.matrix tr.total td {
+  font-weight: 700;
+  border-top: 2px solid GrayText;
+}
+tr.methodological td {
+  background: color-mix(in srgb, #8a6d00 12%, transparent);
+}
+dl.compact {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.15rem 1rem;
+}
+dl.compact dd {
+  margin: 0;
+}
 /* A/B experiments: the facts of a plan, and the plan form's arms. */
 dl.facts {
   display: grid;

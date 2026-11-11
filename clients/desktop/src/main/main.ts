@@ -14,6 +14,7 @@ import { Exporter, type ExportEnv } from './exports';
 import { Experiments } from './experiments';
 import { Floor } from './floor';
 import { Reports, type ReportExportEnv } from './reports';
+import { Migrations } from './migrations';
 import { loadSettings } from './settings';
 import { Stores } from './stores';
 import { Transport } from './transport';
@@ -204,6 +205,10 @@ function start(): void {
   ipcMain.handle(CHANNELS.getRecommendations, (_e, customerId: unknown) =>
     customers.recommendations(customerId),
   );
+  const migrations = new Migrations(office);
+  ipcMain.handle(CHANNELS.migrationMatrix, (_e, query: unknown) => migrations.matrix(query));
+  ipcMain.handle(CHANNELS.listMigrations, (_e, query: unknown) => migrations.list(query));
+  ipcMain.handle(CHANNELS.explainMigration, (_e, query: unknown) => migrations.explain(query));
   const experiments = new Experiments(office);
   ipcMain.handle(CHANNELS.listExperiments, (_e, query: unknown) => experiments.list(query));
   ipcMain.handle(CHANNELS.getExperiment, (_e, experimentId: unknown) => experiments.get(experimentId));

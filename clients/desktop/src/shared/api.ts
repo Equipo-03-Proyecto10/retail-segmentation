@@ -618,6 +618,118 @@ export interface ReportView {
 
 export type ReportFormat = 'pdf' | 'csv' | 'xlsx';
 
+// ---------- migration matrix (F28-06, #875) ----------
+
+/** How a customer stood at one instant: holding a label, scored with none (RN-21), or with no assignment (new). */
+export type MigrationState = 'label' | 'unassigned' | 'new';
+
+/** Set by segments-service from the vocabulary's order; the client never recomputes it. */
+export type MigrationMovement = 'improved' | 'declined' | 'unchanged' | 'not_ranked';
+
+/** The two instants of a comparison. The earlier one is always the before state (RN-59). */
+export interface MigrationWindow {
+  from: string;
+  to: string;
+}
+
+/** One state's figures. label_code is present exactly when state is label. */
+export interface MigrationTotalView {
+  state: MigrationState;
+  label_code?: string;
+  before_count: number;
+  after_count: number;
+  entries: number;
+  exits: number;
+}
+
+/** A matrix cell: the customers who stood in one state before and one state after. A cell with none is not sent. */
+export interface MigrationCellView {
+  previous_state: MigrationState;
+  previous_label_code?: string;
+  new_state: MigrationState;
+  new_label_code?: string;
+  movement: MigrationMovement;
+  customer_count: number;
+}
+
+export interface MigrationMatrixView {
+  from: string;
+  to: string;
+  /** Absent while the latest versioned run at that instant has none yet. */
+  from_model_version_id?: number;
+  to_model_version_id?: number;
+  /** The two instants fall under different model versions, or one is unknown: a difference may come from the model (ADR-0064). */
+  methodological: boolean;
+  customer_count: number;
+  totals: MigrationTotalView[];
+  cells: MigrationCellView[];
+}
+
+export type MigrationDirection = 'entries' | 'exits';
+
+/**
+ * The customers behind a cell (both states, and their label codes when the state is label) or behind one
+ * label's entries or exits (direction and label_code); never both.
+ */
+export interface MigrationListQuery extends MigrationWindow {
+  previous_state?: MigrationState;
+  previous_label_code?: string;
+  new_state?: MigrationState;
+  new_label_code?: string;
+  direction?: MigrationDirection;
+  label_code?: string;
+  /** false keeps behaviour only; true keeps what a model change may explain. */
+  methodological?: boolean;
+  page?: number;
+  size?: number;
+}
+
+export interface MigrationView {
+  customer_id: string;
+  previous_state: MigrationState;
+  previous_label_code?: string;
+  new_state: MigrationState;
+  new_label_code?: string;
+  movement: MigrationMovement;
+  changed_at?: string;
+  cause?: string;
+  previous_run_id?: number;
+  new_run_id?: number;
+  previous_model_version_id?: number;
+  new_model_version_id?: number;
+  methodological: boolean;
+  /** recency, frequency or monetary: the measures judged changed. */
+  responsible_variables: string[];
+  /** The label changed and no variable did: the score moved because the population or the model did. */
+  rank_only: boolean;
+}
+
+export interface MigrationListView extends MigrationWindow {
+  items: MigrationView[];
+  page: PageView;
+}
+
+export interface MigrationExplanationQuery extends MigrationWindow {
+  customer_id: string;
+}
+
+export interface MigrationMeasureView {
+  variable: string;
+  unit: string;
+  /** Decimals exactly as the service sent them; absent when the side has no value. */
+  previous_value?: string;
+  new_value?: string;
+  judgement: 'changed' | 'stable' | 'not_compared';
+  not_compared_reason?: string;
+  rank_changed: boolean;
+  statement: string;
+}
+
+export interface MigrationExplanationView extends MigrationWindow {
+  migration: MigrationView;
+  measures: MigrationMeasureView[];
+}
+
 // ---------- A/B experiments (F28-10, #879) ----------
 
 export type ExperimentState = 'PLANNED' | 'ASSIGNED' | 'ANALYZED';
@@ -973,6 +1085,9 @@ export interface MosaiqBridge {
   kpiDefinitions(): Promise<Result<KpiDefinitionView[]>>;
   kpiReport(query: ReportQuery): Promise<Result<ReportView>>;
   exportReport(format: ReportFormat): Promise<Result<ExportOutcome>>;
+  migrationMatrix(query: MigrationWindow): Promise<Result<MigrationMatrixView>>;
+  listMigrations(query: MigrationListQuery): Promise<Result<MigrationListView>>;
+  explainMigration(query: MigrationExplanationQuery): Promise<Result<MigrationExplanationView>>;
   listExperiments(query: ExperimentQuery): Promise<Result<Paged<ExperimentView>>>;
   getExperiment(experimentId: number): Promise<Result<ExperimentView>>;
   planExperiment(draft: ExperimentDraft): Promise<Result<ExperimentView>>;
@@ -1044,6 +1159,9 @@ export const CHANNELS = {
   kpiDefinitions: 'mosaiq:kpi-definitions',
   kpiReport: 'mosaiq:kpi-report',
   exportReport: 'mosaiq:export-report',
+  migrationMatrix: 'mosaiq:migration-matrix',
+  listMigrations: 'mosaiq:list-migrations',
+  explainMigration: 'mosaiq:explain-migration',
   listExperiments: 'mosaiq:list-experiments',
   getExperiment: 'mosaiq:get-experiment',
   planExperiment: 'mosaiq:plan-experiment',

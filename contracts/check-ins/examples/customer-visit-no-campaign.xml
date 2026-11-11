@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomerVisit xmlns="https://mosaiq.maxthecoder.online/xml/check-ins/v1">
+  <visit_id>4e8a1c37-6b2d-4f09-8c53-a1d7e92b0f65</visit_id>
+  <customer_id>c2f6e0a4-91b3-4d57-a8e1-3b5f7d9c1e20</customer_id>
+  <store_id>3</store_id>
+  <occurred_at>2026-11-09T11:15:00Z</occurred_at>
+  <recorded_at>2026-11-09T11:15:01Z</recorded_at>
+  <recorded_by>5b0c2f3e-8a41-4d6b-9c10-2e7a1f4d9b33</recorded_by>
+</CustomerVisit>

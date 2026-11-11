@@ -73,10 +73,10 @@ services:
     resources: [engagement-events, engagement-summaries]
   - name: check-ins
     port: 5013
-    rule: "A staff check-in is verified only when the server-computed distance lies within the store's geofence at acceptable accuracy, and overrides are append-only reviews (RN-56)"
-    rn: [RN-56]
+    rule: "A staff check-in is verified only when the server-computed distance lies within the store's geofence at acceptable accuracy, and overrides are append-only reviews (RN-56); a customer visit is a separate fact that never holds a position, recorded only for an active loyalty code and a customer who has not withdrawn profiling, once per duplicate window (RN-72)"
+    rn: [RN-56, RN-72]
     wave: core
-    resources: [check-ins]
+    resources: [check-ins, customer-visits]
   - name: campaigns
     port: 5014
     rule: "A campaign moves only DRAFT→ACTIVE/CANCELLED and ACTIVE→FINISHED/CANCELLED, is edited only in DRAFT, never ends before it starts, and is activated only before it has ended and while every attached experiment is ready (RN-15, RN-16, RN-22, RN-24 (activation), RN-31, RN-32, RN-49 (activation)), and a promotion belongs to one campaign, discounts by a percentage above zero, and is valid only within that campaign's dates (RN-71)"

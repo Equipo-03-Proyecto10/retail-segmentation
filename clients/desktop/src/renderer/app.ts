@@ -6,6 +6,7 @@ import { renderCategories, renderProducts } from './catalog';
 import { el, errorBox } from './dom';
 import { renderConversion } from './conversion';
 import { renderCustomers } from './customers';
+import { renderExploration } from './exploration';
 import { renderDrift } from './drift';
 import { renderExperiments } from './experiments';
 import { renderKmeans } from './kmeans';
@@ -161,6 +162,7 @@ function renderHome(state: Extract<AppState, { status: 'signed_in' }>): void {
     else if (next === 'campaigns') renderCampaigns(body, ctx);
     else if (next === 'experiments') renderExperiments(body, ctx);
     else if (next === 'customers') renderCustomers(body, ctx);
+    else if (next === 'exploration') renderExploration(body, ctx);
     else if (next === 'users') renderUsers(body, ctx);
     else if (next === 'audit') renderAudit(body, ctx);
     else if (next === 'transfer') renderTransfer(body, ctx);

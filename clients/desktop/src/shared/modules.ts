@@ -18,6 +18,7 @@ export type ModuleName =
   | 'experiments'
   | 'conversion'
   | 'customers'
+  | 'exploration'
   | 'users'
   | 'audit'
   | 'transfer'
@@ -42,6 +43,7 @@ export const MODULE_GROUPS: readonly ModuleGroup[] = [
     label: 'Analysis',
     modules: [
       { name: 'customers', label: 'Customers', operation: 'searchCustomers' },
+      { name: 'exploration', label: 'Customer exploration', operation: 'getRfmProfile' },
       { name: 'sales', label: 'Sales', operation: 'listSales' },
       { name: 'engagement', label: 'Engagement', operation: 'getEngagementSummary' },
       { name: 'check-ins', label: 'Check-ins', operation: 'listCheckIns' },

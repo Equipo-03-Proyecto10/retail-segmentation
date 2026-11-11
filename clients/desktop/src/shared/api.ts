@@ -1,6 +1,15 @@
 // Types shared by the main process, the preload bridge and the screens.
 // Nothing in here carries a credential.
 
+import type {
+  ConsentView,
+  ExplorationProfileView,
+  ExplorationQuery,
+  ExplorationSalesView,
+  InterestsView,
+  RestrictionsView,
+} from './exploration';
+
 export interface FieldDetail {
   field: string;
   code: string;
@@ -1610,6 +1619,11 @@ export interface MosaiqBridge {
   migrationMatrix(query: MigrationWindow): Promise<Result<MigrationMatrixView>>;
   listMigrations(query: MigrationListQuery): Promise<Result<MigrationListView>>;
   explainMigration(query: MigrationExplanationQuery): Promise<Result<MigrationExplanationView>>;
+  exploreProfile(customerId: string): Promise<Result<ExplorationProfileView>>;
+  exploreSales(query: ExplorationQuery): Promise<Result<ExplorationSalesView>>;
+  exploreRestrictions(customerId: string): Promise<Result<RestrictionsView>>;
+  exploreConsent(customerId: string): Promise<Result<ConsentView>>;
+  exploreInterests(customerId: string): Promise<Result<InterestsView>>;
   listExperiments(query: ExperimentQuery): Promise<Result<Paged<ExperimentView>>>;
   getExperiment(experimentId: number): Promise<Result<ExperimentView>>;
   planExperiment(draft: ExperimentDraft): Promise<Result<ExperimentView>>;
@@ -1708,6 +1722,11 @@ export const CHANNELS = {
   migrationMatrix: 'mosaiq:migration-matrix',
   listMigrations: 'mosaiq:list-migrations',
   explainMigration: 'mosaiq:explain-migration',
+  exploreProfile: 'mosaiq:explore-profile',
+  exploreSales: 'mosaiq:explore-sales',
+  exploreRestrictions: 'mosaiq:explore-restrictions',
+  exploreConsent: 'mosaiq:explore-consent',
+  exploreInterests: 'mosaiq:explore-interests',
   listExperiments: 'mosaiq:list-experiments',
   getExperiment: 'mosaiq:get-experiment',
   planExperiment: 'mosaiq:plan-experiment',

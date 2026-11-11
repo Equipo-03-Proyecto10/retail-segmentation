@@ -564,6 +564,54 @@ model-registry is not implemented yet (F22-11). The unit tests (`tests/unit/mode
 `tests/unit/kmeans.test.ts`) and the window tests (`tests/window/kmeans.spec.ts`) answer with the
 recorded examples in `contracts/model-registry/examples/`, read from disk.
 
+## Customer exploration (F28-03)
+
+Through five services: rfm-engine (`contracts/rfm-engine/`), sales-service, products-service and
+categories-service, and customer-preferences (`contracts/customer-preferences/`, whose consent,
+restriction and interest reads are published ahead of their implementation and marked planned, ADR-0073).
+The **Customer exploration** screen, in the Analysis group, is offered to the roles whose `x-mosaiq-roles`
+allow `getRfmProfile`: `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING` and `AUDITOR`. Any other role has
+no entry in the navigation, and the main process refuses a forced call with `forbidden_role` before
+sending anything. Each read is checked against its own operation (`EXPLORATION_OPERATIONS`), so a role the
+contract leaves out of one read, such as the consent record for an analyst, is refused on that panel and
+the others are still drawn. A refusal by a service is shown as it was sent: code, message and correlation
+id, and the panel says whether the console or the service refused. Nothing is hidden before it is asked.
+
+- **Pick a customer** by searching the directory (`GET /v1/customers`) or by entering an id, and choose the
+  first and last day (UTC, the last included) of the sales window to look at.
+- **One customer across windows.** The profile of rfm-engine (`GET /v1/rfm-profiles/{customer_id}`: R, F,
+  M, scores and label under one rule set) holds a window of its own: the rule set's `window_days`
+  (`GET /v1/rfm-rule-sets/{rule_set_id}`) ending at `computed_at` (RN-65). The screen sets three columns
+  side by side, each stating its window: the profile; the customer's sales over the profile's window,
+  worked out here, with "same as the profile" or "the profile says ..." on each figure; and the sales over
+  the chosen window. A role that may not read rule sets (`STORE_MANAGER`) has a profile with no window, and
+  the sales are read over the chosen one only. A window includes its first instant and excludes its last,
+  as `GET /v1/sales` does; recency is whole days from the latest purchase to the instant stated beside it,
+  which is the end of the window or now, whichever is earlier.
+- **Purchases, categories and channels** come from the customer's sales (`GET /v1/sales?customer_id=`, all
+  pages up to 2,000, read once for both windows), the category of each product
+  (`GET /v1/products?ids=`, 50 to a call) and the names of categories, channels and stores. No service
+  answers them per customer, so the figures of `src/shared/exploration.ts` are worked out in the client and
+  pinned by unit tests; a purchase counts once in each category it includes.
+- **Net purchases (ADR-0062).** The reversals of the customer (`GET /v1/sale-reversals?customer_id=`, planned)
+  are applied: a sale reversed in full is listed and marked and does not count, and a part returned lowers
+  spend. When the reversals cannot be read (not implemented yet, refused, or an audited read that cannot be
+  recorded) the sales are counted as charged, a warning says so, and the reason is shown.
+- **Restrictions and consent.** `GET .../restrictions` shows whether personalization is allowed, the
+  channels not to reach the customer on and the categories not to offer them (and those below). It reads
+  `false` for a purpose withdrawn or never recorded, and the screen says exactly that. `GET .../consent`,
+  for `ADMIN`, `AUDITOR` and `STORE_MANAGER`, shows each purpose with its state, source and basis, a
+  programme default said as such and never as the customer's own consent (ADR-0066). `GET .../interests`
+  shows what the customer declared apart from what the platform inferred, each inferred interest with its
+  window.
+- Opening a customer reads that customer's sales history, which ADR-0066 section 4 has the services record
+  in the audit trail; a service that cannot record it answers `audit_unavailable`, shown as returned.
+- Export is the shell's: the first table on screen, for the roles that may export (ADR-0074).
+
+The window tests (`tests/window/exploration.spec.ts`) answer with the recorded examples of the contracts
+above, read from disk, plus the few documents `tests/support/exploration.ts` builds in their shape
+(products, stores, categories), and check the screen at 375 px and at 1440 px.
+
 ## Packages and CI (F16-05)
 
 `.github/workflows/desktop.yml` runs on a pull request that touches `clients/desktop/**`,

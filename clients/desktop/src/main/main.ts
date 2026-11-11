@@ -11,6 +11,7 @@ import { Campaigns } from './campaigns';
 import { Catalog } from './catalog';
 import { ConversionResults } from './conversion';
 import { Customers } from './customers';
+import { Exploration } from './exploration';
 import { Drift } from './drift';
 import { Exporter, type ExportEnv } from './exports';
 import { Experiments } from './experiments';
@@ -246,6 +247,14 @@ function start(): void {
   ipcMain.handle(CHANNELS.migrationMatrix, (_e, query: unknown) => migrations.matrix(query));
   ipcMain.handle(CHANNELS.listMigrations, (_e, query: unknown) => migrations.list(query));
   ipcMain.handle(CHANNELS.explainMigration, (_e, query: unknown) => migrations.explain(query));
+  const exploration = new Exploration(office);
+  ipcMain.handle(CHANNELS.exploreProfile, (_e, customerId: unknown) => exploration.profile(customerId));
+  ipcMain.handle(CHANNELS.exploreSales, (_e, query: unknown) => exploration.sales(query));
+  ipcMain.handle(CHANNELS.exploreRestrictions, (_e, customerId: unknown) =>
+    exploration.restrictions(customerId),
+  );
+  ipcMain.handle(CHANNELS.exploreConsent, (_e, customerId: unknown) => exploration.consent(customerId));
+  ipcMain.handle(CHANNELS.exploreInterests, (_e, customerId: unknown) => exploration.interests(customerId));
   const experiments = new Experiments(office);
   ipcMain.handle(CHANNELS.listExperiments, (_e, query: unknown) => experiments.list(query));
   ipcMain.handle(CHANNELS.getExperiment, (_e, experimentId: unknown) => experiments.get(experimentId));

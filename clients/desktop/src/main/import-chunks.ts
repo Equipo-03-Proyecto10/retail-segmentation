@@ -1,5 +1,5 @@
 import { parseCsv, UnclosedQuote } from './csv';
-import { buildXml, type FieldGroup } from './xml';
+import { buildXml, type Fields } from './xml';
 
 // What the main process does with the file the user chose (F28-02, #871): read it as UTF-8 CSV,
 // check its header against contract version 1, and cut its rows into the numbered chunks of
@@ -94,7 +94,7 @@ export function limitCells(cells: readonly string[]): string[] {
 }
 
 /** The request fields of a chunk, as the transport builds them. */
-export function chunkFields(rows: readonly ImportRow[]): { rows: FieldGroup[] } {
+export function chunkFields(rows: readonly ImportRow[]): { rows: Fields[] } {
   return { rows: rows.map((r) => ({ line: String(r.line), cells: r.cells })) };
 }
 

@@ -478,3 +478,34 @@ for (const as of ['MARKETING', 'STORE_MANAGER', 'ANALYST']) {
     await app.close();
   });
 }
+
+test('the review fits a narrow window and a wide one, and never scrolls the page sideways', async () => {
+  const { app, page } = await launch('ADMIN');
+  await openImports(page);
+  await page.getByTestId('review-17').click();
+  await expect(rejectionRows(page)).toHaveCount(4);
+  for (const [width, height] of [
+    [375, 900],
+    [1440, 900],
+  ] as const) {
+    await app.evaluate(
+      ({ BrowserWindow }, size) => {
+        BrowserWindow.getAllWindows()[0]?.setSize(size[0], size[1]);
+      },
+      [width, height],
+    );
+    await expect.poll(async () => page.evaluate(() => window.innerWidth)).toBeLessThanOrEqual(width);
+    const fits = await page.evaluate(() => ({
+      page: document.documentElement.scrollWidth <= window.innerWidth + 1,
+      // A table may be wider than the window only inside its own scroll area.
+      tables: Array.from(document.querySelectorAll('main table')).every((table) => {
+        const area = table.closest('.scroll') ?? table;
+        return area.getBoundingClientRect().right <= window.innerWidth + 1;
+      }),
+    }));
+    expect(fits).toEqual({ page: true, tables: true });
+    expect(await page.locator('main table').count()).toBeGreaterThan(0);
+    await shot(page, `871-desktop-import-07-${width}px`);
+  }
+  await app.close();
+});

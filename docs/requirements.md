@@ -208,6 +208,9 @@ The web's matrix does not change.
 | Reads of model versions, their publications and training runs | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Segments and rules: read. A version is configuration and fitted statistics with no customer data |
 | Reads of drift reports and alerts | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Segments and rules: read. A report holds shares, rates and counts per segment and variable, and no customer |
 | `POST /v1/model-versions`, `POST /v1/model-trainings`, `POST /v1/model-versions/{version_id}/publications`, `POST /v1/model-versions/{version_id}/rollbacks` | `ADMIN` | Segment run: run (RN-05); a publication changes every customer's segment |
+| Reads of experiments, their results, assignments, conversions and sale attributions (a row of the last three names a customer) | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Campaigns: read (`campaign.read`), as the web's experiment pages today |
+| `POST /v1/experiments`, `POST /v1/experiment-assignments`, `POST /v1/experiments/{experiment_id}/conversions` | `ADMIN`, `MARKETING` | Campaigns: full (`campaign.write`). A plan is frozen when it is written, and an assignment is written once (RN-42) |
+| `GET /v1/experiment-assignments/current` | `ADMIN`, `STORE_MANAGER`, `SALES_ASSOCIATE` | The floor reads one customer's arm in one campaign to decide whether to show a treatment (F27-07, ADR-0060), and nothing else of an experiment |
 | Reads of active promotions | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR`, and the four floor roles, who read active promotions of their assigned stores only | ADR-0060. Other campaign reads keep their roles |
 | Writes of a campaign's audience, budget, eligibility rules and exclusions, and of promotions | `ADMIN`, `MARKETING` | Campaigns: full |
 | `GET /v1/kpi-reports/definitions` | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR`, `STORE_MANAGER`, `COMMERCIAL_SUPERVISOR` | Reports: read. The catalog is configuration with no customer data |

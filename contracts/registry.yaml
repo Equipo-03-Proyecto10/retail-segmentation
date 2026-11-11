@@ -101,6 +101,12 @@ services:
     rn: [RN-66]
     wave: third
     resources: [model-versions, model-trainings, drift-reports, drift-alerts]
+  - name: experimentation
+    port: 5020
+    rule: "An experiment's frame and arms are fixed before measurement, assignment, exposure and conversion are separate append-only facts, a sale is attributed at most once, and an effect is reported only against a control, with its uncertainty (RN-23, RN-24, RN-25, RN-27, RN-42, RN-48, RN-49, RN-67)"
+    rn: [RN-23, RN-24, RN-25, RN-27, RN-42, RN-48, RN-49, RN-67]
+    wave: third
+    resources: [experiments, experiment-assignments, experiment-results, sale-attributions]
   - name: analytics-kpis
     port: 5022
     rule: "A KPI is reported only under its published definition, window and data origin, from `api_*` objects, and only to the roles and stores allowed to read it (RN-68)"

@@ -7,6 +7,7 @@ import { el, errorBox } from './dom';
 import { renderCustomers } from './customers';
 import { renderCheckIns, renderEngagement, renderSales, renderStock } from './floor';
 import { latestRequest } from './latest-request';
+import { renderMigrations } from './migrations';
 import { exportAction } from './export';
 import { guardBridge } from './session';
 import { reconcileRender, type RenderState } from './render-state';
@@ -145,6 +146,7 @@ function renderHome(state: Extract<AppState, { status: 'signed_in' }>): void {
     else if (next === 'sales') renderSales(body, ctx);
     else if (next === 'engagement') renderEngagement(body, ctx);
     else if (next === 'check-ins') renderCheckIns(body, ctx);
+    else if (next === 'migrations') renderMigrations(body, ctx);
     else if (next === 'reports') renderReports(body, { ...ctx, canExport: state.canExport });
     else if (next === 'stores') renderStores(body, ctx);
     else if (next === 'campaigns') renderCampaigns(body, ctx);

@@ -37,6 +37,19 @@ const bridge: MosaiqBridge = {
   transitionCampaign: (campaignId, to, expectedStatus) =>
     ipcRenderer.invoke(CHANNELS.transitionCampaign, campaignId, to, expectedStatus),
   listCampaignLabels: () => ipcRenderer.invoke(CHANNELS.listCampaignLabels),
+  getCampaignAudience: (campaignId) => ipcRenderer.invoke(CHANNELS.getCampaignAudience, campaignId),
+  putCampaignAudience: (campaignId, draft) =>
+    ipcRenderer.invoke(CHANNELS.putCampaignAudience, campaignId, draft),
+  getCampaignBudget: (campaignId) => ipcRenderer.invoke(CHANNELS.getCampaignBudget, campaignId),
+  putCampaignBudget: (campaignId, draft) => ipcRenderer.invoke(CHANNELS.putCampaignBudget, campaignId, draft),
+  getCampaignEligibilityRules: (campaignId) =>
+    ipcRenderer.invoke(CHANNELS.getCampaignEligibilityRules, campaignId),
+  putCampaignEligibilityRules: (campaignId, draft) =>
+    ipcRenderer.invoke(CHANNELS.putCampaignEligibilityRules, campaignId, draft),
+  getCampaignExclusions: (campaignId) => ipcRenderer.invoke(CHANNELS.getCampaignExclusions, campaignId),
+  putCampaignExclusions: (campaignId, draft) =>
+    ipcRenderer.invoke(CHANNELS.putCampaignExclusions, campaignId, draft),
+  previewCampaignAudience: (campaignId) => ipcRenderer.invoke(CHANNELS.previewCampaignAudience, campaignId),
   listAuditEntries: (query) => ipcRenderer.invoke(CHANNELS.listAuditEntries, query),
   getAuditEntry: (auditId) => ipcRenderer.invoke(CHANNELS.getAuditEntry, auditId),
   stockLevels: (query) => ipcRenderer.invoke(CHANNELS.stockLevels, query),

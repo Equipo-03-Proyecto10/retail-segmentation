@@ -1,0 +1,41 @@
+{
+  "campaign_id": 12,
+  "label_code": "LOYAL",
+  "label_holders": 4000,
+  "reasons": [
+    {
+      "code": "not_in_customer_reference",
+      "excluded": 12
+    },
+    {
+      "code": "personalization_withdrawn",
+      "excluded": 40
+    },
+    {
+      "code": "marketing_contact_withdrawn",
+      "excluded": 220
+    },
+    {
+      "code": "excluded_customer",
+      "excluded": 2
+    },
+    {
+      "code": "excluded_label",
+      "excluded": 0
+    },
+    {
+      "code": "registered_after_cutoff",
+      "excluded": 250
+    },
+    {
+      "code": "too_few_purchases",
+      "excluded": 356
+    },
+    {
+      "code": "over_max_customers",
+      "excluded": 0
+    }
+  ],
+  "audience_size": 3120,
+  "as_of": "2026-11-02T15:04:05Z"
+}

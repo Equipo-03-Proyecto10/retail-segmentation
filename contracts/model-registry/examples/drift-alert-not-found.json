@@ -1,0 +1,6 @@
+{
+  "code": "drift_alert_not_found",
+  "message": "The drift alert does not exist.",
+  "correlation_id": "corr-drift-alert-not-found",
+  "details": []
+}

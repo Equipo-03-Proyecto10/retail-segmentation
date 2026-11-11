@@ -1,0 +1,71 @@
+{
+  "experiment_id": 15,
+  "name": "Spring basket booster",
+  "campaign_id": 6,
+  "state": "PLANNED",
+  "design_kind": "CONTROLLED",
+  "assignment_rule": "V1",
+  "data_origin": "OBSERVED",
+  "arms": [
+    {
+      "arm_id": 41,
+      "position": 0,
+      "kind": "CONTROL",
+      "name": "No offer",
+      "treatment_description": "Held back: receives no basket offer."
+    },
+    {
+      "arm_id": 42,
+      "position": 1,
+      "kind": "TREATMENT",
+      "name": "Basket booster",
+      "treatment_description": "Offered 5 percent off a basket of five or more items."
+    }
+  ],
+  "design": {
+    "primary_metric": "CONVERSION",
+    "secondary_metric": "REVENUE_PER_CUSTOMER",
+    "estimator": "DIFFERENCE_OF_PROPORTIONS",
+    "alpha": 0.05,
+    "comparison_alpha": 0.05,
+    "power": 0.80,
+    "minimum_detectable_effect": 0.02,
+    "baseline": 0.10,
+    "baseline_std_dev": null,
+    "required_per_arm": 3839,
+    "smallest_detectable_effect": 0.0537,
+    "allocation": "EQUAL",
+    "conversion_window_days": 14,
+    "settle_days": 7,
+    "starts_on": "2026-11-16",
+    "analysis_at": null
+  },
+  "frame": {
+    "taken_at": "2026-11-06T10:15:00Z",
+    "size": 1200,
+    "digest": "df0ad5683e6f88ceea1a5f42684b9b073043e4094bf33e09d9d6dbe2fbe62b96",
+    "label_code": "LOYAL",
+    "model_version_id": 5,
+    "exclusions": [
+      {
+        "reason": "NO_MARKETING_CONTACT_CONSENT",
+        "count": 96
+      },
+      {
+        "reason": "NO_PERSONALIZATION_CONSENT",
+        "count": 41
+      },
+      {
+        "reason": "OVERLAPPING_EXPERIMENT",
+        "count": 310
+      }
+    ]
+  },
+  "salt": "09848d0652fb9a5ef2acc1efa72eec4c7176b7a729c224c0e23eda3cf5402f6f",
+  "assignment": null,
+  "flags": [
+    "UNDERPOWERED"
+  ],
+  "planned_at": "2026-11-06T10:15:00Z",
+  "planned_by": "11111111-1111-1111-1111-000000000003"
+}

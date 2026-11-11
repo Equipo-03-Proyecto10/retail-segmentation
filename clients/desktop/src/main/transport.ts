@@ -7,7 +7,7 @@ export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
 export interface CallOptions {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
-  /** Path starting with /v1/<resource>; the service is derived from the registry. */
+  /** Path starting with /v<N>/<resource>; the service is derived from the registry, the schema from <N>. */
   path: string;
   /** Root element and fields of the XML request body, when there is one. */
   body?: { root: string; fields: Fields };
@@ -65,19 +65,28 @@ export class Transport {
     private readonly fetchImpl: FetchLike = (url, init) => fetch(url, init),
   ) {}
 
-  serviceOf(path: string): string {
-    const resource = /^\/v1\/([^/?#]+)/.exec(path)?.[1];
-    if (resource === undefined) throw new Error(`not a /v1 path: ${path}`);
+  /** The service that owns a path's resource and the major version the path is in. */
+  route(path: string): { service: string; version: string } {
+    const match = /^\/(v[1-9]\d*)\/([^/?#]+)/.exec(path);
+    if (match === null) throw new Error(`not a versioned path: ${path}`);
+    const version = match[1] as string;
+    const resource = match[2] as string;
     // The one JSON-only operation is never called by this client (E-04).
     if (resource === 'jwks.json') throw new Error('jwks.json is not called by the desktop client');
     const service = serviceForResource(this.bundle, resource);
     if (service === undefined) throw new Error(`no registered service for resource ${resource}`);
-    return service;
+    return { service, version };
+  }
+
+  serviceOf(path: string): string {
+    return this.route(path).service;
   }
 
   async call(options: CallOptions): Promise<CallResult> {
-    const service = this.serviceOf(options.path);
-    const ns = serviceNamespace(this.bundle, service);
+    const { service, version } = this.route(options.path);
+    const ns = serviceNamespace(this.bundle, service, version);
+    // A major whose XSD is not bundled cannot be validated, so it is not called.
+    if (this.bundle.schemas[ns] === undefined) throw new Error(`no bundled schema for ${service} ${version}`);
     const correlationId = randomUUID();
     const headers: Record<string, string> = {
       ...options.headers,

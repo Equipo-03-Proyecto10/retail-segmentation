@@ -37,6 +37,19 @@ const bridge: MosaiqBridge = {
   transitionCampaign: (campaignId, to, expectedStatus) =>
     ipcRenderer.invoke(CHANNELS.transitionCampaign, campaignId, to, expectedStatus),
   listCampaignLabels: () => ipcRenderer.invoke(CHANNELS.listCampaignLabels),
+  getCampaignAudience: (campaignId) => ipcRenderer.invoke(CHANNELS.getCampaignAudience, campaignId),
+  putCampaignAudience: (campaignId, draft) =>
+    ipcRenderer.invoke(CHANNELS.putCampaignAudience, campaignId, draft),
+  getCampaignBudget: (campaignId) => ipcRenderer.invoke(CHANNELS.getCampaignBudget, campaignId),
+  putCampaignBudget: (campaignId, draft) => ipcRenderer.invoke(CHANNELS.putCampaignBudget, campaignId, draft),
+  getCampaignEligibilityRules: (campaignId) =>
+    ipcRenderer.invoke(CHANNELS.getCampaignEligibilityRules, campaignId),
+  putCampaignEligibilityRules: (campaignId, draft) =>
+    ipcRenderer.invoke(CHANNELS.putCampaignEligibilityRules, campaignId, draft),
+  getCampaignExclusions: (campaignId) => ipcRenderer.invoke(CHANNELS.getCampaignExclusions, campaignId),
+  putCampaignExclusions: (campaignId, draft) =>
+    ipcRenderer.invoke(CHANNELS.putCampaignExclusions, campaignId, draft),
+  previewCampaignAudience: (campaignId) => ipcRenderer.invoke(CHANNELS.previewCampaignAudience, campaignId),
   listAuditEntries: (query) => ipcRenderer.invoke(CHANNELS.listAuditEntries, query),
   getAuditEntry: (auditId) => ipcRenderer.invoke(CHANNELS.getAuditEntry, auditId),
   stockLevels: (query) => ipcRenderer.invoke(CHANNELS.stockLevels, query),
@@ -78,6 +91,36 @@ const bridge: MosaiqBridge = {
   kpiDefinitions: () => ipcRenderer.invoke(CHANNELS.kpiDefinitions),
   kpiReport: (query) => ipcRenderer.invoke(CHANNELS.kpiReport, query),
   exportReport: (format) => ipcRenderer.invoke(CHANNELS.exportReport, format),
+  inspectRecommendation: (query) => ipcRenderer.invoke(CHANNELS.inspectRecommendation, query),
+  listRecommendationDecisions: (query) => ipcRenderer.invoke(CHANNELS.listRecommendationDecisions, query),
+  openRecommendationDecision: (decisionId) =>
+    ipcRenderer.invoke(CHANNELS.openRecommendationDecision, decisionId),
+  listDriftReports: (query) => ipcRenderer.invoke(CHANNELS.listDriftReports, query),
+  getDriftReport: (reportId) => ipcRenderer.invoke(CHANNELS.getDriftReport, reportId),
+  listDriftAlerts: (query) => ipcRenderer.invoke(CHANNELS.listDriftAlerts, query),
+  getDriftAlert: (alertId) => ipcRenderer.invoke(CHANNELS.getDriftAlert, alertId),
+  migrationMatrix: (query) => ipcRenderer.invoke(CHANNELS.migrationMatrix, query),
+  listMigrations: (query) => ipcRenderer.invoke(CHANNELS.listMigrations, query),
+  explainMigration: (query) => ipcRenderer.invoke(CHANNELS.explainMigration, query),
+  exploreProfile: (customerId) => ipcRenderer.invoke(CHANNELS.exploreProfile, customerId),
+  exploreSales: (query) => ipcRenderer.invoke(CHANNELS.exploreSales, query),
+  exploreRestrictions: (customerId) => ipcRenderer.invoke(CHANNELS.exploreRestrictions, customerId),
+  exploreConsent: (customerId) => ipcRenderer.invoke(CHANNELS.exploreConsent, customerId),
+  exploreInterests: (customerId) => ipcRenderer.invoke(CHANNELS.exploreInterests, customerId),
+  listExperiments: (query) => ipcRenderer.invoke(CHANNELS.listExperiments, query),
+  getExperiment: (experimentId) => ipcRenderer.invoke(CHANNELS.getExperiment, experimentId),
+  planExperiment: (draft) => ipcRenderer.invoke(CHANNELS.planExperiment, draft),
+  assignExperiment: (experimentId, acknowledgeUnderpowered) =>
+    ipcRenderer.invoke(CHANNELS.assignExperiment, experimentId, acknowledgeUnderpowered),
+  getExperimentResult: (experimentId, basis) =>
+    ipcRenderer.invoke(CHANNELS.getExperimentResult, experimentId, basis),
+  listModelVersions: (query) => ipcRenderer.invoke(CHANNELS.listModelVersions, query),
+  getModelVersion: (versionId) => ipcRenderer.invoke(CHANNELS.getModelVersion, versionId),
+  listTrainings: (query) => ipcRenderer.invoke(CHANNELS.listTrainings, query),
+  getTraining: (trainingId) => ipcRenderer.invoke(CHANNELS.getTraining, trainingId),
+  startTraining: (draft) => ipcRenderer.invoke(CHANNELS.startTraining, draft),
+  publishModelVersion: (versionId, reason) =>
+    ipcRenderer.invoke(CHANNELS.publishModelVersion, versionId, reason),
   chooseImportFile: () => ipcRenderer.invoke(CHANNELS.chooseImportFile),
   startImport: () => ipcRenderer.invoke(CHANNELS.startImport),
   resumeImport: (importId) => ipcRenderer.invoke(CHANNELS.resumeImport, importId),

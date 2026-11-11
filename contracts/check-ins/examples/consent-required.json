@@ -1,0 +1,6 @@
+{
+  "code": "consent_required",
+  "message": "The customer has not granted the consent a visit needs.",
+  "correlation_id": "corr-consent-required",
+  "details": []
+}

@@ -6,8 +6,8 @@ import type { MosaiqBridge } from '../../src/shared/api';
 describe('module groups', () => {
   it('places every module in exactly one group', () => {
     const names = MODULE_GROUPS.flatMap((g) => g.modules.map((m) => m.name));
-    expect(new Set(names).size).toBe(15);
-    expect(names).toHaveLength(15);
+    expect(new Set(names).size).toBe(22);
+    expect(names).toHaveLength(22);
   });
 
   it('shows a role only the modules whose operation it may call, and no empty group', () => {
@@ -18,15 +18,13 @@ describe('module groups', () => {
     ]);
   });
 
-  it('offers the import and data-quality module to the roles that may list imports, which is ADMIN alone', () => {
-    const imports = MODULE_GROUPS.flatMap((g) => g.modules).find((m) => m.name === 'imports');
-    expect(imports).toMatchObject({ label: 'Import and data quality', operation: 'listSaleImports' });
-    expect(visibleGroups(['listSaleImports']).map((g) => [g.id, g.modules.map((m) => m.name)])).toEqual([
-      ['analysis', ['imports']],
+  it('offers K-means to a role that may read model versions, in the analysis group, and to no other', () => {
+    expect(visibleGroups(['listModelVersions']).map((g) => [g.id, g.modules.map((m) => m.name)])).toEqual([
+      ['analysis', ['kmeans']],
       ['administration', ['services']],
     ]);
-    expect(visibleGroups(['listSales']).flatMap((g) => g.modules.map((m) => m.name))).not.toContain(
-      'imports',
+    expect(visibleGroups(['listCampaigns']).flatMap((g) => g.modules.map((m) => m.name))).not.toContain(
+      'kmeans',
     );
   });
 

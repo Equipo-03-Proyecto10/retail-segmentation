@@ -1,5 +1,7 @@
 # Products reads: Flask against its Rust twin
 
+**Superseded in part by [the F15-03 report](products-reads-flask-vs-rust-x86.md) (#751)**, which re-runs the comparison on x86-64 with the 160 MB limit enforced, five calibration passes, PSS and CPU. This report is kept as the first run and as history.
+
 Evidence for F15-02 (#455), under [ADR-0042](../adr/0042-a-bench-only-rust-build-of-the-products-reads-is-compared-under-one-load.md). Two builds of the same contract (`contracts/products/`) answer `GET /v1/products` and `GET /v1/products/{product_id}` under the same load: products-service (Flask, gunicorn, 1 worker, 4 threads) and the bench-only twin (axum, 2 Tokio workers, 3 pooled connections). The raw k6 JSON summaries are in [`bench/results/2026-10-22-pi5/`](../../bench/results/2026-10-22-pi5/); `python3 bench/aggregate.py report bench/results/2026-10-22-pi5` reproduces every table below.
 
 ## Headline

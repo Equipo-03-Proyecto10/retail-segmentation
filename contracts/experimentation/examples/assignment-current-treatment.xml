@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ExperimentAssignment xmlns="https://mosaiq.maxthecoder.online/xml/experimentation/v1">
+  <assignment_id>74211</assignment_id>
+  <experiment_id>18</experiment_id>
+  <campaign_id>8</campaign_id>
+  <customer_id>c0a80001-0000-4000-8000-000000000204</customer_id>
+  <arm_id>62</arm_id>
+  <arm_kind>TREATMENT</arm_kind>
+  <arm_name>Free coffee with any basket</arm_name>
+  <assignment_key>c46257a135c867fa4e7b8237203bf328ae76bbd46a910d963f2147ba2a7f0fcb</assignment_key>
+  <assigned_at>2026-11-05T08:00:00Z</assigned_at>
+  <exposure_count>1</exposure_count>
+  <first_exposed_at>2026-11-07T16:42:10Z</first_exposed_at>
+</ExperimentAssignment>

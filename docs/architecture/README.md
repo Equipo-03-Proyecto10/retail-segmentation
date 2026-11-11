@@ -95,6 +95,8 @@ is **bench-only**: it is drawn outside the services, is never registered, never
 routed by NGINX and never deployed, and connects as `svc_products_bench`
 ([ADR-0042](../adr/0042-a-bench-only-rust-build-of-the-products-reads-is-compared-under-one-load.md),
 exception E-22). The measurement is in
+[`../evidence/products-reads-flask-vs-rust-x86.md`](../evidence/products-reads-flask-vs-rust-x86.md)
+(F15-03, run on x86-64 with the memory limit enforced), after the first run in
 [`../evidence/products-reads-flask-vs-rust.md`](../evidence/products-reads-flask-vs-rust.md).
 
 ## Rendering

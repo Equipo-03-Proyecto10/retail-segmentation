@@ -253,3 +253,21 @@ dl.compact {
 dl.compact dd {
   margin: 0;
 }
+.exploration-facts {
+  display: grid;
+  grid-template-columns: minmax(6rem, max-content) 1fr;
+  gap: 0.15rem 1rem;
+}
+.exploration-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.detail {
+  display: block;
+  font-size: 0.8rem;
+  color: GrayText;
+}
+th[scope='colgroup'] {
+  text-align: center;
+  border-left: 1px solid GrayText;
+}

@@ -9,6 +9,7 @@ import { loadBundle } from './bundle';
 import { Campaigns } from './campaigns';
 import { Catalog } from './catalog';
 import { Customers } from './customers';
+import { Exploration } from './exploration';
 import { Exporter, type ExportEnv } from './exports';
 import { Floor } from './floor';
 import { Reports, type ReportExportEnv } from './reports';
@@ -207,6 +208,14 @@ function start(): void {
   ipcMain.handle(CHANNELS.migrationMatrix, (_e, query: unknown) => migrations.matrix(query));
   ipcMain.handle(CHANNELS.listMigrations, (_e, query: unknown) => migrations.list(query));
   ipcMain.handle(CHANNELS.explainMigration, (_e, query: unknown) => migrations.explain(query));
+  const exploration = new Exploration(office);
+  ipcMain.handle(CHANNELS.exploreProfile, (_e, customerId: unknown) => exploration.profile(customerId));
+  ipcMain.handle(CHANNELS.exploreSales, (_e, query: unknown) => exploration.sales(query));
+  ipcMain.handle(CHANNELS.exploreRestrictions, (_e, customerId: unknown) =>
+    exploration.restrictions(customerId),
+  );
+  ipcMain.handle(CHANNELS.exploreConsent, (_e, customerId: unknown) => exploration.consent(customerId));
+  ipcMain.handle(CHANNELS.exploreInterests, (_e, customerId: unknown) => exploration.interests(customerId));
   office.onStateChange((state) => {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(CHANNELS.stateChanged, state);
   });

@@ -5,6 +5,7 @@ import { renderCampaigns } from './campaigns';
 import { renderCategories, renderProducts } from './catalog';
 import { el, errorBox } from './dom';
 import { renderCustomers } from './customers';
+import { renderExploration } from './exploration';
 import { renderCheckIns, renderEngagement, renderSales, renderStock } from './floor';
 import { latestRequest } from './latest-request';
 import { renderMigrations } from './migrations';
@@ -151,6 +152,7 @@ function renderHome(state: Extract<AppState, { status: 'signed_in' }>): void {
     else if (next === 'stores') renderStores(body, ctx);
     else if (next === 'campaigns') renderCampaigns(body, ctx);
     else if (next === 'customers') renderCustomers(body, ctx);
+    else if (next === 'exploration') renderExploration(body, ctx);
     else if (next === 'users') renderUsers(body, ctx);
     else if (next === 'audit') renderAudit(body, ctx);
     else if (next === 'transfer') renderTransfer(body, ctx);

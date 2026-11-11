@@ -337,6 +337,7 @@ test('screens and controls follow each role', async () => {
   ({ app, page } = await launch('ANALYST'));
   expect(await nav(page)).toEqual([
     'customers',
+    'exploration',
     'sales',
     'engagement',
     'migrations',

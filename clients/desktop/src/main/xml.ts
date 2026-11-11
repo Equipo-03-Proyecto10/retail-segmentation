@@ -89,6 +89,12 @@ const REPEATED = new Set([
   'SegmentMigrations.SegmentMigration.responsible_variables',
   'SegmentMigrationExplanation.migration.responsible_variables',
   'SegmentMigrationExplanation.MigrationMeasure',
+  'SaleReversals.SaleReversal',
+  'RestrictionProfile.restricted_channel_ids',
+  'RestrictionProfile.restricted_category_ids',
+  'ConsentState.purposes',
+  'InterestProfile.declared_category_ids',
+  'InterestProfile.inferred_interests',
 ]);
 /** Child elements that repeat wherever they appear: error details, sale lines, summary groups, event history, check-in reviews, a campaign's allowed transitions. */
 const REPEATED_CHILDREN = new Set([

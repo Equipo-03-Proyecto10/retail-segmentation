@@ -81,6 +81,11 @@ const bridge: MosaiqBridge = {
   migrationMatrix: (query) => ipcRenderer.invoke(CHANNELS.migrationMatrix, query),
   listMigrations: (query) => ipcRenderer.invoke(CHANNELS.listMigrations, query),
   explainMigration: (query) => ipcRenderer.invoke(CHANNELS.explainMigration, query),
+  exploreProfile: (customerId) => ipcRenderer.invoke(CHANNELS.exploreProfile, customerId),
+  exploreSales: (query) => ipcRenderer.invoke(CHANNELS.exploreSales, query),
+  exploreRestrictions: (customerId) => ipcRenderer.invoke(CHANNELS.exploreRestrictions, customerId),
+  exploreConsent: (customerId) => ipcRenderer.invoke(CHANNELS.exploreConsent, customerId),
+  exploreInterests: (customerId) => ipcRenderer.invoke(CHANNELS.exploreInterests, customerId),
 };
 
 contextBridge.exposeInMainWorld('mosaiq', bridge);

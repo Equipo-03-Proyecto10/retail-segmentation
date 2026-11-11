@@ -24,6 +24,9 @@
 - A product is retired by `is_active = false`, never deleted: no DELETE grant. `image_path` stays web-managed and is read-only here.
 - Commercial status (`active`, `paused`, `discontinued`) and `is_active` never disagree: `is_active` is true exactly when the status is `active`. Both `PATCH` operations keep them in step in one transaction, and `product_ref_v1` still publishes only `is_active`.
 - `GET /v1/products?ids=` is a batch read of at most 50 ids, so clients avoid one lookup per product.
+- The status and `is_active` are kept in step by the database, in both directions and whoever writes: a status write sets `is_active`, and a change of `is_active` (the web's, or `PATCH /v1/products/{id}`) sets the status to `active` or `discontinued`, leaving a `paused` product paused. A product with no status row reads from `is_active`. Sales refuses a paused or discontinued product as it refuses an inactive one (RN-37), because `api_products.product_ref_v1` publishes `is_active = false`.
+- Attributes (1 to 20 distinct names per product) are replaced as a set; the last cannot be removed through the service. A barcode is a GTIN-8, -12, -13 or -14 with a valid check digit, unique among products (409 `barcode_taken`, 422 `invalid_barcode`); it is set or replaced, never cleared. `photo_url` is read-only: `PRODUCTS_PHOTO_BASE_URL` joined to the web-managed `image_path`.
+- A relation is directed and replaced one kind at a time (at most 50 existing products, never the product itself). Every write to the four tables is audited under its table's name with the caller, and published on the changed stream.
 
 ## Endpoints
 
@@ -47,6 +50,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Object | Kind | Access | Notes |
 |---|---|---|---|
 | `product` | Table (`public`) | S+W: SELECT, INSERT, UPDATE of `name`, `category_id`, `list_price`, `is_active`; no DELETE | `image_path` is web-managed; the web is a legacy co-writer (E-09) |
+| `products.product_status`, `products.product_attribute`, `products.product_barcode`, `products.product_relation` | Tables (`products`) | S: SELECT, INSERT, and UPDATE of `commercial_status`, `value` and `barcode`; DELETE on attributes and relations only. `definer_products` writes the status from the `is_active` trigger | The commercial details (F21-10). Seeded with 40, 120, 40 and 50 rows; audited by `fn_audit`; 4NF argument in `docs/data-model.md` §2.4 |
 | `products_events.outbox` | Table (outbox) | SELECT, UPDATE of `relayed_at`, DELETE (7-day purge) | Filled by `definer_products`; seed-exempt runtime state |
 
 ## Database contracts
@@ -60,7 +64,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 | Direction | Stream | Captured from / consumer group | Effect |
 |---|---|---|---|
-| Produces | `stream:products.v1.changed` | captured from `product` | Own cache and recommendations' cache |
+| Produces | `stream:products.v1.changed` | captured from `product` and the four `products.*` detail tables | Own cache and recommendations' cache |
 | Consumes | `stream:products.v1.changed` | group `products` | Invalidates its own cache, including web edits and hard deletes |
 
 ## Redis keys
@@ -82,6 +86,11 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | 404 | `product_not_found` | No product has the given `product_id` |
 | 409 | `product_id_taken` | A `POST` supplies a `product_id` that already exists, as the web's catalog form does |
 | 422 | `too_many_ids` | `ids` names more than 50 products |
+| 409 | `barcode_taken` | Another product already has the barcode (unique violation) |
+| 422 | `invalid_barcode` | The barcode's check digit is wrong |
+| 422 | `self_relation` | `related_product_ids` contains the product itself |
+| 422 | `unknown_related_product` | A related product does not exist |
+| 404 | `not_found` | `relation_kind` is neither `substitute` nor `complement` |
 
 ## Accepted exceptions
 
@@ -128,6 +137,12 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 - **Why it is acceptable:** A fair comparison needs the same contract under the same load. Two services doing different work cannot be compared.
 - **Guard:** It is never registered, routed, deployed or counted, so no endpoint is served by two deployables. It connects as `svc_products_bench` with SELECT on `public.product` only.
 - **Decided in:** [ADR-0042](../adr/0042-a-bench-only-rust-build-of-the-products-reads-is-compared-under-one-load.md) (Decision). Register: [E-22](./README.md#e-22--a-bench-only-rust-build-serves-the-same-read-endpoints-as-products).
+
+## Configuration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PRODUCTS_PHOTO_BASE_URL` | `http://localhost:5000/admin/products/image/` | The web's photo route; `photo_url` is this plus `image_path`. Absolute http(s) URL or the service refuses to start. Set the web's public address in the instance's `products.env` |
 
 ## Failure behaviour
 

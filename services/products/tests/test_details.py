@@ -853,9 +853,12 @@ def test_the_service_role_cannot_delete_a_status_or_clear_a_barcode(
     service_dsn,
 ) -> None:
     with psycopg.connect(service_dsn, autocommit=True) as connection:
-        for table in ("product_status", "product_barcode"):
+        for statement in (
+            "DELETE FROM products.product_status",
+            "DELETE FROM products.product_barcode",
+        ):
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
-                connection.execute(f"DELETE FROM products.{table}")  # noqa: S608
+                connection.execute(statement)
 
 
 def test_the_sync_function_is_a_pinned_definer_nobody_can_call(owner) -> None:
@@ -875,18 +878,19 @@ def test_deleting_a_product_takes_its_details_with_it(client, owner) -> None:
     patch_details(
         client,
         one,
-        {"barcode": gtin13(5), "attributes": [{"name": "color", "value": "red"}]},
+        {
+            "commercial_status": "paused",
+            "barcode": gtin13(5),
+            "attributes": [{"name": "color", "value": "red"}],
+        },
     )
     put_relations(client, two, "substitute", [one])
     owner.execute("DELETE FROM public.product WHERE product_id = %s", (one,))
-    for table, column in (
-        ("product_status", "product_id"),
-        ("product_attribute", "product_id"),
-        ("product_barcode", "product_id"),
-        ("product_relation", "related_product_id"),
+    for query in (
+        "SELECT count(*) FROM products.product_status WHERE product_id = %s",
+        "SELECT count(*) FROM products.product_attribute WHERE product_id = %s",
+        "SELECT count(*) FROM products.product_barcode WHERE product_id = %s",
+        "SELECT count(*) FROM products.product_relation WHERE related_product_id = %s",
     ):
-        count = owner.execute(
-            f"SELECT count(*) FROM products.{table} WHERE {column} = %s",  # noqa: S608
-            (one,),
-        ).fetchone()
-        assert count == (0,), table
+        count = owner.execute(query, (one,)).fetchone()
+        assert count == (0,), query

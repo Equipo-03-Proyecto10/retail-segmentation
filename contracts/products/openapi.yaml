@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: products-service
-  version: 1.2.0
+  version: 1.2.1
   description: >-
     Owns the product catalog rule: a product has a unique SKU, a non-negative
     two-decimal list price, exactly one existing category, and is retired by

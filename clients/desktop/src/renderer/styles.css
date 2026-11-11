@@ -294,6 +294,22 @@ dl.facts dd {
   font-weight: 700;
   margin: 0.5rem 0;
 }
+/* Conversion analysis: the design's warnings stay in view while the result scrolls. */
+.design-warnings {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.5rem 0.75rem;
+  border: 2px solid #8a6d00;
+  background: Canvas;
+}
+.caveat {
+  margin: 0.25rem 0;
+  font-weight: 600;
+}
+.pending {
+  font-weight: 600;
+}
 progress {
   width: 100%;
 }

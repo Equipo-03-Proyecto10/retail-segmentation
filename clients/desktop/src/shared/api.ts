@@ -889,6 +889,128 @@ export interface ExperimentDraft {
   arms: ExperimentArmDraft[];
 }
 
+// ---------- conversion analysis (F28-11, #880) ----------
+
+/** PRIMARY is the result stored once at the analysis instant; RE_READ is computed at the request and replaces nothing. */
+export type ResultBasis = 'PRIMARY' | 'RE_READ';
+
+/** PENDING shows counts only; INVALID withholds the estimate because the sample ratio check failed. */
+export type ResultStatus = 'PENDING' | 'COMPLETE' | 'INVALID';
+
+/** EFFECT is a treatment against the control; TREATMENT_DIFFERENCE is one treatment against another and never an effect. */
+export type ComparisonLabel = 'EFFECT' | 'TREATMENT_DIFFERENCE';
+
+export type MetricRole = 'PRIMARY' | 'SECONDARY';
+
+/** INCONCLUSIVE is a non-significant result of an underpowered experiment: never "no effect" (ADR-0068). */
+export type Conclusion = 'SIGNIFICANT' | 'NOT_SIGNIFICANT' | 'INCONCLUSIVE';
+
+/** One arm over every assigned customer, exposed or not (intent to treat). Decimals stay as the service sent them. */
+export interface ArmOutcomeView {
+  arm_id: number;
+  kind: ArmKind;
+  name: string;
+  assigned: number;
+  analysed: number;
+  exposed: number;
+  converted: number;
+  /** No conversion yet, and the window is still open. */
+  pending: number;
+  not_converted: number;
+  conversion_rate: string;
+  /** Descriptive and non-causal: the exposed are a self-selected part of their arm. Absent for a control. */
+  exposed_conversion_rate?: string;
+  net_revenue: string;
+  revenue_per_customer: string;
+  revenue_std_dev: string;
+}
+
+export interface RevenueEffectView {
+  amount: string;
+  lower: string;
+  upper: string;
+}
+
+export interface BootstrapView {
+  resamples: number;
+  lower: string;
+  upper: string;
+  agrees: boolean;
+}
+
+export interface ComparisonView {
+  label: ComparisonLabel;
+  metric: ExperimentMetric;
+  role: MetricRole;
+  arm_id: number;
+  against_arm_id: number;
+  difference: string;
+  lower: string;
+  upper: string;
+  confidence_level: string;
+  test: 'POOLED_Z' | 'WELCH_T';
+  p_value: string;
+  degrees_of_freedom?: string;
+  /** On the primary comparison only. */
+  conclusion?: Conclusion;
+  /** On the primary comparison of an EFFECT whose metric is revenue per customer. */
+  incremental_revenue?: RevenueEffectView;
+  bootstrap?: BootstrapView;
+}
+
+export interface EffectRefusalView {
+  code: string;
+  message: string;
+}
+
+export interface ArmAttributionView {
+  arm_id: number;
+  attributed_sales: number;
+  attributed_customers: number;
+  attributed_revenue: string;
+}
+
+/** Commercial credit for sales, counted once. It is not an effect (ADR-0069). */
+export interface AttributionView {
+  label: 'ATTRIBUTION';
+  window_days: number;
+  arms: ArmAttributionView[];
+  attributed_sales: number;
+  attributed_revenue: string;
+  unattributed_conversions: number;
+  as_of: string;
+}
+
+export interface AssumptionView {
+  /** An open vocabulary. */
+  code: string;
+  statement: string;
+}
+
+/** A result with the design it was planned under. Attribution and effect are separate sections and are never merged. */
+export interface ExperimentResultView {
+  experiment_id: number;
+  campaign_id?: number;
+  basis: ResultBasis;
+  status: ResultStatus;
+  as_of: string;
+  /** The share of the conversion window elapsed at as_of, as sent. */
+  elapsed_share: string;
+  data_origin: ExperimentDataOrigin;
+  /** True when the experiment is not OBSERVED or a conversion links a seeded sale: label the figures Synthetic. */
+  synthetic: boolean;
+  design_kind: ExperimentDesignKind;
+  design: ExperimentDesignView;
+  arms: ArmOutcomeView[];
+  /** Absent while PENDING. */
+  checks?: ExperimentChecksView;
+  comparisons: ComparisonView[];
+  effect_refusal?: EffectRefusalView;
+  attribution?: AttributionView;
+  assumptions: AssumptionView[];
+  flags: ExperimentFlag[];
+}
+
 // ---------- K-means models (F28-05, #874) ----------
 
 export type ModelMethod = 'RFM_RULES' | 'KMEANS';
@@ -1104,6 +1226,7 @@ export interface MosaiqBridge {
   getExperiment(experimentId: number): Promise<Result<ExperimentView>>;
   planExperiment(draft: ExperimentDraft): Promise<Result<ExperimentView>>;
   assignExperiment(experimentId: number, acknowledgeUnderpowered: boolean): Promise<Result<AssignmentView>>;
+  getExperimentResult(experimentId: number, basis: ResultBasis): Promise<Result<ExperimentResultView>>;
   listModelVersions(query: ModelVersionQuery): Promise<Result<Paged<ModelVersionView>>>;
   getModelVersion(versionId: number): Promise<Result<ModelVersionView>>;
   listTrainings(query: TrainingQuery): Promise<Result<Paged<TrainingView>>>;
@@ -1185,6 +1308,7 @@ export const CHANNELS = {
   getExperiment: 'mosaiq:get-experiment',
   planExperiment: 'mosaiq:plan-experiment',
   assignExperiment: 'mosaiq:assign-experiment',
+  getExperimentResult: 'mosaiq:get-experiment-result',
   listModelVersions: 'mosaiq:list-model-versions',
   getModelVersion: 'mosaiq:get-model-version',
   listTrainings: 'mosaiq:list-trainings',

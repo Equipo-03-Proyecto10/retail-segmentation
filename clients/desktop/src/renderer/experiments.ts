@@ -1,6 +1,7 @@
 import type {
   ArmKind,
-  AssignmentChecksView,
+  ExperimentChecksView,
+  ExperimentDesignView,
   AssignmentView,
   CampaignView,
   ExperimentDataOrigin,
@@ -68,7 +69,7 @@ const SIZES: [string, string][] = [
 
 const today = (): string => new Date().toISOString().slice(0, 10);
 
-function facts(rows: [string, string, string?][]): HTMLElement {
+export function facts(rows: [string, string, string?][]): HTMLElement {
   const list = el('dl', { cls: 'facts' });
   for (const [name, value, id] of rows) {
     const dd = el('dd', { text: value });
@@ -78,7 +79,7 @@ function facts(rows: [string, string, string?][]): HTMLElement {
   return list;
 }
 
-function table(headers: string[], rows: string[][], id: string): HTMLElement {
+export function table(headers: string[], rows: string[][], id: string): HTMLElement {
   const head = el('tr');
   for (const h of headers) head.append(el('th', { text: h }));
   const body = el('tbody');
@@ -138,8 +139,7 @@ function sampleSizeBlock(e: ExperimentView): HTMLElement {
   return testid(el('div', {}, ...parts), 'sample-size');
 }
 
-function designFacts(e: ExperimentView): HTMLElement {
-  const d = e.design;
+export function designFacts(d: ExperimentDesignView): HTMLElement {
   const rows: [string, string, string?][] = [
     ['Primary metric', METRIC_TEXT[d.primary_metric], 'design-primary-metric'],
   ];
@@ -172,7 +172,10 @@ function designFacts(e: ExperimentView): HTMLElement {
   return testid(facts(rows), 'design-facts');
 }
 
-function balanceTable(c: AssignmentChecksView, arms: ExperimentView['arms']): HTMLElement {
+export function balanceTable(
+  c: ExperimentChecksView,
+  arms: readonly { arm_id: number; name: string }[],
+): HTMLElement {
   if (c.balance.length === 0)
     return testid(el('p', { text: 'No balance measure was stored.' }), 'balance-none');
   return testid(
@@ -438,7 +441,7 @@ export function renderExperiments(host: HTMLElement, ctx: ScreenContext): void {
       );
     }
     parts.push(summary, el('h4', { text: 'Sample size' }), sampleSizeBlock(e));
-    parts.push(el('h4', { text: 'Design' }), designFacts(e));
+    parts.push(el('h4', { text: 'Design' }), designFacts(e.design));
     parts.push(
       el('h4', { text: 'Arms' }),
       table(

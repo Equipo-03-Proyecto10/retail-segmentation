@@ -86,6 +86,8 @@ const bridge: MosaiqBridge = {
   planExperiment: (draft) => ipcRenderer.invoke(CHANNELS.planExperiment, draft),
   assignExperiment: (experimentId, acknowledgeUnderpowered) =>
     ipcRenderer.invoke(CHANNELS.assignExperiment, experimentId, acknowledgeUnderpowered),
+  getExperimentResult: (experimentId, basis) =>
+    ipcRenderer.invoke(CHANNELS.getExperimentResult, experimentId, basis),
   listModelVersions: (query) => ipcRenderer.invoke(CHANNELS.listModelVersions, query),
   getModelVersion: (versionId) => ipcRenderer.invoke(CHANNELS.getModelVersion, versionId),
   listTrainings: (query) => ipcRenderer.invoke(CHANNELS.listTrainings, query),

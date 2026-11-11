@@ -113,6 +113,12 @@ const REPEATED = new Set([
   'Experiment.assignment.checks.balance',
   'AssignmentSummary.arms',
   'AssignmentSummary.checks.balance',
+  'ExperimentResult.arms',
+  'ExperimentResult.checks.balance',
+  'ExperimentResult.comparisons',
+  'ExperimentResult.attribution.arms',
+  'ExperimentResult.assumptions',
+  'ExperimentResult.flags',
 ]);
 /** Child elements that repeat wherever they appear: error details, sale lines, summary groups, event history, check-in reviews, a campaign's allowed transitions. */
 const REPEATED_CHILDREN = new Set([

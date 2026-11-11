@@ -115,6 +115,7 @@ test('window is locked down', async () => {
     'getCheckIn',
     'getCustomer',
     'getExperiment',
+    'getExperimentResult',
     'getModelVersion',
     'getPreferences',
     'getProduct',

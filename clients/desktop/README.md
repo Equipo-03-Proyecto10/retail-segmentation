@@ -65,6 +65,7 @@ being ignored. `MOSAIQ_DESKTOP_CONFIG_DIR` overrides the directory (the window t
   - audit trail: `listAuditEntries`, `getAuditEntry` (read only).
   - migration matrix: `migrationMatrix`, `listMigrations`, `explainMigration` (read only).
   - A/B experiments: `listExperiments`, `getExperiment`, `planExperiment`, `assignExperiment`.
+  - conversion analysis: `getExperimentResult` (read only).
   - K-means models: `listModelVersions`, `getModelVersion`, `listTrainings`, `getTraining`,
     `startTraining`, `publishModelVersion`.
 
@@ -261,6 +262,52 @@ the floor's `GET /v1/experiment-assignments/current`, and the sale attributions.
 The window tests (`tests/window/experiments.spec.ts`) answer with the recorded examples of
 `contracts/experimentation/` and `contracts/campaigns/`, read from disk, and keep whether the plan was
 assigned, so `underpowered_not_acknowledged` arises from what is stored.
+
+## Conversion analysis (F28-11)
+
+Through experimentation-service (`contracts/experimentation/`, ADR-0068 and ADR-0069). The **Conversion
+analysis** screen is shown to `ADMIN`, `ANALYST`, `MARKETING` and `AUDITOR`, by the `x-mosaiq-roles` of
+`getExperimentResult`; the main process checks the operation before the call, so a forced read from another
+role is `forbidden_role` and nothing is sent. Nothing is written: the module has no write control and the
+bridge has no write for it. The operation is published ahead of its implementation (ADR-0073).
+
+- **Open a result.** The picker lists the experiments that are `ASSIGNED` or `ANALYZED` (one call each,
+  `GET /v1/experiments?state=`): a `PLANNED` experiment has no result. The reading is the stored primary
+  result, or "Re-read as of now" (`basis=RE_READ`), which says it replaces nothing. Both are
+  `GET /v1/experiment-results/{experiment_id}`.
+- **Each arm, and the pending customers.** A table of each arm's assigned, analysed, exposed, converted,
+  **pending** and not-converted customers, its conversion rate (the exposed rate is labelled descriptive and
+  not causal), net revenue and revenue per customer. A sentence states the pending customers of each arm:
+  they have not bought yet, their window is open, and they are counted in the arm's customers. Every
+  figure is as the service sent it; a fraction is written as a percentage by moving its decimal point.
+- **The difference and its interval.** Each comparison shows the difference, its interval at the service's
+  confidence level, the p-value, the test (with the bootstrap beside a Welch interval, and a warning when it
+  disagrees) and the conclusion. A rate difference is also written in percentage points. A result that is
+  not read yet (`PENDING`) shows counts and the share of the window elapsed and no interval, p-value or
+  direction; one whose sample ratio check failed (`INVALID`) says its estimate is withheld.
+- **An effect only against a control.** A comparison is an **Effect against the control** (and money of
+  that effect, "Incremental revenue", with its interval) only when the design is controlled, its arms hold
+  exactly one control and the comparison is a treatment against it. Two treatments with no control show a
+  **Difference between treatments**, never the words effect, incremental or uplift, and say that no effect
+  can be claimed, with the service's own refusal. An `EFFECT` the service sends without a control is not
+  shown and is reported as a contract problem. A non-significant result of an underpowered plan reads
+  "inconclusive", never "no effect".
+- **Attribution apart.** Attribution is a section of its own, every figure labelled Attribution, saying it
+  is commercial credit and not a measure of what the campaign changed. It never uses the words incremental,
+  uplift or caused, and its figures are not in the effect table.
+- **The warnings of the design stay next to the result.** A bar under the title lists them (what the design
+  flagged, no control, not read yet, withheld, inconclusive, Synthetic, re-read) and stays in view while the
+  result scrolls; each is written out below the facts, repeated above each comparison table, and carried on
+  every arm row. The design values and the checks (sample ratio and balance) the result was planned and read
+  under are on the same screen.
+- **Export.** The shared CSV export (ADR-0074) writes the first table, the arms table. Each of its rows
+  carries the data origin (Synthetic or Observed), the instant the net sales were read and the design
+  warnings, so the file says what it is: observed counts, neither an effect nor attribution. The
+  comparisons and attribution are not exported; ADR-0074 leaves the labelled experiment report to the web.
+
+The window tests (`tests/window/conversion.spec.ts`) answer with the recorded results of
+`contracts/experimentation/` (complete, revenue, inconclusive, pending, invalid and offer comparison), read
+from disk.
 
 ## Audit trail (F16-09)
 

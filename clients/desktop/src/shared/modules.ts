@@ -14,6 +14,7 @@ export type ModuleName =
   | 'stores'
   | 'campaigns'
   | 'experiments'
+  | 'conversion'
   | 'customers'
   | 'users'
   | 'audit'
@@ -44,6 +45,7 @@ export const MODULE_GROUPS: readonly ModuleGroup[] = [
       { name: 'check-ins', label: 'Check-ins', operation: 'listCheckIns' },
       { name: 'migrations', label: 'Migration matrix', operation: 'getSegmentMigrationMatrix' },
       { name: 'reports', label: 'Reports', operation: 'listKpiDefinitions' },
+      { name: 'conversion', label: 'Conversion analysis', operation: 'getExperimentResult' },
       { name: 'kmeans', label: 'K-means', operation: 'listModelVersions' },
     ],
   },
@@ -117,6 +119,9 @@ export const EXPERIMENT_OPERATIONS = {
   plan: 'planExperiment',
   assign: 'assignExperiment',
 } as const;
+
+/** The operation the conversion analysis module calls (experimentation x-mosaiq-roles); it is checked before the call. */
+export const CONVERSION_OPERATIONS = { result: 'getExperimentResult' } as const;
 
 /** Error codes that mean the session is over; the user goes back to sign-in. */
 export const SESSION_ENDED_CODES: readonly string[] = [

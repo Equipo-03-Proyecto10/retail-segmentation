@@ -78,6 +78,9 @@ const bridge: MosaiqBridge = {
   kpiDefinitions: () => ipcRenderer.invoke(CHANNELS.kpiDefinitions),
   kpiReport: (query) => ipcRenderer.invoke(CHANNELS.kpiReport, query),
   exportReport: (format) => ipcRenderer.invoke(CHANNELS.exportReport, format),
+  migrationMatrix: (query) => ipcRenderer.invoke(CHANNELS.migrationMatrix, query),
+  listMigrations: (query) => ipcRenderer.invoke(CHANNELS.listMigrations, query),
+  explainMigration: (query) => ipcRenderer.invoke(CHANNELS.explainMigration, query),
 };
 
 contextBridge.exposeInMainWorld('mosaiq', bridge);

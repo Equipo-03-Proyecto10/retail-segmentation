@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ExperimentRequest xmlns="https://mosaiq.maxthecoder.online/xml/experimentation/v1">
+  <name>Loyalty booster, two offers against control</name>
+  <campaign_id>5</campaign_id>
+  <primary_metric>REVENUE_PER_CUSTOMER</primary_metric>
+  <starts_on>2026-09-14</starts_on>
+  <conversion_window_days>21</conversion_window_days>
+  <minimum_detectable_effect>1.50</minimum_detectable_effect>
+  <alpha>0.05</alpha>
+  <power>0.80</power>
+  <data_origin>OBSERVED</data_origin>
+  <arms>
+    <kind>CONTROL</kind>
+    <name>No offer</name>
+    <treatment_description>Held back: receives no loyalty offer.</treatment_description>
+  </arms>
+  <arms>
+    <kind>TREATMENT</kind>
+    <name>Double points</name>
+    <treatment_description>Earns double loyalty points for 21 days.</treatment_description>
+  </arms>
+  <arms>
+    <kind>TREATMENT</kind>
+    <name>Free gift</name>
+    <treatment_description>Receives a free gift on the next purchase.</treatment_description>
+  </arms>
+</ExperimentRequest>

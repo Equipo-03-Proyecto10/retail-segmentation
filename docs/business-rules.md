@@ -1308,6 +1308,49 @@ is append-only. The contract of F22-10 (#805) specifies versions, training runs,
 metrics, publications and rollbacks; drift reports and alerts follow with F23. ·
 #743
 
+### RN-67 — An experiment is frozen before it assigns anyone, a sale is attributed to one campaign at most, and an effect is claimed only against a control, with its interval
+An experiment is a frozen plan. Before anyone is assigned, one transaction stores
+its frame (the eligible customers at one recorded instant), its primary metric,
+estimator, alpha, power, minimum detectable effect, baseline, customers per arm,
+allocation and conversion window, and a salt
+([ADR-0068](adr/0068-an-experiment-is-planned-and-frozen-before-assignment-and-claims-an-effect-only-against-a-control.md)).
+Nothing in it changes afterwards, and its arms are fixed (RN-24, RN-49). The
+assignment is a function of that plan that anyone can recompute, is written once
+for the whole frame and never rewritten (RN-23, RN-42), and a customer is
+assigned in at most one experiment whose period overlaps. Assignment, exposure
+and conversion are separate append-only facts (RN-27,
+[ADR-0027](adr/0027-experiment-exposures-are-treatment-only-and-append-only.md),
+[ADR-0050](adr/0050-experiment-conversions-are-append-only-for-the-application-role.md)),
+and the control is never exposed. Outcomes are intent to treat, over every
+assigned customer, and net of reversals
+([ADR-0062](adr/0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md)).
+The primary result is computed once, at the analysis instant, and a later read is
+labelled as of its own time.
+
+A sale is attributed to at most one campaign
+([ADR-0069](adr/0069-a-sale-is-attributed-to-one-campaign-at-most-and-only-the-difference-against-control-is-incremental.md)):
+a recorded conversion of a treatment assignment, with a recorded exposure before
+the sale, inside the experiment's own conversion window. The latest eligible
+exposure holds it, a tie going to the lower assignment id, and the holder is never
+reassigned or reopened, even when the sale is later reversed. Attribution is
+commercial. It is not a claim that the campaign caused the sale.
+
+An effect, an incremental amount or an uplift is stated only as a treatment's
+difference against a control, with its interval and its test, over every assigned
+customer. An experiment with no control compares two offers and states no effect.
+An underpowered experiment is flagged, and a non-significant result of one is
+inconclusive, never "no effect". Every report, export and contract field names
+whether it shows attribution or effect.
+
+**Enforced:** experimentation (planned), ADR-0059, ADR-0068 and ADR-0069 — the
+plan, assignments, conversions and attributions are written once and never
+rewritten, and a unique constraint leaves one holder per sale (F25-12). The
+contract of F25-06 (#837) specifies experiments, assignments, conversions,
+attributions and results in `contracts/experimentation/`, and a contract test
+fails if an attribution field says incremental or uplift, or if a field that
+carries an effect has no interval. RN-23, RN-24, RN-27, RN-48 and RN-49 stay as
+the web enforces them until the implementing stories rewrite them. · #746, #837
+
 ### RN-68 — A KPI is reported only under its published definition, window and data origin, and only to the roles and stores allowed to read it
 A KPI has one published definition, one window and one data origin, and a report
 names the version of the definition it follows, so a figure cannot mean two
@@ -1419,6 +1462,9 @@ migration-matrix and migration-explanation rules. RN-65 belongs to rfm-engine
 
 migration-matrix and migration-explanation rules. RN-68 belongs to analytics-kpis (#747) and waits on its
 implementation story, F26-02 (#847).
+
+RN-67 belongs to experimentation (#746) and waits on its stand-up story, F25-07
+(#838).
 
 RN-72 belongs to check-ins (#800) and waits on its implementation story, F21-23
 (#801).

@@ -8,6 +8,7 @@ export type ModuleName =
   | 'sales'
   | 'engagement'
   | 'check-ins'
+  | 'migrations'
   | 'reports'
   | 'stores'
   | 'campaigns'
@@ -40,6 +41,7 @@ export const MODULE_GROUPS: readonly ModuleGroup[] = [
       { name: 'sales', label: 'Sales', operation: 'listSales' },
       { name: 'engagement', label: 'Engagement', operation: 'getEngagementSummary' },
       { name: 'check-ins', label: 'Check-ins', operation: 'listCheckIns' },
+      { name: 'migrations', label: 'Migration matrix', operation: 'getSegmentMigrationMatrix' },
       { name: 'reports', label: 'Reports', operation: 'listKpiDefinitions' },
     ],
   },
@@ -98,6 +100,13 @@ export const KPI_OPERATIONS: Readonly<Record<string, string>> = {
   'recommendation-performance': 'getRecommendationPerformanceReport',
   'campaign-performance': 'getCampaignPerformanceReport',
 };
+
+/** The read operations the migration matrix module calls (segments x-mosaiq-roles); each is checked before its call. */
+export const MIGRATION_OPERATIONS = {
+  matrix: 'getSegmentMigrationMatrix',
+  list: 'listSegmentMigrations',
+  explanation: 'getSegmentMigrationExplanation',
+} as const;
 
 /** The operations the A/B experiment module calls (experimentation x-mosaiq-roles); each is checked before its call. */
 export const EXPERIMENT_OPERATIONS = {

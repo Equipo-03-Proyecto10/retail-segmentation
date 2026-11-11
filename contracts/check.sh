@@ -274,7 +274,7 @@ PY
   # none of them would be checked.
   for later in contracts/"$service"/examples/*/; do
     later=${later%/}
-    if [[ ! ${later##*/} =~ ^v([2-9][0-9]*)$ ]]; then
+    if [[ ! ${later##*/} =~ ^v([2-9]|[1-9][0-9]+)$ ]]; then
       fail "unexpected examples directory: $later"
       continue
     fi

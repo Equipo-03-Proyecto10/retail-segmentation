@@ -61,10 +61,10 @@ services:
     resources: [segments, segment-assignments, segment-migrations]
   - name: recommendations
     port: 5011
-    rule: "Recommend active, in-stock products not already bought, matching a stated signal, with reasons, or report why nothing qualifies (RN-40)"
+    rule: "Recommend only products that are available at the reference store and channel (the one the caller names, else the customer's usual store), not already bought and matching a stated signal, with reasons, marking any alternative and recording and reading back the explanation of each decision, or report why nothing qualifies (RN-40, ADR-0067)"
     rn: [RN-40]
     wave: core
-    resources: [recommendations]
+    resources: [recommendations, recommendation-decisions]
   - name: engagement
     port: 5012
     rule: "In-store engagement (`QR_SCAN`, `RECO_CLICK`, `STORE_VISIT`, `RECO_IMPRESSION`, `CAMPAIGN_EXPOSURE`, `CART_ADD`, `CART_REMOVE`, `NAVIGATION`) is recorded once per client event as a distinct fact that is never a sale, attributed, voided rather than deleted, and summarized (RN-55)"

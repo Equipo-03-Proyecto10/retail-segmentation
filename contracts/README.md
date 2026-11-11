@@ -16,6 +16,11 @@ For a service named `<name>`, the v1 contract contains:
   examples named `*.xml`, and examples that must be refused named
   `*.invalid.xml`.
 
+A later major keeps its examples in `contracts/<name>/examples/v<N>/`, validated
+against `contracts/<name>/<name>.v<N>.xsd` with the same rules (an `*.invalid.xml`
+must be refused). The check fails on any other subdirectory, so no example sits
+where nothing validates it.
+
 Request examples are named `*.request.json` and `*.request.xml`. Every other
 non-invalid XML example is a response example. This distinction is used by the
 compatibility check: the base XSD must accept the head response examples, and

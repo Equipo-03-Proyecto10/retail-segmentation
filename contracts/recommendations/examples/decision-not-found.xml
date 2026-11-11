@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>decision_not_found</code>
+  <message>No decision c41e8a06-72d3-4b95-a1f0-6e2b9d57c3a4 is held.</message>
+  <correlation_id>corr-decision-not-found</correlation_id>
+</Error>

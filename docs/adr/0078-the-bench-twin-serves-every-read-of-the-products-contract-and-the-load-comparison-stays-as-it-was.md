@@ -94,7 +94,7 @@ WHERE c.relkind IN ('r', 'p', 'v', 'm')
   AND c.relnamespace NOT IN ('pg_catalog'::regnamespace, 'information_schema'::regnamespace)
   AND (has_table_privilege('svc_products_bench', c.oid, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE')
        OR has_any_column_privilege('svc_products_bench', c.oid, 'SELECT, INSERT, UPDATE'))
-ORDER BY 1;
+ORDER BY relation::text;
 -- product, products.product_attribute, products.product_barcode,
 -- products.product_relation, products.product_status
 SELECT bool_or(has_table_privilege('svc_products_bench', c.oid, 'INSERT, UPDATE, DELETE, TRUNCATE'))

@@ -1,0 +1,6 @@
+{
+  "code": "experiment_not_assigned",
+  "message": "The experiment is not assigned, so it has nothing to evaluate or report.",
+  "correlation_id": "corr-experiment-not-assigned",
+  "details": []
+}

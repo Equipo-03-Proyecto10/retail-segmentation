@@ -1,0 +1,80 @@
+{
+  "experiment_id": 3,
+  "name": "Seeded A/A split",
+  "campaign_id": 1,
+  "state": "ASSIGNED",
+  "design_kind": "CONTROLLED",
+  "assignment_rule": "V0",
+  "data_origin": "SEEDED",
+  "arms": [
+    {
+      "arm_id": 7,
+      "position": 0,
+      "kind": "CONTROL",
+      "name": "Control",
+      "treatment_description": "Held back."
+    },
+    {
+      "arm_id": 8,
+      "position": 1,
+      "kind": "TREATMENT",
+      "name": "Offer A",
+      "treatment_description": "First offer."
+    },
+    {
+      "arm_id": 9,
+      "position": 2,
+      "kind": "TREATMENT",
+      "name": "Offer B",
+      "treatment_description": "Second offer."
+    }
+  ],
+  "design": {
+    "primary_metric": "CONVERSION",
+    "secondary_metric": null,
+    "estimator": null,
+    "alpha": null,
+    "comparison_alpha": null,
+    "power": null,
+    "minimum_detectable_effect": null,
+    "baseline": null,
+    "baseline_std_dev": null,
+    "required_per_arm": null,
+    "smallest_detectable_effect": null,
+    "allocation": null,
+    "conversion_window_days": 14,
+    "settle_days": null,
+    "starts_on": "2026-09-01",
+    "analysis_at": null
+  },
+  "frame": null,
+  "salt": null,
+  "assignment": {
+    "experiment_id": 3,
+    "assigned_at": "2026-09-01T09:00:00Z",
+    "assigned_by": null,
+    "assigned_total": 30,
+    "acknowledged_underpowered": false,
+    "arms": [
+      {
+        "arm_id": 7,
+        "kind": "CONTROL",
+        "assigned": 10
+      },
+      {
+        "arm_id": 8,
+        "kind": "TREATMENT",
+        "assigned": 10
+      },
+      {
+        "arm_id": 9,
+        "kind": "TREATMENT",
+        "assigned": 10
+      }
+    ],
+    "checks": null
+  },
+  "flags": [],
+  "planned_at": null,
+  "planned_by": null
+}

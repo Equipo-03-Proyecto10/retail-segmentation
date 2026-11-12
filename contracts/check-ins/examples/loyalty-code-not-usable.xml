@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>loyalty_code_not_usable</code>
+  <message>The loyalty code does not identify a customer with an active card.</message>
+  <correlation_id>corr-loyalty-code-not-usable</correlation_id>
+  <details>
+    <field>loyalty_code</field>
+    <code>not_usable</code>
+  </details>
+</Error>

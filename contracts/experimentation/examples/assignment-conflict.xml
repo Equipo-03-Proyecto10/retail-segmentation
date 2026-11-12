@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>assignment_conflict</code>
+  <message>A customer of the frame already holds an assignment in this experiment.</message>
+  <correlation_id>corr-assignment-conflict</correlation_id>
+</Error>

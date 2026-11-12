@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_pagination</code>
+  <message>The pagination values are outside their allowed ranges.</message>
+  <correlation_id>corr-invalid-pagination</correlation_id>
+  <details>
+    <field>size</field>
+    <code>out_of_range</code>
+  </details>
+</Error>

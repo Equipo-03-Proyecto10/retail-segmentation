@@ -138,6 +138,146 @@
     </xs:sequence>
   </xs:complexType>
 
+  <!-- A sales import (ADR-0070). The CSV never travels: the client reads the
+       file and sends its rows as positional cells, in numbered chunks that
+       stay under the 64 KiB body cap. -->
+  <xs:simpleType name="ImportStatus">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="RECEIVING"/>
+      <xs:enumeration value="PROCESSING"/>
+      <xs:enumeration value="COMPLETED"/>
+      <xs:enumeration value="CANCELLED"/>
+      <xs:enumeration value="EXPIRED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- The only status a client may set. Any other value is refused by the
+       schema, as is a second element. -->
+  <xs:simpleType name="ImportStatusRequested">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="CANCELLED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- The eight column names are checked by the service
+       (invalid_body, unexpected_column), not by the schema, so that a
+       renamed column is named in the answer. -->
+  <xs:complexType name="SaleImportRequest">
+    <xs:sequence>
+      <xs:element name="contract_version" type="xs:integer"/>
+      <xs:element name="header" type="xs:string" minOccurs="8" maxOccurs="8"/>
+      <xs:element name="total_rows" type="sales:ImportTotalRows"/>
+      <xs:element name="chunk_count" type="sales:ImportChunkCount"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:simpleType name="ImportTotalRows">
+    <xs:restriction base="xs:integer">
+      <xs:minInclusive value="1"/>
+      <xs:maxInclusive value="100000"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="ImportChunkCount">
+    <xs:restriction base="xs:integer">
+      <xs:minInclusive value="1"/>
+      <xs:maxInclusive value="667"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- A cell is text, never typed at this layer: a price of 19.999 or a
+       future date is a row rejection later, not a schema error here. -->
+  <xs:simpleType name="ImportCell">
+    <xs:restriction base="xs:string">
+      <xs:maxLength value="256"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- An empty cell is an empty element, so the position of every cell is
+       kept. A row may carry no cell at all: it is then the row rejection
+       wrong_cell_count. -->
+  <xs:complexType name="SaleImportRow">
+    <xs:sequence>
+      <xs:element name="line" type="xs:positiveInteger"/>
+      <xs:element name="cells" type="sales:ImportCell"
+                  minOccurs="0" maxOccurs="64"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- 1 to 150 rows. The client also stops a chunk at 60,000 bytes. -->
+  <xs:complexType name="SaleImportChunk">
+    <xs:sequence>
+      <xs:element name="rows" type="sales:SaleImportRow"
+                  minOccurs="1" maxOccurs="150"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SaleImportStatusRequest">
+    <xs:sequence>
+      <xs:element name="status" type="sales:ImportStatusRequested"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SaleImport">
+    <xs:sequence>
+      <xs:element name="import_id" type="xs:long"/>
+      <xs:element name="status" type="sales:ImportStatus"/>
+      <xs:element name="contract_version" type="xs:positiveInteger"/>
+      <xs:element name="total_rows" type="xs:positiveInteger"/>
+      <xs:element name="chunk_count" type="xs:positiveInteger"/>
+      <xs:element name="next_sequence" type="xs:nonNegativeInteger"/>
+      <xs:element name="received" type="xs:nonNegativeInteger"/>
+      <xs:element name="accepted" type="xs:nonNegativeInteger"/>
+      <xs:element name="rejected" type="xs:nonNegativeInteger"/>
+      <xs:element name="pending" type="xs:nonNegativeInteger"/>
+      <xs:element name="created_at" type="xs:dateTime"/>
+      <xs:element name="finished_at" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="created_by" type="sales:Uuid"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SaleImports">
+    <xs:sequence>
+      <xs:element name="SaleImport" type="sales:SaleImport"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:simpleType name="DuplicateOf">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="FILE"/>
+      <xs:enumeration value="RECORDED_SALE"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- code and field stay open strings: a code added later is not breaking,
+       and an enumeration here would make it so for a client holding this
+       schema. The codes in force are listed in the OpenAPI document.
+       field is absent when the row as a whole is at fault.
+       duplicate_of, first_line and sale_id appear only on duplicate_row:
+       FILE names the first line of this file that the row repeats, and
+       RECORDED_SALE names the sale already recorded, when it is known. -->
+  <xs:complexType name="SaleImportRejection">
+    <xs:sequence>
+      <xs:element name="line" type="xs:positiveInteger"/>
+      <xs:element name="field" type="xs:string" minOccurs="0"/>
+      <xs:element name="code" type="xs:string"/>
+      <xs:element name="message" type="xs:string"/>
+      <xs:element name="duplicate_of" type="sales:DuplicateOf" minOccurs="0"/>
+      <xs:element name="first_line" type="xs:positiveInteger" minOccurs="0"/>
+      <xs:element name="sale_id" type="xs:long" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SaleImportRejections">
+    <xs:sequence>
+      <xs:element name="SaleImportRejection" type="sales:SaleImportRejection"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
   <xs:complexType name="Channel">
     <xs:sequence>
       <xs:element name="channel_id" type="xs:integer"/>
@@ -159,4 +299,10 @@
   <xs:element name="SaleReversal" type="sales:SaleReversal"/>
   <xs:element name="SaleReversals" type="sales:SaleReversals"/>
   <xs:element name="Channels" type="sales:Channels"/>
+  <xs:element name="SaleImportRequest" type="sales:SaleImportRequest"/>
+  <xs:element name="SaleImportChunk" type="sales:SaleImportChunk"/>
+  <xs:element name="SaleImportStatusRequest" type="sales:SaleImportStatusRequest"/>
+  <xs:element name="SaleImport" type="sales:SaleImport"/>
+  <xs:element name="SaleImports" type="sales:SaleImports"/>
+  <xs:element name="SaleImportRejections" type="sales:SaleImportRejections"/>
 </xs:schema>

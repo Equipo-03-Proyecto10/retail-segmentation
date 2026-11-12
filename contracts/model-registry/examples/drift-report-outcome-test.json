@@ -1,0 +1,116 @@
+{
+  "report_id": 36,
+  "kind": "OUTCOME_TEST",
+  "model_version": {
+    "version_id": 5,
+    "name": "kmeans-k4-2026-10",
+    "method": "KMEANS"
+  },
+  "comparison": "COMPARED",
+  "not_compared_reason": null,
+  "window": {
+    "start": "2026-11-28T03:00:00Z",
+    "end": "2026-12-28T03:00:00Z",
+    "days": 30,
+    "customer_count": 17601
+  },
+  "reference": {
+    "sample_size": 18432,
+    "captured_at": "2026-10-29T03:00:00Z"
+  },
+  "previous_report_id": 21,
+  "variables": [],
+  "outcome_test": {
+    "relation": "REPURCHASE_GIVEN_SEGMENT",
+    "horizon_days": 30,
+    "cohort_as_of": "2026-11-28T03:00:00Z",
+    "thresholds": {
+      "alpha": 0.05,
+      "min_difference_points": 5,
+      "min_customers_per_side": 100
+    },
+    "segments": [
+      {
+        "label_code": "CHAMPIONS",
+        "reference": {
+          "customers": 2212,
+          "repurchasers": 1371,
+          "rate": 0.6198
+        },
+        "current": {
+          "customers": 2010,
+          "repurchasers": 1195,
+          "rate": 0.5945
+        },
+        "difference_points": -2.53,
+        "z": -1.68,
+        "p_value": 0.093,
+        "adjusted_p_value": 0.279,
+        "result": "NOT_PASSED",
+        "persisted": false
+      },
+      {
+        "label_code": "LOYAL",
+        "reference": {
+          "customers": 5714,
+          "repurchasers": 2743,
+          "rate": 0.48
+        },
+        "current": {
+          "customers": 5421,
+          "repurchasers": 2063,
+          "rate": 0.3806
+        },
+        "difference_points": -9.95,
+        "z": -10.59,
+        "p_value": 3.16e-26,
+        "adjusted_p_value": 1.26e-25,
+        "result": "PASSED",
+        "persisted": true
+      },
+      {
+        "label_code": "AT_RISK",
+        "reference": {
+          "customers": 6082,
+          "repurchasers": 1642,
+          "rate": 0.27
+        },
+        "current": {
+          "customers": 5990,
+          "repurchasers": 1587,
+          "rate": 0.2649
+        },
+        "difference_points": -0.5,
+        "z": -0.62,
+        "p_value": 0.532,
+        "adjusted_p_value": 1.0,
+        "result": "NOT_PASSED",
+        "persisted": false
+      },
+      {
+        "label_code": "LOST",
+        "reference": {
+          "customers": 4424,
+          "repurchasers": 354,
+          "rate": 0.08
+        },
+        "current": {
+          "customers": 4180,
+          "repurchasers": 345,
+          "rate": 0.0825
+        },
+        "difference_points": 0.25,
+        "z": 0.43,
+        "p_value": 0.669,
+        "adjusted_p_value": 1.0,
+        "result": "NOT_PASSED",
+        "persisted": false
+      }
+    ],
+    "claim": "CONCEPT_DRIFT"
+  },
+  "alert_ids": [
+    43
+  ],
+  "computed_at": "2026-12-29T03:06:29Z"
+}

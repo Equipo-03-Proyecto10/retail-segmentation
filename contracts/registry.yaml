@@ -43,16 +43,16 @@ services:
     resources: [customers, loyalty-cards]
   - name: customer-preferences
     port: 5008
-    rule: "A customer's preferred channels and interest categories are each replaced only atomically, as a whole set of existing references (RN-54)"
-    rn: [RN-54]
+    rule: "A customer's preferred channels and interest categories are each replaced only atomically, as a whole set of existing references, and their consent and restrictions change only by appending a recorded, attributed decision that is never edited or removed (RN-54, RN-73)"
+    rn: [RN-54, RN-73]
     wave: core
     resources: [preference-profiles]
   - name: sales
     port: 5009
-    rule: "A sale is recorded exactly once, all or nothing, consuming its stock in the same transaction, and only with lines dated not in the future and not before the customer's registration, for active products, with positive quantities and positive two-decimal prices; it is never edited or deleted, and a cancellation or return is recorded beside it as an append-only reversal that restores stock in the same transaction (RN-11 to RN-13, RN-37 (accepted sales), RN-70)"
+    rule: "A sale is recorded exactly once, all or nothing, consuming its stock in the same transaction, and only with lines dated not in the future and not before the customer's registration, for active products, with positive quantities and positive two-decimal prices; it is never edited or deleted, and a cancellation or return is recorded beside it as an append-only reversal that restores stock in the same transaction, and the rows of an imported file pass that same rule one row at a time, each accepted or refused on its own with its line and reason reported (RN-11 to RN-13, RN-37 (accepted sales), RN-70)"
     rn: [RN-11, RN-12, RN-13, RN-37, RN-70]
     wave: core
-    resources: [sales, sale-reversals, channels]
+    resources: [sales, sale-reversals, sale-imports, channels]
   - name: segments
     port: 5010
     rule: "A customer has at most one current segment, named by its stable label code, unassigned states are reported as they are, a migration compares one customer's labels within one model version, and a comparison across versions is marked methodological (RN-20, RN-21, RN-39, RN-59, RN-60)"
@@ -61,10 +61,10 @@ services:
     resources: [segments, segment-assignments, segment-migrations]
   - name: recommendations
     port: 5011
-    rule: "Recommend active, in-stock products not already bought, matching a stated signal, with reasons, or report why nothing qualifies (RN-40)"
+    rule: "Recommend only products that are available at the reference store and channel (the one the caller names, else the customer's usual store), not already bought and matching a stated signal, with reasons, marking any alternative and recording and reading back the explanation of each decision, or report why nothing qualifies (RN-40, ADR-0067)"
     rn: [RN-40]
     wave: core
-    resources: [recommendations]
+    resources: [recommendations, recommendation-decisions]
   - name: engagement
     port: 5012
     rule: "In-store engagement (`QR_SCAN`, `RECO_CLICK`, `STORE_VISIT`, `RECO_IMPRESSION`, `CAMPAIGN_EXPOSURE`, `CART_ADD`, `CART_REMOVE`, `NAVIGATION`) is recorded once per client event as a distinct fact that is never a sale, attributed, voided rather than deleted, and summarized (RN-55)"
@@ -73,10 +73,10 @@ services:
     resources: [engagement-events, engagement-summaries]
   - name: check-ins
     port: 5013
-    rule: "A staff check-in is verified only when the server-computed distance lies within the store's geofence at acceptable accuracy, and overrides are append-only reviews (RN-56)"
-    rn: [RN-56]
+    rule: "A staff check-in is verified only when the server-computed distance lies within the store's geofence at acceptable accuracy, and overrides are append-only reviews (RN-56); a customer visit is a separate fact that never holds a position, recorded only for an active loyalty code and a customer who has not withdrawn profiling, once per duplicate window (RN-72)"
+    rn: [RN-56, RN-72]
     wave: core
-    resources: [check-ins]
+    resources: [check-ins, customer-visits]
   - name: campaigns
     port: 5014
     rule: "A campaign moves only DRAFT→ACTIVE/CANCELLED and ACTIVE→FINISHED/CANCELLED, is edited only in DRAFT, never ends before it starts, and is activated only before it has ended and while every attached experiment is ready (RN-15, RN-16, RN-22, RN-24 (activation), RN-31, RN-32, RN-49 (activation)), and a promotion belongs to one campaign, discounts by a percentage above zero, and is valid only within that campaign's dates (RN-71)"
@@ -85,10 +85,10 @@ services:
     resources: [campaigns, promotions]
   - name: audit-trail
     port: 5015
-    rule: "The audit trail is append-only, attributed, free of credentials, and readable by ADMIN and AUDITOR only (RN-28, RN-29, RN-30)"
+    rule: "The audit trail is append-only, attributed, free of credentials, and readable by ADMIN and AUDITOR only, and it also reports the domain events recorded under that same append-only, attributed, credential-free discipline (RN-28, RN-29, RN-30, ADR-0072)"
     rn: [RN-28, RN-29, RN-30]
     wave: second
-    resources: [audit-entries]
+    resources: [audit-entries, domain-events]
   - name: rfm-engine
     port: 5016
     rule: "A customer's R, F and M are a function of their accepted, unreversed purchases under one rule-set version, change only for the customers an event touched, and equal a full recalculation of that version at the same instant (RN-65)"
@@ -100,7 +100,13 @@ services:
     rule: "A model version is immutable once published, carries its dataset, parameters, metrics and reference distribution, changes state only by an explicit publication or rollback, and every drift alert is judged against that reference (RN-66)"
     rn: [RN-66]
     wave: third
-    resources: [model-versions, model-trainings]
+    resources: [model-versions, model-trainings, drift-reports, drift-alerts]
+  - name: experimentation
+    port: 5020
+    rule: "An experiment's frame and arms are fixed before measurement, assignment, exposure and conversion are separate append-only facts, a sale is attributed at most once, and an effect is reported only against a control, with its uncertainty (RN-23, RN-24, RN-25, RN-27, RN-42, RN-48, RN-49, RN-67)"
+    rn: [RN-23, RN-24, RN-25, RN-27, RN-42, RN-48, RN-49, RN-67]
+    wave: third
+    resources: [experiments, experiment-assignments, experiment-results, sale-attributions]
   - name: analytics-kpis
     port: 5022
     rule: "A KPI is reported only under its published definition, window and data origin, from `api_*` objects, and only to the roles and stores allowed to read it (RN-68)"

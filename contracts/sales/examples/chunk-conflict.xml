@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>chunk_conflict</code>
+  <message>Chunk 1 of import 17 was already staged with other rows.</message>
+  <correlation_id>corr-chunk-conflict</correlation_id>
+  <details>
+    <field>sequence</field>
+    <code>already_staged</code>
+  </details>
+</Error>

@@ -1,0 +1,13 @@
+{
+  "assignment_id": 74212,
+  "experiment_id": 18,
+  "campaign_id": 8,
+  "customer_id": "c0a80001-0000-4000-8000-000000000205",
+  "arm_id": 61,
+  "arm_kind": "CONTROL",
+  "arm_name": "No offer",
+  "assignment_key": "7786b3082cf6fe15cf17c086444605d6d0f9ced43560ff614af5d098e876e7a2",
+  "assigned_at": "2026-11-05T08:00:00Z",
+  "exposure_count": 0,
+  "first_exposed_at": null
+}

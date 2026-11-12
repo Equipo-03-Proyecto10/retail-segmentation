@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import yaml
+import pytest
+
+yaml = pytest.importorskip("yaml")
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "contracts/analytics-kpis"

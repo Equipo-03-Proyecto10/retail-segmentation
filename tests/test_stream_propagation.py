@@ -257,6 +257,7 @@ def test_every_stream_with_an_outbox_has_a_load_or_is_known_undeployed():
     undeployed = {
         "stream:rfm.v1.profile_changed",
         "stream:models.v1.publication_recorded",
+        "stream:preferences.v1.consent_changed",
         "stream:sales.v1.reversed",
         "stream:segments.v1.assignment_changed",
     }

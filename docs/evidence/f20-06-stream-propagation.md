@@ -58,6 +58,7 @@ Some streams or groups were not measured, because they do not exist yet:
 |---|---|---|
 | `stream:rfm.v1.profile_changed` | `model-registry`, `analytics-kpis` | The producer is not deployed. The stream is contracted but not captured in `sql/01_schema.sql`. |
 | `stream:models.v1.publication_recorded` | `rfm-engine` | The producer is not deployed. |
+| `stream:preferences.v1.consent_changed` | `recommendations`, `campaigns`, `rfm-engine` | The stream is contracted (#794) but not captured yet. |
 | `stream:sales.v1.reversed` | `recommendations`, `rfm-engine`, `experimentation` | The stream is contracted but not captured yet. |
 | `stream:segments.v1.assignment_changed` | `recommendations`, `analytics-kpis` | The stream is contracted but not captured yet. |
 | `stream:sales.v1.recorded` | `rfm-engine` | The consumer is not deployed, so Redis has no such group. |

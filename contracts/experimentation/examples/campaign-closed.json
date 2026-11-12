@@ -1,0 +1,6 @@
+{
+  "code": "campaign_closed",
+  "message": "An experiment cannot be attached to a campaign that is finished or cancelled.",
+  "correlation_id": "corr-campaign-closed",
+  "details": []
+}

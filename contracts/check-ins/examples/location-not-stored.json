@@ -1,0 +1,11 @@
+{
+  "code": "invalid_body",
+  "message": "A customer visit stores no location.",
+  "correlation_id": "corr-location-not-stored",
+  "details": [
+    {
+      "field": "latitude",
+      "code": "location_not_stored"
+    }
+  ]
+}

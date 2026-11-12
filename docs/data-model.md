@@ -556,6 +556,51 @@ The sales boundary (ADR-0039, ADR-0046, F14-18) adds one relation, also in 4NF:
 
 `sales_events.outbox` is one more boundary outbox, under the outbox note above.
 
+The products boundary (ADR-0046, F21-10) adds four relations in the schema
+`products`, each keyed by the product it is about, and none a column of
+`public.product`, which stays as the web knows it. All four are in 4NF. The
+decision that matters is how a product's many-valued facts are split:
+- **`products.product_attribute`** is where multi-valued attributes are split.
+  A product has a variable number of attributes (colour, size, brand, pack
+  size), and each is a fact of its own. Columns for them in `product` would be
+  repeating groups, not 1NF, and mostly NULL. One relation holding the
+  attribute sets side by side, `(product_id, colour, size)`, would carry two
+  independent multivalued facts, `product_id →→ colour` and
+  `product_id →→ size`, and 4NF would need a row for every combination: a
+  product with three colours and four sizes would be twelve rows, and adding a
+  colour would mean writing four. So a row is one `(product_id, name)` pair
+  with its `value`. The key is `(product_id, name)`; the only dependency is
+  `(product_id, name) → value`, and its determinant is the key, so the relation
+  is in BCNF, and a relation of key plus one attribute holds no multivalued
+  dependency. What this gives up is a typed column per attribute: `value` is
+  text, and the name's format and the value's length are CHECKs.
+- **`products.product_relation`** is the multivalued fact "this product has
+  these substitutes and these complements". Substitutes and complements are
+  independent of each other, so they are rows of one relation told apart by
+  `relation_kind`, not two columns holding sets. Every column is in the key,
+  `(product_id, relation_kind, related_product_id)`, so the only dependencies
+  are trivial and the relation is in BCNF and 4NF. A relation is directed: the
+  row for `(A, B)` says nothing about `(B, A)`, and no symmetric row is
+  stored, which would be derived data free to drift. It is not a dependency of
+  one product on another: `related_product_id` is a second reference to
+  `product`, never a copy of any of its columns.
+- **`products.product_status`** is a 1:1 split of `product`, determinant
+  `product_id → commercial_status`, kept apart because it is the service's
+  fact (the web edits `is_active` and never sees it) and to leave `public.product`
+  unchanged. The status and `is_active` overlap by design, one being true
+  exactly when the other is `active`, so the database keeps them in step in
+  both directions (below) instead of storing one as a derivation of the other:
+  the web reads `is_active` only, and sales and recommendations read it through
+  `api_products.product_ref_v1`. A product with no status row reads as `active`
+  when `is_active`, and `discontinued` otherwise, so no row is needed for a
+  product nobody has classified.
+- **`products.product_barcode`** is a 1:1 split too: `product_id → barcode`,
+  and `barcode → product_id` because a barcode identifies one product, so both
+  are keys (`UNIQUE`) and the relation is in BCNF. It is not a column of
+  `product` because it is optional, would be NULL on every product the web
+  creates, and is the service's to write. A product has at most one barcode; a
+  second barcode would be a multivalued fact and a relation of its own.
+
 ---
 
 ## 3. Logical model
@@ -732,6 +777,47 @@ has no privilege on `sales`. A CSV header has no row here.
 | `request_sha256` | `BYTEA` | NN | `CHECK octet_length = 32` (`sale_capture_request_sha256_check`) | SHA-256 of the canonical request (the caller's `sub`, the ids, `occurred_at` in UTC, the lines sorted with two-decimal prices); a retry with the same key is compared with it |
 | `recorded_by` | `UUID` | NN | FK → `public.app_user`, `ON DELETE RESTRICT` | The token's `sub`: who recorded the sale |
 | `captured_at` | `TIMESTAMPTZ` | NN | default `now()` | When the sale was accepted |
+
+#### `products.product_status`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `product_id` | `INTEGER` | NN | PK; FK → `public.product`, `ON DELETE CASCADE` | The product whose status this is |
+| `commercial_status` | `TEXT` | NN | CHECK in `active`, `paused`, `discontinued` | Commercial lifecycle; `active` is on sale, `paused` is off sale and may return, `discontinued` is retired |
+
+`public.product.is_active` is true exactly when the status is `active`.
+`trg_sync_product_from_status` sets `is_active` when the status is written;
+`trg_sync_status_from_product` sets the status when `is_active` changes, to
+`active` or `discontinued`, leaving a `paused` product paused. Each runs only at
+trigger depth 0, so neither calls the other back. A product with no row reads
+as `active` or `discontinued` from `is_active`.
+
+#### `products.product_attribute`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `product_id` | `INTEGER` | NN | PK part; FK → `public.product`, `ON DELETE CASCADE` | The product |
+| `name` | `TEXT` | NN | PK part; CHECK `^[a-z][a-z0-9_]{0,39}$` | Lowercase snake_case attribute name, unique within the product |
+| `value` | `TEXT` | NN | CHECK 1 to 120 characters | The attribute's value |
+
+At most 20 attributes per product is the service's rule, in the contract.
+
+#### `products.product_barcode`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `product_id` | `INTEGER` | NN | PK; FK → `public.product`, `ON DELETE CASCADE` | The product |
+| `barcode` | `TEXT` | NN | UQ (`product_barcode_barcode_key`); CHECK `products.gtin_is_valid` | A GTIN-8, -12, -13 or -14, digits only, with a valid check digit |
+
+#### `products.product_relation`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `product_id` | `INTEGER` | NN | PK part; FK → `public.product`, `ON DELETE CASCADE` | The product the relation is stated for |
+| `related_product_id` | `INTEGER` | NN | PK part; FK → `public.product`, `ON DELETE CASCADE`; CHECK `<> product_id` | The related product |
+| `relation_kind` | `TEXT` | NN | PK part; CHECK in `substitute`, `complement` | Kind of relation; directed, with no implied mirror row |
+
+Published to recommendations as `api_products.product_relation_v1`.
 
 #### `segment_rule`
 
@@ -1232,6 +1318,9 @@ The sales boundary owns `sales` for `sale_capture`, publishes
 The segments boundary owns no table: it publishes
 `api_segments.current_label_v1` over the web's `customer_segment_history` and
 keeps relay state in `segments_events`.
+The products boundary owns `products` for `product_status`, `product_attribute`,
+`product_barcode` and `product_relation`, and publishes `api_products.product_ref_v1`
+and `api_products.product_relation_v1`.
 The check-ins boundary owns `checkins` for `store_check_in` and
 `check_in_review`. It has no contract schema and no outbox, because nothing
 reads or consumes check-ins but its own service. It reads store locations
@@ -1363,7 +1452,7 @@ delete. Three groups of tables carry it:
 | Group | Tables | Why |
 |---|---|---|
 | Business rules | `segment`, `segment_rule`, `campaign`, `experiment` | Changing a rule silently changes what every report means |
-| Catalogs | `category`, `product`, `store`, `channel`, `role`, `customer`, `app_user` | These are what the administrator module edits, so this is what the demonstration's audit trail shows |
+| Catalogs | `category`, `product`, `store`, `channel`, `role`, `customer`, `app_user`, and the products boundary's `product_status`, `product_attribute`, `product_barcode`, `product_relation` | These are what the administrator module edits, so this is what the demonstration's audit trail shows. The products tables are written by products-service, which passes the actor with `mosaiq.user_id`; the audit key is the product's id |
 | Segment assignment history | `customer_segment_history` | Each inserted successor and each closure replaces the audit signal formerly produced by changing `customer.current_segment_id` (ADR-0017) |
 
 Individual sales are **not** audited. Their volume and history already live in

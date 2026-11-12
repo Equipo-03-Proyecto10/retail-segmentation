@@ -9,7 +9,7 @@ F16-01 is the foundation: shell, secure window, preload bridge, XML transport, s
 role-gated screens. F16-02 adds Products and Categories, F16-04 adds Stock, Sales, Engagement and
 Check-ins, F16-06 adds Users, Transfer administrator and the account menu, F16-07 adds Stores
 with their locations, F16-08 adds Campaigns and their transitions, F16-09 adds the Audit trail, and
-F16-03 adds Customers (see below).
+F16-03 adds Customers, and F28-02 adds Import and data quality (see below).
 
 ## Run it
 
@@ -22,9 +22,12 @@ npm start        # bundles the contracts, builds, launches Electron
 ```
 
 `npm start` copies `contracts/<name>/<name>.xsd` for every entry of `contracts/registry.yaml`, plus
-`contracts/common/v1/common.xsd`, into `bundled/schemas/`, and writes every operation's
+`contracts/common/v1/common.xsd`, into `bundled/schemas/`, together with each later major a service
+publishes beside `/v1` as `contracts/<name>/<name>.v<N>.xsd` under its own namespace (ADR-0035), and writes every operation's
 `x-mosaiq-roles` to `bundled/operations.json` (`scripts/bundle-contracts.mjs`). The build fails when
-a service has an `openapi.yaml` but no XSD. A registry entry whose contract has not merged yet is
+a service has an `openapi.yaml` but no XSD, or declares `/v<N>` operations without a `<name>.v<N>.xsd`. A
+call's schema follows the major in its path: `/v2/...` is checked against the `v2` namespace and a `/v1`
+answer on it is refused as a contract defect, so `/v1` callers keep the schema they validate against. A registry entry whose contract has not merged yet is
 skipped, listed in the output, and its screens are not offered. `bundled/` and `dist/` are generated
 and git-ignored.
 
@@ -62,7 +65,20 @@ being ignored. `MOSAIQ_DESKTOP_CONFIG_DIR` overrides the directory (the window t
   - store locations: `listStores`, `getStore`, `setStoreLocation`, `removeStoreLocation`.
   - campaigns: `listCampaigns`, `getCampaign`, `createCampaign`, `updateCampaign`, `transitionCampaign`,
     `listCampaignLabels`.
-  - audit trail: `listAuditEntries`, `getAuditEntry` (read only).
+  - a campaign's plan: `getCampaignAudience`, `putCampaignAudience`, `getCampaignBudget`,
+    `putCampaignBudget`, `getCampaignEligibilityRules`, `putCampaignEligibilityRules`,
+    `getCampaignExclusions`, `putCampaignExclusions`, `previewCampaignAudience`.
+  - audit trail: `listAuditEntries`, `getAuditEntry`, `listDomainEvents`, `getDomainEvent` (read only).
+  - drift analysis: `listDriftReports`, `getDriftReport`, `listDriftAlerts`, `getDriftAlert` (read only).
+  - migration matrix: `migrationMatrix`, `listMigrations`, `explainMigration` (read only).
+  - A/B experiments: `listExperiments`, `getExperiment`, `planExperiment`, `assignExperiment`.
+  - conversion analysis: `getExperimentResult` (read only).
+  - K-means models: `listModelVersions`, `getModelVersion`, `listTrainings`, `getTraining`,
+    `startTraining`, `publishModelVersion`.
+  - recommendations: `inspectRecommendation`, `listRecommendationDecisions`, `openRecommendationDecision`
+    (read only).
+  - sales import: `chooseImportFile`, `startImport`, `resumeImport`, `importProgress`, `cancelImport`,
+    `listImports`, `getImport`, `listImportRejections`.
 
   There is no generic fetch and no `ipcRenderer`. The main process checks every value a screen sends
   (`src/main/checks.ts`, used by `catalog.ts` and `floor.ts`) before it builds a path or a body from it.
@@ -206,14 +222,152 @@ Through campaigns-service (`contracts/campaigns/`). The **Campaigns** screen is 
   `CANCELLED` offer none. The client does not decide whether a move is legal, so a forced one is
   answered by the service.
 - The lifecycle and the dates are the service's: the client checks only types and lengths. Refusals are
-  shown as returned (code, message, correlation id): `ends_before_start` with its `ends_on` detail next
-  to the dates, `duplicate_draft` and `unknown_label`, `illegal_transition`, `status_changed`,
-  `campaign_ended` and `experiment_not_ready`. After `status_changed` the campaign is read again and
-  the move is not retried.
+  shown with their code and correlation id as returned, and a plain sentence for the code (F28-09):
+  `ends_before_start` with its `ends_on` detail next to the dates, `duplicate_draft` and
+  `unknown_label`, `illegal_transition`, `status_changed`, `campaign_ended` and `experiment_not_ready`.
+  After `status_changed` the campaign is read again and the move is not retried.
 
 The window tests (`tests/window/campaigns.spec.ts`) answer with the recorded examples in
 `contracts/campaigns/examples/` and `contracts/segments/examples/`, read from disk, and keep the status
 of the campaign they transition.
+
+### Audience, conditions, exclusions, budget and validity (F28-09)
+
+An open campaign also shows its plan, under the edit form (`renderer/campaign-plan.ts`,
+`main/campaign-plan.ts`). Each section is a sub-resource of the campaign's own path in
+`contracts/campaigns/`, read with `GET` and replaced whole with `PUT`, and each reads and saves on its
+own: one that is refused shows its refusal in place and the others stay usable.
+
+| Section    | Path                                   | Writable members                                                                                                          |
+| ---------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Audience   | `/v1/campaigns/{id}/audience`          | `max_customers`, a cap of 1 to 10,000,000 (empty for none)                                                                |
+| Conditions | `/v1/campaigns/{id}/eligibility-rules` | `registered_on_or_before`, and `min_purchases` (1 to 1000) with `purchase_window_days` (1 to 731), given together         |
+| Exclusions | `/v1/campaigns/{id}/exclusions`        | up to 1000 customer ids and 20 label codes, none twice                                                                    |
+| Budget     | `/v1/campaigns/{id}/budget`            | `total_amount` and `per_customer_cap`, two-decimal text with no currency; the per-customer limit may not exceed the total |
+
+- **Validity** is the campaign's own `starts_on` and `ends_on`, saved by the edit form through
+  `PATCH /v1/campaigns/{id}`. Both are checked as dates before sending; whether the end precedes the
+  start is the service's (`ends_before_start`), as before.
+- **Roles.** `ADMIN` and `MARKETING` write; `ANALYST` and `AUDITOR` read and preview, and are drawn no
+  control. The roles are the bundled `x-mosaiq-roles` of `putCampaign*` and `getCampaign*`.
+- **Validated when saved.** The main process checks every value against the XSD and the contract's
+  bounds and sends nothing when one fails; each reason is shown next to its field in plain words.
+  Whether a customer id or a label exists is the service's answer: `unknown_customer`, `unknown_label`.
+- **Only a DRAFT changes.** Outside `DRAFT` every control is drawn disabled, and a forced write gets 409
+  `campaign_not_draft`. Activation is unchanged: the moves are the service's `allowed_transitions`.
+- **Preview.** "Preview audience" reads the audience's breakdown by reason
+  (`GET /v1/campaigns/{id}/audience/breakdown`, `getCampaignAudienceBreakdown`), and the audience, the
+  conditions and the exclusions as saved, to word each reason. It shows the estimated audience and when it
+  was counted, the customers holding the campaign's label, how many were left out, and each of the eight
+  reasons with its count, in the contract's order of precedence: not in the customer list or anonymized,
+  personalization consent withdrawn or not recorded, marketing contact consent withdrawn or not recorded
+  (ADR-0066), excluded by id, excluded by label, registered after the cutoff, too few purchases, over the
+  cap. A customer is counted once, under the first reason that applies, so the holders are the reasons
+  plus the audience. A reason whose rule is not set shows 0 and says so. A preview already on screen is read again after a save.
+- **When the breakdown is not answered** (the operation is planned until F25-04, #835, and a service
+  that does not have it answers a refusal, a missing route or something off contract), the preview says
+  so on screen and falls back to the audience's one total: the number left out is then the customers
+  holding the label (`GET /v1/segments`, `size`, optional) minus the audience, not split by reason, and
+  the rules that can leave customers out are listed without counts. An ended session is not a fallback.
+- **Plain words.** Every code the campaigns contract can answer has one sentence
+  (`shared/campaign-messages.ts`); the code, the correlation id and each detail stay behind the
+  "Details" disclosure. A unit test reads `contracts/campaigns/openapi.yaml` and fails when a code of
+  its `/v1/campaigns` operations has no sentence.
+- The operations are marked planned in the contract (ADR-0073) until campaigns-service implements them
+  (F25-04, #835). Until then a deployed service does not answer them as the contract says, and each
+  section shows the failure in place without taking the screen down; the preview falls back as above.
+
+The window tests (`tests/window/campaign-plan.spec.ts`) keep the plan they are given and answer with
+the same recorded examples.
+
+## A/B experiments (F28-10)
+
+Through experimentation-service (`contracts/experimentation/`, ADR-0068). The **A/B experiments** screen is
+shown to `ADMIN`, `ANALYST`, `MARKETING` and `AUDITOR`, by the `x-mosaiq-roles` of `listExperiments`; `ADMIN`
+and `MARKETING` also plan and assign. The main process checks the operation before every call, so a forced
+call from another role is refused as `forbidden_role` and nothing is sent. The service's operations are
+published ahead of their implementation (ADR-0073); the screen shows whatever the service answers.
+
+- **List and detail.** `GET /v1/experiments` (`state`, `data_origin`, `campaign_id`, paging) and
+  `GET /v1/experiments/{experiment_id}`: arms, design values, frame with each exclusion's count, the published
+  salt, flags and the assignment. An experiment of assignment rule V0 is readable and says it is not verified.
+  Figures from a `SEEDED` or `INJECTED` experiment are labelled Synthetic.
+- **Plan** (`POST /v1/experiments`). The form sends only the inputs of the contract: name, campaign, primary
+  metric, start, conversion window, minimum detectable effect, optional alpha and power, and two to five
+  arms. The baseline, the sample size, the frame and the salt are never inputs: the service takes them in
+  the plan's transaction. A plan is frozen, so a confirmation says it cannot be edited or deleted. While arms
+  are entered the screen reads the design (one control and treatments; two treatments and no control;
+  or one the service would refuse) and disables the button for the last. The arm rules themselves stay the
+  service's: `control_count` and `treatment_count` come back as returned.
+- **Sample size.** Right after the plan, and on every later read, the screen shows the customers each arm
+  needs (`design.required_per_arm`, computed by the service from the plan, never by the client), the frame
+  and what it supplies to each arm, and the **Underpowered** flag the service stored, with the smallest
+  effect the frame can detect. A result that is not significant is said to be inconclusive, never "no
+  effect".
+- **No control.** A design with no control arm says, while it is entered and wherever it is read, that no
+  effect of the campaign against no treatment can be claimed: it compares two offers.
+- **Assign** (`POST /v1/experiment-assignments`). Offered for a `PLANNED` experiment after a confirmation
+  that the assignment is written once. An underpowered plan needs the acknowledgement box ticked, and the
+  acknowledgement is sent only then (`underpowered_not_acknowledged` is the service's answer when it is
+  missing). The assignment's recomputation, **sample ratio check** and **balance checks** (standardized
+  difference per measure against the reference arm, the threshold, and whether it is flagged) are shown from
+  the response and again whenever the experiment is opened.
+- A `<name>` or description from the service is set with `textContent`; entities are not decoded by the
+  client's XML reader, so a name that holds markup is shown as typed.
+
+Not in this screen: the conversion results (the conversion analysis module, F28-11, #880), the list of conversions
+and `POST /v1/experiments/{experiment_id}/conversions`, the whole-assignment list (it names every customer),
+the floor's `GET /v1/experiment-assignments/current`, and the sale attributions.
+
+The window tests (`tests/window/experiments.spec.ts`) answer with the recorded examples of
+`contracts/experimentation/` and `contracts/campaigns/`, read from disk, and keep whether the plan was
+assigned, so `underpowered_not_acknowledged` arises from what is stored.
+
+## Conversion analysis (F28-11)
+
+Through experimentation-service (`contracts/experimentation/`, ADR-0068 and ADR-0069). The **Conversion
+analysis** screen is shown to `ADMIN`, `ANALYST`, `MARKETING` and `AUDITOR`, by the `x-mosaiq-roles` of
+`getExperimentResult`; the main process checks the operation before the call, so a forced read from another
+role is `forbidden_role` and nothing is sent. Nothing is written: the module has no write control and the
+bridge has no write for it. The operation is published ahead of its implementation (ADR-0073).
+
+- **Open a result.** The picker lists the experiments that are `ASSIGNED` or `ANALYZED` (one call each,
+  `GET /v1/experiments?state=`): a `PLANNED` experiment has no result. The reading is the stored primary
+  result, or "Re-read as of now" (`basis=RE_READ`), which says it replaces nothing. Both are
+  `GET /v1/experiment-results/{experiment_id}`.
+- **Each arm, and the pending customers.** A table of each arm's assigned, analysed, exposed, converted,
+  **pending** and not-converted customers, its conversion rate (the exposed rate is labelled descriptive and
+  not causal), net revenue and revenue per customer. A sentence states the pending customers of each arm:
+  they have not bought yet, their window is open, and they are counted in the arm's customers. Every
+  figure is as the service sent it; a fraction is written as a percentage by moving its decimal point.
+- **The difference and its interval.** Each comparison shows the difference, its interval at the service's
+  confidence level, the p-value, the test (with the bootstrap beside a Welch interval, and a warning when it
+  disagrees) and the conclusion. A rate difference is also written in percentage points. A result that is
+  not read yet (`PENDING`) shows counts and the share of the window elapsed and no interval, p-value or
+  direction; one whose sample ratio check failed (`INVALID`) says its estimate is withheld.
+- **An effect only against a control.** A comparison is an **Effect against the control** (and money of
+  that effect, "Incremental revenue", with its interval) only when the design is controlled, its arms hold
+  exactly one control and the comparison is a treatment against it. Two treatments with no control show a
+  **Difference between treatments**, never the words effect, incremental or uplift, and say that no effect
+  can be claimed, with the service's own refusal. An `EFFECT` the service sends without a control is not
+  shown and is reported as a contract problem. A non-significant result of an underpowered plan reads
+  "inconclusive", never "no effect".
+- **Attribution apart.** Attribution is a section of its own, every figure labelled Attribution, saying it
+  is commercial credit and not a measure of what the campaign changed. It never uses the words incremental,
+  uplift or caused, and its figures are not in the effect table.
+- **The warnings of the design stay next to the result.** A bar under the title lists them (what the design
+  flagged, no control, not read yet, withheld, inconclusive, Synthetic, re-read) and stays in view while the
+  result scrolls; each is written out below the facts, repeated above each comparison table, and carried on
+  every arm row. The design values and the checks (sample ratio and balance) the result was planned and read
+  under are on the same screen.
+- **Export.** The shared CSV export (ADR-0074) writes the first table, the arms table. Each of its rows
+  carries the data origin (Synthetic or Observed), the instant the net sales were read and the design
+  warnings, so the file says what it is: observed counts, neither an effect nor attribution. The
+  comparisons and attribution are not exported; ADR-0074 leaves the labelled experiment report to the web.
+
+The window tests (`tests/window/conversion.spec.ts`) answer with the recorded results of
+`contracts/experimentation/` (complete, revenue, inconclusive, pending, invalid and offer comparison), read
+from disk.
 
 ## Audit trail (F16-09)
 
@@ -234,9 +388,54 @@ navigation, and a forced call gets 403 `forbidden_role`, shown as returned.
 - The trail is append-only: the screen has no create, edit or delete control and the bridge has no
   operation for one.
 
+### Decisions and versions (F28-15)
+
+The same screen has a second list, **Decisions and versions**, from the domain events audit-trail
+publishes (ADR-0072, `GET /v1/domain-events` and `GET /v1/domain-events/{event_id}`): a calculation that
+ran, a model version published or rolled back, a permission changed, a critical act such as a campaign
+activated, a read of one customer's history and a read of the trail. Each row names its actor (role and
+user id, or the system), its subject, the version it concerns (`model_version_id`, `rule_set_version`),
+when it was recorded and its outcome. One opens to show the keys of its `details` and its place in the
+hash chain.
+
+- **Filters.** Kind, actor (user id), actor role, model version, subject type and id, outcome, and a
+  range of `recorded_at`, which the server's clock sets and no producer can move. The main process also
+  accepts `store_id` and `source`; the screen does not offer them. Every filter is checked before a
+  query string is built (the closed kinds, outcomes and subject types, which are lower case, a UUID, a
+  role code, a service role name, a positive 64-bit version id kept as text, RFC 3339 timestamps with an
+  offset). A subject id is refused without its subject type (`requires_subject_type`), as the contract
+  does, and nothing is sent.
+- **Four shortcuts** fill in those filters, which stay visible and editable, so what is sent is what is
+  shown: _Model versions_ (`subject_type=model_version`, which finds both `MODEL_PUBLISHED` and
+  `MODEL_ROLLED_BACK`), _Campaign decisions_ (`kind=CRITICAL_ACTION`, `subject_type=campaign`) and
+  _Permissions_ (`kind=PERMISSION_CHANGED`) read domain events. _Rule changes_ reads the row changes of
+  `audit-entries` with `entity=segment_rule`, because ADR-0072 has no event kind for editing a rule and
+  RN-28 records every change to one there. All four then take an actor and dates.
+- **XML only, validated.** The answer is validated against the audit-trail XSD, which holds one wrapper
+  per kind inside `details` (`<details><HistoryRead>...`) and allows only that wrapper's keys. A
+  document with a key the wrapper does not list, a credential among them, fails validation and is shown
+  as a contract defect, with none of its content. The detail panel lists the wrapper's children as text
+  and repeats no vocabulary, so a value the contract changes (such as `data_origin`) needs no change
+  here.
+- **Who reaches it.** `ADMIN` and `AUDITOR`, by the `x-mosaiq-roles` of all four operations. The
+  main process refuses any other role with `forbidden_role` before anything is sent, for the row list
+  as well as for the decisions, and the renderer offers such a role no entry in the navigation.
+- **A read that cannot be recorded** answers 503 `audit_unavailable` and returns no data (ADR-0072
+  section 4); the screen shows it as returned, with no table.
+- Not built: `GET /v1/domain-events/verification` (the hash-chain check), which no story of this
+  module asks for.
+
+The three operations of domain events are marked planned in the contract (ADR-0073) until the service
+implements them; a service that does not answer yet is shown as it answers.
+
 The window tests (`tests/window/audit.spec.ts`) answer with the recorded examples in
-`contracts/audit-trail/examples/`. The fake gateway records a product edit and then answers the audit
-query with an entry for that entity, key and the signed-in user.
+`contracts/audit-trail/examples/` (`tests/support/domain-events.ts` reads them from disk). The fake
+gateway records a product edit and then answers the audit query with an entry for that entity, key and
+the signed-in user, and answers the domain-event queries by filtering the recorded events by kind,
+actor, role, subject type, outcome and `recorded_at`. The contract has no example of a campaign
+activation, so one is made from its critical-action example by changing only the values that say what
+was done. One test checks the screen at 375 px and 1440 px: the table scrolls inside its own area and
+the page never scrolls sideways.
 
 ## Customers, preferences, segments and recommendations (F16-03)
 
@@ -273,6 +472,250 @@ customer opened earlier is dropped.
 The window tests (`tests/window/customers.spec.ts`) answer with the recorded examples of the seven
 contracts, read from disk, including the `unassigned_result` and `no_open_assignment` examples that no
 seeded customer has.
+
+## Drift analysis (F28-07)
+
+Through model-registry (`contracts/model-registry/`, version 1.1.0). The **Drift** screen, in the Analysis
+group, is offered to the roles whose `x-mosaiq-roles` allow `listDriftReports`: `ADMIN`, `ANALYST`,
+`MARKETING` and `AUDITOR`. Any other role has no entry in the navigation, and the main process refuses a
+forced call with `forbidden_role` before sending anything. Each of the four reads is checked against its own
+operation (`DRIFT_OPERATIONS`). The four operations are published ahead of their implementation and marked
+planned (ADR-0073), so the window and unit tests answer with the recorded examples of
+`contracts/model-registry/examples/`; a service that does not answer yet is shown as it answers. The screen
+writes nothing: there is no operation that starts a run or acknowledges an alert.
+
+- **Reports.** A list (`GET /v1/drift-reports`: kind, model version and comparison filters, twenty to a
+  page), and a report opens from it (`GET /v1/drift-reports/{report_id}`). A `DATA_DRIFT` report charts, for
+  each of the segment shares and R, F and M, the reference and the current share of every bin side by side,
+  with the statistic (PSI, and the chi-square on the segment shares) beside the thresholds it is judged by
+  (0.10 and 0.25; p below 0.05 and 0.01), the variable's state (`NORMAL`, `WATCH`, `ALARM_PENDING`,
+  `ALARM`), a meter of each PSI against its two thresholds, and a table of every bin with its PSI
+  contribution. An `OUTCOME_TEST` report names its relation, horizon and cohort, and charts each segment's
+  reference and current repurchase rate with the two-proportion z, the Holm-adjusted p-value and the result.
+- **Alerts.** A list (`GET /v1/drift-alerts`: kind, model version and variable filters) and an alert opens
+  with its explanation first: what changed, the variable, the model version, and the suggested review
+  (the service's text, shown as sent, with "A suggestion to review, not a verdict."), then how much: the
+  statistics against their thresholds and the three bins that moved most, or the segments that persisted.
+  An alert opens the report that raised it and the report before it, and a report opens its alerts.
+- **No number, no guess.** An `INSUFFICIENT_DATA` report says that the window holds fewer than 200
+  customers (or that no segment has 100 on both sides) and shows no statistic. A `NOT_COMPARED` report says
+  that the window crosses a change of model version, that this is a methodological difference, and that
+  nothing in it was compared (ADR-0064, ADR-0065). The screen never fills the gap.
+- **The wording of F23-07.** A finding about a distribution is a "distribution change". The phrase of a
+  change in the relation between a segment and an outcome is written in one function
+  (`claimText` in `src/shared/drift.ts`), only for an outcome-test result that persisted, with the
+  relation, the horizon and the cohort beside it; no other screen, list, chart or message says it, and no
+  sentence about a window that crosses a version uses a word of behaviour. The main process also refuses an
+  answer that says more than its own evidence supports (a claim without a persisted outcome result, a
+  statistic in a report that holds no number, distribution evidence in an outcome-test alert, the phrase in
+  a distribution alert's review): a contract defect, nothing of it used (`reportFault` and `alertFault` in
+  `src/main/drift.ts`). `src/shared/drift-wording.ts` holds the rules, `tests/unit/drift.test.ts` scans the
+  module's strings against them, and `tests/window/drift.spec.ts` reads back the text of every screen.
+- **Charts** are SVG built element by element (`src/renderer/drift-chart.ts`): no markup string, no
+  `innerHTML`, no chart library and nothing loaded from outside, so they run under the CSP as it is
+  (`script-src 'self'`, `style-src 'self'`). The reference and the current are the first two categorical
+  colours of the data-visualisation palette, in light and dark, with a legend; every pair also gives its
+  values on hover and on keyboard focus and in the table beside the chart.
+- Export is the shell's: the first table on the screen (the list of reports or alerts), as CSV, for the
+  roles that may export (ADR-0074).
+
+## Migration matrix (F28-06)
+
+Through segments-service (`contracts/segments/`). The **Migration matrix** screen, in the Analysis group,
+is offered to the roles whose `x-mosaiq-roles` allow `getSegmentMigrationMatrix`: `ADMIN`, `ANALYST`,
+`STORE_MANAGER`, `MARKETING` and `AUDITOR`. Any other role has no entry in the navigation, and the main
+process refuses a forced call with `forbidden_role` before sending anything. Each of the three reads is
+checked against its own operation (`MIGRATION_OPERATIONS`). The three operations are published ahead of
+their implementation and marked planned (ADR-0073), so the window and unit tests answer with the recorded
+examples of `contracts/segments/examples/`; a service that does not answer yet is shown as it answers.
+
+- **Two dates.** The screen compares the segment each customer held at two instants
+  (`GET /v1/segment-migrations/matrix`, `from` and `to`, entered in UTC). The earlier date is always the
+  before state, whatever order they are entered in (RN-59); two equal dates are refused first.
+- **The grid.** Rows are the state before and columns the state after. The axes come from the label
+  vocabulary (`GET /v1/segments`) in business order, then Unassigned and New (New is "Not in later run" on
+  the after side), so a pair with no customers, which the service leaves out, is still a cell that can be
+  opened. Each cell shows its count and the service's `movement`; the client never classifies a customer.
+- **Totals reconcile.** The grid adds a row total and a column total from the cells, and the screen checks
+  them against the service's figures: each row against its before count, each column against its after
+  count, the customers who entered a state against its column less those who stayed, those who left against
+  its row less the same, and all of them against the customers compared. It says "Totals reconcile", or
+  lists every figure that does not (`reconcile` in `src/shared/migration-matrix.ts`).
+- **Each cell opens its customers** (`GET /v1/segment-migrations` with the cell's two states and label
+  codes), twenty to a page, and so does a label's entries or exits (`direction` and `label_code`). The list
+  is compared with the count the matrix gave for it. "Behaviour only" and "Methodological only" send
+  `methodological`.
+- **Two versions are methodological.** When the service marks the matrix methodological, a banner says that
+  a difference may come from the model and is not shown as behaviour, the versions are named (or said to be
+  unknown), the grid is drawn with a dashed outline, and each customer carries "Methodological: may come
+  from the model" (ADR-0064). The mark is the service's; the screen never derives or clears it.
+- **A move names its responsible variables.** Each customer lists the variables the service judged changed;
+  **Explain** opens `GET /v1/segment-migrations/explanation` with each variable's values on both sides, its
+  judgement and the service's sentence (RN-60), "Only the rank moved" when the label changed and no variable
+  did, and the reason when a variable is not compared.
+- Export is the shell's: the first table, the grid, as CSV, for the roles that may export (ADR-0074).
+
+The window tests (`tests/window/migrations.spec.ts`) answer with `tests/support/segments.ts`, which serves
+the recorded matrices and explanations and generates the customers behind a cell from the matrix's own
+cells, so a list holds exactly as many customers as its cell counted.
+
+## K-means models (F28-05)
+
+Through model-registry (`contracts/model-registry/`, ADR-0064). The **K-means** screen, in the Analysis
+group, is offered to `ADMIN`, `ANALYST`, `MARKETING` and `AUDITOR` by the `x-mosaiq-roles` of
+`listModelVersions`, and to no other role. Starting a training and publishing a version are `ADMIN` only
+in the contract (RN-05), so the other three roles read and compare and are drawn no write control. The
+main process refuses a write from a role the contract does not allow before anything is sent, and a
+forced one gets `forbidden_role`.
+
+- **Launch.** An `ADMIN` chooses the variables (R, F, M), the normalization (`MIN_MAX` or `NONE`), k (2 to
+  20), the seed, the window in days, the iteration limit and the tolerance, and names the draft version.
+  An empty seed is left out of the request: the service chooses one and records it (RN-58), and the
+  screen shows the seed the training ran with. `POST /v1/model-trainings` answers RUNNING. The main
+  process checks every value first against the contract's facets, so a refusal names its field and
+  nothing is sent; the service's own refusals (`training_in_progress`, `model_version_name_taken`,
+  `invalid_body` with its details) are shown as returned.
+- **Progress.** The contract has no percentage, so the screen shows the state of the run (an indeterminate
+  progress bar and the seconds it has run, polled once a second with `GET /v1/model-trainings/{id}`),
+  and for a finished run its iterations, whether it converged and its inertia and silhouette. A training
+  already running when the screen opens, started by anyone, is followed too. A COMPLETED training
+  registered a DRAFT version: the screen says so, lists it and opens it. A FAILED one says it
+  registered nothing.
+- **Versions.** `GET /v1/model-versions` filtered by method (K-means by default) and state, with
+  paging; the export button writes the table on screen (ADR-0074). A version opens with its parameters,
+  its metrics, its data origin (`Synthetic` when it was fitted on seeded data, ADR-0052), its centroids
+  in raw units and its size under each label. A version is immutable: there is no edit or delete
+  control.
+- **Raw units.** A centroid is stored in the normalized space of the fit. Under `MIN_MAX` the screen puts
+  it back with the bounds the version froze, `min + coordinate * (max - min)`: recency in days since
+  the last purchase, frequency in net purchases, monetary value as a net amount. Under `NONE` the
+  coordinates already are raw. A variable the fit did not use, or a bound the service did not send, shows
+  as a dash rather than as a guess.
+- **Sizes.** A version carries a share per label and the number of customers it was fitted on, and no
+  count per cluster, so a size is the label's: `share * customers fitted`, to the nearest customer.
+- **Compare.** Tick two versions, or compare a version with the published one. Inertia, silhouette and
+  stability, the parameters, the size under each label and the centroids in raw units sit side by side,
+  and what differs is marked. Centroids are lined up by label, never by cluster number (ADR-0018). The
+  comparison is marked methodological (ADR-0064), says that inertia and silhouette do not compare across
+  different data, k, variables or normalization, and never says that one version is better (RN-39).
+- **Publish.** `POST /v1/model-versions/{id}/publications` for a DRAFT, from a dialog that first reads the
+  version published now and states what changes for customers: which version it replaces and retires,
+  that every customer is scored again in a full run that does not finish before the answer, the labels
+  customers will hold, that a change caused by it is recorded as `VERSION_CHANGE` and never counted as
+  behaviour, and that segments already written are not rewritten. The reason (1 to 500 characters) is
+  required and is kept in the append-only publication. If the published version cannot be read, nothing
+  can be confirmed. `version_not_draft` and `publication_conflict` are shown as returned and the version
+  is read again. Rollback is in the contract and is not offered here.
+
+model-registry is not implemented yet (F22-11). The unit tests (`tests/unit/models.test.ts`,
+`tests/unit/kmeans.test.ts`) and the window tests (`tests/window/kmeans.spec.ts`) answer with the
+recorded examples in `contracts/model-registry/examples/`, read from disk.
+
+## Customer exploration (F28-03)
+
+Through five services: rfm-engine (`contracts/rfm-engine/`), sales-service, products-service and
+categories-service, and customer-preferences (`contracts/customer-preferences/`, whose consent,
+restriction and interest reads are published ahead of their implementation and marked planned, ADR-0073).
+The **Customer exploration** screen, in the Analysis group, is offered to the roles whose `x-mosaiq-roles`
+allow `getRfmProfile`: `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING` and `AUDITOR`. Any other role has
+no entry in the navigation, and the main process refuses a forced call with `forbidden_role` before
+sending anything. Each read is checked against its own operation (`EXPLORATION_OPERATIONS`), so a role the
+contract leaves out of one read, such as the consent record for an analyst, is refused on that panel and
+the others are still drawn. A refusal by a service is shown as it was sent: code, message and correlation
+id, and the panel says whether the console or the service refused. Nothing is hidden before it is asked.
+
+- **Pick a customer** by searching the directory (`GET /v1/customers`) or by entering an id, and choose the
+  first and last day (UTC, the last included) of the sales window to look at.
+- **One customer across windows.** The profile of rfm-engine (`GET /v1/rfm-profiles/{customer_id}`: R, F,
+  M, scores and label under one rule set) holds a window of its own: the rule set's `window_days`
+  (`GET /v1/rfm-rule-sets/{rule_set_id}`) ending at `computed_at` (RN-65). The screen sets three columns
+  side by side, each stating its window: the profile; the customer's sales over the profile's window,
+  worked out here, with "same as the profile" or "the profile says ..." on each figure; and the sales over
+  the chosen window. A role that may not read rule sets (`STORE_MANAGER`) has a profile with no window, and
+  the sales are read over the chosen one only. A window includes its first instant and excludes its last,
+  as `GET /v1/sales` does; recency is whole days from the latest purchase to the instant stated beside it,
+  which is the end of the window or now, whichever is earlier.
+- **Purchases, categories and channels** come from the customer's sales (`GET /v1/sales?customer_id=`, all
+  pages up to 2,000, read once for both windows), the category of each product
+  (`GET /v1/products?ids=`, 50 to a call) and the names of categories, channels and stores. No service
+  answers them per customer, so the figures of `src/shared/exploration.ts` are worked out in the client and
+  pinned by unit tests; a purchase counts once in each category it includes.
+- **Net purchases (ADR-0062).** The reversals of the customer (`GET /v1/sale-reversals?customer_id=`, planned)
+  are applied: a sale reversed in full is listed and marked and does not count, and a part returned lowers
+  spend. When the reversals cannot be read (not implemented yet, refused, or an audited read that cannot be
+  recorded) the sales are counted as charged, a warning says so, and the reason is shown.
+- **Restrictions and consent.** `GET .../restrictions` shows whether personalization is allowed, the
+  channels not to reach the customer on and the categories not to offer them (and those below). It reads
+  `false` for a purpose withdrawn or never recorded, and the screen says exactly that. `GET .../consent`,
+  for `ADMIN`, `AUDITOR` and `STORE_MANAGER`, shows each purpose with its state, source and basis, a
+  programme default said as such and never as the customer's own consent (ADR-0066). `GET .../interests`
+  shows what the customer declared apart from what the platform inferred, each inferred interest with its
+  window.
+- Opening a customer reads that customer's sales history, which ADR-0066 section 4 has the services record
+  in the audit trail; a service that cannot record it answers `audit_unavailable`, shown as returned.
+- Export is the shell's: the first table on screen, for the roles that may export (ADR-0074).
+
+The window tests (`tests/window/exploration.spec.ts`) answer with the recorded examples of the contracts
+above, read from disk, plus the few documents `tests/support/exploration.ts` builds in their shape
+(products, stores, categories), and check the screen at 375 px and at 1440 px.
+
+## Import and data quality (F28-02)
+
+Through sales-service (`contracts/sales/`, resource `sale-imports`, [ADR-0070](../../docs/adr/0070-a-sales-import-reaches-sales-service-as-numbered-row-chunks-under-the-64-kib-cap-and-is-processed-by-a-worker.md)).
+The **Import and data quality** screen is offered to `ADMIN` alone, by the `x-mosaiq-roles` of
+`listSaleImports`; the main process refuses every one of its calls to any other role before it opens a
+dialog or sends a request. The bridge operations are `chooseImportFile`, `startImport`, `resumeImport`,
+`importProgress`, `cancelImport`, `listImports`, `getImport` and `listImportRejections`.
+
+- **The file stays in the main process.** `chooseImportFile` opens the native dialog there and reads
+  the file it returns (UTF-8, a leading byte-order mark ignored, CRLF, LF or CR, quoted values with
+  commas and line breaks, as the web page's reader does; at most 16 MiB). The renderer receives the
+  file's name, its number of data rows and chunks, and nothing of its contents, and names no file.
+- **Checked before anything is sent.** The header must be the eight columns of CSV contract v1; a wrong
+  one is refused naming the first wrong column (`header[3]`, `unexpected_column`), as the service would.
+  A file that is not UTF-8, has a quote it never closes, no rows, more than 100,000 rows or needs more
+  than 667 chunks is refused with its reason. Empty lines are skipped and counted, not sent.
+- **Chunks.** Rows are sent as numbered chunks (from 0) of at most 150 rows and 60,000 bytes of
+  serialized XML, so the 64 KiB cap is never what the client discovers. `PUT .../chunks/{sequence}`
+  carries each one; the transport validates it against `sales.xsd` before it is sent and the answer
+  after it arrives. A cell longer than 256 characters is cut at 256 and a row of more than 64 cells at
+  64, and a character XML cannot carry becomes U+FFFD: no column accepts such a cell and no row of that
+  length is valid, so the service still rejects the row, by line, and one odd row never refuses a chunk
+  of good ones. `POST /v1/sale-imports` carries one `Idempotency-Key` per start, reused if the create is
+  tried again.
+- **Progress.** The screen shows the chunks staged, the rows received and, from the service, accepted,
+  rejected and pending, written as `Received 320 = accepted 316 + rejected 4 + pending 0` with a plain
+  statement of whether the identity holds. Once every chunk is staged the console reads the import every
+  2 seconds until the service ends it. The run lives in the main process, so leaving the screen does not
+  stop it.
+- **Failures.** A 503, a 429 (waiting for `Retry-After`) or no answer is tried again twice with the same
+  request. If it still fails the import pauses with the file held, and **Resume** reads
+  `next_sequence`, sends the last staged chunk again (the service answers a replay for the same file and
+  `chunk_conflict` for another) and continues. After a restart, "Resume with its file" in the recent
+  imports does the same with the file chosen again. `chunk_conflict`, `row_count_mismatch` and the other
+  final refusals stop the run; on `row_count_mismatch` the console cancels the import, as ADR-0070 asks.
+  **Cancel import** sets `CANCELLED`: accepted rows stay accepted.
+- **Review.** Any import in the recent list opens its counts and its report: line, field (or "whole row"),
+  code and the service's reason, 100 rows a page with **Load the next 100** and **Load all**. The
+  contract has no filter on the report, so the code, field and kind filters apply to the rejections
+  loaded so far, and the screen says so while more are unread. Messages quote the file's own text; the
+  parser leaves XML entities as written, so the module decodes the five predefined ones and numeric
+  references, once, and sets the result with `textContent`.
+- **Duplicates.** A repeat inside the file (`duplicate_of` `FILE`, with the first line it repeats) and a
+  sale already recorded (`RECORDED_SALE`, with `sale_id` when the service knows it) are two kinds in
+  their own column, counted apart, and filterable. For a recorded sale, **Open sale** reads
+  `GET /v1/sales/{sale_id}` through the existing sales read and shows it beside the file's line. For a
+  repeat, **Repeats of line N** lists every loaded line that repeats it and says that line N was recorded
+  once. The first line is an accepted row, so it is not in the report. Settling look-alike duplicates and
+  the audited resolutions are F26-09 (#854), not this module.
+- **Export.** The module's one table is the rejections, so the shared **Export CSV** (ADR-0074) writes the
+  filtered rows on screen through the save dialog, with the formula-injection prefix, and records the
+  export in `export-audit.log`.
+
+The unit tests (`tests/unit/csv.test.ts`, `import-chunks.test.ts`, `imports.test.ts`) cover the parser,
+the chunker (size limits, sequence, determinism) and the whole flow against the recorded examples of
+`contracts/sales/examples/`, including retry, pause, resume and cancel. The window tests
+(`tests/window/imports.spec.ts`) replace only the native file dialogs and answer with those examples.
 
 ## Packages and CI (F16-05)
 
@@ -320,3 +763,44 @@ Compliance greps (both print nothing):
 grep -rn "application/json" src/
 grep -rlE "safeStorage|refresh_token" src/ | grep -i renderer
 ```
+
+## Recommendations inspection (F28-08)
+
+Through recommendations-service (`contracts/recommendations/`, `/v2`, ADR-0067). The **Recommendations**
+screen, in the Analysis group, is offered to the roles whose `x-mosaiq-roles` allow
+`getRecommendationsV2`. Stored decisions are open to fewer roles (`listRecommendationDecisions` and
+`getRecommendationDecision`: `ADMIN`, `ANALYST`, `AUDITOR` and `STORE_MANAGER`, the last only at its assigned
+stores, which the service enforces). A role that may inspect but not read decisions sees the inspection and a
+note that the decisions are closed to it. The main process checks each of the three reads against its own
+operation (`RECOMMENDATION_OPERATIONS`) and refuses a forced call with `forbidden_role` before sending
+anything. The operations are published ahead of their implementation and marked planned (ADR-0073), so the
+tests answer with the recorded examples of `contracts/recommendations/examples/v2/`, validated against
+`recommendations.v2.xsd`; a service that does not answer yet is shown as it answers.
+
+- **Inspect.** A customer (chosen from the customer search for roles that may search, or typed as an id), a
+  store from the stores read and a channel from the channels read, and a limit of 1 to 50. With no store the
+  service uses the customer's usual store, and with no channel any channel the store enables: the screen
+  never fills either in (`GET /v2/recommendations`, `store_id` and `channel_id` are sent only when chosen).
+- **Each item** shows its position, product, kind, factors (signals matched, segment buyers and category share,
+  the figures RN-40 orders by), availability (the quantity on hand and the store and channel it was judged at)
+  and the reasons that matched, each in words with its figures. Product, category, store and channel names are
+  read from their owners within the call (ADR-0035); an id whose name cannot be read is shown with its id and
+  "name unavailable".
+- **Alternatives are marked.** A `kind` of `alternative` reads "Alternative for <product>, which is unavailable
+  here (<reason>)", has no factors ("Not scored") and is drawn with a solid left rule. A `kind` of `elsewhere`
+  reads "Another store: unavailable at <store>, so not recommended there", names the other store that holds it
+  and is drawn in italics with a dashed rule. The words carry the mark, not only the styling.
+- **Excluded.** The exclusion counts of the answer, each with the reason in words. Products are counted and
+  never listed, so the screen lists none. A status with no items (`no_usual_store`, `no_open_assignment`,
+  `unassigned_result`, `PERSONALIZATION_WITHDRAWN`) says in plain words why nothing was offered, and `none_match`
+  says that no product qualified here.
+- **Stored decisions.** The list (`GET /v2/recommendation-decisions`) filters by customer, store, status and a
+  UTC day range (the last day included), twenty to a page. A decision opens from the list, from an inspection
+  ("Open the stored decision") or by its id, and shows what was offered and excluded as the answer does. A
+  decision whose customer was anonymized reads "Anonymized". It keeps no window or usual store, so the screen
+  does not show them.
+- Export is the shell's: the first table on screen as CSV, for the roles that may export (ADR-0074).
+
+The unit tests (`tests/unit/recommendations.test.ts`) and the window tests
+(`tests/window/recommendations.spec.ts`) answer with the recorded v2 examples and with pages of products,
+categories, stores, channels and customers built in `tests/support/recommendations.ts`.

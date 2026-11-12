@@ -1,0 +1,2 @@
+saturation rates (requests/s), median of the calibration passes with the range, and the measured rate at 70% of the lower median
+detail  xml  flask=320 (320-320) rust=1920 (1920-1920) measured=224

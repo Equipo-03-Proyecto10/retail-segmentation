@@ -91,4 +91,297 @@
 
   <xs:element name="AuditEntry" type="audit:AuditEntryType"/>
   <xs:element name="AuditEntries" type="audit:AuditEntriesType"/>
+
+  <!-- Domain events (ADR-0072). A null JSON member is an omitted element. -->
+  <xs:simpleType name="DomainEventKind">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="CALCULATION_RUN"/>
+      <xs:enumeration value="MODEL_PUBLISHED"/>
+      <xs:enumeration value="MODEL_ROLLED_BACK"/>
+      <xs:enumeration value="PERMISSION_CHANGED"/>
+      <xs:enumeration value="CRITICAL_ACTION"/>
+      <xs:enumeration value="HISTORY_READ"/>
+      <xs:enumeration value="AUDIT_READ"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="DomainEventOutcome">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="SUCCESS"/>
+      <xs:enumeration value="REFUSED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="ActorType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="USER"/>
+      <xs:enumeration value="SYSTEM"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="RoleCode">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[A-Z][A-Z_]{1,29}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="ModelVersionId">
+    <xs:restriction base="xs:positiveInteger">
+      <xs:maxInclusive value="9223372036854775807"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="StoreId">
+    <xs:restriction base="xs:int">
+      <xs:minInclusive value="1"/>
+      <xs:maxInclusive value="32767"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="SubjectType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="user"/>
+      <xs:enumeration value="customer"/>
+      <xs:enumeration value="model_version"/>
+      <xs:enumeration value="calculation"/>
+      <xs:enumeration value="sale"/>
+      <xs:enumeration value="sale_reversal"/>
+      <xs:enumeration value="stock_level"/>
+      <xs:enumeration value="campaign"/>
+      <xs:enumeration value="experiment"/>
+      <xs:enumeration value="audit_entry"/>
+      <xs:enumeration value="domain_event"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Source">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="svc_[a-z][a-z_]{0,59}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Sha256Hex">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9a-f]{64}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="ReasonCode">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[A-Z][A-Z0-9_]{0,39}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="CorrelationId">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9A-Za-z\-]{1,64}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="CalculationRunDetailsType">
+    <xs:sequence>
+      <xs:element name="calculation">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="RFM"/>
+            <xs:enumeration value="SEGMENTATION"/>
+            <xs:enumeration value="KPI"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+      <xs:element name="status">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="COMPLETED"/>
+            <xs:enumeration value="FAILED"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+      <xs:element name="input_count" type="xs:nonNegativeInteger"/>
+      <xs:element name="output_count" type="xs:nonNegativeInteger"/>
+      <xs:element name="parameters_digest" type="audit:Sha256Hex" minOccurs="0"/>
+      <xs:element name="window_from" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="window_to" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="data_origin" minOccurs="0">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="OBSERVED"/>
+            <xs:enumeration value="SEEDED"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- previous_version_id is omitted for a first publication. -->
+  <xs:complexType name="ModelChangeDetailsType">
+    <xs:sequence>
+      <xs:element name="previous_version_id" type="audit:ModelVersionId" minOccurs="0"/>
+      <xs:element name="reason_code" type="audit:ReasonCode"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="PermissionChangedDetailsType">
+    <xs:sequence>
+      <xs:element name="change">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="ROLE_ASSIGNED"/>
+            <xs:enumeration value="ADMINISTRATOR_TRANSFERRED"/>
+            <xs:enumeration value="USER_DEACTIVATED"/>
+            <xs:enumeration value="USER_REACTIVATED"/>
+            <xs:enumeration value="STORES_ASSIGNED"/>
+            <xs:enumeration value="STORES_UNASSIGNED"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+      <xs:element name="from_role" type="audit:RoleCode" minOccurs="0"/>
+      <xs:element name="to_role" type="audit:RoleCode" minOccurs="0"/>
+      <xs:element name="store_id" type="audit:StoreId" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="CriticalActionDetailsType">
+    <xs:sequence>
+      <xs:element name="action">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="SALE_REVERSED"/>
+            <xs:enumeration value="STOCK_ADJUSTED"/>
+            <xs:enumeration value="CUSTOMER_ANONYMIZED"/>
+            <xs:enumeration value="AUDIT_PAYLOAD_REDACTED"/>
+            <xs:enumeration value="EXPERIMENT_FROZEN"/>
+            <xs:enumeration value="CAMPAIGN_ACTIVATED"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+      <xs:element name="reason_code" type="audit:ReasonCode" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="HistoryReadDetailsType">
+    <xs:sequence>
+      <xs:element name="history">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="CONSENT"/>
+            <xs:enumeration value="SEGMENT"/>
+            <xs:enumeration value="SALES"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="AuditReadDetailsType">
+    <xs:sequence>
+      <xs:element name="resource">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="AUDIT_ENTRIES"/>
+            <xs:enumeration value="DOMAIN_EVENTS"/>
+            <xs:enumeration value="DOMAIN_EVENT_VERIFICATION"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+      <xs:element name="filter" minOccurs="0" maxOccurs="unbounded">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="entity"/>
+            <xs:enumeration value="entity_pk"/>
+            <xs:enumeration value="user_id"/>
+            <xs:enumeration value="action"/>
+            <xs:enumeration value="kind"/>
+            <xs:enumeration value="actor_user_id"/>
+            <xs:enumeration value="actor_role"/>
+            <xs:enumeration value="model_version_id"/>
+            <xs:enumeration value="subject_type"/>
+            <xs:enumeration value="subject_id"/>
+            <xs:enumeration value="store_id"/>
+            <xs:enumeration value="outcome"/>
+            <xs:enumeration value="source"/>
+            <xs:enumeration value="from"/>
+            <xs:enumeration value="to"/>
+            <xs:enumeration value="page"/>
+            <xs:enumeration value="size"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- One child, named for the kind's details type: CalculationRun for
+       CALCULATION_RUN, ModelChange for both model kinds, PermissionChange,
+       CriticalAction, HistoryRead and AuditRead. -->
+  <xs:complexType name="DomainEventDetailsType">
+    <xs:choice>
+      <xs:element name="CalculationRun" type="audit:CalculationRunDetailsType"/>
+      <xs:element name="ModelChange" type="audit:ModelChangeDetailsType"/>
+      <xs:element name="PermissionChange" type="audit:PermissionChangedDetailsType"/>
+      <xs:element name="CriticalAction" type="audit:CriticalActionDetailsType"/>
+      <xs:element name="HistoryRead" type="audit:HistoryReadDetailsType"/>
+      <xs:element name="AuditRead" type="audit:AuditReadDetailsType"/>
+    </xs:choice>
+  </xs:complexType>
+
+  <xs:complexType name="DomainEventType">
+    <xs:sequence>
+      <xs:element name="event_id" type="audit:Uuid"/>
+      <xs:element name="kind" type="audit:DomainEventKind"/>
+      <xs:element name="outcome" type="audit:DomainEventOutcome"/>
+      <xs:element name="occurred_at" type="xs:dateTime"/>
+      <xs:element name="recorded_at" type="xs:dateTime"/>
+      <xs:element name="actor_type" type="audit:ActorType"/>
+      <xs:element name="actor_user_id" type="audit:Uuid" minOccurs="0"/>
+      <xs:element name="actor_role" type="audit:RoleCode" minOccurs="0"/>
+      <xs:element name="source" type="audit:Source"/>
+      <xs:element name="store_id" type="audit:StoreId" minOccurs="0"/>
+      <xs:element name="subject_type" type="audit:SubjectType" minOccurs="0"/>
+      <xs:element name="subject_id" type="audit:EntityPk" minOccurs="0"/>
+      <xs:element name="model_version_id" type="audit:ModelVersionId" minOccurs="0"/>
+      <xs:element name="rule_set_version" type="audit:ModelVersionId" minOccurs="0"/>
+      <xs:element name="correlation_id" type="audit:CorrelationId" minOccurs="0"/>
+      <xs:element name="details" type="audit:DomainEventDetailsType"/>
+      <xs:element name="prev_hash" type="audit:Sha256Hex"/>
+      <xs:element name="entry_hash" type="audit:Sha256Hex"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="DomainEventsType">
+    <xs:sequence>
+      <xs:element name="DomainEvent" type="audit:DomainEventType"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- head_hash is omitted for an empty range; first_broken_event_id and
+       reason are omitted when the chain is ok. -->
+  <xs:complexType name="DomainEventVerificationType">
+    <xs:sequence>
+      <xs:element name="status">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="ok"/>
+            <xs:enumeration value="broken"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+      <xs:element name="checked" type="xs:nonNegativeInteger"/>
+      <xs:element name="head_hash" type="audit:Sha256Hex" minOccurs="0"/>
+      <xs:element name="first_broken_event_id" type="audit:Uuid" minOccurs="0"/>
+      <xs:element name="reason" minOccurs="0">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="entry_hash_mismatch"/>
+            <xs:enumeration value="prev_hash_mismatch"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name="DomainEvent" type="audit:DomainEventType"/>
+  <xs:element name="DomainEvents" type="audit:DomainEventsType"/>
+  <xs:element name="DomainEventVerification" type="audit:DomainEventVerificationType"/>
 </xs:schema>

@@ -1,0 +1,6 @@
+{
+  "code": "import_in_progress",
+  "message": "Import 17 is still PROCESSING; wait for it to complete, or cancel it, before opening another.",
+  "correlation_id": "corr-import-in-progress",
+  "details": []
+}

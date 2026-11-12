@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>underpowered_not_acknowledged</code>
+  <message>The plan is underpowered; assign it only with acknowledge_underpowered true.</message>
+  <correlation_id>corr-underpowered-not-acknowledged</correlation_id>
+</Error>

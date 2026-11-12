@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_body</code>
+  <message>The chunk violates its schema.</message>
+  <correlation_id>corr-chunk-invalid-body</correlation_id>
+  <details>
+    <field>rows[0].cells[4]</field>
+    <code>too_long</code>
+  </details>
+  <details>
+    <field>rows[2].line</field>
+    <code>not_increasing</code>
+  </details>
+</Error>

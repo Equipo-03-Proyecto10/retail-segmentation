@@ -1,0 +1,6 @@
+{
+  "code": "sale_attribution_not_found",
+  "message": "No attribution has this id.",
+  "correlation_id": "corr-sale-attribution-not-found",
+  "details": []
+}

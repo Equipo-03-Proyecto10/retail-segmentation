@@ -23,7 +23,8 @@ export type ModuleName =
   | 'audit'
   | 'transfer'
   | 'services'
-  | 'imports';
+  | 'imports'
+  | 'inventory';
 
 export interface ConsoleModule {
   name: ModuleName;
@@ -73,6 +74,7 @@ export const MODULE_GROUPS: readonly ModuleGroup[] = [
       { name: 'categories', label: 'Categories', operation: 'listCategories' },
       { name: 'stock', label: 'Stock', operation: 'listStockLevels' },
       { name: 'stores', label: 'Stores', operation: 'listStores' },
+      { name: 'inventory', label: 'Demand and stock', operation: 'getDemandReport' },
     ],
   },
   {
@@ -155,6 +157,14 @@ export const AUDIT_OPERATIONS = {
   entry: 'getAuditEntry',
   events: 'listDomainEvents',
   event: 'getDomainEvent',
+} as const;
+
+/** The read operations the inventory planning module calls (analytics-kpis and stock x-mosaiq-roles); each is checked before its call (ADR-0079). */
+export const INVENTORY_OPERATIONS = {
+  demand: 'getDemandReport',
+  stock: 'listStockLevels',
+  stores: 'listStores',
+  products: 'listProducts',
 } as const;
 
 /** Error codes that mean the session is over; the user goes back to sign-in. */

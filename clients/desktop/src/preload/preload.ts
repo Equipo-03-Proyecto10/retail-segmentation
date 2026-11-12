@@ -92,6 +92,7 @@ const bridge: MosaiqBridge = {
   getRecommendations: (customerId) => ipcRenderer.invoke(CHANNELS.getRecommendations, customerId),
   kpiDefinitions: () => ipcRenderer.invoke(CHANNELS.kpiDefinitions),
   kpiReport: (query) => ipcRenderer.invoke(CHANNELS.kpiReport, query),
+  inventoryPlan: (query) => ipcRenderer.invoke(CHANNELS.inventoryPlan, query),
   exportReport: (format) => ipcRenderer.invoke(CHANNELS.exportReport, format),
   inspectRecommendation: (query) => ipcRenderer.invoke(CHANNELS.inspectRecommendation, query),
   listRecommendationDecisions: (query) => ipcRenderer.invoke(CHANNELS.listRecommendationDecisions, query),

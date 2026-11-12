@@ -142,6 +142,7 @@ test('window is locked down', async () => {
     'getUser',
     'importProgress',
     'inspectRecommendation',
+    'inventoryPlan',
     'kpiDefinitions',
     'kpiReport',
     'listAssignments',

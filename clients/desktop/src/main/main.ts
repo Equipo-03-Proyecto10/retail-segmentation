@@ -19,6 +19,7 @@ import { Floor } from './floor';
 import { Recommendations } from './recommendations';
 import { Models } from './models';
 import { Imports, systemImportEnv } from './imports';
+import { Inventory } from './inventory';
 import { Reports, type ReportExportEnv } from './reports';
 import { Migrations } from './migrations';
 import { loadSettings } from './settings';
@@ -109,6 +110,8 @@ function start(): void {
   const reports = new Reports(office, reportEnv, dir);
   ipcMain.handle(CHANNELS.kpiDefinitions, () => reports.definitions());
   ipcMain.handle(CHANNELS.kpiReport, (_e, query: unknown) => reports.report(query));
+  const inventory = new Inventory(office);
+  ipcMain.handle(CHANNELS.inventoryPlan, (_e, query: unknown) => inventory.plan(query));
   ipcMain.handle(CHANNELS.exportReport, (_e, format: unknown) => {
     reportOwner = BrowserWindow.fromWebContents(_e.sender) ?? undefined;
     return reports.exportReport(format);

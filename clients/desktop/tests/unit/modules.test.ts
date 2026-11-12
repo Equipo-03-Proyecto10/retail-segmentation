@@ -6,8 +6,8 @@ import type { MosaiqBridge } from '../../src/shared/api';
 describe('module groups', () => {
   it('places every module in exactly one group', () => {
     const names = MODULE_GROUPS.flatMap((g) => g.modules.map((m) => m.name));
-    expect(new Set(names).size).toBe(22);
-    expect(names).toHaveLength(22);
+    expect(new Set(names).size).toBe(23);
+    expect(names).toHaveLength(23);
   });
 
   it('shows a role only the modules whose operation it may call, and no empty group', () => {
@@ -25,6 +25,16 @@ describe('module groups', () => {
     ]);
     expect(visibleGroups(['listCampaigns']).flatMap((g) => g.modules.map((m) => m.name))).not.toContain(
       'kmeans',
+    );
+  });
+
+  it('offers demand and stock in the planning group, to a role that may read demand, and to no other', () => {
+    expect(visibleGroups(['getDemandReport']).map((g) => [g.id, g.modules.map((m) => m.name)])).toEqual([
+      ['planning', ['inventory']],
+      ['administration', ['services']],
+    ]);
+    expect(visibleGroups(['listCampaigns']).flatMap((g) => g.modules.map((m) => m.name))).not.toContain(
+      'inventory',
     );
   });
 

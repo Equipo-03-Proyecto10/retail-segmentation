@@ -79,6 +79,7 @@ being ignored. `MOSAIQ_DESKTOP_CONFIG_DIR` overrides the directory (the window t
     (read only).
   - sales import: `chooseImportFile`, `startImport`, `resumeImport`, `importProgress`, `cancelImport`,
     `listImports`, `getImport`, `listImportRejections`.
+  - demand and stock: `inventoryPlan` (read only; ADR-0079).
 
   There is no generic fetch and no `ipcRenderer`. The main process checks every value a screen sends
   (`src/main/checks.ts`, used by `catalog.ts` and `floor.ts`) before it builds a path or a body from it.
@@ -716,6 +717,27 @@ The unit tests (`tests/unit/csv.test.ts`, `import-chunks.test.ts`, `imports.test
 the chunker (size limits, sequence, determinism) and the whole flow against the recorded examples of
 `contracts/sales/examples/`, including retry, pause, resume and cancel. The window tests
 (`tests/window/imports.spec.ts`) replace only the native file dialogs and answer with those examples.
+
+## Demand and stock (F28-12)
+
+The inventory planner's screen (`src/renderer/inventory.ts`) shows one store's demand for a period, by
+category and by segment, next to the units on hand. It is read in one call, `inventoryPlan`, whose
+main-process reader (`src/main/inventory.ts`) reads three services through the transport:
+
+- analytics-kpis, `GET /v1/kpi-reports/demand`, grouped by `category` and `segment`, paged; it holds no
+  customer and no customer count (ADR-0079);
+- stock, `GET /v1/stock-levels` for the store, paged, one line per product;
+- products, `GET /v1/products?ids=`, in batches of 50, to map each stocked product to its category.
+
+The rules are pure and tested in `src/shared/inventory.ts`. **Short by** is the period's demand in units
+above the units on hand today: a planning hint, never negative, and not a forecast. A category with
+stock and no demand is listed with no shortfall. A figure the service did not send is refused as
+`figure_unavailable`, never shown as zero. A list cut at the page limit sets `truncated`, and the screen
+says so.
+
+The plan needs the operations `getDemandReport`, `listStockLevels`, `listProducts` and `listStores`; the
+module is offered only to a role that may read demand (`INVENTORY_OPERATIONS` in `src/shared/modules.ts`).
+Its tests are `tests/unit/inventory.test.ts` and `tests/window/inventory.spec.ts`.
 
 ## Packages and CI (F16-05)
 

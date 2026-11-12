@@ -824,6 +824,48 @@ export interface ReportView {
 
 export type ReportFormat = 'pdf' | 'csv' | 'xlsx';
 
+// ---------- inventory planning (F28-12, #881) ----------
+
+export interface InventoryQuery {
+  store_id: number;
+  from: string;
+  to: string;
+}
+
+/** One category of a store's plan: the period's demand, the units on hand and the units short. */
+export interface CategoryPlanView {
+  category_id: number;
+  category: string;
+  demand_units: number;
+  demand_orders: number;
+  /** Two places, as the service's currency figures are written. */
+  demand_amount: string;
+  on_hand: number;
+  short_by: number;
+}
+
+/** One segment label of a store's plan, across every category. Carries no customer. */
+export interface SegmentPlanView {
+  label: string;
+  units: number;
+  orders: number;
+  amount: string;
+}
+
+export interface InventoryPlanView {
+  store_id: number;
+  store_name: string;
+  from: string;
+  to: string;
+  generated_at: string;
+  /** Some figure comes from seeded data (ADR-0052). */
+  synthetic: boolean;
+  /** The demand report or the stock listing was cut at the page limit, so a figure may be short. */
+  truncated: boolean;
+  categories: CategoryPlanView[];
+  segments: SegmentPlanView[];
+}
+
 // ---------- recommendations inspection (F28-08, #877) ----------
 
 /** An id the service sent, with the name its owner gave it; absent when that owner could not be read. */
@@ -1774,6 +1816,7 @@ export interface MosaiqBridge {
   getRecommendations(customerId: string): Promise<Result<RecommendationView>>;
   kpiDefinitions(): Promise<Result<KpiDefinitionView[]>>;
   kpiReport(query: ReportQuery): Promise<Result<ReportView>>;
+  inventoryPlan(query: InventoryQuery): Promise<Result<InventoryPlanView>>;
   exportReport(format: ReportFormat): Promise<Result<ExportOutcome>>;
   inspectRecommendation(query: InspectQuery): Promise<Result<InspectionView>>;
   listRecommendationDecisions(query: DecisionQuery): Promise<Result<Paged<DecisionSummaryView>>>;
@@ -1890,6 +1933,7 @@ export const CHANNELS = {
   getRecommendations: 'mosaiq:get-recommendations',
   kpiDefinitions: 'mosaiq:kpi-definitions',
   kpiReport: 'mosaiq:kpi-report',
+  inventoryPlan: 'mosaiq:inventory-plan',
   exportReport: 'mosaiq:export-report',
   inspectRecommendation: 'mosaiq:inspect-recommendation',
   listRecommendationDecisions: 'mosaiq:list-recommendation-decisions',

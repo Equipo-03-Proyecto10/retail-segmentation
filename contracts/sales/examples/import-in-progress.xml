@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>import_in_progress</code>
+  <message>Import 17 is still PROCESSING; wait for it to complete, or cancel it, before opening another.</message>
+  <correlation_id>corr-import-in-progress</correlation_id>
+</Error>

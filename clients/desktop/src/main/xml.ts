@@ -68,6 +68,9 @@ const REPEATED = new Set([
   'Users.User',
   'Roles.Role',
   'Campaigns.Campaign',
+  'CampaignAudienceBreakdown.reasons',
+  'CampaignExclusions.customer_ids',
+  'CampaignExclusions.label_codes',
   'Segments.Segment',
   'AuditEntries.AuditEntry',
   'Customers.Customer',
@@ -76,6 +79,12 @@ const REPEATED = new Set([
   'PreferenceProfile.interest_category_ids',
   'Recommendation.items',
   'Recommendation.items.reasons',
+  'Recommendation.exclusions',
+  'RecommendationDecision.exclusions',
+  'RecommendationDecision.items',
+  'RecommendationDecision.items.reasons',
+  'RecommendationDecisions.RecommendationDecisionSummary',
+  'RecommendationDecisions.RecommendationDecisionSummary.exclusions',
   'KpiReport.group_by',
   'KpiReport.rows',
   'KpiReport.rows.measures',
@@ -83,6 +92,68 @@ const REPEATED = new Set([
   'KpiDefinitions.KpiDefinition',
   'KpiDefinitions.KpiDefinition.dimensions',
   'KpiDefinitions.KpiDefinition.measures',
+  'SaleImports.SaleImport',
+  'SaleImportRejections.SaleImportRejection',
+  'DriftReport.variables',
+  'DriftReport.variables.statistics',
+  'DriftReport.variables.bins',
+  'DriftReport.outcome_test.segments',
+  'DriftReport.alert_ids',
+  'DriftReports.DriftReport',
+  'DriftReports.DriftReport.variables',
+  'DriftReports.DriftReport.variables.statistics',
+  'DriftReports.DriftReport.variables.bins',
+  'DriftReports.DriftReport.outcome_test.segments',
+  'DriftReports.DriftReport.alert_ids',
+  'DriftAlert.statistics',
+  'DriftAlert.bins',
+  'DriftAlert.outcome_test.segments',
+  'DriftAlerts.DriftAlert',
+  'DriftAlerts.DriftAlert.statistics',
+  'DriftAlerts.DriftAlert.bins',
+  'DriftAlerts.DriftAlert.outcome_test.segments',
+  'SegmentMigrationMatrix.MigrationTotal',
+  'SegmentMigrationMatrix.MigrationCell',
+  'SegmentMigrations.SegmentMigration',
+  'SegmentMigrations.SegmentMigration.responsible_variables',
+  'SegmentMigrationExplanation.migration.responsible_variables',
+  'SegmentMigrationExplanation.MigrationMeasure',
+  'SaleReversals.SaleReversal',
+  'RestrictionProfile.restricted_channel_ids',
+  'RestrictionProfile.restricted_category_ids',
+  'ConsentState.purposes',
+  'InterestProfile.declared_category_ids',
+  'InterestProfile.inferred_interests',
+  'ModelVersions.ModelVersion',
+  'ModelVersions.ModelVersion.parameters.features',
+  'ModelVersions.ModelVersion.frozen_scoring.centroids',
+  'ModelVersions.ModelVersion.reference_distribution.labels',
+  'ModelVersion.parameters.features',
+  'ModelVersion.frozen_scoring.centroids',
+  'ModelVersion.reference_distribution.labels',
+  'ModelTrainings.ModelTraining',
+  'ModelTrainings.ModelTraining.parameters.features',
+  'ModelTraining.parameters.features',
+  'ModelPublications.ModelPublication',
+  'Experiments.Experiment',
+  'Experiments.Experiment.arms',
+  'Experiments.Experiment.flags',
+  'Experiments.Experiment.frame.exclusions',
+  'Experiments.Experiment.assignment.arms',
+  'Experiments.Experiment.assignment.checks.balance',
+  'Experiment.arms',
+  'Experiment.flags',
+  'Experiment.frame.exclusions',
+  'Experiment.assignment.arms',
+  'Experiment.assignment.checks.balance',
+  'AssignmentSummary.arms',
+  'AssignmentSummary.checks.balance',
+  'ExperimentResult.arms',
+  'ExperimentResult.checks.balance',
+  'ExperimentResult.comparisons',
+  'ExperimentResult.attribution.arms',
+  'ExperimentResult.assumptions',
+  'ExperimentResult.flags',
 ]);
 /** Child elements that repeat wherever they appear: error details, sale lines, summary groups, event history, check-in reviews, a campaign's allowed transitions. */
 const REPEATED_CHILDREN = new Set([
@@ -124,24 +195,46 @@ const XSI = 'http://www.w3.org/2001/XMLSchema-instance';
 /** A request field: text, or null for an explicit xsi:nil (for example, make a category a root). */
 export type FieldValue = string | null;
 
-/** Builds a request body, in the given order. A list repeats its element once per value, and an empty list sends none. */
-export function buildXml(
-  root: string,
-  namespace: string,
-  fields: Record<string, FieldValue | string[]>,
-): string {
-  const element: Record<string, unknown> = { '@_xmlns': namespace };
+/**
+ * A request body's fields, in order. A list of text repeats its element once per value, and an
+ * empty list sends none. A nested record is a child element with children of its own. A list of
+ * records repeats the element once per record, each with its own children (the arms of a plan,
+ * the rows of a chunk); an empty string is sent as an empty element, so a cell keeps its position.
+ */
+export interface Fields {
+  [name: string]: FieldValue | string[] | Fields | Fields[];
+}
+
+/** Fills an element from fields, in order; true when any field is an explicit xsi:nil. */
+function fill(element: Record<string, unknown>, fields: Fields): boolean {
   let nil = false;
   for (const [name, value] of Object.entries(fields)) {
     if (Array.isArray(value)) {
-      if (value.length > 0) element[name] = value;
+      if (value.length === 0) continue;
+      element[name] = (value as (string | Fields)[]).map((item) => {
+        if (typeof item === 'string') return item;
+        const child: Record<string, unknown> = {};
+        nil = fill(child, item) || nil;
+        return child;
+      });
     } else if (value === null) {
       element[name] = { '@_xsi:nil': 'true' };
       nil = true;
+    } else if (typeof value === 'object') {
+      const child: Record<string, unknown> = {};
+      nil = fill(child, value) || nil;
+      element[name] = child;
     } else {
       element[name] = value;
     }
   }
+  return nil;
+}
+
+/** Builds a request body from its fields, in the given order. */
+export function buildXml(root: string, namespace: string, fields: Fields): string {
+  const element: Record<string, unknown> = { '@_xmlns': namespace };
+  const nil = fill(element, fields);
   if (nil) element['@_xmlns:xsi'] = XSI;
   const body = builder.build({ [root]: element }) as string;
   return `<?xml version="1.0" encoding="UTF-8"?>${body}`;

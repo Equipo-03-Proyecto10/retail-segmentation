@@ -1,0 +1,20 @@
+{
+  "name": "Win-back offer for at-risk customers",
+  "campaign_id": 4,
+  "primary_metric": "CONVERSION",
+  "starts_on": "2026-10-01",
+  "conversion_window_days": 14,
+  "minimum_detectable_effect": 0.02,
+  "arms": [
+    {
+      "kind": "CONTROL",
+      "name": "No offer",
+      "treatment_description": "Held back: receives no win-back offer."
+    },
+    {
+      "kind": "TREATMENT",
+      "name": "10 percent win-back voucher",
+      "treatment_description": "Offered a 10 percent voucher on the next purchase."
+    }
+  ]
+}

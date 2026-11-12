@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>campaign_closed</code>
+  <message>An experiment cannot be attached to a campaign that is finished or cancelled.</message>
+  <correlation_id>corr-campaign-closed</correlation_id>
+</Error>

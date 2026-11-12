@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>audit_unavailable</code>
+  <message>The read could not be recorded, so it was not served.</message>
+  <correlation_id>corr-audit-unavailable</correlation_id>
+</Error>

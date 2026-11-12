@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SaleImportChunk xmlns="https://mosaiq.maxthecoder.online/xml/sales/v1">
+  <rows>
+    <line>second</line>
+    <cells>T-1001</cells>
+  </rows>
+</SaleImportChunk>

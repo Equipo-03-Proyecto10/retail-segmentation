@@ -895,8 +895,9 @@ REVOKE UPDATE, DELETE ON audit_log FROM retail_app;
 -- row of contracts/db/grants.csv, which contracts/db/check_grants.sh compares
 -- with the database in both directions (ADR-0034).
 --
--- The bench-only Rust build of the products reads: SELECT on product, nothing
--- else (ADR-0042).
+-- The bench-only Rust build of the products reads: SELECT on product here, and
+-- on the products boundary's four tables in that boundary's section; nothing
+-- else (ADR-0042, ADR-0078).
 GRANT SELECT ON product TO svc_products_bench;
 -- fn_audit runs as definer_audit (AUDIT STRATEGY below), which may append to
 -- the audit log and do nothing else.
@@ -1556,6 +1557,12 @@ GRANT UPDATE (barcode) ON products.product_barcode TO svc_products;
 GRANT SELECT, INSERT, DELETE ON products.product_relation TO svc_products;
 
 GRANT SELECT ON api_products.product_relation_v1 TO svc_products, svc_recommendations;
+
+-- The bench-only twin serves the details and relations reads too, read-only
+-- (ADR-0078): SELECT on the four tables and USAGE on their schema, no write.
+GRANT USAGE ON SCHEMA products TO svc_products_bench;
+GRANT SELECT ON products.product_status, products.product_attribute,
+    products.product_barcode, products.product_relation TO svc_products_bench;
 -- END BOUNDARY products
 
 -- BEGIN BOUNDARY customers

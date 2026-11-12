@@ -1,5 +1,10 @@
 role,object,privilege
 svc_products_bench,public.product,SELECT
+svc_products_bench,products,USAGE
+svc_products_bench,products.product_status,SELECT
+svc_products_bench,products.product_attribute,SELECT
+svc_products_bench,products.product_barcode,SELECT
+svc_products_bench,products.product_relation,SELECT
 definer_audit,public.audit_log,INSERT
 svc_products,public.product,SELECT
 svc_products,public.product,INSERT

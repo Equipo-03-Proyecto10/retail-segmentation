@@ -1,0 +1,80 @@
+{
+  "domain_events": [
+    {
+      "event_id": "7a0c5e1d-3b2f-4c8a-9d61-000000000009",
+      "kind": "AUDIT_READ",
+      "outcome": "SUCCESS",
+      "occurred_at": "2026-11-08T12:30:00.010Z",
+      "recorded_at": "2026-11-08T12:30:00.018Z",
+      "actor_type": "USER",
+      "actor_user_id": "11111111-1111-1111-1111-000000000006",
+      "actor_role": "AUDITOR",
+      "source": "svc_audit_trail",
+      "store_id": null,
+      "subject_type": null,
+      "subject_id": null,
+      "model_version_id": null,
+      "rule_set_version": null,
+      "correlation_id": "corr-audit-read",
+      "details": {
+        "resource": "DOMAIN_EVENTS",
+        "filters": [
+          "kind",
+          "subject_type",
+          "subject_id"
+        ]
+      },
+      "prev_hash": "03a4476dd9a10dcb5cffed2850105c22ae5f73e7531c455718b4b498c99b7f1a",
+      "entry_hash": "7e7768dc6b4b94a8c5df48261195015567ef500557c66a62a9f57e373a98df09"
+    },
+    {
+      "event_id": "7a0c5e1d-3b2f-4c8a-9d61-000000000008",
+      "kind": "HISTORY_READ",
+      "outcome": "REFUSED",
+      "occurred_at": "2026-11-08T11:04:59.300Z",
+      "recorded_at": "2026-11-08T11:04:59.306Z",
+      "actor_type": "USER",
+      "actor_user_id": "11111111-1111-1111-1111-000000000005",
+      "actor_role": "INVENTORY_PLANNER",
+      "source": "svc_segments",
+      "store_id": null,
+      "subject_type": "customer",
+      "subject_id": "00000000-0000-0000-0000-000000000007",
+      "model_version_id": null,
+      "rule_set_version": null,
+      "correlation_id": "corr-seg-c7",
+      "details": {
+        "history": "SEGMENT"
+      },
+      "prev_hash": "6e0550412e62bea076a1cfb2b7b6e6892484e31e399a985d0b475c6bb15a173c",
+      "entry_hash": "92d11bcc469c24d37a908c037f5b3caa0f95cb6716e8ae4d357741a7a0d7edb8"
+    },
+    {
+      "event_id": "7a0c5e1d-3b2f-4c8a-9d61-000000000007",
+      "kind": "HISTORY_READ",
+      "outcome": "SUCCESS",
+      "occurred_at": "2026-11-08T11:02:13.441Z",
+      "recorded_at": "2026-11-08T11:02:13.447Z",
+      "actor_type": "USER",
+      "actor_user_id": "11111111-1111-1111-1111-000000000002",
+      "actor_role": "ANALYST",
+      "source": "svc_sales",
+      "store_id": null,
+      "subject_type": "customer",
+      "subject_id": "00000000-0000-0000-0000-000000000007",
+      "model_version_id": null,
+      "rule_set_version": null,
+      "correlation_id": "corr-sales-c7",
+      "details": {
+        "history": "SALES"
+      },
+      "prev_hash": "50f0aa6d082625d6ccb3fbf56457d50202c1653519f50789d02d38ffb7a013d2",
+      "entry_hash": "29fd7f922bf17266ec390af322024daf75fa91133b8fb25049b4dc66723a6308"
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 3,
+    "total": 9
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "event_id": "7a0c5e1d-3b2f-4c8a-9d61-000000000001",
+  "kind": "CALCULATION_RUN",
+  "outcome": "SUCCESS",
+  "occurred_at": "2026-11-06T02:00:41.208Z",
+  "recorded_at": "2026-11-06T02:00:41.233Z",
+  "actor_type": "SYSTEM",
+  "actor_user_id": null,
+  "actor_role": null,
+  "source": "svc_rfm",
+  "store_id": null,
+  "subject_type": "calculation",
+  "subject_id": "418",
+  "model_version_id": null,
+  "rule_set_version": 3,
+  "correlation_id": "rfm-recalc-418",
+  "details": {
+    "calculation": "RFM",
+    "status": "COMPLETED",
+    "input_count": 12840,
+    "output_count": 1930,
+    "window_from": "2025-11-06T00:00:00Z",
+    "window_to": "2026-11-06T00:00:00Z",
+    "data_origin": "OBSERVED"
+  },
+  "prev_hash": "24d3e087bfe0c15f606db97836449852a44414f98f425301fb08affb3d64c11c",
+  "entry_hash": "5e2d5d1e58e94d7607e0745cd3e612c4a358fc93f37fc5ab1fed8d04bbf7ce77"
+}

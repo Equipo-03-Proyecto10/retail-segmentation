@@ -1,17 +1,22 @@
 openapi: 3.1.0
 info:
   title: sales-service
-  version: 1.2.0
+  version: 1.3.0
   description: >-
     Records a sale exactly once, all or nothing, and reads sales and the channel
     vocabulary back (RN-11 to RN-13, RN-37). A sale is never edited or deleted:
     a cancellation or a return is recorded beside it as a reversal, an
-    append-only fact, and every reader counts net units (ADR-0062).
+    append-only fact, and every reader counts net units (ADR-0062). A sales file
+    reaches the service as a sale import: its rows travel as numbered chunks under
+    the 64 KiB body cap and a worker applies them one row at a time through the
+    same rule, each row accepted or refused on its own and every refusal reported
+    by line, field and reason (ADR-0070).
 security:
   - bearer: []
 tags:
   - name: Sales
   - name: Sale reversals
+  - name: Sale imports
   - name: Channels
   - name: Meta
 paths:
@@ -501,6 +506,546 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/OperationUnavailable'
+  /v1/sale-imports:
+    post:
+      x-mosaiq-status: planned
+      tags: [Sale imports]
+      summary: Open a sales import
+      description: >-
+        Opens an import and reserves its place. No row travels here: the CSV never
+        reaches the service. The client reads the file, checks its header and sends
+        the rows afterwards as numbered chunks with `PUT
+        /v1/sale-imports/{import_id}/chunks/{sequence}`, each an ordinary JSON or XML
+        body under the 64 KiB cap (ADR-0070).
+
+        `contract_version` is 1, the CSV contract of the web's page. `header` is the
+        eight column names in order: `transaction_id`, `customer_id`, `store_id`,
+        `channel_id`, `occurred_at`, `product_id`, `quantity`, `unit_price`.
+        `total_rows` is the number of data lines, 1 to 100,000; the header is line 1
+        and is not counted. `chunk_count` is the number of chunks the client will
+        send, 1 to 667. A value out of range is 422 `invalid_body` naming the field
+        (`total_rows` or `chunk_count`, with `out_of_range`); a version other than 1
+        is 422 `invalid_body` on `contract_version` with `unsupported_version`; a
+        header that is not those eight names in that order is 422 `invalid_body`
+        naming the first wrong column as `header[3]` with `unexpected_column`.
+
+        One import is open at a time. While another is `RECEIVING` or `PROCESSING`
+        the answer is 409 `import_in_progress`; its id is the newest in `GET
+        /v1/sale-imports`. The importer is the token's `sub`, never a body field, and
+        only `ADMIN` imports (ADR-0070 section 7).
+
+        Idempotency. `Idempotency-Key` is required and its namespace is this
+        resource's own. The service hashes the caller's `sub` and the body, so a JSON
+        retry and an XML retry hash the same. The same key with the same hash is a
+        replay: 200 with the import that key created, as it stands now, `Idempotent-Replayed:
+        true`, and nothing created. The same key with a different hash is 409
+        `idempotency_key_reused`. A client retries only on a network error, a timeout
+        or a 503, with the same key, and treats 409 and 422 as final.
+      operationId: createSaleImport
+      x-mosaiq-roles:
+        - ADMIN
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaleImportRequest'
+            examples:
+              nine_rows_two_chunks:
+                externalValue: ./examples/create-sale-import.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/SaleImportRequest'
+            examples:
+              nine_rows_two_chunks:
+                externalValue: ./examples/create-sale-import.request.xml
+      responses:
+        '200':
+          description: The key was already used by an identical request; the import it created is returned.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            Idempotent-Replayed:
+              $ref: '#/components/headers/ImportIdempotentReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleImport'
+              examples:
+                replayed:
+                  externalValue: ./examples/create-sale-import-replay.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/SaleImport'
+              examples:
+                replayed:
+                  externalValue: ./examples/create-sale-import-replay.xml
+        '201':
+          description: The import was opened and is `RECEIVING`.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            Location:
+              $ref: '#/components/headers/ImportLocation'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleImport'
+              examples:
+                opened:
+                  externalValue: ./examples/create-sale-import.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/SaleImport'
+              examples:
+                opened:
+                  externalValue: ./examples/create-sale-import.xml
+        '400':
+          $ref: '#/components/responses/SaleBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/ImportCreateConflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ImportCreateRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+    get:
+      x-mosaiq-status: planned
+      tags: [Sale imports]
+      summary: List the recent imports
+      description: >-
+        Returns a page of imports, newest first by `created_at`, then by
+        `import_id`, with the status and counts of each. It carries no rows and no
+        rejections: `GET /v1/sale-imports/{import_id}/rejections` reads those. The
+        newest import is the one that blocks a new one while it is `RECEIVING` or
+        `PROCESSING`.
+      operationId: listSaleImports
+      x-mosaiq-roles:
+        - ADMIN
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of imports.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleImportPage'
+              examples:
+                imports_page:
+                  externalValue: ./examples/list-sale-imports.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/SaleImportPage'
+              examples:
+                imports_page:
+                  externalValue: ./examples/list-sale-imports.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/InvalidPagination'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/sale-imports/{import_id}:
+    get:
+      x-mosaiq-status: planned
+      tags: [Sale imports]
+      summary: Get one import, its progress and its reconciled counts
+      description: >-
+        Returns the import's `status`, `next_sequence` and counts. It is how a
+        client resumes: one that lost its connection asks, then continues at
+        `next_sequence`, the lowest chunk the service has not yet staged. Sending a
+        chunk that was already staged is harmless (see `sendSaleImportChunk`), so a
+        client unsure whether its last chunk arrived may also simply send it again.
+
+        The counts reconcile, and the service refuses to report an import
+        `COMPLETED` unless they do: `received` (the rows staged) equals `accepted` +
+        `rejected` + `pending`, and `pending` is zero at `COMPLETED`, where
+        `received` also equals `total_rows`. `accepted` and `rejected` are rows, not
+        sales: a sale spread over several lines of the file can be partly accepted
+        (ADR-0070 section 4). `accepted`, `rejected` and `pending` may move while the
+        import is `RECEIVING`, so a client reads them as final only at `COMPLETED`.
+        In `CANCELLED` and `EXPIRED`, `pending` keeps counting the rows that were
+        received and never applied, so the identity holds in every status.
+
+        `RECEIVING`: chunks are still expected. `PROCESSING`: every chunk is staged
+        and rows remain to apply. `COMPLETED`: every row has an outcome.
+        `CANCELLED`: the administrator cancelled it. `EXPIRED`: 24 hours passed
+        without a chunk, and the staged rows not yet applied were dropped.
+        `finished_at` is set in the last three, and absent (`null` in JSON) before.
+      operationId: getSaleImport
+      x-mosaiq-roles:
+        - ADMIN
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ImportId'
+      responses:
+        '200':
+          description: The requested import.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleImport'
+              examples:
+                processing:
+                  externalValue: ./examples/get-sale-import.json
+                completed:
+                  externalValue: ./examples/get-sale-import-completed.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/SaleImport'
+              examples:
+                processing:
+                  externalValue: ./examples/get-sale-import.xml
+                completed:
+                  externalValue: ./examples/get-sale-import-completed.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/SaleImportNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/sale-imports/{import_id}/chunks/{sequence}:
+    put:
+      x-mosaiq-status: planned
+      tags: [Sale imports]
+      summary: Send one numbered chunk of rows
+      description: >-
+        Stages chunk `sequence`, counted from 0, and answers 202 with the import's
+        counts. Nothing is applied inside the request: a worker of this service
+        applies the rows afterwards, one at a time, through the same rule as `POST
+        /v1/sales` (ADR-0070 sections 3 and 4).
+
+        A chunk is the rows as positional cells, `{line, cells[]}`, so the service,
+        not the client, decides what a row is. `line` is the row's line in the file,
+        the header being line 1. It must be positive, unique and increasing within the
+        import, across chunks as well as inside one; otherwise 422 `invalid_body`
+        with `details[].field` as `rows[2].line`. A chunk is validated structurally
+        and nothing else: 1 to 150 rows, at most 64 cells per row, each cell a string
+        of at most 256 characters. A violation is 422 `invalid_body` naming the field
+        (`rows` with `too_many`, `rows[0].cells[4]` with `too_long`). Values are never
+        typed here: a price of `19.999`, a future date, an unparsable number or nine
+        cells is a row rejection later, reported by line (`listSaleImportRejections`),
+        never a refusal of the chunk, because one bad row must not reject its
+        neighbours (ADR-0020).
+
+        Size. The client stops a chunk at 150 rows or 60,000 bytes of serialized
+        body, whichever comes first, so the cap is never what it discovers. A larger
+        body is still 413 `payload_too_large` from NGINX, unchanged, and a client that
+        sends more than 10 requests a second (burst 20) is 429 `rate_limited` with
+        `Retry-After`. In XML a cell is written as an element, empty when the cell
+        is empty, so the position of every cell is kept.
+
+        Order and repetition. Chunks are sent in order. The same `sequence` with the
+        same body, compared by the SHA-256 of the canonical form (the rows by `line`,
+        each `line` with its cells in order, so a JSON and an XML retry compare equal),
+        is a replay: 200 with the import and `Idempotent-Replayed: true`, and nothing
+        staged twice. The same `sequence` with another body is 409 `chunk_conflict`. A
+        `sequence` above `next_sequence` is 409 `chunk_out_of_order`, whose `details`
+        name `next_sequence`: the answer cannot carry the number (an error detail is a
+        `field` and a `code`), so its message states it and `GET
+        /v1/sale-imports/{import_id}` returns it. An import that is not `RECEIVING`
+        is 409 `import_not_receiving`.
+
+        Reconciliation. The rows of all chunks must add up to `total_rows`, and the
+        chunks must number `chunk_count`. When the last chunk (`sequence` =
+        `chunk_count` - 1) arrives and they do not, the answer is 422
+        `row_count_mismatch` and the import stays `RECEIVING` until it is cancelled or
+        expires; a client treats the refusal as final, cancels, and opens a new import
+        with the numbers of the file it read. When they do add up, the import becomes
+        `PROCESSING`.
+      operationId: sendSaleImportChunk
+      x-mosaiq-roles:
+        - ADMIN
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ImportId'
+        - $ref: '#/components/parameters/ChunkSequence'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaleImportChunk'
+            examples:
+              last_chunk:
+                externalValue: ./examples/send-sale-import-chunk.request.json
+              malformed_cell:
+                externalValue: ./examples/send-sale-import-chunk-malformed-cell.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/SaleImportChunk'
+            examples:
+              last_chunk:
+                externalValue: ./examples/send-sale-import-chunk.request.xml
+              malformed_cell:
+                externalValue: ./examples/send-sale-import-chunk-malformed-cell.request.xml
+      responses:
+        '200':
+          description: The same chunk was already staged; the import is returned and nothing is staged again.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            Idempotent-Replayed:
+              $ref: '#/components/headers/ImportIdempotentReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleImport'
+              examples:
+                replayed:
+                  externalValue: ./examples/sale-import-chunk-replay.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/SaleImport'
+              examples:
+                replayed:
+                  externalValue: ./examples/sale-import-chunk-replay.xml
+        '202':
+          description: The chunk was staged. Its rows are applied afterwards, so the counts are not final.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleImport'
+              examples:
+                staged:
+                  externalValue: ./examples/sale-import-chunk-accepted.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/SaleImport'
+              examples:
+                staged:
+                  externalValue: ./examples/sale-import-chunk-accepted.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/SaleImportNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/ChunkConflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ChunkRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/sale-imports/{import_id}/rejections:
+    get:
+      x-mosaiq-status: planned
+      tags: [Sale imports]
+      summary: List the rows an import refused
+      description: >-
+        Returns a page of the rejected rows, ordered by `line`, with `page` and
+        `size` as everywhere else and `PageInfo.total` equal to the import's
+        `rejected`. The report survives the import: it stays readable after
+        `COMPLETED`, as the web's does. Rows are applied in file order by one worker,
+        so a page read during processing does not shift when later rows are
+        refused.
+
+        Each rejection carries the `line` of the file (the header is line 1), the
+        `field` at fault, a stable `code` a program branches on, and a `message` a
+        person can act on: it names the line, says what is wrong and what a valid
+        value looks like, and quotes at most 64 characters of the offending cell, with
+        control characters removed. `field` is the column name (`transaction_id`,
+        `customer_id`, `store_id`, `channel_id`, `occurred_at`, `product_id`,
+        `quantity` or `unit_price`) and is absent (`null` in JSON) when the row as
+        a whole is at fault. A rejection rolls back nothing else: every other row of
+        the file is judged on its own.
+
+        A duplicate says which kind it is. `duplicate_row` always carries
+        `duplicate_of`: `FILE` when an earlier line of this same file, an accepted
+        one, already made the row's line, and then `first_line` names it; and
+        `RECORDED_SALE` when the sale was recorded before this import began, by an
+        earlier import of the same file, through the web page's upload
+        (ADR-0070 section 5) or as a seeded sale, and then `sale_id` names it when it
+        is known. A repeat inside the file and a sale already recorded need different
+        actions, which is why the report keeps them apart. Neither records anything.
+
+        The codes are those the same fault gets on `POST /v1/sales`, plus the codes
+        that only a file can cause:
+
+        | `code` | `field` | The row |
+        |---|---|---|
+        | `wrong_cell_count` | absent | does not have exactly eight cells |
+        | `invalid_value` | the column | has a blank cell, or one that is not of its column's type: a whole number (`store_id`, `channel_id`, `product_id`, `quantity`), a UUID (`customer_id`), a decimal (`unit_price`) or an ISO 8601 date and time (`occurred_at`) |
+        | `missing_offset` | `occurred_at` | has a date and time with no UTC offset |
+        | `formula_like_id` | `transaction_id` | has an id that starts with `=`, `+`, `-` or `@`, which a spreadsheet would evaluate |
+        | `id_too_long` | `transaction_id` | has an id of more than 50 characters |
+        | `header_mismatch` | the first column that disagrees | names a `transaction_id` already accepted in this import with another customer, store, channel or date |
+        | `duplicate_row` | absent | repeats a line that already exists (see `duplicate_of`) |
+        | `unknown_customer`, `unknown_store`, `unknown_channel`, `unknown_product` | the column | names no such customer, store, channel or product |
+        | `inactive_product` | `product_id` | names a product that is no longer active |
+        | `before_registration` | `occurred_at` | is dated before the customer registered |
+        | `future_dated` | `occurred_at` | is dated in the future |
+        | `invalid_price` | `unit_price` | has a price that is not positive or has more than two decimals |
+        | `invalid_quantity` | `quantity` | has a quantity that is not positive |
+        | `stock_unavailable` | `quantity` | asks for more units than the store holds |
+        | `no_stock_record` | `product_id` | names a product the store holds no stock record for |
+      operationId: listSaleImportRejections
+      x-mosaiq-roles:
+        - ADMIN
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ImportId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of rejections.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleImportRejectionPage'
+              examples:
+                rejections_page:
+                  externalValue: ./examples/list-sale-import-rejections.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/SaleImportRejectionPage'
+              examples:
+                rejections_page:
+                  externalValue: ./examples/list-sale-import-rejections.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/SaleImportNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/InvalidPagination'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/sale-imports/{import_id}/status:
+    put:
+      x-mosaiq-status: planned
+      tags: [Sale imports]
+      summary: Cancel an import
+      description: >-
+        Sets the import's status to `CANCELLED`, the only value a client may set. Rows
+        already accepted stay accepted: nothing is rolled back (ADR-0020), and only the
+        chunks not yet applied are dropped. Their rows stay in `pending`, so the counts
+        still reconcile. Cancelling an import that is already `CANCELLED` answers 200
+        with it, unchanged. An import that is `COMPLETED` or `EXPIRED` has finished,
+        and cancelling it is 409 `import_finished`.
+
+        A revoked session does not stop an import that was already received: the
+        importer was checked on every chunk and the work outlives the token
+        (ADR-0070 section 3). Cancelling is what stops it.
+      operationId: cancelSaleImport
+      x-mosaiq-roles:
+        - ADMIN
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ImportId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaleImportStatusRequest'
+            examples:
+              cancel:
+                externalValue: ./examples/cancel-sale-import.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/SaleImportStatusRequest'
+            examples:
+              cancel:
+                externalValue: ./examples/cancel-sale-import.request.xml
+      responses:
+        '200':
+          description: The import is `CANCELLED`.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleImport'
+              examples:
+                cancelled:
+                  externalValue: ./examples/cancel-sale-import.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/SaleImport'
+              examples:
+                cancelled:
+                  externalValue: ./examples/cancel-sale-import.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/SaleImportNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/ImportFinished'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ImportStatusRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
   /v1/channels:
     get:
       tags: [Sales]
@@ -660,6 +1205,24 @@ components:
       schema:
         type: integer
         format: int64
+    ImportId:
+      name: import_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    ChunkSequence:
+      name: sequence
+      in: path
+      required: true
+      description: >-
+        The chunk's number, counted from 0 and at most `chunk_count` - 1. At
+        most 667 chunks make an import.
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 666
     SaleIdFilter:
       name: sale_id
       in: query
@@ -746,6 +1309,17 @@ components:
       required: true
       schema:
         type: string
+    ImportLocation:
+      description: The URL of the opened import, `/v1/sale-imports/{import_id}`.
+      required: true
+      schema:
+        type: string
+    ImportIdempotentReplayed:
+      description: Always `true`; the answer is for a request already received, and nothing was created or staged again.
+      required: true
+      schema:
+        type: string
+        enum: ['true']
     IdempotentReplayed:
       description: Always `true`; the answer is the original sale, not a new one.
       required: true
@@ -1047,6 +1621,286 @@ components:
           $ref: '#/components/schemas/PageInfo'
       xml:
         name: SaleReversals
+        namespace: https://mosaiq.maxthecoder.online/xml/sales/v1
+    ImportStatus:
+      type: string
+      enum: [RECEIVING, PROCESSING, COMPLETED, CANCELLED, EXPIRED]
+      description: >-
+        `RECEIVING`: chunks are still expected. `PROCESSING`: every chunk is staged
+        and rows remain to apply. `COMPLETED`: every row has an outcome and the
+        counts reconcile. `CANCELLED`: the administrator cancelled it. `EXPIRED`:
+        24 hours passed without a chunk. An import leaves `RECEIVING` only to
+        `PROCESSING`, `CANCELLED` or `EXPIRED`, and `COMPLETED`, `CANCELLED` and
+        `EXPIRED` are final.
+    SaleImportRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - contract_version
+        - header
+        - total_rows
+        - chunk_count
+      properties:
+        contract_version:
+          type: integer
+          description: >-
+            The CSV contract of the web's page, 1. Another value is 422
+            `invalid_body` on this field with `unsupported_version`.
+        header:
+          type: array
+          minItems: 8
+          maxItems: 8
+          description: >-
+            The eight column names of the file, in order: `transaction_id`,
+            `customer_id`, `store_id`, `channel_id`, `occurred_at`, `product_id`,
+            `quantity`, `unit_price`. The service checks the names, and answers 422
+            `invalid_body` on the first wrong one, as `header[3]` with
+            `unexpected_column`.
+          items:
+            type: string
+        total_rows:
+          type: integer
+          minimum: 1
+          maximum: 100000
+          description: The data lines of the file; the header is line 1 and is not counted.
+        chunk_count:
+          type: integer
+          minimum: 1
+          maximum: 667
+          description: How many chunks the client will send, numbered 0 to `chunk_count` - 1.
+      xml:
+        name: SaleImportRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/sales/v1
+    SaleImportRow:
+      type: object
+      additionalProperties: false
+      required:
+        - line
+        - cells
+      properties:
+        line:
+          type: integer
+          minimum: 1
+          description: >-
+            The row's line in the file, the header being line 1, so the first data row
+            is 2. Unique and increasing within the import, across chunks. Otherwise 422
+            `invalid_body` on `rows[i].line`.
+        cells:
+          type: array
+          maxItems: 64
+          description: >-
+            The row's cells, as text and in the order of the file's columns. They are
+            never typed here: a row with another number of cells than eight is the row
+            rejection `wrong_cell_count`, not a refusal of the chunk. In XML each cell
+            is a `cells` element, empty when the cell is empty.
+          items:
+            type: string
+            maxLength: 256
+    SaleImportChunk:
+      type: object
+      additionalProperties: false
+      required:
+        - rows
+      properties:
+        rows:
+          type: array
+          minItems: 1
+          maxItems: 150
+          description: >-
+            1 to 150 rows. The client also stops a chunk at 60,000 bytes of serialized
+            body, so a chunk stays under the 64 KiB cap in JSON and in XML.
+          items:
+            $ref: '#/components/schemas/SaleImportRow'
+      xml:
+        name: SaleImportChunk
+        namespace: https://mosaiq.maxthecoder.online/xml/sales/v1
+    SaleImportStatusRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [CANCELLED]
+          description: The only status a client may set.
+      xml:
+        name: SaleImportStatusRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/sales/v1
+    SaleImport:
+      type: object
+      additionalProperties: false
+      required:
+        - import_id
+        - status
+        - contract_version
+        - total_rows
+        - chunk_count
+        - next_sequence
+        - received
+        - accepted
+        - rejected
+        - pending
+        - created_at
+        - finished_at
+        - created_by
+      properties:
+        import_id:
+          type: integer
+          format: int64
+        status:
+          $ref: '#/components/schemas/ImportStatus'
+        contract_version:
+          type: integer
+          minimum: 1
+        total_rows:
+          type: integer
+          minimum: 1
+          description: The data lines the client announced.
+        chunk_count:
+          type: integer
+          minimum: 1
+          description: The chunks the client announced.
+        next_sequence:
+          type: integer
+          minimum: 0
+          description: >-
+            The lowest chunk the service has not staged. A client that lost its
+            connection continues here. It equals `chunk_count` once every chunk is staged.
+        received:
+          type: integer
+          minimum: 0
+          description: The rows staged so far.
+        accepted:
+          type: integer
+          minimum: 0
+          description: Rows applied as a sale line.
+        rejected:
+          type: integer
+          minimum: 0
+          description: Rows refused, each reported by line.
+        pending:
+          type: integer
+          minimum: 0
+          description: >-
+            Rows staged and not yet applied. Zero at `COMPLETED`. In `CANCELLED` and
+            `EXPIRED` it keeps counting the rows that were never applied.
+        created_at:
+          type: string
+          format: date-time
+        finished_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: >-
+            When the import became `COMPLETED`, `CANCELLED` or `EXPIRED`; absent in XML
+            (`null` in JSON) before.
+        created_by:
+          type: string
+          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+          description: The `sub` of the caller that opened the import, never taken from a body.
+      xml:
+        name: SaleImport
+        namespace: https://mosaiq.maxthecoder.online/xml/sales/v1
+    SaleImportPage:
+      type: object
+      additionalProperties: false
+      required:
+        - sale_imports
+        - page_info
+      properties:
+        sale_imports:
+          type: array
+          items:
+            $ref: '#/components/schemas/SaleImport'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: SaleImports
+        namespace: https://mosaiq.maxthecoder.online/xml/sales/v1
+    DuplicateOf:
+      type: string
+      enum: [FILE, RECORDED_SALE]
+      description: >-
+        `FILE`: an earlier, accepted line of this same file already made the row's
+        line. `RECORDED_SALE`: the sale was recorded before this import began.
+    SaleImportRejection:
+      type: object
+      additionalProperties: false
+      required:
+        - line
+        - field
+        - code
+        - message
+        - duplicate_of
+        - first_line
+        - sale_id
+      properties:
+        line:
+          type: integer
+          minimum: 1
+          description: The line of the file, the header being line 1, so at least 2.
+        field:
+          type:
+            - string
+            - 'null'
+          description: >-
+            The column at fault. Absent in XML (`null` in JSON) when the row as a whole
+            is, as for `wrong_cell_count` and `duplicate_row`.
+        code:
+          type: string
+          description: >-
+            A stable snake_case code a program branches on. The codes in force are
+            listed on `listSaleImportRejections`; the schema does not enumerate them
+            so that a code added later is not a breaking change.
+        message:
+          type: string
+          description: >-
+            A sentence a person can act on: the line, what is wrong and what a valid
+            value looks like. It quotes at most 64 characters of the offending cell,
+            with control characters removed.
+        duplicate_of:
+          oneOf:
+            - $ref: '#/components/schemas/DuplicateOf'
+            - type: 'null'
+          description: >-
+            Set on `duplicate_row` only, to tell a repeat inside the file from a sale
+            already recorded. Absent in XML (`null` in JSON) otherwise.
+        first_line:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+          description: >-
+            With `duplicate_of` `FILE`, the first line of this file, an accepted one,
+            that made the row's line. Absent in XML (`null` in JSON) otherwise.
+        sale_id:
+          type:
+            - integer
+            - 'null'
+          format: int64
+          description: >-
+            With `duplicate_of` `RECORDED_SALE`, the recorded sale, when it is known.
+            Absent in XML (`null` in JSON) otherwise.
+      xml:
+        name: SaleImportRejection
+        namespace: https://mosaiq.maxthecoder.online/xml/sales/v1
+    SaleImportRejectionPage:
+      type: object
+      additionalProperties: false
+      required:
+        - sale_import_rejections
+        - page_info
+      properties:
+        sale_import_rejections:
+          type: array
+          items:
+            $ref: '#/components/schemas/SaleImportRejection'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: SaleImportRejections
         namespace: https://mosaiq.maxthecoder.online/xml/sales/v1
     Channel:
       type: object
@@ -1558,3 +2412,181 @@ components:
               externalValue: ./examples/no-stock-record.xml
             invalid_body:
               externalValue: ./examples/reversal-invalid-body.xml
+    MalformedBody:
+      description: '`malformed_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            malformed_body:
+              externalValue: ./examples/malformed-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            malformed_body:
+              externalValue: ./examples/malformed-body.xml
+    SaleImportNotFound:
+      description: '`sale_import_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            sale_import_not_found:
+              externalValue: ./examples/sale-import-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            sale_import_not_found:
+              externalValue: ./examples/sale-import-not-found.xml
+    ImportCreateConflict:
+      description: '`idempotency_key_reused` or `import_in_progress`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            idempotency_key_reused:
+              externalValue: ./examples/import-idempotency-key-reused.json
+            import_in_progress:
+              externalValue: ./examples/import-in-progress.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            idempotency_key_reused:
+              externalValue: ./examples/import-idempotency-key-reused.xml
+            import_in_progress:
+              externalValue: ./examples/import-in-progress.xml
+    ImportCreateRefused:
+      description: '`invalid_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/import-invalid-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/import-invalid-body.xml
+    InvalidPagination:
+      description: '`invalid_pagination`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.xml
+    ChunkConflict:
+      description: '`chunk_conflict`, `chunk_out_of_order` or `import_not_receiving`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            chunk_conflict:
+              externalValue: ./examples/chunk-conflict.json
+            chunk_out_of_order:
+              externalValue: ./examples/chunk-out-of-order.json
+            import_not_receiving:
+              externalValue: ./examples/import-not-receiving.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            chunk_conflict:
+              externalValue: ./examples/chunk-conflict.xml
+            chunk_out_of_order:
+              externalValue: ./examples/chunk-out-of-order.xml
+            import_not_receiving:
+              externalValue: ./examples/import-not-receiving.xml
+    ChunkRefused:
+      description: '`invalid_body` or `row_count_mismatch`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/chunk-invalid-body.json
+            row_count_mismatch:
+              externalValue: ./examples/row-count-mismatch.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/chunk-invalid-body.xml
+            row_count_mismatch:
+              externalValue: ./examples/row-count-mismatch.xml
+    ImportFinished:
+      description: '`import_finished`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            import_finished:
+              externalValue: ./examples/import-finished.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            import_finished:
+              externalValue: ./examples/import-finished.xml
+    ImportStatusRefused:
+      description: '`invalid_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/import-status-invalid-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/import-status-invalid-body.xml

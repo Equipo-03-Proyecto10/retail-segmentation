@@ -1,0 +1,10 @@
+window_s=50.031
+samples=5
+rss_peak_kb=121308
+pss_peak_kb=103651
+cpu_usage_usec=12991788
+cpu_user_usec=11638351
+cpu_system_usec=1353437
+cpu_nr_periods=500
+cpu_nr_throttled=0
+cpu_throttled_usec=0

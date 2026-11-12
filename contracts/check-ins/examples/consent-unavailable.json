@@ -1,0 +1,6 @@
+{
+  "code": "consent_unavailable",
+  "message": "The customer's consent could not be read, so the visit was not recorded. Try again.",
+  "correlation_id": "corr-consent-unavailable",
+  "details": []
+}

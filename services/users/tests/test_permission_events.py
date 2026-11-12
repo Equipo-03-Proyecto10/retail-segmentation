@@ -7,12 +7,14 @@ its own copy of the seeded database, so the events it finds are its own.
 
 from __future__ import annotations
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import psycopg
 import pytest
 
-from tests.conftest import ADMIN, ANALYST, STORE_MANAGER
+from tests.conftest import ADMIN, ANALYST, STORE_MANAGER, Api
 
 pytestmark = pytest.mark.postgres
 
@@ -122,6 +124,106 @@ def test_deactivation_and_reactivation_commit_with_their_events(
     assert [(row[5], row[7]) for row in _events(owner, since)] == [
         (ANALYST, {"change": "USER_DEACTIVATED"}),
         (ANALYST, {"change": "USER_REACTIVATED"}),
+    ]
+
+
+def test_concurrent_deactivation_records_only_the_transaction_that_changed_the_row(
+    service: Any,
+    token: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    owner: psycopg.Connection,
+    since: int,
+) -> None:
+    """A waiter must compare with the row it locks, not an earlier snapshot."""
+    from app import rules
+
+    waiting = threading.Event()
+    proceed = threading.Event()
+    original = rules.set_active
+
+    def interleaved(*args: Any, **kwargs: Any) -> Any:
+        if threading.current_thread().name.startswith("stale-request"):
+            waiting.set()
+            assert proceed.wait(10), "the concurrent request did not finish"
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(rules, "set_active", interleaved)
+    first = Api(service.test_client(), token)
+    second = Api(service.test_client(), token)
+    with ThreadPoolExecutor(
+        max_workers=1, thread_name_prefix="stale-request"
+    ) as executor:
+        future = executor.submit(first, "POST", f"/v1/users/{ANALYST}/deactivation")
+        assert waiting.wait(10), "the first request did not reach the update"
+        concurrent = second("POST", f"/v1/users/{ANALYST}/deactivation")
+        proceed.set()
+        waited = future.result(timeout=10)
+
+    assert (concurrent.status_code, waited.status_code) == (200, 200)
+    assert [(row[5], row[7]) for row in _events(owner, since)] == [
+        (ANALYST, {"change": "USER_DEACTIVATED"})
+    ]
+
+
+def test_concurrent_role_changes_record_each_locked_transition(
+    service: Any,
+    token: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    owner: psycopg.Connection,
+    since: int,
+) -> None:
+    """The waiting event starts from the role committed while it waited."""
+    from app import rules
+
+    waiting = threading.Event()
+    proceed = threading.Event()
+    original = rules.update_user
+
+    def interleaved(*args: Any, **kwargs: Any) -> Any:
+        if threading.current_thread().name.startswith("stale-request"):
+            waiting.set()
+            assert proceed.wait(10), "the concurrent request did not finish"
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(rules, "update_user", interleaved)
+    first = Api(service.test_client(), token)
+    second = Api(service.test_client(), token)
+    with ThreadPoolExecutor(
+        max_workers=1, thread_name_prefix="stale-request"
+    ) as executor:
+        future = executor.submit(
+            first,
+            "PATCH",
+            f"/v1/users/{STORE_MANAGER}",
+            json_body={"role_code": "AUDITOR"},
+        )
+        assert waiting.wait(10), "the first request did not reach the update"
+        concurrent = second(
+            "PATCH",
+            f"/v1/users/{STORE_MANAGER}",
+            json_body={"role_code": "MARKETING"},
+        )
+        proceed.set()
+        waited = future.result(timeout=10)
+
+    assert (concurrent.status_code, waited.status_code) == (200, 200)
+    assert [(row[5], row[7]) for row in _events(owner, since)] == [
+        (
+            STORE_MANAGER,
+            {
+                "change": "ROLE_ASSIGNED",
+                "from_role": "STORE_MANAGER",
+                "to_role": "MARKETING",
+            },
+        ),
+        (
+            STORE_MANAGER,
+            {
+                "change": "ROLE_ASSIGNED",
+                "from_role": "MARKETING",
+                "to_role": "AUDITOR",
+            },
+        ),
     ]
 
 

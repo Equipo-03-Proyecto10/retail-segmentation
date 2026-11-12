@@ -188,8 +188,7 @@ def create_app(*, start_relay: bool = True) -> Flask:
     def update_user(user_id: UUID) -> Representation:
         body = kit.body
         with kit.db.transaction() as connection:
-            before = rules.require_user(connection, user_id)
-            user = rules.update_user(
+            before, user = rules.update_user(
                 connection,
                 user_id,
                 name=body.get("name"),
@@ -240,8 +239,7 @@ def create_app(*, start_relay: bool = True) -> Flask:
 
     def set_active(user_id: UUID, is_active: bool) -> Representation:
         with kit.db.transaction() as connection:
-            before = rules.require_user(connection, user_id)
-            user = rules.set_active(connection, user_id, is_active)
+            before, user = rules.set_active(connection, user_id, is_active)
             # Setting the flag it already has changes no permission.
             if before["is_active"] != user["is_active"]:
                 audit.permission_changed(

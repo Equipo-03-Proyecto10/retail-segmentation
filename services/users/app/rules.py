@@ -189,16 +189,16 @@ def update_user(
     name: str | None = None,
     email: str | None = None,
     role_code: str | None = None,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """Edit name, email or a non-ADMIN role; the ADMIN role only transfers."""
     if name is not None:
         name = clean_name(name)
-    user = get_user(connection, user_id, lock=True)
-    if user is None:
+    before = get_user(connection, user_id, lock=True)
+    if before is None:
         raise user_not_found()
-    new_role = user["role_id"]
-    if role_code is not None and role_code != user["role_code"]:
-        if role_code == ADMIN or user["role_code"] == ADMIN:
+    new_role = before["role_id"]
+    if role_code is not None and role_code != before["role_code"]:
+        if role_code == ADMIN or before["role_code"] == ADMIN:
             raise ApiError(
                 409,
                 "use_administrator_transfer",
@@ -210,31 +210,31 @@ def update_user(
             cursor.execute(
                 "UPDATE app_user SET name = %s, email = %s WHERE user_id = %s",
                 (
-                    user["name"] if name is None else name,
-                    user["email"] if email is None else normalize_email(email),
-                    str(user["user_id"]),
+                    before["name"] if name is None else name,
+                    before["email"] if email is None else normalize_email(email),
+                    str(before["user_id"]),
                 ),
             )
-            if new_role != user["role_id"]:
+            if new_role != before["role_id"]:
                 cursor.execute(
                     "UPDATE app_user SET role_id = %s WHERE user_id = %s",
-                    (new_role, str(user["user_id"])),
+                    (new_role, str(before["user_id"])),
                 )
     except UniqueViolation as error:
         raise translate(error) from None
-    return require_user(connection, user_id)
+    return before, require_user(connection, user_id)
 
 
 def set_active(
     connection: Connection, user_id: UUID | str, is_active: bool
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """Deactivate or reactivate; never deactivate the only ADMIN (RN-01)."""
-    user = get_user(connection, user_id, lock=True)
-    if user is None:
+    before = get_user(connection, user_id, lock=True)
+    if before is None:
         raise user_not_found()
     if (
         not is_active
-        and user["role_code"] == ADMIN
+        and before["role_code"] == ADMIN
         and administrator_count(connection) <= 1
     ):
         raise ApiError(
@@ -243,13 +243,13 @@ def set_active(
             "This is the only administrator, and the system may not be left "
             "without one.",
         )
-    if user["is_active"] != is_active:
+    if before["is_active"] != is_active:
         with connection.cursor() as cursor:
             cursor.execute(
                 "UPDATE app_user SET is_active = %s WHERE user_id = %s",
-                (is_active, str(user["user_id"])),
+                (is_active, str(before["user_id"])),
             )
-    return require_user(connection, user_id)
+    return before, require_user(connection, user_id)
 
 
 def set_password_hash(
@@ -264,7 +264,7 @@ def set_password_hash(
 
 def transfer_administrator(
     connection: Connection, *, caller: str, successor_id: UUID | str
-) -> None:
+) -> list[tuple[str, str, str]]:
     """Move the ADMIN seat to a successor, under row locks, in one transaction.
 
     The current ADMIN row is locked first, then the successor's, always in
@@ -309,6 +309,11 @@ def transfer_administrator(
         raise translate(error) from None
     if administrator_count(connection) != 1:
         raise single_administrator()
+    # The roles that moved, (user_id, from, to), for the transfer's events.
+    return [
+        (str(incumbent), ADMIN, successor["role_code"]),
+        (str(successor["user_id"]), successor["role_code"], ADMIN),
+    ]
 
 
 def list_users(

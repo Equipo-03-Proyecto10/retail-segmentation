@@ -20,7 +20,9 @@
 
 ## Business rule
 
-- Reads `audit_log` and nothing else. The table is written only by `fn_audit`, which runs as `definer_audit`, so no service role can write, alter or delete a row. The service strips `password_hash` again as defence in depth.
+- Reads `audit_log`. The table is written only by `fn_audit`, which runs as `definer_audit`, so no service role can write, alter or delete a row. The service strips `password_hash` again as defence in depth.
+- Reads `audit_events.domain_event`, the domain events of [ADR-0072](../adr/0072-domain-events-are-recorded-by-one-definer-function-into-a-hash-chained-append-only-table-that-audit-trail-reads.md) (F21-25). Producers write it only through `api_audit.record_event_v1` in the transaction of their act; nothing can alter a row, and a SHA-256 hash chain makes an edit by the owner visible to `GET /v1/domain-events/verification`.
+- Every read of either log records one `AUDIT_READ` event, naming the reader and the filters used but not their values, in the read's transaction. A read that cannot be recorded answers 503 `audit_unavailable` and returns nothing.
 - Read-rule service (E-08). Because it consumes no stream and publishes nothing, it can be dropped without effect.
 
 ## Endpoints
@@ -29,6 +31,9 @@
 |---|---|---|---|
 | GET | `/v1/audit-entries` | Query (`entity`, `entity_pk`, `user_id`, `action`, `from`, `to`, `page`, `size`) | ADMIN, AUDITOR |
 | GET | `/v1/audit-entries/{audit_id}` | One entry | ADMIN, AUDITOR |
+| GET | `/v1/domain-events` | Query (`kind`, `actor_user_id`, `actor_role`, `model_version_id`, `subject_type`, `subject_id`, `store_id`, `outcome`, `source`, `from`, `to`, `page`, `size`) | ADMIN, AUDITOR |
+| GET | `/v1/domain-events/{event_id}` | One event | ADMIN, AUDITOR |
+| GET | `/v1/domain-events/verification` | Recompute the hash chain over a `recorded_at` range | ADMIN, AUDITOR |
 
 Roles follow the [service operation policy](../requirements.md#service-operation-policy-distributed-stage). Meta routes (no token): `GET /health/live`, `GET /health/ready`, `GET /openapi.yaml`, `GET /schema.xsd`.
 
@@ -41,10 +46,13 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Object | Kind | Access | Notes |
 |---|---|---|---|
 | `audit_log` | Table (`public`) | R: SELECT; only `svc_audit_trail` may read it | Written by `fn_audit` for every writer (E-12) |
+| `audit_events.domain_event` | Table (service schema) | R: SELECT; only `svc_audit_trail` may read it | Written only by `api_audit.record_event_v1`, as `definer_audit` (ADR-0072) |
 
 ## Database contracts
 
-None.
+| Object | Role | Contract |
+|---|---|---|
+| `api_audit.record_event_v1` | Produced; also called for `AUDIT_READ` | [`api_audit.record_event.v1.md`](../../contracts/db/api_audit.record_event.v1.md) |
 
 ## Events
 
@@ -64,7 +72,9 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | HTTP | Code | When |
 |---|---|---|
 | 404 | `audit_entry_not_found` | No entry has the requested `audit_id` |
-| 422 | `invalid_query` | `entity` or `action` is unknown, or `to` is before `from`; `details` names the rejected parameter |
+| 404 | `domain_event_not_found` | No domain event has the requested `event_id` |
+| 422 | `invalid_query` | A filter is unknown or malformed, or `to` is before `from`; `details` names the rejected parameter |
+| 503 | `audit_unavailable` | The read's own `AUDIT_READ` could not be recorded, so nothing is returned |
 
 ## Accepted exceptions
 

@@ -57,6 +57,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Direction | Object | Counterpart |
 |---|---|---|
 | Publishes | `api_users.credential_v1` | auth (its only consumer; E-15) |
+| Calls | `api_audit.record_event_v1(...)` | audit-trail (EXECUTE; ADR-0072): one `PERMISSION_CHANGED` per role assignment, administrator transfer (one per moved role), deactivation and reactivation, in the change's transaction |
 
 ## Events
 

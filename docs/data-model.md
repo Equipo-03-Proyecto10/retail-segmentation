@@ -557,6 +557,39 @@ The sales boundary (ADR-0039, ADR-0046, F14-18) adds one relation, also in 4NF:
 
 `sales_events.outbox` is one more boundary outbox, under the outbox note above.
 
+The audit-trail boundary (ADR-0072, F21-25) adds one relation, in 4NF:
+- **`audit_events.domain_event`** has three candidate keys: `event_id`, the
+  producer's idempotency key; `seq`, the chain position; and `entry_hash`.
+  Each determines every other column. It is not `audit_log` widened: a row is
+  one decision (a calculation, a publication, a permission change, a logged
+  read), not one row change, and the two tables never mix.
+  - *Why `prev_hash` is not a transitive dependency:* it equals the
+    `entry_hash` of the row at `seq - 1`, a fact of another row. Recomputing it
+    from that row is exactly what verification does, so storing it is the
+    point: an edit to any earlier row no longer matches the link that follows
+    it. `entry_hash` is a function of the row's own columns, stored for the
+    same reason, and is never updated because the row never is.
+  - *Why `source` is not derived from `kind`:* a kind may have several writers
+    (`HISTORY_READ` has three), so `source` is a fact of the event, taken from
+    the recording `session_user`.
+  - *Why the subject is two columns and not one per subject kind:* an event
+    is about one thing. `subject_type` says how to read `subject_id`, both are
+    determined by `event_id`, and a column per kind of subject would be NULL
+    in every row but one. ADR-0072's `subject_user_id` and `customer_id` in `details`
+    are carried here instead, so each value is stored once.
+  - *Why `details` satisfies 1NF:* it is closed per kind by
+    `audit_events.details_valid`, holds only ids, codes, versions and counts,
+    and is written once and read back whole. No query filters on its members:
+    the filters an auditor uses (`kind`, actor, model version, subject, store)
+    are columns. Splitting it would need one table per kind for at most four
+    scalar keys each.
+  - *Why `store_ids` and `filters` are not a multivalued dependency:* they are
+    the set of stores one permission change added or removed, and the set of
+    filter names one read used. Each set is a fact of that single event and
+    never changes, so a child relation would hold the same thing in more rows.
+  - *Why there are no foreign keys:* an event is evidence and must outlive the
+    user, customer, store or model version it names, as `audit_log` does (§5).
+
 The products boundary (ADR-0046, F21-10) adds four relations in the schema
 `products`, each keyed by the product it is about, and none a column of
 `public.product`, which stays as the web knows it. All four are in 4NF. The
@@ -1247,6 +1280,35 @@ days read.
 | `data_after` | `JSONB` | yes | — | Row after, `NULL` on delete |
 | `executed_at` | `TIMESTAMPTZ` | NN | default `now()` | When |
 
+#### `audit_events.domain_event`
+
+Domain events (ADR-0072), written only by `api_audit.record_event_v1` (owned by
+`definer_audit`) and read only by `svc_audit_trail`. Append-only: nothing holds
+`UPDATE`, `DELETE` or `TRUNCATE` but the schema owner, and a trigger refuses
+those too. Seeded with 32 rows covering every kind.
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `seq` | `BIGINT` | NN | `UNIQUE`, `> 0` | Chain position, gapless, assigned under advisory lock 272001 |
+| `event_id` | `UUID` | NN | PK | The producer's idempotency key |
+| `kind` | `TEXT` | NN | `CHECK IN` the seven kinds | What happened |
+| `outcome` | `TEXT` | NN | `SUCCESS` or `REFUSED` | `REFUSED` only for a refused `HISTORY_READ` |
+| `occurred_at` | `TIMESTAMPTZ` | NN | at most five minutes ahead | When the act happened, as the producer stated it |
+| `recorded_at` | `TIMESTAMPTZ` | NN | the database's `now()` | When the event was recorded |
+| `actor_type` | `TEXT` | NN | `USER` or `SYSTEM` | Who acted |
+| `actor_user_id` | `UUID` | yes | NN exactly when `USER` | The verified token's subject |
+| `actor_role` | `TEXT` | yes | NN exactly when `USER` | The verified token's role code |
+| `source` | `TEXT` | NN | — | The recording `session_user` (`svc_users`, ...) |
+| `store_id` | `SMALLINT` | yes | — | The store the act happened in |
+| `subject_type` | `TEXT` | yes | NULL exactly when `subject_id` is | What the event is about |
+| `subject_id` | `TEXT` | yes | 1 to 80 characters | That subject's id, as text |
+| `model_version_id` | `BIGINT` | yes | — | Model version, for anything computed or scored |
+| `rule_set_version` | `BIGINT` | yes | — | Rule-set version a calculation ran under |
+| `correlation_id` | `TEXT` | yes | — | The request's `X-Correlation-ID` |
+| `details` | `JSONB` | NN | an object, closed per kind | Ids, codes, versions and counts; never a credential (RN-29) |
+| `prev_hash` | `TEXT` | NN | 64 hex | `entry_hash` of the previous event, 64 zeros for the first |
+| `entry_hash` | `TEXT` | NN | `UNIQUE`, 64 hex | SHA-256 of the canonical form of every other column |
+
 #### `<suffix>_events.outbox`
 
 One table per boundary that publishes a stream (§4 lists the eight), created
@@ -1487,6 +1549,15 @@ Two details worth knowing:
 
 Retention: audit rows are kept indefinitely as compliance evidence. Archiving
 by year is possible later and is not needed at this volume.
+
+`audit_log` answers which row changed. Decisions are recorded apart, in
+`audit_events.domain_event` (ADR-0072): a producer calls
+`api_audit.record_event_v1` inside the transaction of the act, so the act and
+its event commit or roll back together. users-service records every permission
+change; sales-service and segments-service record each read of one named
+customer's history, refusals included, and fail the read closed when the event
+cannot be written; audit-trail records each read of either log. The rows form a
+SHA-256 hash chain that `GET /v1/domain-events/verification` recomputes.
 
 ---
 

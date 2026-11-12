@@ -264,7 +264,7 @@ async fn a_credential_in_the_table_never_reaches_an_entry() {
 }
 
 #[tokio::test]
-async fn the_service_reads_audit_log_and_holds_nothing_else() {
+async fn the_service_reads_the_two_logs_and_holds_nothing_else() {
     let Some(url) = owner_url() else { return };
     let _turn = TURN.lock().await;
     let owner = connect(&url).await;
@@ -308,7 +308,8 @@ async fn the_service_reads_audit_log_and_holds_nothing_else() {
         .unwrap();
     assert!(reaching.is_empty());
 
-    // Nothing is granted to the role by name but that one SELECT.
+    // Nothing is granted to the role by name but SELECT on the two logs
+    // (ADR-0072), and EXECUTE on the one writer it records its reads with.
     let granted = owner
         .query(
             "SELECT c.relname::text, a.privilege_type \
@@ -319,17 +320,34 @@ async fn the_service_reads_audit_log_and_holds_nothing_else() {
         .await
         .unwrap();
     let granted: Vec<(String, String)> = granted.iter().map(|r| (r.get(0), r.get(1))).collect();
-    assert_eq!(granted, [("audit_log".to_owned(), "SELECT".to_owned())]);
-    let functions: i64 = owner
-        .query_one(
-            "SELECT count(*) FROM pg_proc AS p CROSS JOIN LATERAL aclexplode(p.proacl) AS a \
+    let mut granted = granted;
+    granted.sort();
+    assert_eq!(
+        granted,
+        [
+            ("audit_log".to_owned(), "SELECT".to_owned()),
+            ("domain_event".to_owned(), "SELECT".to_owned()),
+        ]
+    );
+    let functions: Vec<String> = owner
+        .query(
+            "SELECT p.oid::regprocedure::text FROM pg_proc AS p \
+             CROSS JOIN LATERAL aclexplode(p.proacl) AS a \
              WHERE a.grantee = 'svc_audit_trail'::regrole",
             &[],
         )
         .await
         .unwrap()
-        .get(0);
-    assert_eq!(functions, 0);
+        .iter()
+        .map(|row| row.get(0))
+        .collect();
+    assert_eq!(
+        functions,
+        [
+            "api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,\
+          smallint,text,text,bigint,bigint,text,jsonb)"
+        ]
+    );
 
     // The role cannot alter the record, and reads no other table.
     for statement in [
@@ -337,6 +355,10 @@ async fn the_service_reads_audit_log_and_holds_nothing_else() {
         "UPDATE public.audit_log SET entity_pk = entity_pk",
         "DELETE FROM public.audit_log",
         "TRUNCATE public.audit_log",
+        "INSERT INTO audit_events.domain_event (seq) VALUES (1)",
+        "UPDATE audit_events.domain_event SET outcome = outcome",
+        "DELETE FROM audit_events.domain_event",
+        "TRUNCATE audit_events.domain_event",
         "SELECT 1 FROM public.campaign",
     ] {
         let error = service.execute(statement, &[]).await.unwrap_err();

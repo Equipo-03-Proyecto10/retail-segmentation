@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: sales-service
-  version: 1.2.0
+  version: 1.3.0
   description: >-
     Records a sale exactly once, all or nothing, and reads sales and the channel
     vocabulary back (RN-11 to RN-13, RN-37). A sale is never edited or deleted:

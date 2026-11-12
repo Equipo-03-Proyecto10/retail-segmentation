@@ -73,13 +73,20 @@ export function formField(
   return wrap;
 }
 
-/** Puts a refusal's details next to the fields of a form that is still on screen, keeping what was typed. */
-export function markDetails(form: HTMLFormElement, details: Details): void {
+/**
+ * Puts a refusal's details next to the fields of a form that is still on screen, keeping what was
+ * typed. A screen may word a detail itself; the default is the field and the code as returned.
+ */
+export function markDetails(
+  form: HTMLFormElement,
+  details: Details,
+  wording: (detail: Details[number]) => string = (d) => `${d.field}: ${d.code}`,
+): void {
   form.querySelectorAll('.field-detail').forEach((old) => old.remove());
   for (const d of details) {
     const control = form.querySelector(`[name="${CSS.escape(d.field)}"]`);
     control?.parentElement?.append(
-      testid(el('p', { cls: 'field-detail', text: `${d.field}: ${d.code}` }), `detail-${d.field}`),
+      testid(el('p', { cls: 'field-detail', text: wording(d) }), `detail-${d.field}`),
     );
   }
 }

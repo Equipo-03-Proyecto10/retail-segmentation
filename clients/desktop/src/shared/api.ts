@@ -1,6 +1,15 @@
 // Types shared by the main process, the preload bridge and the screens.
 // Nothing in here carries a credential.
 
+import type {
+  ConsentView,
+  ExplorationProfileView,
+  ExplorationQuery,
+  ExplorationSalesView,
+  InterestsView,
+  RestrictionsView,
+} from './exploration';
+
 export interface FieldDetail {
   field: string;
   code: string;
@@ -226,6 +235,119 @@ export type CampaignChanges = Partial<CampaignDraft>;
 export interface LabelView {
   label_code: string;
   name: string;
+}
+
+/**
+ * A campaign's plan: four sub-resources of its own path (F25-03, #834), each read on its own and
+ * replaced whole while the campaign is DRAFT. Optional members are absent when never written.
+ */
+export interface AudienceView {
+  campaign_id: number;
+  label_code: string;
+  /** The cap on the number of customers; absent when there is none. */
+  max_customers?: number;
+  /** Counted by campaigns-service when it answered, as of as_of; never stored by the client. */
+  audience_size: number;
+  as_of: string;
+}
+
+/** Typed values, sent as written: the main process checks them. Empty text removes the cap. */
+export interface AudienceDraft {
+  max_customers: string;
+}
+
+export interface BudgetView {
+  campaign_id: number;
+  /** Two-decimal text, no currency: the most the campaign may grant in discounts. */
+  total_amount?: string;
+  /** Two-decimal text, no currency: the most one customer may receive. */
+  per_customer_cap?: string;
+}
+
+/** Two-decimal amounts as typed; empty text removes that limit. */
+export interface BudgetDraft {
+  total_amount: string;
+  per_customer_cap: string;
+}
+
+/** The conditions (eligibility rules) a customer in the audience must satisfy. */
+export interface EligibilityView {
+  campaign_id: number;
+  registered_on_or_before?: string;
+  min_purchases?: number;
+  purchase_window_days?: number;
+}
+
+/** As typed; empty text removes a rule, and the two purchase members go together. */
+export interface EligibilityDraft {
+  registered_on_or_before: string;
+  min_purchases: string;
+  purchase_window_days: string;
+}
+
+export interface ExclusionsView {
+  campaign_id: number;
+  customer_ids: string[];
+  label_codes: string[];
+}
+
+export interface ExclusionsDraft {
+  customer_ids: string[];
+  label_codes: string[];
+}
+
+/** Why a customer holding the campaign's label is not in its audience, in the order of precedence the contract fixes. */
+export const AUDIENCE_REASONS = [
+  'not_in_customer_reference',
+  'personalization_withdrawn',
+  'marketing_contact_withdrawn',
+  'excluded_customer',
+  'excluded_label',
+  'registered_after_cutoff',
+  'too_few_purchases',
+  'over_max_customers',
+] as const;
+export type AudienceReasonCode = (typeof AUDIENCE_REASONS)[number];
+
+export interface AudienceReasonView {
+  code: AudienceReasonCode;
+  /** Customers left out for this reason and no earlier one. */
+  excluded: number;
+}
+
+/**
+ * The audience with the customers it leaves out counted by reason (getCampaignAudienceBreakdown).
+ * Each customer is counted once, under the first reason that applies, so label_holders is the sum of
+ * the reasons' counts plus audience_size.
+ */
+export interface AudienceBreakdownView {
+  campaign_id: number;
+  label_code: string;
+  /** Customers holding the label before any reason is applied. */
+  label_holders: number;
+  /** Always eight, in the contract's order. */
+  reasons: AudienceReasonView[];
+  audience_size: number;
+  as_of: string;
+}
+
+/**
+ * What a preview shows: the audience with its exclusions counted by reason, and the rules it was
+ * counted under (the cap, the conditions and the exclusions, to word each reason).
+ *
+ * When campaigns-service does not answer the breakdown, `breakdown` is absent, `breakdown_error` says
+ * why, and the preview falls back to the audience's one total: the number left out is then the
+ * customers holding the label now (segments-service, `label_holders`) minus the audience, and it is
+ * not split by reason.
+ */
+export interface AudiencePreviewView {
+  audience: AudienceView;
+  eligibility: EligibilityView;
+  exclusions: ExclusionsView;
+  breakdown?: AudienceBreakdownView;
+  breakdown_error?: ErrorView;
+  /** Fallback only: customers holding the label now, from segments-service; absent when that read failed. */
+  label_holders?: number;
 }
 
 /** One append-only entry. audit_id is text: it can exceed 2^53. The payloads are JSON text, as returned. */
@@ -702,6 +824,872 @@ export interface ReportView {
 
 export type ReportFormat = 'pdf' | 'csv' | 'xlsx';
 
+// ---------- recommendations inspection (F28-08, #877) ----------
+
+/** An id the service sent, with the name its owner gave it; absent when that owner could not be read. */
+export interface NamedView {
+  id: number;
+  name?: string;
+}
+
+export interface FactorsView {
+  signals_matched: number;
+  segment_buyers?: number;
+  /** The decimal as recommendations-service sent it. */
+  category_share?: string;
+}
+
+export interface AvailabilityView {
+  /** The store whose shelf the figure comes from: the reference store, except on an elsewhere entry. */
+  store: NamedView;
+  channel?: NamedView;
+  quantity_on_hand: number;
+}
+
+export interface InspectedReasonView {
+  signal: string;
+  segment_buyers?: number;
+  category?: NamedView;
+  share?: string;
+}
+
+export interface InspectedItemView {
+  product: NamedView;
+  category: NamedView;
+  /** primary: available here and recommended. alternative: a declared substitute for an unavailable product. elsewhere: the unavailable product, held by another store. */
+  kind: string;
+  position: number;
+  /** Absent on an alternative, which is not scored. */
+  factors?: FactorsView;
+  availability: AvailabilityView;
+  /** The unavailable product an alternative stands in for. */
+  alternative_for?: NamedView;
+  unavailable_reason?: string;
+  reasons: InspectedReasonView[];
+}
+
+export interface ExclusionView {
+  reason: string;
+  count: number;
+}
+
+/** What recommendations-service answered for a customer, or what it recorded in a decision: the same shape, since a decision holds what the client received. */
+export interface InspectionView {
+  decision_id: string;
+  /** Absent once the customer was anonymized. */
+  customer_id?: string;
+  status: string;
+  computed_at: string;
+  /** Only on a live answer; a stored decision does not keep the window. */
+  window?: { days: number; start: string; end: string };
+  label_code?: string;
+  run_id?: number;
+  model_version_id?: number;
+  /** Only on a live answer. */
+  usual_store?: NamedView;
+  /** The reference store the products were judged at. */
+  store?: NamedView;
+  /** given: the caller named it. usual_store: the customer's usual store. */
+  store_source?: string;
+  channel?: NamedView;
+  exclusions: ExclusionView[];
+  items: InspectedItemView[];
+}
+
+export interface InspectQuery {
+  customer_id: string;
+  store_id?: number;
+  channel_id?: number;
+  limit?: number;
+}
+
+export interface DecisionQuery {
+  customer_id?: string;
+  store_id?: number;
+  status?: string;
+  /** RFC 3339 instants: from is included, to is not. */
+  from?: string;
+  to?: string;
+  page?: number;
+  size?: number;
+}
+
+export interface DecisionSummaryView {
+  decision_id: string;
+  customer_id?: string;
+  status: string;
+  computed_at: string;
+  store?: NamedView;
+  store_source?: string;
+  channel?: NamedView;
+  item_count: number;
+  exclusions: ExclusionView[];
+}
+
+// ---------- drift analysis (F28-07, #876) ----------
+
+/** DATA_DRIFT compares distributions with the version's reference; OUTCOME_TEST tests a matured cohort (ADR-0065). */
+export type DriftKind = 'DATA_DRIFT' | 'OUTCOME_TEST';
+
+/** Whether a number exists: INSUFFICIENT_DATA and NOT_COMPARED carry no statistic (ADR-0064, ADR-0065). */
+export type DriftComparison = 'COMPARED' | 'INSUFFICIENT_DATA' | 'NOT_COMPARED';
+
+export type DistributionVariable = 'SEGMENT_SHARES' | 'R' | 'F' | 'M';
+export type DriftVariable = DistributionVariable | 'REPURCHASE_RATE';
+export type VariableState = 'NORMAL' | 'WATCH' | 'ALARM_PENDING' | 'ALARM';
+export type StatisticLevel = 'NORMAL' | 'WATCH' | 'ALARM';
+export type OutcomeResult = 'PASSED' | 'NOT_PASSED' | 'NOT_TESTED';
+
+/** The only wording a screen may use for a finding. CONCEPT_DRIFT belongs to an outcome-test alert alone. */
+export type DriftClaim = 'DISTRIBUTION_CHANGE' | 'CONCEPT_DRIFT';
+
+export type ReviewCode = 'REVIEW_SEGMENT_MIX' | 'REVIEW_FEATURE_DISTRIBUTION' | 'REVIEW_PREDICTIVE_RELATION';
+
+export interface ModelVersionRefView {
+  version_id: number;
+  name: string;
+  method: string;
+}
+
+/** DATA_DRIFT: the trailing days ending at end. OUTCOME_TEST: the outcome window (start, end] of one cohort. */
+export interface DriftWindowView {
+  start: string;
+  end: string;
+  days: number;
+  customer_count: number;
+}
+
+export interface DriftReferenceView {
+  sample_size: number;
+  captured_at: string;
+}
+
+/** Decimals are kept exactly as the service sent them. lower and upper are absent for a segment and for NO_VALUE. */
+export interface DriftBinView {
+  label: string;
+  lower?: string;
+  upper?: string;
+  reference_share: string;
+  current_share: string;
+  contribution: string;
+}
+
+export interface DriftStatisticView {
+  statistic: 'PSI' | 'CHI_SQUARE';
+  value: string;
+  /** CHI_SQUARE only. */
+  p_value?: string;
+  degrees_of_freedom?: number;
+  /** VALUE: reached at or above a threshold (PSI). P_VALUE: below it (CHI_SQUARE). */
+  threshold_basis: 'VALUE' | 'P_VALUE';
+  watch_threshold: string;
+  alarm_threshold: string;
+  level: StatisticLevel;
+}
+
+export interface VariableDriftView {
+  variable: DistributionVariable;
+  state: VariableState;
+  statistics: DriftStatisticView[];
+  bins: DriftBinView[];
+}
+
+export interface OutcomeRatesView {
+  customers: number;
+  repurchasers: number;
+  /** Absent when there are no customers. */
+  rate?: string;
+}
+
+export interface OutcomeSegmentView {
+  label_code: string;
+  reference: OutcomeRatesView;
+  current: OutcomeRatesView;
+  difference_points?: string;
+  /** z, p_value and adjusted_p_value are absent when result is NOT_TESTED. */
+  z?: string;
+  p_value?: string;
+  adjusted_p_value?: string;
+  result: OutcomeResult;
+  persisted: boolean;
+}
+
+export interface OutcomeTestView {
+  relation: 'REPURCHASE_GIVEN_SEGMENT';
+  horizon_days: number;
+  cohort_as_of: string;
+  thresholds: { alpha: string; min_difference_points: string; min_customers_per_side: number };
+  segments: OutcomeSegmentView[];
+  /** Present only when a segment persisted; the one place the phrase concept drift may come from. */
+  claim?: 'CONCEPT_DRIFT';
+}
+
+export interface SuggestedReviewView {
+  code: ReviewCode;
+  /** English text from the service, shown as it is. */
+  text: string;
+}
+
+export interface DriftReportView {
+  report_id: number;
+  kind: DriftKind;
+  model_version: ModelVersionRefView;
+  comparison: DriftComparison;
+  not_compared_reason?: 'VERSION_CHANGE';
+  window: DriftWindowView;
+  reference: DriftReferenceView;
+  previous_report_id?: number;
+  /** Empty unless the report is a COMPARED DATA_DRIFT. */
+  variables: VariableDriftView[];
+  /** Present only on a COMPARED OUTCOME_TEST. */
+  outcome_test?: OutcomeTestView;
+  alert_ids: number[];
+  computed_at: string;
+}
+
+export interface DriftAlertView {
+  alert_id: number;
+  report_id: number;
+  previous_report_id: number;
+  kind: DriftKind;
+  claim: DriftClaim;
+  model_version: ModelVersionRefView;
+  variable: DriftVariable;
+  window: DriftWindowView;
+  reference: DriftReferenceView;
+  /** A DATA_DRIFT alert: its statistics against their thresholds. Empty for an outcome test. */
+  statistics: DriftStatisticView[];
+  /** A DATA_DRIFT alert: the (at most three) bins that moved most, largest contribution first. */
+  bins: DriftBinView[];
+  /** An OUTCOME_TEST alert: the segments that persisted. */
+  outcome_test?: OutcomeTestView;
+  suggested_review: SuggestedReviewView;
+  raised_at: string;
+}
+
+export interface DriftReportQuery {
+  kind?: DriftKind;
+  model_version_id?: number;
+  comparison?: DriftComparison;
+  page?: number;
+  size?: number;
+}
+
+export interface DriftAlertQuery {
+  kind?: DriftKind;
+  model_version_id?: number;
+  variable?: DriftVariable;
+  page?: number;
+  size?: number;
+}
+
+// ---------- migration matrix (F28-06, #875) ----------
+
+/** How a customer stood at one instant: holding a label, scored with none (RN-21), or with no assignment (new). */
+export type MigrationState = 'label' | 'unassigned' | 'new';
+
+/** Set by segments-service from the vocabulary's order; the client never recomputes it. */
+export type MigrationMovement = 'improved' | 'declined' | 'unchanged' | 'not_ranked';
+
+/** The two instants of a comparison. The earlier one is always the before state (RN-59). */
+export interface MigrationWindow {
+  from: string;
+  to: string;
+}
+
+/** One state's figures. label_code is present exactly when state is label. */
+export interface MigrationTotalView {
+  state: MigrationState;
+  label_code?: string;
+  before_count: number;
+  after_count: number;
+  entries: number;
+  exits: number;
+}
+
+/** A matrix cell: the customers who stood in one state before and one state after. A cell with none is not sent. */
+export interface MigrationCellView {
+  previous_state: MigrationState;
+  previous_label_code?: string;
+  new_state: MigrationState;
+  new_label_code?: string;
+  movement: MigrationMovement;
+  customer_count: number;
+}
+
+export interface MigrationMatrixView {
+  from: string;
+  to: string;
+  /** Absent while the latest versioned run at that instant has none yet. */
+  from_model_version_id?: number;
+  to_model_version_id?: number;
+  /** The two instants fall under different model versions, or one is unknown: a difference may come from the model (ADR-0064). */
+  methodological: boolean;
+  customer_count: number;
+  totals: MigrationTotalView[];
+  cells: MigrationCellView[];
+}
+
+export type MigrationDirection = 'entries' | 'exits';
+
+/**
+ * The customers behind a cell (both states, and their label codes when the state is label) or behind one
+ * label's entries or exits (direction and label_code); never both.
+ */
+export interface MigrationListQuery extends MigrationWindow {
+  previous_state?: MigrationState;
+  previous_label_code?: string;
+  new_state?: MigrationState;
+  new_label_code?: string;
+  direction?: MigrationDirection;
+  label_code?: string;
+  /** false keeps behaviour only; true keeps what a model change may explain. */
+  methodological?: boolean;
+  page?: number;
+  size?: number;
+}
+
+export interface MigrationView {
+  customer_id: string;
+  previous_state: MigrationState;
+  previous_label_code?: string;
+  new_state: MigrationState;
+  new_label_code?: string;
+  movement: MigrationMovement;
+  changed_at?: string;
+  cause?: string;
+  previous_run_id?: number;
+  new_run_id?: number;
+  previous_model_version_id?: number;
+  new_model_version_id?: number;
+  methodological: boolean;
+  /** recency, frequency or monetary: the measures judged changed. */
+  responsible_variables: string[];
+  /** The label changed and no variable did: the score moved because the population or the model did. */
+  rank_only: boolean;
+}
+
+export interface MigrationListView extends MigrationWindow {
+  items: MigrationView[];
+  page: PageView;
+}
+
+export interface MigrationExplanationQuery extends MigrationWindow {
+  customer_id: string;
+}
+
+export interface MigrationMeasureView {
+  variable: string;
+  unit: string;
+  /** Decimals exactly as the service sent them; absent when the side has no value. */
+  previous_value?: string;
+  new_value?: string;
+  judgement: 'changed' | 'stable' | 'not_compared';
+  not_compared_reason?: string;
+  rank_changed: boolean;
+  statement: string;
+}
+
+export interface MigrationExplanationView extends MigrationWindow {
+  migration: MigrationView;
+  measures: MigrationMeasureView[];
+}
+
+// ---------- A/B experiments (F28-10, #879) ----------
+
+export type ExperimentState = 'PLANNED' | 'ASSIGNED' | 'ANALYZED';
+
+/** CONTROLLED is the only design that may state an effect; OFFER_COMPARISON has no control (ADR-0068). */
+export type ExperimentDesignKind = 'CONTROLLED' | 'OFFER_COMPARISON';
+
+export type ArmKind = 'CONTROL' | 'TREATMENT';
+
+export type ExperimentMetric = 'CONVERSION' | 'REVENUE_PER_CUSTOMER';
+
+/** SEEDED and INJECTED figures are Synthetic (RN-26). */
+export type ExperimentDataOrigin = 'OBSERVED' | 'SEEDED' | 'INJECTED';
+
+export type ExperimentFlag =
+  'UNDERPOWERED' | 'SAMPLE_RATIO_FAILED' | 'BALANCE_FLAGGED' | 'RECOMPUTATION_MISMATCH';
+
+export interface ExperimentArmView {
+  arm_id: number;
+  position: number;
+  kind: ArmKind;
+  name: string;
+  treatment_description: string;
+}
+
+/**
+ * What was fixed before anyone was assigned (ADR-0068). Decimals stay as the service sent them. Every
+ * value but the metric, the window and the start is absent for assignment rule V0.
+ */
+export interface ExperimentDesignView {
+  primary_metric: ExperimentMetric;
+  secondary_metric?: ExperimentMetric;
+  estimator?: 'DIFFERENCE_OF_PROPORTIONS' | 'DIFFERENCE_OF_MEANS';
+  alpha?: string;
+  comparison_alpha?: string;
+  power?: string;
+  minimum_detectable_effect?: string;
+  baseline?: string;
+  baseline_std_dev?: string;
+  /** The customers each arm needs to detect the minimum effect; the service computes it at planning. */
+  required_per_arm?: number;
+  /** The smallest effect the frame can detect; above the minimum exactly when the plan is UNDERPOWERED. */
+  smallest_detectable_effect?: string;
+  allocation?: 'EQUAL';
+  conversion_window_days: number;
+  settle_days?: number;
+  starts_on: string;
+  /** Null until the experiment is assigned. */
+  analysis_at?: string;
+}
+
+export interface FrameExclusionView {
+  /** An open vocabulary: an unknown code is shown as it is. */
+  reason: string;
+  count: number;
+}
+
+export interface FrameView {
+  taken_at: string;
+  size: number;
+  digest: string;
+  label_code: string;
+  model_version_id?: number;
+  exclusions: FrameExclusionView[];
+}
+
+export interface SampleRatioView {
+  status: 'PASSED' | 'FAILED';
+  p_value: string;
+  threshold: string;
+}
+
+export type BalanceMeasure = 'PRE_RECENCY_DAYS' | 'PRE_PURCHASE_COUNT' | 'PRE_NET_SPEND';
+
+/** A diagnostic: it never changes an estimate and is never used to redraw an assignment. */
+export interface BalanceView {
+  measure: BalanceMeasure;
+  arm_id: number;
+  reference_arm_id: number;
+  standardized_mean_difference: string;
+  flagged: boolean;
+  threshold: string;
+}
+
+export interface ExperimentChecksView {
+  sample_ratio: SampleRatioView;
+  balance: BalanceView[];
+}
+
+export interface AssignmentChecksView extends ExperimentChecksView {
+  /** Recomputing every assignment from the plan gave the stored arms. */
+  recomputation_matches: boolean;
+}
+
+export interface ArmCountView {
+  arm_id: number;
+  kind: ArmKind;
+  assigned: number;
+}
+
+export interface AssignmentView {
+  experiment_id: number;
+  assigned_at: string;
+  assigned_by?: string;
+  assigned_total: number;
+  acknowledged_underpowered: boolean;
+  arms: ArmCountView[];
+  /** Absent for assignment rule V0, which stored none. */
+  checks?: AssignmentChecksView;
+}
+
+export interface ExperimentView {
+  experiment_id: number;
+  name: string;
+  campaign_id?: number;
+  state: ExperimentState;
+  design_kind: ExperimentDesignKind;
+  /** V1 is recomputable; V0 is the web's earlier shuffle: readable, never called verified. */
+  assignment_rule: 'V0' | 'V1';
+  data_origin: ExperimentDataOrigin;
+  arms: ExperimentArmView[];
+  design: ExperimentDesignView;
+  frame?: FrameView;
+  /** Published with the plan; it is not a secret. */
+  salt?: string;
+  assignment?: AssignmentView;
+  flags: ExperimentFlag[];
+  planned_at?: string;
+  planned_by?: string;
+}
+
+export interface ExperimentQuery {
+  campaign_id?: number;
+  state?: ExperimentState;
+  data_origin?: ExperimentDataOrigin;
+  page?: number;
+  size?: number;
+}
+
+export interface ExperimentArmDraft {
+  kind: ArmKind;
+  name: string;
+  treatment_description: string;
+}
+
+/** The inputs of a plan. The baseline, the sample size, the frame and the salt are never inputs. */
+export interface ExperimentDraft {
+  name: string;
+  campaign_id: number;
+  primary_metric: ExperimentMetric;
+  starts_on: string;
+  conversion_window_days: number;
+  /** A decimal as typed: a rate difference for CONVERSION (0.02 is two points), money for REVENUE_PER_CUSTOMER. */
+  minimum_detectable_effect: string;
+  alpha?: string;
+  power?: string;
+  arms: ExperimentArmDraft[];
+}
+
+// ---------- conversion analysis (F28-11, #880) ----------
+
+/** PRIMARY is the result stored once at the analysis instant; RE_READ is computed at the request and replaces nothing. */
+export type ResultBasis = 'PRIMARY' | 'RE_READ';
+
+/** PENDING shows counts only; INVALID withholds the estimate because the sample ratio check failed. */
+export type ResultStatus = 'PENDING' | 'COMPLETE' | 'INVALID';
+
+/** EFFECT is a treatment against the control; TREATMENT_DIFFERENCE is one treatment against another and never an effect. */
+export type ComparisonLabel = 'EFFECT' | 'TREATMENT_DIFFERENCE';
+
+export type MetricRole = 'PRIMARY' | 'SECONDARY';
+
+/** INCONCLUSIVE is a non-significant result of an underpowered experiment: never "no effect" (ADR-0068). */
+export type Conclusion = 'SIGNIFICANT' | 'NOT_SIGNIFICANT' | 'INCONCLUSIVE';
+
+/** One arm over every assigned customer, exposed or not (intent to treat). Decimals stay as the service sent them. */
+export interface ArmOutcomeView {
+  arm_id: number;
+  kind: ArmKind;
+  name: string;
+  assigned: number;
+  analysed: number;
+  exposed: number;
+  converted: number;
+  /** No conversion yet, and the window is still open. */
+  pending: number;
+  not_converted: number;
+  conversion_rate: string;
+  /** Descriptive and non-causal: the exposed are a self-selected part of their arm. Absent for a control. */
+  exposed_conversion_rate?: string;
+  net_revenue: string;
+  revenue_per_customer: string;
+  revenue_std_dev: string;
+}
+
+export interface RevenueEffectView {
+  amount: string;
+  lower: string;
+  upper: string;
+}
+
+export interface BootstrapView {
+  resamples: number;
+  lower: string;
+  upper: string;
+  agrees: boolean;
+}
+
+export interface ComparisonView {
+  label: ComparisonLabel;
+  metric: ExperimentMetric;
+  role: MetricRole;
+  arm_id: number;
+  against_arm_id: number;
+  difference: string;
+  lower: string;
+  upper: string;
+  confidence_level: string;
+  test: 'POOLED_Z' | 'WELCH_T';
+  p_value: string;
+  degrees_of_freedom?: string;
+  /** On the primary comparison only. */
+  conclusion?: Conclusion;
+  /** On the primary comparison of an EFFECT whose metric is revenue per customer. */
+  incremental_revenue?: RevenueEffectView;
+  bootstrap?: BootstrapView;
+}
+
+export interface EffectRefusalView {
+  code: string;
+  message: string;
+}
+
+export interface ArmAttributionView {
+  arm_id: number;
+  attributed_sales: number;
+  attributed_customers: number;
+  attributed_revenue: string;
+}
+
+/** Commercial credit for sales, counted once. It is not an effect (ADR-0069). */
+export interface AttributionView {
+  label: 'ATTRIBUTION';
+  window_days: number;
+  arms: ArmAttributionView[];
+  attributed_sales: number;
+  attributed_revenue: string;
+  unattributed_conversions: number;
+  as_of: string;
+}
+
+export interface AssumptionView {
+  /** An open vocabulary. */
+  code: string;
+  statement: string;
+}
+
+/** A result with the design it was planned under. Attribution and effect are separate sections and are never merged. */
+export interface ExperimentResultView {
+  experiment_id: number;
+  campaign_id?: number;
+  basis: ResultBasis;
+  status: ResultStatus;
+  as_of: string;
+  /** The share of the conversion window elapsed at as_of, as sent. */
+  elapsed_share: string;
+  data_origin: ExperimentDataOrigin;
+  /** True when the experiment is not OBSERVED or a conversion links a seeded sale: label the figures Synthetic. */
+  synthetic: boolean;
+  design_kind: ExperimentDesignKind;
+  design: ExperimentDesignView;
+  arms: ArmOutcomeView[];
+  /** Absent while PENDING. */
+  checks?: ExperimentChecksView;
+  comparisons: ComparisonView[];
+  effect_refusal?: EffectRefusalView;
+  attribution?: AttributionView;
+  assumptions: AssumptionView[];
+  flags: ExperimentFlag[];
+}
+
+// ---------- K-means models (F28-05, #874) ----------
+
+export type ModelMethod = 'RFM_RULES' | 'KMEANS';
+export type VersionState = 'DRAFT' | 'PUBLISHED' | 'RETIRED';
+export type VersionSource = 'REGISTERED' | 'TRAINING' | 'WEB_RUN';
+export type TrainingState = 'RUNNING' | 'COMPLETED' | 'FAILED';
+export type DataOrigin = 'OBSERVED' | 'SEEDED';
+export type ModelFeature = 'R' | 'F' | 'M';
+export type Normalization = 'NONE' | 'MIN_MAX';
+
+/** What a version or a training was defined with. Decimals stay as model-registry sent them. */
+export interface ModelParametersView {
+  k?: number;
+  max_iterations?: number;
+  tolerance?: string;
+  features: ModelFeature[];
+  normalization: Normalization;
+}
+
+/** A coordinate of a centroid, in the normalized space the fit used. */
+export interface CentroidView {
+  cluster_index: number;
+  label_code: string;
+  r: string;
+  f: string;
+  m: string;
+}
+
+/** The raw minimum and maximum of min-max scaling, to put a centroid back into raw units. */
+export interface BoundsView {
+  r_min: string;
+  r_max: string;
+  f_min: string;
+  f_max: string;
+  m_min: string;
+  m_max: string;
+}
+
+/** A label's share of the customers the version was fitted on (0 to 1, as sent). */
+export interface LabelShareView {
+  label_code: string;
+  share: string;
+}
+
+export interface DatasetView {
+  fingerprint: string;
+  origin: DataOrigin;
+  row_count: number;
+}
+
+/** A measure the method does not have is absent. */
+export interface MetricsView {
+  inertia?: string;
+  silhouette?: string;
+  stability?: string;
+}
+
+/** One immutable model version (ADR-0064). Only its state follows publications. */
+export interface ModelVersionView {
+  version_id: number;
+  name: string;
+  method: ModelMethod;
+  state: VersionState;
+  source: VersionSource;
+  window_days: number;
+  seed?: string;
+  parameters: ModelParametersView;
+  centroids: CentroidView[];
+  bounds?: BoundsView;
+  /** Customers the version was fitted on, the base of every label share. */
+  sample_size: number;
+  labels: LabelShareView[];
+  dataset: DatasetView;
+  metrics: MetricsView;
+  training_id?: number;
+  created_at: string;
+  published_at?: string;
+  retired_at?: string;
+}
+
+export interface TrainingView {
+  training_id: number;
+  state: TrainingState;
+  version_name: string;
+  window_days: number;
+  /** Always set: the requested seed, or the one the service chose (RN-58). */
+  seed: string;
+  parameters: ModelParametersView;
+  dataset?: DatasetView;
+  metrics?: MetricsView;
+  iterations?: number;
+  converged?: boolean;
+  /** The DRAFT version a COMPLETED training registered. */
+  version_id?: number;
+  started_at: string;
+  finished_at?: string;
+  failure_code?: string;
+}
+
+export interface PublicationView {
+  publication_id: number;
+  version_id: number;
+  action: 'PUBLISH' | 'ROLLBACK';
+  previous_version_id?: number;
+  reason: string;
+  published_at: string;
+}
+
+export interface ModelVersionQuery {
+  method?: ModelMethod;
+  state?: VersionState;
+  page?: number;
+  size?: number;
+}
+
+export interface TrainingQuery {
+  state?: TrainingState;
+  page?: number;
+  size?: number;
+}
+
+/** What a K-means training is started with. An absent seed is chosen and recorded by the service. */
+export interface TrainingDraft {
+  version_name: string;
+  window_days: number;
+  k: number;
+  max_iterations: number;
+  tolerance: string;
+  features: ModelFeature[];
+  normalization: Normalization;
+  /** Whole number as text, because a 64-bit seed does not fit a JavaScript number. */
+  seed?: string;
+}
+
+// ---------- sales import and data quality (F28-02, #871) ----------
+
+export type ImportStatus = 'RECEIVING' | 'PROCESSING' | 'COMPLETED' | 'CANCELLED' | 'EXPIRED';
+
+/** One import as sales-service returned it (SaleImport). The counts reconcile in every status. */
+export interface SaleImportView {
+  import_id: number;
+  status: ImportStatus;
+  contract_version: number;
+  total_rows: number;
+  chunk_count: number;
+  /** The lowest chunk the service has not staged: where a client resumes. */
+  next_sequence: number;
+  /** Rows staged: received = accepted + rejected + pending. */
+  received: number;
+  accepted: number;
+  rejected: number;
+  pending: number;
+  created_at: string;
+  /** Set in COMPLETED, CANCELLED and EXPIRED. */
+  finished_at?: string;
+  created_by: string;
+}
+
+export interface ImportQuery {
+  page?: number;
+  size?: number;
+}
+
+export type DuplicateKind = 'FILE' | 'RECORDED_SALE';
+
+/** A row the import refused. field is absent when the row as a whole is at fault. */
+export interface ImportRejectionView {
+  line: number;
+  field?: string;
+  code: string;
+  message: string;
+  /** On duplicate_row only: a repeat inside the file, or a sale recorded before this import began. */
+  duplicate_of?: DuplicateKind;
+  /** With FILE: the first line of the file, an accepted one, that the row repeats. */
+  first_line?: number;
+  /** With RECORDED_SALE: the recorded sale, when the service knows it. */
+  sale_id?: number;
+}
+
+export interface ImportRejectionQuery {
+  import_id: number;
+  page?: number;
+  size?: number;
+}
+
+/** What the main process read from the chosen file. The renderer never receives its rows. */
+export interface ImportFileView {
+  /** The file's name, without its folder. */
+  name: string;
+  size_bytes: number;
+  /** Data lines sent, the header excluded. */
+  total_rows: number;
+  chunk_count: number;
+  /** Empty lines in the file; they are not rows and are not sent. */
+  blank_lines: number;
+}
+
+export type ImportPhase = 'creating' | 'sending' | 'processing' | 'paused' | 'failed' | 'finished';
+
+/** The import this console is running, as the main process holds it. */
+export interface ImportRunView {
+  phase: ImportPhase;
+  file_name: string;
+  total_rows: number;
+  chunk_count: number;
+  /** Chunks the service has staged. */
+  chunks_staged: number;
+  import?: SaleImportView;
+  /** Why the run stopped, as returned. */
+  error?: ErrorView;
+  /** The file is still held and the import can continue where the service says. */
+  can_resume: boolean;
+}
+
 /** The named operations the renderer may call; there is no generic transport. */
 export interface MosaiqBridge {
   getState(): Promise<AppState>;
@@ -737,6 +1725,15 @@ export interface MosaiqBridge {
     expectedStatus: CampaignStatus,
   ): Promise<Result<CampaignView>>;
   listCampaignLabels(): Promise<Result<LabelView[]>>;
+  getCampaignAudience(campaignId: number): Promise<Result<AudienceView>>;
+  putCampaignAudience(campaignId: number, draft: AudienceDraft): Promise<Result<AudienceView>>;
+  getCampaignBudget(campaignId: number): Promise<Result<BudgetView>>;
+  putCampaignBudget(campaignId: number, draft: BudgetDraft): Promise<Result<BudgetView>>;
+  getCampaignEligibilityRules(campaignId: number): Promise<Result<EligibilityView>>;
+  putCampaignEligibilityRules(campaignId: number, draft: EligibilityDraft): Promise<Result<EligibilityView>>;
+  getCampaignExclusions(campaignId: number): Promise<Result<ExclusionsView>>;
+  putCampaignExclusions(campaignId: number, draft: ExclusionsDraft): Promise<Result<ExclusionsView>>;
+  previewCampaignAudience(campaignId: number): Promise<Result<AudiencePreviewView>>;
   listAuditEntries(query: AuditQuery): Promise<Result<Paged<AuditEntryView>>>;
   getAuditEntry(auditId: string): Promise<Result<AuditEntryView>>;
   listDomainEvents(query: DomainEventQuery): Promise<Result<Paged<DomainEventView>>>;
@@ -778,6 +1775,45 @@ export interface MosaiqBridge {
   kpiDefinitions(): Promise<Result<KpiDefinitionView[]>>;
   kpiReport(query: ReportQuery): Promise<Result<ReportView>>;
   exportReport(format: ReportFormat): Promise<Result<ExportOutcome>>;
+  inspectRecommendation(query: InspectQuery): Promise<Result<InspectionView>>;
+  listRecommendationDecisions(query: DecisionQuery): Promise<Result<Paged<DecisionSummaryView>>>;
+  openRecommendationDecision(decisionId: string): Promise<Result<InspectionView>>;
+  listDriftReports(query: DriftReportQuery): Promise<Result<Paged<DriftReportView>>>;
+  getDriftReport(reportId: number): Promise<Result<DriftReportView>>;
+  listDriftAlerts(query: DriftAlertQuery): Promise<Result<Paged<DriftAlertView>>>;
+  getDriftAlert(alertId: number): Promise<Result<DriftAlertView>>;
+  migrationMatrix(query: MigrationWindow): Promise<Result<MigrationMatrixView>>;
+  listMigrations(query: MigrationListQuery): Promise<Result<MigrationListView>>;
+  explainMigration(query: MigrationExplanationQuery): Promise<Result<MigrationExplanationView>>;
+  exploreProfile(customerId: string): Promise<Result<ExplorationProfileView>>;
+  exploreSales(query: ExplorationQuery): Promise<Result<ExplorationSalesView>>;
+  exploreRestrictions(customerId: string): Promise<Result<RestrictionsView>>;
+  exploreConsent(customerId: string): Promise<Result<ConsentView>>;
+  exploreInterests(customerId: string): Promise<Result<InterestsView>>;
+  listExperiments(query: ExperimentQuery): Promise<Result<Paged<ExperimentView>>>;
+  getExperiment(experimentId: number): Promise<Result<ExperimentView>>;
+  planExperiment(draft: ExperimentDraft): Promise<Result<ExperimentView>>;
+  assignExperiment(experimentId: number, acknowledgeUnderpowered: boolean): Promise<Result<AssignmentView>>;
+  getExperimentResult(experimentId: number, basis: ResultBasis): Promise<Result<ExperimentResultView>>;
+  listModelVersions(query: ModelVersionQuery): Promise<Result<Paged<ModelVersionView>>>;
+  getModelVersion(versionId: number): Promise<Result<ModelVersionView>>;
+  listTrainings(query: TrainingQuery): Promise<Result<Paged<TrainingView>>>;
+  getTraining(trainingId: number): Promise<Result<TrainingView>>;
+  /** Starts a K-means training; the answer is the run, RUNNING, and its result becomes a DRAFT version. */
+  startTraining(draft: TrainingDraft): Promise<Result<TrainingView>>;
+  /** Publishes a DRAFT with the reason that is kept in the append-only publication. */
+  publishModelVersion(versionId: number, reason: string): Promise<Result<PublicationView>>;
+  /** Opens the file dialog in the main process, which reads and checks the file; null when it is cancelled. */
+  chooseImportFile(): Promise<Result<ImportFileView | null>>;
+  startImport(): Promise<Result<ImportRunView>>;
+  /** Continues an import at the chunk the service expects next, with the same file chosen again. */
+  resumeImport(importId: number): Promise<Result<ImportRunView>>;
+  /** The running import, or null. Asks no service. */
+  importProgress(): Promise<Result<ImportRunView | null>>;
+  cancelImport(importId: number): Promise<Result<SaleImportView>>;
+  listImports(query: ImportQuery): Promise<Result<Paged<SaleImportView>>>;
+  getImport(importId: number): Promise<Result<SaleImportView>>;
+  listImportRejections(query: ImportRejectionQuery): Promise<Result<Paged<ImportRejectionView>>>;
 }
 
 export const CHANNELS = {
@@ -809,6 +1845,15 @@ export const CHANNELS = {
   updateCampaign: 'mosaiq:update-campaign',
   transitionCampaign: 'mosaiq:transition-campaign',
   listCampaignLabels: 'mosaiq:list-campaign-labels',
+  getCampaignAudience: 'mosaiq:get-campaign-audience',
+  putCampaignAudience: 'mosaiq:put-campaign-audience',
+  getCampaignBudget: 'mosaiq:get-campaign-budget',
+  putCampaignBudget: 'mosaiq:put-campaign-budget',
+  getCampaignEligibilityRules: 'mosaiq:get-campaign-eligibility-rules',
+  putCampaignEligibilityRules: 'mosaiq:put-campaign-eligibility-rules',
+  getCampaignExclusions: 'mosaiq:get-campaign-exclusions',
+  putCampaignExclusions: 'mosaiq:put-campaign-exclusions',
+  previewCampaignAudience: 'mosaiq:preview-campaign-audience',
   listAuditEntries: 'mosaiq:list-audit-entries',
   getAuditEntry: 'mosaiq:get-audit-entry',
   listDomainEvents: 'mosaiq:list-domain-events',
@@ -846,4 +1891,38 @@ export const CHANNELS = {
   kpiDefinitions: 'mosaiq:kpi-definitions',
   kpiReport: 'mosaiq:kpi-report',
   exportReport: 'mosaiq:export-report',
+  inspectRecommendation: 'mosaiq:inspect-recommendation',
+  listRecommendationDecisions: 'mosaiq:list-recommendation-decisions',
+  openRecommendationDecision: 'mosaiq:open-recommendation-decision',
+  listDriftReports: 'mosaiq:list-drift-reports',
+  getDriftReport: 'mosaiq:get-drift-report',
+  listDriftAlerts: 'mosaiq:list-drift-alerts',
+  getDriftAlert: 'mosaiq:get-drift-alert',
+  migrationMatrix: 'mosaiq:migration-matrix',
+  listMigrations: 'mosaiq:list-migrations',
+  explainMigration: 'mosaiq:explain-migration',
+  exploreProfile: 'mosaiq:explore-profile',
+  exploreSales: 'mosaiq:explore-sales',
+  exploreRestrictions: 'mosaiq:explore-restrictions',
+  exploreConsent: 'mosaiq:explore-consent',
+  exploreInterests: 'mosaiq:explore-interests',
+  listExperiments: 'mosaiq:list-experiments',
+  getExperiment: 'mosaiq:get-experiment',
+  planExperiment: 'mosaiq:plan-experiment',
+  assignExperiment: 'mosaiq:assign-experiment',
+  getExperimentResult: 'mosaiq:get-experiment-result',
+  listModelVersions: 'mosaiq:list-model-versions',
+  getModelVersion: 'mosaiq:get-model-version',
+  listTrainings: 'mosaiq:list-trainings',
+  getTraining: 'mosaiq:get-training',
+  startTraining: 'mosaiq:start-training',
+  publishModelVersion: 'mosaiq:publish-model-version',
+  chooseImportFile: 'mosaiq:choose-import-file',
+  startImport: 'mosaiq:start-import',
+  resumeImport: 'mosaiq:resume-import',
+  importProgress: 'mosaiq:import-progress',
+  cancelImport: 'mosaiq:cancel-import',
+  listImports: 'mosaiq:list-imports',
+  getImport: 'mosaiq:get-import',
+  listImportRejections: 'mosaiq:list-import-rejections',
 } as const;

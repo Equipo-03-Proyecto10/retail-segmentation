@@ -1,6 +1,6 @@
 # model-registry
 
-> **Status:** Contract published (phase 22, third; F22-10, #805). Not yet implemented: the service is stood up by F22-11 (#806). ADR-0059 places it; ADR-0063 and ADR-0064 decide how it behaves.
+> **Status:** Contract published (phase 22, third; F22-10, #805), and extended with drift reports and alerts (phase 23; F23-08, #820). Not yet implemented: the service is stood up by F22-11 (#806), and the drift operations, marked planned in the contract (ADR-0073), by F23-09 (#821). ADR-0059 places it; ADR-0063, ADR-0064 and ADR-0065 decide how it behaves.
 > **One rule:** A model version is immutable once published, carries its dataset, parameters, metrics and reference distribution, changes state only by an explicit publication or rollback, and every drift alert is judged against that reference (RN-66)
 
 ## Summary
@@ -16,8 +16,8 @@
 | MongoDB | — |
 | Compose project / image | `mosaiq-model-registry` / `ghcr.io/equipo-03-proyecto10/mosaiq-model-registry` |
 | `mem_limit` | 160 MB (ADR-0059) |
-| Used by | Electron: the K-means configuration module (F28-05). rfm-engine and analytics-kpis read the published version. |
-| Governing ADRs | [ADR-0059](../adr/0059-four-new-services-join-the-fifteen-and-six-capabilities-fold-into-the-rule-they-extend.md), [ADR-0063](../adr/0063-segments-change-on-events-and-on-a-schedule-scored-against-the-published-version.md), [ADR-0064](../adr/0064-a-model-version-is-immutable-and-a-change-of-version-is-never-reported-as-behaviour.md), [ADR-0035](../adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md), [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) |
+| Used by | Electron: the K-means configuration module (F28-05) and the drift analysis module (F28-07). rfm-engine and analytics-kpis read the published version. |
+| Governing ADRs | [ADR-0059](../adr/0059-four-new-services-join-the-fifteen-and-six-capabilities-fold-into-the-rule-they-extend.md), [ADR-0063](../adr/0063-segments-change-on-events-and-on-a-schedule-scored-against-the-published-version.md), [ADR-0064](../adr/0064-a-model-version-is-immutable-and-a-change-of-version-is-never-reported-as-behaviour.md), [ADR-0065](../adr/0065-drift-is-claimed-in-three-separate-kinds-and-concept-drift-only-from-a-predictive-outcome.md), [ADR-0035](../adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md), [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) |
 
 ## Business rule
 
@@ -26,7 +26,8 @@
 - After a publication or rollback, every customer is scored under the published version in a full run whose changed rows carry the cause `VERSION_CHANGE` (ADR-0063, ADR-0064).
 - A training fits K-means over the net purchases of a window with a recorded seed, and registers its result as a `DRAFT`. It publishes nothing.
 - A run the web started is registered as a version, and published, when no version matches its method and parameters (ADR-0064). Its source is `WEB_RUN` and it has no owner.
-- Drift reports and alerts, judged against a version's reference distribution, belong to this rule and are specified by their own contract story (F23). `drift-reports` and `drift-alerts` are reserved for this service by ADR-0059 and are not yet in the registry.
+- Drift reports and alerts, judged against a version's reference distribution, belong to this rule (ADR-0059). A **report** is one comparison of one version with its reference, of kind `DATA_DRIFT` (the distribution of the segments, and of R, F and M, against the reference: PSI, and the chi-square on the segment shares, with the thresholds of ADR-0065) or `OUTCOME_TEST` (the repurchase relation of a matured cohort). It carries the statistic, the reference, the current window, the threshold and the model version. A window with fewer than 200 customers is `INSUFFICIENT_DATA`, and one that crosses a publication or rollback is `NOT_COMPARED`: a change of version is never reported as behaviour (ADR-0064).
+- An **alert** is raised by a report when a variable holds its alarm in two consecutive windows (watch is displayed and never alerted), or when a segment passes the outcome test in two consecutive matured cohorts. It says which variable changed, by how much and what review it suggests, and its `claim` is the only wording a client may use: `DISTRIBUTION_CHANGE`, or, on an outcome test alone, with the relation, horizon and cohort named beside it, `CONCEPT_DRIFT` (ADR-0065). A customer's migration between segments and a customer's own consumption shift (RN-36, RN-50) are not drift and are never in a report.
 
 ## Endpoints
 
@@ -41,6 +42,10 @@
 | GET | `/v1/model-trainings` | Training runs (`method`, `state`, `page`, `size`) | ADMIN, ANALYST, MARKETING, AUDITOR |
 | POST | `/v1/model-trainings` | Start a K-means training; 201 `RUNNING` | ADMIN |
 | GET | `/v1/model-trainings/{training_id}` | One training and the version it registered | ADMIN, ANALYST, MARKETING, AUDITOR |
+| GET | `/v1/drift-reports` | Drift reports, newest window first (`kind`, `model_version_id`, `comparison`, `page`, `size`). Planned (ADR-0073) | ADMIN, ANALYST, MARKETING, AUDITOR |
+| GET | `/v1/drift-reports/{report_id}` | One report: per variable its state, statistics against thresholds and every bin's reference and current share; or the outcome test's relation, horizon, cohort and per-segment rates. Planned | ADMIN, ANALYST, MARKETING, AUDITOR |
+| GET | `/v1/drift-alerts` | Drift alerts, newest first (`kind`, `model_version_id`, `variable`, `page`, `size`). Planned | ADMIN, ANALYST, MARKETING, AUDITOR |
+| GET | `/v1/drift-alerts/{alert_id}` | One alert with its variable, version, statistics and bins (or outcome test) and suggested review. Planned | ADMIN, ANALYST, MARKETING, AUDITOR |
 
 Roles follow the [service operation policy](../requirements.md#service-operation-policy-distributed-stage). Meta routes (no token): `GET /health/live`, `GET /health/ready`, `GET /openapi.yaml`, `GET /schema.xsd`. The contract is [`contracts/model-registry/`](../../contracts/model-registry/openapi.yaml).
 
@@ -51,6 +56,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Object | Kind | Access | Notes |
 |---|---|---|---|
 | `models.model_version`, `models.model_publication`, `models.model_training`, `models.run_version` | Tables (`models`) | S | Named by the schema story; the contract fixes only what the endpoints serve |
+| Drift reports and alerts | Tables (`models`) | S | Named, with their 4NF justification and seed rows, by F23-09 (#821); the contract fixes only what the endpoints serve, and that reports and alerts are append-only |
 | `models_events.outbox` | Table (outbox) | SELECT, UPDATE of `relayed_at`, DELETE (7-day purge) | Filled by `definer_models`; seed-exempt runtime state |
 
 ## Database contracts
@@ -84,6 +90,8 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 |---|---|---|
 | 404 | `model_version_not_found` | The version does not exist |
 | 404 | `model_training_not_found` | The training does not exist |
+| 404 | `drift_report_not_found` | The drift report does not exist |
+| 404 | `drift_alert_not_found` | The drift alert does not exist |
 | 409 | `model_version_name_taken` | `POST /v1/model-versions` or `POST /v1/model-trainings` names an existing version |
 | 409 | `version_not_draft` | A publication of a version that is not `DRAFT` |
 | 409 | `version_not_retired` | A rollback to a version that is not `RETIRED` |
@@ -111,8 +119,9 @@ None. The path `/v1/model-versions/{version_id}/publications` nests a publicatio
 
 - A test tries to edit and delete a published version as each role, and the partial unique index refuses a second `PUBLISHED` row (ADR-0064).
 - A test publishes and rolls back, then compares `customer_segment_history`: rows that existed are identical and only new rows appear.
+- A test scans templates, API schemas and report generators for "concept drift" and fails unless it appears on an outcome-test result that names its relation, horizon and cohort; a window with a change of version inside it is not compared, and fewer than 200 customers is "insufficient data", never a number (ADR-0065).
 - [ADR-0043](../adr/0043-at-least-ten-microservices-each-implementing-one-business-rule.md) Compliance (registry: one rule, RN ids resolve), and ADR-0035 (resources are unique).
 
 ## Backlog
 
-F22-10 contract (#805), F22-11 stand-up (#806), F22-12 training, F22-13 publication and rollback; consumed by F28-05, F22-15 and F23. Issue numbers live in [`docs/backlog.md`](../backlog.md).
+F22-10 contract (#805), F22-11 stand-up (#806), F22-12 training, F22-13 publication and rollback; F23-08 drift contract (#820), F23-09 data-drift monitor (#821), F23-11 outcome test (#823); consumed by F28-05, F28-07, F22-15 and F23. Issue numbers live in [`docs/backlog.md`](../backlog.md).

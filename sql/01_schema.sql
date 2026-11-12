@@ -895,8 +895,9 @@ REVOKE UPDATE, DELETE ON audit_log FROM retail_app;
 -- row of contracts/db/grants.csv, which contracts/db/check_grants.sh compares
 -- with the database in both directions (ADR-0034).
 --
--- The bench-only Rust build of the products reads: SELECT on product, nothing
--- else (ADR-0042).
+-- The bench-only Rust build of the products reads: SELECT on product here, and
+-- on the products boundary's four tables in that boundary's section; nothing
+-- else (ADR-0042, ADR-0078).
 GRANT SELECT ON product TO svc_products_bench;
 -- fn_audit runs as definer_audit (AUDIT STRATEGY below), which may append to
 -- the audit log and do nothing else.
@@ -1283,11 +1284,21 @@ GRANT SELECT ON api_sales.purchase_line_v1 TO svc_sales, svc_recommendations;
 -- capture trigger fires for every writer of public.product, the frozen web
 -- and a hard delete included, so no change is invisible to the cache
 -- invalidation of products and of recommendations.
+--
+-- F21-10 (#790) adds the product's commercial details in the service schema
+-- `products` (ADR-0046): a commercial status, attributes, a barcode and
+-- directed relations, each in its own table keyed by product_id and none a
+-- column of public.product, which stays as the web knows it. The status and
+-- public.product.is_active are kept in step by two triggers, so neither the
+-- web nor the service can leave them disagreeing (see the triggers below).
+-- docs/data-model.md §2.4 holds the 4NF justification.
 
 CREATE SCHEMA IF NOT EXISTS api_products;
 REVOKE ALL ON SCHEMA api_products FROM PUBLIC;
 CREATE SCHEMA IF NOT EXISTS products_events;
 REVOKE ALL ON SCHEMA products_events FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS products;
+REVOKE ALL ON SCHEMA products FROM PUBLIC;
 
 -- Keys only, never state: consumers re-read the producer's api_ view.
 CREATE TABLE IF NOT EXISTS products_events.outbox (
@@ -1301,6 +1312,92 @@ CREATE TABLE IF NOT EXISTS products_events.outbox (
 CREATE INDEX IF NOT EXISTS outbox_unrelayed
     ON products_events.outbox (occurred_at) WHERE relayed_at IS NULL;
 
+-- GTIN check digit (GS1): from the right of the body, the digits weigh 3, 1,
+-- 3, 1, ...; the check digit completes their sum to a multiple of ten. Pure and
+-- immutable, so a CHECK can use it. products-service validates the same rule
+-- before it writes, to answer 422 invalid_barcode; this is the backstop, and
+-- services/products/tests pins the two together.
+CREATE OR REPLACE FUNCTION products.gtin_check_digit(body text) RETURNS integer
+LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
+SET search_path = pg_catalog, pg_temp
+AS $gtin$
+    SELECT (10 - coalesce(sum(substr(body, length(body) - i + 1, 1)::integer
+                              * CASE WHEN i % 2 = 1 THEN 3 ELSE 1 END), 0) % 10) % 10
+      FROM generate_series(1, length(body)) AS i
+$gtin$;
+
+CREATE OR REPLACE FUNCTION products.gtin_is_valid(code text) RETURNS boolean
+LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
+SET search_path = pg_catalog, pg_temp
+AS $gtin$
+    SELECT CASE
+        WHEN code ~ '^([0-9]{8}|[0-9]{12,14})$'
+        THEN right(code, 1)::integer = products.gtin_check_digit(left(code, -1))
+        ELSE false
+    END
+$gtin$;
+
+-- One row per product that has an explicit commercial status. A product with
+-- none reads as active when public.product.is_active, otherwise discontinued.
+-- is_active is true exactly when the status is active (decision 2 of the
+-- products contract, 1.2.0); paused and discontinued are both off sale.
+CREATE TABLE IF NOT EXISTS products.product_status (
+    product_id        integer NOT NULL,
+    commercial_status text    NOT NULL,
+    CONSTRAINT product_status_pkey PRIMARY KEY (product_id),
+    CONSTRAINT product_status_product_id_fkey
+        FOREIGN KEY (product_id) REFERENCES public.product (product_id) ON DELETE CASCADE,
+    CONSTRAINT product_status_commercial_status_check
+        CHECK (commercial_status IN ('active', 'paused', 'discontinued'))
+);
+
+-- One row per (product, attribute name): the product's variable set of
+-- name and value pairs, split out so that no relation carries two independent
+-- multivalued facts (docs/data-model.md §2.4).
+CREATE TABLE IF NOT EXISTS products.product_attribute (
+    product_id integer NOT NULL,
+    name       text    NOT NULL,
+    value      text    NOT NULL,
+    CONSTRAINT product_attribute_pkey PRIMARY KEY (product_id, name),
+    CONSTRAINT product_attribute_product_id_fkey
+        FOREIGN KEY (product_id) REFERENCES public.product (product_id) ON DELETE CASCADE,
+    CONSTRAINT product_attribute_name_check CHECK (name ~ '^[a-z][a-z0-9_]{0,39}$'),
+    CONSTRAINT product_attribute_value_check CHECK (char_length(value) BETWEEN 1 AND 120)
+);
+
+-- At most one barcode per product, and one product per barcode: a GTIN-8, -12,
+-- -13 or -14 with a valid check digit.
+CREATE TABLE IF NOT EXISTS products.product_barcode (
+    product_id integer NOT NULL,
+    barcode    text    NOT NULL,
+    CONSTRAINT product_barcode_pkey PRIMARY KEY (product_id),
+    CONSTRAINT product_barcode_product_id_fkey
+        FOREIGN KEY (product_id) REFERENCES public.product (product_id) ON DELETE CASCADE,
+    CONSTRAINT product_barcode_barcode_key UNIQUE (barcode),
+    CONSTRAINT product_barcode_gtin_check CHECK (products.gtin_is_valid(barcode))
+);
+
+-- A directed relation: (A, B, substitute) does not imply (B, A, substitute).
+-- Both ends are products; a product is never related to itself.
+CREATE TABLE IF NOT EXISTS products.product_relation (
+    product_id         integer NOT NULL,
+    related_product_id integer NOT NULL,
+    relation_kind      text    NOT NULL,
+    CONSTRAINT product_relation_pkey
+        PRIMARY KEY (product_id, relation_kind, related_product_id),
+    CONSTRAINT product_relation_product_id_fkey
+        FOREIGN KEY (product_id) REFERENCES public.product (product_id) ON DELETE CASCADE,
+    CONSTRAINT product_relation_related_product_id_fkey
+        FOREIGN KEY (related_product_id) REFERENCES public.product (product_id) ON DELETE CASCADE,
+    CONSTRAINT product_relation_kind_check
+        CHECK (relation_kind IN ('substitute', 'complement')),
+    CONSTRAINT product_relation_not_self_check CHECK (product_id <> related_product_id)
+);
+-- A product delete (the web's) cascades through related_product_id, which the
+-- primary key does not lead with.
+CREATE INDEX IF NOT EXISTS idx_product_relation_related
+    ON products.product_relation (related_product_id);
+
 -- contracts/db/api_products.product_ref.v1.md. Definer rights
 -- (security_invoker = off): a consumer reads these columns and nothing else of
 -- public.product. image_path stays web-managed and is not published.
@@ -1308,6 +1405,13 @@ CREATE OR REPLACE VIEW api_products.product_ref_v1
 WITH (security_invoker = off) AS
 SELECT product_id, sku, name, category_id, list_price, is_active
 FROM public.product;
+
+-- contracts/db/api_products.product_relation.v1.md. Definer rights, so
+-- recommendations reads the three columns without any privilege on the table.
+CREATE OR REPLACE VIEW api_products.product_relation_v1
+WITH (security_invoker = off) AS
+SELECT product_id, related_product_id, relation_kind
+FROM products.product_relation;
 
 -- Captures every writer, the web included, in the writer's transaction.
 CREATE OR REPLACE FUNCTION products_events.capture_changed() RETURNS trigger
@@ -1337,6 +1441,94 @@ CREATE OR REPLACE TRIGGER trg_capture_changed
 AFTER INSERT OR UPDATE OR DELETE ON public.product
 FOR EACH ROW EXECUTE FUNCTION products_events.capture_changed();
 
+-- The commercial details are product source of truth too: the same capture
+-- function announces a change to any of them with the product's id, so the
+-- caches of products and recommendations are invalidated the same way.
+CREATE OR REPLACE TRIGGER trg_capture_status_changed
+AFTER INSERT OR UPDATE OR DELETE ON products.product_status
+FOR EACH ROW EXECUTE FUNCTION products_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_capture_attribute_changed
+AFTER INSERT OR UPDATE OR DELETE ON products.product_attribute
+FOR EACH ROW EXECUTE FUNCTION products_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_capture_barcode_changed
+AFTER INSERT OR UPDATE OR DELETE ON products.product_barcode
+FOR EACH ROW EXECUTE FUNCTION products_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_capture_relation_changed
+AFTER INSERT OR UPDATE OR DELETE ON products.product_relation
+FOR EACH ROW EXECUTE FUNCTION products_events.capture_changed();
+
+-- Catalog data is audited (RN-28), the actor coming from mosaiq.user_id, which
+-- the kit sets in every service transaction. The entity is the table's name,
+-- unique across schemas (ADR-0046), and the key is the product the row is
+-- about; the before and after documents carry the rest.
+CREATE OR REPLACE TRIGGER trg_audit_product_status
+AFTER INSERT OR UPDATE OR DELETE ON products.product_status
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('product_id');
+CREATE OR REPLACE TRIGGER trg_audit_product_attribute
+AFTER INSERT OR UPDATE OR DELETE ON products.product_attribute
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('product_id');
+CREATE OR REPLACE TRIGGER trg_audit_product_barcode
+AFTER INSERT OR UPDATE OR DELETE ON products.product_barcode
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('product_id');
+CREATE OR REPLACE TRIGGER trg_audit_product_relation
+AFTER INSERT OR UPDATE OR DELETE ON products.product_relation
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('product_id');
+
+-- Status and is_active in step, in both directions, by the database. Each
+-- trigger runs only when no other trigger is running (pg_trigger_depth() < 1),
+-- so one change cannot call the other back; the write each makes is the whole
+-- of the sync.
+--
+-- A change of public.product.is_active, by the web or by PATCH
+-- /v1/products/{id}: true sets the status active; false sets it discontinued,
+-- unless it is already paused. It runs as definer_products, because the web
+-- has no privilege on the status table.
+CREATE OR REPLACE FUNCTION products.sync_status_from_product() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $sync$
+BEGIN
+    INSERT INTO products.product_status AS s (product_id, commercial_status)
+    VALUES (NEW.product_id, CASE WHEN NEW.is_active THEN 'active' ELSE 'discontinued' END)
+    ON CONFLICT (product_id) DO UPDATE
+       SET commercial_status = EXCLUDED.commercial_status
+     WHERE s.commercial_status IS DISTINCT FROM EXCLUDED.commercial_status
+       AND NOT (s.commercial_status = 'paused' AND NOT NEW.is_active);
+    RETURN NULL;
+END
+$sync$;
+ALTER FUNCTION products.sync_status_from_product() OWNER TO definer_products;
+REVOKE EXECUTE ON FUNCTION products.sync_status_from_product() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_sync_status_from_product
+AFTER UPDATE OF is_active ON public.product
+FOR EACH ROW
+WHEN (OLD.is_active IS DISTINCT FROM NEW.is_active AND pg_trigger_depth() < 1)
+EXECUTE FUNCTION products.sync_status_from_product();
+
+-- A write of the status (PATCH /v1/products/{id}/details): active sets
+-- is_active true, paused and discontinued set it false. It runs with the
+-- writer's own rights, and svc_products holds UPDATE (is_active) already.
+CREATE OR REPLACE FUNCTION products.sync_product_from_status() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, pg_temp
+AS $sync$
+BEGIN
+    UPDATE public.product
+       SET is_active = (NEW.commercial_status = 'active')
+     WHERE product_id = NEW.product_id
+       AND is_active IS DISTINCT FROM (NEW.commercial_status = 'active');
+    RETURN NULL;
+END
+$sync$;
+
+CREATE OR REPLACE TRIGGER trg_sync_product_from_status
+AFTER INSERT OR UPDATE OF commercial_status ON products.product_status
+FOR EACH ROW
+WHEN (pg_trigger_depth() < 1)
+EXECUTE FUNCTION products.sync_product_from_status();
+
 -- svc_products writes the catalog but never deletes from it, and never
 -- touches image_path (web-managed). Each is a row of contracts/db/grants.csv.
 GRANT SELECT, INSERT ON public.product TO svc_products;
@@ -1350,6 +1542,27 @@ GRANT USAGE ON SCHEMA api_products
     TO svc_products, svc_sales, svc_recommendations, svc_engagement;
 GRANT SELECT ON api_products.product_ref_v1
     TO svc_products, svc_sales, svc_recommendations, svc_engagement;
+
+-- The commercial details. A status is set, never removed; an attribute set is
+-- replaced by insert, update of value and delete; a barcode is set or replaced,
+-- never cleared; a relation has no column to update, so a replace inserts and
+-- deletes. definer_products writes the status from the is_active trigger.
+GRANT USAGE ON SCHEMA products TO svc_products, definer_products;
+GRANT SELECT, INSERT ON products.product_status TO svc_products, definer_products;
+GRANT UPDATE (commercial_status) ON products.product_status TO svc_products, definer_products;
+GRANT SELECT, INSERT, DELETE ON products.product_attribute TO svc_products;
+GRANT UPDATE (value) ON products.product_attribute TO svc_products;
+GRANT SELECT, INSERT ON products.product_barcode TO svc_products;
+GRANT UPDATE (barcode) ON products.product_barcode TO svc_products;
+GRANT SELECT, INSERT, DELETE ON products.product_relation TO svc_products;
+
+GRANT SELECT ON api_products.product_relation_v1 TO svc_products, svc_recommendations;
+
+-- The bench-only twin serves the details and relations reads too, read-only
+-- (ADR-0078): SELECT on the four tables and USAGE on their schema, no write.
+GRANT USAGE ON SCHEMA products TO svc_products_bench;
+GRANT SELECT ON products.product_status, products.product_attribute,
+    products.product_barcode, products.product_relation TO svc_products_bench;
 -- END BOUNDARY products
 
 -- BEGIN BOUNDARY customers

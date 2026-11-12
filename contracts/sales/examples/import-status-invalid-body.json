@@ -1,0 +1,11 @@
+{
+  "code": "invalid_body",
+  "message": "The status request violates its schema: only CANCELLED can be set.",
+  "correlation_id": "corr-import-status-invalid-body",
+  "details": [
+    {
+      "field": "status",
+      "code": "not_allowed"
+    }
+  ]
+}

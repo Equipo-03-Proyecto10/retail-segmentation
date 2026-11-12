@@ -1,12 +1,17 @@
 import type { CampaignStatus, CampaignView, LabelView } from '../shared/api';
 import type { ScreenContext } from './catalog';
 import { button, el, errorBox, formField, markDetails, pager, select, show, testid, textInput } from './dom';
+import { plainDetail } from '../shared/campaign-messages';
+import { renderPlan } from './campaign-plan';
 import { latestRequest } from './latest-request';
 
 // Campaigns and their transitions (F16-08, #486). ADMIN, ANALYST, MARKETING and
 // AUDITOR read; ADMIN and MARKETING write (x-mosaiq-roles, through ctx.can).
 // The lifecycle is campaigns-service's: the buttons offered are the moves it
-// returned in allowed_transitions, and every refusal is shown as returned.
+// returned in allowed_transitions, and every refusal is shown with its code and
+// correlation id as returned, and a plain sentence for its code (F28-09, #878).
+// An open campaign also shows its plan: audience, conditions, exclusions, a preview
+// and budget (campaign-plan.ts); its validity is the dates in the form below.
 
 const FORM_FIELDS = ['name', 'label_code', 'starts_on', 'ends_on'];
 const STATUSES: CampaignStatus[] = ['DRAFT', 'ACTIVE', 'FINISHED', 'CANCELLED'];
@@ -115,7 +120,12 @@ export function renderCampaigns(host: HTMLElement, ctx: ScreenContext): void {
           body.append(row);
         }
         tableArea.replaceChildren(
-          testid(el('table', {}, el('thead', {}, head), body), 'campaigns-table'),
+          // The table scrolls inside its own area in a narrow window, never the page (F28-09: 375 px).
+          el(
+            'div',
+            { cls: 'scroll' },
+            testid(el('table', {}, el('thead', {}, head), body), 'campaigns-table'),
+          ),
           pager(res.value.page, 'campaigns', (page) => {
             query = { ...query, page };
             void load();
@@ -149,6 +159,7 @@ export function renderCampaigns(host: HTMLElement, ctx: ScreenContext): void {
     const parts: Node[] = [el('h3', { text: `${c.name} (#${c.campaign_id})` }), facts];
     // ANALYST and AUDITOR read only: no control is drawn for them.
     if (ctx.can('updateCampaign')) parts.push(editForm(c));
+    parts.push(renderPlan({ ctx, labels, labelName }, c));
     if (ctx.can('transitionCampaign')) parts.push(transitions(c));
     detail.replaceChildren(...parts);
   }
@@ -174,7 +185,7 @@ export function renderCampaigns(host: HTMLElement, ctx: ScreenContext): void {
       el(
         'form',
         {},
-        el('h4', { text: 'Edit the campaign' }),
+        el('h4', { text: 'Edit the campaign and its validity' }),
         formField('name', 'Name', name, [], 'edit'),
         formField('label_code', 'Label', label, [], 'edit'),
         formField('starts_on', 'Starts on', starts, [], 'edit'),
@@ -205,7 +216,7 @@ export function renderCampaigns(host: HTMLElement, ctx: ScreenContext): void {
         if (!isCurrent()) return;
         show(message, res, res.ok ? `Campaign ${res.value.name} saved.` : '', FORM_FIELDS);
         if (res.ok) showCampaign(res.value);
-        else markDetails(form, res.error.details);
+        else markDetails(form, res.error.details, plainDetail);
         await load();
       });
     });
@@ -277,7 +288,7 @@ export function renderCampaigns(host: HTMLElement, ctx: ScreenContext): void {
           if (res.ok) {
             form.reset();
             showCampaign(res.value);
-          } else markDetails(form, res.error.details);
+          } else markDetails(form, res.error.details, plainDetail);
           await load();
         });
     });

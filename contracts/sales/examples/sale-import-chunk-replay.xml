@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SaleImport xmlns="https://mosaiq.maxthecoder.online/xml/sales/v1">
+  <import_id>17</import_id>
+  <status>PROCESSING</status>
+  <contract_version>1</contract_version>
+  <total_rows>9</total_rows>
+  <chunk_count>2</chunk_count>
+  <next_sequence>2</next_sequence>
+  <received>9</received>
+  <accepted>3</accepted>
+  <rejected>2</rejected>
+  <pending>4</pending>
+  <created_at>2026-10-28T15:02:11Z</created_at>
+  <created_by>11111111-1111-1111-1111-000000000001</created_by>
+</SaleImport>

@@ -57,7 +57,7 @@ Callers cast the store id and pass every argument positionally:
 
 | Kind | Writers (`session_user`) | Subject | `details` keys (required; *optional*) |
 |---|---|---|---|
-| `CALCULATION_RUN` | `svc_rfm`, `svc_segments`, `svc_kpis` | `calculation` or none | `calculation` (`RFM`, `SEGMENTATION`, `KPI`), `status` (`COMPLETED`, `FAILED`), `input_count`, `output_count`; *`parameters_digest`*, *`window_from`*, *`window_to`*, *`data_origin`* (`REAL`, `SYNTHETIC`, `MIXED`) |
+| `CALCULATION_RUN` | `svc_rfm`, `svc_segments`, `svc_kpis` | `calculation` or none | `calculation` (`RFM`, `SEGMENTATION`, `KPI`), `status` (`COMPLETED`, `FAILED`), `input_count`, `output_count`; *`parameters_digest`*, *`window_from`*, *`window_to`*, *`data_origin`* (`OBSERVED` or `SEEDED`, as ADR-0052 defines them: `SEEDED` when any sale the calculation read is seeded) |
 | `MODEL_PUBLISHED`, `MODEL_ROLLED_BACK` | `svc_models` | `model_version`, with `model_version_id` not null | `previous_version_id` (integer or null), `reason_code` |
 | `PERMISSION_CHANGED` | `svc_users` | `user`, required | `change`; *`from_role`*, *`to_role`*, *`store_ids`* |
 | `CRITICAL_ACTION` | `svc_sales`, `svc_stock`, `svc_customers`, `svc_experiments`, `svc_campaigns` | required | `action` (`SALE_REVERSED`, `STOCK_ADJUSTED`, `CUSTOMER_ANONYMIZED`, `AUDIT_PAYLOAD_REDACTED`, `EXPERIMENT_FROZEN`, `CAMPAIGN_ACTIVATED`); *`reason_code`* |

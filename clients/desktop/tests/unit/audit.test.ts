@@ -236,7 +236,7 @@ describe('listing domain events', () => {
       'window_to',
       'data_origin',
     ]);
-    expect(run.details.find((d) => d.key === 'data_origin')?.value).toBe('REAL');
+    expect(run.details.find((d) => d.key === 'data_origin')?.value).toBe('OBSERVED');
 
     // A repeated element is joined.
     const stores = named('domain-event-stores-assigned');

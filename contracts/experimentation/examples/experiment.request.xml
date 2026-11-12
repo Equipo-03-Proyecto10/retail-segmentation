@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ExperimentRequest xmlns="https://mosaiq.maxthecoder.online/xml/experimentation/v1">
+  <name>Win-back offer for at-risk customers</name>
+  <campaign_id>4</campaign_id>
+  <primary_metric>CONVERSION</primary_metric>
+  <starts_on>2026-10-01</starts_on>
+  <conversion_window_days>14</conversion_window_days>
+  <minimum_detectable_effect>0.02</minimum_detectable_effect>
+  <arms>
+    <kind>CONTROL</kind>
+    <name>No offer</name>
+    <treatment_description>Held back: receives no win-back offer.</treatment_description>
+  </arms>
+  <arms>
+    <kind>TREATMENT</kind>
+    <name>10 percent win-back voucher</name>
+    <treatment_description>Offered a 10 percent voucher on the next purchase.</treatment_description>
+  </arms>
+</ExperimentRequest>

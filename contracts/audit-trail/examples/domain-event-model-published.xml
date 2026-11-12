@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DomainEvent xmlns="https://mosaiq.maxthecoder.online/xml/audit-trail/v1">
+  <event_id>7a0c5e1d-3b2f-4c8a-9d61-000000000002</event_id>
+  <kind>MODEL_PUBLISHED</kind>
+  <outcome>SUCCESS</outcome>
+  <occurred_at>2026-11-06T15:12:03.004Z</occurred_at>
+  <recorded_at>2026-11-06T15:12:03.019Z</recorded_at>
+  <actor_type>USER</actor_type>
+  <actor_user_id>11111111-1111-1111-1111-000000000001</actor_user_id>
+  <actor_role>ADMIN</actor_role>
+  <source>svc_models</source>
+  <subject_type>model_version</subject_type>
+  <subject_id>12</subject_id>
+  <model_version_id>12</model_version_id>
+  <correlation_id>corr-publish-12</correlation_id>
+  <details>
+    <ModelChange>
+      <previous_version_id>11</previous_version_id>
+      <reason_code>QUARTERLY_REFIT</reason_code>
+    </ModelChange>
+  </details>
+  <prev_hash>50f6096d18f5436cd23d8b3eb782f58fa619e912a4f426b65f981402e2a95eb6</prev_hash>
+  <entry_hash>edda7b47233f9790fcc6d116d0a0c0eac38a5d6e44b7cf0c002c6d30bfa61e74</entry_hash>
+</DomainEvent>

@@ -4,7 +4,8 @@ import { endsSession } from '../shared/modules';
 // The shell's two guards over the bridge every module shares (F28-01, #870): one loading
 // indicator for any call in flight, and one way back to sign-in when the session is over.
 
-const PASS_THROUGH = new Set(['onStateChange', 'getState', 'signIn', 'signOut']);
+// importProgress asks no service and is polled while an import runs, so it must not flicker the indicator.
+const PASS_THROUGH = new Set(['onStateChange', 'getState', 'signIn', 'signOut', 'importProgress']);
 
 export interface Guards {
   /** Called with true when the first call starts and false when the last one settles. */

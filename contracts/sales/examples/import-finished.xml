@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>import_finished</code>
+  <message>Import 17 is COMPLETED and cannot be cancelled.</message>
+  <correlation_id>corr-import-finished</correlation_id>
+  <details>
+    <field>status</field>
+    <code>finished</code>
+  </details>
+</Error>

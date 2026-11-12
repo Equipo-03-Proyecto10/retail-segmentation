@@ -44,9 +44,40 @@ fn no_sql_is_built_with_format() {
     }
 }
 
+/// ADR-0078: `public.product` and the four tables of the products boundary,
+/// read and never written, and no `api_` object.
 #[test]
-fn it_reads_only_public_product() {
+fn it_reads_only_the_five_relations_adr_0078_allows() {
     let source = fs::read_to_string("src/lib.rs").expect("source");
-    assert_eq!(source.matches("FROM public.product").count(), 4);
     assert!(!source.contains("api_products"));
+    let allowed = [
+        "public.product",
+        "products.product_status",
+        "products.product_attribute",
+        "products.product_barcode",
+        "products.product_relation",
+    ];
+    let mut reads = 0;
+    for line in source.lines() {
+        for keyword in ["FROM ", "JOIN "] {
+            let Some(start) = line.find(keyword) else {
+                continue;
+            };
+            let name: String = line[start + keyword.len()..]
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '.')
+                .collect();
+            assert!(allowed.contains(&name.as_str()), "{line}");
+            reads += 1;
+        }
+    }
+    assert!(reads >= 8, "the statements were not found: {reads}");
+    for statement in [
+        "INSERT INTO",
+        "UPDATE public",
+        "UPDATE products",
+        "DELETE FROM",
+    ] {
+        assert!(!source.contains(statement), "{statement}");
+    }
 }

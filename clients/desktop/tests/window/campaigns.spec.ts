@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import { PLAIN_MESSAGES } from '../../src/shared/campaign-messages';
 import { shot } from '../support/evidence';
 
 // Campaigns and their transitions (F16-08, #486), against a fake gateway that answers
@@ -32,6 +33,12 @@ const SHOWN: Record<Status, string> = {
   ACTIVE: 'draft-to-active',
   FINISHED: 'active-to-finished',
   CANCELLED: 'draft-to-cancelled',
+};
+const PLAN: Record<string, string> = {
+  audience: 'campaign-audience',
+  budget: 'campaign-budget',
+  'eligibility-rules': 'campaign-eligibility-rules',
+  exclusions: 'campaign-exclusions',
 };
 const LEGAL: Record<Status, Status[]> = {
   DRAFT: ['ACTIVE', 'CANCELLED'],
@@ -90,6 +97,10 @@ test.beforeAll(async () => {
         return reply(200, example('campaigns', 'campaigns'));
       }
       const match = /^\/api\/campaigns\/v1\/campaigns\/(\d+)(\/transitions)?$/.exec(path);
+      // The plan of a campaign (F28-09) has its own spec; here its four sections only have to load.
+      const plan = /^\/api\/campaigns\/v1\/campaigns\/301\/([a-z-]+)$/.exec(path)?.[1];
+      if (plan !== undefined && plan in PLAN && method === 'GET')
+        return reply(200, example('campaigns', PLAN[plan]!));
       if (!match || match[1] !== '301') return reply(404, example('campaigns', 'campaign-not-found'));
       if (method === 'GET') return reply(200, example('campaigns', SHOWN[stored]));
       if (method === 'PATCH')
@@ -237,9 +248,11 @@ test('an end before the start shows ends_before_start next to the dates; duplica
   nextRefusal = { file: 'ends-before-start', status: 422 };
   await form.getByRole('button', { name: 'Create campaign' }).click();
   await expect(page.getByTestId('error-code')).toHaveText('ends_before_start');
-  await expect(page.getByTestId('error-message')).toHaveText('ends_on cannot be before starts_on.');
+  await expect(page.getByTestId('error-message')).toHaveText(PLAIN_MESSAGES.ends_before_start as string);
   await expect(page.getByTestId('error-correlation')).toHaveText('corr-campaign-422b');
-  await expect(form.getByTestId('detail-ends_on')).toHaveText('ends_on: before_start');
+  await expect(form.getByTestId('detail-ends_on')).toHaveText(
+    'The end date cannot be before the start date.',
+  );
   await shot(page, '486-desktop-campaigns-03-ends-before-start');
   await expect(form.locator('#create-ends_on')).toHaveValue('2026-11-01');
 
@@ -252,7 +265,7 @@ test('an end before the start shows ends_before_start next to the dates; duplica
   nextRefusal = { file: 'unknown-label', status: 422 };
   await form.getByRole('button', { name: 'Create campaign' }).click();
   await expect(page.getByTestId('error-code')).toHaveText('unknown_label');
-  await expect(form.getByTestId('detail-label_code')).toHaveText('label_code: unknown');
+  await expect(form.getByTestId('detail-label_code')).toHaveText('The label is not known.');
   expect(writes()).toHaveLength(3);
   await app.close();
 });
@@ -279,7 +292,7 @@ test('a DRAFT is edited with only the changed fields; outside DRAFT the controls
   await page.getByRole('button', { name: 'Save changes' }).click();
   await expect(page.getByTestId('error-code')).toHaveText('ends_before_start');
   await expect(page.getByTestId('campaign-edit-form').getByTestId('detail-ends_on')).toHaveText(
-    'ends_on: before_start',
+    'The end date cannot be before the start date.',
   );
 
   // Once ACTIVE the edit controls are disabled, and a forced edit gets 409 campaign_not_draft.

@@ -8,7 +8,11 @@ product state.
 
 An AFTER row trigger captures `INSERT`, `UPDATE`, and `DELETE` on `product` by
 any writer. That includes products-service changes, frozen-web edits, and web or
-maintenance hard deletes. The SECURITY DEFINER capture function writes the
+maintenance hard deletes. The same trigger function captures the products
+boundary's own tables of commercial details, `products.product_status`,
+`products.product_attribute`, `products.product_barcode` and
+`products.product_relation`, by any writer, with the id of the product the row
+is about as `entity_id`. The SECURITY DEFINER capture function writes the
 transactional `products_events.outbox` and wakes only the owner's relay on the
 private `products_outbox` channel. A rolled-back product change therefore
 publishes no event.
@@ -26,7 +30,8 @@ after reading the committed outbox row. Each entry has exactly these fields:
 
 Consumers re-read current state through a versioned database contract when
 they need it. In particular, the stream does not contain a SKU, name, category,
-price, active flag, image path, or before/after document.
+price, active flag, commercial status, attribute, barcode, relation, image
+path, or before/after document.
 
 ## Consumer groups and delivery
 
@@ -46,8 +51,12 @@ row remains in the seven-day replay window. The approximate stream cap is
 
 ## Compatibility
 
-Changing the stream key, captured table or operations, field names or
-encodings, `entity_id` meaning, version value, or delivery promise is breaking.
+Changing the stream key, removing a captured table or changing the captured
+operations, field names or encodings, `entity_id` meaning, version value, or
+delivery promise is breaking. Capturing one more table of the boundary's own,
+with the same fields and `entity_id` meaning, is not: a consumer that
+invalidates on any event receives more of them, and one that re-reads through a
+versioned database contract reads the same.
 A breaking revision creates `stream:products.v2.changed` and
 `contracts/streams/products.changed.v2.md`; capture writes both versions until
 the `products` and `recommendations` groups have moved.

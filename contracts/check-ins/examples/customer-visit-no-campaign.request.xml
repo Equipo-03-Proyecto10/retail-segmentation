@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomerVisitRequest xmlns="https://mosaiq.maxthecoder.online/xml/check-ins/v1">
+  <loyalty_code>9K2FQ7XH4M1TBN6WZ0VCDPRJ3A</loyalty_code>
+  <store_id>3</store_id>
+  <occurred_at>2026-11-09T11:15:00Z</occurred_at>
+</CustomerVisitRequest>

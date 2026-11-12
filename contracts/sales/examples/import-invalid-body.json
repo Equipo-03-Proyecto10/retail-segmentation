@@ -1,0 +1,11 @@
+{
+  "code": "invalid_body",
+  "message": "The import violates its schema: the header must be the eight columns of contract version 1, in order.",
+  "correlation_id": "corr-import-invalid-body",
+  "details": [
+    {
+      "field": "header[3]",
+      "code": "unexpected_column"
+    }
+  ]
+}

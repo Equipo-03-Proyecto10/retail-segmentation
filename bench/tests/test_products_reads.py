@@ -1,9 +1,10 @@
-"""The products read cases (ADR-0042), run against either build.
+"""The products read cases (ADR-0042, ADR-0078), run against either build.
 
 `bench/conformance.sh` runs them, with the shared conformance suite, against
 products-service and against its bench-only Rust twin on the same database
 and token path. Both builds must pass the same cases before anything is
-measured. `BENCH_TWIN=1` adds the twin's own promise: it serves no write.
+measured: the list, the one product, and the details and relations reads of
+F21-10. `BENCH_TWIN=1` adds the twin's own promise: it serves no write.
 """
 
 from __future__ import annotations
@@ -93,8 +94,92 @@ def test_one_product_and_an_unknown_one(client: Client, token: str) -> None:
     assert (reply.status, reply.code()) == (404, "product_not_found")
 
 
+def test_the_details_of_a_seeded_product(client: Client, token: str) -> None:
+    reply = get(client, token, "/v1/products/3/details")
+    body = reply.json()
+    assert reply.status == 200
+    assert list(body) == [
+        "product_id",
+        "sku",
+        "name",
+        "category_id",
+        "list_price",
+        "is_active",
+        "commercial_status",
+        "attributes",
+        "photo_url",
+        "barcode",
+    ]
+    assert body["name"] == "Demo Product 3" and body["list_price"] == "26.25"
+    assert (body["commercial_status"], body["is_active"]) == ("active", True)
+    assert [attribute["name"] for attribute in body["attributes"]] == [
+        "brand",
+        "color",
+        "pack_size",
+    ]
+    assert body["barcode"] == "7501000000036" and body["photo_url"] is None
+
+
+def test_a_product_with_no_details_reads_its_status_from_is_active(
+    client: Client, token: str
+) -> None:
+    # The 10,000 bench products carry no status, attribute or barcode row.
+    body = get(client, token, "/v1/products/100017/details").json()
+    assert (body["commercial_status"], body["is_active"]) == ("active", True)
+    assert (body["attributes"], body["barcode"], body["photo_url"]) == ([], None, None)
+
+
+def test_relations_are_ordered_by_kind_then_id(client: Client, token: str) -> None:
+    body = get(client, token, "/v1/products/1/relations").json()
+    assert body["product_id"] == 1
+    assert body["product_relations"] == [
+        {"related_product_id": 2, "kind": "complement"},
+        {"related_product_id": 31, "kind": "substitute"},
+    ]
+    assert body["page_info"] == {"page": 1, "size": 20, "total": 2}
+    only = get(client, token, "/v1/products/1/relations?kind=substitute").json()
+    assert [item["related_product_id"] for item in only["product_relations"]] == [31]
+    paged = get(client, token, "/v1/products/1/relations?page=2&size=1").json()
+    assert paged["page_info"] == {"page": 2, "size": 1, "total": 2}
+    beyond = get(client, token, "/v1/products/1/relations?page=9").json()
+    assert beyond["product_relations"] == [] and beyond["page_info"]["total"] == 2
+    none = get(client, token, "/v1/products/100017/relations").json()
+    assert none["product_id"] == 100017 and none["product_relations"] == []
+
+
 @pytest.mark.parametrize(
-    "path", ["/v1/products?size=3", "/v1/products/3", "/v1/products/999999"]
+    "path", ["/v1/products/999999/details", "/v1/products/999999/relations"]
+)
+def test_details_and_relations_of_an_unknown_product(
+    client: Client, token: str, path: str
+) -> None:
+    reply = get(client, token, path)
+    assert (reply.status, reply.code()) == (404, "product_not_found")
+
+
+@pytest.mark.parametrize("kind", ["upsell", "", "Substitute"])
+def test_an_unknown_relation_kind_is_invalid_query(
+    client: Client, token: str, kind: str
+) -> None:
+    reply = get(client, token, "/v1/products/1/relations?kind=" + kind)
+    assert (reply.status, reply.code()) == (422, "invalid_query")
+    assert reply.json()["details"] == [{"field": "kind", "code": "enum"}]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/v1/products?size=3",
+        "/v1/products/3",
+        "/v1/products/999999",
+        "/v1/products/3/details",
+        "/v1/products/100017/details",
+        "/v1/products/999999/details",
+        "/v1/products/1/relations",
+        "/v1/products/1/relations?kind=complement&size=1",
+        "/v1/products/100017/relations",
+        "/v1/products/1/relations?kind=upsell",
+    ],
 )
 def test_xml_answers_validate(client: Client, token: str, path: str) -> None:
     # Client.call validates every XML body against products.xsd.
@@ -115,6 +200,12 @@ def test_xml_answers_validate(client: Client, token: str, path: str) -> None:
             b' "category_id": 1, "list_price": "1.00"}',
         ),
         ("PATCH", "/v1/products/3", b'{"name": "Never written"}'),
+        ("PATCH", "/v1/products/3/details", b'{"commercial_status": "paused"}'),
+        (
+            "PUT",
+            "/v1/products/3/relations/substitute",
+            b'{"related_product_ids": [4]}',
+        ),
         ("PUT", "/v1/products/3", b"{}"),
         ("DELETE", "/v1/products/3", None),
     ],
@@ -133,3 +224,7 @@ def test_the_twin_serves_no_write(
     )
     assert (reply.status, reply.code()) == (405, "method_not_allowed")
     assert get(client, admin, "/v1/products/3").json()["name"] == "Demo Product 3"
+    assert get(client, admin, "/v1/products/3/details").json()["is_active"] is True
+    assert (
+        get(client, admin, "/v1/products/3/relations").json()["page_info"]["total"] == 2
+    )

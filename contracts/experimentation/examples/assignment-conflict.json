@@ -1,0 +1,6 @@
+{
+  "code": "assignment_conflict",
+  "message": "A customer of the frame already holds an assignment in this experiment.",
+  "correlation_id": "corr-assignment-conflict",
+  "details": []
+}

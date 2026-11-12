@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SaleImport xmlns="https://mosaiq.maxthecoder.online/xml/sales/v1">
+  <import_id>18</import_id>
+  <status>CANCELLED</status>
+  <contract_version>1</contract_version>
+  <total_rows>40000</total_rows>
+  <chunk_count>267</chunk_count>
+  <next_sequence>120</next_sequence>
+  <received>18000</received>
+  <accepted>12000</accepted>
+  <rejected>300</rejected>
+  <pending>5700</pending>
+  <created_at>2026-10-29T09:00:00Z</created_at>
+  <finished_at>2026-10-29T09:02:03Z</finished_at>
+  <created_by>11111111-1111-1111-1111-000000000001</created_by>
+</SaleImport>

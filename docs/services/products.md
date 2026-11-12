@@ -16,7 +16,7 @@
 | MongoDB | — |
 | Compose project / image | `mosaiq-products` / `ghcr.io/equipo-03-proyecto10/mosaiq-products` |
 | Used by | Android: QR detail and one batch lookup per recommendation list (F17-02, F17-05). Electron: product maintenance and product names for sales read-back (F16-02, F16-04). |
-| Governing ADRs | [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md), [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md), [ADR-0042](../adr/0042-a-bench-only-rust-build-of-the-products-reads-is-compared-under-one-load.md) |
+| Governing ADRs | [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md), [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md), [ADR-0042](../adr/0042-a-bench-only-rust-build-of-the-products-reads-is-compared-under-one-load.md), [ADR-0078](../adr/0078-the-bench-twin-serves-every-read-of-the-products-contract-and-the-load-comparison-stays-as-it-was.md) |
 
 ## Business rule
 
@@ -133,10 +133,10 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 ### E-22 — a bench-only Rust build serves the same read endpoints as products
 
-- **What:** `bench/products-service-rs/` implements the products read operations so the two languages can be compared.
+- **What:** `bench/products-service-rs/` implements the read operations of the products contract (the list, one product, and the details and relations of a product) so the two languages can be compared. The load comparison measures the first two; it serves the others so that both builds pass the same conformance suite (ADR-0078).
 - **Why it is acceptable:** A fair comparison needs the same contract under the same load. Two services doing different work cannot be compared.
-- **Guard:** It is never registered, routed, deployed or counted, so no endpoint is served by two deployables. It connects as `svc_products_bench` with SELECT on `public.product` only.
-- **Decided in:** [ADR-0042](../adr/0042-a-bench-only-rust-build-of-the-products-reads-is-compared-under-one-load.md) (Decision). Register: [E-22](./README.md#e-22--a-bench-only-rust-build-serves-the-same-read-endpoints-as-products).
+- **Guard:** It is never registered, routed, deployed or counted, so no endpoint is served by two deployables. It connects as `svc_products_bench` with SELECT on `public.product` and the four tables of the products boundary, and writes nothing.
+- **Decided in:** [ADR-0042](../adr/0042-a-bench-only-rust-build-of-the-products-reads-is-compared-under-one-load.md) (Decision); [ADR-0078](../adr/0078-the-bench-twin-serves-every-read-of-the-products-contract-and-the-load-comparison-stays-as-it-was.md) (the reads it serves and its role's grants). Register: [E-22](./README.md#e-22--a-bench-only-rust-build-serves-the-same-read-endpoints-as-products).
 
 ## Configuration
 

@@ -1,12 +1,12 @@
 # The products reads bench
 
-[ADR-0042](../docs/adr/0042-a-bench-only-rust-build-of-the-products-reads-is-compared-under-one-load.md) compares Flask and Rust on identical work. `products-service-rs/` is a Rust build of products-service's two read operations, `GET /v1/products` and `GET /v1/products/{product_id}`. It runs behind exactly `contracts/products/` and answers with the same JSON, XML, status codes and error envelope.
+[ADR-0042](../docs/adr/0042-a-bench-only-rust-build-of-the-products-reads-is-compared-under-one-load.md) compares Flask and Rust on identical work. `products-service-rs/` is a Rust build of products-service's read operations: `GET /v1/products`, `GET /v1/products/{product_id}`, and, since [ADR-0078](../docs/adr/0078-the-bench-twin-serves-every-read-of-the-products-contract-and-the-load-comparison-stays-as-it-was.md), `GET /v1/products/{product_id}/details` and `GET /v1/products/{product_id}/relations`. It runs behind exactly `contracts/products/` and answers with the same JSON, XML, status codes and error envelope. The load comparison is unchanged: its four scenarios (list, search, filter, detail) use the first two reads; the other two are served so that both builds pass the same conformance suite, and are not benchmarked.
 
 **It is a benchmark artifact, not a service** (accepted exception E-22):
 - It is never registered in `contracts/registry.yaml`, never routed by NGINX, never deployed, and never counted toward ADR-0043's services.
 - Its image is never pushed.
-- It implements no write. The contract's two writes go through the kit's usual checks (token, role, media type, size, body) and then answer 405; any other method is the router's 405.
-- It connects as `svc_products_bench`, which may read `public.product` and nothing else.
+- It implements no write. The contract's four writes (`createProduct`, `updateProduct`, `updateProductDetails`, `replaceProductRelations`) go through the kit's usual checks (token, role, media type, size, body) and then answer 405; any other method is the router's 405.
+- It connects as `svc_products_bench`, which may read `public.product` and the products boundary's four tables (`products.product_status`, `products.product_attribute`, `products.product_barcode`, `products.product_relation`) and nothing else. `PRODUCTS_PHOTO_BASE_URL` has the same value in `env/products-bench.env` and `env/products.env`, so both builds answer the same `photo_url`.
 - Its Redis user (`redis/products-bench.acl`) may only `EXISTS` a session's liveness key.
 - Like products-service in the bench, it has no cache and no rate limiter. Like every service, it verifies the RS256 token and the session's liveness on every request, and signs nothing.
 
@@ -46,7 +46,7 @@ Do the same for `auth`, under `"$AUTH_TAG"`. Then, from the repository root:
 bash bench/conformance.sh
 ```
 
-It brings the `bench` profile up and runs the suite against both builds, then compares 20 requests in each format. It stops at the first difference and leaves the stack running for the load runs. Afterwards:
+It brings the `bench` profile up and runs the suite against both builds, then compares 30 requests in each format (the four reads, with unknown ids and refusals). It stops at the first difference and leaves the stack running for the load runs. Afterwards:
 
 ```bash
 docker compose -f bench/compose.yaml --profile bench down -v

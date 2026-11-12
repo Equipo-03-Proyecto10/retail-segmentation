@@ -37,8 +37,9 @@ implements no write: the four write operations (`createProduct`, `updateProduct`
 `updateProductDetails`, `replaceProductRelations`) are registered and answer 405. `svc_products_bench`
 holds SELECT on `public.product` and on the four `products.*` tables, USAGE on the schema
 `products`, and nothing else; each grant is a row of `contracts/db/grants.csv`. The load comparison
-is unchanged: its four scenarios (list, search, filter, detail), the fairness rules and the report
-`docs/evidence/products-reads-flask-vs-rust.md` stay as ADR-0042 and F15-03 left them, and the two
+is unchanged: its four scenarios (list, search, filter, detail), the fairness rules and the two
+reports, `docs/evidence/products-reads-flask-vs-rust.md` (F15-02) and
+`docs/evidence/products-reads-flask-vs-rust-x86.md` (F15-03), stay as they were written, and the two
 new reads are served to pass conformance, not benchmarked. Everything else of ADR-0042 stands: the
 twin is never registered, routed, deployed, counted or pushed, runs only in the `bench` profile on
 port 5103, and its crate follows the code rules of ADR-0045.

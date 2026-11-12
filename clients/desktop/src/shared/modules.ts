@@ -22,7 +22,8 @@ export type ModuleName =
   | 'users'
   | 'audit'
   | 'transfer'
-  | 'services';
+  | 'services'
+  | 'imports';
 
 export interface ConsoleModule {
   name: ModuleName;
@@ -53,6 +54,7 @@ export const MODULE_GROUPS: readonly ModuleGroup[] = [
       { name: 'drift', label: 'Drift', operation: 'listDriftReports' },
       { name: 'conversion', label: 'Conversion analysis', operation: 'getExperimentResult' },
       { name: 'kmeans', label: 'K-means', operation: 'listModelVersions' },
+      { name: 'imports', label: 'Import and data quality', operation: 'listSaleImports' },
     ],
   },
   {

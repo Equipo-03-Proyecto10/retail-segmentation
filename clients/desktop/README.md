@@ -9,7 +9,7 @@ F16-01 is the foundation: shell, secure window, preload bridge, XML transport, s
 role-gated screens. F16-02 adds Products and Categories, F16-04 adds Stock, Sales, Engagement and
 Check-ins, F16-06 adds Users, Transfer administrator and the account menu, F16-07 adds Stores
 with their locations, F16-08 adds Campaigns and their transitions, F16-09 adds the Audit trail, and
-F16-03 adds Customers (see below).
+F16-03 adds Customers, and F28-02 adds Import and data quality (see below).
 
 ## Run it
 
@@ -77,6 +77,8 @@ being ignored. `MOSAIQ_DESKTOP_CONFIG_DIR` overrides the directory (the window t
     `startTraining`, `publishModelVersion`.
   - recommendations: `inspectRecommendation`, `listRecommendationDecisions`, `openRecommendationDecision`
     (read only).
+  - sales import: `chooseImportFile`, `startImport`, `resumeImport`, `importProgress`, `cancelImport`,
+    `listImports`, `getImport`, `listImportRejections`.
 
   There is no generic fetch and no `ipcRenderer`. The main process checks every value a screen sends
   (`src/main/checks.ts`, used by `catalog.ts` and `floor.ts`) before it builds a path or a body from it.
@@ -611,6 +613,64 @@ id, and the panel says whether the console or the service refused. Nothing is hi
 The window tests (`tests/window/exploration.spec.ts`) answer with the recorded examples of the contracts
 above, read from disk, plus the few documents `tests/support/exploration.ts` builds in their shape
 (products, stores, categories), and check the screen at 375 px and at 1440 px.
+
+## Import and data quality (F28-02)
+
+Through sales-service (`contracts/sales/`, resource `sale-imports`, [ADR-0070](../../docs/adr/0070-a-sales-import-reaches-sales-service-as-numbered-row-chunks-under-the-64-kib-cap-and-is-processed-by-a-worker.md)).
+The **Import and data quality** screen is offered to `ADMIN` alone, by the `x-mosaiq-roles` of
+`listSaleImports`; the main process refuses every one of its calls to any other role before it opens a
+dialog or sends a request. The bridge operations are `chooseImportFile`, `startImport`, `resumeImport`,
+`importProgress`, `cancelImport`, `listImports`, `getImport` and `listImportRejections`.
+
+- **The file stays in the main process.** `chooseImportFile` opens the native dialog there and reads
+  the file it returns (UTF-8, a leading byte-order mark ignored, CRLF, LF or CR, quoted values with
+  commas and line breaks, as the web page's reader does; at most 16 MiB). The renderer receives the
+  file's name, its number of data rows and chunks, and nothing of its contents, and names no file.
+- **Checked before anything is sent.** The header must be the eight columns of CSV contract v1; a wrong
+  one is refused naming the first wrong column (`header[3]`, `unexpected_column`), as the service would.
+  A file that is not UTF-8, has a quote it never closes, no rows, more than 100,000 rows or needs more
+  than 667 chunks is refused with its reason. Empty lines are skipped and counted, not sent.
+- **Chunks.** Rows are sent as numbered chunks (from 0) of at most 150 rows and 60,000 bytes of
+  serialized XML, so the 64 KiB cap is never what the client discovers. `PUT .../chunks/{sequence}`
+  carries each one; the transport validates it against `sales.xsd` before it is sent and the answer
+  after it arrives. A cell longer than 256 characters is cut at 256 and a row of more than 64 cells at
+  64, and a character XML cannot carry becomes U+FFFD: no column accepts such a cell and no row of that
+  length is valid, so the service still rejects the row, by line, and one odd row never refuses a chunk
+  of good ones. `POST /v1/sale-imports` carries one `Idempotency-Key` per start, reused if the create is
+  tried again.
+- **Progress.** The screen shows the chunks staged, the rows received and, from the service, accepted,
+  rejected and pending, written as `Received 320 = accepted 316 + rejected 4 + pending 0` with a plain
+  statement of whether the identity holds. Once every chunk is staged the console reads the import every
+  2 seconds until the service ends it. The run lives in the main process, so leaving the screen does not
+  stop it.
+- **Failures.** A 503, a 429 (waiting for `Retry-After`) or no answer is tried again twice with the same
+  request. If it still fails the import pauses with the file held, and **Resume** reads
+  `next_sequence`, sends the last staged chunk again (the service answers a replay for the same file and
+  `chunk_conflict` for another) and continues. After a restart, "Resume with its file" in the recent
+  imports does the same with the file chosen again. `chunk_conflict`, `row_count_mismatch` and the other
+  final refusals stop the run; on `row_count_mismatch` the console cancels the import, as ADR-0070 asks.
+  **Cancel import** sets `CANCELLED`: accepted rows stay accepted.
+- **Review.** Any import in the recent list opens its counts and its report: line, field (or "whole row"),
+  code and the service's reason, 100 rows a page with **Load the next 100** and **Load all**. The
+  contract has no filter on the report, so the code, field and kind filters apply to the rejections
+  loaded so far, and the screen says so while more are unread. Messages quote the file's own text; the
+  parser leaves XML entities as written, so the module decodes the five predefined ones and numeric
+  references, once, and sets the result with `textContent`.
+- **Duplicates.** A repeat inside the file (`duplicate_of` `FILE`, with the first line it repeats) and a
+  sale already recorded (`RECORDED_SALE`, with `sale_id` when the service knows it) are two kinds in
+  their own column, counted apart, and filterable. For a recorded sale, **Open sale** reads
+  `GET /v1/sales/{sale_id}` through the existing sales read and shows it beside the file's line. For a
+  repeat, **Repeats of line N** lists every loaded line that repeats it and says that line N was recorded
+  once. The first line is an accepted row, so it is not in the report. Settling look-alike duplicates and
+  the audited resolutions are F26-09 (#854), not this module.
+- **Export.** The module's one table is the rejections, so the shared **Export CSV** (ADR-0074) writes the
+  filtered rows on screen through the save dialog, with the formula-injection prefix, and records the
+  export in `export-audit.log`.
+
+The unit tests (`tests/unit/csv.test.ts`, `import-chunks.test.ts`, `imports.test.ts`) cover the parser,
+the chunker (size limits, sequence, determinism) and the whole flow against the recorded examples of
+`contracts/sales/examples/`, including retry, pause, resume and cancel. The window tests
+(`tests/window/imports.spec.ts`) replace only the native file dialogs and answer with those examples.
 
 ## Packages and CI (F16-05)
 

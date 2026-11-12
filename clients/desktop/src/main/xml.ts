@@ -92,6 +92,8 @@ const REPEATED = new Set([
   'KpiDefinitions.KpiDefinition',
   'KpiDefinitions.KpiDefinition.dimensions',
   'KpiDefinitions.KpiDefinition.measures',
+  'SaleImports.SaleImport',
+  'SaleImportRejections.SaleImportRejection',
   'DriftReport.variables',
   'DriftReport.variables.statistics',
   'DriftReport.variables.bins',

@@ -217,6 +217,7 @@ Later runtime events must be preserved.
 | [0075](0075-engagement-relays-interaction-facts-on-a-redis-stream-from-an-outbox-kept-on-the-event-document.md) | engagement relays interaction facts on a Redis stream, from an outbox kept on the event document | Accepted |
 | [0077](0077-desktop-executive-reports-export-pdf-csv-and-excel-from-the-report-main-served-and-keep-the-data-origin.md) | Desktop executive reports export PDF, CSV and Excel from the report main served, and keep the data origin | Accepted |
 | [0078](0078-the-bench-twin-serves-every-read-of-the-products-contract-and-the-load-comparison-stays-as-it-was.md) | The bench twin serves every read of the products contract, and the load comparison stays as it was | Accepted |
+| [0079](0079-inventory-planners-read-demand-by-segment-and-category-as-an-aggregate-kpi.md) | Inventory planners read demand by segment and category as an aggregate report | Proposed |
 
 ## Writing one
 

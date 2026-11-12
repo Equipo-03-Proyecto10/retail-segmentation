@@ -236,7 +236,16 @@ describe('choosing the file', () => {
 });
 
 describe('roles', () => {
-  const others = ['ANALYST', 'MARKETING', 'STORE_MANAGER', 'INVENTORY_PLANNER', 'AUDITOR'];
+  const others = [
+    'ANALYST',
+    'MARKETING',
+    'STORE_MANAGER',
+    'INVENTORY_PLANNER',
+    'AUDITOR',
+    'SALES_ASSOCIATE',
+    'LOYALTY_OFFICER',
+    'COMMERCIAL_SUPERVISOR',
+  ];
 
   it('offers the import to the administrator only (x-mosaiq-roles)', () => {
     for (const op of [

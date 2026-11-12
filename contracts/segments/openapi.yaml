@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: segments-service
-  version: 1.2.0
+  version: 1.3.0
   description: >-
     Serves what the segmentation runs recorded: the label vocabulary, each
     customer's current assignment and the history, the assignments of each model
@@ -38,6 +38,8 @@ paths:
         - STORE_MANAGER
         - MARKETING
         - AUDITOR
+        - SALES_ASSOCIATE
+        - LOYALTY_OFFICER
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
       responses:
@@ -87,6 +89,8 @@ paths:
         - STORE_MANAGER
         - MARKETING
         - AUDITOR
+        - SALES_ASSOCIATE
+        - LOYALTY_OFFICER
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/LabelCode'

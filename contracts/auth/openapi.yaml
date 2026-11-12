@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: auth-service
-  version: 1.0.1
+  version: 1.1.0
   description: >-
     Authenticates active accounts, issues RS256 access tokens, rotates refresh
     tokens, and owns session liveness under RN-52. Sign-in and refresh read the
@@ -254,6 +254,9 @@ paths:
         - INVENTORY_PLANNER
         - AUDITOR
         - CUSTOMER
+        - SALES_ASSOCIATE
+        - LOYALTY_OFFICER
+        - COMMERCIAL_SUPERVISOR
       parameters:
         - $ref: "#/components/parameters/CorrelationId"
       responses:
@@ -295,6 +298,9 @@ paths:
         - INVENTORY_PLANNER
         - AUDITOR
         - CUSTOMER
+        - SALES_ASSOCIATE
+        - LOYALTY_OFFICER
+        - COMMERCIAL_SUPERVISOR
       parameters:
         - $ref: "#/components/parameters/CorrelationId"
       responses:
@@ -451,6 +457,9 @@ components:
         - INVENTORY_PLANNER
         - AUDITOR
         - CUSTOMER
+        - SALES_ASSOCIATE
+        - LOYALTY_OFFICER
+        - COMMERCIAL_SUPERVISOR
     SignInRequest:
       type: object
       additionalProperties: false

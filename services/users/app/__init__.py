@@ -42,6 +42,9 @@ ROLE_CODES = (
     "INVENTORY_PLANNER",
     "AUDITOR",
     "CUSTOMER",
+    "SALES_ASSOCIATE",
+    "LOYALTY_OFFICER",
+    "COMMERCIAL_SUPERVISOR",
 )
 # More than five failed current-password checks for one user in 15 minutes.
 PASSWORD_FAILURES = 5

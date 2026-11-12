@@ -19,9 +19,11 @@
 # the system actually has. The exemption is recorded here instead, where a
 # reviewer sees it.
 
-# Seven roles, from the permission matrix in docs/data-model.md. An eighth
-# would be a business decision, not seed data. Exactly one user holds ADMIN —
-# AGENTS.md, enforced in the schema by F4-02.
+# Ten roles: the seven of the permission matrix in docs/requirements.md §3,
+# and the three floor roles ADR-0060 added (SALES_ASSOCIATE, LOYALTY_OFFICER,
+# COMMERCIAL_SUPERVISOR, F19-04). An eleventh would be a business decision, not
+# seed data. Exactly one user holds ADMIN — AGENTS.md, enforced in the schema
+# by F4-02.
 role
 
 # Five sales channels: mobile app, web, physical store, marketplace and call

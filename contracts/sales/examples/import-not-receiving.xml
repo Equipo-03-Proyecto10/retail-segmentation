@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>import_not_receiving</code>
+  <message>Import 17 is PROCESSING and takes no more chunks.</message>
+  <correlation_id>corr-import-not-receiving</correlation_id>
+  <details>
+    <field>status</field>
+    <code>not_receiving</code>
+  </details>
+</Error>

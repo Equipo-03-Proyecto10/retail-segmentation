@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import secrets
+import time
 
 import pytest
 
@@ -111,15 +112,30 @@ def test_sixth_wrong_current_password_is_rate_limited(
     assert 0 < int(locked.headers["Retry-After"]) <= 900
 
 
+# auth's per-IP sign-in limit: 30 attempts in a fixed 60 s window that starts
+# at the first attempt (services/auth/app/__init__.py, LOGIN_LIMIT and
+# LOGIN_WINDOW_SECONDS). The instance's edge refuses sooner.
+SIGN_IN_LIMIT = 30
+SIGN_IN_WINDOW = 60
+
+
 @run_last
 def test_sign_in_is_rate_limited_by_ip(
     deployed_stack: Stack, evidence: Evidence
 ) -> None:
-    """Vary email so the email/IP lock cannot mask the IP-only limit."""
+    """Vary email so the email/IP lock cannot mask the IP-only limit.
+
+    The window may have started before this case, with the suite's own
+    sign-ins, and end in the middle of the loop; the count then starts again.
+    So the loop runs until a refusal or until two whole windows have passed,
+    not for a fixed number of attempts: within a fresh window the limit must
+    refuse the attempt after the thirtieth.
+    """
     refused = None
     accepted = 0
-    for attempt in range(35):
-        email = f"f18-04-ip-{deployed_stack.run_id}-{attempt}@example.test"
+    deadline = time.monotonic() + 2 * SIGN_IN_WINDOW + 5
+    while accepted < 3 * SIGN_IN_LIMIT and time.monotonic() < deadline:
+        email = f"f18-04-ip-{deployed_stack.run_id}-{accepted}@example.test"
         reply = deployed_stack.sign_in_reply(
             email, "definitely-wrong-password", paced=False
         )
@@ -130,7 +146,9 @@ def test_sign_in_is_rate_limited_by_ip(
         accepted += 1
 
     assert accepted > 0
-    assert refused is not None, "The per-IP sign-in limit accepted 35 attempts."
+    assert (
+        refused is not None
+    ), f"The per-IP sign-in limit accepted {accepted} attempts over two windows."
     held = evidence.check(
         "auth",
         f"sign-in attempt {accepted + 1} from one IP, varied emails",

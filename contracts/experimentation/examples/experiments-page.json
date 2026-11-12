@@ -1,0 +1,339 @@
+{
+  "experiments": [
+    {
+      "experiment_id": 16,
+      "name": "Voucher versus free delivery",
+      "campaign_id": 7,
+      "state": "ANALYZED",
+      "design_kind": "OFFER_COMPARISON",
+      "assignment_rule": "V1",
+      "data_origin": "OBSERVED",
+      "arms": [
+        {
+          "arm_id": 51,
+          "position": 0,
+          "kind": "TREATMENT",
+          "name": "10 percent voucher",
+          "treatment_description": "Offered a 10 percent voucher on the next purchase."
+        },
+        {
+          "arm_id": 52,
+          "position": 1,
+          "kind": "TREATMENT",
+          "name": "Free delivery",
+          "treatment_description": "Offered free delivery on the next online purchase."
+        }
+      ],
+      "design": {
+        "primary_metric": "CONVERSION",
+        "secondary_metric": "REVENUE_PER_CUSTOMER",
+        "estimator": "DIFFERENCE_OF_PROPORTIONS",
+        "alpha": 0.05,
+        "comparison_alpha": 0.05,
+        "power": 0.80,
+        "minimum_detectable_effect": 0.02,
+        "baseline": 0.10,
+        "baseline_std_dev": null,
+        "required_per_arm": 3839,
+        "smallest_detectable_effect": 0.0196,
+        "allocation": "EQUAL",
+        "conversion_window_days": 14,
+        "settle_days": 7,
+        "starts_on": "2026-10-05",
+        "analysis_at": "2026-10-26T08:00:00Z"
+      },
+      "frame": {
+        "taken_at": "2026-10-05T07:59:55Z",
+        "size": 8000,
+        "digest": "03ec6905cfd132ab399fa8d575d12fc4dc74d22d494c3663d7a7098cc857da1a",
+        "label_code": "LOYAL",
+        "model_version_id": 5,
+        "exclusions": [
+          {
+            "reason": "NO_MARKETING_CONTACT_CONSENT",
+            "count": 300
+          },
+          {
+            "reason": "NO_PERSONALIZATION_CONSENT",
+            "count": 150
+          }
+        ]
+      },
+      "salt": "a7790f98633d3f57304a9b06565581bbb460927312e9089a671b12e0af490e35",
+      "assignment": {
+        "experiment_id": 16,
+        "assigned_at": "2026-10-05T08:00:00Z",
+        "assigned_by": "11111111-1111-1111-1111-000000000003",
+        "assigned_total": 8000,
+        "acknowledged_underpowered": false,
+        "arms": [
+          {
+            "arm_id": 51,
+            "kind": "TREATMENT",
+            "assigned": 4000
+          },
+          {
+            "arm_id": 52,
+            "kind": "TREATMENT",
+            "assigned": 4000
+          }
+        ],
+        "checks": {
+          "recomputation_matches": true,
+          "sample_ratio": {
+            "status": "PASSED",
+            "p_value": 1.000000,
+            "threshold": 0.001
+          },
+          "balance": [
+            {
+              "measure": "PRE_RECENCY_DAYS",
+              "arm_id": 52,
+              "reference_arm_id": 51,
+              "standardized_mean_difference": 0.019,
+              "flagged": false,
+              "threshold": 0.25
+            },
+            {
+              "measure": "PRE_PURCHASE_COUNT",
+              "arm_id": 52,
+              "reference_arm_id": 51,
+              "standardized_mean_difference": 0.011,
+              "flagged": false,
+              "threshold": 0.25
+            },
+            {
+              "measure": "PRE_NET_SPEND",
+              "arm_id": 52,
+              "reference_arm_id": 51,
+              "standardized_mean_difference": 0.016,
+              "flagged": false,
+              "threshold": 0.25
+            }
+          ]
+        }
+      },
+      "flags": [],
+      "planned_at": "2026-10-05T07:59:55Z",
+      "planned_by": "11111111-1111-1111-1111-000000000003"
+    },
+    {
+      "experiment_id": 12,
+      "name": "Win-back offer for at-risk customers",
+      "campaign_id": 4,
+      "state": "ANALYZED",
+      "design_kind": "CONTROLLED",
+      "assignment_rule": "V1",
+      "data_origin": "OBSERVED",
+      "arms": [
+        {
+          "arm_id": 31,
+          "position": 0,
+          "kind": "CONTROL",
+          "name": "No offer",
+          "treatment_description": "Held back: receives no win-back offer."
+        },
+        {
+          "arm_id": 32,
+          "position": 1,
+          "kind": "TREATMENT",
+          "name": "10 percent win-back voucher",
+          "treatment_description": "Offered a 10 percent voucher on the next purchase."
+        }
+      ],
+      "design": {
+        "primary_metric": "CONVERSION",
+        "secondary_metric": "REVENUE_PER_CUSTOMER",
+        "estimator": "DIFFERENCE_OF_PROPORTIONS",
+        "alpha": 0.05,
+        "comparison_alpha": 0.05,
+        "power": 0.80,
+        "minimum_detectable_effect": 0.02,
+        "baseline": 0.10,
+        "baseline_std_dev": null,
+        "required_per_arm": 3839,
+        "smallest_detectable_effect": 0.0196,
+        "allocation": "EQUAL",
+        "conversion_window_days": 14,
+        "settle_days": 7,
+        "starts_on": "2026-10-01",
+        "analysis_at": "2026-10-22T08:00:00Z"
+      },
+      "frame": {
+        "taken_at": "2026-10-01T07:59:58Z",
+        "size": 8000,
+        "digest": "334bd17a266b4167fff8bb0b0f3022120b21c9f8d91ec2e70c67e795cf3b1c7e",
+        "label_code": "AT_RISK",
+        "model_version_id": 5,
+        "exclusions": [
+          {
+            "reason": "NO_MARKETING_CONTACT_CONSENT",
+            "count": 412
+          },
+          {
+            "reason": "NO_PERSONALIZATION_CONSENT",
+            "count": 233
+          },
+          {
+            "reason": "CHANNEL_RESTRICTED",
+            "count": 61
+          },
+          {
+            "reason": "CAMPAIGN_EXCLUSION",
+            "count": 48
+          },
+          {
+            "reason": "INACTIVE",
+            "count": 19
+          },
+          {
+            "reason": "ANONYMIZED",
+            "count": 7
+          }
+        ]
+      },
+      "salt": "7aad187aa11f4824cb5c887a553a6d8dd6aa66a20d65f197a033841a3256cf40",
+      "assignment": {
+        "experiment_id": 12,
+        "assigned_at": "2026-10-01T08:00:00Z",
+        "assigned_by": "11111111-1111-1111-1111-000000000003",
+        "assigned_total": 8000,
+        "acknowledged_underpowered": false,
+        "arms": [
+          {
+            "arm_id": 31,
+            "kind": "CONTROL",
+            "assigned": 4000
+          },
+          {
+            "arm_id": 32,
+            "kind": "TREATMENT",
+            "assigned": 4000
+          }
+        ],
+        "checks": {
+          "recomputation_matches": true,
+          "sample_ratio": {
+            "status": "PASSED",
+            "p_value": 1.000000,
+            "threshold": 0.001
+          },
+          "balance": [
+            {
+              "measure": "PRE_RECENCY_DAYS",
+              "arm_id": 32,
+              "reference_arm_id": 31,
+              "standardized_mean_difference": 0.012,
+              "flagged": false,
+              "threshold": 0.25
+            },
+            {
+              "measure": "PRE_PURCHASE_COUNT",
+              "arm_id": 32,
+              "reference_arm_id": 31,
+              "standardized_mean_difference": 0.008,
+              "flagged": false,
+              "threshold": 0.25
+            },
+            {
+              "measure": "PRE_NET_SPEND",
+              "arm_id": 32,
+              "reference_arm_id": 31,
+              "standardized_mean_difference": 0.021,
+              "flagged": false,
+              "threshold": 0.25
+            }
+          ]
+        }
+      },
+      "flags": [],
+      "planned_at": "2026-10-01T07:59:58Z",
+      "planned_by": "11111111-1111-1111-1111-000000000003"
+    },
+    {
+      "experiment_id": 3,
+      "name": "Seeded A/A split",
+      "campaign_id": 1,
+      "state": "ASSIGNED",
+      "design_kind": "CONTROLLED",
+      "assignment_rule": "V0",
+      "data_origin": "SEEDED",
+      "arms": [
+        {
+          "arm_id": 7,
+          "position": 0,
+          "kind": "CONTROL",
+          "name": "Control",
+          "treatment_description": "Held back."
+        },
+        {
+          "arm_id": 8,
+          "position": 1,
+          "kind": "TREATMENT",
+          "name": "Offer A",
+          "treatment_description": "First offer."
+        },
+        {
+          "arm_id": 9,
+          "position": 2,
+          "kind": "TREATMENT",
+          "name": "Offer B",
+          "treatment_description": "Second offer."
+        }
+      ],
+      "design": {
+        "primary_metric": "CONVERSION",
+        "secondary_metric": null,
+        "estimator": null,
+        "alpha": null,
+        "comparison_alpha": null,
+        "power": null,
+        "minimum_detectable_effect": null,
+        "baseline": null,
+        "baseline_std_dev": null,
+        "required_per_arm": null,
+        "smallest_detectable_effect": null,
+        "allocation": null,
+        "conversion_window_days": 14,
+        "settle_days": null,
+        "starts_on": "2026-09-01",
+        "analysis_at": null
+      },
+      "frame": null,
+      "salt": null,
+      "assignment": {
+        "experiment_id": 3,
+        "assigned_at": "2026-09-01T09:00:00Z",
+        "assigned_by": null,
+        "assigned_total": 30,
+        "acknowledged_underpowered": false,
+        "arms": [
+          {
+            "arm_id": 7,
+            "kind": "CONTROL",
+            "assigned": 10
+          },
+          {
+            "arm_id": 8,
+            "kind": "TREATMENT",
+            "assigned": 10
+          },
+          {
+            "arm_id": 9,
+            "kind": "TREATMENT",
+            "assigned": 10
+          }
+        ],
+        "checks": null
+      },
+      "flags": [],
+      "planned_at": null,
+      "planned_by": null
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 3
+  }
+}

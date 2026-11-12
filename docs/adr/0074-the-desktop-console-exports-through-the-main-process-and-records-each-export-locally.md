@@ -1,10 +1,10 @@
 # ADR-0074 — The desktop console exports tables through the main process and records each export locally
 
-**Status:** Accepted
+**Status:** Partially superseded by ADR-0077 (formats, source of the figures and the data-origin label, for the Reports module only)
 **Owner:** Max
 **Issue:** #870
 **Supersedes:** —
-**Superseded by:** —
+**Superseded by:** [ADR-0077](0077-desktop-executive-reports-export-pdf-csv-and-excel-from-the-report-main-served-and-keep-the-data-origin.md), in part (the Reports module's formats, source of the figures and data-origin label)
 
 ---
 

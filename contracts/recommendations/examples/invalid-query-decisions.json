@@ -1,0 +1,11 @@
+{
+  "code": "invalid_query",
+  "message": "status must be one of the recommendation statuses.",
+  "correlation_id": "corr-invalid-query-decisions",
+  "details": [
+    {
+      "field": "status",
+      "code": "invalid_value"
+    }
+  ]
+}

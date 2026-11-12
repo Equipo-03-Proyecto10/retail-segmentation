@@ -1,0 +1,43 @@
+{
+  "attributions": [
+    {
+      "attribution_id": 8801,
+      "sale_id": 90412,
+      "experiment_id": 12,
+      "campaign_id": 4,
+      "assignment_id": 70431,
+      "customer_id": "c0a80001-0000-4000-8000-000000000101",
+      "arm_id": 32,
+      "exposed_at": "2026-10-02T11:05:00Z",
+      "sold_at": "2026-10-03T15:20:11Z",
+      "window_closes_at": "2026-10-15T08:00:00Z",
+      "net_amount": "42.50",
+      "counts": true,
+      "attributed_at": "2026-10-15T08:05:00Z",
+      "label": "ATTRIBUTION",
+      "as_of": "2026-10-22T08:00:07Z"
+    },
+    {
+      "attribution_id": 8802,
+      "sale_id": 90690,
+      "experiment_id": 12,
+      "campaign_id": 4,
+      "assignment_id": 70433,
+      "customer_id": "c0a80001-0000-4000-8000-000000000103",
+      "arm_id": 32,
+      "exposed_at": "2026-10-05T09:30:00Z",
+      "sold_at": "2026-10-12T17:48:03Z",
+      "window_closes_at": "2026-10-15T08:00:00Z",
+      "net_amount": "0.00",
+      "counts": false,
+      "attributed_at": "2026-10-15T08:05:00Z",
+      "label": "ATTRIBUTION",
+      "as_of": "2026-10-22T08:00:07Z"
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 2
+  }
+}

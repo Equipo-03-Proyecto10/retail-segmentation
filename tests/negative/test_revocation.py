@@ -22,9 +22,10 @@ import uuid
 
 import pytest
 
-from tests.negative.stack import Evidence, Service, Stack, registry_names, require
+from tests.negative.stack import Evidence, Service, Stack, implemented_names, require
 
-NAMES = registry_names()
+# The services a case that loops over all of them can call.
+IMPLEMENTED = implemented_names()
 
 
 def _probe(stack: Stack, service: Service, token: str):
@@ -37,14 +38,14 @@ def test_a_signed_out_session_is_refused_everywhere(
 ) -> None:
     session = deployed_stack.fresh_session("ADMIN")
     token = session.token()
-    for name in NAMES:
+    for name in IMPLEMENTED:
         before = _probe(deployed_stack, services[name], token)
         assert before.status != 401, (name, before.outcome())
 
     require(session.sign_out(), 204)
 
     held = True
-    for name in NAMES:
+    for name in IMPLEMENTED:
         reply = _probe(deployed_stack, services[name], token)
         held &= evidence.check(
             name, "the next request after sign-out", reply, 401, "session_revoked"

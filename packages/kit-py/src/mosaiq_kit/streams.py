@@ -25,6 +25,62 @@ def _timestamp(value: datetime) -> str:
     return utc.isoformat(timespec=timespec).replace("+00:00", "Z")
 
 
+class StreamPublisher:
+    """Publish entries on one stream with the kit's durability rule.
+
+    Source-agnostic (ADR-0075): a producer whose outbox is not the PostgreSQL
+    template, such as engagement's `relay_pending` on a MongoDB document, polls
+    its own outbox and hands each batch here. The publisher names neither
+    database. It runs `XADD ... MAXLEN ~ 10000` per entry and then one
+    `WAITAOF 1 0 2000`; only after `publish` returns may the caller mark the
+    entries relayed. Any failure raises `redis.RedisError`, and the caller
+    keeps the entries pending, so delivery is at least once.
+    """
+
+    def __init__(self, redis: redis.Redis, stream: str):
+        if not stream.startswith("stream:"):
+            raise ValueError("A stream key starts with 'stream:'.")
+        self.redis = redis
+        self.stream = stream
+
+    @staticmethod
+    def _encode(value: Any) -> str | int | float:
+        if isinstance(value, datetime):
+            return _timestamp(value)
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if isinstance(value, int | float | str):
+            return value
+        return str(value)
+
+    def publish(self, entries: Iterable[dict[str, Any]]) -> list[str]:
+        """Append the entries in order and wait for the local AOF.
+
+        A field whose value is None is left out of its entry. Returns the
+        stream ids, in order. An empty batch writes nothing and waits for
+        nothing.
+        """
+
+        ids: list[str] = []
+        for fields in entries:
+            encoded = {
+                key: self._encode(value)
+                for key, value in fields.items()
+                if value is not None
+            }
+            if not encoded:
+                raise ValueError("A stream entry needs at least one field.")
+            entry_id = self.redis.xadd(
+                self.stream, encoded, maxlen=10_000, approximate=True
+            )
+            ids.append(entry_id.decode() if isinstance(entry_id, bytes) else entry_id)
+        if ids:
+            durability = self.redis.execute_command("WAITAOF", 1, 0, 2000)
+            if not durability or int(durability[0]) < 1:
+                raise redis.RedisError("The local AOF did not confirm the entries.")
+        return ids
+
+
 class OutboxRelay:
     """Relay one service boundary's outbox to its configured streams."""
 

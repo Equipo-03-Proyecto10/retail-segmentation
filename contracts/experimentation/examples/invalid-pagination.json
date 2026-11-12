@@ -1,0 +1,11 @@
+{
+  "code": "invalid_pagination",
+  "message": "page and size are out of range.",
+  "correlation_id": "corr-invalid-pagination",
+  "details": [
+    {
+      "field": "size",
+      "code": "out_of_range"
+    }
+  ]
+}

@@ -154,6 +154,10 @@ dialog {
   gap: 0.35rem;
   align-items: center;
 }
+.choices input[type='checkbox'] {
+  width: auto;
+  margin: 0;
+}
 .nav {
   flex-wrap: wrap;
   gap: 1rem;
@@ -184,4 +188,381 @@ dialog {
   gap: 1rem;
   align-items: center;
   justify-content: flex-end;
+}
+.chart {
+  display: grid;
+  gap: 0.25rem;
+}
+.bar {
+  display: grid;
+  grid-template-columns: minmax(8rem, 16rem) 1fr auto;
+  gap: 0.75rem;
+  align-items: center;
+}
+.bar meter {
+  width: 100%;
+}
+.num {
+  text-align: right;
+}
+.synthetic {
+  font-weight: bold;
+}
+.scroll {
+  overflow-x: auto;
+}
+dl.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.15rem 1rem;
+}
+dl.facts dd {
+  margin: 0;
+}
+.choices-list {
+  list-style: none;
+  padding: 0;
+}
+.choices-list button {
+  margin: 0.15rem 0;
+}
+table.items tr.kind-alternative > :first-child {
+  border-left: 0.3rem solid Highlight;
+}
+table.items tr.kind-elsewhere > :first-child {
+  border-left: 0.3rem dashed GrayText;
+}
+table.items tr.kind-elsewhere {
+  font-style: italic;
+}
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1rem 0 0;
+}
+.tabs button[aria-current='true'] {
+  font-weight: 700;
+  text-decoration: underline;
+}
+button.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0 0.75rem 0 0;
+  color: LinkText;
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+.viz {
+  --viz-ink-2: #52514e;
+  --viz-grid: #e1e0d9;
+  --viz-axis: #c3c2b7;
+  --viz-ref: #2a78d6;
+  --viz-cur: #eb6834;
+  --viz-warn: #fab219;
+  --viz-crit: #d03b3b;
+  margin: 1rem 0;
+}
+@media (prefers-color-scheme: dark) {
+  .viz {
+    --viz-ink-2: #c3c2b7;
+    --viz-grid: #2c2c2a;
+    --viz-axis: #383835;
+    --viz-ref: #3987e5;
+    --viz-cur: #d95926;
+  }
+}
+.viz figcaption {
+  font-weight: 600;
+}
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.15rem 1rem;
+}
+.facts dd {
+  margin: 0;
+}
+.viz-svg {
+  display: block;
+  width: 100%;
+  min-width: 34rem;
+  max-width: 44rem;
+  height: auto;
+}
+.viz-meter {
+  display: block;
+  width: 100%;
+  max-width: 22rem;
+  height: auto;
+}
+.viz-grid,
+.viz-axis,
+.viz-mark {
+  stroke-width: 1;
+}
+.viz-grid {
+  stroke: var(--viz-grid);
+}
+.viz-axis,
+.viz-mark {
+  stroke: var(--viz-axis);
+}
+.viz-text {
+  fill: CanvasText;
+  font-size: 13px;
+}
+.viz-tick {
+  fill: var(--viz-ink-2);
+  font-size: 12px;
+}
+.viz-ref {
+  fill: var(--viz-ref);
+}
+.viz-cur {
+  fill: var(--viz-cur);
+}
+.viz-hit {
+  fill: transparent;
+}
+.viz-pair:hover .viz-hit,
+.viz-pair:focus .viz-hit {
+  fill: color-mix(in srgb, CanvasText 8%, transparent);
+}
+.viz-pair:focus {
+  outline: 2px solid Highlight;
+}
+.viz-legend {
+  display: flex;
+  gap: 1.25rem;
+  list-style: none;
+  padding: 0;
+  margin: 0.25rem 0;
+}
+.viz-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.swatch {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 2px;
+}
+.swatch.viz-ref {
+  background: var(--viz-ref);
+}
+.swatch.viz-cur {
+  background: var(--viz-cur);
+}
+.viz-readout {
+  min-height: 1.25rem;
+  margin: 0.25rem 0;
+  color: var(--viz-ink-2);
+}
+.viz-track {
+  fill: var(--viz-grid);
+}
+.viz-fill.viz-level-normal {
+  fill: var(--viz-ink-2);
+}
+.viz-fill.viz-level-watch {
+  fill: var(--viz-warn);
+}
+.viz-fill.viz-level-alarm {
+  fill: var(--viz-crit);
+}
+@media (forced-colors: active) {
+  .viz-ref {
+    fill: GrayText;
+  }
+  .viz-cur,
+  .viz-fill {
+    fill: Highlight;
+  }
+  .swatch.viz-ref {
+    background: GrayText;
+  }
+  .swatch.viz-cur {
+    background: Highlight;
+  }
+}
+.matrix th[scope='row'] {
+  white-space: nowrap;
+}
+.matrix td button {
+  min-width: 2.5rem;
+}
+.matrix td.zero button {
+  color: GrayText;
+}
+.matrix td[data-movement]::after {
+  content: attr(data-label);
+  display: block;
+  font-size: 0.75rem;
+}
+.matrix td.move-improved {
+  border-left: 4px solid #1b6e2f;
+}
+.matrix td.move-declined {
+  border-left: 4px solid #b00020;
+}
+.matrix td.move-unchanged {
+  border-left: 4px solid GrayText;
+}
+.matrix td.move-not_ranked {
+  border-left: 4px dotted GrayText;
+}
+.matrix.methodological td[data-movement] {
+  outline: 1px dashed #8a6d00;
+  outline-offset: -2px;
+}
+.matrix tr.total th,
+.matrix tr.total td {
+  font-weight: 700;
+  border-top: 2px solid GrayText;
+}
+tr.methodological td {
+  background: color-mix(in srgb, #8a6d00 12%, transparent);
+}
+dl.compact {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.15rem 1rem;
+}
+dl.compact dd {
+  margin: 0;
+}
+.exploration-facts {
+  display: grid;
+  grid-template-columns: minmax(6rem, max-content) 1fr;
+  gap: 0.15rem 1rem;
+}
+.exploration-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.detail {
+  display: block;
+  font-size: 0.8rem;
+  color: GrayText;
+}
+th[scope='colgroup'] {
+  text-align: center;
+  border-left: 1px solid GrayText;
+}
+/* A/B experiments: the facts of a plan, and the plan form's arms. */
+dl.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+}
+dl.facts dt {
+  font-weight: 600;
+}
+dl.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.arm-row {
+  display: grid;
+  grid-template-columns: 11rem 1fr 2fr auto;
+  gap: 0 1rem;
+  align-items: end;
+}
+.hint {
+  margin: 0.25rem 0 0;
+  font-size: 0.9rem;
+}
+.acknowledge {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.acknowledge input[type='checkbox'] {
+  width: auto;
+  margin: 0;
+}
+.acknowledge label {
+  margin: 0;
+  font-weight: 400;
+}
+.sample-size-required {
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin: 0.5rem 0;
+}
+/* Conversion analysis: the design's warnings stay in view while the result scrolls. */
+.design-warnings {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.5rem 0.75rem;
+  border: 2px solid #8a6d00;
+  background: Canvas;
+}
+.caveat {
+  margin: 0.25rem 0;
+  font-weight: 600;
+}
+.pending {
+  font-weight: 600;
+}
+progress {
+  width: 100%;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.form-field fieldset {
+  margin-top: 1rem;
+}
+dialog ul {
+  padding-left: 1.25rem;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+progress {
+  display: block;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+.imports {
+  list-style: none;
+  padding: 0;
+}
+.imports li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  align-items: center;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid GrayText;
+}
+.imports button {
+  margin: 0;
+}
+.audit-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.audit-tabs button[aria-current='true'] {
+  font-weight: 700;
+}
+.hint {
+  margin: 0.75rem 0 0;
+}
+/* A long id or hash wraps inside a detail instead of widening the page. */
+.panel h3,
+.panel dd {
+  overflow-wrap: anywhere;
 }

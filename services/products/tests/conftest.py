@@ -28,6 +28,14 @@ import redis
 SERVICE_ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS = SERVICE_ROOT / "contracts"
 FIRST_TEST_ID = 900_000
+# The audit entities a test can leave rows under (F21-10 adds the last four).
+AUDITED_ENTITIES = (
+    "product",
+    "product_status",
+    "product_attribute",
+    "product_barcode",
+    "product_relation",
+)
 _CALLER = {"sub": "00000000-0000-4000-8000-000000000001"}
 
 
@@ -77,8 +85,9 @@ def clean_products() -> Iterator[None]:
             )
             # Their audit and outbox rows are test residue too (ids 9xxxxx).
             connection.execute(
-                "DELETE FROM public.audit_log " "WHERE entity = %s AND entity_pk ~ %s",
-                ("product", "^9[0-9]{5}$"),
+                "DELETE FROM public.audit_log "
+                "WHERE entity = ANY(%s) AND entity_pk ~ %s",
+                (list(AUDITED_ENTITIES), "^9[0-9]{5}$"),
             )
             connection.execute(
                 "DELETE FROM products_events.outbox WHERE entity_id ~ %s",

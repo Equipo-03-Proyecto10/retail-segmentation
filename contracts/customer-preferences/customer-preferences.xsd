@@ -40,9 +40,277 @@
     </xs:sequence>
   </xs:complexType>
 
+  <!-- ADR-0066. Exactly these three purposes exist. -->
+  <xs:simpleType name="ConsentPurpose">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="PERSONALIZATION"/>
+      <xs:enumeration value="MARKETING_CONTACT"/>
+      <xs:enumeration value="PROFILING"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="ConsentDecisionValue">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="GRANTED"/>
+      <xs:enumeration value="WITHDRAWN"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- NOT_RECORDED is never stored: it is what a purpose with no decision
+       reads as, and every reader treats it as not granted. -->
+  <xs:simpleType name="ConsentPurposeState">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="GRANTED"/>
+      <xs:enumeration value="WITHDRAWN"/>
+      <xs:enumeration value="NOT_RECORDED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- MIGRATION rows exist only from the backfill; the API records
+       STAFF_ON_BEHALF. -->
+  <xs:simpleType name="DecisionSource">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="STAFF_ON_BEHALF"/>
+      <xs:enumeration value="CUSTOMER_SELF"/>
+      <xs:enumeration value="MIGRATION"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="ConsentBasis">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="EXPLICIT"/>
+      <xs:enumeration value="PROGRAMME_DEFAULT"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="RestrictionKind">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="CHANNEL"/>
+      <xs:enumeration value="INTEREST_CATEGORY"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="RestrictionDecisionValue">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="IMPOSED"/>
+      <xs:enumeration value="LIFTED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="PreferenceSet">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="PREFERRED_CHANNELS"/>
+      <xs:enumeration value="INTEREST_CATEGORIES"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="InferenceSource">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="NET_PURCHASES"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="WindowDays">
+    <xs:restriction base="xs:integer">
+      <xs:minInclusive value="1"/>
+      <xs:maxInclusive value="3650"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Strength">
+    <xs:restriction base="xs:integer">
+      <xs:minInclusive value="1"/>
+      <xs:maxInclusive value="100"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- An inferred interest states where it came from, over which window and
+       how strongly. It is a separate member of InterestProfile, so it can
+       never stand in for a declared one: a category in declared_category_ids
+       is not repeated here, and an inferred interest without these four
+       elements is not valid. -->
+  <xs:complexType name="InferredInterest">
+    <xs:sequence>
+      <xs:element name="category_id" type="xs:integer"/>
+      <xs:element name="source" type="cp:InferenceSource"/>
+      <xs:element name="window_days" type="cp:WindowDays"/>
+      <xs:element name="strength" type="cp:Strength"/>
+      <xs:element name="inferred_at" type="xs:dateTime"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- declared_category_ids is the customer's own word, written only by the
+       whole-set replace. inferred_interests is the platform's reading of net
+       purchases and is empty unless the customer's current PERSONALIZATION
+       decision is GRANTED. An empty member is no element at all. -->
+  <xs:complexType name="InterestProfile">
+    <xs:sequence>
+      <xs:element name="customer_id" type="cp:Uuid"/>
+      <xs:element name="declared_category_ids" type="xs:integer"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="inferred_interests" type="cp:InferredInterest"
+                  minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- The current restrictions and the one effect of consent a floor role may
+       see: whether personalization is allowed. Never the consent record. -->
+  <xs:complexType name="RestrictionProfile">
+    <xs:sequence>
+      <xs:element name="customer_id" type="cp:Uuid"/>
+      <xs:element name="personalization_allowed" type="xs:boolean"/>
+      <xs:element name="restricted_channel_ids" type="xs:integer"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="restricted_category_ids" type="xs:integer"
+                  minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- A purpose with no decision is NOT_RECORDED and carries none of the
+       optional elements. recorded_by is omitted for a MIGRATION decision. -->
+  <xs:complexType name="PurposeConsent">
+    <xs:sequence>
+      <xs:element name="purpose" type="cp:ConsentPurpose"/>
+      <xs:element name="state" type="cp:ConsentPurposeState"/>
+      <xs:element name="decision_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="recorded_at" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="recorded_by" type="cp:Uuid" minOccurs="0"/>
+      <xs:element name="source" type="cp:DecisionSource" minOccurs="0"/>
+      <xs:element name="basis" type="cp:ConsentBasis" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- One entry per purpose, in the order PERSONALIZATION,
+       MARKETING_CONTACT, PROFILING. -->
+  <xs:complexType name="ConsentState">
+    <xs:sequence>
+      <xs:element name="customer_id" type="cp:Uuid"/>
+      <xs:element name="as_of" type="xs:dateTime"/>
+      <xs:element name="purposes" type="cp:PurposeConsent"
+                  minOccurs="3" maxOccurs="3"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- A row of the append-only consent log. recorded_by is omitted for a
+       MIGRATION decision. -->
+  <xs:complexType name="ConsentDecision">
+    <xs:sequence>
+      <xs:element name="decision_id" type="xs:long"/>
+      <xs:element name="customer_id" type="cp:Uuid"/>
+      <xs:element name="purpose" type="cp:ConsentPurpose"/>
+      <xs:element name="decision" type="cp:ConsentDecisionValue"/>
+      <xs:element name="recorded_at" type="xs:dateTime"/>
+      <xs:element name="recorded_by" type="cp:Uuid" minOccurs="0"/>
+      <xs:element name="source" type="cp:DecisionSource"/>
+      <xs:element name="basis" type="cp:ConsentBasis"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ConsentDecisions">
+    <xs:sequence>
+      <xs:element name="ConsentDecision" type="cp:ConsentDecision"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- recorded_at, recorded_by, source and basis are the service's: the
+       server clock, the verified token, STAFF_ON_BEHALF and EXPLICIT. They are
+       not elements of a request, so a client cannot supply them. A purpose
+       appears at most once; the schema cannot say so, and the service answers
+       422 invalid_body (duplicate). -->
+  <xs:complexType name="ConsentDecisionInput">
+    <xs:sequence>
+      <xs:element name="purpose" type="cp:ConsentPurpose"/>
+      <xs:element name="decision" type="cp:ConsentDecisionValue"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="RecordConsentDecisionsRequest">
+    <xs:sequence>
+      <xs:element name="decisions" type="cp:ConsentDecisionInput"
+                  minOccurs="1" maxOccurs="3"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- A row of the append-only restriction log. -->
+  <xs:complexType name="RestrictionDecision">
+    <xs:sequence>
+      <xs:element name="decision_id" type="xs:long"/>
+      <xs:element name="customer_id" type="cp:Uuid"/>
+      <xs:element name="kind" type="cp:RestrictionKind"/>
+      <xs:element name="target_id" type="xs:integer"/>
+      <xs:element name="decision" type="cp:RestrictionDecisionValue"/>
+      <xs:element name="recorded_at" type="xs:dateTime"/>
+      <xs:element name="recorded_by" type="cp:Uuid"/>
+      <xs:element name="source" type="cp:DecisionSource"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="RestrictionDecisions">
+    <xs:sequence>
+      <xs:element name="RestrictionDecision" type="cp:RestrictionDecision"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- A (kind, target_id) pair appears at most once, and target_id must name
+       an existing channel or category; the schema cannot say so, and the
+       service answers 422 invalid_body (duplicate), unknown_channel or
+       unknown_category. -->
+  <xs:complexType name="RestrictionDecisionInput">
+    <xs:sequence>
+      <xs:element name="kind" type="cp:RestrictionKind"/>
+      <xs:element name="target_id" type="xs:integer"/>
+      <xs:element name="decision" type="cp:RestrictionDecisionValue"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="RecordRestrictionDecisionsRequest">
+    <xs:sequence>
+      <xs:element name="decisions" type="cp:RestrictionDecisionInput"
+                  minOccurs="1" maxOccurs="50"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- One replace of one of the two declared sets: the ids it held and the
+       ids it holds now, each sorted ascending. An empty list is no element. -->
+  <xs:complexType name="PreferenceChange">
+    <xs:sequence>
+      <xs:element name="change_id" type="xs:long"/>
+      <xs:element name="customer_id" type="cp:Uuid"/>
+      <xs:element name="preference_set" type="cp:PreferenceSet"/>
+      <xs:element name="before_ids" type="xs:integer"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="after_ids" type="xs:integer"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="changed_at" type="xs:dateTime"/>
+      <xs:element name="changed_by" type="cp:Uuid"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="PreferenceChanges">
+    <xs:sequence>
+      <xs:element name="PreferenceChange" type="cp:PreferenceChange"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
   <xs:element name="PreferenceProfile" type="cp:PreferenceProfile"/>
   <xs:element name="ReplacePreferredChannelsRequest"
               type="cp:ReplacePreferredChannelsRequest"/>
   <xs:element name="ReplaceInterestCategoriesRequest"
               type="cp:ReplaceInterestCategoriesRequest"/>
+  <xs:element name="InterestProfile" type="cp:InterestProfile"/>
+  <xs:element name="RestrictionProfile" type="cp:RestrictionProfile"/>
+  <xs:element name="ConsentState" type="cp:ConsentState"/>
+  <xs:element name="ConsentDecisions" type="cp:ConsentDecisions"/>
+  <xs:element name="RecordConsentDecisionsRequest"
+              type="cp:RecordConsentDecisionsRequest"/>
+  <xs:element name="RestrictionDecisions" type="cp:RestrictionDecisions"/>
+  <xs:element name="RecordRestrictionDecisionsRequest"
+              type="cp:RecordRestrictionDecisionsRequest"/>
+  <xs:element name="PreferenceChanges" type="cp:PreferenceChanges"/>
 </xs:schema>

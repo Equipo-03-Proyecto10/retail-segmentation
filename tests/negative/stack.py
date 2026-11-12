@@ -512,10 +512,27 @@ class Stack:
             )
 
 
+# The seed gives users 2 to 7 the roles 2 to 7 of its rotation, and appends
+# users 31 to 33 for ADR-0060's floor roles (sql/02_seed_30_per_table.sql).
+SEEDED_USER_NUMBER = {
+    "ADMIN": 1,
+    "ANALYST": 2,
+    "STORE_MANAGER": 3,
+    "MARKETING": 4,
+    "INVENTORY_PLANNER": 5,
+    "AUDITOR": 6,
+    "CUSTOMER": 7,
+    "SALES_ASSOCIATE": 31,
+    "LOYALTY_OFFICER": 32,
+    "COMMERCIAL_SUPERVISOR": 33,
+}
+
+
 def local_accounts() -> dict[str, Account]:
-    """One deterministic seeded account for each of the seven roles."""
+    """One deterministic seeded account for each of the ten roles."""
     accounts = {}
-    for number, role in enumerate(ROLE_CODES, start=1):
+    for role in ROLE_CODES:
+        number = SEEDED_USER_NUMBER[role]
         email = (
             "admin@mosaiq-demo.com"
             if role == "ADMIN"

@@ -192,3 +192,25 @@ svc_campaigns,public.campaign,UPDATE
 definer_guard,public.experiment,SELECT
 definer_guard,public.experiment_group,SELECT
 svc_audit_trail,public.audit_log,SELECT
+definer_audit,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
+definer_audit,audit_events,USAGE
+definer_audit,audit_events.domain_event,INSERT
+definer_audit,audit_events.domain_event,SELECT
+svc_audit_trail,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
+svc_audit_trail,api_audit,USAGE
+svc_audit_trail,audit_events,USAGE
+svc_audit_trail,audit_events.domain_event,SELECT
+svc_campaigns,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
+svc_campaigns,api_audit,USAGE
+svc_customers,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
+svc_customers,api_audit,USAGE
+svc_preferences,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
+svc_preferences,api_audit,USAGE
+svc_sales,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
+svc_sales,api_audit,USAGE
+svc_segments,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
+svc_segments,api_audit,USAGE
+svc_stock,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
+svc_stock,api_audit,USAGE
+svc_users,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
+svc_users,api_audit,USAGE

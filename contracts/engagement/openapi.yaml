@@ -1,9 +1,11 @@
 openapi: 3.1.0
 info:
   title: engagement-service
-  version: 2.1.0
-  description: 'Records in-store engagement: QR scans and recommendation clicks
-    (RN-55). Events live in MongoDB, are recorded once per client event, attributed
+  version: 2.3.0
+  description: 'Records client-originated field events (RN-55): in-store engagement
+    events and capture incidents, the device''s reports of a refused queued write
+    (ADR-0071). Both live in MongoDB, in `engagement_event` and `capture_incident`.
+    Engagement events live in MongoDB, are recorded once per client event, attributed
     to the caller, voided rather than deleted, and summarized. Only `POST /v1/engagement-events`
     reads PostgreSQL, through the published store, product and customer views, to
     check references. Every `/v1` operation answers 503 `database_unavailable` when
@@ -26,6 +28,7 @@ security:
 - bearer: []
 tags:
 - name: Engagement
+- name: Capture incidents
 - name: Meta
 paths:
   /v1/engagement-events:
@@ -46,6 +49,7 @@ paths:
       x-mosaiq-roles:
       - ADMIN
       - STORE_MANAGER
+      - SALES_ASSOCIATE
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       requestBody:
@@ -139,6 +143,8 @@ paths:
       - STORE_MANAGER
       - MARKETING
       - AUDITOR
+      - SALES_ASSOCIATE
+      - COMMERCIAL_SUPERVISOR
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       - $ref: '#/components/parameters/Type'
@@ -347,6 +353,353 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/OperationUnavailable'
+  /v1/capture-incidents:
+    post:
+      tags:
+      - Capture incidents
+      summary: Report a refused floor write
+      description: 'The device reports, once, that a queued write (`source_type`,
+        `source_operation_id`) was finally refused (ADR-0071). Recorded once per
+        `client_incident_id`, attributed to the token''s `sub` (`reported_by`). The
+        service does not verify the refusal: an incident is a claim, shown as
+        reported. The same `client_incident_id` arriving again with the same
+        `source_type` and `source_operation_id`, or a second report of the same
+        `(source_type, source_operation_id)`, answers 200 with the original and writes
+        nothing; any other combination answers 409 `client_incident_conflict`. The
+        store must exist and the caller must be assigned to it (403 `forbidden_store`,
+        ADR-0060; `ADMIN` is not narrowed). `occurred_at` more than five minutes
+        ahead of the server answers 422 `occurred_in_future`. There is no customer
+        field and no free text. The reporter does not read incidents back.'
+      operationId: reportCaptureIncident
+      x-mosaiq-status: planned
+      x-mosaiq-roles:
+      - SALES_ASSOCIATE
+      - LOYALTY_OFFICER
+      - STORE_MANAGER
+      - COMMERCIAL_SUPERVISOR
+      - ADMIN
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaptureIncidentRequest'
+            examples:
+              refused_sale:
+                externalValue: ./examples/capture-incident.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/CaptureIncidentRequest'
+            examples:
+              refused_sale:
+                externalValue: ./examples/capture-incident.request.xml
+      responses:
+        '200':
+          description: A replay, the original incident with nothing written.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureIncident'
+              examples:
+                replay:
+                  externalValue: ./examples/capture-incident.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CaptureIncident'
+              examples:
+                replay:
+                  externalValue: ./examples/capture-incident.xml
+        '201':
+          description: The recorded incident.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureIncident'
+              examples:
+                open:
+                  externalValue: ./examples/capture-incident.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CaptureIncident'
+              examples:
+                open:
+                  externalValue: ./examples/capture-incident.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/IncidentForbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/IncidentCreateConflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/IncidentCreateInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+    get:
+      tags:
+      - Capture incidents
+      summary: List capture incidents
+      description: 'Returns a page ordered by `recorded_at`, newest first, narrowed
+        to the stores the caller is assigned to (ADR-0060); `ADMIN` sees every store.
+        A `store_id` filter outside the caller''s stores answers 403 `forbidden_store`.
+        The mobile poll sends `status=OPEN` and `recorded_since` set to the largest
+        server `recorded_at` it holds minus five minutes (ADR-0071).'
+      operationId: listCaptureIncidents
+      x-mosaiq-status: planned
+      x-mosaiq-roles:
+      - COMMERCIAL_SUPERVISOR
+      - ADMIN
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/IncidentStatus'
+      - $ref: '#/components/parameters/StoreId'
+      - $ref: '#/components/parameters/IncidentSourceType'
+      - $ref: '#/components/parameters/RecordedSince'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of incidents.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureIncidentPage'
+              examples:
+                page:
+                  externalValue: ./examples/capture-incidents-page.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CaptureIncidentPage'
+              examples:
+                page:
+                  externalValue: ./examples/capture-incidents-page.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/IncidentForbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/InvalidQuery'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/capture-incidents/{incident_id}:
+    get:
+      tags:
+      - Capture incidents
+      summary: Get one capture incident
+      description: Returns the incident with its review `history`. An incident of
+        a store outside the caller's assignment answers 403 `forbidden_store`.
+      operationId: getCaptureIncident
+      x-mosaiq-status: planned
+      x-mosaiq-roles:
+      - COMMERCIAL_SUPERVISOR
+      - ADMIN
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/IncidentId'
+      responses:
+        '200':
+          description: The incident.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureIncident'
+              examples:
+                resolved:
+                  externalValue: ./examples/capture-incident-resolved.json
+                open:
+                  externalValue: ./examples/capture-incident.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CaptureIncident'
+              examples:
+                resolved:
+                  externalValue: ./examples/capture-incident-resolved.xml
+                open:
+                  externalValue: ./examples/capture-incident.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/IncidentForbidden'
+        '404':
+          $ref: '#/components/responses/IncidentNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/capture-incidents/{incident_id}/reviews:
+    post:
+      tags:
+      - Capture incidents
+      summary: Acknowledge or resolve a capture incident
+      description: 'Appends a review `{status, note, by, at}` to `history` and moves
+        the incident forward only: `OPEN` to `ACKNOWLEDGED` to `RESOLVED`, and `OPEN`
+        to `RESOLVED` is allowed. A move to the current status or backward answers
+        409 `invalid_transition`. `note` is optional, at most 200 characters, and is
+        shown to supervisors only. An incident is never deleted. Narrowed to the
+        caller''s stores (403 `forbidden_store`).'
+      operationId: reviewCaptureIncident
+      x-mosaiq-status: planned
+      x-mosaiq-roles:
+      - COMMERCIAL_SUPERVISOR
+      - ADMIN
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/IncidentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaptureIncidentReviewRequest'
+            examples:
+              resolve:
+                externalValue: ./examples/capture-incident-review.request.json
+              acknowledge:
+                externalValue: ./examples/capture-incident-acknowledge.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/CaptureIncidentReviewRequest'
+            examples:
+              resolve:
+                externalValue: ./examples/capture-incident-review.request.xml
+              acknowledge:
+                externalValue: ./examples/capture-incident-acknowledge.request.xml
+      responses:
+        '201':
+          description: The incident with the review appended.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureIncident'
+              examples:
+                resolved:
+                  externalValue: ./examples/capture-incident-resolved.json
+                acknowledged:
+                  externalValue: ./examples/capture-incident-acknowledged.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CaptureIncident'
+              examples:
+                resolved:
+                  externalValue: ./examples/capture-incident-resolved.xml
+                acknowledged:
+                  externalValue: ./examples/capture-incident-acknowledged.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/IncidentForbidden'
+        '404':
+          $ref: '#/components/responses/IncidentNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/IncidentReviewConflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/InvalidBody'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/capture-incident-summaries:
+    get:
+      tags:
+      - Capture incidents
+      summary: Summarize capture incidents
+      description: Counts incidents grouped by `store`, `day`, `source_type` or
+        `refused_code`. `from` and `to` are UTC dates (`YYYY-MM-DD`), both inclusive,
+        and a day is a UTC day of `recorded_at`. Narrowed to the caller's stores.
+      operationId: getCaptureIncidentSummary
+      x-mosaiq-status: planned
+      x-mosaiq-roles:
+      - COMMERCIAL_SUPERVISOR
+      - ADMIN
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/SummaryFrom'
+      - $ref: '#/components/parameters/SummaryTo'
+      - $ref: '#/components/parameters/SummaryStoreId'
+      - $ref: '#/components/parameters/IncidentGroupBy'
+      responses:
+        '200':
+          description: The counts.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureIncidentSummary'
+              examples:
+                by_store:
+                  externalValue: ./examples/capture-incident-summary-by-store.json
+                by_day:
+                  externalValue: ./examples/capture-incident-summary-by-day.json
+                by_source_type:
+                  externalValue: ./examples/capture-incident-summary-by-source-type.json
+                by_refused_code:
+                  externalValue: ./examples/capture-incident-summary-by-refused-code.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CaptureIncidentSummary'
+              examples:
+                by_store:
+                  externalValue: ./examples/capture-incident-summary-by-store.xml
+                by_day:
+                  externalValue: ./examples/capture-incident-summary-by-day.xml
+                by_source_type:
+                  externalValue: ./examples/capture-incident-summary-by-source-type.xml
+                by_refused_code:
+                  externalValue: ./examples/capture-incident-summary-by-refused-code.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/IncidentForbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/InvalidSummaryQuery'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
   /health/live:
     get:
       tags:
@@ -422,6 +775,7 @@ paths:
       x-mosaiq-roles:
       - ADMIN
       - STORE_MANAGER
+      - SALES_ASSOCIATE
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       requestBody:
@@ -564,6 +918,8 @@ paths:
       - STORE_MANAGER
       - MARKETING
       - AUDITOR
+      - SALES_ASSOCIATE
+      - COMMERCIAL_SUPERVISOR
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       - $ref: '#/components/parameters/TypeV2'
@@ -618,6 +974,8 @@ paths:
       - STORE_MANAGER
       - MARKETING
       - AUDITOR
+      - SALES_ASSOCIATE
+      - COMMERCIAL_SUPERVISOR
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       - $ref: '#/components/parameters/EventId'
@@ -937,6 +1295,52 @@ components:
         - CART_ADD
         - CART_REMOVE
         - NAVIGATION
+    IncidentId:
+      name: incident_id
+      in: path
+      required: true
+      description: The server-assigned incident id, a UUID string.
+      schema:
+        type: string
+        format: uuid
+    IncidentStatus:
+      name: status
+      in: query
+      required: false
+      schema:
+        type: string
+        enum:
+        - OPEN
+        - ACKNOWLEDGED
+        - RESOLVED
+    IncidentSourceType:
+      name: source_type
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/IncidentSourceType'
+    RecordedSince:
+      name: recorded_since
+      in: query
+      required: false
+      description: Include incidents whose server `recorded_at` is at or after this
+        RFC 3339 timestamp.
+      schema:
+        type: string
+        format: date-time
+    IncidentGroupBy:
+      name: group_by
+      in: query
+      required: true
+      description: How to group the counts. A missing or unknown value answers 422
+        `invalid_query`.
+      schema:
+        type: string
+        enum:
+        - store
+        - day
+        - source_type
+        - refused_code
   headers:
     CorrelationId:
       description: The effective correlation id for this request.
@@ -1793,6 +2197,270 @@ components:
       xml:
         name: EngagementEventRequest
         namespace: https://mosaiq.maxthecoder.online/xml/engagement/v2
+    IncidentSourceType:
+      type: string
+      description: Which queued write was refused.
+      enum:
+      - SALE
+      - CHECK_IN
+      - ENGAGEMENT_EVENT
+      - CUSTOMER_WRITE
+    IncidentStatus:
+      type: string
+      description: The resolution state. Moves forward only.
+      enum:
+      - OPEN
+      - ACKNOWLEDGED
+      - RESOLVED
+    CaptureIncidentRequest:
+      type: object
+      additionalProperties: false
+      description: A refused queued write, reported once. It carries no customer
+        field and no free text.
+      required:
+      - client_incident_id
+      - source_type
+      - source_operation_id
+      - source_correlation_id
+      - store_id
+      - refused_status
+      - refused_code
+      - attempts
+      - occurred_at
+      properties:
+        client_incident_id:
+          type: string
+          format: uuid
+          description: The idempotency key, the UUIDv5 of `source_operation_id` under
+            one fixed namespace, computed when the outbox row is created.
+        source_type:
+          $ref: '#/components/schemas/IncidentSourceType'
+        source_operation_id:
+          type: string
+          format: uuid
+          description: The refused write's own key, its `Idempotency-Key`, `client_event_id`
+            or `client_check_in_id`.
+        source_correlation_id:
+          type: string
+          pattern: ^[0-9A-Za-z-]{1,64}$
+          description: The `X-Correlation-ID` of the refused attempt.
+        store_id:
+          type: integer
+          format: int32
+        refused_status:
+          type: integer
+          minimum: 400
+          maximum: 499
+          description: The HTTP status of the final refusal.
+        refused_code:
+          type: string
+          pattern: ^[a-z][a-z0-9_]{0,63}$
+          description: The refusing service's error code, for example `stock_unavailable`.
+        attempts:
+          type: integer
+          minimum: 1
+        occurred_at:
+          type: string
+          format: date-time
+          description: When the user acted, by the device clock.
+        line_count:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          description: Lines in the refused sale; only for `SALE`, otherwise null.
+      xml:
+        name: CaptureIncidentRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/engagement/v1
+    CaptureIncidentReviewRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - status
+      properties:
+        status:
+          type: string
+          enum:
+          - ACKNOWLEDGED
+          - RESOLVED
+        note:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Optional, shown to supervisors only.
+      xml:
+        name: CaptureIncidentReviewRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/engagement/v1
+    IncidentReview:
+      type: object
+      additionalProperties: false
+      required:
+      - status
+      - note
+      - by
+      - at
+      properties:
+        status:
+          type: string
+          enum:
+          - ACKNOWLEDGED
+          - RESOLVED
+        note:
+          type:
+          - string
+          - 'null'
+          maxLength: 200
+        by:
+          type: string
+          format: uuid
+        at:
+          type: string
+          format: date-time
+    CaptureIncidentItem:
+      type: object
+      additionalProperties: false
+      description: A refused write as reported, never confirmed by the service.
+      required: &incident_required
+      - incident_id
+      - client_incident_id
+      - source_type
+      - source_operation_id
+      - source_correlation_id
+      - store_id
+      - refused_status
+      - refused_code
+      - attempts
+      - occurred_at
+      - line_count
+      - reported_by
+      - recorded_at
+      - status
+      - history
+      properties: &incident_properties
+        incident_id:
+          type: string
+          format: uuid
+        client_incident_id:
+          type: string
+          format: uuid
+        source_type:
+          $ref: '#/components/schemas/IncidentSourceType'
+        source_operation_id:
+          type: string
+          format: uuid
+          description: The refused write's own key, its `Idempotency-Key`, `client_event_id`
+            or `client_check_in_id`.
+        source_correlation_id:
+          type: string
+          pattern: ^[0-9A-Za-z-]{1,64}$
+          description: The `X-Correlation-ID` of the refused attempt.
+        store_id:
+          type: integer
+          format: int32
+        refused_status:
+          type: integer
+          minimum: 400
+          maximum: 499
+          description: The HTTP status of the final refusal.
+        refused_code:
+          type: string
+          pattern: ^[a-z][a-z0-9_]{0,63}$
+          description: The refusing service's error code, for example `stock_unavailable`.
+        attempts:
+          type: integer
+          minimum: 1
+        occurred_at:
+          type: string
+          format: date-time
+          description: When the user acted, by the device clock.
+        line_count:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          description: Lines in the refused sale; only for `SALE`, otherwise null.
+        reported_by:
+          type: string
+          format: uuid
+          description: The token's `sub`.
+        recorded_at:
+          type: string
+          format: date-time
+          description: Server time.
+        status:
+          $ref: '#/components/schemas/IncidentStatus'
+        history:
+          type: array
+          description: The reviews in order; empty while `OPEN`.
+          items:
+            $ref: '#/components/schemas/IncidentReview'
+    CaptureIncident:
+      type: object
+      additionalProperties: false
+      required: *incident_required
+      properties: *incident_properties
+      xml:
+        name: CaptureIncident
+        namespace: https://mosaiq.maxthecoder.online/xml/engagement/v1
+    CaptureIncidentPage:
+      type: object
+      additionalProperties: false
+      required:
+      - capture_incidents
+      - page_info
+      properties:
+        capture_incidents:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaptureIncidentItem'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: CaptureIncidents
+        namespace: https://mosaiq.maxthecoder.online/xml/engagement/v1
+    CaptureIncidentSummary:
+      type: object
+      additionalProperties: false
+      required:
+      - from
+      - to
+      - group_by
+      - groups
+      properties:
+        from:
+          type:
+          - string
+          - 'null'
+          format: date
+        to:
+          type:
+          - string
+          - 'null'
+          format: date
+        group_by:
+          type: string
+          enum:
+          - store
+          - day
+          - source_type
+          - refused_code
+        groups:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - key
+            - count
+            properties:
+              key:
+                type: string
+              count:
+                type: integer
+                minimum: 0
+      xml:
+        name: CaptureIncidentSummary
+        namespace: https://mosaiq.maxthecoder.online/xml/engagement/v1
   responses:
     Unauthorized:
       description: '`invalid_token` or `session_revoked`.'
@@ -2132,3 +2800,105 @@ components:
           examples:
             invalid_query:
               externalValue: ./examples/invalid-query-group-by.xml
+    IncidentForbidden:
+      description: '`forbidden_role` or `forbidden_store`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.json
+            forbidden_store:
+              externalValue: ./examples/forbidden-store.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.xml
+            forbidden_store:
+              externalValue: ./examples/forbidden-store.xml
+    IncidentCreateConflict:
+      description: '`client_incident_conflict`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            client_incident_conflict:
+              externalValue: ./examples/client-incident-conflict.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            client_incident_conflict:
+              externalValue: ./examples/client-incident-conflict.xml
+    IncidentCreateInvalid:
+      description: '`invalid_body` or `unknown_store` or `occurred_in_future`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-body.json
+            unknown_store:
+              externalValue: ./examples/unknown-store.json
+            occurred_in_future:
+              externalValue: ./examples/occurred-in-future.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-body.xml
+            unknown_store:
+              externalValue: ./examples/unknown-store.xml
+            occurred_in_future:
+              externalValue: ./examples/occurred-in-future.xml
+    IncidentNotFound:
+      description: '`incident_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            incident_not_found:
+              externalValue: ./examples/incident-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            incident_not_found:
+              externalValue: ./examples/incident-not-found.xml
+    IncidentReviewConflict:
+      description: '`invalid_transition`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_transition:
+              externalValue: ./examples/invalid-transition.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_transition:
+              externalValue: ./examples/invalid-transition.xml

@@ -43,7 +43,7 @@ problems=$(
     locks=$(find "$d" -maxdepth 1 \( -name uv.lock -o -name Cargo.lock \) | wc -l)
     [ "$locks" -eq 1 ] || echo "ADR-0045: $d has $locks lock files"
   done
-  git grep -nwE 'ADMIN|ANALYST|STORE_MANAGER|MARKETING|INVENTORY_PLANNER|AUDITOR|CUSTOMER' -- packages/ \
+  git grep -nwE 'ADMIN|ANALYST|STORE_MANAGER|MARKETING|INVENTORY_PLANNER|AUDITOR|CUSTOMER|SALES_ASSOCIATE|LOYALTY_OFFICER|COMMERCIAL_SUPERVISOR' -- packages/ \
     | found "ADR-0045 role code in a kit"
   git grep -noE "[\"'][a-z_]+:[a-z_]+:[^\"']*" -- packages/ \
     | grep -vE "pub:auth:v1:live:|[\"']stream:" | found "ADR-0045 Redis key in a kit"

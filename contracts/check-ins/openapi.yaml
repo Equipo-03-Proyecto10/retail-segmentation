@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: check-ins-service
-  version: 1.1.0
+  version: 1.2.0
   description: 'Records staff GPS check-ins and computes their verdict on the server
     (RN-56). The phone sends a fix and shows the answer; it never decides. Check-ins
     are never updated or deleted, and an override is an append-only review. The
@@ -51,6 +51,9 @@ paths:
       x-mosaiq-roles:
       - ADMIN
       - STORE_MANAGER
+      - SALES_ASSOCIATE
+      - LOYALTY_OFFICER
+      - COMMERCIAL_SUPERVISOR
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       requestBody:

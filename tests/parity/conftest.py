@@ -1,4 +1,4 @@
-"""Fixtures and the results file of the parity harness (F20-07, F20-08).
+"""Fixtures and the results file of the parity harness (F20-07, F20-08, F20-09).
 
 Each path is skipped, with its reason, when its configuration or its service
 is missing; nothing is faked. At the end of the session the cases are written
@@ -18,14 +18,15 @@ from tests.parity.compare import (
     AuditDifference,
     CaseResult,
     Difference,
+    SegmentDifference,
     write_results,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
 _results: list[CaseResult] = []
-_differences: dict[str, list[Difference | AuditDifference]] = {}
+_differences: dict[str, list[Difference | SegmentDifference | AuditDifference]] = {}
 # The files whose cases are parity cases; test_compare.py is not one.
-_CASE_FILES = {"test_parity.py", "test_audit_parity.py"}
+_CASE_FILES = {"test_parity.py", "test_segment_parity.py", "test_audit_parity.py"}
 
 
 def _missing(*names: str) -> list[str]:
@@ -103,11 +104,31 @@ def audit() -> stack.AuditPath:
     )
 
 
+@pytest.fixture(scope="session")
+def segments() -> stack.SegmentsPath:
+    absent = [
+        f"services/{n}/"
+        for n in ("auth", "segments")
+        if not (ROOT / "services" / n).is_dir()
+    ]
+    if absent:
+        pytest.skip("segments path: waiting for " + ", ".join(absent))
+    if missing := _missing(
+        "PARITY_GATEWAY_URL", "PARITY_SERVICE_EMAIL", "PARITY_SERVICE_PASSWORD"
+    ):
+        pytest.skip("segments path: not set: " + ", ".join(missing))
+    return stack.SegmentsPath(
+        stack.env("PARITY_GATEWAY_URL"),
+        stack.env("PARITY_SERVICE_EMAIL"),
+        stack.env("PARITY_SERVICE_PASSWORD"),
+    )
+
+
 @pytest.fixture
 def differences(request) -> list[Difference]:
     """Where a case collects what differs, so it is printed and recorded."""
 
-    found: list[Difference | AuditDifference] = []
+    found: list[Difference | SegmentDifference | AuditDifference] = []
     _differences[request.node.name] = found
     return found
 

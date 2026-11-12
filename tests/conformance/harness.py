@@ -43,7 +43,7 @@ AUDIENCE = "mosaiq-api"
 # Every token names a seeded account, so an operation that answers for its
 # caller (users' GET /v1/users/me) finds one: each stack loads the seed.
 SUBJECT = "11111111-1111-1111-1111-000000000001"
-# The seven role codes of contracts/auth/token-claims.v1.md.
+# The ten role codes of contracts/auth/token-claims.v1.md.
 ROLE_CODES = (
     "ADMIN",
     "ANALYST",
@@ -52,6 +52,9 @@ ROLE_CODES = (
     "INVENTORY_PLANNER",
     "AUDITOR",
     "CUSTOMER",
+    "SALES_ASSOCIATE",
+    "LOYALTY_OFFICER",
+    "COMMERCIAL_SUPERVISOR",
 )
 METHODS = ("get", "post", "put", "patch", "delete")
 

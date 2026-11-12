@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CaptureIncidentReviewRequest xmlns="https://mosaiq.maxthecoder.online/xml/engagement/v1">
+  <status>RESOLVED</status>
+  <note>Reviewed with the associate; the badge was scanned outside the store.</note>
+</CaptureIncidentReviewRequest>

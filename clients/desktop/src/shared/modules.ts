@@ -8,14 +8,22 @@ export type ModuleName =
   | 'sales'
   | 'engagement'
   | 'check-ins'
+  | 'migrations'
   | 'reports'
+  | 'recommendations'
+  | 'drift'
+  | 'kmeans'
   | 'stores'
   | 'campaigns'
+  | 'experiments'
+  | 'conversion'
   | 'customers'
+  | 'exploration'
   | 'users'
   | 'audit'
   | 'transfer'
-  | 'services';
+  | 'services'
+  | 'imports';
 
 export interface ConsoleModule {
   name: ModuleName;
@@ -36,16 +44,26 @@ export const MODULE_GROUPS: readonly ModuleGroup[] = [
     label: 'Analysis',
     modules: [
       { name: 'customers', label: 'Customers', operation: 'searchCustomers' },
+      { name: 'exploration', label: 'Customer exploration', operation: 'getRfmProfile' },
       { name: 'sales', label: 'Sales', operation: 'listSales' },
       { name: 'engagement', label: 'Engagement', operation: 'getEngagementSummary' },
       { name: 'check-ins', label: 'Check-ins', operation: 'listCheckIns' },
+      { name: 'migrations', label: 'Migration matrix', operation: 'getSegmentMigrationMatrix' },
       { name: 'reports', label: 'Reports', operation: 'listKpiDefinitions' },
+      { name: 'recommendations', label: 'Recommendations', operation: 'getRecommendationsV2' },
+      { name: 'drift', label: 'Drift', operation: 'listDriftReports' },
+      { name: 'conversion', label: 'Conversion analysis', operation: 'getExperimentResult' },
+      { name: 'kmeans', label: 'K-means', operation: 'listModelVersions' },
+      { name: 'imports', label: 'Import and data quality', operation: 'listSaleImports' },
     ],
   },
   {
     id: 'marketing',
     label: 'Marketing',
-    modules: [{ name: 'campaigns', label: 'Campaigns', operation: 'listCampaigns' }],
+    modules: [
+      { name: 'campaigns', label: 'Campaigns', operation: 'listCampaigns' },
+      { name: 'experiments', label: 'A/B experiments', operation: 'listExperiments' },
+    ],
   },
   {
     id: 'planning',
@@ -94,6 +112,50 @@ export const KPI_OPERATIONS: Readonly<Record<string, string>> = {
   'recommendation-performance': 'getRecommendationPerformanceReport',
   'campaign-performance': 'getCampaignPerformanceReport',
 };
+
+/**
+ * The read operations the recommendations module calls (recommendations x-mosaiq-roles); each is checked before
+ * its call. Decisions are open to fewer roles than the recommendation itself.
+ */
+export const RECOMMENDATION_OPERATIONS = {
+  inspect: 'getRecommendationsV2',
+  decisions: 'listRecommendationDecisions',
+  decision: 'getRecommendationDecision',
+} as const;
+
+/** The read operations the drift module calls (model-registry x-mosaiq-roles); each is checked before its call. */
+export const DRIFT_OPERATIONS = {
+  reports: 'listDriftReports',
+  report: 'getDriftReport',
+  alerts: 'listDriftAlerts',
+  alert: 'getDriftAlert',
+} as const;
+
+/** The read operations the migration matrix module calls (segments x-mosaiq-roles); each is checked before its call. */
+export const MIGRATION_OPERATIONS = {
+  matrix: 'getSegmentMigrationMatrix',
+  list: 'listSegmentMigrations',
+  explanation: 'getSegmentMigrationExplanation',
+} as const;
+
+/** The operations the A/B experiment module calls (experimentation x-mosaiq-roles); each is checked before its call. */
+export const EXPERIMENT_OPERATIONS = {
+  list: 'listExperiments',
+  get: 'getExperiment',
+  plan: 'planExperiment',
+  assign: 'assignExperiment',
+} as const;
+
+/** The operation the conversion analysis module calls (experimentation x-mosaiq-roles); it is checked before the call. */
+export const CONVERSION_OPERATIONS = { result: 'getExperimentResult' } as const;
+
+/** The read operations the audit module calls (audit-trail x-mosaiq-roles: ADMIN, AUDITOR); each is checked before its call. */
+export const AUDIT_OPERATIONS = {
+  entries: 'listAuditEntries',
+  entry: 'getAuditEntry',
+  events: 'listDomainEvents',
+  event: 'getDomainEvent',
+} as const;
 
 /** Error codes that mean the session is over; the user goes back to sign-in. */
 export const SESSION_ENDED_CODES: readonly string[] = [

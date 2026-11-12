@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
 CHANGED_STREAM = "stream:products.v1.changed"
 CACHE_TTL_SECONDS = 600
 MAX_BATCH_IDS = 50
+DEFAULT_PHOTO_BASE_URL = "http://localhost:5000/admin/products/image/"
 
 
 def _flag(name: str, default: bool = True) -> bool:
@@ -29,6 +31,7 @@ class Settings:
     redis_state_url: str
     redis_cache_url: str
     contracts_dir: Path
+    photo_base_url: str
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -49,4 +52,14 @@ class Settings:
                     str(Path(__file__).resolve().parent.parent / "contracts"),
                 )
             ),
+            photo_base_url=_photo_base_url(),
         )
+
+
+def _photo_base_url() -> str:
+    """Where the web serves uploaded photos; ``photo_url`` is this plus the path."""
+
+    value = os.environ.get("PRODUCTS_PHOTO_BASE_URL", DEFAULT_PHOTO_BASE_URL).strip()
+    if re.fullmatch(r"https?://[^\s?#]+", value) is None:
+        raise ValueError("PRODUCTS_PHOTO_BASE_URL must be an absolute http(s) URL.")
+    return value.rstrip("/") + "/"

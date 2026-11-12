@@ -1,0 +1,94 @@
+{
+  "decision_id": "9b2d4c7e-5a10-4f38-8c61-d3e0a7b94f12",
+  "customer_id": "3f6c1d52-8e4a-4b7d-a0c9-5d2e7b1f4a68",
+  "status": "recommended",
+  "computed_at": "2026-10-15T16:42:10Z",
+  "window": {
+    "days": 180,
+    "start": "2026-04-18T00:00:00Z",
+    "end": "2026-10-15T00:00:00Z"
+  },
+  "label_code": "LOYAL_HIGH_VALUE",
+  "run_id": 41,
+  "model_version_id": 7,
+  "usual_store_id": 3,
+  "store_id": 3,
+  "store_source": "usual_store",
+  "channel_id": null,
+  "exclusions": [
+    {
+      "reason": "already_bought",
+      "count": 2
+    },
+    {
+      "reason": "out_of_stock",
+      "count": 1
+    }
+  ],
+  "items": [
+    {
+      "product_id": 245,
+      "category_id": 12,
+      "kind": "primary",
+      "position": 1,
+      "factors": {
+        "signals_matched": 3,
+        "segment_buyers": 17,
+        "category_share": 0.4
+      },
+      "availability": {
+        "store_id": 3,
+        "channel_id": null,
+        "quantity_on_hand": 8
+      },
+      "alternative_for": null,
+      "unavailable_reason": null,
+      "reasons": [
+        {
+          "signal": "segment",
+          "segment_buyers": 17,
+          "category_id": null,
+          "share": null
+        },
+        {
+          "signal": "preferred_category",
+          "segment_buyers": null,
+          "category_id": 10,
+          "share": null
+        },
+        {
+          "signal": "purchase_history",
+          "segment_buyers": null,
+          "category_id": 12,
+          "share": 0.4
+        }
+      ]
+    },
+    {
+      "product_id": 120,
+      "category_id": 7,
+      "kind": "primary",
+      "position": 2,
+      "factors": {
+        "signals_matched": 1,
+        "segment_buyers": 9,
+        "category_share": null
+      },
+      "availability": {
+        "store_id": 3,
+        "channel_id": null,
+        "quantity_on_hand": 14
+      },
+      "alternative_for": null,
+      "unavailable_reason": null,
+      "reasons": [
+        {
+          "signal": "segment",
+          "segment_buyers": 9,
+          "category_id": null,
+          "share": null
+        }
+      ]
+    }
+  ]
+}

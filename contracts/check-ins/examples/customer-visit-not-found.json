@@ -1,0 +1,6 @@
+{
+  "code": "customer_visit_not_found",
+  "message": "Customer visit 4e8a1c37-6b2d-4f09-8c53-a1d7e92b0f99 was not found.",
+  "correlation_id": "corr-customer-visit-not-found",
+  "details": []
+}

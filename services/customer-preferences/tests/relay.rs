@@ -355,6 +355,7 @@ fn the_acl_is_one_user_line_with_the_documented_selectors() {
         "+waitaof",
         "(%R~pub:auth:v1:live:* +exists)",
         "(~stream:preferences.v1.changed +xadd)",
+        "(~stream:preferences.v1.consent_changed +xadd)",
     ] {
         assert!(line.contains(part), "{part}");
     }

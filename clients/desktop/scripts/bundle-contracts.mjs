@@ -1,7 +1,15 @@
 // Copies each registered service's XSD, plus common/v1, into bundled/ and
 // extracts every operation's x-mosaiq-roles into bundled/operations.json.
 // The output is generated and git-ignored; never edit it by hand (F16-01).
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, copyFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
@@ -50,8 +58,29 @@ for (const svc of registry.services) {
   schemas[namespace] = `${name}/${name}.xsd`;
   services.push({ name, resources: svc.resources });
 
+  // A later major ships beside /v1 as <name>.v<N>.xsd in its own namespace (ADR-0035), so a
+  // /v1 caller keeps the schema it validated against.
+  const later = new Set();
+  for (const file of readdirSync(join(contracts, name))) {
+    const major =
+      file.startsWith(`${name}.v`) && file.endsWith('.xsd') ? file.slice(name.length + 2, -4) : '';
+    if (!/^[2-9]\d*$/.test(major)) continue;
+    const versioned = `${NS}/${name}/v${major}`;
+    const body = readFileSync(join(contracts, name, file), 'utf8');
+    if (!body.includes(`targetNamespace="${versioned}"`)) {
+      fail(`${file} does not declare targetNamespace ${versioned}`);
+    }
+    copyFileSync(join(contracts, name, file), join(out, 'schemas', name, file));
+    schemas[versioned] = `${name}/${file}`;
+    later.add(major);
+  }
+
   const doc = parse(readFileSync(openapi, 'utf8'));
   for (const [path, item] of Object.entries(doc.paths ?? {})) {
+    const major = /^\/v(\d+)\//.exec(path)?.[1];
+    if (major !== undefined && major !== '1' && !later.has(major)) {
+      fail(`${name} declares /v${major} operations but no ${name}.v${major}.xsd`);
+    }
     for (const method of METHODS) {
       const op = item[method];
       if (!op) continue;

@@ -1,0 +1,140 @@
+{
+  "decision_id": "c41e8a06-72d3-4b95-a1f0-6e2b9d57c3a4",
+  "customer_id": "3f6c1d52-8e4a-4b7d-a0c9-5d2e7b1f4a68",
+  "status": "recommended",
+  "computed_at": "2026-10-15T16:42:10Z",
+  "window": {
+    "days": 180,
+    "start": "2026-04-18T00:00:00Z",
+    "end": "2026-10-15T00:00:00Z"
+  },
+  "label_code": "LOYAL_HIGH_VALUE",
+  "run_id": 41,
+  "model_version_id": 7,
+  "usual_store_id": 3,
+  "store_id": 5,
+  "store_source": "given",
+  "channel_id": 1,
+  "exclusions": [
+    {
+      "reason": "already_bought",
+      "count": 2
+    },
+    {
+      "reason": "not_sellable",
+      "count": 1
+    },
+    {
+      "reason": "out_of_stock",
+      "count": 2
+    }
+  ],
+  "items": [
+    {
+      "product_id": 120,
+      "category_id": 7,
+      "kind": "primary",
+      "position": 1,
+      "factors": {
+        "signals_matched": 1,
+        "segment_buyers": 9,
+        "category_share": null
+      },
+      "availability": {
+        "store_id": 5,
+        "channel_id": 1,
+        "quantity_on_hand": 22
+      },
+      "alternative_for": null,
+      "unavailable_reason": null,
+      "reasons": [
+        {
+          "signal": "segment",
+          "segment_buyers": 9,
+          "category_id": null,
+          "share": null
+        }
+      ]
+    },
+    {
+      "product_id": 331,
+      "category_id": 12,
+      "kind": "primary",
+      "position": 2,
+      "factors": {
+        "signals_matched": 1,
+        "segment_buyers": null,
+        "category_share": 0.4
+      },
+      "availability": {
+        "store_id": 5,
+        "channel_id": 1,
+        "quantity_on_hand": 4
+      },
+      "alternative_for": null,
+      "unavailable_reason": null,
+      "reasons": [
+        {
+          "signal": "purchase_history",
+          "segment_buyers": null,
+          "category_id": 12,
+          "share": 0.4
+        }
+      ]
+    },
+    {
+      "product_id": 246,
+      "category_id": 12,
+      "kind": "alternative",
+      "position": 3,
+      "factors": null,
+      "availability": {
+        "store_id": 5,
+        "channel_id": 1,
+        "quantity_on_hand": 11
+      },
+      "alternative_for": 245,
+      "unavailable_reason": "out_of_stock",
+      "reasons": [
+        {
+          "signal": "relation_substitute",
+          "segment_buyers": null,
+          "category_id": null,
+          "share": null
+        }
+      ]
+    },
+    {
+      "product_id": 88,
+      "category_id": 9,
+      "kind": "elsewhere",
+      "position": 4,
+      "factors": {
+        "signals_matched": 2,
+        "segment_buyers": 5,
+        "category_share": 0.25
+      },
+      "availability": {
+        "store_id": 3,
+        "channel_id": 1,
+        "quantity_on_hand": 6
+      },
+      "alternative_for": null,
+      "unavailable_reason": "out_of_stock",
+      "reasons": [
+        {
+          "signal": "segment",
+          "segment_buyers": 5,
+          "category_id": null,
+          "share": null
+        },
+        {
+          "signal": "purchase_history",
+          "segment_buyers": null,
+          "category_id": 9,
+          "share": 0.25
+        }
+      ]
+    }
+  ]
+}

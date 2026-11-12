@@ -1,0 +1,258 @@
+{
+  "experiment_id": 13,
+  "campaign_id": 5,
+  "basis": "PRIMARY",
+  "status": "COMPLETE",
+  "as_of": "2026-10-12T09:00:09Z",
+  "elapsed_share": 1,
+  "data_origin": "OBSERVED",
+  "synthetic": false,
+  "design_kind": "CONTROLLED",
+  "design": {
+    "primary_metric": "REVENUE_PER_CUSTOMER",
+    "secondary_metric": "CONVERSION",
+    "estimator": "DIFFERENCE_OF_MEANS",
+    "alpha": 0.05,
+    "comparison_alpha": 0.025,
+    "power": 0.80,
+    "minimum_detectable_effect": 1.50,
+    "baseline": 5.90,
+    "baseline_std_dev": 30.00,
+    "required_per_arm": 7605,
+    "smallest_detectable_effect": 1.46,
+    "allocation": "EQUAL",
+    "conversion_window_days": 21,
+    "settle_days": 7,
+    "starts_on": "2026-09-14",
+    "analysis_at": "2026-10-12T09:00:00Z"
+  },
+  "arms": [
+    {
+      "arm_id": 21,
+      "kind": "CONTROL",
+      "name": "No offer",
+      "assigned": 8000,
+      "analysed": 8000,
+      "exposed": 0,
+      "converted": 760,
+      "pending": 0,
+      "not_converted": 7240,
+      "conversion_rate": 0.0950,
+      "exposed_conversion_rate": null,
+      "net_revenue": "47040.00",
+      "revenue_per_customer": "5.88",
+      "revenue_std_dev": 30.20
+    },
+    {
+      "arm_id": 22,
+      "kind": "TREATMENT",
+      "name": "Double points",
+      "assigned": 8000,
+      "analysed": 8000,
+      "exposed": 7011,
+      "converted": 904,
+      "pending": 0,
+      "not_converted": 7096,
+      "conversion_rate": 0.1130,
+      "exposed_conversion_rate": 0.1228,
+      "net_revenue": "61120.00",
+      "revenue_per_customer": "7.64",
+      "revenue_std_dev": 33.10
+    },
+    {
+      "arm_id": 23,
+      "kind": "TREATMENT",
+      "name": "Free gift",
+      "assigned": 8000,
+      "analysed": 8000,
+      "exposed": 6890,
+      "converted": 812,
+      "pending": 0,
+      "not_converted": 7188,
+      "conversion_rate": 0.1015,
+      "exposed_conversion_rate": 0.1118,
+      "net_revenue": "50800.00",
+      "revenue_per_customer": "6.35",
+      "revenue_std_dev": 31.00
+    }
+  ],
+  "checks": {
+    "sample_ratio": {
+      "status": "PASSED",
+      "p_value": 1.000000,
+      "threshold": 0.001
+    },
+    "balance": [
+      {
+        "measure": "PRE_RECENCY_DAYS",
+        "arm_id": 22,
+        "reference_arm_id": 21,
+        "standardized_mean_difference": 0.006,
+        "flagged": false,
+        "threshold": 0.25
+      },
+      {
+        "measure": "PRE_PURCHASE_COUNT",
+        "arm_id": 22,
+        "reference_arm_id": 21,
+        "standardized_mean_difference": 0.014,
+        "flagged": false,
+        "threshold": 0.25
+      },
+      {
+        "measure": "PRE_NET_SPEND",
+        "arm_id": 22,
+        "reference_arm_id": 21,
+        "standardized_mean_difference": 0.009,
+        "flagged": false,
+        "threshold": 0.25
+      }
+    ]
+  },
+  "comparisons": [
+    {
+      "label": "EFFECT",
+      "metric": "REVENUE_PER_CUSTOMER",
+      "role": "PRIMARY",
+      "arm_id": 22,
+      "against_arm_id": 21,
+      "difference": 1.76,
+      "lower": 0.64,
+      "upper": 2.88,
+      "confidence_level": 0.975,
+      "test": "WELCH_T",
+      "p_value": 0.000443,
+      "degrees_of_freedom": 15865.4,
+      "conclusion": "SIGNIFICANT",
+      "incremental_revenue": {
+        "amount": "14080.00",
+        "lower": "5097.26",
+        "upper": "23062.74"
+      },
+      "bootstrap": {
+        "resamples": 10000,
+        "lower": 0.66,
+        "upper": 2.87,
+        "agrees": true
+      }
+    },
+    {
+      "label": "EFFECT",
+      "metric": "REVENUE_PER_CUSTOMER",
+      "role": "PRIMARY",
+      "arm_id": 23,
+      "against_arm_id": 21,
+      "difference": 0.47,
+      "lower": -0.61,
+      "upper": 1.55,
+      "confidence_level": 0.975,
+      "test": "WELCH_T",
+      "p_value": 0.331381,
+      "degrees_of_freedom": 15987.1,
+      "conclusion": "NOT_SIGNIFICANT",
+      "incremental_revenue": {
+        "amount": "3760.00",
+        "lower": "-4916.38",
+        "upper": "12436.38"
+      },
+      "bootstrap": {
+        "resamples": 10000,
+        "lower": -0.59,
+        "upper": 1.54,
+        "agrees": true
+      }
+    },
+    {
+      "label": "EFFECT",
+      "metric": "CONVERSION",
+      "role": "SECONDARY",
+      "arm_id": 22,
+      "against_arm_id": 21,
+      "difference": 0.0180,
+      "lower": 0.0072,
+      "upper": 0.0288,
+      "confidence_level": 0.975,
+      "test": "POOLED_Z",
+      "p_value": 0.000192,
+      "degrees_of_freedom": null,
+      "conclusion": null,
+      "incremental_revenue": null,
+      "bootstrap": null
+    },
+    {
+      "label": "EFFECT",
+      "metric": "CONVERSION",
+      "role": "SECONDARY",
+      "arm_id": 23,
+      "against_arm_id": 21,
+      "difference": 0.0065,
+      "lower": -0.0040,
+      "upper": 0.0170,
+      "confidence_level": 0.975,
+      "test": "POOLED_Z",
+      "p_value": 0.167240,
+      "degrees_of_freedom": null,
+      "conclusion": null,
+      "incremental_revenue": null,
+      "bootstrap": null
+    }
+  ],
+  "effect_refusal": null,
+  "attribution": {
+    "label": "ATTRIBUTION",
+    "window_days": 21,
+    "arms": [
+      {
+        "arm_id": 22,
+        "attributed_sales": 1180,
+        "attributed_customers": 702,
+        "attributed_revenue": "38911.50"
+      },
+      {
+        "arm_id": 23,
+        "attributed_sales": 988,
+        "attributed_customers": 618,
+        "attributed_revenue": "29764.25"
+      }
+    ],
+    "attributed_sales": 2168,
+    "attributed_revenue": "68675.75",
+    "unattributed_conversions": 412,
+    "as_of": "2026-10-12T09:00:09Z"
+  },
+  "assumptions": [
+    {
+      "code": "INTENT_TO_TREAT",
+      "statement": "Every assigned customer counts in the arm they were assigned to, exposed or not."
+    },
+    {
+      "code": "NET_OF_REVERSALS",
+      "statement": "Conversions and revenue count sales net of reversals, as known at `as_of`."
+    },
+    {
+      "code": "SINGLE_LOOK",
+      "statement": "The result is read once, at the analysis instant; stopping early or adding a look needs a new experiment."
+    },
+    {
+      "code": "FAMILY_WISE_ALPHA",
+      "statement": "Each treatment is compared with the control at the experiment's alpha divided by the number of treatments."
+    },
+    {
+      "code": "LARGE_SAMPLE_APPROXIMATION",
+      "statement": "The intervals rest on the normal approximation, which the planned customers per arm make adequate."
+    },
+    {
+      "code": "NO_CONTAMINATION",
+      "statement": "A customer is assigned in at most one experiment whose period overlaps this one's."
+    },
+    {
+      "code": "CONTROL_NEVER_EXPOSED",
+      "statement": "The control is never exposed, so exposure is a secondary, descriptive measure and not an effect on the exposed."
+    },
+    {
+      "code": "ZERO_FOR_NON_BUYERS",
+      "statement": "Revenue per customer counts zero for a customer who bought nothing in the window."
+    }
+  ],
+  "flags": []
+}

@@ -183,3 +183,70 @@ def test_a_rename_by_the_web_is_served_within_ten_seconds(
         assert name == unique + "-web"
     finally:
         redis_admin.config_set("appendonly", before)
+
+
+class Crash(BaseException):
+    """The process dies: the kit catches Exception only, so no XACK follows."""
+
+
+def test_reapplying_an_event_leaves_the_same_state(
+    stack, admin_headers, new_id, unique, owner, redis_admin
+):
+    """#764 criterion 3: re-applying an event is idempotent by re-read (ADR-0044).
+
+    The event is applied by a process that dies after the effect and before
+    XACK, applied again by the restarted process from its pending list, and
+    applied a third time as a duplicate entry, as a relay that crashed between
+    XADD and its UPDATE appends. Each time, the next read is the same answer.
+    """
+    app, relay, _ = stack
+    client = app.test_client()
+    category_id = new_id()
+    client.post(
+        "/v1/categories",
+        json={"category_id": category_id, "name": unique},
+        headers=admin_headers,
+    )
+    relay_until(relay)
+    # Acknowledge the creation's own event, so only the rename is in play.
+    StreamConsumer(service_client_for(), STREAM, lambda _f: None).run_once()
+    url = f"/v1/categories/{category_id}"
+    assert client.get(url, headers=admin_headers).get_json()["name"] == unique
+
+    def handle(_fields):  # the production handler (service.start_background)
+        app.extensions["categories_cache"].invalidate()
+
+    def observe():
+        return client.get(url, headers=admin_headers).get_json()
+
+    with owner.transaction():
+        owner.execute("SET LOCAL ROLE retail_app")
+        owner.execute(
+            "UPDATE category SET name = %s WHERE category_id = %s",
+            (unique + "-web", category_id),
+        )
+    assert relay_until(relay) == 1
+    (entry_id, fields), *_ = redis_admin.xrevrange(STREAM, count=1)
+
+    def crashing(entry):
+        handle(entry)
+        raise Crash
+
+    with pytest.raises(Crash):
+        StreamConsumer(service_client_for(), STREAM, crashing).run_once(block_ms=10)
+    first = observe()
+    assert first["name"] == unique + "-web"
+    assert redis_admin.xpending(STREAM, "categories")["pending"] == 1
+
+    restarted = StreamConsumer(service_client_for(), STREAM, handle)
+    assert restarted.run_once(block_ms=10) == 1
+    assert observe() == first
+
+    redis_admin.xadd(STREAM, fields)
+    assert StreamConsumer(service_client_for(), STREAM, handle).run_once(10) == 1
+    assert observe() == first
+    assert redis_admin.xpending(STREAM, "categories")["pending"] == 0
+
+
+def service_client_for():
+    return service_client(os.environ["REDIS_CATEGORIES_PASSWORD"])

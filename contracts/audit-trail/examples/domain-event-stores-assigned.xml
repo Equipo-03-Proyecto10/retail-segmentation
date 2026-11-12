@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DomainEvent xmlns="https://mosaiq.maxthecoder.online/xml/audit-trail/v1">
+  <event_id>7a0c5e1d-3b2f-4c8a-9d61-000000000005</event_id>
+  <kind>PERMISSION_CHANGED</kind>
+  <outcome>SUCCESS</outcome>
+  <occurred_at>2026-11-07T10:07:44.900Z</occurred_at>
+  <recorded_at>2026-11-07T10:07:44.912Z</recorded_at>
+  <actor_type>USER</actor_type>
+  <actor_user_id>11111111-1111-1111-1111-000000000001</actor_user_id>
+  <actor_role>ADMIN</actor_role>
+  <source>svc_users</source>
+  <subject_type>user</subject_type>
+  <subject_id>11111111-1111-1111-1111-000000000003</subject_id>
+  <correlation_id>corr-assign-3</correlation_id>
+  <details>
+    <PermissionChange>
+      <change>STORES_ASSIGNED</change>
+      <store_id>4</store_id>
+      <store_id>9</store_id>
+    </PermissionChange>
+  </details>
+  <prev_hash>f44c2dfda97846e20fa6a6da5829a8589d7b1e26794192f5a252db46ab6b0820</prev_hash>
+  <entry_hash>b7c2e52d90733be990c46f507e7ea3151bba2e1fd656be8695502ce2c5de4cd3</entry_hash>
+</DomainEvent>

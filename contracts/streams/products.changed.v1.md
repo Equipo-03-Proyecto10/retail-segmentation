@@ -60,3 +60,16 @@ versioned database contract reads the same.
 A breaking revision creates `stream:products.v2.changed` and
 `contracts/streams/products.changed.v2.md`; capture writes both versions until
 the `products` and `recommendations` groups have moved.
+
+## Propagation bound
+
+The time from the commit of the outbox row to the group's acknowledgement of
+its entry, under the controlled load of `ops/propagation/` (F20-06, #764).
+`ops/propagation/propagation.py check` fails a run whose p95 or maximum
+exceeds the figure below, or that leaves an entry unacknowledged. The measured
+figures are in `docs/evidence/f20-06-stream-propagation.md`.
+
+| Group | p95 (ms) | Max (ms) |
+|---|---:|---:|
+| `products` | 3000 | 5000 |
+| `recommendations` | 3000 | 5000 |

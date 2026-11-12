@@ -62,6 +62,22 @@ pending entries first, may claim entries idle for more than 60 seconds, and
 acknowledges only after its effect succeeds. After five failed deliveries it logs
 and acknowledges the entry; the outbox row remains in the seven-day replay log.
 
+## Propagation bound
+
+The time from the commit of the outbox row to the group's acknowledgement of
+its entry, under the controlled load of `ops/propagation/` (F20-06, #764).
+`ops/propagation/propagation.py check` fails a run whose p95 or maximum
+exceeds the figure below, or that leaves an entry unacknowledged. The measured
+figures are in `docs/evidence/f20-06-stream-propagation.md`.
+
+| Group | p95 (ms) | Max (ms) |
+|---|---:|---:|
+| `recommendations` | 3000 | 5000 |
+| `analytics-kpis` | 3000 | 5000 |
+
+Not measured yet: `recommendations`, `analytics-kpis`.
+Their bound is the default, and it holds from the first run that measures them.
+
 ## Failure and compatibility
 
 The owner relay waits on `segments_outbox` only as a private wake-up and also

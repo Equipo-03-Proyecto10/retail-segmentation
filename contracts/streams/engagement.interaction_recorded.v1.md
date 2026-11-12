@@ -71,6 +71,22 @@ deliveries it logs and acknowledges the entry. Notices apply idempotently: a
 keeps the void (ADR-0075). A projection is eventually consistent, within
 seconds: the relay polls every second.
 
+## Propagation bound
+
+The time from the write that sets the event's `relay_pending` notice to the
+group's acknowledgement of its entry. `ops/propagation/propagation.py check`
+fails a run whose p95 or maximum exceeds the figure below, or that leaves an
+entry unacknowledged (F20-06, #764). The measured figures are in
+`docs/evidence/f20-06-stream-propagation.md`.
+
+| Group | p95 (ms) | Max (ms) |
+|---|---:|---:|
+| `experimentation` | 3000 | 5000 |
+| `recommendations` | 3000 | 5000 |
+
+Not measured yet: `experimentation`, `recommendations`.
+Their bound is the default, and it holds from the first run that measures it.
+
 ## Failure and compatibility
 
 The relay is a thread of the engagement container. Every second it reads up to

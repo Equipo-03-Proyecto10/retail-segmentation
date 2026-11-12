@@ -12,7 +12,10 @@ producer's `svc_` PostgreSQL role. That file contracts the stream
   `stream:engagement.v1.interaction_recorded` carries the interaction fact,
   because engagement keeps its events in MongoDB and publishes no view to
   re-read (ADR-0075, `engagement.interaction_recorded.v1.md`);
-- every consumer group, named after the consuming service; and
+- every consumer group, named after the consuming service;
+- a `## Propagation bound` table: each group's p95 and maximum, in
+  milliseconds, from the outbox commit to the group's acknowledgement, which
+  `ops/propagation/propagation.py check` enforces (F20-06); and
 - replay, failure, and compatibility behavior.
 
 Producers use `XADD` with `MAXLEN ~ 10000`. Delivery is at least once, and each

@@ -440,3 +440,169 @@ fn the_acl_has_the_documented_selectors_and_no_scan_or_keys() {
     }
     assert!(line.contains("+xreadgroup +xack +xgroup|create +xpending +xclaim"));
 }
+
+async fn pending(admin: &mut MultiplexedConnection) -> i64 {
+    let summary: redis::Value = redis::cmd("XPENDING")
+        .arg(STREAM)
+        .arg("stores")
+        .query_async(admin)
+        .await
+        .unwrap();
+    match summary {
+        redis::Value::Array(items) => redis::from_redis_value(&items[0]).unwrap(),
+        other => panic!("XPENDING answered {other:?}"),
+    }
+}
+
+/// #764 criterion 3: re-applying an event is idempotent by re-read (ADR-0044).
+///
+/// The invalidation runs in a process that does not acknowledge it, as one
+/// that dies after its effect and before XACK leaves it; the restarted
+/// process, a fresh consumer with an empty `event_id` memory, applies the
+/// entry again from its pending list; then a duplicate entry, as a relay that
+/// crashed between XADD and its UPDATE appends, is applied once more. Each
+/// time the cache is empty and the next directory read is the same.
+#[tokio::test]
+async fn reapplying_an_event_leaves_the_same_directory() {
+    let (Some(db_url), Some(redis_url)) = (owner_url(), redis_url()) else {
+        return;
+    };
+    let _turn = REDIS_USER.lock().await;
+    let owner = connect(&db_url).await;
+    let db = service_database(&db_url);
+    let admin = redis::Client::open(redis_url.as_str()).unwrap();
+    let mut admin = admin.get_multiplexed_async_connection().await.unwrap();
+    let password = load_acl(&mut admin).await;
+    let _: redis::RedisResult<()> = redis::cmd("DEL")
+        .arg(STREAM)
+        .arg(DIRECTORY_CACHE_KEY)
+        .query_async(&mut admin)
+        .await;
+    std::env::set_var("MOSAIQ_SERVICE_NAME", "stores");
+    let cache = Cache::new(
+        redis::Client::open(
+            service_redis_info(&redis_url, SUFFIX, Some(password.clone())).unwrap(),
+        )
+        .unwrap(),
+    );
+    // The production handler (spawn_stream_tasks): drop the cached directory.
+    // `dies` makes it fail after the effect, so the entry is not acknowledged.
+    let handler = |cache: Cache, dies: bool| {
+        move |_event: HashMap<String, String>| {
+            let cache = cache.clone();
+            async move {
+                cache.invalidate().await?;
+                if dies {
+                    return Err(redis::RedisError::from((
+                        redis::ErrorKind::IoError,
+                        "the process died before XACK",
+                    )));
+                }
+                Ok(())
+            }
+        }
+    };
+    let consumer = |dies: bool| {
+        let cache = cache.clone();
+        let (url, password) = (redis_url.clone(), password.clone());
+        async move {
+            StreamConsumer::new(
+                service_connection(&url, &password).await,
+                STREAM,
+                handler(cache, dies),
+            )
+            .unwrap()
+        }
+    };
+    consumer(false).await.run_once(Some(100)).await.unwrap(); // the group
+
+    let store = TestStore::create(&owner).await;
+    let name_of = |stores: &[stores::StoreRecord]| {
+        stores
+            .iter()
+            .find(|s| s.store_id == store.id)
+            .unwrap()
+            .name
+            .clone()
+    };
+    cached_directory(&db, Some(&cache)).await.unwrap(); // cached
+    owner
+        .batch_execute(&format!(
+            "BEGIN; SET LOCAL ROLE retail_app; \
+             UPDATE public.store SET name = 'svc-test-reapplied' WHERE store_id = {}; COMMIT;",
+            store.id
+        ))
+        .await
+        .unwrap();
+    let event_id = uuid::Uuid::new_v4().to_string();
+    let entity_id = store.id.to_string();
+    let fields = [
+        ("event_id", event_id.as_str()),
+        ("v", "1"),
+        ("event_type", "UPDATE"),
+        ("entity_id", entity_id.as_str()),
+        ("occurred_at", "2026-11-09T00:00:00Z"),
+    ];
+    let xadd = |admin: &mut MultiplexedConnection| {
+        let mut command = redis::cmd("XADD");
+        command.arg(STREAM).arg("*");
+        for (field, value) in fields {
+            command.arg(field).arg(value);
+        }
+        let mut admin = admin.clone();
+        async move {
+            let _: String = command.query_async(&mut admin).await.unwrap();
+        }
+    };
+    let reads = admin.clone();
+    let observe = || {
+        let (cache, db) = (cache.clone(), &db);
+        let mut admin = reads.clone();
+        async move {
+            let cached: Option<String> = redis::cmd("GET")
+                .arg(DIRECTORY_CACHE_KEY)
+                .query_async(&mut admin)
+                .await
+                .unwrap();
+            let stores = cached_directory(db, Some(&cache)).await.unwrap();
+            // StoreRecord has no PartialEq; its JSON is what a reader sees.
+            (
+                cached.is_some(),
+                serde_json::to_value(&stores).unwrap(),
+                stores,
+            )
+        }
+    };
+
+    xadd(&mut admin).await;
+    consumer(true).await.run_once(Some(100)).await.unwrap();
+    let (was_cached, first, stores) = observe().await;
+    assert!(!was_cached, "the effect happened before the process died");
+    assert_eq!(name_of(&stores), "svc-test-reapplied");
+    assert_eq!(pending(&mut admin).await, 1);
+
+    let mut restarted = consumer(false).await;
+    assert_eq!(restarted.run_once(Some(100)).await.unwrap(), 1);
+    let (was_cached, again, _) = observe().await;
+    assert_eq!((was_cached, again), (false, first.clone()));
+
+    xadd(&mut admin).await;
+    let mut duplicate = consumer(false).await;
+    assert_eq!(duplicate.run_once(Some(100)).await.unwrap(), 1);
+    let (was_cached, again, _) = observe().await;
+    assert_eq!((was_cached, again), (false, first));
+    assert_eq!(pending(&mut admin).await, 0);
+
+    let _: redis::RedisResult<()> = redis::cmd("DEL")
+        .arg(STREAM)
+        .arg(DIRECTORY_CACHE_KEY)
+        .query_async(&mut admin)
+        .await;
+    let _: () = redis::cmd("ACL")
+        .arg("DELUSER")
+        .arg("svc_stores")
+        .query_async(&mut admin)
+        .await
+        .unwrap();
+    store.cleanup(&owner).await;
+}

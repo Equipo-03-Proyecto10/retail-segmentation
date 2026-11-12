@@ -68,6 +68,22 @@ scratch, so a replay or a reordering cannot change a result.
 | `stream:sales.v1.reversed` | sales | Finds the customer of the reversal's sale and recomputes their profile (ADR-0062). The producer's contract is F21-02 (#770), which lists group `rfm-engine`. |
 | The model-registry publication stream | model-registry | Recomputes every customer under the newly published, or rolled-back, version, recorded as a change of version (ADR-0064). The producer's contract is F22-10 (#805). |
 
+## Propagation bound
+
+The time from the commit of the outbox row to the group's acknowledgement of
+its entry, under the controlled load of `ops/propagation/` (F20-06, #764).
+`ops/propagation/propagation.py check` fails a run whose p95 or maximum
+exceeds the figure below, or that leaves an entry unacknowledged. The measured
+figures are in `docs/evidence/f20-06-stream-propagation.md`.
+
+| Group | p95 (ms) | Max (ms) |
+|---|---:|---:|
+| `model-registry` | 3000 | 5000 |
+| `analytics-kpis` | 3000 | 5000 |
+
+Not measured yet: `model-registry`, `analytics-kpis`.
+Their bound is the default, and it holds from the first run that measures them.
+
 ## Failure and compatibility
 
 The owner relay waits on `rfm_outbox` only as a private wake-up and also polls at

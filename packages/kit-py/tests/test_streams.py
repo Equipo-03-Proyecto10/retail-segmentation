@@ -320,6 +320,52 @@ def test_consumer_deduplicates_event_ids_in_memory(
     assert len(handled) == 1
 
 
+def test_consumer_restarted_after_a_backlog_loses_nothing_and_applies_once(
+    monkeypatch: pytest.MonkeyPatch,
+    redis_admin: redis.Redis,
+    service_redis: redis.Redis,
+) -> None:
+    """F20-06 (#764): a stopped consumer restarts after a backlog.
+
+    The backlog holds an entry the stopped process had read but not
+    acknowledged, fifty new events, and five of them appended twice, as a
+    relay that crashed between XADD and marking its rows relayed would. The
+    restarted process applies each event exactly once and leaves nothing
+    pending or undelivered.
+    """
+    stream = _fresh_stream(redis_admin)
+    monkeypatch.setenv("MOSAIQ_SERVICE_NAME", "kit-consumer-restart")
+    before = StreamConsumer(service_redis, stream, lambda _entry: None)
+    before.run_once(block_ms=1)
+    redis_admin.xadd(stream, {"event_id": "in-flight", "v": "1"})
+    # Read by the old process, which stops before acknowledging it.
+    service_redis.xreadgroup(
+        before.group, before.consumer, {stream: ">"}, count=1, block=1
+    )
+    before.stop()
+
+    events = [f"event-{n}" for n in range(50)]
+    for event_id in events:
+        redis_admin.xadd(stream, {"event_id": event_id, "v": "1"})
+    for event_id in events[10:15]:
+        redis_admin.xadd(stream, {"event_id": event_id, "v": "1"})
+
+    handled: list[str] = []
+    after = StreamConsumer(
+        service_redis, stream, lambda entry: handled.append(entry["event_id"])
+    )
+    processed = 0
+    while (count := after.run_once(block_ms=1)) > 0:
+        processed += count
+
+    assert processed == 1 + 50 + 5
+    assert sorted(handled) == sorted(["in-flight", *events])
+    assert len(handled) == len(set(handled))
+    assert redis_admin.xpending(stream, after.group)["pending"] == 0
+    (group,) = redis_admin.xinfo_groups(stream)
+    assert group["lag"] == 0
+
+
 def test_consumer_acks_after_the_fifth_failed_delivery(
     monkeypatch: pytest.MonkeyPatch,
     redis_admin: redis.Redis,

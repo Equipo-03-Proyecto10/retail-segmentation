@@ -113,3 +113,19 @@ chosen k and does not revise it.
   separated by silhouette, but by the smallest cluster and the mean over seeds.
 - The cost of a sampled silhouette is linear in the population (1,000 customers each
   compared with all): about 4 million distance calculations at this size.
+
+## 6. Feedback from F23-04 (#816)
+
+[F23-04](f23-04-kmeans-stability.md) measured how stable each k is at 20 seeds and over
+20 bootstrap resamples of the customers, with stated thresholds. It feeds back into this
+choice as follows.
+- **k = 4 stands.** It is the only k inside the commercial limits with a stable verdict
+  (seed ARI mean 0.86, bootstrap 0.84, weakest cluster 0.77). k = 3 is moderate (0.74,
+  0.81, weakest cluster 0.74). The seed stability of section 2, measured on five seeds
+  (0.69 at k = 3, 0.79 at k = 4), orders them the same way.
+- **k = 5 to 8 are poor,** which adds a second reason to the smallest-cluster limit of
+  section 2: the cluster of one customer is recovered in about one resample in twenty.
+- **A condition on k = 4:** one seed in twenty (seed 19) leaves the extreme spender alone
+  in a cluster. A run at k = 4 whose smallest cluster is under 2% of customers should be
+  run again with another seed. The registered seed, 11, is not affected. This does not
+  change any default, as in section 3.

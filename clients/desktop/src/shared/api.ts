@@ -362,6 +362,90 @@ export interface AuditEntryView {
   executed_at: string;
 }
 
+/** The closed list of domain-event kinds (audit-trail.xsd, ADR-0072). Adding one is a contract change. */
+export const DOMAIN_EVENT_KINDS = [
+  'CALCULATION_RUN',
+  'MODEL_PUBLISHED',
+  'MODEL_ROLLED_BACK',
+  'PERMISSION_CHANGED',
+  'CRITICAL_ACTION',
+  'HISTORY_READ',
+  'AUDIT_READ',
+] as const;
+export const DOMAIN_EVENT_OUTCOMES = ['SUCCESS', 'REFUSED'] as const;
+/** What a domain event is about (the closed `SubjectType` of the contract, lower case). */
+export const DOMAIN_EVENT_SUBJECT_TYPES = [
+  'user',
+  'customer',
+  'model_version',
+  'calculation',
+  'sale',
+  'sale_reversal',
+  'stock_level',
+  'campaign',
+  'experiment',
+  'audit_entry',
+  'domain_event',
+] as const;
+
+export interface DomainEventQuery {
+  kind?: string;
+  actor_user_id?: string;
+  actor_role?: string;
+  /** A positive 64-bit integer, kept as text. */
+  model_version_id?: string;
+  subject_type?: string;
+  /** Only valid together with subject_type. */
+  subject_id?: string;
+  store_id?: number;
+  outcome?: string;
+  /** The producer's database role, for example svc_models. */
+  source?: string;
+  /** RFC 3339 timestamps with an offset, bounding when the event was recorded. */
+  from?: string;
+  to?: string;
+  page?: number;
+  size?: number;
+}
+
+/**
+ * One key of an event's details and its value as text; a repeated element (the stores of a permission
+ * change, the filters of a read) is joined with commas. Values are kept as the XML gave them, so a
+ * vocabulary the contract widens needs no change here.
+ */
+export interface EventDetailView {
+  key: string;
+  value: string;
+}
+
+/**
+ * One domain event: a decision the trail records besides a row change (F28-15, ADR-0072). Ids that
+ * can exceed 2^53 are text. The details carry ids, codes, versions and counts only; the XSD names one
+ * wrapper per kind and closes its keys, so a key that is not in the contract never reaches the screen.
+ */
+export interface DomainEventView {
+  event_id: string;
+  kind: string;
+  outcome: string;
+  occurred_at: string;
+  recorded_at: string;
+  actor_type: string;
+  actor_user_id: string | null;
+  actor_role: string | null;
+  source: string;
+  store_id: number | null;
+  /** Null for a read of the trail that names one nothing, such as a list. */
+  subject_type: string | null;
+  subject_id: string | null;
+  model_version_id: string | null;
+  rule_set_version: string | null;
+  /** Null for an event no request caused, such as a schedule's. */
+  correlation_id: string | null;
+  details: EventDetailView[];
+  prev_hash: string;
+  entry_hash: string;
+}
+
 export interface StockQuery {
   store_id?: number;
   below?: number;
@@ -1526,6 +1610,86 @@ export interface TrainingDraft {
   seed?: string;
 }
 
+// ---------- sales import and data quality (F28-02, #871) ----------
+
+export type ImportStatus = 'RECEIVING' | 'PROCESSING' | 'COMPLETED' | 'CANCELLED' | 'EXPIRED';
+
+/** One import as sales-service returned it (SaleImport). The counts reconcile in every status. */
+export interface SaleImportView {
+  import_id: number;
+  status: ImportStatus;
+  contract_version: number;
+  total_rows: number;
+  chunk_count: number;
+  /** The lowest chunk the service has not staged: where a client resumes. */
+  next_sequence: number;
+  /** Rows staged: received = accepted + rejected + pending. */
+  received: number;
+  accepted: number;
+  rejected: number;
+  pending: number;
+  created_at: string;
+  /** Set in COMPLETED, CANCELLED and EXPIRED. */
+  finished_at?: string;
+  created_by: string;
+}
+
+export interface ImportQuery {
+  page?: number;
+  size?: number;
+}
+
+export type DuplicateKind = 'FILE' | 'RECORDED_SALE';
+
+/** A row the import refused. field is absent when the row as a whole is at fault. */
+export interface ImportRejectionView {
+  line: number;
+  field?: string;
+  code: string;
+  message: string;
+  /** On duplicate_row only: a repeat inside the file, or a sale recorded before this import began. */
+  duplicate_of?: DuplicateKind;
+  /** With FILE: the first line of the file, an accepted one, that the row repeats. */
+  first_line?: number;
+  /** With RECORDED_SALE: the recorded sale, when the service knows it. */
+  sale_id?: number;
+}
+
+export interface ImportRejectionQuery {
+  import_id: number;
+  page?: number;
+  size?: number;
+}
+
+/** What the main process read from the chosen file. The renderer never receives its rows. */
+export interface ImportFileView {
+  /** The file's name, without its folder. */
+  name: string;
+  size_bytes: number;
+  /** Data lines sent, the header excluded. */
+  total_rows: number;
+  chunk_count: number;
+  /** Empty lines in the file; they are not rows and are not sent. */
+  blank_lines: number;
+}
+
+export type ImportPhase = 'creating' | 'sending' | 'processing' | 'paused' | 'failed' | 'finished';
+
+/** The import this console is running, as the main process holds it. */
+export interface ImportRunView {
+  phase: ImportPhase;
+  file_name: string;
+  total_rows: number;
+  chunk_count: number;
+  /** Chunks the service has staged. */
+  chunks_staged: number;
+  import?: SaleImportView;
+  /** Why the run stopped, as returned. */
+  error?: ErrorView;
+  /** The file is still held and the import can continue where the service says. */
+  can_resume: boolean;
+}
+
 /** The named operations the renderer may call; there is no generic transport. */
 export interface MosaiqBridge {
   getState(): Promise<AppState>;
@@ -1572,6 +1736,8 @@ export interface MosaiqBridge {
   previewCampaignAudience(campaignId: number): Promise<Result<AudiencePreviewView>>;
   listAuditEntries(query: AuditQuery): Promise<Result<Paged<AuditEntryView>>>;
   getAuditEntry(auditId: string): Promise<Result<AuditEntryView>>;
+  listDomainEvents(query: DomainEventQuery): Promise<Result<Paged<DomainEventView>>>;
+  getDomainEvent(eventId: string): Promise<Result<DomainEventView>>;
   stockLevels(query: StockQuery): Promise<Result<Paged<StockLevelView>>>;
   listSales(query: SalesQuery): Promise<Result<Paged<SaleView>>>;
   getSale(saleId: number): Promise<Result<SaleView>>;
@@ -1637,6 +1803,17 @@ export interface MosaiqBridge {
   startTraining(draft: TrainingDraft): Promise<Result<TrainingView>>;
   /** Publishes a DRAFT with the reason that is kept in the append-only publication. */
   publishModelVersion(versionId: number, reason: string): Promise<Result<PublicationView>>;
+  /** Opens the file dialog in the main process, which reads and checks the file; null when it is cancelled. */
+  chooseImportFile(): Promise<Result<ImportFileView | null>>;
+  startImport(): Promise<Result<ImportRunView>>;
+  /** Continues an import at the chunk the service expects next, with the same file chosen again. */
+  resumeImport(importId: number): Promise<Result<ImportRunView>>;
+  /** The running import, or null. Asks no service. */
+  importProgress(): Promise<Result<ImportRunView | null>>;
+  cancelImport(importId: number): Promise<Result<SaleImportView>>;
+  listImports(query: ImportQuery): Promise<Result<Paged<SaleImportView>>>;
+  getImport(importId: number): Promise<Result<SaleImportView>>;
+  listImportRejections(query: ImportRejectionQuery): Promise<Result<Paged<ImportRejectionView>>>;
 }
 
 export const CHANNELS = {
@@ -1679,6 +1856,8 @@ export const CHANNELS = {
   previewCampaignAudience: 'mosaiq:preview-campaign-audience',
   listAuditEntries: 'mosaiq:list-audit-entries',
   getAuditEntry: 'mosaiq:get-audit-entry',
+  listDomainEvents: 'mosaiq:list-domain-events',
+  getDomainEvent: 'mosaiq:get-domain-event',
   stockLevels: 'mosaiq:stock-levels',
   listSales: 'mosaiq:list-sales',
   getSale: 'mosaiq:get-sale',
@@ -1738,4 +1917,12 @@ export const CHANNELS = {
   getTraining: 'mosaiq:get-training',
   startTraining: 'mosaiq:start-training',
   publishModelVersion: 'mosaiq:publish-model-version',
+  chooseImportFile: 'mosaiq:choose-import-file',
+  startImport: 'mosaiq:start-import',
+  resumeImport: 'mosaiq:resume-import',
+  importProgress: 'mosaiq:import-progress',
+  cancelImport: 'mosaiq:cancel-import',
+  listImports: 'mosaiq:list-imports',
+  getImport: 'mosaiq:get-import',
+  listImportRejections: 'mosaiq:list-import-rejections',
 } as const;

@@ -18,6 +18,7 @@ import { Experiments } from './experiments';
 import { Floor } from './floor';
 import { Recommendations } from './recommendations';
 import { Models } from './models';
+import { Imports, systemImportEnv } from './imports';
 import { Reports, type ReportExportEnv } from './reports';
 import { Migrations } from './migrations';
 import { loadSettings } from './settings';
@@ -112,6 +113,33 @@ function start(): void {
     reportOwner = BrowserWindow.fromWebContents(_e.sender) ?? undefined;
     return reports.exportReport(format);
   });
+  let importOwner: BrowserWindow | undefined;
+  // The file the import reads is the one this dialog returns; the renderer names no file.
+  const imports = new Imports(
+    office,
+    systemImportEnv(async () => {
+      const options = {
+        properties: ['openFile' as const],
+        filters: [{ name: 'CSV', extensions: ['csv'] }],
+      };
+      const picked = importOwner
+        ? await dialog.showOpenDialog(importOwner, options)
+        : await dialog.showOpenDialog(options);
+      return picked.canceled ? undefined : picked.filePaths[0];
+    }),
+    bundle,
+  );
+  ipcMain.handle(CHANNELS.chooseImportFile, (_e) => {
+    importOwner = BrowserWindow.fromWebContents(_e.sender) ?? undefined;
+    return imports.chooseFile();
+  });
+  ipcMain.handle(CHANNELS.startImport, () => imports.startImport());
+  ipcMain.handle(CHANNELS.resumeImport, (_e, importId: unknown) => imports.resumeImport(importId));
+  ipcMain.handle(CHANNELS.importProgress, () => imports.importProgress());
+  ipcMain.handle(CHANNELS.cancelImport, (_e, importId: unknown) => imports.cancelImport(importId));
+  ipcMain.handle(CHANNELS.listImports, (_e, query: unknown) => imports.listImports(query));
+  ipcMain.handle(CHANNELS.getImport, (_e, importId: unknown) => imports.getImport(importId));
+  ipcMain.handle(CHANNELS.listImportRejections, (_e, query: unknown) => imports.listRejections(query));
   // Each handler passes the renderer's values on unchanged; Catalog checks every one of them.
   const catalog = new Catalog(office);
   ipcMain.handle(CHANNELS.listProducts, (_e, query: unknown) => catalog.listProducts(query));
@@ -210,6 +238,8 @@ function start(): void {
   const audit = new Audit(office);
   ipcMain.handle(CHANNELS.listAuditEntries, (_e, query: unknown) => audit.listEntries(query));
   ipcMain.handle(CHANNELS.getAuditEntry, (_e, auditId: unknown) => audit.getEntry(auditId));
+  ipcMain.handle(CHANNELS.listDomainEvents, (_e, query: unknown) => audit.listEvents(query));
+  ipcMain.handle(CHANNELS.getDomainEvent, (_e, eventId: unknown) => audit.getEvent(eventId));
   const customers = new Customers(office);
   ipcMain.handle(CHANNELS.searchCustomers, (_e, query: unknown) => customers.search(query));
   ipcMain.handle(CHANNELS.getCustomer, (_e, customerId: unknown) => customers.get(customerId));

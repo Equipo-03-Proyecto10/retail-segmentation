@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
+from functools import wraps
 from typing import Any
+from urllib.parse import quote
 
 import psycopg
-from flask import Flask, request
+from flask import Flask, Response, request
+from lxml import etree
 from mosaiq_kit import (
     ApiError,
     Kit,
@@ -21,7 +25,7 @@ from mosaiq_kit.auth import service_redis
 
 import redis
 
-from . import store
+from . import gtin, store
 from .cache import ReadCache
 from .config import CHANGED_STREAM, MAX_BATCH_IDS, Settings
 
@@ -29,6 +33,7 @@ LOGGER = logging.getLogger(__name__)
 SUFFIX = "products"
 _IDS = re.compile(r"[1-9][0-9]*(,[1-9][0-9]*)*")
 _INT = re.compile(r"[0-9]+")
+RELATION_KINDS = ("substitute", "complement")
 
 
 def _long_timeout_client(url: str, timeout: float) -> redis.Redis:
@@ -112,6 +117,13 @@ def _map_write_error(error: psycopg.Error) -> ApiError:
 
     constraint = _constraint(error)
     if isinstance(error, psycopg.errors.UniqueViolation):
+        if constraint == "product_barcode_barcode_key":
+            return ApiError(
+                409,
+                "barcode_taken",
+                "Another product already has this barcode.",
+                [{"field": "barcode", "code": "unique"}],
+            )
         if constraint == "product_sku_key":
             return ApiError(
                 409,
@@ -127,6 +139,8 @@ def _map_write_error(error: psycopg.Error) -> ApiError:
                 [{"field": "product_id", "code": "duplicate"}],
             )
     if isinstance(error, psycopg.errors.ForeignKeyViolation):
+        if constraint == "product_relation_related_product_id_fkey":
+            return _unknown_related_product()
         if constraint == "product_category_id_fkey":
             return ApiError(
                 422,
@@ -135,6 +149,10 @@ def _map_write_error(error: psycopg.Error) -> ApiError:
                 [{"field": "category_id", "code": "unknown"}],
             )
     if isinstance(error, psycopg.errors.CheckViolation):
+        if constraint == "product_barcode_gtin_check":
+            return _invalid_barcode()
+        if constraint == "product_relation_not_self_check":
+            return _self_relation()
         if constraint == "product_list_price_check":
             return ApiError(
                 422,
@@ -143,6 +161,98 @@ def _map_write_error(error: psycopg.Error) -> ApiError:
                 [{"field": "list_price", "code": "out_of_range"}],
             )
     raise error
+
+
+def _invalid_barcode() -> ApiError:
+    return ApiError(
+        422,
+        "invalid_barcode",
+        "The barcode is not a valid GTIN.",
+        [{"field": "barcode", "code": "check_digit"}],
+    )
+
+
+def _self_relation() -> ApiError:
+    return ApiError(
+        422,
+        "self_relation",
+        "A product cannot be related to itself.",
+        [{"field": "related_product_ids", "code": "self"}],
+    )
+
+
+def _unknown_related_product() -> ApiError:
+    return ApiError(
+        422,
+        "unknown_related_product",
+        "A related product does not exist.",
+        [{"field": "related_product_ids", "code": "not_found"}],
+    )
+
+
+def _photo_url(base_url: str, image_path: str | None) -> str | None:
+    """The configured base joined to the web-managed ``image_path``."""
+
+    if not image_path:
+        return None
+    return base_url + quote(image_path.lstrip("/"), safe="/")
+
+
+def _details(row: dict[str, Any], base_url: str) -> dict[str, Any]:
+    """The ``ProductDetails`` members, in the XSD's order."""
+
+    return {
+        "product_id": row["product_id"],
+        "sku": row["sku"],
+        "name": row["name"],
+        "category_id": row["category_id"],
+        "list_price": row["list_price"],
+        "is_active": row["is_active"],
+        "commercial_status": row["commercial_status"],
+        "attributes": row["attributes"],
+        "photo_url": _photo_url(base_url, row["image_path"]),
+        "barcode": row["barcode"],
+    }
+
+
+def _lead_with_product_id(app: Flask, operation_id: str) -> None:
+    """Put ``product_id`` first in a relations response.
+
+    ``ProductRelations`` is a page of items under their parent's id, and the
+    kit's ``Page`` renders the page alone. The kit renders the items and the
+    page info in both formats; this adds the one member it cannot, from the path
+    value, to the 200 response of the operation.
+    """
+
+    endpoint = "mosaiq_operation_" + operation_id
+    view = app.view_functions[endpoint]
+
+    @wraps(view)
+    def wrapped(**values: Any) -> Response:
+        response = view(**values)
+        if response.status_code == 200:
+            product_id = values["product_id"]
+            if response.mimetype == "application/json":
+                document = json.loads(response.get_data())
+                response.set_data(
+                    json.dumps(
+                        {"product_id": product_id, **document},
+                        separators=(",", ":"),
+                    )
+                )
+            else:
+                root = etree.fromstring(response.get_data())
+                member = etree.Element(
+                    etree.QName(etree.QName(root).namespace, "product_id")
+                )
+                member.text = str(product_id)
+                root.insert(0, member)
+                response.set_data(
+                    etree.tostring(root, xml_declaration=True, encoding="UTF-8")
+                )
+        return response
+
+    app.view_functions[endpoint] = wrapped
 
 
 def create_app() -> Flask:
@@ -255,6 +365,107 @@ def create_app() -> Flask:
         invalidate()
         return Representation("Product", product)
 
+    @kit.operation("getProductDetails")
+    def get_product_details(product_id: int) -> Representation:
+        with kit.db.connection() as connection:
+            row = store.get_details(connection, product_id)
+        if row is None:
+            raise _not_found()
+        return Representation("ProductDetails", _details(row, settings.photo_base_url))
+
+    @kit.operation("updateProductDetails")
+    def update_product_details(product_id: int) -> Representation:
+        body = kit.body
+        barcode = body.get("barcode")
+        if barcode is not None and not gtin.is_valid(barcode):
+            raise _invalid_barcode()
+        attributes = body.get("attributes")
+        if attributes is not None:
+            names = [attribute["name"] for attribute in attributes]
+            if len(set(names)) != len(names):
+                raise ApiError(
+                    422,
+                    "invalid_body",
+                    "The request body violates the product details schema.",
+                    [{"field": "attributes", "code": "duplicate"}],
+                )
+        try:
+            with kit.db.transaction() as connection:
+                if not store.lock_product(connection, product_id):
+                    raise _not_found()
+                if "commercial_status" in body:
+                    store.set_status(connection, product_id, body["commercial_status"])
+                if barcode is not None:
+                    store.set_barcode(connection, product_id, barcode)
+                if attributes is not None:
+                    store.replace_attributes(connection, product_id, attributes)
+                row = store.get_details(connection, product_id)
+        except psycopg.errors.IntegrityError as error:
+            raise _map_write_error(error) from None
+        # A status change moves is_active, which the cached reads carry.
+        invalidate()
+        return Representation("ProductDetails", _details(row, settings.photo_base_url))
+
+    @kit.operation("listProductRelations")
+    def list_product_relations(product_id: int) -> Page:
+        kind = request.args.get("kind")
+        if kind is not None and kind not in RELATION_KINDS:
+            raise _invalid_query("kind", "enum")
+        with kit.db.connection() as connection:
+            if not store.product_exists(connection, product_id):
+                raise _not_found()
+            items, total = store.list_relations(
+                connection,
+                product_id,
+                kind,
+                kit.size,
+                (kit.page - 1) * kit.size,
+            )
+        return Page(
+            "ProductRelations",
+            "ProductRelation",
+            "product_relations",
+            items,
+            page=kit.page,
+            size=kit.size,
+            total=total,
+        )
+
+    @kit.operation("replaceProductRelations")
+    def replace_product_relations(product_id: int, relation_kind: str) -> Page:
+        if relation_kind not in RELATION_KINDS:
+            raise ApiError(
+                404, "not_found", "The relation kind is not substitute or complement."
+            )
+        related_ids = kit.body["related_product_ids"]
+        if product_id in related_ids:
+            raise _self_relation()
+        try:
+            with kit.db.transaction() as connection:
+                if not store.lock_product(connection, product_id):
+                    raise _not_found()
+                if store.missing_products(connection, related_ids):
+                    raise _unknown_related_product()
+                store.replace_relations(
+                    connection, product_id, relation_kind, related_ids
+                )
+                items, total = store.list_relations(
+                    connection, product_id, relation_kind, kit.size, 0
+                )
+        except psycopg.errors.IntegrityError as error:
+            raise _map_write_error(error) from None
+        return Page(
+            "ProductRelations",
+            "ProductRelation",
+            "product_relations",
+            items,
+            page=1,
+            size=kit.size,
+            total=total,
+        )
+
+    _lead_with_product_id(app, "listProductRelations")
+    _lead_with_product_id(app, "replaceProductRelations")
     _start_workers(app, kit, settings, cache)
     return app
 

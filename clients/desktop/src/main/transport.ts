@@ -12,6 +12,8 @@ export interface CallOptions {
   /** Root element and fields of the XML request body, when there is one. */
   body?: { root: string; fields: Fields };
   bearer?: string;
+  /** Extra request headers, such as Idempotency-Key. Accept, X-Correlation-ID and Authorization are never replaced. */
+  headers?: Record<string, string>;
 }
 
 export type CallResult =
@@ -86,7 +88,11 @@ export class Transport {
     // A major whose XSD is not bundled cannot be validated, so it is not called.
     if (this.bundle.schemas[ns] === undefined) throw new Error(`no bundled schema for ${service} ${version}`);
     const correlationId = randomUUID();
-    const headers: Record<string, string> = { Accept: 'application/xml', 'X-Correlation-ID': correlationId };
+    const headers: Record<string, string> = {
+      ...options.headers,
+      Accept: 'application/xml',
+      'X-Correlation-ID': correlationId,
+    };
     let body: string | undefined;
     if (options.body) {
       body = buildXml(options.body.root, ns, options.body.fields);

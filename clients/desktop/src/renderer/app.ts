@@ -10,6 +10,7 @@ import { renderExploration } from './exploration';
 import { renderDrift } from './drift';
 import { renderExperiments } from './experiments';
 import { renderKmeans } from './kmeans';
+import { renderImports } from './imports';
 import { renderCheckIns, renderEngagement, renderSales, renderStock } from './floor';
 import { latestRequest } from './latest-request';
 import { renderMigrations } from './migrations';
@@ -158,6 +159,7 @@ function renderHome(state: Extract<AppState, { status: 'signed_in' }>): void {
     else if (next === 'drift') renderDrift(body, ctx);
     else if (next === 'conversion') renderConversion(body, ctx);
     else if (next === 'kmeans') renderKmeans(body, ctx);
+    else if (next === 'imports') renderImports(body, ctx);
     else if (next === 'stores') renderStores(body, ctx);
     else if (next === 'campaigns') renderCampaigns(body, ctx);
     else if (next === 'experiments') renderExperiments(body, ctx);

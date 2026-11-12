@@ -9,7 +9,7 @@ F16-01 is the foundation: shell, secure window, preload bridge, XML transport, s
 role-gated screens. F16-02 adds Products and Categories, F16-04 adds Stock, Sales, Engagement and
 Check-ins, F16-06 adds Users, Transfer administrator and the account menu, F16-07 adds Stores
 with their locations, F16-08 adds Campaigns and their transitions, F16-09 adds the Audit trail, and
-F16-03 adds Customers (see below).
+F16-03 adds Customers, and F28-02 adds Import and data quality (see below).
 
 ## Run it
 
@@ -68,7 +68,7 @@ being ignored. `MOSAIQ_DESKTOP_CONFIG_DIR` overrides the directory (the window t
   - a campaign's plan: `getCampaignAudience`, `putCampaignAudience`, `getCampaignBudget`,
     `putCampaignBudget`, `getCampaignEligibilityRules`, `putCampaignEligibilityRules`,
     `getCampaignExclusions`, `putCampaignExclusions`, `previewCampaignAudience`.
-  - audit trail: `listAuditEntries`, `getAuditEntry` (read only).
+  - audit trail: `listAuditEntries`, `getAuditEntry`, `listDomainEvents`, `getDomainEvent` (read only).
   - drift analysis: `listDriftReports`, `getDriftReport`, `listDriftAlerts`, `getDriftAlert` (read only).
   - migration matrix: `migrationMatrix`, `listMigrations`, `explainMigration` (read only).
   - A/B experiments: `listExperiments`, `getExperiment`, `planExperiment`, `assignExperiment`.
@@ -77,6 +77,8 @@ being ignored. `MOSAIQ_DESKTOP_CONFIG_DIR` overrides the directory (the window t
     `startTraining`, `publishModelVersion`.
   - recommendations: `inspectRecommendation`, `listRecommendationDecisions`, `openRecommendationDecision`
     (read only).
+  - sales import: `chooseImportFile`, `startImport`, `resumeImport`, `importProgress`, `cancelImport`,
+    `listImports`, `getImport`, `listImportRejections`.
 
   There is no generic fetch and no `ipcRenderer`. The main process checks every value a screen sends
   (`src/main/checks.ts`, used by `catalog.ts` and `floor.ts`) before it builds a path or a body from it.
@@ -386,9 +388,54 @@ navigation, and a forced call gets 403 `forbidden_role`, shown as returned.
 - The trail is append-only: the screen has no create, edit or delete control and the bridge has no
   operation for one.
 
+### Decisions and versions (F28-15)
+
+The same screen has a second list, **Decisions and versions**, from the domain events audit-trail
+publishes (ADR-0072, `GET /v1/domain-events` and `GET /v1/domain-events/{event_id}`): a calculation that
+ran, a model version published or rolled back, a permission changed, a critical act such as a campaign
+activated, a read of one customer's history and a read of the trail. Each row names its actor (role and
+user id, or the system), its subject, the version it concerns (`model_version_id`, `rule_set_version`),
+when it was recorded and its outcome. One opens to show the keys of its `details` and its place in the
+hash chain.
+
+- **Filters.** Kind, actor (user id), actor role, model version, subject type and id, outcome, and a
+  range of `recorded_at`, which the server's clock sets and no producer can move. The main process also
+  accepts `store_id` and `source`; the screen does not offer them. Every filter is checked before a
+  query string is built (the closed kinds, outcomes and subject types, which are lower case, a UUID, a
+  role code, a service role name, a positive 64-bit version id kept as text, RFC 3339 timestamps with an
+  offset). A subject id is refused without its subject type (`requires_subject_type`), as the contract
+  does, and nothing is sent.
+- **Four shortcuts** fill in those filters, which stay visible and editable, so what is sent is what is
+  shown: _Model versions_ (`subject_type=model_version`, which finds both `MODEL_PUBLISHED` and
+  `MODEL_ROLLED_BACK`), _Campaign decisions_ (`kind=CRITICAL_ACTION`, `subject_type=campaign`) and
+  _Permissions_ (`kind=PERMISSION_CHANGED`) read domain events. _Rule changes_ reads the row changes of
+  `audit-entries` with `entity=segment_rule`, because ADR-0072 has no event kind for editing a rule and
+  RN-28 records every change to one there. All four then take an actor and dates.
+- **XML only, validated.** The answer is validated against the audit-trail XSD, which holds one wrapper
+  per kind inside `details` (`<details><HistoryRead>...`) and allows only that wrapper's keys. A
+  document with a key the wrapper does not list, a credential among them, fails validation and is shown
+  as a contract defect, with none of its content. The detail panel lists the wrapper's children as text
+  and repeats no vocabulary, so a value the contract changes (such as `data_origin`) needs no change
+  here.
+- **Who reaches it.** `ADMIN` and `AUDITOR`, by the `x-mosaiq-roles` of all four operations. The
+  main process refuses any other role with `forbidden_role` before anything is sent, for the row list
+  as well as for the decisions, and the renderer offers such a role no entry in the navigation.
+- **A read that cannot be recorded** answers 503 `audit_unavailable` and returns no data (ADR-0072
+  section 4); the screen shows it as returned, with no table.
+- Not built: `GET /v1/domain-events/verification` (the hash-chain check), which no story of this
+  module asks for.
+
+The three operations of domain events are marked planned in the contract (ADR-0073) until the service
+implements them; a service that does not answer yet is shown as it answers.
+
 The window tests (`tests/window/audit.spec.ts`) answer with the recorded examples in
-`contracts/audit-trail/examples/`. The fake gateway records a product edit and then answers the audit
-query with an entry for that entity, key and the signed-in user.
+`contracts/audit-trail/examples/` (`tests/support/domain-events.ts` reads them from disk). The fake
+gateway records a product edit and then answers the audit query with an entry for that entity, key and
+the signed-in user, and answers the domain-event queries by filtering the recorded events by kind,
+actor, role, subject type, outcome and `recorded_at`. The contract has no example of a campaign
+activation, so one is made from its critical-action example by changing only the values that say what
+was done. One test checks the screen at 375 px and 1440 px: the table scrolls inside its own area and
+the page never scrolls sideways.
 
 ## Customers, preferences, segments and recommendations (F16-03)
 
@@ -611,6 +658,64 @@ id, and the panel says whether the console or the service refused. Nothing is hi
 The window tests (`tests/window/exploration.spec.ts`) answer with the recorded examples of the contracts
 above, read from disk, plus the few documents `tests/support/exploration.ts` builds in their shape
 (products, stores, categories), and check the screen at 375 px and at 1440 px.
+
+## Import and data quality (F28-02)
+
+Through sales-service (`contracts/sales/`, resource `sale-imports`, [ADR-0070](../../docs/adr/0070-a-sales-import-reaches-sales-service-as-numbered-row-chunks-under-the-64-kib-cap-and-is-processed-by-a-worker.md)).
+The **Import and data quality** screen is offered to `ADMIN` alone, by the `x-mosaiq-roles` of
+`listSaleImports`; the main process refuses every one of its calls to any other role before it opens a
+dialog or sends a request. The bridge operations are `chooseImportFile`, `startImport`, `resumeImport`,
+`importProgress`, `cancelImport`, `listImports`, `getImport` and `listImportRejections`.
+
+- **The file stays in the main process.** `chooseImportFile` opens the native dialog there and reads
+  the file it returns (UTF-8, a leading byte-order mark ignored, CRLF, LF or CR, quoted values with
+  commas and line breaks, as the web page's reader does; at most 16 MiB). The renderer receives the
+  file's name, its number of data rows and chunks, and nothing of its contents, and names no file.
+- **Checked before anything is sent.** The header must be the eight columns of CSV contract v1; a wrong
+  one is refused naming the first wrong column (`header[3]`, `unexpected_column`), as the service would.
+  A file that is not UTF-8, has a quote it never closes, no rows, more than 100,000 rows or needs more
+  than 667 chunks is refused with its reason. Empty lines are skipped and counted, not sent.
+- **Chunks.** Rows are sent as numbered chunks (from 0) of at most 150 rows and 60,000 bytes of
+  serialized XML, so the 64 KiB cap is never what the client discovers. `PUT .../chunks/{sequence}`
+  carries each one; the transport validates it against `sales.xsd` before it is sent and the answer
+  after it arrives. A cell longer than 256 characters is cut at 256 and a row of more than 64 cells at
+  64, and a character XML cannot carry becomes U+FFFD: no column accepts such a cell and no row of that
+  length is valid, so the service still rejects the row, by line, and one odd row never refuses a chunk
+  of good ones. `POST /v1/sale-imports` carries one `Idempotency-Key` per start, reused if the create is
+  tried again.
+- **Progress.** The screen shows the chunks staged, the rows received and, from the service, accepted,
+  rejected and pending, written as `Received 320 = accepted 316 + rejected 4 + pending 0` with a plain
+  statement of whether the identity holds. Once every chunk is staged the console reads the import every
+  2 seconds until the service ends it. The run lives in the main process, so leaving the screen does not
+  stop it.
+- **Failures.** A 503, a 429 (waiting for `Retry-After`) or no answer is tried again twice with the same
+  request. If it still fails the import pauses with the file held, and **Resume** reads
+  `next_sequence`, sends the last staged chunk again (the service answers a replay for the same file and
+  `chunk_conflict` for another) and continues. After a restart, "Resume with its file" in the recent
+  imports does the same with the file chosen again. `chunk_conflict`, `row_count_mismatch` and the other
+  final refusals stop the run; on `row_count_mismatch` the console cancels the import, as ADR-0070 asks.
+  **Cancel import** sets `CANCELLED`: accepted rows stay accepted.
+- **Review.** Any import in the recent list opens its counts and its report: line, field (or "whole row"),
+  code and the service's reason, 100 rows a page with **Load the next 100** and **Load all**. The
+  contract has no filter on the report, so the code, field and kind filters apply to the rejections
+  loaded so far, and the screen says so while more are unread. Messages quote the file's own text; the
+  parser leaves XML entities as written, so the module decodes the five predefined ones and numeric
+  references, once, and sets the result with `textContent`.
+- **Duplicates.** A repeat inside the file (`duplicate_of` `FILE`, with the first line it repeats) and a
+  sale already recorded (`RECORDED_SALE`, with `sale_id` when the service knows it) are two kinds in
+  their own column, counted apart, and filterable. For a recorded sale, **Open sale** reads
+  `GET /v1/sales/{sale_id}` through the existing sales read and shows it beside the file's line. For a
+  repeat, **Repeats of line N** lists every loaded line that repeats it and says that line N was recorded
+  once. The first line is an accepted row, so it is not in the report. Settling look-alike duplicates and
+  the audited resolutions are F26-09 (#854), not this module.
+- **Export.** The module's one table is the rejections, so the shared **Export CSV** (ADR-0074) writes the
+  filtered rows on screen through the save dialog, with the formula-injection prefix, and records the
+  export in `export-audit.log`.
+
+The unit tests (`tests/unit/csv.test.ts`, `import-chunks.test.ts`, `imports.test.ts`) cover the parser,
+the chunker (size limits, sequence, determinism) and the whole flow against the recorded examples of
+`contracts/sales/examples/`, including retry, pause, resume and cancel. The window tests
+(`tests/window/imports.spec.ts`) replace only the native file dialogs and answer with those examples.
 
 ## Packages and CI (F16-05)
 

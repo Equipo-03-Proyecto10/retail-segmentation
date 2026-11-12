@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: analytics-kpis-service
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     Reports the commercial KPIs of the platform under their published
     definition, window and data origin, and only to the roles and stores
@@ -477,6 +477,60 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/kpi-reports/demand:
+    get:
+      summary: Report demand by segment and category
+      description: >-
+        Demand (`demand`, definition version 1): the units, the distinct sales and the amount of the purchases that still stand, grouped by any of `segment`, `store`, `category` and `period`. Each figure is an aggregate of net purchase lines, so the report names no customer and carries no customer count. It is read by the inventory planner (ADR-0079), over every store. Origin: `api_sales.net_purchase_line_v1`, `api_products.product_ref_v1` for `category`, and `api_segments.current_label_v1` for `segment`. Reversals are subtracted (ADR-0062). The report has its own response type, so the KPI catalog at `/v1/kpi-reports/definitions` does not list it in v1.
+      operationId: getDemandReport
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - INVENTORY_PLANNER
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/DemandGroupBy'
+        - $ref: '#/components/parameters/Granularity'
+        - $ref: '#/components/parameters/StoreId'
+        - $ref: '#/components/parameters/SegmentCode'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: The report, ordered by period, then by the other dimensions.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DemandReport'
+              examples:
+                by_store_category_and_segment:
+                  summary: Demand by store, category and segment.
+                  externalValue: ./examples/demand.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/DemandReport'
+              examples:
+                by_store_category_and_segment:
+                  summary: Demand by store, category and segment.
+                  externalValue: ./examples/demand.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/KpiQueryValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
   /v1/kpi-reports/definitions:
     get:
       summary: List the KPI definitions
@@ -653,6 +707,22 @@ components:
         uniqueItems: true
         items:
           $ref: '#/components/schemas/Dimension'
+    DemandGroupBy:
+      name: group_by
+      in: query
+      required: false
+      style: form
+      explode: false
+      description: >-
+        Comma-separated dimensions of the demand report, any of `segment`,
+        `store`, `category` and `period`. One it does not support is 422
+        `invalid_query` (`dimension_not_supported`). Without `group_by` the
+        report has one row for the whole window.
+      schema:
+        type: array
+        uniqueItems: true
+        items:
+          $ref: '#/components/schemas/DemandDimension'
     Granularity:
       name: granularity
       in: query
@@ -1003,6 +1073,116 @@ components:
           type: string
       xml:
         name: measures
+    DemandDimension:
+      type: string
+      enum:
+        - segment
+        - store
+        - category
+        - period
+    DemandRow:
+      type: object
+      additionalProperties: false
+      required:
+        - period_start
+        - period_end
+        - segment_code
+        - segment_state
+        - store_id
+        - category_id
+        - synthetic
+        - measures
+      properties:
+        period_start:
+          type: [string, 'null']
+          format: date
+          description: First day of the bucket; null when the report is not grouped by period. Omitted in XML when null.
+        period_end:
+          type: [string, 'null']
+          format: date
+          description: Last day of the bucket, inclusive; null when the report is not grouped by period.
+        segment_code:
+          type: [string, 'null']
+          description: The label code, only when `segment_state` is `assigned`.
+        segment_state:
+          description: Null when the report is not grouped by segment.
+          oneOf:
+            - $ref: '#/components/schemas/SegmentState'
+            - type: 'null'
+        store_id:
+          type: [integer, 'null']
+          format: int32
+          description: As `stores` identifies it; null when not grouped by store.
+        category_id:
+          type: [integer, 'null']
+          format: int32
+          description: As `api_products` identifies a product's category; null when not grouped by category.
+        synthetic:
+          type: boolean
+          description: True when any sale the row aggregates is `SEEDED` (ADR-0052).
+        measures:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Measure'
+      xml:
+        name: DemandRow
+        namespace: https://mosaiq.maxthecoder.online/xml/analytics-kpis/v1
+    DemandReport:
+      type: object
+      additionalProperties: false
+      required:
+        - kpi
+        - definition_version
+        - from
+        - to
+        - granularity
+        - group_by
+        - generated_at
+        - store_scope
+        - data_origin
+        - rows
+        - page_info
+      properties:
+        kpi:
+          type: string
+          enum:
+            - demand
+        definition_version:
+          type: integer
+          enum:
+            - 1
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        granularity:
+          description: Null, and omitted in XML, when the report has no period.
+          oneOf:
+            - $ref: '#/components/schemas/Granularity'
+            - type: 'null'
+        group_by:
+          type: array
+          items:
+            $ref: '#/components/schemas/DemandDimension'
+        generated_at:
+          type: string
+          format: date-time
+        store_scope:
+          $ref: '#/components/schemas/StoreScope'
+        data_origin:
+          $ref: '#/components/schemas/DataOrigin'
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/DemandRow'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: DemandReport
+        namespace: https://mosaiq.maxthecoder.online/xml/analytics-kpis/v1
     KpiDefinition:
       type: object
       additionalProperties: false

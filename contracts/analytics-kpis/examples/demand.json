@@ -1,0 +1,141 @@
+{
+  "kpi": "demand",
+  "definition_version": 1,
+  "from": "2026-10-01",
+  "to": "2026-10-31",
+  "granularity": null,
+  "group_by": [
+    "store",
+    "category",
+    "segment"
+  ],
+  "generated_at": "2026-10-31T18:00:00Z",
+  "store_scope": {
+    "restricted": false,
+    "store_ids": []
+  },
+  "data_origin": {
+    "views": [
+      "api_sales.net_purchase_line_v1",
+      "api_products.product_ref_v1",
+      "api_segments.current_label_v1"
+    ],
+    "synthetic": false,
+    "spans_model_versions": false,
+    "model_version_ids": [
+      4
+    ]
+  },
+  "rows": [
+    {
+      "period_start": null,
+      "period_end": null,
+      "segment_code": "LOYAL",
+      "segment_state": "assigned",
+      "store_id": 1,
+      "category_id": 12,
+      "synthetic": false,
+      "measures": [
+        {
+          "code": "net_units",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "140",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "net_orders",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "66",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "net_amount",
+          "kind": "OBSERVED",
+          "unit": "currency",
+          "value": "17920.00",
+          "lower": null,
+          "upper": null
+        }
+      ]
+    },
+    {
+      "period_start": null,
+      "period_end": null,
+      "segment_code": null,
+      "segment_state": "no_open_assignment",
+      "store_id": 1,
+      "category_id": 12,
+      "synthetic": false,
+      "measures": [
+        {
+          "code": "net_units",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "12",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "net_orders",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "7",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "net_amount",
+          "kind": "OBSERVED",
+          "unit": "currency",
+          "value": "1560.00",
+          "lower": null,
+          "upper": null
+        }
+      ]
+    },
+    {
+      "period_start": null,
+      "period_end": null,
+      "segment_code": "LOYAL",
+      "segment_state": "assigned",
+      "store_id": 1,
+      "category_id": 15,
+      "synthetic": false,
+      "measures": [
+        {
+          "code": "net_units",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "40",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "net_orders",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "25",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "net_amount",
+          "kind": "OBSERVED",
+          "unit": "currency",
+          "value": "960.00",
+          "lower": null,
+          "upper": null
+        }
+      ]
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 3
+  }
+}

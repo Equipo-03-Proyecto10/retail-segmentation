@@ -25,7 +25,7 @@
 - It reads `api_*` views only. It holds no privilege on a base table and calls no service. It writes nothing and publishes no stream, so it can be dropped without effect (E-08).
 - Sales figures are net of reversals (ADR-0062). A window that holds a change of model version is marked (ADR-0064). A figure that aggregates a seeded sale is marked synthetic (ADR-0052).
 - `STORE_MANAGER` and `COMMERCIAL_SUPERVISOR` read only their assigned stores, from `api_users.store_assignment_v1` on each request (ADR-0060). Another store is 403 `forbidden_store`; no store named means the assigned stores. They do not read a KPI whose figure has no store.
-- No report carries a customer identifier.
+- No report carries a customer identifier. The demand report (ADR-0079) is the one report `INVENTORY_PLANNER` reads; it carries a segment label and aggregates only, and it is not in the catalog until a `/v2`.
 
 ## Endpoints
 
@@ -39,6 +39,7 @@
 | GET | `/v1/kpi-reports/recommendation-performance` | Impressions, clicks, purchases | the above (store roles narrowed) |
 | GET | `/v1/kpi-reports/migrations` | Segment changes within a model version | ADMIN, ANALYST, MARKETING, AUDITOR |
 | GET | `/v1/kpi-reports/campaign-performance` | Attributed sales and incremental effect per campaign | ADMIN, ANALYST, MARKETING, AUDITOR |
+| GET | `/v1/kpi-reports/demand` | Units, distinct sales and amount by segment, store, category and period; no customer and no customer count (ADR-0079). Its own response type, so the catalog does not list it in v1 | ADMIN, ANALYST, INVENTORY_PLANNER, AUDITOR |
 
 Reports take `from` and `to` (required), `group_by` of `segment`, `store`, `channel` and `period`, `granularity`, filters, `page` and `size`. Meta routes (no token): `GET /health/live`, `GET /health/ready`, `GET /openapi.yaml`, `GET /schema.xsd`. The contract is [`contracts/analytics-kpis/`](../../contracts/analytics-kpis/openapi.yaml). It adds one resource, `kpi-reports`, and no registered resource name appears in its paths.
 
@@ -47,6 +48,7 @@ Reports take `from` and `to` (required), `group_by` of `segment`, `store`, `chan
 | View | Producer | State |
 |---|---|---|
 | `api_segments.current_label_v1` | segments | Published |
+| `api_products.product_ref_v1` | products | Published; read for `category_id` by the demand report (ADR-0079) |
 | `api_sales.net_purchase_line_v1` | sales | Contracted in the reversal story (F21-03); it must also publish `data_origin` (ADR-0052), an additive column |
 | `api_users.store_assignment_v1` | users | Contracted in the store-assignment story (F19-05) |
 | `api_segments.assignment_change_v1` | segments | Required, not contracted: a customer's changes of assignment with previous and new label and model version |

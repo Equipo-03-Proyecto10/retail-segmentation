@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ExperimentAssignment xmlns="https://mosaiq.maxthecoder.online/xml/experimentation/v1">
+  <assignment_id>74212</assignment_id>
+  <experiment_id>18</experiment_id>
+  <campaign_id>8</campaign_id>
+  <customer_id>c0a80001-0000-4000-8000-000000000205</customer_id>
+  <arm_id>61</arm_id>
+  <arm_kind>CONTROL</arm_kind>
+  <arm_name>No offer</arm_name>
+  <assignment_key>7786b3082cf6fe15cf17c086444605d6d0f9ced43560ff614af5d098e876e7a2</assignment_key>
+  <assigned_at>2026-11-05T08:00:00Z</assigned_at>
+  <exposure_count>0</exposure_count>
+</ExperimentAssignment>

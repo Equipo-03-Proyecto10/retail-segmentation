@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RestrictionProfile xmlns="https://mosaiq.maxthecoder.online/xml/customer-preferences/v1">
+  <customer_id>7b3ad781-c5de-4f40-ae50-1fa825ce2b25</customer_id>
+  <personalization_allowed>true</personalization_allowed>
+  <restricted_channel_ids>5</restricted_channel_ids>
+  <restricted_category_ids>9</restricted_category_ids>
+</RestrictionProfile>

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: model-registry-service
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     Keeps every model version immutable and says which one is published. A model version is
     immutable once published, carries its dataset, parameters, metrics and reference distribution,
@@ -10,14 +10,20 @@ info:
     and `model-trainings`, the runs that fit and register draft versions. Exactly one version
     is published at a time, because a customer holds one current segment (RN-20). The current
     published version is published to other services as `api_models.published_version_v1`,
-    not through this API (ADR-0044). Drift reports and alerts, the other half of the rule,
-    are specified by their own contract story (F23) and are not part of this version.
+    not through this API (ADR-0044). It also serves `drift-reports` and `drift-alerts`, the
+    other half of the rule: every report and alert is judged against the reference distribution
+    of the version it names, and carries the statistic, the reference, the current window, the
+    threshold and the model version (RN-66, ADR-0065). A change of version inside a window is
+    never compared (ADR-0064). The drift operations are published ahead of their implementation
+    (ADR-0073, F23-09) and are marked planned.
 security:
 - bearer: []
 tags:
 - name: Versions
 - name: Publications
 - name: Trainings
+- name: Drift reports
+- name: Drift alerts
 - name: Meta
 paths:
   /v1/model-versions:
@@ -625,6 +631,275 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/OperationUnavailable'
+  /v1/drift-reports:
+    get:
+      tags:
+      - Drift reports
+      summary: List drift reports
+      description: >-
+        Returns a page of drift reports, newest window first. A report is one comparison of one model
+        version against its own reference distribution (RN-66, ADR-0065), of one of two kinds. `DATA_DRIFT`
+        compares the distribution of the customers' current segments, and of R, F and M, with the
+        version's reference: it reports a distribution change, with the statistics and thresholds
+        and the bins that explain each variable. `OUTCOME_TEST` is the outcome test of one matured
+        cohort, the only kind that can claim a change in the relation between a segment and
+        repurchase. `comparison` says whether a number exists: `INSUFFICIENT_DATA` when the window
+        holds fewer than 200 customers, and `NOT_COMPARED` with reason `VERSION_CHANGE` when the window
+        crosses a publication or a rollback, because a change of version is never reported as behaviour
+        (ADR-0064). Neither carries a statistic. A migration of one customer between segments and a
+        customer's own consumption shift are not drift and are never in a report. The monitor writes
+        reports on its schedule; no operation here starts a run. `kind`, `model_version_id` and
+        `comparison` filter on the stored values and combine.
+      operationId: listDriftReports
+      x-mosaiq-status: planned
+      x-mosaiq-roles:
+      - ADMIN
+      - ANALYST
+      - MARKETING
+      - AUDITOR
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/DriftKindFilter'
+      - $ref: '#/components/parameters/ModelVersionIdFilter'
+      - $ref: '#/components/parameters/ComparisonFilter'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of drift reports.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriftReportPage'
+              examples:
+                page:
+                  externalValue: ./examples/drift-reports-page.json
+                none:
+                  externalValue: ./examples/drift-reports-none.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/DriftReportPage'
+              examples:
+                page:
+                  externalValue: ./examples/drift-reports-page.xml
+                none:
+                  externalValue: ./examples/drift-reports-none.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/ListInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/drift-reports/{report_id}:
+    get:
+      tags:
+      - Drift reports
+      summary: Get one drift report
+      description: >-
+        Returns one report with everything needed to read it without another call. For `DATA_DRIFT`, each
+        compared variable carries its `state`, its statistics against their thresholds, and the reference
+        and current share of every bin, so a client can chart both distributions; the window, the
+        version and the reference it was judged against are named on the report. For `OUTCOME_TEST`, the
+        relation, the horizon and the cohort are named, with each segment's reference and current
+        repurchase rate and its test result. `previous_report_id` names the report of the same version
+        and kind that precedes this one, the other window or cohort of the persistence rule, and `alert_ids`
+        the alerts this report raised.
+      operationId: getDriftReport
+      x-mosaiq-status: planned
+      x-mosaiq-roles:
+      - ADMIN
+      - ANALYST
+      - MARKETING
+      - AUDITOR
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/ReportId'
+      responses:
+        '200':
+          description: The report.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriftReport'
+              examples:
+                alarm:
+                  externalValue: ./examples/drift-report.json
+                alarm_pending:
+                  externalValue: ./examples/drift-report-alarm-pending.json
+                insufficient_data:
+                  externalValue: ./examples/drift-report-insufficient-data.json
+                not_compared:
+                  externalValue: ./examples/drift-report-not-compared.json
+                outcome_test:
+                  externalValue: ./examples/drift-report-outcome-test.json
+                outcome_test_first_cohort:
+                  externalValue: ./examples/drift-report-outcome-test-first-cohort.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/DriftReport'
+              examples:
+                alarm:
+                  externalValue: ./examples/drift-report.xml
+                alarm_pending:
+                  externalValue: ./examples/drift-report-alarm-pending.xml
+                insufficient_data:
+                  externalValue: ./examples/drift-report-insufficient-data.xml
+                not_compared:
+                  externalValue: ./examples/drift-report-not-compared.xml
+                outcome_test:
+                  externalValue: ./examples/drift-report-outcome-test.xml
+                outcome_test_first_cohort:
+                  externalValue: ./examples/drift-report-outcome-test-first-cohort.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/DriftReportNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/drift-alerts:
+    get:
+      tags:
+      - Drift alerts
+      summary: List drift alerts
+      description: >-
+        Returns a page of drift alerts, newest first. A report raises an alert for a variable that holds
+        its alarm in two consecutive windows, or for an outcome test in which a segment passes in two
+        consecutive matured cohorts; a watch level is shown in a report and is never alerted (ADR-0065).
+        An alarm that continues raises a further alert in each report whose variable is still at `ALARM`.
+        Alerts are append-only facts: nothing here acknowledges, edits or closes one. Each alert can be
+        explained from itself: `model_version` and `variable` say what changed and under which version;
+        `statistics` against their thresholds and the `bins` that moved most, or the segment's reference
+        and current repurchase rate, say by how much; `suggested_review` says what to review, as a stable
+        `code` and a `text`. `claim` is the only wording a client may use for the finding: `DISTRIBUTION_CHANGE`,
+        or `CONCEPT_DRIFT` on an alert of an `OUTCOME_TEST` alone. `kind`, `model_version_id` and `variable`
+        filter on the stored values and combine.
+      operationId: listDriftAlerts
+      x-mosaiq-status: planned
+      x-mosaiq-roles:
+      - ADMIN
+      - ANALYST
+      - MARKETING
+      - AUDITOR
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/DriftKindFilter'
+      - $ref: '#/components/parameters/ModelVersionIdFilter'
+      - $ref: '#/components/parameters/VariableFilter'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of drift alerts.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriftAlertPage'
+              examples:
+                page:
+                  externalValue: ./examples/drift-alerts-page.json
+                none:
+                  externalValue: ./examples/drift-alerts-none.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/DriftAlertPage'
+              examples:
+                page:
+                  externalValue: ./examples/drift-alerts-page.xml
+                none:
+                  externalValue: ./examples/drift-alerts-none.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/ListInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/drift-alerts/{alert_id}:
+    get:
+      tags:
+      - Drift alerts
+      summary: Get one drift alert
+      description: >-
+        Returns one alert, with the window and the reference it was judged against, the statistics and
+        bins or the outcome test that explain it, and the review it suggests. `report_id` names the
+        report that raised it and `previous_report_id` the earlier report that held the same finding,
+        so the persistence rule can be read. The full evidence, every bin and every variable, is in the
+        report.
+      operationId: getDriftAlert
+      x-mosaiq-status: planned
+      x-mosaiq-roles:
+      - ADMIN
+      - ANALYST
+      - MARKETING
+      - AUDITOR
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/AlertId'
+      responses:
+        '200':
+          description: The alert.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriftAlert'
+              examples:
+                segment_shares:
+                  externalValue: ./examples/drift-alert.json
+                feature:
+                  externalValue: ./examples/drift-alert-feature.json
+                outcome_test:
+                  externalValue: ./examples/drift-alert-outcome-test.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/DriftAlert'
+              examples:
+                segment_shares:
+                  externalValue: ./examples/drift-alert.xml
+                feature:
+                  externalValue: ./examples/drift-alert-feature.xml
+                outcome_test:
+                  externalValue: ./examples/drift-alert-outcome-test.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/DriftAlertNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
   /health/live:
     get:
       tags:
@@ -771,6 +1046,53 @@ components:
       required: false
       schema:
         $ref: '#/components/schemas/TrainingState'
+    ReportId:
+      name: report_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    AlertId:
+      name: alert_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    DriftKindFilter:
+      name: kind
+      in: query
+      required: false
+      description: Keep only reports or alerts of this kind.
+      schema:
+        $ref: '#/components/schemas/DriftKind'
+    ModelVersionIdFilter:
+      name: model_version_id
+      in: query
+      required: false
+      description: >-
+        Keep only what concerns this model version. The version is a resource of this service, so its
+        id is a query field and never a path.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    ComparisonFilter:
+      name: comparison
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/DriftComparison'
+    VariableFilter:
+      name: variable
+      in: query
+      required: false
+      description: Keep only alerts about this variable.
+      schema:
+        $ref: '#/components/schemas/DriftVariable'
   headers:
     CorrelationId:
       description: The effective correlation id for this request.
@@ -1465,6 +1787,644 @@ components:
       xml:
         name: ModelTrainings
         namespace: https://mosaiq.maxthecoder.online/xml/model-registry/v1
+    DriftKind:
+      type: string
+      description: >-
+        `DATA_DRIFT` is a distribution change: the segments or the R, F and M of the customers differ from
+        the version's reference distribution (ADR-0065). `OUTCOME_TEST` is the test of the relation
+        between a segment and repurchase within the horizon, on a matured cohort.
+      enum:
+      - DATA_DRIFT
+      - OUTCOME_TEST
+    DistributionVariable:
+      type: string
+      description: >-
+        What a distribution change is measured on: the share of customers in each segment, or the R, F
+        or M of the customers. Categories and channels are not variables of this contract; ADR-0065 does
+        not name them.
+      enum:
+      - SEGMENT_SHARES
+      - R
+      - F
+      - M
+    DriftVariable:
+      type: string
+      description: >-
+        What an alert is about: a `DistributionVariable`, or `REPURCHASE_RATE` for the outcome test.
+      enum:
+      - SEGMENT_SHARES
+      - R
+      - F
+      - M
+      - REPURCHASE_RATE
+    DriftComparison:
+      type: string
+      description: >-
+        `COMPARED`: the statistics exist. `INSUFFICIENT_DATA`: the window holds fewer than 200 customers
+        (a `DATA_DRIFT` report) or no segment has 100 customers on both sides (an `OUTCOME_TEST` report),
+        so there is no number. `NOT_COMPARED`: the window crosses a change of version, so nothing is
+        compared (ADR-0064, ADR-0065).
+      enum:
+      - COMPARED
+      - INSUFFICIENT_DATA
+      - NOT_COMPARED
+    NotComparedReason:
+      type: string
+      description: >-
+        `VERSION_CHANGE`: a publication or a rollback falls inside the window. A methodological
+        difference is never drift.
+      enum:
+      - VERSION_CHANGE
+    DriftStatisticName:
+      type: string
+      description: >-
+        `PSI` is the population stability index over the bins, an empty bin floored at 0.0005 of its side
+        before the logarithm. `CHI_SQUARE` is the chi-square goodness of fit of the segment shares
+        against the reference shares (ADR-0065).
+      enum:
+      - PSI
+      - CHI_SQUARE
+    ThresholdBasis:
+      type: string
+      description: >-
+        What the thresholds are compared with: `VALUE` (the statistic's `value`, reached at or above the
+        threshold, for PSI) or `P_VALUE` (the `p_value`, below the threshold, for CHI_SQUARE).
+      enum:
+      - VALUE
+      - P_VALUE
+    StatisticLevel:
+      type: string
+      description: >-
+        `ALARM` when the alarm threshold is passed, else `WATCH` when the watch threshold is passed, else
+        `NORMAL`. The level of one statistic in one window; persistence is in `VariableState`.
+      enum:
+      - NORMAL
+      - WATCH
+      - ALARM
+    VariableState:
+      type: string
+      description: >-
+        The state of a variable in a window. `ALARM_PENDING`: the alarm condition holds in this window
+        and did not in the previous one. `ALARM`: it holds in this window and in the previous one, which
+        is the only state that raises an alert. `WATCH`: a statistic passed its watch threshold and the
+        alarm condition does not hold. The alarm condition of SEGMENT_SHARES is the PSI alarm threshold
+        and the chi-square alarm together; of R, F and M, the PSI alarm threshold.
+      enum:
+      - NORMAL
+      - WATCH
+      - ALARM_PENDING
+      - ALARM
+    OutcomeResult:
+      type: string
+      description: >-
+        `PASSED`: the segment's repurchase rate differs from the reference significantly after the Holm
+        correction and by at least the minimum difference. `NOT_PASSED`: it was tested and did not pass.
+        `NOT_TESTED`: either side has fewer customers than the minimum, so no statistic exists.
+      enum:
+      - PASSED
+      - NOT_PASSED
+      - NOT_TESTED
+    DriftClaim:
+      type: string
+      description: >-
+        The wording a client may use for what an alert found. `DISTRIBUTION_CHANGE` for every alert of
+        a `DATA_DRIFT` report. `CONCEPT_DRIFT` only for an alert of an `OUTCOME_TEST` report, whose
+        `outcome_test` names the relation, the horizon and the cohort (ADR-0065).
+      enum:
+      - DISTRIBUTION_CHANGE
+      - CONCEPT_DRIFT
+    OutcomeClaim:
+      type: string
+      description: >-
+        Present on an outcome test only when a segment passed in two consecutive matured cohorts, and
+        null otherwise, so no other result carries the phrase.
+      enum:
+      - CONCEPT_DRIFT
+    OutcomeRelation:
+      type: string
+      description: >-
+        The monitored relation: the probability that a customer repurchases within the horizon, given
+        the customer's segment (ADR-0065).
+      enum:
+      - REPURCHASE_GIVEN_SEGMENT
+    ReviewCode:
+      type: string
+      description: >-
+        What to review, stable for a client to branch on. `REVIEW_SEGMENT_MIX`: whether the frozen scoring
+        still fits the customers. `REVIEW_FEATURE_DISTRIBUTION`: whether a variable changed for a reason
+        other than behaviour, such as the season or the data. `REVIEW_PREDICTIVE_RELATION`: what the
+        segments predict.
+      enum:
+      - REVIEW_SEGMENT_MIX
+      - REVIEW_FEATURE_DISTRIBUTION
+      - REVIEW_PREDICTIVE_RELATION
+    PValue:
+      type: number
+      minimum: 0
+      maximum: 1
+    ModelVersionRef:
+      type: object
+      additionalProperties: false
+      description: The model version a report or alert concerns, a resource of this service.
+      required:
+      - version_id
+      - name
+      - method
+      properties:
+        version_id:
+          type: integer
+          format: int64
+          minimum: 1
+        name:
+          $ref: '#/components/schemas/Name'
+        method:
+          $ref: '#/components/schemas/Method'
+    DriftWindow:
+      type: object
+      additionalProperties: false
+      description: >-
+        What was compared with the reference. For `DATA_DRIFT`, the trailing `days` days ending at `end`,
+        with the customers' current assignments read as one snapshot at `end`. For `OUTCOME_TEST`, the
+        outcome window `(start, end]` of one cohort, where `start` is the cohort's as-of date and `end`
+        is `start` plus the horizon, already in the past.
+      required:
+      - start
+      - end
+      - days
+      - customer_count
+      properties:
+        start:
+          type: string
+          format: date-time
+        end:
+          type: string
+          format: date-time
+        days:
+          $ref: '#/components/schemas/WindowDays'
+        customer_count:
+          type: integer
+          minimum: 0
+          description: Customers in the window. Fewer than 200 is `INSUFFICIENT_DATA` for `DATA_DRIFT`.
+    DriftReference:
+      type: object
+      additionalProperties: false
+      description: >-
+        The reference the version was judged against: its own `reference_distribution` (ADR-0064), whose
+        `sample_size` and `captured_at` are repeated here. The reference shares of each bin are in
+        `bins`, so a client never has to read the version to explain a report.
+      required:
+      - sample_size
+      - captured_at
+      properties:
+        sample_size:
+          type: integer
+          minimum: 1
+        captured_at:
+          type: string
+          format: date-time
+    DriftBin:
+      type: object
+      additionalProperties: false
+      description: >-
+        One bin of a variable, with the share of customers in it in the reference and in the window.
+        For SEGMENT_SHARES, a bin is a segment and `label` is its label code. For R, F and M, the bins
+        are those of the version's reference, labelled `B1` upward in order, with `lower` and `upper`
+        as the version's `bin_edges` give them, plus `NO_VALUE` for customers with no value (no edges).
+        The shares of one variable sum to 1 on each side.
+      required:
+      - label
+      - lower
+      - upper
+      - reference_share
+      - current_share
+      - contribution
+      properties:
+        label:
+          type: string
+          minLength: 1
+        lower:
+          type:
+          - number
+          - 'null'
+        upper:
+          type:
+          - number
+          - 'null'
+        reference_share:
+          type: number
+          minimum: 0
+          maximum: 1
+        current_share:
+          type: number
+          minimum: 0
+          maximum: 1
+        contribution:
+          type: number
+          minimum: 0
+          description: >-
+            This bin's term of the PSI, `(current - reference) * ln(current / reference)`, so the bins
+            that moved most are the ones with the largest contribution.
+    DriftStatistic:
+      type: object
+      additionalProperties: false
+      description: One statistic of one variable in one window, with the thresholds it is judged by.
+      required:
+      - statistic
+      - value
+      - p_value
+      - degrees_of_freedom
+      - threshold_basis
+      - watch_threshold
+      - alarm_threshold
+      - level
+      properties:
+        statistic:
+          $ref: '#/components/schemas/DriftStatisticName'
+        value:
+          type: number
+          minimum: 0
+          description: The PSI, or the chi-square statistic.
+        p_value:
+          type:
+          - number
+          - 'null'
+          minimum: 0
+          maximum: 1
+          description: CHI_SQUARE only; null for PSI.
+        degrees_of_freedom:
+          type:
+          - integer
+          - 'null'
+          minimum: 1
+          description: CHI_SQUARE only, the number of segments less one; null for PSI.
+        threshold_basis:
+          $ref: '#/components/schemas/ThresholdBasis'
+        watch_threshold:
+          type: number
+          description: 0.10 for PSI, 0.05 for the chi-square p-value (ADR-0065). Conventional, not derived.
+        alarm_threshold:
+          type: number
+          description: 0.25 for PSI, 0.01 for the chi-square p-value (ADR-0065). Conventional, not derived.
+        level:
+          $ref: '#/components/schemas/StatisticLevel'
+    VariableDrift:
+      type: object
+      additionalProperties: false
+      description: >-
+        One variable of a compared `DATA_DRIFT` report: its state, its statistics against their thresholds
+        (SEGMENT_SHARES has the PSI and the chi-square, R, F and M the PSI) and the reference and current
+        share of every bin.
+      required:
+      - variable
+      - state
+      - statistics
+      - bins
+      properties:
+        variable:
+          $ref: '#/components/schemas/DistributionVariable'
+        state:
+          $ref: '#/components/schemas/VariableState'
+        statistics:
+          type: array
+          minItems: 1
+          maxItems: 2
+          items:
+            $ref: '#/components/schemas/DriftStatistic'
+        bins:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/DriftBin'
+    OutcomeRates:
+      type: object
+      additionalProperties: false
+      description: Customers of a segment on one side of the test, and how many repurchased within the horizon.
+      required:
+      - customers
+      - repurchasers
+      - rate
+      properties:
+        customers:
+          type: integer
+          minimum: 0
+        repurchasers:
+          type: integer
+          minimum: 0
+        rate:
+          type:
+          - number
+          - 'null'
+          minimum: 0
+          maximum: 1
+          description: '`repurchasers` over `customers`; null when there are no customers.'
+    OutcomeThresholds:
+      type: object
+      additionalProperties: false
+      description: The thresholds ADR-0065 sets for the outcome test.
+      required:
+      - alpha
+      - min_difference_points
+      - min_customers_per_side
+      properties:
+        alpha:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: The family-wise level of the Holm correction across segments, 0.05.
+        min_difference_points:
+          type: number
+          description: The smallest difference in percentage points that counts, 5.
+        min_customers_per_side:
+          type: integer
+          minimum: 1
+          description: A segment is tested only when both sides have this many customers, 100.
+    OutcomeSegment:
+      type: object
+      additionalProperties: false
+      description: >-
+        One segment's repurchase rate in the reference cohort and in the current matured cohort, and the
+        two-proportion z-test between them.
+      required:
+      - label_code
+      - reference
+      - current
+      - difference_points
+      - z
+      - p_value
+      - adjusted_p_value
+      - result
+      - persisted
+      properties:
+        label_code:
+          type: string
+        reference:
+          $ref: '#/components/schemas/OutcomeRates'
+        current:
+          $ref: '#/components/schemas/OutcomeRates'
+        difference_points:
+          type:
+          - number
+          - 'null'
+          description: >-
+            The current rate less the reference rate, in percentage points; null when a side has no
+            customers.
+        z:
+          type:
+          - number
+          - 'null'
+          description: Null when `result` is NOT_TESTED.
+        p_value:
+          oneOf:
+          - $ref: '#/components/schemas/PValue'
+          - type: 'null'
+          description: Two-sided, null when `result` is NOT_TESTED.
+        adjusted_p_value:
+          oneOf:
+          - $ref: '#/components/schemas/PValue'
+          - type: 'null'
+          description: After the Holm correction across the tested segments, null when `result` is NOT_TESTED.
+        result:
+          $ref: '#/components/schemas/OutcomeResult'
+        persisted:
+          type: boolean
+          description: >-
+            True when `result` is PASSED here and the same segment was PASSED in the report named by
+            `previous_report_id`: two consecutive matured cohorts.
+    OutcomeTest:
+      type: object
+      additionalProperties: false
+      description: >-
+        The outcome test of one matured cohort (ADR-0065). The relation, the horizon and the cohort are
+        named here, beside any claim. A customer repurchases if at least one accepted sale of theirs,
+        net of reversals, falls in `(cohort_as_of, cohort_as_of + horizon_days]`. Only cohorts whose
+        horizon is already in the past are tested, and two consecutive cohorts have as-of dates exactly
+        one horizon apart.
+      required:
+      - relation
+      - horizon_days
+      - cohort_as_of
+      - thresholds
+      - segments
+      - claim
+      properties:
+        relation:
+          $ref: '#/components/schemas/OutcomeRelation'
+        horizon_days:
+          type: integer
+          minimum: 1
+          description: The horizon `H`, 30 days.
+        cohort_as_of:
+          type: string
+          format: date-time
+          description: The as-of date `t` of the cohort, whose customers are grouped by their segment at `t`.
+        thresholds:
+          $ref: '#/components/schemas/OutcomeThresholds'
+        segments:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/OutcomeSegment'
+          description: >-
+            Every segment of the version for a report; only the segments that persisted for an alert.
+        claim:
+          oneOf:
+          - $ref: '#/components/schemas/OutcomeClaim'
+          - type: 'null'
+          description: >-
+            `CONCEPT_DRIFT` when at least one segment persisted, and null otherwise. A cohort in which a
+            segment passed for the first time claims nothing yet.
+    SuggestedReview:
+      type: object
+      additionalProperties: false
+      description: >-
+        The review an alert suggests. It is a suggestion, never a verdict: a change in distribution is
+        not shown to mean that the segments stopped predicting anything.
+      required:
+      - code
+      - text
+      properties:
+        code:
+          $ref: '#/components/schemas/ReviewCode'
+        text:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: >-
+            English text naming the variable and the change, for a client to show as it is. Its wording
+            follows `claim`.
+    DriftReport:
+      type: object
+      additionalProperties: false
+      description: >-
+        One comparison of one model version with its reference, immutable once written. `variables` is
+        empty unless the report is a `COMPARED` `DATA_DRIFT`; `outcome_test` is null unless it is a
+        `COMPARED` `OUTCOME_TEST`. For an `INSUFFICIENT_DATA` or `NOT_COMPARED` report neither is present:
+        there is no number, and nothing is guessed. Repeating the monitor on the same data gives the same
+        report.
+      required:
+      - report_id
+      - kind
+      - model_version
+      - comparison
+      - not_compared_reason
+      - window
+      - reference
+      - previous_report_id
+      - variables
+      - outcome_test
+      - alert_ids
+      - computed_at
+      properties:
+        report_id:
+          type: integer
+          format: int64
+        kind:
+          $ref: '#/components/schemas/DriftKind'
+        model_version:
+          $ref: '#/components/schemas/ModelVersionRef'
+        comparison:
+          $ref: '#/components/schemas/DriftComparison'
+        not_compared_reason:
+          oneOf:
+          - $ref: '#/components/schemas/NotComparedReason'
+          - type: 'null'
+          description: Set only when `comparison` is NOT_COMPARED.
+        window:
+          $ref: '#/components/schemas/DriftWindow'
+        reference:
+          $ref: '#/components/schemas/DriftReference'
+        previous_report_id:
+          type:
+          - integer
+          - 'null'
+          format: int64
+          description: >-
+            The report of the same version and kind whose window precedes this one, the other window of
+            the persistence rule; null for the first.
+        variables:
+          type: array
+          items:
+            $ref: '#/components/schemas/VariableDrift'
+        outcome_test:
+          oneOf:
+          - $ref: '#/components/schemas/OutcomeTest'
+          - type: 'null'
+        alert_ids:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: The alerts this report raised, empty when it raised none.
+        computed_at:
+          type: string
+          format: date-time
+      xml:
+        name: DriftReport
+        namespace: https://mosaiq.maxthecoder.online/xml/model-registry/v1
+    DriftReportPage:
+      type: object
+      additionalProperties: false
+      required:
+      - reports
+      - page_info
+      properties:
+        reports:
+          type: array
+          items:
+            $ref: '#/components/schemas/DriftReport'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: DriftReports
+        namespace: https://mosaiq.maxthecoder.online/xml/model-registry/v1
+    DriftAlert:
+      type: object
+      additionalProperties: false
+      description: >-
+        An append-only finding of one report, explained from itself: which variable changed (`variable`),
+        under which version (`model_version`), by how much (`statistics` and `bins` for a `DATA_DRIFT`
+        alert, `outcome_test` for an `OUTCOME_TEST` alert) and what review it suggests (`suggested_review`).
+        A `DATA_DRIFT` alert has `statistics` and `bins`, the three bins with the largest `contribution`
+        first, and a null `outcome_test`. An `OUTCOME_TEST` alert has empty `statistics` and `bins`, and
+        an `outcome_test` holding the segments that persisted.
+      required:
+      - alert_id
+      - report_id
+      - previous_report_id
+      - kind
+      - claim
+      - model_version
+      - variable
+      - window
+      - reference
+      - statistics
+      - bins
+      - outcome_test
+      - suggested_review
+      - raised_at
+      properties:
+        alert_id:
+          type: integer
+          format: int64
+        report_id:
+          type: integer
+          format: int64
+          description: The report that raised the alert, a resource of this service.
+        previous_report_id:
+          type: integer
+          format: int64
+          description: The earlier report that held the same finding; an alert needs two consecutive windows.
+        kind:
+          $ref: '#/components/schemas/DriftKind'
+        claim:
+          $ref: '#/components/schemas/DriftClaim'
+        model_version:
+          $ref: '#/components/schemas/ModelVersionRef'
+        variable:
+          $ref: '#/components/schemas/DriftVariable'
+        window:
+          $ref: '#/components/schemas/DriftWindow'
+        reference:
+          $ref: '#/components/schemas/DriftReference'
+        statistics:
+          type: array
+          maxItems: 2
+          items:
+            $ref: '#/components/schemas/DriftStatistic'
+        bins:
+          type: array
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/DriftBin'
+          description: The bins that moved most, by contribution, largest first.
+        outcome_test:
+          oneOf:
+          - $ref: '#/components/schemas/OutcomeTest'
+          - type: 'null'
+        suggested_review:
+          $ref: '#/components/schemas/SuggestedReview'
+        raised_at:
+          type: string
+          format: date-time
+      xml:
+        name: DriftAlert
+        namespace: https://mosaiq.maxthecoder.online/xml/model-registry/v1
+    DriftAlertPage:
+      type: object
+      additionalProperties: false
+      required:
+      - alerts
+      - page_info
+      properties:
+        alerts:
+          type: array
+          items:
+            $ref: '#/components/schemas/DriftAlert'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: DriftAlerts
+        namespace: https://mosaiq.maxthecoder.online/xml/model-registry/v1
     PageInfo:
       type: object
       additionalProperties: false
@@ -1867,3 +2827,39 @@ components:
           examples:
             training_in_progress:
               externalValue: ./examples/training-in-progress.xml
+    DriftReportNotFound:
+      description: '`drift_report_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            drift_report_not_found:
+              externalValue: ./examples/drift-report-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            drift_report_not_found:
+              externalValue: ./examples/drift-report-not-found.xml
+    DriftAlertNotFound:
+      description: '`drift_alert_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            drift_alert_not_found:
+              externalValue: ./examples/drift-alert-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            drift_alert_not_found:
+              externalValue: ./examples/drift-alert-not-found.xml

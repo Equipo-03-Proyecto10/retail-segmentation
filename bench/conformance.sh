@@ -18,7 +18,10 @@ mkdir -p bench/products-service-rs/contracts/common
 cp -R contracts/products bench/products-service-rs/contracts/products
 cp -R contracts/common/v1 bench/products-service-rs/contracts/common/v1
 
-"${compose[@]}" up --build --wait --wait-timeout 300
+# BENCH_NO_BUILD=1: the images are already loaded (CI builds them once for every shard).
+build=--build
+[[ -z ${BENCH_NO_BUILD:-} ]] || build=--no-build
+"${compose[@]}" up "$build" --wait --wait-timeout 300
 
 export CONFORMANCE_SERVICE=products
 export CONFORMANCE_CONTRACT_DIR=contracts/products

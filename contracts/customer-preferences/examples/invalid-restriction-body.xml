@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_body</code>
+  <message>The same restriction appears twice in the list of decisions.</message>
+  <correlation_id>corr-invalid-restriction-body</correlation_id>
+  <details>
+    <field>decisions[1]</field>
+    <code>duplicate</code>
+  </details>
+</Error>

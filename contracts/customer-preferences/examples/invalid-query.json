@@ -1,0 +1,11 @@
+{
+  "code": "invalid_query",
+  "message": "A query parameter is malformed.",
+  "correlation_id": "corr-invalid-query",
+  "details": [
+    {
+      "field": "as_of",
+      "code": "in_the_future"
+    }
+  ]
+}

@@ -156,8 +156,8 @@ paths:
         Returns the domain events that match every filter given (ADR-0072):
         calculations, model publications and rollbacks, permission changes,
         critical actions, logged reads of one customer's history, and reads of
-        the audit trail itself. Events are ordered by `recorded_at` and then
-        `event_id`, both descending; pagination applies after filtering. An
+        the audit trail itself. Events are ordered by `recorded_at` descending
+        and then by reverse hash-chain order; pagination applies after filtering. An
         unknown `kind`, `outcome`, `actor_role` or `subject_type`, a malformed
         UUID, integer or timestamp, or a `to` before `from` is 422
         `invalid_query`, and `details` names the rejected parameter. Every
@@ -1117,7 +1117,7 @@ components:
       properties:
         domain_events:
           type: array
-          description: Events ordered by `recorded_at` descending, then `event_id` descending.
+          description: Events ordered by `recorded_at` descending, then by reverse hash-chain order.
           items:
             $ref: '#/components/schemas/DomainEvent'
         page_info:

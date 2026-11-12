@@ -854,9 +854,9 @@ BEGIN
         -- n, source, kind, outcome, days ago, actor (null = SYSTEM), role,
         -- store, subject type, subject id, model version, rule set, details
         ( 1, 'svc_rfm',         'CALCULATION_RUN',    'SUCCESS', 40, NULL, NULL, NULL::smallint, 'calculation', '401', NULL::bigint, 1::bigint,
-          '{"calculation":"RFM","status":"COMPLETED","input_count":300,"output_count":30,"data_origin":"SYNTHETIC"}'),
+          '{"calculation":"RFM","status":"COMPLETED","input_count":300,"output_count":30,"data_origin":"SEEDED"}'),
         ( 2, 'svc_segments',    'CALCULATION_RUN',    'SUCCESS', 39, NULL, NULL, NULL, 'calculation', '402', 1, 1,
-          '{"calculation":"SEGMENTATION","status":"COMPLETED","input_count":30,"output_count":30,"data_origin":"SYNTHETIC"}'),
+          '{"calculation":"SEGMENTATION","status":"COMPLETED","input_count":30,"output_count":30,"data_origin":"SEEDED"}'),
         ( 3, 'svc_kpis',        'CALCULATION_RUN',    'SUCCESS', 38, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
           '{"calculation":"KPI","status":"COMPLETED","input_count":300,"output_count":7,"window_from":"2026-09-01T00:00:00Z","window_to":"2026-10-01T00:00:00Z"}'),
         ( 4, 'svc_rfm',         'CALCULATION_RUN',    'SUCCESS', 37, NULL, NULL, NULL, 'calculation', '403', NULL, 2,

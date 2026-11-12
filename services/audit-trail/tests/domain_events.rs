@@ -8,8 +8,8 @@
 mod support;
 
 use serde_json::Value;
-use support::connect;
 use support::http::{assert_valid_xml, send, send_with, Stack, AUDITOR, ROLES, TURN};
+use support::{connect, owner_url, service_url};
 use tokio_postgres::Client;
 use uuid::Uuid;
 
@@ -219,6 +219,29 @@ async fn every_seeded_kind_reads_back_and_the_filters_narrow() {
         (404, true)
     );
     stack.finish().await;
+}
+
+#[tokio::test]
+async fn equal_recording_times_follow_chain_order_across_pages() {
+    let Some(url) = owner_url() else { return };
+    let client = connect(&service_url(&url)).await;
+    let filters = audit_trail::events::parse_event_filters("source=svc_rfm").unwrap();
+    let first = audit_trail::events::list_events(&client, &filters, 1, 1)
+        .await
+        .unwrap();
+    let second = audit_trail::events::list_events(&client, &filters, 2, 1)
+        .await
+        .unwrap();
+
+    assert_eq!((first.1, second.1), (2, 2));
+    assert_eq!(first.0[0].recorded_at, second.0[0].recorded_at);
+    assert_eq!(
+        [
+            first.0[0].event_id.to_string(),
+            second.0[0].event_id.to_string()
+        ],
+        [seeded(4), seeded(1)]
+    );
 }
 
 #[tokio::test]

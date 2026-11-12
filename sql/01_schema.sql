@@ -2587,7 +2587,7 @@ BEGIN
                AND (NOT d ? 'parameters_digest' OR audit_events.str_like(d, 'parameters_digest', '^[0-9a-f]{64}$'))
                AND (NOT d ? 'window_from' OR audit_events.str_like(d, 'window_from', stamp))
                AND (NOT d ? 'window_to' OR audit_events.str_like(d, 'window_to', stamp))
-               AND (NOT d ? 'data_origin' OR audit_events.str_in(d, 'data_origin', ARRAY['REAL', 'SYNTHETIC', 'MIXED']));
+               AND (NOT d ? 'data_origin' OR audit_events.str_in(d, 'data_origin', ARRAY['OBSERVED', 'SEEDED']));
         WHEN 'MODEL_PUBLISHED', 'MODEL_ROLLED_BACK' THEN
             RETURN (jsonb_typeof(d -> 'previous_version_id') = 'null'
                     OR (jsonb_typeof(d -> 'previous_version_id') = 'number'

@@ -426,7 +426,7 @@ pub async fn list_events<C: GenericClient + Sync>(
     const STATEMENT: &str = concat!(
         "WITH matched AS ( SELECT ",
         columns!(),
-        " FROM audit_events.domain_event \
+        ", seq FROM audit_events.domain_event \
              WHERE ($1::text IS NULL OR kind = $1) \
                AND ($2::uuid IS NULL OR actor_user_id = $2) \
                AND ($3::text IS NULL OR actor_role = $3) \
@@ -441,7 +441,7 @@ pub async fn list_events<C: GenericClient + Sync>(
          SELECT p.*, t.total \
          FROM (SELECT count(*) AS total FROM matched) AS t \
          LEFT JOIN LATERAL (SELECT * FROM matched \
-                             ORDER BY recorded_at DESC, event_id DESC \
+                             ORDER BY recorded_at DESC, seq DESC \
                              LIMIT $12 OFFSET $13) AS p ON TRUE"
     );
     let rows = client
@@ -466,7 +466,7 @@ pub async fn list_events<C: GenericClient + Sync>(
         .await?;
     let total = rows
         .first()
-        .map(|row| row.try_get::<_, i64>(18))
+        .map(|row| row.try_get::<_, i64>(19))
         .transpose()?
         .unwrap_or(0);
     let events = rows

@@ -21,7 +21,7 @@
     "output_count": 1930,
     "window_from": "2025-11-06T00:00:00Z",
     "window_to": "2026-11-06T00:00:00Z",
-    "data_origin": "REAL"
+    "data_origin": "OBSERVED"
   },
   "prev_hash": "24d3e087bfe0c15f606db97836449852a44414f98f425301fb08affb3d64c11c",
   "entry_hash": "5e2d5d1e58e94d7607e0745cd3e612c4a358fc93f37fc5ab1fed8d04bbf7ce77"

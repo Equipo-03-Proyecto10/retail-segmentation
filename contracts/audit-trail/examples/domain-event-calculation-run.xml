@@ -19,7 +19,7 @@
       <output_count>1930</output_count>
       <window_from>2025-11-06T00:00:00Z</window_from>
       <window_to>2026-11-06T00:00:00Z</window_to>
-      <data_origin>REAL</data_origin>
+      <data_origin>OBSERVED</data_origin>
     </CalculationRun>
   </details>
   <prev_hash>24d3e087bfe0c15f606db97836449852a44414f98f425301fb08affb3d64c11c</prev_hash>

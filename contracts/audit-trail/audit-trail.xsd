@@ -205,9 +205,8 @@
       <xs:element name="data_origin" minOccurs="0">
         <xs:simpleType>
           <xs:restriction base="xs:string">
-            <xs:enumeration value="REAL"/>
-            <xs:enumeration value="SYNTHETIC"/>
-            <xs:enumeration value="MIXED"/>
+            <xs:enumeration value="OBSERVED"/>
+            <xs:enumeration value="SEEDED"/>
           </xs:restriction>
         </xs:simpleType>
       </xs:element>

@@ -31,7 +31,8 @@ with the reason.
 ## The local stack
 
 Start the stack with the commands in the root README, "The full stack". The
-suite uses one seeded account per role (`admin@` and `user2@` to `user7@`), all
+suite uses one seeded account per role (`admin@`, `user2@` to `user7@`, and
+`user31@` to `user33@` for the three floor roles of ADR-0060), all
 with the public demonstration password from the root README. It signs them out,
 but does not modify or deactivate them.
 

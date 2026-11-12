@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: engagement-service
-  version: 2.1.0
+  version: 2.2.0
   description: 'Records client-originated field events (RN-55): in-store engagement
     events and capture incidents, the device''s reports of a refused queued write
     (ADR-0071). Both live in MongoDB, in `engagement_event` and `capture_incident`.
@@ -49,6 +49,7 @@ paths:
       x-mosaiq-roles:
       - ADMIN
       - STORE_MANAGER
+      - SALES_ASSOCIATE
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       requestBody:
@@ -142,6 +143,8 @@ paths:
       - STORE_MANAGER
       - MARKETING
       - AUDITOR
+      - SALES_ASSOCIATE
+      - COMMERCIAL_SUPERVISOR
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       - $ref: '#/components/parameters/Type'
@@ -773,6 +776,7 @@ paths:
       x-mosaiq-roles:
       - ADMIN
       - STORE_MANAGER
+      - SALES_ASSOCIATE
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       requestBody:
@@ -916,6 +920,8 @@ paths:
       - STORE_MANAGER
       - MARKETING
       - AUDITOR
+      - SALES_ASSOCIATE
+      - COMMERCIAL_SUPERVISOR
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       - $ref: '#/components/parameters/TypeV2'
@@ -971,6 +977,8 @@ paths:
       - STORE_MANAGER
       - MARKETING
       - AUDITOR
+      - SALES_ASSOCIATE
+      - COMMERCIAL_SUPERVISOR
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       - $ref: '#/components/parameters/EventId'

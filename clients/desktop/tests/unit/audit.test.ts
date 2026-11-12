@@ -469,17 +469,20 @@ describe('who reaches the audit module', () => {
     for (const o of ops) expect(o.roles, o.operationId).toEqual(['ADMIN', 'AUDITOR']);
   });
 
-  // The three floor roles of ADR-0060 are not in the auth contract of this branch yet, so they
-  // cannot sign in here; the contract check above covers them, since no operation lists them.
-  it.each(['ANALYST', 'MARKETING', 'STORE_MANAGER', 'INVENTORY_PLANNER'])(
-    'refuses %s in the main process, and sends nothing',
-    async (role) => {
-      const { audit, seen } = await signedIn(role, events);
-      for (const [name, call] of calls)
-        expect(await call(audit), name).toMatchObject({ ok: false, error: { code: 'forbidden_role' } });
-      expect(seen).toHaveLength(0);
-    },
-  );
+  it.each([
+    'ANALYST',
+    'MARKETING',
+    'STORE_MANAGER',
+    'INVENTORY_PLANNER',
+    'SALES_ASSOCIATE',
+    'LOYALTY_OFFICER',
+    'COMMERCIAL_SUPERVISOR',
+  ])('refuses %s in the main process, and sends nothing', async (role) => {
+    const { audit, seen } = await signedIn(role, events);
+    for (const [name, call] of calls)
+      expect(await call(audit), name).toMatchObject({ ok: false, error: { code: 'forbidden_role' } });
+    expect(seen).toHaveLength(0);
+  });
 
   it.each(['ADMIN', 'AUDITOR'])('lets %s read both resources', async (role) => {
     const { audit, seen } = await signedIn(role, (r) =>

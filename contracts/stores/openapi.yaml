@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: stores-service
-  version: 1.2.0
+  version: 1.3.0
   description: >-
     Publishes the store directory and lets an administrator set or clear the
     one geofenced location that belongs to a store (RN-53). Also publishes, and
@@ -31,6 +31,9 @@ paths:
         - MARKETING
         - INVENTORY_PLANNER
         - AUDITOR
+        - SALES_ASSOCIATE
+        - LOYALTY_OFFICER
+        - COMMERCIAL_SUPERVISOR
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/Active'
@@ -83,6 +86,9 @@ paths:
         - MARKETING
         - INVENTORY_PLANNER
         - AUDITOR
+        - SALES_ASSOCIATE
+        - LOYALTY_OFFICER
+        - COMMERCIAL_SUPERVISOR
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/StoreId'
@@ -231,6 +237,9 @@ paths:
         - MARKETING
         - INVENTORY_PLANNER
         - AUDITOR
+        - SALES_ASSOCIATE
+        - LOYALTY_OFFICER
+        - COMMERCIAL_SUPERVISOR
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/StoreId'
@@ -346,6 +355,9 @@ paths:
         - MARKETING
         - INVENTORY_PLANNER
         - AUDITOR
+        - SALES_ASSOCIATE
+        - LOYALTY_OFFICER
+        - COMMERCIAL_SUPERVISOR
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/StoreId'
@@ -469,6 +481,9 @@ paths:
         - MARKETING
         - INVENTORY_PLANNER
         - AUDITOR
+        - SALES_ASSOCIATE
+        - LOYALTY_OFFICER
+        - COMMERCIAL_SUPERVISOR
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/StoreId'
@@ -592,6 +607,9 @@ paths:
         - MARKETING
         - INVENTORY_PLANNER
         - AUDITOR
+        - SALES_ASSOCIATE
+        - LOYALTY_OFFICER
+        - COMMERCIAL_SUPERVISOR
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/StoreId'

@@ -2,14 +2,27 @@
 
 import json
 
+import pytest
+
 from tests.parity.compare import (
+    ASSIGNED,
+    NO_OPEN_ASSIGNMENT,
+    UNASSIGNED_RESULT,
+    Assignment,
     AuditShape,
     CaseResult,
     Difference,
+    SegmentDifference,
+    assignment_from_service,
     audit_shape,
     credentials_in,
+    diff_assignments,
     diff_audit,
     diff_levels,
+    diff_members,
+    parse_customer_current,
+    parse_propagation_bound,
+    parse_report_open_members,
     parse_stock_page,
     write_results,
 )
@@ -53,12 +66,142 @@ def test_results_file_counts_cases(tmp_path) -> None:
     assert data["cases"][1]["differences"][0]["web"] == 1
 
 
+# ---------- segments (F20-09) ----------
+
+PILL = (
+    '<span class="mq-pill mq-pill--{tone}">'
+    '<span class="mq-pill__dot"></span>{text}</span>'
+)
+LOYAL = PILL.format(tone="info", text="Loyal")
+SYNTHETIC = PILL.format(tone="warning", text="Synthetic")
+
+
+def _timeline(*rows: str) -> str:
+    """The shape of catalog/customer_detail.html: a comparison table first,
+    then the timeline, whose header the reader looks for."""
+
+    return f"""
+<table class="mq-table"><thead><tr><th>Measure</th><th>Previous</th></tr></thead>
+<tbody><tr><td>Label</td><td>{LOYAL}</td></tr></tbody></table>
+<table class="mq-table"><thead><tr>
+<th scope="col">Run</th><th scope="col">Label</th><th scope="col">Valid from</th>
+<th scope="col">Valid to</th><th>R</th><th>F</th><th>M</th><th>Recency</th>
+</tr></thead><tbody>{"".join(rows)}</tbody></table>"""
+
+
+def _row(run: int, label: str, valid_to: str, scores=("4", "5", "3")) -> str:
+    r, f, m = scores
+    return (
+        f'<tr><td><a href="/run-history/{run}">#{run}</a> {SYNTHETIC} '
+        f'<span class="mq-caption">2026-10-01 · 90-day window</span></td>'
+        f'<td>{PILL.format(tone="info", text=label)} '
+        f'<span class="mq-caption">since 2026-09-01</span></td>'
+        f"<td>2026-10-01 03:00</td><td>{valid_to}</td>"
+        f"<td>{r}</td><td>{f}</td><td>{m}</td><td>12 days</td></tr>"
+    )
+
+
+def test_the_open_timeline_row_is_the_current_assignment() -> None:
+    page = _timeline(_row(9, "Loyal", "Open"), _row(4, "At risk", "2026-10-01 03:00"))
+    assert parse_customer_current(page) == (9, "Loyal", (4, 5, 3))
+
+
+def test_an_unassigned_open_row_has_no_label_and_no_scores() -> None:
+    page = _timeline(_row(9, "Unassigned", "Open", ("—", "—", "—")))
+    assert parse_customer_current(page) == (9, None, (None, None, None))
+
+
+def test_a_customer_without_an_open_row_has_no_current_assignment() -> None:
+    assert parse_customer_current(_timeline(_row(4, "Loyal", "2026-10-01"))) is None
+    assert parse_customer_current("<p>No segment history</p>") is None
+
+
+def _report(rows: str, page: int = 1, pages: int = 2) -> str:
+    return f"""
+<table class="mq-table"><thead><tr>
+<th>Customer</th><th>Run</th><th>Label</th><th>Valid from</th><th>Valid to</th><th></th>
+</tr></thead><tbody>{rows}</tbody></table>
+<nav>Page {page} of {pages} · 30 rows</nav>"""
+
+
+def _report_row(customer: str, valid_to: str) -> str:
+    return (
+        f'<tr><td><a href="/catalog/customers/{customer}">Ana</a></td>'
+        f"<td>#9 · 2026-10-01 · RFM_RULES</td>"
+        f"<td>{PILL.format(tone='info', text='Loyal')}</td><td>2026-10-01</td>"
+        f"<td>{valid_to}</td><td><details><summary>Why?</summary>"
+        "<table><thead><tr><th>Component</th></tr></thead>"
+        "<tbody><tr><td>Recency</td></tr></tbody></table></details></td></tr>"
+    )
+
+
+def test_the_report_keeps_only_open_rows_and_reads_its_page_count() -> None:
+    a, b = (
+        "7b3ad781-c5de-4f40-ae50-1fa825ce2b25",
+        "0c9f6a3e-5d2b-4c8e-9a41-7e3b2d1f8a66",
+    )
+    page = _report(
+        _report_row(a, '<span class="mq-caption">still open</span>')
+        + _report_row(b, "2026-10-01")
+    )
+    assert parse_report_open_members(page) == ({a}, 1, 2)
+
+
+def test_service_states_map_to_assignments() -> None:
+    assert assignment_from_service(
+        {
+            "customer_id": "c",
+            "state": ASSIGNED,
+            "label_code": "LOYAL",
+            "r_score": 4,
+            "f_score": 5,
+            "m_score": 4,
+            "since": "x",
+            "run_id": 42,
+        }
+    ) == Assignment(ASSIGNED, "LOYAL", 4, 5, 4, 42)
+    assert assignment_from_service(
+        {"customer_id": "c", "state": UNASSIGNED_RESULT, "since": "x", "run_id": 42}
+    ) == Assignment(UNASSIGNED_RESULT, run_id=42)
+    assert assignment_from_service(
+        {"customer_id": "c", "state": NO_OPEN_ASSIGNMENT}
+    ) == Assignment(NO_OPEN_ASSIGNMENT)
+
+
+def test_every_assignment_field_that_differs_is_reported() -> None:
+    web = {
+        "a": Assignment(ASSIGNED, "LOYAL", 4, 5, 4, 42),
+        "b": Assignment(UNASSIGNED_RESULT, run_id=42),
+    }
+    service = {
+        "a": Assignment(ASSIGNED, "LOYAL", 4, 5, 3, 41),
+        "c": Assignment(NO_OPEN_ASSIGNMENT),
+    }
+    found = diff_assignments(web, service)
+    assert [(d.subject, d.what) for d in found] == [
+        ("a", "m_score"),
+        ("a", "run_id"),
+        ("b", "missing on one side"),
+        ("c", "missing on one side"),
+    ]
+    assert diff_assignments(web, dict(web)) == []
+
+
+def test_members_on_one_side_only_are_reported() -> None:
+    found = diff_members("LOYAL", {"a", "b"}, {"b", "c"})
+    assert found == [
+        SegmentDifference("LOYAL", "member on the web only", "a", None),
+        SegmentDifference("LOYAL", "member on the service only", None, "c"),
+    ]
+    assert "LOYAL: member on the web only" in str(found[0])
+
+
 # ---------- audit (F20-08) ----------
 
 ACTOR = "11111111-1111-1111-1111-000000000001"
 
 
-def _row(action, before, after, user=ACTOR, entity="category") -> dict:
+def _audit_row(action, before, after, user=ACTOR, entity="category") -> dict:
     return {
         "entity": entity,
         "action": action,
@@ -70,7 +213,7 @@ def _row(action, before, after, user=ACTOR, entity="category") -> dict:
 
 def test_an_audit_shape_keeps_columns_and_changes_not_values() -> None:
     shape = audit_shape(
-        _row(
+        _audit_row(
             "UPDATE", {"category_id": 7, "name": "A"}, {"category_id": 7, "name": "B"}
         ),
         ACTOR,
@@ -83,24 +226,38 @@ def test_an_audit_shape_keeps_columns_and_changes_not_values() -> None:
         ("name",),
         True,
     )
-    assert audit_shape(_row("INSERT", None, {"category_id": 8}), ACTOR).before is None
+    assert (
+        audit_shape(_audit_row("INSERT", None, {"category_id": 8}), ACTOR).before
+        is None
+    )
 
 
 def test_the_same_change_by_two_writers_has_no_difference() -> None:
-    web = [audit_shape(_row("UPDATE", {"id": 1, "n": "a"}, {"id": 1, "n": "b"}), ACTOR)]
+    web = [
+        audit_shape(
+            _audit_row("UPDATE", {"id": 1, "n": "a"}, {"id": 1, "n": "b"}), ACTOR
+        )
+    ]
     service = [
-        audit_shape(_row("UPDATE", {"id": 2, "n": "c"}, {"id": 2, "n": "d"}), ACTOR)
+        audit_shape(
+            _audit_row("UPDATE", {"id": 2, "n": "c"}, {"id": 2, "n": "d"}), ACTOR
+        )
     ]
     assert diff_audit("category UPDATE", web, service) == []
 
 
 def test_an_unattributed_or_differently_shaped_row_is_reported() -> None:
-    web = [audit_shape(_row("UPDATE", {"id": 1, "n": "a"}, {"id": 1, "n": "b"}), ACTOR)]
+    web = [
+        audit_shape(
+            _audit_row("UPDATE", {"id": 1, "n": "a"}, {"id": 1, "n": "b"}), ACTOR
+        )
+    ]
     service = [
         audit_shape(
-            _row("UPDATE", {"id": 2, "n": "c"}, {"id": 2, "n": "c"}, user=None), ACTOR
+            _audit_row("UPDATE", {"id": 2, "n": "c"}, {"id": 2, "n": "c"}, user=None),
+            ACTOR,
         ),
-        audit_shape(_row("INSERT", None, {"id": 2}), ACTOR),
+        audit_shape(_audit_row("INSERT", None, {"id": 2}), ACTOR),
     ]
     found = diff_audit("category UPDATE", web, service)
     assert [d.what for d in found] == [
@@ -125,3 +282,30 @@ def test_credentials_are_found_by_key_and_by_hash_shape() -> None:
         "audit_entries[0].data_after.password_hash",
         "audit_entries[1].data_before.note",
     ]
+
+
+# ---------- stream bounds (F20-09) ----------
+
+CONTRACT = """# `stream:segments.v1.run_recorded`
+
+## Propagation bound
+
+| Group | p95 (ms) | Max (ms) |
+|---|---:|---:|
+| `segments` | 3000 | 5000 |
+| `recommendations` | 2500 | 4000 |
+
+## Failure and compatibility
+"""
+
+
+def test_a_group_bound_is_read_from_its_stream_contract() -> None:
+    assert parse_propagation_bound(CONTRACT, "segments") == (3000, 5000)
+    assert parse_propagation_bound(CONTRACT, "recommendations") == (2500, 4000)
+
+
+def test_a_contract_without_a_bound_states_none() -> None:
+    with pytest.raises(ValueError, match="no '## Propagation bound' section"):
+        parse_propagation_bound("# `stream:x`\n\n## Consumers\n", "segments")
+    with pytest.raises(ValueError, match="no row for 'campaigns'"):
+        parse_propagation_bound(CONTRACT, "campaigns")

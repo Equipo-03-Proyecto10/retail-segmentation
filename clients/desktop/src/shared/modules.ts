@@ -149,6 +149,14 @@ export const EXPERIMENT_OPERATIONS = {
 /** The operation the conversion analysis module calls (experimentation x-mosaiq-roles); it is checked before the call. */
 export const CONVERSION_OPERATIONS = { result: 'getExperimentResult' } as const;
 
+/** The read operations the audit module calls (audit-trail x-mosaiq-roles: ADMIN, AUDITOR); each is checked before its call. */
+export const AUDIT_OPERATIONS = {
+  entries: 'listAuditEntries',
+  entry: 'getAuditEntry',
+  events: 'listDomainEvents',
+  event: 'getDomainEvent',
+} as const;
+
 /** Error codes that mean the session is over; the user goes back to sign-in. */
 export const SESSION_ENDED_CODES: readonly string[] = [
   'signed_out',

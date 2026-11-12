@@ -175,6 +175,7 @@ right place for it, and which the team accepted on 2026-09-07.
 | [F23-01](f23-01-evaluation-dataset.md) | The reproducible evaluation dataset, loaded on PostgreSQL 18, the web's RFM and K-means runs over it, and the leads it gives the model studies |
 | [F23-02](f23-02-variables-and-normalization.md) | Which variables stay, min-max against log, robust and rank scaling, and what winsorizing does to cluster sizes, with a recommendation for a new model version |
 | [F23-03](f23-03-choosing-k.md) | Inertia, sampled silhouette, smallest cluster and seed stability for k from 2 to 12, the commercial limits, the argued choice of k = 4, and which labels each k can produce |
+| [F23-04](f23-04-kmeans-stability.md) | A registered K-means result reproduced identically from its recorded parameters, seed and bootstrap stability with stated thresholds, how far the clusters move between adjacent time windows, and what that feeds back into F23-03's choice of k |
 
 ## Review passes
 

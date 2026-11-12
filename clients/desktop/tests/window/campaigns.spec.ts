@@ -156,6 +156,9 @@ test('the screen is shown to ADMIN, ANALYST, MARKETING and AUDITOR and hidden fr
     ['AUDITOR', true],
     ['STORE_MANAGER', false],
     ['INVENTORY_PLANNER', false],
+    ['SALES_ASSOCIATE', false],
+    ['LOYALTY_OFFICER', false],
+    ['COMMERCIAL_SUPERVISOR', false],
   ] as const) {
     const { app, page } = await launch(as);
     await expect(nav(page, 'campaigns')).toHaveCount(visible ? 1 : 0);

@@ -8,14 +8,19 @@ set.
 Every case that applies to a service runs against each service in
 `contracts/registry.yaml`, from that service's own contract: its operations and
 their `x-mosaiq-roles`. A service added to the registry is therefore covered as
-soon as it is deployed, with no edit here. Each run writes its own section of
+soon as it is deployed, with no edit here. A contract merges before its service
+(ADR-0035), so a registered service with no `services/<name>/compose.yaml` yet
+has a gateway route and nothing behind it. Its cases are skipped with that
+reason, and the cases that loop over every service leave it out.
+`tests/test_negative_scope.py` keeps that set equal to the services the local
+stack runs. Each run writes its own section of
 [`docs/evidence/f18-04-negative-tests.md`](../../docs/evidence/f18-04-negative-tests.md):
 every case's expected and actual result, and the cases this target cannot run,
 with the reason.
 
 | File | What it refuses |
 |---|---|
-| `test_auth.py` | A reused refresh token; a session's token after sign-out; the sixth sign-in after five failures (email and IP); the sixth wrong current password; the per-IP sign-in limit, last |
+| `test_auth.py` | A reused refresh token; a session's token after sign-out; the sixth sign-in after five failures (email and IP); the sixth wrong current password; the per-IP sign-in limit, last, tried until a refusal or two whole windows |
 | `test_tokens.py` | No token, a tampered signature, `alg: none`, HS256 keyed with the public key, a wrong `iss`, a wrong `aud`, an expired token: 401 `invalid_token` from every service |
 | `test_roles.py` | A role outside each operation's `x-mosaiq-roles`: 403 `forbidden_role` |
 | `test_representations.py` | 406 for `Accept: text/csv`, 415 for `text/plain`, 400 for XML with a DOCTYPE or an entity, 413 for 65 KiB at the edge and on the service's own port, 422 for `page=0` and `size=101` |

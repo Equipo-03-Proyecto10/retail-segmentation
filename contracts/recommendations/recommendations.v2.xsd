@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:rec="https://mosaiq.maxthecoder.online/xml/recommendations/v2"
+           xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1"
+           targetNamespace="https://mosaiq.maxthecoder.online/xml/recommendations/v2"
+           elementFormDefault="qualified">
+  <xs:import namespace="https://mosaiq.maxthecoder.online/xml/common/v1"
+             schemaLocation="../common/v1/common.xsd"/>
+
+  <xs:simpleType name="Uuid">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- PERSONALIZATION_WITHDRAWN keeps the spelling ADR-0067 gives it. -->
+  <xs:simpleType name="Status">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="recommended"/>
+      <xs:enumeration value="none_match"/>
+      <xs:enumeration value="no_open_assignment"/>
+      <xs:enumeration value="unassigned_result"/>
+      <xs:enumeration value="no_usual_store"/>
+      <xs:enumeration value="PERSONALIZATION_WITHDRAWN"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="StoreSource">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="given"/>
+      <xs:enumeration value="usual_store"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Kind">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="primary"/>
+      <xs:enumeration value="alternative"/>
+      <xs:enumeration value="elsewhere"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Signal">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="segment"/>
+      <xs:enumeration value="preferred_category"/>
+      <xs:enumeration value="purchase_history"/>
+      <xs:enumeration value="relation_substitute"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="UnavailableReason">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="not_sellable"/>
+      <xs:enumeration value="channel_not_enabled"/>
+      <xs:enumeration value="out_of_stock"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="ExclusionReason">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="already_bought"/>
+      <xs:enumeration value="inactive"/>
+      <xs:enumeration value="not_sellable"/>
+      <xs:enumeration value="store_not_selling"/>
+      <xs:enumeration value="channel_not_enabled"/>
+      <xs:enumeration value="out_of_stock"/>
+      <xs:enumeration value="PERSONALIZATION_WITHDRAWN"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Share">
+    <xs:restriction base="xs:decimal">
+      <xs:minInclusive value="0"/>
+      <xs:maxInclusive value="1"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="SignalCount">
+    <xs:restriction base="xs:positiveInteger">
+      <xs:maxInclusive value="3"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="Reason">
+    <xs:sequence>
+      <xs:element name="signal" type="rec:Signal"/>
+      <xs:element name="segment_buyers" type="xs:positiveInteger" minOccurs="0"/>
+      <xs:element name="category_id" type="xs:integer" minOccurs="0"/>
+      <xs:element name="share" type="rec:Share" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Factors">
+    <xs:sequence>
+      <xs:element name="signals_matched" type="rec:SignalCount"/>
+      <xs:element name="segment_buyers" type="xs:positiveInteger" minOccurs="0"/>
+      <xs:element name="category_share" type="rec:Share" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Availability">
+    <xs:sequence>
+      <xs:element name="store_id" type="xs:integer"/>
+      <xs:element name="channel_id" type="xs:integer" minOccurs="0"/>
+      <xs:element name="quantity_on_hand" type="xs:positiveInteger"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="RecommendationItem">
+    <xs:sequence>
+      <xs:element name="product_id" type="xs:integer"/>
+      <xs:element name="category_id" type="xs:integer"/>
+      <xs:element name="kind" type="rec:Kind"/>
+      <xs:element name="position" type="xs:positiveInteger"/>
+      <xs:element name="factors" type="rec:Factors" minOccurs="0"/>
+      <xs:element name="availability" type="rec:Availability"/>
+      <xs:element name="alternative_for" type="xs:integer" minOccurs="0"/>
+      <xs:element name="unavailable_reason" type="rec:UnavailableReason" minOccurs="0"/>
+      <xs:element name="reasons" type="rec:Reason" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Exclusion">
+    <xs:sequence>
+      <xs:element name="reason" type="rec:ExclusionReason"/>
+      <xs:element name="count" type="xs:positiveInteger"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Window">
+    <xs:sequence>
+      <xs:element name="days" type="xs:positiveInteger"/>
+      <xs:element name="start" type="xs:dateTime"/>
+      <xs:element name="end" type="xs:dateTime"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Recommendation">
+    <xs:sequence>
+      <xs:element name="decision_id" type="rec:Uuid"/>
+      <xs:element name="customer_id" type="rec:Uuid"/>
+      <xs:element name="status" type="rec:Status"/>
+      <xs:element name="computed_at" type="xs:dateTime"/>
+      <xs:element name="window" type="rec:Window"/>
+      <xs:element name="label_code" type="xs:string" minOccurs="0"/>
+      <xs:element name="run_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="model_version_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="usual_store_id" type="xs:integer" minOccurs="0"/>
+      <xs:element name="store_id" type="xs:integer" minOccurs="0"/>
+      <xs:element name="store_source" type="rec:StoreSource" minOccurs="0"/>
+      <xs:element name="channel_id" type="xs:integer" minOccurs="0"/>
+      <xs:element name="exclusions" type="rec:Exclusion"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="items" type="rec:RecommendationItem"
+                  minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="RecommendationDecision">
+    <xs:sequence>
+      <xs:element name="decision_id" type="rec:Uuid"/>
+      <xs:element name="customer_id" type="rec:Uuid" minOccurs="0"/>
+      <xs:element name="status" type="rec:Status"/>
+      <xs:element name="computed_at" type="xs:dateTime"/>
+      <xs:element name="run_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="model_version_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="store_id" type="xs:integer" minOccurs="0"/>
+      <xs:element name="store_source" type="rec:StoreSource" minOccurs="0"/>
+      <xs:element name="channel_id" type="xs:integer" minOccurs="0"/>
+      <xs:element name="exclusions" type="rec:Exclusion"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="items" type="rec:RecommendationItem"
+                  minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="RecommendationDecisionSummary">
+    <xs:sequence>
+      <xs:element name="decision_id" type="rec:Uuid"/>
+      <xs:element name="customer_id" type="rec:Uuid" minOccurs="0"/>
+      <xs:element name="status" type="rec:Status"/>
+      <xs:element name="computed_at" type="xs:dateTime"/>
+      <xs:element name="store_id" type="xs:integer" minOccurs="0"/>
+      <xs:element name="store_source" type="rec:StoreSource" minOccurs="0"/>
+      <xs:element name="channel_id" type="xs:integer" minOccurs="0"/>
+      <xs:element name="item_count" type="xs:nonNegativeInteger"/>
+      <xs:element name="exclusions" type="rec:Exclusion"
+                  minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="RecommendationDecisions">
+    <xs:sequence>
+      <xs:element name="RecommendationDecisionSummary"
+                  type="rec:RecommendationDecisionSummary"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name="Recommendation" type="rec:Recommendation"/>
+  <xs:element name="RecommendationDecision" type="rec:RecommendationDecision"/>
+  <xs:element name="RecommendationDecisions" type="rec:RecommendationDecisions"/>
+</xs:schema>

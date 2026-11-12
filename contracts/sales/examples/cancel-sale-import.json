@@ -1,0 +1,15 @@
+{
+  "import_id": 18,
+  "status": "CANCELLED",
+  "contract_version": 1,
+  "total_rows": 40000,
+  "chunk_count": 267,
+  "next_sequence": 120,
+  "received": 18000,
+  "accepted": 12000,
+  "rejected": 300,
+  "pending": 5700,
+  "created_at": "2026-10-29T09:00:00Z",
+  "finished_at": "2026-10-29T09:02:03Z",
+  "created_by": "11111111-1111-1111-1111-000000000001"
+}

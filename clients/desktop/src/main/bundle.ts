@@ -30,8 +30,9 @@ export function loadBundle(dir: string): Bundle {
   return { ...meta, files };
 }
 
-export function serviceNamespace(bundle: Bundle, service: string): string {
-  return `${bundle.namespaceBase}/${service}/v1`;
+/** The namespace a service's XML answers use in a major version ("v1", "v2"; ADR-0035). */
+export function serviceNamespace(bundle: Bundle, service: string, version = 'v1'): string {
+  return `${bundle.namespaceBase}/${service}/${version}`;
 }
 
 export const COMMON_NAMESPACE_SUFFIX = 'common/v1';

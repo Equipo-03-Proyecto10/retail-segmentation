@@ -1,0 +1,6 @@
+{
+  "code": "assignment_not_found",
+  "message": "The customer holds no arm in a running experiment of this campaign.",
+  "correlation_id": "corr-assignment-not-found",
+  "details": []
+}

@@ -1,0 +1,14 @@
+flask memory.max: 167772160
+flask memory.swap.max: 167772160
+flask memory.current: 86593536
+flask memory.peak: 93487104
+flask memory.swap.current: 0
+flask memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 sock_throttled 0
+flask cpu.max: 50000 100000
+rust memory.max: 167772160
+rust memory.swap.max: 167772160
+rust memory.current: 40726528
+rust memory.peak: 46723072
+rust memory.swap.current: 0
+rust memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 sock_throttled 0
+rust cpu.max: 50000 100000

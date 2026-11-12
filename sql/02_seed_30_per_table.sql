@@ -411,6 +411,52 @@ SELECT n, 'SKU-' || lpad(n::text,5,'0'), 'Demo Product ' || n,
        TRUE
 FROM generate_series(1,40) n;
 
+-- ---------- products.* commercial details (F21-10, #790) ----------
+-- One block for the boundary's four tables, after product and before anything
+-- sells it. Every seeded product is active, so each status row says what
+-- is_active already says and the two never disagree (the trigger in the
+-- products boundary keeps them so). Nothing uses random().
+--
+-- product_status (40): one row per seeded product.
+INSERT INTO products.product_status (product_id, commercial_status)
+SELECT product_id, CASE WHEN is_active THEN 'active' ELSE 'discontinued' END
+FROM product
+ORDER BY product_id;
+
+-- product_attribute (120): three attributes per product, from short
+-- vocabularies by modular arithmetic.
+INSERT INTO products.product_attribute (product_id, name, value)
+SELECT p.product_id, a.name, a.value
+FROM product AS p
+CROSS JOIN LATERAL (VALUES
+    ('brand',     (ARRAY['Aurora','Norte','Sierra','Delta','Valle','Costa','Pinar','Mesa'])[1 + (p.product_id % 8)]),
+    ('color',     (ARRAY['black','white','graphite','blue','green','red'])[1 + (p.product_id % 6)]),
+    ('pack_size', (ARRAY['1 unit','2 units','6 units','12 units'])[1 + (p.product_id % 4)])
+) AS a(name, value)
+ORDER BY p.product_id, a.name;
+
+-- product_barcode (40): a GTIN-13 under the GS1 Mexico prefix 750, the body
+-- numbered from the product id and its check digit computed by the same
+-- function the CHECK uses.
+INSERT INTO products.product_barcode (product_id, barcode)
+SELECT product_id,
+       b.body || products.gtin_check_digit(b.body)::text
+FROM product AS p
+CROSS JOIN LATERAL (SELECT '7501' || lpad(p.product_id::text, 8, '0') AS body) AS b
+ORDER BY product_id;
+
+-- product_relation (50, directed). Products n and n + 30 share a category
+-- (category = 1 + (n - 1) % 30), so each of the ten pairs substitutes both
+-- ways (20 rows); product n is bought with product n + 1, whose category
+-- differs, for n = 1 to 30, and the complement is not mirrored (30 rows).
+INSERT INTO products.product_relation (product_id, related_product_id, relation_kind)
+SELECT n, n + 30, 'substitute' FROM generate_series(1,10) AS n
+UNION ALL
+SELECT n + 30, n, 'substitute' FROM generate_series(1,10) AS n
+UNION ALL
+SELECT n, n + 1, 'complement' FROM generate_series(1,30) AS n
+ORDER BY 3, 1, 2;
+
 -- ---------- transaction (300, varied by customer, within the last 180 days) ----------
 -- Customers do not behave alike. Each one has a purchase count, a day of last
 -- purchase and a spacing between purchases, all derived from the customer
@@ -806,7 +852,8 @@ JOIN app_user AS u ON u.role_id = r.role_id AND u.is_active;
 -- ---------- audit_log ----------
 -- Filled by the triggers as the statements above ran: segment, segment_rule,
 -- campaign, experiment, category, product, store, channel, role, customer,
--- app_user and customer_segment_history. Nothing is inserted here by hand.
+-- app_user, customer_segment_history, stores.store_location and the products
+-- boundary's four tables. Nothing is inserted here by hand.
 
 -- ---------- outboxes (ADR-0054, #597) ----------
 -- Empty-database bootstrap only: remove the events this transaction captured

@@ -200,6 +200,111 @@ def test_an_invalid_example_that_validates_fails(tmp_path: Path) -> None:
     )
 
 
+def _add_v2(repo: Path) -> None:
+    """A second major beside v1: its XSD, and its example in examples/v2/."""
+
+    v1 = "https://mosaiq.maxthecoder.online/xml/alpha/v1"
+    v2 = "https://mosaiq.maxthecoder.online/xml/alpha/v2"
+    xsd = (repo / "contracts/alpha/alpha.xsd").read_text().replace(v1, v2)
+    _write(repo / "contracts/alpha/alpha.v2.xsd", xsd)
+    example = (repo / "contracts/alpha/examples/alpha.xml").read_text()
+    directory = repo / "contracts/alpha/examples/v2"
+    directory.mkdir()
+    _write(directory / "alpha.xml", example.replace(v1, v2))
+    _bump_contract(repo)
+
+
+def test_a_later_major_with_valid_examples_passes_without_output(
+    tmp_path: Path,
+) -> None:
+    repo, base = _repository(tmp_path)
+    _add_v2(repo)
+    _commit(repo, "publish a v2 beside v1")
+
+    result = _run(repo, base)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout == ""
+
+
+def test_a_v2_example_the_v2_xsd_refuses_fails(tmp_path: Path) -> None:
+    repo, base = _repository(tmp_path)
+    _add_v2(repo)
+    _replace(repo / "contracts/alpha/examples/v2/alpha.xml", "<id>1</id>", "<id>x</id>")
+    _commit(repo, "break a v2 example")
+
+    _assert_fails(
+        _run(repo, base), "invalid XML example: contracts/alpha/examples/v2/alpha.xml"
+    )
+
+
+def test_a_v2_example_in_the_v1_namespace_fails(tmp_path: Path) -> None:
+    repo, base = _repository(tmp_path)
+    _add_v2(repo)
+    valid_v1 = (repo / "contracts/alpha/examples/alpha.xml").read_text()
+    _write(repo / "contracts/alpha/examples/v2/alpha.xml", valid_v1)
+    _commit(repo, "put a v1 document in examples/v2")
+
+    _assert_fails(
+        _run(repo, base), "invalid XML example: contracts/alpha/examples/v2/alpha.xml"
+    )
+
+
+def test_an_invalid_v2_example_that_validates_fails(tmp_path: Path) -> None:
+    repo, base = _repository(tmp_path)
+    _add_v2(repo)
+    valid = (repo / "contracts/alpha/examples/v2/alpha.xml").read_text()
+    _write(repo / "contracts/alpha/examples/v2/alpha.invalid.xml", valid)
+    _commit(repo, "make the invalid v2 example valid")
+
+    _assert_fails(
+        _run(repo, base),
+        "invalid example accepted: contracts/alpha/examples/v2/alpha.invalid.xml",
+    )
+
+
+def test_a_refused_invalid_v2_example_passes(tmp_path: Path) -> None:
+    repo, base = _repository(tmp_path)
+    _add_v2(repo)
+    valid = (repo / "contracts/alpha/examples/v2/alpha.xml").read_text()
+    _write(
+        repo / "contracts/alpha/examples/v2/alpha.invalid.xml",
+        valid.replace("<id>1</id>", "<id>x</id>"),
+    )
+    _commit(repo, "add a refused v2 example")
+
+    result = _run(repo, base)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout == ""
+
+
+def test_examples_of_a_major_with_no_xsd_fail(tmp_path: Path) -> None:
+    repo, base = _repository(tmp_path)
+    _add_v2(repo)
+    (repo / "contracts/alpha/alpha.v2.xsd").unlink()
+    _commit(repo, "drop the v2 schema")
+
+    _assert_fails(
+        _run(repo, base),
+        "missing XSD for contracts/alpha/examples/v2: contracts/alpha/alpha.v2.xsd",
+    )
+
+
+def test_an_examples_directory_that_is_not_a_major_fails(tmp_path: Path) -> None:
+    repo, base = _repository(tmp_path)
+    directory = repo / "contracts/alpha/examples/drafts"
+    directory.mkdir()
+    _write(directory / "alpha.xml", "<not-validated/>\n")
+    _bump_contract(repo)
+    _commit(repo, "hide an example in an unchecked directory")
+
+    _assert_fails(
+        _run(repo, base),
+        "unexpected examples directory: contracts/alpha/examples/drafts",
+    )
+
+
 def test_an_oasdiff_breaking_change_within_v1_fails(tmp_path: Path) -> None:
     repo, base = _repository(tmp_path)
     openapi = repo / "contracts/alpha/openapi.yaml"

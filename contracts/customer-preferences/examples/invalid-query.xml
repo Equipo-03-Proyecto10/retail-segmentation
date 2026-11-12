@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_query</code>
+  <message>A query parameter is malformed.</message>
+  <correlation_id>corr-invalid-query</correlation_id>
+  <details>
+    <field>as_of</field>
+    <code>in_the_future</code>
+  </details>
+</Error>

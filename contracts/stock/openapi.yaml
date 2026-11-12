@@ -387,6 +387,9 @@ paths:
       - MARKETING
       - INVENTORY_PLANNER
       - AUDITOR
+      - SALES_ASSOCIATE
+      - LOYALTY_OFFICER
+      - COMMERCIAL_SUPERVISOR
       x-mosaiq-conformance-query:
         store_id: '3'
       parameters:

@@ -217,6 +217,29 @@ def registry_names() -> list[str]:
     return names
 
 
+def implemented(name: str) -> bool:
+    """Whether a registered service has an implementation to answer for it.
+
+    A contract merges before its service (AGENTS.md, ADR-0035), so a new
+    service is registered, and the gateway routes its prefix, while nothing
+    stands behind the route: every request to it is a 502. Until
+    `services/<name>/compose.yaml` exists, there is nothing to test.
+    """
+    return (ROOT / "services" / name / "compose.yaml").is_file()
+
+
+def not_implemented_reason(name: str) -> str:
+    return (
+        f"{name} has a contract and a gateway route but no implementation yet "
+        f"(no services/{name}/compose.yaml)"
+    )
+
+
+def implemented_names() -> list[str]:
+    """The registered services that are implemented, for a case that loops."""
+    return [name for name in registry_names() if implemented(name)]
+
+
 @dataclass
 class Session:
     access: str

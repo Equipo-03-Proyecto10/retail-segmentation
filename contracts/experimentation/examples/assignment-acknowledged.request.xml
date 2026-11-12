@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<AssignmentRequest xmlns="https://mosaiq.maxthecoder.online/xml/experimentation/v1">
+  <experiment_id>15</experiment_id>
+  <acknowledge_underpowered>true</acknowledge_underpowered>
+</AssignmentRequest>

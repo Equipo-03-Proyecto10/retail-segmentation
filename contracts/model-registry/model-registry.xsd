@@ -382,6 +382,321 @@
     </xs:sequence>
   </xs:complexType>
 
+  <!-- Drift (F23-08; ADR-0065). A distribution change is reported as data
+       drift; a claim about the relation between a segment and an outcome is
+       made only by an outcome test. The schema cannot say when each element
+       is present, so the comments below do. -->
+  <xs:simpleType name="DriftKind">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="DATA_DRIFT"/>
+      <xs:enumeration value="OUTCOME_TEST"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="DistributionVariable">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="SEGMENT_SHARES"/>
+      <xs:enumeration value="R"/>
+      <xs:enumeration value="F"/>
+      <xs:enumeration value="M"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="DriftVariable">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="SEGMENT_SHARES"/>
+      <xs:enumeration value="R"/>
+      <xs:enumeration value="F"/>
+      <xs:enumeration value="M"/>
+      <xs:enumeration value="REPURCHASE_RATE"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="DriftComparison">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="COMPARED"/>
+      <xs:enumeration value="INSUFFICIENT_DATA"/>
+      <xs:enumeration value="NOT_COMPARED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="NotComparedReason">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="VERSION_CHANGE"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="DriftStatisticName">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="PSI"/>
+      <xs:enumeration value="CHI_SQUARE"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="ThresholdBasis">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="VALUE"/>
+      <xs:enumeration value="P_VALUE"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="StatisticLevel">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="NORMAL"/>
+      <xs:enumeration value="WATCH"/>
+      <xs:enumeration value="ALARM"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="VariableState">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="NORMAL"/>
+      <xs:enumeration value="WATCH"/>
+      <xs:enumeration value="ALARM_PENDING"/>
+      <xs:enumeration value="ALARM"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="OutcomeResult">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="PASSED"/>
+      <xs:enumeration value="NOT_PASSED"/>
+      <xs:enumeration value="NOT_TESTED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="DriftClaim">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="DISTRIBUTION_CHANGE"/>
+      <xs:enumeration value="CONCEPT_DRIFT"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="OutcomeClaim">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="CONCEPT_DRIFT"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="OutcomeRelation">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="REPURCHASE_GIVEN_SEGMENT"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="ReviewCode">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="REVIEW_SEGMENT_MIX"/>
+      <xs:enumeration value="REVIEW_FEATURE_DISTRIBUTION"/>
+      <xs:enumeration value="REVIEW_PREDICTIVE_RELATION"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="ReviewText">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:maxLength value="500"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- A probability. xs:double because a p-value can be far below the
+       precision of xs:decimal text, and is written as 2.78E-146. -->
+  <xs:simpleType name="PValue">
+    <xs:restriction base="xs:double">
+      <xs:minInclusive value="0"/>
+      <xs:maxInclusive value="1"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="ModelVersionRef">
+    <xs:sequence>
+      <xs:element name="version_id" type="xs:long"/>
+      <xs:element name="name" type="mr:Name"/>
+      <xs:element name="method" type="mr:Method"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="DriftWindow">
+    <xs:sequence>
+      <xs:element name="start" type="xs:dateTime"/>
+      <xs:element name="end" type="xs:dateTime"/>
+      <xs:element name="days" type="mr:WindowDays"/>
+      <xs:element name="customer_count" type="xs:nonNegativeInteger"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="DriftReference">
+    <xs:sequence>
+      <xs:element name="sample_size" type="xs:positiveInteger"/>
+      <xs:element name="captured_at" type="xs:dateTime"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- lower and upper are omitted for a segment bin and for NO_VALUE. -->
+  <xs:complexType name="DriftBin">
+    <xs:sequence>
+      <xs:element name="label" type="xs:string"/>
+      <xs:element name="lower" type="xs:decimal" minOccurs="0"/>
+      <xs:element name="upper" type="xs:decimal" minOccurs="0"/>
+      <xs:element name="reference_share" type="mr:Fraction"/>
+      <xs:element name="current_share" type="mr:Fraction"/>
+      <xs:element name="contribution">
+        <xs:simpleType>
+          <xs:restriction base="xs:decimal">
+            <xs:minInclusive value="0"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- p_value and degrees_of_freedom are present for CHI_SQUARE only. -->
+  <xs:complexType name="DriftStatistic">
+    <xs:sequence>
+      <xs:element name="statistic" type="mr:DriftStatisticName"/>
+      <xs:element name="value">
+        <xs:simpleType>
+          <xs:restriction base="xs:decimal">
+            <xs:minInclusive value="0"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+      <xs:element name="p_value" type="mr:PValue" minOccurs="0"/>
+      <xs:element name="degrees_of_freedom" type="xs:positiveInteger" minOccurs="0"/>
+      <xs:element name="threshold_basis" type="mr:ThresholdBasis"/>
+      <xs:element name="watch_threshold" type="xs:decimal"/>
+      <xs:element name="alarm_threshold" type="xs:decimal"/>
+      <xs:element name="level" type="mr:StatisticLevel"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="VariableDrift">
+    <xs:sequence>
+      <xs:element name="variable" type="mr:DistributionVariable"/>
+      <xs:element name="state" type="mr:VariableState"/>
+      <xs:element name="statistics" type="mr:DriftStatistic"
+                  minOccurs="1" maxOccurs="2"/>
+      <xs:element name="bins" type="mr:DriftBin"
+                  minOccurs="1" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- rate is omitted when there are no customers. -->
+  <xs:complexType name="OutcomeRates">
+    <xs:sequence>
+      <xs:element name="customers" type="xs:nonNegativeInteger"/>
+      <xs:element name="repurchasers" type="xs:nonNegativeInteger"/>
+      <xs:element name="rate" type="mr:Fraction" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="OutcomeThresholds">
+    <xs:sequence>
+      <xs:element name="alpha" type="mr:Fraction"/>
+      <xs:element name="min_difference_points" type="xs:decimal"/>
+      <xs:element name="min_customers_per_side" type="xs:positiveInteger"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- NOT_TESTED omits z, p_value and adjusted_p_value; difference_points is
+       omitted when either side has no customers. -->
+  <xs:complexType name="OutcomeSegment">
+    <xs:sequence>
+      <xs:element name="label_code" type="xs:string"/>
+      <xs:element name="reference" type="mr:OutcomeRates"/>
+      <xs:element name="current" type="mr:OutcomeRates"/>
+      <xs:element name="difference_points" type="xs:decimal" minOccurs="0"/>
+      <xs:element name="z" type="xs:decimal" minOccurs="0"/>
+      <xs:element name="p_value" type="mr:PValue" minOccurs="0"/>
+      <xs:element name="adjusted_p_value" type="mr:PValue" minOccurs="0"/>
+      <xs:element name="result" type="mr:OutcomeResult"/>
+      <xs:element name="persisted" type="xs:boolean"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- claim is present only when a segment persisted, and never otherwise. -->
+  <xs:complexType name="OutcomeTest">
+    <xs:sequence>
+      <xs:element name="relation" type="mr:OutcomeRelation"/>
+      <xs:element name="horizon_days" type="xs:positiveInteger"/>
+      <xs:element name="cohort_as_of" type="xs:dateTime"/>
+      <xs:element name="thresholds" type="mr:OutcomeThresholds"/>
+      <xs:element name="segments" type="mr:OutcomeSegment"
+                  minOccurs="1" maxOccurs="unbounded"/>
+      <xs:element name="claim" type="mr:OutcomeClaim" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SuggestedReview">
+    <xs:sequence>
+      <xs:element name="code" type="mr:ReviewCode"/>
+      <xs:element name="text" type="mr:ReviewText"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- not_compared_reason only when comparison is NOT_COMPARED;
+       previous_report_id for the first report of a version and kind;
+       variables only for a COMPARED DATA_DRIFT report; outcome_test only for
+       a COMPARED OUTCOME_TEST report; alert_ids when it raised no alert. -->
+  <xs:complexType name="DriftReport">
+    <xs:sequence>
+      <xs:element name="report_id" type="xs:long"/>
+      <xs:element name="kind" type="mr:DriftKind"/>
+      <xs:element name="model_version" type="mr:ModelVersionRef"/>
+      <xs:element name="comparison" type="mr:DriftComparison"/>
+      <xs:element name="not_compared_reason" type="mr:NotComparedReason"
+                  minOccurs="0"/>
+      <xs:element name="window" type="mr:DriftWindow"/>
+      <xs:element name="reference" type="mr:DriftReference"/>
+      <xs:element name="previous_report_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="variables" type="mr:VariableDrift"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="outcome_test" type="mr:OutcomeTest" minOccurs="0"/>
+      <xs:element name="alert_ids" type="xs:long"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="computed_at" type="xs:dateTime"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="DriftReports">
+    <xs:sequence>
+      <xs:element name="DriftReport" type="mr:DriftReport"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- statistics and bins for a DATA_DRIFT alert only; outcome_test, with the
+       persisted segments alone, for an OUTCOME_TEST alert only. -->
+  <xs:complexType name="DriftAlert">
+    <xs:sequence>
+      <xs:element name="alert_id" type="xs:long"/>
+      <xs:element name="report_id" type="xs:long"/>
+      <xs:element name="previous_report_id" type="xs:long"/>
+      <xs:element name="kind" type="mr:DriftKind"/>
+      <xs:element name="claim" type="mr:DriftClaim"/>
+      <xs:element name="model_version" type="mr:ModelVersionRef"/>
+      <xs:element name="variable" type="mr:DriftVariable"/>
+      <xs:element name="window" type="mr:DriftWindow"/>
+      <xs:element name="reference" type="mr:DriftReference"/>
+      <xs:element name="statistics" type="mr:DriftStatistic"
+                  minOccurs="0" maxOccurs="2"/>
+      <xs:element name="bins" type="mr:DriftBin"
+                  minOccurs="0" maxOccurs="3"/>
+      <xs:element name="outcome_test" type="mr:OutcomeTest" minOccurs="0"/>
+      <xs:element name="suggested_review" type="mr:SuggestedReview"/>
+      <xs:element name="raised_at" type="xs:dateTime"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="DriftAlerts">
+    <xs:sequence>
+      <xs:element name="DriftAlert" type="mr:DriftAlert"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
   <xs:element name="ModelVersion" type="mr:ModelVersion"/>
   <xs:element name="ModelVersions" type="mr:ModelVersions"/>
   <xs:element name="ModelVersionRequest" type="mr:ModelVersionRequest"/>
@@ -391,4 +706,8 @@
   <xs:element name="ModelTraining" type="mr:ModelTraining"/>
   <xs:element name="ModelTrainings" type="mr:ModelTrainings"/>
   <xs:element name="ModelTrainingRequest" type="mr:ModelTrainingRequest"/>
+  <xs:element name="DriftReport" type="mr:DriftReport"/>
+  <xs:element name="DriftReports" type="mr:DriftReports"/>
+  <xs:element name="DriftAlert" type="mr:DriftAlert"/>
+  <xs:element name="DriftAlerts" type="mr:DriftAlerts"/>
 </xs:schema>

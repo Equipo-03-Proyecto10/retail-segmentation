@@ -4,7 +4,12 @@ info:
   version: 1.1.0
   description: >-
     Reads a customer's preference profile and replaces each of its two sets,
-    preferred channels and interest categories, only as a whole (RN-54).
+    preferred channels and interest categories, only as a whole (RN-54). Also
+    records a customer's consent by purpose and their restrictions as an
+    append-only, attributed log whose current state is published to the other
+    boundaries (RN-73, ADR-0066), reads the history of those records and of the
+    two sets, and returns declared and inferred interests apart, so that an
+    inferred interest never stands in for a declared one.
 security:
   - bearer: []
 tags:
@@ -78,8 +83,11 @@ paths:
         leave exactly one of the two submitted sets, never a mixture. A duplicate id
         in the list is 422 `invalid_body`, with `details` naming the field. The
         schema does not check that ids exist, so that the service answers
-        ``unknown_channel`` with its own code. The other set is untouched. Answers
-        200 with the whole profile after the replace.
+        ``unknown_channel`` with its own code. The other set is untouched. A replace
+        that changes the set is also recorded, with its before and after, in the
+        preference history (`listPreferenceChanges`, planned), in the same transaction;
+        the whole-set rule is unchanged. Answers 200 with the whole profile after the
+        replace.
       operationId: replacePreferredChannels
       x-mosaiq-roles:
         - ADMIN
@@ -162,8 +170,13 @@ paths:
         leave exactly one of the two submitted sets, never a mixture. A duplicate id
         in the list is 422 `invalid_body`, with `details` naming the field. The
         schema does not check that ids exist, so that the service answers
-        ``unknown_category`` with its own code. The other set is untouched. Answers
-        200 with the whole profile after the replace.
+        ``unknown_category`` with its own code. The other set is untouched. This
+        replaces the declared set only, and nothing else writes it: an inferred
+        interest is neither read nor written by this operation and can never
+        overwrite a declared one (`getInterestProfile`). A replace that changes the
+        set is also recorded, with its before and after, in the preference history
+        (`listPreferenceChanges`, planned), in the same transaction; the whole-set rule
+        is unchanged. Answers 200 with the whole profile after the replace.
       operationId: replaceInterestCategories
       x-mosaiq-roles:
         - ADMIN
@@ -230,6 +243,550 @@ paths:
           $ref: '#/components/responses/UnsupportedMediaType'
         '422':
           $ref: '#/components/responses/CategoriesRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/preference-profiles/{customer_id}/interests:
+    get:
+      tags: [Preferences]
+      summary: Get a customer's declared and inferred interests, apart
+      description: >-
+        Returns the customer's interests in two separate members. `declared_category_ids`
+        is the customer's own word: the set `PUT .../interest-categories` replaces, and
+        nothing else writes it. `inferred_interests` is what the platform read from the
+        customer's net purchases, each entry stating its `source`, the `window_days` it
+        measured, its `strength` and when it was inferred. The two never merge. An
+        inferred interest has no route that writes the declared set, so it can never
+        overwrite a declared one, and a category the customer declared is not repeated
+        among the inferred ones: the declared interest stands. `strength` is a whole
+        percentage from 1 to 100, the share of the customer's net purchases in the
+        window that include a product of the category, rounded half up; an interest
+        below 1 is not reported. `inferred_interests` is empty whenever the customer's
+        current `PERSONALIZATION` decision is not `GRANTED`, for every role, because an
+        inferred interest exists only to tailor an offer (ADR-0066 section 2); a
+        customer who withdrew `PROFILING` has none at all, since nothing is inferred for
+        them and what was inferred is deleted. Declared interests are returned
+        whatever the consent. A customer with neither gets two empty members (an empty
+        member is no element in XML), not a 404; only a customer absent from
+        `api_customers.customer_ref_v1` is 404 `customer_not_found`. Not recorded in the
+        audit trail: it is the current state, not a history.
+      operationId: getInterestProfile
+      x-mosaiq-status: planned
+      x-mosaiq-roles: [ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR, SALES_ASSOCIATE, LOYALTY_OFFICER]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CustomerId'
+      responses:
+        '200':
+          description: The declared and the inferred interests.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InterestProfile'
+              examples:
+                declared_and_inferred:
+                  externalValue: ./examples/get-interest-profile.json
+                declared_only:
+                  externalValue: ./examples/get-interest-profile-without-inference.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/InterestProfile'
+              examples:
+                declared_and_inferred:
+                  externalValue: ./examples/get-interest-profile.xml
+                declared_only:
+                  externalValue: ./examples/get-interest-profile-without-inference.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CustomerNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/preference-profiles/{customer_id}/restrictions:
+    get:
+      tags: [Preferences]
+      summary: Get a customer's current restrictions
+      description: >-
+        Returns what the customer does not want done, as it stands now: the channels
+        they do not want to be reached on (`restricted_channel_ids`) and the interest
+        categories they do not want offered (`restricted_category_ids`), each sorted
+        ascending, empty when none. A restriction on a category covers the categories
+        below it; the consumer resolves the descendants, and the service returns only
+        the ids the customer named. `personalization_allowed` is `true` only when the
+        customer's current `PERSONALIZATION` decision is `GRANTED`. It is the one effect
+        of consent a floor role needs, so that a seller sees at the till that nothing is
+        to be tailored to this customer, and it is not the consent record: it carries
+        no purpose other than that one, no time, no actor, no source and no basis, and a
+        purpose never recorded reads as `false`, the same as a withdrawn one. The
+        record itself is read from `GET .../consent`, which a seller may not call. Not
+        recorded in the audit trail: it is the current state, not a history. Only a
+        customer absent from `api_customers.customer_ref_v1` is 404 `customer_not_found`.
+      operationId: getRestrictionProfile
+      x-mosaiq-status: planned
+      x-mosaiq-roles: [ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR, SALES_ASSOCIATE, LOYALTY_OFFICER]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CustomerId'
+      responses:
+        '200':
+          description: The current restrictions.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestrictionProfile'
+              examples:
+                restricted:
+                  externalValue: ./examples/get-restrictions.json
+                personalization_withdrawn:
+                  externalValue: ./examples/get-restrictions-personalization-withdrawn.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/RestrictionProfile'
+              examples:
+                restricted:
+                  externalValue: ./examples/get-restrictions.xml
+                personalization_withdrawn:
+                  externalValue: ./examples/get-restrictions-personalization-withdrawn.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CustomerNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/preference-profiles/{customer_id}/consent:
+    get:
+      tags: [Preferences]
+      summary: Get a customer's consent, one entry per purpose
+      description: >-
+        Returns the state of the three purposes, `PERSONALIZATION`, `MARKETING_CONTACT`
+        and `PROFILING`, always in that order and always all three. The state of a
+        purpose is the latest row of the append-only consent log for it: `GRANTED` or
+        `WITHDRAWN`, with the row's `decision_id`, `recorded_at`, `recorded_by`,
+        `source` and `basis`. A purpose with no row is `NOT_RECORDED`, carries none of
+        those, and every reader treats it as not granted. A `PROGRAMME_DEFAULT` basis is
+        reported as such and is never the customer's own consent (ADR-0066 section 1);
+        `recorded_by` is null for a `MIGRATION` decision, whose actor is unknown.
+        `as_of` is optional and is an RFC 3339 instant with an offset: the state is
+        then the latest row of each purpose recorded at or before it, so the state at
+        any past instant is derivable. An `as_of` after the server's clock is 422
+        `invalid_query`. The answer's `as_of` is the instant evaluated, in UTC. This is
+        the current record, not a history, and is not recorded in the audit trail; the
+        history is `GET .../consent-decisions`.
+      operationId: getConsentState
+      x-mosaiq-status: planned
+      x-mosaiq-roles: [ADMIN, AUDITOR, STORE_MANAGER, LOYALTY_OFFICER]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CustomerId'
+        - $ref: '#/components/parameters/AsOf'
+      responses:
+        '200':
+          description: The state of each purpose.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentState'
+              examples:
+                recorded:
+                  externalValue: ./examples/get-consent.json
+                not_recorded:
+                  externalValue: ./examples/get-consent-not-recorded.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/ConsentState'
+              examples:
+                recorded:
+                  externalValue: ./examples/get-consent.xml
+                not_recorded:
+                  externalValue: ./examples/get-consent-not-recorded.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CustomerNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/QueryInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/preference-profiles/{customer_id}/consent-decisions:
+    get:
+      tags: [Preferences]
+      summary: List a customer's consent log
+      description: >-
+        Lists every decision ever recorded for the customer, newest first (by
+        `decision_id`), a grant and the withdrawal that followed it both. A decision is
+        never edited or removed, so this is the evidence of what was allowed and when.
+        `purpose` narrows it to one purpose. A customer with no decision gets an empty
+        page, not a 404. This is the history of one named customer, so each call is
+        recorded as a `HISTORY_READ` domain event of `history` `CONSENT` with the
+        actor, the customer and the time, never the rows returned, and so is each 403
+        (ADR-0066 section 4, ADR-0072). If that event cannot be recorded the call
+        answers 503 `audit_unavailable` and returns nothing; a database that is
+        down is 503 `database_unavailable`, as for any operation.
+      operationId: listConsentDecisions
+      x-mosaiq-status: planned
+      x-mosaiq-roles: [ADMIN, AUDITOR, STORE_MANAGER, LOYALTY_OFFICER]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CustomerId'
+        - $ref: '#/components/parameters/ConsentPurposeFilter'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of the consent log.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentDecisions'
+              examples:
+                decisions:
+                  externalValue: ./examples/list-consent-decisions.json
+                none:
+                  externalValue: ./examples/list-consent-decisions-none.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/ConsentDecisions'
+              examples:
+                decisions:
+                  externalValue: ./examples/list-consent-decisions.xml
+                none:
+                  externalValue: ./examples/list-consent-decisions-none.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CustomerNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/ListInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/LoggedReadUnavailable'
+    post:
+      tags: [Preferences]
+      summary: Record consent decisions
+      description: >-
+        Appends one row to the consent log for each entry of `decisions`, all or
+        nothing, in one transaction that also commits the outbox row for
+        `stream:preferences.v1.consent_changed`, so that when the call returns the
+        published view shows the change. Each entry names a `purpose` and a `decision`
+        (`GRANTED` or `WITHDRAWN`) and nothing else: `recorded_at` is the server's
+        clock, `recorded_by` is the app user of the verified token, `source` is
+        `STAFF_ON_BEHALF` and `basis` is `EXPLICIT`, and none of them is read from the
+        body (an element for one is refused). `CUSTOMER_SELF` and `MIGRATION` are never
+        recorded by this operation. A purpose appears at most once per call, and at
+        most three entries are accepted; a repeat is 422 `invalid_body`, with `details`
+        naming the field. An entry is appended even when it equals the purpose's current
+        state: that confirms the state, and it is how a `PROGRAMME_DEFAULT` decision
+        becomes an `EXPLICIT` one. A withdrawal never rewrites the grant before it; both
+        stay. No operation edits or removes a decision. Registration is customers'
+        operation and records no consent: the client follows it with this call, asking
+        for each purpose separately, and until then every purpose reads `NOT_RECORDED`,
+        which no reader treats as granted. Answers 201 with the state of the three
+        purposes after the append. A customer anonymized by customers-service (ADR-0066
+        section 3) accepts nothing: 409 `customer_anonymized`. There is no idempotency
+        identifier; a replayed call appends an identical decision, which changes no
+        state.
+      operationId: recordConsentDecisions
+      x-mosaiq-status: planned
+      x-mosaiq-roles: [ADMIN, LOYALTY_OFFICER]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CustomerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordConsentDecisionsRequest'
+            examples:
+              register:
+                externalValue: ./examples/record-consent.request.json
+              withdraw_personalization:
+                externalValue: ./examples/withdraw-personalization.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/RecordConsentDecisionsRequest'
+            examples:
+              register:
+                externalValue: ./examples/record-consent.request.xml
+              withdraw_personalization:
+                externalValue: ./examples/withdraw-personalization.request.xml
+      responses:
+        '201':
+          description: The decisions were appended; the state of each purpose after them.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentState'
+              examples:
+                register:
+                  externalValue: ./examples/record-consent.json
+                withdraw_personalization:
+                  externalValue: ./examples/withdraw-personalization.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/ConsentState'
+              examples:
+                register:
+                  externalValue: ./examples/record-consent.xml
+                withdraw_personalization:
+                  externalValue: ./examples/withdraw-personalization.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CustomerNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/CustomerAnonymized'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ConsentBodyRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/preference-profiles/{customer_id}/restriction-decisions:
+    get:
+      tags: [Preferences]
+      summary: List a customer's restriction log
+      description: >-
+        Lists every restriction decision recorded for the customer, newest first (by
+        `decision_id`), an `IMPOSED` and the `LIFTED` that followed it both. `kind`
+        narrows it to channels or to interest categories. A customer with none gets an
+        empty page, not a 404. Like the consent log it is the history of one named
+        customer: each call, and each 403, is recorded as a `HISTORY_READ` domain event
+        of `history` `CONSENT` with the actor, the customer and the time, never the rows
+        (ADR-0066 section 4, ADR-0072), and if the event cannot be recorded the call
+        answers 503 `audit_unavailable` and returns nothing; a database that is down
+        is 503 `database_unavailable`, as for any operation. The current restrictions
+        are `GET .../restrictions`.
+      operationId: listRestrictionDecisions
+      x-mosaiq-status: planned
+      x-mosaiq-roles: [ADMIN, AUDITOR, STORE_MANAGER, LOYALTY_OFFICER]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CustomerId'
+        - $ref: '#/components/parameters/RestrictionKindFilter'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of the restriction log.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestrictionDecisions'
+              examples:
+                decisions:
+                  externalValue: ./examples/list-restriction-decisions.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/RestrictionDecisions'
+              examples:
+                decisions:
+                  externalValue: ./examples/list-restriction-decisions.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CustomerNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/ListInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/LoggedReadUnavailable'
+    post:
+      tags: [Preferences]
+      summary: Record restriction decisions
+      description: >-
+        Appends one row to the restriction log for each entry of `decisions`, all or
+        nothing, in the transaction that also commits the outbox row for
+        `stream:preferences.v1.consent_changed`. Each entry names a `kind` (`CHANNEL` or
+        `INTEREST_CATEGORY`), the `target_id` of that channel or category, and a
+        `decision`, `IMPOSED` or `LIFTED`; `recorded_at`, `recorded_by` and `source` are
+        set as `recordConsentDecisions` sets them and are never read from the body. The
+        current restrictions are the targets whose latest decision is `IMPOSED`. A
+        restriction is a narrower fact inside a granted purpose and is independent of
+        the declared sets: a restricted category is never offered, whether the customer
+        declared it, or it was inferred, or neither. At most 50 entries are accepted,
+        and a `(kind, target_id)` pair appears at most once per call: a repeat is 422
+        `invalid_body`. A `target_id` that names no channel (for `CHANNEL`) or no
+        category (for `INTEREST_CATEGORY`) is 422 `unknown_channel` or
+        `unknown_category`, with `details` naming the field. Like consent, an entry is
+        appended even when it equals the current state, and nothing is edited or
+        removed. Answers 201 with the current restrictions after the append. A customer
+        anonymized by customers-service accepts nothing: 409 `customer_anonymized`.
+      operationId: recordRestrictionDecisions
+      x-mosaiq-status: planned
+      x-mosaiq-roles: [ADMIN, LOYALTY_OFFICER]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CustomerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordRestrictionDecisionsRequest'
+            examples:
+              restrict:
+                externalValue: ./examples/record-restrictions.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/RecordRestrictionDecisionsRequest'
+            examples:
+              restrict:
+                externalValue: ./examples/record-restrictions.request.xml
+      responses:
+        '201':
+          description: The decisions were appended; the current restrictions after them.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestrictionProfile'
+              examples:
+                restricted:
+                  externalValue: ./examples/record-restrictions.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/RestrictionProfile'
+              examples:
+                restricted:
+                  externalValue: ./examples/record-restrictions.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CustomerNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/CustomerAnonymized'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/RestrictionsBodyRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/preference-profiles/{customer_id}/preference-changes:
+    get:
+      tags: [Preferences]
+      summary: List the history of a customer's preference changes
+      description: >-
+        Lists each replace of the customer's two declared sets, newest first (by
+        `change_id`), with the ids the set held before (`before_ids`) and holds after
+        (`after_ids`), sorted ascending, and who replaced it and when. `preference_set`
+        narrows it to `PREFERRED_CHANNELS` or `INTEREST_CATEGORIES`. A replace appends
+        its row in the transaction that replaces the set, so the history and the set
+        never disagree, and a replace whose result equals the set already held changes
+        nothing and appends nothing. The whole-set rule of RN-54 is unchanged: this is
+        a record of the replaces, not a second way to make one. Inferred interests are
+        not preferences the customer replaced and have no entry here. The history of a
+        customer with no change is an empty page, not a 404. It is read by the roles that
+        read the consent log; the audit trail does not log it (ADR-0072 names no history
+        kind for it), and only a customer absent from `api_customers.customer_ref_v1` is
+        404 `customer_not_found`.
+      operationId: listPreferenceChanges
+      x-mosaiq-status: planned
+      x-mosaiq-roles: [ADMIN, AUDITOR, STORE_MANAGER, LOYALTY_OFFICER]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CustomerId'
+        - $ref: '#/components/parameters/PreferenceSetFilter'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of the preference history.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreferenceChanges'
+              examples:
+                changes:
+                  externalValue: ./examples/list-preference-changes.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/PreferenceChanges'
+              examples:
+                changes:
+                  externalValue: ./examples/list-preference-changes.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CustomerNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/ListInvalid'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -330,6 +887,56 @@ components:
         type: string
         format: uuid
         example: 00000000-0000-0000-0000-000000000001
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Size:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    AsOf:
+      name: as_of
+      in: query
+      required: false
+      description: >-
+        An RFC 3339 instant with an offset, not after the server's clock. The
+        consent state is then the latest decision of each purpose recorded at or
+        before it. Absent means now. A malformed value is 422 `invalid_query` with
+        `details` code `invalid_timestamp`, a future one with `in_the_future`.
+      schema:
+        type: string
+        format: date-time
+    ConsentPurposeFilter:
+      name: purpose
+      in: query
+      required: false
+      description: Narrows the log to one purpose. An unknown value is 422 `invalid_query`.
+      schema:
+        $ref: '#/components/schemas/ConsentPurpose'
+    RestrictionKindFilter:
+      name: kind
+      in: query
+      required: false
+      description: Narrows the log to one kind. An unknown value is 422 `invalid_query`.
+      schema:
+        $ref: '#/components/schemas/RestrictionKind'
+    PreferenceSetFilter:
+      name: preference_set
+      in: query
+      required: false
+      description: Narrows the history to one set. An unknown value is 422 `invalid_query`.
+      schema:
+        $ref: '#/components/schemas/PreferenceSet'
   headers:
     CorrelationId:
       description: The effective correlation id for this request.
@@ -366,7 +973,10 @@ components:
           items:
             type: integer
             format: int32
-          description: Sorted ascending; empty when the customer has none.
+          description: >-
+            The customer's declared interests, sorted ascending; empty when the
+            customer has none. Inferred interests are never in this response:
+            `getInterestProfile` returns them, apart.
       xml:
         name: PreferenceProfile
         namespace: https://mosaiq.maxthecoder.online/xml/customer-preferences/v1
@@ -400,6 +1010,432 @@ components:
       xml:
         name: ReplaceInterestCategoriesRequest
         namespace: https://mosaiq.maxthecoder.online/xml/customer-preferences/v1
+    Uuid:
+      type: string
+      pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+    ConsentPurpose:
+      type: string
+      enum: [PERSONALIZATION, MARKETING_CONTACT, PROFILING]
+      description: >-
+        What a customer allowed (ADR-0066 section 1). `PROFILING` permits deriving
+        facts about the individual from their behaviour: segment assignment,
+        inferred interests and a place in a model's input. `PERSONALIZATION`
+        permits tailoring what the customer sees or is offered:
+        recommendations, segment- or interest-based audiences and experiment
+        assignment. `MARKETING_CONTACT` permits sending a campaign communication.
+        These are the only three.
+    ConsentDecisionValue:
+      type: string
+      enum: [GRANTED, WITHDRAWN]
+    ConsentPurposeState:
+      type: string
+      enum: [GRANTED, WITHDRAWN, NOT_RECORDED]
+      description: >-
+        `NOT_RECORDED` is never stored: it is what a purpose with no decision
+        reads as, and every reader treats it as not granted.
+    DecisionSource:
+      type: string
+      enum: [STAFF_ON_BEHALF, CUSTOMER_SELF, MIGRATION]
+      description: >-
+        Who the decision came from. This contract's writes record
+        `STAFF_ON_BEHALF`; `MIGRATION` rows come only from the backfill of
+        ADR-0066, and `CUSTOMER_SELF` is reserved for a self-service route that
+        needs its own decision.
+    ConsentBasis:
+      type: string
+      enum: [EXPLICIT, PROGRAMME_DEFAULT]
+      description: >-
+        `EXPLICIT` when the customer said so; `PROGRAMME_DEFAULT` for the
+        backfill given to customers registered before consent existed, which is
+        reported as such and never as the customer's consent.
+    RestrictionKind:
+      type: string
+      enum: [CHANNEL, INTEREST_CATEGORY]
+    RestrictionDecisionValue:
+      type: string
+      enum: [IMPOSED, LIFTED]
+    PreferenceSet:
+      type: string
+      enum: [PREFERRED_CHANNELS, INTEREST_CATEGORIES]
+    InferredInterest:
+      type: object
+      additionalProperties: false
+      description: >-
+        An interest the platform read from the customer's net purchases. It states
+        where it came from, over which window and how strongly, all four required,
+        so it cannot be mistaken for a declared interest, which carries none of them.
+      required: [category_id, source, window_days, strength, inferred_at]
+      properties:
+        category_id:
+          type: integer
+          format: int32
+        source:
+          type: string
+          enum: [NET_PURCHASES]
+          description: >-
+            What the inference read: the customer's accepted sales less their
+            reversals (ADR-0062).
+        window_days:
+          type: integer
+          minimum: 1
+          maximum: 3650
+          description: The days of sales the inference measured.
+        strength:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: >-
+            The share, as a whole percentage rounded half up, of the customer's net
+            purchases in the window that include a product of the category.
+        inferred_at:
+          type: string
+          format: date-time
+    InterestProfile:
+      type: object
+      additionalProperties: false
+      description: >-
+        Declared and inferred interests in two members that never merge. A category
+        in `declared_category_ids` is not repeated in `inferred_interests`, and no
+        operation turns an inferred interest into a declared one: only the whole-set
+        replace writes the declared set.
+      required: [customer_id, declared_category_ids, inferred_interests]
+      properties:
+        customer_id:
+          $ref: '#/components/schemas/Uuid'
+        declared_category_ids:
+          type: array
+          items:
+            type: integer
+            format: int32
+          description: >-
+            The customer's own word, sorted ascending; empty when none. The same set
+            as `interest_category_ids` of the preference profile.
+        inferred_interests:
+          type: array
+          items:
+            $ref: '#/components/schemas/InferredInterest'
+          description: >-
+            Ordered by `strength` descending, then `category_id` ascending. Empty
+            unless the customer's current `PERSONALIZATION` decision is `GRANTED`,
+            and always empty after `PROFILING` is withdrawn.
+      xml:
+        name: InterestProfile
+        namespace: https://mosaiq.maxthecoder.online/xml/customer-preferences/v1
+    RestrictionProfile:
+      type: object
+      additionalProperties: false
+      required:
+        - customer_id
+        - personalization_allowed
+        - restricted_channel_ids
+        - restricted_category_ids
+      properties:
+        customer_id:
+          $ref: '#/components/schemas/Uuid'
+        personalization_allowed:
+          type: boolean
+          description: >-
+            True only when the current `PERSONALIZATION` decision is `GRANTED`; false
+            for a withdrawn purpose and for one never recorded. It is the effect of
+            consent a floor role may see, and not the consent record.
+        restricted_channel_ids:
+          type: array
+          items:
+            type: integer
+            format: int32
+          description: Channels the customer does not want to be reached on, sorted ascending.
+        restricted_category_ids:
+          type: array
+          items:
+            type: integer
+            format: int32
+          description: >-
+            Interest categories the customer does not want offered, sorted ascending.
+            Each covers the categories below it.
+      xml:
+        name: RestrictionProfile
+        namespace: https://mosaiq.maxthecoder.online/xml/customer-preferences/v1
+    PurposeConsent:
+      type: object
+      additionalProperties: false
+      description: >-
+        The state of one purpose. For `NOT_RECORDED` every member after `state` is
+        null (absent in XML); `recorded_by` is also null for a `MIGRATION` decision.
+      required:
+        - purpose
+        - state
+        - decision_id
+        - recorded_at
+        - recorded_by
+        - source
+        - basis
+      properties:
+        purpose:
+          $ref: '#/components/schemas/ConsentPurpose'
+        state:
+          $ref: '#/components/schemas/ConsentPurposeState'
+        decision_id:
+          type: [integer, 'null']
+          format: int64
+        recorded_at:
+          type: [string, 'null']
+          format: date-time
+        recorded_by:
+          oneOf:
+            - $ref: '#/components/schemas/Uuid'
+            - type: 'null'
+        source:
+          oneOf:
+            - $ref: '#/components/schemas/DecisionSource'
+            - type: 'null'
+        basis:
+          oneOf:
+            - $ref: '#/components/schemas/ConsentBasis'
+            - type: 'null'
+    ConsentState:
+      type: object
+      additionalProperties: false
+      required: [customer_id, as_of, purposes]
+      properties:
+        customer_id:
+          $ref: '#/components/schemas/Uuid'
+        as_of:
+          type: string
+          format: date-time
+          description: The instant the state was evaluated at, in UTC.
+        purposes:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/PurposeConsent'
+          description: >-
+            One entry per purpose, in the order `PERSONALIZATION`,
+            `MARKETING_CONTACT`, `PROFILING`.
+      xml:
+        name: ConsentState
+        namespace: https://mosaiq.maxthecoder.online/xml/customer-preferences/v1
+    ConsentDecision:
+      type: object
+      additionalProperties: false
+      description: >-
+        One row of the append-only consent log. `recorded_by` is null for a
+        `MIGRATION` decision, whose actor is unknown.
+      required:
+        - decision_id
+        - customer_id
+        - purpose
+        - decision
+        - recorded_at
+        - recorded_by
+        - source
+        - basis
+      properties:
+        decision_id:
+          type: integer
+          format: int64
+        customer_id:
+          $ref: '#/components/schemas/Uuid'
+        purpose:
+          $ref: '#/components/schemas/ConsentPurpose'
+        decision:
+          $ref: '#/components/schemas/ConsentDecisionValue'
+        recorded_at:
+          type: string
+          format: date-time
+        recorded_by:
+          oneOf:
+            - $ref: '#/components/schemas/Uuid'
+            - type: 'null'
+        source:
+          $ref: '#/components/schemas/DecisionSource'
+        basis:
+          $ref: '#/components/schemas/ConsentBasis'
+    ConsentDecisions:
+      type: object
+      additionalProperties: false
+      required: [consent_decisions, page_info]
+      properties:
+        consent_decisions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConsentDecision'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: ConsentDecisions
+        namespace: https://mosaiq.maxthecoder.online/xml/customer-preferences/v1
+    ConsentDecisionInput:
+      type: object
+      additionalProperties: false
+      required: [purpose, decision]
+      properties:
+        purpose:
+          $ref: '#/components/schemas/ConsentPurpose'
+        decision:
+          $ref: '#/components/schemas/ConsentDecisionValue'
+    RecordConsentDecisionsRequest:
+      type: object
+      additionalProperties: false
+      description: >-
+        The decisions to append. `recorded_at`, `recorded_by`, `source` and `basis`
+        are the service's and are not members of this body.
+      required: [decisions]
+      properties:
+        decisions:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/ConsentDecisionInput'
+          description: At most one entry per purpose.
+      xml:
+        name: RecordConsentDecisionsRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/customer-preferences/v1
+    RestrictionDecision:
+      type: object
+      additionalProperties: false
+      description: One row of the append-only restriction log.
+      required:
+        - decision_id
+        - customer_id
+        - kind
+        - target_id
+        - decision
+        - recorded_at
+        - recorded_by
+        - source
+      properties:
+        decision_id:
+          type: integer
+          format: int64
+        customer_id:
+          $ref: '#/components/schemas/Uuid'
+        kind:
+          $ref: '#/components/schemas/RestrictionKind'
+        target_id:
+          type: integer
+          format: int32
+          description: The channel id for `CHANNEL`, the category id for `INTEREST_CATEGORY`.
+        decision:
+          $ref: '#/components/schemas/RestrictionDecisionValue'
+        recorded_at:
+          type: string
+          format: date-time
+        recorded_by:
+          $ref: '#/components/schemas/Uuid'
+        source:
+          $ref: '#/components/schemas/DecisionSource'
+    RestrictionDecisions:
+      type: object
+      additionalProperties: false
+      required: [restriction_decisions, page_info]
+      properties:
+        restriction_decisions:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestrictionDecision'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: RestrictionDecisions
+        namespace: https://mosaiq.maxthecoder.online/xml/customer-preferences/v1
+    RestrictionDecisionInput:
+      type: object
+      additionalProperties: false
+      required: [kind, target_id, decision]
+      properties:
+        kind:
+          $ref: '#/components/schemas/RestrictionKind'
+        target_id:
+          type: integer
+          format: int32
+        decision:
+          $ref: '#/components/schemas/RestrictionDecisionValue'
+    RecordRestrictionDecisionsRequest:
+      type: object
+      additionalProperties: false
+      description: >-
+        The decisions to append. `recorded_at`, `recorded_by` and `source` are the
+        service's and are not members of this body.
+      required: [decisions]
+      properties:
+        decisions:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/RestrictionDecisionInput'
+          description: At most one entry per `(kind, target_id)` pair.
+      xml:
+        name: RecordRestrictionDecisionsRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/customer-preferences/v1
+    PreferenceChange:
+      type: object
+      additionalProperties: false
+      description: One replace of one of the two declared sets.
+      required:
+        - change_id
+        - customer_id
+        - preference_set
+        - before_ids
+        - after_ids
+        - changed_at
+        - changed_by
+      properties:
+        change_id:
+          type: integer
+          format: int64
+        customer_id:
+          $ref: '#/components/schemas/Uuid'
+        preference_set:
+          $ref: '#/components/schemas/PreferenceSet'
+        before_ids:
+          type: array
+          items:
+            type: integer
+            format: int32
+          description: The ids the set held before the replace, sorted ascending; may be empty.
+        after_ids:
+          type: array
+          items:
+            type: integer
+            format: int32
+          description: The ids the set holds after the replace, sorted ascending; may be empty.
+        changed_at:
+          type: string
+          format: date-time
+        changed_by:
+          $ref: '#/components/schemas/Uuid'
+    PreferenceChanges:
+      type: object
+      additionalProperties: false
+      required: [preference_changes, page_info]
+      properties:
+        preference_changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/PreferenceChange'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: PreferenceChanges
+        namespace: https://mosaiq.maxthecoder.online/xml/customer-preferences/v1
+    PageInfo:
+      type: object
+      additionalProperties: false
+      required: [page, size, total]
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
     ErrorDetail:
       type: object
       additionalProperties: false
@@ -589,6 +1625,35 @@ components:
               externalValue: ./examples/auth-unavailable.xml
             database_unavailable:
               externalValue: ./examples/database-unavailable.xml
+    LoggedReadUnavailable:
+      description: >-
+        `auth_unavailable`, `database_unavailable`, or `audit_unavailable` when
+        the `HISTORY_READ` domain event of a logged read cannot be recorded
+        (ADR-0072).
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.json
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.json
+            audit_unavailable:
+              externalValue: ./examples/audit-unavailable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.xml
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.xml
+            audit_unavailable:
+              externalValue: ./examples/audit-unavailable.xml
     SchemaNotReady:
       description: '`schema_not_ready`.'
       headers:
@@ -669,3 +1734,105 @@ components:
               externalValue: ./examples/unknown-category.xml
             invalid_body:
               externalValue: ./examples/invalid-body-category-ids.xml
+    CustomerAnonymized:
+      description: '`customer_anonymized`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            customer_anonymized:
+              externalValue: ./examples/customer-anonymized.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            customer_anonymized:
+              externalValue: ./examples/customer-anonymized.xml
+    ConsentBodyRefused:
+      description: '`invalid_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-consent-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/invalid-consent-body.xml
+    RestrictionsBodyRefused:
+      description: '`unknown_channel`, `unknown_category` or `invalid_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unknown_channel:
+              externalValue: ./examples/unknown-restriction-channel.json
+            unknown_category:
+              externalValue: ./examples/unknown-restriction-category.json
+            invalid_body:
+              externalValue: ./examples/invalid-restriction-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unknown_channel:
+              externalValue: ./examples/unknown-restriction-channel.xml
+            unknown_category:
+              externalValue: ./examples/unknown-restriction-category.xml
+            invalid_body:
+              externalValue: ./examples/invalid-restriction-body.xml
+    QueryInvalid:
+      description: '`invalid_query`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.xml
+    ListInvalid:
+      description: '`invalid_query` or `invalid_pagination`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.json
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-query.xml
+            invalid_pagination:
+              externalValue: ./examples/invalid-pagination.xml

@@ -1,0 +1,6 @@
+{
+  "code": "rate_limited",
+  "message": "Too many requests.",
+  "correlation_id": "corr-rate-limited",
+  "details": []
+}

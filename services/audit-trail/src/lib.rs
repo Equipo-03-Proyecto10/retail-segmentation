@@ -9,6 +9,12 @@
 //!
 //! A payload is a JSON object in the JSON representation and a string holding
 //! that object's JSON text in the XML one (`contracts/audit-trail/`).
+//!
+//! It also reports domain events (ADR-0072, F21-25; see [`events`]), and it
+//! records every read of either log as an `AUDIT_READ` event in the read's
+//! own transaction: a read that cannot be recorded is 503 `audit_unavailable`.
+
+pub mod events;
 
 use std::sync::Arc;
 
@@ -23,8 +29,10 @@ use mosaiq_kit::{
     configure_logging, ApiError, Ctx, Database, Detail, Kit, KitConfig, Page, Reply,
     Representation, Value,
 };
-use tokio_postgres::Row;
+use tokio_postgres::{GenericClient, Row};
 use uuid::Uuid;
+
+use crate::events::{AuditRead, ENTRY_FILTERS, EVENT_FILTERS, RANGE_FILTERS};
 
 pub const SERVICE: &str = "audit-trail";
 pub const SUFFIX: &str = "audit_trail";
@@ -52,7 +60,14 @@ pub const ACTIONS: [&str; 3] = ["INSERT", "UPDATE", "DELETE"];
 const CREDENTIAL: &str = "password_hash";
 
 tokio::task_local! {
-    static REQUEST_QUERY: String;
+    static REQUEST: RequestInfo;
+}
+
+/// kit-rs gives a handler neither the query string nor the Accept header.
+#[derive(Clone, Default)]
+struct RequestInfo {
+    query: String,
+    accept: String,
 }
 
 // ---------- the query ----------
@@ -227,6 +242,17 @@ pub async fn list_entries(
     size: u32,
 ) -> Result<(Vec<AuditEntry>, u64), ApiError> {
     let connection = db.connection().await?;
+    let client: &tokio_postgres::Client = &connection;
+    list_entries_in(client, filters, page, size).await
+}
+
+/// [`list_entries`] on a given client, such as the read's transaction.
+pub async fn list_entries_in<C: GenericClient + Sync>(
+    connection: &C,
+    filters: &Filters,
+    page: u32,
+    size: u32,
+) -> Result<(Vec<AuditEntry>, u64), ApiError> {
     let limit = i64::from(size);
     let offset = i64::from(page.saturating_sub(1)) * limit;
     // One statement: the total always comes back, even past the last page, as
@@ -277,6 +303,15 @@ pub async fn list_entries(
 
 pub async fn read_entry(db: &Database, audit_id: i64) -> Result<Option<AuditEntry>, ApiError> {
     let connection = db.connection().await?;
+    let client: &tokio_postgres::Client = &connection;
+    read_entry_in(client, audit_id).await
+}
+
+/// [`read_entry`] on a given client, such as the read's transaction.
+pub async fn read_entry_in<C: GenericClient + Sync>(
+    connection: &C,
+    audit_id: i64,
+) -> Result<Option<AuditEntry>, ApiError> {
     connection
         .query_opt(
             "SELECT audit_id, user_id, entity, entity_pk, action, \
@@ -300,10 +335,83 @@ pub fn audit_entry_not_found() -> ApiError {
 
 // ---------- the operations ----------
 
+fn request_info() -> RequestInfo {
+    REQUEST.try_with(Clone::clone).unwrap_or_default()
+}
+
+/// Whether XML outranks JSON in `accept`, as the kit's negotiation decides:
+/// the details of a domain event have a different shape in each.
+pub fn prefers_xml(accept: &str) -> bool {
+    let mut json = (0.0_f32, 0_u8);
+    let mut xml = (0.0_f32, 0_u8);
+    for range in accept.split(',') {
+        let mut parts = range.split(';');
+        let media = parts.next().unwrap_or("").trim().to_ascii_lowercase();
+        let mut quality = 1.0_f32;
+        for parameter in parts {
+            if let Some(value) = parameter.trim().strip_prefix("q=") {
+                quality = value.trim().parse().unwrap_or(0.0);
+            }
+        }
+        let specificity = match media.as_str() {
+            "*/*" => 0,
+            "application/*" => 1,
+            "application/json" | "application/xml" => 2,
+            _ => continue,
+        };
+        for (target, name) in [
+            (&mut json, "application/json"),
+            (&mut xml, "application/xml"),
+        ] {
+            let matches = media == name || specificity < 2;
+            if matches && quality > 0.0 && (quality, specificity) > (target.0, target.1) {
+                *target = (quality, specificity);
+            }
+        }
+    }
+    xml.0 > 0.0 && (xml.0, xml.1) > (json.0, json.1)
+}
+
+/// Run `read` in one transaction with its `AUDIT_READ`, recorded after the
+/// rows are read and before they are returned. Nothing is returned unless
+/// both commit together.
+async fn recorded<T, F>(ctx: &Ctx, read: AuditRead, rows: F) -> Result<T, ApiError>
+where
+    F: for<'c> FnOnce(
+        &'c tokio_postgres::Transaction<'c>,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<T, ApiError>> + Send + 'c>,
+    >,
+{
+    let principal = ctx
+        .principal()
+        .ok_or_else(|| ApiError::new(401, "invalid_token", "The bearer token is invalid."))?;
+    let mut connection = ctx.db().connection().await?;
+    let transaction = connection.transaction(Some(principal)).await?;
+    // A read that fails records nothing; a 404 (Ok(None)) is still a read of
+    // the log and is recorded. A 422 never reaches here.
+    let result = rows(&transaction).await?;
+    events::record_audit_read(&*transaction, principal, &ctx.correlation_id, &read).await?;
+    transaction
+        .commit()
+        .await
+        .map_err(|_| events::audit_unavailable())?;
+    Ok(result)
+}
+
 async fn list(ctx: Ctx) -> Result<Reply, ApiError> {
-    let query = REQUEST_QUERY.try_with(Clone::clone).unwrap_or_default();
+    let query = request_info().query;
     let filters = parse_filters(&query)?;
-    let (entries, total) = list_entries(ctx.db(), &filters, ctx.page, ctx.size).await?;
+    let read = AuditRead {
+        resource: "AUDIT_ENTRIES",
+        filters: events::filter_names(&query, &ENTRY_FILTERS),
+        subject: None,
+    };
+    let (page, size) = (ctx.page, ctx.size);
+    let (entries, total) = recorded(&ctx, read, |client| {
+        Box::pin(async move { list_entries_in(client, &filters, page, size).await })
+    })
+    .await?;
     let items = entries.iter().map(AuditEntry::wire).collect();
     Ok(Page::new(
         "AuditEntries",
@@ -319,10 +427,77 @@ async fn list(ctx: Ctx) -> Result<Reply, ApiError> {
 
 async fn get(ctx: Ctx) -> Result<Reply, ApiError> {
     let audit_id = ctx.path_i64("audit_id").ok_or_else(audit_entry_not_found)?;
-    let entry = read_entry(ctx.db(), audit_id)
-        .await?
-        .ok_or_else(audit_entry_not_found)?;
+    let read = AuditRead {
+        resource: "AUDIT_ENTRIES",
+        filters: Vec::new(),
+        subject: Some(("audit_entry", audit_id.to_string())),
+    };
+    let entry = recorded(&ctx, read, |client| {
+        Box::pin(async move { read_entry_in(client, audit_id).await })
+    })
+    .await?
+    .ok_or_else(audit_entry_not_found)?;
     Ok(Representation::new("AuditEntry", entry.wire()).into())
+}
+
+async fn list_domain_events(ctx: Ctx) -> Result<Reply, ApiError> {
+    let info = request_info();
+    let filters = events::parse_event_filters(&info.query)?;
+    let read = AuditRead {
+        resource: "DOMAIN_EVENTS",
+        filters: events::filter_names(&info.query, &EVENT_FILTERS),
+        subject: None,
+    };
+    let (page, size) = (ctx.page, ctx.size);
+    let (rows, total) = recorded(&ctx, read, |client| {
+        Box::pin(async move { events::list_events(client, &filters, page, size).await })
+    })
+    .await?;
+    let xml = prefers_xml(&info.accept);
+    let items = rows.iter().map(|event| event.wire(xml)).collect();
+    Ok(Page::new(
+        "DomainEvents",
+        "DomainEvent",
+        "domain_events",
+        items,
+        ctx.page,
+        total,
+    )
+    .size(ctx.size)
+    .into())
+}
+
+async fn get_domain_event(ctx: Ctx) -> Result<Reply, ApiError> {
+    let event_id = ctx
+        .path_uuid("event_id")
+        .ok_or_else(events::domain_event_not_found)?;
+    let read = AuditRead {
+        resource: "DOMAIN_EVENTS",
+        filters: Vec::new(),
+        subject: Some(("domain_event", event_id.to_string())),
+    };
+    let event = recorded(&ctx, read, |client| {
+        Box::pin(async move { events::read_event(client, event_id).await })
+    })
+    .await?
+    .ok_or_else(events::domain_event_not_found)?;
+    let xml = prefers_xml(&request_info().accept);
+    Ok(Representation::new("DomainEvent", event.wire(xml)).into())
+}
+
+async fn verify_domain_events(ctx: Ctx) -> Result<Reply, ApiError> {
+    let query = request_info().query;
+    let (from, to) = events::parse_verification_range(&query)?;
+    let read = AuditRead {
+        resource: "DOMAIN_EVENT_VERIFICATION",
+        filters: events::filter_names(&query, &RANGE_FILTERS),
+        subject: None,
+    };
+    let verification = recorded(&ctx, read, |client| {
+        Box::pin(async move { events::verify_chain(client, from, to).await })
+    })
+    .await?;
+    Ok(Representation::new("DomainEventVerification", verification.wire()).into())
 }
 
 async fn database_ready(db: Arc<Database>) -> bool {
@@ -333,23 +508,40 @@ async fn database_ready(db: Arc<Database>) -> bool {
         .query("SELECT audit_id FROM public.audit_log LIMIT $1", &[&0i64])
         .await
         .is_ok()
+        && connection
+            .query(
+                "SELECT event_id FROM audit_events.domain_event LIMIT $1",
+                &[&0i64],
+            )
+            .await
+            .is_ok()
 }
 
 // ---------- the layer around the kit's router ----------
 
-/// kit-rs gives a handler no query string, so it is kept for the request.
-async fn capture_query(request: Request<Body>, next: Next) -> Response {
-    let query = request.uri().query().unwrap_or_default().to_owned();
-    REQUEST_QUERY.scope(query, next.run(request)).await
+async fn capture_request(request: Request<Body>, next: Next) -> Response {
+    let info = RequestInfo {
+        query: request.uri().query().unwrap_or_default().to_owned(),
+        accept: request
+            .headers()
+            .get(axum::http::header::ACCEPT)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_owned(),
+    };
+    REQUEST.scope(info, next.run(request)).await
 }
 
 pub fn router(config: KitConfig, contracts: &str) -> Result<Router, Box<dyn std::error::Error>> {
     Ok(Kit::new(SERVICE, SUFFIX, contracts, config)?
         .operation("listAuditEntries", list)?
         .operation("getAuditEntry", get)?
+        .operation("listDomainEvents", list_domain_events)?
+        .operation("verifyDomainEvents", verify_domain_events)?
+        .operation("getDomainEvent", get_domain_event)?
         .ready_check(database_ready)
         .into_router()
-        .layer(middleware::from_fn(capture_query)))
+        .layer(middleware::from_fn(capture_request)))
 }
 
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {

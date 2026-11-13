@@ -181,6 +181,11 @@ to an existing XML response type is also breaking because response types are
 closed to additions within a major. A new operation, optional query parameter,
 optional request element, or error code on an existing status is not breaking.
 
+The one exception is a closed vocabulary that an accepted record grows: an
+entry in [`vocabulary-growth.yaml`](vocabulary-growth.yaml) excuses exactly the
+values it lists, for exactly the contract version that adds them
+([ADR-0076](../docs/adr/0076-role-codes-grow-inside-v1-only-by-an-accepted-record-and-clients-grant-nothing-for-an-unknown-role.md)).
+
 A breaking version ships `/v2` beside `/v1` in the same OpenAPI document. Its
 schema is `<name>.v2.xsd`, uses namespace
 `https://mosaiq.maxthecoder.online/xml/<name>/v2`, and is served at

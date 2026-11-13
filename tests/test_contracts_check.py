@@ -7,6 +7,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 CHECK = ROOT / "contracts/check.sh"
 FIXTURES = ROOT / "tests/fixtures/contracts"
@@ -496,3 +498,162 @@ def test_first_addition_of_common_v1_is_not_frozen(tmp_path: Path) -> None:
     result = _run(repo, base)
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout == ""
+
+
+# ---------- vocabulary growth (ADR-0076) ----------
+
+_KIND_SCHEMA = (
+    "              schema:\n"
+    "                type: object\n"
+    "                properties:\n"
+    "                  kind:\n"
+    "                    type: string\n"
+    "                    enum: [ADMIN, ANALYST]\n"
+)
+_KIND_TYPE = (
+    '  <xs:simpleType name="Kind">\n'
+    '    <xs:restriction base="xs:string">\n'
+    '      <xs:enumeration value="ADMIN"/>\n'
+    '      <xs:enumeration value="ANALYST"/>\n'
+    "    </xs:restriction>\n"
+    "  </xs:simpleType>\n"
+)
+
+
+def _vocabulary_repository(tmp_path: Path) -> tuple[Path, str]:
+    """The fixture with a closed `kind` vocabulary in alpha's v1 response."""
+    repo, _ = _repository(tmp_path)
+    contract = repo / "contracts/alpha"
+    _replace(
+        contract / "openapi.yaml",
+        "              schema:\n                type: object\n",
+        _KIND_SCHEMA,
+    )
+    _replace(
+        contract / "alpha.xsd",
+        '  <xs:complexType name="AlphaItem">',
+        _KIND_TYPE + '  <xs:complexType name="AlphaItem">',
+    )
+    _replace(
+        contract / "alpha.xsd",
+        '      <xs:element name="name" type="xs:string"/>\n    </xs:sequence>\n'
+        '  </xs:complexType>\n  <xs:complexType name="AlphaRequest">',
+        '      <xs:element name="name" type="xs:string"/>\n'
+        '      <xs:element name="kind" type="alpha:Kind"/>\n    </xs:sequence>\n'
+        '  </xs:complexType>\n  <xs:complexType name="AlphaRequest">',
+    )
+    _replace(
+        contract / "examples/alpha.xml",
+        "  <name>First</name>",
+        "  <name>First</name>\n  <kind>ADMIN</kind>",
+    )
+    _bump_contract(repo)
+    (repo / "docs/adr").mkdir(parents=True, exist_ok=True)
+    _write(repo / "docs/adr/0001-kinds-grow.md", "# ADR-0001 — Kinds grow\n")
+    base = _commit(repo, "a closed vocabulary in v1")
+    return repo, base
+
+
+def _grow(repo: Path, *values: str, version: str = "1.1.0") -> None:
+    contract = repo / "contracts/alpha"
+    listed = ", ".join(["ADMIN", "ANALYST", *values])
+    _replace(contract / "openapi.yaml", "enum: [ADMIN, ANALYST]", f"enum: [{listed}]")
+    _replace(contract / "openapi.yaml", "version: 1.0.1", f"version: {version}")
+    _replace(
+        contract / "alpha.xsd",
+        '      <xs:enumeration value="ANALYST"/>\n',
+        '      <xs:enumeration value="ANALYST"/>\n'
+        + "".join(f'      <xs:enumeration value="{value}"/>\n' for value in values),
+    )
+    _replace(
+        contract / "examples/alpha.xml",
+        "<kind>ADMIN</kind>",
+        f"<kind>{values[0]}</kind>",
+    )
+
+
+def _entry(
+    repo: Path, *values: str, version: str = "1.1.0", adr: str = "ADR-0001"
+) -> None:
+    _write(
+        repo / "contracts/vocabulary-growth.yaml",
+        "entries:\n"
+        f"  - adr: {adr}\n"
+        "    service: alpha\n"
+        f"    version: {version}\n"
+        f"    values: [{', '.join(values)}]\n",
+    )
+
+
+def test_a_listed_value_grows_the_vocabulary_at_its_version(tmp_path: Path) -> None:
+    repo, base = _vocabulary_repository(tmp_path)
+    _grow(repo, "SALES_ASSOCIATE")
+    _entry(repo, "SALES_ASSOCIATE")
+    _commit(repo, "grow the vocabulary")
+
+    result = _run(repo, base)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout == ""
+
+
+def test_a_value_added_without_an_entry_is_breaking(tmp_path: Path) -> None:
+    repo, base = _vocabulary_repository(tmp_path)
+    _grow(repo, "SALES_ASSOCIATE")
+    _commit(repo, "grow the vocabulary without an entry")
+
+    result = _run(repo, base)
+
+    _assert_fails(result, "breaking OpenAPI change in v1: alpha")
+    _assert_fails(
+        result, "XML response changed in v1: contracts/alpha/examples/alpha.xml"
+    )
+
+
+def test_an_entry_for_another_version_excuses_nothing(tmp_path: Path) -> None:
+    repo, base = _vocabulary_repository(tmp_path)
+    _grow(repo, "SALES_ASSOCIATE", version="1.2.0")
+    _entry(repo, "SALES_ASSOCIATE", version="1.1.0")
+    _commit(repo, "an entry left behind by an earlier version")
+
+    _assert_fails(_run(repo, base), "breaking OpenAPI change in v1: alpha")
+
+
+def test_an_entry_excuses_only_the_values_it_lists(tmp_path: Path) -> None:
+    repo, base = _vocabulary_repository(tmp_path)
+    _grow(repo, "LOYALTY_OFFICER", "SALES_ASSOCIATE")
+    _entry(repo, "SALES_ASSOCIATE")
+    _commit(repo, "one value the entry does not list")
+
+    result = _run(repo, base)
+
+    _assert_fails(result, "breaking OpenAPI change in v1: alpha")
+    _assert_fails(
+        result, "XML response changed in v1: contracts/alpha/examples/alpha.xml"
+    )
+
+
+@pytest.mark.parametrize("unlisted", ["sneaky_role", "Rogue-Role"])
+def test_an_unlisted_value_in_any_spelling_is_still_breaking(
+    tmp_path: Path, unlisted: str
+) -> None:
+    """A value the entry does not list fails whatever its case or characters."""
+    repo, base = _vocabulary_repository(tmp_path)
+    _grow(repo, "SALES_ASSOCIATE", unlisted)
+    _entry(repo, "SALES_ASSOCIATE")
+    _commit(repo, "an unlisted value outside the code pattern")
+
+    _assert_fails(_run(repo, base), "breaking OpenAPI change in v1: alpha")
+
+
+def test_an_entry_must_name_an_existing_record(tmp_path: Path) -> None:
+    repo, base = _vocabulary_repository(tmp_path)
+    _grow(repo, "SALES_ASSOCIATE")
+    _entry(repo, "SALES_ASSOCIATE", adr="ADR-0999")
+    _commit(repo, "an entry with no record behind it")
+
+    _assert_fails(
+        _run(repo, base),
+        "contracts/vocabulary-growth.yaml: entry 1: "
+        "ADR-0999 is not a record in docs/adr/",
+    )

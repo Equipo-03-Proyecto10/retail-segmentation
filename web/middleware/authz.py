@@ -137,6 +137,12 @@ PERMISSIONS: dict[str, frozenset[str]] = {
     # granted to ADMIN, who holds the section outright — a page every signed-in
     # user may open, whatever their role, declares `@requires()` instead.
     "CUSTOMER": frozenset({USER_SELF}),
+    # ADR-0060's floor roles (F19-04, #754). They work through the services
+    # from the Android client and hold nothing in the web: `web/` gains no
+    # route for them, the safe direction ADR-0007 expects.
+    "SALES_ASSOCIATE": frozenset(),
+    "LOYALTY_OFFICER": frozenset(),
+    "COMMERCIAL_SUPERVISOR": frozenset(),
 }
 
 

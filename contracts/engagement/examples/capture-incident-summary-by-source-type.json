@@ -1,0 +1,15 @@
+{
+  "from": "2026-11-04",
+  "to": "2026-11-05",
+  "group_by": "source_type",
+  "groups": [
+    {
+      "key": "SALE",
+      "count": 3
+    },
+    {
+      "key": "CHECK_IN",
+      "count": 2
+    }
+  ]
+}

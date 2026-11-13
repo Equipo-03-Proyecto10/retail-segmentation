@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: stock-service
-  version: 1.1.1
+  version: 1.2.1
   description: 'Publishes the quantity held for each store and product pair, records the movements that
     change it, and states in which channels a product can be sold (RN-14, ADR-0061). A level, movement
     or availability carries ids and quantities only: no product name, price, store name or channel name,
@@ -33,6 +33,9 @@ paths:
       - MARKETING
       - INVENTORY_PLANNER
       - AUDITOR
+      - SALES_ASSOCIATE
+      - LOYALTY_OFFICER
+      - COMMERCIAL_SUPERVISOR
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       - $ref: '#/components/parameters/StoreId'
@@ -381,6 +384,9 @@ paths:
       - MARKETING
       - INVENTORY_PLANNER
       - AUDITOR
+      - SALES_ASSOCIATE
+      - LOYALTY_OFFICER
+      - COMMERCIAL_SUPERVISOR
       x-mosaiq-conformance-query:
         store_id: '3'
       parameters:

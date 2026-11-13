@@ -1559,6 +1559,7 @@ dependencies = [
  "axum",
  "chrono",
  "form_urlencoded",
+ "http-body-util",
  "jsonwebtoken",
  "mosaiq-kit",
  "redis",
@@ -1566,6 +1567,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-postgres",
+ "tower",
  "tracing",
  "uuid",
 ]

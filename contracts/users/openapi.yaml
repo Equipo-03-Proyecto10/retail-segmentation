@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: users-service
-  version: 1.2.0
+  version: 1.3.0
   description: >-
     Owns user accounts, password changes, deactivation, the read-only role
     vocabulary, the atomic administrator transfer, and the stores each floor
@@ -158,6 +158,9 @@ paths:
         - INVENTORY_PLANNER
         - AUDITOR
         - CUSTOMER
+        - SALES_ASSOCIATE
+        - LOYALTY_OFFICER
+        - COMMERCIAL_SUPERVISOR
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
       responses:
@@ -312,6 +315,9 @@ paths:
         - INVENTORY_PLANNER
         - AUDITOR
         - CUSTOMER
+        - SALES_ASSOCIATE
+        - LOYALTY_OFFICER
+        - COMMERCIAL_SUPERVISOR
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/UserId'
@@ -444,7 +450,7 @@ paths:
         - $ref: '#/components/parameters/CorrelationId'
       responses:
         '200':
-          description: All seven immutable role codes.
+          description: All ten immutable role codes.
           headers:
             X-Correlation-ID:
               $ref: '#/components/headers/CorrelationId'
@@ -867,6 +873,9 @@ components:
         - INVENTORY_PLANNER
         - AUDITOR
         - CUSTOMER
+        - SALES_ASSOCIATE
+        - LOYALTY_OFFICER
+        - COMMERCIAL_SUPERVISOR
     RoleCodeInput:
       type: string
       description: >-
@@ -1709,10 +1718,13 @@ components:
           - {role_code: INVENTORY_PLANNER, description: Inventory planner}
           - {role_code: AUDITOR, description: Auditor}
           - {role_code: CUSTOMER, description: Loyalty programme customer}
-        page: {page: 1, size: 20, total: 7}
+          - {role_code: SALES_ASSOCIATE, description: Store seller}
+          - {role_code: LOYALTY_OFFICER, description: Loyalty officer}
+          - {role_code: COMMERCIAL_SUPERVISOR, description: Commercial supervisor}
+        page: {page: 1, size: 20, total: 10}
     RolesXml:
       value: |-
-        <Roles xmlns="https://mosaiq.maxthecoder.online/xml/users/v1" xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1"><Role><role_code>ADMIN</role_code><description>System administrator</description></Role><Role><role_code>ANALYST</role_code><description>Commercial analyst</description></Role><Role><role_code>STORE_MANAGER</role_code><description>Store manager</description></Role><Role><role_code>MARKETING</role_code><description>Marketing</description></Role><Role><role_code>INVENTORY_PLANNER</role_code><description>Inventory planner</description></Role><Role><role_code>AUDITOR</role_code><description>Auditor</description></Role><Role><role_code>CUSTOMER</role_code><description>Loyalty programme customer</description></Role><common:PageInfo><common:page>1</common:page><common:size>20</common:size><common:total>7</common:total></common:PageInfo></Roles>
+        <Roles xmlns="https://mosaiq.maxthecoder.online/xml/users/v1" xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1"><Role><role_code>ADMIN</role_code><description>System administrator</description></Role><Role><role_code>ANALYST</role_code><description>Commercial analyst</description></Role><Role><role_code>STORE_MANAGER</role_code><description>Store manager</description></Role><Role><role_code>MARKETING</role_code><description>Marketing</description></Role><Role><role_code>INVENTORY_PLANNER</role_code><description>Inventory planner</description></Role><Role><role_code>AUDITOR</role_code><description>Auditor</description></Role><Role><role_code>CUSTOMER</role_code><description>Loyalty programme customer</description></Role><Role><role_code>SALES_ASSOCIATE</role_code><description>Store seller</description></Role><Role><role_code>LOYALTY_OFFICER</role_code><description>Loyalty officer</description></Role><Role><role_code>COMMERCIAL_SUPERVISOR</role_code><description>Commercial supervisor</description></Role><common:PageInfo><common:page>1</common:page><common:size>20</common:size><common:total>10</common:total></common:PageInfo></Roles>
     RoleJson:
       value: {role_code: AUDITOR, description: Auditor}
     RoleXml:

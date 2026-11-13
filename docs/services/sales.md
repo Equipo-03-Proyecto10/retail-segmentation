@@ -54,6 +54,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Consumes | `api_products.product_ref_v1` | products |
 | Consumes | `api_customers.customer_ref_v1` | customers |
 | Calls | `api_stock.consume_v1(smallint, int, int)` | stock (EXECUTE; E-05) |
+| Calls | `api_audit.record_event_v1(...)` | audit-trail (EXECUTE; ADR-0072): a `HISTORY_READ` for `GET /v1/sales?customer_id=`, a 403 included, in the read's transaction; 503 `audit_unavailable` when it cannot |
 
 ## Events
 

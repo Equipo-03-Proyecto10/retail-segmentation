@@ -178,6 +178,9 @@ def test_the_details_xml_is_valid_against_the_xsd(client, xsd) -> None:
         ("INVENTORY_PLANNER", "get_relations", 200),
         ("STORE_MANAGER", "get_relations", 200),
         ("MARKETING", "get_details", 200),
+        ("SALES_ASSOCIATE", "get_details", 200),
+        ("LOYALTY_OFFICER", "get_relations", 200),
+        ("COMMERCIAL_SUPERVISOR", "get_details", 200),
         ("CUSTOMER", "get_details", 403),
         ("ANALYST", "patch_details", 403),
         ("STORE_MANAGER", "patch_details", 403),
@@ -185,7 +188,7 @@ def test_the_details_xml_is_valid_against_the_xsd(client, xsd) -> None:
         ("MARKETING", "put_relations", 403),
     ],
 )
-def test_reads_follow_the_six_roles_and_writes_are_admin_only(
+def test_reads_follow_the_nine_roles_and_writes_are_admin_only(
     client, role, operation, expected
 ) -> None:
     if operation == "get_details":

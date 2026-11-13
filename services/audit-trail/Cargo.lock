@@ -67,12 +67,14 @@ dependencies = [
  "http-body-util",
  "indexmap",
  "jsonwebtoken",
+ "libxml",
  "mosaiq-kit",
  "redis",
  "serde_json",
  "tokio",
  "tokio-postgres",
  "tower",
+ "tracing",
  "uuid",
 ]
 

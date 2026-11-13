@@ -51,3 +51,26 @@ def test_inventory_is_written_only_through_the_stock_contract() -> None:
         name for name, text in SOURCES.items() if "api_stock.consume_v1(" in text
     ]
     assert callers == ["store.py"]
+
+
+def test_stock_is_restored_only_through_the_stock_contract() -> None:
+    # A reversal gives stock back through api_stock.restock_v1 (ADR-0061), once
+    # per resellable line and only from the store module, never by a write.
+    callers = [
+        name for name, text in SOURCES.items() if "api_stock.restock_v1(" in text
+    ]
+    assert callers == ["store.py"]
+    assert _matching(r"stock\.stock_movement", re.IGNORECASE) == []
+
+
+def test_only_the_service_writes_a_lines_running_total() -> None:
+    # transaction_line.returned_quantity is written by this service alone, and
+    # nothing else of a sale line is ever updated (ADR-0062).
+    updates = [
+        line
+        for text in SOURCES.values()
+        for line in re.findall(
+            r"update\s+public\.transaction_line\s+set\s+(\w+)", text, re.IGNORECASE
+        )
+    ]
+    assert updates == ["returned_quantity"]

@@ -592,6 +592,41 @@ and one column to `transaction_line`:
   `COMMIT`), a writer guard (only `svc_sales`) and a CHECK (between 0 and
   `quantity`).
 
+Sales imports (ADR-0070, F26-08) add three relations to the sales boundary, all in 4NF,
+and one column to `sales.sale_capture`:
+- **`sales.import`** has two candidate keys, `import_id` and the request's
+  `idempotency_key`, and each determines every other column: the file's announced
+  `total_rows` and `chunk_count`, the status, who opened it and when. Its counts
+  (`received`, `accepted`, `rejected`, `pending`, `next_sequence`) are **not**
+  columns: each is a `count` or a `sum` over the chunks and outcomes below, so
+  storing it would be a derived value free to disagree with them. The status is
+  stored because it is an event the system moved (the last chunk arrived, an
+  administrator cancelled, a day passed), not a function of the rows. A partial
+  unique index allows one open import at a time.
+- **`sales.import_chunk`** is keyed by `(import_id, sequence)`. `row_count`,
+  `first_line`, `last_line` and the payload `rows` are facts of that one chunk. The
+  payload is a document of the rows as the client sent them, held only until they
+  are applied: it is nulled when the chunk is done, cancelled or expired, and
+  `row_count` stays so the counts of an import that never finished still
+  reconcile. `request_sha256` is the canonical body a retry is compared with.
+- **`sales.import_row_outcome`** is keyed by `(import_id, line)`: one row for each
+  line of the file, accepted or refused. An accepted outcome holds only the pointer
+  to the sale line it made, `(transaction_id, product_id)`; the cells are not kept,
+  so no fact about a sale is stored twice. A refused outcome holds what the report
+  shows: `code`, `field`, `message` and, for a duplicate, which kind (`FILE` with
+  the first line, or `RECORDED_SALE` with the sale). Those nullable columns are one
+  value each for that row and apply to some codes only (`import_row_outcome_shape_check`
+  says which), so they are not independent multivalued facts. The outcome is written
+  in the same transaction as the sale line, which is what makes a resume exact.
+- **`sales.sale_capture.import_id`** says which import made a header. It is null for a
+  phone sale, which is why it is a nullable column of the capture row and not a
+  relation of its own: one capture has at most one import.
+
+The `BEFORE INSERT` guard on `public.transaction` gained one rule for imports: an
+imported id is written `svc-sales:imp:<id>`, the web's page writes `<id>`, and each
+refuses the id when the other's spelling exists (SQLSTATE 22023, under advisory lock
+293001), so a file loaded through both paths is recorded once.
+
 The database, not only the service, guarantees that a sale's reversals never
 exceed the sale: a `BEFORE INSERT` trigger on `sales.sale_reversal_line` locks the
 sold line and refuses a line that would push the sum past `quantity`
@@ -925,6 +960,54 @@ The lines a reversal touched; a cancellation lists every line of the sale.
 | `quantity` | `INT` | NN | `CHECK > 0`; the sum over a sale line never exceeds `transaction_line.quantity` (trigger) | Units reversed by this reversal |
 | `reason` | `TEXT` | NULL | not blank, at most 200 characters; present exactly for a return line | Why these units come back |
 | `resellable` | `BOOLEAN` | NN | default true | False when the goods cannot be resold: the line is recorded and stock is not restored |
+
+#### `sales.import`
+
+One row per accepted `POST /v1/sale-imports` (ADR-0070). `svc_sales` holds SELECT,
+INSERT and UPDATE; the web has no privilege on `sales`.
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `import_id` | `BIGINT` | NN | PK, generated always as identity | The import, `int64` in the contract |
+| `idempotency_key` | `UUID` | NN | unique | The caller's `Idempotency-Key` for this resource |
+| `request_sha256` | `BYTEA` | NN | `CHECK octet_length = 32` | SHA-256 of the caller's `sub` and the request in canonical form |
+| `contract_version` | `SMALLINT` | NN | `CHECK = 1` | The CSV contract of the web's page |
+| `total_rows` | `INTEGER` | NN | `CHECK BETWEEN 1 AND 100000` | The data lines the client announced |
+| `chunk_count` | `INTEGER` | NN | `CHECK BETWEEN 1 AND 667` | The chunks the client announced |
+| `status` | `TEXT` | NN | `RECEIVING`, `PROCESSING`, `COMPLETED`, `CANCELLED`, `EXPIRED` | Where the import is |
+| `created_by` | `UUID` | NN | FK → `public.app_user`, `ON DELETE RESTRICT` | The token's `sub` |
+| `created_at` | `TIMESTAMPTZ` | NN | default `now()` | When it was opened |
+| `last_chunk_at` | `TIMESTAMPTZ` | NN | default `now()` | When a chunk last arrived; the 24-hour expiry counts from it |
+| `finished_at` | `TIMESTAMPTZ` | NULL | set exactly in `COMPLETED`, `CANCELLED` and `EXPIRED` | When it finished |
+
+A partial unique index (`import_one_open`) allows one import in `RECEIVING` or
+`PROCESSING` at a time.
+
+#### `sales.import_chunk`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `import_id` | `BIGINT` | NN | PK, FK → `sales.import`, `ON DELETE CASCADE` | The import |
+| `sequence` | `INTEGER` | NN | PK, `CHECK BETWEEN 0 AND 666` | The chunk's number, from 0 |
+| `request_sha256` | `BYTEA` | NN | `CHECK octet_length = 32` | SHA-256 of the rows by `line`, each with its cells in order |
+| `row_count` | `INTEGER` | NN | `CHECK BETWEEN 1 AND 150` | Rows in the chunk |
+| `first_line`, `last_line` | `INTEGER` | NN | `CHECK last_line >= first_line` | The lines it holds |
+| `rows` | `JSONB` | NULL | null once `DONE` | The rows as sent, until applied (or cancelled or expired) |
+| `status` | `TEXT` | NN | `PENDING`, `DONE` | Whether its rows have all been judged |
+| `staged_at` | `TIMESTAMPTZ` | NN | default `now()` | When it was staged |
+
+#### `sales.import_row_outcome`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `import_id` | `BIGINT` | NN | PK, FK → `sales.import`, `ON DELETE CASCADE` | The import |
+| `line` | `INTEGER` | NN | PK, `CHECK >= 2` | The line of the file, the header being line 1 |
+| `outcome` | `TEXT` | NN | `ACCEPTED`, `REJECTED` | What happened to the row |
+| `code`, `field`, `message` | `TEXT` | NULL | present for `REJECTED`, absent for `ACCEPTED` (`import_row_outcome_shape_check`) | The stable code, the column at fault and the sentence the report shows |
+| `duplicate_of` | `TEXT` | NULL | `FILE` or `RECORDED_SALE`, exactly for `duplicate_row` | Which kind of repeat |
+| `first_line` | `INTEGER` | NULL | only with `FILE` | The first line of this file that made the row's line |
+| `sale_id` | `BIGINT` | NULL | only with `RECORDED_SALE` | The recorded sale |
+| `transaction_id`, `product_id` | `BIGINT`, `INTEGER` | NULL | with the pair, FK → `public.transaction_line`, `ON DELETE SET NULL`; set for `ACCEPTED` | The sale line the row made |
 
 #### `stock.movement_request`
 

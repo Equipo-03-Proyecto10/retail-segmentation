@@ -12,6 +12,11 @@ The files a service's implementation story copies into `services/<name>/`
 | `render.py` | — | Writes the three files for one service |
 | `check.sh` | — | ADR-0040's compose and NGINX loop; prints nothing when they hold |
 
+A second process of one service (sales-service's import worker, F26-08) is not in
+the template: `render.py` writes one container, and the second one is added to that
+service's `compose.yaml` by hand, with the same hardening, no port and its own
+`mem_limit` (the memory gate counts it).
+
 Lines marked `#auth# ` are auth's alone: its private key mount and its sign-in
 limit. `render.py` keeps them for `auth` and drops them for everyone else.
 

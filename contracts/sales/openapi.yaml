@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: sales-service
-  version: 1.5.0
+  version: 1.6.0
   description: >-
     Records a sale exactly once, all or nothing, and reads sales and the channel
     vocabulary back (RN-11 to RN-13, RN-37). A sale is never edited or deleted:
@@ -510,7 +510,6 @@ paths:
           $ref: '#/components/responses/OperationUnavailable'
   /v1/sale-imports:
     post:
-      x-mosaiq-status: planned
       tags: [Sale imports]
       summary: Open a sales import
       description: >-
@@ -626,7 +625,6 @@ paths:
         '503':
           $ref: '#/components/responses/OperationUnavailable'
     get:
-      x-mosaiq-status: planned
       tags: [Sale imports]
       summary: List the recent imports
       description: >-
@@ -675,7 +673,6 @@ paths:
           $ref: '#/components/responses/OperationUnavailable'
   /v1/sale-imports/{import_id}:
     get:
-      x-mosaiq-status: planned
       tags: [Sale imports]
       summary: Get one import, its progress and its reconciled counts
       description: >-
@@ -743,7 +740,6 @@ paths:
           $ref: '#/components/responses/OperationUnavailable'
   /v1/sale-imports/{import_id}/chunks/{sequence}:
     put:
-      x-mosaiq-status: planned
       tags: [Sale imports]
       summary: Send one numbered chunk of rows
       description: >-
@@ -879,7 +875,6 @@ paths:
           $ref: '#/components/responses/OperationUnavailable'
   /v1/sale-imports/{import_id}/rejections:
     get:
-      x-mosaiq-status: planned
       tags: [Sale imports]
       summary: List the rows an import refused
       description: >-
@@ -972,7 +967,6 @@ paths:
           $ref: '#/components/responses/OperationUnavailable'
   /v1/sale-imports/{import_id}/status:
     put:
-      x-mosaiq-status: planned
       tags: [Sale imports]
       summary: Cancel an import
       description: >-

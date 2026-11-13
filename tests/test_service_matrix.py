@@ -19,10 +19,13 @@ SCRIPT = ROOT / ".github/scripts/service-matrix.sh"
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
-    # stock and products are built; users has a contract but no service yet.
-    for name in ("stock", "products"):
+    # products and sales are Python; stock and stores are Rust. Users has a
+    # contract but no service yet.
+    for name in ("products", "sales", "stock", "stores"):
         (tmp_path / "services" / name).mkdir(parents=True)
         (tmp_path / "services" / name / "Dockerfile").write_text("FROM scratch\n")
+    for name in ("stock", "stores"):
+        (tmp_path / "services" / name / "Cargo.lock").write_text("")
     (tmp_path / "services" / "draft").mkdir()
     (tmp_path / "contracts" / "users").mkdir(parents=True)
     return tmp_path
@@ -69,21 +72,26 @@ def test_a_service_directory_without_a_dockerfile_is_not_built(repo: Path) -> No
 def test_the_common_schema_and_the_suite_select_every_built_service(
     repo: Path,
 ) -> None:
-    assert matrix(repo, "contracts/common/v1/common.xsd") == ["products", "stock"]
+    expected = ["stock", "stores", "products", "sales"]
+    assert matrix(repo, "contracts/common/v1/common.xsd") == expected
     assert matrix(repo, "tests/conformance/test_conformance.py") == [
-        "products",
         "stock",
+        "stores",
+        "products",
+        "sales",
     ]
-    assert matrix(repo, ".github/workflows/services.yml") == ["products", "stock"]
+    assert matrix(repo, ".github/workflows/services.yml") == expected
 
 
-def test_each_service_is_selected_once_and_in_order(repo: Path) -> None:
+def test_each_service_is_selected_once_with_rust_first(repo: Path) -> None:
     assert matrix(
         repo,
         "services/stock/Cargo.toml",
         "contracts/stock/stock.xsd",
         "services/products/app/__init__.py",
-    ) == ["products", "stock"]
+        "services/sales/app/__init__.py",
+        "services/stores/src/main.rs",
+    ) == ["stock", "stores", "products", "sales"]
 
 
 def test_files_outside_services_and_contracts_select_nothing(repo: Path) -> None:

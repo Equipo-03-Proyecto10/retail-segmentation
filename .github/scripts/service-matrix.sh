@@ -57,5 +57,13 @@ fi
 json=
 while IFS= read -r name; do
   [[ -n $name ]] && json+="${json:+,}\"$name\""
-done < <(printf '%s\n' "${!selected[@]}" | sort)
+done < <(
+  for name in "${!selected[@]}"; do
+    if [[ -f $root/services/$name/Cargo.lock ]]; then
+      printf '0\t%s\n' "$name"
+    else
+      printf '1\t%s\n' "$name"
+    fi
+  done | sort -k1,1 -k2,2 | cut -f2
+)
 printf '[%s]\n' "$json"

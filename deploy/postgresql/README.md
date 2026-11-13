@@ -203,6 +203,7 @@ local   retail          svc_categories                          scram-sha-256
 local   retail          svc_checkins                            scram-sha-256
 local   retail          svc_customers                           scram-sha-256
 local   retail          svc_engagement                          scram-sha-256
+local   retail          svc_experiments                         scram-sha-256
 local   retail          svc_preferences                         scram-sha-256
 local   retail          svc_products                            scram-sha-256
 local   retail          svc_recommendations                     scram-sha-256
@@ -214,7 +215,7 @@ local   retail          svc_users                               scram-sha-256
 local   all             all                                     peer
 ```
 
-These are the fifteen roles `sql/00_create_database.sql` creates, the second
+These are the sixteen roles `sql/00_create_database.sql` creates, the second
 wave's `svc_campaigns` and `svc_audit_trail` included. There is no `host` line
 for them, and no line at all for `svc_products_bench`: the bench never runs on
 the instance. `listen_addresses` stays `localhost`, and `mosaiq.conf` does not

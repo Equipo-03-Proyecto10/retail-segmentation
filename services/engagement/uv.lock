@@ -260,7 +260,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "gunicorn", specifier = "==23.0.0" },
-    { name = "mosaiq-kit", git = "https://github.com/Equipo-03-Proyecto10/retail-segmentation?subdirectory=packages%2Fkit-py&rev=kit-py%2Fv0.1.7" },
+    { name = "mosaiq-kit", git = "https://github.com/Equipo-03-Proyecto10/retail-segmentation?subdirectory=packages%2Fkit-py&rev=kit-py%2Fv0.1.8" },
     { name = "pymongo", specifier = "==4.17.0" },
 ]
 
@@ -643,8 +643,8 @@ wheels = [
 
 [[package]]
 name = "mosaiq-kit"
-version = "0.1.7"
-source = { git = "https://github.com/Equipo-03-Proyecto10/retail-segmentation?subdirectory=packages%2Fkit-py&rev=kit-py%2Fv0.1.7#ed13dddd2a17feb62c11041022d05cd4e591726e" }
+version = "0.1.8"
+source = { git = "https://github.com/Equipo-03-Proyecto10/retail-segmentation?subdirectory=packages%2Fkit-py&rev=kit-py%2Fv0.1.8#ae2d4a52c059b01297342e3acf6e8fd7fd8a2cff" }
 dependencies = [
     { name = "flask" },
     { name = "jsonschema", extra = ["format-nongpl"] },

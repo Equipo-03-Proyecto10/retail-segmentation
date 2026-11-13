@@ -1248,11 +1248,21 @@ through its pinned kit, failing closed with 503 when Redis is unreachable
 ### RN-53 — A store has at most one location, with valid coordinates and a 25–2000 m geofence, set by the administrator only
 A store's location is optional. When set, its latitude lies between −90 and
 90, its longitude between −180 and 180, and its geofence radius between 25 and
-2000 metres. Only `ADMIN` sets or clears it.
+2000 metres. A store also has one operating status (`OPEN`,
+`TEMPORARILY_CLOSED` or `CLOSED`), weekly opening hours (at most one interval
+per day, each closing later than it opens, in one IANA time zone), a set of
+enabled channels, and a maximum discount from 0.00 to 100.00 percent or none.
+Only `ADMIN` sets or clears any of them, and each change is validated,
+audited and announced on `stores.v1.changed`. The status is separate from the
+directory's `is_active` flag, which only the web writes; a store sells only
+when both allow it and the channel is enabled.
 
-**Enforced:** stores-service (planned), ADR-0034 and ADR-0046 —
-`stores.store_location` is keyed by `store_id` and its CHECK constraints bound
-the three values; the service accepts location writes from `ADMIN` only.
+**Enforced:** stores-service, ADR-0034 and ADR-0046 — `stores.store_location`
+is keyed by `store_id` and its CHECK constraints bound the three values;
+`stores.store_status`, `stores.store_hours` with `stores.store_hours_interval`,
+`stores.store_channel_set` with `stores.store_channel`, and
+`stores.store_commercial_rule` hold the rest under their own keys and CHECKs;
+the service accepts writes from `ADMIN` only.
 · #398
 
 ### RN-54 — Each of a customer's preference sets is replaced atomically, as a whole set

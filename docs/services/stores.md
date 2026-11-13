@@ -1,6 +1,6 @@
 # stores
 
-> **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
+> **Status:** Implemented: the location (F14-09, F14-10) and the status, hours, channels and commercial rules (F21-11, F21-12). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
 > **One rule:** Each store has at most one location, with valid coordinates and a 25–2000 m geofence, and one operating status, weekly opening hours, set of enabled channels and maximum discount, all set by ADMIN only (RN-53)
 
 ## Summary
@@ -21,7 +21,7 @@
 ## Business rule
 
 - `stores.store_location` is a 1:1 vertical split of `store` (PK `store_id`), with CHECKs on latitude (−90 to 90), longitude (−180 to 180) and `geofence_radius_m` (25 to 2000), and `set_by` an `ADMIN`.
-- Status, opening hours, enabled channel ids and the maximum discount are service-owned facts of the same store, each replaced whole by ADMIN only. Clearing is a write: an empty `intervals` list (and a null `time_zone`), an empty `channel_ids` list, or a null `max_discount_percent` (an omitted element in XML). `time_zone` is null exactly when there are no intervals, as in `api_stores.store_directory_v2`.
+- Status, opening hours, enabled channel ids and the maximum discount are service-owned facts of the same store, each replaced whole by ADMIN only, validated, audited and announced in the same transaction. A replacement that changes nothing writes, audits and announces nothing. Clearing is a write: an empty `intervals` list (and a null `time_zone`), an empty `channel_ids` list, or a null `max_discount_percent` (an omitted element in XML). `time_zone` is null exactly when there are no intervals, as in `api_stores.store_directory_v2`.
 - stores reads the web-written `store` table as its declared read owner (E-10) and publishes the directory with the location, so a check-in can be verified against it.
 
 ## Endpoints
@@ -51,6 +51,10 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 |---|---|---|---|
 | `store` | Table (`public`) | R: SELECT | Only the web writes the directory (E-10) |
 | `stores.store_location` | Table (`stores`) | S: SELECT, INSERT, UPDATE, DELETE | New; 30 seed rows, one per seeded store; audited under entity `store_location` ([ADR-0046](../adr/0046-service-owned-data-lives-in-service-schemas.md)) |
+| `stores.store_status` | Table (`stores`) | S: SELECT, INSERT, UPDATE, DELETE | New (F21-12); 30 seed rows; audited under its own name |
+| `stores.store_hours`, `stores.store_hours_interval` | Tables (`stores`) | S: SELECT, INSERT, UPDATE, DELETE | New; 30 and 190 seed rows; `time_zone` is null exactly when there is no interval |
+| `stores.store_channel_set`, `stores.store_channel` | Tables (`stores`) | S: SELECT, INSERT, UPDATE, DELETE | New; 30 and 65 seed rows; an id that is no channel is refused by the foreign key, since the service cannot read `channel` (E-10) |
+| `stores.store_commercial_rule` | Table (`stores`) | S: SELECT, INSERT, UPDATE, DELETE | New; 30 seed rows |
 | `stores_events.outbox` | Table (outbox) | SELECT, UPDATE of `relayed_at`, DELETE (7-day purge) | Filled by `definer_stores`; seed-exempt runtime state |
 
 ## Database contracts
@@ -64,7 +68,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 | Direction | Stream | Captured from / consumer group | Effect |
 |---|---|---|---|
-| Produces | `stream:stores.v1.changed` | captured from `store` and `stores.store_location` | Own cache |
+| Produces | `stream:stores.v1.changed` | captured from `store`, `stores.store_location` and the six tables of F21-12 | Own cache |
 | Consumes | `stream:stores.v1.changed` | group `stores` | Invalidates its own directory cache |
 
 ## Redis keys
@@ -82,6 +86,7 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | HTTP | Code | When |
 |---|---|---|
 | 422 | `invalid_body` | A CHECK on latitude, longitude or radius fails; `details` name the field |
+| 422 | `invalid_body` | A rule a schema cannot state is broken; `details` name the field: `duplicate_day`, `closes_before_opens`, `time_zone_required`, `time_zone_without_hours` and `invalid_format` (an unknown time zone) on hours, `duplicate_channel` and `unknown_channel` on channels, `not_allowed` on a status |
 | 404 | `store_not_found` | An unknown `store_id` on any operation |
 
 ## Accepted exceptions
@@ -93,6 +98,7 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 - **What:** Some services read a table they never write (`role`, `store`, `inventory`, `channel`, the segmentation tables, `audit_log`) and publish it through a contract.
 - **Why it is acceptable:** Without a declared owner, several services would read `store` directly and nobody would know who a change breaks. One read owner gives one service to change and one contract for everyone else.
 - **Guard:** Exactly one `svc_*` role holds any privilege on each base table, and CI checks it. A read owner cannot fix its own data: the web does.
+- **Outcome when the web and a service both write `store` (F21-12, #786):** they do not write the same fact. The web alone writes the `store` row, `is_active` included; stores-service writes the store's operating status, hours, enabled channels and maximum discount in its own `stores` tables, and holds only `SELECT` on `store`. Neither write can overwrite the other. Both are announced on `stream:stores.v1.changed`, because the capture trigger covers `public.store` and the new tables whoever writes, and `api_stores.store_directory_v2` publishes `is_active` and `status` side by side: a consumer lets a store sell only when `is_active` is true, the status is `OPEN` and the channel is enabled.
 - **Decided in:** [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) (Decision and ownership matrix). Register: [E-10](./README.md#e-10--read-owners-of-tables-only-the-web-writes).
 
 ### E-11 — foreign keys cross service boundaries

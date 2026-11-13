@@ -6,8 +6,8 @@
 |---|---|
 | Stream | `stream:stores.v1.changed` |
 | Producer | stores-service |
-| Captured tables | `public.store`, `stores.store_location` |
-| Captured operations | `INSERT`, `UPDATE`, `DELETE` on either table, by any writer |
+| Captured tables | `public.store`, `stores.store_location`, `stores.store_status`, `stores.store_hours`, `stores.store_hours_interval`, `stores.store_channel_set`, `stores.store_channel`, `stores.store_commercial_rule` |
+| Captured operations | `INSERT`, `UPDATE`, `DELETE` on any of them, by any writer |
 | Outbox | `stores_events.outbox` |
 | Private wake-up channel | `stores_outbox` |
 | Consumer group | `stores` |
@@ -22,7 +22,7 @@ transaction as the change. A rollback therefore publishes nothing.
 
 Every entry is key-only and carries no store state:
 
-For both captured tables, `entity_id` = `store_id`.
+For every captured table, `entity_id` = `store_id`. A change to a store's hours or channels can be several entries, one per row written, all for the same store; a consumer treats each as "this store changed".
 
 | Field | Encoding and meaning |
 |---|---|
@@ -38,7 +38,7 @@ handles pending entries first, may claim entries idle for more than 60 seconds,
 and acknowledges only after invalidation succeeds. After five failed
 deliveries it logs and acknowledges the entry; the outbox row remains in the
 seven-day replay log. Current state is re-read from
-`api_stores.store_directory_v1`, never from the event.
+`api_stores.store_directory_v1` or `_v2`, never from the event.
 
 ## Propagation bound
 

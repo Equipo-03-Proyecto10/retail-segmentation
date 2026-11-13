@@ -67,7 +67,6 @@ one.
 
 ## Grants
 
-`contracts/db/grants.csv` is not changed by the contract-only story. It is
-compared with the live database in both directions, and the view does not exist
-there yet. The view, the `USAGE` on `api_stores` and the `SELECT` rows for the
-consumers above are added with the DDL in #786.
+`contracts/db/grants.csv` carries `USAGE` on `api_stores` and `SELECT` on this
+view for the producer and for the consumers above (F21-12, #786), added with the
+DDL that creates the view and the tables behind it.

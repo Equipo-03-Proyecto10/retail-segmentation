@@ -555,6 +555,49 @@ The sales boundary (ADR-0039, ADR-0046, F14-18) adds one relation, also in 4NF:
   - `request_sha256` is a fact of the request as accepted, not a function of
     current data, so it is not derived state.
 
+The stores boundary (RN-53, ADR-0046, F21-12) adds six relations beside
+`stores.store_location`, all in 4NF. Each fact of a store is its own relation,
+keyed by `store_id` and nothing else, because a store's status, its weekly
+hours, its enabled channels and its discount cap are independent facts: none
+determines another, and changing one must not rewrite the others, their
+`set_by` or their `set_at`.
+- **`stores.store_status`** (`store_id → status, set_by, set_at`): one status
+  per store, three values. A store with no row is `OPEN`, so the absence of a
+  fact is never stored as a default.
+- **`stores.store_hours`** and **`stores.store_hours_interval`**. The opening
+  days are a multivalued fact (a store opens on several days), so they cannot
+  share a row with the store's time zone: that would be either seven repeating
+  column groups (not 1NF) or one row per day repeating the zone, where
+  `store_id → time_zone` holds but `store_id` is not the row's key, a 2NF
+  violation and an update anomaly (change the zone in six rows out of seven).
+  `store_hours` holds what depends on the store alone (`time_zone`, `set_by`,
+  `set_at`) and `store_hours_interval` holds one open day, keyed by
+  `(store_id, day_of_week)`, which determines `opens_at` and `closes_at`.
+  Neither opening time nor closing time determines the other, and no non-key
+  column determines another, so both are in BCNF and, with no further
+  multivalued dependency, in 4NF. A day with no row is closed. Two things a key
+  cannot say are held by CHECKs and one constraint trigger: `closes_at >
+  opens_at` and whole minutes, and `time_zone IS NULL` exactly when the store
+  has no interval, checked at commit so a replacement may write the header and
+  its days in any order.
+- **`stores.store_channel_set`** and **`stores.store_channel`**. The enabled
+  channels are a multivalued fact (`store_id ↠ channel_id`), so one row is one
+  enabled channel, keyed by `(store_id, channel_id)`, with no non-key column.
+  When and by whom the set was last replaced is a fact of the set, not of any
+  one channel, so it is held once in `store_channel_set` (`store_id → set_by,
+  set_at`). Putting `set_by` and `set_at` on each channel row would repeat them
+  for every channel of a store and would lose them when the set is emptied,
+  which the contract says is a write with an `updated_at` of its own.
+- **`stores.store_commercial_rule`** (`store_id → max_discount_percent, set_by,
+  set_at`): the one rule the contract defines. A `NULL` cap and a store with no
+  row mean the same, "no cap of its own"; the row exists after clearing only to
+  keep `set_at`.
+
+`public.store.is_active` is not moved, copied or written here: the web owns it,
+and the status above is a separate fact (`api_stores.store_directory_v2`
+publishes both, and the consumer applies "active, `OPEN`, and the channel
+enabled").
+
 `sales_events.outbox` is one more boundary outbox, under the outbox note above.
 
 The stock boundary (ADR-0061, ADR-0046, F21-06) adds two relations, both in 4NF:
@@ -773,6 +816,57 @@ instead of deadlocking and the second one is refused as `category_no_cycle` (#58
 This is a 1:1 vertical split of `store`: `store_id` is both its key and its
 determinant, and determines every location attribute. It contains no
 independent multivalued facts, so the relation is in 4NF.
+
+#### `stores.store_status`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `store_id` | `SMALLINT` | NN | PK; FK → `public.store`, `ON DELETE CASCADE` | The store whose operating status this is |
+| `status` | `TEXT` | NN | CHECK in `OPEN`, `TEMPORARILY_CLOSED`, `CLOSED` | Whether the store sells; only `OPEN` does |
+| `set_by` | `UUID` | NN | FK → `public.app_user` | Administrator who last changed it |
+| `set_at` | `TIMESTAMPTZ` | NN | default `now()` | When it last changed |
+
+#### `stores.store_hours`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `store_id` | `SMALLINT` | NN | PK; FK → `public.store`, `ON DELETE CASCADE` | The store whose weekly hours these are |
+| `time_zone` | `TEXT` | yes | CHECK 1 to 64 characters; null exactly when the store has no interval (constraint trigger, deferred) | IANA zone the intervals are expressed in |
+| `set_by` | `UUID` | NN | FK → `public.app_user` | Administrator who last changed them |
+| `set_at` | `TIMESTAMPTZ` | NN | default `now()` | When they last changed |
+
+#### `stores.store_hours_interval`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `store_id` | `SMALLINT` | NN | PK part; FK → `stores.store_hours`, `ON DELETE CASCADE` | The store |
+| `day_of_week` | `SMALLINT` | NN | PK part; CHECK 1 to 7 | ISO 8601 day, 1 Monday; a day with no row is closed |
+| `opens_at` | `TIME` | NN | CHECK whole minutes | Local opening time |
+| `closes_at` | `TIME` | NN | CHECK whole minutes and `> opens_at` | Local closing time, the same day |
+
+#### `stores.store_channel_set`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `store_id` | `SMALLINT` | NN | PK; FK → `public.store`, `ON DELETE CASCADE` | The store whose channel set was written |
+| `set_by` | `UUID` | NN | FK → `public.app_user` | Administrator who last changed the set |
+| `set_at` | `TIMESTAMPTZ` | NN | default `now()` | When it last changed, an emptied set included |
+
+#### `stores.store_channel`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `store_id` | `SMALLINT` | NN | PK part; FK → `stores.store_channel_set`, `ON DELETE CASCADE` | The store |
+| `channel_id` | `SMALLINT` | NN | PK part; FK → `public.channel`, `ON DELETE RESTRICT` | A channel the store enables; an id that is no channel is refused by this key |
+
+#### `stores.store_commercial_rule`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `store_id` | `SMALLINT` | NN | PK; FK → `public.store`, `ON DELETE CASCADE` | The store |
+| `max_discount_percent` | `NUMERIC(5,2)` | yes | CHECK 0 to 100 | Largest discount the store allows on a sale line; null is no cap of its own |
+| `set_by` | `UUID` | NN | FK → `public.app_user` | Administrator who last changed it |
+| `set_at` | `TIMESTAMPTZ` | NN | default `now()` | When it last changed |
 
 #### `stores_events.outbox`
 
@@ -1432,8 +1526,9 @@ suffix:
 - its outbox lives in `<suffix>_events`;
 - any table of its own lives in a schema named for it.
 
-The stores boundary therefore owns `stores` for `store_location`, publishes
-through `api_stores`, and keeps relay state in `stores_events`.
+The stores boundary therefore owns `stores` for `store_location` and the six
+tables of its status, hours, channels and commercial rule, publishes through
+`api_stores`, and keeps relay state in `stores_events`.
 The sales boundary owns `sales` for `sale_capture`, publishes
 `api_sales.purchase_line_v1` and keeps relay state in `sales_events`.
 The segments boundary owns no table: it publishes
@@ -1538,7 +1633,9 @@ twelve meet neither condition:
   access, F3-06), and no query reads the child by the user:*
   `app_session (user_id)`, `audit_log (user_id)`,
   `notification (subject_user_id)`, `sales_load (loaded_by)`,
-  `segmentation_run (executed_by)`, `stores.store_location (set_by)` and
+  `segmentation_run (executed_by)`, `stores.store_location (set_by)`,
+  `stores.store_status (set_by)`, `stores.store_hours (set_by)`,
+  `stores.store_channel_set (set_by)`, `stores.store_commercial_rule (set_by)` and
   `checkins.check_in_review (reviewed_by)`.
   Revoking a deactivated user's open sessions is served by the partial
   `idx_app_session_open_by_user`; revoked sessions are history and nothing

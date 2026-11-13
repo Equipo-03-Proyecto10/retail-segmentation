@@ -48,6 +48,12 @@ pub fn service_database(owner: &str) -> Database {
     )
 }
 
+/// The seeded sole administrator: a real `app_user`, so a decision or a change
+/// recorded as them satisfies the foreign key to the user table.
+pub fn admin() -> Uuid {
+    Uuid::parse_str("11111111-1111-1111-1111-000000000001").unwrap()
+}
+
 pub fn principal(sub: Uuid, role: &str) -> Principal {
     Principal {
         sub: sub.to_string(),
@@ -159,19 +165,26 @@ impl TestCustomer {
             .collect()
     }
 
+    /// Remove the customer and everything recorded about it. The logs are
+    /// append-only for every role and a customer is never deleted, so this
+    /// runs as a superuser under `session_replication_role = replica`, which
+    /// switches the guard triggers and the foreign keys off for the one
+    /// transaction. Nothing but a throwaway fixture is ever removed this way.
     pub async fn cleanup(self, owner: &Client) {
+        let id = self.id;
         owner
-            .execute(
-                "DELETE FROM public.customer WHERE customer_id = $1",
-                &[&self.id],
-            )
-            .await
-            .unwrap();
-        owner
-            .execute(
-                "DELETE FROM preferences_events.outbox WHERE entity_id = $1",
-                &[&self.id.to_string()],
-            )
+            .batch_execute(&format!(
+                "BEGIN; SET LOCAL session_replication_role = replica; \
+                 DELETE FROM preferences.preference_change_member WHERE change_id IN \
+                     (SELECT change_id FROM preferences.preference_change \
+                      WHERE customer_id = '{id}'); \
+                 DELETE FROM preferences.preference_change WHERE customer_id = '{id}'; \
+                 DELETE FROM preferences.consent_decision WHERE customer_id = '{id}'; \
+                 DELETE FROM preferences.restriction_decision WHERE customer_id = '{id}'; \
+                 DELETE FROM public.customer WHERE customer_id = '{id}'; \
+                 DELETE FROM preferences_events.outbox WHERE entity_id = '{id}'; \
+                 COMMIT;"
+            ))
             .await
             .unwrap();
     }

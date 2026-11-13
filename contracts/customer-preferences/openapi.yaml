@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: customer-preferences-service
-  version: 1.1.0
+  version: 1.1.1
   description: >-
     Reads a customer's preference profile and replaces each of its two sets,
     preferred channels and interest categories, only as a whole (RN-54). Also
@@ -332,7 +332,6 @@ paths:
         recorded in the audit trail: it is the current state, not a history. Only a
         customer absent from `api_customers.customer_ref_v1` is 404 `customer_not_found`.
       operationId: getRestrictionProfile
-      x-mosaiq-status: planned
       x-mosaiq-roles: [ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR, SALES_ASSOCIATE, LOYALTY_OFFICER]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
@@ -392,7 +391,6 @@ paths:
         the current record, not a history, and is not recorded in the audit trail; the
         history is `GET .../consent-decisions`.
       operationId: getConsentState
-      x-mosaiq-status: planned
       x-mosaiq-roles: [ADMIN, AUDITOR, STORE_MANAGER, LOYALTY_OFFICER]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
@@ -451,7 +449,6 @@ paths:
         answers 503 `audit_unavailable` and returns nothing; a database that is
         down is 503 `database_unavailable`, as for any operation.
       operationId: listConsentDecisions
-      x-mosaiq-status: planned
       x-mosaiq-roles: [ADMIN, AUDITOR, STORE_MANAGER, LOYALTY_OFFICER]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
@@ -522,7 +519,6 @@ paths:
         identifier; a replayed call appends an identical decision, which changes no
         state.
       operationId: recordConsentDecisions
-      x-mosaiq-status: planned
       x-mosaiq-roles: [ADMIN, LOYALTY_OFFICER]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
@@ -607,7 +603,6 @@ paths:
         is 503 `database_unavailable`, as for any operation. The current restrictions
         are `GET .../restrictions`.
       operationId: listRestrictionDecisions
-      x-mosaiq-status: planned
       x-mosaiq-roles: [ADMIN, AUDITOR, STORE_MANAGER, LOYALTY_OFFICER]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
@@ -670,7 +665,6 @@ paths:
         removed. Answers 201 with the current restrictions after the append. A customer
         anonymized by customers-service accepts nothing: 409 `customer_anonymized`.
       operationId: recordRestrictionDecisions
-      x-mosaiq-status: planned
       x-mosaiq-roles: [ADMIN, LOYALTY_OFFICER]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
@@ -750,7 +744,6 @@ paths:
         kind for it), and only a customer absent from `api_customers.customer_ref_v1` is
         404 `customer_not_found`.
       operationId: listPreferenceChanges
-      x-mosaiq-status: planned
       x-mosaiq-roles: [ADMIN, AUDITOR, STORE_MANAGER, LOYALTY_OFFICER]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'

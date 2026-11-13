@@ -165,7 +165,7 @@ async fn a_changing_replace_reaches_the_stream_within_five_seconds() {
     let channels = channel_ids(&owner).await;
     replace(
         &db,
-        &principal(Uuid::new_v4(), "STORE_MANAGER"),
+        &principal(support::admin(), "STORE_MANAGER"),
         customer.id,
         PreferenceSet::PreferredChannels,
         &[Some(channels[0])],
@@ -268,7 +268,7 @@ async fn the_service_relay_delivers_again_after_its_connection_is_killed() {
     let customer = TestCustomer::create(&owner).await;
     let channels = channel_ids(&owner).await;
     let entity = customer.id.to_string();
-    let manager = principal(Uuid::new_v4(), "STORE_MANAGER");
+    let manager = principal(support::admin(), "STORE_MANAGER");
     replace(
         &db,
         &manager,

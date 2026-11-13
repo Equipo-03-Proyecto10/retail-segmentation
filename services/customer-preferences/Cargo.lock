@@ -344,9 +344,12 @@ dependencies = [
 
 [[package]]
 name = "customer-preferences"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "axum",
+ "chrono",
+ "form_urlencoded",
+ "indexmap",
  "mosaiq-kit",
  "redis",
  "serde_json",

@@ -42,6 +42,23 @@ def _sale(row: tuple[Any, ...], lines: list[tuple[Any, ...]]) -> dict[str, Any]:
     }
 
 
+def consume_stock(
+    connection: psycopg.Connection, store_id: int, lines: list[dict[str, Any]]
+) -> None:
+    """Consume each line's stock through the stock contract, in ascending
+    product order, so sales that share products lock inventory rows in one
+    order (ADR-0039). The one place a sale, or a row of an import, takes stock."""
+    indexed = sorted(enumerate(lines), key=lambda item: item[1]["product_id"])
+    for index, line in indexed:
+        try:
+            connection.execute(
+                "SELECT api_stock.consume_v1(%s::smallint, %s, %s)",
+                (store_id, line["product_id"], line["quantity"]),
+            ).fetchone()
+        except psycopg.errors.CheckViolation as error:
+            raise StockRefusal(index, error) from error
+
+
 def get_sale(connection: psycopg.Connection, sale_id: int) -> dict[str, Any] | None:
     row = connection.execute(
         "SELECT transaction_id, customer_id, store_id, channel_id,"
@@ -135,15 +152,7 @@ def insert_sale(
                 line["unit_price"],
             ),
         )
-    indexed = sorted(enumerate(lines), key=lambda item: item[1]["product_id"])
-    for index, line in indexed:
-        try:
-            connection.execute(
-                "SELECT api_stock.consume_v1(%s::smallint, %s, %s)",
-                (store_id, line["product_id"], line["quantity"]),
-            ).fetchone()
-        except psycopg.errors.CheckViolation as error:
-            raise StockRefusal(index, error) from error
+    consume_stock(connection, store_id, lines)
     connection.execute(
         "INSERT INTO sales.sale_capture"
         " (transaction_id, request_sha256, recorded_by) VALUES (%s, %s, %s)",

@@ -286,6 +286,7 @@ def cleanup(owner_url: str) -> Iterator[None]:
                 "DELETE FROM public.transaction WHERE transaction_id = ANY(%s)",
                 (ids,),
             )
+        connection.execute("DELETE FROM sales.import")
         with connection.cursor() as cursor:
             cursor.executemany(
                 "INSERT INTO public.inventory (store_id, product_id, quantity_on_hand)"

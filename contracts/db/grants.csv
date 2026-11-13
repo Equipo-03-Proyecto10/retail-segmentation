@@ -165,6 +165,7 @@ definer_users,users_events,USAGE
 definer_users,users_events.outbox,INSERT
 svc_sales,public.transaction,SELECT
 svc_sales,public.transaction,INSERT
+svc_sales,public.transaction(total),UPDATE
 svc_sales,public.transaction_line,SELECT
 svc_sales,public.transaction_line,INSERT
 svc_sales,public.transaction_line(returned_quantity),UPDATE
@@ -176,6 +177,14 @@ svc_sales,sales.sale_reversal,SELECT
 svc_sales,sales.sale_reversal,INSERT
 svc_sales,sales.sale_reversal_line,SELECT
 svc_sales,sales.sale_reversal_line,INSERT
+svc_sales,sales.import,SELECT
+svc_sales,sales.import,INSERT
+svc_sales,sales.import,UPDATE
+svc_sales,sales.import_chunk,SELECT
+svc_sales,sales.import_chunk,INSERT
+svc_sales,sales.import_chunk,UPDATE
+svc_sales,sales.import_row_outcome,SELECT
+svc_sales,sales.import_row_outcome,INSERT
 svc_sales,sales_events,USAGE
 svc_sales,sales_events.outbox,SELECT
 svc_sales,sales_events.outbox,DELETE

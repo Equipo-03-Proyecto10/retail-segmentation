@@ -12,8 +12,8 @@
 # A table in public is named bare (`role`). A table in a service schema is
 # named schema-qualified, as CI counts it (ADR-0046): `<suffix>_events.outbox`
 # for a boundary's outbox, which holds runtime events and no seed, and
-# `sales.sale_capture`, `sales.sale_reversal` and `sales.sale_reversal_line`,
-# which hold runtime facts. CI refuses any other schema-qualified name here.
+# `sales.sale_capture`, `sales.sale_reversal`, `sales.sale_reversal_line` and the
+# three tables of a sales import, which hold runtime facts and control state. CI refuses any other schema-qualified name here.
 #
 # Padding a catalog with filler rows to reach 30 is the alternative, and it
 # makes the seed misrepresent the business: a reader cannot tell which roles
@@ -79,6 +79,16 @@ sales.sale_capture
 # reversal lines) proves, and services/sales/tests proves with real reversals.
 sales.sale_reversal
 sales.sale_reversal_line
+
+# The control state of a sales import (F26-08, ADR-0070): an import exists only
+# while an administrator loads a file through sales-service, its staged chunks
+# are nulled as soon as they are applied, and the seed loads no file through the
+# service (its sales_load rows are the web page's uploads). A seeded import would
+# invent a load that never happened, and its outcomes would claim sales the
+# seed did not make.
+sales.import
+sales.import_chunk
+sales.import_row_outcome
 
 # sales-service relays stream:sales.v1.recorded from here and purges relayed
 # rows after seven days: runtime state, never seed data. The capture trigger

@@ -1160,6 +1160,28 @@ BEGIN
         RAISE EXCEPTION 'svc_sales records OBSERVED sales only (ADR-0052)'
             USING ERRCODE = '22023';
     END IF;
+    -- ADR-0070 section 5. A file imported through sales-service writes the id
+    -- `svc-sales:imp:<id>`, the web writes `<id>`. Neither path may record the
+    -- other's sale again, so each refuses the id when the other's exists. Both
+    -- take the same advisory lock first (key 293001, contracts/db/
+    -- advisory-locks.md), so two concurrent loads of one file cannot both pass.
+    IF session_user = 'svc_sales' AND NEW.source_transaction_id LIKE 'svc-sales:imp:%' THEN
+        PERFORM pg_advisory_xact_lock(293001, hashtext(substr(NEW.source_transaction_id, 15)));
+        IF EXISTS (SELECT FROM public.transaction AS t
+                    WHERE t.source_transaction_id = substr(NEW.source_transaction_id, 15)) THEN
+            RAISE EXCEPTION 'duplicate: % was already loaded through the other path',
+                substr(NEW.source_transaction_id, 15)
+                USING ERRCODE = '22023';
+        END IF;
+    ELSIF session_user <> 'svc_sales' THEN
+        PERFORM pg_advisory_xact_lock(293001, hashtext(NEW.source_transaction_id));
+        IF EXISTS (SELECT FROM public.transaction AS t
+                    WHERE t.source_transaction_id = 'svc-sales:imp:' || NEW.source_transaction_id) THEN
+            RAISE EXCEPTION 'duplicate: % was already loaded through the other path',
+                NEW.source_transaction_id
+                USING ERRCODE = '22023';
+        END IF;
+    END IF;
     RETURN NEW;
 END
 $$;
@@ -1549,6 +1571,129 @@ REVOKE ALL ON api_sales.net_purchase_line_v1 FROM PUBLIC;
 GRANT UPDATE (returned_quantity) ON public.transaction_line TO svc_sales;
 GRANT SELECT, INSERT ON sales.sale_reversal, sales.sale_reversal_line TO svc_sales;
 GRANT SELECT ON api_sales.net_purchase_line_v1 TO svc_sales, svc_recommendations;
+
+-- Sales imports (F26-06 ADR-0070, F26-08). A file reaches sales-service as
+-- numbered chunks of rows, is staged here and applied one row at a time by the
+-- worker, a second process of the same image. docs/data-model.md holds the 4NF
+-- justification.
+--
+-- One row per import. The Idempotency-Key is this resource's own and is kept
+-- here because no other column holds it. request_sha256 is the canonical
+-- request a retry is compared with. last_chunk_at is when a chunk last arrived,
+-- which is what the 24-hour expiry counts from.
+CREATE TABLE IF NOT EXISTS sales.import (
+    import_id       bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    idempotency_key uuid NOT NULL
+        CONSTRAINT import_idempotency_key_key UNIQUE,
+    request_sha256  bytea NOT NULL
+        CONSTRAINT import_request_sha256_check CHECK (octet_length(request_sha256) = 32),
+    contract_version smallint NOT NULL
+        CONSTRAINT import_contract_version_check CHECK (contract_version = 1),
+    total_rows      integer NOT NULL
+        CONSTRAINT import_total_rows_check CHECK (total_rows BETWEEN 1 AND 100000),
+    chunk_count     integer NOT NULL
+        CONSTRAINT import_chunk_count_check CHECK (chunk_count BETWEEN 1 AND 667),
+    status          text NOT NULL DEFAULT 'RECEIVING'
+        CONSTRAINT import_status_check
+        CHECK (status IN ('RECEIVING', 'PROCESSING', 'COMPLETED', 'CANCELLED', 'EXPIRED')),
+    created_by      uuid NOT NULL
+        REFERENCES public.app_user (user_id) ON DELETE RESTRICT,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    last_chunk_at   timestamptz NOT NULL DEFAULT now(),
+    finished_at     timestamptz,
+    CONSTRAINT import_finished_check
+        CHECK ((status IN ('COMPLETED', 'CANCELLED', 'EXPIRED')) = (finished_at IS NOT NULL))
+);
+-- One import is open at a time (ADR-0070 section 2): the database says so too.
+CREATE UNIQUE INDEX IF NOT EXISTS import_one_open
+    ON sales.import ((true)) WHERE status IN ('RECEIVING', 'PROCESSING');
+CREATE INDEX IF NOT EXISTS import_created
+    ON sales.import (created_at DESC, import_id DESC);
+
+-- One row per staged chunk. `rows` is the payload the worker applies and is
+-- nulled as soon as the chunk is done, cancelled or expired: a staged copy of
+-- customer ids does not outlive the work. row_count stays, so the counts of an
+-- import that never finished still reconcile.
+CREATE TABLE IF NOT EXISTS sales.import_chunk (
+    import_id      bigint NOT NULL
+        REFERENCES sales.import (import_id) ON DELETE CASCADE,
+    sequence       integer NOT NULL
+        CONSTRAINT import_chunk_sequence_check CHECK (sequence BETWEEN 0 AND 666),
+    request_sha256 bytea NOT NULL
+        CONSTRAINT import_chunk_request_sha256_check CHECK (octet_length(request_sha256) = 32),
+    row_count      integer NOT NULL
+        CONSTRAINT import_chunk_row_count_check CHECK (row_count BETWEEN 1 AND 150),
+    first_line     integer NOT NULL
+        CONSTRAINT import_chunk_first_line_check CHECK (first_line >= 1),
+    last_line      integer NOT NULL,
+    rows           jsonb,
+    status         text NOT NULL DEFAULT 'PENDING'
+        CONSTRAINT import_chunk_status_check CHECK (status IN ('PENDING', 'DONE')),
+    staged_at      timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (import_id, sequence),
+    CONSTRAINT import_chunk_lines_check CHECK (last_line >= first_line),
+    CONSTRAINT import_chunk_done_check CHECK (status <> 'DONE' OR rows IS NULL)
+);
+CREATE INDEX IF NOT EXISTS import_chunk_pending
+    ON sales.import_chunk (import_id, sequence) WHERE status = 'PENDING';
+
+-- One row per applied or refused line of the file. It is the durable record
+-- that makes a resume exact: the outcome is written in the same transaction as
+-- the sale line it describes, so a line is never applied twice. An accepted
+-- outcome points at the sale line it made (transaction_id, product_id), which
+-- is how a later duplicate names the first line; a refused one carries what the
+-- report shows. The row's cells are not kept.
+CREATE TABLE IF NOT EXISTS sales.import_row_outcome (
+    import_id      bigint NOT NULL
+        REFERENCES sales.import (import_id) ON DELETE CASCADE,
+    line           integer NOT NULL
+        CONSTRAINT import_row_outcome_line_check CHECK (line >= 2),
+    outcome        text NOT NULL
+        CONSTRAINT import_row_outcome_outcome_check CHECK (outcome IN ('ACCEPTED', 'REJECTED')),
+    code           text,
+    field          text,
+    message        text,
+    duplicate_of   text
+        CONSTRAINT import_row_outcome_duplicate_of_check
+        CHECK (duplicate_of IN ('FILE', 'RECORDED_SALE')),
+    first_line     integer,
+    sale_id        bigint,
+    transaction_id bigint,
+    product_id     integer,
+    PRIMARY KEY (import_id, line),
+    FOREIGN KEY (transaction_id, product_id)
+        REFERENCES public.transaction_line (transaction_id, product_id) ON DELETE SET NULL,
+    CONSTRAINT import_row_outcome_shape_check CHECK (
+        CASE outcome
+            WHEN 'ACCEPTED' THEN code IS NULL AND field IS NULL AND message IS NULL
+                AND duplicate_of IS NULL AND first_line IS NULL AND sale_id IS NULL
+            ELSE code IS NOT NULL AND message IS NOT NULL
+                AND transaction_id IS NULL AND product_id IS NULL
+                AND ((code = 'duplicate_row') = (duplicate_of IS NOT NULL))
+                AND (first_line IS NULL OR duplicate_of = 'FILE')
+                AND (sale_id IS NULL OR duplicate_of = 'RECORDED_SALE')
+        END)
+);
+CREATE INDEX IF NOT EXISTS import_row_outcome_rejected
+    ON sales.import_row_outcome (import_id, line) WHERE outcome = 'REJECTED';
+CREATE INDEX IF NOT EXISTS import_row_outcome_line_made
+    ON sales.import_row_outcome (import_id, transaction_id, product_id)
+    WHERE outcome = 'ACCEPTED';
+
+-- A header an import made has a capture row like a phone sale's, so ADR-0039's
+-- query (one sales.sale_capture row for every `svc-sales:` header) still
+-- returns nothing. import_id says which import made it.
+ALTER TABLE sales.sale_capture
+    ADD COLUMN IF NOT EXISTS import_id bigint REFERENCES sales.import (import_id);
+CREATE INDEX IF NOT EXISTS sale_capture_import
+    ON sales.sale_capture (import_id) WHERE import_id IS NOT NULL;
+
+-- An import appends lines to a header and recomputes its total, as the web's
+-- CSV path does (the deferred trigger on both tables holds total equal to the
+-- sum of the lines). That is the one column of a header svc_sales may change.
+GRANT UPDATE (total) ON public.transaction TO svc_sales;
+GRANT SELECT, INSERT, UPDATE ON sales.import, sales.import_chunk TO svc_sales;
+GRANT SELECT, INSERT ON sales.import_row_outcome TO svc_sales;
 -- END BOUNDARY sales
 
 -- BEGIN BOUNDARY products

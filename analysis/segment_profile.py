@@ -92,6 +92,50 @@ def _ever_before(dataset: Dataset, window_days: int) -> set[str]:
     return {s.customer_id for s in dataset.sales if s.seconds_ago > limit}
 
 
+def profile_of(
+    label: str,
+    rank: int,
+    at: Sequence[int],
+    features: Features,
+    prior: Counter[str],
+    before: set[str],
+    total: float,
+) -> Profile:
+    """The profile of the customers at positions `at` of `features`, under `label`.
+    It takes members and not clusters, so any method that labels customers can be
+    profiled by it (F23-06)."""
+    r = [features.recency_days[i] for i in at]
+    f = [features.frequency[i] for i in at]
+    m = [features.monetary[i] for i in at]
+    revenue = sum(m)
+    return Profile(
+        label=label,
+        rank=rank,
+        customers=len(at),
+        customer_share=len(at) / len(features.ids),
+        revenue=revenue,
+        revenue_share=revenue / total,
+        # The centroid is the mean of its members, and min-max is a straight
+        # line, so the raw centroid is the members' mean (a test checks it
+        # against the normalized centroid turned back into raw units).
+        recency_days=statistics.fmean(r),
+        frequency=statistics.fmean(f),
+        monetary=statistics.fmean(m),
+        median_recency=statistics.median(r),
+        median_frequency=statistics.median(f),
+        median_monetary=statistics.median(m),
+        bought_recently=sum(x <= RECENT_DAYS for x in r) / len(at),
+        bought_lately=sum(x <= INACTIVE_DAYS for x in r) / len(at),
+        prior_frequency=statistics.fmean(prior[features.ids[i]] for i in at),
+        new_customers=sum(features.ids[i] not in before for i in at) / len(at),
+        extreme=sum(features.extreme[i] for i in at),
+        extreme_revenue_share=(
+            sum(features.monetary[i] for i in at if features.extreme[i]) / revenue
+        ),
+        groups=dict(Counter(features.group[i] for i in at)),
+    )
+
+
 def profiles(dataset: Dataset | None = None) -> tuple[list[Profile], KMeansFit]:
     """One profile per cluster, best first, with the label ADR-0030 gives it."""
     dataset = dataset or generate()
@@ -105,39 +149,7 @@ def profiles(dataset: Dataset | None = None) -> tuple[list[Profile], KMeansFit]:
     out = []
     for rank, cluster in enumerate(rank_clusters(result)):
         at = [i for i, c in enumerate(result.assignments) if c == cluster]
-        r = [features.recency_days[i] for i in at]
-        f = [features.frequency[i] for i in at]
-        m = [features.monetary[i] for i in at]
-        revenue = sum(m)
-        out.append(
-            Profile(
-                label=labels[rank],
-                rank=rank,
-                customers=len(at),
-                customer_share=len(at) / len(features.ids),
-                revenue=revenue,
-                revenue_share=revenue / total,
-                # The centroid is the mean of its members, and min-max is a straight
-                # line, so the raw centroid is the members' mean (a test checks it
-                # against the normalized centroid turned back into raw units).
-                recency_days=statistics.fmean(r),
-                frequency=statistics.fmean(f),
-                monetary=statistics.fmean(m),
-                median_recency=statistics.median(r),
-                median_frequency=statistics.median(f),
-                median_monetary=statistics.median(m),
-                bought_recently=sum(x <= RECENT_DAYS for x in r) / len(at),
-                bought_lately=sum(x <= INACTIVE_DAYS for x in r) / len(at),
-                prior_frequency=statistics.fmean(prior[features.ids[i]] for i in at),
-                new_customers=sum(features.ids[i] not in before for i in at) / len(at),
-                extreme=sum(features.extreme[i] for i in at),
-                extreme_revenue_share=(
-                    sum(features.monetary[i] for i in at if features.extreme[i])
-                    / revenue
-                ),
-                groups=dict(Counter(features.group[i] for i in at)),
-            )
-        )
+        out.append(profile_of(labels[rank], rank, at, features, prior, before, total))
     return out, result
 
 

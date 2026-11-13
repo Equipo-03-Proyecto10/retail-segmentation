@@ -9,8 +9,10 @@ synthetic** (ADR-0052). Governing records: ADR-0018 (the two methods behind one
 pipeline; its pairing rule is ADR-0030's) and RN-39.
 
 **The result in one line: the criteria favour neither method.** All three tie at their
-stated margins, and the tie holds at half and at double those margins. Section 5 says
-what each method does better and what that means for choosing between them.
+stated margins. At half those margins each method wins one criterion (K-means
+interpretability, RFM rules stability), and at double all three tie, so the verdict is
+the same at both. Section 5 says what each method does better and what that means for
+choosing between them.
 
 ## 1. What is compared, and why this study decides
 
@@ -63,9 +65,9 @@ bands from the seed file and not copying them. It follows the query's `ntile(5)`
 **distinct** values of each measure (#352), so equal values share a score. It was checked
 against `score_rfm_rules` on the loaded dataset: all 5,000 customers, the 3,979 scored
 agree on label and on all three scores with **0 differences**, and the 1,021 with no sale
-agree as unassigned. `tests/test_method_comparison.py` keeps that check (it needs
-PostgreSQL and is skipped without it) and fails when the replica is changed to split
-ties by row.
+agree as unassigned. `tests/test_method_comparison.py` keeps that check on a smaller
+generated dataset (300 customers, seed 99; it needs PostgreSQL and is skipped without
+it) and fails when the replica is changed to split ties by row.
 
 ## 3. The two methods on the current window
 
@@ -161,7 +163,9 @@ least 2% of customers.
 | K-means, k = 6 | CHAMPION | 11 | 0.909 |
 
 It widens the gap between RFM rules and K-means at k = 4 (0.175) without reaching the
-margin of 0.20, and the verdict stays the same.
+margin of 0.20. Against K-means at k = 6 it crosses it (0.209), so K-means at k = 6 then
+leads on interpretability while RFM rules lead on stability: one win each, and the
+verdict stays the same for both pairs.
 
 ### Stability: do the same customers keep their segment
 
@@ -238,7 +242,8 @@ each leads, below the margin or not:
   margin:** 7 of 8 claims against 9 of 12, and it fills AT_RISK (748 customers) where RFM rules fill it with four. It
   cannot name LOYAL or HIBERNATING at k = 4, and at k = 6 its CHAMPION is one person.
 - **For deciding who to invest in they are equal here:** the same share of later spend
-  explained, and the same segments (CHAMPION, LOYAL) carry nearly all of it.
+  explained, and the same pattern of who buys again: CHAMPION and LOYAL customers
+  nearly always, LOST customers 36% to 38% of the time.
 
 So the choice between them is not settled by quality and should be made on what the
 business needs that these criteria do not measure. A team that needs a segment of

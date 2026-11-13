@@ -507,10 +507,10 @@ def test_a_partial_return_counts_net_units_and_restores_only_resellable_goods(
     ).fetchone()
     assert (net[0], str(net[1]), str(net[2])) == (2, "20.00", "38.50")
     assert owner.execute(
-        "SELECT product_id, net_quantity, net_amount::text"
+        "SELECT product_id, net_quantity, net_amount::text, data_origin"
         " FROM api_sales.net_purchase_line_v1 WHERE transaction_id = %s",
         (sale["sale_id"],),
-    ).fetchall() == [(first, 2, "20.00")]
+    ).fetchall() == [(first, 2, "20.00", "OBSERVED")]
 
 
 def test_a_return_in_xml_validates_against_the_xsd(app, client, token, make_sale):

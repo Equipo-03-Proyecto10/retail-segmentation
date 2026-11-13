@@ -1562,7 +1562,8 @@ GRANT SELECT ON public.net_sale_line, public.net_sale TO retail_app;
 CREATE OR REPLACE VIEW api_sales.net_purchase_line_v1
 WITH (security_invoker = off) AS
 SELECT transaction_id, customer_id, store_id, channel_id, occurred_at,
-       product_id, quantity, returned_quantity, net_quantity, unit_price, net_amount
+       product_id, quantity, returned_quantity, net_quantity, unit_price, net_amount,
+       data_origin
 FROM public.net_sale_line;
 REVOKE ALL ON api_sales.net_purchase_line_v1 FROM PUBLIC;
 

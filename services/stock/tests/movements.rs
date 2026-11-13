@@ -336,9 +336,9 @@ async fn stock_is_never_negative() {
     // The schema says it too: a direct write below zero is refused.
     let direct = owner
         .execute(
-            "UPDATE public.inventory SET quantity_on_hand = -1 \
+            "UPDATE public.inventory SET quantity_on_hand = $3 \
              WHERE store_id = $1 AND product_id = $2",
-            &[&pair.store_id, &pair.product_id],
+            &[&pair.store_id, &pair.product_id, &-1i32],
         )
         .await;
     assert!(direct.is_err());
@@ -433,8 +433,8 @@ async fn a_transfer_is_all_or_nothing() {
     assert_eq!(destination.on_hand(&owner).await, Some(i32::MAX));
     let rows: i64 = owner
         .query_one(
-            "SELECT count(*) FROM stock.stock_movement WHERE product_id = 6",
-            &[],
+            "SELECT count(*) FROM stock.stock_movement WHERE product_id = $1",
+            &[&6i32],
         )
         .await
         .unwrap()
@@ -702,18 +702,40 @@ async fn a_movement_is_audited_with_its_reason_and_cannot_be_changed() {
     assert!(events >= 1);
 
     // History is append-only for the service.
-    for statement in [
-        "UPDATE stock.stock_movement SET note = 'rewritten'",
-        "DELETE FROM stock.stock_movement",
-        "INSERT INTO stock.stock_movement (movement_type, store_id, product_id, quantity_delta, \
-         quantity_before, quantity_after, reference, recorded_by) \
-         VALUES ('RECEIPT', 22, 7, 1, 0, 1, 'x', '11111111-1111-1111-1111-000000000001')",
-    ] {
-        let error = stock.execute(statement, &[]).await.unwrap_err();
-        assert_eq!(error.code().unwrap().code(), "42501", "{statement}");
-    }
     let error = stock
-        .execute("UPDATE public.inventory SET quantity_on_hand = 999", &[])
+        .execute("UPDATE stock.stock_movement SET note = $1", &[&"rewritten"])
+        .await
+        .unwrap_err();
+    assert_eq!(error.code().unwrap().code(), "42501");
+    let error = stock
+        .execute("DELETE FROM stock.stock_movement", &[])
+        .await
+        .unwrap_err();
+    assert_eq!(error.code().unwrap().code(), "42501");
+    let error = stock
+        .execute(
+            "INSERT INTO stock.stock_movement (movement_type, store_id, product_id, \
+             quantity_delta, quantity_before, quantity_after, reference, recorded_by) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+            &[
+                &"RECEIPT",
+                &22i16,
+                &7i32,
+                &1i32,
+                &0i32,
+                &1i32,
+                &"x",
+                &admin(),
+            ],
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.code().unwrap().code(), "42501");
+    let error = stock
+        .execute(
+            "UPDATE public.inventory SET quantity_on_hand = $1",
+            &[&999i32],
+        )
         .await
         .unwrap_err();
     assert_eq!(error.code().unwrap().code(), "42501");
@@ -738,14 +760,52 @@ async fn the_schema_refuses_a_movement_that_states_nothing() {
                 "INSERT INTO stock.stock_movement (movement_type, store_id, product_id, \
                  quantity_delta, quantity_before, quantity_after, reference, reason, counted_by, \
                  recorded_by) \
-                 VALUES ($1, 1, 1, $2, 5, 5 + $2, $3, $4, $5, $6)",
-                &[&kind, &delta, &reference, &reason, &counted_by, &admin()],
+                 VALUES ($1, $2, $3, $4, $5, $5 + $4, $6, $7, $8, $9)",
+                &[
+                    &kind,
+                    &1i16,
+                    &1i32,
+                    &delta,
+                    &5i32,
+                    &reference,
+                    &reason,
+                    &counted_by,
+                    &admin(),
+                ],
             )
             .await;
         assert!(
             result.is_err(),
             "{kind} {reference:?} {reason:?} {counted_by:?} {delta}"
         );
+    }
+}
+
+#[tokio::test]
+async fn movement_history_restricts_master_deletion() {
+    let _guard = test_lock().await;
+    let Some(url) = database_url() else { return };
+    let owner = connect(&url).await;
+    let rows = owner
+        .query(
+            "SELECT conname, confdeltype::text \
+             FROM pg_constraint \
+             WHERE conrelid = $1::text::regclass \
+               AND conname = ANY($2::text[]) \
+             ORDER BY conname",
+            &[
+                &"stock.stock_movement",
+                &vec![
+                    "stock_movement_product_id_fkey",
+                    "stock_movement_store_id_fkey",
+                ],
+            ],
+        )
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 2);
+    for row in rows {
+        assert_eq!(row.get::<_, String>(1), "r", "{}", row.get::<_, String>(0));
     }
 }
 

@@ -361,8 +361,8 @@ async fn roles_the_key_and_both_representations() {
     owner
         .execute(
             "INSERT INTO public.inventory (store_id, product_id, quantity_on_hand) \
-             VALUES (1, $1, 10)",
-            &[&PRODUCT],
+             VALUES ($1, $2, $3)",
+            &[&1i16, &PRODUCT, &10i32],
         )
         .await
         .unwrap();

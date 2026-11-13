@@ -263,8 +263,8 @@ async fn forget_restocks(owner: &Client, store_id: i16, product_id: i32, quantit
     owner
         .execute(
             "DELETE FROM stock.stock_movement \
-             WHERE movement_type = 'RESTOCK' AND reversal_id = ANY($1)",
-            &[&vec![RESTOCK_REVERSAL, RESTOCK_REPEATED]],
+             WHERE movement_type = $1 AND reversal_id = ANY($2)",
+            &[&"RESTOCK", &vec![RESTOCK_REVERSAL, RESTOCK_REPEATED]],
         )
         .await
         .unwrap();
@@ -361,9 +361,9 @@ async fn restock_adds_units_and_records_one_movement() {
             "SELECT quantity_delta, quantity_before, quantity_after, \
                     idempotency_key IS NULL, recorded_by IS NULL \
              FROM stock.stock_movement \
-             WHERE movement_type = 'RESTOCK' AND reversal_id = $1 \
-               AND store_id = $2 AND product_id = $3",
-            &[&RESTOCK_REVERSAL, &store_id, &product_id],
+             WHERE movement_type = $1 AND reversal_id = $2 \
+               AND store_id = $3 AND product_id = $4",
+            &[&"RESTOCK", &RESTOCK_REVERSAL, &store_id, &product_id],
         )
         .await
         .unwrap();

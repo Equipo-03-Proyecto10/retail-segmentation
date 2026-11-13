@@ -40,7 +40,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 | Object | Kind | Access | Notes |
 |---|---|---|---|
-| `inventory` | Table (`public`) | R: SELECT. The web's CSV path is a writer (E-09) | Services write it only through `consume_v1` and `stock.record_movement` (ADR-0061) |
+| `inventory` | Table (`public`) | R: SELECT. The web's CSV path is a writer (E-09) | Services write it only through `consume_v1`, `restock_v1` and `stock.record_movement` (ADR-0061) |
 | `api_stock.consume_v1` | Function | Owned by `definer_stock`: SELECT on `inventory`, UPDATE of `quantity_on_hand` and `updated_at` | EXECUTE to `svc_sales` only |
 | `api_stock.restock_v1` | Function | Owned by `definer_stock`: the UPDATE above, and INSERT of a `RESTOCK` row in `stock.stock_movement` | EXECUTE to `svc_sales` only |
 | `stock.stock_movement`, `stock.movement_request` | Tables (`stock` schema) | `svc_stock` reads movements; `definer_stock` inserts through `stock.record_movement` | Append-only history and idempotency memory (F21-06) |

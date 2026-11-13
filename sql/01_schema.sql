@@ -2019,9 +2019,9 @@ CREATE TABLE IF NOT EXISTS stock.stock_movement (
         CONSTRAINT stock_movement_type_check
         CHECK (movement_type IN ('RECEIPT', 'TRANSFER', 'COUNT', 'ADJUSTMENT', 'RESTOCK')),
     store_id         smallint NOT NULL
-        REFERENCES public.store (store_id) ON DELETE CASCADE,
+        REFERENCES public.store (store_id) ON DELETE RESTRICT,
     product_id       integer NOT NULL
-        REFERENCES public.product (product_id) ON DELETE CASCADE,
+        REFERENCES public.product (product_id) ON DELETE RESTRICT,
     quantity_delta   integer NOT NULL,
     quantity_before  integer NOT NULL
         CONSTRAINT stock_movement_before_check CHECK (quantity_before >= 0),

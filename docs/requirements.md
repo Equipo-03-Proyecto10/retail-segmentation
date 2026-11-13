@@ -187,6 +187,8 @@ The web's matrix does not change.
 |---|---|---|
 | Reads of products (including `GET /v1/products?ids=`), categories, stores (including a store's status, opening hours, enabled channel ids and commercial rules), stock levels and channels | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `INVENTORY_PLANNER`, `AUDITOR`, `SALES_ASSOCIATE`, `LOYALTY_OFFICER`, `COMMERCIAL_SUPERVISOR` | Catalogs: read. Stock follows the catalog (ADR-0010) |
 | Writes of products, categories, store locations, and a store's status, opening hours, enabled channel ids and commercial rules | `ADMIN` | Catalogs: full for `ADMIN` only |
+| `POST /v1/stock-movements` (a receipt, transfer, count or adjustment) | `ADMIN`, `INVENTORY_PLANNER` | ADR-0061: the only way stock changes beyond a sale and its reversal. An adjustment is recorded as a `CRITICAL_ACTION` domain event (ADR-0072) |
+| Reads of stock movements (`GET /v1/stock-movements`, `GET /v1/stock-movements/{movement_id}`) | `ADMIN`, `INVENTORY_PLANNER`, `AUDITOR` | The movement history: who moved stock, when and why (ADR-0061) |
 | Reads of segments (labels and sizes) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR`, `SALES_ASSOCIATE`, `LOYALTY_OFFICER` | Segments and rules: read. The floor roles per ADR-0060 |
 | `GET /v1/recommendations` | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR` | The original representation is unchanged; the floor-safe recommendation read is `/v2` |
 | `GET /v2/recommendations` | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR`, `SALES_ASSOCIATE`, `LOYALTY_OFFICER`; a floor role that names a `store_id` reads only a store assigned to it, another is 403 `forbidden_store` | Segments and rules: read. ADR-0060 adds the two floor roles, and ADR-0067 narrows a named store only |
@@ -265,8 +267,8 @@ The web's matrix does not change.
   the narrowing. Sale reversals, loyalty cards, active promotions, KPI
   reports and store assignments list them already; customer visits and
   consent gain them when they are written.
-- `INVENTORY_PLANNER`'s `inventory` write stays deferred
-  ([`roadmap.md`](roadmap.md)), and no operation lists it.
+- `INVENTORY_PLANNER` changes `inventory` only through a stock movement
+  (ADR-0061).
 
 ## 4. Traceability
 

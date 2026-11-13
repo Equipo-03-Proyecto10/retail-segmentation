@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: stock-service
-  version: 1.2.0
+  version: 1.2.1
   description: 'Publishes the quantity held for each store and product pair, records the movements that
     change it, and states in which channels a product can be sold (RN-14, ADR-0061). A level, movement
     or availability carries ids and quantities only: no product name, price, store name or channel name,
@@ -164,9 +164,14 @@ paths:
         a timeout or a 503, always with the same key, and treats 409 and 422 as final.
 
 
+        Audit. A new adjustment is recorded as ADR-0072''s `CRITICAL_ACTION` domain
+        event (`STOCK_ADJUSTED`, with the adjustment''s reason as its reason code) in
+        the same transaction, so it never commits without its event; a replay records
+        nothing. The event is read through audit-trail''s `GET /v1/domain-events`.
+
+
         Roles. Only `ADMIN` and `INVENTORY_PLANNER` write.'
       operationId: recordStockMovement
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - INVENTORY_PLANNER
@@ -279,7 +284,6 @@ paths:
         descending). `store_id` matches the movement's own store, so a transfer shows under both stores.
         `from` and `to` bound `recorded_at` (RFC 3339 with an offset, `from` inclusive, `to` exclusive).
       operationId: listStockMovements
-      x-mosaiq-status: planned
       x-mosaiq-roles: &id008
       - ADMIN
       - INVENTORY_PLANNER
@@ -330,7 +334,6 @@ paths:
       summary: Get one stock movement
       description: Returns one movement row. A transfer's two rows are two movements sharing a `transfer_id`.
       operationId: getStockMovement
-      x-mosaiq-status: planned
       x-mosaiq-roles: *id008
       parameters:
       - *id006

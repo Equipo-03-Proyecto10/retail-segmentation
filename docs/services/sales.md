@@ -99,9 +99,9 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 ### E-05 — one synchronous cross-boundary call, inside the database
 
-- **What:** sales-service calls `api_stock.consume_v1` once per sale line, inside its own transaction. It is the only place where one boundary calls into another.
-- **Why it is acceptable:** A sale and its stock decrement must commit together (RN-14, ADR-0031). A saga or an HTTP call to stock could leave a sale without its decrement, or the reverse. A SECURITY DEFINER function owned by `definer_stock` gives atomicity without a stock write privilege for sales.
-- **Guard:** EXECUTE goes to `svc_sales` only, and the grant check compares it both ways. It is in the database and never HTTP. ADR-0044 states that a second cross-boundary write needs its own record.
+- **What:** sales-service calls `api_stock.consume_v1` once per sale line, inside the sale's transaction, and `api_stock.restock_v1` once per resalable reversed line, inside the reversal's transaction (ADR-0061, ADR-0062). They are the only places where sales calls into another boundary.
+- **Why it is acceptable:** A sale and its stock decrement must commit together (RN-14, ADR-0031), and so must a reversal and its restock (ADR-0061). A saga or an HTTP call to stock could leave a sale without its decrement, a reversal without its restock, or the reverse. A SECURITY DEFINER function owned by `definer_stock` gives atomicity without a stock write privilege for sales.
+- **Guard:** EXECUTE on both goes to `svc_sales` only, and the grant check compares it both ways. Both are in the database and never HTTP. ADR-0044 states that a further cross-boundary write needs its own record; for `restock_v1`, that record is ADR-0061.
 - **Decided in:** [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) (The one synchronous call); [ADR-0039](../adr/0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) (The transaction). Register: [E-05](./README.md#e-05--one-synchronous-cross-boundary-call-inside-the-database).
 
 ### E-09 — the frozen web is a legacy co-writer of some tables

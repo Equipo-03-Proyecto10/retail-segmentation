@@ -1,4 +1,4 @@
-"""The memory gate over every compose project (F13-09), at ADR-0059's 3,500 MB (F19-08)."""
+"""The memory gate over every compose project (F13-09), at 3,500 MB (ADR-0059)."""
 
 from __future__ import annotations
 
@@ -39,6 +39,14 @@ def test_the_repository_is_within_the_budget() -> None:
         [sys.executable, str(GATE)], cwd=ROOT, capture_output=True, text=True
     )
     assert result.returncode == 0, result.stdout
+
+
+def test_the_default_set_counts_every_project_on_the_instance() -> None:
+    result = subprocess.run(
+        [sys.executable, str(GATE)], cwd=ROOT, capture_output=True, text=True
+    )
+    projects = 2 + len(list((ROOT / "services").glob("*/compose.yaml")))
+    assert f"across {projects} files" in result.stdout, result.stdout
 
 
 def test_exactly_3500_mb_passes(tmp_path: Path) -> None:

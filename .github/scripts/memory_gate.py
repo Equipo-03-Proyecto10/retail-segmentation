@@ -6,7 +6,8 @@ instance under load (docs/evidence/f19-08-memory.md).
 
     python3 .github/scripts/memory_gate.py [compose.yaml ...]
 
-Without arguments it reads deploy/infra/compose.yaml and every
+Without arguments it reads every compose project that runs on the instance:
+deploy/infra/compose.yaml, ops/console/compose.yaml (ADR-0055) and every
 services/*/compose.yaml. A limit is a whole number of `m` or `g` (1g = 1024m);
 a container without one, or with any other form, fails the gate. Prints the
 total when it passes; prints each problem and exits 1 when it does not.
@@ -54,6 +55,7 @@ def check(files: list[Path]) -> tuple[int, list[str]]:
 def main(arguments: list[str]) -> int:
     files = [Path(argument) for argument in arguments] or [
         Path("deploy/infra/compose.yaml"),
+        Path("ops/console/compose.yaml"),
         *sorted(Path("services").glob("*/compose.yaml")),
     ]
     total, problems = check(files)

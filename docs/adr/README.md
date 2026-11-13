@@ -218,6 +218,7 @@ Later runtime events must be preserved.
 | [0076](0076-role-codes-grow-inside-v1-only-by-an-accepted-record-and-clients-grant-nothing-for-an-unknown-role.md) | Role codes grow inside v1 only by an accepted record, and clients grant nothing for an unknown role | Accepted |
 | [0077](0077-desktop-executive-reports-export-pdf-csv-and-excel-from-the-report-main-served-and-keep-the-data-origin.md) | Desktop executive reports export PDF, CSV and Excel from the report main served, and keep the data origin | Accepted |
 | [0078](0078-the-bench-twin-serves-every-read-of-the-products-contract-and-the-load-comparison-stays-as-it-was.md) | The bench twin serves every read of the products contract, and the load comparison stays as it was | Accepted |
+| [0080](0080-the-nightly-chain-and-the-emulator-pull-service-images-keyed-by-their-build-context.md) | The nightly chain and the emulator pull service images keyed by their build context, and build only what is missing | Proposed |
 
 ## Writing one
 

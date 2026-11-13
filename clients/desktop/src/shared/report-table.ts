@@ -25,7 +25,7 @@ export interface ReportTable {
 export const SYNTHETIC_LABEL = 'Synthetic';
 export const OBSERVED_LABEL = 'Observed';
 
-const SEGMENT_STATES: Record<string, string> = {
+export const SEGMENT_STATES: Record<string, string> = {
   unassigned_result: 'Unassigned (no result)',
   no_open_assignment: 'No open assignment',
 };

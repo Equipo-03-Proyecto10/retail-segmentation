@@ -6,8 +6,8 @@ import type { MosaiqBridge } from '../../src/shared/api';
 describe('module groups', () => {
   it('places every module in exactly one group', () => {
     const names = MODULE_GROUPS.flatMap((g) => g.modules.map((m) => m.name));
-    expect(new Set(names).size).toBe(22);
-    expect(names).toHaveLength(22);
+    expect(new Set(names).size).toBe(23);
+    expect(names).toHaveLength(23);
   });
 
   it('shows a role only the modules whose operation it may call, and no empty group', () => {

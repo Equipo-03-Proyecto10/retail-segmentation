@@ -10,6 +10,7 @@ export type ModuleName =
   | 'check-ins'
   | 'migrations'
   | 'reports'
+  | 'planning'
   | 'recommendations'
   | 'drift'
   | 'kmeans'
@@ -72,6 +73,7 @@ export const MODULE_GROUPS: readonly ModuleGroup[] = [
       { name: 'products', label: 'Products', operation: 'listProducts' },
       { name: 'categories', label: 'Categories', operation: 'listCategories' },
       { name: 'stock', label: 'Stock', operation: 'listStockLevels' },
+      { name: 'planning', label: 'Inventory planning', operation: 'getDemandCoverageReport' },
       { name: 'stores', label: 'Stores', operation: 'listStores' },
     ],
   },

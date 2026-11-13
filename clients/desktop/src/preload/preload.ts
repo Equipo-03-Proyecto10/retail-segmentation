@@ -131,6 +131,7 @@ const bridge: MosaiqBridge = {
   listImports: (query) => ipcRenderer.invoke(CHANNELS.listImports, query),
   getImport: (importId) => ipcRenderer.invoke(CHANNELS.getImport, importId),
   listImportRejections: (query) => ipcRenderer.invoke(CHANNELS.listImportRejections, query),
+  planningReport: (query) => ipcRenderer.invoke(CHANNELS.planningReport, query),
 };
 
 contextBridge.exposeInMainWorld('mosaiq', bridge);

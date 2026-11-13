@@ -208,6 +208,46 @@ def test_delete_with_products_children_or_interest_gets_409(
     assert ("DELETE",) not in outbox(owner, leaf)
 
 
+def test_delete_of_a_category_a_restriction_names_gets_409(
+    client, admin_headers, owner, new_id, unique
+):
+    category_id = new_id()
+    owner.execute(
+        "INSERT INTO category (category_id, name) VALUES (%s, %s)",
+        (category_id, unique),
+    )
+    customer, admin = owner.execute(
+        "SELECT (SELECT customer_id FROM customer LIMIT 1),"
+        " (SELECT user_id FROM app_user WHERE role_id = 1)"
+    ).fetchone()
+    owner.execute(
+        "INSERT INTO preferences.restriction_decision"
+        " (customer_id, kind, category_id, decision, recorded_by, source)"
+        " VALUES (%s, 'INTEREST_CATEGORY', %s, 'IMPOSED', %s, 'STAFF_ON_BEHALF')",
+        (customer, category_id, admin),
+    )
+    try:
+        response = client.delete(f"/v1/categories/{category_id}", headers=admin_headers)
+        assert (response.status_code, response.get_json()["code"]) == (
+            409,
+            "category_has_customer_interest",
+        )
+        kept = owner.execute(
+            "SELECT count(*) FROM category WHERE category_id = %s", (category_id,)
+        ).fetchone()[0]
+        assert kept == 1
+    finally:
+        # The decision log is append-only; only the owner, with triggers off,
+        # can take the test's row back out.
+        with owner.transaction():
+            owner.execute("SET LOCAL session_replication_role = replica")
+            owner.execute(
+                "DELETE FROM preferences.restriction_decision WHERE category_id = %s",
+                (category_id,),
+            )
+            owner.execute("DELETE FROM category WHERE category_id = %s", (category_id,))
+
+
 def test_deleting_a_free_leaf_answers_204_and_adds_one_delete_row(
     client, admin_headers, new_id, unique, owner
 ):

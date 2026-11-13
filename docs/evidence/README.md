@@ -201,3 +201,4 @@ These follow a specific review rather than a story.
 | Document | What it records |
 |---|---|
 | [F24-01 (#824)](824-recommendation-guarantee.md) | The current RN-40 guarantee tested on seeded PostgreSQL: zero-stock, elsewhere-only, inactive and already-bought products never appear, reasons carry their figures; and what the rule cannot do: choose a store, consider a channel, offer an alternative, keep the explanation |
+| [F24-05 (#828)](828-decision-record.md) | The decision record: what a served recommendation stores, that it reads back equal to what the client received after stock and rules changed, that a cached answer names a stored decision, the 90-day retention, anonymization, and the schema's refusals; with the limits that remain |

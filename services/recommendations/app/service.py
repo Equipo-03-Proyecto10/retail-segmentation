@@ -22,7 +22,7 @@ from psycopg import Connection
 
 import redis
 
-from . import rule, store
+from . import decision_store, decisions, retention, rule, store
 from .cache import ResultCache, result_key
 from .config import DEFAULT_LIMIT, MAX_LIMIT, STREAMS, Settings
 
@@ -147,16 +147,26 @@ def create_app() -> Flask:
             generation = cache.generation()
             cached = cache.get(key, generation)
             if cached is not None:
-                return Representation("Recommendation", cached)
+                # Nothing is written: the answer is the one already recorded.
+                LOGGER.info("Served cached decision %s", cached.decision_id)
+                return Representation("Recommendation", cached.value)
             now = datetime.now(UTC)
             result = rule.recommend(
                 ViewReads(connection, label), customer_id, now, limit
             )
+            # The record comes first and is committed with this connection, so
+            # an answer is never cached, or sent, without its decision.
+            decision = decisions.from_v1(
+                result, decision_id=str(uuid.uuid4()), computed_at=now
+            )
+            decision_store.record(connection, decision)
         data = wire_value(result.as_dict(now))
-        cache.put(key, data, generation)
+        cache.put(key, data, generation, decision.decision_id)
         return Representation("Recommendation", data)
 
     _start_consumers(app, settings, cache)
+    if settings.retention_enabled:
+        retention.start(app, kit)
     return app
 
 

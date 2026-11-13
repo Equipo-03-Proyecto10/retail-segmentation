@@ -174,22 +174,20 @@ class SaleContentTest {
     @Test
     fun registrationOpensASheetAndClearsAfterSuccess() {
         var ui by mutableStateOf(SaleUi(store = store, registration = ready))
-        var registered: Triple<String, String, String>? = null
-        show({ ui }, SaleActions(onRegister = { n, e, p -> registered = Triple(n, e, p) }))
+        show({ ui })
         compose.onNodeWithText("New customer").performScrollTo().performClick()
         compose.waitForIdle()
         compose.onNodeWithText("Register customer").assertExists().assertIsNotEnabled()
         compose.onNodeWithText("Name").performTextInput("Ben Ruiz")
         compose.onNodeWithText("Email").performTextInput("not-an-email")
-        compose.onNodeWithText("Enter a valid email address").assertExists()
-        compose.onNodeWithText("Register customer").assertIsNotEnabled()
+        // Keep develop's behavior: the service owns email validation; the client only requires a name and channel.
+        compose.onNodeWithText("Register customer").assertIsEnabled()
         compose.onNode(hasText("In store").and(hasRole(Role.RadioButton))).assertExists()
         compose.onNodeWithText("Online").assertExists()
         ui = ui.copy(registration = ready.copy(customer = ana), customer = ana)
         compose.waitForIdle()
         compose.onNodeWithText("Register customer").assertDoesNotExist()
         compose.onNodeWithText("New customer").assertDoesNotExist()
-        assertEquals(null, registered)
         // Opening the form again starts empty.
         compose.onNodeWithText("Change").performClick()
         compose.onNodeWithText("New customer").performScrollTo().performClick()

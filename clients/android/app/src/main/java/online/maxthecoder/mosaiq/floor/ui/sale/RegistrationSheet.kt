@@ -1,6 +1,5 @@
 package online.maxthecoder.mosaiq.floor.ui.sale
 
-import android.util.Patterns
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -50,9 +49,6 @@ data class RegistrationFields(val name: String = "", val email: String = "", val
 internal fun channelLabel(name: String): String =
     if (name == PHYSICAL_STORE) stringResource(R.string.sale_channel_in_store) else humanize(name)
 
-internal fun isValidEmail(email: String): Boolean =
-    email.isBlank() || Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches()
-
 /**
  * The new-customer form in a modal bottom sheet: labeled fields with the right keyboards,
  * inline validation, the registration channel as 48dp radio rows, and one primary action.
@@ -85,9 +81,8 @@ fun RegistrationForm(
     onLoadChannels: () -> Unit,
     onSubmit: () -> Unit
 ) {
-    val emailValid = isValidEmail(fields.email)
     val canSubmit =
-        fields.name.isNotBlank() && emailValid && registration.selectedChannelId != null && !registration.loading
+        fields.name.isNotBlank() && registration.selectedChannelId != null && !registration.loading
     Column(
         Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).imePadding().padding(horizontal = Spacing.Lg)
             .padding(bottom = Spacing.Xxl),
@@ -114,14 +109,7 @@ fun RegistrationForm(
             fields.email,
             { onFields(fields.copy(email = it)) },
             stringResource(R.string.sale_field_email),
-            errorText = if (emailValid) {
-                fieldError(
-                    registration.error,
-                    "email"
-                )
-            } else {
-                stringResource(R.string.sale_email_invalid)
-            },
+            errorText = fieldError(registration.error, "email"),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next)
         )
         MqTextField(

@@ -400,15 +400,16 @@ class ScreenStatesTest {
     }
 
     @Test
-    fun theRegistrationFormEnablesSubmitOnlyWithANameAValidEmailAndAChannel() {
+    fun theRegistrationFormEnablesSubmitWithANameAndAChannel() {
         var submitted = 0
-        form(ready, RegistrationFields(name = "Ben Ruiz", email = "ben@example.com"), onSubmit = { submitted++ })
+        // Preserve develop's validation boundary: the service, not Android's Patterns regex, validates email.
+        form(ready, RegistrationFields(name = "Ben Ruiz", email = "not-an-email"), onSubmit = { submitted++ })
         compose.onNodeWithText("Register customer").performScrollTo().assertIsEnabled().performClick()
         assertEquals(1, submitted)
     }
 
     @Test
-    fun theRegistrationFormIsBlockedWithoutANameOrWithABadEmail() {
+    fun theRegistrationFormIsBlockedWithoutAName() {
         form(ready, RegistrationFields(name = "", email = "ben@example.com"))
         compose.onNodeWithText("Register customer").assertIsNotEnabled()
     }

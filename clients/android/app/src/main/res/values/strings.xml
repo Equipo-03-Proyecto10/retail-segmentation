@@ -126,7 +126,6 @@
     <string name="sale_field_required">Required</string>
     <string name="sale_field_email">Email</string>
     <string name="sale_field_phone">Phone</string>
-    <string name="sale_email_invalid">Enter a valid email address</string>
     <string name="sale_channels_loading">Loading sales channels…</string>
     <string name="sale_channels_load">Load channels</string>
     <string name="sale_channel_in_store">In store</string>

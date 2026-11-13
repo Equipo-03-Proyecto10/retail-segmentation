@@ -12,9 +12,9 @@ database yet. engagement-service's own story, F14-24 (#466), adds the
 database, its user, its collections and its seed in
 `services/engagement/mongo/`.
 
-MongoDB holds one thing: in-store engagement that no PostgreSQL table holds, a
-product QR scanned on the floor and a tap on a shown recommendation. Check-ins
-and purchases stay in PostgreSQL. Only engagement-service reads or writes it;
+MongoDB holds client-originated engagement facts and reports of refused queued
+writes that no PostgreSQL table holds. Check-ins and purchases stay in
+PostgreSQL. Only engagement-service reads or writes it;
 the web and every other service never connect.
 
 ## Server
@@ -101,6 +101,17 @@ A unique index on `{store_id: 1, day: 1, type: 1}` keeps one document per key.
 The rollup is derived and rebuildable: losing it, or `redis-cache`, loses
 nothing.
 
+### `capture_incident`
+
+One document per refused queued write. `client_incident_id` and
+`(source_type, source_operation_id)` are independently unique, so concurrent
+retries and a report from a second device return the original. The document is
+the contract's allow-list: refusal metadata, store, reporter, times, status and
+review history. It carries no credential or customer field. Reviews append
+`{status, note, by, at}` and move only forward to `RESOLVED`; incidents are
+closed, never deleted. The `{store_id, status, recorded_at: -1}` index serves
+the supervisor's narrowed poll.
+
 ## Operations
 
 | Operation | Endpoint | MongoDB |
@@ -109,6 +120,9 @@ nothing.
 | Query | `GET /v1/engagement-events` (`type`, `store_id`, `customer_id`, `voided`, `from`, `to`, `page`, `size`) and `GET /v1/engagement-events/{event_id}` | `find` with a range on `occurred_at`, sorted `occurred_at: -1`, each filter served by one index (`IXSCAN` in `explain`) |
 | Update | `POST /v1/engagement-events/{event_id}/void`, `ADMIN` only, with a `reason` | `updateOne({_id, voided: false}, {$set: {voided: true}, $push: {history: …}})`, then `$inc: -1`. Already voided: 409 `already_voided` |
 | Aggregation | `GET /v1/engagement-summaries` (`from`, `to`, `store_id`, `group_by=store\|day\|type`) | `$match` on `day` and `store_id`, `$group` with `$sum: "$count"`, `$sort`, over `engagement_daily` |
+| Report incident | `POST /v1/capture-incidents` | `insertOne`; either unique collision returns the one original incident or 409 `client_incident_conflict` |
+| Read incidents | List, item and summary capture-incident operations | `find`/`aggregate`, narrowed by assignments read for the request |
+| Review incident | `POST /v1/capture-incidents/{incident_id}/reviews` | Atomic forward-only status update and history `$push` |
 
 The rollup's `$inc` is a `findOneAndUpdate` with `upsert: true` and
 `returnDocument: "after"`: `+1` on an insert, `-1` on a void.
@@ -129,9 +143,11 @@ pipeline.
 
 ## Write-time validation
 
-`svc_engagement` holds SELECT on exactly three PostgreSQL views and nothing
+`svc_engagement` holds SELECT on exactly four PostgreSQL views and nothing
 else: `api_products.product_ref_v1`, `api_stores.store_directory_v1` and
-`api_customers.customer_ref_v1` (ADR-0044). Before it writes, the service
+`api_customers.customer_ref_v1`, plus
+`api_users.store_assignment_v1` for per-request incident narrowing (ADR-0044).
+Before it writes, the service
 refuses:
 - 422 `unknown_store`: the store must exist and be active;
 - 422 `unknown_product`: the product must exist;
@@ -145,7 +161,7 @@ resolves as unknown.
 
 ## Who creates the shape
 
-`services/engagement/mongo/init.js` creates the database, the user, both
+`services/engagement/mongo/init.js` creates the database, the user, all three
 collections, the validator and the indexes. It is idempotent, and an
 administrator runs it in mongosh as root before the engagement version that
 needs it, as a schema section is applied before its service. The service never
@@ -168,7 +184,7 @@ second run inserts nothing, and ends with the rollup rebuild.
 
 | Failure | Behaviour |
 |---|---|
-| MongoDB down | engagement's event operations and summaries answer 503 `database_unavailable`, never 500, and its `/health/ready` answers 503. No other service notices |
+| MongoDB down | engagement's event and incident operations and summaries answer 503 `database_unavailable`, never 500, and its `/health/ready` answers 503. No other service notices |
 | `redis-cache` unreachable | A one-store summary of today falls back to `engagement_daily` |
 | MongoDB restarted | Nothing is lost: events and the rollup live in the `mongodb-data` volume |
 | A rollup that disagrees with its events | The rebuild recomputes it from `engagement_event` |
@@ -185,7 +201,7 @@ every change under `deploy/infra/`:
   database beyond MongoDB's own.
 
 ADR-0038's compliance block is the check once engagement is built: the user's
-only role, the two collections, the validator, the four indexes, a refused
+only role, the three collections, their validators and indexes, a refused
 invalid document, index use in `explain`, and a rollup equal to its rebuild. Its
 greps keep MongoDB out of every other service, and delete calls out of
 engagement's source.

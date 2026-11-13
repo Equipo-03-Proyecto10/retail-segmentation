@@ -9,8 +9,15 @@ service decides.
 
 Accepted sales only. ADR-0020 persists a CSV row only once it is accepted, and
 rejected rows live in the load's rejection report, never in `transaction`. So
-reading `transaction` and `transaction_line` *is* reading accepted sales; there
+reading the sales tables *is* reading accepted sales; there
 is no status column to filter on and none is invented here.
+
+Net units (ADR-0062). A cancellation or a return is recorded beside the sale and
+never edits it, so every statement here reads the views that hold the one
+definition of net: `net_sale` (a sale with at least one unit left, its net
+amount) and `net_sale_line` (a line's units and amount after its returns). A
+sale whose net amount is zero is no purchase, so it is in neither. Nothing here
+reads the gross `transaction` or `transaction_line`; a test scans for it.
 
 Every window is the closed interval [since, until]. The caller supplies both
 ends, so the same statement is repeatable for a fixed `until` instead of
@@ -142,15 +149,15 @@ class HistoryRow:
 # idx_transaction_seeded_date, so the check stays cheap however many OBSERVED
 # sales the window holds.
 _SALES_TOTALS = """
-    SELECT count(*), sum(total), max(occurred_at),
+    SELECT count(*), sum(net_total), max(occurred_at),
            coalesce(bool_or(data_origin = 'SEEDED'), false),
            EXISTS (
-               SELECT 1 FROM transaction AS seeded
+               SELECT 1 FROM net_sale AS seeded
                WHERE seeded.data_origin = 'SEEDED'
                  AND seeded.occurred_at >= %(since)s
                  AND seeded.occurred_at <= %(until)s
            )
-    FROM transaction
+    FROM net_sale
     WHERE customer_id = %(customer_id)s
       AND occurred_at >= %(since)s
       AND occurred_at <= %(until)s
@@ -185,8 +192,8 @@ def list_channel_totals(
     with connection.cursor() as cursor:
         cursor.execute(
             """
-            SELECT ch.channel_id, ch.name, count(*), sum(t.total)
-            FROM transaction AS t
+            SELECT ch.channel_id, ch.name, count(*), sum(t.net_total)
+            FROM net_sale AS t
             JOIN channel AS ch ON ch.channel_id = t.channel_id
             WHERE t.customer_id = %(customer_id)s
               AND t.occurred_at >= %(since)s
@@ -207,8 +214,8 @@ def list_store_totals(
     with connection.cursor() as cursor:
         cursor.execute(
             """
-            SELECT s.store_id, s.name, count(*), sum(t.total)
-            FROM transaction AS t
+            SELECT s.store_id, s.name, count(*), sum(t.net_total)
+            FROM net_sale AS t
             JOIN store AS s ON s.store_id = t.store_id
             WHERE t.customer_id = %(customer_id)s
               AND t.occurred_at >= %(since)s
@@ -232,10 +239,10 @@ def list_category_totals(
             """
             SELECT c.category_id, c.name,
                    count(DISTINCT t.transaction_id),
-                   sum(tl.quantity),
-                   sum(tl.quantity * tl.unit_price)
-            FROM transaction AS t
-            JOIN transaction_line AS tl ON tl.transaction_id = t.transaction_id
+                   sum(tl.net_quantity),
+                   sum(tl.net_amount)
+            FROM net_sale AS t
+            JOIN net_sale_line AS tl ON tl.transaction_id = t.transaction_id
             JOIN product AS p ON p.product_id = tl.product_id
             JOIN category AS c ON c.category_id = p.category_id
             WHERE t.customer_id = %(customer_id)s
@@ -257,9 +264,9 @@ def list_product_totals(
     with connection.cursor() as cursor:
         cursor.execute(
             """
-            SELECT p.product_id, p.name, count(*), sum(tl.quantity)
-            FROM transaction AS t
-            JOIN transaction_line AS tl ON tl.transaction_id = t.transaction_id
+            SELECT p.product_id, p.name, count(*), sum(tl.net_quantity)
+            FROM net_sale AS t
+            JOIN net_sale_line AS tl ON tl.transaction_id = t.transaction_id
             JOIN product AS p ON p.product_id = tl.product_id
             WHERE t.customer_id = %(customer_id)s
               AND t.occurred_at >= %(since)s
@@ -286,10 +293,10 @@ def get_discount_totals(
     with connection.cursor() as cursor:
         cursor.execute(
             """
-            SELECT sum(tl.quantity * tl.unit_price),
-                   sum(tl.quantity * p.list_price)
-            FROM transaction AS t
-            JOIN transaction_line AS tl ON tl.transaction_id = t.transaction_id
+            SELECT sum(tl.net_amount),
+                   sum(tl.net_quantity * p.list_price)
+            FROM net_sale AS t
+            JOIN net_sale_line AS tl ON tl.transaction_id = t.transaction_id
             JOIN product AS p ON p.product_id = tl.product_id
             WHERE t.customer_id = %(customer_id)s
               AND t.occurred_at >= %(since)s

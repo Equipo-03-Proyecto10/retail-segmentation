@@ -190,10 +190,15 @@ svc_sales,public.transaction,SELECT
 svc_sales,public.transaction,INSERT
 svc_sales,public.transaction_line,SELECT
 svc_sales,public.transaction_line,INSERT
+svc_sales,public.transaction_line(returned_quantity),UPDATE
 svc_sales,public.channel,SELECT
 svc_sales,sales,USAGE
 svc_sales,sales.sale_capture,SELECT
 svc_sales,sales.sale_capture,INSERT
+svc_sales,sales.sale_reversal,SELECT
+svc_sales,sales.sale_reversal,INSERT
+svc_sales,sales.sale_reversal_line,SELECT
+svc_sales,sales.sale_reversal_line,INSERT
 svc_sales,sales_events,USAGE
 svc_sales,sales_events.outbox,SELECT
 svc_sales,sales_events.outbox,DELETE
@@ -204,6 +209,8 @@ svc_sales,api_sales,USAGE
 svc_recommendations,api_sales,USAGE
 svc_sales,api_sales.purchase_line_v1,SELECT
 svc_recommendations,api_sales.purchase_line_v1,SELECT
+svc_sales,api_sales.net_purchase_line_v1,SELECT
+svc_recommendations,api_sales.net_purchase_line_v1,SELECT
 svc_segments,public.segment_label,SELECT
 svc_segments,public.segment,SELECT
 svc_segments,public.segment_rule,SELECT

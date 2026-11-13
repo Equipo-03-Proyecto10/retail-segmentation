@@ -176,3 +176,28 @@ def test_the_revenue_read_is_parameterized_and_window_bound() -> None:
     assert "bool_or(t.data_origin = 'SEEDED')" in statements[0][0]
     assert summary.seeded is False
     assert read_revenue_summary(_connection(seeded=True), 90).seeded is True
+
+
+@pytest.mark.parametrize("seeded", [True, False])
+def test_the_parity_harness_reads_the_revenue_the_page_shows(seeded: bool) -> None:
+    """tests/parity reads the page as a browser does (F21-03). If the markup of
+    the two headline figures changes, its parser must change with it."""
+    from tests.parity.compare import parse_reports_revenue
+
+    body = (
+        _client(_connection(seeded=seeded), "ANALYST").get(_URL).get_data(as_text=True)
+    )
+
+    assert parse_reports_revenue(body) == (Decimal("300.50"), 3)
+
+
+def test_the_parity_harness_reads_an_empty_page_as_no_figures() -> None:
+    from tests.parity.compare import parse_reports_revenue
+
+    body = (
+        _client(_connection(with_sales=False), "ANALYST")
+        .get(_URL)
+        .get_data(as_text=True)
+    )
+
+    assert parse_reports_revenue(body) is None

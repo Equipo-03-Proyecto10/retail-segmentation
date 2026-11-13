@@ -7,8 +7,10 @@ separate statements could therefore mix states and invent or hide a shift.
 
 Nothing here ranks or compares. The rows are tagged by period and dimension,
 then mapped back to the inputs used by the RN-35 ranking functions in the
-service. Channel and store totals come from transaction headers. Category
-totals additionally join transaction_line, product and category.
+service. Channel and store totals come from the net sale headers (`net_sale`).
+Category totals additionally join the net lines (`net_sale_line`), product and
+category. Both count net units (ADR-0062): a return lowers them, and a sale
+cancelled in full is no purchase.
 
 Accepted sales only: ADR-0020 persists a CSV row only once it is accepted. A
 period is half-open, [start, end), so adjacent periods never share an instant.
@@ -66,10 +68,10 @@ def list_totals_for_periods(
             SELECT periods.period, 'channel' AS dimension,
                    t.customer_id, ch.channel_id, ch.name,
                    count(*) AS purchases, NULL::bigint AS units,
-                   sum(t.total) AS spend,
+                   sum(t.net_total) AS spend,
                    bool_or(t.data_origin = 'SEEDED') AS seeded
             FROM periods
-            JOIN transaction AS t
+            JOIN net_sale AS t
               ON t.occurred_at >= periods.start_at
              AND t.occurred_at < periods.end_at
              AND (%(customer_id)s::uuid IS NULL
@@ -82,10 +84,10 @@ def list_totals_for_periods(
             SELECT periods.period, 'store' AS dimension,
                    t.customer_id, s.store_id, s.name,
                    count(*) AS purchases, NULL::bigint AS units,
-                   sum(t.total) AS spend,
+                   sum(t.net_total) AS spend,
                    bool_or(t.data_origin = 'SEEDED') AS seeded
             FROM periods
-            JOIN transaction AS t
+            JOIN net_sale AS t
               ON t.occurred_at >= periods.start_at
              AND t.occurred_at < periods.end_at
              AND (%(customer_id)s::uuid IS NULL
@@ -98,16 +100,16 @@ def list_totals_for_periods(
             SELECT periods.period, 'category' AS dimension,
                    t.customer_id, c.category_id, c.name,
                    count(DISTINCT t.transaction_id) AS purchases,
-                   sum(tl.quantity) AS units,
-                   sum(tl.quantity * tl.unit_price) AS spend,
+                   sum(tl.net_quantity) AS units,
+                   sum(tl.net_amount) AS spend,
                    bool_or(t.data_origin = 'SEEDED') AS seeded
             FROM periods
-            JOIN transaction AS t
+            JOIN net_sale AS t
               ON t.occurred_at >= periods.start_at
              AND t.occurred_at < periods.end_at
              AND (%(customer_id)s::uuid IS NULL
                   OR t.customer_id = %(customer_id)s::uuid)
-            JOIN transaction_line AS tl
+            JOIN net_sale_line AS tl
               ON tl.transaction_id = t.transaction_id
             JOIN product AS p ON p.product_id = tl.product_id
             JOIN category AS c ON c.category_id = p.category_id
@@ -121,13 +123,13 @@ def list_totals_for_periods(
                    NULL::numeric AS spend,
                    bool_or(t.data_origin = 'SEEDED') AS seeded
             FROM periods
-            JOIN transaction AS t
+            JOIN net_sale AS t
               ON t.occurred_at >= periods.start_at
              AND t.occurred_at < periods.end_at
              AND (%(customer_id)s::uuid IS NULL
                   OR t.customer_id = %(customer_id)s::uuid)
             WHERE EXISTS (
-                SELECT 1 FROM transaction_line AS line
+                SELECT 1 FROM net_sale_line AS line
                 WHERE line.transaction_id = t.transaction_id
             )
             GROUP BY periods.period, t.customer_id

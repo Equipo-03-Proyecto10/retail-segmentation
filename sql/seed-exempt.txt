@@ -12,7 +12,8 @@
 # A table in public is named bare (`role`). A table in a service schema is
 # named schema-qualified, as CI counts it (ADR-0046): `<suffix>_events.outbox`
 # for a boundary's outbox, which holds runtime events and no seed, and
-# `sales.sale_capture`. CI refuses any other schema-qualified name here.
+# `sales.sale_capture`, `sales.sale_reversal` and `sales.sale_reversal_line`,
+# which hold runtime facts. CI refuses any other schema-qualified name here.
 #
 # Padding a catalog with filler rows to reach 30 is the alternative, and it
 # makes the seed misrepresent the business: a reader cannot tell which roles
@@ -66,6 +67,18 @@ users_events.outbox
 # sale's own transaction; the seed records no phone sale, so it is empty in a
 # fresh database (F14-18, ADR-0039).
 sales.sale_capture
+
+# sales-service records a reversal (a cancellation or a return) only when a
+# seller or a manager reverses a sale; none exists in a fresh database, and the
+# seed is not allowed to invent them (F21-03, ADR-0062). Seeding thirty would
+# change what every seeded report, segmentation run and experiment conversion
+# counts as net, and every golden fixture captured against the seed, for the
+# sake of a row count. A reversal is a runtime fact like the phone sale's
+# provenance row above. `returned_quantity` is 0 on every seeded line, which the
+# reconciliation query in CI (a line's running total equals the sum of its
+# reversal lines) proves, and services/sales/tests proves with real reversals.
+sales.sale_reversal
+sales.sale_reversal_line
 
 # sales-service relays stream:sales.v1.recorded from here and purges relayed
 # rows after seven days: runtime state, never seed data. The capture trigger

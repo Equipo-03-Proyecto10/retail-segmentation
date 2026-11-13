@@ -1,6 +1,6 @@
 import type { PlanningQuery, PlanningRowView, PlanningView, Result } from '../shared/api';
 import { SEGMENT_STATES } from '../shared/report-table';
-import type { Backoffice } from './backoffice';
+import { localError, type Backoffice } from './backoffice';
 import {
   checked,
   failed,
@@ -23,6 +23,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const DAY = 86_400_000;
 const MAX_WINDOW_DAYS = 731;
 const MAX_TARGET_DAYS = 180;
+const REPORT_OPERATION = 'getDemandCoverageReport';
 
 interface SegmentXml {
   segment_code?: string;
@@ -60,7 +61,12 @@ const isTrue = (v: string): boolean => v === 'true' || v === '1';
 function checkedQuery(raw: unknown, today: string): PlanningQuery {
   const q = record(raw, 'The planning query');
   const date = (v: unknown, label: string): string => {
-    if (typeof v !== 'string' || !DATE.test(v) || Number.isNaN(Date.parse(v)))
+    if (
+      typeof v !== 'string' ||
+      !DATE.test(v) ||
+      Number.isNaN(Date.parse(v)) ||
+      new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) !== v
+    )
       throw invalidInput(`${label} must be a date (YYYY-MM-DD).`);
     return v;
   };
@@ -97,8 +103,20 @@ export class Planning {
     private readonly now: () => Date = () => new Date(),
   ) {}
 
+  /** Refuses a role unless the bundled contract allows the report operation. */
+  private allowed(): Result<never> | null {
+    const state = this.office.state();
+    if (state.status !== 'signed_in')
+      return { ok: false, error: localError('signed_out', 'You are signed out.') };
+    return state.operations.includes(REPORT_OPERATION)
+      ? null
+      : { ok: false, error: localError('forbidden_role', 'Your role may not read inventory planning.') };
+  }
+
   report(raw: unknown): Promise<Result<PlanningView>> {
     return checked(this.office, async () => {
+      const refused = this.allowed();
+      if (refused !== null) return refused;
       const query = checkedQuery(raw, this.now().toISOString().slice(0, 10));
       const res = await this.office.authed({
         method: 'GET',

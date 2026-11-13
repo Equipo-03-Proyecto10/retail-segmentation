@@ -124,6 +124,7 @@ describe('inventory planning', () => {
     [{ ...query, from: '2024-01-01' }, /at most 731/],
     [{ ...query, target_cover_days: 181 }, /target cover/],
     [{ ...query, from: '1 Oct' }, /date/],
+    [{ ...query, from: '2026-02-30' }, /date/],
     [{ ...query, store_id: 0 }, /store/],
   ])('refuses %j before sending anything', async (bad, message) => {
     const { planning, calls } = await setup();
@@ -136,10 +137,14 @@ describe('inventory planning', () => {
     expect(calls()).toHaveLength(0);
   });
 
-  it('passes on the service refusal of a role or store', async () => {
-    const { planning } = await setup('MARKETING', () => ({ status: 403, body: errorXml('forbidden_role') }));
+  it('refuses a role the contract does not allow before sending anything', async () => {
+    const { planning, calls } = await setup('MARKETING', () => ({
+      status: 403,
+      body: errorXml('forbidden_role'),
+    }));
     const res = await planning.report(query);
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error.code).toBe('forbidden_role');
+    expect(calls()).toHaveLength(0);
   });
 });

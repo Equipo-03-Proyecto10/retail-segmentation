@@ -818,6 +818,40 @@ decision that matters is how a product's many-valued facts are split:
   creates, and is the service's to write. A product has at most one barcode; a
   second barcode would be a multivalued fact and a relation of its own.
 
+- **`models.model_version`** (model-registry, F22-11, ADR-0064) is one relation
+  keyed by `version_id`, with `name` a second candidate key, so every other
+  column depends on a candidate key and nothing else: it is in BCNF. The
+  method's own fields (`seed`, `rule_set_id`, `k`, `max_iterations`,
+  `tolerance`) sit in the row because each is a single value of the version,
+  null when the other method does not have it, and a CHECK ties them to
+  `method`. `frozen_scoring` and `reference_distribution` are `jsonb`
+  documents: each is written once, frozen, and read whole (a customer is scored
+  against all of one version's boundaries or centroids, and drift compares the
+  whole histogram), and no query selects, joins or updates a part of one, so
+  decomposing them into bin and boundary rows would store the same facts in
+  more rows without a dependency to remove. The three mutable columns
+  `state`, `published_at` and `retired_at` are a stored projection of
+  `models.model_publication` (the version of the latest publication is the
+  published one); they are kept because the partial unique index that allows
+  exactly one `PUBLISHED` row needs a column to index (ADR-0064), and a trigger
+  lets nothing else in the row change, in any role.
+- **`models.model_version_feature`** is the multivalued fact "this version uses
+  these variables". R, F and M are independent of every other fact of the
+  version, so they are rows keyed `(version_id, feature)`, not an array column;
+  every column is in the key, so the relation is in BCNF and 4NF.
+- **`models.model_publication`** is the multivalued fact "this version was made
+  the published one, at this time, by this person, for this reason"; a version
+  can be published, retired and restored many times. `publication_id`
+  determines every column, and `previous_version_id` is a second reference to
+  `model_version`, not a copy of it. It is append-only, so a rollback is a new
+  row and history is never rewritten.
+- **`models.run_version`** is the 1:N fact "this segmentation run was scored
+  under this version" (ADR-0064). `run_id → version_id`, and the run is the
+  web's, named by value with no foreign key (the record outlives any maintenance
+  delete of a run): `segmentation_run` does not change. A WEB_RUN
+  version's source run is derived (the earliest linked run), not stored, so the
+  two cannot disagree.
+
 ---
 
 ## 3. Logical model

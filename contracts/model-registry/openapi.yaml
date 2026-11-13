@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: model-registry-service
-  version: 1.1.0
+  version: 1.1.1
   description: >-
     Keeps every model version immutable and says which one is published. A model version is
     immutable once published, carries its dataset, parameters, metrics and reference distribution,
@@ -14,8 +14,9 @@ info:
     other half of the rule: every report and alert is judged against the reference distribution
     of the version it names, and carries the statistic, the reference, the current window, the
     threshold and the model version (RN-66, ADR-0065). A change of version inside a window is
-    never compared (ADR-0064). The drift operations are published ahead of their implementation
-    (ADR-0073, F23-09) and are marked planned.
+    never compared (ADR-0064). The drift operations (F23-09), publication and rollback (F22-13)
+    and training (F22-12) are published ahead of their implementation (ADR-0073) and are marked
+    planned.
 security:
 - bearer: []
 tags:
@@ -290,6 +291,7 @@ paths:
         a race for the single published slot is 409 `publication_conflict`; read the published
         version again and retry. Only an administrator publishes (RN-05).
       operationId: publishModelVersion
+      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       parameters:
@@ -366,6 +368,7 @@ paths:
         already published. Losing a race is 409 `publication_conflict`. Only an administrator
         rolls back.
       operationId: rollbackToModelVersion
+      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       parameters:
@@ -436,6 +439,7 @@ paths:
         Returns a page of training runs, newest first. `method` and `state` filter on the
         stored values.
       operationId: listModelTrainings
+      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - ANALYST
@@ -493,6 +497,7 @@ paths:
         409 `model_version_name_taken`. Only RFM_RULES versions are registered through `POST
         /v1/model-versions`; `method` here is always KMEANS.
       operationId: createModelTraining
+      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       parameters:
@@ -584,6 +589,7 @@ paths:
         Returns one training with its parameters, seed, dataset, metrics and the version it
         registered.
       operationId: getModelTraining
+      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - ANALYST

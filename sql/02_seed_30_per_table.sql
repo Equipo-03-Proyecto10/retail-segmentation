@@ -1077,6 +1077,179 @@ JOIN app_user AS u ON u.role_id = r.role_id AND u.is_active;
 -- app_user, customer_segment_history, the stores boundary's seven tables and the products
 -- boundary's four tables. Nothing is inserted here by hand.
 
+-- ---------- models.* (F22-11, ADR-0064) ----------
+-- The registry starts with the two definitions the seed already holds, each
+-- registered as the version a web run produces (source WEB_RUN, no owner):
+-- the existing RFM rules, from the newest RFM_RULES run, and the K-means run.
+-- Every segmentation run is linked to the version of its method and
+-- parameters, so the 29 earlier rule runs and the last one share the first,
+-- and a version's source run is the earliest run linked to it. Everything a
+-- version carries is read from that run's own history rows, not invented:
+--   * dataset: the SHA-256 of the canonical rows the run scored, one line
+--     `customer|last purchase|purchases|total` per customer, by customer id;
+--   * RFM frozen scoring: the boundaries the run's quintile scores imply;
+--   * K-means frozen scoring: each label's cluster (its rank in
+--     label_mapping.labels_by_rank), its centroid as the mean of the members'
+--     min-max values (recency reversed, a constant feature 0), and the raw
+--     bounds; the run converged with a final shift of 0, so the means are the
+--     fitted centroids;
+--   * reference distribution: four equal-width bins per feature over the
+--     scored customers, and the share of each label;
+--   * metrics: inertia and silhouette as the run recorded them.
+-- The newest run is rule-based and every customer's current assignment comes
+-- from it, so its version is the published one; the K-means version is a
+-- draft. The seed publication is the one a first run of the web would make.
+DO $seed_models$
+DECLARE
+    r        record;
+    v_id     bigint;
+    scoring  jsonb;
+    ref      jsonb;
+    ds       record;
+    q        jsonb;
+BEGIN
+    FOR r IN
+        SELECT s.run_id, s.method, s.window_days, s.parameters, s.run_at, s.data_origin
+        FROM segmentation_run AS s
+        WHERE s.run_id IN (
+            (SELECT max(run_id) FROM segmentation_run WHERE method = 'RFM_RULES'),
+            (SELECT max(run_id) FROM segmentation_run WHERE method = 'KMEANS'))
+        ORDER BY s.method DESC
+    LOOP
+        -- The rows the run scored, with recency in days: before the run for
+        -- the rule bands, before the run's latest purchase for K-means (the
+        -- reference point the web's fit uses).
+        CREATE TEMP TABLE seed_scored ON COMMIT DROP AS
+        SELECT h.customer_id, h.label_code, h.recency_last_purchase_at AS last_at,
+               h.frequency_count AS f, h.monetary_total AS m,
+               h.r_score, h.f_score, h.m_score,
+               extract(epoch FROM (
+                   CASE WHEN r.method = 'KMEANS'
+                        THEN max(h.recency_last_purchase_at) OVER ()
+                        ELSE r.run_at END
+                   - h.recency_last_purchase_at)) / 86400.0 AS r_days
+        FROM customer_segment_history AS h
+        WHERE h.run_id = r.run_id AND h.frequency_count IS NOT NULL;
+
+        SELECT count(*) AS n,
+               encode(sha256(convert_to(string_agg(
+                   customer_id::text || '|' || to_char(last_at AT TIME ZONE 'UTC',
+                       'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') || '|' || f || '|' || m,
+                   E'\n' ORDER BY customer_id), 'UTF8')), 'hex') AS fingerprint
+        INTO ds FROM seed_scored;
+
+        -- Four equal-width bins per feature: edges and the share in each.
+        SELECT jsonb_build_object(
+            'sample_size', ds.n,
+            'captured_at', to_char(r.run_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+            'features', (
+                SELECT jsonb_agg(jsonb_build_object(
+                    'feature', f.feature,
+                    'bin_edges', (SELECT jsonb_agg(round(f.a + (f.b - f.a) * i / 4.0, 4) ORDER BY i)
+                                  FROM generate_series(0, 4) AS i),
+                    'proportions', (SELECT jsonb_agg(
+                        (SELECT count(*) FROM seed_scored AS x
+                          WHERE least(4, 1 + floor(4 * (CASE f.feature
+                                    WHEN 'R' THEN x.r_days WHEN 'F' THEN x.f ELSE x.m END - f.a)
+                                    / (f.b - f.a))::int) = bins.bin)::float8 / ds.n
+                        ORDER BY bins.bin) FROM generate_series(1, 4) AS bins(bin))
+                ) ORDER BY f.ord)
+                FROM (SELECT 'R' AS feature, 1 AS ord, min(r_days) AS a, max(r_days) AS b FROM seed_scored
+                      UNION ALL SELECT 'F', 2, min(f), max(f) FROM seed_scored
+                      UNION ALL SELECT 'M', 3, min(m), max(m) FROM seed_scored) AS f),
+            'labels', (SELECT jsonb_agg(jsonb_build_object(
+                           'label_code', label_code, 'share', c::float8 / ds.n)
+                           ORDER BY label_code)
+                       FROM (SELECT label_code, count(*) AS c FROM seed_scored
+                             WHERE label_code IS NOT NULL GROUP BY label_code) AS l))
+        INTO ref;
+
+        IF r.method = 'RFM_RULES' THEN
+            scoring := jsonb_build_object(
+                'quintile_boundaries', jsonb_build_object(
+                    'recency_boundaries', (SELECT jsonb_agg(floor(b) ORDER BY s DESC) FROM (
+                        SELECT r_score AS s, max(r_days) AS b FROM seed_scored
+                        WHERE r_score BETWEEN 2 AND 5 GROUP BY r_score) AS t),
+                    'frequency_boundaries', (SELECT jsonb_agg(b ORDER BY s DESC) FROM (
+                        SELECT f_score AS s, min(f) AS b FROM seed_scored
+                        WHERE f_score BETWEEN 2 AND 5 GROUP BY f_score) AS t),
+                    'monetary_boundaries', (SELECT jsonb_agg(b::text ORDER BY s DESC) FROM (
+                        SELECT m_score AS s, min(m) AS b FROM seed_scored
+                        WHERE m_score BETWEEN 2 AND 5 GROUP BY m_score) AS t)),
+                'centroids', '[]'::jsonb,
+                'normalization_bounds', NULL);
+        ELSE
+            scoring := jsonb_build_object(
+                'quintile_boundaries', NULL,
+                'centroids', (
+                    SELECT jsonb_agg(jsonb_build_object(
+                        'cluster_index', rk.ord - 1, 'label_code', rk.label,
+                        'r', round((1 - (c.r - b.r_min) / nullif(b.r_max - b.r_min, 0))::numeric, 6),
+                        'f', round(coalesce((c.f - b.f_min) / nullif(b.f_max - b.f_min, 0), 0)::numeric, 6),
+                        'm', round(coalesce((c.m - b.m_min) / nullif(b.m_max - b.m_min, 0), 0)::numeric, 6))
+                        ORDER BY rk.ord)
+                    FROM jsonb_array_elements_text(r.parameters -> 'label_mapping' -> 'labels_by_rank')
+                             WITH ORDINALITY AS rk(label, ord)
+                    JOIN (SELECT label_code, avg(r_days) AS r, avg(f) AS f, avg(m) AS m
+                          FROM seed_scored GROUP BY label_code) AS c ON c.label_code = rk.label
+                    CROSS JOIN (SELECT min(r_days) AS r_min, max(r_days) AS r_max,
+                                       min(f) AS f_min, max(f) AS f_max,
+                                       min(m) AS m_min, max(m) AS m_max FROM seed_scored) AS b),
+                'normalization_bounds', (SELECT jsonb_build_object(
+                    'r_min', min(r_days), 'r_max', max(r_days),
+                    'f_min', min(f), 'f_max', max(f), 'm_min', min(m), 'm_max', max(m))
+                    FROM seed_scored));
+            -- The centroid of a constant recency is 0, as the fit normalizes it.
+            scoring := jsonb_set(scoring, '{centroids}', coalesce((
+                SELECT jsonb_agg(CASE WHEN e -> 'r' = 'null'::jsonb
+                                      THEN jsonb_set(e, '{r}', '0') ELSE e END)
+                FROM jsonb_array_elements(scoring -> 'centroids') AS e), '[]'::jsonb));
+        END IF;
+
+        INSERT INTO models.model_version
+            (name, method, source, window_days, seed, rule_set_id, k, max_iterations,
+             tolerance, normalization, frozen_scoring, reference_distribution,
+             dataset_fingerprint, dataset_origin, dataset_row_count,
+             inertia, silhouette, stability, owner_id, created_at)
+        VALUES (
+            CASE r.method WHEN 'RFM_RULES' THEN 'web-rfm-rules-' || r.window_days || 'd'
+                 ELSE 'web-kmeans-k' || (r.parameters ->> 'k') || '-seed' || (r.parameters ->> 'seed')
+                      || '-' || r.window_days || 'd' END,
+            r.method, 'WEB_RUN', r.window_days,
+            (r.parameters ->> 'seed')::bigint, NULL,
+            (r.parameters ->> 'k')::int, (r.parameters ->> 'max_iterations')::int,
+            (r.parameters ->> 'tolerance')::float8,
+            CASE r.method WHEN 'RFM_RULES' THEN 'NONE' ELSE 'MIN_MAX' END,
+            scoring, ref, ds.fingerprint, r.data_origin, ds.n,
+            (r.parameters -> 'quality' ->> 'inertia')::float8,
+            (r.parameters -> 'quality' ->> 'silhouette')::float8,
+            NULL, NULL, r.run_at)
+        RETURNING version_id INTO v_id;
+
+        INSERT INTO models.model_version_feature (version_id, feature)
+        SELECT v_id, f FROM unnest(ARRAY['R', 'F', 'M']) AS f;
+
+        -- Every run of this method and these parameters has this version.
+        INSERT INTO models.run_version (run_id, version_id, linked_at)
+        SELECT s.run_id, v_id, s.run_at FROM segmentation_run AS s
+        WHERE s.method = r.method AND s.window_days = r.window_days
+          AND s.parameters = r.parameters;
+
+        DROP TABLE seed_scored;
+    END LOOP;
+
+    -- The rule version is the one every customer is scored under today.
+    INSERT INTO models.model_publication
+        (version_id, action, previous_version_id, reason, published_by, published_at)
+    SELECT v.version_id, 'PUBLISH', NULL,
+           'First publication: the web run that scored every customer', NULL, v.created_at
+    FROM models.model_version AS v WHERE v.method = 'RFM_RULES';
+    UPDATE models.model_version
+       SET state = 'PUBLISHED', published_at = created_at
+     WHERE method = 'RFM_RULES';
+END
+$seed_models$;
+
 -- ---------- audit_events.domain_event (32, every kind, ADR-0072) ----------
 -- Runtime history, seeded like app_session rather than exempted (ADR-0051).
 -- Each row goes through audit_events.append_v1, the function behind

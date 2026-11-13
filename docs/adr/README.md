@@ -219,6 +219,7 @@ Later runtime events must be preserved.
 | [0077](0077-desktop-executive-reports-export-pdf-csv-and-excel-from-the-report-main-served-and-keep-the-data-origin.md) | Desktop executive reports export PDF, CSV and Excel from the report main served, and keep the data origin | Accepted |
 | [0078](0078-the-bench-twin-serves-every-read-of-the-products-contract-and-the-load-comparison-stays-as-it-was.md) | The bench twin serves every read of the products contract, and the load comparison stays as it was | Accepted |
 | [0080](0080-the-nightly-chain-and-the-emulator-pull-service-images-keyed-by-their-build-context.md) | The nightly chain and the emulator pull service images keyed by their build context, and build only what is missing | Accepted |
+| [0081](0081-the-domain-event-table-is-owned-by-the-schema-owner-and-a-subject-is-named-once-in-the-common-fields.md) | The domain-event table is owned by the schema owner, and a subject is named once, in the common fields | Proposed |
 
 ## Writing one
 

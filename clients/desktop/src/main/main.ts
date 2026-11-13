@@ -6,13 +6,22 @@ import { CHANNELS } from '../shared/api';
 import { Audit } from './audit';
 import { Backoffice } from './backoffice';
 import { loadBundle } from './bundle';
+import { CampaignPlan } from './campaign-plan';
 import { Campaigns } from './campaigns';
 import { Catalog } from './catalog';
+import { ConversionResults } from './conversion';
 import { Customers } from './customers';
+import { Exploration } from './exploration';
+import { Drift } from './drift';
 import { Exporter, type ExportEnv } from './exports';
+import { Experiments } from './experiments';
 import { Floor } from './floor';
+import { Recommendations } from './recommendations';
+import { Models } from './models';
+import { Imports, systemImportEnv } from './imports';
 import { Planning } from './planning';
 import { Reports, type ReportExportEnv } from './reports';
+import { Migrations } from './migrations';
 import { loadSettings } from './settings';
 import { Stores } from './stores';
 import { Transport } from './transport';
@@ -105,6 +114,33 @@ function start(): void {
     reportOwner = BrowserWindow.fromWebContents(_e.sender) ?? undefined;
     return reports.exportReport(format);
   });
+  let importOwner: BrowserWindow | undefined;
+  // The file the import reads is the one this dialog returns; the renderer names no file.
+  const imports = new Imports(
+    office,
+    systemImportEnv(async () => {
+      const options = {
+        properties: ['openFile' as const],
+        filters: [{ name: 'CSV', extensions: ['csv'] }],
+      };
+      const picked = importOwner
+        ? await dialog.showOpenDialog(importOwner, options)
+        : await dialog.showOpenDialog(options);
+      return picked.canceled ? undefined : picked.filePaths[0];
+    }),
+    bundle,
+  );
+  ipcMain.handle(CHANNELS.chooseImportFile, (_e) => {
+    importOwner = BrowserWindow.fromWebContents(_e.sender) ?? undefined;
+    return imports.chooseFile();
+  });
+  ipcMain.handle(CHANNELS.startImport, () => imports.startImport());
+  ipcMain.handle(CHANNELS.resumeImport, (_e, importId: unknown) => imports.resumeImport(importId));
+  ipcMain.handle(CHANNELS.importProgress, () => imports.importProgress());
+  ipcMain.handle(CHANNELS.cancelImport, (_e, importId: unknown) => imports.cancelImport(importId));
+  ipcMain.handle(CHANNELS.listImports, (_e, query: unknown) => imports.listImports(query));
+  ipcMain.handle(CHANNELS.getImport, (_e, importId: unknown) => imports.getImport(importId));
+  ipcMain.handle(CHANNELS.listImportRejections, (_e, query: unknown) => imports.listRejections(query));
   const planning = new Planning(office);
   ipcMain.handle(CHANNELS.planningReport, (_e, query: unknown) => planning.report(query));
   // Each handler passes the renderer's values on unchanged; Catalog checks every one of them.
@@ -182,9 +218,31 @@ function start(): void {
     campaigns.transitionCampaign(campaignId, to, expected),
   );
   ipcMain.handle(CHANNELS.listCampaignLabels, () => campaigns.listLabels());
+  const plan = new CampaignPlan(office);
+  ipcMain.handle(CHANNELS.getCampaignAudience, (_e, campaignId: unknown) => plan.getAudience(campaignId));
+  ipcMain.handle(CHANNELS.putCampaignAudience, (_e, campaignId: unknown, draft: unknown) =>
+    plan.putAudience(campaignId, draft),
+  );
+  ipcMain.handle(CHANNELS.getCampaignBudget, (_e, campaignId: unknown) => plan.getBudget(campaignId));
+  ipcMain.handle(CHANNELS.putCampaignBudget, (_e, campaignId: unknown, draft: unknown) =>
+    plan.putBudget(campaignId, draft),
+  );
+  ipcMain.handle(CHANNELS.getCampaignEligibilityRules, (_e, campaignId: unknown) =>
+    plan.getEligibility(campaignId),
+  );
+  ipcMain.handle(CHANNELS.putCampaignEligibilityRules, (_e, campaignId: unknown, draft: unknown) =>
+    plan.putEligibility(campaignId, draft),
+  );
+  ipcMain.handle(CHANNELS.getCampaignExclusions, (_e, campaignId: unknown) => plan.getExclusions(campaignId));
+  ipcMain.handle(CHANNELS.putCampaignExclusions, (_e, campaignId: unknown, draft: unknown) =>
+    plan.putExclusions(campaignId, draft),
+  );
+  ipcMain.handle(CHANNELS.previewCampaignAudience, (_e, campaignId: unknown) => plan.preview(campaignId));
   const audit = new Audit(office);
   ipcMain.handle(CHANNELS.listAuditEntries, (_e, query: unknown) => audit.listEntries(query));
   ipcMain.handle(CHANNELS.getAuditEntry, (_e, auditId: unknown) => audit.getEntry(auditId));
+  ipcMain.handle(CHANNELS.listDomainEvents, (_e, query: unknown) => audit.listEvents(query));
+  ipcMain.handle(CHANNELS.getDomainEvent, (_e, eventId: unknown) => audit.getEvent(eventId));
   const customers = new Customers(office);
   ipcMain.handle(CHANNELS.searchCustomers, (_e, query: unknown) => customers.search(query));
   ipcMain.handle(CHANNELS.getCustomer, (_e, customerId: unknown) => customers.get(customerId));
@@ -204,6 +262,51 @@ function start(): void {
   ipcMain.handle(CHANNELS.listAssignments, (_e, query: unknown) => customers.assignments(query));
   ipcMain.handle(CHANNELS.getRecommendations, (_e, customerId: unknown) =>
     customers.recommendations(customerId),
+  );
+  const recommendations = new Recommendations(office);
+  ipcMain.handle(CHANNELS.inspectRecommendation, (_e, query: unknown) => recommendations.inspect(query));
+  ipcMain.handle(CHANNELS.listRecommendationDecisions, (_e, query: unknown) =>
+    recommendations.listDecisions(query),
+  );
+  ipcMain.handle(CHANNELS.openRecommendationDecision, (_e, decisionId: unknown) =>
+    recommendations.openDecision(decisionId),
+  );
+  const drift = new Drift(office);
+  ipcMain.handle(CHANNELS.listDriftReports, (_e, query: unknown) => drift.listReports(query));
+  ipcMain.handle(CHANNELS.getDriftReport, (_e, reportId: unknown) => drift.getReport(reportId));
+  ipcMain.handle(CHANNELS.listDriftAlerts, (_e, query: unknown) => drift.listAlerts(query));
+  ipcMain.handle(CHANNELS.getDriftAlert, (_e, alertId: unknown) => drift.getAlert(alertId));
+  const migrations = new Migrations(office);
+  ipcMain.handle(CHANNELS.migrationMatrix, (_e, query: unknown) => migrations.matrix(query));
+  ipcMain.handle(CHANNELS.listMigrations, (_e, query: unknown) => migrations.list(query));
+  ipcMain.handle(CHANNELS.explainMigration, (_e, query: unknown) => migrations.explain(query));
+  const exploration = new Exploration(office);
+  ipcMain.handle(CHANNELS.exploreProfile, (_e, customerId: unknown) => exploration.profile(customerId));
+  ipcMain.handle(CHANNELS.exploreSales, (_e, query: unknown) => exploration.sales(query));
+  ipcMain.handle(CHANNELS.exploreRestrictions, (_e, customerId: unknown) =>
+    exploration.restrictions(customerId),
+  );
+  ipcMain.handle(CHANNELS.exploreConsent, (_e, customerId: unknown) => exploration.consent(customerId));
+  ipcMain.handle(CHANNELS.exploreInterests, (_e, customerId: unknown) => exploration.interests(customerId));
+  const experiments = new Experiments(office);
+  ipcMain.handle(CHANNELS.listExperiments, (_e, query: unknown) => experiments.list(query));
+  ipcMain.handle(CHANNELS.getExperiment, (_e, experimentId: unknown) => experiments.get(experimentId));
+  ipcMain.handle(CHANNELS.planExperiment, (_e, draft: unknown) => experiments.plan(draft));
+  ipcMain.handle(CHANNELS.assignExperiment, (_e, experimentId: unknown, acknowledge: unknown) =>
+    experiments.assign(experimentId, acknowledge),
+  );
+  const conversion = new ConversionResults(office);
+  ipcMain.handle(CHANNELS.getExperimentResult, (_e, experimentId: unknown, basis: unknown) =>
+    conversion.result(experimentId, basis),
+  );
+  const models = new Models(office);
+  ipcMain.handle(CHANNELS.listModelVersions, (_e, query: unknown) => models.listVersions(query));
+  ipcMain.handle(CHANNELS.getModelVersion, (_e, versionId: unknown) => models.getVersion(versionId));
+  ipcMain.handle(CHANNELS.listTrainings, (_e, query: unknown) => models.listTrainings(query));
+  ipcMain.handle(CHANNELS.getTraining, (_e, trainingId: unknown) => models.getTraining(trainingId));
+  ipcMain.handle(CHANNELS.startTraining, (_e, draft: unknown) => models.startTraining(draft));
+  ipcMain.handle(CHANNELS.publishModelVersion, (_e, versionId: unknown, reason: unknown) =>
+    models.publish(versionId, reason),
   );
   office.onStateChange((state) => {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(CHANNELS.stateChanged, state);

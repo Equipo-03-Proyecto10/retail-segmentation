@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SaleImportRequest xmlns="https://mosaiq.maxthecoder.online/xml/sales/v1">
+  <contract_version>1</contract_version>
+  <header>transaction_id</header>
+  <header>customer_id</header>
+  <header>store_id</header>
+  <header>channel_id</header>
+  <header>occurred_at</header>
+  <header>product_id</header>
+  <header>quantity</header>
+  <header>unit_price</header>
+  <total_rows>9</total_rows>
+  <chunk_count>2</chunk_count>
+</SaleImportRequest>

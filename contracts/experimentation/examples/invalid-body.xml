@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_body</code>
+  <message>A control may appear at most once, and an experiment needs at least one treatment.</message>
+  <correlation_id>corr-invalid-body</correlation_id>
+  <details>
+    <field>arms</field>
+    <code>control_count</code>
+  </details>
+</Error>

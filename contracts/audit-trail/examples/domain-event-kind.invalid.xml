@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DomainEvent xmlns="https://mosaiq.maxthecoder.online/xml/audit-trail/v1">
+  <event_id>7a0c5e1d-3b2f-4c8a-9d61-000000000007</event_id>
+  <kind>PAGE_VIEW</kind>
+  <outcome>SUCCESS</outcome>
+  <occurred_at>2026-11-08T11:02:13.441Z</occurred_at>
+  <recorded_at>2026-11-08T11:02:13.447Z</recorded_at>
+  <actor_type>USER</actor_type>
+  <actor_user_id>11111111-1111-1111-1111-000000000002</actor_user_id>
+  <actor_role>ANALYST</actor_role>
+  <source>svc_sales</source>
+  <subject_type>customer</subject_type>
+  <subject_id>00000000-0000-0000-0000-000000000007</subject_id>
+  <correlation_id>corr-sales-c7</correlation_id>
+  <details>
+    <HistoryRead>
+      <history>SALES</history>
+    </HistoryRead>
+  </details>
+  <prev_hash>50f0aa6d082625d6ccb3fbf56457d50202c1653519f50789d02d38ffb7a013d2</prev_hash>
+  <entry_hash>29fd7f922bf17266ec390af322024daf75fa91133b8fb25049b4dc66723a6308</entry_hash>
+</DomainEvent>

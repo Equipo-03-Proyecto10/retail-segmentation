@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { Campaigns } from '../../src/main/campaigns';
 import { XsdValidator } from '../../src/main/xml';
+import { PLAIN_MESSAGES } from '../../src/shared/campaign-messages';
 import { bundle, claims, example, makeOffice, MemoryVault, tokenResult } from '../support/fake';
 import type { Responder, Seen } from '../support/fake';
 
@@ -238,6 +239,22 @@ describe('transitions', () => {
       error: { code },
     });
   });
+
+  it.each([
+    [409, 'illegal-transition', 'illegal_transition', 'corr-transition-409a'],
+    [409, 'status-changed', 'status_changed', 'corr-transition-409b'],
+    [409, 'campaign-ended', 'campaign_ended', 'corr-transition-409c'],
+    [409, 'experiment-not-ready', 'experiment_not_ready', 'corr-transition-409d'],
+  ] as const)(
+    'words %s %s in plain words and keeps its code and correlation id (F28-09)',
+    async (status, file, code, correlation) => {
+      const { campaigns } = await signedIn('ADMIN', answer(status, file));
+      expect(await campaigns.transitionCampaign(301, 'ACTIVE', 'DRAFT')).toMatchObject({
+        ok: false,
+        error: { code, message: PLAIN_MESSAGES[code], correlation_id: correlation },
+      });
+    },
+  );
 
   it('sends an illegal move as asked, so the service refuses it, and refuses an unknown status locally', async () => {
     const { campaigns, seen } = await signedIn('ADMIN', answer(409, 'illegal-transition'));

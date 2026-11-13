@@ -58,6 +58,51 @@ ROOT = Path(__file__).resolve().parents[2]
 _CSRF = re.compile(r'name="csrf_token"\s+value="([^"]+)"')
 _WINDOW = re.compile(r'name="window"\s+value="(\d+)"')
 RUN_RECORDED_CONTRACT = ROOT / "contracts/streams/segments.run_recorded.v1.md"
+MAX_RATE_LIMIT_RETRIES = 3
+MAX_RETRY_AFTER_SECONDS = 60
+
+
+class ParityClient(Client):
+    """Gateway client whose reads respect the services' rate-limit window."""
+
+    def __init__(
+        self,
+        base_url,
+        contract,
+        *,
+        sleep=time.sleep,
+        transport=None,
+        rate_limit_retries=MAX_RATE_LIMIT_RETRIES,
+    ) -> None:
+        super().__init__(base_url, contract)
+        self._sleep = sleep
+        self._transport = transport
+        self._rate_limit_retries = rate_limit_retries
+
+    def call(self, method: str, path: str, **kwargs):
+        for retry in range(self._rate_limit_retries + 1):
+            if self._transport is None:
+                reply = super().call(method, path, **kwargs)
+            else:
+                reply = self._transport(method, path, **kwargs)
+            if reply.status != 429 or method.upper() != "GET":
+                return reply
+            if retry == self._rate_limit_retries:
+                raise AssertionError(
+                    f"{method} {path}: still rate limited after "
+                    f"{self._rate_limit_retries} retries"
+                )
+            retry_after = reply.headers.get("Retry-After")
+            try:
+                wait = int(retry_after)
+            except (TypeError, ValueError) as error:
+                raise AssertionError(
+                    f"{method} {path}: rate limit response has invalid "
+                    f"Retry-After {retry_after!r}"
+                ) from error
+            self._sleep(min(MAX_RETRY_AFTER_SECONDS, max(0, wait)))
+
+        raise AssertionError("unreachable")
 
 
 def env(name: str, default: str = "") -> str:
@@ -251,7 +296,7 @@ def _token(page: str) -> str:
 def sign_in(gateway_url: str, email: str, password: str) -> str:
     """An access token from auth-service, the only signer (ADR-0036)."""
 
-    auth = Client(gateway_url, load_contract(ROOT / "contracts/auth"))
+    auth = ParityClient(gateway_url, load_contract(ROOT / "contracts/auth"))
     reply = auth.call(
         "POST",
         "/api/auth/v1/sessions",
@@ -266,8 +311,10 @@ def sign_in(gateway_url: str, email: str, password: str) -> str:
 
 class ServicePath:
     def __init__(self, gateway_url: str, email: str, password: str) -> None:
-        self.sales = Client(gateway_url, load_contract(ROOT / "contracts/sales"))
-        self.stock_client = Client(gateway_url, load_contract(ROOT / "contracts/stock"))
+        self.sales = ParityClient(gateway_url, load_contract(ROOT / "contracts/sales"))
+        self.stock_client = ParityClient(
+            gateway_url, load_contract(ROOT / "contracts/stock")
+        )
         self.token = sign_in(gateway_url, email, password)
 
     def record_sale(self, sale: dict, key: str | None = None):
@@ -302,7 +349,7 @@ class AuditPath:
 
     def __init__(self, gateway_url: str, email: str, password: str) -> None:
         self.clients = {
-            name: Client(gateway_url, load_contract(ROOT / "contracts" / name))
+            name: ParityClient(gateway_url, load_contract(ROOT / "contracts" / name))
             for name in (*self.WRITERS, "audit-trail")
         }
         self.token = sign_in(gateway_url, email, password)
@@ -333,8 +380,10 @@ class SegmentsPath:
     """segments-service as a client reads it (F20-09)."""
 
     def __init__(self, gateway_url: str, email: str, password: str) -> None:
-        self.client = Client(gateway_url, load_contract(ROOT / "contracts/segments"))
-        self.customers = Client(
+        self.client = ParityClient(
+            gateway_url, load_contract(ROOT / "contracts/segments")
+        )
+        self.customers = ParityClient(
             gateway_url, load_contract(ROOT / "contracts/customers")
         )
         self.token = sign_in(gateway_url, email, password)

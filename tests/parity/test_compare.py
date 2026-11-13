@@ -1,9 +1,11 @@
 """The harness's pure parts run in every pytest, with or without a stack."""
 
+import http.client
 import json
 
 import pytest
 
+from tests.conformance.harness import Reply
 from tests.parity.compare import (
     ASSIGNED,
     NO_OPEN_ASSIGNMENT,
@@ -26,11 +28,98 @@ from tests.parity.compare import (
     parse_stock_page,
     write_results,
 )
+from tests.parity.stack import ParityClient
 
 PAGE = """<table><tbody>
 <tr><td>Centro</td><td>SKU-1</td><td>Soap</td><td>7 <span>Low</span></td><td>x</td></tr>
 <tr><td>Norte</td><td>SKU-2</td><td>Tea</td><td>40</td><td>x</td></tr>
 </tbody></table>"""
+
+
+class FakeTransport:
+    def __init__(self, replies) -> None:
+        self.replies = iter(replies)
+        self.calls = 0
+
+    def __call__(self, method, path, **kwargs):
+        self.calls += 1
+        return next(self.replies)
+
+
+def _reply(status: int, retry_after: str | None = None) -> Reply:
+    headers = {} if retry_after is None else {"Retry-After": retry_after}
+    return Reply(status, headers, b"")
+
+
+def _parity_client(replies, sleeps: list[int], retries=3) -> tuple:
+    transport = FakeTransport(replies)
+    client = ParityClient(
+        "http://parity.invalid",
+        contract=None,
+        sleep=sleeps.append,
+        transport=transport,
+        rate_limit_retries=retries,
+    )
+    return client, transport
+
+
+def test_a_parity_read_waits_for_retry_after_before_retrying() -> None:
+    sleeps = []
+    client, transport = _parity_client([_reply(429, "7"), _reply(200)], sleeps)
+
+    assert client.call("GET", "/api/segments/v1/segment-assignments").status == 200
+    assert sleeps == [7]
+    assert transport.calls == 2
+
+
+def test_a_parity_read_caps_retry_after_at_sixty_seconds() -> None:
+    sleeps = []
+    client, _ = _parity_client([_reply(429, "90"), _reply(200)], sleeps)
+
+    assert client.call("GET", "/api/segments/v1/segment-assignments").status == 200
+    assert sleeps == [60]
+
+
+def test_a_parity_read_gives_up_after_the_retry_bound() -> None:
+    sleeps = []
+    client, transport = _parity_client([_reply(429, "1")] * 3, sleeps, retries=2)
+
+    with pytest.raises(AssertionError, match="still rate limited after 2 retries"):
+        client.call("GET", "/api/segments/v1/segment-assignments")
+
+    assert sleeps == [1, 1]
+    assert transport.calls == 3
+
+
+def test_a_parity_read_does_not_retry_another_error() -> None:
+    sleeps = []
+    unavailable = _reply(503)
+    client, transport = _parity_client([unavailable], sleeps)
+
+    assert client.call("GET", "/api/segments/v1/segment-assignments") is unavailable
+    assert sleeps == []
+    assert transport.calls == 1
+
+
+def test_a_rate_limited_write_is_returned_not_repeated() -> None:
+    sleeps = []
+    limited = _reply(429, "5")
+    client, transport = _parity_client([limited], sleeps)
+
+    assert client.call("POST", "/api/sales/v1/sales") is limited
+    assert sleeps == []
+    assert transport.calls == 1
+
+
+def test_retry_after_is_read_from_real_headers_whatever_their_case() -> None:
+    # The shared client hands back http.client's headers, which match any case.
+    headers = http.client.HTTPMessage()
+    headers["retry-after"] = "4"
+    sleeps = []
+    client, _ = _parity_client([Reply(429, headers, b""), _reply(200)], sleeps)
+
+    assert client.call("GET", "/api/segments/v1/segment-assignments").status == 200
+    assert sleeps == [4]
 
 
 def test_the_stock_page_is_read_row_by_row() -> None:

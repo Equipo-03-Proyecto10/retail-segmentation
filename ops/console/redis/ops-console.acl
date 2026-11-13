@@ -1,5 +1,9 @@
 # ops-console's Redis user (ADR-0055), assembled by deploy/infra/redis/assemble-acl.sh
 # with REDIS_OPS_CONSOLE_PASSWORD from /etc/mosaiq/svc/ops-console.env. It may
-# read server info, find the streams and read their consumer groups; nothing it
-# can run writes. INFO sits in @dangerous, so it is granted by name.
-user ops_console on {{password}} resetchannels -@all +ping +info +scan +xinfo|groups %R~stream:*
+# read server info and time, find the streams, read their consumer groups, and
+# read a group's pending summary and one entry to age its oldest unacknowledged
+# entry (#764); nothing it can run writes. INFO sits in @dangerous, so it is
+# granted by name. ops/propagation reads streams as this user too, and also
+# needs EXISTS and XREVRANGE; tests/test_acl.py fails when either reader sends a
+# command this line does not grant.
+user ops_console on {{password}} resetchannels -@all +ping +info +scan +xinfo|groups +xpending +xrange +xrevrange +exists +time %R~stream:*

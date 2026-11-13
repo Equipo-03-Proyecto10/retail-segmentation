@@ -1268,7 +1268,10 @@ replacement runs in one transaction that takes
 and inserting the set; the foreign keys refuse an unknown channel or category.
 · #398
 
-### RN-55 — In-store engagement is recorded once per client event as a distinct fact that is never a sale, attributed, voided rather than deleted, and summarized
+### RN-55 — A client-originated field event is recorded once per client id as a distinct fact that is never a sale, attributed, voided or closed rather than deleted, and summarized
+A client-originated field event is either in-store engagement or a capture
+incident.
+
 An engagement event from the floor is one of eight kinds: `QR_SCAN`,
 `RECO_CLICK`, `STORE_VISIT`, `RECO_IMPRESSION`, `CAMPAIGN_EXPOSURE`, `CART_ADD`,
 `CART_REMOVE` and `NAVIGATION`. It is stored once per client event id, with the
@@ -1277,9 +1280,20 @@ a visit or a click, and a cart is intent, never a sale. A confirmed transaction
 exists only in sales-service. A wrong event is voided with a reason and kept,
 and summaries count only events that are not voided, each kind under its own key.
 
-**Enforced:** engagement-service (planned), ADR-0038 — the unique
-`client_event_id` index and the `$jsonSchema` validator on `engagement_event`
-in MongoDB, and a void operation that never deletes. · #398, #798
+A capture incident is the device's report that a queued write was finally
+refused (ADR-0071). It is stored once per client incident id, and once per
+refused write (`source_type`, `source_operation_id`), with the user who reported
+it, and it carries no customer field and no free text. It is a claim, shown as
+reported, never a sale. A supervisor moves it forward only, `OPEN` to
+`ACKNOWLEDGED` to `RESOLVED`, each review appended to its history; it is closed,
+never deleted, and summaries count incidents by store, day, source and
+refusal code.
+
+**Enforced:** engagement-service (planned), ADR-0038, ADR-0071 — the unique
+`client_event_id` index and the `$jsonSchema` validator on `engagement_event`,
+and the unique `client_incident_id` and `(source_type, source_operation_id)`
+indexes and the `$jsonSchema` validator on `capture_incident`, in MongoDB; a
+void operation and a forward-only review that never delete. · #398, #798, #865
 
 ### RN-56 — A staff check-in is verified only within the store's geofence at acceptable accuracy, and overrides are append-only reviews
 The server computes the distance from the reported position to the store's

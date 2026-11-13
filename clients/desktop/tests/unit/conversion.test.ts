@@ -77,7 +77,13 @@ describe('who may read a result', () => {
       const { office } = await signedIn(role, answer(200, 'result-complete'));
       expect(operations(office)).toContain(CONVERSION_OPERATIONS.result);
     }
-    for (const role of ['STORE_MANAGER', 'INVENTORY_PLANNER']) {
+    for (const role of [
+      'STORE_MANAGER',
+      'INVENTORY_PLANNER',
+      'SALES_ASSOCIATE',
+      'LOYALTY_OFFICER',
+      'COMMERCIAL_SUPERVISOR',
+    ]) {
       const { office } = await signedIn(role, answer(200, 'result-complete'));
       expect(operations(office)).not.toContain(CONVERSION_OPERATIONS.result);
     }

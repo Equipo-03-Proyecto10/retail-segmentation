@@ -29,9 +29,21 @@
     <role_code>CUSTOMER</role_code>
     <description>Loyalty programme customer</description>
   </Role>
+  <Role>
+    <role_code>SALES_ASSOCIATE</role_code>
+    <description>Store seller</description>
+  </Role>
+  <Role>
+    <role_code>LOYALTY_OFFICER</role_code>
+    <description>Loyalty officer</description>
+  </Role>
+  <Role>
+    <role_code>COMMERCIAL_SUPERVISOR</role_code>
+    <description>Commercial supervisor</description>
+  </Role>
   <common:PageInfo>
     <common:page>1</common:page>
     <common:size>20</common:size>
-    <common:total>7</common:total>
+    <common:total>10</common:total>
   </common:PageInfo>
 </Roles>

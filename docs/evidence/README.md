@@ -166,6 +166,7 @@ right place for it, and which the team accepted on 2026-09-07.
 
 | Document | What it records |
 |---|---|
+| [F20-01 (#759)](f20-01-android-sale.md) | **Not yet run.** The procedure and template for one real sale from the Android release build through `https://mosaiq.maxthecoder.online/`: a store manager created through users-service, the masked HTTPS request and its 201 with `X-Correlation-ID`, the rows read with bind parameters, 403 `forbidden_role` and 401 `invalid_token`, and every service's deployed version. The live run awaits the team's approval |
 | [F20-05 (#763)](f20-05-failure-classification.md) | Every failure of the consolidated F20-03 run on `develop` (`f6c7bc74`), run three times, classified with its command, commit and log: no campaign suite failed and no product defect was found; 17 cases are `tests/negative` test defects (#977), one flaky categories audit test is a fixture defect, and one Android failure was a Gradle download 504 that passed on the same tree |
 
 ## Phase 23 — model validity and drift
@@ -175,6 +176,8 @@ right place for it, and which the team accepted on 2026-09-07.
 | [F23-01](f23-01-evaluation-dataset.md) | The reproducible evaluation dataset, loaded on PostgreSQL 18, the web's RFM and K-means runs over it, and the leads it gives the model studies |
 | [F23-02](f23-02-variables-and-normalization.md) | Which variables stay, min-max against log, robust and rank scaling, and what winsorizing does to cluster sizes, with a recommendation for a new model version |
 | [F23-03](f23-03-choosing-k.md) | Inertia, sampled silhouette, smallest cluster and seed stability for k from 2 to 12, the commercial limits, the argued choice of k = 4, and which labels each k can produce |
+| [F23-04](f23-04-kmeans-stability.md) | A registered K-means result reproduced identically from its recorded parameters, seed and bootstrap stability with stated thresholds, how far the clusters move between adjacent time windows, and what that feeds back into F23-03's choice of k |
+| [F23-05](f23-05-segment-profiles.md) | Each K-means segment at k = 4 in business terms (centroid in raw units, size, revenue share), a commercial action for each with the measure that would show it worked, and the three places a label says more than its customers do |
 
 ## Review passes
 

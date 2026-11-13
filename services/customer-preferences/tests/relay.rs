@@ -5,7 +5,9 @@ mod support;
 
 use std::time::{Duration, Instant};
 
-use customer_preferences::{replace, run_relay, PreferenceSet, STREAM, SUFFIX};
+use customer_preferences::{
+    record_consent, replace, run_relay, PreferenceSet, CONSENT_STREAM, STREAM, SUFFIX,
+};
 use mosaiq_kit::{service_redis_info, OutboxRelay};
 use redis::aio::MultiplexedConnection;
 use support::{channel_ids, connect, owner_url, principal, service_database, TestCustomer};
@@ -141,8 +143,13 @@ async fn a_changing_replace_reaches_the_stream_within_five_seconds() {
         )
         .await
         .unwrap();
-    let mut relay =
-        OutboxRelay::new(&support::service_url(&db_url), SUFFIX, [STREAM], redis).unwrap();
+    let mut relay = OutboxRelay::new(
+        &support::service_url(&db_url),
+        SUFFIX,
+        [STREAM, CONSENT_STREAM],
+        redis,
+    )
+    .unwrap();
     let mut left: i64 = 1;
     for _ in 0..20 {
         while relay.run_once(Duration::ZERO).await.unwrap() > 0 {}
@@ -359,4 +366,93 @@ fn the_acl_is_one_user_line_with_the_documented_selectors() {
     ] {
         assert!(line.contains(part), "{part}");
     }
+}
+
+/// F21-17: a consent decision reaches `stream:preferences.v1.consent_changed`,
+/// key only, from the outbox row its own transaction committed.
+#[tokio::test]
+async fn a_consent_decision_reaches_its_own_stream_key_only() {
+    let (Some(db_url), Some(url)) = (owner_url(), redis_url()) else {
+        return;
+    };
+    let _turn = REDIS_USER.lock().await;
+    let owner = connect(&db_url).await;
+    let db = service_database(&db_url);
+    let mut admin = admin(&url).await;
+    let password = load_acl(&mut admin).await;
+    let info = service_redis_info(&url, SUFFIX, Some(password)).unwrap();
+    let redis = redis::Client::open(info)
+        .unwrap()
+        .get_multiplexed_async_connection()
+        .await
+        .unwrap();
+    let mut relay = OutboxRelay::new(
+        &support::service_url(&db_url),
+        SUFFIX,
+        [STREAM, CONSENT_STREAM],
+        redis,
+    )
+    .unwrap();
+
+    let customer = TestCustomer::create(&owner).await;
+    let entity = customer.id.to_string();
+    record_consent(
+        &db,
+        &principal(support::admin(), "LOYALTY_OFFICER"),
+        customer.id,
+        &[("PERSONALIZATION".to_owned(), "WITHDRAWN".to_owned())],
+    )
+    .await
+    .unwrap();
+    // Committed with its row: the outbox already holds the event.
+    let waiting: i64 = owner
+        .query_one(
+            "SELECT count(*) FROM preferences_events.outbox \
+             WHERE entity_id = $1 AND stream = $2 AND relayed_at IS NULL",
+            &[&entity, &CONSENT_STREAM],
+        )
+        .await
+        .unwrap()
+        .get(0);
+    assert_eq!(waiting, 1);
+
+    let started = Instant::now();
+    let mut found: Option<Vec<(String, String)>> = None;
+    while found.is_none() && started.elapsed() < Duration::from_secs(5) {
+        relay.run_once(Duration::from_secs(1)).await.unwrap();
+        let entries: Vec<(String, Vec<(String, String)>)> = redis::cmd("XREVRANGE")
+            .arg(CONSENT_STREAM)
+            .arg("+")
+            .arg("-")
+            .arg("COUNT")
+            .arg(100)
+            .query_async(&mut admin)
+            .await
+            .unwrap();
+        let wanted = ("entity_id".to_owned(), entity.clone());
+        found = entries
+            .into_iter()
+            .map(|(_, fields)| fields)
+            .find(|fields| fields.contains(&wanted));
+    }
+    let fields = found.expect("the decision did not reach the consent stream within 5 s");
+    let mut names: Vec<&str> = fields.iter().map(|(name, _)| name.as_str()).collect();
+    names.sort_unstable();
+    assert_eq!(
+        names,
+        ["entity_id", "event_id", "event_type", "occurred_at", "v"],
+        "key only: no purpose, no decision"
+    );
+    assert!(fields.contains(&("event_type".to_owned(), "INSERT".to_owned())));
+    assert!(fields.contains(&("v".to_owned(), "1".to_owned())));
+    // The decision is not on the other stream.
+    assert_eq!(entries_for(&mut admin, &entity).await, 0);
+
+    let _: () = redis::cmd("ACL")
+        .arg("DELUSER")
+        .arg("svc_preferences")
+        .query_async(&mut admin)
+        .await
+        .unwrap();
+    customer.cleanup(&owner).await;
 }

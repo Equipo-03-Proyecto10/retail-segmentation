@@ -14,8 +14,8 @@ import redis
 ACL = Path(__file__).resolve().parents[1] / "redis/rfm-engine.acl"
 EXPECTED = (
     "user svc_rfm on {{password}} resetchannels -@all +@connection +@read"
-    " +@write -@dangerous -scan -randomkey ~rfm:rl:*"
-    " (%R~pub:auth:v1:live:* +exists)"
+    " +@write -@dangerous -scan -randomkey ~rfm:rl:* +waitaof"
+    " (%R~pub:auth:v1:live:* +exists) (~stream:rfm.v1.profile_changed +xadd)"
 )
 USER = "svc_rfm_acltest"
 
@@ -57,6 +57,7 @@ def _dryrun(client: Any, *command: str) -> str:
     [
         ("PING",),
         ("EXISTS", "pub:auth:v1:live:session"),
+        ("XADD", "stream:rfm.v1.profile_changed", "*", "a", "b"),
         ("INCR", "rfm:rl:actor:window"),
         ("EXPIRE", "rfm:rl:actor:window", "60"),
     ],
@@ -71,6 +72,7 @@ def test_dryrun_allows_only_what_rfm_engine_needs(
     "command",
     [
         ("XADD", "stream:segments.v1.run_recorded", "*", "a", "b"),
+        ("XADD", "stream:sales.v1.recorded", "*", "a", "b"),
         ("GET", "auth:session:x"),
         ("GET", "pub:auth:v1:live:session"),
         ("DEL", "pub:auth:v1:live:session"),

@@ -1,1 +1,1 @@
-user svc_rfm on {{password}} resetchannels -@all +@connection +@read +@write -@dangerous -scan -randomkey ~rfm:rl:* (%R~pub:auth:v1:live:* +exists)
+user svc_rfm on {{password}} resetchannels -@all +@connection +@read +@write -@dangerous -scan -randomkey ~rfm:rl:* +waitaof (%R~pub:auth:v1:live:* +exists) (~stream:rfm.v1.profile_changed +xadd)

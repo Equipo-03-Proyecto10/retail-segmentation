@@ -142,9 +142,9 @@ def test_sales_are_accepted_sales_with_their_lines_oldest_first() -> None:
     )
     flat = _flat(_statement_and_params(connection)[0])
 
-    assert "FROM transaction AS t" in flat
-    assert "LEFT JOIN transaction_line AS tl" in flat
-    assert "COALESCE(sum(tl.quantity), 0)" in flat
+    assert "FROM net_sale AS t" in flat
+    assert "LEFT JOIN net_sale_line AS tl" in flat
+    assert "COALESCE(sum(tl.net_quantity), 0)" in flat
     assert "ORDER BY t.occurred_at, t.transaction_id" in flat
     assert sales == [
         SaleRow(

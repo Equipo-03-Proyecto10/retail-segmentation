@@ -36,6 +36,9 @@
       <xs:enumeration value="INVENTORY_PLANNER"/>
       <xs:enumeration value="AUDITOR"/>
       <xs:enumeration value="CUSTOMER"/>
+      <xs:enumeration value="SALES_ASSOCIATE"/>
+      <xs:enumeration value="LOYALTY_OFFICER"/>
+      <xs:enumeration value="COMMERCIAL_SUPERVISOR"/>
     </xs:restriction>
   </xs:simpleType>
 

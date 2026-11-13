@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>unknown_campaign</code>
+  <message>Campaign 9999 does not exist.</message>
+  <correlation_id>corr-unknown-campaign</correlation_id>
+  <details>
+    <field>campaign_id</field>
+    <code>unknown_campaign</code>
+  </details>
+</Error>

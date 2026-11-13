@@ -192,6 +192,23 @@ compile_xsd() {
   fi
 }
 
+# Every XML example of a directory validates against its XSD, except an
+# *.invalid.xml, which must be refused.
+check_xml_examples() {
+  local xsd=$1 dir=$2 example
+  for example in "$dir"/*.xml; do
+    if [[ $example == *.invalid.xml ]]; then
+      if xmllint --noout --nonet --schema "$xsd" "$example" \
+        >/dev/null 2>&1; then
+        fail "invalid example accepted: $example"
+      fi
+    elif ! xmllint --noout --nonet --schema "$xsd" "$example" \
+      >/dev/null 2>&1; then
+      fail "invalid XML example: $example"
+    fi
+  done
+}
+
 compile_xsd contracts/common/v1/common.xsd
 
 # A failed read must stop the run: an empty list would skip every per-contract
@@ -250,16 +267,23 @@ PY
     fi
   done
 
-  for example in contracts/"$service"/examples/*.xml; do
-    if [[ $example == *.invalid.xml ]]; then
-      if xmllint --noout --nonet --schema "$primary_xsd" "$example" \
-        >/dev/null 2>&1; then
-        fail "invalid example accepted: $example"
-      fi
-    elif ! xmllint --noout --nonet --schema "$primary_xsd" "$example" \
-      >/dev/null 2>&1; then
-      fail "invalid XML example: $example"
+  check_xml_examples "$primary_xsd" contracts/"$service"/examples
+
+  # A later major keeps its examples in examples/v<N>/, validated against its
+  # own <service>.v<N>.xsd: the loop above does not recurse, so without this
+  # none of them would be checked.
+  for later in contracts/"$service"/examples/*/; do
+    later=${later%/}
+    if [[ ! ${later##*/} =~ ^v([2-9]|[1-9][0-9]+)$ ]]; then
+      fail "unexpected examples directory: $later"
+      continue
     fi
+    later_xsd="contracts/$service/$service.v${BASH_REMATCH[1]}.xsd"
+    if [[ ! -f $later_xsd ]]; then
+      fail "missing XSD for $later: $later_xsd"
+      continue
+    fi
+    check_xml_examples "$later_xsd" "$later"
   done
 
   if ! openapi-spec-validator "$openapi" >/dev/null 2>&1; then
@@ -287,18 +311,137 @@ if git cat-file -e "$BASE:contracts" 2>/dev/null; then
   fi
 fi
 
+# ADR-0076: a closed vocabulary (the role codes) grows inside v1 only through
+# an entry in contracts/vocabulary-growth.yaml. An entry names an accepted
+# record, a service, the exact contract version that adds the values, and the
+# values. It excuses nothing but those values being added, and only while the
+# contract is at that version.
+growth_file=contracts/vocabulary-growth.yaml
+if [[ -f $growth_file ]]; then
+  if ! growth_errors=$(GROWTH_FILE=$growth_file python3 - <<'PY'
+import os
+import pathlib
+import re
+import sys
+
+import yaml
+
+path = pathlib.Path(os.environ["GROWTH_FILE"])
+data = yaml.safe_load(path.read_text()) or {}
+entries = data.get("entries")
+errors = []
+if not isinstance(entries, list):
+    errors.append(f"{path}: entries must be a list")
+    entries = []
+for index, entry in enumerate(entries):
+    where = f"{path}: entry {index + 1}"
+    if not isinstance(entry, dict):
+        errors.append(f"{where}: must be a mapping")
+        continue
+    if set(entry) != {"adr", "service", "version", "values"}:
+        errors.append(f"{where}: needs exactly adr, service, version and values")
+        continue
+    adr = str(entry["adr"])
+    match = re.fullmatch(r"ADR-(\d{4})", adr)
+    if not match or not list(pathlib.Path("docs/adr").glob(f"{match[1]}-*.md")):
+        errors.append(f"{where}: {adr} is not a record in docs/adr/")
+    if not pathlib.Path(f"contracts/{entry['service']}/openapi.yaml").is_file():
+        errors.append(f"{where}: no contract for service {entry['service']}")
+    if not re.fullmatch(r"\d+\.\d+\.\d+", str(entry["version"])):
+        errors.append(f"{where}: version must be semver")
+    values = entry["values"]
+    if not isinstance(values, list) or not values or not all(
+        isinstance(value, str) and re.fullmatch(r"[A-Z][A-Z0-9_]*", value)
+        for value in values
+    ):
+        errors.append(f"{where}: values must be a non-empty list of codes")
+print("\n".join(errors))
+sys.exit(1 if errors else 0)
+PY
+  ); then
+    while IFS= read -r line; do
+      [[ -n $line ]] && fail "$line"
+    done <<<"$growth_errors"
+  fi
+fi
+
+# The values an entry adds to $1's contract at version $2, one per line.
+growth_values() {
+  [[ -f $growth_file ]] || return 0
+  yq -r --arg service "$1" --arg version "$2" \
+    '.entries[]? | select(.service == $service and (.version | tostring) == $version) | .values[]' \
+    "$growth_file" 2>/dev/null
+}
+
 for service in "${service_names[@]}"; do
   openapi="contracts/$service/openapi.yaml"
   base_openapi="$base_tree/contracts/$service/openapi.yaml"
   [[ -f $openapi && -f $base_openapi ]] || continue
 
-  if ! oasdiff breaking --fail-on ERR "$base_openapi" "$openapi" \
-    >/dev/null 2>&1; then
-    fail "breaking OpenAPI change in v1: $service"
+  head_version=$(yq -r '.info.version' "$openapi" 2>/dev/null)
+  growth=$(growth_values "$service" "$head_version")
+
+  if ! breaking=$(oasdiff breaking --fail-on ERR --format json \
+    "$base_openapi" "$openapi" 2>/dev/null); then
+    # Without an entry, any finding fails. With one, only an added enum value
+    # that the entry lists is excused; an unreadable report fails too.
+    if [[ -z $growth ]] || ! remaining=$(
+      jq -r --arg values "$growth" '
+        ($values | split("\n")) as $listed
+        | [.[] | select(.level == 3)
+           | select(
+               .id != "response-property-enum-value-added"
+               or ([.text | scan("`([^`]*)` enum value")[0]] as $found
+                   | ($found | length) == 0
+                     or ($found | all(. as $v | $listed | any(. == $v)) | not))
+             )]
+        | length' <<<"$breaking" 2>/dev/null
+    ) || [[ $remaining != 0 ]]; then
+      fail "breaking OpenAPI change in v1: $service"
+    fi
   fi
 
   base_xsd="$base_tree/contracts/$service/$service.xsd"
   head_xsd="contracts/$service/$service.xsd"
+  # With an entry, a response is held to the base XSD grown by exactly the
+  # listed values: each base enumeration may gain those values and no others.
+  if [[ -n $growth && -f $base_xsd && -f $head_xsd ]]; then
+    grown_xsd="${base_xsd%.xsd}.grown.xsd"
+    if ! GROWTH="$growth" python3 - "$base_xsd" "$head_xsd" "$grown_xsd" <<'PY'
+import os
+import re
+import sys
+
+base_path, head_path, grown_path = sys.argv[1:]
+listed = set(os.environ["GROWTH"].split())
+base = open(base_path, encoding="utf-8").read()
+head = open(head_path, encoding="utf-8").read()
+block = re.compile(
+    r'<xs:simpleType name="(?P<name>[^"]+)">.*?</xs:simpleType>', re.DOTALL
+)
+value = re.compile(r'<xs:enumeration value="([^"]+)"/>')
+heads = {match["name"]: match[0] for match in block.finditer(head)}
+
+
+def grow(match: re.Match[str]) -> str:
+    grown = heads.get(match["name"])
+    before = set(value.findall(match[0]))
+    if grown is None or not before:
+        return match[0]
+    added = set(value.findall(grown)) - before
+    if added and added <= listed and before <= set(value.findall(grown)):
+        return grown
+    return match[0]
+
+
+open(grown_path, "w", encoding="utf-8").write(block.sub(grow, base))
+PY
+    then
+      fail "cannot grow the base XSD of $service"
+      grown_xsd=$base_xsd
+    fi
+    base_xsd=$grown_xsd
+  fi
   for example in contracts/"$service"/examples/*.xml; do
     [[ $example == *.invalid.xml || $example == *.request.xml ]] && continue
     # A response whose root element the base XSD never declared is a new

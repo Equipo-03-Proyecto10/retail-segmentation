@@ -1,5 +1,10 @@
 role,object,privilege
 svc_products_bench,public.product,SELECT
+svc_products_bench,products,USAGE
+svc_products_bench,products.product_status,SELECT
+svc_products_bench,products.product_attribute,SELECT
+svc_products_bench,products.product_barcode,SELECT
+svc_products_bench,products.product_relation,SELECT
 definer_audit,public.audit_log,INSERT
 svc_products,public.product,SELECT
 svc_products,public.product,INSERT
@@ -21,6 +26,26 @@ svc_products,api_products.product_ref_v1,SELECT
 svc_sales,api_products.product_ref_v1,SELECT
 svc_recommendations,api_products.product_ref_v1,SELECT
 svc_engagement,api_products.product_ref_v1,SELECT
+svc_products,products,USAGE
+definer_products,products,USAGE
+svc_products,products.product_status,SELECT
+svc_products,products.product_status,INSERT
+svc_products,products.product_status(commercial_status),UPDATE
+definer_products,products.product_status,SELECT
+definer_products,products.product_status,INSERT
+definer_products,products.product_status(commercial_status),UPDATE
+svc_products,products.product_attribute,SELECT
+svc_products,products.product_attribute,INSERT
+svc_products,products.product_attribute,DELETE
+svc_products,products.product_attribute(value),UPDATE
+svc_products,products.product_barcode,SELECT
+svc_products,products.product_barcode,INSERT
+svc_products,products.product_barcode(barcode),UPDATE
+svc_products,products.product_relation,SELECT
+svc_products,products.product_relation,INSERT
+svc_products,products.product_relation,DELETE
+svc_products,api_products.product_relation_v1,SELECT
+svc_recommendations,api_products.product_relation_v1,SELECT
 svc_customers,public.customer,SELECT
 svc_customers,public.customer,INSERT
 svc_customers,public.customer(name),UPDATE
@@ -167,3 +192,25 @@ svc_campaigns,public.campaign,UPDATE
 definer_guard,public.experiment,SELECT
 definer_guard,public.experiment_group,SELECT
 svc_audit_trail,public.audit_log,SELECT
+definer_audit,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
+definer_audit,audit_events,USAGE
+definer_audit,audit_events.domain_event,INSERT
+definer_audit,audit_events.domain_event,SELECT
+svc_audit_trail,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
+svc_audit_trail,api_audit,USAGE
+svc_audit_trail,audit_events,USAGE
+svc_audit_trail,audit_events.domain_event,SELECT
+svc_campaigns,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
+svc_campaigns,api_audit,USAGE
+svc_customers,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
+svc_customers,api_audit,USAGE
+svc_preferences,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
+svc_preferences,api_audit,USAGE
+svc_sales,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
+svc_sales,api_audit,USAGE
+svc_segments,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
+svc_segments,api_audit,USAGE
+svc_stock,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
+svc_stock,api_audit,USAGE
+svc_users,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
+svc_users,api_audit,USAGE

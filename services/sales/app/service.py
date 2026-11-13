@@ -28,7 +28,7 @@ from mosaiq_kit import (
 
 import redis
 
-from . import store
+from . import audit, store
 
 LOGGER = logging.getLogger(__name__)
 STREAM = "stream:sales.v1.recorded"
@@ -480,7 +480,11 @@ def create_app(*, start_relay: bool | None = None) -> Flask:
                 "from",
                 "after_to",
             )
-        with kit.db.connection() as connection:
+        # A read naming one customer is a logged read: its HISTORY_READ is
+        # recorded in the read's own transaction, before any row is returned.
+        with kit.db.transaction() as connection:
+            if customer_id is not None:
+                audit.record_history_read(connection, kit.principal, customer_id)
             sales, total = store.list_sales(
                 connection,
                 customer_id=customer_id,
@@ -513,6 +517,8 @@ def create_app(*, start_relay: bool | None = None) -> Flask:
         with kit.db.connection() as connection:
             items = store.channels(connection)
         return Collection("Channels", "Channel", "channels", items)
+
+    audit.log_refusals(app, kit, "listSales")
 
     enabled = (
         os.environ.get("OUTBOX_RELAY_ENABLED", "true").lower()

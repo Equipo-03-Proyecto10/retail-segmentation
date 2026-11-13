@@ -206,7 +206,8 @@ def new_id(owner: psycopg.Connection):
 
     The cleanup deletes a test's categories but not their outbox rows, so an id
     an earlier test used is still taken: drawing it again would let that test's
-    events leak into this one's outbox assertions (#600).
+    events leak into this one's outbox assertions (#600). The same holds for
+    its audit rows, which nothing deletes (#1000).
     """
 
     taken = {
@@ -225,13 +226,28 @@ def new_id(owner: psycopg.Connection):
         )
         if row[0].isdigit() and int(row[0]) >= TEST_ID_FLOOR
     )
+    # audit_log is append-only, so an id an earlier test used keeps its rows
+    # after the cleanup: drawing it again would let that test's history into
+    # this one's audit assertions (#1000).
+    taken.update(
+        int(row[0])
+        for row in owner.execute(
+            "SELECT DISTINCT entity_pk FROM audit_log WHERE entity = 'category'"
+        )
+        if row[0].isdigit() and int(row[0]) >= TEST_ID_FLOOR
+    )
 
     def allocate() -> int:
-        while True:
-            candidate = random.randint(TEST_ID_FLOOR, 32000)
-            if candidate not in taken:
-                taken.add(candidate)
-                return candidate
+        free = [i for i in range(TEST_ID_FLOOR, 32001) if i not in taken]
+        if not free:
+            # Audit and outbox rows are kept, so a database reused for many
+            # runs ends with no id left: say so instead of looping forever.
+            raise RuntimeError(
+                "no free category id is left in the test range; load a fresh database"
+            )
+        candidate = random.choice(free)
+        taken.add(candidate)
+        return candidate
 
     return allocate
 

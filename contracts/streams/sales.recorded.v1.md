@@ -59,6 +59,22 @@ seven-day replay log. A sale that raises more than one entry recomputes the same
 customer from the same net purchases each time and so gives the same profile, and
 an entry for a sale that has since been reversed gives the reversed profile.
 
+## Propagation bound
+
+The time from the commit of the outbox row to the group's acknowledgement of
+its entry, under the controlled load of `ops/propagation/` (F20-06, #764).
+`ops/propagation/propagation.py check` fails a run whose p95 or maximum
+exceeds the figure below, or that leaves an entry unacknowledged. The measured
+figures are in `docs/evidence/f20-06-stream-propagation.md`.
+
+| Group | p95 (ms) | Max (ms) |
+|---|---:|---:|
+| `recommendations` | 3000 | 5000 |
+| `rfm-engine` | 3000 | 5000 |
+
+Not measured yet: `rfm-engine`.
+Its bound is the default, and it holds from the first run that measures it.
+
 ## Failure and compatibility
 
 The owner relay waits on `sales_outbox` only as a private wake-up and also

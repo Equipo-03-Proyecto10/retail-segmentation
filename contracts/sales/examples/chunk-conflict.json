@@ -1,0 +1,11 @@
+{
+  "code": "chunk_conflict",
+  "message": "Chunk 1 of import 17 was already staged with other rows.",
+  "correlation_id": "corr-chunk-conflict",
+  "details": [
+    {
+      "field": "sequence",
+      "code": "already_staged"
+    }
+  ]
+}

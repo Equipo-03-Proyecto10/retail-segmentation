@@ -37,28 +37,44 @@ fn no_sql_is_built_with_format() {
     }
 }
 
+/// The service reads the two logs and writes no table: its one write is its
+/// own `AUDIT_READ`, through the function every producer uses (ADR-0072),
+/// inside the transaction of the read it records.
 #[test]
-fn the_service_only_reads_and_only_the_one_table() {
-    let source = fs::read_to_string("src/lib.rs").expect("service source");
+fn the_service_only_reads_the_two_logs_and_records_through_the_function() {
+    let sources: Vec<String> = ["src/lib.rs", "src/events.rs"]
+        .iter()
+        .map(|path| fs::read_to_string(path).expect("service source"))
+        .collect();
+    let source = sources.join("\n");
     for write in [
         "INSERT INTO",
         "UPDATE public",
+        "UPDATE audit_events",
         "DELETE FROM",
         "TRUNCATE",
-        ".transaction(",
     ] {
         assert!(!source.contains(write), "{write}");
     }
-    let tables: Vec<&str> = source
-        .split("FROM public.")
-        .skip(1)
-        .map(|rest| {
-            rest.split(|c: char| !c.is_alphanumeric() && c != '_')
-                .next()
-                .unwrap()
-        })
-        .collect();
-    assert!(!tables.is_empty() && tables.iter().all(|table| *table == "audit_log"));
+    let tables = |schema: &str| -> Vec<String> {
+        source
+            .split(schema)
+            .skip(1)
+            .map(|rest| {
+                rest.split(|c: char| !c.is_alphanumeric() && c != '_')
+                    .next()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect()
+    };
+    let public = tables("FROM public.");
+    assert!(!public.is_empty() && public.iter().all(|table| table == "audit_log"));
+    let events = tables("FROM audit_events.");
+    assert!(!events.is_empty() && events.iter().all(|table| table == "domain_event"));
+    assert_eq!(source.matches("api_audit.record_event_v1(").count(), 1);
+    assert_eq!(sources[0].matches(".transaction(").count(), 1);
+    assert!(!sources[1].contains(".transaction("));
     assert!(!source.contains("XREADGROUP") && !source.contains("OutboxRelay"));
 }
 

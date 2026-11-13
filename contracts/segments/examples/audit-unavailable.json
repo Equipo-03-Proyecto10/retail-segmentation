@@ -1,0 +1,6 @@
+{
+  "code": "audit_unavailable",
+  "message": "The read could not be recorded, so it was not served.",
+  "correlation_id": "corr-audit-unavailable",
+  "details": []
+}

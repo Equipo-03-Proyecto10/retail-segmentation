@@ -217,6 +217,29 @@ def registry_names() -> list[str]:
     return names
 
 
+def implemented(name: str) -> bool:
+    """Whether a registered service has an implementation to answer for it.
+
+    A contract merges before its service (AGENTS.md, ADR-0035), so a new
+    service is registered, and the gateway routes its prefix, while nothing
+    stands behind the route: every request to it is a 502. Until
+    `services/<name>/compose.yaml` exists, there is nothing to test.
+    """
+    return (ROOT / "services" / name / "compose.yaml").is_file()
+
+
+def not_implemented_reason(name: str) -> str:
+    return (
+        f"{name} has a contract and a gateway route but no implementation yet "
+        f"(no services/{name}/compose.yaml)"
+    )
+
+
+def implemented_names() -> list[str]:
+    """The registered services that are implemented, for a case that loops."""
+    return [name for name in registry_names() if implemented(name)]
+
+
 @dataclass
 class Session:
     access: str
@@ -489,10 +512,27 @@ class Stack:
             )
 
 
+# The seed gives users 2 to 7 the roles 2 to 7 of its rotation, and appends
+# users 31 to 33 for ADR-0060's floor roles (sql/02_seed_30_per_table.sql).
+SEEDED_USER_NUMBER = {
+    "ADMIN": 1,
+    "ANALYST": 2,
+    "STORE_MANAGER": 3,
+    "MARKETING": 4,
+    "INVENTORY_PLANNER": 5,
+    "AUDITOR": 6,
+    "CUSTOMER": 7,
+    "SALES_ASSOCIATE": 31,
+    "LOYALTY_OFFICER": 32,
+    "COMMERCIAL_SUPERVISOR": 33,
+}
+
+
 def local_accounts() -> dict[str, Account]:
-    """One deterministic seeded account for each of the seven roles."""
+    """One deterministic seeded account for each of the ten roles."""
     accounts = {}
-    for number, role in enumerate(ROLE_CODES, start=1):
+    for role in ROLE_CODES:
+        number = SEEDED_USER_NUMBER[role]
         email = (
             "admin@mosaiq-demo.com"
             if role == "ADMIN"

@@ -895,8 +895,9 @@ REVOKE UPDATE, DELETE ON audit_log FROM retail_app;
 -- row of contracts/db/grants.csv, which contracts/db/check_grants.sh compares
 -- with the database in both directions (ADR-0034).
 --
--- The bench-only Rust build of the products reads: SELECT on product, nothing
--- else (ADR-0042).
+-- The bench-only Rust build of the products reads: SELECT on product here, and
+-- on the products boundary's four tables in that boundary's section; nothing
+-- else (ADR-0042, ADR-0078).
 GRANT SELECT ON product TO svc_products_bench;
 -- fn_audit runs as definer_audit (AUDIT STRATEGY below), which may append to
 -- the audit log and do nothing else.
@@ -1283,11 +1284,21 @@ GRANT SELECT ON api_sales.purchase_line_v1 TO svc_sales, svc_recommendations;
 -- capture trigger fires for every writer of public.product, the frozen web
 -- and a hard delete included, so no change is invisible to the cache
 -- invalidation of products and of recommendations.
+--
+-- F21-10 (#790) adds the product's commercial details in the service schema
+-- `products` (ADR-0046): a commercial status, attributes, a barcode and
+-- directed relations, each in its own table keyed by product_id and none a
+-- column of public.product, which stays as the web knows it. The status and
+-- public.product.is_active are kept in step by two triggers, so neither the
+-- web nor the service can leave them disagreeing (see the triggers below).
+-- docs/data-model.md §2.4 holds the 4NF justification.
 
 CREATE SCHEMA IF NOT EXISTS api_products;
 REVOKE ALL ON SCHEMA api_products FROM PUBLIC;
 CREATE SCHEMA IF NOT EXISTS products_events;
 REVOKE ALL ON SCHEMA products_events FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS products;
+REVOKE ALL ON SCHEMA products FROM PUBLIC;
 
 -- Keys only, never state: consumers re-read the producer's api_ view.
 CREATE TABLE IF NOT EXISTS products_events.outbox (
@@ -1301,6 +1312,92 @@ CREATE TABLE IF NOT EXISTS products_events.outbox (
 CREATE INDEX IF NOT EXISTS outbox_unrelayed
     ON products_events.outbox (occurred_at) WHERE relayed_at IS NULL;
 
+-- GTIN check digit (GS1): from the right of the body, the digits weigh 3, 1,
+-- 3, 1, ...; the check digit completes their sum to a multiple of ten. Pure and
+-- immutable, so a CHECK can use it. products-service validates the same rule
+-- before it writes, to answer 422 invalid_barcode; this is the backstop, and
+-- services/products/tests pins the two together.
+CREATE OR REPLACE FUNCTION products.gtin_check_digit(body text) RETURNS integer
+LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
+SET search_path = pg_catalog, pg_temp
+AS $gtin$
+    SELECT (10 - coalesce(sum(substr(body, length(body) - i + 1, 1)::integer
+                              * CASE WHEN i % 2 = 1 THEN 3 ELSE 1 END), 0) % 10) % 10
+      FROM generate_series(1, length(body)) AS i
+$gtin$;
+
+CREATE OR REPLACE FUNCTION products.gtin_is_valid(code text) RETURNS boolean
+LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
+SET search_path = pg_catalog, pg_temp
+AS $gtin$
+    SELECT CASE
+        WHEN code ~ '^([0-9]{8}|[0-9]{12,14})$'
+        THEN right(code, 1)::integer = products.gtin_check_digit(left(code, -1))
+        ELSE false
+    END
+$gtin$;
+
+-- One row per product that has an explicit commercial status. A product with
+-- none reads as active when public.product.is_active, otherwise discontinued.
+-- is_active is true exactly when the status is active (decision 2 of the
+-- products contract, 1.2.0); paused and discontinued are both off sale.
+CREATE TABLE IF NOT EXISTS products.product_status (
+    product_id        integer NOT NULL,
+    commercial_status text    NOT NULL,
+    CONSTRAINT product_status_pkey PRIMARY KEY (product_id),
+    CONSTRAINT product_status_product_id_fkey
+        FOREIGN KEY (product_id) REFERENCES public.product (product_id) ON DELETE CASCADE,
+    CONSTRAINT product_status_commercial_status_check
+        CHECK (commercial_status IN ('active', 'paused', 'discontinued'))
+);
+
+-- One row per (product, attribute name): the product's variable set of
+-- name and value pairs, split out so that no relation carries two independent
+-- multivalued facts (docs/data-model.md §2.4).
+CREATE TABLE IF NOT EXISTS products.product_attribute (
+    product_id integer NOT NULL,
+    name       text    NOT NULL,
+    value      text    NOT NULL,
+    CONSTRAINT product_attribute_pkey PRIMARY KEY (product_id, name),
+    CONSTRAINT product_attribute_product_id_fkey
+        FOREIGN KEY (product_id) REFERENCES public.product (product_id) ON DELETE CASCADE,
+    CONSTRAINT product_attribute_name_check CHECK (name ~ '^[a-z][a-z0-9_]{0,39}$'),
+    CONSTRAINT product_attribute_value_check CHECK (char_length(value) BETWEEN 1 AND 120)
+);
+
+-- At most one barcode per product, and one product per barcode: a GTIN-8, -12,
+-- -13 or -14 with a valid check digit.
+CREATE TABLE IF NOT EXISTS products.product_barcode (
+    product_id integer NOT NULL,
+    barcode    text    NOT NULL,
+    CONSTRAINT product_barcode_pkey PRIMARY KEY (product_id),
+    CONSTRAINT product_barcode_product_id_fkey
+        FOREIGN KEY (product_id) REFERENCES public.product (product_id) ON DELETE CASCADE,
+    CONSTRAINT product_barcode_barcode_key UNIQUE (barcode),
+    CONSTRAINT product_barcode_gtin_check CHECK (products.gtin_is_valid(barcode))
+);
+
+-- A directed relation: (A, B, substitute) does not imply (B, A, substitute).
+-- Both ends are products; a product is never related to itself.
+CREATE TABLE IF NOT EXISTS products.product_relation (
+    product_id         integer NOT NULL,
+    related_product_id integer NOT NULL,
+    relation_kind      text    NOT NULL,
+    CONSTRAINT product_relation_pkey
+        PRIMARY KEY (product_id, relation_kind, related_product_id),
+    CONSTRAINT product_relation_product_id_fkey
+        FOREIGN KEY (product_id) REFERENCES public.product (product_id) ON DELETE CASCADE,
+    CONSTRAINT product_relation_related_product_id_fkey
+        FOREIGN KEY (related_product_id) REFERENCES public.product (product_id) ON DELETE CASCADE,
+    CONSTRAINT product_relation_kind_check
+        CHECK (relation_kind IN ('substitute', 'complement')),
+    CONSTRAINT product_relation_not_self_check CHECK (product_id <> related_product_id)
+);
+-- A product delete (the web's) cascades through related_product_id, which the
+-- primary key does not lead with.
+CREATE INDEX IF NOT EXISTS idx_product_relation_related
+    ON products.product_relation (related_product_id);
+
 -- contracts/db/api_products.product_ref.v1.md. Definer rights
 -- (security_invoker = off): a consumer reads these columns and nothing else of
 -- public.product. image_path stays web-managed and is not published.
@@ -1308,6 +1405,13 @@ CREATE OR REPLACE VIEW api_products.product_ref_v1
 WITH (security_invoker = off) AS
 SELECT product_id, sku, name, category_id, list_price, is_active
 FROM public.product;
+
+-- contracts/db/api_products.product_relation.v1.md. Definer rights, so
+-- recommendations reads the three columns without any privilege on the table.
+CREATE OR REPLACE VIEW api_products.product_relation_v1
+WITH (security_invoker = off) AS
+SELECT product_id, related_product_id, relation_kind
+FROM products.product_relation;
 
 -- Captures every writer, the web included, in the writer's transaction.
 CREATE OR REPLACE FUNCTION products_events.capture_changed() RETURNS trigger
@@ -1337,6 +1441,94 @@ CREATE OR REPLACE TRIGGER trg_capture_changed
 AFTER INSERT OR UPDATE OR DELETE ON public.product
 FOR EACH ROW EXECUTE FUNCTION products_events.capture_changed();
 
+-- The commercial details are product source of truth too: the same capture
+-- function announces a change to any of them with the product's id, so the
+-- caches of products and recommendations are invalidated the same way.
+CREATE OR REPLACE TRIGGER trg_capture_status_changed
+AFTER INSERT OR UPDATE OR DELETE ON products.product_status
+FOR EACH ROW EXECUTE FUNCTION products_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_capture_attribute_changed
+AFTER INSERT OR UPDATE OR DELETE ON products.product_attribute
+FOR EACH ROW EXECUTE FUNCTION products_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_capture_barcode_changed
+AFTER INSERT OR UPDATE OR DELETE ON products.product_barcode
+FOR EACH ROW EXECUTE FUNCTION products_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_capture_relation_changed
+AFTER INSERT OR UPDATE OR DELETE ON products.product_relation
+FOR EACH ROW EXECUTE FUNCTION products_events.capture_changed();
+
+-- Catalog data is audited (RN-28), the actor coming from mosaiq.user_id, which
+-- the kit sets in every service transaction. The entity is the table's name,
+-- unique across schemas (ADR-0046), and the key is the product the row is
+-- about; the before and after documents carry the rest.
+CREATE OR REPLACE TRIGGER trg_audit_product_status
+AFTER INSERT OR UPDATE OR DELETE ON products.product_status
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('product_id');
+CREATE OR REPLACE TRIGGER trg_audit_product_attribute
+AFTER INSERT OR UPDATE OR DELETE ON products.product_attribute
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('product_id');
+CREATE OR REPLACE TRIGGER trg_audit_product_barcode
+AFTER INSERT OR UPDATE OR DELETE ON products.product_barcode
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('product_id');
+CREATE OR REPLACE TRIGGER trg_audit_product_relation
+AFTER INSERT OR UPDATE OR DELETE ON products.product_relation
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('product_id');
+
+-- Status and is_active in step, in both directions, by the database. Each
+-- trigger runs only when no other trigger is running (pg_trigger_depth() < 1),
+-- so one change cannot call the other back; the write each makes is the whole
+-- of the sync.
+--
+-- A change of public.product.is_active, by the web or by PATCH
+-- /v1/products/{id}: true sets the status active; false sets it discontinued,
+-- unless it is already paused. It runs as definer_products, because the web
+-- has no privilege on the status table.
+CREATE OR REPLACE FUNCTION products.sync_status_from_product() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $sync$
+BEGIN
+    INSERT INTO products.product_status AS s (product_id, commercial_status)
+    VALUES (NEW.product_id, CASE WHEN NEW.is_active THEN 'active' ELSE 'discontinued' END)
+    ON CONFLICT (product_id) DO UPDATE
+       SET commercial_status = EXCLUDED.commercial_status
+     WHERE s.commercial_status IS DISTINCT FROM EXCLUDED.commercial_status
+       AND NOT (s.commercial_status = 'paused' AND NOT NEW.is_active);
+    RETURN NULL;
+END
+$sync$;
+ALTER FUNCTION products.sync_status_from_product() OWNER TO definer_products;
+REVOKE EXECUTE ON FUNCTION products.sync_status_from_product() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_sync_status_from_product
+AFTER UPDATE OF is_active ON public.product
+FOR EACH ROW
+WHEN (OLD.is_active IS DISTINCT FROM NEW.is_active AND pg_trigger_depth() < 1)
+EXECUTE FUNCTION products.sync_status_from_product();
+
+-- A write of the status (PATCH /v1/products/{id}/details): active sets
+-- is_active true, paused and discontinued set it false. It runs with the
+-- writer's own rights, and svc_products holds UPDATE (is_active) already.
+CREATE OR REPLACE FUNCTION products.sync_product_from_status() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, pg_temp
+AS $sync$
+BEGIN
+    UPDATE public.product
+       SET is_active = (NEW.commercial_status = 'active')
+     WHERE product_id = NEW.product_id
+       AND is_active IS DISTINCT FROM (NEW.commercial_status = 'active');
+    RETURN NULL;
+END
+$sync$;
+
+CREATE OR REPLACE TRIGGER trg_sync_product_from_status
+AFTER INSERT OR UPDATE OF commercial_status ON products.product_status
+FOR EACH ROW
+WHEN (pg_trigger_depth() < 1)
+EXECUTE FUNCTION products.sync_product_from_status();
+
 -- svc_products writes the catalog but never deletes from it, and never
 -- touches image_path (web-managed). Each is a row of contracts/db/grants.csv.
 GRANT SELECT, INSERT ON public.product TO svc_products;
@@ -1350,6 +1542,27 @@ GRANT USAGE ON SCHEMA api_products
     TO svc_products, svc_sales, svc_recommendations, svc_engagement;
 GRANT SELECT ON api_products.product_ref_v1
     TO svc_products, svc_sales, svc_recommendations, svc_engagement;
+
+-- The commercial details. A status is set, never removed; an attribute set is
+-- replaced by insert, update of value and delete; a barcode is set or replaced,
+-- never cleared; a relation has no column to update, so a replace inserts and
+-- deletes. definer_products writes the status from the is_active trigger.
+GRANT USAGE ON SCHEMA products TO svc_products, definer_products;
+GRANT SELECT, INSERT ON products.product_status TO svc_products, definer_products;
+GRANT UPDATE (commercial_status) ON products.product_status TO svc_products, definer_products;
+GRANT SELECT, INSERT, DELETE ON products.product_attribute TO svc_products;
+GRANT UPDATE (value) ON products.product_attribute TO svc_products;
+GRANT SELECT, INSERT ON products.product_barcode TO svc_products;
+GRANT UPDATE (barcode) ON products.product_barcode TO svc_products;
+GRANT SELECT, INSERT, DELETE ON products.product_relation TO svc_products;
+
+GRANT SELECT ON api_products.product_relation_v1 TO svc_products, svc_recommendations;
+
+-- The bench-only twin serves the details and relations reads too, read-only
+-- (ADR-0078): SELECT on the four tables and USAGE on their schema, no write.
+GRANT USAGE ON SCHEMA products TO svc_products_bench;
+GRANT SELECT ON products.product_status, products.product_attribute,
+    products.product_barcode, products.product_relation TO svc_products_bench;
 -- END BOUNDARY products
 
 -- BEGIN BOUNDARY customers
@@ -2150,12 +2363,472 @@ GRANT SELECT, INSERT, UPDATE ON public.campaign TO svc_campaigns;
 -- END BOUNDARY campaigns
 
 -- BEGIN BOUNDARY audit-trail
--- audit-trail-service (F14-30, ADR-0034): reads audit_log and nothing else. It
--- adds no table, no view and no function, and it owns no write: fn_audit, which
--- runs as definer_audit, is the only writer of an entry (E-12), and no svc_*
--- role holds INSERT, UPDATE, DELETE or TRUNCATE on the table. Only this role
--- reads it. Idempotent: an operator re-applies it.
+-- audit-trail-service (F14-30, ADR-0034): reads audit_log, and owns no write
+-- on it: fn_audit, which runs as definer_audit, is the only writer of an entry
+-- (E-12), and no svc_* role holds INSERT, UPDATE, DELETE or TRUNCATE on the
+-- table. Only this role reads it. Idempotent: an operator re-applies it.
 GRANT SELECT ON public.audit_log TO svc_audit_trail;
+
+-- Domain events (F21-25, ADR-0072): calculations, model publications and
+-- rollbacks, permission changes, critical actions and logged reads, recorded
+-- by their producers through api_audit.record_event_v1 inside the transaction
+-- of the act. The table is audit-trail's; svc_audit_trail only reads it, and
+-- definer_audit only appends. Contract:
+-- contracts/db/api_audit.record_event.v1.md.
+CREATE SCHEMA IF NOT EXISTS audit_events;
+REVOKE ALL ON SCHEMA audit_events FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS api_audit;
+REVOKE ALL ON SCHEMA api_audit FROM PUBLIC;
+
+-- seq is the chain position, assigned under advisory lock 272001 so it is
+-- gapless and the chain has one head. Nothing references app_user, customer
+-- or store: an event is evidence and outlives what it names.
+CREATE TABLE IF NOT EXISTS audit_events.domain_event (
+    seq              bigint      NOT NULL,
+    event_id         uuid        PRIMARY KEY,
+    kind             text        NOT NULL,
+    outcome          text        NOT NULL,
+    occurred_at      timestamptz NOT NULL,
+    recorded_at      timestamptz NOT NULL,
+    actor_type       text        NOT NULL,
+    actor_user_id    uuid,
+    actor_role       text,
+    source           text        NOT NULL,
+    store_id         smallint,
+    subject_type     text,
+    subject_id       text,
+    model_version_id bigint,
+    rule_set_version bigint,
+    correlation_id   text,
+    details          jsonb       NOT NULL,
+    prev_hash        text        NOT NULL,
+    entry_hash       text        NOT NULL,
+    CONSTRAINT domain_event_seq_key UNIQUE (seq),
+    CONSTRAINT domain_event_entry_hash_key UNIQUE (entry_hash),
+    CONSTRAINT domain_event_seq_positive CHECK (seq > 0),
+    CONSTRAINT domain_event_kind CHECK (kind IN (
+        'CALCULATION_RUN', 'MODEL_PUBLISHED', 'MODEL_ROLLED_BACK',
+        'PERMISSION_CHANGED', 'CRITICAL_ACTION', 'HISTORY_READ', 'AUDIT_READ')),
+    CONSTRAINT domain_event_outcome CHECK (outcome IN ('SUCCESS', 'REFUSED')),
+    CONSTRAINT domain_event_actor CHECK (
+        (actor_type = 'USER' AND actor_user_id IS NOT NULL AND actor_role IS NOT NULL)
+        OR (actor_type = 'SYSTEM' AND actor_user_id IS NULL AND actor_role IS NULL)),
+    CONSTRAINT domain_event_subject CHECK ((subject_type IS NULL) = (subject_id IS NULL)),
+    CONSTRAINT domain_event_details_object CHECK (jsonb_typeof(details) = 'object'),
+    CONSTRAINT domain_event_hash_format CHECK (
+        prev_hash ~ '^[0-9a-f]{64}$' AND entry_hash ~ '^[0-9a-f]{64}$')
+);
+CREATE INDEX IF NOT EXISTS domain_event_recorded
+    ON audit_events.domain_event (recorded_at DESC, event_id DESC);
+CREATE INDEX IF NOT EXISTS domain_event_kind_recorded
+    ON audit_events.domain_event (kind, recorded_at DESC);
+CREATE INDEX IF NOT EXISTS domain_event_actor_user
+    ON audit_events.domain_event (actor_user_id) WHERE actor_user_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS domain_event_model_version
+    ON audit_events.domain_event (model_version_id) WHERE model_version_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS domain_event_subject_key
+    ON audit_events.domain_event (subject_type, subject_id) WHERE subject_type IS NOT NULL;
+
+-- Second layer after the privileges (ADR-0072 section 6): even the owner's
+-- UPDATE, DELETE or TRUNCATE is refused unless the operator's archiving script
+-- drops these triggers first.
+CREATE OR REPLACE FUNCTION audit_events.refuse_change() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, pg_temp
+AS $refuse$
+BEGIN
+    RAISE EXCEPTION 'domain events are append-only (% refused)', TG_OP
+        USING ERRCODE = 'check_violation', CONSTRAINT = 'domain_event_append_only';
+END
+$refuse$;
+CREATE OR REPLACE TRIGGER domain_event_append_only
+BEFORE UPDATE OR DELETE ON audit_events.domain_event
+FOR EACH ROW EXECUTE FUNCTION audit_events.refuse_change();
+CREATE OR REPLACE TRIGGER domain_event_no_truncate
+BEFORE TRUNCATE ON audit_events.domain_event
+FOR EACH STATEMENT EXECUTE FUNCTION audit_events.refuse_change();
+
+-- The canonical form: the jsonb text of every column but entry_hash, with
+-- timestamps in UTC whatever the session's TimeZone. audit-trail recomputes
+-- it to verify the chain.
+CREATE OR REPLACE FUNCTION audit_events.entry_hash_v1(e audit_events.domain_event)
+RETURNS text
+LANGUAGE sql
+STABLE
+SET search_path = pg_catalog, pg_temp
+SET timezone = 'UTC'
+AS $hash$
+    SELECT encode(sha256(convert_to((to_jsonb(e) - 'entry_hash')::text, 'UTF8')), 'hex')
+$hash$;
+
+-- RN-29: a key naming a credential, or a string shaped like a token or a
+-- password hash, anywhere in a value.
+CREATE OR REPLACE FUNCTION audit_events.credential_text(t text) RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+SET search_path = pg_catalog, pg_temp
+AS $cred$
+    SELECT t IS NOT NULL AND (
+        t ~ '^[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}$'
+        OR t ~ '(^|[^A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.'
+        OR t ~ '\$argon2(id|i|d)\$'
+        OR t ~ '\$2[aby]\$[0-9]{2}\$')
+$cred$;
+
+CREATE OR REPLACE FUNCTION audit_events.credential_found(j jsonb) RETURNS boolean
+LANGUAGE plpgsql
+IMMUTABLE
+SET search_path = pg_catalog, pg_temp
+AS $found$
+DECLARE
+    k text;
+    v jsonb;
+BEGIN
+    CASE jsonb_typeof(j)
+        WHEN 'object' THEN
+            FOR k, v IN SELECT key, value FROM jsonb_each(j) LOOP
+                IF k ~* '(password|hash|secret|token|key|credential)'
+                   OR audit_events.credential_found(v) THEN
+                    RETURN true;
+                END IF;
+            END LOOP;
+        WHEN 'array' THEN
+            FOR v IN SELECT value FROM jsonb_array_elements(j) LOOP
+                IF audit_events.credential_found(v) THEN
+                    RETURN true;
+                END IF;
+            END LOOP;
+        WHEN 'string' THEN
+            RETURN audit_events.credential_text(j #>> '{}');
+        ELSE
+            NULL;
+    END CASE;
+    RETURN false;
+END
+$found$;
+
+-- One key's value: a string in a closed set, a string matching a pattern, a
+-- non-negative integer, or an array of distinct members of a closed set.
+CREATE OR REPLACE FUNCTION audit_events.str_in(d jsonb, k text, allowed text[])
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+SET search_path = pg_catalog, pg_temp
+AS $$ SELECT coalesce(jsonb_typeof(d -> k) = 'string' AND (d ->> k) = ANY (allowed), false) $$;
+
+CREATE OR REPLACE FUNCTION audit_events.str_like(d jsonb, k text, pattern text)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+SET search_path = pg_catalog, pg_temp
+AS $$ SELECT coalesce(jsonb_typeof(d -> k) = 'string' AND (d ->> k) ~ pattern, false) $$;
+
+CREATE OR REPLACE FUNCTION audit_events.count_ok(d jsonb, k text)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+SET search_path = pg_catalog, pg_temp
+AS $$ SELECT coalesce(jsonb_typeof(d -> k) = 'number' AND (d ->> k) ~ '^[0-9]{1,18}$', false) $$;
+
+-- Whether details carries exactly the keys a kind allows, with values of the
+-- right type and set. Values are scalars, or flat arrays where allowed.
+CREATE OR REPLACE FUNCTION audit_events.details_valid(p_kind text, d jsonb)
+RETURNS boolean
+LANGUAGE plpgsql
+IMMUTABLE
+SET search_path = pg_catalog, pg_temp
+AS $valid$
+DECLARE
+    required text[];
+    optional text[];
+    role_code constant text := '^[A-Z][A-Z_]{1,29}$';
+    reason constant text := '^[A-Z][A-Z0-9_]{0,39}$';
+    stamp constant text :=
+        '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})$';
+    change text;
+BEGIN
+    IF d IS NULL OR jsonb_typeof(d) <> 'object' THEN
+        RETURN false;
+    END IF;
+    CASE p_kind
+        WHEN 'CALCULATION_RUN' THEN
+            required := ARRAY['calculation', 'status', 'input_count', 'output_count'];
+            optional := ARRAY['parameters_digest', 'window_from', 'window_to', 'data_origin'];
+        WHEN 'MODEL_PUBLISHED', 'MODEL_ROLLED_BACK' THEN
+            required := ARRAY['previous_version_id', 'reason_code'];
+            optional := ARRAY[]::text[];
+        WHEN 'PERMISSION_CHANGED' THEN
+            required := ARRAY['change'];
+            optional := ARRAY['from_role', 'to_role', 'store_ids'];
+        WHEN 'CRITICAL_ACTION' THEN
+            required := ARRAY['action'];
+            optional := ARRAY['reason_code'];
+        WHEN 'HISTORY_READ' THEN
+            required := ARRAY['history'];
+            optional := ARRAY[]::text[];
+        WHEN 'AUDIT_READ' THEN
+            required := ARRAY['resource', 'filters'];
+            optional := ARRAY[]::text[];
+        ELSE
+            RETURN false;
+    END CASE;
+    IF NOT (d ?& required)
+       OR EXISTS (SELECT 1 FROM jsonb_object_keys(d) AS key
+                  WHERE key <> ALL (required || optional)) THEN
+        RETURN false;
+    END IF;
+
+    CASE p_kind
+        WHEN 'CALCULATION_RUN' THEN
+            RETURN audit_events.str_in(d, 'calculation', ARRAY['RFM', 'SEGMENTATION', 'KPI'])
+               AND audit_events.str_in(d, 'status', ARRAY['COMPLETED', 'FAILED'])
+               AND audit_events.count_ok(d, 'input_count')
+               AND audit_events.count_ok(d, 'output_count')
+               AND (NOT d ? 'parameters_digest' OR audit_events.str_like(d, 'parameters_digest', '^[0-9a-f]{64}$'))
+               AND (NOT d ? 'window_from' OR audit_events.str_like(d, 'window_from', stamp))
+               AND (NOT d ? 'window_to' OR audit_events.str_like(d, 'window_to', stamp))
+               AND (NOT d ? 'data_origin' OR audit_events.str_in(d, 'data_origin', ARRAY['OBSERVED', 'SEEDED']));
+        WHEN 'MODEL_PUBLISHED', 'MODEL_ROLLED_BACK' THEN
+            RETURN (jsonb_typeof(d -> 'previous_version_id') = 'null'
+                    OR (jsonb_typeof(d -> 'previous_version_id') = 'number'
+                        AND (d ->> 'previous_version_id') ~ '^[1-9][0-9]{0,17}$'))
+               AND audit_events.str_like(d, 'reason_code', reason);
+        WHEN 'PERMISSION_CHANGED' THEN
+            IF NOT audit_events.str_in(d, 'change', ARRAY[
+                    'ROLE_ASSIGNED', 'ADMINISTRATOR_TRANSFERRED', 'USER_DEACTIVATED',
+                    'USER_REACTIVATED', 'STORES_ASSIGNED', 'STORES_UNASSIGNED']) THEN
+                RETURN false;
+            END IF;
+            change := d ->> 'change';
+            IF change IN ('ROLE_ASSIGNED', 'ADMINISTRATOR_TRANSFERRED') THEN
+                RETURN NOT d ? 'store_ids'
+                   AND audit_events.str_like(d, 'from_role', role_code)
+                   AND audit_events.str_like(d, 'to_role', role_code)
+                   AND d ->> 'from_role' <> d ->> 'to_role';
+            ELSIF change IN ('STORES_ASSIGNED', 'STORES_UNASSIGNED') THEN
+                RETURN NOT d ? 'from_role' AND NOT d ? 'to_role'
+                   AND jsonb_typeof(d -> 'store_ids') = 'array'
+                   AND jsonb_array_length(d -> 'store_ids') > 0
+                   AND NOT EXISTS (
+                       SELECT 1 FROM jsonb_array_elements(d -> 'store_ids') AS s(v)
+                       WHERE jsonb_typeof(s.v) <> 'number'
+                          OR (s.v #>> '{}') !~ '^[1-9][0-9]{0,4}$'
+                          OR (s.v #>> '{}')::int > 32767)
+                   AND (SELECT count(DISTINCT v) = count(*)
+                          FROM jsonb_array_elements(d -> 'store_ids') AS s(v));
+            ELSE
+                RETURN NOT d ? 'from_role' AND NOT d ? 'to_role' AND NOT d ? 'store_ids';
+            END IF;
+        WHEN 'CRITICAL_ACTION' THEN
+            RETURN audit_events.str_in(d, 'action', ARRAY[
+                    'SALE_REVERSED', 'STOCK_ADJUSTED', 'CUSTOMER_ANONYMIZED',
+                    'AUDIT_PAYLOAD_REDACTED', 'EXPERIMENT_FROZEN', 'CAMPAIGN_ACTIVATED'])
+               AND (NOT d ? 'reason_code' OR audit_events.str_like(d, 'reason_code', reason));
+        WHEN 'HISTORY_READ' THEN
+            RETURN audit_events.str_in(d, 'history', ARRAY['CONSENT', 'SEGMENT', 'SALES']);
+        WHEN 'AUDIT_READ' THEN
+            RETURN audit_events.str_in(d, 'resource', ARRAY[
+                    'AUDIT_ENTRIES', 'DOMAIN_EVENTS', 'DOMAIN_EVENT_VERIFICATION'])
+               AND jsonb_typeof(d -> 'filters') = 'array'
+               AND NOT EXISTS (
+                   SELECT 1 FROM jsonb_array_elements(d -> 'filters') AS f(v)
+                   WHERE jsonb_typeof(f.v) <> 'string'
+                      OR (f.v #>> '{}') <> ALL (ARRAY[
+                          'entity', 'entity_pk', 'user_id', 'action', 'kind',
+                          'actor_user_id', 'actor_role', 'model_version_id',
+                          'subject_type', 'subject_id', 'store_id', 'outcome',
+                          'source', 'from', 'to', 'page', 'size']))
+               AND (SELECT count(DISTINCT v) = count(*)
+                      FROM jsonb_array_elements(d -> 'filters') AS f(v));
+    END CASE;
+    RETURN false;
+END
+$valid$;
+
+-- The checks and the append. p_source is the recording role: record_event_v1
+-- passes session_user, and only the seed, run by the owner, names one. No
+-- svc_* role may call this directly.
+CREATE OR REPLACE FUNCTION audit_events.append_v1(
+    p_source text,
+    p_event_id uuid,
+    p_kind text,
+    p_outcome text,
+    p_occurred_at timestamptz,
+    p_actor_type text,
+    p_actor_user_id uuid,
+    p_actor_role text,
+    p_store_id smallint,
+    p_subject_type text,
+    p_subject_id text,
+    p_model_version_id bigint,
+    p_rule_set_version bigint,
+    p_correlation_id text,
+    p_details jsonb
+) RETURNS TABLE (recorded_at timestamptz, entry_hash text, created boolean)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $append$
+#variable_conflict use_column
+DECLARE
+    writers text[];
+    stored audit_events.domain_event;
+    r audit_events.domain_event;
+    subjects text[] := ARRAY[
+        'user', 'customer', 'model_version', 'calculation', 'sale', 'sale_reversal',
+        'stock_level', 'campaign', 'experiment', 'audit_entry', 'domain_event'];
+BEGIN
+    -- 1. The kind is in the closed list and mapped to the recording role.
+    writers := CASE p_kind
+        WHEN 'CALCULATION_RUN' THEN ARRAY['svc_rfm', 'svc_segments', 'svc_kpis']
+        WHEN 'MODEL_PUBLISHED' THEN ARRAY['svc_models']
+        WHEN 'MODEL_ROLLED_BACK' THEN ARRAY['svc_models']
+        WHEN 'PERMISSION_CHANGED' THEN ARRAY['svc_users']
+        WHEN 'CRITICAL_ACTION' THEN ARRAY['svc_sales', 'svc_stock', 'svc_customers',
+                                          'svc_experiments', 'svc_campaigns']
+        WHEN 'HISTORY_READ' THEN ARRAY['svc_preferences', 'svc_segments', 'svc_sales']
+        WHEN 'AUDIT_READ' THEN ARRAY['svc_audit_trail']
+    END;
+    IF writers IS NULL OR p_source IS NULL OR NOT (p_source = ANY (writers)) THEN
+        RAISE EXCEPTION '% may not record kind %', p_source, coalesce(p_kind, 'NULL')
+            USING ERRCODE = 'MA001', CONSTRAINT = 'event_kind_not_permitted';
+    END IF;
+
+    -- 2. No credential anywhere (RN-29), before the key check so a credential
+    -- is always reported as one.
+    IF audit_events.credential_found(p_details)
+       OR audit_events.credential_text(p_subject_id)
+       OR audit_events.credential_text(p_correlation_id) THEN
+        RAISE EXCEPTION 'a domain event never carries a credential'
+            USING ERRCODE = 'MA003', CONSTRAINT = 'event_credential_refused';
+    END IF;
+
+    -- 3. Exactly the keys the kind allows.
+    IF NOT audit_events.details_valid(p_kind, p_details) THEN
+        RAISE EXCEPTION 'details do not match kind %', p_kind
+            USING ERRCODE = 'MA002', CONSTRAINT = 'event_details_invalid';
+    END IF;
+
+    -- 4. The common fields.
+    IF p_event_id IS NULL
+       OR p_outcome IS NULL OR p_outcome NOT IN ('SUCCESS', 'REFUSED')
+       OR (p_outcome = 'REFUSED' AND p_kind <> 'HISTORY_READ')
+       OR p_occurred_at IS NULL OR p_occurred_at > now() + interval '5 minutes'
+       OR p_actor_type IS NULL OR p_actor_type NOT IN ('USER', 'SYSTEM')
+       OR (p_actor_type = 'USER' AND (p_actor_user_id IS NULL OR p_actor_role IS NULL
+                                      OR p_actor_role !~ '^[A-Z][A-Z_]{1,29}$'))
+       OR (p_actor_type = 'SYSTEM' AND (p_actor_user_id IS NOT NULL OR p_actor_role IS NOT NULL))
+       OR (p_kind = 'AUDIT_READ' AND p_actor_type <> 'USER')
+       OR (p_subject_type IS NULL) <> (p_subject_id IS NULL)
+       OR (p_subject_type IS NOT NULL AND p_subject_type <> ALL (subjects))
+       OR (p_subject_id IS NOT NULL AND length(p_subject_id) NOT BETWEEN 1 AND 80)
+       OR (p_kind = 'PERMISSION_CHANGED' AND p_subject_type IS DISTINCT FROM 'user')
+       OR (p_kind = 'HISTORY_READ' AND p_subject_type IS DISTINCT FROM 'customer')
+       OR (p_kind IN ('MODEL_PUBLISHED', 'MODEL_ROLLED_BACK')
+           AND (p_subject_type IS DISTINCT FROM 'model_version' OR p_model_version_id IS NULL))
+       OR (p_kind = 'CRITICAL_ACTION' AND p_subject_type IS NULL)
+       OR (p_kind = 'CALCULATION_RUN' AND p_subject_type IS NOT NULL
+           AND p_subject_type <> 'calculation')
+       OR (p_kind = 'AUDIT_READ' AND p_subject_type IS NOT NULL
+           AND p_subject_type NOT IN ('domain_event', 'audit_entry'))
+       OR (p_store_id IS NOT NULL AND p_store_id < 1)
+       OR (p_model_version_id IS NOT NULL AND p_model_version_id < 1)
+       OR (p_rule_set_version IS NOT NULL AND p_rule_set_version < 1)
+       OR (p_correlation_id IS NOT NULL AND p_correlation_id !~ '^[0-9A-Za-z-]{1,64}$') THEN
+        RAISE EXCEPTION 'the event''s common fields are invalid'
+            USING ERRCODE = 'MA004', CONSTRAINT = 'event_invalid';
+    END IF;
+
+    -- One head: every writer appends under the same transaction lock
+    -- (contracts/db/advisory-locks.md).
+    PERFORM pg_advisory_xact_lock(272001);
+
+    SELECT * INTO stored FROM audit_events.domain_event d WHERE d.event_id = p_event_id;
+    IF FOUND THEN
+        IF stored.source <> p_source OR stored.kind <> p_kind THEN
+            RAISE EXCEPTION 'event % was recorded by another source or kind', p_event_id
+                USING ERRCODE = 'MA005', CONSTRAINT = 'event_id_conflict';
+        END IF;
+        RETURN QUERY SELECT stored.recorded_at, stored.entry_hash, false;
+        RETURN;
+    END IF;
+
+    SELECT coalesce(max(d.seq), 0) + 1 INTO r.seq FROM audit_events.domain_event d;
+    SELECT coalesce((SELECT d.entry_hash FROM audit_events.domain_event d
+                      ORDER BY d.seq DESC LIMIT 1), repeat('0', 64))
+      INTO r.prev_hash;
+    r.event_id := p_event_id;
+    r.kind := p_kind;
+    r.outcome := p_outcome;
+    r.occurred_at := p_occurred_at;
+    r.recorded_at := now();
+    r.actor_type := p_actor_type;
+    r.actor_user_id := p_actor_user_id;
+    r.actor_role := p_actor_role;
+    r.source := p_source;
+    r.store_id := p_store_id;
+    r.subject_type := p_subject_type;
+    r.subject_id := p_subject_id;
+    r.model_version_id := p_model_version_id;
+    r.rule_set_version := p_rule_set_version;
+    r.correlation_id := p_correlation_id;
+    r.details := p_details;
+    r.entry_hash := audit_events.entry_hash_v1(r);
+
+    INSERT INTO audit_events.domain_event SELECT r.*;
+    RETURN QUERY SELECT r.recorded_at, r.entry_hash, true;
+END
+$append$;
+ALTER FUNCTION audit_events.append_v1(text, uuid, text, text, timestamptz, text, uuid, text,
+    smallint, text, text, bigint, bigint, text, jsonb) OWNER TO definer_audit;
+REVOKE EXECUTE ON FUNCTION audit_events.append_v1(text, uuid, text, text, timestamptz, text,
+    uuid, text, smallint, text, text, bigint, bigint, text, jsonb) FROM PUBLIC;
+
+-- The one writer a producer calls. source is session_user, which neither SET
+-- ROLE nor this function's SECURITY DEFINER changes.
+CREATE OR REPLACE FUNCTION api_audit.record_event_v1(
+    p_event_id uuid,
+    p_kind text,
+    p_outcome text,
+    p_occurred_at timestamptz,
+    p_actor_type text,
+    p_actor_user_id uuid,
+    p_actor_role text,
+    p_store_id smallint,
+    p_subject_type text,
+    p_subject_id text,
+    p_model_version_id bigint,
+    p_rule_set_version bigint,
+    p_correlation_id text,
+    p_details jsonb
+) RETURNS TABLE (recorded_at timestamptz, entry_hash text, created boolean)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $record$
+    SELECT * FROM audit_events.append_v1(
+        session_user::text, p_event_id, p_kind, p_outcome, p_occurred_at, p_actor_type,
+        p_actor_user_id, p_actor_role, p_store_id, p_subject_type, p_subject_id,
+        p_model_version_id, p_rule_set_version, p_correlation_id, p_details)
+$record$;
+ALTER FUNCTION api_audit.record_event_v1(uuid, text, text, timestamptz, text, uuid, text,
+    smallint, text, text, bigint, bigint, text, jsonb) OWNER TO definer_audit;
+REVOKE EXECUTE ON FUNCTION api_audit.record_event_v1(uuid, text, text, timestamptz, text,
+    uuid, text, smallint, text, text, bigint, bigint, text, jsonb) FROM PUBLIC;
+
+REVOKE ALL ON audit_events.domain_event FROM PUBLIC;
+GRANT USAGE ON SCHEMA audit_events TO definer_audit, svc_audit_trail;
+GRANT SELECT, INSERT ON audit_events.domain_event TO definer_audit;
+GRANT SELECT ON audit_events.domain_event TO svc_audit_trail;
+
+-- The writers whose roles exist; svc_rfm, svc_models, svc_kpis and
+-- svc_experiments receive theirs with the role.
+GRANT USAGE ON SCHEMA api_audit TO svc_users, svc_sales, svc_segments, svc_preferences,
+    svc_stock, svc_customers, svc_campaigns, svc_audit_trail;
+GRANT EXECUTE ON FUNCTION api_audit.record_event_v1(uuid, text, text, timestamptz, text, uuid,
+    text, smallint, text, text, bigint, bigint, text, jsonb)
+    TO svc_users, svc_sales, svc_segments, svc_preferences, svc_stock, svc_customers,
+       svc_campaigns, svc_audit_trail;
 -- END BOUNDARY audit-trail
 
 -- BEGIN APPLICATION ROLE VERIFICATION

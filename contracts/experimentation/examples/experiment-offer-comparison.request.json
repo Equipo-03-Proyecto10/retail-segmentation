@@ -1,0 +1,20 @@
+{
+  "name": "Voucher versus free delivery",
+  "campaign_id": 7,
+  "primary_metric": "CONVERSION",
+  "starts_on": "2026-10-05",
+  "conversion_window_days": 14,
+  "minimum_detectable_effect": 0.02,
+  "arms": [
+    {
+      "kind": "TREATMENT",
+      "name": "10 percent voucher",
+      "treatment_description": "Offered a 10 percent voucher on the next purchase."
+    },
+    {
+      "kind": "TREATMENT",
+      "name": "Free delivery",
+      "treatment_description": "Offered free delivery on the next online purchase."
+    }
+  ]
+}

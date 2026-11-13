@@ -219,3 +219,82 @@ def test_eviction_of_the_index_does_not_defeat_invalidation(
     monkeypatch.setattr(rule, "recommend", recompute)
     _ask(app, token)
     assert calls, "A result survived invalidation after the index was evicted"
+
+
+class Crash(BaseException):
+    """The process dies: the kit catches Exception only, so no XACK follows."""
+
+
+@pytest.mark.parametrize("stream", STREAMS)
+def test_reapplying_an_event_leaves_the_same_state(
+    build_app: Callable[..., Flask],
+    token: Callable[..., dict],
+    redis_connection: redis.Redis,
+    owner: psycopg.Connection,
+    monkeypatch: pytest.MonkeyPatch,
+    stream: str,
+) -> None:
+    """#764 criterion 3, for the `recommendations` group on each of its streams.
+
+    Re-applying an event is idempotent by re-read (ADR-0044). The production
+    handler runs in a process that dies after the effect and before XACK; the
+    restarted process applies the entry again from its pending list; then a
+    duplicate entry, as a relay that crashed between XADD and its UPDATE
+    appends, is applied once more. Each time the cache is empty and the next
+    answer, recomputed from the database, is the same.
+    """
+    from mosaiq_kit import StreamConsumer
+
+    import app.service
+
+    # Build the real consumers, but drive one by hand instead of in a thread.
+    monkeypatch.setattr(app.service.StreamConsumer, "start", lambda self: None)
+    application = build_app(consumers=True)
+    production = next(
+        c
+        for c in application.extensions["recommendations_consumers"]
+        if c.stream == stream
+    )
+    # Threads from earlier tests may still read as `recommendations`, so the
+    # hand-driven consumers read as a group of their own; the kit's code path
+    # is the same for any group name.
+    group = "recommendations-reapply"
+    monkeypatch.setenv("MOSAIQ_SERVICE_NAME", group)
+    StreamConsumer(production.redis, stream, production.handler).run_once(1)
+    key = result_key(CUSTOMER, _run_id(owner), 10)
+
+    def observe() -> tuple[bool, dict]:
+        cached = bool(redis_connection.exists(key))
+        answer = _ask(application, token)
+        # The instant of the computation, and the window it anchors, are not
+        # state: every recomputation moves them.
+        answer.pop("computed_at")
+        answer["window"].pop("start")
+        answer["window"].pop("end")
+        return cached, answer
+
+    _ask(application, token)
+    assert redis_connection.exists(key)
+    fields = {"event_id": f"reapply-{stream}-{time.time_ns()}", "v": "1"}
+    redis_connection.xadd(stream, fields)
+
+    def crashing(entry: dict[str, str]) -> None:
+        production.handler(entry)
+        raise Crash
+
+    with pytest.raises(Crash):
+        StreamConsumer(production.redis, stream, crashing).run_once(block_ms=10)
+    first = observe()
+    assert first[0] is False  # the effect happened before the crash
+    assert redis_connection.xpending(stream, group)["pending"] == 1
+
+    restarted = StreamConsumer(production.redis, stream, production.handler)
+    assert restarted.run_once(block_ms=10) == 1
+    assert observe() == first
+
+    redis_connection.xadd(stream, fields)
+    duplicate = StreamConsumer(production.redis, stream, production.handler)
+    assert duplicate.run_once(block_ms=10) == 1
+    assert observe() == first
+    assert redis_connection.xpending(stream, group)["pending"] == 0
+    redis_connection.xgroup_destroy(stream, group)

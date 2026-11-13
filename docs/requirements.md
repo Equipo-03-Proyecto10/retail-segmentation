@@ -128,6 +128,9 @@ row · `—` no access.
 | `INVENTORY_PLANNER` | read, `inventory` write | — | — | — | — | — | read | — |
 | `AUDITOR` | read | read | read | read | — | — | read | read |
 | `CUSTOMER` | — | own | — | — | — | — | — | — |
+| `SALES_ASSOCIATE` | — | — | — | — | — | — | — | — |
+| `LOYALTY_OFFICER` | — | — | — | — | — | — | — | — |
+| `COMMERCIAL_SUPERVISOR` | — | — | — | — | — | — | — | — |
 
 Three things this matrix is deliberately strict about:
 
@@ -141,6 +144,11 @@ Three things this matrix is deliberately strict about:
   `customer.user_id` ownership link. The seed and current user-management
   workflow leave that link empty, so the dormant `user.self` permission grants
   no current route or access.
+- **The three floor roles hold nothing in the web.** `SALES_ASSOCIATE`,
+  `LOYALTY_OFFICER` and `COMMERCIAL_SUPERVISOR` work through the services from
+  the Android client
+  ([ADR-0060](adr/0060-four-store-profiles-map-to-four-roles-and-services-read-each-users-stores-per-request.md)).
+  They may sign in to the web and reach only what every signed-in user reaches.
 
 Enforced by the authorization middleware at the route level — F4-01 (#69),
 which transcribes this table into `web/middleware/authz.py` and refuses any
@@ -177,18 +185,32 @@ The web's matrix does not change.
 
 | Operations | `x-mosaiq-roles` | Basis |
 |---|---|---|
-| Reads of products (including `GET /v1/products?ids=`), categories, stores (including a store's status, opening hours, enabled channel ids and commercial rules), stock levels and channels | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `INVENTORY_PLANNER`, `AUDITOR` | Catalogs: read. Stock follows the catalog (ADR-0010) |
+| Reads of products (including `GET /v1/products?ids=`), categories, stores (including a store's status, opening hours, enabled channel ids and commercial rules), stock levels and channels | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `INVENTORY_PLANNER`, `AUDITOR`, `SALES_ASSOCIATE`, `LOYALTY_OFFICER`, `COMMERCIAL_SUPERVISOR` | Catalogs: read. Stock follows the catalog (ADR-0010) |
 | Writes of products, categories, store locations, and a store's status, opening hours, enabled channel ids and commercial rules | `ADMIN` | Catalogs: full for `ADMIN` only |
-| Reads of customers, preference profiles, segments, segment assignments and recommendations | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR` | Segments and rules: read. Customers follow `segment.read` (ADR-0010, ADR-0023) |
-| Reads of sales, sale reversals and engagement events (each row names a customer) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR` | Reports: read, narrowed to `segment.read` holders, which keeps `INVENTORY_PLANNER` out of customer data |
-| Reads of products (including `GET /v1/products?ids=`), categories, stores, stock levels and channels | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `INVENTORY_PLANNER`, `AUDITOR` | Catalogs: read. Stock follows the catalog (ADR-0010) |
-| Writes of products, categories and store locations | `ADMIN` | Catalogs: full for `ADMIN` only |
-| Reads of customers, preference profiles, segments, segment assignments, segment migrations and recommendations | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR` | Segments and rules: read. Customers follow `segment.read` (ADR-0010, ADR-0023) |
-| Reads of sales and engagement events (each row names a customer) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR` | Reports: read, narrowed to `segment.read` holders, which keeps `INVENTORY_PLANNER` out of customer data |
+| Reads of segments (labels and sizes) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR`, `SALES_ASSOCIATE`, `LOYALTY_OFFICER` | Segments and rules: read. The floor roles per ADR-0060 |
+| `GET /v1/recommendations` | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR` | The original representation is unchanged; the floor-safe recommendation read is `/v2` |
+| `GET /v2/recommendations` | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR`, `SALES_ASSOCIATE`, `LOYALTY_OFFICER`; a floor role that names a `store_id` reads only a store assigned to it, another is 403 `forbidden_store` | Segments and rules: read. ADR-0060 adds the two floor roles, and ADR-0067 narrows a named store only |
+| Reads of recommendation decisions (`GET /v2/recommendation-decisions` and `/{decision_id}`) | `ADMIN`, `ANALYST`, `AUDITOR`, and `STORE_MANAGER` narrowed to decisions made at its assigned stores | A decision names a customer and a store, so it follows `segment.read` and ADR-0060's narrowing. `MARKETING` and the other floor roles read none. ADR-0067 left the exact roles to F24-03 |
+| Reads of customers and preference profiles | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR`, `LOYALTY_OFFICER` | Customers follow `segment.read` (ADR-0010, ADR-0023). `SALES_ASSOCIATE` reads a customer only through the floor view below |
+| Reads of segment assignments and segment migrations (assignments carry R, F and M scores) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR` | Segments and rules: read. ADR-0060 gives the scores to `STORE_MANAGER` alone among the floor roles |
+| Reads of sales, sale reversals and engagement events (each row names a customer) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR`, `SALES_ASSOCIATE`, `COMMERCIAL_SUPERVISOR` | Reports: read, narrowed to `segment.read` holders, which keeps `INVENTORY_PLANNER` out of customer data |
 | Engagement summaries (aggregates, no customer) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `INVENTORY_PLANNER`, `AUDITOR` | Reports: read |
+| `POST /v1/capture-incidents` | `ADMIN`, `STORE_MANAGER`, `SALES_ASSOCIATE`, `LOYALTY_OFFICER`, `COMMERCIAL_SUPERVISOR`; a floor role only at its assigned stores, `ADMIN` at any | ADR-0071: the roles that queue a write report its final refusal. The reporter does not read incidents back |
+| Reads and reviews of capture incidents (`GET /v1/capture-incidents`, `GET /v1/capture-incidents/{incident_id}`, `POST /v1/capture-incidents/{incident_id}/reviews`) | `ADMIN`, and `COMMERCIAL_SUPERVISOR` at its assigned stores | ADR-0060 gives the supervisor capture incidents; ADR-0071 names the resource and narrows these to the caller's stores |
+| `GET /v1/capture-incident-summaries` | `ADMIN`, `COMMERCIAL_SUPERVISOR` | ADR-0071 |
 | Reads of check-ins (where a staff member was) | `ADMIN`, `STORE_MANAGER`, `AUDITOR` | New, and narrowed: staff location data |
-| Floor writes: `POST /v1/sales`; `POST /v1/customers` and `PATCH /v1/customers/{customer_id}`; `PUT /v1/preference-profiles/{customer_id}/preferred-channels` and `/interest-categories`; `POST /v1/check-ins`; `POST /v1/engagement-events` | `ADMIN`, `STORE_MANAGER` | New. `STORE_MANAGER` is the floor role (ADR-0041, following ADR-0023). The web still refuses these to `STORE_MANAGER` |
+| `POST /v1/customer-visits` | `ADMIN`, `STORE_MANAGER`, `SALES_ASSOCIATE`; the two floor roles only at their assigned stores | Record an authorized customer visit (ADR-0060, ADR-0066). Refused for a customer who has not granted `PROFILING`; `LOYALTY_OFFICER` and `COMMERCIAL_SUPERVISOR` do not record visits |
+| Reads of customer visits (`GET /v1/customer-visits`, `GET /v1/customer-visits/{visit_id}`) | `ADMIN`, `AUDITOR`, and `STORE_MANAGER`, `SALES_ASSOCIATE` narrowed to their assigned stores | A visit names a customer, so it follows the customer-named rows of ADR-0060 and is read by fewer roles than sales or engagement events: not `ANALYST`, `MARKETING`, `INVENTORY_PLANNER`, `LOYALTY_OFFICER` or `COMMERCIAL_SUPERVISOR`. No precise location is stored; a visit is kept 36 months (ADR-0066) |
+| Floor writes: `POST /v1/sales`; `POST /v1/customers` and `PATCH /v1/customers/{customer_id}`; `PUT /v1/preference-profiles/{customer_id}/preferred-channels` and `/interest-categories`; `POST /v1/check-ins`; `POST /v1/engagement-events` | `ADMIN`, `STORE_MANAGER` | New. `STORE_MANAGER` is a floor role (ADR-0041, following ADR-0023). The web still refuses these to `STORE_MANAGER` |
+| `POST /v1/sales`, `POST /v1/engagement-events` | also `SALES_ASSOCIATE` | ADR-0060 |
+| `POST` and `PATCH` of customers, `PUT` of preferences | also `LOYALTY_OFFICER` | ADR-0060 |
+| `POST /v1/check-ins` | also `SALES_ASSOCIATE`, `LOYALTY_OFFICER`, `COMMERCIAL_SUPERVISOR` | ADR-0060 |
+| Reads of `/v1/preference-profiles/{customer_id}` and `PUT` of its `/preferred-channels` and `/interest-categories`, in addition to the roles above | `LOYALTY_OFFICER` | Preferences are the loyalty officer's (ADR-0060) |
+| Reads of `/v1/preference-profiles/{customer_id}/interests` and `/restrictions` | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR`, `SALES_ASSOCIATE`, `LOYALTY_OFFICER` | Interest categories and restrictions are readable by the floor roles except `COMMERCIAL_SUPERVISOR`; the seller never reads the consent record (ADR-0060, ADR-0066) |
+| Reads of `/v1/preference-profiles/{customer_id}/consent`, `/consent-decisions`, `/restriction-decisions` and `/preference-changes` | `ADMIN`, `AUDITOR`, `STORE_MANAGER`, `LOYALTY_OFFICER` | The consent and restriction log (ADR-0066 section 4). Reads of the two decision logs are audited as `HISTORY_READ` (ADR-0072) |
+| `POST /v1/preference-profiles/{customer_id}/consent-decisions` and `/restriction-decisions` | `ADMIN`, `LOYALTY_OFFICER` | Consent is recorded by the loyalty officer; `STORE_MANAGER` reads it and does not write it (ADR-0060) |
 | `POST /v1/sale-reversals` | `ADMIN`, `STORE_MANAGER` for a cancellation or a return; `SALES_ASSOCIATE` (ADR-0060) for a cancellation only | ADR-0062. A return is refused to the seller with `forbidden_role` |
+| Sales imports: `POST /v1/sale-imports`, `PUT /v1/sale-imports/{import_id}/chunks/{sequence}` and `PUT /v1/sale-imports/{import_id}/status`, and the reads `GET /v1/sale-imports`, `GET /v1/sale-imports/{import_id}` and `GET /v1/sale-imports/{import_id}/rejections` | `ADMIN` | ADR-0070. A file spans stores, so no store-scoped profile imports, and a rejection quotes the cell it refused, which can name a customer. The web page's upload is `ADMIN` only as well |
 | Loyalty cards: `POST` and `GET /v1/loyalty-cards`, `PUT /v1/loyalty-cards/{card_id}/revocation` | `ADMIN`, `LOYALTY_OFFICER` | Customers: loyalty (ADR-0060) |
 | `POST /v1/loyalty-cards/lookup` | `ADMIN`, `SALES_ASSOCIATE`, `LOYALTY_OFFICER` | Identify a customer at the counter (ADR-0060) |
 | `GET /v1/customers/floor-search` and `/v1/customers/{customer_id}/floor-view`, the floor view of a customer | `SALES_ASSOCIATE`, `LOYALTY_OFFICER` | The field table of ADR-0060, for customers' own fields only; `COMMERCIAL_SUPERVISOR` reads no customer element |
@@ -197,7 +219,7 @@ The web's matrix does not change.
 | Writes of users, password resets of another user, and `POST /v1/administrator-transfers` | `ADMIN` | Users: full |
 | `PUT /v1/store-assignments/{user_id}` | `ADMIN` | Users: full (ADR-0060) |
 | `GET /v1/store-assignments/{user_id}` | `ADMIN` and `AUDITOR` for any user; `SALES_ASSOCIATE`, `STORE_MANAGER`, `LOYALTY_OFFICER` and `COMMERCIAL_SUPERVISOR` for their own id only | Users: read; own (ADR-0060) |
-| `GET /v1/users/me`; `PUT /v1/users/{user_id}/password` for the caller's own id, with the current password | Every authenticated role, `CUSTOMER` included | Users: own |
+| `GET /v1/users/me`; `PUT /v1/users/{user_id}/password` for the caller's own id, with the current password | Every authenticated role, `CUSTOMER` and the floor roles included | Users: own |
 | `GET` and `DELETE /v1/sessions/current` | Every authenticated role | — |
 | Reads of campaigns | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Campaigns: read |
 | Writes and transitions of campaigns | `ADMIN`, `MARKETING` | Campaigns: full |
@@ -206,13 +228,17 @@ The web's matrix does not change.
 | Reads of RFM recalculations and their differences | `ADMIN`, `ANALYST`, `AUDITOR` | Reports: read, narrowed to the roles that verify the model; a difference names a customer |
 | `POST /v1/rfm-rule-sets`, `POST /v1/rfm-recalculations` | `ADMIN` | Segment run: run (RN-05); a rule set changes what every report says |
 | Reads of model versions, their publications and training runs | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Segments and rules: read. A version is configuration and fitted statistics with no customer data |
+| Reads of drift reports and alerts | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Segments and rules: read. A report holds shares, rates and counts per segment and variable, and no customer |
 | `POST /v1/model-versions`, `POST /v1/model-trainings`, `POST /v1/model-versions/{version_id}/publications`, `POST /v1/model-versions/{version_id}/rollbacks` | `ADMIN` | Segment run: run (RN-05); a publication changes every customer's segment |
+| Reads of experiments, their results, assignments, conversions and sale attributions (a row of the last three names a customer) | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Campaigns: read (`campaign.read`), as the web's experiment pages today |
+| `POST /v1/experiments`, `POST /v1/experiment-assignments`, `POST /v1/experiments/{experiment_id}/conversions` | `ADMIN`, `MARKETING` | Campaigns: full (`campaign.write`). A plan is frozen when it is written, and an assignment is written once (RN-42) |
+| `GET /v1/experiment-assignments/current` | `ADMIN`, `STORE_MANAGER`, `SALES_ASSOCIATE` | The floor reads one customer's arm in one campaign to decide whether to show a treatment (F27-07, ADR-0060), and nothing else of an experiment |
 | Reads of active promotions | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR`, and the four floor roles, who read active promotions of their assigned stores only | ADR-0060. Other campaign reads keep their roles |
 | Writes of a campaign's audience, budget, eligibility rules and exclusions, and of promotions | `ADMIN`, `MARKETING` | Campaigns: full |
 | `GET /v1/kpi-reports/definitions` | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR`, `STORE_MANAGER`, `COMMERCIAL_SUPERVISOR` | Reports: read. The catalog is configuration with no customer data |
 | KPI reports with a store (`net-sales`, `spend`, `retention`, `conversion`, `recommendation-performance`) | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR`, and `STORE_MANAGER`, `COMMERCIAL_SUPERVISOR` narrowed to their assigned stores | Reports: read. Narrowed as ADR-0060 decides: another store is 403 `forbidden_store` |
 | KPI reports with no store (`migrations`, `campaign-performance`) | `ADMIN`, `ANALYST`, `MARKETING`, `AUDITOR` | Reports: read. A figure with no store cannot be narrowed, so the two store roles do not read it |
-| `GET /v1/audit-entries` | `ADMIN`, `AUDITOR` | Audit log: read |
+| `GET /v1/audit-entries`, `GET /v1/domain-events` (with `/{event_id}` and `/verification`) | `ADMIN`, `AUDITOR` | Audit log: read. Every such read is itself recorded as an `AUDIT_READ` domain event (ADR-0072) |
 | `POST /v1/sessions`, `POST /v1/sessions/refresh`, `GET /v1/jwks.json`, meta routes | No token | — |
 
 - `CUSTOMER` reaches only sign-in, refresh, its own session, `GET /v1/users/me`
@@ -224,7 +250,20 @@ The web's matrix does not change.
   customer (sales and engagement events) follow `segment.read`, which keeps
   `INVENTORY_PLANNER` out of customer data. Check-ins, which record where a
   staff member was, are read by `ADMIN`, `STORE_MANAGER` and `AUDITOR` only.
-- No operation is narrowed to a store: `app_user` has no store (ADR-0010).
+- No operation is narrowed to a store yet: `app_user` has no store
+  (ADR-0010). ADR-0060 narrows the four floor roles to their assigned stores;
+  the association is F19-05 and F19-06, the narrowing F19-07. Until then a
+  floor role's reads of sales and engagement events cover every store.
+- ADR-0060's floor roles (F19-04) are listed only on operations that exist.
+  Three of its rows wait for the work that makes them safe:
+  `SALES_ASSOCIATE` reads a customer only through the floor view
+  (F21-13, F21-14), never the full representation, which carries email,
+  phone and preferred channels; the two floor
+  roles read segment assignments once their R, F and M scores can be left
+  out; and engagement summaries and reads of check-ins gain floor roles with
+  the narrowing. Sale reversals, loyalty cards, active promotions, KPI
+  reports and store assignments list them already; customer visits and
+  consent gain them when they are written.
 - `INVENTORY_PLANNER`'s `inventory` write stays deferred
   ([`roadmap.md`](roadmap.md)), and no operation lists it.
 

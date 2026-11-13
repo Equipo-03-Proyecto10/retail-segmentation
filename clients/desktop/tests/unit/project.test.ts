@@ -105,4 +105,28 @@ describe('bundle-contracts', () => {
     expect(failed.out).toMatch(/campaigns has an openapi.yaml but no campaigns.xsd/);
     rmSync(tmp, { recursive: true, force: true });
   });
+
+  it('bundles a later major beside /v1 under its own namespace, and requires one for a /v2 path', () => {
+    const NS = 'https://mosaiq.maxthecoder.online/xml';
+    expect(bundle.schemas[`${NS}/recommendations/v2`]).toBe('recommendations/recommendations.v2.xsd');
+    expect(bundle.schemas[`${NS}/recommendations/v1`]).toBe('recommendations/recommendations.xsd');
+    expect(bundle.schemas[`${NS}/engagement/v2`]).toBe('engagement/engagement.v2.xsd');
+    expect(bundle.operations.find((o) => o.operationId === 'getRecommendationsV2')?.path).toBe(
+      '/v2/recommendations',
+    );
+
+    const tmp = mkdtempSync(join(tmpdir(), 'mosaiq-contracts-'));
+    cpSync(real, tmp, { recursive: true });
+    const second = join(tmp, 'recommendations', 'recommendations.v2.xsd');
+    const text = readFileSync(second, 'utf8');
+    writeFileSync(second, text.replaceAll('/recommendations/v2', '/recommendations/v3'));
+    const wrongNamespace = run(tmp);
+    expect(wrongNamespace.status).toBe(1);
+    expect(wrongNamespace.out).toMatch(/recommendations.v2.xsd does not declare targetNamespace/);
+    rmSync(second);
+    const missing = run(tmp);
+    expect(missing.status).toBe(1);
+    expect(missing.out).toMatch(/recommendations declares \/v2 operations but no recommendations.v2.xsd/);
+    rmSync(tmp, { recursive: true, force: true });
+  });
 });

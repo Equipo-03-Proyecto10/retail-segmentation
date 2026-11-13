@@ -10,6 +10,8 @@ from a seed, with its results in [`docs/evidence/`](../docs/evidence/).
 | `load.py` | Loads that dataset into a local throwaway database, after the three SQL scripts |
 | `normalization_study.py` | F23-02: regenerates the tables of the variables, normalization and extreme-value study. Reads no database |
 | `k_study.py` | F23-03: inertia, sampled silhouette, stability and the labels each k can produce, for k from 2 to 12. Reads no database |
+| `stability_study.py` | F23-04: a registered result reproduced, seed and bootstrap stability with thresholds, and the movement between adjacent windows, for k from 2 to 8. Reads no database |
+| `segment_profile.py` | F23-05: each segment at k = 4 in raw units with its revenue share, and each label's claim put to its cluster. Reads no database |
 
 ## The evaluation dataset
 

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CaptureIncidentSummary xmlns="https://mosaiq.maxthecoder.online/xml/engagement/v1">
+  <from>2026-11-04</from>
+  <to>2026-11-05</to>
+  <group_by>store</group_by>
+  <groups>
+    <key>3</key>
+    <count>4</count>
+  </groups>
+  <groups>
+    <key>7</key>
+    <count>1</count>
+  </groups>
+</CaptureIncidentSummary>

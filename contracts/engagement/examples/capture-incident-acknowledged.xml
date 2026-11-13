@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CaptureIncident xmlns="https://mosaiq.maxthecoder.online/xml/engagement/v1">
+  <incident_id>7c1e5a90-3b2d-4f68-8a14-9d0e6b2c4f11</incident_id>
+  <client_incident_id>2b8f4d1a-6c37-5e90-b1a2-3d4c5e6f7a81</client_incident_id>
+  <source_type>SALE</source_type>
+  <source_operation_id>d4f1b3a2-9c58-4e07-a6b1-0f2e8c3d5a74</source_operation_id>
+  <source_correlation_id>corr-sale-refused-01</source_correlation_id>
+  <store_id>3</store_id>
+  <refused_status>409</refused_status>
+  <refused_code>stock_unavailable</refused_code>
+  <attempts>3</attempts>
+  <occurred_at>2026-11-05T14:02:10Z</occurred_at>
+  <line_count>2</line_count>
+  <reported_by>5b0c2f3e-8a41-4d6b-9c10-2e7a1f4d9b33</reported_by>
+  <recorded_at>2026-11-05T14:02:41Z</recorded_at>
+  <status>ACKNOWLEDGED</status>
+  <history>
+    <status>ACKNOWLEDGED</status>
+    <note>Checking stock with the warehouse.</note>
+    <by>9d4e7a10-52c3-4b8f-a1e6-0c3b5d7f9a21</by>
+    <at>2026-11-05T14:20:00Z</at>
+  </history>
+</CaptureIncident>

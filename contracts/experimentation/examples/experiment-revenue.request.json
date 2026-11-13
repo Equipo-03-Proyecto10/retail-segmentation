@@ -1,0 +1,28 @@
+{
+  "name": "Loyalty booster, two offers against control",
+  "campaign_id": 5,
+  "primary_metric": "REVENUE_PER_CUSTOMER",
+  "starts_on": "2026-09-14",
+  "conversion_window_days": 21,
+  "minimum_detectable_effect": 1.50,
+  "alpha": 0.05,
+  "power": 0.80,
+  "data_origin": "OBSERVED",
+  "arms": [
+    {
+      "kind": "CONTROL",
+      "name": "No offer",
+      "treatment_description": "Held back: receives no loyalty offer."
+    },
+    {
+      "kind": "TREATMENT",
+      "name": "Double points",
+      "treatment_description": "Earns double loyalty points for 21 days."
+    },
+    {
+      "kind": "TREATMENT",
+      "name": "Free gift",
+      "treatment_description": "Receives a free gift on the next purchase."
+    }
+  ]
+}

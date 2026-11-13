@@ -9,7 +9,11 @@ It is not a microservice: it implements no business rule and is not in
 - `/run/mosaiq/ops/containers.json`, written by `host/mosaiq-ops-snapshot.sh`
   on the host, so the container never sees the Docker socket;
 - `INFO memory` and `XINFO GROUPS` for every `stream:*` on both Redis
-  instances, as the read-only user in `redis/ops-console.acl`.
+  instances, as the read-only user in `redis/ops-console.acl`. For each group
+  it also shows the age of the oldest entry the group has not acknowledged:
+  the oldest pending entry (`XPENDING`), else the first undelivered one
+  (`XRANGE` after `last-delivered-id`), aged against the server's `TIME`. Lag
+  counts entries; this age is the delay (#764).
 
 It keeps one hour of readiness samples in memory and serves `/` (HTML,
 refreshing itself) and `/status.json` on `127.0.0.1:5090`.

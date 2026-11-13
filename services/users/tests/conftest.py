@@ -6,7 +6,7 @@ the service, as the JWKS file auth-service would publish (ADR-0036).
 `postgres` tests need TEST_DATABASE_URL, the owner's URL to a database built
 by the three scripts (CI's services job sets it). Each test gets its own copy
 of that database, made from it as a template, and the service connects to the
-copy as svc_users, so every privilege it lacks is lacking here too.
+copy signed in as svc_users, so every privilege it lacks is lacking here too.
 
 `redis` tests need TEST_REDIS_URL (or USERS_TEST_REDIS_URL), an administrator's
 URL to a Redis 8 whose ACLs the test may change. MOSAIQ_REQUIRE_REDIS=1 makes a
@@ -24,7 +24,7 @@ import uuid
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, urlsplit, urlunsplit
+from urllib.parse import urlsplit, urlunsplit
 
 import psycopg
 import pytest
@@ -198,9 +198,18 @@ def token() -> Callable[..., str]:
 
 
 def _with_database(url: str, database: str, *, role: str | None = None) -> str:
+    """The owner's URL to `database`, or a login as `role` itself.
+
+    A service role signs in as itself, with the default password 00 gives it,
+    so `session_user` is svc_users as in production: api_audit.record_event_v1
+    takes the recording role from session_user, which SET ROLE cannot change.
+    """
     parts = urlsplit(url)
-    query = "options=" + quote(f"-c role={role}") if role else ""
-    return urlunsplit((parts.scheme, parts.netloc, "/" + database, query, ""))
+    netloc = parts.netloc
+    if role:
+        host = parts.hostname or "127.0.0.1"
+        netloc = f"{role}:{role}@{host}" + (f":{parts.port}" if parts.port else "")
+    return urlunsplit((parts.scheme, netloc, "/" + database, "", ""))
 
 
 @pytest.fixture

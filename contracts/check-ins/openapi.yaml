@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: check-ins-service
-  version: 1.0.0
+  version: 1.2.0
   description: 'Records staff GPS check-ins and computes their verdict on the server
     (RN-56). The phone sends a fix and shows the answer; it never decides. Check-ins
     are never updated or deleted, and an override is an append-only review. The
@@ -14,11 +14,20 @@ info:
     Each of the five is a 201 answer, not an error. The effective `verified` is
     the latest review''s verdict when a review exists, else `auto_verified`. Reads
     are limited to ADMIN, STORE_MANAGER and AUDITOR because they are staff location
-    data.'
+    data. The service also records authorized customer visits, a separate resource
+    (`customer-visits`): a customer fact that names a customer, a store, a time
+    and optionally a campaign, and never a position, so staff and customer facts
+    never mix (ADR-0035). A visit needs an active loyalty code and the customer''s
+    granted `PROFILING` consent (ADR-0066), a repeat within the 2-hour duplicate
+    window is the same visit, it is kept 36 months from `occurred_at`, and it is
+    read by ADMIN, AUDITOR and, in their assigned stores, STORE_MANAGER and
+    SALES_ASSOCIATE. The three customer-visit operations are `x-mosaiq-status:
+    planned` (ADR-0073) until F21-23 (#801) implements them.'
 security:
 - bearer: []
 tags:
 - name: CheckIns
+- name: CustomerVisits
 - name: Meta
 paths:
   /v1/check-ins:
@@ -42,6 +51,9 @@ paths:
       x-mosaiq-roles:
       - ADMIN
       - STORE_MANAGER
+      - SALES_ASSOCIATE
+      - LOYALTY_OFFICER
+      - COMMERCIAL_SUPERVISOR
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       requestBody:
@@ -290,6 +302,312 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/OperationUnavailable'
+  /v1/customer-visits:
+    post:
+      tags:
+      - CustomerVisits
+      summary: Record an authorized customer visit
+      description: >-
+        Records that a customer who identified themselves came to a store. It is
+        a customer fact and never a staff fact: it is not a check-in (RN-56), it
+        carries no position, and it is kept apart from `check-ins`.
+
+
+        What a visit needs. `loyalty_code` is the 26-character code a scanner
+        read from the customer's card, the opaque identifier that
+        customers-service issues and looks up (`POST /v1/loyalty-cards/lookup`).
+        This service never calls customers over HTTP: it resolves the code with
+        `api_customers.resolve_loyalty_code_v1`, which answers with the customer
+        of an ACTIVE card and with nothing for an unknown or revoked code. The
+        code is never stored and never echoed; the visit keeps `customer_id`.
+        The customer must also have the `PROFILING` purpose granted
+        (ADR-0066): its latest decision in `api_preferences.consent_state_v1`
+        is `GRANTED`. A purpose that was withdrawn or was never recorded is not
+        granted. A consent that cannot be read is not granted either, because
+        the view is read fail-closed (ADR-0066): nothing is stored and the
+        answer is 503 `consent_unavailable`, which a client may retry.
+        `PERSONALIZATION` and `MARKETING_CONTACT` are not tested, since a visit
+        tailors nothing and contacts no one. A visit carries the `store_id`, the
+        time `occurred_at` and, optionally, a `campaign_id`, whose existence is
+        checked in `api_campaigns.campaign_ref_v1` and nothing more. The user
+        who records it is the token's `sub` (`recorded_by`), never a body
+        field.
+
+
+        Refusals. They are decided in this order, and on any of them nothing is
+        stored: 400, 413, 415 and 422 `invalid_body` for the body itself; 422
+        `occurred_in_future` when `occurred_at` is more than five minutes ahead
+        of the server; 403 `forbidden_store` when the caller is `STORE_MANAGER`
+        or `SALES_ASSOCIATE` and the store is not assigned to them (ADR-0060);
+        422 `unknown_store` when the store is missing or inactive in
+        `api_stores.store_directory_v1`; 422 `unknown_campaign`; 422
+        `loyalty_code_not_usable`, the one answer for an unknown code and for a
+        revoked card, which names no customer; and 409 `consent_required`. The
+        409 is one answer for a withdrawn and for an unrecorded consent, so the
+        response does not say which: a seller does not read the consent record
+        (ADR-0060). The 503 `consent_unavailable` says only that the consent
+        could not be read and nothing about the customer. The service applies
+        its request limit to this operation per caller (429 `rate_limited`), so
+        a code cannot be guessed by repetition.
+
+
+        Duplicate window. A visit is the customer at a store within a window of
+        7200 seconds. A post is a repeat, and so the same visit, when a visit
+        exists for the same `customer_id` and `store_id` whose `occurred_at`
+        differs from the post's by strictly less than 7200 seconds, earlier or
+        later. The window is anchored at the stored visit's `occurred_at` and a
+        repeat never moves it: a visit at 10:00:00 covers posts from 08:00:01 to
+        11:59:59, and a post at 12:00:00 is a new visit. When more than one
+        stored visit matches, the one with the earliest `occurred_at` is the
+        visit. A new visit answers 201. A repeat answers 200 with the stored
+        visit exactly as it was and writes nothing: its `campaign_id` is the
+        stored one, and a different `campaign_id` in the repeat is ignored,
+        never added and never replaced. The repeat is decided after every
+        refusal above, so a customer who has no consent is refused and never
+        answered with an earlier visit. Two posts that arrive together create
+        one visit: the service serializes them per customer and store, and the
+        second answers 200.
+
+
+        Privacy. No precise location is stored for a customer. A visit holds a
+        store, a time and at most a campaign: no latitude, longitude, accuracy,
+        address, device or network identifier. The request is closed, so a
+        `latitude`, `longitude` or `accuracy_m` is refused with 422
+        `invalid_body` whose detail code is `location_not_stored`, and nothing
+        is stored. The only place a visit names is the store, never where the
+        customer was. A visit is kept 36 months from its `occurred_at`
+        (ADR-0066); see `getCustomerVisit` for what happens then.
+      operationId: createCustomerVisit
+      x-mosaiq-status: planned
+      x-mosaiq-roles:
+      - ADMIN
+      - STORE_MANAGER
+      - SALES_ASSOCIATE
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerVisitRequest'
+            examples:
+              with_campaign:
+                externalValue: ./examples/customer-visit.request.json
+              no_campaign:
+                externalValue: ./examples/customer-visit-no-campaign.request.json
+              repeat:
+                externalValue: ./examples/customer-visit-repeat.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/CustomerVisitRequest'
+            examples:
+              with_campaign:
+                externalValue: ./examples/customer-visit.request.xml
+              no_campaign:
+                externalValue: ./examples/customer-visit-no-campaign.request.xml
+              repeat:
+                externalValue: ./examples/customer-visit-repeat.request.xml
+      responses:
+        '200':
+          description: A repeat within the duplicate window, the same visit. The
+            stored visit as it was, nothing written.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerVisit'
+              examples:
+                replay:
+                  externalValue: ./examples/customer-visit-replay.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CustomerVisit'
+              examples:
+                replay:
+                  externalValue: ./examples/customer-visit-replay.xml
+        '201':
+          description: The visit was recorded.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerVisit'
+              examples:
+                with_campaign:
+                  externalValue: ./examples/customer-visit.json
+                no_campaign:
+                  externalValue: ./examples/customer-visit-no-campaign.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CustomerVisit'
+              examples:
+                with_campaign:
+                  externalValue: ./examples/customer-visit.xml
+                no_campaign:
+                  externalValue: ./examples/customer-visit-no-campaign.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/VisitForbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/ConsentRequired'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/VisitInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/VisitUnavailable'
+    get:
+      tags:
+      - CustomerVisits
+      summary: List customer visits
+      description: >-
+        Returns a page ordered by `occurred_at`, newest first, then by
+        `visit_id`. `from` and `to` bound `occurred_at`, both inclusive, and a
+        `to` before `from` answers 422 `invalid_query`, as does a `customer_id`
+        that is not a UUID or a `campaign_id` that is not a positive integer.
+        `STORE_MANAGER` and `SALES_ASSOCIATE` work only in their assigned
+        stores (ADR-0060): a list with no `store_id` returns only visits of
+        their stores, and one that names another store answers 403
+        `forbidden_store`. `ADMIN` and `AUDITOR` are not confined. These are the
+        roles that read visits, and `COMMERCIAL_SUPERVISOR`, `LOYALTY_OFFICER`,
+        `ANALYST`, `MARKETING` and `INVENTORY_PLANNER` do not, because a row
+        names a customer and no aggregate is published here. Elements are the
+        same for every reading role. A visit older than 36 months no longer
+        names its customer: `customer_id` is null, and omitted in XML.
+      operationId: listCustomerVisits
+      x-mosaiq-status: planned
+      x-mosaiq-roles:
+      - ADMIN
+      - STORE_MANAGER
+      - SALES_ASSOCIATE
+      - AUDITOR
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/StoreId'
+      - $ref: '#/components/parameters/VisitCustomerId'
+      - $ref: '#/components/parameters/VisitCampaignId'
+      - $ref: '#/components/parameters/VisitFrom'
+      - $ref: '#/components/parameters/VisitTo'
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of customer visits.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerVisitPage'
+              examples:
+                page:
+                  externalValue: ./examples/customer-visits-page.json
+                none:
+                  externalValue: ./examples/customer-visits-none.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CustomerVisitPage'
+              examples:
+                page:
+                  externalValue: ./examples/customer-visits-page.xml
+                none:
+                  externalValue: ./examples/customer-visits-none.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/VisitForbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/InvalidQuery'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/customer-visits/{visit_id}:
+    get:
+      tags:
+      - CustomerVisits
+      summary: Get one customer visit
+      description: >-
+        Returns one visit. `STORE_MANAGER` and `SALES_ASSOCIATE` read only a
+        visit of an assigned store, and another store's visit answers 403
+        `forbidden_store` (ADR-0060). An unknown id answers 404
+        `customer_visit_not_found`.
+
+
+        Retention. A visit is kept 36 months from its `occurred_at`, the
+        retention period of ADR-0066. When the period ends the row stops
+        naming the customer: `customer_id` becomes null and is omitted in XML,
+        while store, time and campaign stay, so counts survive without a
+        person. No operation of this contract edits or deletes a visit; the
+        end of the period is a maintenance act of check-ins on its own table. A
+        later withdrawal of `PROFILING` stops new visits and does not rewrite
+        recorded ones, as ADR-0066 keeps the other recorded facts of a customer
+        (sales, R, F and M, experiment assignments). Anonymizing a customer
+        (ADR-0066 section 3) changes nothing here: a visit keys on the
+        customer's UUID alone, and the identity has gone from the customer's
+        row.
+      operationId: getCustomerVisit
+      x-mosaiq-status: planned
+      x-mosaiq-roles:
+      - ADMIN
+      - STORE_MANAGER
+      - SALES_ASSOCIATE
+      - AUDITOR
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/VisitId'
+      responses:
+        '200':
+          description: The visit.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerVisit'
+              examples:
+                visit:
+                  externalValue: ./examples/customer-visit.json
+                past_retention:
+                  externalValue: ./examples/customer-visit-past-retention.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CustomerVisit'
+              examples:
+                visit:
+                  externalValue: ./examples/customer-visit.xml
+                past_retention:
+                  externalValue: ./examples/customer-visit-past-retention.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/VisitForbidden'
+        '404':
+          $ref: '#/components/responses/VisitNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
   /health/live:
     get:
       tags:
@@ -432,6 +750,48 @@ components:
       required: false
       description: Include check-ins whose `occurred_at` is at or before this RFC
         3339 timestamp. A `to` before `from` answers 422 `invalid_query`.
+      schema:
+        type: string
+        format: date-time
+    VisitId:
+      name: visit_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    VisitCustomerId:
+      name: customer_id
+      in: query
+      required: false
+      description: Restrict to this customer's visits.
+      schema:
+        type: string
+        format: uuid
+    VisitCampaignId:
+      name: campaign_id
+      in: query
+      required: false
+      description: Restrict to visits linked to this campaign.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+    VisitFrom:
+      name: from
+      in: query
+      required: false
+      description: Include visits whose `occurred_at` is at or after this RFC 3339
+        timestamp.
+      schema:
+        type: string
+        format: date-time
+    VisitTo:
+      name: to
+      in: query
+      required: false
+      description: Include visits whose `occurred_at` is at or before this RFC 3339
+        timestamp. A `to` before `from` answers 422 `invalid_query`.
       schema:
         type: string
         format: date-time
@@ -687,6 +1047,110 @@ components:
       xml:
         name: PageInfo
         namespace: https://mosaiq.maxthecoder.online/xml/common/v1
+    LoyaltyCode:
+      type: string
+      pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+      description: >-
+        The opaque code of a loyalty card, as customers-service issues it: 128
+        random bits as 26 Crockford base32 characters (digits and uppercase
+        letters except I, L, O and U). It holds no personal data. It is a request
+        value only; a visit never stores or returns it.
+    CustomerVisitRequest:
+      type: object
+      additionalProperties: false
+      description: The recording user is the token's `sub`, never a body field. The
+        body is closed, so a location member such as `latitude`, `longitude` or
+        `accuracy_m` answers 422 `invalid_body` with the detail code
+        `location_not_stored`, and no customer id, card id, name or device identifier
+        is accepted either.
+      required:
+      - loyalty_code
+      - store_id
+      - occurred_at
+      properties:
+        loyalty_code:
+          $ref: '#/components/schemas/LoyaltyCode'
+        store_id:
+          type: integer
+          format: int32
+        occurred_at:
+          type: string
+          format: date-time
+        campaign_id:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Optional. The campaign the visit is linked to. Its existence
+            is checked in `api_campaigns.campaign_ref_v1`; an unknown one answers
+            422 `unknown_campaign`.
+      xml:
+        name: CustomerVisitRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/check-ins/v1
+    CustomerVisit:
+      type: object
+      additionalProperties: false
+      description: One authorized customer visit. It has no coordinate, accuracy,
+        address, device identifier or loyalty code.
+      required:
+      - visit_id
+      - customer_id
+      - store_id
+      - campaign_id
+      - occurred_at
+      - recorded_at
+      - recorded_by
+      properties:
+        visit_id:
+          type: string
+          format: uuid
+        customer_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          description: The customer. Null, and omitted in XML, once the visit is
+            older than 36 months from `occurred_at`.
+        store_id:
+          type: integer
+          format: int32
+        campaign_id:
+          anyOf:
+          - type: integer
+            format: int32
+            minimum: 1
+          - type: 'null'
+          description: The campaign the visit is linked to; null, and omitted in
+            XML, when it has none.
+        occurred_at:
+          type: string
+          format: date-time
+        recorded_at:
+          type: string
+          format: date-time
+          description: Server time, never client-supplied.
+        recorded_by:
+          type: string
+          format: uuid
+          description: The user who recorded the visit, from the token.
+      xml:
+        name: CustomerVisit
+        namespace: https://mosaiq.maxthecoder.online/xml/check-ins/v1
+    CustomerVisitPage:
+      type: object
+      additionalProperties: false
+      required:
+      - customer_visits
+      - page_info
+      properties:
+        customer_visits:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerVisit'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: CustomerVisits
+        namespace: https://mosaiq.maxthecoder.online/xml/check-ins/v1
     ErrorDetail:
       type: object
       additionalProperties: false
@@ -1014,3 +1478,125 @@ components:
               externalValue: ./examples/invalid-query.xml
             invalid_pagination:
               externalValue: ./examples/invalid-pagination.xml
+    VisitForbidden:
+      description: '`forbidden_role` or `forbidden_store`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.json
+            forbidden_store:
+              externalValue: ./examples/forbidden-store.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.xml
+            forbidden_store:
+              externalValue: ./examples/forbidden-store.xml
+    ConsentRequired:
+      description: '`consent_required`: the customer has withdrawn `PROFILING` or never
+        granted it. The answer does not say which. Nothing was stored.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            consent_required:
+              externalValue: ./examples/consent-required.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            consent_required:
+              externalValue: ./examples/consent-required.xml
+    VisitUnavailable:
+      description: '`auth_unavailable`, `database_unavailable` or `consent_unavailable`:
+        the consent of the customer could not be read, so the visit was refused and
+        nothing was stored. A client may retry.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.json
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.json
+            consent_unavailable:
+              externalValue: ./examples/consent-unavailable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              externalValue: ./examples/auth-unavailable.xml
+            database_unavailable:
+              externalValue: ./examples/database-unavailable.xml
+            consent_unavailable:
+              externalValue: ./examples/consent-unavailable.xml
+    VisitInvalid:
+      description: '`invalid_body`, `occurred_in_future`, `unknown_store`, `unknown_campaign`
+        or `loyalty_code_not_usable`. Nothing was stored.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            location_not_stored:
+              externalValue: ./examples/location-not-stored.json
+            occurred_in_future:
+              externalValue: ./examples/occurred-in-future.json
+            unknown_store:
+              externalValue: ./examples/unknown-store.json
+            unknown_campaign:
+              externalValue: ./examples/unknown-campaign.json
+            loyalty_code_not_usable:
+              externalValue: ./examples/loyalty-code-not-usable.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            location_not_stored:
+              externalValue: ./examples/location-not-stored.xml
+            occurred_in_future:
+              externalValue: ./examples/occurred-in-future.xml
+            unknown_store:
+              externalValue: ./examples/unknown-store.xml
+            unknown_campaign:
+              externalValue: ./examples/unknown-campaign.xml
+            loyalty_code_not_usable:
+              externalValue: ./examples/loyalty-code-not-usable.xml
+    VisitNotFound:
+      description: '`customer_visit_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            customer_visit_not_found:
+              externalValue: ./examples/customer-visit-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            customer_visit_not_found:
+              externalValue: ./examples/customer-visit-not-found.xml

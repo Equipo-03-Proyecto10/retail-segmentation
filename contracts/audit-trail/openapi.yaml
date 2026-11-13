@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: audit-trail-service
-  version: 1.1.0
+  version: 1.2.1
   description: >-
     Reads the audit trail: the append-only entries `fn_audit` writes for every
     insert, update and delete on an audited table (RN-28, RN-30). An entry is
@@ -12,6 +12,15 @@ info:
     strips it again (RN-29). The service has no write operation, because
     `fn_audit` is the only writer of an entry (ADR-0035). Only ADMIN and
     AUDITOR read it.
+
+
+    It also reports domain events (ADR-0072): calculations, model
+    publications and rollbacks, permission changes, critical actions, and
+    logged reads, recorded by their producers through
+    `api_audit.record_event_v1` into an append-only, hash-chained table under
+    the same discipline. They are a separate resource, `domain-events`, so
+    the two never mix. Every read of either resource by ADMIN or AUDITOR is
+    itself recorded as an `AUDIT_READ` event.
 security:
   - bearer: []
 paths:
@@ -31,7 +40,9 @@ paths:
         is also 422 `invalid_query`, with `details` code `invalid_format`; an
         `entity_pk` without `entity` is 422 `invalid_query` with `details` code
         `requires_entity`, because one key value can name rows of several
-        tables (#533).
+        tables (#533). A successful call records one `AUDIT_READ` domain
+        event naming the filters used, never their values; when it cannot, the
+        call is 503 `audit_unavailable` and returns no entries (ADR-0072).
       operationId: listAuditEntries
       x-mosaiq-roles:
         - ADMIN
@@ -85,7 +96,9 @@ paths:
         is never changed once written, so the representation of an existing
         `audit_id` is stable. An unknown `audit_id` is 404
         `audit_entry_not_found`. A path segment that is not a positive integer
-        matches no route and is the kit's 404 `not_found` (#533).
+        matches no route and is the kit's 404 `not_found` (#533). A
+        successful call records one `AUDIT_READ` domain event, and is 503
+        `audit_unavailable` when it cannot (ADR-0072).
       operationId: getAuditEntry
       x-mosaiq-roles:
         - ADMIN
@@ -136,6 +149,211 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/domain-events:
+    get:
+      summary: List domain events
+      description: >-
+        Returns the domain events that match every filter given (ADR-0072):
+        calculations, model publications and rollbacks, permission changes,
+        critical actions, logged reads of one customer's history, and reads of
+        the audit trail itself. Events are ordered by `recorded_at` descending
+        and then by reverse hash-chain order; pagination applies after filtering. An
+        unknown `kind`, `outcome`, `actor_role` or `subject_type`, a malformed
+        UUID, integer or timestamp, or a `to` before `from` is 422
+        `invalid_query`, and `details` names the rejected parameter. Every
+        successful call records one `AUDIT_READ` event naming the filters it
+        used, never their values, in the same transaction as the read; when
+        that record cannot be written the call is 503 `audit_unavailable` and
+        returns no events.
+      operationId: listDomainEvents
+      x-mosaiq-roles:
+        - ADMIN
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/Kind'
+        - $ref: '#/components/parameters/ActorUserId'
+        - $ref: '#/components/parameters/ActorRole'
+        - $ref: '#/components/parameters/ModelVersionId'
+        - $ref: '#/components/parameters/SubjectType'
+        - $ref: '#/components/parameters/SubjectId'
+        - $ref: '#/components/parameters/StoreId'
+        - $ref: '#/components/parameters/Outcome'
+        - $ref: '#/components/parameters/Source'
+        - $ref: '#/components/parameters/EventFrom'
+        - $ref: '#/components/parameters/EventTo'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of domain events, newest first.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainEvents'
+              examples:
+                page:
+                  externalValue: ./examples/domain-events.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/DomainEvents'
+              examples:
+                page:
+                  externalValue: ./examples/domain-events.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/DomainEventQueryValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/RecordedReadUnavailable'
+  /v1/domain-events/verification:
+    get:
+      summary: Verify the domain-event hash chain
+      description: >-
+        Recomputes the hash chain over the events whose `recorded_at` lies in
+        the inclusive range `from`..`to`, or over the whole table when neither
+        is given (ADR-0072 section 6). Each event's `entry_hash` is the SHA-256
+        of its canonical form, which includes `prev_hash`, and its `prev_hash`
+        must equal the `entry_hash` of the event recorded just before it, or
+        the genesis value for the first event. The answer is `ok` with the
+        number of events checked and the head hash, or `broken` with the first
+        event whose hash or link does not match and why. An auditor keeps the
+        head hash outside the database to tell a consistent chain from the
+        chain they saw. A malformed bound, or a `to` before `from`, is 422
+        `invalid_query`. The call records one `AUDIT_READ` event, and is 503
+        `audit_unavailable` when it cannot.
+      operationId: verifyDomainEvents
+      x-mosaiq-roles:
+        - ADMIN
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/EventFrom'
+        - $ref: '#/components/parameters/EventTo'
+      responses:
+        '200':
+          description: The verification result.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainEventVerification'
+              examples:
+                ok:
+                  externalValue: ./examples/domain-event-verification-ok.json
+                broken:
+                  externalValue: ./examples/domain-event-verification-broken.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/DomainEventVerification'
+              examples:
+                ok:
+                  externalValue: ./examples/domain-event-verification-ok.xml
+                broken:
+                  externalValue: ./examples/domain-event-verification-broken.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/DomainEventQueryValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/RecordedReadUnavailable'
+  /v1/domain-events/{event_id}:
+    get:
+      summary: Get one domain event
+      description: >-
+        Returns the event identified by `event_id`. An event is never changed
+        once recorded, so the representation of an existing `event_id` is
+        stable. An unknown `event_id` is 404 `domain_event_not_found`; a path
+        segment that is not a UUID is the kit's 404 `not_found`. The call
+        records one `AUDIT_READ` event whose subject is the event read, and is
+        503 `audit_unavailable` when it cannot.
+      operationId: getDomainEvent
+      x-mosaiq-roles:
+        - ADMIN
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The requested domain event.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainEvent'
+              examples:
+                calculation_run:
+                  externalValue: ./examples/domain-event-calculation-run.json
+                model_published:
+                  externalValue: ./examples/domain-event-model-published.json
+                model_rolled_back:
+                  externalValue: ./examples/domain-event-model-rolled-back.json
+                permission_changed:
+                  externalValue: ./examples/domain-event-permission-changed.json
+                store_assignment:
+                  externalValue: ./examples/domain-event-stores-assigned.json
+                critical_action:
+                  externalValue: ./examples/domain-event-critical-action.json
+                history_read:
+                  externalValue: ./examples/domain-event-history-read.json
+                history_read_refused:
+                  externalValue: ./examples/domain-event-history-read-refused.json
+                audit_read:
+                  externalValue: ./examples/domain-event-audit-read.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/DomainEvent'
+              examples:
+                calculation_run:
+                  externalValue: ./examples/domain-event-calculation-run.xml
+                model_published:
+                  externalValue: ./examples/domain-event-model-published.xml
+                model_rolled_back:
+                  externalValue: ./examples/domain-event-model-rolled-back.xml
+                permission_changed:
+                  externalValue: ./examples/domain-event-permission-changed.xml
+                store_assignment:
+                  externalValue: ./examples/domain-event-stores-assigned.xml
+                critical_action:
+                  externalValue: ./examples/domain-event-critical-action.xml
+                history_read:
+                  externalValue: ./examples/domain-event-history-read.xml
+                history_read_refused:
+                  externalValue: ./examples/domain-event-history-read-refused.xml
+                audit_read:
+                  externalValue: ./examples/domain-event-audit-read.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/DomainEventNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/RecordedReadUnavailable'
   /health/live:
     get:
       summary: Report process liveness
@@ -308,6 +526,117 @@ components:
         minimum: 1
         maximum: 100
         default: 20
+    EventId:
+      name: event_id
+      in: path
+      required: true
+      description: The event's UUID, the idempotency key its producer chose.
+      schema:
+        type: string
+        format: uuid
+    Kind:
+      name: kind
+      in: query
+      required: false
+      description: >-
+        One event kind. An unknown kind is 422 `invalid_query` with `details`
+        field `kind`.
+      schema:
+        $ref: '#/components/schemas/DomainEventKind'
+    ActorUserId:
+      name: actor_user_id
+      in: query
+      required: false
+      description: >-
+        Exact id of the acting user. A value that is not a UUID is 422
+        `invalid_query` (`invalid_format`).
+      schema:
+        type: string
+        format: uuid
+    ActorRole:
+      name: actor_role
+      in: query
+      required: false
+      description: >-
+        Exact role code the actor's token carried. A value that is not a role
+        code is 422 `invalid_query` (`invalid_format`).
+      schema:
+        $ref: '#/components/schemas/RoleCode'
+    ModelVersionId:
+      name: model_version_id
+      in: query
+      required: false
+      description: >-
+        Exact model version the event names. A value that is not a positive
+        integer is 422 `invalid_query` (`invalid_format`).
+      schema:
+        $ref: '#/components/schemas/ModelVersionId'
+    SubjectType:
+      name: subject_type
+      in: query
+      required: false
+      description: >-
+        What the event is about. An unknown value is 422 `invalid_query`
+        (`enum`).
+      schema:
+        $ref: '#/components/schemas/SubjectType'
+    SubjectId:
+      name: subject_id
+      in: query
+      required: false
+      description: >-
+        Exact id of the subject, as text. Only valid together with
+        `subject_type`; alone it is 422 `invalid_query` (`requires_subject_type`).
+      schema:
+        $ref: '#/components/schemas/SubjectId'
+    StoreId:
+      name: store_id
+      in: query
+      required: false
+      description: >-
+        Exact store the act happened in. A value that is not an integer from 1
+        to 32767 is 422 `invalid_query` (`invalid_format`).
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 32767
+    Outcome:
+      name: outcome
+      in: query
+      required: false
+      description: '`SUCCESS` or `REFUSED`; anything else is 422 `invalid_query` (`enum`).'
+      schema:
+        $ref: '#/components/schemas/DomainEventOutcome'
+    Source:
+      name: source
+      in: query
+      required: false
+      description: >-
+        Exact database role that recorded the event, such as `svc_users`. A
+        value that is not a service role name is 422 `invalid_query`
+        (`invalid_format`).
+      schema:
+        $ref: '#/components/schemas/Source'
+    EventFrom:
+      name: from
+      in: query
+      required: false
+      description: >-
+        Inclusive lower bound on `recorded_at`, an RFC 3339 timestamp with an
+        offset. Any other value is 422 `invalid_query` (`invalid_format`).
+      schema:
+        type: string
+        format: date-time
+    EventTo:
+      name: to
+      in: query
+      required: false
+      description: >-
+        Inclusive upper bound on `recorded_at`, an RFC 3339 timestamp with an
+        offset. A `to` before `from` is 422 `invalid_query`.
+      schema:
+        type: string
+        format: date-time
   headers:
     CorrelationId:
       description: Correlation id used for this response.
@@ -438,6 +767,396 @@ components:
           $ref: '#/components/schemas/PageInfo'
       xml:
         name: AuditEntries
+        namespace: https://mosaiq.maxthecoder.online/xml/audit-trail/v1
+    DomainEventKind:
+      type: string
+      description: >-
+        The closed list of ADR-0072. Adding a kind is a contract change and a
+        new version of `api_audit.record_event_v1`'s allowed set.
+      enum:
+        - CALCULATION_RUN
+        - MODEL_PUBLISHED
+        - MODEL_ROLLED_BACK
+        - PERMISSION_CHANGED
+        - CRITICAL_ACTION
+        - HISTORY_READ
+        - AUDIT_READ
+    DomainEventOutcome:
+      type: string
+      description: >-
+        `REFUSED` is recorded only for `HISTORY_READ`, when the read was
+        refused; every other event is `SUCCESS`.
+      enum:
+        - SUCCESS
+        - REFUSED
+    ActorType:
+      type: string
+      description: >-
+        `USER` for an act a signed-in user performed, with `actor_user_id` and
+        `actor_role` from the verified token; `SYSTEM` for a schedule or a
+        stream consumer, with both null.
+      enum:
+        - USER
+        - SYSTEM
+    RoleCode:
+      type: string
+      pattern: '^[A-Z][A-Z_]{1,29}$'
+    ModelVersionId:
+      type: integer
+      format: int64
+      minimum: 1
+      maximum: 9223372036854775807
+    SubjectType:
+      type: string
+      description: >-
+        What the event is about. `subject_id` holds that thing's own id as
+        text: a UUID for a `user`, a `customer` or a `domain_event`, an
+        integer for the others.
+      enum:
+        - user
+        - customer
+        - model_version
+        - calculation
+        - sale
+        - sale_reversal
+        - stock_level
+        - campaign
+        - experiment
+        - audit_entry
+        - domain_event
+    SubjectId:
+      type: string
+      minLength: 1
+      maxLength: 80
+    Source:
+      type: string
+      description: The `session_user` of the transaction that recorded the event.
+      pattern: '^svc_[a-z][a-z_]{0,59}$'
+    Sha256Hex:
+      type: string
+      pattern: '^[0-9a-f]{64}$'
+    ReasonCode:
+      type: string
+      pattern: '^[A-Z][A-Z0-9_]{0,39}$'
+    CalculationRunDetails:
+      type: object
+      additionalProperties: false
+      required: [calculation, status, input_count, output_count]
+      properties:
+        calculation:
+          type: string
+          enum: [RFM, SEGMENTATION, KPI]
+        status:
+          type: string
+          enum: [COMPLETED, FAILED]
+        input_count:
+          type: integer
+          minimum: 0
+        output_count:
+          type: integer
+          minimum: 0
+        parameters_digest:
+          $ref: '#/components/schemas/Sha256Hex'
+        window_from:
+          type: string
+          format: date-time
+        window_to:
+          type: string
+          format: date-time
+        data_origin:
+          description: >-
+            ADR-0052's provenance of what the calculation read: `SEEDED` when any
+            sale it read is seeded, otherwise `OBSERVED`.
+          type: string
+          enum: [OBSERVED, SEEDED]
+    ModelChangeDetails:
+      type: object
+      additionalProperties: false
+      required: [previous_version_id, reason_code]
+      properties:
+        previous_version_id:
+          description: The version published before the change, or null for the first publication.
+          oneOf:
+            - $ref: '#/components/schemas/ModelVersionId'
+            - type: 'null'
+        reason_code:
+          $ref: '#/components/schemas/ReasonCode'
+    PermissionChangedDetails:
+      type: object
+      additionalProperties: false
+      required: [change]
+      description: >-
+        `ROLE_ASSIGNED` and `ADMINISTRATOR_TRANSFERRED` carry `from_role` and
+        `to_role`; `STORES_ASSIGNED` and `STORES_UNASSIGNED` carry `store_ids`,
+        the stores added or removed; `USER_DEACTIVATED` and
+        `USER_REACTIVATED` carry nothing else. An administrator transfer is
+        recorded as two events, one per user whose role moved.
+      properties:
+        change:
+          type: string
+          enum:
+            - ROLE_ASSIGNED
+            - ADMINISTRATOR_TRANSFERRED
+            - USER_DEACTIVATED
+            - USER_REACTIVATED
+            - STORES_ASSIGNED
+            - STORES_UNASSIGNED
+        from_role:
+          $ref: '#/components/schemas/RoleCode'
+        to_role:
+          $ref: '#/components/schemas/RoleCode'
+        store_ids:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: integer
+            minimum: 1
+            maximum: 32767
+    CriticalActionDetails:
+      type: object
+      additionalProperties: false
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum:
+            - SALE_REVERSED
+            - STOCK_ADJUSTED
+            - CUSTOMER_ANONYMIZED
+            - AUDIT_PAYLOAD_REDACTED
+            - EXPERIMENT_FROZEN
+            - CAMPAIGN_ACTIVATED
+        reason_code:
+          $ref: '#/components/schemas/ReasonCode'
+    HistoryReadDetails:
+      type: object
+      additionalProperties: false
+      required: [history]
+      description: >-
+        The customer whose history was read is the event's subject; nothing
+        that was read is recorded.
+      properties:
+        history:
+          type: string
+          enum: [CONSENT, SEGMENT, SALES]
+    AuditReadDetails:
+      type: object
+      additionalProperties: false
+      required: [resource, filters]
+      description: The names of the filters the reader used, never their values or the rows returned.
+      properties:
+        resource:
+          type: string
+          enum: [AUDIT_ENTRIES, DOMAIN_EVENTS, DOMAIN_EVENT_VERIFICATION]
+        filters:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - entity
+              - entity_pk
+              - user_id
+              - action
+              - kind
+              - actor_user_id
+              - actor_role
+              - model_version_id
+              - subject_type
+              - subject_id
+              - store_id
+              - outcome
+              - source
+              - from
+              - to
+              - page
+              - size
+    DomainEvent:
+      type: object
+      additionalProperties: false
+      description: >-
+        One domain event as `api_audit.record_event_v1` recorded it
+        (ADR-0072). `details` holds ids, codes, versions and counts only, with
+        exactly the keys its kind allows, and never a credential (RN-29). In
+        XML a null member is omitted, and `details` holds one element named
+        for the kind's details type.
+      required:
+        - event_id
+        - kind
+        - outcome
+        - occurred_at
+        - recorded_at
+        - actor_type
+        - actor_user_id
+        - actor_role
+        - source
+        - store_id
+        - subject_type
+        - subject_id
+        - model_version_id
+        - rule_set_version
+        - correlation_id
+        - details
+        - prev_hash
+        - entry_hash
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        kind:
+          $ref: '#/components/schemas/DomainEventKind'
+        outcome:
+          $ref: '#/components/schemas/DomainEventOutcome'
+        occurred_at:
+          type: string
+          format: date-time
+          description: The moment of the act, as its producer stated it.
+        recorded_at:
+          type: string
+          format: date-time
+          description: The database's clock when the event was recorded.
+        actor_type:
+          $ref: '#/components/schemas/ActorType'
+        actor_user_id:
+          type: [string, 'null']
+          format: uuid
+        actor_role:
+          oneOf:
+            - $ref: '#/components/schemas/RoleCode'
+            - type: 'null'
+        source:
+          $ref: '#/components/schemas/Source'
+        store_id:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 32767
+        subject_type:
+          oneOf:
+            - $ref: '#/components/schemas/SubjectType'
+            - type: 'null'
+        subject_id:
+          oneOf:
+            - $ref: '#/components/schemas/SubjectId'
+            - type: 'null'
+        model_version_id:
+          oneOf:
+            - $ref: '#/components/schemas/ModelVersionId'
+            - type: 'null'
+        rule_set_version:
+          type: [integer, 'null']
+          format: int64
+          minimum: 1
+        correlation_id:
+          type: [string, 'null']
+          pattern: '^[0-9A-Za-z-]{1,64}$'
+        details:
+          type: object
+        prev_hash:
+          $ref: '#/components/schemas/Sha256Hex'
+        entry_hash:
+          $ref: '#/components/schemas/Sha256Hex'
+      allOf:
+        - if:
+            properties:
+              kind:
+                const: CALCULATION_RUN
+          then:
+            properties:
+              details:
+                $ref: '#/components/schemas/CalculationRunDetails'
+        - if:
+            properties:
+              kind:
+                enum: [MODEL_PUBLISHED, MODEL_ROLLED_BACK]
+          then:
+            properties:
+              details:
+                $ref: '#/components/schemas/ModelChangeDetails'
+        - if:
+            properties:
+              kind:
+                const: PERMISSION_CHANGED
+          then:
+            properties:
+              details:
+                $ref: '#/components/schemas/PermissionChangedDetails'
+        - if:
+            properties:
+              kind:
+                const: CRITICAL_ACTION
+          then:
+            properties:
+              details:
+                $ref: '#/components/schemas/CriticalActionDetails'
+        - if:
+            properties:
+              kind:
+                const: HISTORY_READ
+          then:
+            properties:
+              details:
+                $ref: '#/components/schemas/HistoryReadDetails'
+        - if:
+            properties:
+              kind:
+                const: AUDIT_READ
+          then:
+            properties:
+              details:
+                $ref: '#/components/schemas/AuditReadDetails'
+      xml:
+        name: DomainEvent
+        namespace: https://mosaiq.maxthecoder.online/xml/audit-trail/v1
+    DomainEvents:
+      type: object
+      additionalProperties: false
+      required:
+        - domain_events
+        - page_info
+      properties:
+        domain_events:
+          type: array
+          description: Events ordered by `recorded_at` descending, then by reverse hash-chain order.
+          items:
+            $ref: '#/components/schemas/DomainEvent'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: DomainEvents
+        namespace: https://mosaiq.maxthecoder.online/xml/audit-trail/v1
+    DomainEventVerification:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - checked
+        - head_hash
+        - first_broken_event_id
+        - reason
+      properties:
+        status:
+          type: string
+          enum: [ok, broken]
+        checked:
+          type: integer
+          minimum: 0
+          description: The number of events in the range that were recomputed.
+        head_hash:
+          description: The `entry_hash` of the newest event in the range, or null when the range is empty.
+          oneOf:
+            - $ref: '#/components/schemas/Sha256Hex'
+            - type: 'null'
+        first_broken_event_id:
+          type: [string, 'null']
+          format: uuid
+          description: The first event, oldest first, whose hash or link does not match; null when `ok`.
+        reason:
+          type: [string, 'null']
+          enum: [entry_hash_mismatch, prev_hash_mismatch, null]
+          description: Why that event broke the chain; null when `ok`.
+      xml:
+        name: DomainEventVerification
         namespace: https://mosaiq.maxthecoder.online/xml/audit-trail/v1
     PageInfo:
       type: object
@@ -621,6 +1340,86 @@ components:
             invalid_pagination:
               value: |-
                 <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>invalid_pagination</code><message>Pagination values are outside their allowed ranges.</message><correlation_id>corr-list-001</correlation_id><details><field>page</field><code>minimum</code></details></Error>
+    DomainEventNotFound:
+      description: '`domain_event_not_found`, or the kit''s `not_found` for an `event_id` that is not a UUID.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            domain_event_not_found:
+              externalValue: ./examples/domain-event-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            domain_event_not_found:
+              externalValue: ./examples/domain-event-not-found.xml
+    DomainEventQueryValidation:
+      description: '`invalid_query` or `invalid_pagination`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_kind:
+              externalValue: ./examples/domain-events-invalid-kind.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_kind:
+              externalValue: ./examples/domain-events-invalid-kind.xml
+    RecordedReadUnavailable:
+      description: >-
+        `auth_unavailable`, `database_unavailable`, or `audit_unavailable` when
+        the read's own `AUDIT_READ` event cannot be recorded, in which case no
+        data is returned (ADR-0072 section 4).
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              value:
+                code: auth_unavailable
+                message: Session state cannot be checked.
+                correlation_id: corr-dependency-503a
+                details: []
+            database_unavailable:
+              value:
+                code: database_unavailable
+                message: The audit database is unavailable.
+                correlation_id: corr-dependency-503b
+                details: []
+            audit_unavailable:
+              value:
+                code: audit_unavailable
+                message: The read could not be recorded, so it was not served.
+                correlation_id: corr-dependency-503c
+                details: []
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            auth_unavailable:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>auth_unavailable</code><message>Session state cannot be checked.</message><correlation_id>corr-dependency-503a</correlation_id></Error>
+            database_unavailable:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>database_unavailable</code><message>The audit database is unavailable.</message><correlation_id>corr-dependency-503b</correlation_id></Error>
+            audit_unavailable:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>audit_unavailable</code><message>The read could not be recorded, so it was not served.</message><correlation_id>corr-dependency-503c</correlation_id></Error>
     RateLimited:
       description: '`rate_limited`.'
       headers:
@@ -647,7 +1446,9 @@ components:
               value: |-
                 <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>rate_limited</code><message>The request limit was exceeded.</message><correlation_id>corr-rate-429</correlation_id></Error>
     ProtectedDatabaseUnavailable:
-      description: '`auth_unavailable` or `database_unavailable`.'
+      description: >-
+        `auth_unavailable`, `database_unavailable`, or `audit_unavailable` when
+        the read's `AUDIT_READ` event cannot be recorded (ADR-0072).
       headers:
         X-Correlation-ID:
           $ref: '#/components/headers/CorrelationId'
@@ -668,6 +1469,12 @@ components:
                 message: The audit database is unavailable.
                 correlation_id: corr-dependency-503b
                 details: []
+            audit_unavailable:
+              value:
+                code: audit_unavailable
+                message: The read could not be recorded, so it was not served.
+                correlation_id: corr-dependency-503c
+                details: []
         application/xml:
           schema:
             $ref: '#/components/schemas/Error'
@@ -678,6 +1485,9 @@ components:
             database_unavailable:
               value: |-
                 <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>database_unavailable</code><message>The audit database is unavailable.</message><correlation_id>corr-dependency-503b</correlation_id></Error>
+            audit_unavailable:
+              value: |-
+                <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1"><code>audit_unavailable</code><message>The read could not be recorded, so it was not served.</message><correlation_id>corr-dependency-503c</correlation_id></Error>
     SchemaNotReady:
       description: '`schema_not_ready`.'
       headers:

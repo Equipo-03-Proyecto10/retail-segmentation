@@ -8,7 +8,7 @@
 | Kind | PostgreSQL view |
 | Owning boundary | sales |
 | Producer | sales-service |
-| Consumers | recommendations |
+| Consumers | recommendations, customer-preferences |
 
 The view publishes the purchases that still count: one row for each line of an
 accepted sale that has at least one unit left after its reversals. It is the
@@ -73,4 +73,6 @@ revision is published as `api_sales.net_purchase_line_v2` with a matching
 The view's `USAGE` and `SELECT` rows in `contracts/db/grants.csv` are added in the
 same pull request as its definition in `sql/01_schema.sql`, which is the
 implementation story of the reversal contract (F21-03). Each further consumer is
-added to the table above by the story that grants it.
+added to the table above by the story that grants it. customer-preferences reads it to
+infer interests from what a customer bought (F21-18, #796): `USAGE` on `api_sales` and
+`SELECT` on this view, granted in the same pull request as the table the inference writes.

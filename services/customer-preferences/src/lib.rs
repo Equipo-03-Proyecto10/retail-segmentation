@@ -9,11 +9,21 @@
 //! DELETE of the ids it no longer holds and an INSERT of the ids it lacks.
 //! Channels and categories are checked by foreign key, so 23503 maps to 422
 //! by constraint name. Every statement is a constant with bound parameters.
+//!
+//! A replace that changes a set also appends its before and after to the
+//! preference history, in the same transaction (F21-17). Consent, restrictions
+//! and the readers of those logs are in [`consent`].
+
+mod consent;
 
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
+use axum::body::Body;
+use axum::extract::Request;
+use axum::middleware::{self, Next};
+use axum::response::Response;
 use axum::Router;
 use mosaiq_kit::{
     service_redis_info, ApiError, Ctx, Database, Detail, Kit, KitConfig, OutboxRelay, Principal,
@@ -22,11 +32,35 @@ use mosaiq_kit::{
 use serde_json::Value as JsonValue;
 use uuid::Uuid;
 
+pub use consent::{
+    parse_as_of, parse_consent_entries, parse_filter, parse_restriction_entries, read_changes,
+    read_consent, read_logged_log, read_restrictions, record_consent, record_history_read,
+    record_restrictions, ConsentState, Log, PurposeState, Recorded, RefusalLog, RestrictionEntry,
+    Restrictions, DECISION_LOCK_CLASS, PURPOSES,
+};
+
+tokio::task_local! {
+    static REQUEST_QUERY: String;
+}
+
+/// The query string of the request being handled; the kit parses the
+/// pagination only.
+pub(crate) fn request_query() -> String {
+    REQUEST_QUERY.try_with(Clone::clone).unwrap_or_default()
+}
+
+async fn capture_query(request: Request<Body>, next: Next) -> Response {
+    let query = request.uri().query().unwrap_or_default().to_owned();
+    REQUEST_QUERY.scope(query, next.run(request)).await
+}
+
 pub const SERVICE: &str = "customer-preferences";
 /// The `svc_` role suffix: `svc_preferences`, `preferences_events`,
 /// `preferences:rl:*` and `REDIS_PREFERENCES_PASSWORD`.
 pub const SUFFIX: &str = "preferences";
 pub const STREAM: &str = "stream:preferences.v1.changed";
+/// The consent and restriction logs' stream (F21-17).
+pub const CONSENT_STREAM: &str = "stream:preferences.v1.consent_changed";
 pub const PORT: u16 = 5008;
 /// The first key of the two-key advisory lock (contracts/db/advisory-locks.md).
 pub const LOCK_CLASS: i32 = 290_001;
@@ -53,7 +87,15 @@ const READ_REPLACED: &str = "SELECT \
 /// the service role and never executed.
 const READY: &str = "SELECT FROM api_customers.customer_ref_v1, \
      public.customer_preferred_channel, public.customer_interest_category, \
-     api_preferences.interest_category_v1, preferences_events.outbox LIMIT 0";
+     api_preferences.interest_category_v1, api_preferences.consent_state_v1, \
+     api_preferences.restriction_v1, preferences.consent_decision, \
+     preferences.restriction_decision, preferences.preference_change, \
+     preferences.preference_change_member, preferences_events.outbox LIMIT 0";
+const INSERT_CHANGE: &str = "INSERT INTO preferences.preference_change \
+     (customer_id, preference_set, changed_by) VALUES ($1, $2, $3) RETURNING change_id";
+const INSERT_MEMBERS: &str = "INSERT INTO preferences.preference_change_member \
+     (change_id, side, member_id) \
+     SELECT $1::bigint, $2::text, m FROM unnest($3::smallint[]) AS m";
 
 /// One of the two independent multivalued facts of a customer (4NF).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -102,6 +144,14 @@ impl PreferenceSet {
         match self {
             Self::PreferredChannels => "channel_ids",
             Self::InterestCategories => "category_ids",
+        }
+    }
+
+    /// The set as the preference history names it.
+    pub fn history_name(self) -> &'static str {
+        match self {
+            Self::PreferredChannels => "PREFERRED_CHANNELS",
+            Self::InterestCategories => "INTEREST_CATEGORIES",
         }
     }
 
@@ -281,6 +331,28 @@ pub async fn replace(
             .map_err(|error| set.insert_error(error, index))?;
     }
 
+    let mut before: Vec<i16> = current.into_iter().collect();
+    before.sort_unstable();
+    let mut after = kept;
+    after.sort_unstable();
+    if before != after {
+        let changed_by = Uuid::parse_str(&actor.sub)
+            .map_err(|_| ApiError::new(401, "invalid_token", "The bearer token is invalid."))?;
+        let change_id: i64 = transaction
+            .query_one(
+                INSERT_CHANGE,
+                &[&customer_id, &set.history_name(), &changed_by],
+            )
+            .await
+            .map_err(consent::write_error)?
+            .try_get(0)?;
+        for (side, ids) in [("BEFORE", &before), ("AFTER", &after)] {
+            transaction
+                .execute(INSERT_MEMBERS, &[&change_id, &side, ids])
+                .await?;
+        }
+    }
+
     let row = transaction
         .query_one(READ_REPLACED, &[&customer_id])
         .await?;
@@ -301,7 +373,7 @@ pub async fn replace(
     })
 }
 
-fn path_customer(ctx: &Ctx) -> Result<Uuid, ApiError> {
+pub(crate) fn path_customer(ctx: &Ctx) -> Result<Uuid, ApiError> {
     ctx.path_uuid("customer_id").ok_or_else(customer_not_found)
 }
 
@@ -340,12 +412,32 @@ async fn database_ready(db: Arc<Database>) -> bool {
 }
 
 pub fn router(config: KitConfig, contracts: &str) -> Result<Router, Box<dyn std::error::Error>> {
-    Ok(Kit::new(SERVICE, SUFFIX, contracts, config)?
+    let kit = Kit::new(SERVICE, SUFFIX, contracts, config.clone())?;
+    let refusals = Arc::new(RefusalLog::new(&config, kit.database())?);
+    Ok(kit
         .operation("getPreferenceProfile", get_preference_profile)?
         .operation("replacePreferredChannels", replace_preferred_channels)?
         .operation("replaceInterestCategories", replace_interest_categories)?
+        .operation("getRestrictionProfile", consent::get_restriction_profile)?
+        .operation("getConsentState", consent::get_consent_state)?
+        .operation("listConsentDecisions", consent::list_consent_decisions)?
+        .operation("recordConsentDecisions", consent::record_consent_decisions)?
+        .operation(
+            "listRestrictionDecisions",
+            consent::list_restriction_decisions,
+        )?
+        .operation(
+            "recordRestrictionDecisions",
+            consent::record_restriction_decisions,
+        )?
+        .operation("listPreferenceChanges", consent::list_preference_changes)?
         .ready_check(database_ready)
-        .into_router())
+        .into_router()
+        .layer(middleware::from_fn_with_state(
+            refusals,
+            consent::log_refusals,
+        ))
+        .layer(middleware::from_fn(capture_query)))
 }
 
 async fn redis_connection(
@@ -358,7 +450,8 @@ async fn redis_connection(
         .await
 }
 
-/// The kit's outbox relay for `stream:preferences.v1.changed`. The first
+/// The kit's outbox relay for `stream:preferences.v1.changed` and
+/// `stream:preferences.v1.consent_changed`. The first
 /// connection is retried every second, so the service comes up during a Redis
 /// outage; after that the kit rebuilds the connection after every outage
 /// (#579). Protected operations still fail closed through the kit.
@@ -372,7 +465,7 @@ pub async fn run_relay(database_url: &str, redis_url: &str, redis_password: Opti
             }
         }
     };
-    let relay = match OutboxRelay::new(database_url, SUFFIX, [STREAM], connection) {
+    let relay = match OutboxRelay::new(database_url, SUFFIX, [STREAM, CONSENT_STREAM], connection) {
         Ok(relay) => relay,
         Err(error) => {
             tracing::error!("The preferences outbox relay is misconfigured: {error}");

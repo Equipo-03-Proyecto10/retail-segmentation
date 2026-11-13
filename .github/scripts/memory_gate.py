@@ -1,8 +1,13 @@
-"""ADR-0040's memory gate: every container's mem_limit sums to at most 3,000 MB.
+"""The memory gate: every container's mem_limit sums to at most 3,500 MB.
+
+ADR-0040 set the gate at 3,000 MB; ADR-0059 moves it to 3,500 MB for the four
+services its map adds, and F19-08 (#758) applies it after measuring the
+instance under load (docs/evidence/f19-08-memory.md).
 
     python3 .github/scripts/memory_gate.py [compose.yaml ...]
 
-Without arguments it reads deploy/infra/compose.yaml and every
+Without arguments it reads every compose project that runs on the instance:
+deploy/infra/compose.yaml, ops/console/compose.yaml (ADR-0055) and every
 services/*/compose.yaml. A limit is a whole number of `m` or `g` (1g = 1024m);
 a container without one, or with any other form, fails the gate. Prints the
 total when it passes; prints each problem and exits 1 when it does not.
@@ -16,7 +21,7 @@ from pathlib import Path
 
 import yaml
 
-BUDGET_MB = 3000
+BUDGET_MB = 3500
 _LIMIT = re.compile(r"([0-9]+)([mg])")
 
 
@@ -42,7 +47,7 @@ def check(files: list[Path]) -> tuple[int, list[str]]:
                 total += size
     if total > BUDGET_MB:
         problems.append(
-            f"FAIL: mem_limit sums to {total} MB, above {BUDGET_MB:,} MB (ADR-0040)"
+            f"FAIL: mem_limit sums to {total} MB, above {BUDGET_MB:,} MB (ADR-0059)"
         )
     return total, problems
 
@@ -50,6 +55,7 @@ def check(files: list[Path]) -> tuple[int, list[str]]:
 def main(arguments: list[str]) -> int:
     files = [Path(argument) for argument in arguments] or [
         Path("deploy/infra/compose.yaml"),
+        Path("ops/console/compose.yaml"),
         *sorted(Path("services").glob("*/compose.yaml")),
     ]
     total, problems = check(files)

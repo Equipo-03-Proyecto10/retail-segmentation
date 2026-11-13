@@ -6,7 +6,7 @@
 |---|---|
 | Stream | `stream:preferences.v1.consent_changed` |
 | Producer | customer-preferences-service |
-| Captured tables | The consent log and the restriction log, in a customer-preferences service schema (ADR-0046); the schema story, F21-17 (#795), names them |
+| Captured tables | `preferences.consent_decision` and `preferences.restriction_decision`, the two append-only logs in the customer-preferences service schema (ADR-0046, F21-17) |
 | Captured operations | `INSERT`, by any writer; both logs are append-only, so there is no `UPDATE` or `DELETE` to capture |
 | Outbox | `preferences_events.outbox` |
 | Private wake-up channel | `preferences_outbox` |

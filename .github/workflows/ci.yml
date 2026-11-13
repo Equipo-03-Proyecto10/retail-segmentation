@@ -126,7 +126,7 @@ jobs:
       - run: pip install -r contracts/requirements.txt
       - name: Repository guards stay silent
         run: bash .github/scripts/guards.sh
-      - name: Every mem_limit sums to at most 3,000 MB
+      - name: Every mem_limit sums to at most 3,500 MB
         run: python3 .github/scripts/memory_gate.py
 
   database:

@@ -2182,6 +2182,8 @@ GRANT SELECT ON api_segments.current_label_v1 TO svc_segments, svc_recommendatio
 -- channel or category delete are announced too. The tables carry no audit
 -- trigger, and this section adds none.
 
+CREATE SCHEMA IF NOT EXISTS preferences;
+REVOKE ALL ON SCHEMA preferences FROM PUBLIC;
 CREATE SCHEMA IF NOT EXISTS api_preferences;
 REVOKE ALL ON SCHEMA api_preferences FROM PUBLIC;
 CREATE SCHEMA IF NOT EXISTS preferences_events;
@@ -2199,6 +2201,171 @@ CREATE TABLE IF NOT EXISTS preferences_events.outbox (
 CREATE INDEX IF NOT EXISTS outbox_unrelayed
     ON preferences_events.outbox (occurred_at) WHERE relayed_at IS NULL;
 
+-- F21-17 (#795, ADR-0066, RN-73): the consent log, the restriction log and the
+-- preference history. All four tables are append-only: svc_preferences holds
+-- SELECT and INSERT and nothing else, and a trigger refuses UPDATE, DELETE and
+-- TRUNCATE for every role, the owner included (refuse_change, below). A
+-- customer is never deleted (RN-08), so the foreign keys to it are RESTRICT.
+
+-- One row per consent decision. The current state of a purpose is its row with
+-- the largest decision_id. recorded_by is null exactly for the backfill that
+-- gave customers registered before consent existed their programme default.
+CREATE TABLE IF NOT EXISTS preferences.consent_decision (
+    decision_id BIGINT GENERATED ALWAYS AS IDENTITY,
+    customer_id UUID NOT NULL,
+    purpose VARCHAR(20) NOT NULL,
+    decision VARCHAR(20) NOT NULL,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    recorded_by UUID,
+    source VARCHAR(20) NOT NULL,
+    basis VARCHAR(20) NOT NULL,
+    CONSTRAINT consent_decision_pkey PRIMARY KEY (decision_id),
+    CONSTRAINT consent_decision_customer_id_fkey FOREIGN KEY (customer_id)
+        REFERENCES public.customer(customer_id) ON DELETE RESTRICT,
+    CONSTRAINT consent_decision_recorded_by_fkey FOREIGN KEY (recorded_by)
+        REFERENCES public.app_user(user_id) ON DELETE RESTRICT,
+    CONSTRAINT consent_decision_purpose_check
+        CHECK (purpose IN ('PERSONALIZATION', 'MARKETING_CONTACT', 'PROFILING')),
+    CONSTRAINT consent_decision_decision_check
+        CHECK (decision IN ('GRANTED', 'WITHDRAWN')),
+    CONSTRAINT consent_decision_source_check
+        CHECK (source IN ('STAFF_ON_BEHALF', 'CUSTOMER_SELF', 'MIGRATION')),
+    CONSTRAINT consent_decision_basis_check
+        CHECK (basis IN ('EXPLICIT', 'PROGRAMME_DEFAULT')),
+    CONSTRAINT consent_decision_migration_check
+        CHECK ((source = 'MIGRATION') = (recorded_by IS NULL)
+           AND (source = 'MIGRATION') = (basis = 'PROGRAMME_DEFAULT'))
+);
+CREATE INDEX IF NOT EXISTS consent_decision_customer_purpose
+    ON preferences.consent_decision (customer_id, purpose, decision_id DESC);
+
+-- One row per restriction decision. A restriction names a channel or an
+-- interest category: two nullable references, exactly one set, each with its
+-- own foreign key; target_id is the one that is set.
+CREATE TABLE IF NOT EXISTS preferences.restriction_decision (
+    decision_id BIGINT GENERATED ALWAYS AS IDENTITY,
+    customer_id UUID NOT NULL,
+    kind VARCHAR(20) NOT NULL,
+    channel_id SMALLINT,
+    category_id SMALLINT,
+    target_id SMALLINT GENERATED ALWAYS AS (COALESCE(channel_id, category_id)) STORED,
+    decision VARCHAR(20) NOT NULL,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    recorded_by UUID NOT NULL,
+    source VARCHAR(20) NOT NULL,
+    CONSTRAINT restriction_decision_pkey PRIMARY KEY (decision_id),
+    CONSTRAINT restriction_decision_customer_id_fkey FOREIGN KEY (customer_id)
+        REFERENCES public.customer(customer_id) ON DELETE RESTRICT,
+    CONSTRAINT restriction_decision_channel_id_fkey FOREIGN KEY (channel_id)
+        REFERENCES public.channel(channel_id) ON DELETE RESTRICT,
+    CONSTRAINT restriction_decision_category_id_fkey FOREIGN KEY (category_id)
+        REFERENCES public.category(category_id) ON DELETE RESTRICT,
+    CONSTRAINT restriction_decision_recorded_by_fkey FOREIGN KEY (recorded_by)
+        REFERENCES public.app_user(user_id) ON DELETE RESTRICT,
+    CONSTRAINT restriction_decision_kind_check
+        CHECK (kind IN ('CHANNEL', 'INTEREST_CATEGORY')),
+    CONSTRAINT restriction_decision_target_check
+        CHECK ((kind = 'CHANNEL' AND channel_id IS NOT NULL AND category_id IS NULL)
+            OR (kind = 'INTEREST_CATEGORY' AND category_id IS NOT NULL AND channel_id IS NULL)),
+    CONSTRAINT restriction_decision_decision_check
+        CHECK (decision IN ('IMPOSED', 'LIFTED')),
+    CONSTRAINT restriction_decision_source_check
+        CHECK (source IN ('STAFF_ON_BEHALF', 'CUSTOMER_SELF'))
+);
+CREATE INDEX IF NOT EXISTS restriction_decision_customer_target
+    ON preferences.restriction_decision (customer_id, kind, target_id, decision_id DESC);
+-- The RESTRICT checks when the web deletes a channel or categories-service
+-- deletes a category scan the child by these keys.
+CREATE INDEX IF NOT EXISTS restriction_decision_channel
+    ON preferences.restriction_decision (channel_id) WHERE channel_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS restriction_decision_category
+    ON preferences.restriction_decision (category_id) WHERE category_id IS NOT NULL;
+
+-- One row per replace of a declared set that changed it. The ids the set held
+-- before and holds after are in preference_change_member, one row per id.
+CREATE TABLE IF NOT EXISTS preferences.preference_change (
+    change_id BIGINT GENERATED ALWAYS AS IDENTITY,
+    customer_id UUID NOT NULL,
+    preference_set VARCHAR(20) NOT NULL,
+    changed_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    changed_by UUID NOT NULL,
+    CONSTRAINT preference_change_pkey PRIMARY KEY (change_id),
+    CONSTRAINT preference_change_customer_id_fkey FOREIGN KEY (customer_id)
+        REFERENCES public.customer(customer_id) ON DELETE RESTRICT,
+    CONSTRAINT preference_change_changed_by_fkey FOREIGN KEY (changed_by)
+        REFERENCES public.app_user(user_id) ON DELETE RESTRICT,
+    CONSTRAINT preference_change_set_check
+        CHECK (preference_set IN ('PREFERRED_CHANNELS', 'INTEREST_CATEGORIES'))
+);
+CREATE INDEX IF NOT EXISTS preference_change_customer
+    ON preferences.preference_change (customer_id, change_id DESC);
+
+-- member_id is a channel id or a category id by the change's preference_set. It
+-- has no foreign key on purpose: it records what the set held at a past
+-- moment, and must stay readable after a channel or category is retired.
+CREATE TABLE IF NOT EXISTS preferences.preference_change_member (
+    change_id BIGINT NOT NULL,
+    side VARCHAR(6) NOT NULL,
+    member_id SMALLINT NOT NULL,
+    CONSTRAINT preference_change_member_pkey PRIMARY KEY (change_id, side, member_id),
+    CONSTRAINT preference_change_member_change_id_fkey FOREIGN KEY (change_id)
+        REFERENCES preferences.preference_change(change_id) ON DELETE RESTRICT,
+    CONSTRAINT preference_change_member_side_check CHECK (side IN ('BEFORE', 'AFTER'))
+);
+
+-- The second layer after the privileges, as for audit_events.domain_event:
+-- even the owner's UPDATE, DELETE or TRUNCATE is refused unless an operator's
+-- archiving script drops these triggers first.
+CREATE OR REPLACE FUNCTION preferences.refuse_change() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, pg_temp
+AS $refuse$
+BEGIN
+    RAISE EXCEPTION '%.% is append-only (% refused)', TG_TABLE_SCHEMA, TG_TABLE_NAME, TG_OP
+        USING ERRCODE = 'check_violation', CONSTRAINT = TG_TABLE_NAME || '_append_only';
+END
+$refuse$;
+CREATE OR REPLACE TRIGGER consent_decision_append_only
+BEFORE UPDATE OR DELETE ON preferences.consent_decision
+FOR EACH ROW EXECUTE FUNCTION preferences.refuse_change();
+CREATE OR REPLACE TRIGGER consent_decision_no_truncate
+BEFORE TRUNCATE ON preferences.consent_decision
+FOR EACH STATEMENT EXECUTE FUNCTION preferences.refuse_change();
+CREATE OR REPLACE TRIGGER restriction_decision_append_only
+BEFORE UPDATE OR DELETE ON preferences.restriction_decision
+FOR EACH ROW EXECUTE FUNCTION preferences.refuse_change();
+CREATE OR REPLACE TRIGGER restriction_decision_no_truncate
+BEFORE TRUNCATE ON preferences.restriction_decision
+FOR EACH STATEMENT EXECUTE FUNCTION preferences.refuse_change();
+CREATE OR REPLACE TRIGGER preference_change_append_only
+BEFORE UPDATE OR DELETE ON preferences.preference_change
+FOR EACH ROW EXECUTE FUNCTION preferences.refuse_change();
+CREATE OR REPLACE TRIGGER preference_change_no_truncate
+BEFORE TRUNCATE ON preferences.preference_change
+FOR EACH STATEMENT EXECUTE FUNCTION preferences.refuse_change();
+CREATE OR REPLACE TRIGGER preference_change_member_append_only
+BEFORE UPDATE OR DELETE ON preferences.preference_change_member
+FOR EACH ROW EXECUTE FUNCTION preferences.refuse_change();
+CREATE OR REPLACE TRIGGER preference_change_member_no_truncate
+BEFORE TRUNCATE ON preferences.preference_change_member
+FOR EACH STATEMENT EXECUTE FUNCTION preferences.refuse_change();
+
+-- ADR-0066 section 1, the default for customers registered before consent
+-- existed: PROFILING and PERSONALIZATION granted, MARKETING_CONTACT withdrawn,
+-- each as a MIGRATION row with no actor. It runs only against an empty log, so
+-- it gives the customers that exist when the log is created their default and
+-- never a customer registered afterwards, who has none until a decision is
+-- recorded. On an empty database there is no customer yet and it appends
+-- nothing; 02_seed_30_per_table.sql appends the seeded customers' defaults.
+INSERT INTO preferences.consent_decision (customer_id, purpose, decision, recorded_by, source, basis)
+SELECT c.customer_id, p.purpose, p.decision, NULL, 'MIGRATION', 'PROGRAMME_DEFAULT'
+FROM public.customer AS c
+CROSS JOIN (VALUES ('PERSONALIZATION', 'GRANTED'),
+                   ('MARKETING_CONTACT', 'WITHDRAWN'),
+                   ('PROFILING', 'GRANTED')) AS p(purpose, decision)
+WHERE NOT EXISTS (SELECT FROM preferences.consent_decision)
+ORDER BY c.customer_id, p.purpose;
+
 -- contracts/db/api_preferences.interest_category.v1.md. Definer rights
 -- (security_invoker = off): recommendations reads these two columns and needs
 -- no privilege on the base table.
@@ -2207,6 +2374,43 @@ WITH (security_invoker = off) AS
 SELECT customer_id, category_id
 FROM public.customer_interest_category;
 REVOKE ALL ON api_preferences.interest_category_v1 FROM PUBLIC;
+
+-- contracts/db/api_preferences.consent_state.v1.md: the latest decision of each
+-- purpose, by decision_id. No actor and no source: reading a customer's state
+-- is not reading the log.
+CREATE OR REPLACE VIEW api_preferences.consent_state_v1
+WITH (security_invoker = off) AS
+SELECT DISTINCT ON (d.customer_id, d.purpose)
+       d.customer_id, d.purpose, d.decision, d.decision_id, d.recorded_at, d.basis
+FROM preferences.consent_decision AS d
+ORDER BY d.customer_id, d.purpose, d.decision_id DESC;
+REVOKE ALL ON api_preferences.consent_state_v1 FROM PUBLIC;
+
+-- contracts/db/api_preferences.restriction_v1.md: a row while the latest
+-- decision for the target is IMPOSED.
+CREATE OR REPLACE VIEW api_preferences.restriction_v1
+WITH (security_invoker = off) AS
+SELECT latest.customer_id, latest.kind, latest.target_id, latest.decision_id,
+       latest.recorded_at AS imposed_at
+FROM (
+    SELECT DISTINCT ON (d.customer_id, d.kind, d.target_id)
+           d.customer_id, d.kind, d.target_id, d.decision, d.decision_id, d.recorded_at
+    FROM preferences.restriction_decision AS d
+    ORDER BY d.customer_id, d.kind, d.target_id, d.decision_id DESC
+) AS latest
+WHERE latest.decision = 'IMPOSED';
+REVOKE ALL ON api_preferences.restriction_v1 FROM PUBLIC;
+
+-- The web's batch segmentation cannot read api_preferences (ADR-0046) and
+-- consumes no service, so it reads this read-only view with the same
+-- definition: the database route of ADR-0045 (ADR-0066 section 2). SELECT
+-- only; the default privileges of public must not make it writable.
+CREATE OR REPLACE VIEW public.consent_state
+WITH (security_invoker = off) AS
+SELECT customer_id, purpose, decision, decision_id, recorded_at, basis
+FROM api_preferences.consent_state_v1;
+REVOKE ALL ON public.consent_state FROM PUBLIC, retail_app;
+GRANT SELECT ON public.consent_state TO retail_app;
 
 -- Captures every writer of either set, the web included, in the writer's
 -- transaction. entity_id is the customer whose profile changed (ADR-0044).
@@ -2240,6 +2444,32 @@ CREATE OR REPLACE TRIGGER trg_capture_interest_category_changed
 AFTER INSERT OR DELETE ON public.customer_interest_category
 FOR EACH ROW EXECUTE FUNCTION preferences_events.capture_changed();
 
+-- The consent stream (contracts/streams/preferences.consent_changed.v1.md):
+-- one key-only event per row appended to either log, in the transaction that
+-- appends it, so a rollback announces nothing and the views already show the
+-- change when the event is visible.
+CREATE OR REPLACE FUNCTION preferences_events.capture_consent_changed() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+BEGIN
+    INSERT INTO preferences_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:preferences.v1.consent_changed', TG_OP, NEW.customer_id::text);
+    PERFORM pg_notify('preferences_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION preferences_events.capture_consent_changed() OWNER TO definer_preferences;
+REVOKE EXECUTE ON FUNCTION preferences_events.capture_consent_changed() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_capture_consent_decision_changed
+AFTER INSERT ON preferences.consent_decision
+FOR EACH ROW EXECUTE FUNCTION preferences_events.capture_consent_changed();
+CREATE OR REPLACE TRIGGER trg_capture_restriction_decision_changed
+AFTER INSERT ON preferences.restriction_decision
+FOR EACH ROW EXECUTE FUNCTION preferences_events.capture_consent_changed();
+
 -- Whole-set replace: SELECT, INSERT and DELETE, never UPDATE. The customer is
 -- checked through api_customers.customer_ref_v1 (granted in the customers
 -- section), and channels and categories by foreign key, which needs no
@@ -2251,8 +2481,16 @@ GRANT USAGE ON SCHEMA preferences_events TO svc_preferences, definer_preferences
 GRANT INSERT ON preferences_events.outbox TO definer_preferences;
 GRANT SELECT, DELETE, UPDATE (relayed_at) ON preferences_events.outbox TO svc_preferences;
 
-GRANT USAGE ON SCHEMA api_preferences TO svc_preferences, svc_recommendations;
+GRANT USAGE ON SCHEMA preferences TO svc_preferences;
+GRANT SELECT, INSERT ON preferences.consent_decision, preferences.restriction_decision,
+    preferences.preference_change, preferences.preference_change_member TO svc_preferences;
+
+GRANT USAGE ON SCHEMA api_preferences TO svc_preferences, svc_recommendations, svc_campaigns;
 GRANT SELECT ON api_preferences.interest_category_v1 TO svc_preferences, svc_recommendations;
+-- The readers named by contracts/db/api_preferences.consent_state.v1.md and
+-- restriction.v1.md whose roles exist; rfm-engine's follows with its role.
+GRANT SELECT ON api_preferences.consent_state_v1 TO svc_preferences, svc_recommendations, svc_campaigns;
+GRANT SELECT ON api_preferences.restriction_v1 TO svc_preferences, svc_recommendations, svc_campaigns;
 -- END BOUNDARY customer-preferences
 
 -- BEGIN BOUNDARY categories

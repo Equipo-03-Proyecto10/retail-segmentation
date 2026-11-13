@@ -1,6 +1,6 @@
 # customer-preferences
 
-> **Status:** Implemented (phase 14, core; F14-16, #475) for the two declared sets. Contract extended in phase 21 (F21-16, #794) with consent, restrictions, inferred interests and history: those operations are marked `x-mosaiq-status: planned` (ADR-0073) and are implemented by F21-17 (#795). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
+> **Status:** Implemented (phase 14, core; F14-16, #475) for the two declared sets, and in phase 21 for consent, restrictions and the preference history (F21-16, #794; F21-17, #795). `GET .../interests` stays marked `x-mosaiq-status: planned` (ADR-0073): the inference it serves is F21-18 (#796). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
 > **One rule:** A customer's preferred channels and interest categories are each replaced only atomically, as a whole set of existing references, and their consent and restrictions change only by appending a recorded, attributed decision that is never edited or removed (RN-54, RN-73)
 
 ## Summary
@@ -35,13 +35,13 @@
 | PUT | `/v1/preference-profiles/{customer_id}/preferred-channels` | Replace the whole set of preferred channels | ADMIN, STORE_MANAGER, LOYALTY_OFFICER |
 | PUT | `/v1/preference-profiles/{customer_id}/interest-categories` | Replace the whole set of declared interest categories | ADMIN, STORE_MANAGER, LOYALTY_OFFICER |
 | GET | `/v1/preference-profiles/{customer_id}/interests` | Declared and inferred interests, in separate members (planned) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR, SALES_ASSOCIATE, LOYALTY_OFFICER |
-| GET | `/v1/preference-profiles/{customer_id}/restrictions` | Current restricted channels and categories, and whether personalization is allowed (planned) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR, SALES_ASSOCIATE, LOYALTY_OFFICER |
-| GET | `/v1/preference-profiles/{customer_id}/consent` | State of the three purposes, now or at `as_of` (planned) | ADMIN, AUDITOR, STORE_MANAGER, LOYALTY_OFFICER |
-| GET | `/v1/preference-profiles/{customer_id}/consent-decisions` | The consent log, newest first (`purpose`, `page`, `size`); audited as `HISTORY_READ` (planned) | ADMIN, AUDITOR, STORE_MANAGER, LOYALTY_OFFICER |
-| POST | `/v1/preference-profiles/{customer_id}/consent-decisions` | Append one to three consent decisions; 201 with the state (planned) | ADMIN, LOYALTY_OFFICER |
-| GET | `/v1/preference-profiles/{customer_id}/restriction-decisions` | The restriction log, newest first (`kind`, `page`, `size`); audited as `HISTORY_READ` (planned) | ADMIN, AUDITOR, STORE_MANAGER, LOYALTY_OFFICER |
-| POST | `/v1/preference-profiles/{customer_id}/restriction-decisions` | Append up to 50 restriction decisions; 201 with the current restrictions (planned) | ADMIN, LOYALTY_OFFICER |
-| GET | `/v1/preference-profiles/{customer_id}/preference-changes` | Before and after of each replace of a declared set (`preference_set`, `page`, `size`) (planned) | ADMIN, AUDITOR, STORE_MANAGER, LOYALTY_OFFICER |
+| GET | `/v1/preference-profiles/{customer_id}/restrictions` | Current restricted channels and categories, and whether personalization is allowed | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR, SALES_ASSOCIATE, LOYALTY_OFFICER |
+| GET | `/v1/preference-profiles/{customer_id}/consent` | State of the three purposes, now or at `as_of` | ADMIN, AUDITOR, STORE_MANAGER, LOYALTY_OFFICER |
+| GET | `/v1/preference-profiles/{customer_id}/consent-decisions` | The consent log, newest first (`purpose`, `page`, `size`); audited as `HISTORY_READ` | ADMIN, AUDITOR, STORE_MANAGER, LOYALTY_OFFICER |
+| POST | `/v1/preference-profiles/{customer_id}/consent-decisions` | Append one to three consent decisions; 201 with the state | ADMIN, LOYALTY_OFFICER |
+| GET | `/v1/preference-profiles/{customer_id}/restriction-decisions` | The restriction log, newest first (`kind`, `page`, `size`); audited as `HISTORY_READ` | ADMIN, AUDITOR, STORE_MANAGER, LOYALTY_OFFICER |
+| POST | `/v1/preference-profiles/{customer_id}/restriction-decisions` | Append up to 50 restriction decisions; 201 with the current restrictions | ADMIN, LOYALTY_OFFICER |
+| GET | `/v1/preference-profiles/{customer_id}/preference-changes` | Before and after of each replace of a declared set (`preference_set`, `page`, `size`) | ADMIN, AUDITOR, STORE_MANAGER, LOYALTY_OFFICER |
 
 Roles follow the [service operation policy](../requirements.md#service-operation-policy-distributed-stage). Meta routes (no token): `GET /health/live`, `GET /health/ready`, `GET /openapi.yaml`, `GET /schema.xsd`.
 
@@ -53,7 +53,10 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 |---|---|---|---|
 | `customer_preferred_channel` | Table (`public`) | S: SELECT, INSERT, DELETE (whole-set replace) | The web only reads it |
 | `customer_interest_category` | Table (`public`) | S: SELECT, INSERT, DELETE (whole-set replace) | The web only reads it |
-| Consent log, restriction log, preference history, inferred interests | Tables (a service schema, ADR-0046) | S: SELECT, INSERT on the two logs and the history; named by the schema story (F21-17, #795), with the inferred-interest table following F21-18 (#796) | Append-only: no UPDATE, no DELETE. Each needs 30 seed rows or a named exemption |
+| `preferences.consent_decision` | Table (`preferences`) | S: SELECT, INSERT | Append-only for every role (privileges and a trigger). 103 seed rows: the ADR-0066 default of every customer, and staff decisions on top |
+| `preferences.restriction_decision` | Table (`preferences`) | S: SELECT, INSERT | Append-only. 34 seed rows, 4 of them lifts |
+| `preferences.preference_change`, `preferences.preference_change_member` | Tables (`preferences`) | S: SELECT, INSERT | Append-only; one change per replace that changed a set, with its before and after ids as member rows. 60 and 120 seed rows |
+| Inferred interests | Table (a service schema, ADR-0046) | Named by F21-18 (#796) | Not built yet |
 | `preferences_events.outbox` | Table (outbox) | SELECT, UPDATE of `relayed_at`, DELETE (7-day purge) | Filled by `definer_preferences`; seed-exempt runtime state |
 
 ## Database contracts
@@ -61,8 +64,9 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Direction | Object | Counterpart |
 |---|---|---|
 | Publishes | `api_preferences.interest_category_v1` | recommendations (declared interests only) |
-| Publishes | `api_preferences.consent_state_v1` (planned, F21-17) | recommendations, campaigns, rfm-engine |
-| Publishes | `api_preferences.restriction_v1` (planned, F21-17) | recommendations, campaigns |
+| Publishes | `api_preferences.consent_state_v1` | recommendations, campaigns, rfm-engine (its grant follows with its role) |
+| Publishes | `api_preferences.restriction_v1` | recommendations, campaigns |
+| Publishes | `public.consent_state` | The web's batch segmentation, read-only (ADR-0066 section 2) |
 | Consumes | `api_customers.customer_ref_v1` | customers |
 
 ## Events
@@ -70,7 +74,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Direction | Stream | Captured from / consumer group | Effect |
 |---|---|---|---|
 | Produces | `stream:preferences.v1.changed` | captured from both preference tables | recommendations' cache |
-| Produces | `stream:preferences.v1.consent_changed` (planned, F21-17) | captured from the consent and restriction logs | `recommendations`, `campaigns` and `rfm-engine` re-read the views for the customer |
+| Produces | `stream:preferences.v1.consent_changed` | captured from `preferences.consent_decision` and `preferences.restriction_decision` | `recommendations`, `campaigns` and `rfm-engine` re-read the views for the customer |
 
 ## Redis keys
 
@@ -86,11 +90,12 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | HTTP | Code | When |
 |---|---|---|
 | 404 | `customer_not_found` | The customer does not exist in `api_customers.customer_ref_v1` |
-| 409 | `customer_anonymized` | A decision is recorded for an anonymized customer (planned) |
-| 503 | `audit_unavailable` | A read of the consent or restriction log cannot record its `HISTORY_READ` event (planned) |
-| 422 | `invalid_query` | `as_of` or a filter is malformed, or `as_of` is in the future (planned) |
-| 422 | `unknown_channel` | A channel id references no channel (23503) |
-| 422 | `unknown_category` | A category id references no category (23503) |
+| 409 | `customer_anonymized` | A decision is recorded for an anonymized customer (planned: it needs the anonymized flag of `api_customers.customer_ref_v1`, F21-19, #797) |
+| 503 | `audit_unavailable` | A read of the consent or restriction log cannot record its `HISTORY_READ` event |
+| 422 | `invalid_query` | `as_of` or a filter is malformed, or `as_of` is in the future |
+| 422 | `invalid_body` | A purpose, or a `(kind, target_id)` pair, repeats in one call (`duplicate`) |
+| 422 | `unknown_channel` | A channel id references no channel (23503), in a set or a restriction |
+| 422 | `unknown_category` | A category id references no category (23503), in a set or a restriction |
 
 ## Accepted exceptions
 

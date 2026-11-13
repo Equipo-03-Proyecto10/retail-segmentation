@@ -19,6 +19,10 @@ REQUESTS = [
     ("get", f"/v1/engagement-events/{EVENT}", "STORE_MANAGER", None),
     ("post", f"/v1/engagement-events/{EVENT}/void", "ADMIN", {"reason": "x"}),
     ("get", "/v1/engagement-summaries?group_by=type", "STORE_MANAGER", None),
+    ("get", "/v2/engagement-events", "STORE_MANAGER", None),
+    ("get", f"/v2/engagement-events/{EVENT}", "STORE_MANAGER", None),
+    ("post", f"/v2/engagement-events/{EVENT}/void", "ADMIN", {"reason": "x"}),
+    ("get", "/v2/engagement-summaries?group_by=type", "STORE_MANAGER", None),
 ]
 
 
@@ -110,13 +114,17 @@ def test_posting_with_mongodb_stopped_is_503_after_the_references_check(
         "product_id": 12,
         "occurred_at": "2001-01-01T00:00:00Z",
     }
-    posted = client.post("/v1/engagement-events", json=body, headers=token("ADMIN"))
-    assert (posted.status_code, posted.get_json()["code"]) == (
-        503,
-        "database_unavailable",
-    )
+    headers = token("ADMIN")
+    for version in ("v1", "v2"):
+        posted = client.post(
+            f"/{version}/engagement-events", json=body, headers=headers
+        )
+        assert (posted.status_code, posted.get_json()["code"]) == (
+            503,
+            "database_unavailable",
+        )
     unknown = client.post(
-        "/v1/engagement-events", json=body | {"store_id": 9999}, headers=token("ADMIN")
+        "/v2/engagement-events", json=body | {"store_id": 9999}, headers=headers
     )
     assert unknown.get_json()["code"] == "unknown_store"
 
@@ -170,7 +178,15 @@ def test_readiness_needs_the_validator_and_both_collections():
         ]
 
     good = {EVENTS: indexes(EVENT_INDEXES), DAILY: indexes(DAILY_INDEXES)}
-    schema = {"properties": {"relay_pending": {}}}
+    from app.events import ALL_TYPES
+
+    schema = {
+        "properties": {
+            "relay_pending": {},
+            "type": {"enum": list(ALL_TYPES)},
+        },
+        "oneOf": [{} for _ in ALL_TYPES],
+    }
     with_validator = [
         {"name": EVENTS, "options": {"validator": {"$jsonSchema": schema}}},
         {"name": DAILY, "options": {}},
@@ -187,6 +203,22 @@ def test_readiness_needs_the_validator_and_both_collections():
     # The validator of 0.1.x has no relay_pending: init.js is not applied yet.
     older = {"validator": {"$jsonSchema": {"properties": {}}}}
     assert not ready([{"name": EVENTS, "options": older}, with_validator[1]], good)
+    # Merely adding the outbox field is not convergence: a validator that
+    # still admits only /v1 types would make every new /v2 insert fail.
+    legacy_taxonomy = {
+        "validator": {
+            "$jsonSchema": {
+                "properties": {
+                    "relay_pending": {},
+                    "type": {"enum": ["QR_SCAN", "RECO_CLICK"]},
+                },
+                "oneOf": [{}, {}],
+            }
+        }
+    }
+    assert not ready(
+        [{"name": EVENTS, "options": legacy_taxonomy}, with_validator[1]], good
+    )
     # The relay index without its partial filter is not the one init.js makes.
     whole = [
         {k: v for k, v in i.items() if k != "partialFilterExpression"}

@@ -254,9 +254,17 @@ class EventStore:
             schema = (
                 infos[EVENTS].get("options", {}).get("validator", {}).get("$jsonSchema")
             )
-            # An older validator would refuse every insert of this version:
-            # init.js has not been applied yet (expand before deploy, ADR-0075).
-            if not schema or "relay_pending" not in schema.get("properties", {}):
+            # An older or only partly converged validator would refuse this
+            # version's inserts: init.js has not been applied successfully yet
+            # (expand before deploy, ADR-0075). The outbox field alone is not
+            # enough; the validator must also admit the complete /v2 taxonomy.
+            properties = schema.get("properties", {}) if schema else {}
+            declared_types = properties.get("type", {}).get("enum", [])
+            if (
+                "relay_pending" not in properties
+                or set(declared_types) != set(ALL_TYPES)
+                or len(schema.get("oneOf", [])) != len(ALL_TYPES)
+            ):
                 return False
             return self._indexes_match(
                 database[EVENTS], EVENT_INDEXES

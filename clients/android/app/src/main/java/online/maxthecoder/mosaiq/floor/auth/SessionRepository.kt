@@ -1,6 +1,8 @@
 package online.maxthecoder.mosaiq.floor.auth
 
 import java.io.IOException
+import online.maxthecoder.mosaiq.floor.AppText
+import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.net.CurrentUser
 import online.maxthecoder.mosaiq.floor.net.Network
@@ -94,11 +96,17 @@ class SessionRepository(
 
     private fun friendly(error: ApiError): ApiError = when {
         error.code == "rate_limited" && error.retryAfterSeconds != null ->
-            error.copy(message = "Too many attempts. Try again in ${error.retryAfterSeconds} seconds.")
+            error.copy(
+                message = AppText.plural(
+                    R.plurals.auth_rate_limited,
+                    error.retryAfterSeconds.coerceIn(0, Int.MAX_VALUE.toLong()).toInt(),
+                    error.retryAfterSeconds
+                )
+            )
         error.code == "auth_unavailable" ->
-            error.copy(message = "Authentication is unavailable. Try again.")
+            error.copy(message = AppText.get(R.string.auth_unavailable))
         error.code == "database_unavailable" ->
-            error.copy(message = "The service is unavailable. Try again.")
+            error.copy(message = AppText.get(R.string.auth_service_unavailable))
         else -> error
     }
 

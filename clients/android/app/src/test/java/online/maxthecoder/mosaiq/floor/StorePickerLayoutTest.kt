@@ -7,16 +7,18 @@ import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import online.maxthecoder.mosaiq.floor.session.Profile
 import online.maxthecoder.mosaiq.floor.ui.CustomerInsightsViewModel
-import online.maxthecoder.mosaiq.floor.ui.FloorHome
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
 import online.maxthecoder.mosaiq.floor.ui.SalesViewModel
 import online.maxthecoder.mosaiq.floor.ui.ScanViewModel
 import online.maxthecoder.mosaiq.floor.ui.SessionState
+import online.maxthecoder.mosaiq.floor.ui.shell.FloorHome
 import org.junit.After
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -60,6 +62,8 @@ class StorePickerLayoutTest {
                 )
             }
         }
+        // The shell opens on Check-in; with no store chosen the picker is one tap away, on the store chip.
+        compose.onNodeWithTag("store-chip").performClick()
         val bounds = compose.onNode(hasClickAction() and hasText("Search")).getUnclippedBoundsInRoot()
         val width = bounds.right - bounds.left
         // The button's own padding is 24dp a side; under that the label has no room (the squeezed layout is 32dp).

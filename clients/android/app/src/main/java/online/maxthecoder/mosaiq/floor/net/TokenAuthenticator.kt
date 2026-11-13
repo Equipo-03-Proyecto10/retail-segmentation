@@ -8,6 +8,8 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.Route
+import online.maxthecoder.mosaiq.floor.AppText
+import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.auth.SessionEvents
 import online.maxthecoder.mosaiq.floor.auth.TokenStore
 import online.maxthecoder.mosaiq.floor.auth.Tokens
@@ -108,10 +110,10 @@ class TokenAuthenticator(
         val TERMINAL = setOf("invalid_refresh", "refresh_reused", "session_expired", "session_revoked")
 
         fun reasonFor(code: String): String = when (code) {
-            "refresh_reused" -> "Your session was used somewhere else, so it was ended. Sign in again."
-            "session_expired" -> "Your session expired. Sign in again."
-            "session_revoked" -> "Your session was ended. Sign in again."
-            else -> "Your session is no longer valid. Sign in again."
+            "refresh_reused" -> AppText.get(R.string.session_ended_reused)
+            "session_expired" -> AppText.get(R.string.session_ended_expired)
+            "session_revoked" -> AppText.get(R.string.session_ended_revoked)
+            else -> AppText.get(R.string.session_ended_invalid)
         }
     }
 }

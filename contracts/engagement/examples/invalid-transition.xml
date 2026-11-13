@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_transition</code>
+  <message>An incident only moves forward from OPEN to ACKNOWLEDGED to RESOLVED.</message>
+  <correlation_id>corr-invalid-transition</correlation_id>
+  <details>
+    <field>status</field>
+    <code>backward_move</code>
+  </details>
+</Error>

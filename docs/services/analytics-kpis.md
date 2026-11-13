@@ -39,8 +39,9 @@
 | GET | `/v1/kpi-reports/recommendation-performance` | Impressions, clicks, purchases | the above (store roles narrowed) |
 | GET | `/v1/kpi-reports/migrations` | Segment changes within a model version | ADMIN, ANALYST, MARKETING, AUDITOR |
 | GET | `/v1/kpi-reports/campaign-performance` | Attributed sales and incremental effect per campaign | ADMIN, ANALYST, MARKETING, AUDITOR |
+| GET | `/v1/kpi-reports/demand-coverage` | Demand by segment and category beside stock on hand, days of cover and units to replenish (planned, F26-05) | ADMIN, ANALYST, INVENTORY_PLANNER, AUDITOR, STORE_MANAGER (narrowed) |
 
-Reports take `from` and `to` (required), `group_by` of `segment`, `store`, `channel` and `period`, `granularity`, filters, `page` and `size`. Meta routes (no token): `GET /health/live`, `GET /health/ready`, `GET /openapi.yaml`, `GET /schema.xsd`. The contract is [`contracts/analytics-kpis/`](../../contracts/analytics-kpis/openapi.yaml). It adds one resource, `kpi-reports`, and no registered resource name appears in its paths.
+Reports take `from` and `to` (required), `group_by` of `segment`, `store`, `channel` and `period`, `granularity`, filters, `page` and `size`; `demand-coverage` instead takes `store_id`, `category_id` and `target_cover_days` (1 to 180, default 14), has no `group_by`, and states its calculation in every response. Meta routes (no token): `GET /health/live`, `GET /health/ready`, `GET /openapi.yaml`, `GET /schema.xsd`. The contract is [`contracts/analytics-kpis/`](../../contracts/analytics-kpis/openapi.yaml). It adds one resource, `kpi-reports`, and no registered resource name appears in its paths.
 
 ## Database contracts it consumes
 
@@ -49,6 +50,8 @@ Reports take `from` and `to` (required), `group_by` of `segment`, `store`, `chan
 | `api_segments.current_label_v1` | segments | Published |
 | `api_sales.net_purchase_line_v1` | sales | Contracted in the reversal story (F21-03); it must also publish `data_origin` (ADR-0052), an additive column |
 | `api_users.store_assignment_v1` | users | Contracted in the store-assignment story (F19-05) |
+| `api_stock.stock_level_v1` | stock | Published; read by `demand-coverage` only, granted by the story that implements it (F26-05) |
+| `api_products.product_ref_v1` | products | Published; read by `demand-coverage` only, for the product's category and `is_active`, granted by the story that implements it (F26-05) |
 | `api_segments.assignment_change_v1` | segments | Required, not contracted: a customer's changes of assignment with previous and new label and model version |
 | `api_recommendations.interaction_v1` | recommendations | Required, not contracted: `RECO_IMPRESSION` and `RECO_CLICK` events that are not voided, kept by recommendations from engagement's stream (ADR-0075) |
 | `api_experiments.exposure_v1` | experimentation | Required, not contracted: `CAMPAIGN_EXPOSURE` events that are not voided, kept by experimentation from engagement's stream (ADR-0075) |

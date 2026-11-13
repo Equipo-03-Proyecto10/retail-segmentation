@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: audit-trail-service
-  version: 1.2.0
+  version: 1.2.1
   description: >-
     Reads the audit trail: the append-only entries `fn_audit` writes for every
     insert, update and delete on an audited table (RN-28, RN-30). An entry is
@@ -151,14 +151,13 @@ paths:
           $ref: '#/components/responses/ProtectedDatabaseUnavailable'
   /v1/domain-events:
     get:
-      x-mosaiq-status: planned
       summary: List domain events
       description: >-
         Returns the domain events that match every filter given (ADR-0072):
         calculations, model publications and rollbacks, permission changes,
         critical actions, logged reads of one customer's history, and reads of
-        the audit trail itself. Events are ordered by `recorded_at` and then
-        `event_id`, both descending; pagination applies after filtering. An
+        the audit trail itself. Events are ordered by `recorded_at` descending
+        and then by reverse hash-chain order; pagination applies after filtering. An
         unknown `kind`, `outcome`, `actor_role` or `subject_type`, a malformed
         UUID, integer or timestamp, or a `to` before `from` is 422
         `invalid_query`, and `details` names the rejected parameter. Every
@@ -218,7 +217,6 @@ paths:
           $ref: '#/components/responses/RecordedReadUnavailable'
   /v1/domain-events/verification:
     get:
-      x-mosaiq-status: planned
       summary: Verify the domain-event hash chain
       description: >-
         Recomputes the hash chain over the events whose `recorded_at` lies in
@@ -278,7 +276,6 @@ paths:
           $ref: '#/components/responses/RecordedReadUnavailable'
   /v1/domain-events/{event_id}:
     get:
-      x-mosaiq-status: planned
       summary: Get one domain event
       description: >-
         Returns the event identified by `event_id`. An event is never changed
@@ -1120,7 +1117,7 @@ components:
       properties:
         domain_events:
           type: array
-          description: Events ordered by `recorded_at` descending, then `event_id` descending.
+          description: Events ordered by `recorded_at` descending, then by reverse hash-chain order.
           items:
             $ref: '#/components/schemas/DomainEvent'
         page_info:

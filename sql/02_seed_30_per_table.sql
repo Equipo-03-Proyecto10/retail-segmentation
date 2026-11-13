@@ -10,7 +10,7 @@
 --    script, and so that a reload produces the same database twice.
 --
 -- 2) role, channel and segment_label hold fewer than 30 rows. Their domains
---    are seven roles, five sales channels and six ordered business labels;
+--    are ten roles, five sales channels and six ordered business labels;
 --    padding them with filler to reach the minimum would make the seed
 --    misrepresent the business. Those three, and only those, are listed in
 --    sql/seed-exempt.txt with the reason, which is the mechanism CI reads.
@@ -48,7 +48,10 @@ INSERT INTO role (role_id, code, description) VALUES
 (4,'MARKETING','Marketing'),
 (5,'INVENTORY_PLANNER','Inventory planner'),
 (6,'AUDITOR','Auditor'),
-(7,'CUSTOMER','Loyalty programme customer');
+(7,'CUSTOMER','Loyalty programme customer'),
+(8,'SALES_ASSOCIATE','Store seller'),
+(9,'LOYALTY_OFFICER','Loyalty officer'),
+(10,'COMMERCIAL_SUPERVISOR','Commercial supervisor');
 
 -- ---------- channel (5) ----------
 INSERT INTO channel (channel_id, name) VALUES
@@ -143,7 +146,7 @@ SELECT n, 'Segment ' || n, 'Segment derived from RULE_' || lpad(n::text,3,'0'), 
 FROM generate_series(1,30) n;
 
 
--- ---------- app_user (30, exactly one administrator) ----------
+-- ---------- app_user (33, exactly one administrator) ----------
 -- AGENTS.md: there is exactly one administrator. User 1 holds role 1 and no
 -- other user does, so the partial unique index F4-02 adds applies to this data
 -- without anyone having to rewrite the seed first.
@@ -162,6 +165,20 @@ SELECT ('11111111-1111-1111-1111-' || lpad(n::text,12,'0'))::uuid,
        TRUE,
        now() - (n || ' days')::interval
 FROM generate_series(1,30) n;
+
+-- One demonstration account per floor role ADR-0060 adds (F19-04, #754):
+-- user 31 is SALES_ASSOCIATE, 32 LOYALTY_OFFICER and 33 COMMERCIAL_SUPERVISOR.
+-- They are appended rather than folded into the rotation above, so users 2 to
+-- 30 keep the roles every other seeded table and test already relies on.
+INSERT INTO app_user (user_id, role_id, name, email, password_hash, is_active, created_at)
+SELECT ('11111111-1111-1111-1111-' || lpad(n::text,12,'0'))::uuid,
+       n - 23,
+       'Demo User ' || n,
+       'user' || n || '@mosaiq-demo.com',
+       '$argon2id$v=19$m=65536,t=3,p=4$BTg0ZDnIiX0UXEv10Pa1Pw$kPMnEtE7i3rQKZhkDCbDiN3R6FEKkEmsN2CKncGfd1c',
+       TRUE,
+       now() - (n || ' days')::interval
+FROM generate_series(31,33) n;
 
 -- ---------- stores.store_location (30, one per seeded store) ----------
 -- Coordinates cycle through plausible city centres in the same order as the
@@ -837,6 +854,109 @@ JOIN app_user AS u ON u.role_id = r.role_id AND u.is_active;
 -- campaign, experiment, category, product, store, channel, role, customer,
 -- app_user, customer_segment_history, stores.store_location and the products
 -- boundary's four tables. Nothing is inserted here by hand.
+
+-- ---------- audit_events.domain_event (32, every kind, ADR-0072) ----------
+-- Runtime history, seeded like app_session rather than exempted (ADR-0051).
+-- Each row goes through audit_events.append_v1, the function behind
+-- api_audit.record_event_v1, so it passes the same kind, credential, key and
+-- common-field checks and joins the same hash chain; only the owner may name
+-- the recording role here, since a producer's is always its session_user.
+-- Users: 1 ADMIN, 2 ANALYST, 3 STORE_MANAGER, 5 INVENTORY_PLANNER, 6 AUDITOR.
+DO $seed_events$
+DECLARE
+    e record;
+BEGIN
+    FOR e IN
+        SELECT * FROM (VALUES
+        -- n, source, kind, outcome, days ago, actor (null = SYSTEM), role,
+        -- store, subject type, subject id, model version, rule set, details
+        ( 1, 'svc_rfm',         'CALCULATION_RUN',    'SUCCESS', 40, NULL, NULL, NULL::smallint, 'calculation', '401', NULL::bigint, 1::bigint,
+          '{"calculation":"RFM","status":"COMPLETED","input_count":300,"output_count":30,"data_origin":"SEEDED"}'),
+        ( 2, 'svc_segments',    'CALCULATION_RUN',    'SUCCESS', 39, NULL, NULL, NULL, 'calculation', '402', 1, 1,
+          '{"calculation":"SEGMENTATION","status":"COMPLETED","input_count":30,"output_count":30,"data_origin":"SEEDED"}'),
+        ( 3, 'svc_kpis',        'CALCULATION_RUN',    'SUCCESS', 38, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+          '{"calculation":"KPI","status":"COMPLETED","input_count":300,"output_count":7,"window_from":"2026-09-01T00:00:00Z","window_to":"2026-10-01T00:00:00Z"}'),
+        ( 4, 'svc_rfm',         'CALCULATION_RUN',    'SUCCESS', 37, NULL, NULL, NULL, 'calculation', '403', NULL, 2,
+          '{"calculation":"RFM","status":"FAILED","input_count":300,"output_count":0,"parameters_digest":"5f2b8e8c1d0a4b7e9c3f6a1d2e4b8c0f7a9d3e5b1c6f8a2d4e7b9c1f3a5d7e9b"}'),
+        ( 5, 'svc_models',      'MODEL_PUBLISHED',    'SUCCESS', 36, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'model_version', '1', 1, NULL,
+          '{"previous_version_id":null,"reason_code":"FIRST_PUBLICATION"}'),
+        ( 6, 'svc_models',      'MODEL_PUBLISHED',    'SUCCESS', 30, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'model_version', '2', 2, NULL,
+          '{"previous_version_id":1,"reason_code":"QUARTERLY_REFIT"}'),
+        ( 7, 'svc_models',      'MODEL_ROLLED_BACK',  'SUCCESS', 29, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'model_version', '1', 1, NULL,
+          '{"previous_version_id":2,"reason_code":"DRIFT_ALERT"}'),
+        ( 8, 'svc_models',      'MODEL_PUBLISHED',    'SUCCESS', 28, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'model_version', '3', 3, NULL,
+          '{"previous_version_id":1,"reason_code":"DRIFT_CORRECTED"}'),
+        ( 9, 'svc_users',       'PERMISSION_CHANGED', 'SUCCESS', 27, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'user', '11111111-1111-1111-1111-000000000008', NULL, NULL,
+          '{"change":"ROLE_ASSIGNED","from_role":"MARKETING","to_role":"ANALYST"}'),
+        (10, 'svc_users',       'PERMISSION_CHANGED', 'SUCCESS', 26, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'user', '11111111-1111-1111-1111-000000000014', NULL, NULL,
+          '{"change":"ROLE_ASSIGNED","from_role":"ANALYST","to_role":"MARKETING"}'),
+        (11, 'svc_users',       'PERMISSION_CHANGED', 'SUCCESS', 25, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'user', '11111111-1111-1111-1111-000000000020', NULL, NULL,
+          '{"change":"ADMINISTRATOR_TRANSFERRED","from_role":"ANALYST","to_role":"ADMIN"}'),
+        (12, 'svc_users',       'PERMISSION_CHANGED', 'SUCCESS', 25, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'user', '11111111-1111-1111-1111-000000000001', NULL, NULL,
+          '{"change":"ADMINISTRATOR_TRANSFERRED","from_role":"ADMIN","to_role":"ANALYST"}'),
+        (13, 'svc_users',       'PERMISSION_CHANGED', 'SUCCESS', 24, '11111111-1111-1111-1111-000000000020', 'ADMIN', NULL, 'user', '11111111-1111-1111-1111-000000000020', NULL, NULL,
+          '{"change":"ADMINISTRATOR_TRANSFERRED","from_role":"ADMIN","to_role":"ANALYST"}'),
+        (14, 'svc_users',       'PERMISSION_CHANGED', 'SUCCESS', 24, '11111111-1111-1111-1111-000000000020', 'ADMIN', NULL, 'user', '11111111-1111-1111-1111-000000000001', NULL, NULL,
+          '{"change":"ADMINISTRATOR_TRANSFERRED","from_role":"ANALYST","to_role":"ADMIN"}'),
+        (15, 'svc_users',       'PERMISSION_CHANGED', 'SUCCESS', 23, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'user', '11111111-1111-1111-1111-000000000025', NULL, NULL,
+          '{"change":"USER_DEACTIVATED"}'),
+        (16, 'svc_users',       'PERMISSION_CHANGED', 'SUCCESS', 22, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'user', '11111111-1111-1111-1111-000000000025', NULL, NULL,
+          '{"change":"USER_REACTIVATED"}'),
+        (17, 'svc_users',       'PERMISSION_CHANGED', 'SUCCESS', 21, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'user', '11111111-1111-1111-1111-000000000003', NULL, NULL,
+          '{"change":"STORES_ASSIGNED","store_ids":[3,9]}'),
+        (18, 'svc_users',       'PERMISSION_CHANGED', 'SUCCESS', 20, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'user', '11111111-1111-1111-1111-000000000003', NULL, NULL,
+          '{"change":"STORES_UNASSIGNED","store_ids":[9]}'),
+        (19, 'svc_sales',       'CRITICAL_ACTION',    'SUCCESS', 19, '11111111-1111-1111-1111-000000000003', 'STORE_MANAGER', 3, 'sale_reversal', '1', NULL, NULL,
+          '{"action":"SALE_REVERSED","reason_code":"CUSTOMER_RETURN"}'),
+        (20, 'svc_stock',       'CRITICAL_ACTION',    'SUCCESS', 18, '11111111-1111-1111-1111-000000000003', 'STORE_MANAGER', 3, 'stock_level', '3:7', NULL, NULL,
+          '{"action":"STOCK_ADJUSTED","reason_code":"PHYSICAL_COUNT"}'),
+        (21, 'svc_customers',   'CRITICAL_ACTION',    'SUCCESS', 17, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'customer', '00000000-0000-0000-0000-000000000030', NULL, NULL,
+          '{"action":"CUSTOMER_ANONYMIZED","reason_code":"SUBJECT_REQUEST"}'),
+        (22, 'svc_customers',   'CRITICAL_ACTION',    'SUCCESS', 16, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'audit_entry', '1', NULL, NULL,
+          '{"action":"AUDIT_PAYLOAD_REDACTED","reason_code":"ANONYMIZATION"}'),
+        (23, 'svc_experiments', 'CRITICAL_ACTION',    'SUCCESS', 15, '11111111-1111-1111-1111-000000000004', 'MARKETING', NULL, 'experiment', '1', NULL, NULL,
+          '{"action":"EXPERIMENT_FROZEN"}'),
+        (24, 'svc_campaigns',   'CRITICAL_ACTION',    'SUCCESS', 14, '11111111-1111-1111-1111-000000000004', 'MARKETING', NULL, 'campaign', '1', NULL, NULL,
+          '{"action":"CAMPAIGN_ACTIVATED"}'),
+        (25, 'svc_sales',       'HISTORY_READ',       'SUCCESS', 13, '11111111-1111-1111-1111-000000000002', 'ANALYST', NULL, 'customer', '00000000-0000-0000-0000-000000000007', NULL, NULL,
+          '{"history":"SALES"}'),
+        (26, 'svc_segments',    'HISTORY_READ',       'SUCCESS', 12, '11111111-1111-1111-1111-000000000003', 'STORE_MANAGER', NULL, 'customer', '00000000-0000-0000-0000-000000000007', NULL, NULL,
+          '{"history":"SEGMENT"}'),
+        (27, 'svc_preferences', 'HISTORY_READ',       'SUCCESS', 11, '11111111-1111-1111-1111-000000000004', 'MARKETING', NULL, 'customer', '00000000-0000-0000-0000-000000000012', NULL, NULL,
+          '{"history":"CONSENT"}'),
+        (28, 'svc_segments',    'HISTORY_READ',       'REFUSED', 10, '11111111-1111-1111-1111-000000000005', 'INVENTORY_PLANNER', NULL, 'customer', '00000000-0000-0000-0000-000000000007', NULL, NULL,
+          '{"history":"SEGMENT"}'),
+        (29, 'svc_sales',       'HISTORY_READ',       'REFUSED', 9, '11111111-1111-1111-1111-000000000005', 'INVENTORY_PLANNER', NULL, 'customer', '00000000-0000-0000-0000-000000000012', NULL, NULL,
+          '{"history":"SALES"}'),
+        (30, 'svc_audit_trail', 'AUDIT_READ',         'SUCCESS', 8, '11111111-1111-1111-1111-000000000006', 'AUDITOR', NULL, NULL, NULL, NULL, NULL,
+          '{"resource":"AUDIT_ENTRIES","filters":["entity","action"]}'),
+        (31, 'svc_audit_trail', 'AUDIT_READ',         'SUCCESS', 7, '11111111-1111-1111-1111-000000000006', 'AUDITOR', NULL, NULL, NULL, NULL, NULL,
+          '{"resource":"DOMAIN_EVENTS","filters":["kind","subject_type","subject_id"]}'),
+        (32, 'svc_audit_trail', 'AUDIT_READ',         'SUCCESS', 6, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, NULL, NULL, NULL, NULL,
+          '{"resource":"DOMAIN_EVENT_VERIFICATION","filters":[]}')
+        ) AS v(n, source, kind, outcome, days_ago, actor, actor_role, store_id,
+               subject_type, subject_id, model_version_id, rule_set_version, details)
+        ORDER BY n
+    LOOP
+        PERFORM audit_events.append_v1(
+            e.source,
+            ('7a0c5e1d-0000-4000-8000-' || lpad(e.n::text, 12, '0'))::uuid,
+            e.kind,
+            e.outcome,
+            now() - make_interval(days => e.days_ago),
+            CASE WHEN e.actor IS NULL THEN 'SYSTEM' ELSE 'USER' END,
+            e.actor::uuid,
+            e.actor_role,
+            e.store_id::smallint,
+            e.subject_type,
+            e.subject_id,
+            e.model_version_id,
+            e.rule_set_version,
+            'seed-' || e.n,
+            e.details::jsonb);
+    END LOOP;
+END
+$seed_events$;
 
 -- ---------- outboxes (ADR-0054, #597) ----------
 -- Empty-database bootstrap only: remove the events this transaction captured

@@ -67,7 +67,15 @@ describe('the audit module in the menu', () => {
       bundle.operations.filter((o) => o.roles?.includes(role)).map((o) => o.operationId);
     expect(names(allowed('AUDITOR'))).toContain('audit');
     expect(names(allowed('ADMIN'))).toContain('audit');
-    for (const role of ['ANALYST', 'MARKETING', 'STORE_MANAGER', 'INVENTORY_PLANNER'])
+    for (const role of [
+      'ANALYST',
+      'MARKETING',
+      'STORE_MANAGER',
+      'INVENTORY_PLANNER',
+      'SALES_ASSOCIATE',
+      'LOYALTY_OFFICER',
+      'COMMERCIAL_SUPERVISOR',
+    ])
       expect(names(allowed(role)), role).not.toContain('audit');
   });
 });

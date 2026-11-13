@@ -1,0 +1,6 @@
+{
+  "code": "client_incident_conflict",
+  "message": "This client_incident_id or source operation was already reported with a different source.",
+  "correlation_id": "corr-client-incident-conflict",
+  "details": []
+}

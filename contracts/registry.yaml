@@ -67,10 +67,10 @@ services:
     resources: [recommendations, recommendation-decisions]
   - name: engagement
     port: 5012
-    rule: "In-store engagement (`QR_SCAN`, `RECO_CLICK`, `STORE_VISIT`, `RECO_IMPRESSION`, `CAMPAIGN_EXPOSURE`, `CART_ADD`, `CART_REMOVE`, `NAVIGATION`) is recorded once per client event as a distinct fact that is never a sale, attributed, voided rather than deleted, and summarized (RN-55)"
+    rule: "A client-originated field event (in-store engagement `QR_SCAN`, `RECO_CLICK`, `STORE_VISIT`, `RECO_IMPRESSION`, `CAMPAIGN_EXPOSURE`, `CART_ADD`, `CART_REMOVE`, `NAVIGATION`, or a refused queued write reported as a capture incident) is recorded once per client id as a distinct fact that is never a sale, attributed, voided or closed rather than deleted, and summarized (RN-55)"
     rn: [RN-55]
     wave: core
-    resources: [engagement-events, engagement-summaries]
+    resources: [engagement-events, engagement-summaries, capture-incidents, capture-incident-summaries]
   - name: check-ins
     port: 5013
     rule: "A staff check-in is verified only when the server-computed distance lies within the store's geofence at acceptable accuracy, and overrides are append-only reviews (RN-56); a customer visit is a separate fact that never holds a position, recorded only for an active loyalty code and a customer who has not withdrawn profiling, once per duplicate window (RN-72)"

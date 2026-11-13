@@ -10,17 +10,23 @@ INSERT itself refuses it.
 
 from __future__ import annotations
 
+import json
+import secrets
 from pathlib import Path
 from typing import Any
 
 import psycopg
-from flask import Flask, request
+from flask import Flask, g, request
+from lxml import etree
 from mosaiq_kit import ApiError, Kit, Page, Representation, configure_logging
 from psycopg import errors, sql
 
 EMAIL_KEY = "ux_customer_email_lower"
 CHANNEL_FKEY = "customer_registration_channel_id_fkey"
 EMAIL_CHECK = "customer_email_check"
+ACTIVE_CARD_KEY = "ux_loyalty_card_one_active_customer"
+CUSTOMER_FKEY = "loyalty_card_customer_id_fkey"
+CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 CONTRACTS_DIR = Path(__file__).resolve().parents[1] / "contracts"
 
@@ -86,6 +92,54 @@ def customer_json(row: tuple[Any, ...]) -> dict[str, Any]:
     }
 
 
+def floor_customer_json(row: tuple[Any, ...], role: str) -> dict[str, Any]:
+    customer = {"customer_id": str(row[0]), "name": row[1]}
+    if role == "LOYALTY_OFFICER":
+        customer.update({"email": row[2], "phone": row[3]})
+    return customer
+
+
+def card_json(row: tuple[Any, ...]) -> dict[str, Any]:
+    return {
+        "card_id": str(row[0]),
+        "customer_id": str(row[1]),
+        "code": row[2],
+        "status": row[3],
+        "issued_at": row[4],
+        "issued_by": str(row[5]),
+        "revoked_at": row[6],
+        "revoked_by": str(row[7]) if row[7] is not None else None,
+        "revocation_reason": row[8],
+    }
+
+
+def generate_card_code() -> str:
+    """Encode 128 CSPRNG bits as exactly 26 Crockford base32 characters."""
+
+    value = int.from_bytes(secrets.token_bytes(16), "big")
+    encoded = []
+    for _ in range(26):
+        value, digit = divmod(value, 32)
+        encoded.append(CROCKFORD[digit])
+    return "".join(reversed(encoded))
+
+
+CARD_COLUMNS = sql.SQL(", ").join(
+    sql.Identifier(name)
+    for name in (
+        "card_id",
+        "customer_id",
+        "code",
+        "status",
+        "issued_at",
+        "issued_by",
+        "revoked_at",
+        "revoked_by",
+        "revocation_reason",
+    )
+)
+
+
 def email_taken() -> ApiError:
     return ApiError(
         409,
@@ -115,6 +169,20 @@ def refusal(error: psycopg.errors.IntegrityError) -> ApiError | None:
             "The parsed body violates the request schema.",
             [{"field": "email", "code": "invalid_format"}],
         )
+    if isinstance(error, errors.UniqueViolation) and constraint == ACTIVE_CARD_KEY:
+        return ApiError(
+            409,
+            "active_card_exists",
+            "The customer already has an active loyalty card.",
+            [{"field": "customer_id", "code": "already_active"}],
+        )
+    if isinstance(error, errors.ForeignKeyViolation) and constraint == CUSTOMER_FKEY:
+        return ApiError(
+            422,
+            "unknown_customer",
+            "The customer does not exist.",
+            [{"field": "customer_id", "code": "not_found"}],
+        )
     return None
 
 
@@ -140,6 +208,29 @@ def create_app() -> Flask:
     )
     holder["kit"] = kit
     app.extensions["mosaiq_kit"] = kit
+
+    @app.after_request
+    def add_loyalty_state(response):
+        """Add the list-wide state that is outside the kit's generic Page."""
+
+        state = getattr(g, "loyalty_state", None)
+        if state is None or response.status_code != 200:
+            return response
+        if response.mimetype == "application/json":
+            payload = response.get_json()
+            payload = {"loyalty_state": state, **payload}
+            response.set_data(json.dumps(payload, separators=(",", ":")))
+        elif response.mimetype == "application/xml":
+            root = etree.fromstring(response.data)
+            element = etree.Element(
+                etree.QName(kit.contract.namespace, "loyalty_state")
+            )
+            element.text = state
+            root.insert(0, element)
+            response.set_data(
+                etree.tostring(root, xml_declaration=True, encoding="UTF-8")
+            )
+        return response
 
     @kit.operation("searchCustomers")
     def search_customers() -> Page:
@@ -193,6 +284,182 @@ def create_app() -> Flask:
         if row is None:
             raise not_found()
         return Representation("Customer", customer_json(row))
+
+    @kit.operation("searchFloorCustomers")
+    def search_floor_customers() -> Page:
+        raw_q = request.args.get("q")
+        q = raw_q.strip() if raw_q is not None else ""
+        if raw_q is None:
+            raise ApiError(
+                422,
+                "invalid_query",
+                "q is required.",
+                [{"field": "q", "code": "required"}],
+            )
+        if len(q) < 3:
+            raise ApiError(
+                422,
+                "invalid_query",
+                "q is shorter than its allowed length.",
+                [{"field": "q", "code": "too_short"}],
+            )
+        if kit.size > 20:
+            raise ApiError(
+                422,
+                "invalid_pagination",
+                "The pagination values are outside their allowed ranges.",
+                [{"field": "size", "code": "out_of_range"}],
+            )
+        role = str(g.principal["role"])
+        pattern = like_pattern(q)
+        if role == "SALES_ASSOCIATE":
+            filters = sql.SQL("WHERE name ILIKE %(pattern)s ESCAPE '\\'")
+        else:
+            filters = sql.SQL(
+                "WHERE (name ILIKE %(pattern)s ESCAPE '\\'"
+                " OR email ILIKE %(pattern)s ESCAPE '\\'"
+                " OR phone ILIKE %(pattern)s ESCAPE '\\')"
+            )
+        params = {"pattern": pattern}
+        offset = (kit.page - 1) * kit.size
+        with kit.db.connection() as connection:
+            total = connection.execute(
+                sql.SQL("SELECT count(*) FROM public.customer {filters}").format(
+                    filters=filters
+                ),
+                params,
+            ).fetchone()[0]
+            rows = connection.execute(
+                sql.SQL(
+                    "SELECT customer_id, name, email, phone FROM public.customer"
+                    " {filters} ORDER BY name, customer_id"
+                    " LIMIT %(limit)s OFFSET %(offset)s"
+                ).format(filters=filters),
+                params | {"limit": kit.size, "offset": offset},
+            ).fetchall()
+        return Page(
+            "FloorCustomers",
+            "FloorCustomer",
+            "customers",
+            [floor_customer_json(row, role) for row in rows],
+            page=kit.page,
+            size=kit.size,
+            total=total,
+        )
+
+    @kit.operation("getFloorCustomer")
+    def get_floor_customer(customer_id: Any) -> Representation:
+        with kit.db.connection() as connection:
+            row = connection.execute(
+                "SELECT customer_id, name, email, phone FROM public.customer"
+                " WHERE customer_id = %s",
+                (customer_id,),
+            ).fetchone()
+        if row is None:
+            raise not_found()
+        return Representation(
+            "FloorCustomer", floor_customer_json(row, str(g.principal["role"]))
+        )
+
+    @kit.operation("issueLoyaltyCard")
+    def issue_loyalty_card() -> Representation:
+        try:
+            with kit.db.transaction() as connection:
+                row = connection.execute(
+                    sql.SQL(
+                        "INSERT INTO customers.loyalty_card"
+                        " (customer_id, code, issued_by) VALUES (%s, %s, %s)"
+                        " RETURNING {}"
+                    ).format(CARD_COLUMNS),
+                    (
+                        kit.body["customer_id"],
+                        generate_card_code(),
+                        str(g.principal["sub"]),
+                    ),
+                ).fetchone()
+        except psycopg.errors.IntegrityError as error:
+            mapped = refusal(error)
+            if mapped is None:
+                raise
+            raise mapped from None
+        return Representation("LoyaltyCard", card_json(row), status=201)
+
+    @kit.operation("listLoyaltyCards")
+    def list_loyalty_cards() -> Page:
+        customer_id = request.args["customer_id"]
+        offset = (kit.page - 1) * kit.size
+        with kit.db.connection() as connection:
+            summary = connection.execute(
+                "SELECT count(*), bool_or(status = 'ACTIVE')"
+                " FROM customers.loyalty_card WHERE customer_id = %s",
+                (customer_id,),
+            ).fetchone()
+            rows = connection.execute(
+                sql.SQL(
+                    "SELECT {} FROM customers.loyalty_card"
+                    " WHERE customer_id = %s"
+                    " ORDER BY issued_at DESC, card_id DESC LIMIT %s OFFSET %s"
+                ).format(CARD_COLUMNS),
+                (customer_id, kit.size, offset),
+            ).fetchall()
+        total, has_active = summary
+        g.loyalty_state = (
+            "NONE" if total == 0 else "ACTIVE" if has_active else "REVOKED"
+        )
+        return Page(
+            "LoyaltyCards",
+            "LoyaltyCard",
+            "loyalty_cards",
+            [card_json(row) for row in rows],
+            page=kit.page,
+            size=kit.size,
+            total=total,
+        )
+
+    @kit.operation("lookupLoyaltyCard")
+    def lookup_loyalty_card() -> Representation:
+        with kit.db.connection() as connection:
+            row = connection.execute(
+                "SELECT card_id, customer_id, status"
+                " FROM customers.loyalty_card WHERE code = %s",
+                (kit.body["code"],),
+            ).fetchone()
+        if row is None:
+            raise card_not_found("code")
+        if row[2] == "REVOKED":
+            raise ApiError(
+                409,
+                "card_revoked",
+                "The loyalty card was revoked.",
+                [{"field": "code", "code": "revoked"}],
+            )
+        return Representation(
+            "LoyaltyCardLookup",
+            {"card_id": str(row[0]), "customer_id": str(row[1])},
+        )
+
+    @kit.operation("revokeLoyaltyCard")
+    def revoke_loyalty_card(card_id: Any) -> Representation:
+        with kit.db.transaction() as connection:
+            row = connection.execute(
+                sql.SQL(
+                    "UPDATE customers.loyalty_card SET status = 'REVOKED',"
+                    " revoked_at = CURRENT_TIMESTAMP, revoked_by = %s,"
+                    " revocation_reason = %s"
+                    " WHERE card_id = %s AND status = 'ACTIVE' RETURNING {}"
+                ).format(CARD_COLUMNS),
+                (str(g.principal["sub"]), kit.body["reason"], card_id),
+            ).fetchone()
+            if row is None:
+                row = connection.execute(
+                    sql.SQL(
+                        "SELECT {} FROM customers.loyalty_card WHERE card_id = %s"
+                    ).format(CARD_COLUMNS),
+                    (card_id,),
+                ).fetchone()
+        if row is None:
+            raise card_not_found("card_id")
+        return Representation("LoyaltyCard", card_json(row))
 
     @kit.operation("registerCustomer")
     def register_customer() -> Representation:
@@ -298,4 +565,13 @@ def not_found() -> ApiError:
         "customer_not_found",
         "The customer does not exist.",
         [{"field": "customer_id", "code": "not_found"}],
+    )
+
+
+def card_not_found(field: str) -> ApiError:
+    return ApiError(
+        404,
+        "card_not_found",
+        "No loyalty card matches.",
+        [{"field": field, "code": "not_found"}],
     )

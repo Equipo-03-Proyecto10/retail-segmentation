@@ -313,6 +313,23 @@ SELECT ('00000000-0000-0000-0000-' || lpad(n::text,12,'0'))::uuid,
        CURRENT_DATE - (180 + n)
 FROM generate_series(1,30) n;
 
+-- ---------- customers.loyalty_card (30) ----------
+-- One durable identifier per seeded customer. Half remain active and half
+-- demonstrate revocation; production codes use a CSPRNG in customers-service.
+INSERT INTO customers.loyalty_card
+    (card_id, customer_id, code, status, issued_at, issued_by,
+     revoked_at, revoked_by, revocation_reason)
+SELECT ('8c000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid,
+       ('00000000-0000-0000-0000-' || lpad(n::text, 12, '0'))::uuid,
+       '7M' || lpad(n::text, 24, '0'),
+       CASE WHEN n <= 15 THEN 'ACTIVE' ELSE 'REVOKED' END,
+       now() - make_interval(days => 60 - n),
+       '11111111-1111-1111-1111-000000000001'::uuid,
+       CASE WHEN n > 15 THEN now() - make_interval(days => 30 - (n - 16)) END,
+       CASE WHEN n > 15 THEN '11111111-1111-1111-1111-000000000001'::uuid END,
+       CASE WHEN n > 15 THEN 'CUSTOMER_REQUEST' END
+FROM generate_series(1,30) AS g(n);
+
 -- ---------- segmentation runs (F7-02) ----------
 -- Every seeded run is SEEDED (ADR-0052): it scored the seeded sales below.
 -- The origin guard on segmentation_run checks OBSERVED runs only, so these

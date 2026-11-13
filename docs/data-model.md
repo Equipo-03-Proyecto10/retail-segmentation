@@ -690,6 +690,8 @@ erDiagram
     category                   ||--o{ product                    : "classifies"
     category                   |o--o{ category                   : "parent of"
     customer                   ||--o{ transaction                : "makes"
+    customer                   ||--o{ loyalty_card               : "holds"
+    app_user                   ||--o{ loyalty_card               : "issues/revokes"
     store                      ||--o{ transaction                : "registers"
     transaction                ||--o{ transaction_line           : "contains"
     product                    ||--o{ transaction_line           : "is sold as"
@@ -1033,6 +1035,30 @@ replacement; ADR-0017 fulfils that prediction with `segmentation_run` and
 `customer_segment_history` below — a customer's current segment is the
 `customer_segment_history` row with `valid_to IS NULL`, never a column on
 `customer` itself, so it cannot disagree with the history it is drawn from.
+
+#### `customers.loyalty_card`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `card_id` | `UUID` | NN | PK, default `gen_random_uuid()` | Durable card identifier |
+| `customer_id` | `UUID` | NN | FK → `public.customer`; one `ACTIVE` row per customer through `ux_loyalty_card_one_active_customer` | Customer the card identifies |
+| `code` | `VARCHAR(26)` | NN | UQ; Crockford base32 format | Opaque 128-bit identifier encoded in the QR |
+| `status` | `VARCHAR(7)` | NN | `ACTIVE` or `REVOKED` | Card lifecycle state |
+| `issued_at` | `TIMESTAMPTZ` | NN | default `CURRENT_TIMESTAMP` | Issue time |
+| `issued_by` | `UUID` | NN | FK → `public.app_user` | Staff member who issued it |
+| `revoked_at` | `TIMESTAMPTZ` | yes | present exactly when revoked | First and only revocation time |
+| `revoked_by` | `UUID` | yes | FK → `public.app_user`; present exactly when revoked | Staff member who revoked it |
+| `revocation_reason` | `VARCHAR(16)` | yes | fixed reason vocabulary; present exactly when revoked | Why the card ended |
+
+`card_id` and `code` are candidate keys. Every other attribute describes that
+one card and depends on either whole key. A customer may hold several cards
+over time, but each card is one row and has one lifecycle, so the relation has
+no independent multivalued dependencies and is in 4NF. Revocation stays on the
+card because it is single-valued and immutable after the first transition; a
+separate revocation relation would only split a one-to-zero-or-one fact. The
+partial unique index constrains the set of rows without creating a column
+dependency. Card history is separate from `customer`, avoiding a repeating
+code/status group and leaving the 30 existing customer rows unchanged.
 
 #### `segmentation_run`
 
@@ -1468,6 +1494,9 @@ The check-ins boundary owns `checkins` for `store_check_in` and
 `check_in_review`. It has no contract schema and no outbox, because nothing
 reads or consumes check-ins but its own service. It reads store locations
 through `api_stores.store_directory_v1`.
+The customers boundary owns `customers.loyalty_card` and publishes only the
+single-code resolver `api_customers.resolve_loyalty_code_v1`; consumers cannot
+enumerate codes or read the table.
 
 The eight outbox owners named by ADR-0044 therefore have both of these schemas:
 
@@ -1482,11 +1511,11 @@ The eight outbox owners named by ADR-0044 therefore have both of these schemas:
 | sales | `api_sales` | `sales_events` |
 | segments | `api_segments` | `segments_events` |
 
-customers is a ninth boundary with a contract schema and no outbox: `api_customers`
-holds `customer_ref_v1` (`customer_id`, `registered_on`, over `customer`,
-`security_invoker = off`), read by sales, customer-preferences, segments,
-recommendations and engagement. It publishes no stream, so it has no
-`customers_events`.
+customers is a ninth boundary with a contract schema and no outbox:
+`api_customers` holds `customer_ref_v1` (`customer_id`, `registered_on`, over
+`customer`, `security_invoker = off`) and `resolve_loyalty_code_v1(text)`,
+which returns identifiers only for an active code. It publishes no stream, so
+it has no `customers_events`.
 
 Each schema is created by its boundary's own section of `sql/01_schema.sql`;
 none exists until that boundary's story lands. `retail_app` has USAGE on
@@ -1596,7 +1625,7 @@ delete. Three groups of tables carry it:
 | Group | Tables | Why |
 |---|---|---|
 | Business rules | `segment`, `segment_rule`, `campaign`, `experiment` | Changing a rule silently changes what every report means |
-| Catalogs | `category`, `product`, `store`, `channel`, `role`, `customer`, `app_user`, and the products boundary's `product_status`, `product_attribute`, `product_barcode`, `product_relation` | These are what the administrator module edits, so this is what the demonstration's audit trail shows. The products tables are written by products-service, which passes the actor with `mosaiq.user_id`; the audit key is the product's id |
+| Catalogs and identifiers | `category`, `product`, `store`, `channel`, `role`, `customer`, `app_user`, `customers.loyalty_card`, and the products boundary's `product_status`, `product_attribute`, `product_barcode`, `product_relation` | These are administrator-managed catalogs or durable customer identifiers. Service writes pass the actor with `mosaiq.user_id`; a loyalty-card issue and its one revocation are attributable like the customer's other writes |
 | Segment assignment history | `customer_segment_history` | Each inserted successor and each closure replaces the audit signal formerly produced by changing `customer.current_segment_id` (ADR-0017) |
 
 Individual sales are **not** audited. Their volume and history already live in

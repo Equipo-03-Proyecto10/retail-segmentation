@@ -1566,7 +1566,8 @@ GRANT SELECT ON products.product_status, products.product_attribute,
 -- END BOUNDARY products
 
 -- BEGIN BOUNDARY customers
--- customers-service (F14-14) owns the registration rule of RN-08: email unique
+-- customers-service (F14-14, F21-14) owns the registration and loyalty-card
+-- rule of RN-08: email unique
 -- when given, whatever the letter case (ux_customer_email_lower), a known channel
 -- (customer_registration_channel_id_fkey), a registration date not in the
 -- future (checked by the service) and no deletion. The table stays in public
@@ -1584,6 +1585,46 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_customer_email_lower
 
 CREATE SCHEMA IF NOT EXISTS api_customers;
 REVOKE ALL ON SCHEMA api_customers FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS customers;
+REVOKE ALL ON SCHEMA customers FROM PUBLIC;
+
+-- Loyalty identifiers are durable facts: revocation updates a row and no role
+-- receives DELETE. The partial index is the database half of the one-active-
+-- card rule and remains effective for writes that bypass customers-service.
+CREATE TABLE IF NOT EXISTS customers.loyalty_card (
+    card_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id         UUID NOT NULL REFERENCES public.customer(customer_id),
+    code                VARCHAR(26) NOT NULL UNIQUE,
+    status              VARCHAR(7) NOT NULL DEFAULT 'ACTIVE',
+    issued_at           TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    issued_by           UUID NOT NULL REFERENCES public.app_user(user_id),
+    revoked_at          TIMESTAMPTZ,
+    revoked_by          UUID REFERENCES public.app_user(user_id),
+    revocation_reason   VARCHAR(16),
+    CONSTRAINT loyalty_card_code_check
+        CHECK (code ~ '^[0-9A-HJKMNP-TV-Z]{26}$'),
+    CONSTRAINT loyalty_card_status_check
+        CHECK (status IN ('ACTIVE', 'REVOKED')),
+    CONSTRAINT loyalty_card_revocation_reason_check
+        CHECK (revocation_reason IS NULL OR revocation_reason IN
+               ('LOST', 'STOLEN', 'REPLACED', 'CUSTOMER_REQUEST', 'OTHER')),
+    CONSTRAINT loyalty_card_revocation_state_check CHECK (
+        (status = 'ACTIVE' AND revoked_at IS NULL AND revoked_by IS NULL
+                           AND revocation_reason IS NULL)
+        OR
+        (status = 'REVOKED' AND revoked_at IS NOT NULL AND revoked_by IS NOT NULL
+                            AND revocation_reason IS NOT NULL)
+    )
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_loyalty_card_one_active_customer
+    ON customers.loyalty_card (customer_id) WHERE status = 'ACTIVE';
+CREATE INDEX IF NOT EXISTS idx_loyalty_card_customer_issued
+    ON customers.loyalty_card (customer_id, issued_at DESC, card_id);
+
+DROP TRIGGER IF EXISTS trg_audit_loyalty_card ON customers.loyalty_card;
+CREATE TRIGGER trg_audit_loyalty_card
+AFTER INSERT OR UPDATE ON customers.loyalty_card
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('card_id');
 
 -- The published customer reference: identity and registration date, and no
 -- personal data. security_invoker = off, so a consumer needs no privilege on
@@ -1594,18 +1635,44 @@ SELECT customer_id, registered_on
 FROM public.customer;
 REVOKE ALL ON api_customers.customer_ref_v1 FROM PUBLIC;
 
+-- Consumers can resolve one active code but cannot enumerate card data.
+CREATE OR REPLACE FUNCTION api_customers.resolve_loyalty_code_v1(p_code text)
+RETURNS TABLE (card_id uuid, customer_id uuid)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+    SELECT card.card_id, card.customer_id
+    FROM customers.loyalty_card AS card
+    WHERE p_code ~ '^[0-9A-HJKMNP-TV-Z]{26}$'
+      AND card.code = p_code
+      AND card.status = 'ACTIVE'
+$$;
+ALTER FUNCTION api_customers.resolve_loyalty_code_v1(text)
+    OWNER TO definer_customers;
+REVOKE ALL ON FUNCTION api_customers.resolve_loyalty_code_v1(text) FROM PUBLIC;
+
 -- The only service writer of customer: no DELETE, and registered_on and
 -- user_id can be set at registration but never corrected.
 GRANT SELECT, INSERT ON public.customer TO svc_customers;
 GRANT UPDATE (name, email, phone, registration_channel_id)
     ON public.customer TO svc_customers;
 
+GRANT USAGE ON SCHEMA customers TO svc_customers, definer_customers;
+GRANT SELECT, INSERT ON customers.loyalty_card TO svc_customers;
+GRANT UPDATE (status, revoked_at, revoked_by, revocation_reason)
+    ON customers.loyalty_card TO svc_customers;
+GRANT SELECT ON customers.loyalty_card TO definer_customers;
+
 GRANT USAGE ON SCHEMA api_customers
     TO svc_customers, svc_sales, svc_preferences, svc_segments,
-       svc_recommendations, svc_engagement;
+       svc_recommendations, svc_engagement, svc_checkins;
 GRANT SELECT ON api_customers.customer_ref_v1
     TO svc_customers, svc_sales, svc_preferences, svc_segments,
        svc_recommendations, svc_engagement;
+GRANT EXECUTE ON FUNCTION api_customers.resolve_loyalty_code_v1(text)
+    TO svc_checkins;
 -- END BOUNDARY customers
 
 -- BEGIN BOUNDARY segments

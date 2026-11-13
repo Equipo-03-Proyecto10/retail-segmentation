@@ -46,6 +46,17 @@ import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
 private const val VIEWPORT_RATIO = 4f / 3f
 private const val FRAME_SHARE = 0.6f
 
+/** CameraX can deliver another frame before Compose removes the preview; only the first value wins. */
+internal class DecodeOnce {
+    private var accepted = false
+
+    fun offer(raw: String?, onDecoded: (String) -> Unit) {
+        if (raw == null || accepted) return
+        accepted = true
+        onDecoded(raw)
+    }
+}
+
 /** The viewport's box: full width, clipped to the theme shape, with a neutral ground behind it. */
 @Composable
 private fun ViewportBox(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
@@ -142,11 +153,12 @@ fun CameraPreview(onDecoded: (String) -> Unit, onError: (Throwable) -> Unit) {
         }
     DisposableEffect(owner) {
         var disposed = false
+        val decodeOnce = DecodeOnce()
         val executor = ContextCompat.getMainExecutor(context)
         controller.setImageAnalysisAnalyzer(
             executor,
             MlKitAnalyzer(listOf(scanner), ImageAnalysis.COORDINATE_SYSTEM_VIEW_REFERENCED, executor) { result ->
-                result.getValue(scanner)?.firstOrNull()?.rawValue?.let { currentDecoded(it) }
+                decodeOnce.offer(result.getValue(scanner)?.firstOrNull()?.rawValue, currentDecoded)
             }
         )
         try {

@@ -29,6 +29,7 @@ import online.maxthecoder.mosaiq.floor.ui.ScanBody
 import online.maxthecoder.mosaiq.floor.ui.ScanResult
 import online.maxthecoder.mosaiq.floor.ui.ScanScreen
 import online.maxthecoder.mosaiq.floor.ui.ScanViewModel
+import online.maxthecoder.mosaiq.floor.ui.scan.DecodeOnce
 import online.maxthecoder.mosaiq.floor.ui.theme.MosaiqTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -55,6 +56,17 @@ class ScanStatesTest {
     private var settings = 0
     private var grant = 0
     private var pickedStore = 0
+
+    @Test
+    fun oneCameraSessionAcceptsOnlyItsFirstDecodedValue() {
+        val decoded = mutableListOf<String>()
+        val gate = DecodeOnce()
+        gate.offer(null, decoded::add)
+        gate.offer("120", decoded::add)
+        gate.offer("245", decoded::add)
+
+        assertEquals(listOf("120"), decoded)
+    }
 
     private fun show(
         result: ScanResult = ScanResult.Idle,

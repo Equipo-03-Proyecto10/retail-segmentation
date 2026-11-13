@@ -4160,6 +4160,156 @@ GRANT EXECUTE ON FUNCTION api_audit.record_event_v1(uuid, text, text, timestampt
        svc_campaigns, svc_audit_trail;
 -- END BOUNDARY audit-trail
 
+-- BEGIN BOUNDARY model-registry
+-- model-registry-service (F22-11, RN-66, ADR-0059, ADR-0064, ADR-0046). The
+-- registry owns every model version, which method and parameters produced it,
+-- the dataset it was fitted on, its metrics and the reference distribution
+-- drift is judged against. A version is immutable: nothing in this section
+-- lets any role edit its definition or delete a row, and the publication
+-- history is append-only. Publication and rollback (F22-13), training
+-- (F22-12), the outbox for stream:models.v1.publication_recorded and the
+-- drift tables (F23-09) are their own stories and extend this section; each
+-- adds its tables, grants and seed rows with its own pull request.
+--
+-- The web has no privilege here (ADR-0046): retail_app gets no USAGE on
+-- `models`, so it cannot even name these tables.
+CREATE SCHEMA IF NOT EXISTS models;
+REVOKE ALL ON SCHEMA models FROM PUBLIC;
+
+-- One row per version. The definition is scalar columns, so that a boundary,
+-- a tolerance or the dataset can be read, compared and constrained one by one;
+-- the two documents that are only ever frozen and read whole (the scoring a
+-- customer is scored against, and the reference histogram) are jsonb.
+-- `state`, `published_at` and `retired_at` are the only columns that ever
+-- change, and only together with an appended models.model_publication row
+-- (F22-13); trg_model_version_immutable refuses any other change and every
+-- DELETE, for every role including the owner. The partial unique index is the
+-- schema's half of "exactly one version is PUBLISHED" (ADR-0064): the service
+-- checks it first and maps the index's refusal to a 409, never a 500.
+CREATE TABLE IF NOT EXISTS models.model_version (
+    version_id             BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name                   VARCHAR(80) NOT NULL UNIQUE CHECK (length(name) >= 1),
+    method                 VARCHAR(20) NOT NULL CHECK (method IN ('RFM_RULES', 'KMEANS')),
+    source                 VARCHAR(20) NOT NULL
+                           CHECK (source IN ('REGISTERED', 'TRAINING', 'WEB_RUN')),
+    window_days            INTEGER NOT NULL CHECK (window_days BETWEEN 1 AND 3650),
+    seed                   BIGINT,
+    rule_set_id            BIGINT CHECK (rule_set_id >= 1),
+    k                      INTEGER CHECK (k BETWEEN 2 AND 20),
+    max_iterations         INTEGER CHECK (max_iterations BETWEEN 1 AND 1000),
+    tolerance              DOUBLE PRECISION CHECK (tolerance > 0),
+    normalization          VARCHAR(20) NOT NULL CHECK (normalization IN ('NONE', 'MIN_MAX')),
+    frozen_scoring         JSONB NOT NULL CHECK (jsonb_typeof(frozen_scoring) = 'object'),
+    reference_distribution JSONB NOT NULL
+                           CHECK (jsonb_typeof(reference_distribution) = 'object'),
+    dataset_fingerprint    CHAR(64) NOT NULL CHECK (dataset_fingerprint ~ '^[0-9a-f]{64}$'),
+    dataset_origin         VARCHAR(20) NOT NULL CHECK (dataset_origin IN ('OBSERVED', 'SEEDED')),
+    dataset_row_count      INTEGER NOT NULL CHECK (dataset_row_count >= 0),
+    inertia                DOUBLE PRECISION CHECK (inertia >= 0),
+    silhouette             DOUBLE PRECISION CHECK (silhouette BETWEEN -1 AND 1),
+    stability              DOUBLE PRECISION CHECK (stability BETWEEN 0 AND 1),
+    owner_id               UUID REFERENCES public.app_user(user_id) ON DELETE RESTRICT,
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+    state                  VARCHAR(20) NOT NULL DEFAULT 'DRAFT'
+                           CHECK (state IN ('DRAFT', 'PUBLISHED', 'RETIRED')),
+    published_at           TIMESTAMPTZ,
+    retired_at             TIMESTAMPTZ,
+    -- A method owns its definition; the other's fields stay null (ADR-0018).
+    CONSTRAINT model_version_method_definition CHECK (
+        (method = 'RFM_RULES' AND seed IS NULL AND k IS NULL AND max_iterations IS NULL
+            AND tolerance IS NULL AND normalization = 'NONE')
+        OR
+        (method = 'KMEANS' AND rule_set_id IS NULL AND k IS NOT NULL
+            AND max_iterations IS NOT NULL AND tolerance IS NOT NULL
+            AND normalization = 'MIN_MAX')),
+    -- A web run has no owner; a registered or trained version always does.
+    CONSTRAINT model_version_owner CHECK ((source = 'WEB_RUN') = (owner_id IS NULL)),
+    CONSTRAINT model_version_state_times CHECK (
+        (state = 'DRAFT') = (published_at IS NULL)
+        AND (state = 'RETIRED') = (retired_at IS NOT NULL))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS model_version_one_published
+    ON models.model_version (state) WHERE state = 'PUBLISHED';
+
+-- The variables a version uses: a multivalued fact of the version, so a row
+-- per feature and not an array in the version's row (4NF).
+CREATE TABLE IF NOT EXISTS models.model_version_feature (
+    version_id BIGINT NOT NULL REFERENCES models.model_version(version_id)
+               ON DELETE RESTRICT,
+    feature    CHAR(1) NOT NULL CHECK (feature IN ('R', 'F', 'M')),
+    PRIMARY KEY (version_id, feature)
+);
+
+-- Append-only: a publication or a rollback is a fact, and a rollback is a new
+-- row naming the restored version, never an edit (ADR-0064). Written by
+-- F22-13; svc_models can only read it until then.
+CREATE TABLE IF NOT EXISTS models.model_publication (
+    publication_id      BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    version_id          BIGINT NOT NULL REFERENCES models.model_version(version_id)
+                        ON DELETE RESTRICT,
+    action              VARCHAR(20) NOT NULL CHECK (action IN ('PUBLISH', 'ROLLBACK')),
+    previous_version_id BIGINT REFERENCES models.model_version(version_id)
+                        ON DELETE RESTRICT,
+    reason              VARCHAR(500) NOT NULL CHECK (length(reason) >= 1),
+    published_by        UUID REFERENCES public.app_user(user_id) ON DELETE RESTRICT,
+    published_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (previous_version_id IS DISTINCT FROM version_id),
+    CHECK (action = 'PUBLISH' OR previous_version_id IS NOT NULL)
+);
+CREATE INDEX IF NOT EXISTS model_publication_version
+    ON models.model_publication (version_id, publication_id);
+
+-- Every segmentation run has a version (ADR-0064): the run the web recorded,
+-- and the version whose method and parameters it matched or created. It names
+-- the web's run by value and never changes it. A WEB_RUN version's source run
+-- is the earliest run linked to it.
+CREATE TABLE IF NOT EXISTS models.run_version (
+    run_id     BIGINT PRIMARY KEY REFERENCES public.segmentation_run(run_id)
+               ON DELETE RESTRICT,
+    version_id BIGINT NOT NULL REFERENCES models.model_version(version_id)
+               ON DELETE RESTRICT,
+    linked_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS run_version_version ON models.run_version (version_id, run_id);
+
+-- Immutability, for every role. Only state, published_at and retired_at of a
+-- version may change; nothing is ever deleted, in any of the four tables.
+CREATE OR REPLACE FUNCTION models.refuse_change() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+    IF TG_TABLE_NAME = 'model_version' AND TG_OP = 'UPDATE'
+       AND (to_jsonb(NEW) - 'state' - 'published_at' - 'retired_at')
+           = (to_jsonb(OLD) - 'state' - 'published_at' - 'retired_at') THEN
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'models.% is immutable: % refused (ADR-0064)', TG_TABLE_NAME, TG_OP
+        USING ERRCODE = '23000', CONSTRAINT = TG_TABLE_NAME || '_immutable';
+END
+$$;
+
+CREATE OR REPLACE TRIGGER trg_model_version_immutable
+BEFORE UPDATE OR DELETE ON models.model_version
+FOR EACH ROW EXECUTE FUNCTION models.refuse_change();
+CREATE OR REPLACE TRIGGER trg_model_version_feature_immutable
+BEFORE UPDATE OR DELETE ON models.model_version_feature
+FOR EACH ROW EXECUTE FUNCTION models.refuse_change();
+CREATE OR REPLACE TRIGGER trg_model_publication_immutable
+BEFORE UPDATE OR DELETE ON models.model_publication
+FOR EACH ROW EXECUTE FUNCTION models.refuse_change();
+CREATE OR REPLACE TRIGGER trg_run_version_immutable
+BEFORE UPDATE OR DELETE ON models.run_version
+FOR EACH ROW EXECUTE FUNCTION models.refuse_change();
+
+-- Each is a row of contracts/db/grants.csv. svc_models registers versions and
+-- reads them; it holds no UPDATE or DELETE on any of them.
+GRANT USAGE ON SCHEMA models TO svc_models;
+GRANT SELECT, INSERT ON models.model_version, models.model_version_feature TO svc_models;
+GRANT SELECT ON models.model_publication, models.run_version TO svc_models;
+-- END BOUNDARY model-registry
+
 -- BEGIN APPLICATION ROLE VERIFICATION
 -- F1-05 (#53). Opt-in acceptance checks, kept here because even a rejected
 -- DROP belongs in the only file allowed to contain table DDL. Normal schema

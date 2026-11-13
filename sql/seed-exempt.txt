@@ -101,3 +101,19 @@ sales_events.outbox
 # capture trigger on segmentation_run passes the seed's own runs through it
 # once, as every writer's do (F14-20).
 segments_events.outbox
+
+# models.model_version: the registry holds the versions of two methods, and
+# today the seed's two definitions, one rule set and one K-means fit (F22-11).
+# A version is a deliberate, immutable act of publication, not a population:
+# padding it with invented versions would fake a history the audit events and
+# the publications would then have to explain. The same holds for the three
+# tables that hang from a version. The 31 segmentation runs reach 30 rows in
+# models.run_version, which is not exempt.
+models.model_version
+
+# models.model_version_feature: R, F and M for each of those versions.
+models.model_version_feature
+
+# models.model_publication: one publication, the first, of the one published
+# version. The history grows only by an administrator's publication (F22-13).
+models.model_publication

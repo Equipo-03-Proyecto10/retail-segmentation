@@ -1,6 +1,6 @@
 # model-registry
 
-> **Status:** Contract published (phase 22, third; F22-10, #805), and extended with drift reports and alerts (phase 23; F23-08, #820). Not yet implemented: the service is stood up by F22-11 (#806), and the drift operations, marked planned in the contract (ADR-0073), by F23-09 (#821). ADR-0059 places it; ADR-0063, ADR-0064 and ADR-0065 decide how it behaves.
+> **Status:** Stood up (phase 22, third; F22-11, #806): it registers, lists and reads versions and lists their publications, over `models.*`. The contract was published by F22-10 (#805) and extended with drift reports and alerts by F23-08 (#820). Publication and rollback (F22-13, #809), training (F22-12, #808) and the drift operations (F23-09, #821) are marked planned in the contract (ADR-0073) and implemented by their own stories. ADR-0059 places it; ADR-0063, ADR-0064 and ADR-0065 decide how it behaves.
 > **One rule:** A model version is immutable once published, carries its dataset, parameters, metrics and reference distribution, changes state only by an explicit publication or rollback, and every drift alert is judged against that reference (RN-66)
 
 ## Summary
@@ -55,7 +55,10 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 | Object | Kind | Access | Notes |
 |---|---|---|---|
-| `models.model_version`, `models.model_publication`, `models.model_training`, `models.run_version` | Tables (`models`) | S | Named by the schema story; the contract fixes only what the endpoints serve |
+| `models.model_version`, `models.model_version_feature` | Tables (`models`) | S, insert only | Immutable: a trigger refuses every DELETE and every change but `state`, `published_at` and `retired_at`, which F22-13 moves with a publication. Exempt from the 30-row seed (two versions), with its reason in `sql/seed-exempt.txt` |
+| `models.model_publication` | Table (`models`) | R until F22-13 | Append-only; one seeded row, the first publication. Exempt |
+| `models.run_version` | Table (`models`) | R until the stream consumer (ADR-0064) | Links each segmentation run to its version; the seed links all 31 runs |
+| `models.model_training` | Table (`models`) | — | Named and justified by F22-12 (#808) |
 | Drift reports and alerts | Tables (`models`) | S | Named, with their 4NF justification and seed rows, by F23-09 (#821); the contract fixes only what the endpoints serve, and that reports and alerts are append-only |
 | `models_events.outbox` | Table (outbox) | SELECT, UPDATE of `relayed_at`, DELETE (7-day purge) | Filled by `definer_models`; seed-exempt runtime state |
 

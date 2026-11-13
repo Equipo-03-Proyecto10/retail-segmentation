@@ -2,7 +2,7 @@
 
 The PostgreSQL model for MOSAIQ: the conceptual model, the normalization to
 fourth normal form with the reason for each step, and the logical model as an
-ER diagram and a data dictionary. §7 records the two MongoDB collections that
+ER diagram and a data dictionary. §7 records the three MongoDB collections that
 sit outside it, and why their shape needs no 4NF argument.
 
 The model is implemented by [`sql/01_schema.sql`](../sql/01_schema.sql). Where
@@ -1668,7 +1668,7 @@ engagement-service alone ([ADR-0038](adr/0038-mongodb-holds-in-store-engagement-
 [`datastores/mongodb-design.md`](datastores/mongodb-design.md) is the full
 specification: validator, indexes, operations and checks.
 
-### The two collections
+### The three collections
 
 `engagement_event` holds one document per event:
 
@@ -1691,6 +1691,13 @@ specification: validator, indexes, operations and checks.
 `engagement_daily` holds one document per `(store_id, day, type)`, unique,
 where `day` is the UTC date of `occurred_at` and `count` is the number of
 events of that key that are not voided.
+
+`capture_incident` holds one refused queued write per `client_incident_id`,
+also unique on `(source_type, source_operation_id)`. Its strict allow-list is
+the incident contract: store and refusal codes, attempt count, occurrence and
+recording times, reporter, status, and the append-only review `history`. It has
+no field for credentials or customer data. A resolution changes `status` and
+appends `{status, note, by, at}`; it never deletes the incident (ADR-0071).
 
 ### The boundary that keeps them out
 
@@ -1721,6 +1728,11 @@ fact is stored twice:
   void is the only change, and a second void is refused (409 `already_voided`),
   so it holds at most one entry. It is always read with its event and never
   queried alone.
+- **One document per refused operation.** Each incident's scalar fields depend
+  on its `_id` and on either candidate identity. Its review history contains
+  only changes to that incident, is always read with it, and has no independent
+  multivalued fact. Closing preserves the fact and its author instead of
+  replacing or deleting it.
 - **`engagement_daily` is derived, not a second source.** It is a rollup of
   `engagement_event`, kept by `$inc` and rebuilt from the events by a
   maintenance `$merge`. When the two disagree, the events win and the rebuild

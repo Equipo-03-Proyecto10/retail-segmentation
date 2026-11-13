@@ -117,12 +117,16 @@ fun FloorHome(
                             onPickStore = { location = FloorLocation.CheckIn },
                             onAddProduct = sales::addProduct
                         )
-                    FloorLocation.Sale ->
+                    FloorLocation.Sale, FloorLocation.RegisterCustomer ->
                         SalesScreen(
                             sales,
                             chosen,
                             onPickStore = { location = FloorLocation.CheckIn },
                             insights = insights,
+                            registering = here == FloorLocation.RegisterCustomer,
+                            onRegisteringChange = { open ->
+                                location = if (open) FloorLocation.RegisterCustomer else FloorLocation.Sale
+                            },
                             onOpenProduct = { productId ->
                                 scan.showProduct(productId)
                                 location = FloorLocation.ProductFromRecommendation(productId)

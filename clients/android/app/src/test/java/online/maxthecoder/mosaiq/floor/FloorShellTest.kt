@@ -15,18 +15,25 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.runBlocking
 import online.maxthecoder.mosaiq.floor.auth.Tokens
+import online.maxthecoder.mosaiq.floor.net.CurrentAssignment
+import online.maxthecoder.mosaiq.floor.net.Customer
+import online.maxthecoder.mosaiq.floor.net.RecommendationItem
+import online.maxthecoder.mosaiq.floor.net.RecommendationResult
 import online.maxthecoder.mosaiq.floor.session.ChosenStore
 import online.maxthecoder.mosaiq.floor.session.Profile
 import online.maxthecoder.mosaiq.floor.ui.CustomerInsightsViewModel
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
+import online.maxthecoder.mosaiq.floor.ui.InsightsState
 import online.maxthecoder.mosaiq.floor.ui.SalesViewModel
 import online.maxthecoder.mosaiq.floor.ui.ScanViewModel
 import online.maxthecoder.mosaiq.floor.ui.SessionState
+import online.maxthecoder.mosaiq.floor.ui.ShownRecommendation
 import online.maxthecoder.mosaiq.floor.ui.shell.FloorHome
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -148,6 +155,48 @@ class FloorShellTest {
 
         compose.onNodeWithText("Pick your store").assertDoesNotExist()
         compose.onNodeWithText("Check in here").assertExists()
+        compose.onNodeWithTag("nav-check-in").assertIsSelected()
+    }
+
+    @Test
+    fun backFromCustomerRegistrationReturnsToTheSaleRoot() {
+        content()
+        compose.onNodeWithTag("nav-sale").performClick()
+        compose.onNodeWithText("New customer").performScrollTo().performClick()
+        compose.onNodeWithText("Register customer").assertExists()
+        assertTrue(backIsEnabled())
+
+        pressBack()
+
+        compose.onNodeWithText("Register customer").assertDoesNotExist()
+        compose.onNodeWithTag("nav-sale").assertIsSelected()
+    }
+
+    @Test
+    fun aRecommendationProductSurvivesRecreationAndBackReturnsToTheScanRoot() {
+        val customer = Customer("c1", "Ana Torres", "ana@example.com", null, 1, "2025-01-01")
+        val item = RecommendationItem(120, 4, 8, emptyList())
+        graph.session.choose(ChosenStore(1, "Centro"))
+        sales.selectedCustomer.value = customer
+        insights.state.value =
+            InsightsState(
+                customerId = customer.customerId,
+                assignment = CurrentAssignment(customer.customerId, "assigned", "loyal_regulars"),
+                recommendations = RecommendationResult(customer.customerId, "recommended", "loyal_regulars"),
+                items = listOf(ShownRecommendation(1, item, "Cotton shirt", emptyList()))
+            )
+        val tester = StateRestorationTester(compose)
+        tester.setContent { Home() }
+        compose.onNodeWithTag("nav-sale").performClick()
+        compose.onNodeWithTag("recommendation-1").performScrollTo().performClick()
+        compose.onNodeWithTag("nav-scan").assertIsSelected()
+
+        tester.emulateSavedInstanceStateRestore()
+
+        compose.onNodeWithTag("nav-scan").assertIsSelected()
+        pressBack()
+        compose.onNodeWithTag("nav-scan").assertIsSelected()
+        pressBack()
         compose.onNodeWithTag("nav-check-in").assertIsSelected()
     }
 

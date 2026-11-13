@@ -15,6 +15,7 @@ class FloorLocationTest {
             FloorLocation.Sale,
             FloorLocation.Outbox,
             FloorLocation.StorePicker,
+            FloorLocation.RegisterCustomer,
             FloorLocation.ProductFromRecommendation(42)
         )
 
@@ -36,6 +37,7 @@ class FloorLocationTest {
     @Test
     fun aSubStateBacksOutToItsRoot() {
         assertEquals(FloorLocation.CheckIn, FloorLocation.StorePicker.back)
+        assertEquals(FloorLocation.Sale, FloorLocation.RegisterCustomer.back)
         assertEquals(FloorLocation.Scan, FloorLocation.ProductFromRecommendation(7).back)
     }
 

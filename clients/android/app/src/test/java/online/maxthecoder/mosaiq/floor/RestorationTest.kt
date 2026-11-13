@@ -162,6 +162,21 @@ class RestorationTest {
     }
 
     @Test
+    fun theActivityBeingRecreatedKeepsCustomerRegistrationAndItsFields() {
+        showHome()
+        compose.onNodeWithTag("nav-sale").performClick()
+        compose.onNodeWithText("New customer").performScrollTo().performClick()
+        compose.onNodeWithText("Name").performTextInput("Ben Ruiz")
+
+        compose.activityRule.scenario.recreate()
+        showHome()
+
+        compose.onNodeWithTag("nav-sale").assertIsSelected()
+        compose.onNodeWithText("Register customer").assertExists()
+        compose.onNodeWithText("Ben Ruiz").assertExists()
+    }
+
+    @Test
     fun theAccountMenuStaysOpenAcrossRecreation() {
         val tester = StateRestorationTester(compose)
         tester.setContent { Home() }

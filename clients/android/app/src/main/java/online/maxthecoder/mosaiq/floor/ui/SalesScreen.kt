@@ -55,6 +55,8 @@ fun SalesScreen(
     store: ChosenStore?,
     onPickStore: () -> Unit,
     insights: CustomerInsightsViewModel,
+    registering: Boolean,
+    onRegisteringChange: (Boolean) -> Unit,
     onOpenProduct: (Int) -> Unit
 ) {
     val customer by model.selectedCustomer.collectAsStateWithLifecycle()
@@ -109,13 +111,28 @@ fun SalesScreen(
             onPickStore = onPickStore,
             rowStatus = model::status
         )
-    SalesContent(ui, actions, snackbar) { CustomerInsights(insights, onOpenProduct) }
+    SalesContent(ui, actions, snackbar, registering, onRegisteringChange) {
+        CustomerInsights(insights, onOpenProduct)
+    }
 }
 
-/** The stateless sale screen; previews and tests drive it with any [SaleUi]. */
+/** A self-contained sale screen for previews and focused component tests. */
 @Composable
 fun SalesContent(ui: SaleUi, actions: SaleActions, snackbar: SnackbarHostState, insights: @Composable () -> Unit) {
     var registering by rememberSaveable { mutableStateOf(false) }
+    SalesContent(ui, actions, snackbar, registering, { registering = it }, insights)
+}
+
+/** The sale screen with its navigation sub-state owned by the shell (ADR-0058). */
+@Composable
+fun SalesContent(
+    ui: SaleUi,
+    actions: SaleActions,
+    snackbar: SnackbarHostState,
+    registering: Boolean,
+    onRegisteringChange: (Boolean) -> Unit,
+    insights: @Composable () -> Unit
+) {
     var name by rememberSaveable { mutableStateOf("") }
     var email by rememberSaveable { mutableStateOf("") }
     var phone by rememberSaveable { mutableStateOf("") }
@@ -123,7 +140,7 @@ fun SalesContent(ui: SaleUi, actions: SaleActions, snackbar: SnackbarHostState, 
     // A successful registration selects the new customer: close the sheet and clear the form.
     LaunchedEffect(registered) {
         if (registered != null) {
-            registering = false
+            onRegisteringChange(false)
             name = ""
             email = ""
             phone = ""
@@ -135,7 +152,7 @@ fun SalesContent(ui: SaleUi, actions: SaleActions, snackbar: SnackbarHostState, 
             verticalArrangement = Arrangement.spacedBy(Spacing.Xxl)
         ) {
             StoreLine(ui.store, actions.onPickStore)
-            CustomerSection(ui, actions, onNewCustomer = { registering = true })
+            CustomerSection(ui, actions, onNewCustomer = { onRegisteringChange(true) })
             if (ui.customer != null) insights()
             ItemsSection(ui, actions)
             HistorySection(ui, actions)
@@ -155,7 +172,7 @@ fun SalesContent(ui: SaleUi, actions: SaleActions, snackbar: SnackbarHostState, 
             onChooseChannel = actions.onChooseChannel,
             onLoadChannels = actions.onLoadChannels,
             onSubmit = { actions.onRegister(name, email, phone) },
-            onDismiss = { registering = false }
+            onDismiss = { onRegisteringChange(false) }
         )
     }
 }

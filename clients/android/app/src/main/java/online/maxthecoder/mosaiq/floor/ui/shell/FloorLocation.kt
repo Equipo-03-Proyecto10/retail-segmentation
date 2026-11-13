@@ -36,6 +36,12 @@ sealed interface FloorLocation {
             get() = CheckIn
     }
 
+    /** Registering a customer in the sale flow; Back closes the sheet and returns to Sale. */
+    data object RegisterCustomer : FloorLocation {
+        override val root: Root
+            get() = Sale
+    }
+
     /** A product opened from a recommendation; part of Scan. */
     data class ProductFromRecommendation(val productId: Int) : FloorLocation {
         override val root: Root
@@ -55,6 +61,7 @@ val FloorLocationSaver: Saver<FloorLocation, String> =
                 FloorLocation.Sale -> "sale"
                 FloorLocation.Outbox -> "outbox"
                 FloorLocation.StorePicker -> "store_picker"
+                FloorLocation.RegisterCustomer -> "register_customer"
                 is FloorLocation.ProductFromRecommendation -> PRODUCT_PREFIX + location.productId
             }
         },
@@ -64,6 +71,7 @@ val FloorLocationSaver: Saver<FloorLocation, String> =
                 saved == "sale" -> FloorLocation.Sale
                 saved == "outbox" -> FloorLocation.Outbox
                 saved == "store_picker" -> FloorLocation.StorePicker
+                saved == "register_customer" -> FloorLocation.RegisterCustomer
                 saved.startsWith(PRODUCT_PREFIX) ->
                     saved.removePrefix(PRODUCT_PREFIX).toIntOrNull()?.let {
                         FloorLocation.ProductFromRecommendation(it)

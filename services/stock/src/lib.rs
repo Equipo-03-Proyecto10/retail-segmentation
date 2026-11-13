@@ -267,10 +267,15 @@ async fn record_stock_movement(ctx: Ctx) -> Result<Reply, ApiError> {
     let sub = movements::caller(&principal.sub)?;
     let body = ctx.body.as_ref().expect("contract requires a body");
     let request = movements::parse_movement(body)?;
+    let actor = movements::Actor {
+        sub,
+        role: &principal.role,
+        correlation_id: &ctx.correlation_id,
+    };
     let mut connection = ctx.db().connection().await?;
     let transaction = connection.transaction(Some(principal)).await?;
     let (recorded, replayed) =
-        movements::record_movement(&*transaction, key, sub, &request).await?;
+        movements::apply_movement(&*transaction, key, &actor, &request).await?;
     transaction.commit().await?;
     let items: Vec<Value> = recorded
         .iter()

@@ -508,6 +508,89 @@ where
     Ok((movements, replayed))
 }
 
+/// Who asked for a movement, as ADR-0072's event names them: the verified
+/// token's subject and role, and the request's `X-Correlation-ID`.
+pub struct Actor<'a> {
+    pub sub: Uuid,
+    pub role: &'a str,
+    pub correlation_id: &'a str,
+}
+
+/// Apply one movement as the service does: `record_movement`, and for a new
+/// adjustment its `CRITICAL_ACTION` domain event (ADR-0072: "stock is
+/// adjusted"), both in the caller's transaction, so an adjustment never
+/// commits without its event and the event never survives a rolled-back
+/// adjustment. A replay changed nothing, so it records nothing.
+pub async fn apply_movement<C>(
+    client: &C,
+    key: Uuid,
+    actor: &Actor<'_>,
+    request: &MovementRequest,
+) -> Result<(Vec<Movement>, bool), ApiError>
+where
+    C: GenericClient + Sync,
+{
+    let (movements, replayed) = record_movement(client, key, actor.sub, request).await?;
+    if !replayed && request.movement_type == MovementType::Adjustment {
+        record_adjustment_event(client, key, actor, request).await?;
+    }
+    Ok((movements, replayed))
+}
+
+/// Record an adjustment as `CRITICAL_ACTION` with `details.action =
+/// STOCK_ADJUSTED` through `api_audit.record_event_v1`, as `svc_stock`.
+///
+/// - The event id is derived from the `Idempotency-Key` in a stock-only
+///   namespace, so the event of one request has one id and cannot collide
+///   with another producer's.
+/// - The subject is the stock level: the event's `store_id` and, as
+///   `subject_id`, the product, which together name
+///   `/v1/stock-levels/{store_id}/{product_id}`.
+/// - The reason code is the adjustment's reason (DAMAGE, LOSS, EXPIRY or
+///   CORRECTION).
+///
+/// A refused record is the producer's fault, never the client's: it fails
+/// the request as a server error, and the caller's transaction rolls back.
+pub async fn record_adjustment_event<C>(
+    client: &C,
+    key: Uuid,
+    actor: &Actor<'_>,
+    request: &MovementRequest,
+) -> Result<(), ApiError>
+where
+    C: GenericClient + Sync,
+{
+    let correlation = (!actor.correlation_id.is_empty() && actor.correlation_id != "-")
+        .then_some(actor.correlation_id);
+    client
+        .query_one(
+            "SELECT created FROM api_audit.record_event_v1( \
+                 md5('stock.adjustment:' || $1::uuid::text)::uuid, 'CRITICAL_ACTION', 'SUCCESS', \
+                 now(), 'USER', $2::uuid, $3::text, $4::smallint, 'stock_level', $5::text, \
+                 NULL::bigint, NULL::bigint, $6::text, \
+                 jsonb_strip_nulls(jsonb_build_object( \
+                     'action', 'STOCK_ADJUSTED', 'reason_code', $7::text)))",
+            &[
+                &key,
+                &actor.sub,
+                &actor.role,
+                &request.store_id,
+                &request.product_id.to_string(),
+                &correlation,
+                &request.reason,
+            ],
+        )
+        .await
+        .map(|_| ())
+        .map_err(|error| {
+            tracing::error!(
+                "STOCK_ADJUSTED not recorded: sqlstate={:?}",
+                error.code().map(|code| code.code().to_owned())
+            );
+            ApiError::from(error)
+        })
+}
+
 // ---------- reading ----------
 
 fn invalid_query(field: &str, detail: &str, message: &str) -> ApiError {

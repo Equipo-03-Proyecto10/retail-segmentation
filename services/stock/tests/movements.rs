@@ -8,7 +8,9 @@
 
 use std::time::Duration;
 
-use stock::movements::{parse_movement, record_movement, MovementRequest, MovementType};
+use stock::movements::{
+    apply_movement, parse_movement, record_movement, Actor, MovementRequest, MovementType,
+};
 use tokio::sync::{Mutex, MutexGuard};
 use tokio_postgres::{Client, NoTls};
 use uuid::Uuid;
@@ -807,6 +809,188 @@ async fn movement_history_restricts_master_deletion() {
     for row in rows {
         assert_eq!(row.get::<_, String>(1), "r", "{}", row.get::<_, String>(0));
     }
+}
+
+// ---------- ADR-0072: an adjustment is a CRITICAL_ACTION ----------
+
+const EVENT_PAIR: Pair = Pair {
+    store_id: 21,
+    product_id: 8,
+};
+
+fn actor(role: &str) -> Actor<'_> {
+    Actor {
+        sub: admin(),
+        role,
+        correlation_id: "stock-test-1",
+    }
+}
+
+/// The domain events recorded for one Idempotency-Key, in the derivation the
+/// service uses, read as the owner.
+async fn events_for(owner: &Client, key: Uuid) -> Vec<tokio_postgres::Row> {
+    owner
+        .query(
+            "SELECT kind, source, outcome, actor_type, actor_user_id, actor_role, store_id, \
+                    subject_type, subject_id, correlation_id, details::text, seq \
+             FROM audit_events.domain_event \
+             WHERE event_id = md5('stock.adjustment:' || $1::uuid::text)::uuid",
+            &[&key],
+        )
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn an_adjustment_commits_with_one_stock_adjusted_event() {
+    let _guard = test_lock().await;
+    let Some(url) = database_url() else { return };
+    let owner = connect(&url).await;
+    let mut stock = connect(&service_url(&url)).await;
+    let pair = EVENT_PAIR;
+    cleanup(&owner, pair.product_id).await;
+    pair.set(&owner, 10).await;
+
+    let key = Uuid::new_v4();
+    let request = adjustment(pair.store_id, pair.product_id, -3);
+    let transaction = stock.transaction().await.unwrap();
+    let (_, replayed) = apply_movement(&transaction, key, &actor("ADMIN"), &request)
+        .await
+        .unwrap();
+    transaction.commit().await.unwrap();
+    assert!(!replayed);
+    assert_eq!(pair.on_hand(&owner).await, Some(7));
+
+    let events = events_for(&owner, key).await;
+    assert_eq!(events.len(), 1, "an adjustment records exactly one event");
+    let event = &events[0];
+    assert_eq!(event.get::<_, String>(0), "CRITICAL_ACTION");
+    assert_eq!(
+        event.get::<_, String>(1),
+        "svc_stock",
+        "source is the session user"
+    );
+    assert_eq!(event.get::<_, String>(2), "SUCCESS");
+    assert_eq!(event.get::<_, String>(3), "USER");
+    assert_eq!(event.get::<_, Option<Uuid>>(4), Some(admin()));
+    assert_eq!(event.get::<_, Option<String>>(5).as_deref(), Some("ADMIN"));
+    assert_eq!(event.get::<_, Option<i16>>(6), Some(pair.store_id));
+    assert_eq!(
+        event.get::<_, Option<String>>(7).as_deref(),
+        Some("stock_level")
+    );
+    assert_eq!(
+        event.get::<_, Option<String>>(8),
+        Some(pair.product_id.to_string())
+    );
+    assert_eq!(
+        event.get::<_, Option<String>>(9).as_deref(),
+        Some("stock-test-1")
+    );
+    let details: serde_json::Value = serde_json::from_str(&event.get::<_, String>(10)).unwrap();
+    assert_eq!(
+        details,
+        serde_json::json!({"action": "STOCK_ADJUSTED", "reason_code": "DAMAGE"})
+    );
+
+    // The new row hashes as the chain says and links to the row before it.
+    let seq: i64 = event.get(11);
+    let linked: bool = owner
+        .query_one(
+            "SELECT e.entry_hash = audit_events.entry_hash_v1(e) \
+                AND e.prev_hash = coalesce( \
+                    (SELECT p.entry_hash FROM audit_events.domain_event p \
+                      WHERE p.seq = e.seq - 1), repeat('0', 64)) \
+             FROM audit_events.domain_event e WHERE e.seq = $1",
+            &[&seq],
+        )
+        .await
+        .unwrap()
+        .get(0);
+    assert!(linked, "the event must extend the hash chain");
+
+    // A replay changed nothing, so it records nothing.
+    let transaction = stock.transaction().await.unwrap();
+    let (_, replayed) = apply_movement(&transaction, key, &actor("ADMIN"), &request)
+        .await
+        .unwrap();
+    transaction.commit().await.unwrap();
+    assert!(replayed);
+    assert_eq!(events_for(&owner, key).await.len(), 1);
+    assert_eq!(pair.on_hand(&owner).await, Some(7));
+    cleanup(&owner, pair.product_id).await;
+}
+
+#[tokio::test]
+async fn only_an_adjustment_records_a_critical_action() {
+    let _guard = test_lock().await;
+    let Some(url) = database_url() else { return };
+    let owner = connect(&url).await;
+    let mut stock = connect(&service_url(&url)).await;
+    let pair = EVENT_PAIR;
+    cleanup(&owner, pair.product_id).await;
+    pair.set(&owner, 10).await;
+
+    for request in [
+        receipt(pair.store_id, pair.product_id, 4),
+        count(pair.store_id, pair.product_id, 12),
+        transfer(pair.store_id, 22, pair.product_id, 2),
+    ] {
+        let key = Uuid::new_v4();
+        let transaction = stock.transaction().await.unwrap();
+        apply_movement(&transaction, key, &actor("INVENTORY_PLANNER"), &request)
+            .await
+            .unwrap();
+        transaction.commit().await.unwrap();
+        assert!(
+            events_for(&owner, key).await.is_empty(),
+            "{:?} is not an adjustment",
+            request.movement_type
+        );
+    }
+    cleanup(&owner, pair.product_id).await;
+}
+
+#[tokio::test]
+async fn an_adjustment_whose_event_is_refused_does_not_commit() {
+    let _guard = test_lock().await;
+    let Some(url) = database_url() else { return };
+    let owner = connect(&url).await;
+    let mut stock = connect(&service_url(&url)).await;
+    let pair = EVENT_PAIR;
+    cleanup(&owner, pair.product_id).await;
+    pair.set(&owner, 10).await;
+
+    // The record function refuses a role code outside its pattern (MA004),
+    // after the movement itself has been applied in the transaction.
+    let key = Uuid::new_v4();
+    let request = adjustment(pair.store_id, pair.product_id, -3);
+    let transaction = stock.transaction().await.unwrap();
+    let error = apply_movement(&transaction, key, &actor("not a role"), &request)
+        .await
+        .unwrap_err();
+    assert!(
+        error.status >= 500,
+        "a refused record is the producer's fault"
+    );
+    drop(transaction);
+
+    assert_eq!(
+        pair.on_hand(&owner).await,
+        Some(10),
+        "the adjustment rolled back"
+    );
+    let remembered: i64 = owner
+        .query_one(
+            "SELECT count(*) FROM stock.movement_request WHERE idempotency_key = $1",
+            &[&key],
+        )
+        .await
+        .unwrap()
+        .get(0);
+    assert_eq!(remembered, 0, "a rolled-back adjustment is not remembered");
+    assert!(events_for(&owner, key).await.is_empty());
+    cleanup(&owner, pair.product_id).await;
 }
 
 #[test]

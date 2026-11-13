@@ -1,4 +1,8 @@
-"""ADR-0040's memory gate: every container's mem_limit sums to at most 3,000 MB.
+"""The memory gate: every container's mem_limit sums to at most 3,500 MB.
+
+ADR-0040 set the gate at 3,000 MB; ADR-0059 moves it to 3,500 MB for the four
+services its map adds, and F19-08 (#758) applies it after measuring the
+instance under load (docs/evidence/f19-08-memory.md).
 
     python3 .github/scripts/memory_gate.py [compose.yaml ...]
 
@@ -16,7 +20,7 @@ from pathlib import Path
 
 import yaml
 
-BUDGET_MB = 3000
+BUDGET_MB = 3500
 _LIMIT = re.compile(r"([0-9]+)([mg])")
 
 
@@ -42,7 +46,7 @@ def check(files: list[Path]) -> tuple[int, list[str]]:
                 total += size
     if total > BUDGET_MB:
         problems.append(
-            f"FAIL: mem_limit sums to {total} MB, above {BUDGET_MB:,} MB (ADR-0040)"
+            f"FAIL: mem_limit sums to {total} MB, above {BUDGET_MB:,} MB (ADR-0059)"
         )
     return total, problems
 

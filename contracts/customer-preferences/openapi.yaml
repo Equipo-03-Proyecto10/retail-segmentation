@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: customer-preferences-service
-  version: 1.1.1
+  version: 1.1.2
   description: >-
     Reads a customer's preference profile and replaces each of its two sets,
     preferred channels and interest categories, only as a whole (RN-54). Also

@@ -209,7 +209,10 @@ def test_a_role_outside_each_operation_is_forbidden_role(
     client: Client, contract: Contract, signer: Signer, sessions: Sessions
 ) -> None:
     operations = [op for op in _v1(contract) if op.protected and op.roles]
-    assert operations, "the contract declares no protected operation"
+    if not operations:
+        # A service stood up before its operations (every one still planned,
+        # ADR-0073) has none to probe, as in the cases above.
+        pytest.skip("the contract declares no protected operation")
     for op in operations:
         token = live(signer, sessions, op.outside_role)
         reply = client.call(op.method, op.url(), token=token)

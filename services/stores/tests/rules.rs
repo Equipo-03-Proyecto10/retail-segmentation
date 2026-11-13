@@ -505,16 +505,22 @@ async fn the_schema_refuses_hours_a_writer_goes_around_the_service_to_break() {
 
     // The same two changes in one transaction, in either order, are accepted:
     // the check is deferred to the commit.
+    owner.batch_execute("BEGIN").await.unwrap();
     owner
-        .batch_execute(&format!(
-            "BEGIN; \
-             INSERT INTO stores.store_hours_interval VALUES ({id}, 1, '09:00', '17:00'); \
-             UPDATE stores.store_hours SET time_zone = 'UTC' WHERE store_id = {id}; \
-             COMMIT;",
-            id = store.id
-        ))
+        .execute(
+            "INSERT INTO stores.store_hours_interval VALUES ($1, 1, '09:00', '17:00')",
+            &[&store.id],
+        )
         .await
         .unwrap();
+    owner
+        .execute(
+            "UPDATE stores.store_hours SET time_zone = 'UTC' WHERE store_id = $1",
+            &[&store.id],
+        )
+        .await
+        .unwrap();
+    owner.batch_execute("COMMIT").await.unwrap();
 
     // An interval under no zone, and a zone left over with no interval.
     let error = owner

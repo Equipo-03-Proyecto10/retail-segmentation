@@ -1,6 +1,6 @@
 # ADR-0081 — The domain-event table is owned by the schema owner, and a subject is named once, in the common fields
 
-**Status:** Proposed
+**Status:** Accepted (2026-11-13)
 **Owner:** Marcelo
 **Issue:** #1004
 **Supersedes:** in part [ADR-0072](0072-domain-events-are-recorded-by-one-definer-function-into-a-hash-chained-append-only-table-that-audit-trail-reads.md) (the first bullet of section 6, and the `details` column of section 1's table for `CALCULATION_RUN`, `PERMISSION_CHANGED`, `CRITICAL_ACTION` and `HISTORY_READ`)

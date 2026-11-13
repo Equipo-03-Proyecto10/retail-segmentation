@@ -57,6 +57,7 @@ own schemas under ADR-0046 and are deliberately outside this list and diagram.
 - `app_user` (N) — has — (1) `role`
 - `app_user` (0..1) — signs in as — (0..1) `customer`
 - `app_user` (1) — opens — (N) `app_session`
+- `app_user` (1) — is assigned through — (N) `users.store_assignment` rows (N) — name — (1) `store`
 - `app_user` (0..1) — performs — (N) `audit_log` entries
 - `app_user` (0..1) — executes — (N) `segmentation_run` rows
 - `channel` (1) — registers — (N) `customer`
@@ -525,6 +526,15 @@ keeps one writer per table: only that boundary's definer appends, and only its
 own relay marks and purges. `segments_events.outbox` (F14-20) is one of them: it
 captures each `segmentation_run` the web inserts.
 
+The users boundary adds **`users.store_assignment`**, the independent
+multivalued fact “this user may work at this store.” Its composite key
+`(user_id, store_id)` contains every attribute, so every determinant is a key
+and the relation is in BCNF and 4NF. Keeping assignments out of `app_user`
+avoids a repeating store list and allows one user to have any number of stores
+without copying account attributes. Deactivation or a role change does not
+delete the fact (RN-04); `api_users.store_assignment_v1` filters inactive and
+non-store-bound users when deciding what currently grants access.
+
 The check-ins boundary (ADR-0046, F14-26) adds two relations, both in 4NF:
 - **`checkins.store_check_in`** has two candidate keys: `check_in_id` and the
   phone's `client_check_in_id`. Each determines every other column.
@@ -773,6 +783,18 @@ instead of deadlocking and the second one is refused as `category_no_cycle` (#58
 This is a 1:1 vertical split of `store`: `store_id` is both its key and its
 determinant, and determines every location attribute. It contains no
 independent multivalued facts, so the relation is in 4NF.
+
+#### `users.store_assignment`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `user_id` | `UUID` | NN | PK with `store_id`; FK → `public.app_user`, `ON DELETE RESTRICT` | The assigned floor user |
+| `store_id` | `SMALLINT` | NN | PK with `user_id`; FK → `public.store`, `ON DELETE RESTRICT` | A store at which the user may work |
+
+Rows are retained when a user is deactivated or moved to a non-store-bound
+role. The published `api_users.store_assignment_v1` view exposes a row only
+for an active `SALES_ASSOCIATE`, `STORE_MANAGER`, `LOYALTY_OFFICER` or
+`COMMERCIAL_SUPERVISOR`; consumers read it on every narrowed request.
 
 #### `stores_events.outbox`
 
@@ -1519,6 +1541,7 @@ deletes any of the four.
 | `idx_notification_recipient_unread` | `notification_recipient (user_id) WHERE read_at IS NULL` | The unread count on every page, and "mark all read" |
 | `notification_{sales_load,run,experiment}_id_key` | `notification (sales_load_id)`, `(run_id)`, `(experiment_id)`, each `UNIQUE` | An event is announced once; the arbiter of the announcer's `ON CONFLICT` |
 | `idx_app_user_role` | `app_user (role_id)` | Users listed and counted by role; the `RESTRICT` check when a role is deleted |
+| `idx_store_assignment_store` | `users.store_assignment (store_id)` | The `RESTRICT` check when a store with assignments is deleted; the primary key already serves reads by user |
 | `idx_customer_registration_channel` | `customer (registration_channel_id)` | The `RESTRICT` check when a channel is deleted |
 | `idx_customer_preferred_channel_channel` | `customer_preferred_channel (channel_id)` | The `CASCADE` when a channel is deleted (the primary key leads with `customer_id`) |
 | `idx_transaction_channel` | `transaction (channel_id)` | The `RESTRICT` check when a channel is deleted, which would otherwise scan every sale |

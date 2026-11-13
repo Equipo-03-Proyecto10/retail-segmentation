@@ -2460,9 +2460,35 @@ GRANT SELECT ON api_stores.store_directory_v1 TO svc_stores, svc_checkins, svc_e
 -- auth can end the user's sessions. Idempotent: an operator re-applies it.
 
 CREATE SCHEMA IF NOT EXISTS api_users;
+CREATE SCHEMA IF NOT EXISTS users;
 CREATE SCHEMA IF NOT EXISTS users_events;
 REVOKE ALL ON SCHEMA api_users FROM PUBLIC;
+REVOKE ALL ON SCHEMA users FROM PUBLIC;
 REVOKE ALL ON SCHEMA users_events FROM PUBLIC;
+
+-- The stores at which a floor user may work. Deactivation and role changes
+-- retain this history; the published view below decides whether it currently
+-- grants anything. The store FK is deliberately checked by PostgreSQL: its
+-- owner may read public.store, while svc_users receives no such privilege.
+CREATE TABLE IF NOT EXISTS users.store_assignment (
+    user_id  UUID NOT NULL,
+    store_id SMALLINT NOT NULL,
+    PRIMARY KEY (user_id, store_id)
+);
+CREATE INDEX IF NOT EXISTS idx_store_assignment_store
+    ON users.store_assignment (store_id);
+DO $$ BEGIN
+    ALTER TABLE users.store_assignment ADD CONSTRAINT store_assignment_user_id_fkey
+        FOREIGN KEY (user_id) REFERENCES public.app_user(user_id) ON DELETE RESTRICT;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE users.store_assignment ADD CONSTRAINT store_assignment_store_id_fkey
+        FOREIGN KEY (store_id) REFERENCES public.store(store_id) ON DELETE RESTRICT;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+CREATE OR REPLACE TRIGGER trg_audit_store_assignment
+AFTER INSERT OR UPDATE OR DELETE ON users.store_assignment
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('user_id');
 
 -- Keys only, never state: consumers re-read the credential view.
 CREATE TABLE IF NOT EXISTS users_events.outbox (
@@ -2488,6 +2514,18 @@ SELECT u.user_id,
        r.code AS role_code
   FROM public.app_user AS u
   JOIN public.role AS r ON r.role_id = u.role_id;
+
+-- Consumers re-read this view for every narrowed request (ADR-0060). Stored
+-- rows survive deactivation and a non-floor role change, but grant no access.
+CREATE OR REPLACE VIEW api_users.store_assignment_v1
+WITH (security_invoker = off) AS
+SELECT a.user_id, a.store_id
+  FROM users.store_assignment AS a
+  JOIN public.app_user AS u ON u.user_id = a.user_id
+  JOIN public.role AS r ON r.role_id = u.role_id
+ WHERE u.is_active
+   AND r.code IN ('SALES_ASSOCIATE', 'STORE_MANAGER', 'LOYALTY_OFFICER',
+                  'COMMERCIAL_SUPERVISOR');
 
 -- One outbox row per access change, whichever role made it, in the writer's
 -- transaction. A change of name or email alone is not an access change.
@@ -2523,12 +2561,17 @@ GRANT SELECT, INSERT ON public.app_user TO svc_users;
 GRANT UPDATE (name, email, role_id, is_active, password_hash) ON public.app_user TO svc_users;
 GRANT SELECT ON public.role TO svc_users;
 
+GRANT USAGE ON SCHEMA users TO svc_users;
+GRANT SELECT, INSERT, DELETE ON users.store_assignment TO svc_users;
+
 GRANT USAGE ON SCHEMA users_events TO svc_users, definer_users;
 GRANT INSERT ON users_events.outbox TO definer_users;
 GRANT SELECT, DELETE, UPDATE (relayed_at) ON users_events.outbox TO svc_users;
 
-GRANT USAGE ON SCHEMA api_users TO svc_users, svc_auth;
+GRANT USAGE ON SCHEMA api_users TO svc_users, svc_auth, svc_sales, svc_checkins, svc_engagement;
 GRANT SELECT ON api_users.credential_v1 TO svc_users, svc_auth;
+GRANT SELECT ON api_users.store_assignment_v1
+    TO svc_users, svc_sales, svc_checkins, svc_engagement;
 -- END BOUNDARY users
 
 -- BEGIN BOUNDARY check-ins

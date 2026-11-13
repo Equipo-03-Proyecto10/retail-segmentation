@@ -180,6 +180,16 @@ SELECT ('11111111-1111-1111-1111-' || lpad(n::text,12,'0'))::uuid,
        now() - (n || ' days')::interval
 FROM generate_series(31,33) n;
 
+-- ---------- users.store_assignment (30) ----------
+-- The five seeded STORE_MANAGER accounts and the three new floor profiles
+-- each have stores. A role change or deactivation keeps these rows as history;
+-- api_users.store_assignment_v1 exposes only currently active floor users.
+INSERT INTO users.store_assignment (user_id, store_id)
+SELECT ('11111111-1111-1111-1111-' ||
+        lpad((ARRAY[3,9,15,21,27,31,32,33])[1+((n-1)%8)]::text, 12, '0'))::uuid,
+       n
+FROM generate_series(1,30) n;
+
 -- ---------- stores.store_location (30, one per seeded store) ----------
 -- Coordinates cycle through plausible city centres in the same order as the
 -- seeded store cities. The sole administrator is the source of every value.

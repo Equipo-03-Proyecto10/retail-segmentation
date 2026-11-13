@@ -4160,6 +4160,33 @@ GRANT EXECUTE ON FUNCTION api_audit.record_event_v1(uuid, text, text, timestampt
        svc_campaigns, svc_audit_trail;
 -- END BOUNDARY audit-trail
 
+-- BEGIN BOUNDARY experimentation
+-- experimentation (F25-07, RN-23, RN-24, RN-42, RN-48, RN-49, ADR-0034, ADR-0046,
+-- ADR-0059, ADR-0068): stood up. It owns the experiments schema for the tables the
+-- stories after it add, and api_experiments for the contract objects it publishes.
+-- It also takes ownership of the five experiment tables the web wrote in public
+-- (E-09): svc_experiments is the one service role that holds privileges on them.
+-- The privileges mirror what retail_app holds, so the append-only rules of
+-- ADR-0026, ADR-0027 and ADR-0050 hold for the service exactly as for the web:
+-- assignments, exposures and conversions are INSERT and SELECT only, and nothing
+-- is ever deleted (ADR-0029). The treatment-only and group-immutability triggers
+-- fire for every writer. Identity columns need no sequence grant, and the
+-- experiment and group ids are allocated under the experiment lock as the web
+-- does. Idempotent: an operator re-applies it.
+CREATE SCHEMA IF NOT EXISTS experiments;
+REVOKE ALL ON SCHEMA experiments FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS api_experiments;
+REVOKE ALL ON SCHEMA api_experiments FROM PUBLIC;
+GRANT USAGE ON SCHEMA experiments, api_experiments TO svc_experiments;
+GRANT SELECT, INSERT, UPDATE ON public.experiment, public.experiment_group TO svc_experiments;
+GRANT SELECT, INSERT ON public.experiment_assignment, public.experiment_exposure,
+    public.experiment_conversion TO svc_experiments;
+-- It is a recording role of audit-trail's CRITICAL_ACTION (api_audit.record_event_v1).
+GRANT USAGE ON SCHEMA api_audit TO svc_experiments;
+GRANT EXECUTE ON FUNCTION api_audit.record_event_v1(uuid, text, text, timestamptz, text, uuid,
+    text, smallint, text, text, bigint, bigint, text, jsonb) TO svc_experiments;
+-- END BOUNDARY experimentation
+
 -- BEGIN APPLICATION ROLE VERIFICATION
 -- F1-05 (#53). Opt-in acceptance checks, kept here because even a rejected
 -- DROP belongs in the only file allowed to contain table DDL. Normal schema

@@ -82,12 +82,12 @@ fi
 
 if wanted 2; then
   cat >> "$sql" <<'SQL'
--- Exactly the fifteen service LOGIN roles, plus the bench role.
+-- Exactly the sixteen service LOGIN roles, plus the bench role.
 SELECT 'assertion 2: missing or extra LOGIN role ' || coalesce(x.name, r.rolname)
 FROM unnest(ARRAY['svc_auth','svc_users','svc_products','svc_categories',
   'svc_stores','svc_stock','svc_customers','svc_preferences','svc_sales','svc_segments',
   'svc_recommendations','svc_engagement','svc_checkins','svc_campaigns','svc_audit_trail',
-  'svc_products_bench']) AS x(name)
+  'svc_experiments','svc_products_bench']) AS x(name)
 FULL JOIN (SELECT rolname FROM pg_roles WHERE rolname LIKE 'svc\_%' AND rolcanlogin) r
   ON r.rolname = x.name
 WHERE x.name IS NULL OR r.rolname IS NULL;
@@ -98,9 +98,8 @@ if wanted 3; then
   cat >> "$sql" <<'SQL'
 -- No service privilege on a web-only table.
 SELECT 'assertion 3: ' || r.rolname || ' reaches web-only ' || t FROM pg_roles r
-CROSS JOIN unnest(ARRAY['app_session','sales_load','sales_load_rejection','experiment',
-  'experiment_group','experiment_assignment','experiment_exposure',
-  'experiment_conversion','notification','notification_recipient']) AS t
+CROSS JOIN unnest(ARRAY['app_session','sales_load','sales_load_rejection',
+  'notification','notification_recipient']) AS t
 WHERE r.rolname LIKE 'svc\_%'
   AND (has_table_privilege(r.oid, ('public.' || t)::regclass,
          'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')

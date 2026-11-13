@@ -143,6 +143,9 @@ SET mosaiq.svc_campaigns_password = :'svc_campaigns_password';
 \if :{?svc_audit_trail_password}
 SET mosaiq.svc_audit_trail_password = :'svc_audit_trail_password';
 \endif
+\if :{?svc_experiments_password}
+SET mosaiq.svc_experiments_password = :'svc_experiments_password';
+\endif
 \if :{?svc_products_bench_password}
 SET mosaiq.svc_products_bench_password = :'svc_products_bench_password';
 \endif
@@ -168,6 +171,7 @@ BEGIN
     'svc_checkins',
     'svc_campaigns',
     'svc_audit_trail',
+    'svc_experiments',
     'svc_products_bench'
   ] LOOP
     pw := coalesce(nullif(current_setting('mosaiq.' || r || '_password', true), ''), r);

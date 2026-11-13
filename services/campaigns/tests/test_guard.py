@@ -143,6 +143,10 @@ def test_the_grants_are_exactly_select_insert_update_on_campaign(
     for role in others:
         for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
             assert not has(role, "public.campaign", privilege), role
+        if role == "svc_experiments":
+            # F25-07 (#838): experimentation owns the experiment tables, and the
+            # guard still reads them as definer_guard, never as svc_campaigns.
+            continue
         for table in ("public.experiment", "public.experiment_group"):
             assert not has(role, table, "SELECT"), role
 

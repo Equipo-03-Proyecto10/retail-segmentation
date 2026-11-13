@@ -310,3 +310,19 @@ svc_stock,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,tex
 svc_stock,api_audit,USAGE
 svc_users,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
 svc_users,api_audit,USAGE
+svc_experiments,experiments,USAGE
+svc_experiments,api_experiments,USAGE
+svc_experiments,public.experiment,SELECT
+svc_experiments,public.experiment,INSERT
+svc_experiments,public.experiment,UPDATE
+svc_experiments,public.experiment_group,SELECT
+svc_experiments,public.experiment_group,INSERT
+svc_experiments,public.experiment_group,UPDATE
+svc_experiments,public.experiment_assignment,SELECT
+svc_experiments,public.experiment_assignment,INSERT
+svc_experiments,public.experiment_exposure,SELECT
+svc_experiments,public.experiment_exposure,INSERT
+svc_experiments,public.experiment_conversion,SELECT
+svc_experiments,public.experiment_conversion,INSERT
+svc_experiments,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
+svc_experiments,api_audit,USAGE

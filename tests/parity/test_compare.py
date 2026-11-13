@@ -14,6 +14,7 @@ from tests.parity.compare import (
     AuditShape,
     CaseResult,
     Difference,
+    ReportDifference,
     SegmentDifference,
     assignment_from_service,
     audit_shape,
@@ -25,6 +26,7 @@ from tests.parity.compare import (
     parse_customer_current,
     parse_propagation_bound,
     parse_report_open_members,
+    parse_reports_revenue,
     parse_stock_page,
     write_results,
 )
@@ -398,3 +400,33 @@ def test_a_contract_without_a_bound_states_none() -> None:
         parse_propagation_bound("# `stream:x`\n\n## Consumers\n", "segments")
     with pytest.raises(ValueError, match="no row for 'campaigns'"):
         parse_propagation_bound(CONTRACT, "campaigns")
+
+
+REPORTS = """<div class="mq-grid mq-grid--3">
+<article class="mq-metric">
+  <span class="mq-metric__label">Revenue <span class="mq-pill">Synthetic</span></span>
+  <span class="mq-metric__value mq-num">12,345.60</span>
+  <div class="mq-metric__footer"><span>30 days to 2026-11-01</span></div>
+</article>
+<article class="mq-metric">
+  <span class="mq-metric__label">Sales</span>
+  <span class="mq-metric__value mq-num">1,204</span>
+</article>
+</div>
+<section><span class="mq-table__count">Revenue by channel</span>
+<table><tr><td>Web</td><td class="mq-num">9</td></tr></table></section>"""
+
+
+def test_the_reports_index_is_read_as_revenue_and_sales() -> None:
+    from decimal import Decimal
+
+    assert parse_reports_revenue(REPORTS) == (Decimal("12345.60"), 1204)
+
+
+def test_an_index_without_sales_has_no_figures() -> None:
+    assert parse_reports_revenue("<h2>No sales yet</h2>") is None
+
+
+def test_a_report_difference_names_the_figure() -> None:
+    found = ReportDifference("reports index", "revenue", "10.00", "20.00")
+    assert "reports index: revenue: web='10.00' expected='20.00'" == str(found)

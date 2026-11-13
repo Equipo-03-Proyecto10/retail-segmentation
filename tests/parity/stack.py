@@ -4,7 +4,7 @@ HTTP and SQL only.
 The web path is the browser's: sign in, upload a sales CSV, read /catalog/stock,
 submit the administrator's forms, read a customer's segment timeline and the
 segment history report, run a segmentation. The service path is a client's:
-sign in to auth-service, POST /v1/sales, GET
+sign in to auth-service, POST /v1/sales, POST /v1/sale-reversals, GET
 /v1/stock-levels/{store_id}/{product_id}, write through a service's contract,
 read GET /v1/audit-entries, register a customer and read the two reads of
 /v1/segment-assignments. Neither imports web/ or services/ (ADR-0045). Every
@@ -13,7 +13,8 @@ SQL statement is parameterized.
 Configuration (all optional; a path without its settings is skipped):
 
     PARITY_WEB_URL            the web system, http://127.0.0.1:5000
-    PARITY_WEB_EMAIL/PASSWORD the administrator, who imports CSVs, reads stock
+    PARITY_WEB_EMAIL/PASSWORD the administrator, who imports CSVs, reads stock,
+                              the reports index
                               and, on both paths, makes the audited changes
                               (F20-08: every service write it uses is ADMIN's)
                               and runs a segmentation (RN-05, F20-09)
@@ -37,6 +38,7 @@ import urllib.parse
 import urllib.request
 import uuid
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from http.cookiejar import CookieJar
 from pathlib import Path
 
@@ -51,6 +53,7 @@ from tests.parity.compare import (
     parse_customer_current,
     parse_propagation_bound,
     parse_report_open_members,
+    parse_reports_revenue,
     parse_stock_page,
 )
 
@@ -223,6 +226,11 @@ class WebPath:
             )
         return found
 
+    def revenue(self) -> tuple[Decimal, int] | None:
+        """(revenue, sales) the reports index shows (F21-03): net of reversals."""
+
+        return parse_reports_revenue(self._get("/reports/"))
+
     def submit(self, form_path: str, fields: dict[str, str], action=None) -> str:
         """Fill the form served at `form_path` and post it to `action` (the
         form's own path by default), as a browser does, CSRF token included."""
@@ -324,6 +332,18 @@ class ServicePath:
             token=self.token,
             content_type="application/json",
             body=json.dumps(sale).encode(),
+            headers={"Idempotency-Key": key or str(uuid.uuid4())},
+        )
+
+    def record_reversal(self, reversal: dict, key: str | None = None):
+        """POST /v1/sale-reversals: a cancellation or a return (F21-03)."""
+
+        return self.sales.call(
+            "POST",
+            "/api/sales/v1/sale-reversals",
+            token=self.token,
+            content_type="application/json",
+            body=json.dumps(reversal).encode(),
             headers={"Idempotency-Key": key or str(uuid.uuid4())},
         )
 

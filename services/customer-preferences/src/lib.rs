@@ -15,6 +15,7 @@
 //! and the readers of those logs are in [`consent`].
 
 mod consent;
+mod inference;
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -37,6 +38,10 @@ pub use consent::{
     read_consent, read_logged_log, read_restrictions, record_consent, record_history_read,
     record_restrictions, ConsentState, Log, PurposeState, Recorded, RefusalLog, RestrictionEntry,
     Restrictions, DECISION_LOCK_CLASS, PURPOSES,
+};
+pub use inference::{
+    infer_all, infer_customer, read_interests, Inferred, InterestProfile, DEFAULT_WINDOW_DAYS,
+    SOURCE as INFERENCE_SOURCE,
 };
 
 tokio::task_local! {
@@ -90,7 +95,9 @@ const READY: &str = "SELECT FROM api_customers.customer_ref_v1, \
      api_preferences.interest_category_v1, api_preferences.consent_state_v1, \
      api_preferences.restriction_v1, preferences.consent_decision, \
      preferences.restriction_decision, preferences.preference_change, \
-     preferences.preference_change_member, preferences_events.outbox LIMIT 0";
+     preferences.preference_change_member, preferences_events.outbox, \
+     preferences.inferred_interest, api_sales.net_purchase_line_v1, \
+     api_products.product_ref_v1 LIMIT 0";
 const INSERT_CHANGE: &str = "INSERT INTO preferences.preference_change \
      (customer_id, preference_set, changed_by) VALUES ($1, $2, $3) RETURNING change_id";
 const INSERT_MEMBERS: &str = "INSERT INTO preferences.preference_change_member \
@@ -418,6 +425,7 @@ pub fn router(config: KitConfig, contracts: &str) -> Result<Router, Box<dyn std:
         .operation("getPreferenceProfile", get_preference_profile)?
         .operation("replacePreferredChannels", replace_preferred_channels)?
         .operation("replaceInterestCategories", replace_interest_categories)?
+        .operation("getInterestProfile", inference::get_interest_profile)?
         .operation("getRestrictionProfile", consent::get_restriction_profile)?
         .operation("getConsentState", consent::get_consent_state)?
         .operation("listConsentDecisions", consent::list_consent_decisions)?
@@ -490,8 +498,25 @@ async fn relay(config: KitConfig) {
     .await;
 }
 
+/// The nightly inference job (F21-18). It has its own pool, so a long run never
+/// holds a request's connection.
+fn spawn_inference(config: &KitConfig) {
+    let (enabled, window_days, interval) = inference::job_settings();
+    let Some(url) = config.database_url.as_deref().filter(|_| enabled) else {
+        tracing::info!("The inference job is disabled");
+        return;
+    };
+    let db = Arc::new(Database::new(
+        Some(url),
+        Duration::from_secs(5),
+        Duration::from_secs(2),
+    ));
+    tokio::spawn(inference::run_job(db, window_days, interval));
+}
+
 pub async fn serve(config: KitConfig, contracts: &str) -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(relay(config.clone()));
+    spawn_inference(&config);
     let app = router(config, contracts)?;
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", PORT)).await?;
     mosaiq_kit::serve(listener, app).await?;

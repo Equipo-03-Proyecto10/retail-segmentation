@@ -272,7 +272,6 @@ paths:
         `api_customers.customer_ref_v1` is 404 `customer_not_found`. Not recorded in the
         audit trail: it is the current state, not a history.
       operationId: getInterestProfile
-      x-mosaiq-status: planned
       x-mosaiq-roles: [ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR, SALES_ASSOCIATE, LOYALTY_OFFICER]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'

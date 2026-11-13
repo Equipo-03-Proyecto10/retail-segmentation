@@ -2366,6 +2366,66 @@ CROSS JOIN (VALUES ('PERSONALIZATION', 'GRANTED'),
 WHERE NOT EXISTS (SELECT FROM preferences.consent_decision)
 ORDER BY c.customer_id, p.purpose;
 
+-- F21-18 (#796, ADR-0066, RN-34, RN-35): the interests inferred from a
+-- customer's net purchases, kept apart from the declared ones in
+-- public.customer_interest_category, which inference never writes. One row per
+-- customer and category; a run replaces a customer's whole set (DELETE and
+-- INSERT under the customer's decision lock), so the role gets no UPDATE.
+-- Every row says where it came from (source), over how many days (window_days)
+-- and how strongly (strength, the percentage of the customer's net purchases
+-- in the window that include a product of the category, rounded half up).
+-- The rows are derived and can be recomputed, so a category's deletion removes
+-- them; a customer is never deleted (RN-08), so that key is RESTRICT. When
+-- PROFILING is withdrawn the service deletes the customer's rows in the same
+-- transaction as the decision (ADR-0066 section 3).
+CREATE TABLE IF NOT EXISTS preferences.inferred_interest (
+    customer_id UUID NOT NULL,
+    category_id SMALLINT NOT NULL,
+    source VARCHAR(20) NOT NULL,
+    window_days SMALLINT NOT NULL,
+    strength SMALLINT NOT NULL,
+    inferred_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+DO $inferred$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_constraint WHERE conname = 'inferred_interest_pkey'
+                   AND conrelid = 'preferences.inferred_interest'::regclass) THEN
+        ALTER TABLE preferences.inferred_interest
+            ADD CONSTRAINT inferred_interest_pkey PRIMARY KEY (customer_id, category_id);
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_constraint WHERE conname = 'inferred_interest_customer_id_fkey'
+                   AND conrelid = 'preferences.inferred_interest'::regclass) THEN
+        ALTER TABLE preferences.inferred_interest
+            ADD CONSTRAINT inferred_interest_customer_id_fkey FOREIGN KEY (customer_id)
+                REFERENCES public.customer(customer_id) ON DELETE RESTRICT;
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_constraint WHERE conname = 'inferred_interest_category_id_fkey'
+                   AND conrelid = 'preferences.inferred_interest'::regclass) THEN
+        ALTER TABLE preferences.inferred_interest
+            ADD CONSTRAINT inferred_interest_category_id_fkey FOREIGN KEY (category_id)
+                REFERENCES public.category(category_id) ON DELETE CASCADE;
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_constraint WHERE conname = 'inferred_interest_source_check'
+                   AND conrelid = 'preferences.inferred_interest'::regclass) THEN
+        ALTER TABLE preferences.inferred_interest
+            ADD CONSTRAINT inferred_interest_source_check CHECK (source IN ('NET_PURCHASES'));
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_constraint WHERE conname = 'inferred_interest_window_days_check'
+                   AND conrelid = 'preferences.inferred_interest'::regclass) THEN
+        ALTER TABLE preferences.inferred_interest
+            ADD CONSTRAINT inferred_interest_window_days_check
+                CHECK (window_days BETWEEN 1 AND 3650);
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_constraint WHERE conname = 'inferred_interest_strength_check'
+                   AND conrelid = 'preferences.inferred_interest'::regclass) THEN
+        ALTER TABLE preferences.inferred_interest
+            ADD CONSTRAINT inferred_interest_strength_check CHECK (strength BETWEEN 1 AND 100);
+    END IF;
+END
+$inferred$;
+CREATE INDEX IF NOT EXISTS inferred_interest_category
+    ON preferences.inferred_interest (category_id);
+
 -- contracts/db/api_preferences.interest_category.v1.md. Definer rights
 -- (security_invoker = off): recommendations reads these two columns and needs
 -- no privilege on the base table.
@@ -2484,6 +2544,13 @@ GRANT SELECT, DELETE, UPDATE (relayed_at) ON preferences_events.outbox TO svc_pr
 GRANT USAGE ON SCHEMA preferences TO svc_preferences;
 GRANT SELECT, INSERT ON preferences.consent_decision, preferences.restriction_decision,
     preferences.preference_change, preferences.preference_change_member TO svc_preferences;
+-- F21-18: inference replaces a customer's inferred set whole, so SELECT, INSERT
+-- and DELETE, never UPDATE. It reads what a customer bought and the category of
+-- each product only through the published views of sales and products.
+GRANT SELECT, INSERT, DELETE ON preferences.inferred_interest TO svc_preferences;
+GRANT USAGE ON SCHEMA api_sales, api_products TO svc_preferences;
+GRANT SELECT ON api_sales.net_purchase_line_v1 TO svc_preferences;
+GRANT SELECT ON api_products.product_ref_v1 TO svc_preferences;
 
 GRANT USAGE ON SCHEMA api_preferences TO svc_preferences, svc_recommendations, svc_campaigns;
 GRANT SELECT ON api_preferences.interest_category_v1 TO svc_preferences, svc_recommendations;

@@ -387,6 +387,9 @@ pub async fn record_consent(
             .await
             .map_err(write_error)?;
     }
+    // ADR-0066: a customer who does not grant PROFILING keeps no inferred
+    // interest, so the rows go in the transaction that records the decision.
+    crate::inference::forget_unless_profiling(&*transaction, customer_id).await?;
     let state = read_consent(&*transaction, customer_id, None).await?;
     transaction.commit().await.map_err(write_error)?;
     Ok(state)

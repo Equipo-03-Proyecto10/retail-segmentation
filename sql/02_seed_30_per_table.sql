@@ -1196,3 +1196,32 @@ DELETE FROM stores_events.outbox;
 DELETE FROM users_events.outbox;
 
 COMMIT;
+
+-- ---------- preferences.inferred_interest (F21-18) ----------
+-- What the inference of #796 leaves for the seeded customers: for each one whose
+-- PROFILING is GRANTED, the categories of at least 1% of their net purchases of
+-- the last 180 days, the declared interests left out, at one instant. Computed
+-- from the seeded sales, so the rows and the sales cannot disagree.
+INSERT INTO preferences.inferred_interest
+    (customer_id, category_id, source, window_days, strength, inferred_at)
+WITH purchases AS (
+    SELECT DISTINCT n.customer_id, n.transaction_id, p.category_id
+    FROM public.net_sale_line AS n
+    JOIN public.product AS p ON p.product_id = n.product_id
+    WHERE n.occurred_at >= now() - interval '180 days'
+), totals AS (
+    SELECT customer_id, count(DISTINCT transaction_id) AS sales FROM purchases GROUP BY customer_id
+), shares AS (
+    SELECT u.customer_id, u.category_id,
+           round(100.0 * count(*) / t.sales)::smallint AS strength
+    FROM purchases AS u JOIN totals AS t USING (customer_id)
+    GROUP BY u.customer_id, u.category_id, t.sales
+)
+SELECT s.customer_id, s.category_id, 'NET_PURCHASES', 180, s.strength, now()
+FROM shares AS s
+JOIN api_preferences.consent_state_v1 AS c
+  ON c.customer_id = s.customer_id AND c.purpose = 'PROFILING' AND c.decision = 'GRANTED'
+WHERE s.strength >= 1
+  AND NOT EXISTS (SELECT FROM public.customer_interest_category AS d
+                  WHERE d.customer_id = s.customer_id AND d.category_id = s.category_id)
+ORDER BY s.customer_id, s.category_id;

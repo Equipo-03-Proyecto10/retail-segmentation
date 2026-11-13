@@ -75,6 +75,7 @@ being ignored. `MOSAIQ_DESKTOP_CONFIG_DIR` overrides the directory (the window t
   - conversion analysis: `getExperimentResult` (read only).
   - K-means models: `listModelVersions`, `getModelVersion`, `listTrainings`, `getTraining`,
     `startTraining`, `publishModelVersion`.
+  - model comparison: `compareModelVersions` (read only).
   - recommendations: `inspectRecommendation`, `listRecommendationDecisions`, `openRecommendationDecision`
     (read only).
   - sales import: `chooseImportFile`, `startImport`, `resumeImport`, `importProgress`, `cancelImport`,
@@ -610,6 +611,30 @@ forced one gets `forbidden_role`.
 model-registry is not implemented yet (F22-11). The unit tests (`tests/unit/models.test.ts`,
 `tests/unit/kmeans.test.ts`) and the window tests (`tests/window/kmeans.spec.ts`) answer with the
 recorded examples in `contracts/model-registry/examples/`, read from disk.
+
+## Model comparison (F28-13)
+
+The **Model comparison** screen composes two owners without moving their facts: immutable version
+metadata and recorded stability come from model-registry, while per-customer labels come from
+segments' versioned assignments. Both reads are XML and are validated against their service XSD.
+The module has no write operation or export.
+
+- It shows F23-06's three predeclared criteria, questions, measures and tie margins for both versions:
+  interpretability (0.20), stability (0.10), and usefulness for decisions (0.05).
+- The current model-registry contract records stability, but not interpretability or usefulness.
+  Missing scores therefore say **Not recorded by model-registry**; agreement, inertia, silhouette or
+  another metric is never substituted for them.
+- For each version, the newest assignment under that version is used once per customer. The screen
+  shows population by label, agreement, disagreement, customers scored by only one version, and a
+  cross-tabulation. Two unassigned results agree, as RN-39 requires.
+- Agreement is labelled as context, never as a quality criterion or verdict. Every comparison is
+  explicitly methodological and never presented as a change in customer behaviour (ADR-0064).
+- Tables scroll inside their panels, so the page fits both the 375 px and 1440 px verification widths.
+
+The segments versioned-assignment operation and model-registry remain planned service work. The unit
+test (`tests/unit/model-comparison.test.ts`) pins the criteria and RN-39 reconciliation. The window test
+(`tests/window/model-comparison.spec.ts`) serves XSD-valid XML from both contracts and verifies the
+read-only bridge and the two required widths.
 
 ## Customer exploration (F28-03)
 

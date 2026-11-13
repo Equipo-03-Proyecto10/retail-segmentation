@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: customers-service
-  version: 1.5.0
+  version: 1.6.0
   description: >-
     Registers, searches, reads and corrects customers under RN-08. Customers
     are never deleted through services; a mistaken registration is corrected
@@ -267,7 +267,6 @@ paths:
     get:
       tags: [Customers]
       operationId: searchFloorCustomers
-      x-mosaiq-status: planned
       summary: Search customers as a floor role
       description: >-
         The search a floor role uses to find the customer it is serving, in the
@@ -329,7 +328,6 @@ paths:
     get:
       tags: [Customers]
       operationId: getFloorCustomer
-      x-mosaiq-status: planned
       summary: Get one customer as a floor role
       description: >-
         Returns the customer in the floor view of the token's role, which
@@ -381,7 +379,6 @@ paths:
     post:
       tags: [Loyalty cards]
       operationId: issueLoyaltyCard
-      x-mosaiq-status: planned
       summary: Issue a loyalty card to a customer
       description: >-
         Issues one card to the customer named in the body. The service
@@ -455,7 +452,6 @@ paths:
     get:
       tags: [Loyalty cards]
       operationId: listLoyaltyCards
-      x-mosaiq-status: planned
       summary: List a customer's loyalty cards
       description: >-
         Lists every card ever issued to one customer, newest first, active or
@@ -508,7 +504,6 @@ paths:
     post:
       tags: [Loyalty cards]
       operationId: lookupLoyaltyCard
-      x-mosaiq-status: planned
       summary: Look a scanned code up
       description: >-
         Resolves the code a scanner read from a QR to the card's id and the
@@ -585,7 +580,6 @@ paths:
     put:
       tags: [Loyalty cards]
       operationId: revokeLoyaltyCard
-      x-mosaiq-status: planned
       summary: Revoke a loyalty card
       description: >-
         Revokes the card, records who did it, when and why, and answers with the

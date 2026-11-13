@@ -77,7 +77,8 @@ user whose role moved. A store-assignment replacement records at most two, one
 for the stores it added and one for the stores it removed.
 
 ADR-0072's table names a few `details` keys that this contract carries as
-common fields instead, so a value is stored once: the `subject_user_id` of a
+common fields instead, so a value is stored once ([ADR-0081](../../docs/adr/0081-the-domain-event-table-is-owned-by-the-schema-owner-and-a-subject-is-named-once-in-the-common-fields.md) records each
+deviation and its reason): the `subject_user_id` of a
 permission change and the `customer_id` of a history read are `subject_id`;
 the `subject_type` and `subject_id` of a critical action are the common
 fields; a calculation's `rule_set_version` is the common field. Its
@@ -127,10 +128,12 @@ chain has one head. `GET /v1/domain-events/verification` recomputes it.
   granted to each existing writer role above, and to nobody else. A writer
   whose role does not exist yet receives its grant in the pull request that
   creates the role.
-- `definer_audit` holds `INSERT` and `SELECT` on `audit_events.domain_event`:
-  `SELECT` reads the chain head and a repeated `event_id`. No role but the
-  schema owner holds `UPDATE`, `DELETE` or `TRUNCATE`, and a trigger refuses
-  all three as a second layer.
+- The schema owner owns `audit_events.domain_event`, not `definer_audit`
+  ([ADR-0081](../../docs/adr/0081-the-domain-event-table-is-owned-by-the-schema-owner-and-a-subject-is-named-once-in-the-common-fields.md), which supersedes ADR-0072 section 6 on this point).
+  `definer_audit` holds `INSERT` and `SELECT` on it: `SELECT` reads the chain
+  head and a repeated `event_id`. No role but the schema owner holds
+  `UPDATE`, `DELETE` or `TRUNCATE`, and a trigger refuses all three as a
+  second layer.
 - `svc_audit_trail` holds `SELECT` on the table. No other `svc_*` role and not
   `retail_app` holds any privilege on it, and the web does not call this
   function (ADR-0046).

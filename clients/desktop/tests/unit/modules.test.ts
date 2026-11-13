@@ -6,8 +6,15 @@ import type { MosaiqBridge } from '../../src/shared/api';
 describe('module groups', () => {
   it('places every module in exactly one group', () => {
     const names = MODULE_GROUPS.flatMap((g) => g.modules.map((m) => m.name));
-    expect(new Set(names).size).toBe(23);
-    expect(names).toHaveLength(23);
+    expect(new Set(names).size).toBe(24);
+    expect(names).toHaveLength(24);
+  });
+
+  it('offers model comparison to a role that may read a model version', () => {
+    expect(visibleGroups(['getModelVersion']).flatMap((g) => g.modules.map((m) => m.name))).toEqual([
+      'model-comparison',
+      'services',
+    ]);
   });
 
   it('shows a role only the modules whose operation it may call, and no empty group', () => {

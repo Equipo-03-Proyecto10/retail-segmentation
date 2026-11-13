@@ -1,4 +1,4 @@
-// engagement-service's MongoDB: the database, its user, both collections, the
+// engagement-service's MongoDB: the database, its user, three collections, the
 // validator and the indexes (ADR-0038).
 //
 // Run by an administrator, as root, in mongosh, before the service version
@@ -140,6 +140,66 @@ const eventSchema = {
   oneOf: Object.keys(kinds).map(shape),
 };
 
+// A refused queued write, kept as a deliberately small allow-list. In
+// particular, there is nowhere to store an authorization header, cookie,
+// token, password or customer details (ADR-0071).
+const incidentSchema = {
+  bsonType: "object",
+  additionalProperties: false,
+  required: [
+    "_id",
+    "client_incident_id",
+    "source_type",
+    "source_operation_id",
+    "source_correlation_id",
+    "store_id",
+    "refused_status",
+    "refused_code",
+    "attempts",
+    "occurred_at",
+    "line_count",
+    "reported_by",
+    "recorded_at",
+    "status",
+    "history",
+  ],
+  properties: {
+    _id: { bsonType: "string", pattern: uuid },
+    client_incident_id: { bsonType: "string", pattern: uuid },
+    source_type: {
+      enum: ["SALE", "CHECK_IN", "ENGAGEMENT_EVENT", "CUSTOMER_WRITE"],
+    },
+    source_operation_id: { bsonType: "string", pattern: uuid },
+    source_correlation_id: {
+      bsonType: "string",
+      pattern: "^[0-9A-Za-z-]{1,64}$",
+    },
+    store_id: { bsonType: "int" },
+    refused_status: { bsonType: "int", minimum: 400, maximum: 499 },
+    refused_code: { bsonType: "string", pattern: "^[a-z][a-z0-9_]{0,63}$" },
+    attempts: { bsonType: "int", minimum: 1 },
+    occurred_at: { bsonType: "date" },
+    line_count: { bsonType: ["int", "null"], minimum: 1 },
+    reported_by: { bsonType: "string", pattern: uuid },
+    recorded_at: { bsonType: "date" },
+    status: { enum: ["OPEN", "ACKNOWLEDGED", "RESOLVED"] },
+    history: {
+      bsonType: "array",
+      items: {
+        bsonType: "object",
+        additionalProperties: false,
+        required: ["status", "note", "by", "at"],
+        properties: {
+          status: { enum: ["ACKNOWLEDGED", "RESOLVED"] },
+          note: { bsonType: ["string", "null"], minLength: 1, maxLength: 200 },
+          by: { bsonType: "string", pattern: uuid },
+          at: { bsonType: "date" },
+        },
+      },
+    },
+  },
+};
+
 const names = engagementDb.getCollectionNames();
 if (!names.includes("engagement_event")) {
   engagementDb.createCollection("engagement_event", {
@@ -160,6 +220,21 @@ if (!names.includes("engagement_event")) {
 if (!names.includes("engagement_daily")) {
   engagementDb.createCollection("engagement_daily");
   print("init.js: created engagement_daily");
+}
+if (!names.includes("capture_incident")) {
+  engagementDb.createCollection("capture_incident", {
+    validator: { $jsonSchema: incidentSchema },
+    validationLevel: "strict",
+    validationAction: "error",
+  });
+  print("init.js: created capture_incident");
+} else {
+  engagementDb.runCommand({
+    collMod: "capture_incident",
+    validator: { $jsonSchema: incidentSchema },
+    validationLevel: "strict",
+    validationAction: "error",
+  });
 }
 
 // ---- indexes: exactly these, no more --------------------------------------
@@ -209,6 +284,18 @@ converge(engagementDb.engagement_event, [
 ]);
 converge(engagementDb.engagement_daily, [
   { name: "store_id_1_day_1_type_1", key: { store_id: 1, day: 1, type: 1 }, unique: true },
+]);
+converge(engagementDb.capture_incident, [
+  { name: "client_incident_id_1", key: { client_incident_id: 1 }, unique: true },
+  {
+    name: "source_type_1_source_operation_id_1",
+    key: { source_type: 1, source_operation_id: 1 },
+    unique: true,
+  },
+  {
+    name: "store_id_1_status_1_recorded_at_-1",
+    key: { store_id: 1, status: 1, recorded_at: -1 },
+  },
 ]);
 
 print("init.js: engagement is ready");

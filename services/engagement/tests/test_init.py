@@ -108,7 +108,11 @@ def test_init_is_idempotent(mongosh, root_uri, admin):
     assert second.returncode == 0, second.stderr
     assert snapshot(admin) == before
     assert "created" not in second.stdout and "dropped" not in second.stdout
-    assert before["collections"] == ["engagement_daily", "engagement_event"]
+    assert before["collections"] == [
+        "capture_incident",
+        "engagement_daily",
+        "engagement_event",
+    ]
     assert before["roles"] == [[{"role": "readWrite", "db": "engagement"}]]
     names = sorted(i[0] for i in before["indexes"]["engagement_event"])
     assert names == [
@@ -137,6 +141,13 @@ def test_init_is_idempotent(mongosh, root_uri, admin):
         True,
         "null",
     ) in daily
+    incident_indexes = before["indexes"]["capture_incident"]
+    assert sorted(index[0] for index in incident_indexes) == [
+        "_id_",
+        "client_incident_id_1",
+        "source_type_1_source_operation_id_1",
+        "store_id_1_status_1_recorded_at_-1",
+    ]
 
 
 def test_init_refuses_to_run_without_a_password(mongosh, root_uri, admin):

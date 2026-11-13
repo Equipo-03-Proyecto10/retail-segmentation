@@ -1591,6 +1591,42 @@ export interface ModelVersionQuery {
   size?: number;
 }
 
+/** The newest assignment written for one customer under a model version. */
+export interface VersionAssignmentView {
+  customer_id: string;
+  label_code?: string;
+}
+
+export interface ModelCriterionView {
+  name: 'Interpretability' | 'Stability' | 'Usefulness for decisions';
+  question: string;
+  measure: string;
+  margin: string;
+  first_score?: string;
+  second_score?: string;
+}
+
+export interface AgreementCellView {
+  first_label: string;
+  second_label: string;
+  customers: number;
+}
+
+/** A descriptive, methodological comparison. Agreement is context and never a verdict (RN-39). */
+export interface ModelComparisonView {
+  first: ModelVersionView;
+  second: ModelVersionView;
+  criteria: ModelCriterionView[];
+  first_population: Record<string, number>;
+  second_population: Record<string, number>;
+  compared: number;
+  agreed: number;
+  disagreed: number;
+  first_only: number;
+  second_only: number;
+  cells: AgreementCellView[];
+}
+
 export interface TrainingQuery {
   state?: TrainingState;
   page?: number;
@@ -1847,6 +1883,7 @@ export interface MosaiqBridge {
   getExperimentResult(experimentId: number, basis: ResultBasis): Promise<Result<ExperimentResultView>>;
   listModelVersions(query: ModelVersionQuery): Promise<Result<Paged<ModelVersionView>>>;
   getModelVersion(versionId: number): Promise<Result<ModelVersionView>>;
+  compareModelVersions(firstVersionId: number, secondVersionId: number): Promise<Result<ModelComparisonView>>;
   listTrainings(query: TrainingQuery): Promise<Result<Paged<TrainingView>>>;
   getTraining(trainingId: number): Promise<Result<TrainingView>>;
   /** Starts a K-means training; the answer is the run, RUNNING, and its result becomes a DRAFT version. */
@@ -1964,6 +2001,7 @@ export const CHANNELS = {
   getExperimentResult: 'mosaiq:get-experiment-result',
   listModelVersions: 'mosaiq:list-model-versions',
   getModelVersion: 'mosaiq:get-model-version',
+  compareModelVersions: 'mosaiq:compare-model-versions',
   listTrainings: 'mosaiq:list-trainings',
   getTraining: 'mosaiq:get-training',
   startTraining: 'mosaiq:start-training',

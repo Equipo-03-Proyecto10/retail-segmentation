@@ -39,7 +39,7 @@ _CONVERSION_DAYS = """
       JOIN (SELECT x.assignment_id, min(t.occurred_at) AS first_at
               FROM experiment_assignment AS x
               JOIN experiment_conversion AS c ON c.assignment_id = x.assignment_id
-              JOIN transaction AS t ON t.transaction_id = c.transaction_id
+              JOIN net_sale AS t ON t.transaction_id = c.transaction_id
              WHERE x.experiment_id = %(experiment)s
              GROUP BY x.assignment_id) AS first_sale
         ON first_sale.assignment_id = a.assignment_id

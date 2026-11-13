@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import asdict, dataclass, field
+from decimal import Decimal
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -62,14 +63,31 @@ class AuditDifference:
         return f"{self.change}: {self.what}: web={self.web!r} service={self.service!r}"
 
 
+@dataclass(frozen=True)
+class ReportDifference:
+    """One way what the web reports differs from what the writer of a reversal
+    expects (F21-03). `subject` names the figure, such as "revenue"."""
+
+    subject: str
+    what: str
+    web: object
+    expected: object
+
+    def __str__(self) -> str:
+        return (
+            f"{self.subject}: {self.what}: web={self.web!r} "
+            f"expected={self.expected!r}"
+        )
+
+
 @dataclass
 class CaseResult:
     case: str
     status: str  # passed | failed | skipped
     detail: str = ""
-    differences: list[Difference | SegmentDifference | AuditDifference] = field(
-        default_factory=list
-    )
+    differences: list[
+        Difference | SegmentDifference | AuditDifference | ReportDifference
+    ] = field(default_factory=list)
 
 
 class _StockTable(HTMLParser):
@@ -113,6 +131,27 @@ def parse_stock_page(html: str) -> list[tuple[str, str, int]]:
         # The cell may carry a "Low" pill after the number.
         rows.append((cells[0], cells[1], int(cells[3].split()[0])))
     return rows
+
+
+_REVENUE_METRIC = re.compile(
+    r'<span class="mq-metric__label">\s*(?P<label>Revenue|Sales)\b.*?</span>\s*'
+    r'<span class="mq-metric__value mq-num">\s*'
+    r"(?P<value>[0-9,]+(?:\.[0-9]+)?)\s*</span>",
+    re.DOTALL,
+)
+
+
+def parse_reports_revenue(html: str) -> tuple[Decimal, int] | None:
+    """(revenue, number of sales) of the reports index, or None when the page
+    says there are no sales (F21-03). The figures are net of reversals."""
+
+    found = {
+        match["label"]: match["value"].replace(",", "")
+        for match in _REVENUE_METRIC.finditer(html)
+    }
+    if "Revenue" not in found or "Sales" not in found:
+        return None
+    return Decimal(found["Revenue"]), int(found["Sales"])
 
 
 def diff_levels(

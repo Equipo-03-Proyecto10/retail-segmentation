@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: engagement-service
-  version: 2.3.0
+  version: 2.4.0
   description: 'Records client-originated field events (RN-55): in-store engagement
     events and capture incidents, the device''s reports of a refused queued write
     (ADR-0071). Both live in MongoDB, in `engagement_event` and `capture_incident`.
@@ -371,7 +371,6 @@ paths:
         ahead of the server answers 422 `occurred_in_future`. There is no customer
         field and no free text. The reporter does not read incidents back.'
       operationId: reportCaptureIncident
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - SALES_ASSOCIATE
       - LOYALTY_OFFICER
@@ -462,7 +461,6 @@ paths:
         The mobile poll sends `status=OPEN` and `recorded_since` set to the largest
         server `recorded_at` it holds minus five minutes (ADR-0071).'
       operationId: listCaptureIncidents
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - COMMERCIAL_SUPERVISOR
       - ADMIN
@@ -513,7 +511,6 @@ paths:
       description: Returns the incident with its review `history`. An incident of
         a store outside the caller's assignment answers 403 `forbidden_store`.
       operationId: getCaptureIncident
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - COMMERCIAL_SUPERVISOR
       - ADMIN
@@ -567,7 +564,6 @@ paths:
         shown to supervisors only. An incident is never deleted. Narrowed to the
         caller''s stores (403 `forbidden_store`).'
       operationId: reviewCaptureIncident
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - COMMERCIAL_SUPERVISOR
       - ADMIN
@@ -647,7 +643,6 @@ paths:
         `refused_code`. `from` and `to` are UTC dates (`YYYY-MM-DD`), both inclusive,
         and a day is a UTC day of `recorded_at`. Narrowed to the caller's stores.
       operationId: getCaptureIncidentSummary
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - COMMERCIAL_SUPERVISOR
       - ADMIN

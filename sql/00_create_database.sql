@@ -198,6 +198,7 @@ BEGIN
     'definer_products',
     'definer_categories',
     'definer_stores',
+    'definer_customers',
     'definer_preferences',
     'definer_sales',
     'definer_segments'

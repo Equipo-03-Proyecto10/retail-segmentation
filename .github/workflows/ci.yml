@@ -200,6 +200,28 @@ jobs:
           GROUP BY t.transaction_id, t.total
           HAVING t.total <> COALESCE(SUM(l.quantity * l.unit_price), 0);
 
+          SELECT 'ADR-0062 returned_quantity disagrees with its reversals',
+                 l.transaction_id, l.product_id, l.returned_quantity,
+                 COALESCE(SUM(x.quantity), 0)
+          FROM transaction_line AS l
+          LEFT JOIN sales.sale_reversal_line AS x
+            ON x.transaction_id = l.transaction_id AND x.product_id = l.product_id
+          GROUP BY l.transaction_id, l.product_id, l.returned_quantity
+          HAVING l.returned_quantity <> COALESCE(SUM(x.quantity), 0);
+
+          SELECT 'ADR-0070 completed import does not reconcile', i.import_id
+          FROM sales.import AS i
+          WHERE i.status = 'COMPLETED'
+            AND (i.total_rows <> (SELECT COALESCE(SUM(c.row_count), 0)
+                                    FROM sales.import_chunk AS c
+                                   WHERE c.import_id = i.import_id)
+                 OR i.total_rows <> (SELECT count(*) FROM sales.import_row_outcome AS o
+                                      WHERE o.import_id = i.import_id));
+
+          SELECT 'ADR-0070 done chunk keeps its staged rows', import_id, sequence
+          FROM sales.import_chunk
+          WHERE status = 'DONE' AND rows IS NOT NULL;
+
           WITH expected AS (
             SELECT h.history_id,
                    max(t.occurred_at) AS last_purchase,
@@ -283,7 +305,7 @@ jobs:
                        ORDER BY 1;")
           [ "$failed" -eq 0 ]
           if grep -vE '^\s*(#|$)' sql/seed-exempt.txt | grep -F . \
-               | grep -vxE 'sales\.sale_capture|[a-z]+_events\.outbox'; then
+               | grep -vxE 'sales\.(sale_(capture|reversal|reversal_line)|import|import_chunk|import_row_outcome)|[a-z]+_events\.outbox'; then
             echo "seed-exempt.txt names a schema-qualified table it may not exempt"
             exit 1
           fi

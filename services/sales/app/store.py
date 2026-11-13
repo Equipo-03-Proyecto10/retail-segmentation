@@ -226,10 +226,14 @@ class Replayed(Exception):
         self.digest = digest
 
 
-_REVERSAL_COLUMNS = (
-    "r.reversal_id, r.transaction_id, r.kind, r.reason, t.customer_id, t.store_id,"
-    " r.recorded_at, r.recorded_by"
+_REVERSAL_FROM = sql.SQL(
+    "FROM sales.sale_reversal AS r"
+    " JOIN public.transaction AS t ON t.transaction_id = r.transaction_id"
 )
+_REVERSAL_SELECT = sql.SQL(
+    "SELECT r.reversal_id, r.transaction_id, r.kind, r.reason, t.customer_id,"
+    " t.store_id, r.recorded_at, r.recorded_by {}"
+).format(_REVERSAL_FROM)
 
 
 def find_reversal_by_key(
@@ -320,11 +324,7 @@ def get_reversal(
     connection: psycopg.Connection, reversal_id: int
 ) -> dict[str, Any] | None:
     rows = connection.execute(
-        sql.SQL(
-            "SELECT {} FROM sales.sale_reversal AS r"
-            " JOIN public.transaction AS t ON t.transaction_id = r.transaction_id"
-            " WHERE r.reversal_id = %s"
-        ).format(sql.SQL(_REVERSAL_COLUMNS)),
+        sql.SQL("{} WHERE r.reversal_id = %s").format(_REVERSAL_SELECT),
         (reversal_id,),
     ).fetchall()
     found = _reversals(connection, rows)
@@ -363,19 +363,14 @@ def list_reversals(
         " AND (%(recorded_to)s::timestamptz IS NULL"
         " OR r.recorded_at < %(recorded_to)s)"
     )
-    join = sql.SQL(
-        " FROM sales.sale_reversal AS r"
-        " JOIN public.transaction AS t ON t.transaction_id = r.transaction_id"
-    )
     total = connection.execute(
-        sql.SQL("SELECT count(*){}{}").format(join, where), params
+        sql.SQL("SELECT count(*) {}{}").format(_REVERSAL_FROM, where), params
     ).fetchone()[0]
     rows = connection.execute(
         sql.SQL(
-            "SELECT " + _REVERSAL_COLUMNS + "{}{}"
-            " ORDER BY r.recorded_at DESC, r.reversal_id DESC"
+            "{}{} ORDER BY r.recorded_at DESC, r.reversal_id DESC"
             " LIMIT %(limit)s OFFSET %(offset)s"
-        ).format(join, where),
+        ).format(_REVERSAL_SELECT, where),
         params,
     ).fetchall()
     return _reversals(connection, rows), total

@@ -70,7 +70,7 @@ def test_only_the_service_writes_a_lines_running_total() -> None:
         line
         for text in SOURCES.values()
         for line in re.findall(
-            r"update\s+public\.transaction_line\s+set\s+(\w+)", text, re.IGNORECASE
+            r"update\s+public\.transaction_line[\"'\s]+set\s+(\w+)", text, re.IGNORECASE
         )
     ]
     assert updates == ["returned_quantity"]

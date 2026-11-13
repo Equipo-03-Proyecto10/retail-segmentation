@@ -28,10 +28,11 @@ from mosaiq_kit import (
 
 import redis
 
-from . import audit, store
+from . import audit, reversal, store
 
 LOGGER = logging.getLogger(__name__)
 STREAM = "stream:sales.v1.recorded"
+REVERSED_STREAM = "stream:sales.v1.reversed"
 CONTRACTS = Path(__file__).resolve().parent.parent / "contracts"
 _INTEGER = re.compile(r"-?[0-9]+")
 # The columns a sale lands in: transaction_line.quantity INT,
@@ -318,7 +319,7 @@ def _database_refusal(
     raise error
 
 
-def _query_integer(name: str) -> int | None:
+def _query_integer(name: str, maximum: int = 32767) -> int | None:
     raw = request.args.get(name)
     if raw is None:
         return None
@@ -331,7 +332,6 @@ def _query_integer(name: str) -> int | None:
             "invalid_type",
         )
     value = int(raw)
-    maximum = 2_147_483_647 if name == "customer_id" else 32767
     if value < 1 or value > maximum:
         raise _error(
             422,
@@ -382,10 +382,14 @@ def create_app(*, start_relay: bool | None = None) -> Flask:
         with holder["kit"].db.connection() as connection:
             row = connection.execute(
                 "SELECT to_regprocedure(%s) IS NOT NULL"
+                " AND to_regprocedure(%s) IS NOT NULL"
+                " AND to_regclass(%s) IS NOT NULL"
                 " AND to_regclass(%s) IS NOT NULL",
                 (
                     "api_stock." "consume_v1(smallint,integer,integer)",
+                    "api_stock." "restock_v1(smallint,integer,integer,bigint)",
                     "sales.sale_capture",
+                    "sales.sale_reversal_line",
                 ),
             ).fetchone()
         return bool(row and row[0])
@@ -512,6 +516,164 @@ def create_app(*, start_relay: bool | None = None) -> Flask:
             raise ApiError(404, "sale_not_found", f"Sale {sale_id} was not found.")
         return Representation("Sale", sale)
 
+    def _reversal_replay(
+        connection: psycopg.Connection, reversal_id: int, earlier: bytes, digest: bytes
+    ) -> Representation:
+        if earlier != digest:
+            raise _error(
+                409,
+                "idempotency_key_reused",
+                "The Idempotency-Key was already used for a different reversal.",
+                "Idempotency-Key",
+                "reused",
+            )
+        found = store.get_reversal(connection, reversal_id)
+        assert found is not None
+        return Representation(
+            "SaleReversal", found, headers={"Idempotent-Replayed": "true"}
+        )
+
+    @kit.operation("recordSaleReversal")
+    def record_sale_reversal() -> Representation:
+        principal = kit.principal
+        assert principal is not None
+        sub = str(principal["sub"])
+        body = kit.body
+        # A seller may cancel but never return (ADR-0062); that is decided by
+        # the kind, which x-mosaiq-roles cannot say, so it is refused here with
+        # the kit's own 403 before anything else is looked at.
+        if body["kind"] == "RETURN" and principal.get("role") == reversal.FLOOR_ROLE:
+            raise reversal.forbidden_role()
+        key = _idempotency_key()
+        request_body = reversal.validate(body)
+        digest = reversal.canonical(request_body, sub)
+        for attempt in range(3):
+            try:
+                with kit.db.transaction() as connection:
+                    earlier = store.find_reversal_by_key(connection, key)
+                    if earlier is not None:
+                        return _reversal_replay(connection, *earlier, digest)
+                    reversal_id = store.record_reversal(
+                        connection,
+                        request=request_body,
+                        key=key,
+                        digest=digest,
+                        recorded_by=sub,
+                        window_open=reversal.window_open,
+                    )
+                    created = store.get_reversal(connection, reversal_id)
+                assert created is not None
+                return Representation(
+                    "SaleReversal",
+                    created,
+                    status=201,
+                    headers={"Location": f"/v1/sale-reversals/{reversal_id}"},
+                )
+            except store.Replayed as replayed:
+                with kit.db.connection() as connection:
+                    return _reversal_replay(
+                        connection, replayed.reversal_id, replayed.digest, digest
+                    )
+            except store.ReversalRefusal as refusal:
+                raise _error(
+                    refusal.status,
+                    refusal.code,
+                    refusal.message,
+                    refusal.field,
+                    refusal.detail,
+                ) from None
+            except (
+                psycopg.errors.DeadlockDetected,
+                psycopg.errors.SerializationFailure,
+            ):
+                if attempt == 2:
+                    raise
+            except psycopg.errors.UniqueViolation as error:
+                if _constraint(error) != "sale_reversal_idempotency_key_key":
+                    raise
+                with kit.db.connection() as connection:
+                    earlier = store.find_reversal_by_key(connection, key)
+                    if earlier is not None:
+                        return _reversal_replay(connection, *earlier, digest)
+                raise
+            except psycopg.errors.CheckViolation as error:
+                # The database's own guard, for a race the locks should have
+                # made impossible: the same answer the rule gives.
+                if _constraint(error) == "sale_reversal_line_within_sale":
+                    raise _error(
+                        409,
+                        "quantity_exceeds_remaining",
+                        "A line returns more units than the sale still holds.",
+                        "lines",
+                        "exceeds_remaining",
+                    ) from None
+                raise
+        raise RuntimeError("transaction retry exhausted")
+
+    @kit.operation("listSaleReversals")
+    def list_sale_reversals() -> Page:
+        sale_id = _query_integer("sale_id", reversal.MAX_ID)
+        customer_id = _query_uuid()
+        store_id = _query_integer("store_id")
+        kind = request.args.get("kind")
+        if kind is not None and kind not in {"CANCELLATION", "RETURN"}:
+            raise _error(
+                422,
+                "invalid_query",
+                "A filter is malformed or the range is reversed.",
+                "kind",
+                "not_allowed",
+            )
+        recorded_from = (
+            _parse_timestamp(request.args["from"], "from")
+            if "from" in request.args
+            else None
+        )
+        recorded_to = (
+            _parse_timestamp(request.args["to"], "to") if "to" in request.args else None
+        )
+        if recorded_from and recorded_to and recorded_from > recorded_to:
+            raise _error(
+                422,
+                "invalid_query",
+                "A filter is malformed or the range is reversed.",
+                "from",
+                "after_to",
+            )
+        with kit.db.connection() as connection:
+            found, total = store.list_reversals(
+                connection,
+                sale_id=sale_id,
+                customer_id=customer_id,
+                store_id=store_id,
+                kind=kind,
+                recorded_from=recorded_from,
+                recorded_to=recorded_to,
+                limit=kit.size,
+                offset=(kit.page - 1) * kit.size,
+            )
+        return Page(
+            "SaleReversals",
+            "SaleReversal",
+            "sale_reversals",
+            found,
+            page=kit.page,
+            size=kit.size,
+            total=total,
+        )
+
+    @kit.operation("getSaleReversal")
+    def get_sale_reversal(reversal_id: int) -> Representation:
+        with kit.db.connection() as connection:
+            found = store.get_reversal(connection, reversal_id)
+        if found is None:
+            raise ApiError(
+                404,
+                "sale_reversal_not_found",
+                f"Sale reversal {reversal_id} was not found.",
+            )
+        return Representation("SaleReversal", found)
+
     @kit.operation("listChannels")
     def list_channels() -> Collection:
         with kit.db.connection() as connection:
@@ -530,7 +692,7 @@ def create_app(*, start_relay: bool | None = None) -> Flask:
         relay = OutboxRelay(
             kit.db.dsn,
             "sales",
-            [STREAM],
+            [STREAM, REVERSED_STREAM],
             _relay_client(
                 os.environ.get("REDIS_STATE_URL", "redis://redis-state:6379/0")
             ),

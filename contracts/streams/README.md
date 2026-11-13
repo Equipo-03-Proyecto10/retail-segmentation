@@ -8,7 +8,10 @@ producer's `svc_` PostgreSQL role. That file contracts the stream
 - the captured table and operations;
 - the meaning and encoding of `entity_id`;
 - the key-only fields `event_id`, `event_type`, `entity_id`, `occurred_at`, and
-  `v` (events never carry entity state);
+  `v` (events never carry entity state). One stream is the exception:
+  `stream:engagement.v1.interaction_recorded` carries the interaction fact,
+  because engagement keeps its events in MongoDB and publishes no view to
+  re-read (ADR-0075, `engagement.interaction_recorded.v1.md`);
 - every consumer group, named after the consuming service;
 - a `## Propagation bound` table: each group's p95 and maximum, in
   milliseconds, from the outbox commit to the group's acknowledgement, which

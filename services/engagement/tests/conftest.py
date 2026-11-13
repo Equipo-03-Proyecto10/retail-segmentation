@@ -189,7 +189,9 @@ def make_app(monkeypatch: pytest.MonkeyPatch, jwks_path: Path, state: FakeState)
                 LiveCounters(redis.Redis.from_url(redis_url, decode_responses=True))
                 if redis_url != DEAD_REDIS
                 else None
-            )
+            ),
+            # A test drives the relay itself, with run_once (test_relay.py).
+            start_relay=False,
         )
         application.testing = True
         application.extensions["mosaiq_kit"].auth.redis = state

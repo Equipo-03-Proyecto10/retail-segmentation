@@ -22,6 +22,7 @@ from __future__ import annotations
 import http.client
 import json
 import os
+import re
 import subprocess
 import time
 import uuid
@@ -143,6 +144,19 @@ class Contract:
     @property
     def xsd(self) -> Path:
         return self.directory / (self.directory.name + ".xsd")
+
+    def xsd_for(self, namespace: str) -> Path:
+        """The XSD whose targetNamespace is the document's root namespace.
+
+        A versioned XSD (`<service>.v2.xsd`) answers its own namespace; any
+        other, the common error envelope included, is the service's own XSD.
+        """
+
+        for path in sorted(self.directory.glob(self.directory.name + ".v*.xsd")):
+            declared = re.search(r'targetNamespace="([^"]+)"', path.read_text())
+            if declared and declared.group(1) == namespace:
+                return path
+        return self.xsd
 
     def resolve(self, item: dict) -> dict:
         while "$ref" in item:
@@ -309,13 +323,19 @@ class Client:
         return reply
 
     def validate_xml(self, document: bytes, where: str) -> None:
+        namespace = subprocess.run(
+            ["xmllint", "--nonet", "--xpath", "namespace-uri(/*)", "-"],
+            input=document,
+            capture_output=True,
+        ).stdout.decode()
+        xsd = self.contract.xsd_for(namespace.strip())
         result = subprocess.run(
-            ["xmllint", "--noout", "--nonet", "--schema", str(self.contract.xsd), "-"],
+            ["xmllint", "--noout", "--nonet", "--schema", str(xsd), "-"],
             input=document,
             capture_output=True,
         )
         assert result.returncode == 0, (
-            f"{where}: XML invalid against {self.contract.xsd.name}: "
+            f"{where}: XML invalid against {xsd.name}: "
             f"{result.stderr.decode()}\n{document.decode(errors='replace')}"
         )
 

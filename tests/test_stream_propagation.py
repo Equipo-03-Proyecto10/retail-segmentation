@@ -255,6 +255,7 @@ def test_every_stream_contract_states_a_bound_for_every_listed_group():
 def test_every_stream_with_an_outbox_has_a_load_or_is_known_undeployed():
     contracts = propagation.load_contracts()
     undeployed = {
+        "stream:engagement.v1.interaction_recorded",
         "stream:rfm.v1.profile_changed",
         "stream:models.v1.publication_recorded",
         "stream:preferences.v1.consent_changed",

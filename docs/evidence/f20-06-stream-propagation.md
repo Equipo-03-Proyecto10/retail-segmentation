@@ -56,6 +56,7 @@ Some streams or groups were not measured, because they do not exist yet:
 
 | Stream | Groups | Why |
 |---|---|---|
+| `stream:engagement.v1.interaction_recorded` | `experimentation`, `recommendations` | The relay publishes from engagement's MongoDB notices (ADR-0075, #799), which `ops/propagation/` cannot load yet, and neither group consumes the stream yet. |
 | `stream:rfm.v1.profile_changed` | `model-registry`, `analytics-kpis` | The producer is not deployed. The stream is contracted but not captured in `sql/01_schema.sql`. |
 | `stream:models.v1.publication_recorded` | `rfm-engine` | The producer is not deployed. |
 | `stream:preferences.v1.consent_changed` | `recommendations`, `campaigns`, `rfm-engine` | The stream is contracted (#794) but not captured yet. |

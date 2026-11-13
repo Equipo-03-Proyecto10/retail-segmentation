@@ -1,18 +1,18 @@
 openapi: 3.1.0
 info:
   title: engagement-service
-  version: 2.2.0
+  version: 2.3.0
   description: 'Records client-originated field events (RN-55): in-store engagement
     events and capture incidents, the device''s reports of a refused queued write
     (ADR-0071). Both live in MongoDB, in `engagement_event` and `capture_incident`.
     Engagement events live in MongoDB, are recorded once per client event, attributed
-    to the caller, voided rather than deleted, and summarized. Only `POST /v1/engagement-events`
-    reads PostgreSQL, through the published store, product and customer views, to
-    check references. Every `/v1` operation answers 503 `database_unavailable` when
-    its database is unreachable, MongoDB included. XML events are polymorphic: the
-    root carries `xsi:type` `QrScanEvent` or `RecoClickEvent` (`QrScanRequest` or
-    `RecoClickRequest` for a request), so the schema allows `label_code` and `rank`
-    only on a `RECO_CLICK`. `/v1` is frozen. `/v2` (XSD `engagement.v2.xsd`, namespace
+    to the caller, voided rather than deleted, and summarized. `POST /v1/engagement-events`
+    and `POST /v2/engagement-events` read PostgreSQL through the published store,
+    product and customer views to check the references each kind carries. Every
+    operation answers 503 `database_unavailable` when its database is unreachable,
+    MongoDB included. XML events are polymorphic: each event or request root carries
+    the `xsi:type` for its kind, so each schema admits only that kind''s fields. `/v1`
+    is frozen. `/v2` (XSD `engagement.v2.xsd`, namespace
     `.../xml/engagement/v2`, served at `/schema.v2.xsd`) keeps `QR_SCAN` and `RECO_CLICK`
     with their meaning and adds `STORE_VISIT`, `RECO_IMPRESSION`, `CAMPAIGN_EXPOSURE`,
     `CART_ADD`, `CART_REMOVE` and `NAVIGATION`, each a distinct fact. None of these events
@@ -22,7 +22,7 @@ info:
     from an outbox kept on the event document (ADR-0075), and experimentation keeps its own
     projection and counts exposures per campaign and customer from it, never as a conversion.
     A void reaches that projection as a later notice, so the count is eventually consistent.
-    The contract of that stream follows in its own story. The v2 summary
+    The stream is contracted in `contracts/streams/engagement.interaction_recorded.v1.md`. The v2 summary
     counts every type.'
 security:
 - bearer: []
@@ -772,7 +772,6 @@ paths:
       summary: Record an engagement event (never a sale)
       description: 'Records the event once per `client_event_id`, attributed to the token''s `sub` (`recorded_by`). The body has eight shapes, one per `type`. The event is never a sale. Store, product and customer are checked against the published store, product and customer views: the store must exist and be active. A new event answers 201. The same `client_event_id` arriving again with the same `type`, `store_id` and `product_id` answers 200 with the original event and writes nothing; with any other type, store or product it answers 409 `client_event_conflict`. `occurred_at` more than five minutes ahead of the server answers 422 `occurred_in_future`.'
       operationId: createEngagementEventV2
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - STORE_MANAGER
@@ -913,7 +912,6 @@ paths:
       summary: List engagement events
       description: Returns a page ordered by `occurred_at`, newest first. `from` and `to` are RFC 3339 timestamps bounding `occurred_at`. Voided events are listed unless `voided=false`.
       operationId: listEngagementEventsV2
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - ANALYST
@@ -970,7 +968,6 @@ paths:
       summary: Get one engagement event
       description: Returns the event with its `history`.
       operationId: getEngagementEventV2
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - ANALYST
@@ -1020,7 +1017,6 @@ paths:
       summary: Void an engagement event
       description: 'Voids the event: it is never deleted, a `VOIDED` entry is added to its `history`, and summaries stop counting it.'
       operationId: voidEngagementEventV2
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       parameters:
@@ -1089,7 +1085,6 @@ paths:
       summary: Summarize engagement
       description: Counts events that are not voided, grouped by `store`, `day` or `type`. `from` and `to` are UTC dates (`YYYY-MM-DD`), both inclusive, and a day is a UTC day. Every event type is counted, including `STORE_VISIT`, `RECO_IMPRESSION`, `CAMPAIGN_EXPOSURE`, `CART_ADD`, `CART_REMOVE` and `NAVIGATION`; grouped by `type` each is its own key and none is folded into another or read as a sale.
       operationId: getEngagementSummaryV2
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - ANALYST
@@ -1851,7 +1846,7 @@ components:
     CampaignExposureRequestV2:
       type: object
       additionalProperties: false
-      description: A customer shown a campaign. It carries the campaign and the customer. Experimentation consumes it from the Redis Stream `stream:engagement.v1.interaction_recorded` that this service relays from its own outbox (ADR-0075), into its own projection, as the exposure count of a campaign per customer; it never calls this service. A void reaches the projection as a later notice. The stream's own contract follows in its own story. An exposure is not a conversion and not a sale.
+      description: A customer shown a campaign. It carries the campaign and the customer. Experimentation consumes it from the Redis Stream `stream:engagement.v1.interaction_recorded` that this service relays from its own outbox (ADR-0075), into its own projection, as the exposure count of a campaign per customer; it never calls this service. A void reaches the projection as a later notice. The stream is contracted in `contracts/streams/engagement.interaction_recorded.v1.md`. An exposure is not a conversion and not a sale.
       required:
       - client_event_id
       - type

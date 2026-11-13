@@ -122,6 +122,25 @@ jobs:
           psql -v ON_ERROR_STOP=1 -d retail -f sql/01_schema.sql
           psql -v ON_ERROR_STOP=1 -d retail -f sql/02_seed_30_per_table.sql
 
+      - name: Install native dependencies
+        run: |
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 update -qq
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 install -y --no-install-recommends libclang-dev libxml2-dev pkg-config
+
+      - name: Install the pinned toolchain
+        working-directory: ${{ env.DIR }}
+        run: |
+          set -euo pipefail
+          channel=$(sed -n 's/^FROM rust:\([0-9.]*\)-.*/\1/p' Dockerfile | head -1)
+          rustup toolchain install "$channel" --profile minimal --component clippy,rustfmt
+          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
+
+      - name: Restore the Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: bench/products-service-rs -> target
+          save-if: ${{ github.ref == 'refs/heads/develop' }}
+
       - name: Rust gates — fmt, clippy, test
         working-directory: ${{ env.DIR }}
         env:
@@ -129,11 +148,6 @@ jobs:
           MOSAIQ_REQUIRE_POSTGRES: "1"
         run: |
           set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends libclang-dev libxml2-dev pkg-config
-          channel=$(sed -n 's/^FROM rust:\([0-9.]*\)-.*/\1/p' Dockerfile | head -1)
-          rustup toolchain install "$channel" --profile minimal --component clippy,rustfmt
-          export RUSTUP_TOOLCHAIN=$channel
           cargo fmt --check
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked

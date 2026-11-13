@@ -199,13 +199,17 @@ jobs:
           uv run ruff check .
           uv run pytest
 
-      - name: Rust service — fmt, clippy, test
+      - name: Rust service — install native dependencies
+        if: steps.kind.outputs.kind == 'rust'
+        run: |
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 update -qq
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 install -y --no-install-recommends libclang-dev libxml2-dev pkg-config
+
+      - name: Rust service — install the pinned toolchain
         if: steps.kind.outputs.kind == 'rust'
         working-directory: ${{ env.DIR }}
         run: |
           set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends libclang-dev libxml2-dev pkg-config
           # The toolchain the image builds with.
           if [ -f rust-toolchain.toml ]; then
             channel=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
@@ -213,7 +217,21 @@ jobs:
             channel=$(sed -n 's/^FROM rust:\([0-9.]*\)-.*/\1/p' Dockerfile | head -1)
           fi
           rustup toolchain install "$channel" --profile minimal --component clippy,rustfmt
-          export RUSTUP_TOOLCHAIN=$channel
+          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
+
+      - name: Rust service — restore the cargo cache
+        if: steps.kind.outputs.kind == 'rust'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ env.DIR }} -> target
+          key: ${{ matrix.service }}
+          save-if: ${{ github.ref == 'refs/heads/develop' }}
+
+      - name: Rust service — fmt, clippy, test
+        if: steps.kind.outputs.kind == 'rust'
+        working-directory: ${{ env.DIR }}
+        run: |
+          set -euo pipefail
           cargo fmt --check
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked

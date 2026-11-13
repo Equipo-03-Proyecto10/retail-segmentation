@@ -22,8 +22,8 @@ printf '%s  %s\n' "$OASDIFF_SHA256" "$tool_tmp/oasdiff.tar.gz" | sha256sum --che
 tar -xzf "$tool_tmp/oasdiff.tar.gz" -C "$tool_tmp" oasdiff
 sudo install -m 0755 "$tool_tmp/oasdiff" /usr/local/bin/oasdiff
 
-sudo apt-get update -qq
-sudo apt-get install -y --no-install-recommends libxml2-utils
+sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 update -qq
+sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 install -y --no-install-recommends libxml2-utils
 # apt cannot hold an exact build, so the pin is the runner image: ubuntu-24.04
 # ships libxml2 2.9.14 for its whole life. A different image fails here rather
 # than validating with an untested libxml.

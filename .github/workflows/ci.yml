@@ -62,7 +62,7 @@ jobs:
       - name: Tests
         run: |
           if [ -n "$(find . -name 'test_*.py' -not -path './.venv/*' -print -quit)" ]; then
-            pytest --junitxml=test-results/pytest.xml
+            pytest -n auto --junitxml=test-results/pytest.xml
           else
             echo "No tests yet — nothing to run."
           fi
@@ -568,8 +568,8 @@ jobs:
       - name: Install libxml2 and libclang
         if: steps.changes.outputs.changed == 'true'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libclang-dev libxml2-dev pkg-config
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 install -y --no-install-recommends libclang-dev libxml2-dev pkg-config
 
       - name: Install the pinned toolchain
         if: steps.changes.outputs.changed == 'true'
@@ -577,7 +577,15 @@ jobs:
         run: |
           channel=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
           rustup toolchain install "$channel" --profile minimal --component clippy,rustfmt
+          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
           cargo --version
+
+      - name: Restore the Rust cache
+        if: steps.changes.outputs.changed == 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/kit-rs -> target
+          save-if: ${{ github.ref == 'refs/heads/develop' }}
 
       - name: Load PostgreSQL scripts
         if: steps.changes.outputs.changed == 'true'

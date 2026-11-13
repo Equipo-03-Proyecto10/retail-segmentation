@@ -171,6 +171,7 @@ test('window is locked down', async () => {
     'onStateChange',
     'openRecommendationDecision',
     'planExperiment',
+    'planningReport',
     'previewCampaignAudience',
     'probeService',
     'publishModelVersion',

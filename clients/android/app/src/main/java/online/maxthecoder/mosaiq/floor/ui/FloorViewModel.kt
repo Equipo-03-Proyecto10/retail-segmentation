@@ -13,10 +13,13 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import online.maxthecoder.mosaiq.floor.AppGraph
+import online.maxthecoder.mosaiq.floor.AppText
+import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.net.CheckInResult
 import online.maxthecoder.mosaiq.floor.net.Store
 import online.maxthecoder.mosaiq.floor.net.json
+import online.maxthecoder.mosaiq.floor.net.totalPages
 import online.maxthecoder.mosaiq.floor.outbox.OutboxRow
 import online.maxthecoder.mosaiq.floor.outbox.RowState
 import online.maxthecoder.mosaiq.floor.outbox.describe
@@ -92,7 +95,7 @@ class FloorViewModel(
                         stores.value.copy(
                             loading = false,
                             stores = body.stores,
-                            totalPages = maxOf(1, (body.pageInfo.total + body.pageInfo.size - 1) / body.pageInfo.size)
+                            totalPages = totalPages(body.pageInfo.total, body.pageInfo.size)
                         )
                 }
         }
@@ -115,11 +118,10 @@ class FloorViewModel(
             val note =
                 when {
                     mode == LocationMode.DENIED ->
-                        "Location is off for this app, so the check-in is recorded without a position " +
-                            "and cannot be verified."
+                        AppText.get(R.string.checkin_note_denied)
                     mode == LocationMode.APPROXIMATE ->
-                        "Only approximate location is allowed, so the check-in may be too imprecise to verify."
-                    fix == null -> "No position could be found, so the check-in is recorded without one."
+                        AppText.get(R.string.checkin_note_approximate)
+                    fix == null -> AppText.get(R.string.checkin_note_no_fix)
                     else -> null
                 }
             val rowId = graph.writes.queueCheckIn(store.storeId, fix)
@@ -146,6 +148,13 @@ class FloorViewModel(
                 runCatching { json.decodeFromString(CheckInResult.serializer(), body) }.getOrNull()
                     ?: return UNREADABLE_ANSWER
             return describe(result)
+        }
+
+        /** Whether the server verified the check-in; `null` when there is no readable answer yet. */
+        fun verifiedOf(row: OutboxRow?): Boolean? {
+            if (row?.state != RowState.DONE) return null
+            val body = row.responseBody ?: return null
+            return runCatching { json.decodeFromString(CheckInResult.serializer(), body).verified }.getOrNull()
         }
     }
 }

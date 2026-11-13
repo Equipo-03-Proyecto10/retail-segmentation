@@ -14,6 +14,7 @@ import { renderImports } from './imports';
 import { renderCheckIns, renderEngagement, renderSales, renderStock } from './floor';
 import { latestRequest } from './latest-request';
 import { renderMigrations } from './migrations';
+import { renderPlanning } from './planning';
 import { exportAction } from './export';
 import { guardBridge } from './session';
 import { reconcileRender, type RenderState } from './render-state';
@@ -150,6 +151,7 @@ function renderHome(state: Extract<AppState, { status: 'signed_in' }>): void {
     if (next === 'products') renderProducts(body, ctx);
     else if (next === 'categories') renderCategories(body, ctx);
     else if (next === 'stock') renderStock(body, ctx);
+    else if (next === 'planning') renderPlanning(body, ctx);
     else if (next === 'sales') renderSales(body, ctx);
     else if (next === 'engagement') renderEngagement(body, ctx);
     else if (next === 'check-ins') renderCheckIns(body, ctx);

@@ -19,6 +19,7 @@ import { Floor } from './floor';
 import { Recommendations } from './recommendations';
 import { Models } from './models';
 import { Imports, systemImportEnv } from './imports';
+import { Planning } from './planning';
 import { Reports, type ReportExportEnv } from './reports';
 import { Migrations } from './migrations';
 import { loadSettings } from './settings';
@@ -140,6 +141,8 @@ function start(): void {
   ipcMain.handle(CHANNELS.listImports, (_e, query: unknown) => imports.listImports(query));
   ipcMain.handle(CHANNELS.getImport, (_e, importId: unknown) => imports.getImport(importId));
   ipcMain.handle(CHANNELS.listImportRejections, (_e, query: unknown) => imports.listRejections(query));
+  const planning = new Planning(office);
+  ipcMain.handle(CHANNELS.planningReport, (_e, query: unknown) => planning.report(query));
   // Each handler passes the renderer's values on unchanged; Catalog checks every one of them.
   const catalog = new Catalog(office);
   ipcMain.handle(CHANNELS.listProducts, (_e, query: unknown) => catalog.listProducts(query));

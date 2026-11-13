@@ -399,6 +399,90 @@ SELECT ('00000000-0000-0000-0000-' || lpad(n::text,12,'0'))::uuid,
 FROM generate_series(1,30) n
 CROSS JOIN generate_series(0,1) c;
 
+-- ---------- preferences.consent_decision (one default per customer and purpose) ----------
+-- ADR-0066 section 1: customers registered before consent existed get PROFILING
+-- and PERSONALIZATION granted and MARKETING_CONTACT withdrawn, as MIGRATION rows
+-- with no actor and PROGRAMME_DEFAULT as the basis. The staff decisions that
+-- follow are by the sole administrator and show a log that grows: every fourth
+-- customer then grants MARKETING_CONTACT and every fifth withdraws
+-- PERSONALIZATION, so customer 20 has both.
+INSERT INTO preferences.consent_decision
+    (customer_id, purpose, decision, recorded_at, recorded_by, source, basis)
+SELECT c.customer_id, p.purpose, p.decision, now() - interval '30 days',
+       NULL, 'MIGRATION', 'PROGRAMME_DEFAULT'
+FROM customer AS c
+CROSS JOIN (VALUES ('PERSONALIZATION', 'GRANTED'),
+                   ('MARKETING_CONTACT', 'WITHDRAWN'),
+                   ('PROFILING', 'GRANTED')) AS p(purpose, decision)
+ORDER BY c.customer_id, p.purpose;
+
+INSERT INTO preferences.consent_decision
+    (customer_id, purpose, decision, recorded_at, recorded_by, source, basis)
+SELECT ('00000000-0000-0000-0000-' || lpad(n::text,12,'0'))::uuid,
+       'MARKETING_CONTACT', 'GRANTED', now() - ((n + 100) || ' hours')::interval,
+       '11111111-1111-1111-1111-000000000001'::uuid, 'STAFF_ON_BEHALF', 'EXPLICIT'
+FROM generate_series(1,30) n WHERE n % 4 = 0;
+
+INSERT INTO preferences.consent_decision
+    (customer_id, purpose, decision, recorded_at, recorded_by, source, basis)
+SELECT ('00000000-0000-0000-0000-' || lpad(n::text,12,'0'))::uuid,
+       'PERSONALIZATION', 'WITHDRAWN', now() - ((n + 50) || ' hours')::interval,
+       '11111111-1111-1111-1111-000000000001'::uuid, 'STAFF_ON_BEHALF', 'EXPLICIT'
+FROM generate_series(1,30) n WHERE n % 5 = 0;
+
+-- ---------- preferences.restriction_decision (30 imposed, 4 of them lifted) ----------
+-- Each of the 30 customers restricts one target: an even customer a channel,
+-- an odd one a top-level category. Customers 7, 14, 21 and 28 then lift theirs,
+-- so the published view carries 26 restrictions and the log keeps all 34.
+INSERT INTO preferences.restriction_decision
+    (customer_id, kind, channel_id, category_id, decision, recorded_at, recorded_by, source)
+SELECT ('00000000-0000-0000-0000-' || lpad(n::text,12,'0'))::uuid,
+       CASE WHEN n % 2 = 0 THEN 'CHANNEL' ELSE 'INTEREST_CATEGORY' END,
+       CASE WHEN n % 2 = 0 THEN (1 + (n % 5))::smallint END,
+       CASE WHEN n % 2 = 1 THEN (1 + (n % 10))::smallint END,
+       'IMPOSED', now() - ((n + 200) || ' hours')::interval,
+       '11111111-1111-1111-1111-000000000001'::uuid, 'STAFF_ON_BEHALF'
+FROM generate_series(1,30) n;
+
+INSERT INTO preferences.restriction_decision
+    (customer_id, kind, channel_id, category_id, decision, recorded_at, recorded_by, source)
+SELECT ('00000000-0000-0000-0000-' || lpad(n::text,12,'0'))::uuid,
+       CASE WHEN n % 2 = 0 THEN 'CHANNEL' ELSE 'INTEREST_CATEGORY' END,
+       CASE WHEN n % 2 = 0 THEN (1 + (n % 5))::smallint END,
+       CASE WHEN n % 2 = 1 THEN (1 + (n % 10))::smallint END,
+       'LIFTED', now() - ((n + 150) || ' hours')::interval,
+       '11111111-1111-1111-1111-000000000001'::uuid, 'STAFF_ON_BEHALF'
+FROM generate_series(1,30) n WHERE n % 7 = 0;
+
+-- ---------- preferences.preference_change (60) and preference_change_member (120) ----------
+-- The history of the two declared sets seeded above: each customer's first
+-- replace of each set, from empty to the set it holds, by the sole
+-- administrator. The members are read from the sets, so the history cannot
+-- disagree with them.
+INSERT INTO preferences.preference_change (customer_id, preference_set, changed_at, changed_by)
+SELECT s.customer_id, 'PREFERRED_CHANNELS', now() - interval '20 days',
+       '11111111-1111-1111-1111-000000000001'::uuid
+FROM (SELECT DISTINCT customer_id FROM customer_preferred_channel) AS s
+ORDER BY s.customer_id;
+
+INSERT INTO preferences.preference_change (customer_id, preference_set, changed_at, changed_by)
+SELECT s.customer_id, 'INTEREST_CATEGORIES', now() - interval '20 days',
+       '11111111-1111-1111-1111-000000000001'::uuid
+FROM (SELECT DISTINCT customer_id FROM customer_interest_category) AS s
+ORDER BY s.customer_id;
+
+INSERT INTO preferences.preference_change_member (change_id, side, member_id)
+SELECT h.change_id, 'AFTER', c.channel_id
+FROM preferences.preference_change AS h
+JOIN customer_preferred_channel AS c USING (customer_id)
+WHERE h.preference_set = 'PREFERRED_CHANNELS';
+
+INSERT INTO preferences.preference_change_member (change_id, side, member_id)
+SELECT h.change_id, 'AFTER', i.category_id
+FROM preferences.preference_change AS h
+JOIN customer_interest_category AS i USING (customer_id)
+WHERE h.preference_set = 'INTEREST_CATEGORIES';
+
 -- ---------- product (40) ----------
 -- image_path stays NULL: F3-07 writes it when a file is actually uploaded, and
 -- a seeded path pointing at a file that does not exist would make the upload

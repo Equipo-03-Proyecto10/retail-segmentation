@@ -1033,6 +1033,109 @@ BEGIN
 END
 $seed_events$;
 
+-- ---------- recommendations.* (30 decisions, F24-05, ADR-0067) ----------
+-- Decision n is for customer n, the answer to the question "what to recommend
+-- to them" some hours ago, kept as the service keeps it: ids, figures and
+-- codes. n mod 10 gives the status: 1 to 5 recommended (15), 6 none_match,
+-- 7 no_usual_store, 8 no_open_assignment, 9 unassigned_result and 0
+-- PERSONALIZATION_WITHDRAWN, three of each of those five. The reference store
+-- is store n, as given for every third customer and as the usual store
+-- otherwise; the channel is given only with the store. A decision that never
+-- reached a reference store has none, and one without a segment has no run.
+-- No model version is seeded: the run behind these decisions has none yet.
+INSERT INTO recommendations.recommendation_decision
+    (decision_id, customer_id, status, computed_at, run_id, model_version_id,
+     store_id, store_source, channel_id)
+SELECT ('c0de0000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid,
+       ('00000000-0000-0000-0000-' || lpad(n::text, 12, '0'))::uuid,
+       s.status,
+       now() - make_interval(hours => 2 * n),
+       CASE WHEN s.status IN ('no_open_assignment', 'unassigned_result',
+                              'PERSONALIZATION_WITHDRAWN')
+            THEN NULL ELSE (SELECT max(run_id) FROM segmentation_run) END,
+       NULL,
+       CASE WHEN s.status IN ('recommended', 'none_match')
+                 OR (s.status = 'PERSONALIZATION_WITHDRAWN' AND n % 3 = 0)
+            THEN n END,
+       CASE WHEN s.status IN ('recommended', 'none_match')
+                 OR (s.status = 'PERSONALIZATION_WITHDRAWN' AND n % 3 = 0)
+            THEN CASE WHEN n % 3 = 0 THEN 'given' ELSE 'usual_store' END END,
+       CASE WHEN n % 3 = 0 THEN 1 + n % 5 END
+FROM generate_series(1, 30) AS n
+CROSS JOIN LATERAL (
+    SELECT CASE n % 10
+               WHEN 6 THEN 'none_match'
+               WHEN 7 THEN 'no_usual_store'
+               WHEN 8 THEN 'no_open_assignment'
+               WHEN 9 THEN 'unassigned_result'
+               WHEN 0 THEN 'PERSONALIZATION_WITHDRAWN'
+               ELSE 'recommended'
+           END AS status
+) AS s;
+
+-- Counts per reason above zero: a recommended decision left out two products
+-- that matched (already bought, and out of stock here), a none_match one lost
+-- its only candidates to the shelf. 15 x 2 + 3 = 33 rows.
+INSERT INTO recommendations.recommendation_exclusion (decision_id, reason, product_count)
+SELECT d.decision_id, r.reason, r.product_count
+FROM recommendations.recommendation_decision AS d
+CROSS JOIN LATERAL (
+    VALUES ('already_bought', 1 + (right(d.decision_id::text, 2)::int) % 3),
+           ('out_of_stock', 1 + (right(d.decision_id::text, 2)::int) % 2)
+) AS r(reason, product_count)
+WHERE d.status = 'recommended'
+UNION ALL
+SELECT decision_id, 'out_of_stock', 2
+FROM recommendations.recommendation_decision
+WHERE status = 'none_match';
+
+-- Two primary items for every recommended decision: product n by the segment
+-- signal, and product n + 10 by purchase history, so the reasons are the two
+-- figures RN-40 orders by. Every other decision of them (n mod 10 = 2 or 4)
+-- also offers an alternative for a product that sold out, and n mod 10 = 4 an
+-- elsewhere entry, held by the next store, for another one. Products are
+-- chosen so that no decision names one twice.
+INSERT INTO recommendations.recommendation_item
+    (decision_id, position, product_id, category_id, kind, quantity_on_hand,
+     held_at_store_id, alternative_for, unavailable_reason)
+SELECT d.decision_id, i.position, i.product_id, p.category_id, i.kind,
+       i.quantity_on_hand, i.held_at_store_id, i.alternative_for, i.unavailable_reason
+FROM recommendations.recommendation_decision AS d
+CROSS JOIN LATERAL (SELECT right(d.decision_id::text, 12)::int AS n) AS k
+CROSS JOIN LATERAL (
+    VALUES (1, k.n, 'primary', 4 + k.n, NULL::int, NULL::int, NULL::text),
+           (2, k.n + 10, 'primary', 3 + k.n % 7, NULL, NULL, NULL)
+    UNION ALL
+    SELECT 3, (k.n + 29) % 40 + 1, 'alternative', 2 + k.n % 5, NULL,
+           (k.n + 19) % 40 + 1, 'out_of_stock'
+    WHERE k.n % 10 IN (2, 4)
+    UNION ALL
+    SELECT 4, k.n + 6, 'elsewhere', 6 + k.n % 4, k.n % 30 + 1, NULL, 'out_of_stock'
+    WHERE k.n % 10 = 4
+) AS i(position, product_id, kind, quantity_on_hand, held_at_store_id,
+       alternative_for, unavailable_reason)
+JOIN product AS p ON p.product_id = i.product_id
+WHERE d.status = 'recommended';
+
+-- The reasons: the first primary item has the segment signal and the second
+-- purchase history in its category, the elsewhere entry has both, and an
+-- alternative the one reason of a substitute.
+INSERT INTO recommendations.recommendation_reason
+    (decision_id, position, signal, segment_buyers, category_id, share)
+SELECT i.decision_id, i.position, r.signal, r.segment_buyers, r.category_id, r.share
+FROM recommendations.recommendation_item AS i
+CROSS JOIN LATERAL (SELECT right(i.decision_id::text, 12)::int AS n) AS k
+CROSS JOIN LATERAL (
+    SELECT 'segment', 2 + k.n, NULL::smallint, NULL::numeric
+    WHERE i.position IN (1, 4)
+    UNION ALL
+    SELECT 'purchase_history', NULL, i.category_id, round((1 + k.n % 4) / 8.0, 4)
+    WHERE i.position IN (2, 4)
+    UNION ALL
+    SELECT 'relation_substitute', NULL, NULL, NULL
+    WHERE i.position = 3
+) AS r(signal, segment_buyers, category_id, share);
+
 -- ---------- outboxes (ADR-0054, #597) ----------
 -- Empty-database bootstrap only: remove the events this transaction captured
 -- before COMMIT makes them visible to a relay. Keep all capture and integrity

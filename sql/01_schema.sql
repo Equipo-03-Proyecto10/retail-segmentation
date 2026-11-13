@@ -3719,6 +3719,302 @@ GRANT EXECUTE ON FUNCTION api_audit.record_event_v1(uuid, text, text, timestampt
        svc_campaigns, svc_audit_trail;
 -- END BOUNDARY audit-trail
 
+-- BEGIN BOUNDARY recommendations
+-- recommendations-service (F24-05, ADR-0067, ADR-0046): the explanation of each
+-- recommendation it serves, kept so that "why was this product offered" can be
+-- answered after the stock and the rules have moved on. It holds identifiers,
+-- figures and codes only: no name, email, phone, SKU, price or free text. The
+-- web has no privilege here, and nothing else reads these tables: the service
+-- publishes them through its own `recommendation-decisions` resource, not a
+-- database view. docs/data-model.md §2.4 holds the 4NF justification.
+--
+-- Kept 90 days, then deleted by the service's own job (ADR-0067). A customer's
+-- anonymization (F21-19) clears customer_id and leaves the figures: the
+-- foreign key does it when a customer row goes, and the service does it by
+-- UPDATE (customer_id) when the customer is anonymized in place.
+--
+-- Nothing derivable is stored. The availability channel is the decision's own
+-- channel; the availability store is the decision's store except on an
+-- `elsewhere` item, which names its own; and an item's factors (signals matched,
+-- segment buyers, category share) are read from its reason rows.
+CREATE SCHEMA IF NOT EXISTS recommendations;
+REVOKE ALL ON SCHEMA recommendations FROM PUBLIC;
+
+-- One decision per answer. model_version_id has no foreign key because the
+-- model registry is another boundary's (ADR-0064): the figure is the one the
+-- run was scored under when the decision was made, null while the run has none.
+CREATE TABLE IF NOT EXISTS recommendations.recommendation_decision (
+    decision_id UUID NOT NULL DEFAULT gen_random_uuid(),
+    customer_id UUID,
+    status TEXT NOT NULL,
+    computed_at TIMESTAMPTZ NOT NULL,
+    run_id BIGINT,
+    model_version_id BIGINT,
+    store_id SMALLINT,
+    store_source TEXT,
+    channel_id SMALLINT
+);
+
+-- The exclusion counts of a decision: one row per reason above zero. A
+-- multivalued fact of the decision, independent of its items (4NF).
+CREATE TABLE IF NOT EXISTS recommendations.recommendation_exclusion (
+    decision_id UUID NOT NULL,
+    reason TEXT NOT NULL,
+    product_count INTEGER NOT NULL
+);
+
+-- One row per product the answer offered, of any kind. category_id is the
+-- product's category when the decision was made: a later re-categorization
+-- must not rewrite what was shown.
+CREATE TABLE IF NOT EXISTS recommendations.recommendation_item (
+    decision_id UUID NOT NULL,
+    position SMALLINT NOT NULL,
+    product_id INTEGER NOT NULL,
+    category_id SMALLINT NOT NULL,
+    kind TEXT NOT NULL,
+    quantity_on_hand INTEGER NOT NULL,
+    held_at_store_id SMALLINT,
+    alternative_for INTEGER,
+    unavailable_reason TEXT
+);
+
+-- The signals behind an item, one row each. relation_substitute is the single
+-- reason of an alternative and carries no figure.
+CREATE TABLE IF NOT EXISTS recommendations.recommendation_reason (
+    decision_id UUID NOT NULL,
+    position SMALLINT NOT NULL,
+    signal TEXT NOT NULL,
+    segment_buyers INTEGER,
+    category_id SMALLINT,
+    share NUMERIC(5, 4)
+);
+
+-- Every named constraint is added separately so this boundary is safe to
+-- re-apply to a database that already contains the tables.
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_decision'::regclass
+      AND conname = 'recommendation_decision_pkey'
+) THEN ALTER TABLE recommendations.recommendation_decision
+        ADD CONSTRAINT recommendation_decision_pkey PRIMARY KEY (decision_id); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_decision'::regclass
+      AND conname = 'recommendation_decision_customer_id_fkey'
+) THEN ALTER TABLE recommendations.recommendation_decision
+        ADD CONSTRAINT recommendation_decision_customer_id_fkey
+        FOREIGN KEY (customer_id) REFERENCES public.customer(customer_id)
+        ON DELETE SET NULL; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_decision'::regclass
+      AND conname = 'recommendation_decision_run_id_fkey'
+) THEN ALTER TABLE recommendations.recommendation_decision
+        ADD CONSTRAINT recommendation_decision_run_id_fkey
+        FOREIGN KEY (run_id) REFERENCES public.segmentation_run(run_id)
+        ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_decision'::regclass
+      AND conname = 'recommendation_decision_store_id_fkey'
+) THEN ALTER TABLE recommendations.recommendation_decision
+        ADD CONSTRAINT recommendation_decision_store_id_fkey
+        FOREIGN KEY (store_id) REFERENCES public.store(store_id)
+        ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_decision'::regclass
+      AND conname = 'recommendation_decision_channel_id_fkey'
+) THEN ALTER TABLE recommendations.recommendation_decision
+        ADD CONSTRAINT recommendation_decision_channel_id_fkey
+        FOREIGN KEY (channel_id) REFERENCES public.channel(channel_id)
+        ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_decision'::regclass
+      AND conname = 'recommendation_decision_status_check'
+) THEN ALTER TABLE recommendations.recommendation_decision
+        ADD CONSTRAINT recommendation_decision_status_check
+        CHECK (status IN ('recommended', 'none_match', 'no_open_assignment',
+                          'unassigned_result', 'no_usual_store',
+                          'PERSONALIZATION_WITHDRAWN')); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_decision'::regclass
+      AND conname = 'recommendation_decision_store_source_check'
+) THEN ALTER TABLE recommendations.recommendation_decision
+        ADD CONSTRAINT recommendation_decision_store_source_check
+        CHECK ((store_id IS NULL) = (store_source IS NULL)
+               AND (store_source IS NULL OR store_source IN ('given', 'usual_store')));
+        END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_decision'::regclass
+      AND conname = 'recommendation_decision_model_version_id_check'
+) THEN ALTER TABLE recommendations.recommendation_decision
+        ADD CONSTRAINT recommendation_decision_model_version_id_check
+        CHECK (model_version_id >= 1); END IF; END $$;
+
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_exclusion'::regclass
+      AND conname = 'recommendation_exclusion_pkey'
+) THEN ALTER TABLE recommendations.recommendation_exclusion
+        ADD CONSTRAINT recommendation_exclusion_pkey PRIMARY KEY (decision_id, reason);
+        END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_exclusion'::regclass
+      AND conname = 'recommendation_exclusion_decision_id_fkey'
+) THEN ALTER TABLE recommendations.recommendation_exclusion
+        ADD CONSTRAINT recommendation_exclusion_decision_id_fkey
+        FOREIGN KEY (decision_id) REFERENCES recommendations.recommendation_decision(decision_id)
+        ON DELETE CASCADE; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_exclusion'::regclass
+      AND conname = 'recommendation_exclusion_reason_check'
+) THEN ALTER TABLE recommendations.recommendation_exclusion
+        ADD CONSTRAINT recommendation_exclusion_reason_check
+        CHECK (reason IN ('already_bought', 'inactive', 'not_sellable',
+                          'store_not_selling', 'channel_not_enabled',
+                          'out_of_stock', 'PERSONALIZATION_WITHDRAWN')); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_exclusion'::regclass
+      AND conname = 'recommendation_exclusion_product_count_check'
+) THEN ALTER TABLE recommendations.recommendation_exclusion
+        ADD CONSTRAINT recommendation_exclusion_product_count_check
+        CHECK (product_count >= 1); END IF; END $$;
+
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_item'::regclass
+      AND conname = 'recommendation_item_pkey'
+) THEN ALTER TABLE recommendations.recommendation_item
+        ADD CONSTRAINT recommendation_item_pkey PRIMARY KEY (decision_id, position);
+        END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_item'::regclass
+      AND conname = 'recommendation_item_decision_product_key'
+) THEN ALTER TABLE recommendations.recommendation_item
+        ADD CONSTRAINT recommendation_item_decision_product_key
+        UNIQUE (decision_id, product_id); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_item'::regclass
+      AND conname = 'recommendation_item_decision_id_fkey'
+) THEN ALTER TABLE recommendations.recommendation_item
+        ADD CONSTRAINT recommendation_item_decision_id_fkey
+        FOREIGN KEY (decision_id) REFERENCES recommendations.recommendation_decision(decision_id)
+        ON DELETE CASCADE; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_item'::regclass
+      AND conname = 'recommendation_item_product_id_fkey'
+) THEN ALTER TABLE recommendations.recommendation_item
+        ADD CONSTRAINT recommendation_item_product_id_fkey
+        FOREIGN KEY (product_id) REFERENCES public.product(product_id)
+        ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_item'::regclass
+      AND conname = 'recommendation_item_category_id_fkey'
+) THEN ALTER TABLE recommendations.recommendation_item
+        ADD CONSTRAINT recommendation_item_category_id_fkey
+        FOREIGN KEY (category_id) REFERENCES public.category(category_id)
+        ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_item'::regclass
+      AND conname = 'recommendation_item_held_at_store_id_fkey'
+) THEN ALTER TABLE recommendations.recommendation_item
+        ADD CONSTRAINT recommendation_item_held_at_store_id_fkey
+        FOREIGN KEY (held_at_store_id) REFERENCES public.store(store_id)
+        ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_item'::regclass
+      AND conname = 'recommendation_item_alternative_for_fkey'
+) THEN ALTER TABLE recommendations.recommendation_item
+        ADD CONSTRAINT recommendation_item_alternative_for_fkey
+        FOREIGN KEY (alternative_for) REFERENCES public.product(product_id)
+        ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_item'::regclass
+      AND conname = 'recommendation_item_position_check'
+) THEN ALTER TABLE recommendations.recommendation_item
+        ADD CONSTRAINT recommendation_item_position_check
+        CHECK (position >= 1 AND quantity_on_hand >= 1); END IF; END $$;
+-- What each kind carries (the contract's RecommendationItemV2): a primary
+-- has no alternative_for and no unavailable_reason; an alternative has both;
+-- an elsewhere entry has the reason and the other store, and no alternative_for.
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_item'::regclass
+      AND conname = 'recommendation_item_kind_check'
+) THEN ALTER TABLE recommendations.recommendation_item
+        ADD CONSTRAINT recommendation_item_kind_check
+        CHECK (CASE kind
+                 WHEN 'primary' THEN num_nonnulls(held_at_store_id, alternative_for,
+                                                  unavailable_reason) = 0
+                 WHEN 'alternative' THEN held_at_store_id IS NULL
+                                         AND alternative_for IS NOT NULL
+                                         AND unavailable_reason IS NOT NULL
+                 WHEN 'elsewhere' THEN held_at_store_id IS NOT NULL
+                                       AND alternative_for IS NULL
+                                       AND unavailable_reason IS NOT NULL
+                 ELSE false END); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_item'::regclass
+      AND conname = 'recommendation_item_unavailable_reason_check'
+) THEN ALTER TABLE recommendations.recommendation_item
+        ADD CONSTRAINT recommendation_item_unavailable_reason_check
+        CHECK (unavailable_reason IN ('not_sellable', 'channel_not_enabled',
+                                      'out_of_stock')); END IF; END $$;
+
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_reason'::regclass
+      AND conname = 'recommendation_reason_pkey'
+) THEN ALTER TABLE recommendations.recommendation_reason
+        ADD CONSTRAINT recommendation_reason_pkey PRIMARY KEY (decision_id, position, signal);
+        END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_reason'::regclass
+      AND conname = 'recommendation_reason_item_fkey'
+) THEN ALTER TABLE recommendations.recommendation_reason
+        ADD CONSTRAINT recommendation_reason_item_fkey
+        FOREIGN KEY (decision_id, position)
+        REFERENCES recommendations.recommendation_item(decision_id, position)
+        ON DELETE CASCADE; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_reason'::regclass
+      AND conname = 'recommendation_reason_category_id_fkey'
+) THEN ALTER TABLE recommendations.recommendation_reason
+        ADD CONSTRAINT recommendation_reason_category_id_fkey
+        FOREIGN KEY (category_id) REFERENCES public.category(category_id)
+        ON DELETE RESTRICT; END IF; END $$;
+-- Each signal carries exactly the figures it owns, and no other.
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_reason'::regclass
+      AND conname = 'recommendation_reason_signal_check'
+) THEN ALTER TABLE recommendations.recommendation_reason
+        ADD CONSTRAINT recommendation_reason_signal_check
+        CHECK (CASE signal
+                 WHEN 'segment' THEN segment_buyers IS NOT NULL AND segment_buyers >= 1
+                                     AND category_id IS NULL AND share IS NULL
+                 WHEN 'preferred_category' THEN segment_buyers IS NULL
+                                                AND category_id IS NOT NULL
+                                                AND share IS NULL
+                 WHEN 'purchase_history' THEN segment_buyers IS NULL
+                                              AND category_id IS NOT NULL
+                                              AND share IS NOT NULL
+                                              AND share > 0 AND share <= 1
+                 WHEN 'relation_substitute' THEN num_nonnulls(segment_buyers,
+                                                              category_id, share) = 0
+                 ELSE false END); END IF; END $$;
+
+-- The retention job deletes by age, and a reader lists by customer or store.
+CREATE INDEX IF NOT EXISTS recommendation_decision_computed
+    ON recommendations.recommendation_decision (computed_at);
+CREATE INDEX IF NOT EXISTS recommendation_decision_customer_computed
+    ON recommendations.recommendation_decision (customer_id, computed_at DESC)
+    WHERE customer_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS recommendation_decision_store_computed
+    ON recommendations.recommendation_decision (store_id, computed_at DESC)
+    WHERE store_id IS NOT NULL;
+
+-- A decision is written once and read back unchanged: SELECT and INSERT,
+-- DELETE for the 90-day retention, and UPDATE of customer_id alone, which is
+-- anonymization. The web has no privilege on this schema.
+GRANT USAGE ON SCHEMA recommendations TO svc_recommendations;
+GRANT SELECT, INSERT, DELETE ON recommendations.recommendation_decision,
+    recommendations.recommendation_exclusion, recommendations.recommendation_item,
+    recommendations.recommendation_reason TO svc_recommendations;
+GRANT UPDATE (customer_id) ON recommendations.recommendation_decision TO svc_recommendations;
+-- END BOUNDARY recommendations
+
 -- BEGIN APPLICATION ROLE VERIFICATION
 -- F1-05 (#53). Opt-in acceptance checks, kept here because even a rejected
 -- DROP belongs in the only file allowed to contain table DDL. Normal schema

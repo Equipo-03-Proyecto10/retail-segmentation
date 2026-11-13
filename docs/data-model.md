@@ -554,6 +554,46 @@ The check-ins boundary (ADR-0046, F14-26) adds two relations, both in 4NF:
   check-in row would need either repeating columns (not 1NF) or updating that
   row, which RN-56 forbids.
 
+The recommendations boundary (ADR-0067, ADR-0046, F24-05) adds four relations,
+all in 4NF. They keep the explanation of each recommendation the service served:
+- **`recommendations.recommendation_decision`** is keyed by `decision_id`, which
+  determines the customer, the status, the computation time, the segmentation
+  run, the model version, the reference store, where that store came from and the
+  reference channel. Those are facts of one answer, fixed when it was made, so
+  none is derived from current data: a later change of a customer's usual store,
+  of a model version or of a store's channels must not rewrite what was
+  answered. The model version has no foreign key because the model registry is
+  another boundary's.
+- **`recommendations.recommendation_exclusion`** is the multivalued fact "this
+  many products were excluded for this reason". It is independent of the
+  decision's items (an excluded product is never listed), so it is its own
+  relation keyed by `(decision_id, reason)`. One row per reason above zero.
+- **`recommendations.recommendation_item`** is one product offered by one
+  decision, keyed by `(decision_id, position)`, with `(decision_id, product_id)`
+  also unique. `category_id` is the product's category when it was shown, a fact
+  of the decision and not a function of the product's current row.
+  - What would be derivable is not a column. An item's availability channel is
+    its decision's channel, and its availability store is its decision's store
+    unless it is an `elsewhere` entry, so only that entry stores a store
+    (`held_at_store_id`). The `factors` of the contract (signals matched, segment
+    buyers, category share) are the count and the figures of the item's reason
+    rows, so storing them would hold each fact twice, free to disagree.
+  - `kind`, `held_at_store_id`, `alternative_for` and `unavailable_reason` depend
+    on each other by the contract (a `primary` has none of the three, an
+    `alternative` has `alternative_for` and a reason, an `elsewhere` has a store
+    and a reason). That is a dependency between the columns of one row, which a
+    CHECK states, not a multivalued fact, so it needs no relation of its own.
+- **`recommendations.recommendation_reason`** is the multivalued fact "this item
+  was offered for this signal, with these figures", independent of the item's
+  other columns, keyed by `(decision_id, position, signal)`. It has no ordinal:
+  the order of reasons is the contract's fixed order of signals, a function of
+  the signal. Keeping reasons in a JSON column would hide the fact from
+  constraints and from aggregation (ADR-0067).
+
+The record holds identifiers, figures and codes only: no name, email, phone,
+SKU, price or free text, and nothing copied from customer or product beyond ids.
+Every text column is a code constrained to a list.
+
 The sales boundary (ADR-0039, ADR-0046, F14-18) adds one relation, also in 4NF:
 - **`sales.sale_capture`** is keyed by `transaction_id`, which determines
   `request_sha256`, `recorded_by` and `captured_at`. It is a 1:1 split of
@@ -913,6 +953,57 @@ effective `verified` are computed on read.
 
 A check-in's effective verdict is its latest review's `verified`, by
 `reviewed_at`. Reviews are appended and never changed.
+
+#### `recommendations.recommendation_decision`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `decision_id` | `UUID` | NN | PK; default `gen_random_uuid()` | The decision, returned to a `/v2` client |
+| `customer_id` | `UUID` | yes | FK → `public.customer`, `ON DELETE SET NULL` | The customer asked about; null once anonymized (F21-19) |
+| `status` | `TEXT` | NN | one of `recommended`, `none_match`, `no_open_assignment`, `unassigned_result`, `no_usual_store`, `PERSONALIZATION_WITHDRAWN` | The answer's status |
+| `computed_at` | `TIMESTAMPTZ` | NN | indexed; the retention job deletes by it | When the answer was computed |
+| `run_id` | `BIGINT` | yes | FK → `public.segmentation_run`, `ON DELETE RESTRICT` | The run behind the customer's open assignment; null until a segment is known |
+| `model_version_id` | `BIGINT` | yes | CHECK `>= 1`; no FK (another boundary's registry) | The model version the run was scored under; null while it has none |
+| `store_id` | `SMALLINT` | yes | FK → `public.store`, `ON DELETE RESTRICT` | The reference store |
+| `store_source` | `TEXT` | yes | `given` or `usual_store`; null exactly when `store_id` is | Which gave the store |
+| `channel_id` | `SMALLINT` | yes | FK → `public.channel`, `ON DELETE RESTRICT` | The reference channel as given, never derived |
+
+#### `recommendations.recommendation_exclusion`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `decision_id` | `UUID` | NN | PK part; FK → `recommendations.recommendation_decision`, `ON DELETE CASCADE` | The decision |
+| `reason` | `TEXT` | NN | PK part; one of the seven exclusion codes of ADR-0067 | Why the products were excluded |
+| `product_count` | `INTEGER` | NN | CHECK `>= 1` | How many products matched a signal and were excluded for it. They are counted, never listed |
+
+#### `recommendations.recommendation_item`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `decision_id` | `UUID` | NN | PK part; FK → `recommendations.recommendation_decision`, `ON DELETE CASCADE` | The decision |
+| `position` | `SMALLINT` | NN | PK part; CHECK `>= 1` | The place in the answer, from 1 |
+| `product_id` | `INTEGER` | NN | FK → `public.product`, `ON DELETE RESTRICT`; unique with `decision_id` | The product offered |
+| `category_id` | `SMALLINT` | NN | FK → `public.category`, `ON DELETE RESTRICT` | The product's category when it was offered |
+| `kind` | `TEXT` | NN | `primary`, `alternative` or `elsewhere`; see the kind CHECK | What the item is |
+| `quantity_on_hand` | `INTEGER` | NN | CHECK `>= 1` | The stock figure the decision used (E-06) |
+| `held_at_store_id` | `SMALLINT` | yes | FK → `public.store`; set exactly for `elsewhere` | The other store that holds an `elsewhere` product |
+| `alternative_for` | `INTEGER` | yes | FK → `public.product`; set exactly for `alternative` | The unavailable product an alternative stands in for |
+| `unavailable_reason` | `TEXT` | yes | `not_sellable`, `channel_not_enabled` or `out_of_stock`; set exactly for `alternative` and `elsewhere` | Why that product is not available at the reference store and channel |
+
+#### `recommendations.recommendation_reason`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `decision_id`, `position` | `UUID`, `SMALLINT` | NN | PK part; FK → `recommendations.recommendation_item`, `ON DELETE CASCADE` | The item |
+| `signal` | `TEXT` | NN | PK part; `segment`, `preferred_category`, `purchase_history` or `relation_substitute` | The reason |
+| `segment_buyers` | `INTEGER` | yes | set, `>= 1`, only for `segment` | Other customers with the same label who bought the product in the window |
+| `category_id` | `SMALLINT` | yes | FK → `public.category`; set only for `preferred_category` and `purchase_history` | The nearest matching category |
+| `share` | `NUMERIC(5,4)` | yes | `> 0` and `<= 1`; set only for `purchase_history` | That category's share of the customer's purchases |
+
+`svc_recommendations` holds SELECT, INSERT and DELETE on the four tables (DELETE
+is the 90-day retention, run by the service) and UPDATE of `customer_id` alone
+(anonymization). A decision is never updated otherwise. The web has no
+privilege on the schema.
 
 #### `sales.sale_capture`
 
@@ -1661,6 +1752,10 @@ through `api_stores.store_directory_v1`.
 The customers boundary owns `customers.loyalty_card` and publishes only the
 single-code resolver `api_customers.resolve_loyalty_code_v1`; consumers cannot
 enumerate codes or read the table.
+
+The recommendations boundary owns `recommendations` for the four tables of its
+decision record. It has no contract schema, because the decisions are published
+by its own `recommendation-decisions` resource and no other service reads them.
 
 The eight outbox owners named by ADR-0044 therefore have both of these schemas:
 

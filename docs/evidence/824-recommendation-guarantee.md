@@ -41,7 +41,7 @@ reason").
 
 ## What the current rule cannot do
 
-Pinned by the last four tests, so F24 changes them on purpose.
+Pinned by the last three tests, so F24 changes them on purpose. The fourth pin, the explanation, was closed by F24-05 ([`828-decision-record.md`](828-decision-record.md)): the rule still keeps nothing, and the service now records each decision.
 
 - **Choose a store.** The store is derived from the customer's purchases in the
   window (the dominant store, RN-35). The caller cannot name one and the answer
@@ -55,7 +55,7 @@ Pinned by the last four tests, so F24 changes them on purpose.
   usual store the answer is `none_match` with no items. Nothing takes its place
   and nothing says what was lost. The same gap covers a discontinued product:
   there is no such state, only `is_active`.
-- **Keep the explanation.** The reasons exist only in the response. No table
+- **Keep the explanation** (closed by F24-05). When this was written the reasons existed only in the response. No table
   in any schema holds a recommendation (E-07), and the cache holds a result only
   until a stream event empties it. Asking again recomputes; the explanation
   given yesterday cannot be shown today.

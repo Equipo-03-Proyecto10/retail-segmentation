@@ -8,18 +8,21 @@ through the seven published views, the way the service does. The transaction is
 rolled back: nothing outlives a test.
 
 The last group pins what the current rule cannot do (choose a store, consider a
-channel, offer an alternative, keep the explanation). Those tests describe
-today's behaviour so that F24 can change it on purpose; the prose is in
+channel, offer an alternative). Those tests describe today's behaviour so
+that F24 can change it on purpose; the explanation is kept since F24-05, by the
+service and not the rule; the prose is in
 docs/evidence/824-recommendation-guarantee.md.
 """
 
 from __future__ import annotations
 
 import dataclasses
+import re
 import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 import psycopg
 import pytest
@@ -336,17 +339,19 @@ def test_it_cannot_offer_an_alternative(scenario: Scenario) -> None:
     assert "alternatives" not in result.as_dict(AS_OF)
 
 
-def test_it_cannot_keep_the_explanation(scenario: Scenario) -> None:
-    """The reasons exist only in the response: no table, anywhere, holds a
-    recommendation (recommendations owns none, E-07), and the same question
-    asked again is a fresh computation."""
+def test_the_rule_still_keeps_no_explanation_the_service_records_it(
+    scenario: Scenario,
+) -> None:
+    """The rule returns its reasons only in its result. Keeping them is the
+    service's own step since F24-05: the decision tables exist, and the rule
+    writes nothing and carries no decision id (decisions.py maps its result to
+    one, and the same question asked again is a fresh computation)."""
     (stored,) = scenario.connection.execute(
         "SELECT count(*) FROM information_schema.tables"
-        " WHERE table_name LIKE %s AND table_schema NOT IN"
-        " ('pg_catalog', 'information_schema')",
-        ("%recommend%",),
+        " WHERE table_schema = 'recommendations'"
     ).fetchone()
-    assert stored == 0
+    assert stored == 4
+    assert not re.search(r"\b(INSERT|UPDATE|DELETE)\b", Path(rule.__file__).read_text())
     first = scenario.ask()
     assert set(first.as_dict(AS_OF)) == {
         "customer_id",

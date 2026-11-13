@@ -2,7 +2,7 @@
 
 The PostgreSQL model for MOSAIQ: the conceptual model, the normalization to
 fourth normal form with the reason for each step, and the logical model as an
-ER diagram and a data dictionary. §7 records the two MongoDB collections that
+ER diagram and a data dictionary. §7 records the three MongoDB collections that
 sit outside it, and why their shape needs no 4NF argument.
 
 The model is implemented by [`sql/01_schema.sql`](../sql/01_schema.sql). Where
@@ -57,6 +57,7 @@ own schemas under ADR-0046 and are deliberately outside this list and diagram.
 - `app_user` (N) — has — (1) `role`
 - `app_user` (0..1) — signs in as — (0..1) `customer`
 - `app_user` (1) — opens — (N) `app_session`
+- `app_user` (1) — is assigned through — (N) `users.store_assignment` rows (N) — name — (1) `store`
 - `app_user` (0..1) — performs — (N) `audit_log` entries
 - `app_user` (0..1) — executes — (N) `segmentation_run` rows
 - `channel` (1) — registers — (N) `customer`
@@ -525,6 +526,15 @@ keeps one writer per table: only that boundary's definer appends, and only its
 own relay marks and purges. `segments_events.outbox` (F14-20) is one of them: it
 captures each `segmentation_run` the web inserts.
 
+The users boundary adds **`users.store_assignment`**, the independent
+multivalued fact “this user may work at this store.” Its composite key
+`(user_id, store_id)` contains every attribute, so every determinant is a key
+and the relation is in BCNF and 4NF. Keeping assignments out of `app_user`
+avoids a repeating store list and allows one user to have any number of stores
+without copying account attributes. Deactivation or a role change does not
+delete the fact (RN-04); `api_users.store_assignment_v1` filters inactive and
+non-store-bound users when deciding what currently grants access.
+
 The check-ins boundary (ADR-0046, F14-26) adds two relations, both in 4NF:
 - **`checkins.store_check_in`** has two candidate keys: `check_in_id` and the
   phone's `client_check_in_id`. Each determines every other column.
@@ -599,6 +609,74 @@ publishes both, and the consumer applies "active, `OPEN`, and the channel
 enabled").
 
 `sales_events.outbox` is one more boundary outbox, under the outbox note above.
+
+Reversals (ADR-0062, F21-03) add two relations to the sales boundary, both in 4NF,
+and one column to `transaction_line`:
+- **`sales.sale_reversal`** has two candidate keys, `reversal_id` and the request's
+  `idempotency_key`, and each determines every other column: the sale, the kind,
+  the cancellation's reason, the request hash, who recorded it and when. The
+  customer and the store are not columns: they are the sale's, and copying them
+  would be a transitive dependency through `transaction_id`. The key is stored
+  here, unlike a sale's, because no other column holds it (a sale's key is the
+  suffix of its `source_transaction_id`). `reason` is null on a return and
+  required on a cancellation (`sale_reversal_reason_kind_check`).
+- **`sales.sale_reversal_line`** is keyed by `(reversal_id, product_id)`.
+  `quantity`, `reason` and `resellable` are each one value of that line. They
+  cannot move up to the reversal: a return holds several lines, each with its own
+  quantity, reason and flag (a damaged one next to a resellable one), which would
+  be repeating columns (not 1NF) or a multivalued dependency on the header. The
+  header's `transaction_id` is repeated here only because the composite foreign
+  key `(transaction_id, product_id)` to `transaction_line` needs it, and a trigger
+  refuses a line whose sale is not its header's. There is no `kind` copy: the
+  trigger reads it from the header.
+- **`transaction_line.returned_quantity`** repeats what these lines add up to,
+  for the reason given under `transaction_line`. It is a deliberate stored
+  derivation, kept in step by a deferred constraint trigger (equal to the sum at
+  `COMMIT`), a writer guard (only `svc_sales`) and a CHECK (between 0 and
+  `quantity`).
+
+Sales imports (ADR-0070, F26-08) add three relations to the sales boundary, all in 4NF,
+and one column to `sales.sale_capture`:
+- **`sales.import`** has two candidate keys, `import_id` and the request's
+  `idempotency_key`, and each determines every other column: the file's announced
+  `total_rows` and `chunk_count`, the status, who opened it and when. Its counts
+  (`received`, `accepted`, `rejected`, `pending`, `next_sequence`) are **not**
+  columns: each is a `count` or a `sum` over the chunks and outcomes below, so
+  storing it would be a derived value free to disagree with them. The status is
+  stored because it is an event the system moved (the last chunk arrived, an
+  administrator cancelled, a day passed), not a function of the rows. A partial
+  unique index allows one open import at a time.
+- **`sales.import_chunk`** is keyed by `(import_id, sequence)`. `row_count`,
+  `first_line`, `last_line` and the payload `rows` are facts of that one chunk. The
+  payload is a document of the rows as the client sent them, held only until they
+  are applied: it is nulled when the chunk is done, cancelled or expired, and
+  `row_count` stays so the counts of an import that never finished still
+  reconcile. `request_sha256` is the canonical body a retry is compared with.
+- **`sales.import_row_outcome`** is keyed by `(import_id, line)`: one row for each
+  line of the file, accepted or refused. An accepted outcome holds only the pointer
+  to the sale line it made, `(transaction_id, product_id)`; the cells are not kept,
+  so no fact about a sale is stored twice. A refused outcome holds what the report
+  shows: `code`, `field`, `message` and, for a duplicate, which kind (`FILE` with
+  the first line, or `RECORDED_SALE` with the sale). Those nullable columns are one
+  value each for that row and apply to some codes only (`import_row_outcome_shape_check`
+  says which), so they are not independent multivalued facts. The outcome is written
+  in the same transaction as the sale line, which is what makes a resume exact.
+- **`sales.sale_capture.import_id`** says which import made a header. It is null for a
+  phone sale, which is why it is a nullable column of the capture row and not a
+  relation of its own: one capture has at most one import.
+
+The `BEFORE INSERT` guard on `public.transaction` gained one rule for imports: an
+imported id is written `svc-sales:imp:<id>`, the web's page writes `<id>`, and each
+refuses the id when the other's spelling exists (SQLSTATE 22023, under advisory lock
+293001), so a file loaded through both paths is recorded once.
+
+The database, not only the service, guarantees that a sale's reversals never
+exceed the sale: a `BEFORE INSERT` trigger on `sales.sale_reversal_line` locks the
+sold line and refuses a line that would push the sum past `quantity`
+(`sale_reversal_line_within_sale`). It also holds that a cancellation takes the
+whole line and states no line reason, and that a return line states one. A sale is
+cancelled once (`sale_reversal_one_cancellation`, a partial unique index). A
+direct `INSERT` by the owner or by `svc_sales` meets the same refusals.
 
 The stock boundary (ADR-0061, ADR-0046, F21-06) adds two relations, both in 4NF:
 - **`stock.movement_request`** is keyed by `idempotency_key`, which determines
@@ -723,6 +801,8 @@ erDiagram
     category                   ||--o{ product                    : "classifies"
     category                   |o--o{ category                   : "parent of"
     customer                   ||--o{ transaction                : "makes"
+    customer                   ||--o{ loyalty_card               : "holds"
+    app_user                   ||--o{ loyalty_card               : "issues/revokes"
     store                      ||--o{ transaction                : "registers"
     transaction                ||--o{ transaction_line           : "contains"
     product                    ||--o{ transaction_line           : "is sold as"
@@ -868,6 +948,18 @@ independent multivalued facts, so the relation is in 4NF.
 | `set_by` | `UUID` | NN | FK → `public.app_user` | Administrator who last changed it |
 | `set_at` | `TIMESTAMPTZ` | NN | default `now()` | When it last changed |
 
+#### `users.store_assignment`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `user_id` | `UUID` | NN | PK with `store_id`; FK → `public.app_user`, `ON DELETE RESTRICT` | The assigned floor user |
+| `store_id` | `SMALLINT` | NN | PK with `user_id`; FK → `public.store`, `ON DELETE RESTRICT` | A store at which the user may work |
+
+Rows are retained when a user is deactivated or moved to a non-store-bound
+role. The published `api_users.store_assignment_v1` view exposes a row only
+for an active `SALES_ASSOCIATE`, `STORE_MANAGER`, `LOYALTY_OFFICER` or
+`COMMERCIAL_SUPERVISOR`; consumers read it on every narrowed request.
+
 #### `stores_events.outbox`
 
 | Column | Type | Null | Constraints | Meaning |
@@ -928,6 +1020,88 @@ has no privilege on `sales`. A CSV header has no row here.
 | `request_sha256` | `BYTEA` | NN | `CHECK octet_length = 32` (`sale_capture_request_sha256_check`) | SHA-256 of the canonical request (the caller's `sub`, the ids, `occurred_at` in UTC, the lines sorted with two-decimal prices); a retry with the same key is compared with it |
 | `recorded_by` | `UUID` | NN | FK → `public.app_user`, `ON DELETE RESTRICT` | The token's `sub`: who recorded the sale |
 | `captured_at` | `TIMESTAMPTZ` | NN | default `now()` | When the sale was accepted |
+
+#### `sales.sale_reversal`
+
+One row per accepted `POST /v1/sale-reversals`, written in the reversal's own
+transaction with its lines, the `returned_quantity` updates, the restock and the
+outbox row (ADR-0062). Append-only: `svc_sales` holds SELECT and INSERT only, and
+the web has no privilege on `sales`. A refused request leaves no row, so it may be
+retried with the same key.
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `reversal_id` | `BIGINT` | NN | PK, generated always as identity | The reversal, `int64` in the contract |
+| `transaction_id` | `BIGINT` | NN | FK → `public.transaction`, `ON DELETE CASCADE` | The sale reversed |
+| `kind` | `TEXT` | NN | `CHECK IN ('CANCELLATION', 'RETURN')` | A cancellation reverses the whole sale, a return some lines |
+| `reason` | `TEXT` | NULL | not blank, at most 200 characters; present exactly for a cancellation | Why the sale was cancelled |
+| `idempotency_key` | `UUID` | NN | unique | The caller's `Idempotency-Key` for this resource |
+| `request_sha256` | `BYTEA` | NN | `CHECK octet_length = 32` | SHA-256 of the canonical request (the caller's `sub`, `sale_id`, `kind`, the reason and the lines sorted by product); a retry is compared with it |
+| `recorded_by` | `UUID` | NN | FK → `public.app_user`, `ON DELETE RESTRICT` | The token's `sub` |
+| `recorded_at` | `TIMESTAMPTZ` | NN | default `now()` | When the service recorded it |
+
+A partial unique index allows one `CANCELLATION` per sale.
+
+#### `sales.sale_reversal_line`
+
+The lines a reversal touched; a cancellation lists every line of the sale.
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `reversal_id` | `BIGINT` | NN | PK, FK → `sales.sale_reversal`, `ON DELETE CASCADE` | The reversal |
+| `product_id` | `INT` | NN | PK; with `transaction_id`, FK → `public.transaction_line`, `ON DELETE CASCADE` | The product reversed |
+| `transaction_id` | `BIGINT` | NN | see above | The sale; the trigger requires it to be the reversal's |
+| `quantity` | `INT` | NN | `CHECK > 0`; the sum over a sale line never exceeds `transaction_line.quantity` (trigger) | Units reversed by this reversal |
+| `reason` | `TEXT` | NULL | not blank, at most 200 characters; present exactly for a return line | Why these units come back |
+| `resellable` | `BOOLEAN` | NN | default true | False when the goods cannot be resold: the line is recorded and stock is not restored |
+
+#### `sales.import`
+
+One row per accepted `POST /v1/sale-imports` (ADR-0070). `svc_sales` holds SELECT,
+INSERT and UPDATE; the web has no privilege on `sales`.
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `import_id` | `BIGINT` | NN | PK, generated always as identity | The import, `int64` in the contract |
+| `idempotency_key` | `UUID` | NN | unique | The caller's `Idempotency-Key` for this resource |
+| `request_sha256` | `BYTEA` | NN | `CHECK octet_length = 32` | SHA-256 of the caller's `sub` and the request in canonical form |
+| `contract_version` | `SMALLINT` | NN | `CHECK = 1` | The CSV contract of the web's page |
+| `total_rows` | `INTEGER` | NN | `CHECK BETWEEN 1 AND 100000` | The data lines the client announced |
+| `chunk_count` | `INTEGER` | NN | `CHECK BETWEEN 1 AND 667` | The chunks the client announced |
+| `status` | `TEXT` | NN | `RECEIVING`, `PROCESSING`, `COMPLETED`, `CANCELLED`, `EXPIRED` | Where the import is |
+| `created_by` | `UUID` | NN | FK → `public.app_user`, `ON DELETE RESTRICT` | The token's `sub` |
+| `created_at` | `TIMESTAMPTZ` | NN | default `now()` | When it was opened |
+| `last_chunk_at` | `TIMESTAMPTZ` | NN | default `now()` | When a chunk last arrived; the 24-hour expiry counts from it |
+| `finished_at` | `TIMESTAMPTZ` | NULL | set exactly in `COMPLETED`, `CANCELLED` and `EXPIRED` | When it finished |
+
+A partial unique index (`import_one_open`) allows one import in `RECEIVING` or
+`PROCESSING` at a time.
+
+#### `sales.import_chunk`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `import_id` | `BIGINT` | NN | PK, FK → `sales.import`, `ON DELETE CASCADE` | The import |
+| `sequence` | `INTEGER` | NN | PK, `CHECK BETWEEN 0 AND 666` | The chunk's number, from 0 |
+| `request_sha256` | `BYTEA` | NN | `CHECK octet_length = 32` | SHA-256 of the rows by `line`, each with its cells in order |
+| `row_count` | `INTEGER` | NN | `CHECK BETWEEN 1 AND 150` | Rows in the chunk |
+| `first_line`, `last_line` | `INTEGER` | NN | `CHECK last_line >= first_line` | The lines it holds |
+| `rows` | `JSONB` | NULL | null once `DONE` | The rows as sent, until applied (or cancelled or expired) |
+| `status` | `TEXT` | NN | `PENDING`, `DONE` | Whether its rows have all been judged |
+| `staged_at` | `TIMESTAMPTZ` | NN | default `now()` | When it was staged |
+
+#### `sales.import_row_outcome`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `import_id` | `BIGINT` | NN | PK, FK → `sales.import`, `ON DELETE CASCADE` | The import |
+| `line` | `INTEGER` | NN | PK, `CHECK >= 2` | The line of the file, the header being line 1 |
+| `outcome` | `TEXT` | NN | `ACCEPTED`, `REJECTED` | What happened to the row |
+| `code`, `field`, `message` | `TEXT` | NULL | present for `REJECTED`, absent for `ACCEPTED` (`import_row_outcome_shape_check`) | The stable code, the column at fault and the sentence the report shows |
+| `duplicate_of` | `TEXT` | NULL | `FILE` or `RECORDED_SALE`, exactly for `duplicate_row` | Which kind of repeat |
+| `first_line` | `INTEGER` | NULL | only with `FILE` | The first line of this file that made the row's line |
+| `sale_id` | `BIGINT` | NULL | only with `RECORDED_SALE` | The recorded sale |
+| `transaction_id`, `product_id` | `BIGINT`, `INTEGER` | NULL | with the pair, FK → `public.transaction_line`, `ON DELETE SET NULL`; set for `ACCEPTED` | The sale line the row made |
 
 #### `stock.movement_request`
 
@@ -1106,6 +1280,30 @@ replacement; ADR-0017 fulfils that prediction with `segmentation_run` and
 `customer_segment_history` row with `valid_to IS NULL`, never a column on
 `customer` itself, so it cannot disagree with the history it is drawn from.
 
+#### `customers.loyalty_card`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `card_id` | `UUID` | NN | PK, default `gen_random_uuid()` | Durable card identifier |
+| `customer_id` | `UUID` | NN | FK → `public.customer`; one `ACTIVE` row per customer through `ux_loyalty_card_one_active_customer` | Customer the card identifies |
+| `code` | `VARCHAR(26)` | NN | UQ; Crockford base32 format | Opaque 128-bit identifier encoded in the QR |
+| `status` | `VARCHAR(7)` | NN | `ACTIVE` or `REVOKED` | Card lifecycle state |
+| `issued_at` | `TIMESTAMPTZ` | NN | default `CURRENT_TIMESTAMP` | Issue time |
+| `issued_by` | `UUID` | NN | FK → `public.app_user` | Staff member who issued it |
+| `revoked_at` | `TIMESTAMPTZ` | yes | present exactly when revoked | First and only revocation time |
+| `revoked_by` | `UUID` | yes | FK → `public.app_user`; present exactly when revoked | Staff member who revoked it |
+| `revocation_reason` | `VARCHAR(16)` | yes | fixed reason vocabulary; present exactly when revoked | Why the card ended |
+
+`card_id` and `code` are candidate keys. Every other attribute describes that
+one card and depends on either whole key. A customer may hold several cards
+over time, but each card is one row and has one lifecycle, so the relation has
+no independent multivalued dependencies and is in 4NF. Revocation stays on the
+card because it is single-valued and immutable after the first transition; a
+separate revocation relation would only split a one-to-zero-or-one fact. The
+partial unique index constrains the set of rows without creating a column
+dependency. Card history is separate from `customer`, avoiding a repeating
+code/status group and leaving the 30 existing customer rows unchanged.
+
 #### `segmentation_run`
 
 | Column | Type | Null | Constraints | Meaning |
@@ -1211,6 +1409,20 @@ These two are the 4NF decomposition from §2.4.
 | `product_id` | `INT` | NN | PK, FK → `product`, `RESTRICT` | The product |
 | `quantity` | `INT` | NN | `CHECK > 0` | Units sold |
 | `unit_price` | `NUMERIC(10,2)` | NN | `CHECK > 0` | Price actually charged, not the product's list price |
+| `returned_quantity` | `INTEGER` | NN | default 0, `CHECK BETWEEN 0 AND quantity` (`transaction_line_returned_quantity_check`) | Units reversed so far: the running total of this line's `sales.sale_reversal_line` rows. Only `svc_sales` writes it (ADR-0062, F21-03) |
+
+**Net units (ADR-0062, F21-03).** `quantity` and `total` stay what was sold and
+charged; a reversal never edits them. `returned_quantity` is the one stored
+copy of what the reversal lines add up to, kept so that the web, which cannot
+read `sales.*` (ADR-0046), and every service read net units from one column.
+It is a stored derivation, like `total`, and the database proves it cannot
+drift: a deferred constraint trigger requires it to equal the sum of the line's
+reversal lines at `COMMIT`, a `BEFORE` trigger refuses any writer but
+`svc_sales`, and a line is always inserted with 0. `public.net_sale_line` (a
+line with at least one unit left) and `public.net_sale` (a sale with at least
+one such line, so with a net amount above zero) hold the one definition of net
+that the web reads, and `api_sales.net_purchase_line_v1` publishes it to
+services.
 
 **Domain rules the database holds (#591).** The checks above are in
 `sql/01_schema.sql` so that no writer, whatever its role, can store a value the
@@ -1541,6 +1753,9 @@ The check-ins boundary owns `checkins` for `store_check_in` and
 `check_in_review`. It has no contract schema and no outbox, because nothing
 reads or consumes check-ins but its own service. It reads store locations
 through `api_stores.store_directory_v1`.
+The customers boundary owns `customers.loyalty_card` and publishes only the
+single-code resolver `api_customers.resolve_loyalty_code_v1`; consumers cannot
+enumerate codes or read the table.
 
 The eight outbox owners named by ADR-0044 therefore have both of these schemas:
 
@@ -1555,11 +1770,11 @@ The eight outbox owners named by ADR-0044 therefore have both of these schemas:
 | sales | `api_sales` | `sales_events` |
 | segments | `api_segments` | `segments_events` |
 
-customers is a ninth boundary with a contract schema and no outbox: `api_customers`
-holds `customer_ref_v1` (`customer_id`, `registered_on`, over `customer`,
-`security_invoker = off`), read by sales, customer-preferences, segments,
-recommendations and engagement. It publishes no stream, so it has no
-`customers_events`.
+customers is a ninth boundary with a contract schema and no outbox:
+`api_customers` holds `customer_ref_v1` (`customer_id`, `registered_on`, over
+`customer`, `security_invoker = off`) and `resolve_loyalty_code_v1(text)`,
+which returns identifiers only for an active code. It publishes no stream, so
+it has no `customers_events`.
 
 Each schema is created by its boundary's own section of `sql/01_schema.sql`;
 none exists until that boundary's story lands. `retail_app` has USAGE on
@@ -1614,6 +1829,7 @@ deletes any of the four.
 | `idx_notification_recipient_unread` | `notification_recipient (user_id) WHERE read_at IS NULL` | The unread count on every page, and "mark all read" |
 | `notification_{sales_load,run,experiment}_id_key` | `notification (sales_load_id)`, `(run_id)`, `(experiment_id)`, each `UNIQUE` | An event is announced once; the arbiter of the announcer's `ON CONFLICT` |
 | `idx_app_user_role` | `app_user (role_id)` | Users listed and counted by role; the `RESTRICT` check when a role is deleted |
+| `idx_store_assignment_store` | `users.store_assignment (store_id)` | The `RESTRICT` check when a store with assignments is deleted; the primary key already serves reads by user |
 | `idx_customer_registration_channel` | `customer (registration_channel_id)` | The `RESTRICT` check when a channel is deleted |
 | `idx_customer_preferred_channel_channel` | `customer_preferred_channel (channel_id)` | The `CASCADE` when a channel is deleted (the primary key leads with `customer_id`) |
 | `idx_transaction_channel` | `transaction (channel_id)` | The `RESTRICT` check when a channel is deleted, which would otherwise scan every sale |
@@ -1670,7 +1886,7 @@ delete. Three groups of tables carry it:
 | Group | Tables | Why |
 |---|---|---|
 | Business rules | `segment`, `segment_rule`, `campaign`, `experiment` | Changing a rule silently changes what every report means |
-| Catalogs | `category`, `product`, `store`, `channel`, `role`, `customer`, `app_user`, and the products boundary's `product_status`, `product_attribute`, `product_barcode`, `product_relation` | These are what the administrator module edits, so this is what the demonstration's audit trail shows. The products tables are written by products-service, which passes the actor with `mosaiq.user_id`; the audit key is the product's id |
+| Catalogs and identifiers | `category`, `product`, `store`, `channel`, `role`, `customer`, `app_user`, `customers.loyalty_card`, and the products boundary's `product_status`, `product_attribute`, `product_barcode`, `product_relation` | These are administrator-managed catalogs or durable customer identifiers. Service writes pass the actor with `mosaiq.user_id`; a loyalty-card issue and its one revocation are attributable like the customer's other writes |
 | Segment assignment history | `customer_segment_history` | Each inserted successor and each closure replaces the audit signal formerly produced by changing `customer.current_segment_id` (ADR-0017) |
 
 Individual sales are **not** audited. Their volume and history already live in
@@ -1742,7 +1958,7 @@ engagement-service alone ([ADR-0038](adr/0038-mongodb-holds-in-store-engagement-
 [`datastores/mongodb-design.md`](datastores/mongodb-design.md) is the full
 specification: validator, indexes, operations and checks.
 
-### The two collections
+### The three collections
 
 `engagement_event` holds one document per event:
 
@@ -1765,6 +1981,13 @@ specification: validator, indexes, operations and checks.
 `engagement_daily` holds one document per `(store_id, day, type)`, unique,
 where `day` is the UTC date of `occurred_at` and `count` is the number of
 events of that key that are not voided.
+
+`capture_incident` holds one refused queued write per `client_incident_id`,
+also unique on `(source_type, source_operation_id)`. Its strict allow-list is
+the incident contract: store and refusal codes, attempt count, occurrence and
+recording times, reporter, status, and the append-only review `history`. It has
+no field for credentials or customer data. A resolution changes `status` and
+appends `{status, note, by, at}`; it never deletes the incident (ADR-0071).
 
 ### The boundary that keeps them out
 
@@ -1795,6 +2018,11 @@ fact is stored twice:
   void is the only change, and a second void is refused (409 `already_voided`),
   so it holds at most one entry. It is always read with its event and never
   queried alone.
+- **One document per refused operation.** Each incident's scalar fields depend
+  on its `_id` and on either candidate identity. Its review history contains
+  only changes to that incident, is always read with it, and has no independent
+  multivalued fact. Closing preserves the fact and its author instead of
+  replacing or deleting it.
 - **`engagement_daily` is derived, not a second source.** It is a rollup of
   `engagement_event`, kept by `$inc` and rebuilt from the events by a
   maintenance `$merge`. When the two disagree, the events win and the rebuild

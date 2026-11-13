@@ -1,9 +1,9 @@
 # engagement
 
-> **Status:** Implemented (phase 14, core; `/v2` taxonomy in phase 21, F21-21, #799). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
-> **One rule:** In-store engagement (`QR_SCAN`, `RECO_CLICK`, `STORE_VISIT`, `RECO_IMPRESSION`, `CAMPAIGN_EXPOSURE`, `CART_ADD`, `CART_REMOVE`, `NAVIGATION`) is recorded once per client event as a distinct fact that is never a sale, attributed, voided rather than deleted, and summarized (RN-55)
+> **Status:** Implemented (phase 14 core; `/v2` taxonomy in phase 21; capture incidents in phase 27, F27-12, #866).
+> **One rule:** A client-originated field event (`QR_SCAN`, `RECO_CLICK`, `STORE_VISIT`, `RECO_IMPRESSION`, `CAMPAIGN_EXPOSURE`, `CART_ADD`, `CART_REMOVE`, `NAVIGATION`, or a refused queued write reported as a capture incident) is recorded once per client id as a distinct fact that is never a sale, attributed, voided or closed rather than deleted, and summarized (RN-55).
 >
-> **Contract:** `/v1` is frozen and records `QR_SCAN` and `RECO_CLICK`. `/v2` (engagement 2.3.0, `engagement.v2.xsd`) keeps both with their meaning and adds the six other kinds. The service serves both since 0.2.0 (#799); a `/v2` kind is invisible to `/v1`.
+> **Contract:** `/v1` records `QR_SCAN`, `RECO_CLICK` and capture incidents. `/v2` keeps the event meaning and adds the six other kinds. Engagement 2.4.0 is served by service 0.3.0.
 
 ## Summary
 
@@ -37,6 +37,7 @@
   | `NAVIGATION` | `screen` | A screen opened in a client |
 
 - No event is a sale. A cart is intent, an exposure is not a conversion, and a confirmed transaction exists only in sales-service. A summary counts events that are not voided and gives each kind its own key.
+- A capture incident records a finally refused queued write once under either unique identity. It is narrowed to live store assignments on every non-admin request, moves forward through review history, and is closed rather than deleted. Its stored shape has no credential or customer field.
 
 ## Endpoints
 
@@ -47,6 +48,10 @@
 | GET | `/v1/engagement-events/{event_id}` | One event | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | POST | `/v1/engagement-events/{event_id}/void` | Void with a reason | ADMIN |
 | GET | `/v1/engagement-summaries` | Counts by store, day or type (`from`, `to`, `store_id`, `group_by`) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, INVENTORY_PLANNER, AUDITOR |
+| POST | `/v1/capture-incidents` | Report a refused queued write once | ADMIN and the four floor roles |
+| GET | `/v1/capture-incidents`, `/{incident_id}` | List or read incidents | ADMIN, COMMERCIAL_SUPERVISOR |
+| POST | `/v1/capture-incidents/{incident_id}/reviews` | Acknowledge or resolve, preserving author and note | ADMIN, COMMERCIAL_SUPERVISOR |
+| GET | `/v1/capture-incident-summaries` | Counts by store, day, source type or refusal code | ADMIN, COMMERCIAL_SUPERVISOR |
 
 `/v2` has the same five operations with the same roles, over all eight kinds:
 
@@ -70,7 +75,8 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 |---|---|---|---|
 | `engagement_event` | MongoDB collection | insert, query, update (void, relay `$pull`) | Strict `$jsonSchema` validator, one shape per kind, plus the outbox field `relay_pending` (ADR-0075); unique `client_event_id`; three secondary indexes and the relay's partial index `relay_pending_occurred_at_1` |
 | `engagement_daily` | MongoDB collection | `$inc` upsert, aggregation | Rollup by store, UTC day and type; rebuildable by a maintenance `$merge` |
-| PostgreSQL | — | No table | SELECT on three published views |
+| `capture_incident` | MongoDB collection | insert, query, forward-only review | Strict allow-list; unique client id and source operation; closed rather than deleted |
+| PostgreSQL | — | No table | SELECT on four published views |
 
 ## Database contracts
 
@@ -79,6 +85,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Consumes | `api_products.product_ref_v1` | products |
 | Consumes | `api_stores.store_directory_v1` | stores |
 | Consumes | `api_customers.customer_ref_v1` | customers |
+| Consumes | `api_users.store_assignment_v1` | users |
 
 ## Events
 
@@ -105,10 +112,14 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 |---|---|---|
 | 409 | `client_event_conflict` | The same `client_event_id` with a different type, store or product |
 | 409 | `already_voided` | The event is already voided |
+| 409 | `client_incident_conflict` | An incident identity names a different refused operation |
+| 409 | `invalid_transition` | An incident review does not move its status forward |
+| 403 | `forbidden_store` | A non-admin caller is not currently assigned to the incident's store |
 | 422 | `unknown_store` | The store must exist and be active |
 | 422 | `unknown_product`, `unknown_customer` | A reference does not exist |
 | 422 | `occurred_in_future` | More than five minutes ahead of the server |
 | 404 | `event_not_found` | An unknown `{event_id}` on a read or a void |
+| 404 | `incident_not_found` | An unknown `{incident_id}` on a read or review |
 | 422 | `invalid_query` | `to` before `from`, or an unknown `group_by`; `details` names the parameter |
 | 503 | `schema_not_ready` | `/health/ready` while a collection or index is missing |
 
@@ -148,7 +159,7 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 | Dependency down | Effect |
 |---|---|
-| PostgreSQL unreachable | `/health/ready` reports not ready. `POST /v1/engagement-events` and `POST /v2/engagement-events` answer 503 `database_unavailable`, never 500, because they validate the references each kind carries against the three published views; reads, voids and summaries use MongoDB only. `/health/live` stays 200 |
+| PostgreSQL unreachable | `/health/ready` reports not ready. Event writes, incident reports and non-admin incident operations answer 503 `database_unavailable`, never 500, because reference and current-assignment checks read the published views. Event reads and admin incident reads use MongoDB only. `/health/live` stays 200 |
 | MongoDB down | Event operations and summaries that reach MongoDB answer 503 `database_unavailable`, never 500 (ADR-0035); `/health/ready` is 503. Other services are unaffected |
 | `redis-cache` down | A one-store summary of today falls back to `engagement_daily` |
 | `redis-state` unreachable or over 200 ms | Every authenticated request returns 503 `auth_unavailable`; authentication fails closed and never falls back to the signature alone. The relay keeps the notices pending and publishes them when it returns |

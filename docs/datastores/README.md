@@ -18,9 +18,9 @@ service will connect.
 
 | Document | What it covers |
 |---|---|
-| [MongoDB](mongodb-design.md) | The server and its accounts, the one database `engagement` and its two collections, the operations, live counters, failure behaviour and checks |
+| [MongoDB](mongodb-design.md) | The server and its accounts, the one database `engagement` and its three collections, the operations, live counters, failure behaviour and checks |
 | [Redis](redis-design.md) | The two instances, every key family with its type and TTL, the per-service ACL rules, the failure behaviour and the checks |
 
 The PostgreSQL model is [`docs/data-model.md`](../data-model.md). Its §7 also
-records the two MongoDB collections, and why they sit outside the relational
+records the three MongoDB collections, and why they sit outside the relational
 model.

@@ -1160,6 +1160,28 @@ BEGIN
         RAISE EXCEPTION 'svc_sales records OBSERVED sales only (ADR-0052)'
             USING ERRCODE = '22023';
     END IF;
+    -- ADR-0070 section 5. A file imported through sales-service writes the id
+    -- `svc-sales:imp:<id>`, the web writes `<id>`. Neither path may record the
+    -- other's sale again, so each refuses the id when the other's exists. Both
+    -- take the same advisory lock first (key 293001, contracts/db/
+    -- advisory-locks.md), so two concurrent loads of one file cannot both pass.
+    IF session_user = 'svc_sales' AND NEW.source_transaction_id LIKE 'svc-sales:imp:%' THEN
+        PERFORM pg_advisory_xact_lock(293001, hashtext(substr(NEW.source_transaction_id, 15)));
+        IF EXISTS (SELECT FROM public.transaction AS t
+                    WHERE t.source_transaction_id = substr(NEW.source_transaction_id, 15)) THEN
+            RAISE EXCEPTION 'duplicate: % was already loaded through the other path',
+                substr(NEW.source_transaction_id, 15)
+                USING ERRCODE = '22023';
+        END IF;
+    ELSIF session_user <> 'svc_sales' THEN
+        PERFORM pg_advisory_xact_lock(293001, hashtext(NEW.source_transaction_id));
+        IF EXISTS (SELECT FROM public.transaction AS t
+                    WHERE t.source_transaction_id = 'svc-sales:imp:' || NEW.source_transaction_id) THEN
+            RAISE EXCEPTION 'duplicate: % was already loaded through the other path',
+                NEW.source_transaction_id
+                USING ERRCODE = '22023';
+        END IF;
+    END IF;
     RETURN NEW;
 END
 $$;
@@ -1276,6 +1298,402 @@ GRANT SELECT, DELETE, UPDATE (relayed_at) ON sales_events.outbox TO svc_sales;
 
 GRANT USAGE ON SCHEMA api_sales TO svc_sales, svc_recommendations;
 GRANT SELECT ON api_sales.purchase_line_v1 TO svc_sales, svc_recommendations;
+
+-- Reversals (F21-01 ADR-0062, F21-03). A cancellation or a return is an
+-- append-only fact recorded beside the sale; the sale, its lines' quantity and
+-- its total are never edited. docs/data-model.md holds the 4NF justification.
+--
+-- transaction_line.returned_quantity is the running total of a line's reversed
+-- units. It repeats what the reversal lines add up to, as inventory repeats its
+-- movements, so every reader of net units (public.net_sale_line, below) reads
+-- one column instead of summing a table the web cannot reach (ADR-0046). Three
+-- guards keep the copy honest: the CHECK, the writer guard and the deferred
+-- equality trigger.
+ALTER TABLE public.transaction_line
+    ADD COLUMN IF NOT EXISTS returned_quantity integer NOT NULL DEFAULT 0;
+DO $returned_quantity$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_constraint
+                    WHERE conrelid = 'public.transaction_line'::regclass
+                      AND conname = 'transaction_line_returned_quantity_check') THEN
+        ALTER TABLE public.transaction_line
+            ADD CONSTRAINT transaction_line_returned_quantity_check
+            CHECK (returned_quantity BETWEEN 0 AND quantity);
+    END IF;
+END
+$returned_quantity$;
+
+-- Only svc_sales writes returned_quantity, and a line is born with none
+-- returned. session_user is the role that connected, which SET ROLE cannot
+-- change, as in the namespace guards above. SQLSTATE 22023 is a DataError that
+-- ingest_row reports as a malformed row, so the web is unchanged.
+CREATE OR REPLACE FUNCTION fn_sales_returned_quantity_guard() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        IF NEW.returned_quantity <> 0 THEN
+            RAISE EXCEPTION 'a sale line is recorded with nothing returned'
+                USING ERRCODE = '22023';
+        END IF;
+    ELSIF session_user <> 'svc_sales' THEN
+        RAISE EXCEPTION 'only svc_sales writes returned_quantity (ADR-0062)'
+            USING ERRCODE = '22023';
+    END IF;
+    RETURN NEW;
+END
+$$;
+
+CREATE OR REPLACE TRIGGER trg_sales_returned_quantity_guard
+BEFORE INSERT OR UPDATE OF returned_quantity ON public.transaction_line
+FOR EACH ROW EXECUTE FUNCTION fn_sales_returned_quantity_guard();
+
+-- One row per reversal. The idempotency key is this resource's own, kept here
+-- because no other column holds it (a sale's key is the suffix of its
+-- source_transaction_id). request_sha256 is the canonical request a retry is
+-- compared with. The customer and the store are the sale's, never copied.
+CREATE TABLE IF NOT EXISTS sales.sale_reversal (
+    reversal_id     bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    transaction_id  bigint NOT NULL
+        REFERENCES public.transaction (transaction_id) ON DELETE CASCADE,
+    kind            text NOT NULL
+        CONSTRAINT sale_reversal_kind_check
+        CHECK (kind IN ('CANCELLATION', 'RETURN')),
+    reason          text
+        CONSTRAINT sale_reversal_reason_check
+        CHECK (reason IS NULL OR (btrim(reason) <> '' AND char_length(reason) <= 200)),
+    idempotency_key uuid NOT NULL
+        CONSTRAINT sale_reversal_idempotency_key_key UNIQUE,
+    request_sha256  bytea NOT NULL
+        CONSTRAINT sale_reversal_request_sha256_check
+        CHECK (octet_length(request_sha256) = 32),
+    recorded_by     uuid NOT NULL
+        REFERENCES public.app_user (user_id) ON DELETE RESTRICT,
+    recorded_at     timestamptz NOT NULL DEFAULT now(),
+    -- A cancellation states its reason on the header, a return on each line.
+    CONSTRAINT sale_reversal_reason_kind_check
+        CHECK ((kind = 'CANCELLATION') = (reason IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS sale_reversal_sale
+    ON sales.sale_reversal (transaction_id);
+CREATE INDEX IF NOT EXISTS sale_reversal_recorded
+    ON sales.sale_reversal (recorded_at DESC, reversal_id DESC);
+-- A sale is cancelled once: a second cancellation could only reverse nothing.
+CREATE UNIQUE INDEX IF NOT EXISTS sale_reversal_one_cancellation
+    ON sales.sale_reversal (transaction_id) WHERE kind = 'CANCELLATION';
+
+-- The lines a reversal touched. (transaction_id, product_id) names the sold
+-- line, so the units reversed can never name a line the sale does not have.
+CREATE TABLE IF NOT EXISTS sales.sale_reversal_line (
+    reversal_id    bigint NOT NULL
+        REFERENCES sales.sale_reversal (reversal_id) ON DELETE CASCADE,
+    transaction_id bigint NOT NULL,
+    product_id     integer NOT NULL,
+    quantity       integer NOT NULL
+        CONSTRAINT sale_reversal_line_quantity_check CHECK (quantity > 0),
+    reason         text
+        CONSTRAINT sale_reversal_line_reason_check
+        CHECK (reason IS NULL OR (btrim(reason) <> '' AND char_length(reason) <= 200)),
+    resellable     boolean NOT NULL DEFAULT true,
+    PRIMARY KEY (reversal_id, product_id),
+    FOREIGN KEY (transaction_id, product_id)
+        REFERENCES public.transaction_line (transaction_id, product_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS sale_reversal_line_sold
+    ON sales.sale_reversal_line (transaction_id, product_id);
+
+-- The sum of a sale line's reversals can never exceed what was sold, whoever
+-- inserts (the service or a direct INSERT). The sold line is locked first, so
+-- two reversals of one line queue instead of both seeing the same remainder.
+-- A cancellation takes the whole line, and a return states a reason; both are
+-- what the contract says and a direct INSERT must not slip past them.
+CREATE OR REPLACE FUNCTION sales.fn_sale_reversal_line_guard() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    header_sale bigint;
+    header_kind text;
+    sold        integer;
+    already     integer;
+BEGIN
+    SELECT r.transaction_id, r.kind INTO header_sale, header_kind
+      FROM sales.sale_reversal AS r WHERE r.reversal_id = NEW.reversal_id;
+    IF header_sale IS DISTINCT FROM NEW.transaction_id THEN
+        RAISE EXCEPTION 'reversal % is not a reversal of sale %', NEW.reversal_id, NEW.transaction_id
+            USING ERRCODE = '23514', CONSTRAINT = 'sale_reversal_line_sale_check';
+    END IF;
+    SELECT l.quantity INTO sold
+      FROM public.transaction_line AS l
+     WHERE l.transaction_id = NEW.transaction_id AND l.product_id = NEW.product_id
+       FOR UPDATE;
+    SELECT coalesce(sum(x.quantity), 0) INTO already
+      FROM sales.sale_reversal_line AS x
+     WHERE x.transaction_id = NEW.transaction_id AND x.product_id = NEW.product_id;
+    IF already + NEW.quantity > sold THEN
+        RAISE EXCEPTION 'reversing % more of product % would exceed the % sold in sale % (% already reversed)',
+            NEW.quantity, NEW.product_id, sold, NEW.transaction_id, already
+            USING ERRCODE = '23514', CONSTRAINT = 'sale_reversal_line_within_sale';
+    END IF;
+    IF header_kind = 'CANCELLATION' AND NEW.quantity <> sold THEN
+        RAISE EXCEPTION 'a cancellation reverses every unit of a line'
+            USING ERRCODE = '23514', CONSTRAINT = 'sale_reversal_line_cancellation_whole';
+    END IF;
+    IF (header_kind = 'RETURN') = (NEW.reason IS NULL) THEN
+        RAISE EXCEPTION 'a return line states a reason and a cancellation line does not'
+            USING ERRCODE = '23514', CONSTRAINT = 'sale_reversal_line_reason_kind_check';
+    END IF;
+    RETURN NEW;
+END
+$$;
+
+CREATE OR REPLACE TRIGGER trg_sale_reversal_line_guard
+BEFORE INSERT ON sales.sale_reversal_line
+FOR EACH ROW EXECUTE FUNCTION sales.fn_sale_reversal_line_guard();
+
+-- At commit, a line's returned_quantity equals the sum of its reversal lines:
+-- a reversal never lands without its effect, and the effect never without a
+-- reversal (contracts/db/api_sales.net_purchase_line.v1.md). Deferred, since
+-- the service writes the reversal line first and the column after it.
+CREATE OR REPLACE FUNCTION sales.fn_returned_quantity_matches() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    expected integer;
+    actual   integer;
+BEGIN
+    SELECT l.returned_quantity INTO actual
+      FROM public.transaction_line AS l
+     WHERE l.transaction_id = NEW.transaction_id AND l.product_id = NEW.product_id;
+    IF NOT FOUND THEN
+        RETURN NULL;
+    END IF;
+    SELECT coalesce(sum(x.quantity), 0) INTO expected
+      FROM sales.sale_reversal_line AS x
+     WHERE x.transaction_id = NEW.transaction_id AND x.product_id = NEW.product_id;
+    IF actual <> expected THEN
+        RAISE EXCEPTION 'returned_quantity % of sale % product % differs from its reversals (%)',
+            actual, NEW.transaction_id, NEW.product_id, expected
+            USING ERRCODE = '23514', CONSTRAINT = 'returned_quantity_matches_reversals';
+    END IF;
+    RETURN NULL;
+END
+$$;
+
+-- A constraint trigger cannot be replaced in place, so it is dropped first.
+DROP TRIGGER IF EXISTS trg_returned_quantity_matches ON sales.sale_reversal_line;
+CREATE CONSTRAINT TRIGGER trg_returned_quantity_matches
+AFTER INSERT ON sales.sale_reversal_line
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION sales.fn_returned_quantity_matches();
+
+DROP TRIGGER IF EXISTS trg_returned_quantity_matches ON public.transaction_line;
+CREATE CONSTRAINT TRIGGER trg_returned_quantity_matches
+AFTER UPDATE OF returned_quantity ON public.transaction_line
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION sales.fn_returned_quantity_matches();
+
+-- stream:sales.v1.reversed (contracts/streams/sales.reversed.v1.md): exactly
+-- one outbox row per reversal, in the reversal's own transaction, so a
+-- rollback publishes nothing. The entity is `sale_id:reversal_id`.
+CREATE OR REPLACE FUNCTION sales_events.capture_reversed() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+BEGIN
+    INSERT INTO sales_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:sales.v1.reversed', TG_OP,
+            NEW.transaction_id::text || ':' || NEW.reversal_id::text);
+    -- An empty wake-up for the owner's relay; only that relay LISTENs.
+    PERFORM pg_notify('sales_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION sales_events.capture_reversed() OWNER TO definer_sales;
+REVOKE EXECUTE ON FUNCTION sales_events.capture_reversed() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_capture_reversed
+AFTER INSERT ON sales.sale_reversal
+FOR EACH ROW EXECUTE FUNCTION sales_events.capture_reversed();
+
+-- The one definition of net units (ADR-0062). public.net_sale_line holds a row
+-- for every sale line with at least one unit left, and public.net_sale one row
+-- for every sale with at least one such line, whose net amount is therefore
+-- above zero: a sale whose net amount is zero stops counting as a purchase.
+-- The web reads these two (retail_app reaches public alone, ADR-0046);
+-- api_sales.net_purchase_line_v1 publishes the same definition to services.
+-- transaction.total stays what was charged and is exposed as `total`.
+CREATE OR REPLACE VIEW public.net_sale_line AS
+SELECT t.transaction_id, t.customer_id, t.store_id, t.channel_id, t.occurred_at,
+       t.data_origin, l.product_id, l.quantity, l.returned_quantity,
+       l.quantity - l.returned_quantity AS net_quantity,
+       l.unit_price,
+       ((l.quantity - l.returned_quantity) * l.unit_price)::numeric(12,2) AS net_amount
+FROM public.transaction AS t
+JOIN public.transaction_line AS l ON l.transaction_id = t.transaction_id
+WHERE l.quantity > l.returned_quantity;
+
+CREATE OR REPLACE VIEW public.net_sale AS
+SELECT t.transaction_id, t.source_transaction_id, t.customer_id, t.store_id,
+       t.channel_id, t.occurred_at, t.data_origin, t.total,
+       n.net_total, n.net_units
+FROM public.transaction AS t
+CROSS JOIN LATERAL (
+    SELECT sum(l.net_amount)::numeric(12,2) AS net_total,
+           sum(l.net_quantity)::bigint AS net_units
+    FROM public.net_sale_line AS l
+    WHERE l.transaction_id = t.transaction_id
+) AS n
+WHERE n.net_units > 0;
+
+REVOKE ALL ON public.net_sale_line, public.net_sale FROM PUBLIC;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
+    ON public.net_sale_line, public.net_sale FROM retail_app;
+GRANT SELECT ON public.net_sale_line, public.net_sale TO retail_app;
+
+-- contracts/db/api_sales.net_purchase_line.v1.md: the lines that still count,
+-- phone and CSV alike. Definer rights, like purchase_line_v1.
+CREATE OR REPLACE VIEW api_sales.net_purchase_line_v1
+WITH (security_invoker = off) AS
+SELECT transaction_id, customer_id, store_id, channel_id, occurred_at,
+       product_id, quantity, returned_quantity, net_quantity, unit_price, net_amount
+FROM public.net_sale_line;
+REVOKE ALL ON api_sales.net_purchase_line_v1 FROM PUBLIC;
+
+-- svc_sales reaches inventory only through api_stock.restock_v1 (granted in
+-- BOUNDARY stock), and writes returned_quantity and nothing else of a line.
+GRANT UPDATE (returned_quantity) ON public.transaction_line TO svc_sales;
+GRANT SELECT, INSERT ON sales.sale_reversal, sales.sale_reversal_line TO svc_sales;
+GRANT SELECT ON api_sales.net_purchase_line_v1 TO svc_sales, svc_recommendations;
+
+-- Sales imports (F26-06 ADR-0070, F26-08). A file reaches sales-service as
+-- numbered chunks of rows, is staged here and applied one row at a time by the
+-- worker, a second process of the same image. docs/data-model.md holds the 4NF
+-- justification.
+--
+-- One row per import. The Idempotency-Key is this resource's own and is kept
+-- here because no other column holds it. request_sha256 is the canonical
+-- request a retry is compared with. last_chunk_at is when a chunk last arrived,
+-- which is what the 24-hour expiry counts from.
+CREATE TABLE IF NOT EXISTS sales.import (
+    import_id       bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    idempotency_key uuid NOT NULL
+        CONSTRAINT import_idempotency_key_key UNIQUE,
+    request_sha256  bytea NOT NULL
+        CONSTRAINT import_request_sha256_check CHECK (octet_length(request_sha256) = 32),
+    contract_version smallint NOT NULL
+        CONSTRAINT import_contract_version_check CHECK (contract_version = 1),
+    total_rows      integer NOT NULL
+        CONSTRAINT import_total_rows_check CHECK (total_rows BETWEEN 1 AND 100000),
+    chunk_count     integer NOT NULL
+        CONSTRAINT import_chunk_count_check CHECK (chunk_count BETWEEN 1 AND 667),
+    status          text NOT NULL DEFAULT 'RECEIVING'
+        CONSTRAINT import_status_check
+        CHECK (status IN ('RECEIVING', 'PROCESSING', 'COMPLETED', 'CANCELLED', 'EXPIRED')),
+    created_by      uuid NOT NULL
+        REFERENCES public.app_user (user_id) ON DELETE RESTRICT,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    last_chunk_at   timestamptz NOT NULL DEFAULT now(),
+    finished_at     timestamptz,
+    CONSTRAINT import_finished_check
+        CHECK ((status IN ('COMPLETED', 'CANCELLED', 'EXPIRED')) = (finished_at IS NOT NULL))
+);
+-- One import is open at a time (ADR-0070 section 2): the database says so too.
+CREATE UNIQUE INDEX IF NOT EXISTS import_one_open
+    ON sales.import ((true)) WHERE status IN ('RECEIVING', 'PROCESSING');
+CREATE INDEX IF NOT EXISTS import_created
+    ON sales.import (created_at DESC, import_id DESC);
+
+-- One row per staged chunk. `rows` is the payload the worker applies and is
+-- nulled as soon as the chunk is done, cancelled or expired: a staged copy of
+-- customer ids does not outlive the work. row_count stays, so the counts of an
+-- import that never finished still reconcile.
+CREATE TABLE IF NOT EXISTS sales.import_chunk (
+    import_id      bigint NOT NULL
+        REFERENCES sales.import (import_id) ON DELETE CASCADE,
+    sequence       integer NOT NULL
+        CONSTRAINT import_chunk_sequence_check CHECK (sequence BETWEEN 0 AND 666),
+    request_sha256 bytea NOT NULL
+        CONSTRAINT import_chunk_request_sha256_check CHECK (octet_length(request_sha256) = 32),
+    row_count      integer NOT NULL
+        CONSTRAINT import_chunk_row_count_check CHECK (row_count BETWEEN 1 AND 150),
+    first_line     integer NOT NULL
+        CONSTRAINT import_chunk_first_line_check CHECK (first_line >= 1),
+    last_line      integer NOT NULL,
+    rows           jsonb,
+    status         text NOT NULL DEFAULT 'PENDING'
+        CONSTRAINT import_chunk_status_check CHECK (status IN ('PENDING', 'DONE')),
+    staged_at      timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (import_id, sequence),
+    CONSTRAINT import_chunk_lines_check CHECK (last_line >= first_line),
+    CONSTRAINT import_chunk_done_check CHECK (status <> 'DONE' OR rows IS NULL)
+);
+CREATE INDEX IF NOT EXISTS import_chunk_pending
+    ON sales.import_chunk (import_id, sequence) WHERE status = 'PENDING';
+
+-- One row per applied or refused line of the file. It is the durable record
+-- that makes a resume exact: the outcome is written in the same transaction as
+-- the sale line it describes, so a line is never applied twice. An accepted
+-- outcome points at the sale line it made (transaction_id, product_id), which
+-- is how a later duplicate names the first line; a refused one carries what the
+-- report shows. The row's cells are not kept.
+CREATE TABLE IF NOT EXISTS sales.import_row_outcome (
+    import_id      bigint NOT NULL
+        REFERENCES sales.import (import_id) ON DELETE CASCADE,
+    line           integer NOT NULL
+        CONSTRAINT import_row_outcome_line_check CHECK (line >= 2),
+    outcome        text NOT NULL
+        CONSTRAINT import_row_outcome_outcome_check CHECK (outcome IN ('ACCEPTED', 'REJECTED')),
+    code           text,
+    field          text,
+    message        text,
+    duplicate_of   text
+        CONSTRAINT import_row_outcome_duplicate_of_check
+        CHECK (duplicate_of IN ('FILE', 'RECORDED_SALE')),
+    first_line     integer,
+    sale_id        bigint,
+    transaction_id bigint,
+    product_id     integer,
+    PRIMARY KEY (import_id, line),
+    FOREIGN KEY (transaction_id, product_id)
+        REFERENCES public.transaction_line (transaction_id, product_id) ON DELETE SET NULL,
+    CONSTRAINT import_row_outcome_shape_check CHECK (
+        CASE outcome
+            WHEN 'ACCEPTED' THEN code IS NULL AND field IS NULL AND message IS NULL
+                AND duplicate_of IS NULL AND first_line IS NULL AND sale_id IS NULL
+            ELSE code IS NOT NULL AND message IS NOT NULL
+                AND transaction_id IS NULL AND product_id IS NULL
+                AND ((code = 'duplicate_row') = (duplicate_of IS NOT NULL))
+                AND (first_line IS NULL OR duplicate_of = 'FILE')
+                AND (sale_id IS NULL OR duplicate_of = 'RECORDED_SALE')
+        END)
+);
+CREATE INDEX IF NOT EXISTS import_row_outcome_rejected
+    ON sales.import_row_outcome (import_id, line) WHERE outcome = 'REJECTED';
+CREATE INDEX IF NOT EXISTS import_row_outcome_line_made
+    ON sales.import_row_outcome (import_id, transaction_id, product_id)
+    WHERE outcome = 'ACCEPTED';
+
+-- A header an import made has a capture row like a phone sale's, so ADR-0039's
+-- query (one sales.sale_capture row for every `svc-sales:` header) still
+-- returns nothing. import_id says which import made it.
+ALTER TABLE sales.sale_capture
+    ADD COLUMN IF NOT EXISTS import_id bigint REFERENCES sales.import (import_id);
+CREATE INDEX IF NOT EXISTS sale_capture_import
+    ON sales.sale_capture (import_id) WHERE import_id IS NOT NULL;
+
+-- An import appends lines to a header and recomputes its total, as the web's
+-- CSV path does (the deferred trigger on both tables holds total equal to the
+-- sum of the lines). That is the one column of a header svc_sales may change.
+GRANT UPDATE (total) ON public.transaction TO svc_sales;
+GRANT SELECT, INSERT, UPDATE ON sales.import, sales.import_chunk TO svc_sales;
+GRANT SELECT, INSERT ON sales.import_row_outcome TO svc_sales;
 -- END BOUNDARY sales
 
 -- BEGIN BOUNDARY products
@@ -1566,7 +1984,8 @@ GRANT SELECT ON products.product_status, products.product_attribute,
 -- END BOUNDARY products
 
 -- BEGIN BOUNDARY customers
--- customers-service (F14-14) owns the registration rule of RN-08: email unique
+-- customers-service (F14-14, F21-14) owns the registration and loyalty-card
+-- rule of RN-08: email unique
 -- when given, whatever the letter case (ux_customer_email_lower), a known channel
 -- (customer_registration_channel_id_fkey), a registration date not in the
 -- future (checked by the service) and no deletion. The table stays in public
@@ -1584,6 +2003,46 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_customer_email_lower
 
 CREATE SCHEMA IF NOT EXISTS api_customers;
 REVOKE ALL ON SCHEMA api_customers FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS customers;
+REVOKE ALL ON SCHEMA customers FROM PUBLIC;
+
+-- Loyalty identifiers are durable facts: revocation updates a row and no role
+-- receives DELETE. The partial index is the database half of the one-active-
+-- card rule and remains effective for writes that bypass customers-service.
+CREATE TABLE IF NOT EXISTS customers.loyalty_card (
+    card_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id         UUID NOT NULL REFERENCES public.customer(customer_id),
+    code                VARCHAR(26) NOT NULL UNIQUE,
+    status              VARCHAR(7) NOT NULL DEFAULT 'ACTIVE',
+    issued_at           TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    issued_by           UUID NOT NULL REFERENCES public.app_user(user_id),
+    revoked_at          TIMESTAMPTZ,
+    revoked_by          UUID REFERENCES public.app_user(user_id),
+    revocation_reason   VARCHAR(16),
+    CONSTRAINT loyalty_card_code_check
+        CHECK (code ~ '^[0-9A-HJKMNP-TV-Z]{26}$'),
+    CONSTRAINT loyalty_card_status_check
+        CHECK (status IN ('ACTIVE', 'REVOKED')),
+    CONSTRAINT loyalty_card_revocation_reason_check
+        CHECK (revocation_reason IS NULL OR revocation_reason IN
+               ('LOST', 'STOLEN', 'REPLACED', 'CUSTOMER_REQUEST', 'OTHER')),
+    CONSTRAINT loyalty_card_revocation_state_check CHECK (
+        (status = 'ACTIVE' AND revoked_at IS NULL AND revoked_by IS NULL
+                           AND revocation_reason IS NULL)
+        OR
+        (status = 'REVOKED' AND revoked_at IS NOT NULL AND revoked_by IS NOT NULL
+                            AND revocation_reason IS NOT NULL)
+    )
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_loyalty_card_one_active_customer
+    ON customers.loyalty_card (customer_id) WHERE status = 'ACTIVE';
+CREATE INDEX IF NOT EXISTS idx_loyalty_card_customer_issued
+    ON customers.loyalty_card (customer_id, issued_at DESC, card_id);
+
+DROP TRIGGER IF EXISTS trg_audit_loyalty_card ON customers.loyalty_card;
+CREATE TRIGGER trg_audit_loyalty_card
+AFTER INSERT OR UPDATE ON customers.loyalty_card
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('card_id');
 
 -- The published customer reference: identity and registration date, and no
 -- personal data. security_invoker = off, so a consumer needs no privilege on
@@ -1594,18 +2053,44 @@ SELECT customer_id, registered_on
 FROM public.customer;
 REVOKE ALL ON api_customers.customer_ref_v1 FROM PUBLIC;
 
+-- Consumers can resolve one active code but cannot enumerate card data.
+CREATE OR REPLACE FUNCTION api_customers.resolve_loyalty_code_v1(p_code text)
+RETURNS TABLE (card_id uuid, customer_id uuid)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+    SELECT card.card_id, card.customer_id
+    FROM customers.loyalty_card AS card
+    WHERE p_code ~ '^[0-9A-HJKMNP-TV-Z]{26}$'
+      AND card.code = p_code
+      AND card.status = 'ACTIVE'
+$$;
+ALTER FUNCTION api_customers.resolve_loyalty_code_v1(text)
+    OWNER TO definer_customers;
+REVOKE ALL ON FUNCTION api_customers.resolve_loyalty_code_v1(text) FROM PUBLIC;
+
 -- The only service writer of customer: no DELETE, and registered_on and
 -- user_id can be set at registration but never corrected.
 GRANT SELECT, INSERT ON public.customer TO svc_customers;
 GRANT UPDATE (name, email, phone, registration_channel_id)
     ON public.customer TO svc_customers;
 
+GRANT USAGE ON SCHEMA customers TO svc_customers, definer_customers;
+GRANT SELECT, INSERT ON customers.loyalty_card TO svc_customers;
+GRANT UPDATE (status, revoked_at, revoked_by, revocation_reason)
+    ON customers.loyalty_card TO svc_customers;
+GRANT SELECT ON customers.loyalty_card TO definer_customers;
+
 GRANT USAGE ON SCHEMA api_customers
     TO svc_customers, svc_sales, svc_preferences, svc_segments,
-       svc_recommendations, svc_engagement;
+       svc_recommendations, svc_engagement, svc_checkins;
 GRANT SELECT ON api_customers.customer_ref_v1
     TO svc_customers, svc_sales, svc_preferences, svc_segments,
        svc_recommendations, svc_engagement;
+GRANT EXECUTE ON FUNCTION api_customers.resolve_loyalty_code_v1(text)
+    TO svc_checkins;
 -- END BOUNDARY customers
 
 -- BEGIN BOUNDARY segments
@@ -2663,9 +3148,35 @@ GRANT SELECT ON api_stores.store_directory_v2 TO svc_stores, svc_stock, svc_camp
 -- auth can end the user's sessions. Idempotent: an operator re-applies it.
 
 CREATE SCHEMA IF NOT EXISTS api_users;
+CREATE SCHEMA IF NOT EXISTS users;
 CREATE SCHEMA IF NOT EXISTS users_events;
 REVOKE ALL ON SCHEMA api_users FROM PUBLIC;
+REVOKE ALL ON SCHEMA users FROM PUBLIC;
 REVOKE ALL ON SCHEMA users_events FROM PUBLIC;
+
+-- The stores at which a floor user may work. Deactivation and role changes
+-- retain this history; the published view below decides whether it currently
+-- grants anything. The store FK is deliberately checked by PostgreSQL: its
+-- owner may read public.store, while svc_users receives no such privilege.
+CREATE TABLE IF NOT EXISTS users.store_assignment (
+    user_id  UUID NOT NULL,
+    store_id SMALLINT NOT NULL,
+    PRIMARY KEY (user_id, store_id)
+);
+CREATE INDEX IF NOT EXISTS idx_store_assignment_store
+    ON users.store_assignment (store_id);
+DO $$ BEGIN
+    ALTER TABLE users.store_assignment ADD CONSTRAINT store_assignment_user_id_fkey
+        FOREIGN KEY (user_id) REFERENCES public.app_user(user_id) ON DELETE RESTRICT;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE users.store_assignment ADD CONSTRAINT store_assignment_store_id_fkey
+        FOREIGN KEY (store_id) REFERENCES public.store(store_id) ON DELETE RESTRICT;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+CREATE OR REPLACE TRIGGER trg_audit_store_assignment
+AFTER INSERT OR UPDATE OR DELETE ON users.store_assignment
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('user_id');
 
 -- Keys only, never state: consumers re-read the credential view.
 CREATE TABLE IF NOT EXISTS users_events.outbox (
@@ -2691,6 +3202,18 @@ SELECT u.user_id,
        r.code AS role_code
   FROM public.app_user AS u
   JOIN public.role AS r ON r.role_id = u.role_id;
+
+-- Consumers re-read this view for every narrowed request (ADR-0060). Stored
+-- rows survive deactivation and a non-floor role change, but grant no access.
+CREATE OR REPLACE VIEW api_users.store_assignment_v1
+WITH (security_invoker = off) AS
+SELECT a.user_id, a.store_id
+  FROM users.store_assignment AS a
+  JOIN public.app_user AS u ON u.user_id = a.user_id
+  JOIN public.role AS r ON r.role_id = u.role_id
+ WHERE u.is_active
+   AND r.code IN ('SALES_ASSOCIATE', 'STORE_MANAGER', 'LOYALTY_OFFICER',
+                  'COMMERCIAL_SUPERVISOR');
 
 -- One outbox row per access change, whichever role made it, in the writer's
 -- transaction. A change of name or email alone is not an access change.
@@ -2726,12 +3249,17 @@ GRANT SELECT, INSERT ON public.app_user TO svc_users;
 GRANT UPDATE (name, email, role_id, is_active, password_hash) ON public.app_user TO svc_users;
 GRANT SELECT ON public.role TO svc_users;
 
+GRANT USAGE ON SCHEMA users TO svc_users;
+GRANT SELECT, INSERT, DELETE ON users.store_assignment TO svc_users;
+
 GRANT USAGE ON SCHEMA users_events TO svc_users, definer_users;
 GRANT INSERT ON users_events.outbox TO definer_users;
 GRANT SELECT, DELETE, UPDATE (relayed_at) ON users_events.outbox TO svc_users;
 
-GRANT USAGE ON SCHEMA api_users TO svc_users, svc_auth;
+GRANT USAGE ON SCHEMA api_users TO svc_users, svc_auth, svc_sales, svc_checkins, svc_engagement;
 GRANT SELECT ON api_users.credential_v1 TO svc_users, svc_auth;
+GRANT SELECT ON api_users.store_assignment_v1
+    TO svc_users, svc_sales, svc_checkins, svc_engagement;
 -- END BOUNDARY users
 
 -- BEGIN BOUNDARY check-ins
@@ -3624,6 +4152,26 @@ BEGIN
     EXCEPTION WHEN invalid_parameter_value THEN
         RAISE NOTICE 'PASS: svc-sales: namespace refused (SQLSTATE 22023)';
     END;
+
+    -- ADR-0062: a line's returned_quantity is written by svc_sales alone. The
+    -- web's update is refused by the BOUNDARY sales guard with 22023, and the
+    -- views it reads for net units are read-only to it.
+    BEGIN
+        UPDATE public.transaction_line SET returned_quantity = 0
+         WHERE (transaction_id, product_id) = (
+               SELECT transaction_id, product_id FROM public.transaction_line
+                ORDER BY transaction_id, product_id LIMIT 1);
+        RAISE EXCEPTION 'FAIL: retail_app wrote returned_quantity';
+    EXCEPTION WHEN invalid_parameter_value THEN
+        RAISE NOTICE 'PASS: returned_quantity refused (SQLSTATE 22023)';
+    END;
+    IF NOT has_table_privilege('public.net_sale', 'SELECT')
+       OR NOT has_table_privilege('public.net_sale_line', 'SELECT')
+       OR has_table_privilege('public.net_sale', 'INSERT, UPDATE, DELETE')
+       OR has_table_privilege('public.net_sale_line', 'INSERT, UPDATE, DELETE') THEN
+        RAISE EXCEPTION 'FAIL: the net sale views are not read-only to the application role';
+    END IF;
+    RAISE NOTICE 'PASS: net sale views are read-only';
     RAISE NOTICE 'PASS: SELECT, INSERT, UPDATE, DELETE and audit sequence access';
 END;
 $verify$;

@@ -39,8 +39,8 @@ from web.db.consumption import HistoryRow
 @dataclass(frozen=True)
 class SaleRow:
     """One accepted sale, with what a reader needs to recognise it. `units` is
-    the sum of its lines' quantities; `total` is the header total the run
-    scores as Monetary."""
+    the sum of its lines' net quantities; `total` is the sale's net amount,
+    which is what the run scores as Monetary (ADR-0062)."""
 
     transaction_id: int
     source_transaction_id: str
@@ -103,12 +103,12 @@ def list_sales_in_window_only(
                 WHERE run_id = %(excluding_run_id)s
             )
             SELECT t.transaction_id, t.source_transaction_id, t.occurred_at,
-                   t.total, s.name, ch.name,
-                   COALESCE(sum(tl.quantity), 0)
-            FROM transaction AS t
+                   t.net_total, s.name, ch.name,
+                   COALESCE(sum(tl.net_quantity), 0)
+            FROM net_sale AS t
             JOIN store AS s ON s.store_id = t.store_id
             JOIN channel AS ch ON ch.channel_id = t.channel_id
-            LEFT JOIN transaction_line AS tl
+            LEFT JOIN net_sale_line AS tl
                    ON tl.transaction_id = t.transaction_id
             CROSS JOIN inside AS i
             CROSS JOIN outside AS o
@@ -116,7 +116,8 @@ def list_sales_in_window_only(
               AND t.occurred_at >= i.since
               AND t.occurred_at <= i.until
               AND NOT (t.occurred_at >= o.since AND t.occurred_at <= o.until)
-            GROUP BY t.transaction_id, s.name, ch.name
+            GROUP BY t.transaction_id, t.source_transaction_id, t.occurred_at,
+                     t.net_total, s.name, ch.name
             ORDER BY t.occurred_at, t.transaction_id
             """,
             {

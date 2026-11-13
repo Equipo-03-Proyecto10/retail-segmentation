@@ -1,6 +1,6 @@
-"""users-service: accounts, passwords, the role vocabulary and RN-01 (F14-04).
+"""users-service: accounts, roles and store assignments (F14-04, F19-06).
 
-The eleven operations of contracts/users/openapi.yaml on mosaiq-kit. Every
+The thirteen operations of contracts/users/openapi.yaml on mosaiq-kit. Every
 write runs in `kit.db.transaction()`, which names the caller to fn_audit. Any
 change to an account's access (role, active flag, password) is captured by the
 schema's trigger into users_events.outbox, and the relay started here carries
@@ -283,6 +283,45 @@ def create_app(*, start_relay: bool = True) -> Flask:
                 if role["role_code"] == role_code:
                     return Representation("Role", role)
         raise ApiError(404, "role_not_found", "The role does not exist.")
+
+    @kit.operation("getStoreAssignment")
+    def get_store_assignment(user_id: UUID) -> Representation:
+        principal = caller()
+        if principal.get("role") in rules.STORE_BOUND_ROLES and str(
+            principal["sub"]
+        ) != str(user_id):
+            raise ApiError(
+                403,
+                "forbidden_user",
+                "A floor role may read only its own store assignment.",
+            )
+        with kit.db.connection() as connection:
+            assignment = rules.store_assignment(connection, user_id)
+        return Representation("StoreAssignment", assignment)
+
+    @kit.operation("replaceStoreAssignment")
+    def replace_store_assignment(user_id: UUID) -> Representation:
+        with kit.db.transaction() as connection:
+            assignment, added, removed = rules.replace_store_assignment(
+                connection, user_id, kit.body["store_ids"]
+            )
+            if added:
+                audit.permission_changed(
+                    connection,
+                    caller(),
+                    user_id,
+                    "STORES_ASSIGNED",
+                    store_ids=added,
+                )
+            if removed:
+                audit.permission_changed(
+                    connection,
+                    caller(),
+                    user_id,
+                    "STORES_UNASSIGNED",
+                    store_ids=removed,
+                )
+        return Representation("StoreAssignment", assignment)
 
     @kit.operation("transferAdministrator")
     def transfer_administrator() -> NoContent:

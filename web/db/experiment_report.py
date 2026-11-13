@@ -127,10 +127,11 @@ _LIST_GROUPS = (
                EXISTS (SELECT 1 FROM experiment_exposure AS x
                         WHERE x.assignment_id = a.assignment_id) AS exposed,
                EXISTS (SELECT 1 FROM experiment_conversion AS c
+                        JOIN net_sale AS ns ON ns.transaction_id = c.transaction_id
                         WHERE c.assignment_id = a.assignment_id) AS converted,
                a.assigned_at
                + make_interval(days => e.conversion_window_days) > %s AS open,
-               EXISTS (SELECT 1 FROM transaction AS t
+               EXISTS (SELECT 1 FROM net_sale AS t
                         WHERE t.customer_id = a.customer_id
                           AND t.occurred_at >= a.assigned_at
                           AND t.occurred_at < a.assigned_at

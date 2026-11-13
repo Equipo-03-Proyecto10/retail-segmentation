@@ -940,11 +940,15 @@ change.
 `web/services/sales_csv.py`; parameterized reads in `web/db/sales.py`; the
 header lock in `get_transaction_by_source_id`; and the upper bound in
 `web/db/segments.py`. The service import's contract is
-`contracts/sales/openapi.yaml` (planned, #852) and its worker follows in #853. Database — `transaction.data_origin` is `NOT NULL` with
+`contracts/sales/openapi.yaml` (#852), and sales-service enforces it in
+`services/sales/app/imports.py`, `rows.py` and `import_worker.py`, with the one sale
+rule in `salerules.py` (F26-08, #853). Database — `transaction.data_origin` is `NOT NULL` with
 no default and `CHECK IN ('OBSERVED','SEEDED')`. **Verified** — by
 `tests/test_ingestion_service.py`, `tests/test_sales_csv.py`,
 `tests/test_sales_db.py`, `tests/test_segments_pipeline_db.py` and
-`tests/test_data_origin_postgres.py`. · #355 · #356 · #559
+`tests/test_data_origin_postgres.py`; for the service import, by
+`services/sales/tests/test_imports.py` and `test_import_golden.py`, which replays
+the web's captured outcomes as one-row imports. · #355 · #356 · #559
 
 ## Consumption profile
 
@@ -1457,10 +1461,13 @@ units, `quantity - returned_quantity`, and a sale whose net amount is zero stops
 counting as a purchase. A repeated `Idempotency-Key` or `source_transaction_id`
 records nothing new.
 
-**Enforced:** sales-service (planned) and ADR-0062 — `sales.sale_reversal` and
+**Enforced:** sales-service (F21-03, #774) and ADR-0062 — `sales.sale_reversal` and
 `sales.sale_reversal_line` are insert-only; `transaction_line.returned_quantity` is
-written only by `svc_sales`, with `CHECK (returned_quantity BETWEEN 0 AND quantity)`;
-the `net_sale_line` and `net_sale` views carry the one definition of net. · #770
+written only by `svc_sales`, with `CHECK (returned_quantity BETWEEN 0 AND quantity)`,
+and equals the sum of the line's reversal lines at commit; a trigger refuses
+reversals that add up to more than was sold, even for a direct `INSERT`; the
+`net_sale_line` and `net_sale` views carry the one definition of net, which the web's
+reports read. · #770, #774
 
 ### RN-71 — A promotion belongs to one campaign, discounts by a percentage above zero, and is valid only within its campaign's dates
 A promotion names exactly one campaign, a discount percentage greater than zero

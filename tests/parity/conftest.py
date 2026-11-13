@@ -18,13 +18,17 @@ from tests.parity.compare import (
     AuditDifference,
     CaseResult,
     Difference,
+    ReportDifference,
     SegmentDifference,
     write_results,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
 _results: list[CaseResult] = []
-_differences: dict[str, list[Difference | SegmentDifference | AuditDifference]] = {}
+_differences: dict[
+    str,
+    list[Difference | SegmentDifference | AuditDifference | ReportDifference],
+] = {}
 # The files whose cases are parity cases; test_compare.py is not one.
 _CASE_FILES = {"test_parity.py", "test_segment_parity.py", "test_audit_parity.py"}
 
@@ -128,7 +132,9 @@ def segments() -> stack.SegmentsPath:
 def differences(request) -> list[Difference]:
     """Where a case collects what differs, so it is printed and recorded."""
 
-    found: list[Difference | SegmentDifference | AuditDifference] = []
+    found: list[Difference | SegmentDifference | AuditDifference | ReportDifference] = (
+        []
+    )
     _differences[request.node.name] = found
     return found
 

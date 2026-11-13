@@ -51,7 +51,7 @@ class ExposedConversion:
 
 # An exposed customer converted "after exposure" when a sale of theirs falls in
 # [first exposed_at, first exposed_at + the experiment's window). Read from
-# `transaction`, not from experiment_conversion, so it does not wait for an
+# `net_sale`, not from experiment_conversion, so it does not wait for an
 # evaluation, and counted from the first exposure so a customer is one, however
 # often they were reached (ADR-0019). Expects the aliases `a` (the assignment)
 # and `e` (its experiment), the shape every caller already has.
@@ -60,7 +60,7 @@ EXISTS (SELECT 1
           FROM (SELECT min(x.exposed_at) AS first_at
                   FROM experiment_exposure AS x
                  WHERE x.assignment_id = a.assignment_id) AS fx
-          JOIN transaction AS t
+          JOIN net_sale AS t
             ON t.customer_id = a.customer_id
            AND t.occurred_at >= fx.first_at
            AND t.occurred_at < fx.first_at
@@ -136,7 +136,7 @@ def evaluate_conversions(connection: Connection, experiment_id: int) -> int:
             SELECT a.assignment_id, t.transaction_id
               FROM experiment_assignment AS a
               JOIN experiment AS e ON e.experiment_id = a.experiment_id
-              JOIN transaction AS t
+              JOIN net_sale AS t
                 ON t.customer_id = a.customer_id
                AND t.occurred_at >= a.assigned_at
                AND t.occurred_at < a.assigned_at
@@ -167,10 +167,12 @@ def list_group_conversion(
             WITH outcome AS (
                 SELECT a.group_id,
                        EXISTS (SELECT 1 FROM experiment_conversion AS c
+                                JOIN net_sale AS ns
+                                  ON ns.transaction_id = c.transaction_id
                                 WHERE c.assignment_id = a.assignment_id) AS converted,
                        a.assigned_at
                        + make_interval(days => e.conversion_window_days) > %s AS open,
-                       EXISTS (SELECT 1 FROM transaction AS t
+                       EXISTS (SELECT 1 FROM net_sale AS t
                                 WHERE t.customer_id = a.customer_id
                                   AND t.occurred_at >= a.assigned_at
                                   AND t.occurred_at < a.assigned_at
@@ -209,12 +211,13 @@ def list_attributions(
             SELECT c.conversion_id, a.assignment_id, a.customer_id, g.kind,
                    a.assigned_at,
                    a.assigned_at + make_interval(days => e.conversion_window_days),
-                   t.transaction_id, t.source_transaction_id, t.occurred_at, t.total
+                   t.transaction_id, t.source_transaction_id, t.occurred_at,
+                   t.net_total
               FROM experiment_conversion AS c
               JOIN experiment_assignment AS a ON a.assignment_id = c.assignment_id
               JOIN experiment_group AS g ON g.group_id = a.group_id
               JOIN experiment AS e ON e.experiment_id = a.experiment_id
-              JOIN transaction AS t ON t.transaction_id = c.transaction_id
+              JOIN net_sale AS t ON t.transaction_id = c.transaction_id
              WHERE a.experiment_id = %s
              ORDER BY t.occurred_at DESC, c.conversion_id DESC
              LIMIT %s OFFSET %s
@@ -227,6 +230,7 @@ def list_attributions(
             SELECT count(*)
               FROM experiment_conversion AS c
               JOIN experiment_assignment AS a ON a.assignment_id = c.assignment_id
+              JOIN net_sale AS t ON t.transaction_id = c.transaction_id
              WHERE a.experiment_id = %s
             """,
             (experiment_id,),
@@ -245,12 +249,12 @@ def read_aa_population(
         cursor.execute(
             """
             SELECT known.customer_id,
-                   EXISTS (SELECT 1 FROM transaction AS later
+                   EXISTS (SELECT 1 FROM net_sale AS later
                             WHERE later.customer_id = known.customer_id
                               AND later.occurred_at >= %s
                               AND later.occurred_at < %s
                                                      + make_interval(days => %s))
-              FROM (SELECT DISTINCT customer_id FROM transaction
+              FROM (SELECT DISTINCT customer_id FROM net_sale
                      WHERE occurred_at < %s) AS known
              ORDER BY known.customer_id
             """,

@@ -91,16 +91,19 @@ def test_a_windowed_read_is_closed_at_both_ends(read, empty, fetch) -> None:
 def test_a_windowed_read_starts_from_the_sales_the_ingestion_accepted(
     read, empty, fetch
 ) -> None:
-    """Only accepted rows are ever persisted (ADR-0020), so `transaction` is the
-    accepted sales. Nothing here reaches for a rejection report or a staging
-    table."""
+    """Only accepted rows are ever persisted (ADR-0020), so the accepted sales
+    are read through `net_sale`, which counts net units (ADR-0062). Nothing here
+    reaches for a rejection report or a staging table, and nothing reads the
+    gross `transaction` any more."""
     connection = MagicMock()
     getattr(_cursor(connection), fetch).return_value = empty
 
     read(connection, _CUSTOMER, _SINCE, _UNTIL)
 
     statement, _ = _statement_and_params(connection)
-    assert "FROM transaction" in statement
+    assert "FROM net_sale" in statement
+    assert "FROM transaction" not in statement
+    assert "JOIN transaction " not in statement
     assert "reject" not in statement.lower()
 
 

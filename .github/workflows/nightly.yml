@@ -59,10 +59,8 @@ jobs:
         run: bash .github/scripts/ci-images.sh push
 
       - name: Re-apply every boundary section
+        id: boundaries
         run: bash .github/scripts/apply-boundaries.sh $COMPOSE exec -T db psql -U postgres -d retail
-
-      - name: The demonstration chain
-        run: python3 -m pytest tests/e2e -rs --junitxml=test-results/e2e.xml
 
       - name: The web-to-service parity harness (F20-07)
         # The web is not part of the compose stack (Q-12 keeps it off the
@@ -89,6 +87,15 @@ jobs:
           export PARITY_GATEWAY_URL=http://127.0.0.1:8080
           export PARITY_DATABASE_URL="postgresql://postgres:postgres@${db_ip}:5432/retail"
           python3 -m pytest tests/parity -rs --junitxml=test-results/parity.xml
+
+      # After parity, and even when parity fails: the chain stops
+      # redis-state on purpose (fail-closed authentication), and the
+      # services' stream relays then reconnect with backoff. Run before
+      # parity, it left segments-service's relay down while parity timed
+      # a run's propagation against its 5 s bound (#1010).
+      - name: The demonstration chain
+        if: ${{ !cancelled() && steps.boundaries.outcome == 'success' }}
+        run: python3 -m pytest tests/e2e -rs --junitxml=test-results/e2e.xml
 
       - name: Collect the stack's compose logs
         if: failure()

@@ -39,6 +39,11 @@ import org.junit.Test
 /** Both runtimes use real Room files, fresh clients and real CoroutineWorkers. */
 class SalesTestApplication : Application(), GraphProvider {
     override lateinit var graph: AppGraph
+
+    override fun onCreate() {
+        super.onCreate()
+        AppText.install(this)
+    }
 }
 
 abstract class SaleQueueScenario {

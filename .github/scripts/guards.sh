@@ -133,6 +133,11 @@ PERL
   git grep -nE "mosaiq-($names)\b" -- .github/ deploy/ ':(exclude).github/scripts/guards.sh' \
     ':(exclude)deploy/check-services.sh' \
     | found "ADR-0040 a service named"
+  # ADR-0080: no test image is named on the deploy path. check-services.sh names
+  # the prefix only to refuse it.
+  git grep -n 'mosaiq-ci-' -- deploy/ .github/workflows/deploy.yml .github/workflows/deploy-service.yml \
+    ':(exclude)deploy/check-services.sh' \
+    | found "ADR-0080 a test image on the deploy path"
   # ADR-0040: the per-service deploy runs each service as its own project,
   # never builds an image and never runs SQL (F18-03), and the web's deploy
   # stays out of the services.

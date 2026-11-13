@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: stores-service
-  version: 1.3.0
+  version: 1.4.0
   description: >-
     Publishes the store directory and lets an administrator set or clear the
     one geofenced location that belongs to a store (RN-53). Also publishes, and
@@ -229,7 +229,6 @@ paths:
       description: >-
         Returns the store's operating status. A store whose status was never written is `OPEN` with a null `updated_at`.
       operationId: getStoreStatus
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -281,7 +280,6 @@ paths:
         Replaces the operating status. `OPEN` lets the store sell, `TEMPORARILY_CLOSED` and `CLOSED` do not. This status is separate from the directory's `is_active` flag, which only the web writes. Only ADMIN may write. The operation is idempotent and answers the
         state it stored.
       operationId: putStoreStatus
-      x-mosaiq-status: planned
       x-mosaiq-roles: [ADMIN]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
@@ -347,7 +345,6 @@ paths:
       description: >-
         Returns the weekly opening hours. A store whose hours were never written, or whose hours were cleared, has a null `time_zone`, no intervals and, if never written, a null `updated_at`. `time_zone` is null exactly when `intervals` is empty, as `api_stores.store_directory_v2` publishes it. In XML an absent `time_zone` is omitted.
       operationId: getStoreHours
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -396,10 +393,9 @@ paths:
       tags: [Stores]
       summary: Replace the opening hours of a store
       description: >-
-        Replaces the whole weekly schedule. An empty `intervals` list clears the hours: every day is closed and the store has no time zone, so `time_zone` must then be null (JSON) or omitted (XML). A non-empty list needs a `time_zone`. Anything else is 422 `invalid_body` on `time_zone` with `time_zone_required` or `time_zone_without_hours`. A day absent from `intervals` is a closed day, a day appears at most once, and `closes_at` is later than `opens_at` on the same day (no overnight interval). A violation is 422 `invalid_body` with the field and one of `duplicate_day`, `closes_before_opens` or `out_of_range`. Only ADMIN may write. The operation is idempotent and answers the
+        Replaces the whole weekly schedule. An empty `intervals` list clears the hours: every day is closed and the store has no time zone, so `time_zone` must then be null (JSON) or omitted (XML). A non-empty list needs a `time_zone`. Anything else is 422 `invalid_body` on `time_zone` with `time_zone_required` or `time_zone_without_hours`, and a name that is not an IANA time zone is `invalid_format` on `time_zone`. A day absent from `intervals` is a closed day, a day appears at most once, and `closes_at` is later than `opens_at` on the same day (no overnight interval). A violation is 422 `invalid_body` with the field and one of `duplicate_day`, `closes_before_opens` or `out_of_range`. Only ADMIN may write. The operation is idempotent and answers the
         state it stored.
       operationId: putStoreHours
-      x-mosaiq-status: planned
       x-mosaiq-roles: [ADMIN]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
@@ -473,7 +469,6 @@ paths:
       description: >-
         Returns the set of channel ids the store enables. Channel ids are sales' vocabulary and are only referenced here; this contract serves no channel resource. A store whose set was never written enables none.
       operationId: getStoreChannels
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -525,7 +520,6 @@ paths:
         Replaces the whole set of enabled channel ids atomically. An empty set (`channel_ids: []` in JSON, no `channel_ids` element in XML) clears the set: the store then enables no channel. An id that does not exist is 422 `invalid_body` with detail code `unknown_channel` on `channel_ids`; a repeated id is `duplicate_channel`. Only ADMIN may write. The operation is idempotent and answers the
         state it stored.
       operationId: putStoreChannels
-      x-mosaiq-status: planned
       x-mosaiq-roles: [ADMIN]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
@@ -599,7 +593,6 @@ paths:
       description: >-
         Returns the store's commercial rules. Exactly one rule exists: `max_discount_percent`, the largest discount the store allows on a sale line. It is null until first set, which means the store imposes no cap of its own.
       operationId: getStoreCommercialRules
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -651,7 +644,6 @@ paths:
         Replaces the commercial rules. `max_discount_percent` is a two-decimal string from `0.00` (no discount allowed) to `100.00`, or null (JSON) / an omitted element (XML) to remove the cap, which is the same state as a store never set. Clearing is idempotent. Sales enforces it; this service only stores it. Only ADMIN may write. The operation is idempotent and answers the
         state it stored.
       operationId: putStoreCommercialRules
-      x-mosaiq-status: planned
       x-mosaiq-roles: [ADMIN]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
@@ -1058,7 +1050,10 @@ components:
       properties:
         channel_ids:
           type: array
-          uniqueItems: true
+          description: >-
+            Not marked `uniqueItems`, so that a repeated id reaches the service
+            and is refused as `duplicate_channel` in JSON as it is in XML,
+            instead of as the schema's generic `duplicate`.
           items:
             type: integer
             format: int32

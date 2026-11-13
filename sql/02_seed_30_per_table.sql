@@ -193,6 +193,69 @@ SELECT n,
        now() - (n || ' hours')::interval
 FROM generate_series(1,30) n;
 
+-- ---------- stores.store_status (30, one per seeded store) ----------
+-- Twenty-seven stores are OPEN, stores 10 and 20 are TEMPORARILY_CLOSED and
+-- store 30 is CLOSED, so a consumer of api_stores.store_directory_v2 sees all
+-- three values. Every row is set by the sole administrator.
+INSERT INTO stores.store_status (store_id, status, set_by, set_at)
+SELECT n,
+       CASE WHEN n = 30 THEN 'CLOSED'
+            WHEN n IN (10, 20) THEN 'TEMPORARILY_CLOSED'
+            ELSE 'OPEN' END,
+       '11111111-1111-1111-1111-000000000001'::uuid,
+       now() - (n || ' hours')::interval
+FROM generate_series(1,30) n;
+
+-- ---------- stores.store_hours (30) and stores.store_hours_interval (190) ----------
+-- The time zone follows the seeded city (the same cycle as the locations).
+-- Every store opens Monday to Friday 09:00-21:00 and Saturday 10:00-18:00;
+-- every third store also opens Sunday 11:00-17:00.
+INSERT INTO stores.store_hours (store_id, time_zone, set_by, set_at)
+SELECT n,
+       (ARRAY['America/Monterrey','America/Monterrey','America/Monterrey','America/Monterrey',
+              'America/Mexico_City','America/Mexico_City','America/Mexico_City','America/Mexico_City',
+              'America/Tijuana','America/Merida'])[1+((n-1)%10)],
+       '11111111-1111-1111-1111-000000000001'::uuid,
+       now() - (n || ' hours')::interval
+FROM generate_series(1,30) n;
+
+INSERT INTO stores.store_hours_interval (store_id, day_of_week, opens_at, closes_at)
+SELECT n, d,
+       CASE WHEN d <= 5 THEN TIME '09:00' WHEN d = 6 THEN TIME '10:00' ELSE TIME '11:00' END,
+       CASE WHEN d <= 5 THEN TIME '21:00' WHEN d = 6 THEN TIME '18:00' ELSE TIME '17:00' END
+FROM generate_series(1,30) n
+CROSS JOIN generate_series(1,7) d
+WHERE d <= 6 OR n % 3 = 0;
+
+-- ---------- stores.store_channel_set (30) and stores.store_channel (65) ----------
+-- Every store enables physical_store (3). Even stores add mobile_app (1),
+-- multiples of 3 add web (2), of 5 marketplace (4) and of 7 call_center (5).
+INSERT INTO stores.store_channel_set (store_id, set_by, set_at)
+SELECT n, '11111111-1111-1111-1111-000000000001'::uuid,
+       now() - (n || ' hours')::interval
+FROM generate_series(1,30) n;
+
+INSERT INTO stores.store_channel (store_id, channel_id)
+SELECT n, c
+FROM generate_series(1,30) n
+CROSS JOIN generate_series(1,5) c
+WHERE c = 3
+   OR (c = 1 AND n % 2 = 0)
+   OR (c = 2 AND n % 3 = 0)
+   OR (c = 4 AND n % 5 = 0)
+   OR (c = 5 AND n % 7 = 0);
+
+-- ---------- stores.store_commercial_rule (30) ----------
+-- The cap cycles through 10, 15, 20, 25 and 30 percent; every sixth store has
+-- no cap of its own (NULL), which a consumer reads as "no store limit".
+INSERT INTO stores.store_commercial_rule (store_id, max_discount_percent, set_by, set_at)
+SELECT n,
+       CASE WHEN n % 6 = 0 THEN NULL
+            ELSE (ARRAY[10,15,20,25,30])[1+(n%5)]::numeric(5,2) END,
+       '11111111-1111-1111-1111-000000000001'::uuid,
+       now() - (n || ' hours')::interval
+FROM generate_series(1,30) n;
+
 -- ---------- checkins.store_check_in (30, one per seeded store) ----------
 -- Check-in k is at store k, by the administrator or one of the five seeded
 -- STORE_MANAGERs (users 3, 9, 15, 21, 27), k hours before the load. The fix is
@@ -900,7 +963,7 @@ JOIN app_user AS u ON u.role_id = r.role_id AND u.is_active;
 -- ---------- audit_log ----------
 -- Filled by the triggers as the statements above ran: segment, segment_rule,
 -- campaign, experiment, category, product, store, channel, role, customer,
--- app_user, customer_segment_history, stores.store_location and the products
+-- app_user, customer_segment_history, the stores boundary's seven tables and the products
 -- boundary's four tables. Nothing is inserted here by hand.
 
 -- ---------- audit_events.domain_event (32, every kind, ADR-0072) ----------

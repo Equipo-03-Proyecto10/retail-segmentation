@@ -72,8 +72,9 @@ The web is not a consumer: it cannot read `api_preferences` (ADR-0046) and consu
 no service. Its batch segmentation reads a read-only view in `public` with this
 definition, the pattern of `net_sale` in ADR-0062 and the database route of
 ADR-0045, and no grant on `api_preferences` goes to `retail_app` (ADR-0066 section
-2). That view belongs to the schema story, F21-17 (#795); this document is its
-specification.
+2). That view is `public.consent_state` (F21-17, #795): the same five columns as
+this view's, `customer_id`, `purpose`, `decision`, `decision_id`, `recorded_at` and
+`basis`, over this view, with `SELECT` for `retail_app` and nothing else.
 
 ## Compatibility
 

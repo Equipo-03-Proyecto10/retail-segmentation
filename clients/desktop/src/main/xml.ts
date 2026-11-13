@@ -75,6 +75,7 @@ const REPEATED = new Set([
   'AuditEntries.AuditEntry',
   'Customers.Customer',
   'SegmentAssignments.SegmentAssignment',
+  'VersionedSegmentAssignments.VersionedSegmentAssignment',
   'PreferenceProfile.preferred_channel_ids',
   'PreferenceProfile.interest_category_ids',
   'Recommendation.items',

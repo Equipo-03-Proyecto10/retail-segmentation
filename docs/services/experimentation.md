@@ -1,6 +1,6 @@
 # experimentation
 
-> **Status:** Stood up (phase 25, third; F25-07, #838): the service answers its meta routes, holds the grants on the five experiment tables, and registers no operation yet; every operation stays `x-mosaiq-status: planned` (ADR-0073). The contract was published by F25-06 (#837). ADR-0059 places it; ADR-0068 and ADR-0069 decide how it behaves.
+> **Status:** Stood up (phase 25, third; F25-07, #838): the service answers its meta routes, holds the grants on the five experiment tables, and serves one operation, `listSaleAttributions`, whose page is empty until F25-03 (#843) builds attribution; every other operation stays `x-mosaiq-status: planned` (ADR-0073). The contract was published by F25-06 (#837). ADR-0059 places it; ADR-0068 and ADR-0069 decide how it behaves.
 > **One rule:** An experiment's frame and arms are fixed before measurement, assignment, exposure and conversion are separate append-only facts, a sale is attributed at most once, and an effect is reported only against a control, with its uncertainty (RN-23, RN-24, RN-25, RN-27, RN-42, RN-48, RN-49, RN-67)
 
 ## Summary

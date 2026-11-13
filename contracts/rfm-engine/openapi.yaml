@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: rfm-engine-service
-  version: 1.0.0
+  version: 1.0.1
   description: >-
     Keeps each customer's R, F and M current. A customer's profile is a function
     of their accepted, unreversed purchases under one rule-set version; it changes

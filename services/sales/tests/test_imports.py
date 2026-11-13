@@ -525,6 +525,19 @@ def test_every_accepted_row_is_a_sale_through_the_same_rule(
         " WHERE import_id = %s AND outcome = 'ACCEPTED' ORDER BY line LIMIT 2",
         (import_id,),
     ).fetchall() == [(2, sale_id, first), (3, sale_id, second)]
+    # CI's reconciliation query (ADR-0070 Compliance) returns nothing: a completed
+    # import has an outcome for every row it announced, and no chunk keeps its rows.
+    assert owner.execute(
+        "SELECT count(*) FROM sales.import AS i WHERE i.status = 'COMPLETED'"
+        " AND (i.total_rows <> (SELECT COALESCE(SUM(c.row_count), 0)"
+        "      FROM sales.import_chunk AS c WHERE c.import_id = i.import_id)"
+        "   OR i.total_rows <> (SELECT count(*) FROM sales.import_row_outcome AS o"
+        "      WHERE o.import_id = i.import_id))"
+    ).fetchone() == (0,)
+    assert owner.execute(
+        "SELECT count(*) FROM sales.import_chunk WHERE status = 'DONE'"
+        " AND rows IS NOT NULL"
+    ).fetchone() == (0,)
     # `svc-sales:` headers and captures still match one to one (ADR-0039).
     assert owner.execute(
         "SELECT count(*) FROM public.transaction AS t FULL JOIN sales.sale_capture"
@@ -1112,3 +1125,37 @@ def test_an_accepted_row_reaches_the_recorded_stream_like_any_other_sale(
     assert [entry[1]["event_type"] for entry in entries] == ["INSERT", "UPDATE"]
     # A refused row raised nothing.
     assert owner.execute("SELECT count(*) FROM sales_events.outbox").fetchone() == (2,)
+
+
+def test_the_worker_runs_as_its_own_process_and_stops_on_sigterm(
+    client, token, owner, world, service_url
+):
+    import os
+    import signal
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    rows = [row(world, line, new_id()) for line in range(2, 6)]
+    import_id = open_import(client, token, 4, 1).get_json()["import_id"]
+    assert put_chunk(client, token, import_id, 0, rows).status_code == 202
+    environment = {
+        **os.environ,
+        "DATABASE_URL": service_url,
+        "SALES_IMPORT_POLL_SECONDS": "0.1",
+    }
+    process = subprocess.Popen(
+        [sys.executable, "-m", "app.import_worker"],
+        cwd=Path(__file__).resolve().parents[1],
+        env=environment,
+    )
+    try:
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            if status(client, token, import_id)["status"] == "COMPLETED":
+                break
+            time.sleep(0.1)
+        assert status(client, token, import_id)["accepted"] == 4
+    finally:
+        process.send_signal(signal.SIGTERM)
+        assert process.wait(timeout=15) == 0

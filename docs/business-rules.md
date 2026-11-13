@@ -940,11 +940,15 @@ change.
 `web/services/sales_csv.py`; parameterized reads in `web/db/sales.py`; the
 header lock in `get_transaction_by_source_id`; and the upper bound in
 `web/db/segments.py`. The service import's contract is
-`contracts/sales/openapi.yaml` (planned, #852) and its worker follows in #853. Database — `transaction.data_origin` is `NOT NULL` with
+`contracts/sales/openapi.yaml` (#852), and sales-service enforces it in
+`services/sales/app/imports.py`, `rows.py` and `import_worker.py`, with the one sale
+rule in `salerules.py` (F26-08, #853). Database — `transaction.data_origin` is `NOT NULL` with
 no default and `CHECK IN ('OBSERVED','SEEDED')`. **Verified** — by
 `tests/test_ingestion_service.py`, `tests/test_sales_csv.py`,
 `tests/test_sales_db.py`, `tests/test_segments_pipeline_db.py` and
-`tests/test_data_origin_postgres.py`. · #355 · #356 · #559
+`tests/test_data_origin_postgres.py`; for the service import, by
+`services/sales/tests/test_imports.py` and `test_import_golden.py`, which replays
+the web's captured outcomes as one-row imports. · #355 · #356 · #559
 
 ## Consumption profile
 

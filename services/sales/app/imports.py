@@ -15,6 +15,7 @@ from typing import Any
 
 import psycopg
 from mosaiq_kit import ApiError
+from psycopg import sql
 from psycopg.types.json import Jsonb
 
 from .rows import COLUMNS
@@ -23,12 +24,13 @@ from .salerules import error
 CONTRACT_VERSION = 1
 CHUNK_BYTES = 60_000
 
-IMPORT_COLUMNS = (
-    "i.import_id, i.status, i.contract_version, i.total_rows, i.chunk_count,"
-    " coalesce(c.chunks, 0), coalesce(c.received, 0), coalesce(o.accepted, 0),"
-    " coalesce(o.rejected, 0), i.created_at, i.finished_at, i.created_by"
-)
-IMPORT_FROM = (
+# The columns of an import and the three tables its counts come from, as one
+# fixed statement: queries add a WHERE or an ORDER BY with sql.SQL, never text.
+_IMPORT_SELECT = sql.SQL(
+    "SELECT i.import_id, i.status, i.contract_version, i.total_rows,"
+    " i.chunk_count, coalesce(c.chunks, 0), coalesce(c.received, 0),"
+    " coalesce(o.accepted, 0), coalesce(o.rejected, 0), i.created_at,"
+    " i.finished_at, i.created_by"
     " FROM sales.import AS i"
     " LEFT JOIN LATERAL (SELECT count(*) AS chunks, sum(row_count) AS received"
     "   FROM sales.import_chunk WHERE import_id = i.import_id) AS c ON true"
@@ -98,11 +100,7 @@ def get_import(
         if locked is None:
             return None
     row = connection.execute(
-        "SELECT "
-        + IMPORT_COLUMNS
-        + IMPORT_FROM
-        + " WHERE i.import_id = %s",  # noqa: S608
-        (import_id,),
+        sql.SQL("{} WHERE i.import_id = %s").format(_IMPORT_SELECT), (import_id,)
     ).fetchone()
     return None if row is None else _import(row)
 
@@ -112,10 +110,9 @@ def list_imports(
 ) -> tuple[list[dict[str, Any]], int]:
     total = connection.execute("SELECT count(*) FROM sales.import").fetchone()[0]
     rows = connection.execute(
-        "SELECT "
-        + IMPORT_COLUMNS
-        + IMPORT_FROM  # noqa: S608
-        + " ORDER BY i.created_at DESC, i.import_id DESC LIMIT %s OFFSET %s",
+        sql.SQL(
+            "{} ORDER BY i.created_at DESC, i.import_id DESC LIMIT %s OFFSET %s"
+        ).format(_IMPORT_SELECT),
         (limit, offset),
     ).fetchall()
     return [_import(row) for row in rows], total

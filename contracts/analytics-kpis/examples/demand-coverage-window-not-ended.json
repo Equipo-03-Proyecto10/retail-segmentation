@@ -1,0 +1,11 @@
+{
+  "code": "invalid_query",
+  "message": "A query parameter is not an allowed value.",
+  "correlation_id": "corr-kpi-422c",
+  "details": [
+    {
+      "field": "to",
+      "code": "window_not_ended"
+    }
+  ]
+}

@@ -338,11 +338,17 @@ impl Stack {
     }
 
     async fn count(&self, table: &str, customer: Uuid) -> i64 {
+        let statement = match table {
+            "consent_decision" => {
+                "SELECT count(*) FROM preferences.consent_decision WHERE customer_id = $1"
+            }
+            "restriction_decision" => {
+                "SELECT count(*) FROM preferences.restriction_decision WHERE customer_id = $1"
+            }
+            other => panic!("no statement for {other}"),
+        };
         self.owner
-            .query_one(
-                &format!("SELECT count(*) FROM preferences.{table} WHERE customer_id = $1"),
-                &[&customer],
-            )
+            .query_one(statement, &[&customer])
             .await
             .unwrap()
             .get(0)

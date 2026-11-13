@@ -555,6 +555,45 @@ The sales boundary (ADR-0039, ADR-0046, F14-18) adds one relation, also in 4NF:
   - `request_sha256` is a fact of the request as accepted, not a function of
     current data, so it is not derived state.
 
+The customer-preferences boundary (ADR-0066, RN-73, F21-17) adds four relations in
+the `preferences` schema beside the two preference tables it already writes, all in
+4NF and all append-only, so no row is ever updated and none can drift from another.
+- **`preferences.consent_decision`** is keyed by `decision_id` (a generated identity),
+  which determines the customer, the purpose, the decision, when it was recorded,
+  by whom, its source and its basis. The *current* state of a purpose is not a
+  column: a `current` flag would be derived data that an UPDATE must keep true,
+  and the log is never updated. It is the row with the largest `decision_id` per
+  customer and purpose, which `api_preferences.consent_state_v1` publishes, and
+  the state at a past instant is the same query bounded by `recorded_at`.
+  `recorded_by` is null exactly for the `MIGRATION` default (a CHECK), and a
+  `MIGRATION` row is exactly a `PROGRAMME_DEFAULT` one.
+- **`preferences.restriction_decision`** is the same shape for a channel or an
+  interest category. The target is two nullable references, `channel_id` and
+  `category_id`, exactly one of them set (a CHECK that follows `kind`), each with
+  its own foreign key, so an unknown channel or category is refused by the
+  database and not by a trigger. `target_id` is a stored generated column, the
+  one that is set, so the published view and the log read one column. It is
+  derived by the database and cannot disagree with its sources. The two reference
+  columns have partial indexes for the `RESTRICT` checks when a channel or a
+  category is deleted.
+- **`preferences.preference_change`** and **`preferences.preference_change_member`**.
+  A replace of a declared set records the ids the set held before and the ids it
+  holds after, two independent multivalued facts of one change
+  (`change_id ↠ before ids`, `change_id ↠ after ids`). Two array columns in the
+  change row would not be 1NF, and one row per (before id, after id) pair would
+  be the cross product that 4NF forbids. So the change is one row
+  (`change_id → customer_id, preference_set, changed_at, changed_by`) and each id
+  is one row of the member relation, keyed by `(change_id, side, member_id)`.
+  `member_id` has no foreign key on purpose: it records what the set held at a
+  past moment, and must stay readable after a channel or category is retired.
+
+The four relations are enforced append-only twice: `svc_preferences` holds `SELECT`
+and `INSERT` and nothing else, and a trigger refuses `UPDATE`, `DELETE` and `TRUNCATE`
+for every role, the owner included, unless an operator's archiving script drops it.
+Their foreign keys to `customer` are `RESTRICT` because a customer is never deleted
+(RN-08, ADR-0066). The customers that exist when the log is created are given the
+default of ADR-0066 section 1 by a backfill that runs once, against an empty log.
+
 `sales_events.outbox` is one more boundary outbox, under the outbox note above.
 
 The stock boundary (ADR-0061, ADR-0046, F21-06) adds two relations, both in 4NF:
@@ -773,6 +812,60 @@ instead of deadlocking and the second one is refused as `category_no_cycle` (#58
 This is a 1:1 vertical split of `store`: `store_id` is both its key and its
 determinant, and determines every location attribute. It contains no
 independent multivalued facts, so the relation is in 4NF.
+
+#### `preferences.consent_decision`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `decision_id` | `BIGINT` | NN | PK; `GENERATED ALWAYS AS IDENTITY` | Orders the decisions; the largest per customer and purpose is the current one |
+| `customer_id` | `UUID` | NN | FK → `public.customer`, `ON DELETE RESTRICT` | The customer who decided |
+| `purpose` | `VARCHAR(20)` | NN | CHECK in `PERSONALIZATION`, `MARKETING_CONTACT`, `PROFILING` | What was decided about |
+| `decision` | `VARCHAR(20)` | NN | CHECK in `GRANTED`, `WITHDRAWN` | The decision |
+| `recorded_at` | `TIMESTAMPTZ` | NN | default `clock_timestamp()` | The server's clock, never client-supplied |
+| `recorded_by` | `UUID` | yes | FK → `public.app_user`; null exactly when `source` is `MIGRATION` | The app user who took it, from the verified token |
+| `source` | `VARCHAR(20)` | NN | CHECK in `STAFF_ON_BEHALF`, `CUSTOMER_SELF`, `MIGRATION` | Where the decision came from |
+| `basis` | `VARCHAR(20)` | NN | CHECK in `EXPLICIT`, `PROGRAMME_DEFAULT`; `PROGRAMME_DEFAULT` exactly when `source` is `MIGRATION` | Whether the customer said it or the programme assigned it |
+
+Append-only (see the boundary's note in section 2.4).
+
+#### `preferences.restriction_decision`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `decision_id` | `BIGINT` | NN | PK; `GENERATED ALWAYS AS IDENTITY` | Orders the decisions |
+| `customer_id` | `UUID` | NN | FK → `public.customer`, `ON DELETE RESTRICT` | The customer who restricted |
+| `kind` | `VARCHAR(20)` | NN | CHECK in `CHANNEL`, `INTEREST_CATEGORY` | What the restriction names |
+| `channel_id` | `SMALLINT` | yes | FK → `public.channel`, `ON DELETE RESTRICT` | Set exactly when `kind` is `CHANNEL` |
+| `category_id` | `SMALLINT` | yes | FK → `public.category`, `ON DELETE RESTRICT` | Set exactly when `kind` is `INTEREST_CATEGORY` |
+| `target_id` | `SMALLINT` | yes | generated, stored: `COALESCE(channel_id, category_id)` | The id that is set |
+| `decision` | `VARCHAR(20)` | NN | CHECK in `IMPOSED`, `LIFTED` | The decision |
+| `recorded_at` | `TIMESTAMPTZ` | NN | default `clock_timestamp()` | The server's clock |
+| `recorded_by` | `UUID` | NN | FK → `public.app_user` | The app user who took it |
+| `source` | `VARCHAR(20)` | NN | CHECK in `STAFF_ON_BEHALF`, `CUSTOMER_SELF` | Where it came from |
+
+Append-only.
+
+#### `preferences.preference_change`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `change_id` | `BIGINT` | NN | PK; `GENERATED ALWAYS AS IDENTITY` | One replace of a declared set that changed it |
+| `customer_id` | `UUID` | NN | FK → `public.customer`, `ON DELETE RESTRICT` | The customer |
+| `preference_set` | `VARCHAR(20)` | NN | CHECK in `PREFERRED_CHANNELS`, `INTEREST_CATEGORIES` | Which of the two sets |
+| `changed_at` | `TIMESTAMPTZ` | NN | default `clock_timestamp()` | When it was replaced |
+| `changed_by` | `UUID` | NN | FK → `public.app_user` | The app user who replaced it |
+
+Append-only.
+
+#### `preferences.preference_change_member`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `change_id` | `BIGINT` | NN | PK part; FK → `preferences.preference_change`, `ON DELETE RESTRICT` | The change |
+| `side` | `VARCHAR(6)` | NN | PK part; CHECK in `BEFORE`, `AFTER` | Whether the id was in the set before or after the replace |
+| `member_id` | `SMALLINT` | NN | PK part; no foreign key | A channel id or a category id, by the change's `preference_set` |
+
+Append-only.
 
 #### `stores_events.outbox`
 
@@ -1436,6 +1529,12 @@ The stores boundary therefore owns `stores` for `store_location`, publishes
 through `api_stores`, and keeps relay state in `stores_events`.
 The sales boundary owns `sales` for `sale_capture`, publishes
 `api_sales.purchase_line_v1` and keeps relay state in `sales_events`.
+The customer-preferences boundary owns `preferences` for `consent_decision`,
+`restriction_decision`, `preference_change` and `preference_change_member`, beside
+the two preference tables it writes in `public`. It publishes
+`api_preferences.consent_state_v1` and `api_preferences.restriction_v1`, and the
+read-only view `public.consent_state`, the web's route to the same consent state
+(ADR-0066 section 2).
 The segments boundary owns no table: it publishes
 `api_segments.current_label_v1` over the web's `customer_segment_history` and
 keeps relay state in `segments_events`.
@@ -1538,7 +1637,10 @@ twelve meet neither condition:
   access, F3-06), and no query reads the child by the user:*
   `app_session (user_id)`, `audit_log (user_id)`,
   `notification (subject_user_id)`, `sales_load (loaded_by)`,
-  `segmentation_run (executed_by)`, `stores.store_location (set_by)` and
+  `segmentation_run (executed_by)`, `stores.store_location (set_by)`,
+  `preferences.consent_decision (recorded_by)`,
+  `preferences.restriction_decision (recorded_by)`,
+  `preferences.preference_change (changed_by)` and
   `checkins.check_in_review (reviewed_by)`.
   Revoking a deactivated user's open sessions is served by the partial
   `idx_app_session_open_by_user`; revoked sessions are history and nothing

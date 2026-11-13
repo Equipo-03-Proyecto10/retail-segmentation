@@ -172,21 +172,29 @@ impl TestCustomer {
     /// transaction. Nothing but a throwaway fixture is ever removed this way.
     pub async fn cleanup(self, owner: &Client) {
         let id = self.id;
+        owner.batch_execute("BEGIN").await.unwrap();
         owner
-            .batch_execute(&format!(
-                "BEGIN; SET LOCAL session_replication_role = replica; \
-                 DELETE FROM preferences.preference_change_member WHERE change_id IN \
-                     (SELECT change_id FROM preferences.preference_change \
-                      WHERE customer_id = '{id}'); \
-                 DELETE FROM preferences.preference_change WHERE customer_id = '{id}'; \
-                 DELETE FROM preferences.consent_decision WHERE customer_id = '{id}'; \
-                 DELETE FROM preferences.restriction_decision WHERE customer_id = '{id}'; \
-                 DELETE FROM public.customer WHERE customer_id = '{id}'; \
-                 DELETE FROM preferences_events.outbox WHERE entity_id = '{id}'; \
-                 COMMIT;"
-            ))
+            .batch_execute("SET LOCAL session_replication_role = replica")
             .await
             .unwrap();
+        for statement in [
+            "DELETE FROM preferences.preference_change_member WHERE change_id IN \
+             (SELECT change_id FROM preferences.preference_change WHERE customer_id = $1)",
+            "DELETE FROM preferences.preference_change WHERE customer_id = $1",
+            "DELETE FROM preferences.consent_decision WHERE customer_id = $1",
+            "DELETE FROM preferences.restriction_decision WHERE customer_id = $1",
+            "DELETE FROM public.customer WHERE customer_id = $1",
+        ] {
+            owner.execute(statement, &[&id]).await.unwrap();
+        }
+        owner
+            .execute(
+                "DELETE FROM preferences_events.outbox WHERE entity_id = $1",
+                &[&id.to_string()],
+            )
+            .await
+            .unwrap();
+        owner.batch_execute("COMMIT").await.unwrap();
     }
 }
 

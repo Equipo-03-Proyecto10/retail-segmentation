@@ -1262,7 +1262,7 @@ the whole set at once with existing channels or categories, so no reader sees
 half an update, and two concurrent replacements of one set leave exactly one of
 them.
 
-**Enforced:** customer-preferences-service (planned), ADR-0034 — each
+**Enforced:** customer-preferences-service, ADR-0034 — each
 replacement runs in one transaction that takes
 `pg_advisory_xact_lock(290001, hashtext(customer_id::text))` before deleting
 and inserting the set; the foreign keys refuse an unknown channel or category.
@@ -1498,12 +1498,19 @@ withdrawn
 Inferred interests are kept apart from declared ones and never overwrite them. The
 two preference sets keep the whole-set replace of RN-54.
 
-**Enforced:** customer-preferences-service (planned), ADR-0066 and ADR-0034 —
-`svc_preferences` holds `SELECT` and `INSERT` only on the two logs, the service
-exposes no route that edits or removes a row, and a decision commits with its outbox
-row in one transaction. The contract of F21-16 (#794) specifies the operations, the
-two `api_preferences` views and the stream; the log and its grants follow with F21-17
-(#795). · #794
+**Enforced:** customer-preferences-service, ADR-0066 and ADR-0034 —
+`svc_preferences` holds `SELECT` and `INSERT` only on the logs
+(`preferences.consent_decision` and `preferences.restriction_decision`), a trigger
+refuses `UPDATE`, `DELETE` and `TRUNCATE` for every other role, the owner
+included, the service exposes no route that edits or removes a row, and a decision
+commits with its outbox row in one transaction. The published views
+`api_preferences.consent_state_v1` and `api_preferences.restriction_v1`, and the
+web's `public.consent_state`, show the latest decision, and a customer registered
+before the log existed has the programme default of ADR-0066 section 1. The
+contract of F21-16 (#794) specifies the operations, the views and the stream; the
+log, its grants and the backfill are F21-17 (#795). Declared interests are
+replaced as RN-54 says, and each replace that changes a set appends its before and
+after to `preferences.preference_change`. · #794
 
 ---
 

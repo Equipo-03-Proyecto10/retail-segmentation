@@ -1789,6 +1789,12 @@ CREATE TABLE IF NOT EXISTS preferences.restriction_decision (
 );
 CREATE INDEX IF NOT EXISTS restriction_decision_customer_target
     ON preferences.restriction_decision (customer_id, kind, target_id, decision_id DESC);
+-- The RESTRICT checks when the web deletes a channel or categories-service
+-- deletes a category scan the child by these keys.
+CREATE INDEX IF NOT EXISTS restriction_decision_channel
+    ON preferences.restriction_decision (channel_id) WHERE channel_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS restriction_decision_category
+    ON preferences.restriction_decision (category_id) WHERE category_id IS NOT NULL;
 
 -- One row per replace of a declared set that changed it. The ids the set held
 -- before and holds after are in preference_change_member, one row per id.

@@ -488,24 +488,37 @@ async fn nothing_edits_or_removes_a_row_of_the_logs_or_the_history() {
     .await
     .unwrap();
 
+    // (table, UPDATE, DELETE, TRUNCATE), each a constant statement.
     let tables = [
-        ("consent_decision", "decision", "'WITHDRAWN'"),
-        ("restriction_decision", "decision", "'LIFTED'"),
+        (
+            "consent_decision",
+            "UPDATE preferences.consent_decision SET decision = 'WITHDRAWN'",
+            "DELETE FROM preferences.consent_decision",
+            "TRUNCATE preferences.consent_decision",
+        ),
+        (
+            "restriction_decision",
+            "UPDATE preferences.restriction_decision SET decision = 'LIFTED'",
+            "DELETE FROM preferences.restriction_decision",
+            "TRUNCATE preferences.restriction_decision",
+        ),
         (
             "preference_change",
-            "preference_set",
-            "'INTEREST_CATEGORIES'",
+            "UPDATE preferences.preference_change SET preference_set = 'INTEREST_CATEGORIES'",
+            "DELETE FROM preferences.preference_change",
+            "TRUNCATE preferences.preference_change",
         ),
-        ("preference_change_member", "side", "'BEFORE'"),
+        (
+            "preference_change_member",
+            "UPDATE preferences.preference_change_member SET side = 'BEFORE'",
+            "DELETE FROM preferences.preference_change_member",
+            "TRUNCATE preferences.preference_change_member",
+        ),
     ];
-    for (table, column, value) in tables {
+    for (table, update, delete, truncate) in tables {
         // The service role holds SELECT and INSERT and nothing else.
-        for statement in [
-            format!("UPDATE preferences.{table} SET {column} = {value}"),
-            format!("DELETE FROM preferences.{table}"),
-            format!("TRUNCATE preferences.{table}"),
-        ] {
-            let error = service.batch_execute(&statement).await.unwrap_err();
+        for statement in [update, delete, truncate] {
+            let error = service.batch_execute(statement).await.unwrap_err();
             assert_eq!(
                 error.code().map(|c| c.code()),
                 Some("42501"),
@@ -513,13 +526,9 @@ async fn nothing_edits_or_removes_a_row_of_the_logs_or_the_history() {
             );
         }
         // The owner is refused by the trigger, whatever the statement.
-        for statement in [
-            format!("UPDATE preferences.{table} SET {column} = {value}"),
-            format!("DELETE FROM preferences.{table}"),
-            format!("TRUNCATE preferences.{table}"),
-        ] {
-            let error = owner.batch_execute(&statement).await.unwrap_err();
-            let database = error.as_db_error().expect(&statement);
+        for statement in [update, delete, truncate] {
+            let error = owner.batch_execute(statement).await.unwrap_err();
+            let database = error.as_db_error().expect(statement);
             if statement.starts_with("TRUNCATE") && table == "preference_change" {
                 // PostgreSQL itself refuses to truncate a table another
                 // table references, before the trigger would.
@@ -554,47 +563,63 @@ async fn the_schema_refuses_a_decision_that_is_not_a_decision() {
     let Some(url) = owner_url() else { return };
     let owner = connect(&url).await;
     let customer = TestCustomer::create(&owner).await;
-    let admin = "'11111111-1111-1111-1111-000000000001'";
-    let consent = "INSERT INTO preferences.consent_decision \
-                   (customer_id, purpose, decision, recorded_by, source, basis) VALUES";
-    let restriction = "INSERT INTO preferences.restriction_decision \
-                       (customer_id, kind, channel_id, category_id, decision, recorded_by, source) \
-                       VALUES";
-    for (values, constraint) in [
+    let actor = admin();
+    // (statement, whether it binds the actor as $2, the constraint refusing it)
+    for (statement, with_actor, constraint) in [
         (
-            format!("{consent} ($1, 'ADVERTISING', 'GRANTED', {admin}, 'STAFF_ON_BEHALF', 'EXPLICIT')"),
+            "INSERT INTO preferences.consent_decision \
+             (customer_id, purpose, decision, recorded_by, source, basis) \
+             VALUES ($1, 'ADVERTISING', 'GRANTED', $2, 'STAFF_ON_BEHALF', 'EXPLICIT')",
+            true,
             "consent_decision_purpose_check",
         ),
         (
-            format!("{consent} ($1, 'PROFILING', 'MAYBE', {admin}, 'STAFF_ON_BEHALF', 'EXPLICIT')"),
+            "INSERT INTO preferences.consent_decision \
+             (customer_id, purpose, decision, recorded_by, source, basis) \
+             VALUES ($1, 'PROFILING', 'MAYBE', $2, 'STAFF_ON_BEHALF', 'EXPLICIT')",
+            true,
             "consent_decision_decision_check",
         ),
         // An unknown actor is genuine only for the migration backfill.
         (
-            format!("{consent} ($1, 'PROFILING', 'GRANTED', NULL, 'STAFF_ON_BEHALF', 'EXPLICIT')"),
+            "INSERT INTO preferences.consent_decision \
+             (customer_id, purpose, decision, recorded_by, source, basis) \
+             VALUES ($1, 'PROFILING', 'GRANTED', NULL, 'STAFF_ON_BEHALF', 'EXPLICIT')",
+            false,
             "consent_decision_migration_check",
         ),
         (
-            format!("{consent} ($1, 'PROFILING', 'GRANTED', {admin}, 'STAFF_ON_BEHALF', 'PROGRAMME_DEFAULT')"),
+            "INSERT INTO preferences.consent_decision \
+             (customer_id, purpose, decision, recorded_by, source, basis) \
+             VALUES ($1, 'PROFILING', 'GRANTED', $2, 'STAFF_ON_BEHALF', 'PROGRAMME_DEFAULT')",
+            true,
             "consent_decision_migration_check",
         ),
         (
-            format!("{restriction} ($1, 'CHANNEL', 1, 1, 'IMPOSED', {admin}, 'STAFF_ON_BEHALF')"),
+            "INSERT INTO preferences.restriction_decision \
+             (customer_id, kind, channel_id, category_id, decision, recorded_by, source) \
+             VALUES ($1, 'CHANNEL', 1, 1, 'IMPOSED', $2, 'STAFF_ON_BEHALF')",
+            true,
             "restriction_decision_target_check",
         ),
         (
-            format!("{restriction} ($1, 'CHANNEL', NULL, 1, 'IMPOSED', {admin}, 'STAFF_ON_BEHALF')"),
+            "INSERT INTO preferences.restriction_decision \
+             (customer_id, kind, channel_id, category_id, decision, recorded_by, source) \
+             VALUES ($1, 'CHANNEL', NULL, 1, 'IMPOSED', $2, 'STAFF_ON_BEHALF')",
+            true,
             "restriction_decision_target_check",
         ),
     ] {
-        let error = owner
-            .execute(values.as_str(), &[&customer.id])
-            .await
-            .expect_err(&values);
+        let error = if with_actor {
+            owner.execute(statement, &[&customer.id, &actor]).await
+        } else {
+            owner.execute(statement, &[&customer.id]).await
+        }
+        .expect_err(statement);
         assert_eq!(
             error.as_db_error().and_then(|e| e.constraint()),
             Some(constraint),
-            "{values}: {error}"
+            "{statement}: {error}"
         );
     }
     customer.cleanup(&owner).await;
@@ -606,18 +631,30 @@ async fn the_seed_gave_each_existing_customer_the_default_adr_0066_decided() {
     let owner = connect(&url).await;
     let db = service_database(&url);
 
-    for (table, minimum) in [
-        ("preferences.consent_decision", 30i64),
-        ("preferences.restriction_decision", 30),
-        ("preferences.preference_change", 30),
-        ("preferences.preference_change_member", 30),
+    for (statement, name, minimum) in [
+        (
+            "SELECT count(*) FROM preferences.consent_decision",
+            "consent_decision",
+            30i64,
+        ),
+        (
+            "SELECT count(*) FROM preferences.restriction_decision",
+            "restriction_decision",
+            30,
+        ),
+        (
+            "SELECT count(*) FROM preferences.preference_change",
+            "preference_change",
+            30,
+        ),
+        (
+            "SELECT count(*) FROM preferences.preference_change_member",
+            "preference_change_member",
+            30,
+        ),
     ] {
-        let rows: i64 = owner
-            .query_one(&format!("SELECT count(*) FROM {table}"), &[])
-            .await
-            .unwrap()
-            .get(0);
-        assert!(rows >= minimum, "{table} holds {rows} rows");
+        let rows: i64 = owner.query_one(statement, &[]).await.unwrap().get(0);
+        assert!(rows >= minimum, "{name} holds {rows} rows");
     }
 
     // Every customer that existed when the log began has the three defaults,

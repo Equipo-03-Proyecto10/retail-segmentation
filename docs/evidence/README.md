@@ -162,6 +162,12 @@ right place for it, and which the team accepted on 2026-09-07.
 | [F18-03 (#456)](f18-03-rollback.md) | One service deployed and rolled back at a time by `deploy/deploy-service.sh`: all 15 services moved onto it at their running versions with no container recreated, 13 of 13 core rollback rehearsals passing every check (previous release and tag ready again, the 17 other containers untouched, the web at 200), a concurrent deploy completing inside a failing one, and ADR-0040's deploy-path greps silent. The workflow's first run, on release #710, deployed segments 0.1.2 and sales 0.1.3 at the same moment, each after its release job, with nothing else restarted |
 | [F18-04 (#459)](f18-04-negative-tests.md) | A scripted negative-test suite across every service and boundary, built from each registered contract: 600 cases, all held, on the local stack (323), on the instance as root through NGINX (259) and from outside it (18, with a control that reaches an allowed port). Covers forged and expired tokens, revoked sessions, roles, representations, the 64 KiB cap, pagination, the single administrator, sales' stock and idempotency refusals, the sign-in and password limits, the grant and Redis ACL checks and the closed ports. Its `redis-state` case found that a restart revokes every session ([#714](https://github.com/Equipo-03-Proyecto10/retail-segmentation/issues/714)) |
 
+## Phase 19 — third-delivery foundation
+
+| Document | What it records |
+|---|---|
+| [F19-08 (#758)](f19-08-memory.md) | Memory on the instance during 300 s of load: 64 requests a second, reads only, across 13 services and the web. Every container stayed under 70% of its limit except ops-console, which is at 90% even at rest. The host peaked at 2,652 MiB used, with no swap and no OOM kill. The gate, now counting the ops console, sums 2,928 of 3,500 MB. ADR-0059's full plan comes to 3,568 MB once that container is counted, and the evidence for the 128 MB Flask cut that would fit it is recorded here |
+
 ## Phase 20 — verified integration of the deployed system
 
 | Document | What it records |

@@ -1,10 +1,15 @@
 name: Nightly
 
 # The demonstration chain against develop (F13-09): the local distributed
-# stack of compose.distributed.yaml from scratch, the three scripts plus every
-# boundary section re-applied as an operator applies them, then tests/e2e/.
-# A scenario whose services do not exist yet is skipped and listed in the job
-# summary. A failure marks the run red and uploads the stack's compose logs.
+# stack of compose.distributed.yaml on fresh volumes, the three scripts plus
+# every boundary section re-applied as an operator applies them, then
+# tests/e2e/. A scenario whose services do not exist yet is skipped and listed
+# in the job summary. A failure marks the run red and uploads the stack's
+# compose logs. The schedule runs develop; a dispatch runs the ref it is
+# dispatched from. Each service image is pulled by its content key when one
+# exists and built otherwise, and only a run on develop pushes what it built
+# (ADR-0080). Building every image from source stays with Service template and
+# ops/verify.
 on:
   schedule:
     # 01:30 in Monterrey (UTC-6).
@@ -17,6 +22,10 @@ permissions:
 jobs:
   e2e:
     runs-on: ubuntu-24.04
+    # packages: write so this job can push ADR-0080's test images. It pushes no release image.
+    permissions:
+      contents: read
+      packages: write
     env:
       COMPOSE: docker compose -f compose.distributed.yaml
       E2E_BASE_URL: http://127.0.0.1:8080
@@ -24,7 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: develop
+          ref: ${{ github.event_name == 'schedule' && 'develop' || github.ref }}
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -33,12 +42,21 @@ jobs:
           pip install -r web/requirements-dev.txt -r contracts/requirements.txt
           bash contracts/install-tools.sh
 
-      - name: Bring the local stack up from scratch
+      - name: Bring the local stack up
+        env:
+          GHCR_TOKEN: ${{ github.token }}
         run: |
           docker network create mosaiq
           bash .github/scripts/stage-contracts.sh --all
           bash docker/distributed/auth-keys.sh
-          $COMPOSE up --build --wait --wait-timeout 600
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          bash .github/scripts/ci-images.sh prepare
+          $COMPOSE up --no-build --wait --wait-timeout 600
+
+      # After the stack came up healthy, so a broken image is never kept.
+      - name: Keep the images built here for the next run (ADR-0080)
+        if: github.ref == 'refs/heads/develop'
+        run: bash .github/scripts/ci-images.sh push
 
       - name: Re-apply every boundary section
         run: bash .github/scripts/apply-boundaries.sh $COMPOSE exec -T db psql -U postgres -d retail

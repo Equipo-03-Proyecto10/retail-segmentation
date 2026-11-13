@@ -4160,6 +4160,21 @@ GRANT EXECUTE ON FUNCTION api_audit.record_event_v1(uuid, text, text, timestampt
        svc_campaigns, svc_audit_trail;
 -- END BOUNDARY audit-trail
 
+-- BEGIN BOUNDARY rfm-engine
+-- rfm-engine (F22-04, RN-65, ADR-0034, ADR-0046): stood up empty. It owns the
+-- rfm schema for its tables, rfm_events for its outbox and api_rfm for the
+-- contract objects it publishes; the stories after it add those objects in this
+-- section. svc_rfm holds USAGE on the three and nothing else yet. Idempotent:
+-- an operator re-applies it.
+CREATE SCHEMA IF NOT EXISTS rfm;
+REVOKE ALL ON SCHEMA rfm FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS rfm_events;
+REVOKE ALL ON SCHEMA rfm_events FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS api_rfm;
+REVOKE ALL ON SCHEMA api_rfm FROM PUBLIC;
+GRANT USAGE ON SCHEMA rfm, rfm_events, api_rfm TO svc_rfm;
+-- END BOUNDARY rfm-engine
+
 -- BEGIN APPLICATION ROLE VERIFICATION
 -- F1-05 (#53). Opt-in acceptance checks, kept here because even a rejected
 -- DROP belongs in the only file allowed to contain table DDL. Normal schema

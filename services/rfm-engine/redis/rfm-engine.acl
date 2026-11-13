@@ -1,0 +1,1 @@
+user svc_rfm on {{password}} resetchannels -@all +@connection +@read +@write -@dangerous -scan -randomkey ~rfm:rl:* (%R~pub:auth:v1:live:* +exists)

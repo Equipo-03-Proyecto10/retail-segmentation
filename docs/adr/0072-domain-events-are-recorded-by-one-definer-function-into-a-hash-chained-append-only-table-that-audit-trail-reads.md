@@ -1,10 +1,10 @@
 # ADR-0072 — Domain events are recorded by one definer function into an append-only, hash-chained table that audit-trail reads
 
-**Status:** Accepted (2026-11-04)
+**Status:** Partially superseded by ADR-0081 (the ownership and privileges of `audit_events.domain_event`, and the `details` keys of four kinds)
 **Owner:** Maximiliano
 **Issue:** #802
 **Supersedes:** —
-**Superseded by:** —
+**Superseded by:** [ADR-0081](0081-the-domain-event-table-is-owned-by-the-schema-owner-and-a-subject-is-named-once-in-the-common-fields.md), in part (§6's first bullet, and the `details` column of §1 for `CALCULATION_RUN`, `PERMISSION_CHANGED`, `CRITICAL_ACTION` and `HISTORY_READ`)
 
 ---
 

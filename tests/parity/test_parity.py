@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import concurrent.futures as futures
 import uuid
+from datetime import timedelta
+from decimal import Decimal
 
-from tests.parity.compare import diff_levels
+from tests.parity.compare import ReportDifference, diff_levels
 from tests.parity.stack import occurred_at, poll
 
 
@@ -58,13 +60,15 @@ def _sale(customer, channel, store, product, price, quantity=1) -> dict:
     }
 
 
-def _csv_row(source_id, customer, channel, store, product, price, quantity=1) -> dict:
+def _csv_row(
+    source_id, customer, channel, store, product, price, quantity=1, at=None
+) -> dict:
     return {
         "transaction_id": source_id,
         "customer_id": customer,
         "store_id": store,
         "channel_id": channel,
-        "occurred_at": occurred_at().isoformat(timespec="seconds"),
+        "occurred_at": (at or occurred_at()).isoformat(timespec="seconds"),
         "product_id": product,
         "quantity": quantity,
         "unit_price": price,
@@ -175,3 +179,95 @@ def _sell_the_last_unit(db, web, service, differences, pair, customer, channel, 
     differences.extend(diff_levels(seen_by_web, expected))
     assert not differences, _report(differences)
     assert all(q >= 0 for q in (seen_by_web[pair], seen_by_service[pair]))
+
+
+def test_a_reversal_through_the_service_is_what_the_web_reports_and_stock_shows(
+    db, web, service, differences
+) -> None:
+    """F21-03, ADR-0062: sales-service reverses a sale the web loaded by CSV and
+    one it recorded itself. The web's reports index counts net units and the
+    stock page and GET /v1/stock-levels show the restored units, the same."""
+
+    (via_web, via_service), customer, channel, prices = _pick(db, 2, 8)
+    pairs = [via_web, via_service]
+    # The reports window ends at the newest sale. This one stays the newest
+    # (the sales below are a minute old), so only the reversals move the figures.
+    web.import_sales(
+        [
+            _csv_row(
+                "parity-" + uuid.uuid4().hex,
+                customer,
+                channel,
+                *via_web,
+                prices[via_web],
+                at=occurred_at() + timedelta(seconds=55),
+            )
+        ]
+    )
+    before_stock = poll(lambda: web.stock(pairs), service.stock(pairs))
+    before_revenue = web.revenue()
+    assert before_revenue is not None, "the reports index shows no sales"
+
+    kept = "parity-" + uuid.uuid4().hex
+    web.import_sales(
+        [_csv_row(kept, customer, channel, *via_web, prices[via_web], quantity=3)]
+    )
+    cancelled = service.record_sale(
+        _sale(customer, channel, *via_service, prices[via_service], quantity=2)
+    )
+    assert cancelled.status == 201, cancelled.body
+    [[kept_id]] = db(
+        "SELECT transaction_id FROM transaction WHERE source_transaction_id = %s",
+        (kept,),
+    )
+
+    # One of three units comes back from the CSV sale; the other sale is
+    # cancelled whole.
+    returned = service.record_reversal(
+        {
+            "sale_id": kept_id,
+            "kind": "RETURN",
+            "lines": [
+                {
+                    "product_id": via_web[1],
+                    "quantity": 1,
+                    "reason": "Parity: one unit returned",
+                }
+            ],
+        }
+    )
+    assert returned.status == 201, returned.body
+    voided = service.record_reversal(
+        {
+            "sale_id": cancelled.json()["sale_id"],
+            "kind": "CANCELLATION",
+            "reason": "Parity: whole sale cancelled",
+        }
+    )
+    assert voided.status == 201, voided.body
+
+    price = Decimal(prices[via_web])
+    expected_stock = {
+        via_web: before_stock[via_web] - 2,
+        via_service: before_stock[via_service],
+    }
+    expected_revenue = (
+        before_revenue[0] + 2 * price,
+        before_revenue[1] + 1,
+    )
+    seen_by_web = poll(lambda: web.stock(pairs), expected_stock)
+    seen_by_service = poll(lambda: service.stock(pairs), expected_stock)
+    differences.extend(diff_levels(seen_by_web, seen_by_service))
+    differences.extend(diff_levels(seen_by_web, expected_stock))
+    revenue = web.revenue()
+    for what, seen, wanted in (
+        ("revenue", revenue and revenue[0], expected_revenue[0]),
+        ("sales", revenue and revenue[1], expected_revenue[1]),
+    ):
+        if seen != wanted:
+            differences.append(ReportDifference("reports index", what, seen, wanted))
+    # The cancelled sale is no purchase, and the returned line counts two units.
+    assert Decimal(returned.json()["net_total"]) == 2 * price
+    assert voided.json()["net_total"] == "0.00"
+    print("\n" + _report(differences) if differences else "\nno difference")
+    assert not differences, _report(differences)

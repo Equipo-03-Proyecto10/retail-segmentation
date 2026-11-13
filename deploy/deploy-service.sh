@@ -183,14 +183,23 @@ load_acl() {
 }
 
 start_release() {
-  local image
+  local images image
   "${compose[@]}" pull || return 1
   # `up` would build an image that is not on disk; the pull must have put it there.
-  image=$("${compose[@]}" config --images) || return 1
-  if ! docker image inspect "$image" >/dev/null 2>&1; then
-    echo "deploy-service: $image is not on disk after the pull" >&2
+  # `config --images` prints one line per service, and a project may run a
+  # second process of its image (sales' import worker, ADR-0070), so each
+  # distinct image is checked on its own.
+  images=$("${compose[@]}" config --images | sort -u) || return 1
+  if [[ -z $images ]]; then
+    echo "deploy-service: compose.yaml names no image" >&2
     return 1
   fi
+  while IFS= read -r image; do
+    if ! docker image inspect "$image" >/dev/null 2>&1; then
+      echo "deploy-service: $image is not on disk after the pull" >&2
+      return 1
+    fi
+  done <<<"$images"
   container_changed=1
   "${compose[@]}" up -d --no-deps
 }

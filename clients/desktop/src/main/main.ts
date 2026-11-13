@@ -18,6 +18,7 @@ import { Experiments } from './experiments';
 import { Floor } from './floor';
 import { Recommendations } from './recommendations';
 import { Models } from './models';
+import { ModelComparison } from './model-comparison';
 import { Imports, systemImportEnv } from './imports';
 import { Planning } from './planning';
 import { Reports, type ReportExportEnv } from './reports';
@@ -302,6 +303,10 @@ function start(): void {
   const models = new Models(office);
   ipcMain.handle(CHANNELS.listModelVersions, (_e, query: unknown) => models.listVersions(query));
   ipcMain.handle(CHANNELS.getModelVersion, (_e, versionId: unknown) => models.getVersion(versionId));
+  const modelComparison = new ModelComparison(office, models);
+  ipcMain.handle(CHANNELS.compareModelVersions, (_e, first: unknown, second: unknown) =>
+    modelComparison.compare(first, second),
+  );
   ipcMain.handle(CHANNELS.listTrainings, (_e, query: unknown) => models.listTrainings(query));
   ipcMain.handle(CHANNELS.getTraining, (_e, trainingId: unknown) => models.getTraining(trainingId));
   ipcMain.handle(CHANNELS.startTraining, (_e, draft: unknown) => models.startTraining(draft));

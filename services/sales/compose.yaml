@@ -46,6 +46,32 @@ services:
       # auth alone signs, so auth alone sees a private key: 0400, UID 10001.
     networks: [mosaiq]
 
+  # The import worker (ADR-0070 section 3, F26-08): a second process of the same
+  # image and the same project, not a new service. It applies the rows the API
+  # staged, one row and one transaction at a time, as svc_sales, and listens on
+  # no port. It is not in the template: render.py writes one container, and a
+  # second process is added here by hand. The 96 MB is an estimate for a polling
+  # process with one connection (ADR-0070, Consequences); F19-08 measures it.
+  sales-import-worker:
+    image: ghcr.io/equipo-03-proyecto10/mosaiq-sales:${IMAGE_TAG}
+    build:
+      context: .
+    command: ["python", "-m", "app.import_worker"]
+    user: "10001:10001"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,mode=0700
+    mem_limit: 96m
+    cpus: 0.25
+    restart: unless-stopped
+    env_file:
+      - ${MOSAIQ_SVC_ENV_DIR:-/etc/mosaiq/svc}/sales.env
+    volumes:
+      - ${MOSAIQ_PG_SOCKET:-/run/postgresql}:/run/postgresql:ro
+    networks: [mosaiq]
+
 # Created once with `docker network create mosaiq` (deploy/infra/README.md);
 # external, so no project's `down` removes it.
 networks:

@@ -35,8 +35,19 @@ from .events import (
     to_millis,
     utc_day,
 )
+from .incidents import (
+    SOURCE_TYPES,
+    STATUSES,
+    IncidentStore,
+    incident_json,
+)
 from .live import LiveCounters
-from .refs import check_references
+from .refs import (
+    assigned_stores,
+    check_references,
+    check_store,
+    require_assigned_store,
+)
 from .relay import InteractionRelay
 
 CONTRACTS_DIR = Path(__file__).resolve().parents[1] / "contracts"
@@ -66,6 +77,7 @@ LISTS = {
 # A device clock may run ahead of the server's by this much (ADR-0038).
 FUTURE_TOLERANCE = timedelta(minutes=5)
 GROUPS = ("store", "day", "type")
+INCIDENT_GROUPS = ("store", "day", "source_type", "refused_code")
 _DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 _INTEGER = re.compile(r"-?\d{1,10}")
 _UUID = re.compile(r"[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}")
@@ -173,6 +185,7 @@ def create_app(
     configure_logging()
     holder: dict[str, Kit] = {}
     store = events if events is not None else EventStore.from_environment()
+    incidents = IncidentStore(store)
     counters = live if live is not None else LiveCounters.from_environment()
 
     kit = Kit(
@@ -180,11 +193,12 @@ def create_app(
         service="engagement",
         suffix="engagement",
         contracts_dir=CONTRACTS_DIR,
-        ready_checks=[store.ready],
+        ready_checks=[store.ready, incidents.ready],
     )
     holder["kit"] = kit
     app.extensions["mosaiq_kit"] = kit
     app.extensions["engagement_store"] = store
+    app.extensions["incident_store"] = incidents
     app.extensions["engagement_live"] = counters
     app.after_request(type_the_page)
 
@@ -394,6 +408,161 @@ def create_app(
             rows = [(day, sum(counts.values()))]
         return [{"key": key, "count": count} for key, count in rows if count > 0]
 
+    def is_admin() -> bool:
+        return kit.principal["role"] == "ADMIN"
+
+    def incident_representation(
+        document: dict[str, Any], status: int = 200
+    ) -> Representation:
+        return Representation("CaptureIncident", incident_json(document), status=status)
+
+    def incident_not_found() -> ApiError:
+        return ApiError(404, "incident_not_found", "No capture incident has this id.")
+
+    def stores_for_request(store_id: int | None = None) -> list[int] | None:
+        """Read current assignments once for this narrowed request."""
+
+        if is_admin():
+            return None
+        with kit.db.connection() as connection:
+            if store_id is not None:
+                require_assigned_store(connection, str(kit.principal["sub"]), store_id)
+                return [store_id]
+            return assigned_stores(connection, str(kit.principal["sub"]))
+
+    def report_incident() -> Representation:
+        body = kit.body
+        occurred_at = parse_instant(body["occurred_at"])
+        if occurred_at is None:
+            raise ApiError(
+                422,
+                "invalid_body",
+                "The parsed body violates the request schema.",
+                [{"field": "occurred_at", "code": "invalid_format"}],
+            )
+        now = to_millis(datetime.now(UTC))
+        if occurred_at > now + FUTURE_TOLERANCE:
+            raise ApiError(
+                422,
+                "occurred_in_future",
+                "occurred_at is more than five minutes ahead of the server.",
+                [{"field": "occurred_at", "code": "in_future"}],
+            )
+        if body["source_type"] != "SALE" and body.get("line_count") is not None:
+            raise ApiError(
+                422,
+                "invalid_body",
+                "The parsed body violates the request schema.",
+                [{"field": "line_count", "code": "unexpected_field"}],
+            )
+        with kit.db.connection() as connection:
+            check_store(connection, body["store_id"])
+            if not is_admin():
+                require_assigned_store(
+                    connection,
+                    str(kit.principal["sub"]),
+                    body["store_id"],
+                )
+        document = {
+            "_id": str(uuid.uuid4()),
+            "client_incident_id": body["client_incident_id"].lower(),
+            "source_type": body["source_type"],
+            "source_operation_id": body["source_operation_id"].lower(),
+            "source_correlation_id": body["source_correlation_id"],
+            "store_id": body["store_id"],
+            "refused_status": body["refused_status"],
+            "refused_code": body["refused_code"],
+            "attempts": body["attempts"],
+            "occurred_at": occurred_at,
+            "line_count": body.get("line_count"),
+            "reported_by": str(kit.principal["sub"]).lower(),
+            "recorded_at": now,
+            "status": "OPEN",
+            "history": [],
+        }
+        stored, created = incidents.insert(document)
+        return incident_representation(stored, status=201 if created else 200)
+
+    def list_incidents() -> Page:
+        query: dict[str, Any] = {}
+        status = request.args.get("status")
+        if status is not None:
+            if status not in STATUSES:
+                raise invalid_query(
+                    "status must be OPEN, ACKNOWLEDGED or RESOLVED.",
+                    "status",
+                    "unknown_value",
+                )
+            query["status"] = status
+        source_type = request.args.get("source_type")
+        if source_type is not None:
+            if source_type not in SOURCE_TYPES:
+                raise invalid_query(
+                    "source_type is not a known queued write type.",
+                    "source_type",
+                    "unknown_value",
+                )
+            query["source_type"] = source_type
+        store_id = query_integer("store_id")
+        allowed = stores_for_request(store_id)
+        if store_id is not None:
+            query["store_id"] = store_id
+        elif allowed is not None:
+            query["store_id"] = {"$in": allowed}
+        recorded_since = query_instant("recorded_since")
+        if recorded_since is not None:
+            query["recorded_at"] = {"$gte": recorded_since}
+        documents, total = incidents.find(query, (kit.page - 1) * kit.size, kit.size)
+        return Page(
+            "CaptureIncidents",
+            "CaptureIncident",
+            "capture_incidents",
+            [incident_json(document) for document in documents],
+            page=kit.page,
+            size=kit.size,
+            total=total,
+        )
+
+    def get_incident(incident_id: Any) -> Representation:
+        document = incidents.get(str(incident_id))
+        if document is None:
+            raise incident_not_found()
+        stores_for_request(document["store_id"])
+        return incident_representation(document)
+
+    def review_incident(incident_id: Any) -> Representation:
+        existing = incidents.get(str(incident_id))
+        if existing is None:
+            raise incident_not_found()
+        stores_for_request(existing["store_id"])
+        reviewed = incidents.review(
+            str(incident_id),
+            kit.body["status"],
+            kit.body.get("note"),
+            str(kit.principal["sub"]).lower(),
+            to_millis(datetime.now(UTC)),
+        )
+        return incident_representation(reviewed, status=201)
+
+    def get_incident_summary() -> Representation:
+        group_by = request.args.get("group_by")
+        if group_by not in INCIDENT_GROUPS:
+            raise invalid_query(
+                "group_by must be store, day, source_type or refused_code.",
+                "group_by",
+                "unknown_group_by",
+            )
+        first, last = query_day("from"), query_day("to")
+        if first is not None and last is not None and last < first:
+            raise invalid_query("to is before from.", "to", "before_from")
+        store_id = query_integer("store_id")
+        allowed = stores_for_request(store_id)
+        groups = incidents.summarize(group_by, first, last, store_id, allowed)
+        return Representation(
+            "CaptureIncidentSummary",
+            {"from": first, "to": last, "group_by": group_by, "groups": groups},
+        )
+
     for suffix, version in (("", "v1"), ("V2", "v2")):
         kit.operation("createEngagementEvent" + suffix)(
             functools.partial(create_event, version)
@@ -410,6 +579,12 @@ def create_app(
         kit.operation("getEngagementSummary" + suffix)(
             functools.partial(get_summary, version)
         )
+
+    kit.operation("reportCaptureIncident")(report_incident)
+    kit.operation("listCaptureIncidents")(list_incidents)
+    kit.operation("getCaptureIncident")(get_incident)
+    kit.operation("reviewCaptureIncident")(review_incident)
+    kit.operation("getCaptureIncidentSummary")(get_incident_summary)
 
     if start_relay:
         found = relay if relay is not None else InteractionRelay.from_environment(store)

@@ -99,6 +99,7 @@ test('window is locked down', async () => {
     'categoryTree',
     'changeOwnPassword',
     'chooseImportFile',
+    'compareModelVersions',
     'correctCustomer',
     'createCampaign',
     'createCategory',

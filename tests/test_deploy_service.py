@@ -47,14 +47,20 @@ if [[ $1 == compose ]]; then
   tag=$(sed -n 's/^IMAGE_TAG=//p' "$envfile")
   case $1 in
     pull) [[ " ${FAKE_PULL_FAILS:-} " != *" $tag "* ]] ;;
-    config) echo "ghcr.io/equipo-03-proyecto10/$project:$tag" ;;
+    # Like compose, one line per service, so a second process repeats it.
+    config) grep -E '^ +image:' "$file" | while read -r _; do
+              echo "ghcr.io/equipo-03-proyecto10/$project:$tag"
+            done ;;
     up) port=$(grep -oE '127\.0\.0\.1:[0-9]+:' "$file" | cut -d: -f2)
         echo "$tag $port" >"$FAKE_STATE/running-$project" ;;
     down) rm -f "$FAKE_STATE/running-$project" ;;
   esac
   exit
 fi
-[[ $1 == image && $2 == inspect && -n ${FAKE_IMAGE_MISSING:-} ]] && exit 1
+# A reference holding a newline names no image, as for the real docker.
+if [[ $1 == image && $2 == inspect ]]; then
+  [[ -n ${FAKE_IMAGE_MISSING:-} || $3 == *$'\n'* ]] && exit 1
+fi
 exit 0
 """,
     "curl": r"""#!/usr/bin/env bash
@@ -138,6 +144,7 @@ class Instance:
         port: int | None = None,
         acl: str = "",
         include: str = "",
+        worker: bool = False,
     ) -> None:
         """Put services/<name>/ of a merged commit in the tree."""
         src = self.tree / "services" / name
@@ -152,6 +159,12 @@ class Instance:
             f"    image: ghcr.io/equipo-03-proyecto10/mosaiq-{name}:${{IMAGE_TAG}}\n"
             f'    ports:\n      - "127.0.0.1:{published}:{PORTS[name]}"\n'
             + (f"    volumes:\n{kid}" if name == "alpha" else "")
+            + (
+                f"  {name}-worker:\n    image: ghcr.io/equipo-03-proyecto10/"
+                f"mosaiq-{name}:${{IMAGE_TAG}}\n"
+                if worker
+                else ""
+            )
         )
         (src / "nginx" / f"{name}.conf").write_text(
             f"location /api/{name}/ {{}}  # {version} {include}\n"
@@ -272,6 +285,19 @@ def test_a_first_release_runs_the_seven_steps_in_order(instance: Instance) -> No
     ]
     assert all(" -p mosaiq-alpha " in call for call in compose)
     assert "up -d --no-deps" in compose[-1]
+
+
+def test_a_second_process_of_the_same_image_deploys(instance: Instance) -> None:
+    # compose prints an image once per service (sales' import worker, ADR-0070).
+    instance.release("beta", "1.0.0", worker=True)
+    result = instance.deploy("beta", "1.0.0")
+    assert result.returncode == 0, result.stderr
+    inspected = [
+        line for line in instance.calls() if line.startswith("docker image inspect")
+    ]
+    assert inspected == [
+        "docker image inspect ghcr.io/equipo-03-proyecto10/mosaiq-beta:1.0.0"
+    ]
 
 
 def test_an_upgrade_switches_current_and_keeps_the_previous_release(

@@ -40,6 +40,7 @@ ROLES = (
     "INVENTORY_PLANNER",
     "AUDITOR",
     "CUSTOMER",
+    "SALES_ASSOCIATE",
 )
 
 
@@ -258,20 +259,40 @@ def cleanup(owner_url: str) -> Iterator[None]:
             row[0]
             for row in connection.execute(
                 "SELECT transaction_id FROM public.transaction"
-                " WHERE source_transaction_id LIKE %s",
-                ("svc-sales:%",),
+                " WHERE source_transaction_id LIKE %s OR source_transaction_id LIKE %s",
+                ("svc-sales:%", "test-csv-%"),
             )
         ]
         if ids:
+            pairs = connection.execute(
+                "SELECT transaction_id, reversal_id FROM sales.sale_reversal"
+                " WHERE transaction_id = ANY(%s)",
+                (ids,),
+            ).fetchall()
+            reversals = [reversal_id for _sale_id, reversal_id in pairs]
             connection.execute(
                 "DELETE FROM sales_events.outbox WHERE entity_id = ANY(%s)",
-                ([str(value) for value in ids],),
+                (
+                    [str(value) for value in ids]
+                    + [f"{sale_id}:{reversal_id}" for sale_id, reversal_id in pairs],
+                ),
+            )
+            connection.execute(
+                "DELETE FROM stock.stock_movement"
+                " WHERE movement_type = 'RESTOCK' AND reversal_id = ANY(%s)",
+                (reversals,),
             )
             connection.execute(
                 "DELETE FROM public.transaction WHERE transaction_id = ANY(%s)",
                 (ids,),
             )
+        connection.execute("DELETE FROM sales.import")
         with connection.cursor() as cursor:
+            cursor.executemany(
+                "INSERT INTO public.inventory (store_id, product_id, quantity_on_hand)"
+                " VALUES (%s, %s, 0) ON CONFLICT DO NOTHING",
+                [(store_id, product_id) for store_id, product_id, _ in quantities],
+            )
             cursor.executemany(
                 "UPDATE public.inventory SET quantity_on_hand = %s"
                 " WHERE store_id = %s AND product_id = %s",

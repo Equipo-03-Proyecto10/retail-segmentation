@@ -52,6 +52,24 @@ def test_the_section_creates_its_objects_in_order() -> None:
     )
 
 
+def test_store_assignments_live_in_the_users_schema_and_are_published() -> None:
+    assert "CREATE SCHEMA IF NOT EXISTS users;" in SECTION
+    assert "CREATE TABLE IF NOT EXISTS users.store_assignment" in SECTION
+    assert "CREATE OR REPLACE VIEW api_users.store_assignment_v1" in SECTION
+    assert "REFERENCES public.store(store_id) ON DELETE RESTRICT" in SECTION
+    assert "GRANT SELECT ON public.store TO svc_users" not in SECTION
+
+
+def test_assignment_view_consumers_match_the_published_contract() -> None:
+    rows = {(g["role"], g["object"], g["privilege"]) for g in GRANTS}
+    readers = {
+        role
+        for role, object_name, privilege in rows
+        if object_name == "api_users.store_assignment_v1" and privilege == "SELECT"
+    }
+    assert readers == {"svc_users", "svc_sales", "svc_checkins", "svc_engagement"}
+
+
 def test_only_access_changes_are_captured() -> None:
     assert re.search(
         r"AFTER UPDATE OF is_active, role_id, password_hash OR DELETE"
@@ -167,5 +185,37 @@ def test_auth_reads_credentials_through_the_view_only(owner_url: str) -> None:
                 assert email == email.lower() and active is True and role == "ADMIN"
                 with pytest.raises(psycopg.errors.InsufficientPrivilege):
                     cur.execute("SELECT 1 FROM public.app_user LIMIT 1")
+        finally:
+            conn.rollback()
+
+
+@pytest.mark.postgres
+def test_assignment_seed_and_effective_view_keep_deactivated_history(
+    owner_url: str,
+) -> None:
+    user_id = "11111111-1111-1111-1111-000000000003"
+    with psycopg.connect(owner_url) as conn:
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT count(*) FROM users.store_assignment")
+                assert cur.fetchone()[0] >= 30
+                cur.execute(
+                    "SELECT count(*) FROM api_users.store_assignment_v1"
+                    " WHERE user_id = %s",
+                    (user_id,),
+                )
+                assert cur.fetchone()[0] > 0
+                cur.execute(
+                    "UPDATE app_user SET is_active = FALSE WHERE user_id = %s",
+                    (user_id,),
+                )
+                cur.execute(
+                    "SELECT"
+                    " (SELECT count(*) FROM users.store_assignment WHERE user_id = %s),"
+                    " (SELECT count(*) FROM api_users.store_assignment_v1"
+                    "   WHERE user_id = %s)",
+                    (user_id, user_id),
+                )
+                assert cur.fetchone() == (4, 0)
         finally:
             conn.rollback()

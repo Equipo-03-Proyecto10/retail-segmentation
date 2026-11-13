@@ -93,8 +93,8 @@ def test_header_and_category_sources_match_their_definitions() -> None:
     _read(connection)
 
     statement, _ = _statement_and_params(connection)
-    assert statement.count("JOIN transaction AS t") == 4
-    assert statement.count("JOIN transaction_line AS tl") == 1
+    assert statement.count("JOIN net_sale AS t") == 4
+    assert statement.count("JOIN net_sale_line AS tl") == 1
     assert statement.count("JOIN product AS p") == 1
     assert statement.count("JOIN category AS c") == 1
     assert "reject" not in statement.lower()
@@ -108,8 +108,8 @@ def test_category_counts_each_purchase_once_and_preserves_units_and_spend() -> N
 
     statement, _ = _statement_and_params(connection)
     assert "count(DISTINCT t.transaction_id) AS purchases" in statement
-    assert "sum(tl.quantity) AS units" in statement
-    assert "sum(tl.quantity * tl.unit_price) AS spend" in statement
+    assert "sum(tl.net_quantity) AS units" in statement
+    assert "sum(tl.net_amount) AS spend" in statement
 
 
 def test_tagged_rows_are_mapped_to_their_period_and_dimension() -> None:
@@ -202,7 +202,7 @@ def test_purchases_with_product_lines_are_counted_once_each() -> None:
     statement = " ".join(_statement_and_params(connection)[0].split())
 
     assert (
-        "WHERE EXISTS ( SELECT 1 FROM transaction_line AS line "
+        "WHERE EXISTS ( SELECT 1 FROM net_sale_line AS line "
         "WHERE line.transaction_id = t.transaction_id )" in statement
     )
     assert "GROUP BY periods.period, t.customer_id" in statement

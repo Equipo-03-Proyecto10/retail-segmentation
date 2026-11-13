@@ -25,7 +25,6 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.net.CurrentAssignment
@@ -188,7 +187,7 @@ private fun RecommendationRow(shown: ShownRecommendation, onOpen: (ShownRecommen
         supporting = (listOf(onHand) + shown.reasons).joinToString("\n"),
         chevron = true,
         divider = true,
-        horizontalPadding = 0.dp,
+        horizontalPadding = Spacing.None,
         modifier =
         Modifier
             .testTag("recommendation-${shown.rank}")

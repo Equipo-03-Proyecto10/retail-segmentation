@@ -5,6 +5,7 @@ import androidx.compose.ui.unit.dp
 
 /** The 4dp spacing scale of ADR-0057, and the smallest touch target. */
 object Spacing {
+    val None: Dp = 0.dp
     val Xxs: Dp = 2.dp
     val Xs: Dp = 4.dp
     val Sm: Dp = 8.dp

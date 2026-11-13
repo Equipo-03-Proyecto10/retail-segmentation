@@ -35,6 +35,7 @@ fun MqListRow(
     chevron: Boolean = false,
     divider: Boolean = false,
     leading: (@Composable () -> Unit)? = null,
+    leadingAlignment: Alignment.Vertical = Alignment.CenterVertically,
     trailing: (@Composable () -> Unit)? = null,
     belowSupporting: (@Composable () -> Unit)? = null,
     horizontalPadding: Dp = Spacing.Lg
@@ -56,7 +57,7 @@ fun MqListRow(
             horizontalArrangement = Arrangement.spacedBy(Spacing.Md),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            leading?.invoke()
+            leading?.let { Box(Modifier.align(leadingAlignment)) { it() } }
             Column(Modifier.weight(1f)) {
                 Text(headline, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
                 if (supporting != null) {

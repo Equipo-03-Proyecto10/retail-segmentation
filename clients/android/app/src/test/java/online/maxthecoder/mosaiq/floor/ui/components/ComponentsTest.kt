@@ -8,16 +8,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasStateDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
@@ -32,6 +37,7 @@ import online.maxthecoder.mosaiq.floor.net.ErrorDetail
 import online.maxthecoder.mosaiq.floor.ui.theme.MosaiqTheme
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -151,6 +157,28 @@ class ComponentsTest {
     fun plainListRowHasNoClickAction() {
         show { MqListRow("Static", trailing = { Text("x") }) }
         compose.onNode(hasClickAction()).assertDoesNotExist()
+    }
+
+    @Test
+    fun listRowCanTopAlignALeadingIconBesideMultilineContent() {
+        show {
+            MqListRow(
+                "Queued sale",
+                supporting = "Today, 14:32",
+                leading = {
+                    MqIcon(
+                        R.drawable.ic_lucide_shopping_cart,
+                        contentDescription = "Write kind",
+                        modifier = Modifier.testTag("leading-icon")
+                    )
+                },
+                leadingAlignment = Alignment.Top,
+                belowSupporting = { Text("Waiting to send") }
+            )
+        }
+        val iconTop = compose.onNodeWithTag("leading-icon", useUnmergedTree = true).getUnclippedBoundsInRoot().top
+        val headlineTop = compose.onNodeWithText("Queued sale", useUnmergedTree = true).getUnclippedBoundsInRoot().top
+        assertTrue("leading icon starts below the headline", iconTop <= headlineTop + 1.dp)
     }
 
     @Test

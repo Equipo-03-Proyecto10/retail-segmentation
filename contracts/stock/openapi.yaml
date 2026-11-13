@@ -164,6 +164,12 @@ paths:
         a timeout or a 503, always with the same key, and treats 409 and 422 as final.
 
 
+        Audit. A new adjustment is recorded as ADR-0072''s `CRITICAL_ACTION` domain
+        event (`STOCK_ADJUSTED`, with the adjustment''s reason as its reason code) in
+        the same transaction, so it never commits without its event; a replay records
+        nothing. The event is read through audit-trail''s `GET /v1/domain-events`.
+
+
         Roles. Only `ADMIN` and `INVENTORY_PLANNER` write.'
       operationId: recordStockMovement
       x-mosaiq-roles:

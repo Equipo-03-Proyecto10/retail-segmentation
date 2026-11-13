@@ -54,6 +54,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Publishes | `api_stock.stock_level_v1` | recommendations |
 | Publishes | `api_stock.consume_v1(smallint, int, int)` | sales (EXECUTE only) |
 | Publishes | `api_stock.restock_v1(smallint, int, int, bigint)` | sales (EXECUTE only) |
+| Calls | `api_audit.record_event_v1(...)` | audit-trail (EXECUTE; ADR-0072): a `CRITICAL_ACTION` with `action` `STOCK_ADJUSTED` for each new adjustment, in its transaction. The subject is the stock level, as `store_id` and `subject_id` (the product), and the reason code is the adjustment's reason. A replay records nothing; a refused record fails the request with a 5xx and rolls the adjustment back |
 
 ## Events
 

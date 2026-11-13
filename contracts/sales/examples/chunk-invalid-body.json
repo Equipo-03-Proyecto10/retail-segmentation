@@ -1,0 +1,15 @@
+{
+  "code": "invalid_body",
+  "message": "The chunk violates its schema.",
+  "correlation_id": "corr-chunk-invalid-body",
+  "details": [
+    {
+      "field": "rows[0].cells[4]",
+      "code": "too_long"
+    },
+    {
+      "field": "rows[2].line",
+      "code": "not_increasing"
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>experiment_not_assigned</code>
+  <message>The experiment is not assigned, so it has nothing to evaluate or report.</message>
+  <correlation_id>corr-experiment-not-assigned</correlation_id>
+</Error>

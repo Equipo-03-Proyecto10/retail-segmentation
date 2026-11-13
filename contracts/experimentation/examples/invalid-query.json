@@ -1,0 +1,11 @@
+{
+  "code": "invalid_query",
+  "message": "A required query field is missing or malformed.",
+  "correlation_id": "corr-invalid-query",
+  "details": [
+    {
+      "field": "customer_id",
+      "code": "required"
+    }
+  ]
+}

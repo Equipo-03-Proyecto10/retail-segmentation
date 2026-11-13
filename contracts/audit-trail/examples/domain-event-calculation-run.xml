@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DomainEvent xmlns="https://mosaiq.maxthecoder.online/xml/audit-trail/v1">
+  <event_id>7a0c5e1d-3b2f-4c8a-9d61-000000000001</event_id>
+  <kind>CALCULATION_RUN</kind>
+  <outcome>SUCCESS</outcome>
+  <occurred_at>2026-11-06T02:00:41.208Z</occurred_at>
+  <recorded_at>2026-11-06T02:00:41.233Z</recorded_at>
+  <actor_type>SYSTEM</actor_type>
+  <source>svc_rfm</source>
+  <subject_type>calculation</subject_type>
+  <subject_id>418</subject_id>
+  <rule_set_version>3</rule_set_version>
+  <correlation_id>rfm-recalc-418</correlation_id>
+  <details>
+    <CalculationRun>
+      <calculation>RFM</calculation>
+      <status>COMPLETED</status>
+      <input_count>12840</input_count>
+      <output_count>1930</output_count>
+      <window_from>2025-11-06T00:00:00Z</window_from>
+      <window_to>2026-11-06T00:00:00Z</window_to>
+      <data_origin>OBSERVED</data_origin>
+    </CalculationRun>
+  </details>
+  <prev_hash>24d3e087bfe0c15f606db97836449852a44414f98f425301fb08affb3d64c11c</prev_hash>
+  <entry_hash>5e2d5d1e58e94d7607e0745cd3e612c4a358fc93f37fc5ab1fed8d04bbf7ce77</entry_hash>
+</DomainEvent>

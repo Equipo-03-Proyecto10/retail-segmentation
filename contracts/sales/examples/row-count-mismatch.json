@@ -1,0 +1,11 @@
+{
+  "code": "row_count_mismatch",
+  "message": "The 2 chunks of import 17 hold 8 rows, and the import announced 9. Cancel it and open a new import with the numbers of the file.",
+  "correlation_id": "corr-row-count-mismatch",
+  "details": [
+    {
+      "field": "total_rows",
+      "code": "mismatch"
+    }
+  ]
+}

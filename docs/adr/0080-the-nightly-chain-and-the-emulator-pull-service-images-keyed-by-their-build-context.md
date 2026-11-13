@@ -61,7 +61,7 @@ The nightly chain (`nightly.yml`) and the emulator job (`android.yml`) take each
 
 ## Compliance
 
-- `git grep -n 'mosaiq-ci-' -- deploy/ .github/workflows/deploy.yml .github/workflows/deploy-service.yml` prints nothing; `.github/scripts/guards.sh` runs it.
+- `git grep -n 'mosaiq-ci-' -- deploy/ .github/workflows/deploy.yml .github/workflows/deploy-service.yml ':(exclude)deploy/check-services.sh'` prints nothing; `.github/scripts/guards.sh` runs it. `check-services.sh` is excluded because it names the prefix in order to refuse it, the same exclusion `guards.sh` already makes for ADR-0040's service-name rule.
 - On the instance, `deploy/check-services.sh` reports any container whose image is `ghcr.io/equipo-03-proyecto10/mosaiq-ci-*`.
 - `git grep -ln 'mosaiq-ci-' -- .github/workflows/` lists only `nightly.yml`, `android.yml` and the cleanup workflow, and every step that pushes carries `if: github.ref == 'refs/heads/develop'`.
 - A test runs the key script over two commits.

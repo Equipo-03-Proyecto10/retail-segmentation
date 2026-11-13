@@ -1,9 +1,9 @@
 # engagement
 
-> **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
+> **Status:** Implemented (phase 14, core; `/v2` taxonomy in phase 21, F21-21, #799). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
 > **One rule:** In-store engagement (`QR_SCAN`, `RECO_CLICK`, `STORE_VISIT`, `RECO_IMPRESSION`, `CAMPAIGN_EXPOSURE`, `CART_ADD`, `CART_REMOVE`, `NAVIGATION`) is recorded once per client event as a distinct fact that is never a sale, attributed, voided rather than deleted, and summarized (RN-55)
 >
-> **Contract:** `/v1` is frozen and records `QR_SCAN` and `RECO_CLICK`. `/v2` (engagement 2.1.0, `engagement.v2.xsd`) keeps both with their meaning and adds the six other kinds. The service serves both since 0.2.0 (#799); a `/v2` kind is invisible to `/v1`.
+> **Contract:** `/v1` is frozen and records `QR_SCAN` and `RECO_CLICK`. `/v2` (engagement 2.3.0, `engagement.v2.xsd`) keeps both with their meaning and adds the six other kinds. The service serves both since 0.2.0 (#799); a `/v2` kind is invisible to `/v1`.
 
 ## Summary
 
@@ -82,7 +82,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 ## Events
 
-ADR-0075 (accepted, issue #948) decides how the interaction facts leave this service, and #799 implements it. The stream's contract is [`contracts/streams/engagement.interaction_recorded.v1.md`](../../contracts/streams/engagement.interaction_recorded.v1.md). engagement relays them on one stream, `stream:engagement.v1.interaction_recorded`, from an outbox kept on the `engagement_event` document itself, because a standalone `mongod` cannot write an event and a second document atomically. The facts carried are `RECO_IMPRESSION`, `QR_SCAN`, `RECO_CLICK` and `CAMPAIGN_EXPOSURE`; a void is a later `VOIDED` notice. Delivery is at least once and consumers deduplicate by the entry's `event_id`.
+ADR-0075 (accepted, issue #948) decides how the interaction facts leave this service, and #799 implements it. The stream's contract is [`contracts/streams/engagement.interaction_recorded.v1.md`](../../contracts/streams/engagement.interaction_recorded.v1.md). engagement relays them on one stream, `stream:engagement.v1.interaction_recorded`, from an outbox kept on the `engagement_event` document itself, because a standalone `mongod` cannot write an event and a second document atomically. The facts carried are `RECO_IMPRESSION`, `RECO_CLICK` and `CAMPAIGN_EXPOSURE`; a void is a later `VOIDED` notice. Delivery is at least once and consumers deduplicate by the entry's `event_id`.
 
 experimentation consumes a `CAMPAIGN_EXPOSURE` (the campaign and the customer) from that stream into its own projection, and counts exposures per campaign and customer from its own schema. It does not call this service and reads none of its stores (ADR-0044). The count is eventually consistent, and a voided exposure stops counting when the `VOIDED` notice arrives. analytics-kpis never consumes the stream: it reads the owners' `api_*` views (ADR-0059).
 
@@ -148,7 +148,7 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 | Dependency down | Effect |
 |---|---|
-| PostgreSQL unreachable | `/health/ready` reports not ready. `POST /v1/engagement-events` answers 503 `database_unavailable`, never 500, because it validates store, product and customer against the three published views; reads, voids and summaries use MongoDB only. `/health/live` stays 200 |
+| PostgreSQL unreachable | `/health/ready` reports not ready. `POST /v1/engagement-events` and `POST /v2/engagement-events` answer 503 `database_unavailable`, never 500, because they validate the references each kind carries against the three published views; reads, voids and summaries use MongoDB only. `/health/live` stays 200 |
 | MongoDB down | Event operations and summaries that reach MongoDB answer 503 `database_unavailable`, never 500 (ADR-0035); `/health/ready` is 503. Other services are unaffected |
 | `redis-cache` down | A one-store summary of today falls back to `engagement_daily` |
 | `redis-state` unreachable or over 200 ms | Every authenticated request returns 503 `auth_unavailable`; authentication fails closed and never falls back to the signature alone. The relay keeps the notices pending and publishes them when it returns |

@@ -4261,11 +4261,13 @@ CREATE INDEX IF NOT EXISTS model_publication_version
 
 -- Every segmentation run has a version (ADR-0064): the run the web recorded,
 -- and the version whose method and parameters it matched or created. It names
--- the web's run by value and never changes it. A WEB_RUN version's source run
--- is the earliest run linked to it.
+-- the web's run by value and never changes it, so run_id has no foreign key: no
+-- application role can delete a run (ADR-0029), only the owner's maintenance
+-- can, and the registry's record must outlive such a delete, not block it or
+-- vanish with it. A WEB_RUN version's source run is the earliest run linked to
+-- it.
 CREATE TABLE IF NOT EXISTS models.run_version (
-    run_id     BIGINT PRIMARY KEY REFERENCES public.segmentation_run(run_id)
-               ON DELETE RESTRICT,
+    run_id     BIGINT PRIMARY KEY,
     version_id BIGINT NOT NULL REFERENCES models.model_version(version_id)
                ON DELETE RESTRICT,
     linked_at  TIMESTAMPTZ NOT NULL DEFAULT now()

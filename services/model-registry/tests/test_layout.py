@@ -89,6 +89,7 @@ def test_the_redis_acl_is_the_one_models_user_line() -> None:
         "user svc_models on {{password}} resetchannels -@all +@connection"
         " +@read +@write -@dangerous -scan -randomkey ~models:rl:*"
         " (%R~pub:auth:v1:live:* +exists)"
+        " (~stream:models.v1.publication_recorded +xadd)"
     ]
 
 

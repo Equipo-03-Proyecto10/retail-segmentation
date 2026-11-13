@@ -15,7 +15,7 @@ from typing import Any
 from psycopg import Connection
 from psycopg.types.json import Jsonb
 
-_SELECT_VERSION = (
+_VERSIONS = (
     "SELECT v.version_id, v.name, v.method, v.state, v.source, v.window_days,"
     " v.seed, v.rule_set_id, v.k, v.max_iterations, v.tolerance, v.normalization,"
     " ARRAY(SELECT f.feature::text FROM models.model_version_feature AS f"
@@ -28,13 +28,16 @@ _SELECT_VERSION = (
     "   WHERE r.version_id = v.version_id AND v.source = 'WEB_RUN'),"
     " v.created_at, v.published_at, v.retired_at"
     " FROM models.model_version AS v"
+    " WHERE (%s::bigint IS NULL OR v.version_id = %s)"
+    " AND (%s::text IS NULL OR v.method = %s)"
+    " AND (%s::text IS NULL OR v.state = %s)"
+    " ORDER BY v.version_id DESC LIMIT %s OFFSET %s"
 )
-_COUNT_VERSION = "SELECT count(*) FROM models.model_version AS v"
-_FILTER = (
+_COUNT_VERSION = (
+    "SELECT count(*) FROM models.model_version AS v"
     " WHERE (%s::text IS NULL OR v.method = %s)"
     " AND (%s::text IS NULL OR v.state = %s)"
 )
-_PAGE = " ORDER BY v.version_id DESC LIMIT %s OFFSET %s"
 VERSION_COLUMNS = (
     "version_id name method state source window_days seed rule_set_id k"
     " max_iterations tolerance normalization features frozen_scoring"
@@ -66,22 +69,18 @@ def list_versions(
     offset: int,
 ) -> tuple[list[dict[str, Any]], int]:
     """A page of versions, newest first, and how many match the filters."""
-    # Every part of the statements is a constant; only the %s values vary.
-    filters = (method, method, state, state)
     rows = connection.execute(
-        _SELECT_VERSION + _FILTER + _PAGE,  # noqa: S608
-        (*filters, limit, offset),
+        _VERSIONS, (None, None, method, method, state, state, limit, offset)
     ).fetchall()
     (total,) = connection.execute(
-        _COUNT_VERSION + _FILTER,  # noqa: S608
-        filters,
+        _COUNT_VERSION, (method, method, state, state)
     ).fetchone()
     return [_version(row) for row in rows], total
 
 
 def get_version(connection: Connection[Any], version_id: int) -> dict[str, Any] | None:
     row = connection.execute(
-        _SELECT_VERSION + " WHERE v.version_id = %s", (version_id,)
+        _VERSIONS, (version_id, version_id, None, None, None, None, 1, 0)
     ).fetchone()
     return None if row is None else _version(row)
 

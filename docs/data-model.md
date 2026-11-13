@@ -847,7 +847,8 @@ decision that matters is how a product's many-valued facts are split:
   row and history is never rewritten.
 - **`models.run_version`** is the 1:N fact "this segmentation run was scored
   under this version" (ADR-0064). `run_id → version_id`, and the run is the
-  web's, named by value: `segmentation_run` does not change. A WEB_RUN
+  web's, named by value with no foreign key (the record outlives any maintenance
+  delete of a run): `segmentation_run` does not change. A WEB_RUN
   version's source run is derived (the earliest linked run), not stored, so the
   two cannot disagree.
 

@@ -1447,10 +1447,13 @@ units, `quantity - returned_quantity`, and a sale whose net amount is zero stops
 counting as a purchase. A repeated `Idempotency-Key` or `source_transaction_id`
 records nothing new.
 
-**Enforced:** sales-service (planned) and ADR-0062 — `sales.sale_reversal` and
+**Enforced:** sales-service (F21-03, #774) and ADR-0062 — `sales.sale_reversal` and
 `sales.sale_reversal_line` are insert-only; `transaction_line.returned_quantity` is
-written only by `svc_sales`, with `CHECK (returned_quantity BETWEEN 0 AND quantity)`;
-the `net_sale_line` and `net_sale` views carry the one definition of net. · #770
+written only by `svc_sales`, with `CHECK (returned_quantity BETWEEN 0 AND quantity)`,
+and equals the sum of the line's reversal lines at commit; a trigger refuses
+reversals that add up to more than was sold, even for a direct `INSERT`; the
+`net_sale_line` and `net_sale` views carry the one definition of net, which the web's
+reports read. · #770, #774
 
 ### RN-71 — A promotion belongs to one campaign, discounts by a percentage above zero, and is valid only within its campaign's dates
 A promotion names exactly one campaign, a discount percentage greater than zero

@@ -22,6 +22,7 @@
 
 - One PostgreSQL transaction per `POST /v1/sales`: validate the whole sale, insert the header and every line, call `api_stock.consume_v1` per line in ascending `product_id` order, insert `sales.sale_capture`, commit. Any refusal rolls everything back.
 - Idempotency is durable in PostgreSQL: the `Idempotency-Key` becomes `source_transaction_id = 'svc-sales:' || key`, and a request hash decides between a replay (200 with the original) and a conflict (409). No Redis key is involved.
+- A reversal (RN-70, ADR-0062) is its own transaction: lock the sold lines in ascending product order, record the `sales.sale_reversal` header and its lines, add to `transaction_line.returned_quantity`, call `api_stock.restock_v1` per resellable line in ascending product order, commit. The outbox row for `stream:sales.v1.reversed` is written by the capture trigger in that transaction, so a rollback publishes nothing. A sale is never edited or deleted; the database refuses reversals that add up to more than was sold. Its time limits are configuration (`SALES_CANCELLATION_WINDOW_DAYS`, `SALES_RETURN_WINDOW_DAYS`, `SALES_TIMEZONE`); the store narrowing of ADR-0060 is #757's.
 - The service never imports the web's ingestion code. The rules it shares with the CSV path are carried by the database and by golden fixtures (E-17). Serves the read-only channel vocabulary (E-01).
 
 ## Endpoints
@@ -31,6 +32,9 @@
 | POST | `/v1/sales` | Record a sale (`Idempotency-Key` UUID required); 201, or 200 with `Idempotent-Replayed: true` on a replay | ADMIN, STORE_MANAGER |
 | GET | `/v1/sales` | List sales (`customer_id`, `store_id`, `from`, `to`, `page`, `size`) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | GET | `/v1/sales/{sale_id}` | One sale (status; the Electron read-back) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
+| POST | `/v1/sale-reversals` | Record a cancellation or a return (`Idempotency-Key` UUID required); 201, or 200 with `Idempotent-Replayed: true` on a replay. A seller records cancellations only | ADMIN, STORE_MANAGER, SALES_ASSOCIATE (returns: ADMIN, STORE_MANAGER) |
+| GET | `/v1/sale-reversals` | List reversals (`sale_id`, `customer_id`, `store_id`, `kind`, `from`, `to`, `page`, `size`) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR, SALES_ASSOCIATE, COMMERCIAL_SUPERVISOR |
+| GET | `/v1/sale-reversals/{reversal_id}` | One reversal with its lines | same as the list |
 | GET | `/v1/channels` | Channel vocabulary, read only (E-01) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, INVENTORY_PLANNER, AUDITOR |
 
 Roles follow the [service operation policy](../requirements.md#service-operation-policy-distributed-stage). Meta routes (no token): `GET /health/live`, `GET /health/ready`, `GET /openapi.yaml`, `GET /schema.xsd`.
@@ -42,6 +46,8 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Object | Kind | Access | Notes |
 |---|---|---|---|
 | `transaction`, `transaction_line` | Tables (`public`) | S+W: SELECT, INSERT | The web's CSV path is a legacy co-writer (E-09); the `svc-sales:` namespace is guarded (E-16) |
+| `transaction_line.returned_quantity` | Column (`public`) | S: UPDATE of this column only | The running total of a line's reversals; CHECK between 0 and `quantity`; a trigger refuses any other writer (ADR-0062) |
+| `sales.sale_reversal`, `sales.sale_reversal_line` | Tables (`sales`) | S: SELECT, INSERT | New; append-only; the database refuses reversals that exceed the sale; seed-exempt runtime state |
 | `sales.sale_capture` | Table (`sales`) | S: SELECT, INSERT | New; `transaction_id` PK, `request_sha256`, `recorded_by`, `captured_at`; seed-exempt runtime state |
 | `channel` | Table (`public`) | R: SELECT | Only the web writes it (E-10) |
 | `sales_events.outbox` | Table (outbox) | SELECT, UPDATE of `relayed_at`, DELETE (7-day purge) | Filled by `definer_sales`; seed-exempt runtime state |
@@ -51,9 +57,11 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Direction | Object | Counterpart |
 |---|---|---|
 | Publishes | `api_sales.purchase_line_v1` | recommendations |
+| Publishes | `api_sales.net_purchase_line_v1` | recommendations (SELECT granted); the net definition of ADR-0062, also read by the web as `public.net_sale_line` |
 | Consumes | `api_products.product_ref_v1` | products |
 | Consumes | `api_customers.customer_ref_v1` | customers |
 | Calls | `api_stock.consume_v1(smallint, int, int)` | stock (EXECUTE; E-05) |
+| Calls | `api_stock.restock_v1(smallint, int, int, bigint)` | stock (EXECUTE; E-05): once per resellable reversed line, in the reversal's transaction |
 | Calls | `api_audit.record_event_v1(...)` | audit-trail (EXECUTE; ADR-0072): a `HISTORY_READ` for `GET /v1/sales?customer_id=`, a 403 included, in the read's transaction; 503 `audit_unavailable` when it cannot |
 
 ## Events
@@ -61,6 +69,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Direction | Stream | Captured from / consumer group | Effect |
 |---|---|---|---|
 | Produces | `stream:sales.v1.recorded` | captured from `transaction` AFTER INSERT OR UPDATE OF `total`, for the service and the CSV path | recommendations' cache; consumers dedupe by `event_id` |
+| Produces | `stream:sales.v1.reversed` | captured from `sales.sale_reversal` AFTER INSERT, one event per reversal (`sale_id:reversal_id`) | recommendations, rfm-engine and experimentation recompute for the customer; consumers dedupe by `event_id` |
 
 ## Redis keys
 
@@ -84,6 +93,14 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | 422 | `unknown_customer`, `unknown_store`, `unknown_channel`, `unknown_product` | A reference does not exist |
 | 422 | `inactive_product`, `before_registration`, `future_dated`, `invalid_price`, `invalid_quantity` | A sale rule is broken |
 | 404 | `sale_not_found` | `GET /v1/sales/{sale_id}` names no sale |
+| 404 | `sale_reversal_not_found` | `GET /v1/sale-reversals/{reversal_id}` names no reversal |
+| 403 | `forbidden_role` | A `SALES_ASSOCIATE` records a return (a seller only cancels), or a role outside `x-mosaiq-roles` |
+| 409 | `quantity_exceeds_remaining` | A return asks for more units than the sale still holds (nothing changes) |
+| 409 | `sale_already_reversed` | A cancellation of a sale that already has a reversal |
+| 409 | `reversal_window_closed` | The cancellation or return window has passed (configuration) |
+| 422 | `unknown_sale`, `unknown_sale_line` | The sale, or a product on it, does not exist |
+| 422 | `reason_required`, `no_return_lines`, `unexpected_lines` | A reason is missing, a return has no lines, a cancellation has some |
+| 422 | `no_stock_record` | A reversed line's store has no stock record: nothing is recorded |
 | 422 | `invalid_query` | `GET /v1/sales` has a malformed `customer_id`, `store_id`, `from` or `to`, or `from` after `to` |
 
 ## Accepted exceptions

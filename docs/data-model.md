@@ -557,6 +557,39 @@ The sales boundary (ADR-0039, ADR-0046, F14-18) adds one relation, also in 4NF:
 
 `sales_events.outbox` is one more boundary outbox, under the outbox note above.
 
+Reversals (ADR-0062, F21-03) add two relations to the sales boundary, both in 4NF,
+and one column to `transaction_line`:
+- **`sales.sale_reversal`** has two candidate keys, `reversal_id` and the request's
+  `idempotency_key`, and each determines every other column: the sale, the kind,
+  the cancellation's reason, the request hash, who recorded it and when. The
+  customer and the store are not columns: they are the sale's, and copying them
+  would be a transitive dependency through `transaction_id`. The key is stored
+  here, unlike a sale's, because no other column holds it (a sale's key is the
+  suffix of its `source_transaction_id`). `reason` is null on a return and
+  required on a cancellation (`sale_reversal_reason_kind_check`).
+- **`sales.sale_reversal_line`** is keyed by `(reversal_id, product_id)`.
+  `quantity`, `reason` and `resellable` are each one value of that line. They
+  cannot move up to the reversal: a return holds several lines, each with its own
+  quantity, reason and flag (a damaged one next to a resellable one), which would
+  be repeating columns (not 1NF) or a multivalued dependency on the header. The
+  header's `transaction_id` is repeated here only because the composite foreign
+  key `(transaction_id, product_id)` to `transaction_line` needs it, and a trigger
+  refuses a line whose sale is not its header's. There is no `kind` copy: the
+  trigger reads it from the header.
+- **`transaction_line.returned_quantity`** repeats what these lines add up to,
+  for the reason given under `transaction_line`. It is a deliberate stored
+  derivation, kept in step by a deferred constraint trigger (equal to the sum at
+  `COMMIT`), a writer guard (only `svc_sales`) and a CHECK (between 0 and
+  `quantity`).
+
+The database, not only the service, guarantees that a sale's reversals never
+exceed the sale: a `BEFORE INSERT` trigger on `sales.sale_reversal_line` locks the
+sold line and refuses a line that would push the sum past `quantity`
+(`sale_reversal_line_within_sale`). It also holds that a cancellation takes the
+whole line and states no line reason, and that a return line states one. A sale is
+cancelled once (`sale_reversal_one_cancellation`, a partial unique index). A
+direct `INSERT` by the owner or by `svc_sales` meets the same refusals.
+
 The stock boundary (ADR-0061, ADR-0046, F21-06) adds two relations, both in 4NF:
 - **`stock.movement_request`** is keyed by `idempotency_key`, which determines
   `request_sha256`, `recorded_by` and `accepted_at`. A request yields one
@@ -834,6 +867,40 @@ has no privilege on `sales`. A CSV header has no row here.
 | `request_sha256` | `BYTEA` | NN | `CHECK octet_length = 32` (`sale_capture_request_sha256_check`) | SHA-256 of the canonical request (the caller's `sub`, the ids, `occurred_at` in UTC, the lines sorted with two-decimal prices); a retry with the same key is compared with it |
 | `recorded_by` | `UUID` | NN | FK → `public.app_user`, `ON DELETE RESTRICT` | The token's `sub`: who recorded the sale |
 | `captured_at` | `TIMESTAMPTZ` | NN | default `now()` | When the sale was accepted |
+
+#### `sales.sale_reversal`
+
+One row per accepted `POST /v1/sale-reversals`, written in the reversal's own
+transaction with its lines, the `returned_quantity` updates, the restock and the
+outbox row (ADR-0062). Append-only: `svc_sales` holds SELECT and INSERT only, and
+the web has no privilege on `sales`. A refused request leaves no row, so it may be
+retried with the same key.
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `reversal_id` | `BIGINT` | NN | PK, generated always as identity | The reversal, `int64` in the contract |
+| `transaction_id` | `BIGINT` | NN | FK → `public.transaction`, `ON DELETE CASCADE` | The sale reversed |
+| `kind` | `TEXT` | NN | `CHECK IN ('CANCELLATION', 'RETURN')` | A cancellation reverses the whole sale, a return some lines |
+| `reason` | `TEXT` | NULL | not blank, at most 200 characters; present exactly for a cancellation | Why the sale was cancelled |
+| `idempotency_key` | `UUID` | NN | unique | The caller's `Idempotency-Key` for this resource |
+| `request_sha256` | `BYTEA` | NN | `CHECK octet_length = 32` | SHA-256 of the canonical request (the caller's `sub`, `sale_id`, `kind`, the reason and the lines sorted by product); a retry is compared with it |
+| `recorded_by` | `UUID` | NN | FK → `public.app_user`, `ON DELETE RESTRICT` | The token's `sub` |
+| `recorded_at` | `TIMESTAMPTZ` | NN | default `now()` | When the service recorded it |
+
+A partial unique index allows one `CANCELLATION` per sale.
+
+#### `sales.sale_reversal_line`
+
+The lines a reversal touched; a cancellation lists every line of the sale.
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `reversal_id` | `BIGINT` | NN | PK, FK → `sales.sale_reversal`, `ON DELETE CASCADE` | The reversal |
+| `product_id` | `INT` | NN | PK; with `transaction_id`, FK → `public.transaction_line`, `ON DELETE CASCADE` | The product reversed |
+| `transaction_id` | `BIGINT` | NN | see above | The sale; the trigger requires it to be the reversal's |
+| `quantity` | `INT` | NN | `CHECK > 0`; the sum over a sale line never exceeds `transaction_line.quantity` (trigger) | Units reversed by this reversal |
+| `reason` | `TEXT` | NULL | not blank, at most 200 characters; present exactly for a return line | Why these units come back |
+| `resellable` | `BOOLEAN` | NN | default true | False when the goods cannot be resold: the line is recorded and stock is not restored |
 
 #### `stock.movement_request`
 
@@ -1117,6 +1184,20 @@ These two are the 4NF decomposition from §2.4.
 | `product_id` | `INT` | NN | PK, FK → `product`, `RESTRICT` | The product |
 | `quantity` | `INT` | NN | `CHECK > 0` | Units sold |
 | `unit_price` | `NUMERIC(10,2)` | NN | `CHECK > 0` | Price actually charged, not the product's list price |
+| `returned_quantity` | `INTEGER` | NN | default 0, `CHECK BETWEEN 0 AND quantity` (`transaction_line_returned_quantity_check`) | Units reversed so far: the running total of this line's `sales.sale_reversal_line` rows. Only `svc_sales` writes it (ADR-0062, F21-03) |
+
+**Net units (ADR-0062, F21-03).** `quantity` and `total` stay what was sold and
+charged; a reversal never edits them. `returned_quantity` is the one stored
+copy of what the reversal lines add up to, kept so that the web, which cannot
+read `sales.*` (ADR-0046), and every service read net units from one column.
+It is a stored derivation, like `total`, and the database proves it cannot
+drift: a deferred constraint trigger requires it to equal the sum of the line's
+reversal lines at `COMMIT`, a `BEFORE` trigger refuses any writer but
+`svc_sales`, and a line is always inserted with 0. `public.net_sale_line` (a
+line with at least one unit left) and `public.net_sale` (a sale with at least
+one such line, so with a net amount above zero) hold the one definition of net
+that the web reads, and `api_sales.net_purchase_line_v1` publishes it to
+services.
 
 **Domain rules the database holds (#591).** The checks above are in
 `sql/01_schema.sql` so that no writer, whatever its role, can store a value the

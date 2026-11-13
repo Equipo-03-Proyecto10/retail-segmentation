@@ -3694,6 +3694,26 @@ BEGIN
     EXCEPTION WHEN invalid_parameter_value THEN
         RAISE NOTICE 'PASS: svc-sales: namespace refused (SQLSTATE 22023)';
     END;
+
+    -- ADR-0062: a line's returned_quantity is written by svc_sales alone. The
+    -- web's update is refused by the BOUNDARY sales guard with 22023, and the
+    -- views it reads for net units are read-only to it.
+    BEGIN
+        UPDATE public.transaction_line SET returned_quantity = 0
+         WHERE (transaction_id, product_id) = (
+               SELECT transaction_id, product_id FROM public.transaction_line
+                ORDER BY transaction_id, product_id LIMIT 1);
+        RAISE EXCEPTION 'FAIL: retail_app wrote returned_quantity';
+    EXCEPTION WHEN invalid_parameter_value THEN
+        RAISE NOTICE 'PASS: returned_quantity refused (SQLSTATE 22023)';
+    END;
+    IF NOT has_table_privilege('public.net_sale', 'SELECT')
+       OR NOT has_table_privilege('public.net_sale_line', 'SELECT')
+       OR has_table_privilege('public.net_sale', 'INSERT, UPDATE, DELETE')
+       OR has_table_privilege('public.net_sale_line', 'INSERT, UPDATE, DELETE') THEN
+        RAISE EXCEPTION 'FAIL: the net sale views are not read-only to the application role';
+    END IF;
+    RAISE NOTICE 'PASS: net sale views are read-only';
     RAISE NOTICE 'PASS: SELECT, INSERT, UPDATE, DELETE and audit sequence access';
 END;
 $verify$;

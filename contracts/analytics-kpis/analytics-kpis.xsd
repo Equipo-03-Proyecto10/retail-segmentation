@@ -191,7 +191,64 @@
     </xs:sequence>
   </xs:complexType>
 
+  <!-- Demand by segment beside stock (getDemandCoverageReport). One row per
+       store and category. segments split net_units by label and carry demand
+       only: stock is not split by segment. days_of_cover is omitted when
+       net_units is 0; segment_code is omitted unless segment_state is
+       assigned. No element carries a customer identifier. -->
+  <xs:complexType name="SegmentDemandType">
+    <xs:sequence>
+      <xs:element name="segment_code" type="xs:string" minOccurs="0"/>
+      <xs:element name="segment_state" type="kpi:SegmentState"/>
+      <xs:element name="net_units" type="xs:positiveInteger"/>
+      <xs:element name="share" type="kpi:Decimal"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="DemandCoverageRowType">
+    <xs:sequence>
+      <xs:element name="store_id" type="kpi:Id"/>
+      <xs:element name="category_id" type="kpi:Id"/>
+      <xs:element name="net_units" type="xs:nonNegativeInteger"/>
+      <xs:element name="daily_demand" type="kpi:Decimal"/>
+      <xs:element name="on_hand" type="xs:nonNegativeInteger"/>
+      <xs:element name="days_of_cover" type="kpi:Decimal" minOccurs="0"/>
+      <xs:element name="replenishment_units" type="xs:nonNegativeInteger"/>
+      <xs:element name="synthetic" type="xs:boolean"/>
+      <xs:element name="segments" type="kpi:SegmentDemandType"
+                  minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:simpleType name="WindowDays">
+    <xs:restriction base="xs:positiveInteger">
+      <xs:maxInclusive value="731"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="TargetCoverDays">
+    <xs:restriction base="xs:positiveInteger">
+      <xs:maxInclusive value="180"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="DemandCoverageReportType">
+    <xs:sequence>
+      <xs:element name="from" type="xs:date"/>
+      <xs:element name="to" type="xs:date"/>
+      <xs:element name="window_days" type="kpi:WindowDays"/>
+      <xs:element name="target_cover_days" type="kpi:TargetCoverDays"/>
+      <xs:element name="generated_at" type="xs:dateTime"/>
+      <xs:element name="calculation" type="xs:string"/>
+      <xs:element name="store_scope" type="kpi:StoreScopeType"/>
+      <xs:element name="data_origin" type="kpi:DataOriginType"/>
+      <xs:element name="rows" type="kpi:DemandCoverageRowType" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
   <xs:element name="KpiReport" type="kpi:KpiReportType"/>
   <xs:element name="KpiDefinition" type="kpi:KpiDefinitionType"/>
   <xs:element name="KpiDefinitions" type="kpi:KpiDefinitionsType"/>
+  <xs:element name="DemandCoverageReport" type="kpi:DemandCoverageReportType"/>
 </xs:schema>

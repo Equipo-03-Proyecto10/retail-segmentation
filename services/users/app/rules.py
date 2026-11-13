@@ -20,10 +20,19 @@ from uuid import UUID
 
 from mosaiq_kit import ApiError
 from psycopg import Connection, sql
-from psycopg.errors import UniqueViolation
+from psycopg.errors import ForeignKeyViolation, UniqueViolation
 
 ADMIN = "ADMIN"
 ADMIN_ROLE_ID = 1
+STORE_BOUND_ROLES = frozenset(
+    {
+        "SALES_ASSOCIATE",
+        "STORE_MANAGER",
+        "LOYALTY_OFFICER",
+        "COMMERCIAL_SUPERVISOR",
+    }
+)
+STORE_ASSIGNMENT_STORE_FKEY = "store_assignment_store_id_fkey"
 
 # Fixed fragments, composed with psycopg.sql; values are only ever bound.
 USER_COLUMNS = sql.SQL(
@@ -132,6 +141,79 @@ def require_user(connection: Connection, user_id: UUID | str) -> dict[str, Any]:
     if user is None:
         raise user_not_found()
     return user
+
+
+def store_assignment(connection: Connection, user_id: UUID | str) -> dict[str, Any]:
+    """Return the effective assignment; retained history grants nothing."""
+    user = require_user(connection, user_id)
+    store_ids: list[int] = []
+    if user["is_active"] and user["role_code"] in STORE_BOUND_ROLES:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT store_id FROM users.store_assignment"
+                " WHERE user_id = %s ORDER BY store_id",
+                (str(user_id),),
+            )
+            store_ids = [row[0] for row in cursor.fetchall()]
+    return {"user_id": str(user["user_id"]), "store_ids": store_ids}
+
+
+def replace_store_assignment(
+    connection: Connection, user_id: UUID | str, store_ids: list[int]
+) -> tuple[dict[str, Any], list[int], list[int]]:
+    """Replace one user's complete set under its row lock.
+
+    The nested transaction is a savepoint under the request transaction. It
+    lets PostgreSQL's store foreign key reject the whole replacement before
+    the refusal is translated, while leaving the request transaction usable.
+    """
+    user = get_user(connection, user_id, lock=True)
+    if user is None:
+        raise user_not_found()
+    if store_ids and user["role_code"] not in STORE_BOUND_ROLES:
+        raise ApiError(
+            409,
+            "role_not_store_bound",
+            "The user's role is not tied to stores, so only an empty set is accepted.",
+            [{"field": "store_ids", "code": "role_not_store_bound"}],
+        )
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT store_id FROM users.store_assignment"
+            " WHERE user_id = %s ORDER BY store_id",
+            (str(user_id),),
+        )
+        before = {row[0] for row in cursor.fetchall()}
+    after = set(store_ids)
+    added = sorted(after - before)
+    removed = sorted(before - after)
+    try:
+        with connection.transaction(), connection.cursor() as cursor:
+            cursor.executemany(
+                "DELETE FROM users.store_assignment"
+                " WHERE user_id = %s AND store_id = %s",
+                [(str(user_id), store_id) for store_id in removed],
+            )
+            cursor.executemany(
+                "INSERT INTO users.store_assignment (user_id, store_id)"
+                " VALUES (%s, %s)",
+                [(str(user_id), store_id) for store_id in added],
+            )
+    except ForeignKeyViolation as error:
+        constraint = getattr(getattr(error, "diag", None), "constraint_name", None)
+        if constraint == STORE_ASSIGNMENT_STORE_FKEY:
+            raise ApiError(
+                422,
+                "unknown_store",
+                "A store id references no store.",
+                [{"field": "store_ids", "code": "unknown"}],
+            ) from None
+        raise
+    return (
+        {"user_id": str(user["user_id"]), "store_ids": sorted(after)},
+        added,
+        removed,
+    )
 
 
 def role_id(connection: Connection, role_code: str) -> int:

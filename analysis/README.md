@@ -12,6 +12,7 @@ from a seed, with its results in [`docs/evidence/`](../docs/evidence/).
 | `k_study.py` | F23-03: inertia, sampled silhouette, stability and the labels each k can produce, for k from 2 to 12. Reads no database |
 | `stability_study.py` | F23-04: a registered result reproduced, seed and bootstrap stability with thresholds, and the movement between adjacent windows, for k from 2 to 8. Reads no database |
 | `segment_profile.py` | F23-05: each segment at k = 4 in raw units with its revenue share, and each label's claim put to its cluster. Reads no database |
+| `method_comparison.py` | F23-06: RFM rules and K-means scored on the same three criteria, with a Python replica of the RFM query, and the verdict they give. Reads no database |
 
 ## The evaluation dataset
 

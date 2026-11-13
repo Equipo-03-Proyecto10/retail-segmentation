@@ -54,6 +54,8 @@ problems=$(
     [[ $memory -gt 0 ]] || echo "container without a mem_limit: $name"
     [[ $oom == false ]] || echo "container was OOM-killed: $name"
     case $image in
+      # ADR-0080: CI's test images (mosaiq-ci-*) share the release prefix and never run here.
+      "${GHCR}ci-"*) echo "container from a CI test image: $name $image" ;;
       "$GHCR"* | redis:* | mongo:*) ;;
       *) echo "container from an unexpected image: $name $image" ;;
     esac

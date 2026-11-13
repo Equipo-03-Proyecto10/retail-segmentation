@@ -310,3 +310,6 @@ svc_stock,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,tex
 svc_stock,api_audit,USAGE
 svc_users,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
 svc_users,api_audit,USAGE
+svc_rfm,rfm,USAGE
+svc_rfm,rfm_events,USAGE
+svc_rfm,api_rfm,USAGE

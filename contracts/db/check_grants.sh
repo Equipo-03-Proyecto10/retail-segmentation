@@ -82,11 +82,11 @@ fi
 
 if wanted 2; then
   cat >> "$sql" <<'SQL'
--- Exactly the fifteen service LOGIN roles, plus the bench role.
+-- Exactly the sixteen service LOGIN roles, plus the bench role.
 SELECT 'assertion 2: missing or extra LOGIN role ' || coalesce(x.name, r.rolname)
 FROM unnest(ARRAY['svc_auth','svc_users','svc_products','svc_categories',
   'svc_stores','svc_stock','svc_customers','svc_preferences','svc_sales','svc_segments',
-  'svc_recommendations','svc_engagement','svc_checkins','svc_campaigns','svc_audit_trail',
+  'svc_recommendations','svc_engagement','svc_checkins','svc_campaigns','svc_audit_trail','svc_rfm',
   'svc_products_bench']) AS x(name)
 FULL JOIN (SELECT rolname FROM pg_roles WHERE rolname LIKE 'svc\_%' AND rolcanlogin) r
   ON r.rolname = x.name

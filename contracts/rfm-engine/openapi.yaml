@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: rfm-engine-service
-  version: 1.0.0
+  version: 1.0.1
   description: >-
     Keeps each customer's R, F and M current. A customer's profile is a function
     of their accepted, unreversed purchases under one rule-set version; it changes
@@ -38,6 +38,7 @@ paths:
         serves. A customer with no stored profile is `pending` and is listed only
         when `state=pending` is asked for.
       operationId: listRfmProfiles
+      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -102,6 +103,7 @@ paths:
         `api_customers.customer_ref_v1` is 404 `customer_not_found`. The
         customer id is the resource's own identity, one profile per customer.
       operationId: getRfmProfile
+      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -220,6 +222,7 @@ paths:
         `band_range` or `bands_overlap`. A name already used is 409
         `rule_set_name_taken`.
       operationId: createRfmRuleSet
+      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
       parameters:
@@ -285,6 +288,7 @@ paths:
       description: >-
         Returns one rule set with its frozen boundaries and bands.
       operationId: getRfmRuleSet
+      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -332,6 +336,7 @@ paths:
         Returns a page of verification recalculations, newest first. `state`,
         `trigger` and `rule_set_id` filter on the stored values.
       operationId: listRfmRecalculations
+      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -391,6 +396,7 @@ paths:
         set, it is 409 `no_published_rule_set`. A named rule set that does not
         exist is 404 `rule_set_not_found`.
       operationId: createRfmRecalculation
+      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
       parameters:
@@ -467,6 +473,7 @@ paths:
         customer does not, and `GET .../differences` lists them. A failed
         recalculation carries a `failure_code` and no outcome.
       operationId: getRfmRecalculation
+      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -529,6 +536,7 @@ paths:
         there is nothing final to list, and the answer is 409
         `recalculation_not_finished`.
       operationId: listRfmRecalculationDifferences
+      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST

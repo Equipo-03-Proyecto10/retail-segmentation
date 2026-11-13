@@ -1,6 +1,6 @@
 # ADR-0080 — The nightly chain and the emulator pull service images keyed by their build context, and build only what is missing
 
-**Status:** Proposed
+**Status:** Accepted (2026-11-12)
 **Owner:** Marcelo
 **Issue:** #979
 **Supersedes:** in part [ADR-0040](0040-each-service-is-built-in-ci-and-runs-as-its-own-compose-project.md) (only its rule that CI pushes an image only for a merged `VERSION` bump; every release package keeps that rule)
@@ -54,12 +54,15 @@ The nightly chain (`nightly.yml`) and the emulator job (`android.yml`) take each
 - A story implements:
   - a key script next to `stage-contracts.sh`;
   - the pull, build and push steps in `nightly.yml` and `android.yml`, with `packages: write` on those two jobs only;
-  - the scheduled cleanup.
+  - the scheduled cleanup;
+  - the `mosaiq-ci-` grep in `.github/scripts/guards.sh`;
+  - a check in `deploy/check-services.sh` that reports any container running a `mosaiq-ci-*` image. Today its `mosaiq-` prefix match would accept one.
 - The whole-stack step in `service-template.yml` and the image builds in `ops/verify/` keep building from source.
 
 ## Compliance
 
 - `git grep -n 'mosaiq-ci-' -- deploy/ .github/workflows/deploy.yml .github/workflows/deploy-service.yml` prints nothing; `.github/scripts/guards.sh` runs it.
+- On the instance, `deploy/check-services.sh` reports any container whose image is `ghcr.io/equipo-03-proyecto10/mosaiq-ci-*`.
 - `git grep -ln 'mosaiq-ci-' -- .github/workflows/` lists only `nightly.yml`, `android.yml` and the cleanup workflow, and every step that pushes carries `if: github.ref == 'refs/heads/develop'`.
 - A test runs the key script over two commits.
   - A change under `services/<name>/`, `contracts/<name>/` or `contracts/common/v1/` changes the affected services' keys and only theirs. A `contracts/common/v1/` change affects every service.

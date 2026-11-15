@@ -21,7 +21,7 @@
 ## Business rule
 
 - A product is recommended only when it is active, in stock at the customer's usual store, not already bought in the window, and matches at least one signal: segment peers, an interest category or a purchase-history category, matched over the category subtree. Each item carries exactly `product_id`, `category_id` (the product's own category), `quantity_on_hand` (the stock held at the usual store, E-06) and `reasons`. Reasons come in the fixed order `segment`, `preferred_category`, `purchase_history`, each with its signal and figures: `segment_buyers`; the nearest matching category as `category_id`; that `category_id` and its `share`. A segment-only item has no category reason.
-- When nothing qualifies, the response says why: `no_open_assignment`, `unassigned_result` or `no_usual_store`. Items carry ids; clients fetch product names with `GET /v1/products?ids=`.
+- When nothing qualifies, the response says why: `no_open_assignment`, `unassigned_result` or `no_usual_store`. A customer who withdrew personalization (or has no decision recorded) gets `none_match` with no items and no segment, history or interest read; `/v1` is frozen and cannot name the reason, which `/v2` states as `PERSONALIZATION_WITHDRAWN` (F24-06). Items carry ids; clients fetch product names with `GET /v1/products?ids=`.
 - `/v1` owns no table. Its result cache lasts 120 s, and parity with the web's rule is proven by golden fixtures for the default path of all seeded customers (E-17).
 
 ### Since ADR-0067 (`/v2`, contract published in F24-03, implementation planned in F24-04 to F24-07)
@@ -30,7 +30,8 @@
 - **Available** means: the commercial status allows the sale, the store's status permits sales, the store enables the channel when one is given, and on-hand is above zero. Opening hours are not part of it. A product that matches a signal and fails is excluded for exactly one reason, in this order: `already_bought`, `inactive`, `not_sellable`, `store_not_selling`, `channel_not_enabled`, `out_of_stock`, `PERSONALIZATION_WITHDRAWN`. The response counts them (`exclusions`) and never lists them.
 - **Each item** has a `kind` (`primary`, `alternative`, `elsewhere`), a `position`, its `factors` (the figures RN-40 orders by), its `availability` (store, channel and the quantity used, E-06) and its `reasons`. An `alternative` is one product related to an unavailable one by a declared substitute relation and itself available; it names the product it replaces (`alternative_for`) and why that was unavailable. An `elsewhere` entry reports another store holding the product and is never a recommendation for the reference store.
 - **The explanation is recorded.** Every answer carries a `decision_id`. The decision (ids, figures and codes only, never a name, email, phone, SKU, price or free text) is kept for 90 days, subject to F21-15, and is read back with `GET /v2/recommendation-decisions/{decision_id}`.
-- **Consent.** A customer who objected to personalization gets `PERSONALIZATION_WITHDRAWN` with no items, and no segment, history or interest is read for them.
+- **Consent.** A customer who objected to personalization gets `PERSONALIZATION_WITHDRAWN` with no items, and no segment, history or interest is read for them. Implemented in `/v1` (F24-06) as `none_match`, since `/v1` is frozen and cannot name the reason; `/v2` states it when F24-04 builds it. A missing decision, or a consent view that cannot be read, is treated as withdrawn. The decision is read on every request, before the result cache, so a withdrawal is seen by the next read and the cache serves nothing older (ADR-0066 section 2).
+- **Restrictions.** A category the customer restricted (`api_preferences.restriction_v1`, kind `INTEREST_CATEGORY`) and every category below it never appears, whatever signal matched, whether the interest was declared or not. The restricted ids are part of the cache key (F24-06).
 - **Default path.** With no store, no channel and every product active and sellable, the answer is what the web returns, which the golden fixtures keep pinning; every other behaviour above is outside the parity claim (E-17).
 
 ## Endpoints
@@ -50,7 +51,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 | Object | Kind | Access | Notes |
 |---|---|---|---|
-| PostgreSQL | — | `/v1`: no table | SELECT on seven published views only; a result cache in `redis-cache` |
+| PostgreSQL | — | `/v1`: no table | SELECT on nine published views only; a result cache in `redis-cache` |
 | PostgreSQL, schema `recommendations` | tables | S (*planned*, F24-05) | The decision record (ADR-0067, ADR-0046): per decision the customer id, the reference store and channel, the status, the exclusion counts, the segmentation run and model version and the computation time; per item its product, kind, position, quantity, `alternative_for` and one row per reason. Ids, figures and codes only. Retained 90 days; anonymization clears the customer id. The tables, their 4NF justification, grants and seed arrive with F24-05 |
 
 ## Database contracts
@@ -64,9 +65,10 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Consumes | `api_preferences.interest_category_v1` | customer-preferences |
 | Consumes | `api_sales.purchase_line_v1` | sales |
 | Consumes | `api_segments.current_label_v1` | segments |
+| Consumes | `api_preferences.consent_state_v1` | customer-preferences (`PERSONALIZATION` only, F24-06) |
+| Consumes | `api_preferences.restriction_v1` | customer-preferences (`INTEREST_CATEGORY` only, F24-06) |
 | Consumes (*planned*, `/v2`) | `api_stock.availability_v1` | stock |
 | Consumes (*planned*, `/v2`) | The commercial-status and substitute-relation views of products (F21-09, F21-10) and the status and channel views of stores (F21-11, F21-12); names fixed by those stories | products, stores |
-| Consumes (*planned*, `/v2`) | The restriction view of customers (F21-15, F21-17) | customers |
 
 ## Events
 
@@ -76,6 +78,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Consumes | `stream:categories.v1.changed` | group `recommendations` | Invalidates its result cache |
 | Consumes | `stream:stock.v1.changed` | group `recommendations` | Invalidates its result cache |
 | Consumes | `stream:preferences.v1.changed` | group `recommendations` | Invalidates its result cache |
+| Consumes | `stream:preferences.v1.consent_changed` | group `recommendations` | Invalidates its result cache. An accelerator only: consent is re-read on every request |
 | Consumes | `stream:sales.v1.recorded` | group `recommendations` | Invalidates its result cache |
 | Consumes | `stream:segments.v1.run_recorded` | group `recommendations` | Invalidates its result cache |
 
@@ -165,7 +168,7 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 ## Compliance
 
-- [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) Compliance (seven consumed views, six consumer groups).
+- [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) Compliance (nine consumed views, seven consumer groups; the count of boundaries stays seven).
 - [ADR-0045](../adr/0045-services-never-import-the-web-system.md) Compliance (golden fixtures for RN-40 on every seeded customer).
 - Registry and grant checks: [ADR-0043](../adr/0043-at-least-ten-microservices-each-implementing-one-business-rule.md) (registry), [ADR-0035](../adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md) (resources are unique), [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) (grant matrix).
 

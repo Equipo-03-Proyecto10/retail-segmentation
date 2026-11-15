@@ -29,6 +29,8 @@ VIEWS = {
     "api_stock.stock_level_v1",
     "api_customers.customer_ref_v1",
     "api_preferences.interest_category_v1",
+    "api_preferences.consent_state_v1",
+    "api_preferences.restriction_v1",
     "api_sales.purchase_line_v1",
     "api_segments.current_label_v1",
 }
@@ -120,7 +122,7 @@ def test_xml_validates_against_the_contract(
 # ---------- static guards over app/ ----------
 
 
-def test_the_code_names_only_the_seven_views() -> None:
+def test_the_code_names_only_the_nine_views() -> None:
     found = subprocess.run(
         ["grep", "-rhoE", r"\b(public|api_[a-z]+)\.[a-z0-9_]+", str(APP)],
         capture_output=True,

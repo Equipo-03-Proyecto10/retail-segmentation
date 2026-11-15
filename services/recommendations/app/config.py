@@ -13,6 +13,7 @@ STREAMS = (
     "stream:categories.v1.changed",
     "stream:stock.v1.changed",
     "stream:preferences.v1.changed",
+    "stream:preferences.v1.consent_changed",
     "stream:sales.v1.recorded",
     "stream:segments.v1.run_recorded",
 )

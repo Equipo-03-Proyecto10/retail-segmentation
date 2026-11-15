@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: recommendations-service
-  version: 2.0.0
+  version: 2.0.1
   description: >-
     Answers what to recommend to one customer, and why, or why nothing qualifies
     (RN-40, restated by ADR-0067).
@@ -55,6 +55,18 @@ paths:
         then by product id. The status is `unassigned_result` or `no_open_assignment`
         when the customer has no segment, and the segment is checked before the
         usual store.
+
+
+        A customer whose `PERSONALIZATION` is not granted (an objection, a
+        withdrawal, no decision recorded, or a consent view the service cannot
+        read) is recommended nothing, so `status` is `none_match`, `items` is empty,
+        `label_code`, `run_id` and `usual_store_id` are null, and no segment,
+        purchase, interest or stock of the customer is read (ADR-0066, ADR-0067).
+        `/v1` is frozen, so it cannot name the reason; `/v2` answers
+        `PERSONALIZATION_WITHDRAWN`. A category the customer restricted, and every
+        category below it, never appears. Consent and restrictions are read on
+        every request, before the result cache, so a withdrawal is seen by the
+        next read and the cache serves nothing older.
       operationId: getRecommendations
       x-mosaiq-roles:
       - ADMIN

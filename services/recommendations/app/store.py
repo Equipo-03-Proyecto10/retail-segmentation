@@ -1,4 +1,4 @@
-"""Reads behind a recommendation, from the seven published views only.
+"""Reads behind a recommendation, from the nine published views only.
 
 recommendations owns no table (ADR-0044, E-07). Every statement names the
 `api_*.*_v1` view it reads and the columns it needs, and is parameterized.
@@ -22,6 +22,29 @@ def customer_exists(connection: Connection[Any], customer_id: str) -> bool:
         (customer_id,),
     ).fetchone()
     return row is not None
+
+
+def personalization_granted(connection: Connection[Any], customer_id: str) -> bool:
+    """Only an explicit GRANTED counts; no row is not granted (ADR-0066)."""
+    row = connection.execute(
+        "SELECT decision FROM api_preferences.consent_state_v1"
+        " WHERE customer_id = %s AND purpose = 'PERSONALIZATION'",
+        (customer_id,),
+    ).fetchone()
+    return row is not None and row[0] == "GRANTED"
+
+
+def restricted_categories(
+    connection: Connection[Any], customer_id: str
+) -> frozenset[int]:
+    """The categories the customer excluded. The subtree is resolved by the
+    rule, from the category tree."""
+    rows = connection.execute(
+        "SELECT target_id FROM api_preferences.restriction_v1"
+        " WHERE customer_id = %s AND kind = 'INTEREST_CATEGORY'",
+        (customer_id,),
+    ).fetchall()
+    return frozenset(int(target) for (target,) in rows)
 
 
 def current_label(connection: Connection[Any], customer_id: str) -> Label:

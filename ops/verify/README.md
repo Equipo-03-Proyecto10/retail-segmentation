@@ -143,3 +143,47 @@ only one of them, and exits 1 if there is any. Those cases are flaky. Each one
 is raised as a defect: a GitHub issue that links both reports. A UUID in a
 case's id is read as `<uuid>`, because a test parametrized with a random UUID
 gets a new id each run.
+
+## One result for one release (F20-12)
+
+F20-12 ([#784](https://github.com/Equipo-03-Proyecto10/retail-segmentation/issues/784)).
+The instructor reads one document for one version, in `docs/evidence/`, with
+nothing inferred from separate reports. [`publish.py`](publish.py) writes it
+from what was observed; it measures nothing.
+
+1. **Pick the release.** The commit whose images the instance runs. Every
+   image must carry it as `org.opencontainers.image.revision`.
+2. **F20-03 at that commit.** Dispatch **Verify one commit** with the commit,
+   then `gh run download <run> -D verify-run`. The report is
+   `verify-run/first/` (or the directory `run.sh --out` wrote).
+3. **The negative suite on the instance, at the same version.** Run the
+   command in [`tests/negative/README.md`](../../tests/negative/README.md),
+   "The instance", adding `MOSAIQ_EVIDENCE_FILE=/tmp/negative-evidence.md` and
+   `--junitxml=/tmp/negative-instance.xml -rs`.
+4. **The images the instance runs.**
+   `bash ops/verify/instance-images.sh > /tmp/instance-images.tsv`, on the
+   instance.
+5. **The issues.** One line per failed case, `<suite><TAB><case><TAB><issue>`
+   (a case ending in `*` matches by prefix; the instance's negative run is the
+   suite `negative (instance)`). A failure with no issue stops the command,
+   so every failure is raised first and none is explained away in the text.
+6. **Publish.**
+
+```bash
+python3 ops/verify/publish.py --verify verify-run/first \
+  --negative-junit negative-instance.xml \
+  --negative-evidence negative-evidence.md \
+  --instance-images instance-images.tsv \
+  --issues issues.tsv
+```
+
+It writes `docs/evidence/f20-12-<sha8>.md`: the commit, the image digests the
+instance runs, the digests and IDs F20-03 ran, totals per suite (the F20-03
+suites and the instance's negative run), every failure with its message as
+the runner gave it and its issue, and every skip with its reason. The result
+is `failed` when any case failed or any image on the instance is not at the
+commit. The exit status is 0 only for `passed`, 1 for `failed` (the document
+is still written) and 2 when the inputs cannot make a true document (nothing
+is written).
+
+`F29-07` repeats this for the final version.

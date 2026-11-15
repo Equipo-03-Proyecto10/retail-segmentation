@@ -166,6 +166,7 @@ def list_sales(
     *,
     customer_id: str | None,
     store_id: int | None,
+    store_ids: list[int] | None = None,
     occurred_from: datetime | None,
     occurred_to: datetime | None,
     limit: int,
@@ -174,6 +175,7 @@ def list_sales(
     params = {
         "customer_id": customer_id,
         "store_id": store_id,
+        "store_ids": store_ids,
         "occurred_from": occurred_from,
         "occurred_to": occurred_to,
         "limit": limit,
@@ -182,6 +184,7 @@ def list_sales(
     where = sql.SQL(
         " WHERE (%(customer_id)s::uuid IS NULL OR customer_id = %(customer_id)s)"
         " AND (%(store_id)s::smallint IS NULL OR store_id = %(store_id)s)"
+        " AND (%(store_ids)s::smallint[] IS NULL OR store_id = ANY(%(store_ids)s))"
         " AND (%(occurred_from)s::timestamptz IS NULL"
         " OR occurred_at >= %(occurred_from)s)"
         " AND (%(occurred_to)s::timestamptz IS NULL"
@@ -346,6 +349,7 @@ def list_reversals(
     sale_id: int | None,
     customer_id: str | None,
     store_id: int | None,
+    store_ids: list[int] | None = None,
     kind: str | None,
     recorded_from: datetime | None,
     recorded_to: datetime | None,
@@ -356,6 +360,7 @@ def list_reversals(
         "sale_id": sale_id,
         "customer_id": customer_id,
         "store_id": store_id,
+        "store_ids": store_ids,
         "kind": kind,
         "recorded_from": recorded_from,
         "recorded_to": recorded_to,
@@ -366,6 +371,7 @@ def list_reversals(
         " WHERE (%(sale_id)s::bigint IS NULL OR r.transaction_id = %(sale_id)s)"
         " AND (%(customer_id)s::uuid IS NULL OR t.customer_id = %(customer_id)s)"
         " AND (%(store_id)s::smallint IS NULL OR t.store_id = %(store_id)s)"
+        " AND (%(store_ids)s::smallint[] IS NULL OR t.store_id = ANY(%(store_ids)s))"
         " AND (%(kind)s::text IS NULL OR r.kind = %(kind)s)"
         " AND (%(recorded_from)s::timestamptz IS NULL"
         " OR r.recorded_at >= %(recorded_from)s)"

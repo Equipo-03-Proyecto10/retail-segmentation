@@ -422,6 +422,7 @@ class EventStore:
         last: str | None,
         store_id: int | None,
         types: tuple[str, ...] = ALL_TYPES,
+        store_ids: list[int] | None = None,
     ) -> list[dict[str, Any]]:
         """Count the events not voided, grouped, from the daily rollup.
 
@@ -436,6 +437,9 @@ class EventStore:
             }
         if store_id is not None:
             match["store_id"] = store_id
+        elif store_ids is not None:
+            # A caller confined to its stores (ADR-0060); none assigned is none.
+            match["store_id"] = {"$in": store_ids}
         field = {"store": "$store_id", "day": "$day", "type": "$type"}[group_by]
         pipeline = [
             {"$match": match},

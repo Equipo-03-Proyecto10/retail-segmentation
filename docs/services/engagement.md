@@ -3,7 +3,7 @@
 > **Status:** Implemented (phase 14 core; `/v2` taxonomy in phase 21; capture incidents in phase 27, F27-12, #866).
 > **One rule:** A client-originated field event (`QR_SCAN`, `RECO_CLICK`, `STORE_VISIT`, `RECO_IMPRESSION`, `CAMPAIGN_EXPOSURE`, `CART_ADD`, `CART_REMOVE`, `NAVIGATION`, or a refused queued write reported as a capture incident) is recorded once per client id as a distinct fact that is never a sale, attributed, voided or closed rather than deleted, and summarized (RN-55).
 >
-> **Contract:** `/v1` records `QR_SCAN`, `RECO_CLICK` and capture incidents. `/v2` keeps the event meaning and adds the six other kinds. Engagement 2.4.0 is served by service 0.3.0.
+> **Contract:** `/v1` records `QR_SCAN`, `RECO_CLICK` and capture incidents. `/v2` keeps the event meaning and adds the six other kinds. Engagement 2.5.0 is served by service 0.4.0.
 
 ## Summary
 
@@ -37,6 +37,7 @@
   | `NAVIGATION` | `screen` | A screen opened in a client |
 
 - No event is a sale. A cart is intent, an exposure is not a conversion, and a confirmed transaction exists only in sales-service. A summary counts events that are not voided and gives each kind its own key.
+- The floor roles work only in their assigned stores (ADR-0060, F19-07). Recording an event, reading one by id, listing events and summarizing (`/v1` and `/v2`) are narrowed by `api_users.store_assignment_v1`, read per request with no cache and no token claim. A confined caller recording for another store gets 403 `forbidden_store` before any reference is checked and nothing is stored; a list or summary with no `store_id` covers only the caller's stores; a floor user with no assignment gets an empty page. `ADMIN` and every other role are not confined.
 - A capture incident records a finally refused queued write once under either unique identity. It is narrowed to live store assignments on every non-admin request, moves forward through review history, and is closed rather than deleted. Its stored shape has no credential or customer field.
 
 ## Endpoints
@@ -114,7 +115,7 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | 409 | `already_voided` | The event is already voided |
 | 409 | `client_incident_conflict` | An incident identity names a different refused operation |
 | 409 | `invalid_transition` | An incident review does not move its status forward |
-| 403 | `forbidden_store` | A non-admin caller is not currently assigned to the incident's store |
+| 403 | `forbidden_store` | A floor caller is not currently assigned to the store of the incident or event, or names such a store (ADR-0060) |
 | 422 | `unknown_store` | The store must exist and be active |
 | 422 | `unknown_product`, `unknown_customer` | A reference does not exist |
 | 422 | `occurred_in_future` | More than five minutes ahead of the server |

@@ -276,6 +276,49 @@ fn unknown_store(store_id: i32) -> ApiError {
     .with_details(vec![Detail::new("store_id", "unknown_store")])
 }
 
+/// The four floor roles work only in their assigned stores (ADR-0060). Every
+/// other role, `ADMIN` and `AUDITOR` among them, is not confined.
+const FLOOR_ROLES: [&str; 4] = [
+    "STORE_MANAGER",
+    "SALES_ASSOCIATE",
+    "LOYALTY_OFFICER",
+    "COMMERCIAL_SUPERVISOR",
+];
+
+fn confined(actor: &Principal) -> bool {
+    FLOOR_ROLES.contains(&actor.role.as_str())
+}
+
+/// 403 `forbidden_store`: no store's name, count or data is in the answer.
+fn forbidden_store(field: &str) -> ApiError {
+    ApiError::new(
+        403,
+        "forbidden_store",
+        "The caller is not assigned to this store.",
+    )
+    .with_details(vec![Detail::new(field, "other_store")])
+}
+
+/// The caller's stores as of this request: read from `api_users`, never
+/// cached and never taken from the token, so a removal is seen by every
+/// request that starts after it commits (ADR-0060).
+async fn assigned_stores(
+    client: &impl tokio_postgres::GenericClient,
+    actor: &Principal,
+) -> Result<Vec<i32>, ApiError> {
+    let user_id = caller(actor)?;
+    Ok(client
+        .query(
+            "SELECT store_id::int4 FROM api_users.store_assignment_v1 \
+             WHERE user_id = $1 ORDER BY store_id",
+            &[&user_id],
+        )
+        .await?
+        .iter()
+        .map(|row| row.get::<_, i32>(0))
+        .collect())
+}
+
 fn check_in_not_found(id: Uuid) -> ApiError {
     ApiError::new(
         404,
@@ -465,6 +508,15 @@ pub async fn record_check_in(
         )
         .with_details(vec![Detail::new("occurred_at", "in_future")]));
     }
+    // A confined caller is refused another store before the store is looked
+    // up, so the refusal does not say whether the store exists.
+    if confined(actor)
+        && !assigned_stores(&*transaction, actor)
+            .await?
+            .contains(&request.store_id)
+    {
+        return Err(forbidden_store("store_id"));
+    }
     let store_id = i16::try_from(request.store_id).map_err(|_| unknown_store(request.store_id))?;
     let store = transaction
         .query_opt(
@@ -559,7 +611,11 @@ async fn read_by_client_id(
 }
 
 /// One check-in with its reviews, oldest first.
-pub async fn read_check_in(db: &Database, id: Uuid) -> Result<(CheckIn, Vec<Review>), ApiError> {
+pub async fn read_check_in(
+    db: &Database,
+    actor: &Principal,
+    id: Uuid,
+) -> Result<(CheckIn, Vec<Review>), ApiError> {
     let connection = db.connection().await?;
     let row = connection
         .query_opt(
@@ -576,6 +632,13 @@ pub async fn read_check_in(db: &Database, id: Uuid) -> Result<(CheckIn, Vec<Revi
         .await?
         .ok_or_else(|| check_in_not_found(id))?;
     let check_in = CheckIn::from_row(&row)?;
+    if confined(actor)
+        && !assigned_stores(&***connection, actor)
+            .await?
+            .contains(&i32::from(check_in.store_id))
+    {
+        return Err(forbidden_store("check_in_id"));
+    }
     let reviews = connection
         .query(
             "SELECT review_id, verified, reason, reviewed_by, reviewed_at \
@@ -593,11 +656,23 @@ pub async fn read_check_in(db: &Database, id: Uuid) -> Result<(CheckIn, Vec<Revi
 /// A page of check-ins, newest first, and the total that match.
 pub async fn list_check_ins(
     db: &Database,
+    actor: &Principal,
     filters: &Filters,
     page: u32,
     size: u32,
 ) -> Result<(Vec<CheckIn>, u64), ApiError> {
     let connection = db.connection().await?;
+    // A confined caller's list is its own stores; naming another is refused,
+    // and a caller with no assignment lists nothing (ADR-0060).
+    let stores: Option<Vec<i32>> = if confined(actor) {
+        let assigned = assigned_stores(&***connection, actor).await?;
+        match filters.store_id {
+            Some(named) if !assigned.contains(&named) => return Err(forbidden_store("store_id")),
+            _ => Some(assigned),
+        }
+    } else {
+        None
+    };
     let limit = i64::from(size);
     let offset = i64::from(page.saturating_sub(1)) * limit;
     // One statement: the total always comes back, even past the last page,
@@ -619,7 +694,8 @@ pub async fn list_check_ins(
                    AND ($3::bool IS NULL \
                         OR COALESCE(r.verified, c.reason = 'within_geofence') = $3) \
                    AND ($4::timestamptz IS NULL OR c.occurred_at >= $4) \
-                   AND ($5::timestamptz IS NULL OR c.occurred_at <= $5)) \
+                   AND ($5::timestamptz IS NULL OR c.occurred_at <= $5) \
+                   AND ($8::int4[] IS NULL OR c.store_id = ANY($8))) \
              SELECT p.check_in_id, p.client_check_in_id, p.user_id, p.store_id, p.latitude, \
                     p.longitude, p.accuracy_m, p.distance_m, p.reason, p.occurred_at, \
                     p.recorded_at, p.verified, t.total \
@@ -635,6 +711,7 @@ pub async fn list_check_ins(
                 &filters.to,
                 &limit,
                 &offset,
+                &stores,
             ],
         )
         .await?;
@@ -717,7 +794,8 @@ async fn create_check_in(ctx: Ctx) -> Result<Reply, ApiError> {
 async fn list(ctx: Ctx) -> Result<Reply, ApiError> {
     let query = REQUEST_QUERY.try_with(Clone::clone).unwrap_or_default();
     let filters = parse_filters(&query)?;
-    let (items, total) = list_check_ins(ctx.db(), &filters, ctx.page, ctx.size).await?;
+    let (items, total) =
+        list_check_ins(ctx.db(), principal(&ctx)?, &filters, ctx.page, ctx.size).await?;
     let items = items.iter().map(CheckIn::wire).collect();
     Ok(
         Page::new("CheckIns", "CheckIn", "check_ins", items, ctx.page, total)
@@ -727,7 +805,7 @@ async fn list(ctx: Ctx) -> Result<Reply, ApiError> {
 }
 
 async fn get(ctx: Ctx) -> Result<Reply, ApiError> {
-    let (check_in, reviews) = read_check_in(ctx.db(), check_in_id(&ctx)?).await?;
+    let (check_in, reviews) = read_check_in(ctx.db(), principal(&ctx)?, check_in_id(&ctx)?).await?;
     let mut data = check_in.wire();
     data.insert(
         "reviews".to_owned(),

@@ -89,6 +89,13 @@ def check_store(connection: Connection, store_id: int) -> None:
         )
 
 
+# ADR-0060: these four roles work only in the stores assigned to them. Every
+# other role, ADMIN and the reading roles among them, is never confined.
+FLOOR_ROLES = frozenset(
+    {"STORE_MANAGER", "SALES_ASSOCIATE", "LOYALTY_OFFICER", "COMMERCIAL_SUPERVISOR"}
+)
+
+
 def assigned_stores(connection: Connection, user_id: str) -> list[int]:
     """Read the caller's current active assignments for this request."""
 

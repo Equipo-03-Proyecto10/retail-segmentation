@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>import_not_finished</code>
+  <message>Import 17 is PROCESSING; reconcile it once it has finished.</message>
+  <correlation_id>corr-import-not-finished</correlation_id>
+  <details>
+    <field>status</field>
+    <code>not_finished</code>
+  </details>
+</Error>

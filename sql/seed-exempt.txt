@@ -13,7 +13,8 @@
 # named schema-qualified, as CI counts it (ADR-0046): `<suffix>_events.outbox`
 # for a boundary's outbox, which holds runtime events and no seed, and
 # `sales.sale_capture`, `sales.sale_reversal`, `sales.sale_reversal_line` and the
-# three tables of a sales import, which hold runtime facts and control state. CI refuses any other schema-qualified name here.
+# three tables of a sales import and `sales.reconciliation_case`, which hold runtime
+# facts and control state. CI refuses any other schema-qualified name here.
 #
 # Padding a catalog with filler rows to reach 30 is the alternative, and it
 # makes the seed misrepresent the business: a reader cannot tell which roles
@@ -89,6 +90,9 @@ sales.sale_reversal_line
 sales.import
 sales.import_chunk
 sales.import_row_outcome
+# F26-09: the look-alike pairs an import's reconciliation found and the
+# decision a person made about each. Runtime facts, not a catalog.
+sales.reconciliation_case
 
 # sales-service relays stream:sales.v1.recorded from here and purges relayed
 # rows after seven days: runtime state, never seed data. The capture trigger

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SaleImportQuality xmlns="https://mosaiq.maxthecoder.online/xml/sales/v1">
+  <import_id>17</import_id>
+  <status>COMPLETED</status>
+  <total_rows>9</total_rows>
+  <received>9</received>
+  <accepted>5</accepted>
+  <rejected>4</rejected>
+  <pending>0</pending>
+  <created_at>2026-10-28T15:02:11Z</created_at>
+  <finished_at>2026-10-28T15:02:14Z</finished_at>
+  <failures>
+    <code>duplicate_row</code>
+    <count>2</count>
+  </failures>
+  <failures>
+    <code>future_dated</code>
+    <count>1</count>
+  </failures>
+  <failures>
+    <code>invalid_quantity</code>
+    <count>1</count>
+  </failures>
+  <reconciliation>
+    <found>3</found>
+    <open>2</open>
+    <distinct>0</distinct>
+    <duplicate>1</duplicate>
+  </reconciliation>
+</SaleImportQuality>

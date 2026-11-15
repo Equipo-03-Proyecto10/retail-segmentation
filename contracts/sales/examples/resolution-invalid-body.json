@@ -1,0 +1,11 @@
+{
+  "code": "invalid_body",
+  "message": "The resolution request violates its schema: resolution must be DISTINCT or DUPLICATE.",
+  "correlation_id": "corr-resolution-invalid-body",
+  "details": [
+    {
+      "field": "resolution",
+      "code": "invalid_value"
+    }
+  ]
+}

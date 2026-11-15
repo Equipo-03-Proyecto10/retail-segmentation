@@ -28,7 +28,7 @@ from mosaiq_kit import (
 
 import redis
 
-from . import audit, imports, reversal, store
+from . import audit, imports, reconciliation, reversal, store
 from .salerules import (
     constraint as _constraint,
 )
@@ -697,6 +697,77 @@ def create_app(*, start_relay: bool | None = None) -> Flask:
                 imports.cancel_import(connection, import_id)
             cancelled = imports.get_import(connection, import_id)
         return Representation("SaleImport", cancelled)
+
+    def _finished_import(connection: psycopg.Connection, import_id: int) -> dict:
+        found = _import_or_404(connection, import_id)
+        if found["status"] not in reconciliation.FINISHED:
+            raise reconciliation.not_finished(import_id, found["status"])
+        return found
+
+    @kit.operation("runSaleImportReconciliation")
+    def run_sale_import_reconciliation(import_id: int) -> Representation:
+        with kit.db.transaction() as connection:
+            imports.expire_stale(connection)
+            # The import's row lock keeps two runs from listing the same pair.
+            if imports.get_import(connection, import_id, lock=True) is None:
+                raise imports.not_found(import_id)
+            _finished_import(connection, import_id)
+            outcome = reconciliation.run(connection, import_id)
+        return Representation("SaleReconciliation", outcome)
+
+    @kit.operation("listSaleReconciliationCases")
+    def list_sale_reconciliation_cases(import_id: int) -> Page:
+        status = request.args.get("status")
+        if status is not None and status not in reconciliation.STATUSES:
+            raise _error(
+                422,
+                "invalid_query",
+                "A filter is malformed or the range is reversed.",
+                "status",
+                "invalid_value",
+            )
+        with kit.db.connection() as connection:
+            _import_or_404(connection, import_id)
+            found, total = reconciliation.list_cases(
+                connection, import_id, status, kit.size, (kit.page - 1) * kit.size
+            )
+        return Page(
+            "SaleReconciliationCases",
+            "SaleReconciliationCase",
+            "sale_reconciliation_cases",
+            found,
+            page=kit.page,
+            size=kit.size,
+            total=total,
+        )
+
+    @kit.operation("resolveSaleReconciliationCase")
+    def resolve_sale_reconciliation_case(
+        import_id: int, case_id: int
+    ) -> Representation:
+        principal = kit.principal
+        assert principal is not None
+        body = kit.body
+        with kit.db.transaction() as connection:
+            _import_or_404(connection, import_id)
+            settled = reconciliation.resolve(
+                connection,
+                import_id,
+                case_id,
+                body["resolution"],
+                body.get("note"),
+                str(principal["sub"]),
+            )
+        return Representation("SaleReconciliationCase", settled)
+
+    @kit.operation("getSaleImportQuality")
+    def get_sale_import_quality(import_id: int) -> Representation:
+        with kit.db.transaction() as connection:
+            imports.expire_stale(connection)
+            report = reconciliation.quality(connection, import_id)
+        if report is None:
+            raise imports.not_found(import_id)
+        return Representation("SaleImportQuality", report)
 
     @kit.operation("listChannels")
     def list_channels() -> Collection:

@@ -255,6 +255,12 @@ svc_sales,sales.import_chunk,INSERT
 svc_sales,sales.import_chunk,UPDATE
 svc_sales,sales.import_row_outcome,SELECT
 svc_sales,sales.import_row_outcome,INSERT
+svc_sales,sales.reconciliation_case,SELECT
+svc_sales,sales.reconciliation_case,INSERT
+svc_sales,sales.reconciliation_case(resolution),UPDATE
+svc_sales,sales.reconciliation_case(resolved_by),UPDATE
+svc_sales,sales.reconciliation_case(resolved_at),UPDATE
+svc_sales,sales.reconciliation_case(note),UPDATE
 svc_sales,sales_events,USAGE
 svc_sales,sales_events.outbox,SELECT
 svc_sales,sales_events.outbox,DELETE

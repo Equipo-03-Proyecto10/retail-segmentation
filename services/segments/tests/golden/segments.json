@@ -121,11 +121,11 @@
   ],
   "header": {
     "as_of": {
-      "anchor": "2026-11-17T08:00:48.497044-06:00"
+      "anchor": "2026-11-17T12:24:31.320987-06:00"
     },
     "captured_on": "2026-11-17",
     "port": "segments",
-    "seed_sha256": "ae8d66fe0bf58c4eda4f84fb4a54a5452bd2a50032dacd1e7708bd26e1957644",
-    "web_commit": "3747159c1c90dd66875d3a9fea9ef13385a83443-dirty"
+    "seed_sha256": "70057653c08b3d2ed18ab3862caa419f5277690b42d62746e7ecf417ef81004f",
+    "web_commit": "0c359363f12407eb5714d593ed0a425f215a3011"
   }
 }

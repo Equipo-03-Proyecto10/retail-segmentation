@@ -154,6 +154,34 @@
     </xs:sequence>
   </xs:complexType>
 
+  <xs:simpleType name="AnonymizationReason">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="SUBJECT_REQUEST"/>
+      <xs:enumeration value="RETENTION_EXPIRED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="AnonymizationOutcome">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="ANONYMIZED"/>
+      <xs:enumeration value="ALREADY_ANONYMIZED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="AnonymizeCustomerRequest">
+    <xs:sequence>
+      <xs:element name="reason" type="cus:AnonymizationReason"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Anonymization">
+    <xs:sequence>
+      <xs:element name="customer_id" type="cus:Uuid"/>
+      <xs:element name="outcome" type="cus:AnonymizationOutcome"/>
+      <xs:element name="anonymized_at" type="xs:dateTime"/>
+    </xs:sequence>
+  </xs:complexType>
+
   <xs:complexType name="LookupLoyaltyCardRequest">
     <xs:sequence>
       <xs:element name="code" type="cus:CardCode"/>
@@ -177,6 +205,8 @@
   <xs:element name="LoyaltyCards" type="cus:LoyaltyCards"/>
   <xs:element name="IssueLoyaltyCardRequest" type="cus:IssueLoyaltyCardRequest"/>
   <xs:element name="RevokeLoyaltyCardRequest" type="cus:RevokeLoyaltyCardRequest"/>
+  <xs:element name="AnonymizeCustomerRequest" type="cus:AnonymizeCustomerRequest"/>
+  <xs:element name="Anonymization" type="cus:Anonymization"/>
   <xs:element name="LookupLoyaltyCardRequest" type="cus:LookupLoyaltyCardRequest"/>
   <xs:element name="LoyaltyCardLookup" type="cus:LoyaltyCardLookup"/>
 </xs:schema>

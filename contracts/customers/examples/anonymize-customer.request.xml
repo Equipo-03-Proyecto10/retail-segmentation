@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<AnonymizeCustomerRequest xmlns="https://mosaiq.maxthecoder.online/xml/customers/v1">
+  <reason>SUBJECT_REQUEST</reason>
+</AnonymizeCustomerRequest>

@@ -1,8 +1,7 @@
 import { createServer, type Server } from 'node:http';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import { expect, launchElectron, test, type ElectronApplication, type Page } from './electron-test';
 
 // The comparison module against XML examples and XSD-valid assignment pages from the two services
 // it composes. No request value is echoed into HTML or into a fake response.
@@ -97,12 +96,7 @@ test.beforeEach(() => {
 });
 
 async function launch(width: number): Promise<{ app: ElectronApplication; page: Page }> {
-  const dir = mkdtempSync(join(tmpdir(), 'mosaiq-desktop-'));
-  writeFileSync(join(dir, 'settings.json'), JSON.stringify({ baseUrl: base }));
-  const app = await electron.launch({
-    args: ['.'],
-    env: { ...process.env, MOSAIQ_DESKTOP_CONFIG_DIR: dir },
-  });
+  const { app } = await launchElectron(base);
   const page = await app.firstWindow();
   await page.setViewportSize({ width, height: 900 });
   await page.fill('#f-email', 'a@b.c');

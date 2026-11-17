@@ -46,7 +46,7 @@ Create `settings.json` in the configuration directory (Linux `~/.config/mosaiq-d
 ```
 
 The base URL is never hard-coded. A malformed settings file stops the app with an error rather than
-being ignored. `MOSAIQ_DESKTOP_CONFIG_DIR` overrides the directory (the window tests use it).
+being ignored. `MOSAIQ_DESKTOP_CONFIG_DIR` overrides the directory (the window tests use it). A window test launches the app only through `launchElectron(baseUrl)` and makes other scratch directories only through `makeTemporaryDirectory(prefix)`, both in `tests/window/electron-test.ts`, and takes `test` from there: its automatic fixture closes the app and removes what the test made, passed or failed, so a run leaves nothing in the temporary directory (#1028). `tests/unit/window-profile-ownership.test.ts` fails a spec that does otherwise.
 
 ## Security model
 

@@ -8,7 +8,7 @@
 | Kind | PostgreSQL view |
 | Owning boundary | customer-preferences |
 | Producer | customer-preferences-service |
-| Consumers | recommendations, campaigns, rfm-engine |
+| Consumers | recommendations, campaigns, rfm-engine, experimentation |
 
 The view publishes what each customer currently allows, one row per customer and
 purpose: the latest row, by `decision_id`, of the append-only consent log

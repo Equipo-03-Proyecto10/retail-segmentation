@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: sales-service
-  version: 1.7.0
+  version: 1.8.0
   description: >-
     Records a sale exactly once, all or nothing, and reads sales and the channel
     vocabulary back (RN-11 to RN-13, RN-37). A sale is never edited or deleted:
@@ -39,6 +39,12 @@ paths:
         `details`, with a zero-based index as in `lines[1].quantity`. The schema
         does not cap or constrain these values, so that the service answers with its
         own code.
+
+        An anonymized customer. A customer that customers-service has anonymized
+        (`anonymized` in `api_customers.customer_ref_v1`, ADR-0066 section 3) is
+        refused with 422 `anonymized_customer` (detail `customer_id`,
+        `anonymized`), and nothing is stored. Its past sales stay as they are,
+        and their reversals are still recorded.
 
         Who may record where. `STORE_MANAGER` and `SALES_ASSOCIATE` work only in
         their assigned stores: a sale for another store is 403 `forbidden_store`
@@ -936,6 +942,7 @@ paths:
         | `header_mismatch` | the first column that disagrees | names a `transaction_id` already accepted in this import with another customer, store, channel or date |
         | `duplicate_row` | absent | repeats a line that already exists (see `duplicate_of`) |
         | `unknown_customer`, `unknown_store`, `unknown_channel`, `unknown_product` | the column | names no such customer, store, channel or product |
+        | `anonymized_customer` | `customer_id` | names a customer that has been anonymized |
         | `inactive_product` | `product_id` | names a product that is no longer active |
         | `before_registration` | `occurred_at` | is dated before the customer registered |
         | `future_dated` | `occurred_at` | is dated in the future |
@@ -2688,7 +2695,7 @@ components:
             duplicate_product_line:
               externalValue: ./examples/duplicate-product-line.xml
     SaleRefused:
-      description: '`no_lines`, `no_stock_record`, `unknown_customer`, `unknown_store`, `unknown_channel`, `unknown_product`, `inactive_product`, `before_registration`, `future_dated`, `invalid_price`, `invalid_quantity` or `invalid_body`.'
+      description: '`no_lines`, `no_stock_record`, `unknown_customer`, `anonymized_customer`, `unknown_store`, `unknown_channel`, `unknown_product`, `inactive_product`, `before_registration`, `future_dated`, `invalid_price`, `invalid_quantity` or `invalid_body`.'
       headers:
         X-Correlation-ID:
           $ref: '#/components/headers/CorrelationId'
@@ -2703,6 +2710,8 @@ components:
               externalValue: ./examples/no-stock-record.json
             unknown_customer:
               externalValue: ./examples/unknown-customer.json
+            anonymized_customer:
+              externalValue: ./examples/anonymized-customer.json
             unknown_store:
               externalValue: ./examples/unknown-store.json
             unknown_channel:
@@ -2731,6 +2740,8 @@ components:
               externalValue: ./examples/no-stock-record.xml
             unknown_customer:
               externalValue: ./examples/unknown-customer.xml
+            anonymized_customer:
+              externalValue: ./examples/anonymized-customer.xml
             unknown_store:
               externalValue: ./examples/unknown-store.xml
             unknown_channel:

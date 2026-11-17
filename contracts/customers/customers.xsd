@@ -182,6 +182,25 @@
     </xs:sequence>
   </xs:complexType>
 
+  <xs:complexType name="RetentionCandidate">
+    <xs:sequence>
+      <xs:element name="customer_id" type="cus:Uuid"/>
+      <xs:element name="registered_on" type="xs:date"/>
+      <xs:element name="last_sale_at" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="last_visit_at" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="last_activity_on" type="xs:date"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="RetentionCandidates">
+    <xs:sequence>
+      <xs:element name="as_of" type="xs:dateTime"/>
+      <xs:element name="inactive_before" type="xs:date"/>
+      <xs:element name="RetentionCandidate" type="cus:RetentionCandidate" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
   <xs:complexType name="LookupLoyaltyCardRequest">
     <xs:sequence>
       <xs:element name="code" type="cus:CardCode"/>
@@ -207,6 +226,7 @@
   <xs:element name="RevokeLoyaltyCardRequest" type="cus:RevokeLoyaltyCardRequest"/>
   <xs:element name="AnonymizeCustomerRequest" type="cus:AnonymizeCustomerRequest"/>
   <xs:element name="Anonymization" type="cus:Anonymization"/>
+  <xs:element name="RetentionCandidates" type="cus:RetentionCandidates"/>
   <xs:element name="LookupLoyaltyCardRequest" type="cus:LookupLoyaltyCardRequest"/>
   <xs:element name="LoyaltyCardLookup" type="cus:LoyaltyCardLookup"/>
 </xs:schema>

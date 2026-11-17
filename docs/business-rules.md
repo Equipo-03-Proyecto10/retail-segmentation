@@ -811,6 +811,14 @@ column. The application only ever adds conversions, and the database enforces
 it: as for exposures (ADR-0027), `retail_app` holds no `UPDATE` or `DELETE`
 privilege on `experiment_conversion` (ADR-0050).
 
+**Conversion, net of reversals (F25-11, ADR-0069).** The experimentation service
+evaluates the same window, and reads sales net (ADR-0062). A sale reversed in full
+before an evaluation is not recorded. A sale reversed after it converted stays
+recorded and is never changed; it counts as a conversion only while its net amount
+is above zero, read when the conversion is listed (`counts`, `net_amount`, `as_of`).
+A customer whose only qualifying sale was reversed in full is *pending* while their
+window is open and *not converted* once it has closed.
+
 **Uplift (F11-07).** The result is intent to treat: each treatment arm's
 conversion rate minus the control's, over every assigned customer whether or not
 they were exposed, with a 95% interval and a two-sided test at alpha 0.05 (each

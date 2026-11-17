@@ -1,6 +1,6 @@
 # experimentation
 
-> **Status:** Stood up (phase 25, third; F25-07, #838): the service answers its meta routes, holds the grants on the five experiment tables, and serves one operation, `listSaleAttributions`, whose page is empty until F25-03 (#843) builds attribution; every other operation stays `x-mosaiq-status: planned` (ADR-0073). The contract was published by F25-06 (#837). ADR-0059 places it; ADR-0068 and ADR-0069 decide how it behaves.
+> **Status:** Stood up (phase 25, third; F25-07, #838): the service answers its meta routes, holds the grants on the five experiment tables, and serves `listSaleAttributions`, whose page is empty until F25-12 (#843) builds attribution; the conversions are implemented too (F25-11, #842: list them, and evaluate them); every other operation stays `x-mosaiq-status: planned` (ADR-0073). The contract was published by F25-06 (#837). ADR-0059 places it; ADR-0068 and ADR-0069 decide how it behaves.
 > **One rule:** An experiment's frame and arms are fixed before measurement, assignment, exposure and conversion are separate append-only facts, a sale is attributed at most once, and an effect is reported only against a control, with its uncertainty (RN-23, RN-24, RN-25, RN-27, RN-42, RN-48, RN-49, RN-67)
 
 ## Summary
@@ -25,12 +25,13 @@
 - An assignment is a function of the plan: a customer's key is `HMAC-SHA-256` of the published salt over the experiment and the customer, the frame is ordered by that key and dealt round-robin, so arms differ by at most one and anyone can recompute them. The whole frame is assigned once and never rewritten (RN-23, RN-42). A customer is assigned in at most one experiment whose period overlaps.
 - Assignment, exposure and conversion are separate append-only facts (RN-27, ADR-0050). The control is never exposed. Exposures are not written here: they are `CAMPAIGN_EXPOSURE` notices of engagement, projected into this service's own schema from its stream (ADR-0075), and only counted.
 - The primary analysis is intent to treat over every assigned customer, net of reversals (ADR-0062), read once at the analysis instant (assignment instant plus the window plus seven days). A later read is labelled as of its time and never replaces the stored primary result.
+- A conversion is a sale of an assigned customer at or after the assignment instant and before it plus the window, a window of 24-hour days. `POST .../conversions` records the qualifying sales not recorded yet, however often it runs (the unique key makes a repeat do nothing, so two at once are safe), and answers how many it added and how many it already had. It reads sales net of reversals, writes no attribution, and never changes or deletes a row (ADR-0050). Whether a conversion counts is read when it is listed: while its sale has a unit left in `api_sales.net_purchase_line_v1`, with the net amount and the instant it was read (ADR-0069). A sale reversed in full before an evaluation is not recorded. A customer with no counting conversion is pending while their own window is open and not converted after it. The service counts those three outcomes per arm (`arm_outcomes`), which `getExperimentResult` will report (F25-13).
 - A sale is attributed to at most one campaign (ADR-0069): a conversion of a treatment assignment, with a recorded exposure before the sale, inside the experiment's own window. The latest exposure holds it, and the holder is never reassigned or reopened.
 - Attribution and effect are two measurements named apart. Only a treatment's difference against a control, with its interval, may be called an effect or incremental. An experiment with no control compares two offers and states a difference between treatments and no effect. A non-significant result of an underpowered experiment is inconclusive.
 
 ## Endpoints
 
-Every business operation below is `planned`. Reads are for the roles that read campaigns; the writes are for the roles that write them (see the [service operation policy](../requirements.md#service-operation-policy-distributed-stage)).
+Every business operation below is `planned` except the two on conversions (F25-11) and the empty list of attributions. Reads are for the roles that read campaigns; the writes are for the roles that write them (see the [service operation policy](../requirements.md#service-operation-policy-distributed-stage)).
 
 | Method | Path | Purpose | Roles (`x-mosaiq-roles`) |
 |---|---|---|---|
@@ -68,6 +69,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Consumes | `api_segments.current_label_v1` | segments (the label a customer holds at the frame instant) |
 | Consumes | `api_models.published_version_v1` | model-registry (the model version published at the frame instant) |
 | Consumes | `api_sales.net_purchase_line_v1` | sales (conversions and revenue, net of reversals) |
+| Consumes | `api_sales.purchase_line_v1` | sales (the date and the origin of a sale that was reversed in full, which the net view no longer lists; F25-11) |
 | Consumes | The campaign's audience, eligibility and exclusions as a versioned view | campaigns (F25-03, F25-04): required, not contracted yet |
 | Consumes | `PERSONALIZATION` and `MARKETING_CONTACT` decisions and channel restrictions as of an instant | customer-preferences (F21-17): required, not contracted yet |
 

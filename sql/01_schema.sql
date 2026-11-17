@@ -4034,6 +4034,46 @@ GRANT USAGE ON SCHEMA api_segments, api_customers, api_sales TO svc_campaigns;
 GRANT SELECT ON api_segments.current_label_v1 TO svc_campaigns;
 GRANT SELECT ON api_customers.customer_ref_v1 TO svc_campaigns;
 GRANT SELECT ON api_sales.net_purchase_line_v1 TO svc_campaigns;
+
+-- What experimentation reads to take an experiment's frame (ADR-0068 section 1, #1051):
+-- the campaign's target label and eligibility rule, and its two lists of exclusions.
+-- Three views, because the rule is one row of a campaign and each exclusion list is its own
+-- multivalued fact (4NF). security_invoker = off, so svc_experiments needs no privilege on
+-- campaigns.* or public.campaign. They hold current rows: the consumer reads them in the one
+-- REPEATABLE READ transaction that fixes its instant T. Contracts:
+-- contracts/db/api_campaigns.campaign_target.v1.md, ...campaign_excluded_customer.v1.md and
+-- ...campaign_excluded_label.v1.md.
+CREATE SCHEMA IF NOT EXISTS api_campaigns;
+REVOKE ALL ON SCHEMA api_campaigns FROM PUBLIC;
+
+CREATE OR REPLACE VIEW api_campaigns.campaign_target_v1
+WITH (security_invoker = off) AS
+SELECT c.campaign_id,
+       c.label_code,
+       c.status,
+       e.registered_on_or_before,
+       e.min_purchases,
+       e.purchase_window_days
+FROM public.campaign AS c
+LEFT JOIN campaigns.campaign_eligibility AS e ON e.campaign_id = c.campaign_id;
+REVOKE ALL ON api_campaigns.campaign_target_v1 FROM PUBLIC;
+
+CREATE OR REPLACE VIEW api_campaigns.campaign_excluded_customer_v1
+WITH (security_invoker = off) AS
+SELECT campaign_id, customer_id
+FROM campaigns.campaign_excluded_customer;
+REVOKE ALL ON api_campaigns.campaign_excluded_customer_v1 FROM PUBLIC;
+
+CREATE OR REPLACE VIEW api_campaigns.campaign_excluded_label_v1
+WITH (security_invoker = off) AS
+SELECT campaign_id, label_code
+FROM campaigns.campaign_excluded_label;
+REVOKE ALL ON api_campaigns.campaign_excluded_label_v1 FROM PUBLIC;
+
+GRANT USAGE ON SCHEMA api_campaigns TO svc_experiments;
+GRANT SELECT ON api_campaigns.campaign_target_v1,
+    api_campaigns.campaign_excluded_customer_v1,
+    api_campaigns.campaign_excluded_label_v1 TO svc_experiments;
 -- END BOUNDARY campaigns
 
 -- BEGIN BOUNDARY audit-trail

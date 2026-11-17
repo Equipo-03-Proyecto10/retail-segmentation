@@ -175,7 +175,7 @@ def app(
     monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
     from app import create_app
 
-    application = create_app()
+    application = create_app(start_relay=False)
     application.config["TESTING"] = True
     yield application
     application.extensions["mosaiq_kit"].db.close()

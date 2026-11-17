@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: experimentation-service
-  version: 1.0.2
+  version: 1.0.3
   description: >-
     Plans experiments, assigns customers to their arms, evaluates conversions, credits sales to campaigns
     and reports results (RN-67). An experiment's frame and arms are fixed before measurement, assignment,
@@ -61,8 +61,8 @@ info:
 
 
 
-    **Not yet implemented.** Every operation is marked `x-mosaiq-status: planned` (ADR-0073): the contract
-    merges first (ADR-0035), and the implementing story removes the marker. The experiment tables the
+    **Not yet implemented.** An operation still marked `x-mosaiq-status: planned` (ADR-0073) is not served: the
+    contract merges first (ADR-0035), and the implementing story removes the marker. The experiment tables the
     web writes are taken over by the stand-up story; this contract moves none of them.
 security:
 - bearer: []
@@ -89,7 +89,6 @@ paths:
       - ANALYST
       - MARKETING
       - AUDITOR
-      x-mosaiq-status: planned
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       - $ref: '#/components/parameters/CampaignIdFilter'
@@ -154,7 +153,6 @@ paths:
       x-mosaiq-roles:
       - ADMIN
       - MARKETING
-      x-mosaiq-status: planned
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       requestBody:
@@ -234,7 +232,6 @@ paths:
       - ANALYST
       - MARKETING
       - AUDITOR
-      x-mosaiq-status: planned
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       - $ref: '#/components/parameters/ExperimentId'
@@ -1455,8 +1452,11 @@ components:
           $ref: '#/components/schemas/Code'
           description: >-
             An open vocabulary; a client shows an unknown code as it is. Today: NO_PERSONALIZATION_CONSENT,
-            NO_MARKETING_CONTACT_CONSENT, CHANNEL_RESTRICTED, ANONYMIZED, INACTIVE, CAMPAIGN_EXCLUSION
-            and OVERLAPPING_EXPERIMENT.
+            NO_MARKETING_CONTACT_CONSENT, CHANNEL_RESTRICTED, ANONYMIZED, INACTIVE, CAMPAIGN_EXCLUSION,
+            CAMPAIGN_ELIGIBILITY (the campaign's own registration or purchase rule) and OVERLAPPING_EXPERIMENT.
+            A customer is counted once, under the first reason that applied, in this order: CAMPAIGN_EXCLUSION,
+            CAMPAIGN_ELIGIBILITY, NO_PERSONALIZATION_CONSENT, NO_MARKETING_CONTACT_CONSENT, CHANNEL_RESTRICTED,
+            OVERLAPPING_EXPERIMENT. A reason with no customer has no entry.
         count:
           type: integer
           minimum: 0

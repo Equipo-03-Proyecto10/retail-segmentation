@@ -183,7 +183,7 @@ private fun RecommendationRow(shown: ShownRecommendation, onOpen: (ShownRecommen
     val description = stringResource(R.string.insights_open_product, shown.name)
     val onHand = stringResource(R.string.insights_on_hand, shown.item.quantityOnHand)
     MqListRow(
-        headline = "${shown.rank}. ${shown.name}",
+        headline = stringResource(R.string.insights_rank_and_name, shown.rank, shown.name),
         supporting = (listOf(onHand) + shown.reasons).joinToString("\n"),
         chevron = true,
         divider = true,
@@ -195,6 +195,8 @@ private fun RecommendationRow(shown: ShownRecommendation, onOpen: (ShownRecommen
             .clickable(role = Role.Button) { onOpen(shown) }
     )
 }
+
+// ui-string-ok-from: previews below (sample copy for design review, never on a screen)
 
 private const val ASSIGNED = "assigned"
 private const val SCORE_COUNT = 3

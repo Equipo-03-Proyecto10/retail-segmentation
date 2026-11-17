@@ -962,6 +962,16 @@ BEGIN
     before_data := before_data - 'password_hash';
     after_data  := after_data  - 'password_hash';
 
+    -- An anonymized customer's name, email and phone never enter the trail again
+    -- (ADR-0066 section 3), and the entry that records the anonymization does not
+    -- keep the identity it removed. The older entries are redacted by
+    -- customers.redact_audit_v1 in the same transaction.
+    IF TG_TABLE_NAME = 'customer'
+       AND coalesce(after_data, before_data) ->> 'anonymized_at' IS NOT NULL THEN
+        before_data := public.fn_redact_identity(before_data);
+        after_data  := public.fn_redact_identity(after_data);
+    END IF;
+
     -- The application sets mosaiq.user_id on the connection once F4-01 knows
     -- who is logged in. Until then, and for anything the seed or a maintenance
     -- script does, the actor is genuinely unknown and the column stays NULL
@@ -2079,8 +2089,10 @@ GRANT SELECT ON products.product_status, products.product_attribute,
 -- when given, whatever the letter case (ux_customer_email_lower), a known channel
 -- (customer_registration_channel_id_fkey), a registration date not in the
 -- future (checked by the service) and no deletion. The table stays in public
--- as legacy, and the web only reads it. The boundary publishes no stream, so it
--- has no outbox and no capture trigger.
+-- as legacy, and the web only reads it. F21-19 (ADR-0066 section 3) adds the
+-- other half of RN-08: a customer is anonymized in place, never deleted. The
+-- boundary therefore publishes one stream, stream:customers.v1.anonymized,
+-- relayed from customers_events.outbox, and one flag in the customer reference.
 
 -- One customer per mailbox, whatever the letter case (#594), as app_user
 -- (#288). A plain UNIQUE on email let Ana@ and ana@ register as two customers.
@@ -2134,14 +2146,154 @@ CREATE TRIGGER trg_audit_loyalty_card
 AFTER INSERT OR UPDATE ON customers.loyalty_card
 FOR EACH ROW EXECUTE FUNCTION public.fn_audit('card_id');
 
--- The published customer reference: identity and registration date, and no
--- personal data. security_invoker = off, so a consumer needs no privilege on
--- public.customer.
+-- Anonymization (F21-19, ADR-0066 section 3). anonymized_at is the one marker:
+-- null until the identity is removed in place, then the instant it was, once.
+-- It depends on the customer alone, so the model stays in 4NF (docs/data-model.md
+-- section 2.4). Two guards keep it honest for every writer, the web and a direct
+-- UPDATE included, because an application check alone is bypassed: the CHECK says
+-- a marked row holds no identity, and the trigger says a marked row never changes
+-- again. The placeholder is the name column's NOT NULL replacement.
+ALTER TABLE public.customer ADD COLUMN IF NOT EXISTS anonymized_at TIMESTAMPTZ;
+DO $anonymized_check$ BEGIN
+    ALTER TABLE public.customer ADD CONSTRAINT customer_anonymized_identity_check
+        CHECK (anonymized_at IS NULL OR (
+            name = 'Anonymized customer' AND email IS NULL AND phone IS NULL
+            AND user_id IS NULL));
+EXCEPTION WHEN duplicate_object THEN NULL; END $anonymized_check$;
+
+CREATE OR REPLACE FUNCTION customers.refuse_anonymized_change() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, pg_temp
+AS $refuse$
+BEGIN
+    RAISE EXCEPTION 'customer % is anonymized and accepts no change', OLD.customer_id
+        USING ERRCODE = 'check_violation', CONSTRAINT = 'customer_anonymized';
+END
+$refuse$;
+REVOKE EXECUTE ON FUNCTION customers.refuse_anonymized_change() FROM PUBLIC;
+
+DROP TRIGGER IF EXISTS trg_customer_anonymized_is_final ON public.customer;
+CREATE TRIGGER trg_customer_anonymized_is_final
+BEFORE UPDATE ON public.customer
+FOR EACH ROW WHEN (OLD.anonymized_at IS NOT NULL)
+EXECUTE FUNCTION customers.refuse_anonymized_change();
+
+-- An anonymized customer holds no loyalty card (ADR-0066): a card is never issued
+-- to one. The check is the table's, so a direct INSERT meets it too.
+CREATE OR REPLACE FUNCTION customers.refuse_card_for_anonymized() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, pg_temp
+AS $refuse$
+BEGIN
+    IF EXISTS (SELECT 1 FROM public.customer AS c
+                WHERE c.customer_id = NEW.customer_id AND c.anonymized_at IS NOT NULL) THEN
+        RAISE EXCEPTION 'customer % is anonymized and holds no loyalty card', NEW.customer_id
+            USING ERRCODE = 'check_violation', CONSTRAINT = 'customer_anonymized';
+    END IF;
+    RETURN NEW;
+END
+$refuse$;
+REVOKE EXECUTE ON FUNCTION customers.refuse_card_for_anonymized() FROM PUBLIC;
+
+DROP TRIGGER IF EXISTS trg_loyalty_card_not_for_anonymized ON customers.loyalty_card;
+CREATE TRIGGER trg_loyalty_card_not_for_anonymized
+BEFORE INSERT ON customers.loyalty_card
+FOR EACH ROW EXECUTE FUNCTION customers.refuse_card_for_anonymized();
+
+-- The published customer reference: identity, registration date and the
+-- anonymized flag, and no personal data. security_invoker = off, so a consumer
+-- needs no privilege on public.customer. anonymized is appended last so the view
+-- is replaced in place (contracts/db/api_customers.customer_ref.v1.md).
 CREATE OR REPLACE VIEW api_customers.customer_ref_v1
 WITH (security_invoker = off) AS
-SELECT customer_id, registered_on
+SELECT customer_id, registered_on, (anonymized_at IS NOT NULL) AS anonymized
 FROM public.customer;
 REVOKE ALL ON api_customers.customer_ref_v1 FROM PUBLIC;
+
+-- The identity inside an audit payload (ADR-0066 section 3): name, email and
+-- phone that are present and not JSON null become the marker; nothing else of
+-- the payload changes. Pure, so fn_audit, the redaction pass and the tests share
+-- one definition.
+CREATE OR REPLACE FUNCTION public.fn_redact_identity(d jsonb) RETURNS jsonb
+LANGUAGE sql IMMUTABLE
+SET search_path = pg_catalog, pg_temp
+AS $redact$
+    SELECT CASE WHEN d IS NULL THEN NULL ELSE
+        d || coalesce((SELECT jsonb_object_agg(k, '"[redacted]"'::jsonb)
+                         FROM unnest(ARRAY['name', 'email', 'phone']) AS k
+                        WHERE d ? k AND jsonb_typeof(d -> k) <> 'null'), '{}'::jsonb)
+    END
+$redact$;
+
+-- Removes the identity from every audit entry of one anonymized customer's row,
+-- and returns how many entries changed. It runs as definer_customers, which may
+-- read those columns and update the two payloads and nothing else; no svc_* role
+-- gains UPDATE on audit_log (ADR-0024, ADR-0066). It refuses a customer that is
+-- not anonymized, so it cannot be used to blank anyone's trail. The entries, their
+-- number, keys, actions, times and actors stay.
+CREATE OR REPLACE FUNCTION customers.redact_audit_v1(p_customer uuid) RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $redact_audit$
+DECLARE
+    changed integer;
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM public.customer AS c
+                    WHERE c.customer_id = p_customer AND c.anonymized_at IS NOT NULL) THEN
+        RAISE EXCEPTION 'customer % is not anonymized', p_customer
+            USING ERRCODE = 'check_violation', CONSTRAINT = 'customer_not_anonymized';
+    END IF;
+    UPDATE public.audit_log AS a
+       SET data_before = public.fn_redact_identity(a.data_before),
+           data_after = public.fn_redact_identity(a.data_after)
+     WHERE a.entity = 'customer' AND a.entity_pk = p_customer::text
+       AND (a.data_before IS DISTINCT FROM public.fn_redact_identity(a.data_before)
+            OR a.data_after IS DISTINCT FROM public.fn_redact_identity(a.data_after));
+    GET DIAGNOSTICS changed = ROW_COUNT;
+    RETURN changed;
+END
+$redact_audit$;
+ALTER FUNCTION customers.redact_audit_v1(uuid) OWNER TO definer_customers;
+REVOKE ALL ON FUNCTION customers.redact_audit_v1(uuid) FROM PUBLIC;
+
+-- Keys only, never state: a consumer re-reads api_customers.customer_ref_v1.
+CREATE SCHEMA IF NOT EXISTS customers_events;
+REVOKE ALL ON SCHEMA customers_events FROM PUBLIC;
+CREATE TABLE IF NOT EXISTS customers_events.outbox (
+    event_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    stream      text NOT NULL,
+    event_type  text NOT NULL,
+    entity_id   text NOT NULL,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    relayed_at  timestamptz
+);
+CREATE INDEX IF NOT EXISTS outbox_unrelayed
+    ON customers_events.outbox (occurred_at) WHERE relayed_at IS NULL;
+
+-- One outbox row, in the transaction that removes the identity, and none for a
+-- row that changes anything else (contracts/streams/customers.anonymized.v1.md).
+CREATE OR REPLACE FUNCTION customers_events.capture_anonymized() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+BEGIN
+    INSERT INTO customers_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:customers.v1.anonymized', TG_OP, NEW.customer_id::text);
+    -- An empty wake-up for the customers relay; only that relay LISTENs.
+    PERFORM pg_notify('customers_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION customers_events.capture_anonymized() OWNER TO definer_customers;
+REVOKE EXECUTE ON FUNCTION customers_events.capture_anonymized() FROM PUBLIC;
+
+DROP TRIGGER IF EXISTS trg_customers_capture_anonymized ON public.customer;
+CREATE TRIGGER trg_customers_capture_anonymized
+AFTER UPDATE OF anonymized_at ON public.customer
+FOR EACH ROW WHEN (OLD.anonymized_at IS NULL AND NEW.anonymized_at IS NOT NULL)
+EXECUTE FUNCTION customers_events.capture_anonymized();
 
 -- Consumers can resolve one active code but cannot enumerate card data.
 CREATE OR REPLACE FUNCTION api_customers.resolve_loyalty_code_v1(p_code text)
@@ -2166,6 +2318,19 @@ REVOKE ALL ON FUNCTION api_customers.resolve_loyalty_code_v1(text) FROM PUBLIC;
 GRANT SELECT, INSERT ON public.customer TO svc_customers;
 GRANT UPDATE (name, email, phone, registration_channel_id)
     ON public.customer TO svc_customers;
+-- Anonymization sets the marker and clears the account link; the CHECK and the
+-- triggers above say what an UPDATE of them may leave behind.
+GRANT UPDATE (user_id, anonymized_at) ON public.customer TO svc_customers;
+-- The redaction function reads the customer's marker and rewrites two payloads
+-- of audit_log, and does nothing else.
+GRANT SELECT (customer_id, anonymized_at) ON public.customer TO definer_customers;
+GRANT SELECT (entity, entity_pk, data_before, data_after),
+      UPDATE (data_before, data_after) ON public.audit_log TO definer_customers;
+GRANT EXECUTE ON FUNCTION customers.redact_audit_v1(uuid) TO svc_customers;
+
+GRANT USAGE ON SCHEMA customers_events TO svc_customers, definer_customers;
+GRANT INSERT ON customers_events.outbox TO definer_customers;
+GRANT SELECT, DELETE, UPDATE (relayed_at) ON customers_events.outbox TO svc_customers;
 
 GRANT USAGE ON SCHEMA customers TO svc_customers, definer_customers;
 GRANT SELECT, INSERT ON customers.loyalty_card TO svc_customers;
@@ -2642,11 +2807,13 @@ GRANT USAGE ON SCHEMA api_sales, api_products TO svc_preferences;
 GRANT SELECT ON api_sales.net_purchase_line_v1 TO svc_preferences;
 GRANT SELECT ON api_products.product_ref_v1 TO svc_preferences;
 
-GRANT USAGE ON SCHEMA api_preferences TO svc_preferences, svc_recommendations, svc_campaigns;
+GRANT USAGE ON SCHEMA api_preferences
+    TO svc_preferences, svc_recommendations, svc_campaigns, svc_checkins;
 GRANT SELECT ON api_preferences.interest_category_v1 TO svc_preferences, svc_recommendations;
 -- The readers named by contracts/db/api_preferences.consent_state.v1.md and
 -- restriction.v1.md whose roles exist; rfm-engine's follows with its role.
-GRANT SELECT ON api_preferences.consent_state_v1 TO svc_preferences, svc_recommendations, svc_campaigns;
+GRANT SELECT ON api_preferences.consent_state_v1
+    TO svc_preferences, svc_recommendations, svc_campaigns, svc_checkins;
 GRANT SELECT ON api_preferences.restriction_v1 TO svc_preferences, svc_recommendations, svc_campaigns;
 -- END BOUNDARY customer-preferences
 
@@ -3807,11 +3974,63 @@ CREATE INDEX IF NOT EXISTS store_check_in_user_occurred
 CREATE INDEX IF NOT EXISTS check_in_review_check_in_reviewed
     ON checkins.check_in_review (check_in_id, reviewed_at);
 
+-- F21-23 (#801, RN-72): an authorized customer visit is a customer fact,
+-- separate from the staff location fact above. It deliberately has no
+-- loyalty-code, card, coordinate, accuracy, address, device or network column.
+-- campaign_id is checked through api_campaigns.campaign_ref_v1 before insert;
+-- there is no cross-boundary foreign key to campaigns' base table.
+CREATE TABLE IF NOT EXISTS checkins.customer_visit (
+    visit_id UUID NOT NULL DEFAULT gen_random_uuid(),
+    customer_id UUID,
+    store_id SMALLINT NOT NULL,
+    campaign_id INTEGER,
+    occurred_at TIMESTAMPTZ NOT NULL,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    recorded_by UUID NOT NULL
+);
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.customer_visit'::regclass
+      AND conname = 'customer_visit_pkey'
+) THEN ALTER TABLE checkins.customer_visit ADD CONSTRAINT customer_visit_pkey
+        PRIMARY KEY (visit_id); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.customer_visit'::regclass
+      AND conname = 'customer_visit_customer_id_fkey'
+) THEN ALTER TABLE checkins.customer_visit ADD CONSTRAINT customer_visit_customer_id_fkey
+        FOREIGN KEY (customer_id) REFERENCES public.customer(customer_id)
+        ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.customer_visit'::regclass
+      AND conname = 'customer_visit_store_id_fkey'
+) THEN ALTER TABLE checkins.customer_visit ADD CONSTRAINT customer_visit_store_id_fkey
+        FOREIGN KEY (store_id) REFERENCES public.store(store_id)
+        ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.customer_visit'::regclass
+      AND conname = 'customer_visit_campaign_id_check'
+) THEN ALTER TABLE checkins.customer_visit ADD CONSTRAINT customer_visit_campaign_id_check
+        CHECK (campaign_id > 0); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.customer_visit'::regclass
+      AND conname = 'customer_visit_recorded_by_fkey'
+) THEN ALTER TABLE checkins.customer_visit ADD CONSTRAINT customer_visit_recorded_by_fkey
+        FOREIGN KEY (recorded_by) REFERENCES public.app_user(user_id)
+        ON DELETE RESTRICT; END IF; END $$;
+CREATE INDEX IF NOT EXISTS customer_visit_customer_store_occurred
+    ON checkins.customer_visit (customer_id, store_id, occurred_at)
+    WHERE customer_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS customer_visit_store_occurred
+    ON checkins.customer_visit (store_id, occurred_at DESC, visit_id);
+CREATE INDEX IF NOT EXISTS customer_visit_campaign_occurred
+    ON checkins.customer_visit (campaign_id, occurred_at DESC)
+    WHERE campaign_id IS NOT NULL;
+
 -- Append-only: SELECT and INSERT, never UPDATE or DELETE (RN-56). The store
 -- locations come from api_stores.store_directory_v1, granted in the stores
 -- section.
 GRANT USAGE ON SCHEMA checkins TO svc_checkins;
-GRANT SELECT, INSERT ON checkins.store_check_in, checkins.check_in_review TO svc_checkins;
+GRANT SELECT, INSERT ON checkins.store_check_in, checkins.check_in_review,
+    checkins.customer_visit TO svc_checkins;
 -- END BOUNDARY check-ins
 
 -- BEGIN BOUNDARY campaigns
@@ -3825,6 +4044,20 @@ GRANT SELECT, INSERT ON checkins.store_check_in, checkins.check_in_review TO svc
 -- service's writes cannot lose the web's. Idempotent: an operator re-applies it.
 CREATE SCHEMA IF NOT EXISTS campaigns;
 REVOKE ALL ON SCHEMA campaigns FROM PUBLIC;
+
+-- BEGIN F21-23 campaign reference view
+-- contracts/db/api_campaigns.campaign_ref.v1.md. This isolated block is kept
+-- apart from campaigns' F25 changes so either part can be merged and re-applied.
+CREATE SCHEMA IF NOT EXISTS api_campaigns;
+REVOKE ALL ON SCHEMA api_campaigns FROM PUBLIC;
+CREATE OR REPLACE VIEW api_campaigns.campaign_ref_v1
+WITH (security_invoker = off) AS
+SELECT campaign_id
+FROM public.campaign;
+REVOKE ALL ON api_campaigns.campaign_ref_v1 FROM PUBLIC;
+GRANT USAGE ON SCHEMA api_campaigns TO svc_campaigns, svc_checkins;
+GRANT SELECT ON api_campaigns.campaign_ref_v1 TO svc_campaigns, svc_checkins;
+-- END F21-23 campaign reference view
 
 -- Each of the first three is one fact of a campaign, so a row exists exactly when
 -- the fact was written: an absent row is "no cap", "no budget", "no rules". The
@@ -3966,6 +4199,46 @@ GRANT USAGE ON SCHEMA api_segments, api_customers, api_sales TO svc_campaigns;
 GRANT SELECT ON api_segments.current_label_v1 TO svc_campaigns;
 GRANT SELECT ON api_customers.customer_ref_v1 TO svc_campaigns;
 GRANT SELECT ON api_sales.net_purchase_line_v1 TO svc_campaigns;
+
+-- What experimentation reads to take an experiment's frame (ADR-0068 section 1, #1051):
+-- the campaign's target label and eligibility rule, and its two lists of exclusions.
+-- Three views, because the rule is one row of a campaign and each exclusion list is its own
+-- multivalued fact (4NF). security_invoker = off, so svc_experiments needs no privilege on
+-- campaigns.* or public.campaign. They hold current rows: the consumer reads them in the one
+-- REPEATABLE READ transaction that fixes its instant T. Contracts:
+-- contracts/db/api_campaigns.campaign_target.v1.md, ...campaign_excluded_customer.v1.md and
+-- ...campaign_excluded_label.v1.md.
+CREATE SCHEMA IF NOT EXISTS api_campaigns;
+REVOKE ALL ON SCHEMA api_campaigns FROM PUBLIC;
+
+CREATE OR REPLACE VIEW api_campaigns.campaign_target_v1
+WITH (security_invoker = off) AS
+SELECT c.campaign_id,
+       c.label_code,
+       c.status,
+       e.registered_on_or_before,
+       e.min_purchases,
+       e.purchase_window_days
+FROM public.campaign AS c
+LEFT JOIN campaigns.campaign_eligibility AS e ON e.campaign_id = c.campaign_id;
+REVOKE ALL ON api_campaigns.campaign_target_v1 FROM PUBLIC;
+
+CREATE OR REPLACE VIEW api_campaigns.campaign_excluded_customer_v1
+WITH (security_invoker = off) AS
+SELECT campaign_id, customer_id
+FROM campaigns.campaign_excluded_customer;
+REVOKE ALL ON api_campaigns.campaign_excluded_customer_v1 FROM PUBLIC;
+
+CREATE OR REPLACE VIEW api_campaigns.campaign_excluded_label_v1
+WITH (security_invoker = off) AS
+SELECT campaign_id, label_code
+FROM campaigns.campaign_excluded_label;
+REVOKE ALL ON api_campaigns.campaign_excluded_label_v1 FROM PUBLIC;
+
+GRANT USAGE ON SCHEMA api_campaigns TO svc_experiments;
+GRANT SELECT ON api_campaigns.campaign_target_v1,
+    api_campaigns.campaign_excluded_customer_v1,
+    api_campaigns.campaign_excluded_label_v1 TO svc_experiments;
 -- END BOUNDARY campaigns
 
 -- BEGIN BOUNDARY audit-trail
@@ -4643,9 +4916,38 @@ REVOKE ALL ON SCHEMA experiments FROM PUBLIC;
 CREATE SCHEMA IF NOT EXISTS api_experiments;
 REVOKE ALL ON SCHEMA api_experiments FROM PUBLIC;
 GRANT USAGE ON SCHEMA experiments, api_experiments TO svc_experiments;
+
+-- Real floor exposures arrive from engagement's at-least-once stream (F25-10,
+-- ADR-0075). The source event id is nullable because the frozen web still
+-- writes exposures directly; for projected events it is the durable
+-- idempotency key. The partial unique index makes a relay duplicate harmless.
+ALTER TABLE public.experiment_exposure
+    ADD COLUMN IF NOT EXISTS source_event_id UUID;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_experiment_exposure_source_event
+    ON public.experiment_exposure (source_event_id)
+    WHERE source_event_id IS NOT NULL;
+
+-- A notice ledger keeps the projection append-only while allowing a VOIDED
+-- notice to remove a source exposure from service counts. It also remembers a
+-- void that arrives before RECORDED and a RECORDED event suppressed by RN-49's
+-- 60-second rule. One row per (source event, notice) makes every re-application
+-- converge without rewriting an assignment, exposure or conversion fact.
+CREATE TABLE IF NOT EXISTS experiments.exposure_notice (
+    source_event_id UUID NOT NULL,
+    notice         VARCHAR(10) NOT NULL CHECK (notice IN ('RECORDED', 'VOIDED')),
+    assignment_id  BIGINT REFERENCES public.experiment_assignment(assignment_id)
+                       ON DELETE CASCADE,
+    occurred_at    TIMESTAMPTZ NOT NULL,
+    disposition    VARCHAR(10) NOT NULL CHECK (
+        disposition IN ('EXPOSURE', 'REPEAT', 'CONTROL', 'OUTSIDE', 'VOIDED')
+    ),
+    PRIMARY KEY (source_event_id, notice)
+);
+REVOKE ALL ON experiments.exposure_notice FROM PUBLIC;
 GRANT SELECT, INSERT, UPDATE ON public.experiment, public.experiment_group TO svc_experiments;
 GRANT SELECT, INSERT ON public.experiment_assignment, public.experiment_exposure,
     public.experiment_conversion TO svc_experiments;
+GRANT SELECT, INSERT ON experiments.exposure_notice TO svc_experiments;
 -- Conversions (F25-11, ADR-0069): a conversion is a qualifying sale of an assigned
 -- customer, read net of reversals from the two views sales publishes. The gross view
 -- still names a sale that was fully reversed, which the net view no longer lists.
@@ -4656,6 +4958,126 @@ GRANT SELECT ON api_sales.purchase_line_v1, api_sales.net_purchase_line_v1
 GRANT USAGE ON SCHEMA api_audit TO svc_experiments;
 GRANT EXECUTE ON FUNCTION api_audit.record_event_v1(uuid, text, text, timestamptz, text, uuid,
     text, smallint, text, text, bigint, bigint, text, jsonb) TO svc_experiments;
+
+-- The plan of an experiment (F25-09, ADR-0068 sections 1 and 4): what is fixed before anyone is
+-- assigned. The experiment itself, its arms (public.experiment_group), its metric
+-- (`target_metric`), window, start and origin stay where the web wrote them; these four tables
+-- hold only what a plan adds, and exist only for an experiment planned through the service.
+-- An experiment without a row in experiment_plan is assignment rule V0 (the web's earlier
+-- shuffle): readable, with no frame and no salt. A plan is frozen: svc_experiments holds SELECT
+-- and INSERT, and the trigger refuses an UPDATE or DELETE from anyone. docs/data-model.md holds
+-- the normal-form note.
+--
+-- Derived, so not stored: the design kind (a control arm or not), an arm's position (control
+-- first, then by group id), the estimator and the secondary metric (functions of the primary
+-- metric), the frame's size (the members counted), and the state (assignments exist or not).
+CREATE TABLE IF NOT EXISTS experiments.experiment_plan (
+    experiment_id             integer PRIMARY KEY
+        REFERENCES public.experiment (experiment_id) ON DELETE RESTRICT,
+    alpha                     numeric(7,6) NOT NULL
+        CONSTRAINT experiment_plan_alpha_check CHECK (alpha > 0 AND alpha < 1),
+    comparison_alpha          numeric(12,10) NOT NULL
+        CONSTRAINT experiment_plan_comparison_alpha_check
+        CHECK (comparison_alpha > 0 AND comparison_alpha <= alpha),
+    power                     numeric(7,6) NOT NULL
+        CONSTRAINT experiment_plan_power_check CHECK (power > 0 AND power < 1),
+    minimum_detectable_effect numeric(14,6) NOT NULL
+        CONSTRAINT experiment_plan_mde_check CHECK (minimum_detectable_effect > 0),
+    baseline                  double precision NOT NULL
+        CONSTRAINT experiment_plan_baseline_check CHECK (baseline >= 0),
+    baseline_std_dev          double precision
+        CONSTRAINT experiment_plan_std_dev_check CHECK (baseline_std_dev >= 0),
+    required_per_arm          integer NOT NULL
+        CONSTRAINT experiment_plan_required_check CHECK (required_per_arm >= 1),
+    smallest_detectable_effect double precision
+        CONSTRAINT experiment_plan_smallest_check CHECK (smallest_detectable_effect > 0),
+    settle_days               smallint NOT NULL
+        CONSTRAINT experiment_plan_settle_check CHECK (settle_days >= 0),
+    frame_taken_at            timestamptz NOT NULL,
+    frame_digest              char(64) NOT NULL
+        CONSTRAINT experiment_plan_digest_check CHECK (frame_digest ~ '^[0-9a-f]{64}$'),
+    label_code                varchar(40) NOT NULL
+        REFERENCES public.segment_label (label_code) ON DELETE RESTRICT,
+    model_version_id          bigint
+        CONSTRAINT experiment_plan_model_version_check CHECK (model_version_id >= 1),
+    salt                      char(64) NOT NULL
+        CONSTRAINT experiment_plan_salt_check CHECK (salt ~ '^[0-9a-f]{64}$'),
+    planned_at                timestamptz NOT NULL,
+    planned_by                uuid NOT NULL
+        REFERENCES public.app_user (user_id) ON DELETE RESTRICT
+);
+
+-- The frame, one row per customer: who was eligible at the frame instant, the only record of it
+-- (a customer who later acquires the label is never added).
+CREATE TABLE IF NOT EXISTS experiments.experiment_frame_member (
+    experiment_id integer NOT NULL
+        REFERENCES public.experiment (experiment_id) ON DELETE RESTRICT,
+    customer_id   uuid NOT NULL
+        REFERENCES public.customer (customer_id) ON DELETE RESTRICT,
+    PRIMARY KEY (experiment_id, customer_id)
+);
+CREATE INDEX IF NOT EXISTS experiment_frame_member_customer
+    ON experiments.experiment_frame_member (customer_id);
+
+-- How many customers one reason removed from the frame: an independent multivalued fact of the
+-- plan (reasons, each with its count), so its own relation.
+CREATE TABLE IF NOT EXISTS experiments.experiment_frame_exclusion (
+    experiment_id integer NOT NULL
+        REFERENCES public.experiment (experiment_id) ON DELETE RESTRICT,
+    reason        varchar(40) NOT NULL
+        CONSTRAINT experiment_frame_exclusion_reason_check
+        CHECK (reason ~ '^[A-Z][A-Z0-9_]*$'),
+    removed       integer NOT NULL
+        CONSTRAINT experiment_frame_exclusion_removed_check CHECK (removed >= 0),
+    PRIMARY KEY (experiment_id, reason)
+);
+
+-- The flags that apply to an experiment: a second independent multivalued fact. The plan stores
+-- UNDERPOWERED; the later stories add the others (ExperimentFlag in the contract).
+CREATE TABLE IF NOT EXISTS experiments.experiment_flag (
+    experiment_id integer NOT NULL
+        REFERENCES public.experiment (experiment_id) ON DELETE RESTRICT,
+    flag          varchar(30) NOT NULL
+        CONSTRAINT experiment_flag_flag_check
+        CHECK (flag IN ('UNDERPOWERED', 'SAMPLE_RATIO_FAILED', 'BALANCE_FLAGGED',
+                        'RECOMPUTATION_MISMATCH')),
+    PRIMARY KEY (experiment_id, flag)
+);
+
+CREATE OR REPLACE FUNCTION experiments.fn_plan_is_frozen() RETURNS trigger
+LANGUAGE plpgsql AS $frozen$
+BEGIN
+    RAISE EXCEPTION 'A plan is frozen: % on % is refused', TG_OP, TG_TABLE_NAME
+        USING ERRCODE = 'check_violation', CONSTRAINT = 'experiment_plan_frozen';
+END
+$frozen$;
+REVOKE EXECUTE ON FUNCTION experiments.fn_plan_is_frozen() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_experiment_plan_frozen
+BEFORE UPDATE OR DELETE ON experiments.experiment_plan
+FOR EACH ROW EXECUTE FUNCTION experiments.fn_plan_is_frozen();
+CREATE OR REPLACE TRIGGER trg_experiment_frame_member_frozen
+BEFORE UPDATE OR DELETE ON experiments.experiment_frame_member
+FOR EACH ROW EXECUTE FUNCTION experiments.fn_plan_is_frozen();
+CREATE OR REPLACE TRIGGER trg_experiment_frame_exclusion_frozen
+BEFORE UPDATE OR DELETE ON experiments.experiment_frame_exclusion
+FOR EACH ROW EXECUTE FUNCTION experiments.fn_plan_is_frozen();
+CREATE OR REPLACE TRIGGER trg_experiment_flag_frozen
+BEFORE DELETE ON experiments.experiment_flag
+FOR EACH ROW EXECUTE FUNCTION experiments.fn_plan_is_frozen();
+
+GRANT SELECT, INSERT ON experiments.experiment_plan, experiments.experiment_frame_member,
+    experiments.experiment_frame_exclusion, experiments.experiment_flag TO svc_experiments;
+
+-- The frame is read from published objects only (ADR-0044), each a row of contracts/db/grants.csv:
+-- the campaign's target and exclusions (#1051, granted in the campaigns section), the label a
+-- customer holds, consent and restrictions, the channels, and the customers.
+GRANT USAGE ON SCHEMA api_segments, api_preferences, api_customers TO svc_experiments;
+GRANT SELECT ON api_segments.current_label_v1 TO svc_experiments;
+GRANT SELECT ON api_preferences.consent_state_v1, api_preferences.restriction_v1
+    TO svc_experiments;
+GRANT SELECT ON api_customers.customer_ref_v1 TO svc_experiments;
+GRANT SELECT ON api_sales.channel_v1 TO svc_experiments;
 -- END BOUNDARY experimentation
 
 -- BEGIN BOUNDARY model-registry
@@ -4664,15 +5086,30 @@ GRANT EXECUTE ON FUNCTION api_audit.record_event_v1(uuid, text, text, timestampt
 -- the dataset it was fitted on, its metrics and the reference distribution
 -- drift is judged against. A version is immutable: nothing in this section
 -- lets any role edit its definition or delete a row, and the publication
--- history is append-only. Publication and rollback (F22-13), training
--- (F22-12), the outbox for stream:models.v1.publication_recorded and the
--- drift tables (F23-09) are their own stories and extend this section; each
--- adds its tables, grants and seed rows with its own pull request.
+-- history is append-only. Publication and rollback (F22-13) own the outbox
+-- for stream:models.v1.publication_recorded and the current-version view.
+-- Training (F22-12) and the drift tables (F23-09) are their own stories.
 --
 -- The web has no privilege here (ADR-0046): retail_app gets no USAGE on
 -- `models`, so it cannot even name these tables.
 CREATE SCHEMA IF NOT EXISTS models;
 REVOKE ALL ON SCHEMA models FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS models_events;
+REVOKE ALL ON SCHEMA models_events FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS api_models;
+REVOKE ALL ON SCHEMA api_models FROM PUBLIC;
+
+-- Keys only, never version state: consumers re-read the published view.
+CREATE TABLE IF NOT EXISTS models_events.outbox (
+    event_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    stream      text NOT NULL,
+    event_type  text NOT NULL,
+    entity_id   text NOT NULL,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    relayed_at  timestamptz
+);
+CREATE INDEX IF NOT EXISTS outbox_unrelayed
+    ON models_events.outbox (occurred_at) WHERE relayed_at IS NULL;
 
 -- One row per version. The definition is scalar columns, so that a boundary,
 -- a tolerance or the dataset can be read, compared and constrained one by one;
@@ -4757,6 +5194,58 @@ CREATE TABLE IF NOT EXISTS models.model_publication (
 CREATE INDEX IF NOT EXISTS model_publication_version
     ON models.model_publication (version_id, publication_id);
 
+-- Every writer is captured in the publication transaction. The event carries
+-- only the publication id; its consumer re-reads api_models after commit.
+CREATE OR REPLACE FUNCTION models_events.capture_publication_recorded() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+BEGIN
+    INSERT INTO models_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:models.v1.publication_recorded', TG_OP, NEW.publication_id::text);
+    PERFORM pg_notify('models_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION models_events.capture_publication_recorded() OWNER TO definer_models;
+REVOKE EXECUTE ON FUNCTION models_events.capture_publication_recorded() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_capture_publication_recorded
+AFTER INSERT ON models.model_publication
+FOR EACH ROW EXECUTE FUNCTION models_events.capture_publication_recorded();
+
+-- contracts/db/api_models.published_version.v1.md. The latest publication of
+-- the PUBLISHED row is the fact that made it current.
+CREATE OR REPLACE VIEW api_models.published_version_v1
+WITH (security_invoker = off) AS
+SELECT v.version_id,
+       v.method,
+       v.name,
+       v.window_days,
+       v.seed,
+       v.rule_set_id,
+       v.k,
+       ARRAY(SELECT f.feature::text
+               FROM models.model_version_feature AS f
+              WHERE f.version_id = v.version_id
+              ORDER BY array_position(ARRAY['R', 'F', 'M'], f.feature::text)) AS features,
+       v.normalization,
+       v.frozen_scoring,
+       v.dataset_origin AS data_origin,
+       p.publication_id,
+       p.published_at
+  FROM models.model_version AS v
+  JOIN LATERAL (
+      SELECT publication_id, published_at
+        FROM models.model_publication
+       WHERE version_id = v.version_id
+       ORDER BY publication_id DESC
+       LIMIT 1
+  ) AS p ON true
+ WHERE v.state = 'PUBLISHED';
+REVOKE ALL ON api_models.published_version_v1 FROM PUBLIC;
+
 -- Every segmentation run has a version (ADR-0064): the run the web recorded,
 -- and the version whose method and parameters it matched or created. It names
 -- the web's run by value and never changes it, so run_id has no foreign key: no
@@ -4771,6 +5260,14 @@ CREATE TABLE IF NOT EXISTS models.run_version (
     linked_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS run_version_version ON models.run_version (version_id, run_id);
+
+-- contracts/db/api_models.run_version.v1.md. A missing row is deliberately
+-- pending; consumers must not replace it with the current published version.
+CREATE OR REPLACE VIEW api_models.run_version_v1
+WITH (security_invoker = off) AS
+SELECT run_id, version_id, linked_at
+  FROM models.run_version;
+REVOKE ALL ON api_models.run_version_v1 FROM PUBLIC;
 
 -- Immutability, for every role. Only state, published_at and retired_at of a
 -- version may change; nothing is ever deleted, in any of the four tables.
@@ -4804,10 +5301,28 @@ BEFORE UPDATE OR DELETE ON models.run_version
 FOR EACH ROW EXECUTE FUNCTION models.refuse_change();
 
 -- Each is a row of contracts/db/grants.csv. svc_models registers versions and
--- reads them; it holds no UPDATE or DELETE on any of them.
+-- publishes by changing only state/times and appending a publication fact. It
+-- holds no DELETE and cannot rewrite any definition or publication history.
 GRANT USAGE ON SCHEMA models TO svc_models;
 GRANT SELECT, INSERT ON models.model_version, models.model_version_feature TO svc_models;
-GRANT SELECT ON models.model_publication, models.run_version TO svc_models;
+GRANT UPDATE (state, published_at, retired_at) ON models.model_version TO svc_models;
+GRANT SELECT, INSERT ON models.model_publication TO svc_models;
+GRANT SELECT ON models.run_version TO svc_models;
+
+GRANT USAGE ON SCHEMA models_events TO svc_models, definer_models;
+GRANT INSERT ON models_events.outbox TO definer_models;
+GRANT SELECT, DELETE, UPDATE (relayed_at) ON models_events.outbox TO svc_models;
+
+-- Consumer grants arrive with their stories; the producer can verify its view.
+GRANT USAGE ON SCHEMA api_models TO svc_models;
+GRANT SELECT ON api_models.published_version_v1 TO svc_models;
+GRANT USAGE ON SCHEMA api_models TO svc_segments;
+GRANT SELECT ON api_models.run_version_v1 TO svc_segments;
+
+-- Publications and rollbacks are critical domain events in the same transaction.
+GRANT USAGE ON SCHEMA api_audit TO svc_models;
+GRANT EXECUTE ON FUNCTION api_audit.record_event_v1(uuid, text, text, timestamptz, text, uuid,
+    text, smallint, text, text, bigint, bigint, text, jsonb) TO svc_models;
 -- END BOUNDARY model-registry
 
 -- BEGIN BOUNDARY recommendations
@@ -5105,6 +5620,34 @@ GRANT SELECT, INSERT, DELETE ON recommendations.recommendation_decision,
     recommendations.recommendation_reason TO svc_recommendations;
 GRANT UPDATE (customer_id) ON recommendations.recommendation_decision TO svc_recommendations;
 -- END BOUNDARY recommendations
+
+-- BEGIN BOUNDARY analytics-kpis
+-- analytics-kpis (F26-02, RN-68, ADR-0034, ADR-0046, ADR-0059, ADR-0060): a read
+-- rule. It owns no table and writes nothing; svc_kpis holds no privilege on a
+-- base table and reads only the api_* views other boundaries publish. kpis and
+-- api_kpis are the schemas ADR-0059 names for it, created empty so a later story
+-- that needs an object of its own does not have to take a schema decision. The
+-- three views are those the net-sales report reads: api_sales.net_purchase_line_v1
+-- (the reversal-aware lines and their data_origin, ADR-0062, ADR-0052),
+-- api_segments.current_label_v1 (the label a customer holds now) and
+-- api_users.store_assignment_v1 (the stores of a store-scoped caller, read on each
+-- request, ADR-0060). F26-05 adds the two views the demand-coverage report reads:
+-- api_stock.stock_level_v1 (the units held per store and product) and
+-- api_products.product_ref_v1 (the product's current category and is_active).
+-- The stories that add a report add the grants it needs here.
+-- Each is a row of contracts/db/grants.csv. Idempotent: an operator re-applies it.
+CREATE SCHEMA IF NOT EXISTS kpis;
+REVOKE ALL ON SCHEMA kpis FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS api_kpis;
+REVOKE ALL ON SCHEMA api_kpis FROM PUBLIC;
+GRANT USAGE ON SCHEMA kpis, api_kpis TO svc_kpis;
+GRANT USAGE ON SCHEMA api_sales, api_segments, api_users, api_stock, api_products TO svc_kpis;
+GRANT SELECT ON api_sales.net_purchase_line_v1 TO svc_kpis;
+GRANT SELECT ON api_segments.current_label_v1 TO svc_kpis;
+GRANT SELECT ON api_users.store_assignment_v1 TO svc_kpis;
+GRANT SELECT ON api_stock.stock_level_v1 TO svc_kpis;
+GRANT SELECT ON api_products.product_ref_v1 TO svc_kpis;
+-- END BOUNDARY analytics-kpis
 
 -- BEGIN APPLICATION ROLE VERIFICATION
 -- F1-05 (#53). Opt-in acceptance checks, kept here because even a rejected

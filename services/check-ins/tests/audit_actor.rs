@@ -35,7 +35,7 @@ async fn a_write_transaction_carries_the_callers_sub() {
     }
 }
 
-/// Both writes, the check-in and the review, open their transaction there.
+/// All writes, staff check-in, review and customer visit, open there.
 #[test]
 fn every_write_opens_the_actor_transaction() {
     let source = fs::read_to_string("src/lib.rs").expect("service source");
@@ -43,7 +43,7 @@ fn every_write_opens_the_actor_transaction() {
         source
             .matches("write_transaction(&mut connection, actor)")
             .count(),
-        2
+        3
     );
     assert_eq!(source.matches(".transaction(").count(), 1);
 }

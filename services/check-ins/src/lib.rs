@@ -1,10 +1,12 @@
-//! check-ins-service (F14-26): one rule, RN-56. The server, never the phone,
-//! decides a check-in's verdict from the haversine distance to the store's
-//! geofence, and a correction is an appended review, never an edit.
+//! check-ins-service (F14-26, F21-23): RN-56 staff check-ins and RN-72
+//! consent-authorized customer visits. The server, never the phone, decides a
+//! check-in's verdict; a correction is an appended review, never an edit.
 //!
 //! Store locations are read only through `api_stores.store_directory_v1`
-//! (ADR-0044). Check-ins and reviews are INSERT-only for `svc_checkins`, and
-//! every SQL statement is a fixed text with bound parameters.
+//! (ADR-0044). Customer visits resolve loyalty, consent and campaign identity
+//! only through their published database contracts. All three records are
+//! INSERT-only for `svc_checkins`, and every SQL statement is fixed text with
+//! bound parameters.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -13,6 +15,7 @@ use axum::body::Body;
 use axum::extract::Request;
 use axum::middleware::{self, Next};
 use axum::response::Response;
+use axum::Router;
 use chrono::{DateTime, Duration, Utc};
 use indexmap::IndexMap;
 use mosaiq_kit::{
@@ -30,6 +33,10 @@ pub const SUFFIX: &str = "checkins";
 pub const EARTH_RADIUS_M: f64 = 6_371_008.8;
 /// How far ahead of the server a phone's clock may be.
 pub const FUTURE_TOLERANCE_MINUTES: i64 = 5;
+/// Two posts differ by strictly less than this many seconds to be one visit.
+pub const VISIT_DUPLICATE_SECONDS: i64 = 7_200;
+/// Registered in contracts/db/advisory-locks.md for customer/store visits.
+pub const VISIT_LOCK_KEY: i32 = 296_001;
 
 tokio::task_local! {
     static REQUEST_QUERY: String;
@@ -236,6 +243,72 @@ pub struct CheckInRequest {
     pub fix: Option<Fix>,
 }
 
+/// One authorized customer visit. A loyalty code is deliberately absent.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CustomerVisit {
+    pub visit_id: Uuid,
+    pub customer_id: Option<Uuid>,
+    pub store_id: i16,
+    pub campaign_id: Option<i32>,
+    pub occurred_at: DateTime<Utc>,
+    pub recorded_at: DateTime<Utc>,
+    pub recorded_by: Uuid,
+}
+
+impl CustomerVisit {
+    fn from_row(row: &Row) -> Result<Self, ApiError> {
+        Ok(Self {
+            visit_id: row.try_get(0)?,
+            customer_id: row.try_get(1)?,
+            store_id: row.try_get(2)?,
+            campaign_id: row.try_get(3)?,
+            occurred_at: row.try_get(4)?,
+            recorded_at: row.try_get(5)?,
+            recorded_by: row.try_get(6)?,
+        })
+    }
+
+    fn wire(&self) -> IndexMap<String, Value> {
+        IndexMap::from([
+            (
+                "visit_id".to_owned(),
+                Value::from(self.visit_id.to_string()),
+            ),
+            (
+                "customer_id".to_owned(),
+                Value::from(self.customer_id.map(|id| id.to_string())),
+            ),
+            ("store_id".to_owned(), Value::from(self.store_id)),
+            ("campaign_id".to_owned(), Value::from(self.campaign_id)),
+            ("occurred_at".to_owned(), Value::from(self.occurred_at)),
+            ("recorded_at".to_owned(), Value::from(self.recorded_at)),
+            (
+                "recorded_by".to_owned(),
+                Value::from(self.recorded_by.to_string()),
+            ),
+        ])
+    }
+}
+
+/// The validated customer-visit body. The code exists only for this call.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CustomerVisitRequest {
+    pub loyalty_code: String,
+    pub store_id: i32,
+    pub occurred_at: DateTime<Utc>,
+    pub campaign_id: Option<i32>,
+}
+
+/// Customer-visit list filters.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct VisitFilters {
+    pub store_id: Option<i32>,
+    pub customer_id: Option<Uuid>,
+    pub campaign_id: Option<i32>,
+    pub from: Option<DateTime<Utc>>,
+    pub to: Option<DateTime<Utc>>,
+}
+
 /// The list's filters, each optional.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Filters {
@@ -327,6 +400,48 @@ fn check_in_not_found(id: Uuid) -> ApiError {
     )
 }
 
+fn customer_visit_not_found(id: Uuid) -> ApiError {
+    ApiError::new(
+        404,
+        "customer_visit_not_found",
+        format!("Customer visit {id} was not found."),
+    )
+}
+
+fn unknown_campaign(id: i32) -> ApiError {
+    ApiError::new(
+        422,
+        "unknown_campaign",
+        format!("Campaign {id} does not exist."),
+    )
+    .with_details(vec![Detail::new("campaign_id", "unknown_campaign")])
+}
+
+fn loyalty_code_not_usable() -> ApiError {
+    ApiError::new(
+        422,
+        "loyalty_code_not_usable",
+        "The loyalty code does not identify a customer with an active card.",
+    )
+    .with_details(vec![Detail::new("loyalty_code", "not_usable")])
+}
+
+fn consent_required() -> ApiError {
+    ApiError::new(
+        409,
+        "consent_required",
+        "The customer has not granted the consent a visit needs.",
+    )
+}
+
+fn consent_unavailable() -> ApiError {
+    ApiError::new(
+        503,
+        "consent_unavailable",
+        "The customer's consent could not be read, so the visit was not recorded. Try again.",
+    )
+}
+
 fn conflict() -> ApiError {
     ApiError::new(
         409,
@@ -343,8 +458,10 @@ fn write_error(error: tokio_postgres::Error, store_id: i32) -> ApiError {
         .unwrap_or_default();
     match constraint {
         // A signed token for an account that does not exist.
-        "store_check_in_user_id_fkey" | "check_in_review_reviewed_by_fkey" => invalid_token(),
-        "store_check_in_store_id_fkey" => unknown_store(store_id),
+        "store_check_in_user_id_fkey"
+        | "check_in_review_reviewed_by_fkey"
+        | "customer_visit_recorded_by_fkey" => invalid_token(),
+        "store_check_in_store_id_fkey" | "customer_visit_store_id_fkey" => unknown_store(store_id),
         "store_check_in_latitude_check" => {
             invalid_body("The fix is outside its range.", "latitude", "out_of_range")
         }
@@ -444,6 +561,54 @@ pub fn parse_check_in(body: &serde_json::Value) -> Result<CheckInRequest, ApiErr
     })
 }
 
+/// Read a customer visit without ever copying the loyalty code into a record.
+pub fn parse_customer_visit(body: &serde_json::Value) -> Result<CustomerVisitRequest, ApiError> {
+    for field in ["latitude", "longitude", "accuracy_m"] {
+        if body.get(field).is_some() {
+            return Err(invalid_body(
+                "A customer visit stores no location.",
+                field,
+                "location_not_stored",
+            ));
+        }
+    }
+    let malformed = || invalid_body("The customer visit is invalid.", "body", "invalid");
+    let loyalty_code = body["loyalty_code"]
+        .as_str()
+        .filter(|code| {
+            code.len() == 26
+                && code.bytes().all(|byte| {
+                    matches!(byte, b'0'..=b'9' | b'A'..=b'Z') && !b"ILOU".contains(&byte)
+                })
+        })
+        .ok_or_else(malformed)?
+        .to_owned();
+    let store_id = body["store_id"]
+        .as_i64()
+        .and_then(|value| i32::try_from(value).ok())
+        .ok_or_else(malformed)?;
+    let occurred_at = body["occurred_at"]
+        .as_str()
+        .and_then(timestamp)
+        .ok_or_else(malformed)?;
+    let campaign_id = match body.get("campaign_id") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(value) => Some(
+            value
+                .as_i64()
+                .and_then(|number| i32::try_from(number).ok())
+                .filter(|number| *number > 0)
+                .ok_or_else(malformed)?,
+        ),
+    };
+    Ok(CustomerVisitRequest {
+        loyalty_code,
+        store_id,
+        occurred_at,
+        campaign_id,
+    })
+}
+
 /// Read the list's query string. A malformed value is `invalid_query`.
 pub fn parse_filters(query: &str) -> Result<Filters, ApiError> {
     let values: HashMap<String, String> = form_urlencoded::parse(query.as_bytes())
@@ -463,6 +628,42 @@ pub fn parse_filters(query: &str) -> Result<Filters, ApiError> {
             "false" => false,
             _ => return Err(bad("verified")),
         });
+    }
+    if let Some(text) = values.get("from") {
+        filters.from = Some(timestamp(text).ok_or_else(|| bad("from"))?);
+    }
+    if let Some(text) = values.get("to") {
+        filters.to = Some(timestamp(text).ok_or_else(|| bad("to"))?);
+    }
+    if let (Some(from), Some(to)) = (filters.from, filters.to) {
+        if to < from {
+            return Err(invalid_query("to is before from.", "to", "before_from"));
+        }
+    }
+    Ok(filters)
+}
+
+/// Read customer-visit filters. Unknown parameters are ignored as the kit's
+/// contract layer does for the existing list operation.
+pub fn parse_visit_filters(query: &str) -> Result<VisitFilters, ApiError> {
+    let values: HashMap<String, String> = form_urlencoded::parse(query.as_bytes())
+        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+        .collect();
+    let bad = |field: &str| invalid_query("A query value is invalid.", field, "invalid");
+    let mut filters = VisitFilters::default();
+    if let Some(text) = values.get("store_id") {
+        filters.store_id = Some(text.parse().map_err(|_| bad("store_id"))?);
+    }
+    if let Some(text) = values.get("customer_id") {
+        filters.customer_id = Some(Uuid::parse_str(text).map_err(|_| bad("customer_id"))?);
+    }
+    if let Some(text) = values.get("campaign_id") {
+        filters.campaign_id = Some(
+            text.parse::<i32>()
+                .ok()
+                .filter(|value| *value > 0)
+                .ok_or_else(|| bad("campaign_id"))?,
+        );
     }
     if let Some(text) = values.get("from") {
         filters.from = Some(timestamp(text).ok_or_else(|| bad("from"))?);
@@ -766,6 +967,235 @@ pub async fn append_review(
     Ok(review)
 }
 
+/// Record an authorized customer visit in the contract's refusal order.
+pub async fn record_customer_visit(
+    db: &Database,
+    actor: &Principal,
+    request: &CustomerVisitRequest,
+    now: DateTime<Utc>,
+) -> Result<(CustomerVisit, Outcome), ApiError> {
+    let recorded_by = caller(actor)?;
+    let mut connection = db.connection().await?;
+    let transaction = write_transaction(&mut connection, actor).await?;
+
+    if request.occurred_at > now + Duration::minutes(FUTURE_TOLERANCE_MINUTES) {
+        return Err(ApiError::new(
+            422,
+            "occurred_in_future",
+            "occurred_at is more than five minutes ahead of the server.",
+        )
+        .with_details(vec![Detail::new("occurred_at", "in_future")]));
+    }
+    if confined(actor)
+        && !assigned_stores(&*transaction, actor)
+            .await?
+            .contains(&request.store_id)
+    {
+        return Err(forbidden_store("store_id"));
+    }
+    let store_id = i16::try_from(request.store_id).map_err(|_| unknown_store(request.store_id))?;
+    let store = transaction
+        .query_opt(
+            "SELECT is_active FROM api_stores.store_directory_v1 WHERE store_id = $1",
+            &[&store_id],
+        )
+        .await?;
+    if !store.is_some_and(|row| row.get::<_, bool>(0)) {
+        return Err(unknown_store(request.store_id));
+    }
+    if let Some(campaign_id) = request.campaign_id {
+        let known = transaction
+            .query_opt(
+                "SELECT campaign_id FROM api_campaigns.campaign_ref_v1 WHERE campaign_id = $1",
+                &[&campaign_id],
+            )
+            .await?;
+        if known.is_none() {
+            return Err(unknown_campaign(campaign_id));
+        }
+    }
+    let customer = transaction
+        .query_opt(
+            "SELECT customer_id FROM api_customers.resolve_loyalty_code_v1($1)",
+            &[&request.loyalty_code],
+        )
+        .await?;
+    let Some(customer_id) = customer.map(|row| row.get::<_, Uuid>(0)) else {
+        return Err(loyalty_code_not_usable());
+    };
+    let consent = transaction
+        .query_opt(
+            "SELECT decision FROM api_preferences.consent_state_v1 \
+             WHERE customer_id = $1 AND purpose = 'PROFILING'",
+            &[&customer_id],
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!("profiling consent read failed: {error}");
+            consent_unavailable()
+        })?;
+    if !consent.is_some_and(|row| row.get::<_, String>(0) == "GRANTED") {
+        return Err(consent_required());
+    }
+
+    // All refusals precede deduplication. The transaction lock makes the
+    // following read-then-insert one decision for concurrent posts.
+    transaction
+        .query_one(
+            "SELECT pg_advisory_xact_lock($1, \
+             hashtext($2::uuid::text || ':' || $3::smallint::text))",
+            &[&VISIT_LOCK_KEY, &customer_id, &store_id],
+        )
+        .await?;
+    if let Some(row) = transaction
+        .query_opt(
+            "SELECT visit_id, customer_id, store_id, campaign_id, occurred_at, \
+                    recorded_at, recorded_by \
+             FROM checkins.customer_visit \
+             WHERE customer_id = $1 AND store_id = $2 \
+               AND occurred_at > $3::timestamptz - interval '7200 seconds' \
+               AND occurred_at < $3::timestamptz + interval '7200 seconds' \
+             ORDER BY occurred_at, visit_id LIMIT 1",
+            &[&customer_id, &store_id, &request.occurred_at],
+        )
+        .await?
+    {
+        return Ok((CustomerVisit::from_row(&row)?, Outcome::Replayed));
+    }
+    let row = transaction
+        .query_one(
+            "INSERT INTO checkins.customer_visit \
+             (customer_id, store_id, campaign_id, occurred_at, recorded_by) \
+             VALUES ($1, $2, $3, $4, $5) \
+             RETURNING visit_id, customer_id, store_id, campaign_id, occurred_at, \
+                       recorded_at, recorded_by",
+            &[
+                &customer_id,
+                &store_id,
+                &request.campaign_id,
+                &request.occurred_at,
+                &recorded_by,
+            ],
+        )
+        .await
+        .map_err(|error| write_error(error, request.store_id))?;
+    let visit = CustomerVisit::from_row(&row)?;
+    transaction.commit().await?;
+    Ok((visit, Outcome::Created))
+}
+
+/// Read one visit, applying 36-month identity retention and store scope.
+pub async fn read_customer_visit(
+    db: &Database,
+    actor: &Principal,
+    id: Uuid,
+) -> Result<CustomerVisit, ApiError> {
+    let connection = db.connection().await?;
+    let row = connection
+        .query_opt(
+            "SELECT visit_id, \
+                    CASE WHEN occurred_at <= now() - interval '36 months' \
+                         THEN NULL ELSE customer_id END, \
+                    store_id, campaign_id, occurred_at, recorded_at, recorded_by \
+             FROM checkins.customer_visit WHERE visit_id = $1",
+            &[&id],
+        )
+        .await?
+        .ok_or_else(|| customer_visit_not_found(id))?;
+    let visit = CustomerVisit::from_row(&row)?;
+    if confined(actor)
+        && !assigned_stores(&***connection, actor)
+            .await?
+            .contains(&i32::from(visit.store_id))
+    {
+        return Err(forbidden_store("visit_id"));
+    }
+    Ok(visit)
+}
+
+/// List visits newest first, narrowed to assigned stores for floor readers.
+pub async fn list_customer_visits(
+    db: &Database,
+    actor: &Principal,
+    filters: &VisitFilters,
+    page: u32,
+    size: u32,
+) -> Result<(Vec<CustomerVisit>, u64), ApiError> {
+    let connection = db.connection().await?;
+    let stores = if confined(actor) {
+        assigned_stores(&***connection, actor).await?
+    } else {
+        Vec::new()
+    };
+    if let Some(store_id) = filters.store_id {
+        if confined(actor) && !stores.contains(&store_id) {
+            return Err(forbidden_store("store_id"));
+        }
+    }
+    let confined_stores = confined(actor).then(|| {
+        stores
+            .iter()
+            .filter_map(|value| i16::try_from(*value).ok())
+            .collect::<Vec<_>>()
+    });
+    let store_id = filters
+        .store_id
+        .map(|value| {
+            i16::try_from(value)
+                .map_err(|_| invalid_query("A query value is invalid.", "store_id", "invalid"))
+        })
+        .transpose()?;
+    let parameters: [&(dyn tokio_postgres::types::ToSql + Sync); 6] = [
+        &store_id,
+        &filters.customer_id,
+        &filters.campaign_id,
+        &filters.from,
+        &filters.to,
+        &confined_stores,
+    ];
+    let total: i64 = connection
+        .query_one(
+            "SELECT count(*) FROM checkins.customer_visit \
+             WHERE ($1::smallint IS NULL OR store_id = $1) \
+               AND ($2::uuid IS NULL OR customer_id = $2) \
+               AND ($3::integer IS NULL OR campaign_id = $3) \
+               AND ($4::timestamptz IS NULL OR occurred_at >= $4) \
+               AND ($5::timestamptz IS NULL OR occurred_at <= $5) \
+               AND ($6::smallint[] IS NULL OR store_id = ANY($6))",
+            &parameters,
+        )
+        .await?
+        .get(0);
+    let offset = i64::from(page.saturating_sub(1)) * i64::from(size);
+    let limit = i64::from(size);
+    let mut item_parameters = parameters.to_vec();
+    item_parameters.push(&limit);
+    item_parameters.push(&offset);
+    let rows = connection
+        .query(
+            "SELECT visit_id, \
+                    CASE WHEN occurred_at <= now() - interval '36 months' \
+                         THEN NULL ELSE customer_id END, \
+                    store_id, campaign_id, occurred_at, recorded_at, recorded_by \
+             FROM checkins.customer_visit \
+             WHERE ($1::smallint IS NULL OR store_id = $1) \
+               AND ($2::uuid IS NULL OR customer_id = $2) \
+               AND ($3::integer IS NULL OR campaign_id = $3) \
+               AND ($4::timestamptz IS NULL OR occurred_at >= $4) \
+               AND ($5::timestamptz IS NULL OR occurred_at <= $5) \
+               AND ($6::smallint[] IS NULL OR store_id = ANY($6)) \
+             ORDER BY occurred_at DESC, visit_id LIMIT $7 OFFSET $8",
+            &item_parameters,
+        )
+        .await?;
+    Ok((
+        rows.iter()
+            .map(CustomerVisit::from_row)
+            .collect::<Result<Vec<_>, _>>()?,
+        u64::try_from(total).unwrap_or(0),
+    ))
+}
+
 // ---------- the operations ----------
 
 fn principal(ctx: &Ctx) -> Result<&Principal, ApiError> {
@@ -775,6 +1205,16 @@ fn principal(ctx: &Ctx) -> Result<&Principal, ApiError> {
 fn check_in_id(ctx: &Ctx) -> Result<Uuid, ApiError> {
     ctx.path_uuid("check_in_id")
         .ok_or_else(|| ApiError::new(404, "check_in_not_found", "The check-in was not found."))
+}
+
+fn visit_id(ctx: &Ctx) -> Result<Uuid, ApiError> {
+    ctx.path_uuid("visit_id").ok_or_else(|| {
+        ApiError::new(
+            404,
+            "customer_visit_not_found",
+            "The customer visit was not found.",
+        )
+    })
 }
 
 async fn create_check_in(ctx: Ctx) -> Result<Reply, ApiError> {
@@ -832,6 +1272,43 @@ async fn create_review(ctx: Ctx) -> Result<Reply, ApiError> {
         .into())
 }
 
+async fn create_customer_visit(ctx: Ctx) -> Result<Reply, ApiError> {
+    let body = ctx.body.as_ref().expect("contract requires a body");
+    let request = parse_customer_visit(body)?;
+    let (visit, outcome) =
+        record_customer_visit(ctx.db(), principal(&ctx)?, &request, Utc::now()).await?;
+    let status = match outcome {
+        Outcome::Created => 201,
+        Outcome::Replayed => 200,
+    };
+    Ok(Representation::new("CustomerVisit", visit.wire())
+        .status(status)
+        .into())
+}
+
+async fn list_customer_visit_operation(ctx: Ctx) -> Result<Reply, ApiError> {
+    let query = REQUEST_QUERY.try_with(Clone::clone).unwrap_or_default();
+    let filters = parse_visit_filters(&query)?;
+    let (items, total) =
+        list_customer_visits(ctx.db(), principal(&ctx)?, &filters, ctx.page, ctx.size).await?;
+    let items = items.iter().map(CustomerVisit::wire).collect();
+    Ok(Page::new(
+        "CustomerVisits",
+        "CustomerVisit",
+        "customer_visits",
+        items,
+        ctx.page,
+        total,
+    )
+    .size(ctx.size)
+    .into())
+}
+
+async fn get_customer_visit_operation(ctx: Ctx) -> Result<Reply, ApiError> {
+    let visit = read_customer_visit(ctx.db(), principal(&ctx)?, visit_id(&ctx)?).await?;
+    Ok(Representation::new("CustomerVisit", visit.wire()).into())
+}
+
 async fn database_ready(db: Arc<Database>) -> bool {
     let Ok(connection) = db.connection().await else {
         return false;
@@ -840,7 +1317,12 @@ async fn database_ready(db: Arc<Database>) -> bool {
         .query_one(
             "SELECT (SELECT count(*) FROM checkins.store_check_in WHERE FALSE) \
                   + (SELECT count(*) FROM checkins.check_in_review WHERE FALSE) \
-                  + (SELECT count(*) FROM api_stores.store_directory_v1 WHERE FALSE)",
+                  + (SELECT count(*) FROM checkins.customer_visit WHERE FALSE) \
+                  + (SELECT count(*) FROM api_stores.store_directory_v1 WHERE FALSE) \
+                  + (SELECT count(*) FROM api_campaigns.campaign_ref_v1 WHERE FALSE) \
+                  + (SELECT count(*) FROM api_preferences.consent_state_v1 WHERE FALSE) \
+                  + (SELECT count(*) FROM api_users.store_assignment_v1 WHERE FALSE) \
+                  + (SELECT count(*) FROM api_customers.resolve_loyalty_code_v1(NULL))",
             &[],
         )
         .await
@@ -853,6 +1335,20 @@ async fn capture_query(request: Request<Body>, next: Next) -> Response {
     REQUEST_QUERY.scope(query, next.run(request)).await
 }
 
+pub fn router(config: KitConfig, contracts: &str) -> Result<Router, Box<dyn std::error::Error>> {
+    Ok(Kit::new(SERVICE, SUFFIX, contracts, config)?
+        .operation("createCheckIn", create_check_in)?
+        .operation("listCheckIns", list)?
+        .operation("getCheckIn", get)?
+        .operation("createCheckInReview", create_review)?
+        .operation("createCustomerVisit", create_customer_visit)?
+        .operation("listCustomerVisits", list_customer_visit_operation)?
+        .operation("getCustomerVisit", get_customer_visit_operation)?
+        .ready_check(database_ready)
+        .into_router()
+        .layer(middleware::from_fn(capture_query)))
+}
+
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     configure_logging(&std::env::var("LOG_LEVEL").unwrap_or_else(|_| "info".to_owned()));
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -860,15 +1356,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         .enable_all()
         .build()?;
     runtime.block_on(async {
-        let kit = Kit::new(SERVICE, SUFFIX, "contracts", KitConfig::from_env(SUFFIX))?;
-        let router = kit
-            .operation("createCheckIn", create_check_in)?
-            .operation("listCheckIns", list)?
-            .operation("getCheckIn", get)?
-            .operation("createCheckInReview", create_review)?
-            .ready_check(database_ready)
-            .into_router()
-            .layer(middleware::from_fn(capture_query));
+        let router = router(KitConfig::from_env(SUFFIX), "contracts")?;
         let listener = tokio::net::TcpListener::bind("0.0.0.0:5013").await?;
         mosaiq_kit::serve(listener, router).await?;
         Ok::<(), Box<dyn std::error::Error>>(())

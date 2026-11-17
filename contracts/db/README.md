@@ -94,3 +94,4 @@ is a wake-up, never a way to carry data or to reach another boundary
 | `segments_outbox` | segments |
 | `rfm_outbox` | rfm-engine |
 | `models_outbox` | model-registry |
+| `customers_outbox` | customers |

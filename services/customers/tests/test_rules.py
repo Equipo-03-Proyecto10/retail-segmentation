@@ -507,22 +507,28 @@ def test_the_view_is_readable_and_the_table_is_not_for_consumers(owner_url, role
                         connection.execute("SELECT name FROM public.customer")
 
 
-def test_the_view_runs_as_its_owner_and_exposes_two_columns(owner):
+def test_the_view_runs_as_its_owner_and_exposes_three_columns(owner):
     row = owner.execute(
         "SELECT reloptions, (SELECT array_agg(attname::text ORDER BY attnum)"
         " FROM pg_attribute WHERE attrelid = c.oid AND attnum > 0)"
         " FROM pg_class c WHERE oid = 'api_customers.customer_ref_v1'::regclass"
     ).fetchone()
     assert row[0] == ["security_invoker=off"]
-    assert row[1] == ["customer_id", "registered_on"]
+    # The flag ADR-0066 adds is appended last, so the view was replaced in place.
+    assert row[1] == ["customer_id", "registered_on", "anonymized"]
 
 
-def test_the_boundary_has_no_outbox_and_no_capture_trigger(owner):
-    schemas = owner.execute(
-        "SELECT count(*) FROM pg_namespace WHERE nspname = 'customers_events'"
-    ).fetchone()[0]
-    triggers = owner.execute(
-        "SELECT count(*) FROM pg_trigger WHERE tgrelid = 'public.customer'::regclass"
-        " AND NOT tgisinternal AND tgname <> 'trg_audit_customer'"
-    ).fetchone()[0]
-    assert (schemas, triggers) == (0, 0)
+def test_the_boundary_has_one_capture_trigger_and_one_guard(owner):
+    names = [
+        name
+        for (name,) in owner.execute(
+            "SELECT tgname FROM pg_trigger WHERE tgrelid = 'public.customer'::regclass"
+            " AND NOT tgisinternal AND tgname <> 'trg_audit_customer' ORDER BY 1"
+        ).fetchall()
+    ]
+    # One outbox row, for the one change that is announced, and the guard that
+    # makes an anonymized row final.
+    assert names == [
+        "trg_customer_anonymized_is_final",
+        "trg_customers_capture_anonymized",
+    ]

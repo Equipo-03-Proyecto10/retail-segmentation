@@ -26,6 +26,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -45,6 +46,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.em
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import online.maxthecoder.mosaiq.floor.R
+import online.maxthecoder.mosaiq.floor.auth.FloorAccess
+import online.maxthecoder.mosaiq.floor.auth.FloorSection
 import online.maxthecoder.mosaiq.floor.outbox.RowState
 import online.maxthecoder.mosaiq.floor.session.ChosenStore
 import online.maxthecoder.mosaiq.floor.ui.CustomerInsightsViewModel
@@ -55,12 +58,17 @@ import online.maxthecoder.mosaiq.floor.ui.ScanScreen
 import online.maxthecoder.mosaiq.floor.ui.ScanViewModel
 import online.maxthecoder.mosaiq.floor.ui.SessionState
 import online.maxthecoder.mosaiq.floor.ui.checkin.StoreAndCheckIn
+import online.maxthecoder.mosaiq.floor.ui.components.MqButton
 import online.maxthecoder.mosaiq.floor.ui.outbox.OutboxList
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
 
 private val WORDMARK_TRACKING = 0.14.em
 
-/** The floor process once signed in: top bar, bottom navigation and the section the location names. */
+/**
+ * The floor process once signed in: top bar, bottom navigation and the section the location names.
+ * Each role gets its own profile of sections (ADR-0060, [FloorAccess]); a role that has none is shown a
+ * plain message instead of any screen.
+ */
 @Composable
 fun FloorHome(
     signedIn: SessionState.SignedIn,
@@ -70,16 +78,51 @@ fun FloorHome(
     insights: CustomerInsightsViewModel,
     onSignOut: () -> Unit
 ) {
-    var location: FloorLocation by rememberSaveable(stateSaver = FloorLocationSaver) {
-        mutableStateOf(FloorLocation.CheckIn)
+    if (FloorAccess.sections(signedIn.role).isEmpty()) {
+        TurnedAway(onSignOut)
+    } else {
+        FloorProfile(signedIn, model, scan, sales, insights, onSignOut)
     }
+}
+
+/** A role the app holds nothing for: no section, no bar, and a way back to sign-in. */
+@Composable
+private fun TurnedAway(onSignOut: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(Spacing.Lg).testTag("turned-away"),
+        verticalArrangement = Arrangement.spacedBy(Spacing.Md, Alignment.CenterVertically)
+    ) {
+        Text(stringResource(R.string.session_role_refused), style = MaterialTheme.typography.bodyLarge)
+        MqButton(stringResource(R.string.session_sign_out), onClick = onSignOut)
+    }
+}
+
+@Composable
+private fun FloorProfile(
+    signedIn: SessionState.SignedIn,
+    model: FloorViewModel,
+    scan: ScanViewModel,
+    sales: SalesViewModel,
+    insights: CustomerInsightsViewModel,
+    onSignOut: () -> Unit
+) {
+    val role = signedIn.role
+    var saved: FloorLocation by rememberSaveable(stateSaver = FloorLocationSaver) {
+        mutableStateOf(FloorLocation.CheckIn.allowedFor(role))
+    }
+    // What was saved is only a request: a role never reaches a section it does not hold, whether the
+    // location came from a tap, Back or a restored state (ADR-0058).
+    val location = saved.allowedFor(role)
+    LaunchedEffect(location) { if (location != saved) saved = location }
+    val go: (FloorLocation) -> Unit = { saved = it.allowedFor(role) }
     val chosen by model.chosen.collectAsStateWithLifecycle()
     val rows by model.open.collectAsStateWithLifecycle()
     val pendingWrites = rows.count { it.state == RowState.PENDING }
+    val canSell = FloorAccess.holds(role, FloorSection.SALE)
 
-    // Back steps one state (ADR-0058); on Check-in it is off, so the system leaves the app.
-    val back = location.back
-    BackHandler(enabled = back != null) { back?.let { location = it } }
+    // Back steps one state (ADR-0058); on the first section it is off, so the system leaves the app.
+    val back = location.backFor(role)
+    BackHandler(enabled = back != null) { back?.let(go) }
 
     SignOutHost(model, onSignOut) { requestSignOut ->
         Scaffold(
@@ -88,7 +131,7 @@ fun FloorHome(
                 FloorTopBar(
                     signedIn = signedIn,
                     store = chosen,
-                    onStoreClick = { location = FloorLocation.StorePicker },
+                    onStoreClick = { go(FloorLocation.StorePicker) },
                     onSignOut = requestSignOut
                 )
             },
@@ -96,7 +139,8 @@ fun FloorHome(
                 FloorBottomBar(
                     selected = location.root,
                     pendingWrites = pendingWrites,
-                    onSelect = { location = it }
+                    held = FloorAccess.sections(role),
+                    onSelect = go
                 )
             }
         ) { innerPadding ->
@@ -107,29 +151,29 @@ fun FloorHome(
                         StoreAndCheckIn(
                             model,
                             picking = here == FloorLocation.StorePicker,
-                            onChangeStore = { location = FloorLocation.StorePicker },
-                            onPicked = { location = FloorLocation.CheckIn }
+                            onChangeStore = { go(FloorLocation.StorePicker) },
+                            onPicked = { go(FloorLocation.CheckIn) }
                         )
                     FloorLocation.Scan, is FloorLocation.ProductFromRecommendation ->
                         ScanScreen(
                             scan,
                             chosen,
-                            onPickStore = { location = FloorLocation.CheckIn },
-                            onAddProduct = sales::addProduct
+                            onPickStore = { go(FloorLocation.CheckIn) },
+                            onAddProduct = if (canSell) sales::addProduct else null
                         )
                     FloorLocation.Sale, FloorLocation.RegisterCustomer ->
                         SalesScreen(
                             sales,
                             chosen,
-                            onPickStore = { location = FloorLocation.CheckIn },
+                            onPickStore = { go(FloorLocation.CheckIn) },
                             insights = insights,
                             registering = here == FloorLocation.RegisterCustomer,
                             onRegisteringChange = { open ->
-                                location = if (open) FloorLocation.RegisterCustomer else FloorLocation.Sale
+                                go(if (open) FloorLocation.RegisterCustomer else FloorLocation.Sale)
                             },
                             onOpenProduct = { productId ->
                                 scan.showProduct(productId)
-                                location = FloorLocation.ProductFromRecommendation(productId)
+                                go(FloorLocation.ProductFromRecommendation(productId))
                             }
                         )
                     FloorLocation.Outbox -> OutboxList(model)
@@ -217,21 +261,33 @@ private fun AccountMenu(signedIn: SessionState.SignedIn, onSignOut: () -> Unit) 
 
 private const val LARGE_FONT_SCALE = 1.3f
 
-private class Section(val root: FloorLocation.Root, @StringRes val label: Int, val icon: Int, val tag: String)
+private class Section(
+    val section: FloorSection,
+    @StringRes val label: Int,
+    val icon: Int,
+    val tag: String
+) {
+    val root: FloorLocation.Root get() = section.root
+}
 
 private val SECTIONS =
     listOf(
-        Section(FloorLocation.CheckIn, R.string.nav_check_in, R.drawable.ic_lucide_map_pin, "nav-check-in"),
-        Section(FloorLocation.Scan, R.string.nav_scan, R.drawable.ic_lucide_scan_line, "nav-scan"),
-        Section(FloorLocation.Sale, R.string.nav_sale, R.drawable.ic_lucide_shopping_cart, "nav-sale"),
-        Section(FloorLocation.Outbox, R.string.nav_outbox, R.drawable.ic_lucide_inbox, "nav-outbox")
+        Section(FloorSection.CHECK_IN, R.string.nav_check_in, R.drawable.ic_lucide_map_pin, "nav-check-in"),
+        Section(FloorSection.SCAN, R.string.nav_scan, R.drawable.ic_lucide_scan_line, "nav-scan"),
+        Section(FloorSection.SALE, R.string.nav_sale, R.drawable.ic_lucide_shopping_cart, "nav-sale"),
+        Section(FloorSection.OUTBOX, R.string.nav_outbox, R.drawable.ic_lucide_inbox, "nav-outbox")
     )
 
 @Composable
-internal fun FloorBottomBar(selected: FloorLocation.Root, pendingWrites: Int, onSelect: (FloorLocation) -> Unit) {
+internal fun FloorBottomBar(
+    selected: FloorLocation.Root,
+    pendingWrites: Int,
+    held: List<FloorSection> = FloorSection.entries,
+    onSelect: (FloorLocation) -> Unit
+) {
     val largeFont = LocalDensity.current.fontScale > LARGE_FONT_SCALE
     NavigationBar {
-        SECTIONS.forEach { section ->
+        SECTIONS.filter { it.section in held }.forEach { section ->
             NavigationBarItem(
                 selected = section.root == selected,
                 onClick = { onSelect(section.root) },

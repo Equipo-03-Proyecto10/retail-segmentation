@@ -14,6 +14,7 @@ use uuid::Uuid;
 /// The seed's one administrator and one of its five store managers.
 pub const ADMIN: &str = "11111111-1111-1111-1111-000000000001";
 pub const STORE_MANAGER: &str = "11111111-1111-1111-1111-000000000003";
+pub const SALES_ASSOCIATE: &str = "11111111-1111-1111-1111-000000000031";
 
 /// The owner URL, or None (the test then skips) when none is configured.
 pub fn owner_url() -> Option<String> {
@@ -70,6 +71,81 @@ pub fn dec(text: &str) -> Decimal {
 /// A moment safely in the past, to the second, so replays compare equal.
 pub fn earlier() -> DateTime<Utc> {
     DateTime::from_timestamp(Utc::now().timestamp() - 600, 0).unwrap()
+}
+
+/// A throwaway customer with one active loyalty card and optional PROFILING
+/// state. Consent rows are append-only, so the unique customer stays after a
+/// test; visits are removed by the store fixture.
+pub struct TestCustomer {
+    pub id: Uuid,
+    pub code: String,
+}
+
+impl TestCustomer {
+    pub async fn create(owner: &Client, decision: Option<&str>) -> Self {
+        let id = Uuid::new_v4();
+        let code = id.simple().to_string()[..26].to_ascii_uppercase();
+        owner
+            .execute(
+                "INSERT INTO public.customer \
+                 (customer_id, name, email, registration_channel_id, registered_on) \
+                 VALUES ($1, $2, $3, 1, CURRENT_DATE)",
+                &[
+                    &id,
+                    &format!("visit-test-{id}"),
+                    &format!("visit-{id}@test.invalid"),
+                ],
+            )
+            .await
+            .unwrap();
+        owner
+            .execute(
+                "INSERT INTO customers.loyalty_card \
+                 (customer_id, code, issued_by) VALUES ($1, $2, $3::text::uuid)",
+                &[&id, &code, &ADMIN],
+            )
+            .await
+            .unwrap();
+        if let Some(decision) = decision {
+            owner
+                .execute(
+                    "INSERT INTO preferences.consent_decision \
+                     (customer_id, purpose, decision, recorded_by, source, basis) \
+                     VALUES ($1, 'PROFILING', $2, $3::text::uuid, \
+                             'STAFF_ON_BEHALF', 'EXPLICIT')",
+                    &[&id, &decision, &ADMIN],
+                )
+                .await
+                .unwrap();
+        }
+        Self { id, code }
+    }
+
+    pub async fn decide(&self, owner: &Client, decision: &str) {
+        owner
+            .execute(
+                "INSERT INTO preferences.consent_decision \
+                 (customer_id, purpose, decision, recorded_by, source, basis) \
+                 VALUES ($1, 'PROFILING', $2, $3::text::uuid, \
+                         'STAFF_ON_BEHALF', 'EXPLICIT')",
+                &[&self.id, &decision, &ADMIN],
+            )
+            .await
+            .unwrap();
+    }
+
+    pub async fn revoke_card(&self, owner: &Client) {
+        owner
+            .execute(
+                "UPDATE customers.loyalty_card \
+                 SET status = 'REVOKED', revoked_at = now(), \
+                     revoked_by = $2::text::uuid, revocation_reason = 'OTHER' \
+                 WHERE customer_id = $1 AND status = 'ACTIVE'",
+                &[&self.id, &ADMIN],
+            )
+            .await
+            .unwrap();
+    }
 }
 
 /// A throwaway store at (25.6866, -100.3161) with a 150 m geofence, or with
@@ -141,6 +217,13 @@ impl TestStore {
     }
 
     pub async fn cleanup(self, owner: &Client) {
+        owner
+            .execute(
+                "DELETE FROM checkins.customer_visit WHERE store_id = $1",
+                &[&self.id],
+            )
+            .await
+            .unwrap();
         owner
             .execute(
                 "DELETE FROM checkins.check_in_review WHERE check_in_id IN \

@@ -124,7 +124,7 @@ fun StorePickerContent(
                         items(state.stores, key = { it.storeId }) { store ->
                             MqListRow(
                                 headline = store.name,
-                                supporting = "${store.city}, ${store.state}",
+                                supporting = stringResource(R.string.place_city_state, store.city, store.state),
                                 chevron = true,
                                 divider = true,
                                 onClick = { onPick(store) }
@@ -141,6 +141,8 @@ fun StorePickerContent(
         )
     }
 }
+
+// ui-string-ok-from: previews below (sample copy for design review, never on a screen)
 
 private const val PREVIEW_WIDTH = 375
 private const val PREVIEW_HEIGHT = 640

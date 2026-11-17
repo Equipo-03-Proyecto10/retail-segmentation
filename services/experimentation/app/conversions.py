@@ -15,7 +15,7 @@ view still gives its date and origin. Statements are literal (guards.sh).
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -148,7 +148,7 @@ def money(value: Decimal) -> str:
 
 
 def instant(value: datetime) -> str:
-    return value.isoformat().replace("+00:00", "Z")
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def evaluate(connection: Connection, experiment_id: int) -> dict[str, Any]:

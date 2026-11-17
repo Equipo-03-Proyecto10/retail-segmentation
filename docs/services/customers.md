@@ -32,7 +32,8 @@
 | GET | `/v1/customers/floor-search` | Floor search: `q` required with 3 characters at least, `size` 20 at most, no `email`; `SALES_ASSOCIATE` matches name only. Items are `FloorCustomer` | SALES_ASSOCIATE, LOYALTY_OFFICER |
 | GET | `/v1/customers/{customer_id}/floor-view` | One customer as `FloorCustomer` | SALES_ASSOCIATE, LOYALTY_OFFICER |
 | POST | `/v1/customers` | Register a customer | ADMIN, STORE_MANAGER |
-| PATCH | `/v1/customers/{customer_id}` | Correct a customer's data | ADMIN, STORE_MANAGER |
+| PATCH | `/v1/customers/{customer_id}` | Correct a customer's data (409 `customer_anonymized` once anonymized) | ADMIN, STORE_MANAGER |
+| PUT | `/v1/customers/{customer_id}/anonymization` | Anonymize a customer in place, idempotently and irreversibly (ADR-0066 section 3; F21-19) | ADMIN |
 | POST | `/v1/loyalty-cards` | Issue a loyalty card (an opaque code, no personal data) | ADMIN, LOYALTY_OFFICER |
 | GET | `/v1/loyalty-cards` | List one customer's cards and its `loyalty_state` (`customer_id` required) | ADMIN, LOYALTY_OFFICER |
 | POST | `/v1/loyalty-cards/lookup` | Resolve a scanned code to its card and customer id | ADMIN, SALES_ASSOCIATE, LOYALTY_OFFICER |
@@ -62,7 +63,8 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 | Object | Kind | Access | Notes |
 |---|---|---|---|
-| `customer` | Table (`public`) | S: SELECT, INSERT, UPDATE of `name`, `email`, `phone`, `registration_channel_id`; no DELETE | The web only reads it; audited (E-12) |
+| `customer` | Table (`public`) | S: SELECT, INSERT, UPDATE of `name`, `email`, `phone`, `registration_channel_id`, `user_id` and `anonymized_at`; no DELETE | The web only reads it; audited (E-12). Anonymization (F21-19) sets `anonymized_at` once; the row is final from then on |
+| `customers_events.outbox` | Table | S: SELECT, DELETE, UPDATE of `relayed_at`; `definer_customers` INSERT | The relay of `stream:customers.v1.anonymized` (runtime state, exempt from the seed) |
 
 ## Database contracts
 
@@ -72,7 +74,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 ## Events
 
-None.
+Publishes `stream:customers.v1.anonymized` (F21-19), key-only, relayed from the owner's outbox: [contract](../../contracts/streams/customers.anonymized.v1.md). Consumed by customer-preferences and users.
 
 ## Redis keys
 
@@ -88,6 +90,7 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | HTTP | Code | When |
 |---|---|---|
 | 409 | `email_taken` | The email already belongs to another customer |
+| 409 | `customer_anonymized` | A correction, or a new loyalty card, for an anonymized customer (F21-19) |
 | 422 | `unknown_channel` | `registration_channel_id` references no channel (23503) |
 | 422 | `future_registration` | A `POST` gives a `registered_on` after the current date |
 | 404 | `customer_not_found` | No customer has the given `customer_id` |

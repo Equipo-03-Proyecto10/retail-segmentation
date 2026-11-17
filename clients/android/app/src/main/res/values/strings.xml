@@ -41,7 +41,7 @@
     <string name="picker_empty_message">Check the spelling or try a nearby city.</string>
 
     <!-- Outbox -->
-    <string name="outbox_empty_title">Everything is sent</string>
+    <string name="outbox_empty_title">Everything is synced</string>
     <string name="outbox_empty_message">Nothing is waiting and nothing needs your attention.</string>
     <string name="outbox_kind_check_in">Check-in</string>
     <string name="outbox_kind_check_in_at">Check-in at %1$s</string>
@@ -54,8 +54,18 @@
     <string name="outbox_state_attention">Needs attention</string>
     <string name="outbox_other_user">Waiting for the user who made it to sign in again.</string>
     <string name="outbox_dismiss">Dismiss</string>
+    <string name="outbox_day_and_time">%1$s, %2$s</string>
     <string name="outbox_today">Today, %1$s</string>
     <string name="outbox_yesterday">Yesterday, %1$s</string>
+    <string name="outbox_send_now">Send now</string>
+    <plurals name="outbox_summary_waiting">
+        <item quantity="one">%1$d write waiting to send</item>
+        <item quantity="other">%1$d writes waiting to send</item>
+    </plurals>
+    <plurals name="outbox_summary_attention">
+        <item quantity="one">%1$d needs attention</item>
+        <item quantity="other">%1$d need attention</item>
+    </plurals>
     <plurals name="outbox_attempts">
         <item quantity="one">Tried %1$d time so far</item>
         <item quantity="other">Tried %1$d times so far</item>
@@ -191,6 +201,10 @@
     <string name="component_decrease_quantity">Decrease quantity</string>
     <string name="component_increase_quantity">Increase quantity</string>
     <string name="component_retry">Retry</string>
+    <string name="component_field_code">%1$s: %2$s</string>
+    <string name="place_city_state">%1$s, %2$s</string>
+    <string name="insights_rank_and_name">%1$d. %2$s</string>
+    <string name="checkin_answer_unreadable">Check-in sent. The answer could not be read.</string>
     <string name="component_details">Details</string>
     <string name="component_code">Code: %1$s</string>
     <string name="component_correlation">Correlation ID: %1$s</string>
@@ -222,7 +236,7 @@
     <string name="session_ended_expired">Your session expired. Sign in again.</string>
     <string name="session_ended_revoked">Your session was ended. Sign in again.</string>
     <string name="session_ended_invalid">Your session is no longer valid. Sign in again.</string>
-    <string name="session_role_refused">This app is for store managers and administrators. You were signed out.</string>
+    <string name="session_role_refused">This app is for store staff accounts: seller, manager, loyalty officer, commercial supervisor and administrator. You were signed out.</string>
     <string name="outbox_invalid_path">The request path is not a valid URL.</string>
     <string name="outbox_refused_default">The service refused this write.</string>
     <string name="sale_refused_default">Sale refused.</string>
@@ -236,6 +250,8 @@
     <string name="verdict_verified">Verified.</string>
     <string name="verdict_not_verified">Not verified.</string>
     <string name="verdict_joined">%1$s %2$s</string>
+    <string name="refusal_forbidden_role">Your role is not allowed to do this. Ask an administrator, then dismiss this write.</string>
+    <string name="refusal_forbidden_store">This write is for a store that is not assigned to you, so it was refused. Dismiss it and pick one of your stores.</string>
     <string name="refusal_future_dated">The sale is dated in the future. Check the phone\'s clock, then record the sale again.</string>
     <string name="checkin_note_denied">Location is off for this app, so the check-in is recorded without a position and cannot be verified.</string>
     <string name="checkin_note_approximate">Only approximate location is allowed, so the check-in may be too imprecise to verify.</string>

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: check-ins-service
-  version: 1.3.0
+  version: 1.4.0
   description: 'Records staff GPS check-ins and computes their verdict on the server
     (RN-56). The phone sends a fix and shows the answer; it never decides. Check-ins
     are never updated or deleted, and an override is an append-only review. The
@@ -378,7 +378,6 @@ paths:
         customer was. A visit is kept 36 months from its `occurred_at`
         (ADR-0066); see `getCustomerVisit` for what happens then.
       operationId: createCustomerVisit
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - STORE_MANAGER
@@ -489,7 +488,6 @@ paths:
         same for every reading role. A visit older than 36 months no longer
         names its customer: `customer_id` is null, and omitted in XML.
       operationId: listCustomerVisits
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - STORE_MANAGER
@@ -564,7 +562,6 @@ paths:
         customer's UUID alone, and the identity has gone from the customer's
         row.
       operationId: getCustomerVisit
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - STORE_MANAGER

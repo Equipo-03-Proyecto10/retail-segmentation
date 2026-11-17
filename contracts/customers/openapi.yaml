@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: customers-service
-  version: 1.6.0
+  version: 1.7.1
   description: >-
     Registers, searches, reads and corrects customers under RN-08. Customers
     are never deleted through services; a mistaken registration is corrected
@@ -9,6 +9,21 @@ info:
     opaque identifier. Floor roles read customers through the floor view, which
     carries only the customer's own fields; segment, RFM, interests,
     restrictions and consent are read from the services that own them.
+
+
+    **Anonymization (ADR-0066 section 3).** A customer is never deleted. After a
+    request, or after 36 months with no sale and no check-in, an administrator
+    anonymizes the customer in place with `PUT /v1/customers/{customer_id}/anonymization`:
+    the name becomes the fixed placeholder `Anonymized customer`, the email and
+    phone are removed, the account link is cleared, and every active loyalty card
+    is revoked. The key, `registered_on`, the registration channel, the sales and
+    the segment history stay, so every figure built on them still reconciles.
+    The operation is irreversible and idempotent. From then on every read returns
+    the placeholder name and no email and no phone; a correction
+    or a new loyalty card is refused with 409 `customer_anonymized`; the customer
+    is flagged `anonymized` in `api_customers.customer_ref_v1`, and the owner
+    announces it on `stream:customers.v1.anonymized`
+    (`contracts/streams/customers.anonymized.v1.md`).
 servers:
   - url: /api/customers
 security:
@@ -177,12 +192,16 @@ paths:
               examples:
                 customer:
                   externalValue: ./examples/get-customer.json
+                anonymized_customer:
+                  externalValue: ./examples/get-anonymized-customer.json
             application/xml:
               schema:
                 $ref: '#/components/schemas/Customer'
               examples:
                 customer:
                   externalValue: ./examples/get-customer.xml
+                anonymized_customer:
+                  externalValue: ./examples/get-anonymized-customer.xml
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -202,7 +221,8 @@ paths:
       description: >-
         Corrects a mistaken registration. Only name, email, phone and
         registration_channel_id are accepted. Any other field, including
-        registered_on, gets 422 invalid_body and a detail naming that field.
+        registered_on, gets 422 invalid_body and a detail naming that field. An
+        anonymized customer accepts no correction: 409 `customer_anonymized`.
       x-mosaiq-roles: [ADMIN, STORE_MANAGER, LOYALTY_OFFICER]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
@@ -252,13 +272,103 @@ paths:
         '406':
           $ref: '#/components/responses/NotAcceptable'
         '409':
-          $ref: '#/components/responses/EmailTaken'
+          $ref: '#/components/responses/EmailTakenOrCustomerAnonymized'
         '413':
           $ref: '#/components/responses/PayloadTooLarge'
         '415':
           $ref: '#/components/responses/UnsupportedMediaType'
         '422':
           $ref: '#/components/responses/CorrectionValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/customers/{customer_id}/anonymization:
+    put:
+      tags: [Customers]
+      operationId: anonymizeCustomer
+      summary: Anonymize a customer
+      description: >-
+        Replaces the customer's identity in place and keeps everything else
+        (ADR-0066 section 3). In one transaction: `name` becomes `Anonymized
+        customer`, `email` and `phone` become null, the link to a login account
+        is cleared, every active loyalty card is revoked by the actor (reason
+        `CUSTOMER_REQUEST` for a `SUBJECT_REQUEST`, `OTHER` for `RETENTION_EXPIRED`),
+        `anonymized_at` is set, the
+        identifying values are removed from every audit entry of the customer's
+        row (the entries, their number, keys, actions, times and actors stay),
+        and two domain events are recorded naming the administrator:
+        `CUSTOMER_ANONYMIZED` and `AUDIT_PAYLOAD_REDACTED`, each with the
+        `reason` as `reason_code` (ADR-0072). The sales, segment history, R, F
+        and M, experiment assignments and consent records are not touched.
+        `reason` says why: `SUBJECT_REQUEST` for a request the customer made
+        (passed on by a loyalty officer), `RETENTION_EXPIRED` for 36 months with
+        no sale and no check-in; an administrator decides each one, so no
+        unattended process rewrites an identity.
+
+
+        The operation is idempotent: anonymizing a customer that is already
+        anonymized answers 200 with `outcome` `ALREADY_ANONYMIZED` and the
+        original `anonymized_at`, and changes, records and announces nothing. It
+        is irreversible.
+      x-mosaiq-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CustomerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnonymizeCustomerRequest'
+            examples:
+              subject_request:
+                externalValue: ./examples/anonymize-customer.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/AnonymizeCustomerRequest'
+            examples:
+              subject_request:
+                externalValue: ./examples/anonymize-customer.request.xml
+      responses:
+        '200':
+          description: The customer is anonymized, now or already.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Anonymization'
+              examples:
+                anonymized:
+                  externalValue: ./examples/anonymize-customer.json
+                already_anonymized:
+                  externalValue: ./examples/anonymize-customer-again.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/Anonymization'
+              examples:
+                anonymized:
+                  externalValue: ./examples/anonymize-customer.xml
+                already_anonymized:
+                  externalValue: ./examples/anonymize-customer-again.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CustomerNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/LookupValidationFailed'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -391,7 +501,8 @@ paths:
         one ACTIVE card; issuing a second returns 409 `active_card_exists`, and
         a replacement is issued only after the first is revoked. A card is
         never deleted; revocation is its only end. An unknown `customer_id`
-        returns 422 `unknown_customer`.
+        returns 422 `unknown_customer`, and an anonymized customer
+        409 `customer_anonymized`: an anonymized customer holds no card.
       x-mosaiq-roles: [ADMIN, LOYALTY_OFFICER]
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
@@ -438,7 +549,7 @@ paths:
         '406':
           $ref: '#/components/responses/NotAcceptable'
         '409':
-          $ref: '#/components/responses/ActiveCardExists'
+          $ref: '#/components/responses/ActiveCardExistsOrCustomerAnonymized'
         '413':
           $ref: '#/components/responses/PayloadTooLarge'
         '415':
@@ -800,6 +911,12 @@ components:
         registered_on:
           type: string
           format: date
+      description: >-
+        An anonymized customer (ADR-0066 section 3) is read like any other: its
+        `name` is the placeholder `Anonymized customer` and its `email` and
+        `phone` are null. The representation gains no member, because a new
+        element in a v1 response is a major change; the instant of anonymization
+        is the `anonymized_at` of `anonymizeCustomer`'s answer.
       xml:
         name: Customer
         namespace: https://mosaiq.maxthecoder.online/xml/customers/v1
@@ -1041,6 +1158,42 @@ components:
           enum: [LOST, STOLEN, REPLACED, CUSTOMER_REQUEST, OTHER]
       xml:
         name: RevokeLoyaltyCardRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/customers/v1
+    AnonymizeCustomerRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          enum: [SUBJECT_REQUEST, RETENTION_EXPIRED]
+          description: >-
+            Why an administrator anonymizes: a request the customer made, or
+            36 months with no sale and no check-in. It is recorded as the
+            `reason_code` of the domain events, never on the customer.
+      xml:
+        name: AnonymizeCustomerRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/customers/v1
+    Anonymization:
+      type: object
+      additionalProperties: false
+      required: [customer_id, outcome, anonymized_at]
+      properties:
+        customer_id:
+          type: string
+          format: uuid
+        outcome:
+          type: string
+          enum: [ANONYMIZED, ALREADY_ANONYMIZED]
+          description: >-
+            `ANONYMIZED` when this request removed the identity,
+            `ALREADY_ANONYMIZED` when an earlier one had: nothing changed.
+        anonymized_at:
+          type: string
+          format: date-time
+          description: The instant the identity was removed, as the first request set it.
+      xml:
+        name: Anonymization
         namespace: https://mosaiq.maxthecoder.online/xml/customers/v1
     LookupLoyaltyCardRequest:
       type: object
@@ -1288,6 +1441,31 @@ components:
           examples:
             email_taken:
               $ref: '#/components/examples/EmailTaken'
+    EmailTakenOrCustomerAnonymized:
+      description: >-
+        `email_taken` — the email already belongs to another customer, in any
+        letter case; or `customer_anonymized` — the customer was anonymized and
+        accepts no correction.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            email_taken:
+              $ref: '#/components/examples/EmailTaken'
+            customer_anonymized:
+              externalValue: ./examples/customer-anonymized.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            email_taken:
+              $ref: '#/components/examples/EmailTaken'
+            customer_anonymized:
+              externalValue: ./examples/customer-anonymized.xml
     PayloadTooLarge:
       description: payload_too_large — the body exceeds 64 KiB.
       headers:
@@ -1540,6 +1718,30 @@ components:
           examples:
             active_card_exists:
               externalValue: ./examples/active-card-exists.xml
+    ActiveCardExistsOrCustomerAnonymized:
+      description: >-
+        `active_card_exists` — the customer already has an ACTIVE card; or
+        `customer_anonymized` — the customer was anonymized and holds no card.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            active_card_exists:
+              externalValue: ./examples/active-card-exists.json
+            customer_anonymized:
+              externalValue: ./examples/customer-anonymized.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            active_card_exists:
+              externalValue: ./examples/active-card-exists.xml
+            customer_anonymized:
+              externalValue: ./examples/customer-anonymized.xml
     IssueValidationFailed:
       description: '`invalid_body` or `unknown_customer`.'
       headers:

@@ -142,10 +142,7 @@ private fun CartLine(line: SaleLine, locked: Boolean, actions: SaleActions) {
                 modifier = Modifier.testTag("stepper-$id")
             )
             Text(
-                formatMoney(
-                    (line.product.listPrice.toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO) *
-                        line.quantity.toBigDecimal()
-                ),
+                formatMoney(lineTotal(line)),
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.weight(1f)
             )

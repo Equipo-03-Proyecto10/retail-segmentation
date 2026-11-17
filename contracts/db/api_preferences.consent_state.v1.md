@@ -8,7 +8,7 @@
 | Kind | PostgreSQL view |
 | Owning boundary | customer-preferences |
 | Producer | customer-preferences-service |
-| Consumers | recommendations, campaigns, rfm-engine |
+| Consumers | recommendations, campaigns, rfm-engine, check-ins, experimentation |
 
 The view publishes what each customer currently allows, one row per customer and
 purpose: the latest row, by `decision_id`, of the append-only consent log
@@ -48,8 +48,9 @@ decision of that record and is not re-decided here.
 | recommendations | `PERSONALIZATION` | The answer is "nothing qualifies" with reason `PERSONALIZATION_WITHDRAWN`, and no segment, history or interest of the customer is read (RN-40, ADR-0067). A cached result is invalidated by `stream:preferences.v1.consent_changed` |
 | campaigns | `PERSONALIZATION`, `MARKETING_CONTACT` | Without `PERSONALIZATION` the customer is in no audience built on a segment or an interest; without `MARKETING_CONTACT` they are in no audience whatever its criterion |
 | rfm-engine | `PROFILING` | The customer's open assignment is closed and they are reported as unassigned with reason `PROFILING_WITHDRAWN`, and they are skipped by incremental updates (ADR-0063) |
+| check-ins | `PROFILING` | A customer visit is refused with `consent_required`; an unreadable view fails closed with `consent_unavailable`, and nothing is stored (ADR-0066, RN-72) |
 
-model-registry (training sets), check-ins (customer visits, F21-22) and
+model-registry (training sets) and
 experimentation (an experiment's frame) also read this view under ADR-0066. Each is
 named here, with its grant, by the contract story of that service, which is an
 addition and not a breaking change. An experiment's frame is judged at one instant
@@ -83,4 +84,4 @@ Removing or renaming a consumed column, changing its PostgreSQL type, changing t
 values of `purpose`, `decision` or `basis`, or changing the one-latest-row-per-purpose
 rule is breaking. A breaking revision is published as
 `api_preferences.consent_state_v2` with a matching `.v2.md` contract beside v1; v1
-remains until recommendations, campaigns and rfm-engine have moved.
+remains until recommendations, campaigns, rfm-engine and check-ins have moved.

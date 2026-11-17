@@ -195,6 +195,7 @@ def service(
 ) -> Iterator[Any]:
     monkeypatch.setenv("DATABASE_URL", database["service"])
     monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
+    monkeypatch.setenv("STREAM_CONSUMER_ENABLED", "false")
     # Ten creates queue on one advisory lock behind a pool of three connections.
     monkeypatch.setenv("DATABASE_POOL_TIMEOUT_SECONDS", "20")
     from app import create_app

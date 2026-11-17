@@ -63,7 +63,14 @@ class OutboxWorker(
 ) : CoroutineWorker(context, parameters) {
     override suspend fun doWork(): Result {
         val graph = (applicationContext as GraphProvider).graph
-        return drain(graph.outbox, graph.session, graph.tokens, graph.network.client, graph.network.gateway)
+        return drain(
+            graph.outbox,
+            graph.session,
+            graph.tokens,
+            graph.network.client,
+            graph.network.gateway,
+            graph.inFlight
+        )
     }
 
     companion object {
@@ -75,7 +82,8 @@ class OutboxWorker(
             session: SessionStore,
             tokens: TokenStore,
             client: OkHttpClient,
-            gateway: okhttp3.HttpUrl
+            gateway: okhttp3.HttpUrl,
+            inFlight: InFlight = InFlight()
         ): Result = withContext(Dispatchers.IO) {
             val userId = session.userId.value
             if (userId == null || tokens.read() == null) return@withContext Result.success()
@@ -97,22 +105,24 @@ class OutboxWorker(
                         }
                         .build()
                 val attempt =
-                    try {
-                        client.newCall(request).execute().use {
-                            val verdict = Attempt.of(
-                                it.code,
-                                it.body?.string(),
-                                it.header(ApiError.CORRELATION_HEADER),
-                                it.header("Retry-After")
-                            )
-                            if (verdict is Attempt.Done) {
-                                verdict.copy(replayed = it.header("Idempotent-Replayed") == "true")
-                            } else {
-                                verdict
+                    inFlight.during(row.id) {
+                        try {
+                            client.newCall(request).execute().use {
+                                val verdict = Attempt.of(
+                                    it.code,
+                                    it.body?.string(),
+                                    it.header(ApiError.CORRELATION_HEADER),
+                                    it.header("Retry-After")
+                                )
+                                if (verdict is Attempt.Done) {
+                                    verdict.copy(replayed = it.header("Idempotent-Replayed") == "true")
+                                } else {
+                                    verdict
+                                }
                             }
+                        } catch (unreachable: IOException) {
+                            Attempt.Retry
                         }
-                    } catch (unreachable: IOException) {
-                        Attempt.Retry
                     }
                 when (attempt) {
                     is Attempt.Done -> outbox.markDone(

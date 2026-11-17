@@ -1,6 +1,8 @@
 package online.maxthecoder.mosaiq.floor.ui.shell
 
 import androidx.compose.runtime.saveable.Saver
+import online.maxthecoder.mosaiq.floor.auth.FloorAccess
+import online.maxthecoder.mosaiq.floor.auth.FloorSection
 
 /**
  * Where the signed-in user is (ADR-0058): four root sections and the sub-states
@@ -48,6 +50,37 @@ sealed interface FloorLocation {
             get() = Scan
     }
 }
+
+/** The section this location is in, which is what a role's profile is made of. */
+val FloorLocation.section: FloorSection
+    get() =
+        when (root) {
+            FloorLocation.CheckIn -> FloorSection.CHECK_IN
+            FloorLocation.Scan -> FloorSection.SCAN
+            FloorLocation.Sale -> FloorSection.SALE
+            FloorLocation.Outbox -> FloorSection.OUTBOX
+        }
+
+val FloorSection.root: FloorLocation.Root
+    get() =
+        when (this) {
+            FloorSection.CHECK_IN -> FloorLocation.CheckIn
+            FloorSection.SCAN -> FloorLocation.Scan
+            FloorSection.SALE -> FloorLocation.Sale
+            FloorSection.OUTBOX -> FloorLocation.Outbox
+        }
+
+/**
+ * This location when [role] holds its section, otherwise where the role opens. Every way
+ * into a location (a tap, Back, a state restored after process death) goes through here,
+ * so a section a role does not hold cannot be shown by any of them. A role that holds
+ * nothing lands on Check-in, which the shell never draws for it.
+ */
+fun FloorLocation.allowedFor(role: String?): FloorLocation =
+    if (FloorAccess.holds(role, section)) this else (FloorAccess.start(role)?.root ?: FloorLocation.CheckIn)
+
+/** [FloorLocation.back], kept inside what [role] holds; `null` when it would not move. */
+fun FloorLocation.backFor(role: String?): FloorLocation? = back?.allowedFor(role)?.takeIf { it != this }
 
 private const val PRODUCT_PREFIX = "product:"
 

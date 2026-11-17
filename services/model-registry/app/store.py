@@ -160,3 +160,60 @@ def list_publications(
         " published_by published_at"
     ).split()
     return [dict(zip(keys, row, strict=True)) for row in rows], total
+
+
+def lock_version(connection: Connection[Any], version_id: int) -> dict[str, Any] | None:
+    """Lock one version and return the state needed by a transition."""
+    row = connection.execute(
+        "SELECT version_id, state FROM models.model_version"
+        " WHERE version_id = %s FOR UPDATE",
+        (version_id,),
+    ).fetchone()
+    return None if row is None else {"version_id": row[0], "state": row[1]}
+
+
+def lock_published(connection: Connection[Any]) -> int | None:
+    """Lock the current published row; the partial index guarantees at most one."""
+    row = connection.execute(
+        "SELECT version_id FROM models.model_version"
+        " WHERE state = 'PUBLISHED' FOR UPDATE"
+    ).fetchone()
+    return None if row is None else row[0]
+
+
+def transition_publication(
+    connection: Connection[Any],
+    *,
+    version_id: int,
+    previous_version_id: int | None,
+    action: str,
+    reason: str,
+    published_by: str,
+) -> dict[str, Any]:
+    """Change the current projection and append its fact in one transaction."""
+    if previous_version_id is not None:
+        connection.execute(
+            "UPDATE models.model_version"
+            " SET state = 'RETIRED', retired_at = now()"
+            " WHERE version_id = %s AND state = 'PUBLISHED'",
+            (previous_version_id,),
+        )
+    connection.execute(
+        "UPDATE models.model_version"
+        " SET state = 'PUBLISHED', published_at = now(), retired_at = NULL"
+        " WHERE version_id = %s",
+        (version_id,),
+    )
+    row = connection.execute(
+        "INSERT INTO models.model_publication"
+        " (version_id, action, previous_version_id, reason, published_by)"
+        " VALUES (%s, %s, %s, %s, %s)"
+        " RETURNING publication_id, version_id, action, previous_version_id,"
+        " reason, published_by::text, published_at",
+        (version_id, action, previous_version_id, reason, published_by),
+    ).fetchone()
+    keys = (
+        "publication_id version_id action previous_version_id reason"
+        " published_by published_at"
+    ).split()
+    return dict(zip(keys, row, strict=True))

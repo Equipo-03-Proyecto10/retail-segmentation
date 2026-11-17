@@ -1,21 +1,49 @@
-"""The Flask application: register a draft version, read versions and their
-publications. Publication, rollback and training are their own stories
-(F22-13, F22-12); their operations are marked planned in the contract."""
+"""Register immutable versions, publish them and restore retired versions."""
 
 from __future__ import annotations
 
+import os
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import psycopg
 from flask import Flask, request
-from mosaiq_kit import ApiError, Kit, Page, Representation, configure_logging
+from mosaiq_kit import (
+    ApiError,
+    Kit,
+    OutboxRelay,
+    Page,
+    Representation,
+    configure_logging,
+)
 
-from . import rules, store
+import redis
+
+from . import audit, rules, store
 from .config import Settings
 
 METHODS = ("RFM_RULES", "KMEANS")
 STATES = ("DRAFT", "PUBLISHED", "RETIRED")
 NAME_CONSTRAINT = "model_version_name_key"
+PUBLISHED_CONSTRAINT = "model_version_one_published"
+STREAM = "stream:models.v1.publication_recorded"
+
+
+def relay_redis(url: str) -> redis.Redis:
+    """A durable-write Redis client authenticated as model-registry."""
+    parsed = urlsplit(url)
+    hostname = parsed.hostname or ""
+    if ":" in hostname:
+        hostname = "[" + hostname + "]"
+    netloc = hostname + ((":" + str(parsed.port)) if parsed.port else "")
+    return redis.Redis.from_url(
+        urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, "")),
+        username="svc_models",
+        password=os.environ.get("REDIS_MODELS_PASSWORD"),
+        socket_connect_timeout=1,
+        socket_timeout=3,
+        decode_responses=True,
+    )
 
 
 def _invalid_query(field: str, allowed: tuple[str, ...]) -> ApiError:
@@ -123,7 +151,7 @@ def version_view(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def create_app() -> Flask:
+def create_app(*, start_relay: bool = True) -> Flask:
     settings = Settings.from_env()
     app = Flask(__name__)
     configure_logging()
@@ -131,7 +159,12 @@ def create_app() -> Flask:
 
     def database_ready() -> bool:
         with holder["kit"].db.connection() as connection:
-            connection.execute("SELECT version_id FROM models.model_version LIMIT 1")
+            ready = connection.execute(
+                "SELECT to_regclass(%s) IS NOT NULL AND to_regclass(%s) IS NOT NULL",
+                ("models_events.outbox", "api_models.published_version_v1"),
+            ).fetchone()
+        if not ready or not ready[0]:
+            raise RuntimeError("model publication schema is not ready")
         return True
 
     kit = Kit(
@@ -219,6 +252,58 @@ def create_app() -> Flask:
             total=total,
         )
 
+    def change_publication(version_id: int, action: str) -> Representation:
+        expected = "DRAFT" if action == "PUBLISH" else "RETIRED"
+        try:
+            with kit.db.transaction() as connection:
+                target = store.lock_version(connection, version_id)
+                if target is None:
+                    raise _version_not_found()
+                if target["state"] != expected:
+                    raise _wrong_state(expected)
+                previous_version_id = store.lock_published(connection)
+                publication = store.transition_publication(
+                    connection,
+                    version_id=version_id,
+                    previous_version_id=previous_version_id,
+                    action=action,
+                    reason=kit.body["reason"],
+                    published_by=str(kit.principal["sub"]),
+                )
+                audit.publication_changed(
+                    connection,
+                    kit.principal,
+                    action=action,
+                    version_id=version_id,
+                    previous_version_id=previous_version_id,
+                )
+        except psycopg.errors.UniqueViolation as error:
+            if error.diag.constraint_name == PUBLISHED_CONSTRAINT:
+                raise _publication_conflict() from None
+            raise
+        return Representation("ModelPublication", publication, status=201)
+
+    @kit.operation("publishModelVersion")
+    def publish_model_version(version_id: int) -> Representation:
+        return change_publication(version_id, "PUBLISH")
+
+    @kit.operation("rollbackToModelVersion")
+    def rollback_to_model_version(version_id: int) -> Representation:
+        return change_publication(version_id, "ROLLBACK")
+
+    dsn = os.environ.get("DATABASE_URL")
+    if start_relay and dsn:
+        relay = OutboxRelay(
+            dsn,
+            "models",
+            [STREAM],
+            relay_redis(
+                os.environ.get("REDIS_STATE_URL", "redis://redis-state:6379/0")
+            ),
+        )
+        relay.start()
+        app.extensions["models_relay"] = relay
+
     return app
 
 
@@ -232,4 +317,24 @@ def _name_taken(name: str) -> ApiError:
         "model_version_name_taken",
         f"A model version named {name} already exists.",
         [{"field": "name", "code": "taken"}],
+    )
+
+
+def _wrong_state(expected: str) -> ApiError:
+    if expected == "DRAFT":
+        return ApiError(
+            409, "version_not_draft", "Only a draft version can be published."
+        )
+    return ApiError(
+        409,
+        "version_not_retired",
+        "Only a retired version can be restored.",
+    )
+
+
+def _publication_conflict() -> ApiError:
+    return ApiError(
+        409,
+        "publication_conflict",
+        "Another publication won the published-version slot; read it and retry.",
     )

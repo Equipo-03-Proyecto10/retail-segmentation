@@ -58,8 +58,12 @@ include:
   - path: [services/audit-trail/compose.yaml, docker/distributed/service.local.yaml]
     env_file: docker/distributed/local.env
   - path: [services/rfm-engine/compose.yaml, docker/distributed/service.local.yaml]
+    env_file: docker/distributed/local.env
   - path: [services/experimentation/compose.yaml, docker/distributed/service.local.yaml]
+    env_file: docker/distributed/local.env
   - path: [services/model-registry/compose.yaml, docker/distributed/service.local.yaml]
+    env_file: docker/distributed/local.env
+  - path: [services/analytics-kpis/compose.yaml, docker/distributed/service.local.yaml]
     env_file: docker/distributed/local.env
 
 services:

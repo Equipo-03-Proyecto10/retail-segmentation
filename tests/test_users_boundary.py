@@ -67,7 +67,13 @@ def test_assignment_view_consumers_match_the_published_contract() -> None:
         for role, object_name, privilege in rows
         if object_name == "api_users.store_assignment_v1" and privilege == "SELECT"
     }
-    assert readers == {"svc_users", "svc_sales", "svc_checkins", "svc_engagement"}
+    assert readers == {
+        "svc_users",
+        "svc_sales",
+        "svc_checkins",
+        "svc_engagement",
+        "svc_kpis",
+    }
 
 
 def test_only_access_changes_are_captured() -> None:

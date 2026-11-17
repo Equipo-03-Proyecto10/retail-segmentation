@@ -28,11 +28,18 @@ A row is available when all three tests pass:
 2. the store enables the channel (`api_stores`);
 3. `quantity_on_hand` is above zero (`public.inventory`).
 
-The view reads the first two only through their producers' versioned views
-(`api_products.product_ref_v1` and its successors, and the store directory's
-channel view), never through their tables. Those columns and views are
-published by the products and stores contracts of this phase (F21-11, F21-12);
-this view is not created until they exist.
+The view reads the first two, and the set of channels, only through their
+producers' versioned views, never through their tables:
+
+- the product: `api_products.product_ref_v1`, whose `is_active` is true exactly
+  when the commercial status is `active`;
+- the store: `api_stores.store_directory_v2`. A store enables a channel when
+  `is_active` is true, `status` is `OPEN` and the channel id is in
+  `channel_ids`, the rule that contract states. A store that is inactive or not
+  `OPEN` therefore answers `CHANNEL_NOT_ENABLED` on every channel;
+- the channels: `api_sales.channel_v1` ([contract](api_sales.channel.v1.md)).
+
+The view was created with F21-07 (#787).
 
 ## Columns
 
@@ -53,7 +60,8 @@ exactly when `reason = 'AVAILABLE'`.
 
 The only consumer is **recommendations**. It receives `USAGE` on `api_stock`
 (already held for `stock_level_v1`) and `SELECT` on this view only, and names
-the columns it reads. stock-service holds `SELECT` as the producer. The view
+the columns it reads. stock-service holds `SELECT` as the producer, and itself
+holds `SELECT` on the three views above, as their declared consumer. The view
 runs with its owner's rights (`security_invoker = off`), so these grants expose
 neither `public.inventory` nor the other boundaries' tables.
 

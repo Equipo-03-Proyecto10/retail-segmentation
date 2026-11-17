@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: stock-service
-  version: 1.2.1
+  version: 1.3.0
   description: 'Publishes the quantity held for each store and product pair, records the movements that
     change it, and states in which channels a product can be sold (RN-14, ADR-0061). A level, movement
     or availability carries ids and quantities only: no product name, price, store name or channel name,
@@ -382,7 +382,6 @@ paths:
         of zero. Rows are read from PostgreSQL on every request and are never cached. `available=true`
         returns only the available rows. Channel ids are sales'' and are filters only.'
       operationId: listAvailabilities
-      x-mosaiq-status: planned
       x-mosaiq-roles: &id011
       - ADMIN
       - ANALYST
@@ -450,7 +449,6 @@ paths:
         or product that does not exist answers 404 `availability_not_found`; a pair with no stock record
         is a row per channel with `reason` `NO_STOCK_RECORD`, not a 404.
       operationId: getAvailability
-      x-mosaiq-status: planned
       x-mosaiq-roles: *id011
       parameters:
       - *id006

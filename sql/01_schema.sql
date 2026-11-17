@@ -1258,6 +1258,15 @@ FROM public.transaction AS t
 JOIN public.transaction_line AS l ON l.transaction_id = t.transaction_id;
 REVOKE ALL ON api_sales.purchase_line_v1 FROM PUBLIC;
 
+-- contracts/db/api_sales.channel.v1.md: the ids of the sales channels, the
+-- vocabulary sales is the read owner of (E-10). Ids only; stock derives one
+-- availability row per channel from it (F21-07).
+CREATE OR REPLACE VIEW api_sales.channel_v1
+WITH (security_invoker = off) AS
+SELECT channel_id
+FROM public.channel;
+REVOKE ALL ON api_sales.channel_v1 FROM PUBLIC;
+
 -- stream:sales.v1.recorded, for every writer of a header, the web's CSV path
 -- included. A service sale fires once (its total is never updated); a CSV row
 -- that creates a header fires twice (the insert, then recompute_total), and a
@@ -1296,8 +1305,9 @@ GRANT USAGE ON SCHEMA sales_events TO svc_sales, definer_sales;
 GRANT INSERT ON sales_events.outbox TO definer_sales;
 GRANT SELECT, DELETE, UPDATE (relayed_at) ON sales_events.outbox TO svc_sales;
 
-GRANT USAGE ON SCHEMA api_sales TO svc_sales, svc_recommendations;
+GRANT USAGE ON SCHEMA api_sales TO svc_sales, svc_recommendations, svc_stock;
 GRANT SELECT ON api_sales.purchase_line_v1 TO svc_sales, svc_recommendations;
+GRANT SELECT ON api_sales.channel_v1 TO svc_sales, svc_stock;
 
 -- Reversals (F21-01 ADR-0062, F21-03). A cancellation or a return is an
 -- append-only fact recorded beside the sale; the sale, its lines' quantity and
@@ -2037,9 +2047,9 @@ GRANT INSERT ON products_events.outbox TO definer_products;
 GRANT SELECT, DELETE, UPDATE (relayed_at) ON products_events.outbox TO svc_products;
 
 GRANT USAGE ON SCHEMA api_products
-    TO svc_products, svc_sales, svc_recommendations, svc_engagement;
+    TO svc_products, svc_sales, svc_recommendations, svc_engagement, svc_stock;
 GRANT SELECT ON api_products.product_ref_v1
-    TO svc_products, svc_sales, svc_recommendations, svc_engagement;
+    TO svc_products, svc_sales, svc_recommendations, svc_engagement, svc_stock;
 
 -- The commercial details. A status is set, never removed; an attribute set is
 -- replaced by insert, update of value and delete; a barcode is set or replaced,
@@ -3079,6 +3089,37 @@ AS
 SELECT store_id, product_id, quantity_on_hand, updated_at
 FROM public.inventory;
 
+-- contracts/db/api_stock.availability.v1.md (F21-07, ADR-0061): whether a
+-- product can be sold in a store and channel, derived on every read and never
+-- stored. One row per store, product and channel, each read through its
+-- producer's view; the reason is the first failing test, in the contract's
+-- order. "The store enables the channel" is stores' published rule: the store
+-- is active, OPEN, and lists the channel (api_stores.store_directory.v2.md).
+-- stock-service answers GET /v1/availabilities from this view, so the
+-- endpoint and recommendations read one definition. The stores section sits
+-- above this one because the view depends on its v2 directory.
+CREATE OR REPLACE VIEW api_stock.availability_v1
+WITH (security_invoker = false)
+AS
+SELECT s.store_id, p.product_id, c.channel_id,
+       r.reason = 'AVAILABLE' AS is_available,
+       r.reason, i.quantity_on_hand, i.updated_at
+FROM api_stores.store_directory_v2 AS s
+CROSS JOIN api_products.product_ref_v1 AS p
+CROSS JOIN api_sales.channel_v1 AS c
+LEFT JOIN public.inventory AS i
+       ON i.store_id = s.store_id AND i.product_id = p.product_id
+CROSS JOIN LATERAL (
+    SELECT CASE
+        WHEN NOT p.is_active THEN 'NOT_SELLABLE'
+        WHEN NOT (s.is_active AND s.status = 'OPEN'
+                  AND c.channel_id = ANY (s.channel_ids)) THEN 'CHANNEL_NOT_ENABLED'
+        WHEN i.store_id IS NULL THEN 'NO_STOCK_RECORD'
+        WHEN i.quantity_on_hand <= 0 THEN 'OUT_OF_STOCK'
+        ELSE 'AVAILABLE'
+    END::text AS reason
+) AS r;
+
 CREATE OR REPLACE FUNCTION api_stock.consume_v1(
     requested_store_id smallint,
     requested_product_id integer,
@@ -3163,6 +3204,7 @@ GRANT UPDATE (relayed_at) ON stock_events.outbox TO svc_stock;
 
 GRANT USAGE ON SCHEMA api_stock TO svc_stock, svc_recommendations, svc_sales;
 GRANT SELECT ON api_stock.stock_level_v1 TO svc_stock, svc_recommendations;
+GRANT SELECT ON api_stock.availability_v1 TO svc_stock, svc_recommendations;
 GRANT EXECUTE ON FUNCTION api_stock.consume_v1(smallint, integer, integer) TO svc_sales;
 -- ---------- stock movements (F21-06, ADR-0061, ADR-0046) ----------
 -- A recorded movement is the only way beyond a sale or its reversal to change

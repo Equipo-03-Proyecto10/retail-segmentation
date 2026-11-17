@@ -15,7 +15,7 @@
 | Redis ACL user | `svc_experiments`, same user line on `redis-state` and `redis-cache` |
 | MongoDB | — |
 | Compose project / image | `mosaiq-experimentation` / `ghcr.io/equipo-03-proyecto10/mosaiq-experimentation` |
-| `mem_limit` | 160 MB (ADR-0059) |
+| `mem_limit` | 128 MB (ADR-0059's first cut, on the F19-08 measurement in [`f19-08-memory.md`](../evidence/f19-08-memory.md)) |
 | Used by | Electron: the A/B experiment module (F28-10, #879). Android: one customer's arm, before an offer is shown (F27-07, #861). analytics-kpis reads its published views. |
 | Governing ADRs | [ADR-0059](../adr/0059-four-new-services-join-the-fifteen-and-six-capabilities-fold-into-the-rule-they-extend.md), [ADR-0068](../adr/0068-an-experiment-is-planned-and-frozen-before-assignment-and-claims-an-effect-only-against-a-control.md), [ADR-0069](../adr/0069-a-sale-is-attributed-to-one-campaign-at-most-and-only-the-difference-against-control-is-incremental.md), [ADR-0053](../adr/0053-experiments-are-measured-on-conversion-only.md), [ADR-0050](../adr/0050-experiment-conversions-are-append-only-for-the-application-role.md), [ADR-0062](../adr/0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md), [ADR-0075](../adr/0075-engagement-relays-interaction-facts-on-a-redis-stream-from-an-outbox-kept-on-the-event-document.md), [ADR-0035](../adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md), [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) |
 

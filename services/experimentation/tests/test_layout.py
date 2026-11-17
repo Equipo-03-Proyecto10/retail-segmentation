@@ -52,7 +52,7 @@ def test_compose_is_one_hardened_independent_loopback_service() -> None:
     assert "name: mosaiq-experimentation" in compose
     published = re.findall(r'^\s*-\s*"([^\"]+:\d+:\d+)"\s*$', compose, re.M)
     assert published == ["127.0.0.1:5020:5020"]
-    assert "mem_limit: 160m" in compose and "cpus: 0.5" in compose
+    assert "mem_limit: 128m" in compose and "cpus: 0.5" in compose
     assert "depends_on" not in compose
     assert "/experimentation.env" in compose
     for hardening in (

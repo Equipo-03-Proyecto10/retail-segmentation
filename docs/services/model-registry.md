@@ -15,7 +15,7 @@
 | Redis ACL user | `svc_models`, same user line on `redis-state` and `redis-cache` |
 | MongoDB | — |
 | Compose project / image | `mosaiq-model-registry` / `ghcr.io/equipo-03-proyecto10/mosaiq-model-registry` |
-| `mem_limit` | 160 MB (ADR-0059) |
+| `mem_limit` | 128 MB (ADR-0059's first cut, on the F19-08 measurement in [`f19-08-memory.md`](../evidence/f19-08-memory.md)) |
 | Used by | Electron: the K-means configuration module (F28-05) and the drift analysis module (F28-07). rfm-engine and analytics-kpis read the published version. |
 | Governing ADRs | [ADR-0059](../adr/0059-four-new-services-join-the-fifteen-and-six-capabilities-fold-into-the-rule-they-extend.md), [ADR-0063](../adr/0063-segments-change-on-events-and-on-a-schedule-scored-against-the-published-version.md), [ADR-0064](../adr/0064-a-model-version-is-immutable-and-a-change-of-version-is-never-reported-as-behaviour.md), [ADR-0065](../adr/0065-drift-is-claimed-in-three-separate-kinds-and-concept-drift-only-from-a-predictive-outcome.md), [ADR-0035](../adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md), [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) |
 

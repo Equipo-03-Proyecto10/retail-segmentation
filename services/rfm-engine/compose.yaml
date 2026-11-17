@@ -26,7 +26,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp:uid=10001,gid=10001,mode=0700
-    mem_limit: 160m
+    mem_limit: 128m
     cpus: 0.5
     restart: unless-stopped
     # Loopback only; NGINX is the one way in (nginx/rfm-engine.conf).

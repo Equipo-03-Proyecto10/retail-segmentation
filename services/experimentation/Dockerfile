@@ -28,5 +28,5 @@ COPY contracts/ ./contracts/
 
 USER 10001:10001
 EXPOSE 5020
-# One worker, four threads, inside the 160 MB of ADR-0040's budget.
+# One worker, four threads, inside the 128 MB that F19-08 measured room for (ADR-0059).
 CMD ["gunicorn", "--bind", "0.0.0.0:5020", "--workers", "1", "--threads", "4", "app:create_app()"]

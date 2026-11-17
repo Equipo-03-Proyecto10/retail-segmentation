@@ -15,7 +15,7 @@
 | Redis ACL user | `svc_rfm`, same user line on `redis-state` and `redis-cache` |
 | MongoDB | — |
 | Compose project / image | `mosaiq-rfm-engine` / `ghcr.io/equipo-03-proyecto10/mosaiq-rfm-engine` |
-| `mem_limit` | 160 MB (ADR-0059) |
+| `mem_limit` | 128 MB (ADR-0059's first cut, on the F19-08 measurement in [`f19-08-memory.md`](../evidence/f19-08-memory.md)) |
 | Used by | Electron: customer exploration (F28-03) and the RFM configuration module (F28-04). model-registry and analytics-kpis read its current profiles. |
 | Governing ADRs | [ADR-0059](../adr/0059-four-new-services-join-the-fifteen-and-six-capabilities-fold-into-the-rule-they-extend.md), [ADR-0062](../adr/0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md), [ADR-0063](../adr/0063-segments-change-on-events-and-on-a-schedule-scored-against-the-published-version.md), [ADR-0064](../adr/0064-a-model-version-is-immutable-and-a-change-of-version-is-never-reported-as-behaviour.md), [ADR-0035](../adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md), [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) |
 

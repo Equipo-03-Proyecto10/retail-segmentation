@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: model-registry-service
-  version: 1.1.1
+  version: 1.2.0
   description: >-
     Keeps every model version immutable and says which one is published. A model version is
     immutable once published, carries its dataset, parameters, metrics and reference distribution,
@@ -14,9 +14,8 @@ info:
     other half of the rule: every report and alert is judged against the reference distribution
     of the version it names, and carries the statistic, the reference, the current window, the
     threshold and the model version (RN-66, ADR-0065). A change of version inside a window is
-    never compared (ADR-0064). The drift operations (F23-09), publication and rollback (F22-13)
-    and training (F22-12) are published ahead of their implementation (ADR-0073) and are marked
-    planned.
+    never compared (ADR-0064). The drift operations (F23-09) and training (F22-12) are published
+    ahead of their implementation (ADR-0073) and are marked planned.
 security:
 - bearer: []
 tags:
@@ -291,7 +290,6 @@ paths:
         a race for the single published slot is 409 `publication_conflict`; read the published
         version again and retry. Only an administrator publishes (RN-05).
       operationId: publishModelVersion
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       parameters:
@@ -368,7 +366,6 @@ paths:
         already published. Losing a race is 409 `publication_conflict`. Only an administrator
         rolls back.
       operationId: rollbackToModelVersion
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       parameters:

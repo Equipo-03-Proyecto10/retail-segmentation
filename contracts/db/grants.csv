@@ -430,6 +430,7 @@ svc_models,models.model_version,INSERT
 svc_models,models.model_version_feature,SELECT
 svc_models,models.model_version_feature,INSERT
 svc_models,models.model_publication,SELECT
+svc_models,models.model_publication,INSERT
 svc_models,models.run_version,SELECT
 svc_kpis,kpis,USAGE
 svc_kpis,api_kpis,USAGE
@@ -479,3 +480,16 @@ svc_customers,customers_events.outbox(relayed_at),UPDATE
 svc_customers,customers_events.outbox,DELETE
 definer_customers,customers_events,USAGE
 definer_customers,customers_events.outbox,INSERT
+svc_models,models.model_version(state),UPDATE
+svc_models,models.model_version(published_at),UPDATE
+svc_models,models.model_version(retired_at),UPDATE
+svc_models,models_events,USAGE
+svc_models,models_events.outbox,SELECT
+svc_models,models_events.outbox,DELETE
+svc_models,models_events.outbox(relayed_at),UPDATE
+definer_models,models_events,USAGE
+definer_models,models_events.outbox,INSERT
+svc_models,api_models,USAGE
+svc_models,api_models.published_version_v1,SELECT
+svc_models,api_audit,USAGE
+svc_models,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE

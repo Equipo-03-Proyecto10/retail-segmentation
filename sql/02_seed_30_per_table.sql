@@ -1543,6 +1543,7 @@ CROSS JOIN LATERAL (
 -- runtime events must still be delivered. Each new outbox adds its line here;
 -- the database test discovers every outbox and requires it to be empty.
 DELETE FROM categories_events.outbox;
+DELETE FROM models_events.outbox;
 DELETE FROM preferences_events.outbox;
 DELETE FROM products_events.outbox;
 DELETE FROM sales_events.outbox;

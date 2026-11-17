@@ -11,6 +11,7 @@ REQUIRED = {
     "Dockerfile",
     "VERSION",
     "app/__init__.py",
+    "app/audit.py",
     "compose.yaml",
     "nginx/model-registry.conf",
     "pyproject.toml",
@@ -91,6 +92,11 @@ def test_the_redis_acl_is_the_one_models_user_line() -> None:
         " (%R~pub:auth:v1:live:* +exists)"
         " (~stream:models.v1.publication_recorded +xadd)"
     ]
+
+
+def test_the_service_version_matches_its_package_version() -> None:
+    version = (ROOT / "VERSION").read_text().strip()
+    assert f'version = "{version}"' in (ROOT / "pyproject.toml").read_text()
 
 
 def test_the_distributed_stack_and_local_environment_include_the_service() -> None:

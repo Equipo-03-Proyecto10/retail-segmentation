@@ -2135,7 +2135,7 @@ those too. Seeded with 32 rows covering every kind.
 
 #### `<suffix>_events.outbox`
 
-One table per boundary that publishes a stream (§4 lists the eight), created
+One table per boundary that publishes a stream, created
 from the outbox template in `sql/01_schema.sql`. Runtime events, not seed data,
 so each is exempt from the 30-row minimum by its schema-qualified name.
 

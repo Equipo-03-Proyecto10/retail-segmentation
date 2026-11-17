@@ -5086,15 +5086,30 @@ GRANT SELECT ON api_sales.channel_v1 TO svc_experiments;
 -- the dataset it was fitted on, its metrics and the reference distribution
 -- drift is judged against. A version is immutable: nothing in this section
 -- lets any role edit its definition or delete a row, and the publication
--- history is append-only. Publication and rollback (F22-13), training
--- (F22-12), the outbox for stream:models.v1.publication_recorded and the
--- drift tables (F23-09) are their own stories and extend this section; each
--- adds its tables, grants and seed rows with its own pull request.
+-- history is append-only. Publication and rollback (F22-13) own the outbox
+-- for stream:models.v1.publication_recorded and the current-version view.
+-- Training (F22-12) and the drift tables (F23-09) are their own stories.
 --
 -- The web has no privilege here (ADR-0046): retail_app gets no USAGE on
 -- `models`, so it cannot even name these tables.
 CREATE SCHEMA IF NOT EXISTS models;
 REVOKE ALL ON SCHEMA models FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS models_events;
+REVOKE ALL ON SCHEMA models_events FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS api_models;
+REVOKE ALL ON SCHEMA api_models FROM PUBLIC;
+
+-- Keys only, never version state: consumers re-read the published view.
+CREATE TABLE IF NOT EXISTS models_events.outbox (
+    event_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    stream      text NOT NULL,
+    event_type  text NOT NULL,
+    entity_id   text NOT NULL,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    relayed_at  timestamptz
+);
+CREATE INDEX IF NOT EXISTS outbox_unrelayed
+    ON models_events.outbox (occurred_at) WHERE relayed_at IS NULL;
 
 -- One row per version. The definition is scalar columns, so that a boundary,
 -- a tolerance or the dataset can be read, compared and constrained one by one;
@@ -5179,6 +5194,58 @@ CREATE TABLE IF NOT EXISTS models.model_publication (
 CREATE INDEX IF NOT EXISTS model_publication_version
     ON models.model_publication (version_id, publication_id);
 
+-- Every writer is captured in the publication transaction. The event carries
+-- only the publication id; its consumer re-reads api_models after commit.
+CREATE OR REPLACE FUNCTION models_events.capture_publication_recorded() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+BEGIN
+    INSERT INTO models_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:models.v1.publication_recorded', TG_OP, NEW.publication_id::text);
+    PERFORM pg_notify('models_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION models_events.capture_publication_recorded() OWNER TO definer_models;
+REVOKE EXECUTE ON FUNCTION models_events.capture_publication_recorded() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_capture_publication_recorded
+AFTER INSERT ON models.model_publication
+FOR EACH ROW EXECUTE FUNCTION models_events.capture_publication_recorded();
+
+-- contracts/db/api_models.published_version.v1.md. The latest publication of
+-- the PUBLISHED row is the fact that made it current.
+CREATE OR REPLACE VIEW api_models.published_version_v1
+WITH (security_invoker = off) AS
+SELECT v.version_id,
+       v.method,
+       v.name,
+       v.window_days,
+       v.seed,
+       v.rule_set_id,
+       v.k,
+       ARRAY(SELECT f.feature::text
+               FROM models.model_version_feature AS f
+              WHERE f.version_id = v.version_id
+              ORDER BY array_position(ARRAY['R', 'F', 'M'], f.feature::text)) AS features,
+       v.normalization,
+       v.frozen_scoring,
+       v.dataset_origin AS data_origin,
+       p.publication_id,
+       p.published_at
+  FROM models.model_version AS v
+  JOIN LATERAL (
+      SELECT publication_id, published_at
+        FROM models.model_publication
+       WHERE version_id = v.version_id
+       ORDER BY publication_id DESC
+       LIMIT 1
+  ) AS p ON true
+ WHERE v.state = 'PUBLISHED';
+REVOKE ALL ON api_models.published_version_v1 FROM PUBLIC;
+
 -- Every segmentation run has a version (ADR-0064): the run the web recorded,
 -- and the version whose method and parameters it matched or created. It names
 -- the web's run by value and never changes it, so run_id has no foreign key: no
@@ -5226,10 +5293,26 @@ BEFORE UPDATE OR DELETE ON models.run_version
 FOR EACH ROW EXECUTE FUNCTION models.refuse_change();
 
 -- Each is a row of contracts/db/grants.csv. svc_models registers versions and
--- reads them; it holds no UPDATE or DELETE on any of them.
+-- publishes by changing only state/times and appending a publication fact. It
+-- holds no DELETE and cannot rewrite any definition or publication history.
 GRANT USAGE ON SCHEMA models TO svc_models;
 GRANT SELECT, INSERT ON models.model_version, models.model_version_feature TO svc_models;
-GRANT SELECT ON models.model_publication, models.run_version TO svc_models;
+GRANT UPDATE (state, published_at, retired_at) ON models.model_version TO svc_models;
+GRANT SELECT, INSERT ON models.model_publication TO svc_models;
+GRANT SELECT ON models.run_version TO svc_models;
+
+GRANT USAGE ON SCHEMA models_events TO svc_models, definer_models;
+GRANT INSERT ON models_events.outbox TO definer_models;
+GRANT SELECT, DELETE, UPDATE (relayed_at) ON models_events.outbox TO svc_models;
+
+-- Consumer grants arrive with their stories; the producer can verify its view.
+GRANT USAGE ON SCHEMA api_models TO svc_models;
+GRANT SELECT ON api_models.published_version_v1 TO svc_models;
+
+-- Publications and rollbacks are critical domain events in the same transaction.
+GRANT USAGE ON SCHEMA api_audit TO svc_models;
+GRANT EXECUTE ON FUNCTION api_audit.record_event_v1(uuid, text, text, timestamptz, text, uuid,
+    text, smallint, text, text, bigint, bigint, text, jsonb) TO svc_models;
 -- END BOUNDARY model-registry
 
 -- BEGIN BOUNDARY recommendations

@@ -130,4 +130,4 @@ def test_creates_the_service_and_definer_roles(
         "       OR rolbypassrls))"
         " FROM pg_roles",
     )
-    assert counts.stdout.strip() == "20|12|0"
+    assert counts.stdout.strip() == "20|13|0"

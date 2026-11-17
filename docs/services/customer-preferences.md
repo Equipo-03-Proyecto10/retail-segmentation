@@ -1,6 +1,6 @@
 # customer-preferences
 
-> **Status:** Implemented (phase 14, core; F14-16, #475) for the two declared sets, and in phase 21 for consent, restrictions and the preference history (F21-16, #794; F21-17, #795). `GET .../interests` stays marked `x-mosaiq-status: planned` (ADR-0073): the inference it serves is F21-18 (#796). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
+> **Status:** Implemented (phase 14, core; F14-16, #475) for the two declared sets, and in phase 21 for consent, restrictions and the preference history (F21-16, #794; F21-17, #795) and for the interests inferred from net purchases (F21-18, #796), which `GET .../interests` serves. ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
 > **One rule:** A customer's preferred channels and interest categories are each replaced only atomically, as a whole set of existing references, and their consent and restrictions change only by appending a recorded, attributed decision that is never edited or removed (RN-54, RN-73)
 
 ## Summary
@@ -24,7 +24,11 @@
 - References are checked: the customer through `api_customers.customer_ref_v1` (404 if unknown), channels and categories by FK (23503 maps to 422).
 - Consent is recorded per purpose (`PERSONALIZATION`, `MARKETING_CONTACT`, `PROFILING`) and restrictions per channel or interest category, each as an append-only log (RN-73, ADR-0066). A decision is a new row; the current state of a purpose is its latest row, a withdrawal never rewrites the grant before it, and the service has no route that edits or removes a row. `recorded_at` is the server's clock and `recorded_by` the app user of the verified token; neither is read from a body. A purpose with no row is `NOT_RECORDED` and is not granted.
 - A decision commits with its outbox row in one transaction, so the views `api_preferences.consent_state_v1` and `api_preferences.restriction_v1` show it when `stream:preferences.v1.consent_changed` announces it. The whole-set rule of RN-54 is untouched for the two declared sets; each replace that changes a set also appends its before and after to the preference history.
-- Declared and inferred interests are separate facts and separate members of `InterestProfile`. Only the whole-set `PUT` writes the declared set, so an inferred interest can never overwrite a declared one, and a declared category is not repeated among the inferred ones. Inferred interests are returned only while the customer's current `PERSONALIZATION` decision is `GRANTED`.
+- Declared and inferred interests are separate facts and separate members of `InterestProfile`. Only the whole-set `PUT` writes the declared set, so an inferred interest can never overwrite a declared one, and a declared category is not repeated among the inferred ones. Inferred interests are returned only while the customer's current `PROFILING` and `PERSONALIZATION` decisions are both `GRANTED`.
+- Inference (F21-18, RN-34, RN-35) reads a customer's net purchases through `api_sales.net_purchase_line_v1` (ADR-0062) and the category of each product through `api_products.product_ref_v1`, and replaces the customer's rows of `preferences.inferred_interest` as a whole. An interest states its `source` (`NET_PURCHASES`), its `window_days` (180 unless `INFERENCE_WINDOW_DAYS` says otherwise) and its `strength`: the percentage of the customer's net purchases in the window that include a product of the category, rounded half up. A sale counts once for a category however many of its lines are in it, a sale returned in full is not a purchase, and a category under 1% is not kept. They are listed by strength descending, then by category.
+- A customer who objects to profiling gets nothing inferred. A `PROFILING` decision that is not `GRANTED` (withdrawn, or never recorded) stops the run for that customer, and the rows they had are deleted in the transaction that records the withdrawal. A withdrawn `PERSONALIZATION` keeps the rows but the reader returns none (ADR-0066 section 3). The run holds the customer's decision lock (`290002`), so a withdrawal and a run never interleave.
+- A declared interest stands. Inference never writes `customer_interest_category`, does not infer a category the customer declared, and the reader leaves a stored row out once its category is declared, so the two members of `InterestProfile` never overlap and each response keeps them apart.
+- The run is a background job of the service, not an operation: every `INFERENCE_INTERVAL_HOURS` (24) it infers for every customer who grants `PROFILING` and deletes the rows of any who do not. `INFERENCE_ENABLED=false` turns it off.
 - Registration is customers' operation and records no consent. The client follows it with `POST .../consent-decisions`, asking for each purpose separately; until then every purpose is `NOT_RECORDED`, which no reader treats as granted. A customer anonymized by customers-service (ADR-0066 section 3) accepts no new decision: 409 `customer_anonymized`.
 
 ## Endpoints
@@ -34,7 +38,7 @@
 | GET | `/v1/preference-profiles/{customer_id}` | Channel ids and declared category ids of one customer (E-03) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR, LOYALTY_OFFICER |
 | PUT | `/v1/preference-profiles/{customer_id}/preferred-channels` | Replace the whole set of preferred channels | ADMIN, STORE_MANAGER, LOYALTY_OFFICER |
 | PUT | `/v1/preference-profiles/{customer_id}/interest-categories` | Replace the whole set of declared interest categories | ADMIN, STORE_MANAGER, LOYALTY_OFFICER |
-| GET | `/v1/preference-profiles/{customer_id}/interests` | Declared and inferred interests, in separate members (planned) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR, SALES_ASSOCIATE, LOYALTY_OFFICER |
+| GET | `/v1/preference-profiles/{customer_id}/interests` | Declared and inferred interests, in separate members; not audited | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR, SALES_ASSOCIATE, LOYALTY_OFFICER |
 | GET | `/v1/preference-profiles/{customer_id}/restrictions` | Current restricted channels and categories, and whether personalization is allowed | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR, SALES_ASSOCIATE, LOYALTY_OFFICER |
 | GET | `/v1/preference-profiles/{customer_id}/consent` | State of the three purposes, now or at `as_of` | ADMIN, AUDITOR, STORE_MANAGER, LOYALTY_OFFICER |
 | GET | `/v1/preference-profiles/{customer_id}/consent-decisions` | The consent log, newest first (`purpose`, `page`, `size`); audited as `HISTORY_READ` | ADMIN, AUDITOR, STORE_MANAGER, LOYALTY_OFFICER |
@@ -56,7 +60,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | `preferences.consent_decision` | Table (`preferences`) | S: SELECT, INSERT | Append-only for every role (privileges and a trigger). 103 seed rows: the ADR-0066 default of every customer, and staff decisions on top |
 | `preferences.restriction_decision` | Table (`preferences`) | S: SELECT, INSERT | Append-only. 34 seed rows, 4 of them lifts |
 | `preferences.preference_change`, `preferences.preference_change_member` | Tables (`preferences`) | S: SELECT, INSERT | Append-only; one change per replace that changed a set, with its before and after ids as member rows. 60 and 120 seed rows |
-| Inferred interests | Table (a service schema, ADR-0046) | Named by F21-18 (#796) | Not built yet |
+| `preferences.inferred_interest` | Table (`preferences`) | S: SELECT, INSERT, DELETE (a run replaces a customer's set whole) | Derived, never edited. Primary key `(customer_id, category_id)`; 276 seed rows computed from the seeded sales for the 30 customers who grant `PROFILING` |
 | `preferences_events.outbox` | Table (outbox) | SELECT, UPDATE of `relayed_at`, DELETE (7-day purge) | Filled by `definer_preferences`; seed-exempt runtime state |
 
 ## Database contracts
@@ -68,6 +72,8 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Publishes | `api_preferences.restriction_v1` | recommendations, campaigns |
 | Publishes | `public.consent_state` | The web's batch segmentation, read-only (ADR-0066 section 2) |
 | Consumes | `api_customers.customer_ref_v1` | customers |
+| Consumes | `api_sales.net_purchase_line_v1` | sales (inference input, F21-18) |
+| Consumes | `api_products.product_ref_v1` | products (category of each purchased product, F21-18) |
 
 ## Events
 
@@ -154,4 +160,4 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 ## Backlog
 
-F14-15 contract, F14-16 implementation; consumed by F17-04, F16-03. F21-16 (#794) publishes the consent, restriction, inferred-interest and history contract, F21-17 (#795) implements it and F21-18 (#796) infers interests. Issue numbers live in [`docs/backlog.md`](../backlog.md).
+F14-15 contract, F14-16 implementation; consumed by F17-04, F16-03. F21-16 (#794) publishes the consent, restriction, inferred-interest and history contract, F21-17 (#795) implements it and F21-18 (#796) infers interests and serves `GET .../interests`. Issue numbers live in [`docs/backlog.md`](../backlog.md).

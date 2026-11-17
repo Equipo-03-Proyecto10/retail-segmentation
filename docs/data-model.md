@@ -649,6 +649,30 @@ default of ADR-0066 section 1 by a backfill that runs once, against an empty log
 
 `sales_events.outbox` is one more boundary outbox, under the outbox note above.
 
+The interests inferred from net purchases (ADR-0066, RN-34, RN-35, F21-18) add one
+relation to the same boundary, in 4NF:
+- **`preferences.inferred_interest`** is keyed by `(customer_id, category_id)`, and that
+  key determines `source`, `window_days`, `strength` and `inferred_at`; there is no other
+  determinant, so the relation is in BCNF, and with no multivalued dependency besides
+  the key it is in 4NF. It is not a third set folded into `customer_interest_category`:
+  a declared interest is something the customer said, an inferred one is something
+  computed about them, and the two have different provenance and lifetimes (an inferred
+  row is deleted when `PROFILING` is withdrawn, a declared one never is), so they stay
+  separate relations and no row can pass for the other. `window_days` and `inferred_at`
+  repeat across a customer's rows because one run makes them all, but each is a fact of
+  that row's own derivation (a later run may recompute one category and not another's
+  window), not a fact of the customer, so moving them to a per-customer header would
+  only add a join and a table that is empty whenever nothing is inferred. Nothing
+  derivable from another boundary is copied: the category's name, the product, the sale
+  and the declared set are all read where they live. `strength` is stored, since it
+  is the result of the run and the net purchases it came from change afterwards.
+  `source` is a CHECK (only `NET_PURCHASES` today), `window_days` is 1 to 3650 and
+  `strength` 1 to 100, so a row the contract could not describe cannot exist. The
+  customer key is `RESTRICT` (a customer is never deleted, RN-08); the category key is
+  `CASCADE`, since the rows are derived and a run recomputes them. `svc_preferences`
+  holds `SELECT`, `INSERT` and `DELETE`, never `UPDATE`: a run replaces a customer's
+  whole set, as the declared sets are replaced.
+
 Reversals (ADR-0062, F21-03) add two relations to the sales boundary, both in 4NF,
 and one column to `transaction_line`:
 - **`sales.sale_reversal`** has two candidate keys, `reversal_id` and the request's
@@ -1040,6 +1064,19 @@ Append-only.
 | `member_id` | `SMALLINT` | NN | PK part; no foreign key | A channel id or a category id, by the change's `preference_set` |
 
 Append-only.
+
+#### `preferences.inferred_interest`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `customer_id` | `UUID` | NN | PK part; FK → `public.customer`, `ON DELETE RESTRICT` | The customer the interest was inferred for |
+| `category_id` | `SMALLINT` | NN | PK part; FK → `public.category`, `ON DELETE CASCADE` | The category |
+| `source` | `VARCHAR(20)` | NN | CHECK in `NET_PURCHASES` | What it was inferred from |
+| `window_days` | `SMALLINT` | NN | CHECK between 1 and 3650 | The days of net purchases the run looked at |
+| `strength` | `SMALLINT` | NN | CHECK between 1 and 100 | The percentage of the customer's net purchases in the window that include a product of the category, rounded half up |
+| `inferred_at` | `TIMESTAMPTZ` | NN | default `now()` | When the run that left the row ran |
+
+Derived and replaced whole by a run; deleted when `PROFILING` is withdrawn.
 
 #### `users.store_assignment`
 

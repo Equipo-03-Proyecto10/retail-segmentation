@@ -20,7 +20,10 @@ use http_body_util::BodyExt;
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use mosaiq_kit::KitConfig;
 use serde_json::{json, Value};
-use support::{connect, owner_url, service_url, TestCustomer};
+use support::{
+    admin, connect, owner_url, principal, products_of, service_database, service_url,
+    stocked_categories, TestCustomer,
+};
 use tokio_postgres::Client;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -902,6 +905,163 @@ async fn a_read_of_the_log_fails_closed_when_its_event_cannot_be_recorded() {
         .get(&format!("{base}/consent-decisions"), "AUDITOR", JSON)
         .await;
     assert_eq!(recovered.status, 200, "{}", recovered.body);
+    customer.cleanup(&stack.owner).await;
+    stack.finish().await;
+}
+
+#[tokio::test]
+async fn interests_show_the_declared_apart_from_the_inferred_in_json_and_xml_to_the_floor_roles() {
+    let _turn = TURN.lock().await;
+    let Some(stack) = Stack::start().await else {
+        return;
+    };
+    let url = owner_url().unwrap();
+    let db = service_database(&url);
+    let customer = TestCustomer::create(&stack.owner).await;
+    let path = format!("/v1/preference-profiles/{}/interests", customer.id);
+
+    // The read is open to the seven profile readers and recorded nowhere: it
+    // is the current state, not a history.
+    for role in ROLES {
+        let reply = stack.get(&path, role, JSON).await;
+        if PROFILE_READERS.contains(&role) {
+            assert_eq!(reply.status, 200, "{role}: {}", reply.body);
+        } else {
+            assert_eq!(reply.status, 403, "{role}");
+            assert_eq!(reply.json()["code"], "forbidden_role");
+        }
+        assert!(stack.events(&reply.correlation).await.is_empty(), "{role}");
+    }
+
+    // A customer with neither set gets two empty members, not a 404.
+    let reply = stack.get(&path, "ANALYST", JSON).await;
+    assert_eq!(
+        reply.json(),
+        json!({"customer_id": customer.id.to_string(),
+               "declared_category_ids": [], "inferred_interests": []})
+    );
+
+    // Purchases, a declared interest and consent, then a run.
+    let [a, b, c] = stocked_categories(&stack.owner).await;
+    let (pa, pb, pc) = (
+        products_of(&stack.owner, a).await,
+        products_of(&stack.owner, b).await,
+        products_of(&stack.owner, c).await,
+    );
+    customer.sale(&stack.owner, 5, &[pa[0], pc[0]]).await;
+    customer.sale(&stack.owner, 6, &[pb[0], pc[0]]).await;
+    customer.sale(&stack.owner, 7, &[pc[1]]).await;
+    customer.sale(&stack.owner, 8, &[pc[0]]).await;
+    let actor = principal(admin(), "ADMIN");
+    customer_preferences::replace(
+        &db,
+        &actor,
+        customer.id,
+        customer_preferences::PreferenceSet::InterestCategories,
+        &[Some(a)],
+    )
+    .await
+    .unwrap();
+    let register = stack
+        .post(
+            &format!("/v1/preference-profiles/{}/consent-decisions", customer.id),
+            "ADMIN",
+            JSON,
+            JSON,
+            &json!({"decisions": [
+                {"purpose": "PROFILING", "decision": "GRANTED"},
+                {"purpose": "PERSONALIZATION", "decision": "GRANTED"}]})
+            .to_string(),
+        )
+        .await;
+    assert_eq!(register.status, 201, "{}", register.body);
+    customer_preferences::infer_customer(&db, customer.id, 180)
+        .await
+        .unwrap();
+
+    let reply = stack.get(&path, "SALES_ASSOCIATE", JSON).await;
+    assert_eq!(reply.status, 200, "{}", reply.body);
+    let body = reply.json();
+    assert_eq!(body["declared_category_ids"], json!([a]));
+    let inferred = body["inferred_interests"].as_array().unwrap();
+    // The declared category is not repeated; c is in all four sales, b in one.
+    assert_eq!(
+        inferred
+            .iter()
+            .map(|i| (
+                i["category_id"].as_i64().unwrap(),
+                i["strength"].as_i64().unwrap()
+            ))
+            .collect::<Vec<_>>(),
+        vec![(i64::from(c), 100), (i64::from(b), 25)]
+    );
+    let example_shape: Value = serde_json::from_str(&example("get-interest-profile.json")).unwrap();
+    for item in inferred {
+        let mut keys: Vec<_> = item.as_object().unwrap().keys().cloned().collect();
+        let mut expected: Vec<_> = example_shape["inferred_interests"][0]
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+        keys.sort();
+        expected.sort();
+        assert_eq!(keys, expected);
+        assert_eq!(item["source"], "NET_PURCHASES");
+        assert_eq!(item["window_days"], 180);
+    }
+
+    let xml = stack.get(&path, "SALES_ASSOCIATE", XML).await;
+    assert_eq!(xml.status, 200, "{}", xml.body);
+    assert!(xml.body.starts_with("<?xml"), "{}", xml.body);
+    assert_eq!(
+        xml.body.matches("<inferred_interests>").count(),
+        2,
+        "{}",
+        xml.body
+    );
+    assert!(
+        xml.body.contains("<source>NET_PURCHASES</source>"),
+        "{}",
+        xml.body
+    );
+
+    // Withdrawn PROFILING: nothing inferred, the declared interest stays.
+    let withdraw = stack
+        .post(
+            &format!("/v1/preference-profiles/{}/consent-decisions", customer.id),
+            "ADMIN",
+            JSON,
+            JSON,
+            &json!({"decisions": [{"purpose": "PROFILING", "decision": "WITHDRAWN"}]}).to_string(),
+        )
+        .await;
+    assert_eq!(withdraw.status, 201, "{}", withdraw.body);
+    let reply = stack.get(&path, "SALES_ASSOCIATE", JSON).await;
+    assert_eq!(
+        reply.json(),
+        json!({"customer_id": customer.id.to_string(),
+               "declared_category_ids": [a], "inferred_interests": []})
+    );
+    let empty_xml = stack.get(&path, "SALES_ASSOCIATE", XML).await;
+    assert!(
+        !empty_xml.body.contains("<inferred_interests"),
+        "{}",
+        empty_xml.body
+    );
+
+    // An unknown customer is 404.
+    let nobody = Uuid::new_v4();
+    let reply = stack
+        .get(
+            &format!("/v1/preference-profiles/{nobody}/interests"),
+            "ADMIN",
+            JSON,
+        )
+        .await;
+    assert_eq!(reply.status, 404);
+    assert_eq!(reply.json()["code"], "customer_not_found");
+
     customer.cleanup(&stack.owner).await;
     stack.finish().await;
 }

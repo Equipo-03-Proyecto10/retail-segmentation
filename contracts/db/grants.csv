@@ -99,6 +99,13 @@ svc_preferences,preferences.preference_change,SELECT
 svc_preferences,preferences.preference_change,INSERT
 svc_preferences,preferences.preference_change_member,SELECT
 svc_preferences,preferences.preference_change_member,INSERT
+svc_preferences,preferences.inferred_interest,SELECT
+svc_preferences,preferences.inferred_interest,INSERT
+svc_preferences,preferences.inferred_interest,DELETE
+svc_preferences,api_sales,USAGE
+svc_preferences,api_sales.net_purchase_line_v1,SELECT
+svc_preferences,api_products,USAGE
+svc_preferences,api_products.product_ref_v1,SELECT
 svc_preferences,api_preferences.consent_state_v1,SELECT
 svc_preferences,api_preferences.restriction_v1,SELECT
 svc_recommendations,api_preferences.consent_state_v1,SELECT

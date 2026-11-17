@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SaleReconciliation xmlns="https://mosaiq.maxthecoder.online/xml/sales/v1">
+  <import_id>17</import_id>
+  <added>2</added>
+  <found>3</found>
+  <open>2</open>
+  <distinct>0</distinct>
+  <duplicate>1</duplicate>
+</SaleReconciliation>

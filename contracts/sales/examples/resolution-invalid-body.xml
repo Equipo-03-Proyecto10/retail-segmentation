@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_body</code>
+  <message>The resolution request violates its schema: resolution must be DISTINCT or DUPLICATE.</message>
+  <correlation_id>corr-resolution-invalid-body</correlation_id>
+  <details>
+    <field>resolution</field>
+    <code>invalid_value</code>
+  </details>
+</Error>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>sale_reconciliation_case_not_found</code>
+  <message>Reconciliation case 99 of import 17 was not found.</message>
+  <correlation_id>corr-case-not-found</correlation_id>
+</Error>

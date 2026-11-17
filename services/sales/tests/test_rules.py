@@ -157,7 +157,11 @@ def test_unknown_customer_store_and_channel(client, token, sale_body):
     for field, value, code in cases:
         body = copy.deepcopy(sale_body)
         body[field] = value
-        response = post(client, token, body)
+        # A floor role naming a store it is not assigned to is refused with 403
+        # before the store is looked up (F19-07); the 422 is ADMIN's to read.
+        response = client.post(
+            "/v1/sales", json=body, headers=idempotency_headers(token("ADMIN"))
+        )
         assert response.status_code == 422
         assert response.get_json()["code"] == code
         assert response.get_json()["details"][0]["field"] == field

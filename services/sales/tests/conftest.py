@@ -148,6 +148,67 @@ def role_subjects(owner_connection: psycopg.Connection) -> dict[str, str]:
     return subjects
 
 
+FLOOR = ("STORE_MANAGER", "SALES_ASSOCIATE")
+
+
+def set_assignments(owner_url: str, user_id: str, stores: list[int]) -> None:
+    """Make `stores` the user's whole assignment set, committed at once."""
+    with psycopg.connect(owner_url, autocommit=True) as connection:
+        with connection.transaction():
+            connection.execute(
+                "DELETE FROM users.store_assignment WHERE user_id = %s", (user_id,)
+            )
+            with connection.cursor() as cursor:
+                cursor.executemany(
+                    "INSERT INTO users.store_assignment (user_id, store_id)"
+                    " VALUES (%s, %s)",
+                    [(user_id, store_id) for store_id in stores],
+                )
+
+
+@pytest.fixture(scope="session")
+def every_store(owner_connection: psycopg.Connection) -> list[int]:
+    return [
+        row[0]
+        for row in owner_connection.execute(
+            "SELECT store_id FROM public.store ORDER BY store_id"
+        )
+    ]
+
+
+@pytest.fixture(scope="session", autouse=True)
+def floor_users_work_everywhere(
+    owner_url: str,
+    role_subjects: dict[str, str],
+    every_store: list[int],
+) -> Iterator[None]:
+    """The floor subjects the suite signs as work in every store (ADR-0060).
+
+    The narrowing of F19-07 would otherwise tie each existing case to the one
+    store the seed happens to give that user. `test_store_scope.py` sets exact
+    assignments for its own cases and puts this state back.
+    """
+    with psycopg.connect(owner_url, autocommit=True) as connection:
+        before = {
+            subject: [
+                row[0]
+                for row in connection.execute(
+                    "SELECT store_id FROM users.store_assignment"
+                    " WHERE user_id = %s ORDER BY store_id",
+                    (subject,),
+                )
+            ]
+            for subject in (role_subjects[role] for role in FLOOR)
+        }
+    for subject in before:
+        set_assignments(owner_url, subject, every_store)
+    try:
+        yield
+    finally:
+        for subject, stores in before.items():
+            set_assignments(owner_url, subject, stores)
+
+
 @pytest.fixture
 def token(
     signing_key: rsa.RSAPrivateKey,
@@ -301,6 +362,38 @@ def cleanup(owner_url: str) -> Iterator[None]:
                     for store_id, product_id, quantity in quantities
                 ],
             )
+
+
+@pytest.fixture
+def world(owner):
+    """A customer, a channel and two stocked products at one store."""
+    rows = owner.execute(
+        "SELECT i.store_id, i.product_id FROM public.inventory AS i"
+        " JOIN public.product AS p USING (product_id)"
+        " WHERE p.is_active AND i.quantity_on_hand >= 10"
+        " ORDER BY i.store_id, i.product_id"
+    ).fetchall()
+    store = rows[0][0]
+    products = [product for found, product in rows if found == store][:3]
+    # Enough stock that no row is refused for it unless a test makes it so; the
+    # suite's cleanup puts the seed's quantities back.
+    owner.execute(
+        "UPDATE public.inventory SET quantity_on_hand = 500"
+        " WHERE store_id = %s AND product_id = ANY(%s)",
+        (store, products),
+    )
+    customer, registered = owner.execute(
+        "SELECT customer_id, registered_on FROM public.customer"
+        " ORDER BY registered_on, customer_id LIMIT 1"
+    ).fetchone()
+    channel = owner.execute("SELECT min(channel_id) FROM public.channel").fetchone()[0]
+    return {
+        "store": store,
+        "products": products,
+        "customer": str(customer),
+        "registered": registered,
+        "channel": channel,
+    }
 
 
 def idempotency_headers(auth: dict[str, str], key: str | None = None) -> dict[str, str]:

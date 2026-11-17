@@ -59,9 +59,9 @@ The design accepts a small number of deliberate deviations from the strict readi
 | [E-06](#e-06--a-recommendation-carries-the-stock-figure-it-used) | a recommendation carries the stock figure it used | [recommendations](./recommendations.md) |
 | [E-07](#e-07--recommendations-depends-on-seven-published-contracts) | recommendations depends on seven published contracts | [recommendations](./recommendations.md) |
 | [E-08](#e-08--read-rule-services-count-as-one-rule-services) | read-rule services count as one-rule services | [stock](./stock.md), [segments](./segments.md), [recommendations](./recommendations.md), [audit-trail](./audit-trail.md) |
-| [E-09](#e-09--the-frozen-web-is-a-legacy-co-writer-of-some-tables) | the frozen web is a legacy co-writer of some tables | [users](./users.md), [products](./products.md), [categories](./categories.md), [campaigns](./campaigns.md), [sales](./sales.md), [stock](./stock.md) |
+| [E-09](#e-09--the-frozen-web-is-a-legacy-co-writer-of-some-tables) | the frozen web is a legacy co-writer of some tables | [users](./users.md), [products](./products.md), [categories](./categories.md), [campaigns](./campaigns.md), [sales](./sales.md), [stock](./stock.md), [experimentation](./experimentation.md) |
 | [E-10](#e-10--read-owners-of-tables-only-the-web-writes) | read owners of tables only the web writes | [users](./users.md), [stores](./stores.md), [stock](./stock.md), [sales](./sales.md), [segments](./segments.md), [audit-trail](./audit-trail.md) |
-| [E-11](#e-11--foreign-keys-cross-service-boundaries) | foreign keys cross service boundaries | [customers](./customers.md), [customer-preferences](./customer-preferences.md), [sales](./sales.md), [check-ins](./check-ins.md), [stores](./stores.md), [campaigns](./campaigns.md) |
+| [E-11](#e-11--foreign-keys-cross-service-boundaries) | foreign keys cross service boundaries | [customers](./customers.md), [customer-preferences](./customer-preferences.md), [sales](./sales.md), [check-ins](./check-ins.md), [stores](./stores.md), [campaigns](./campaigns.md), [recommendations](./recommendations.md) |
 | [E-12](#e-12--audit_log-is-the-one-table-every-writer-shares) | audit_log is the one table every writer shares | [audit-trail](./audit-trail.md), [users](./users.md), [products](./products.md), [categories](./categories.md), [stores](./stores.md), [customers](./customers.md), [campaigns](./campaigns.md) |
 | [E-13](#e-13--a-definer-guard-reads-rows-its-service-cannot-read) | a definer guard reads rows its service cannot read | [categories](./categories.md), [campaigns](./campaigns.md) |
 | [E-14](#e-14--campaigns-shares-the-webs-id-allocation-lock) | campaigns shares the web's id-allocation lock | [campaigns](./campaigns.md) |
@@ -132,7 +132,7 @@ The design accepts a small number of deliberate deviations from the strict readi
 
 ### E-08 — read-rule services count as one-rule services
 
-- **What:** Four services write no invariant of their own. They enforce a read rule: what they may report, and to whom. Since ADR-0067 recommendations also records the explanation of each decision, in a schema of its own (F24-05). That record is its own output and not an invariant other services depend on, so it is still counted as a read-rule service.
+- **What:** Four services write no invariant of their own. They enforce a read rule: what they may report, and to whom. Since ADR-0067 recommendations also records the explanation of each decision, in a schema of its own (F24-05, implemented). That record is its own output and not an invariant other services depend on, so it is still counted as a read-rule service.
 - **Why it is acceptable:** Counting them follows the instructor's wording (one business rule per service), and the domain does not offer more writers: segmentation runs belong to the web (RN-05), and the audit log is written by `fn_audit`.
 - **Guard:** The instructor confirmed that read-only boundaries count (Q-13, 2026-10-15). Even under the strict reading the floor would hold: ten core writers plus campaigns. ADR-0043 forbids cutting any core service.
 - **Services:** [stock](./stock.md), [segments](./segments.md), [recommendations](./recommendations.md), [audit-trail](./audit-trail.md)
@@ -140,10 +140,10 @@ The design accepts a small number of deliberate deviations from the strict readi
 
 ### E-09 — the frozen web is a legacy co-writer of some tables
 
-- **What:** The web still writes `app_user`, `product`, `category`, `campaign`, `transaction`, `transaction_line` and, through its CSV path, `inventory`. "Only service writer" is not "only writer".
+- **What:** The web still writes `app_user`, `product`, `category`, `campaign`, `transaction`, `transaction_line`, the five `experiment*` tables and, through its CSV path, `inventory`. "Only service writer" is not "only writer".
 - **Why it is acceptable:** The web is frozen, yet a phone sale must appear in it and its edits must keep working. Services therefore write the same `public` tables the web reads.
 - **Guard:** Rules both enforce live in the schema (CHECKs, unique indexes, triggers) or are pinned by golden fixtures (E-17). The owner's outbox trigger captures web writes too, so no writer is invisible.
-- **Services:** [users](./users.md), [products](./products.md), [categories](./categories.md), [campaigns](./campaigns.md), [sales](./sales.md), [stock](./stock.md)
+- **Services:** [users](./users.md), [products](./products.md), [categories](./categories.md), [campaigns](./campaigns.md), [sales](./sales.md), [stock](./stock.md), [experimentation](./experimentation.md)
 - **Decided in:** [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) (Context); [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) (Events)
 
 ### E-10 — read owners of tables only the web writes
@@ -157,10 +157,10 @@ The design accepts a small number of deliberate deviations from the strict readi
 
 ### E-11 — foreign keys cross service boundaries
 
-- **What:** Tables owned by different services reference each other (`customer.channel_id`, `transaction_line.product_id`, `campaign.label_code` to `segment_label`, `checkins.store_check_in` to `store` and `app_user`).
+- **What:** Tables owned by different services reference each other (`customer.channel_id`, `transaction_line.product_id`, `campaign.label_code` to `segment_label`, `checkins.store_check_in` to `store` and `app_user`, `recommendations.recommendation_decision` to `customer`, `segmentation_run`, `store` and `channel`).
 - **Why it is acceptable:** They come from the legacy schema or protect it. The RI check runs as the parent's owner, so the child's service needs no privilege on the parent. Dropping them would weaken the model the web relies on.
 - **Guard:** A violation (23503) maps to a 422 by constraint name. No service holds DELETE on a master, so no cascade starts from a service. The category guard covers the remaining case.
-- **Services:** [customers](./customers.md), [customer-preferences](./customer-preferences.md), [sales](./sales.md), [check-ins](./check-ins.md), [stores](./stores.md), [campaigns](./campaigns.md)
+- **Services:** [customers](./customers.md), [customer-preferences](./customer-preferences.md), [sales](./sales.md), [check-ins](./check-ins.md), [stores](./stores.md), [campaigns](./campaigns.md), [recommendations](./recommendations.md)
 - **Decided in:** [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) (Consequences)
 
 ### E-12 — audit_log is the one table every writer shares

@@ -89,13 +89,12 @@ def test_posting_with_postgresql_stopped_is_503_and_the_rest_still_works(
         503,
         "database_unavailable",
     )
+    # A floor caller's reads need PostgreSQL for the assignment (ADR-0060); an
+    # unconfined role's reads do not.
+    admin = token("ADMIN")
+    assert client.get("/v1/engagement-events?size=1", headers=admin).status_code == 200
     assert (
-        client.get("/v1/engagement-events?size=1", headers=headers).status_code == 200
-    )
-    assert (
-        client.get(
-            "/v1/engagement-summaries?group_by=type", headers=headers
-        ).status_code
+        client.get("/v1/engagement-summaries?group_by=type", headers=admin).status_code
         == 200
     )
     assert client.get("/health/ready").status_code == 204

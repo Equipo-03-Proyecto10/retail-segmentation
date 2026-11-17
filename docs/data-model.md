@@ -554,6 +554,46 @@ The check-ins boundary (ADR-0046, F14-26) adds two relations, both in 4NF:
   check-in row would need either repeating columns (not 1NF) or updating that
   row, which RN-56 forbids.
 
+The recommendations boundary (ADR-0067, ADR-0046, F24-05) adds four relations,
+all in 4NF. They keep the explanation of each recommendation the service served:
+- **`recommendations.recommendation_decision`** is keyed by `decision_id`, which
+  determines the customer, the status, the computation time, the segmentation
+  run, the model version, the reference store, where that store came from and the
+  reference channel. Those are facts of one answer, fixed when it was made, so
+  none is derived from current data: a later change of a customer's usual store,
+  of a model version or of a store's channels must not rewrite what was
+  answered. The model version has no foreign key because the model registry is
+  another boundary's.
+- **`recommendations.recommendation_exclusion`** is the multivalued fact "this
+  many products were excluded for this reason". It is independent of the
+  decision's items (an excluded product is never listed), so it is its own
+  relation keyed by `(decision_id, reason)`. One row per reason above zero.
+- **`recommendations.recommendation_item`** is one product offered by one
+  decision, keyed by `(decision_id, position)`, with `(decision_id, product_id)`
+  also unique. `category_id` is the product's category when it was shown, a fact
+  of the decision and not a function of the product's current row.
+  - What would be derivable is not a column. An item's availability channel is
+    its decision's channel, and its availability store is its decision's store
+    unless it is an `elsewhere` entry, so only that entry stores a store
+    (`held_at_store_id`). The `factors` of the contract (signals matched, segment
+    buyers, category share) are the count and the figures of the item's reason
+    rows, so storing them would hold each fact twice, free to disagree.
+  - `kind`, `held_at_store_id`, `alternative_for` and `unavailable_reason` depend
+    on each other by the contract (a `primary` has none of the three, an
+    `alternative` has `alternative_for` and a reason, an `elsewhere` has a store
+    and a reason). That is a dependency between the columns of one row, which a
+    CHECK states, not a multivalued fact, so it needs no relation of its own.
+- **`recommendations.recommendation_reason`** is the multivalued fact "this item
+  was offered for this signal, with these figures", independent of the item's
+  other columns, keyed by `(decision_id, position, signal)`. It has no ordinal:
+  the order of reasons is the contract's fixed order of signals, a function of
+  the signal. Keeping reasons in a JSON column would hide the fact from
+  constraints and from aggregation (ADR-0067).
+
+The record holds identifiers, figures and codes only: no name, email, phone,
+SKU, price or free text, and nothing copied from customer or product beyond ids.
+Every text column is a code constrained to a list.
+
 The sales boundary (ADR-0039, ADR-0046, F14-18) adds one relation, also in 4NF:
 - **`sales.sale_capture`** is keyed by `transaction_id`, which determines
   `request_sha256`, `recorded_by` and `captured_at`. It is a 1:1 split of
@@ -649,6 +689,30 @@ default of ADR-0066 section 1 by a backfill that runs once, against an empty log
 
 `sales_events.outbox` is one more boundary outbox, under the outbox note above.
 
+The interests inferred from net purchases (ADR-0066, RN-34, RN-35, F21-18) add one
+relation to the same boundary, in 4NF:
+- **`preferences.inferred_interest`** is keyed by `(customer_id, category_id)`, and that
+  key determines `source`, `window_days`, `strength` and `inferred_at`; there is no other
+  determinant, so the relation is in BCNF, and with no multivalued dependency besides
+  the key it is in 4NF. It is not a third set folded into `customer_interest_category`:
+  a declared interest is something the customer said, an inferred one is something
+  computed about them, and the two have different provenance and lifetimes (an inferred
+  row is deleted when `PROFILING` is withdrawn, a declared one never is), so they stay
+  separate relations and no row can pass for the other. `window_days` and `inferred_at`
+  repeat across a customer's rows because one run makes them all, but each is a fact of
+  that row's own derivation (a later run may recompute one category and not another's
+  window), not a fact of the customer, so moving them to a per-customer header would
+  only add a join and a table that is empty whenever nothing is inferred. Nothing
+  derivable from another boundary is copied: the category's name, the product, the sale
+  and the declared set are all read where they live. `strength` is stored, since it
+  is the result of the run and the net purchases it came from change afterwards.
+  `source` is a CHECK (only `NET_PURCHASES` today), `window_days` is 1 to 3650 and
+  `strength` 1 to 100, so a row the contract could not describe cannot exist. The
+  customer key is `RESTRICT` (a customer is never deleted, RN-08); the category key is
+  `CASCADE`, since the rows are derived and a run recomputes them. `svc_preferences`
+  holds `SELECT`, `INSERT` and `DELETE`, never `UPDATE`: a run replaces a customer's
+  whole set, as the declared sets are replaced.
+
 Reversals (ADR-0062, F21-03) add two relations to the sales boundary, both in 4NF,
 and one column to `transaction_line`:
 - **`sales.sale_reversal`** has two candidate keys, `reversal_id` and the request's
@@ -700,6 +764,18 @@ and one column to `sales.sale_capture`:
   value each for that row and apply to some codes only (`import_row_outcome_shape_check`
   says which), so they are not independent multivalued facts. The outcome is written
   in the same transaction as the sale line, which is what makes a resume exact.
+- **`sales.reconciliation_case`** (F26-09) is keyed by `case_id`, and `(imported_transaction_id,
+  matched_transaction_id)` is unique: one case for each pair of a sale an import made and
+  an earlier sale that looks like it (same customer, store, instant and lines) under another
+  source id. Everything the case shows about the two sales (their source ids, the
+  customer, the store, the instant, the total) is read from `public.transaction`, so none of
+  it is stored twice. The columns it owns are the facts of that pair: when it was found and,
+  once a person settles it, `resolution`, `resolved_by`, `resolved_at` and `note`. Those four
+  are one fact, a decision, and each depends on the case alone, not on one another or on
+  an independent list, so the table is in 4NF (`reconciliation_case_resolved_check`
+  holds them all null or all set). A decision is written once: a trigger refuses any
+  later `UPDATE` or direct `DELETE`, whatever role writes. It is not seeded: it holds
+  runtime facts, and is named in `sql/seed-exempt.txt`.
 - **`sales.sale_capture.import_id`** says which import made a header. It is null for a
   phone sale, which is why it is a nullable column of the capture row and not a
   relation of its own: one capture has at most one import.
@@ -817,6 +893,40 @@ decision that matters is how a product's many-valued facts are split:
   `product` because it is optional, would be NULL on every product the web
   creates, and is the service's to write. A product has at most one barcode; a
   second barcode would be a multivalued fact and a relation of its own.
+
+- **`models.model_version`** (model-registry, F22-11, ADR-0064) is one relation
+  keyed by `version_id`, with `name` a second candidate key, so every other
+  column depends on a candidate key and nothing else: it is in BCNF. The
+  method's own fields (`seed`, `rule_set_id`, `k`, `max_iterations`,
+  `tolerance`) sit in the row because each is a single value of the version,
+  null when the other method does not have it, and a CHECK ties them to
+  `method`. `frozen_scoring` and `reference_distribution` are `jsonb`
+  documents: each is written once, frozen, and read whole (a customer is scored
+  against all of one version's boundaries or centroids, and drift compares the
+  whole histogram), and no query selects, joins or updates a part of one, so
+  decomposing them into bin and boundary rows would store the same facts in
+  more rows without a dependency to remove. The three mutable columns
+  `state`, `published_at` and `retired_at` are a stored projection of
+  `models.model_publication` (the version of the latest publication is the
+  published one); they are kept because the partial unique index that allows
+  exactly one `PUBLISHED` row needs a column to index (ADR-0064), and a trigger
+  lets nothing else in the row change, in any role.
+- **`models.model_version_feature`** is the multivalued fact "this version uses
+  these variables". R, F and M are independent of every other fact of the
+  version, so they are rows keyed `(version_id, feature)`, not an array column;
+  every column is in the key, so the relation is in BCNF and 4NF.
+- **`models.model_publication`** is the multivalued fact "this version was made
+  the published one, at this time, by this person, for this reason"; a version
+  can be published, retired and restored many times. `publication_id`
+  determines every column, and `previous_version_id` is a second reference to
+  `model_version`, not a copy of it. It is append-only, so a rollback is a new
+  row and history is never rewritten.
+- **`models.run_version`** is the 1:N fact "this segmentation run was scored
+  under this version" (ADR-0064). `run_id → version_id`, and the run is the
+  web's, named by value with no foreign key (the record outlives any maintenance
+  delete of a run): `segmentation_run` does not change. A WEB_RUN
+  version's source run is derived (the earliest linked run), not stored, so the
+  two cannot disagree.
 
 ---
 
@@ -1041,6 +1151,19 @@ Append-only.
 
 Append-only.
 
+#### `preferences.inferred_interest`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `customer_id` | `UUID` | NN | PK part; FK → `public.customer`, `ON DELETE RESTRICT` | The customer the interest was inferred for |
+| `category_id` | `SMALLINT` | NN | PK part; FK → `public.category`, `ON DELETE CASCADE` | The category |
+| `source` | `VARCHAR(20)` | NN | CHECK in `NET_PURCHASES` | What it was inferred from |
+| `window_days` | `SMALLINT` | NN | CHECK between 1 and 3650 | The days of net purchases the run looked at |
+| `strength` | `SMALLINT` | NN | CHECK between 1 and 100 | The percentage of the customer's net purchases in the window that include a product of the category, rounded half up |
+| `inferred_at` | `TIMESTAMPTZ` | NN | default `now()` | When the run that left the row ran |
+
+Derived and replaced whole by a run; deleted when `PROFILING` is withdrawn.
+
 #### `users.store_assignment`
 
 | Column | Type | Null | Constraints | Meaning |
@@ -1100,6 +1223,57 @@ effective `verified` are computed on read.
 
 A check-in's effective verdict is its latest review's `verified`, by
 `reviewed_at`. Reviews are appended and never changed.
+
+#### `recommendations.recommendation_decision`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `decision_id` | `UUID` | NN | PK; default `gen_random_uuid()` | The decision, returned to a `/v2` client |
+| `customer_id` | `UUID` | yes | FK → `public.customer`, `ON DELETE SET NULL` | The customer asked about; null once anonymized (F21-19) |
+| `status` | `TEXT` | NN | one of `recommended`, `none_match`, `no_open_assignment`, `unassigned_result`, `no_usual_store`, `PERSONALIZATION_WITHDRAWN` | The answer's status |
+| `computed_at` | `TIMESTAMPTZ` | NN | indexed; the retention job deletes by it | When the answer was computed |
+| `run_id` | `BIGINT` | yes | FK → `public.segmentation_run`, `ON DELETE RESTRICT` | The run behind the customer's open assignment; null until a segment is known |
+| `model_version_id` | `BIGINT` | yes | CHECK `>= 1`; no FK (another boundary's registry) | The model version the run was scored under; null while it has none |
+| `store_id` | `SMALLINT` | yes | FK → `public.store`, `ON DELETE RESTRICT` | The reference store |
+| `store_source` | `TEXT` | yes | `given` or `usual_store`; null exactly when `store_id` is | Which gave the store |
+| `channel_id` | `SMALLINT` | yes | FK → `public.channel`, `ON DELETE RESTRICT` | The reference channel as given, never derived |
+
+#### `recommendations.recommendation_exclusion`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `decision_id` | `UUID` | NN | PK part; FK → `recommendations.recommendation_decision`, `ON DELETE CASCADE` | The decision |
+| `reason` | `TEXT` | NN | PK part; one of the seven exclusion codes of ADR-0067 | Why the products were excluded |
+| `product_count` | `INTEGER` | NN | CHECK `>= 1` | How many products matched a signal and were excluded for it. They are counted, never listed |
+
+#### `recommendations.recommendation_item`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `decision_id` | `UUID` | NN | PK part; FK → `recommendations.recommendation_decision`, `ON DELETE CASCADE` | The decision |
+| `position` | `SMALLINT` | NN | PK part; CHECK `>= 1` | The place in the answer, from 1 |
+| `product_id` | `INTEGER` | NN | FK → `public.product`, `ON DELETE RESTRICT`; unique with `decision_id` | The product offered |
+| `category_id` | `SMALLINT` | NN | FK → `public.category`, `ON DELETE RESTRICT` | The product's category when it was offered |
+| `kind` | `TEXT` | NN | `primary`, `alternative` or `elsewhere`; see the kind CHECK | What the item is |
+| `quantity_on_hand` | `INTEGER` | NN | CHECK `>= 1` | The stock figure the decision used (E-06) |
+| `held_at_store_id` | `SMALLINT` | yes | FK → `public.store`; set exactly for `elsewhere` | The other store that holds an `elsewhere` product |
+| `alternative_for` | `INTEGER` | yes | FK → `public.product`; set exactly for `alternative` | The unavailable product an alternative stands in for |
+| `unavailable_reason` | `TEXT` | yes | `not_sellable`, `channel_not_enabled` or `out_of_stock`; set exactly for `alternative` and `elsewhere` | Why that product is not available at the reference store and channel |
+
+#### `recommendations.recommendation_reason`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `decision_id`, `position` | `UUID`, `SMALLINT` | NN | PK part; FK → `recommendations.recommendation_item`, `ON DELETE CASCADE` | The item |
+| `signal` | `TEXT` | NN | PK part; `segment`, `preferred_category`, `purchase_history` or `relation_substitute` | The reason |
+| `segment_buyers` | `INTEGER` | yes | set, `>= 1`, only for `segment` | Other customers with the same label who bought the product in the window |
+| `category_id` | `SMALLINT` | yes | FK → `public.category`; set only for `preferred_category` and `purchase_history` | The nearest matching category |
+| `share` | `NUMERIC(5,4)` | yes | `> 0` and `<= 1`; set only for `purchase_history` | That category's share of the customer's purchases |
+
+`svc_recommendations` holds SELECT, INSERT and DELETE on the four tables (DELETE
+is the 90-day retention, run by the service) and UPDATE of `customer_id` alone
+(anonymization). A decision is never updated otherwise. The web has no
+privilege on the schema.
 
 #### `sales.sale_capture`
 
@@ -1195,6 +1369,24 @@ A partial unique index (`import_one_open`) allows one import in `RECEIVING` or
 | `first_line` | `INTEGER` | NULL | only with `FILE` | The first line of this file that made the row's line |
 | `sale_id` | `BIGINT` | NULL | only with `RECORDED_SALE` | The recorded sale |
 | `transaction_id`, `product_id` | `BIGINT`, `INTEGER` | NULL | with the pair, FK → `public.transaction_line`, `ON DELETE SET NULL`; set for `ACCEPTED` | The sale line the row made |
+
+#### `sales.reconciliation_case`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `case_id` | `BIGINT` | NN | PK, identity | The case |
+| `import_id` | `BIGINT` | NN | FK → `sales.import`, `ON DELETE CASCADE` | The import whose sale this is |
+| `imported_transaction_id` | `BIGINT` | NN | FK → `public.transaction`, `ON DELETE CASCADE`; `CHECK <>` the matched one | The sale the import made |
+| `matched_transaction_id` | `BIGINT` | NN | FK → `public.transaction`, `ON DELETE CASCADE`; unique with the imported one | The earlier sale it looks like |
+| `found_at` | `TIMESTAMPTZ` | NN | default `now()` | When reconciliation listed the pair |
+| `resolution` | `TEXT` | NULL | `DISTINCT` or `DUPLICATE` | A person's decision: two real sales, or one sale loaded twice |
+| `resolved_by` | `UUID` | NULL | FK → `public.app_user`, `ON DELETE RESTRICT` | The `sub` of whoever decided |
+| `resolved_at` | `TIMESTAMPTZ` | NULL | set with `resolution` | When |
+| `note` | `TEXT` | NULL | 1 to 500 characters, only with `resolution` | Why, in the person's words |
+
+`resolution`, `resolved_by` and `resolved_at` are all null or all set. Once set, the row
+cannot be changed or deleted directly (`reconciliation_case_write_once`); `svc_sales` holds
+`UPDATE` on those four columns only.
 
 #### `stock.movement_request`
 
@@ -1855,6 +2047,10 @@ through `api_stores.store_directory_v1`.
 The customers boundary owns `customers.loyalty_card` and publishes only the
 single-code resolver `api_customers.resolve_loyalty_code_v1`; consumers cannot
 enumerate codes or read the table.
+
+The recommendations boundary owns `recommendations` for the four tables of its
+decision record. It has no contract schema, because the decisions are published
+by its own `recommendation-decisions` resource and no other service reads them.
 
 The eight outbox owners named by ADR-0044 therefore have both of these schemas:
 

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: check-ins-service
-  version: 1.2.0
+  version: 1.3.0
   description: 'Records staff GPS check-ins and computes their verdict on the server
     (RN-56). The phone sends a fix and shows the answer; it never decides. Check-ins
     are never updated or deleted, and an override is an append-only review. The
@@ -46,7 +46,7 @@ paths:
         user is the token''s `sub`. Replaying a `client_check_in_id` with the same
         user, store, fix and `occurred_at` answers 200 with the original check-in
         and writes nothing; the same id with any other value answers 409 `client_check_in_conflict`.
-        A phone retries a request refused with 503 under the same `client_check_in_id`.'
+        A phone retries a request refused with 503 under the same `client_check_in_id`. A caller confined to assigned stores (STORE_MANAGER, SALES_ASSOCIATE, LOYALTY_OFFICER, COMMERCIAL_SUPERVISOR) checking in at a store that is not assigned to them gets 403 forbidden_store (detail store_id, other_store), decided after the replay and the future check and before the store is looked up, with nothing stored (ADR-0060). ADMIN is not confined.'
       operationId: createCheckIn
       x-mosaiq-roles:
       - ADMIN
@@ -130,7 +130,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/CheckInForbidden'
         '406':
           $ref: '#/components/responses/NotAcceptable'
         '409':
@@ -150,7 +150,7 @@ paths:
       - CheckIns
       summary: List check-ins
       description: Returns a page ordered by `occurred_at`, newest first. `verified`
-        filters on the effective value. `from` and `to` bound `occurred_at`.
+        filters on the effective value. `from` and `to` bound `occurred_at`. A caller confined to assigned stores (STORE_MANAGER) sees only those stores check-ins. Without store_id the list is limited to them, a store_id outside them answers 403 forbidden_store with no check-ins, and a caller with no assignment gets an empty page (ADR-0060). ADMIN and AUDITOR are not confined.
       operationId: listCheckIns
       x-mosaiq-roles: &id005
       - ADMIN
@@ -186,7 +186,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/CheckInForbidden'
         '406':
           $ref: '#/components/responses/NotAcceptable'
         '422':
@@ -201,7 +201,7 @@ paths:
       - CheckIns
       summary: Get one check-in with its reviews
       description: Returns the check-in and its `reviews`, oldest first. `verified`
-        is the latest review's verdict when a review exists, else `auto_verified`.
+        is the latest review's verdict when a review exists, else `auto_verified`. A check-in of a store outside the assignment of a confined caller (STORE_MANAGER) answers 403 forbidden_store (detail check_in_id, other_store) with no data (ADR-0060). ADMIN and AUDITOR are not confined.
       operationId: getCheckIn
       x-mosaiq-roles: *id005
       parameters:
@@ -228,7 +228,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/CheckInForbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '406':
@@ -1478,6 +1478,28 @@ components:
               externalValue: ./examples/invalid-query.xml
             invalid_pagination:
               externalValue: ./examples/invalid-pagination.xml
+    CheckInForbidden:
+      description: '`forbidden_role` or `forbidden_store`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.json
+            forbidden_store:
+              externalValue: ./examples/forbidden-store-id.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.xml
+            forbidden_store:
+              externalValue: ./examples/forbidden-store-id.xml
     VisitForbidden:
       description: '`forbidden_role` or `forbidden_store`.'
       headers:

@@ -28,7 +28,7 @@ from mosaiq_kit import (
 
 import redis
 
-from . import audit, imports, reversal, store
+from . import audit, imports, reconciliation, reversal, scope, store
 from .salerules import (
     constraint as _constraint,
 )
@@ -238,6 +238,14 @@ def create_app(*, start_relay: bool | None = None) -> Flask:
         assert principal is not None
         sub = str(principal["sub"])
         body = kit.body
+        # ADR-0060: a floor role records a sale only at an assigned store, read
+        # now, before a replay can answer for a store the caller has lost.
+        with kit.db.connection() as connection:
+            scope.require_store(
+                connection,
+                principal,
+                body["store_id"],
+            )
         occurred_at, lines = validate_sale_rules(body)
         digest = _canonical(body, occurred_at, lines, sub)
         source_id = "svc-sales:" + key
@@ -314,12 +322,17 @@ def create_app(*, start_relay: bool | None = None) -> Flask:
         # A read naming one customer is a logged read: its HISTORY_READ is
         # recorded in the read's own transaction, before any row is returned.
         with kit.db.transaction() as connection:
+            # A store the caller is confined away from is a 403 (recorded as a
+            # refused history read when a customer is named), and with no store
+            # named a floor role sees only its own stores.
+            stores = scope.readable_stores(connection, kit.principal, store_id)
             if customer_id is not None:
                 audit.record_history_read(connection, kit.principal, customer_id)
             sales, total = store.list_sales(
                 connection,
                 customer_id=customer_id,
                 store_id=store_id,
+                store_ids=stores,
                 occurred_from=occurred_from,
                 occurred_to=occurred_to,
                 limit=kit.size,
@@ -339,6 +352,13 @@ def create_app(*, start_relay: bool | None = None) -> Flask:
     def get_sale(sale_id: int) -> Representation:
         with kit.db.connection() as connection:
             sale = store.get_sale(connection, sale_id)
+            if sale is not None:
+                scope.require_store(
+                    connection,
+                    kit.principal,
+                    sale["store_id"],
+                    what="sale",
+                )
         if sale is None:
             raise ApiError(404, "sale_not_found", f"Sale {sale_id} was not found.")
         return Representation("Sale", sale)
@@ -371,6 +391,18 @@ def create_app(*, start_relay: bool | None = None) -> Flask:
         # the kit's own 403 before anything else is looked at.
         if body["kind"] == "RETURN" and principal.get("role") == reversal.FLOOR_ROLE:
             raise reversal.forbidden_role()
+        with kit.db.connection() as connection:
+            held_at = connection.execute(
+                "SELECT store_id FROM public.transaction WHERE transaction_id = %s",
+                (body["sale_id"],),
+            ).fetchone()
+            if held_at is not None:
+                scope.require_store(
+                    connection,
+                    principal,
+                    held_at[0],
+                    what="sale",
+                )
         key = _idempotency_key()
         request_body = reversal.validate(body)
         digest = reversal.canonical(request_body, sub)
@@ -468,11 +500,13 @@ def create_app(*, start_relay: bool | None = None) -> Flask:
                 "after_to",
             )
         with kit.db.connection() as connection:
+            stores = scope.readable_stores(connection, kit.principal, store_id)
             found, total = store.list_reversals(
                 connection,
                 sale_id=sale_id,
                 customer_id=customer_id,
                 store_id=store_id,
+                store_ids=stores,
                 kind=kind,
                 recorded_from=recorded_from,
                 recorded_to=recorded_to,
@@ -493,6 +527,13 @@ def create_app(*, start_relay: bool | None = None) -> Flask:
     def get_sale_reversal(reversal_id: int) -> Representation:
         with kit.db.connection() as connection:
             found = store.get_reversal(connection, reversal_id)
+            if found is not None:
+                scope.require_store(
+                    connection,
+                    kit.principal,
+                    found["store_id"],
+                    what="reversal",
+                )
         if found is None:
             raise ApiError(
                 404,
@@ -697,6 +738,77 @@ def create_app(*, start_relay: bool | None = None) -> Flask:
                 imports.cancel_import(connection, import_id)
             cancelled = imports.get_import(connection, import_id)
         return Representation("SaleImport", cancelled)
+
+    def _finished_import(connection: psycopg.Connection, import_id: int) -> dict:
+        found = _import_or_404(connection, import_id)
+        if found["status"] not in reconciliation.FINISHED:
+            raise reconciliation.not_finished(import_id, found["status"])
+        return found
+
+    @kit.operation("runSaleImportReconciliation")
+    def run_sale_import_reconciliation(import_id: int) -> Representation:
+        with kit.db.transaction() as connection:
+            imports.expire_stale(connection)
+            # The import's row lock keeps two runs from listing the same pair.
+            if imports.get_import(connection, import_id, lock=True) is None:
+                raise imports.not_found(import_id)
+            _finished_import(connection, import_id)
+            outcome = reconciliation.run(connection, import_id)
+        return Representation("SaleReconciliation", outcome)
+
+    @kit.operation("listSaleReconciliationCases")
+    def list_sale_reconciliation_cases(import_id: int) -> Page:
+        status = request.args.get("status")
+        if status is not None and status not in reconciliation.STATUSES:
+            raise _error(
+                422,
+                "invalid_query",
+                "A filter is malformed or the range is reversed.",
+                "status",
+                "invalid_value",
+            )
+        with kit.db.connection() as connection:
+            _import_or_404(connection, import_id)
+            found, total = reconciliation.list_cases(
+                connection, import_id, status, kit.size, (kit.page - 1) * kit.size
+            )
+        return Page(
+            "SaleReconciliationCases",
+            "SaleReconciliationCase",
+            "sale_reconciliation_cases",
+            found,
+            page=kit.page,
+            size=kit.size,
+            total=total,
+        )
+
+    @kit.operation("resolveSaleReconciliationCase")
+    def resolve_sale_reconciliation_case(
+        import_id: int, case_id: int
+    ) -> Representation:
+        principal = kit.principal
+        assert principal is not None
+        body = kit.body
+        with kit.db.transaction() as connection:
+            _import_or_404(connection, import_id)
+            settled = reconciliation.resolve(
+                connection,
+                import_id,
+                case_id,
+                body["resolution"],
+                body.get("note"),
+                str(principal["sub"]),
+            )
+        return Representation("SaleReconciliationCase", settled)
+
+    @kit.operation("getSaleImportQuality")
+    def get_sale_import_quality(import_id: int) -> Representation:
+        with kit.db.transaction() as connection:
+            imports.expire_stale(connection)
+            report = reconciliation.quality(connection, import_id)
+        if report is None:
+            raise imports.not_found(import_id)
+        return Representation("SaleImportQuality", report)
 
     @kit.operation("listChannels")
     def list_channels() -> Collection:

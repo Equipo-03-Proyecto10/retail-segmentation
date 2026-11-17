@@ -1,6 +1,6 @@
 # experimentation
 
-> **Status:** Contract published (phase 25, third; F25-06, #837). Not yet implemented: the service is stood up by F25-07 (#838), and every operation is marked `x-mosaiq-status: planned` until then (ADR-0073). ADR-0059 places it; ADR-0068 and ADR-0069 decide how it behaves.
+> **Status:** Stood up (phase 25, third; F25-07, #838): the service answers its meta routes, holds the grants on the five experiment tables, and serves one operation, `listSaleAttributions`, whose page is empty until F25-03 (#843) builds attribution; every other operation stays `x-mosaiq-status: planned` (ADR-0073). The contract was published by F25-06 (#837). ADR-0059 places it; ADR-0068 and ADR-0069 decide how it behaves.
 > **One rule:** An experiment's frame and arms are fixed before measurement, assignment, exposure and conversion are separate append-only facts, a sale is attributed at most once, and an effect is reported only against a control, with its uncertainty (RN-23, RN-24, RN-25, RN-27, RN-42, RN-48, RN-49, RN-67)
 
 ## Summary
@@ -15,7 +15,7 @@
 | Redis ACL user | `svc_experiments`, same user line on `redis-state` and `redis-cache` |
 | MongoDB | — |
 | Compose project / image | `mosaiq-experimentation` / `ghcr.io/equipo-03-proyecto10/mosaiq-experimentation` |
-| `mem_limit` | 160 MB (ADR-0059) |
+| `mem_limit` | 128 MB (ADR-0059's first cut, on the F19-08 measurement in [`f19-08-memory.md`](../evidence/f19-08-memory.md)) |
 | Used by | Electron: the A/B experiment module (F28-10, #879). Android: one customer's arm, before an offer is shown (F27-07, #861). analytics-kpis reads its published views. |
 | Governing ADRs | [ADR-0059](../adr/0059-four-new-services-join-the-fifteen-and-six-capabilities-fold-into-the-rule-they-extend.md), [ADR-0068](../adr/0068-an-experiment-is-planned-and-frozen-before-assignment-and-claims-an-effect-only-against-a-control.md), [ADR-0069](../adr/0069-a-sale-is-attributed-to-one-campaign-at-most-and-only-the-difference-against-control-is-incremental.md), [ADR-0053](../adr/0053-experiments-are-measured-on-conversion-only.md), [ADR-0050](../adr/0050-experiment-conversions-are-append-only-for-the-application-role.md), [ADR-0062](../adr/0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md), [ADR-0075](../adr/0075-engagement-relays-interaction-facts-on-a-redis-stream-from-an-outbox-kept-on-the-event-document.md), [ADR-0035](../adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md), [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) |
 
@@ -56,7 +56,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 | Object | Kind | Access | Notes |
 |---|---|---|---|
-| `experiment`, `experiment_group`, `experiment_assignment`, `experiment_exposure`, `experiment_conversion` | Tables the web writes today | W until F25-07 | The stand-up story takes ownership and grants the role (#838). This contract moves none of them. Experiments assigned under the web's earlier shuffle are served as assignment rule `V0`: readable, with no frame, salt or key, and not called verified |
+| `experiment`, `experiment_group`, `experiment_assignment`, `experiment_exposure`, `experiment_conversion` | Tables the web writes today | S, W (E-09) | F25-07 (#838) took ownership: `svc_experiments` holds SELECT, INSERT and UPDATE on `experiment` and `experiment_group`, and SELECT and INSERT only on assignment, exposure and conversion, as `retail_app` does (ADR-0026, ADR-0027, ADR-0050). Neither role deletes. The web keeps writing them. Experiments assigned under the web's earlier shuffle are served as assignment rule `V0`: readable, with no frame, salt or key, and not called verified |
 | The plan (frame, salt, design values), the stored checks, the exposure projection, the attributions and the stored primary results | Tables (`experiments`) | S | Named and justified (4NF) by their own stories: F25-08 (#839), F25-09 (#840), F25-10 (#841), F25-12 (#843), F25-13 (#844). The contract fixes only what the endpoints serve |
 
 ## Database contracts

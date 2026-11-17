@@ -1,0 +1,11 @@
+{
+  "code": "import_not_finished",
+  "message": "Import 17 is PROCESSING; reconcile it once it has finished.",
+  "correlation_id": "corr-import-not-finished",
+  "details": [
+    {
+      "field": "status",
+      "code": "not_finished"
+    }
+  ]
+}

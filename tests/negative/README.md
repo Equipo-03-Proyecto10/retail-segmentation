@@ -25,6 +25,7 @@ with the reason.
 | `test_roles.py` | A role outside each operation's `x-mosaiq-roles`: 403 `forbidden_role` |
 | `test_representations.py` | 406 for `Accept: text/csv`, 415 for `text/plain`, 400 for XML with a DOCTYPE or an entity, 413 for 65 KiB at the edge and on the service's own port, 422 for `page=0` and `size=101` |
 | `test_rules.py` | users' single administrator (409 ×3), and sales' 409 `stock_unavailable`, 400 `idempotency_key_required` and, locally, 409 `idempotency_key_reused` |
+| `test_store_scope.py` | Each operation F19-03 narrows (sales, engagement and check-ins: record, read and list), asked for a store the floor caller is not assigned to: 403 `forbidden_store` in JSON and XML with no data; an unfiltered list holds only the caller's stores; `ADMIN` is unchanged; a removed assignment is refused on the next call. Throwaway accounts, assigned through users-service; reads by id of another store's rows run locally only |
 | `test_revocation.py` | A signed-out session on every service; locally, customers refusing it with no database statement |
 | `test_infrastructure.py` | redis-state stopped, locally (503 `auth_unavailable`, liveness up); the grant and boundary checks; two service roles refused another boundary; a direct INSERT of a second administrator, locally; `check-redis.sh`; the internal ports from outside |
 
@@ -34,7 +35,8 @@ Start the stack with the commands in the root README, "The full stack". The
 suite uses one seeded account per role (`admin@`, `user2@` to `user7@`, and
 `user31@` to `user33@` for the three floor roles of ADR-0060), all
 with the public demonstration password from the root README. It signs them out,
-but does not modify or deactivate them.
+but does not modify or deactivate them. `test_store_scope.py` assigns stores to
+throwaway accounts it creates, never to a seeded one.
 
 Copy the boundary checks into the database container once, then run the suite
 from the repository root:

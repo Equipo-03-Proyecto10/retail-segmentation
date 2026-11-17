@@ -1077,6 +1077,179 @@ JOIN app_user AS u ON u.role_id = r.role_id AND u.is_active;
 -- app_user, customer_segment_history, the stores boundary's seven tables and the products
 -- boundary's four tables. Nothing is inserted here by hand.
 
+-- ---------- models.* (F22-11, ADR-0064) ----------
+-- The registry starts with the two definitions the seed already holds, each
+-- registered as the version a web run produces (source WEB_RUN, no owner):
+-- the existing RFM rules, from the newest RFM_RULES run, and the K-means run.
+-- Every segmentation run is linked to the version of its method and
+-- parameters, so the 29 earlier rule runs and the last one share the first,
+-- and a version's source run is the earliest run linked to it. Everything a
+-- version carries is read from that run's own history rows, not invented:
+--   * dataset: the SHA-256 of the canonical rows the run scored, one line
+--     `customer|last purchase|purchases|total` per customer, by customer id;
+--   * RFM frozen scoring: the boundaries the run's quintile scores imply;
+--   * K-means frozen scoring: each label's cluster (its rank in
+--     label_mapping.labels_by_rank), its centroid as the mean of the members'
+--     min-max values (recency reversed, a constant feature 0), and the raw
+--     bounds; the run converged with a final shift of 0, so the means are the
+--     fitted centroids;
+--   * reference distribution: four equal-width bins per feature over the
+--     scored customers, and the share of each label;
+--   * metrics: inertia and silhouette as the run recorded them.
+-- The newest run is rule-based and every customer's current assignment comes
+-- from it, so its version is the published one; the K-means version is a
+-- draft. The seed publication is the one a first run of the web would make.
+DO $seed_models$
+DECLARE
+    r        record;
+    v_id     bigint;
+    scoring  jsonb;
+    ref      jsonb;
+    ds       record;
+    q        jsonb;
+BEGIN
+    FOR r IN
+        SELECT s.run_id, s.method, s.window_days, s.parameters, s.run_at, s.data_origin
+        FROM segmentation_run AS s
+        WHERE s.run_id IN (
+            (SELECT max(run_id) FROM segmentation_run WHERE method = 'RFM_RULES'),
+            (SELECT max(run_id) FROM segmentation_run WHERE method = 'KMEANS'))
+        ORDER BY s.method DESC
+    LOOP
+        -- The rows the run scored, with recency in days: before the run for
+        -- the rule bands, before the run's latest purchase for K-means (the
+        -- reference point the web's fit uses).
+        CREATE TEMP TABLE seed_scored ON COMMIT DROP AS
+        SELECT h.customer_id, h.label_code, h.recency_last_purchase_at AS last_at,
+               h.frequency_count AS f, h.monetary_total AS m,
+               h.r_score, h.f_score, h.m_score,
+               extract(epoch FROM (
+                   CASE WHEN r.method = 'KMEANS'
+                        THEN max(h.recency_last_purchase_at) OVER ()
+                        ELSE r.run_at END
+                   - h.recency_last_purchase_at)) / 86400.0 AS r_days
+        FROM customer_segment_history AS h
+        WHERE h.run_id = r.run_id AND h.frequency_count IS NOT NULL;
+
+        SELECT count(*) AS n,
+               encode(sha256(convert_to(string_agg(
+                   customer_id::text || '|' || to_char(last_at AT TIME ZONE 'UTC',
+                       'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') || '|' || f || '|' || m,
+                   E'\n' ORDER BY customer_id), 'UTF8')), 'hex') AS fingerprint
+        INTO ds FROM seed_scored;
+
+        -- Four equal-width bins per feature: edges and the share in each.
+        SELECT jsonb_build_object(
+            'sample_size', ds.n,
+            'captured_at', to_char(r.run_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+            'features', (
+                SELECT jsonb_agg(jsonb_build_object(
+                    'feature', f.feature,
+                    'bin_edges', (SELECT jsonb_agg(round(f.a + (f.b - f.a) * i / 4.0, 4) ORDER BY i)
+                                  FROM generate_series(0, 4) AS i),
+                    'proportions', (SELECT jsonb_agg(
+                        (SELECT count(*) FROM seed_scored AS x
+                          WHERE least(4, 1 + floor(4 * (CASE f.feature
+                                    WHEN 'R' THEN x.r_days WHEN 'F' THEN x.f ELSE x.m END - f.a)
+                                    / (f.b - f.a))::int) = bins.bin)::float8 / ds.n
+                        ORDER BY bins.bin) FROM generate_series(1, 4) AS bins(bin))
+                ) ORDER BY f.ord)
+                FROM (SELECT 'R' AS feature, 1 AS ord, min(r_days) AS a, max(r_days) AS b FROM seed_scored
+                      UNION ALL SELECT 'F', 2, min(f), max(f) FROM seed_scored
+                      UNION ALL SELECT 'M', 3, min(m), max(m) FROM seed_scored) AS f),
+            'labels', (SELECT jsonb_agg(jsonb_build_object(
+                           'label_code', label_code, 'share', c::float8 / ds.n)
+                           ORDER BY label_code)
+                       FROM (SELECT label_code, count(*) AS c FROM seed_scored
+                             WHERE label_code IS NOT NULL GROUP BY label_code) AS l))
+        INTO ref;
+
+        IF r.method = 'RFM_RULES' THEN
+            scoring := jsonb_build_object(
+                'quintile_boundaries', jsonb_build_object(
+                    'recency_boundaries', (SELECT jsonb_agg(floor(b) ORDER BY s DESC) FROM (
+                        SELECT r_score AS s, max(r_days) AS b FROM seed_scored
+                        WHERE r_score BETWEEN 2 AND 5 GROUP BY r_score) AS t),
+                    'frequency_boundaries', (SELECT jsonb_agg(b ORDER BY s DESC) FROM (
+                        SELECT f_score AS s, min(f) AS b FROM seed_scored
+                        WHERE f_score BETWEEN 2 AND 5 GROUP BY f_score) AS t),
+                    'monetary_boundaries', (SELECT jsonb_agg(b::text ORDER BY s DESC) FROM (
+                        SELECT m_score AS s, min(m) AS b FROM seed_scored
+                        WHERE m_score BETWEEN 2 AND 5 GROUP BY m_score) AS t)),
+                'centroids', '[]'::jsonb,
+                'normalization_bounds', NULL);
+        ELSE
+            scoring := jsonb_build_object(
+                'quintile_boundaries', NULL,
+                'centroids', (
+                    SELECT jsonb_agg(jsonb_build_object(
+                        'cluster_index', rk.ord - 1, 'label_code', rk.label,
+                        'r', round((1 - (c.r - b.r_min) / nullif(b.r_max - b.r_min, 0))::numeric, 6),
+                        'f', round(coalesce((c.f - b.f_min) / nullif(b.f_max - b.f_min, 0), 0)::numeric, 6),
+                        'm', round(coalesce((c.m - b.m_min) / nullif(b.m_max - b.m_min, 0), 0)::numeric, 6))
+                        ORDER BY rk.ord)
+                    FROM jsonb_array_elements_text(r.parameters -> 'label_mapping' -> 'labels_by_rank')
+                             WITH ORDINALITY AS rk(label, ord)
+                    JOIN (SELECT label_code, avg(r_days) AS r, avg(f) AS f, avg(m) AS m
+                          FROM seed_scored GROUP BY label_code) AS c ON c.label_code = rk.label
+                    CROSS JOIN (SELECT min(r_days) AS r_min, max(r_days) AS r_max,
+                                       min(f) AS f_min, max(f) AS f_max,
+                                       min(m) AS m_min, max(m) AS m_max FROM seed_scored) AS b),
+                'normalization_bounds', (SELECT jsonb_build_object(
+                    'r_min', min(r_days), 'r_max', max(r_days),
+                    'f_min', min(f), 'f_max', max(f), 'm_min', min(m), 'm_max', max(m))
+                    FROM seed_scored));
+            -- The centroid of a constant recency is 0, as the fit normalizes it.
+            scoring := jsonb_set(scoring, '{centroids}', coalesce((
+                SELECT jsonb_agg(CASE WHEN e -> 'r' = 'null'::jsonb
+                                      THEN jsonb_set(e, '{r}', '0') ELSE e END)
+                FROM jsonb_array_elements(scoring -> 'centroids') AS e), '[]'::jsonb));
+        END IF;
+
+        INSERT INTO models.model_version
+            (name, method, source, window_days, seed, rule_set_id, k, max_iterations,
+             tolerance, normalization, frozen_scoring, reference_distribution,
+             dataset_fingerprint, dataset_origin, dataset_row_count,
+             inertia, silhouette, stability, owner_id, created_at)
+        VALUES (
+            CASE r.method WHEN 'RFM_RULES' THEN 'web-rfm-rules-' || r.window_days || 'd'
+                 ELSE 'web-kmeans-k' || (r.parameters ->> 'k') || '-seed' || (r.parameters ->> 'seed')
+                      || '-' || r.window_days || 'd' END,
+            r.method, 'WEB_RUN', r.window_days,
+            (r.parameters ->> 'seed')::bigint, NULL,
+            (r.parameters ->> 'k')::int, (r.parameters ->> 'max_iterations')::int,
+            (r.parameters ->> 'tolerance')::float8,
+            CASE r.method WHEN 'RFM_RULES' THEN 'NONE' ELSE 'MIN_MAX' END,
+            scoring, ref, ds.fingerprint, r.data_origin, ds.n,
+            (r.parameters -> 'quality' ->> 'inertia')::float8,
+            (r.parameters -> 'quality' ->> 'silhouette')::float8,
+            NULL, NULL, r.run_at)
+        RETURNING version_id INTO v_id;
+
+        INSERT INTO models.model_version_feature (version_id, feature)
+        SELECT v_id, f FROM unnest(ARRAY['R', 'F', 'M']) AS f;
+
+        -- Every run of this method and these parameters has this version.
+        INSERT INTO models.run_version (run_id, version_id, linked_at)
+        SELECT s.run_id, v_id, s.run_at FROM segmentation_run AS s
+        WHERE s.method = r.method AND s.window_days = r.window_days
+          AND s.parameters = r.parameters;
+
+        DROP TABLE seed_scored;
+    END LOOP;
+
+    -- The rule version is the one every customer is scored under today.
+    INSERT INTO models.model_publication
+        (version_id, action, previous_version_id, reason, published_by, published_at)
+    SELECT v.version_id, 'PUBLISH', NULL,
+           'First publication: the web run that scored every customer', NULL, v.created_at
+    FROM models.model_version AS v WHERE v.method = 'RFM_RULES';
+    UPDATE models.model_version
+       SET state = 'PUBLISHED', published_at = created_at
+     WHERE method = 'RFM_RULES';
+END
+$seed_models$;
+
 -- ---------- audit_events.domain_event (32, every kind, ADR-0072) ----------
 -- Runtime history, seeded like app_session rather than exempted (ADR-0051).
 -- Each row goes through audit_events.append_v1, the function behind
@@ -1180,6 +1353,109 @@ BEGIN
 END
 $seed_events$;
 
+-- ---------- recommendations.* (30 decisions, F24-05, ADR-0067) ----------
+-- Decision n is for customer n, the answer to the question "what to recommend
+-- to them" some hours ago, kept as the service keeps it: ids, figures and
+-- codes. n mod 10 gives the status: 1 to 5 recommended (15), 6 none_match,
+-- 7 no_usual_store, 8 no_open_assignment, 9 unassigned_result and 0
+-- PERSONALIZATION_WITHDRAWN, three of each of those five. The reference store
+-- is store n, as given for every third customer and as the usual store
+-- otherwise; the channel is given only with the store. A decision that never
+-- reached a reference store has none, and one without a segment has no run.
+-- No model version is seeded: the run behind these decisions has none yet.
+INSERT INTO recommendations.recommendation_decision
+    (decision_id, customer_id, status, computed_at, run_id, model_version_id,
+     store_id, store_source, channel_id)
+SELECT ('c0de0000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid,
+       ('00000000-0000-0000-0000-' || lpad(n::text, 12, '0'))::uuid,
+       s.status,
+       now() - make_interval(hours => 2 * n),
+       CASE WHEN s.status IN ('no_open_assignment', 'unassigned_result',
+                              'PERSONALIZATION_WITHDRAWN')
+            THEN NULL ELSE (SELECT max(run_id) FROM segmentation_run) END,
+       NULL,
+       CASE WHEN s.status IN ('recommended', 'none_match')
+                 OR (s.status = 'PERSONALIZATION_WITHDRAWN' AND n % 3 = 0)
+            THEN n END,
+       CASE WHEN s.status IN ('recommended', 'none_match')
+                 OR (s.status = 'PERSONALIZATION_WITHDRAWN' AND n % 3 = 0)
+            THEN CASE WHEN n % 3 = 0 THEN 'given' ELSE 'usual_store' END END,
+       CASE WHEN n % 3 = 0 THEN 1 + n % 5 END
+FROM generate_series(1, 30) AS n
+CROSS JOIN LATERAL (
+    SELECT CASE n % 10
+               WHEN 6 THEN 'none_match'
+               WHEN 7 THEN 'no_usual_store'
+               WHEN 8 THEN 'no_open_assignment'
+               WHEN 9 THEN 'unassigned_result'
+               WHEN 0 THEN 'PERSONALIZATION_WITHDRAWN'
+               ELSE 'recommended'
+           END AS status
+) AS s;
+
+-- Counts per reason above zero: a recommended decision left out two products
+-- that matched (already bought, and out of stock here), a none_match one lost
+-- its only candidates to the shelf. 15 x 2 + 3 = 33 rows.
+INSERT INTO recommendations.recommendation_exclusion (decision_id, reason, product_count)
+SELECT d.decision_id, r.reason, r.product_count
+FROM recommendations.recommendation_decision AS d
+CROSS JOIN LATERAL (
+    VALUES ('already_bought', 1 + (right(d.decision_id::text, 2)::int) % 3),
+           ('out_of_stock', 1 + (right(d.decision_id::text, 2)::int) % 2)
+) AS r(reason, product_count)
+WHERE d.status = 'recommended'
+UNION ALL
+SELECT decision_id, 'out_of_stock', 2
+FROM recommendations.recommendation_decision
+WHERE status = 'none_match';
+
+-- Two primary items for every recommended decision: product n by the segment
+-- signal, and product n + 10 by purchase history, so the reasons are the two
+-- figures RN-40 orders by. Every other decision of them (n mod 10 = 2 or 4)
+-- also offers an alternative for a product that sold out, and n mod 10 = 4 an
+-- elsewhere entry, held by the next store, for another one. Products are
+-- chosen so that no decision names one twice.
+INSERT INTO recommendations.recommendation_item
+    (decision_id, position, product_id, category_id, kind, quantity_on_hand,
+     held_at_store_id, alternative_for, unavailable_reason)
+SELECT d.decision_id, i.position, i.product_id, p.category_id, i.kind,
+       i.quantity_on_hand, i.held_at_store_id, i.alternative_for, i.unavailable_reason
+FROM recommendations.recommendation_decision AS d
+CROSS JOIN LATERAL (SELECT right(d.decision_id::text, 12)::int AS n) AS k
+CROSS JOIN LATERAL (
+    VALUES (1, k.n, 'primary', 4 + k.n, NULL::int, NULL::int, NULL::text),
+           (2, k.n + 10, 'primary', 3 + k.n % 7, NULL, NULL, NULL)
+    UNION ALL
+    SELECT 3, (k.n + 29) % 40 + 1, 'alternative', 2 + k.n % 5, NULL,
+           (k.n + 19) % 40 + 1, 'out_of_stock'
+    WHERE k.n % 10 IN (2, 4)
+    UNION ALL
+    SELECT 4, k.n + 6, 'elsewhere', 6 + k.n % 4, k.n % 30 + 1, NULL, 'out_of_stock'
+    WHERE k.n % 10 = 4
+) AS i(position, product_id, kind, quantity_on_hand, held_at_store_id,
+       alternative_for, unavailable_reason)
+JOIN product AS p ON p.product_id = i.product_id
+WHERE d.status = 'recommended';
+
+-- The reasons: the first primary item has the segment signal and the second
+-- purchase history in its category, the elsewhere entry has both, and an
+-- alternative the one reason of a substitute.
+INSERT INTO recommendations.recommendation_reason
+    (decision_id, position, signal, segment_buyers, category_id, share)
+SELECT i.decision_id, i.position, r.signal, r.segment_buyers, r.category_id, r.share
+FROM recommendations.recommendation_item AS i
+CROSS JOIN LATERAL (SELECT right(i.decision_id::text, 12)::int AS n) AS k
+CROSS JOIN LATERAL (
+    SELECT 'segment', 2 + k.n, NULL::smallint, NULL::numeric
+    WHERE i.position IN (1, 4)
+    UNION ALL
+    SELECT 'purchase_history', NULL, i.category_id, round((1 + k.n % 4) / 8.0, 4)
+    WHERE i.position IN (2, 4)
+    UNION ALL
+    SELECT 'relation_substitute', NULL, NULL, NULL
+    WHERE i.position = 3
+) AS r(signal, segment_buyers, category_id, share);
+
 -- ---------- outboxes (ADR-0054, #597) ----------
 -- Empty-database bootstrap only: remove the events this transaction captured
 -- before COMMIT makes them visible to a relay. Keep all capture and integrity
@@ -1196,3 +1472,32 @@ DELETE FROM stores_events.outbox;
 DELETE FROM users_events.outbox;
 
 COMMIT;
+
+-- ---------- preferences.inferred_interest (F21-18) ----------
+-- What the inference of #796 leaves for the seeded customers: for each one whose
+-- PROFILING is GRANTED, the categories of at least 1% of their net purchases of
+-- the last 180 days, the declared interests left out, at one instant. Computed
+-- from the seeded sales, so the rows and the sales cannot disagree.
+INSERT INTO preferences.inferred_interest
+    (customer_id, category_id, source, window_days, strength, inferred_at)
+WITH purchases AS (
+    SELECT DISTINCT n.customer_id, n.transaction_id, p.category_id
+    FROM public.net_sale_line AS n
+    JOIN public.product AS p ON p.product_id = n.product_id
+    WHERE n.occurred_at >= now() - interval '180 days'
+), totals AS (
+    SELECT customer_id, count(DISTINCT transaction_id) AS sales FROM purchases GROUP BY customer_id
+), shares AS (
+    SELECT u.customer_id, u.category_id,
+           round(100.0 * count(*) / t.sales)::smallint AS strength
+    FROM purchases AS u JOIN totals AS t USING (customer_id)
+    GROUP BY u.customer_id, u.category_id, t.sales
+)
+SELECT s.customer_id, s.category_id, 'NET_PURCHASES', 180, s.strength, now()
+FROM shares AS s
+JOIN api_preferences.consent_state_v1 AS c
+  ON c.customer_id = s.customer_id AND c.purpose = 'PROFILING' AND c.decision = 'GRANTED'
+WHERE s.strength >= 1
+  AND NOT EXISTS (SELECT FROM public.customer_interest_category AS d
+                  WHERE d.customer_id = s.customer_id AND d.category_id = s.category_id)
+ORDER BY s.customer_id, s.category_id;

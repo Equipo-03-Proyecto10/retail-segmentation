@@ -106,7 +106,9 @@ def _post(
     return client.post(
         "/v1/sales",
         json=body,
-        headers={**token("STORE_MANAGER"), "Idempotency-Key": str(key)},
+        # ADMIN is not confined to a store (F19-07), so the golden outcomes
+        # of the rule, which include an unknown store, stay the rule's.
+        headers={**token("ADMIN"), "Idempotency-Key": str(key)},
     )
 
 

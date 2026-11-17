@@ -1,4 +1,4 @@
-"""The result cache and its six invalidation consumers, on a real Redis."""
+"""The result cache and its seven invalidation consumers, on a real Redis."""
 
 from __future__ import annotations
 

@@ -114,6 +114,8 @@ dependencies {
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.work.testing)
     testImplementation(libs.robolectric)
+    // FloorAccessContractTest reads the contracts' x-mosaiq-roles, anchors and aliases included.
+    testImplementation(libs.snakeyaml)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.androidx.test.ext.junit)
     testImplementation(platform(libs.compose.bom))

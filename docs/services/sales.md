@@ -72,7 +72,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 | Direction | Object | Counterpart |
 |---|---|---|
-| Publishes | `api_sales.purchase_line_v1` | recommendations |
+| Publishes | `api_sales.purchase_line_v1` | recommendations, customers (the retention candidates, #1061) |
 | Publishes | `api_sales.channel_v1` | stock (the set of channel ids availability is derived over, F21-07) |
 | Publishes | `api_sales.net_purchase_line_v1` | recommendations (SELECT granted); the net definition of ADR-0062, also read by the web as `public.net_sale_line` |
 | Consumes | `api_products.product_ref_v1` | products |
@@ -109,6 +109,7 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | 422 | `no_lines` | The sale has no lines |
 | 422 | `no_stock_record` | No inventory row for the store and product |
 | 422 | `unknown_customer`, `unknown_store`, `unknown_channel`, `unknown_product` | A reference does not exist |
+| 422 | `anonymized_customer` | The customer has been anonymized (ADR-0066 section 3, #1061); also an imported row's reason |
 | 422 | `inactive_product`, `before_registration`, `future_dated`, `invalid_price`, `invalid_quantity` | A sale rule is broken |
 | 404 | `sale_not_found` | `GET /v1/sales/{sale_id}` names no sale |
 | 404 | `sale_import_not_found` | An import route names no import |

@@ -2219,8 +2219,10 @@ The products boundary owns `products` for `product_status`, `product_attribute`,
 `product_barcode` and `product_relation`, and publishes `api_products.product_ref_v1`
 and `api_products.product_relation_v1`.
 The check-ins boundary owns `checkins` for `store_check_in`,
-`check_in_review` and `customer_visit`. It has no contract schema and no outbox, because nothing
-reads or consumes check-ins but its own service. It reads store locations
+`check_in_review` and `customer_visit`. It has no outbox, and its one contract
+schema, `api_checkins`, publishes only `customer_last_visit_v1`: each customer's
+latest visit, which customers reads for its retention candidates (ADR-0066
+section 3, #1061). It reads store locations
 through `api_stores.store_directory_v1`; visits additionally resolve loyalty
 codes through `api_customers`, read profiling consent through
 `api_preferences`, and validate campaign identity through `api_campaigns`.

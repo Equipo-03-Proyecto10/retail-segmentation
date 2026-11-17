@@ -34,6 +34,7 @@
 | POST | `/v1/customers` | Register a customer | ADMIN, STORE_MANAGER |
 | PATCH | `/v1/customers/{customer_id}` | Correct a customer's data (409 `customer_anonymized` once anonymized) | ADMIN, STORE_MANAGER |
 | PUT | `/v1/customers/{customer_id}/anonymization` | Anonymize a customer in place, idempotently and irreversibly (ADR-0066 section 3; F21-19) | ADMIN |
+| GET | `/v1/customers/retention-candidates` | The customers with no sale and no visit for 36 months, for an administrator to anonymize with `RETENTION_EXPIRED`; rewrites nothing (ADR-0066 section 3; #1061) | ADMIN |
 | POST | `/v1/loyalty-cards` | Issue a loyalty card (an opaque code, no personal data) | ADMIN, LOYALTY_OFFICER |
 | GET | `/v1/loyalty-cards` | List one customer's cards and its `loyalty_state` (`customer_id` required) | ADMIN, LOYALTY_OFFICER |
 | POST | `/v1/loyalty-cards/lookup` | Resolve a scanned code to its card and customer id | ADMIN, SALES_ASSOCIATE, LOYALTY_OFFICER |
@@ -71,6 +72,8 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Direction | Object | Counterpart |
 |---|---|---|
 | Publishes | `api_customers.customer_ref_v1` | sales, customer-preferences, segments, recommendations, engagement |
+| Consumes | `api_sales.purchase_line_v1` | sales (each customer's latest sale, for the retention candidates, #1061) |
+| Consumes | `api_checkins.customer_last_visit_v1` | check-ins (each customer's latest visit, for the retention candidates, #1061) |
 
 ## Events
 

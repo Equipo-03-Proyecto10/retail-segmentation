@@ -632,6 +632,29 @@ def test_each_failing_row_gets_its_own_reason_and_the_counts_add_up(
     )
 
 
+def test_a_row_naming_an_anonymized_customer_is_refused_and_records_no_sale(
+    client, token, owner, world, service_url, anonymized_customer
+):
+    """An imported row passes the rule POST /v1/sales applies (#1061)."""
+    kept, refused = new_id(), new_id()
+    import_id = load(
+        client,
+        token,
+        service_url,
+        [
+            row(world, 2, kept),
+            row(world, 3, refused, customer_id=anonymized_customer),
+        ],
+    )
+    done = status(client, token, import_id)
+    assert (done["accepted"], done["rejected"]) == (1, 1)
+    report = rejections(client, token, import_id)
+    assert report[3]["code"] == "anonymized_customer"
+    assert report[3]["field"] == "customer_id"
+    assert sales(owner, kept) is not None
+    assert sales(owner, refused) is None
+
+
 def test_a_row_with_no_stock_record_or_not_enough_stock_changes_nothing(
     client, token, owner, world, service_url
 ):

@@ -232,6 +232,10 @@ _SALE_REFUSALS = {
         "occurred_at is dated before the customer registered",
     ),
     "unknown_customer": ("customer_id", "customer_id names no customer"),
+    "anonymized_customer": (
+        "customer_id",
+        "customer_id names a customer that has been anonymized",
+    ),
     "unknown_store": ("store_id", "store_id names no store"),
     "unknown_channel": ("channel_id", "channel_id names no channel"),
     "unknown_product": ("product_id", "product_id names no product"),

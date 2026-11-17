@@ -28,6 +28,7 @@ from mosaiq_kit import (
     Representation,
     configure_logging,
 )
+from mosaiq_kit.rendering import wire_value
 from psycopg import errors, sql
 
 import redis
@@ -54,6 +55,31 @@ COLUMNS = sql.SQL(", ").join(
         "registration_channel_id",
         "registered_on",
     )
+)
+
+# ADR-0066 section 3: a customer with no sale and no visit for this many months
+# is a retention candidate, and only an administrator anonymizes one.
+RETENTION_MONTHS = 36
+
+# The customers that are not anonymized and whose latest activity falls before
+# %(inactive_before)s. The latest activity is the latest of the registration
+# date and the UTC dates of the latest sale and the latest visit; GREATEST
+# ignores the nulls of a customer with no sale or no visit. Sales come from
+# the sales boundary's published lines and visits from the check-ins view, the
+# only routes this service has to either (ADR-0044).
+RETENTION_ACTIVITY = sql.SQL(
+    "SELECT * FROM ("
+    " SELECT c.customer_id, c.registered_on, s.last_sale_at,"
+    " v.last_visited_at AS last_visit_at,"
+    " GREATEST(c.registered_on, (s.last_sale_at AT TIME ZONE 'UTC')::date,"
+    " (v.last_visited_at AT TIME ZONE 'UTC')::date) AS last_activity_on"
+    " FROM public.customer AS c"
+    " LEFT JOIN (SELECT customer_id, max(occurred_at) AS last_sale_at"
+    " FROM api_sales.purchase_line_v1 GROUP BY customer_id) AS s"
+    " USING (customer_id)"
+    " LEFT JOIN api_checkins.customer_last_visit_v1 AS v USING (customer_id)"
+    " WHERE c.anonymized_at IS NULL"
+    ") AS activity WHERE last_activity_on < %(inactive_before)s"
 )
 
 # The fields a correction may name; registered_on and customer_id are refused
@@ -255,23 +281,24 @@ def create_app(*, start_relay: bool | None = None) -> Flask:
     app.extensions["mosaiq_kit"] = kit
 
     @app.after_request
-    def add_loyalty_state(response):
-        """Add the list-wide state that is outside the kit's generic Page."""
+    def add_page_head(response):
+        """Add the list-wide fields that come before the items, outside the
+        kit's generic Page: a customer's `loyalty_state`, or the retention
+        candidates' `as_of` and `inactive_before`, in the contract's order."""
 
-        state = getattr(g, "loyalty_state", None)
-        if state is None or response.status_code != 200:
+        head = getattr(g, "page_head", None)
+        if not head or response.status_code != 200:
             return response
         if response.mimetype == "application/json":
             payload = response.get_json()
-            payload = {"loyalty_state": state, **payload}
+            payload = {**head, **payload}
             response.set_data(json.dumps(payload, separators=(",", ":")))
         elif response.mimetype == "application/xml":
             root = etree.fromstring(response.data)
-            element = etree.Element(
-                etree.QName(kit.contract.namespace, "loyalty_state")
-            )
-            element.text = state
-            root.insert(0, element)
+            for index, (name, value) in enumerate(head.items()):
+                element = etree.Element(etree.QName(kit.contract.namespace, name))
+                element.text = value
+                root.insert(index, element)
             response.set_data(
                 etree.tostring(root, xml_declaration=True, encoding="UTF-8")
             )
@@ -392,6 +419,60 @@ def create_app(*, start_relay: bool | None = None) -> Flask:
             total=total,
         )
 
+    @kit.operation("listRetentionCandidates")
+    def list_retention_candidates() -> Page:
+        """ADR-0066 section 3: who has had no sale and no visit for 36 months.
+
+        A read that rewrites nothing. One transaction, so `as_of` and every
+        count below come from one snapshot; the cutoff is computed by
+        PostgreSQL, which clamps a month end (29 February less 36 months is
+        28 February).
+        """
+
+        offset = (kit.page - 1) * kit.size
+        with kit.db.transaction() as connection:
+            as_of, inactive_before = connection.execute(
+                "SELECT now(), ((now() AT TIME ZONE 'UTC')::date"
+                " - make_interval(months => %s))::date",
+                (RETENTION_MONTHS,),
+            ).fetchone()
+            params = {"inactive_before": inactive_before}
+            total = connection.execute(
+                sql.SQL("SELECT count(*) FROM ({}) AS c").format(RETENTION_ACTIVITY),
+                params,
+            ).fetchone()[0]
+            rows = connection.execute(
+                sql.SQL(
+                    "SELECT customer_id, registered_on, last_sale_at, last_visit_at,"
+                    " last_activity_on FROM ({}) AS c"
+                    " ORDER BY last_activity_on, customer_id"
+                    " LIMIT %(limit)s OFFSET %(offset)s"
+                ).format(RETENTION_ACTIVITY),
+                params | {"limit": kit.size, "offset": offset},
+            ).fetchall()
+        g.page_head = {
+            "as_of": wire_value(as_of),
+            "inactive_before": wire_value(inactive_before),
+        }
+        return Page(
+            "RetentionCandidates",
+            "RetentionCandidate",
+            "candidates",
+            [
+                {
+                    "customer_id": str(row[0]),
+                    "registered_on": row[1],
+                    "last_sale_at": row[2],
+                    "last_visit_at": row[3],
+                    "last_activity_on": row[4],
+                }
+                for row in rows
+            ],
+            page=kit.page,
+            size=kit.size,
+            total=total,
+        )
+
     @kit.operation("getFloorCustomer")
     def get_floor_customer(customer_id: Any) -> Representation:
         with kit.db.connection() as connection:
@@ -448,9 +529,11 @@ def create_app(*, start_relay: bool | None = None) -> Flask:
                 (customer_id, kit.size, offset),
             ).fetchall()
         total, has_active = summary
-        g.loyalty_state = (
-            "NONE" if total == 0 else "ACTIVE" if has_active else "REVOKED"
-        )
+        g.page_head = {
+            "loyalty_state": (
+                "NONE" if total == 0 else "ACTIVE" if has_active else "REVOKED"
+            )
+        }
         return Page(
             "LoyaltyCards",
             "LoyaltyCard",

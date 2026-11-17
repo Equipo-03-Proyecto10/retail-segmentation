@@ -309,6 +309,8 @@ definer_segments,segments_events.outbox,INSERT
 svc_segments,api_segments,USAGE
 svc_recommendations,api_segments,USAGE
 svc_segments,api_segments.current_label_v1,SELECT
+svc_segments,api_models,USAGE
+svc_segments,api_models.run_version_v1,SELECT
 svc_recommendations,api_segments.current_label_v1,SELECT
 svc_recommendations,recommendations,USAGE
 svc_recommendations,recommendations.recommendation_decision,SELECT

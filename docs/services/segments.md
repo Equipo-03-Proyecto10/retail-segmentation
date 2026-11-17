@@ -1,6 +1,6 @@
 # segments
 
-> **Status:** Implemented (phase 14, core; F14-20, #461). Contract extended by F22-14 (#810) for per-version assignments and migrations; the extension is not yet implemented (F22-16, #812). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
+> **Status:** Implemented (phase 14, core; F14-20, #461). Version-aware migrations were implemented by F22-16 (#812); per-version assignment listing remains planned. ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
 > **One rule:** A customer has at most one current segment, named by its stable label code, unassigned states are reported as they are, a migration compares one customer's labels within one model version, and a comparison across versions is marked methodological (RN-20, RN-21, RN-39, RN-59, RN-60)
 
 ## Summary
@@ -56,7 +56,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 |---|---|---|
 | Publishes | `api_segments.current_label_v1` | recommendations |
 | Publishes | `api_segments.apply_assignment_v1` | rfm-engine (the only caller) |
-| Consumes | model-registry's published run-version view (F22-10, #805) | model-registry (the model version of each run) |
+| Consumes | `api_models.run_version_v1` | model-registry (the immutable model version of each run) |
 | Consumes | `api_customers.customer_ref_v1` | customers (a 404 for an unknown customer) |
 | Calls | `api_audit.record_event_v1(...)` | audit-trail (EXECUTE; ADR-0072): a `HISTORY_READ` for `GET /v1/segment-assignments?customer_id=`, a 403 included, in the read's transaction; 503 `audit_unavailable` when it cannot |
 
@@ -144,4 +144,4 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 ## Backlog
 
-F14-19 contract, F14-20 implementation; consumed by F17-05, F16-03. Issue numbers live in [`docs/backlog.md`](../backlog.md).
+F14-19 contract, F14-20 implementation, F22-14 version-aware contract and F22-16 migration implementation; consumed by F17-05, F16-03 and F28-08. Issue numbers live in [`docs/backlog.md`](../backlog.md).

@@ -3,6 +3,7 @@ package online.maxthecoder.mosaiq.floor.outbox
 import kotlin.math.roundToInt
 import online.maxthecoder.mosaiq.floor.AppText
 import online.maxthecoder.mosaiq.floor.R
+import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.net.CheckInResult
 
 /** The server's verdict in plain words. The app only reports it (RN-56). */
@@ -38,3 +39,14 @@ fun refusalReason(code: String?): String? = when (code) {
     "forbidden_store" -> AppText.get(R.string.refusal_forbidden_store)
     else -> null
 }
+
+/**
+ * What the service answered to this row, as the error screens show it. [fallbackMessage] is what a
+ * refusal with no message of its own says; the screens that list rows each have their own wording.
+ */
+fun OutboxRow.asError(fallbackMessage: String = AppText.get(R.string.outbox_refused_default)): ApiError = ApiError(
+    status = status ?: 0,
+    code = code ?: "refused",
+    message = message ?: fallbackMessage,
+    correlationId = correlationId
+)

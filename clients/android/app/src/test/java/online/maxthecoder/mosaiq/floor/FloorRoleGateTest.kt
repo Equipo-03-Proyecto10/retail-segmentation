@@ -6,6 +6,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import online.maxthecoder.mosaiq.floor.auth.InMemoryTokenStore
+import online.maxthecoder.mosaiq.floor.auth.SessionEvents
 import online.maxthecoder.mosaiq.floor.auth.SessionRepository
 import online.maxthecoder.mosaiq.floor.auth.SessionResult
 import online.maxthecoder.mosaiq.floor.auth.Tokens
@@ -72,7 +73,7 @@ class FloorRoleGateTest {
     fun aProfileKeptByAnOlderBuildForARoleNoLongerServedOpensNothingOffline() = runBlocking {
         val tokens = InMemoryTokenStore(Tokens("access-1", "refresh-1"))
         val session = InMemorySessionStore().also { it.signedIn(Profile("A", "Demo A", "ANALYST")) }
-        val events = online.maxthecoder.mosaiq.floor.auth.SessionEvents()
+        val events = SessionEvents()
         val repository =
             SessionRepository(Network("http://127.0.0.1:9/", tokens, events, 2), tokens, "JVM test", session)
 
@@ -87,7 +88,7 @@ class FloorRoleGateTest {
     fun aKnownRoleKeptOfflineStillOpensTheFloor() = runBlocking {
         val tokens = InMemoryTokenStore(Tokens("access-1", "refresh-1"))
         val session = InMemorySessionStore().also { it.signedIn(Profile("A", "Demo A", "SALES_ASSOCIATE")) }
-        val events = online.maxthecoder.mosaiq.floor.auth.SessionEvents()
+        val events = SessionEvents()
         val repository =
             SessionRepository(Network("http://127.0.0.1:9/", tokens, events, 2), tokens, "JVM test", session)
 

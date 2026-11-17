@@ -217,7 +217,9 @@ def test_a_reference_is_checked_only_where_the_kind_has_it(workspace):
         workspace, sent["CAMPAIGN_EXPOSURE"] | {"customer_id": str(uuid.uuid4())}
     )
     assert nobody.get_json()["code"] == "unknown_customer"
-    closed = post(workspace, sent["NAVIGATION"] | {"store_id": 999999})
+    closed = post(
+        workspace, sent["NAVIGATION"] | {"store_id": 999999}, headers=workspace.admin
+    )
     assert closed.get_json()["code"] == "unknown_store"
 
 

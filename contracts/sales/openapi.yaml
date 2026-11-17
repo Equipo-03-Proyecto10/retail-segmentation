@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: sales-service
-  version: 1.6.0
+  version: 1.7.0
   description: >-
     Records a sale exactly once, all or nothing, and reads sales and the channel
     vocabulary back (RN-11 to RN-13, RN-37). A sale is never edited or deleted:
@@ -35,6 +35,12 @@ paths:
         `details`, with a zero-based index as in `lines[1].quantity`. The schema
         does not cap or constrain these values, so that the service answers with its
         own code.
+
+        Who may record where. `STORE_MANAGER` and `SALES_ASSOCIATE` work only in
+        their assigned stores: a sale for another store is 403 `forbidden_store`
+        (detail `store_id`, `other_store`), decided before the store is looked up,
+        so a caller learns nothing about stores it is not assigned to. `ADMIN` is
+        not confined (ADR-0060).
 
         Idempotency. The `Idempotency-Key` becomes `source_transaction_id =
         'svc-sales:' || lowercase(key)`. The service hashes the caller's `sub`, the
@@ -121,7 +127,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/StoreForbidden'
         '406':
           $ref: '#/components/responses/NotAcceptable'
         '409':
@@ -152,6 +158,12 @@ paths:
         outcome `REFUSED`. When that event cannot be recorded the read is 503
         `audit_unavailable` and returns no sales. A read without `customer_id`
         records nothing.
+
+        A caller confined to assigned stores (`STORE_MANAGER`) sees only those
+        stores' sales: without `store_id` the list is limited to them, a floor
+        user with no assignment gets an empty page, and a `store_id` outside the
+        assignment is 403 `forbidden_store`, with no sales (ADR-0060). `ADMIN`,
+        `ANALYST` and `MARKETING` are not confined.
       operationId: listSales
       x-mosaiq-roles:
         - ADMIN
@@ -191,7 +203,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/StoreForbidden'
         '406':
           $ref: '#/components/responses/NotAcceptable'
         '422':
@@ -206,7 +218,10 @@ paths:
       summary: Get one sale
       description: >-
         Returns the sale with its lines. Used for the phone's status check and for
-        the desktop read-back.
+        the desktop read-back. A caller confined to assigned stores
+        (`STORE_MANAGER`) reading a sale of another store gets 403
+        `forbidden_store` and no data (ADR-0060); `ADMIN`, `ANALYST` and
+        `MARKETING` are not confined.
       operationId: getSale
       x-mosaiq-roles:
         - ADMIN
@@ -241,7 +256,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/StoreForbidden'
         '404':
           $ref: '#/components/responses/SaleNotFound'
         '406':
@@ -2291,6 +2306,28 @@ components:
               externalValue: ./examples/invalid-query.xml
             invalid_pagination:
               externalValue: ./examples/invalid-pagination.xml
+    StoreForbidden:
+      description: '`forbidden_role` or `forbidden_store`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.json
+            forbidden_store:
+              externalValue: ./examples/forbidden-store-id.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            forbidden_role:
+              externalValue: ./examples/forbidden-role.xml
+            forbidden_store:
+              externalValue: ./examples/forbidden-store-id.xml
     ReversalForbidden:
       description: '`forbidden_role` or `forbidden_store`.'
       headers:

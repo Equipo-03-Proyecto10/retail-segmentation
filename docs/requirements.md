@@ -195,12 +195,12 @@ The web's matrix does not change.
 | Reads of recommendation decisions (`GET /v2/recommendation-decisions` and `/{decision_id}`) | `ADMIN`, `ANALYST`, `AUDITOR`, and `STORE_MANAGER` narrowed to decisions made at its assigned stores | A decision names a customer and a store, so it follows `segment.read` and ADR-0060's narrowing. `MARKETING` and the other floor roles read none. ADR-0067 left the exact roles to F24-03 |
 | Reads of customers and preference profiles | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR`, `LOYALTY_OFFICER` | Customers follow `segment.read` (ADR-0010, ADR-0023). `SALES_ASSOCIATE` reads a customer only through the floor view below |
 | Reads of segment assignments and segment migrations (assignments carry R, F and M scores) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR` | Segments and rules: read. ADR-0060 gives the scores to `STORE_MANAGER` alone among the floor roles |
-| Reads of sales, sale reversals and engagement events (each row names a customer) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR`, `SALES_ASSOCIATE`, `COMMERCIAL_SUPERVISOR` | Reports: read, narrowed to `segment.read` holders, which keeps `INVENTORY_PLANNER` out of customer data |
-| Engagement summaries (aggregates, no customer) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `INVENTORY_PLANNER`, `AUDITOR` | Reports: read |
+| Reads of sales, sale reversals and engagement events (each row names a customer) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR`, `SALES_ASSOCIATE`, `COMMERCIAL_SUPERVISOR` | Reports: read, narrowed to `segment.read` holders, which keeps `INVENTORY_PLANNER` out of customer data. A floor role reads only its assigned stores (F19-07) |
+| Engagement summaries (aggregates, no customer) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `INVENTORY_PLANNER`, `AUDITOR` | Reports: read. `STORE_MANAGER` summarizes only its assigned stores (F19-07) |
 | `POST /v1/capture-incidents` | `ADMIN`, `STORE_MANAGER`, `SALES_ASSOCIATE`, `LOYALTY_OFFICER`, `COMMERCIAL_SUPERVISOR`; a floor role only at its assigned stores, `ADMIN` at any | ADR-0071: the roles that queue a write report its final refusal. The reporter does not read incidents back |
 | Reads and reviews of capture incidents (`GET /v1/capture-incidents`, `GET /v1/capture-incidents/{incident_id}`, `POST /v1/capture-incidents/{incident_id}/reviews`) | `ADMIN`, and `COMMERCIAL_SUPERVISOR` at its assigned stores | ADR-0060 gives the supervisor capture incidents; ADR-0071 names the resource and narrows these to the caller's stores |
 | `GET /v1/capture-incident-summaries` | `ADMIN`, `COMMERCIAL_SUPERVISOR` | ADR-0071 |
-| Reads of check-ins (where a staff member was) | `ADMIN`, `STORE_MANAGER`, `AUDITOR` | New, and narrowed: staff location data |
+| Reads of check-ins (where a staff member was) | `ADMIN`, `STORE_MANAGER`, `AUDITOR` | New, and narrowed: staff location data. `STORE_MANAGER` reads only its assigned stores (F19-07), and a floor role records only at its assigned stores |
 | `POST /v1/customer-visits` | `ADMIN`, `STORE_MANAGER`, `SALES_ASSOCIATE`; the two floor roles only at their assigned stores | Record an authorized customer visit (ADR-0060, ADR-0066). Refused for a customer who has not granted `PROFILING`; `LOYALTY_OFFICER` and `COMMERCIAL_SUPERVISOR` do not record visits |
 | Reads of customer visits (`GET /v1/customer-visits`, `GET /v1/customer-visits/{visit_id}`) | `ADMIN`, `AUDITOR`, and `STORE_MANAGER`, `SALES_ASSOCIATE` narrowed to their assigned stores | A visit names a customer, so it follows the customer-named rows of ADR-0060 and is read by fewer roles than sales or engagement events: not `ANALYST`, `MARKETING`, `INVENTORY_PLANNER`, `LOYALTY_OFFICER` or `COMMERCIAL_SUPERVISOR`. No precise location is stored; a visit is kept 36 months (ADR-0066) |
 | Floor writes: `POST /v1/sales`; `POST /v1/customers` and `PATCH /v1/customers/{customer_id}`; `PUT /v1/preference-profiles/{customer_id}/preferred-channels` and `/interest-categories`; `POST /v1/check-ins`; `POST /v1/engagement-events` | `ADMIN`, `STORE_MANAGER` | New. `STORE_MANAGER` is a floor role (ADR-0041, following ADR-0023). The web still refuses these to `STORE_MANAGER` |
@@ -253,18 +253,29 @@ The web's matrix does not change.
   customer (sales and engagement events) follow `segment.read`, which keeps
   `INVENTORY_PLANNER` out of customer data. Check-ins, which record where a
   staff member was, are read by `ADMIN`, `STORE_MANAGER` and `AUDITOR` only.
-- No operation is narrowed to a store yet: `app_user` has no store
-  (ADR-0010). ADR-0060 narrows the four floor roles to their assigned stores;
-  the association is F19-05 and F19-06, the narrowing F19-07. Until then a
-  floor role's reads of sales and engagement events cover every store.
+- The four floor roles (`STORE_MANAGER`, `SALES_ASSOCIATE`, `LOYALTY_OFFICER`,
+  `COMMERCIAL_SUPERVISOR`) work only in their assigned stores (ADR-0060,
+  F19-07). Each service reads the assignment on every request from
+  `api_users.store_assignment_v1`, so a removal is refused from the next call.
+  The narrowed operations are recording, reading and listing sales and
+  reversals; recording, reading and listing engagement events and reading
+  engagement summaries; recording, reading and listing check-ins; and the
+  capture incidents and customer visits listed above. Another store's row is
+  403 `forbidden_store` in JSON and XML, a list with no `store_id` returns only
+  the caller's stores, and a floor user with no assignment works in no store.
+  `ADMIN` and every role that is not a floor role are not confined. Stock
+  levels, catalogs, customers, segments and recommendations are not narrowed,
+  because ADR-0060 says a seller may offer what another store holds and a
+  customer belongs to no store.
 - ADR-0060's floor roles (F19-04) are listed only on operations that exist.
   Three of its rows wait for the work that makes them safe:
   `SALES_ASSOCIATE` reads a customer only through the floor view
   (F21-13, F21-14), never the full representation, which carries email,
   phone and preferred channels; the two floor
   roles read segment assignments once their R, F and M scores can be left
-  out; and engagement summaries and reads of check-ins gain floor roles with
-  the narrowing. Sale reversals, loyalty cards, active promotions, KPI
+  out. Engagement summaries and reads of check-ins keep their roles: ADR-0060
+  adds no floor role to them, so `STORE_MANAGER` is the one floor role they
+  narrow. Sale reversals, loyalty cards, active promotions, KPI
   reports and store assignments list them already; customer visits and
   consent gain them when they are written.
 - `INVENTORY_PLANNER` changes `inventory` only through a stock movement

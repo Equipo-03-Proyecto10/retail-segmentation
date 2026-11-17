@@ -28,7 +28,7 @@ from mosaiq_kit import (
 
 import redis
 
-from . import audit, imports, reversal, store
+from . import audit, imports, reversal, scope, store
 from .salerules import (
     constraint as _constraint,
 )
@@ -238,6 +238,14 @@ def create_app(*, start_relay: bool | None = None) -> Flask:
         assert principal is not None
         sub = str(principal["sub"])
         body = kit.body
+        # ADR-0060: a floor role records a sale only at an assigned store, read
+        # now, before a replay can answer for a store the caller has lost.
+        with kit.db.connection() as connection:
+            scope.require_store(
+                connection,
+                principal,
+                body["store_id"],
+            )
         occurred_at, lines = validate_sale_rules(body)
         digest = _canonical(body, occurred_at, lines, sub)
         source_id = "svc-sales:" + key
@@ -314,12 +322,17 @@ def create_app(*, start_relay: bool | None = None) -> Flask:
         # A read naming one customer is a logged read: its HISTORY_READ is
         # recorded in the read's own transaction, before any row is returned.
         with kit.db.transaction() as connection:
+            # A store the caller is confined away from is a 403 (recorded as a
+            # refused history read when a customer is named), and with no store
+            # named a floor role sees only its own stores.
+            stores = scope.readable_stores(connection, kit.principal, store_id)
             if customer_id is not None:
                 audit.record_history_read(connection, kit.principal, customer_id)
             sales, total = store.list_sales(
                 connection,
                 customer_id=customer_id,
                 store_id=store_id,
+                store_ids=stores,
                 occurred_from=occurred_from,
                 occurred_to=occurred_to,
                 limit=kit.size,
@@ -339,6 +352,13 @@ def create_app(*, start_relay: bool | None = None) -> Flask:
     def get_sale(sale_id: int) -> Representation:
         with kit.db.connection() as connection:
             sale = store.get_sale(connection, sale_id)
+            if sale is not None:
+                scope.require_store(
+                    connection,
+                    kit.principal,
+                    sale["store_id"],
+                    what="sale",
+                )
         if sale is None:
             raise ApiError(404, "sale_not_found", f"Sale {sale_id} was not found.")
         return Representation("Sale", sale)
@@ -371,6 +391,18 @@ def create_app(*, start_relay: bool | None = None) -> Flask:
         # the kit's own 403 before anything else is looked at.
         if body["kind"] == "RETURN" and principal.get("role") == reversal.FLOOR_ROLE:
             raise reversal.forbidden_role()
+        with kit.db.connection() as connection:
+            held_at = connection.execute(
+                "SELECT store_id FROM public.transaction WHERE transaction_id = %s",
+                (body["sale_id"],),
+            ).fetchone()
+            if held_at is not None:
+                scope.require_store(
+                    connection,
+                    principal,
+                    held_at[0],
+                    what="sale",
+                )
         key = _idempotency_key()
         request_body = reversal.validate(body)
         digest = reversal.canonical(request_body, sub)
@@ -468,11 +500,13 @@ def create_app(*, start_relay: bool | None = None) -> Flask:
                 "after_to",
             )
         with kit.db.connection() as connection:
+            stores = scope.readable_stores(connection, kit.principal, store_id)
             found, total = store.list_reversals(
                 connection,
                 sale_id=sale_id,
                 customer_id=customer_id,
                 store_id=store_id,
+                store_ids=stores,
                 kind=kind,
                 recorded_from=recorded_from,
                 recorded_to=recorded_to,
@@ -493,6 +527,13 @@ def create_app(*, start_relay: bool | None = None) -> Flask:
     def get_sale_reversal(reversal_id: int) -> Representation:
         with kit.db.connection() as connection:
             found = store.get_reversal(connection, reversal_id)
+            if found is not None:
+                scope.require_store(
+                    connection,
+                    kit.principal,
+                    found["store_id"],
+                    what="reversal",
+                )
         if found is None:
             raise ApiError(
                 404,

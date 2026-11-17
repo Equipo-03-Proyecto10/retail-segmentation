@@ -43,6 +43,7 @@ from .incidents import (
 )
 from .live import LiveCounters
 from .refs import (
+    FLOOR_ROLES,
     assigned_stores,
     check_references,
     check_store,
@@ -233,6 +234,13 @@ def create_app(
         if customer_id is not None:
             customer_id = customer_id.lower()
         with kit.db.connection() as connection:
+            # ADR-0060: a floor role records an event only at an assigned
+            # store. It is refused before the store is looked up, so a store
+            # that is not the caller's is a 403 whether or not it exists.
+            if confined():
+                require_assigned_store(
+                    connection, str(kit.principal["sub"]), body["store_id"]
+                )
             check_references(
                 connection, body["store_id"], body.get("product_id"), customer_id
             )
@@ -294,8 +302,11 @@ def create_app(
                 )
             query["type"] = kind
         store_id = query_integer("store_id")
+        allowed = event_stores(store_id)
         if store_id is not None:
             query["store_id"] = store_id
+        elif allowed is not None:
+            query["store_id"] = {"$in": allowed}
         customer_id = request.args.get("customer_id")
         if customer_id is not None:
             if not _UUID.fullmatch(customer_id):
@@ -333,6 +344,7 @@ def create_app(
         document = store.get(str(event_id), VERSIONS[version][0])
         if document is None:
             raise ApiError(404, "event_not_found", f"Event {event_id} was not found.")
+        event_stores(document["store_id"])
         return event_representation(document, version=version)
 
     def void_event(version: str, event_id: Any) -> Representation:
@@ -365,6 +377,7 @@ def create_app(
         if first is not None and last is not None and last < first:
             raise invalid_query("to is before from.", "to", "before_from")
         store_id = query_integer("store_id")
+        allowed = event_stores(store_id)
         today = datetime.now(UTC).date()
         groups = None
         if store_id is not None and first == today and last == today:
@@ -376,6 +389,7 @@ def create_app(
                 last.isoformat() if last else None,
                 store_id,
                 kinds,
+                allowed if store_id is None else None,
             )
         return Representation(
             "EngagementSummary",
@@ -429,6 +443,19 @@ def create_app(
                 require_assigned_store(connection, str(kit.principal["sub"]), store_id)
                 return [store_id]
             return assigned_stores(connection, str(kit.principal["sub"]))
+
+    def confined() -> bool:
+        return kit.principal["role"] in FLOOR_ROLES
+
+    def event_stores(store_id: int | None = None) -> list[int] | None:
+        """The stores an event read may cover (ADR-0060, F19-07).
+
+        None for a role that is not confined. A confined caller naming a store
+        that is not theirs is refused with 403 `forbidden_store`; naming none,
+        it is limited to its stores, read from the view for this request alone.
+        """
+
+        return stores_for_request(store_id) if confined() else None
 
     def report_incident() -> Representation:
         body = kit.body

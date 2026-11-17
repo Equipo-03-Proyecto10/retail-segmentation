@@ -100,7 +100,34 @@ impl TestStore {
                 .await
                 .unwrap();
         }
-        Self { id }
+        let store = Self { id };
+        // The seed's manager works here, as every older case assumes (ADR-0060).
+        store.assign(owner, STORE_MANAGER).await;
+        store
+    }
+
+    /// `user` is assigned to this store (a no-op when already).
+    pub async fn assign(&self, owner: &Client, user: &str) {
+        owner
+            .execute(
+                "INSERT INTO users.store_assignment (user_id, store_id) \
+                 VALUES ($1::text::uuid, $2) ON CONFLICT DO NOTHING",
+                &[&user, &self.id],
+            )
+            .await
+            .unwrap();
+    }
+
+    /// `user` is no longer assigned to this store.
+    pub async fn unassign(&self, owner: &Client, user: &str) {
+        owner
+            .execute(
+                "DELETE FROM users.store_assignment \
+                 WHERE user_id = $1::text::uuid AND store_id = $2",
+                &[&user, &self.id],
+            )
+            .await
+            .unwrap();
     }
 
     pub async fn deactivate(&self, owner: &Client) {
@@ -125,6 +152,13 @@ impl TestStore {
         owner
             .execute(
                 "DELETE FROM checkins.store_check_in WHERE store_id = $1",
+                &[&self.id],
+            )
+            .await
+            .unwrap();
+        owner
+            .execute(
+                "DELETE FROM users.store_assignment WHERE store_id = $1",
                 &[&self.id],
             )
             .await

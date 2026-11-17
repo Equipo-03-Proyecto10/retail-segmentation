@@ -70,7 +70,9 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Consumes | `api_models.published_version_v1` | model-registry (the model version published at the frame instant) |
 | Consumes | `api_sales.net_purchase_line_v1` | sales (conversions and revenue, net of reversals) |
 | Consumes | `api_sales.purchase_line_v1` | sales (the date and the origin of a sale that was reversed in full, which the net view no longer lists; F25-11) |
-| Consumes | The campaign's audience, eligibility and exclusions as a versioned view | campaigns (F25-03, F25-04): required, not contracted yet |
+| Consumes | `api_campaigns.campaign_target_v1` | campaigns (the target label, status and eligibility rules of the campaign; #1051) |
+| Consumes | `api_campaigns.campaign_excluded_customer_v1` | campaigns (the customers a campaign excludes by name; #1051) |
+| Consumes | `api_campaigns.campaign_excluded_label_v1` | campaigns (the labels a campaign excludes; #1051) |
 | Consumes | `PERSONALIZATION` and `MARKETING_CONTACT` decisions and channel restrictions as of an instant | customer-preferences (F21-17): required, not contracted yet |
 
 The contract invents no column of a view that is not contracted. Each producer's story fixes its columns and adds the grant row for `svc_experiments` to `contracts/db/grants.csv`; the two views this service publishes are fixed by the stories that implement them.

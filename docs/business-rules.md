@@ -1502,10 +1502,10 @@ recorded visit is the same visit, and the stored visit is returned unchanged. A
 visit is kept 36 months from `occurred_at`; after that it stops naming the
 customer and keeps its store, time and campaign.
 
-**Enforced:** check-ins-service (planned), ADR-0034, ADR-0046 and ADR-0066 — the
+**Enforced:** check-ins-service, ADR-0034, ADR-0046 and ADR-0066 — the
 service checks the code through `api_customers.resolve_loyalty_code_v1` and the
 consent through `api_preferences.consent_state_v1` on every write, and the table
-that F21-23 creates holds no coordinate column. · #800
+holds no coordinate column. · #801
 
 ### RN-73 — A customer's consent and restrictions change only by an appended, attributed decision, and a reader that cannot read them treats the purpose as withdrawn
 A customer's consent is recorded per purpose (`PERSONALIZATION`,

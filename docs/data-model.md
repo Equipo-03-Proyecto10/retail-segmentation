@@ -547,7 +547,8 @@ without copying account attributes. Deactivation or a role change does not
 delete the fact (RN-04); `api_users.store_assignment_v1` filters inactive and
 non-store-bound users when deciding what currently grants access.
 
-The check-ins boundary (ADR-0046, F14-26) adds two relations, both in 4NF:
+The check-ins boundary (ADR-0046, F14-26, F21-23) adds three relations, all in
+4NF:
 - **`checkins.store_check_in`** has two candidate keys: `check_in_id` and the
   phone's `client_check_in_id`. Each determines every other column.
   - There is no `verified` column. The automatic verdict depends on `reason`
@@ -565,6 +566,20 @@ The check-ins boundary (ADR-0046, F14-26) adds two relations, both in 4NF:
   review, and `check_in_id` relates it to its check-in. Keeping reviews in the
   check-in row would need either repeating columns (not 1NF) or updating that
   row, which RN-56 forbids.
+- **`checkins.customer_visit`** is the separate RN-72 fact that one customer
+  visited one store at one time, optionally in relation to one campaign.
+  `visit_id` determines the customer, store, campaign, occurrence time,
+  recording time and recording user, so every non-trivial functional
+  dependency has a candidate key as determinant. A campaign is optional but
+  single-valued; visits are not stored as a repeated group on the customer,
+  store or campaign. The relation therefore has no independent multivalued
+  dependency and is in 4NF. The loyalty code is an input used only through
+  `api_customers.resolve_loyalty_code_v1`; retaining it would duplicate an
+  identifier owned by customers and is deliberately not a column. Coordinates
+  and device or network identifiers are not facts of an authorized visit and
+  are likewise absent. `customer_id` alone becomes nullable after the 36-month
+  retention period so aggregate store/time/campaign facts can remain without
+  naming a person.
 
 The recommendations boundary (ADR-0067, ADR-0046, F24-05) adds four relations,
 all in 4NF. They keep the explanation of each recommendation the service served:
@@ -1255,6 +1270,24 @@ effective `verified` are computed on read.
 
 A check-in's effective verdict is its latest review's `verified`, by
 `reviewed_at`. Reviews are appended and never changed.
+
+#### `checkins.customer_visit`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `visit_id` | `UUID` | NN | PK; default `gen_random_uuid()` | Authorized visit identifier |
+| `customer_id` | `UUID` | yes | FK → `public.customer`, `ON DELETE RESTRICT` | Resolved customer; null after the 36-month retention period |
+| `store_id` | `SMALLINT` | NN | FK → `public.store`, `ON DELETE RESTRICT` | Store visited |
+| `campaign_id` | `INTEGER` | yes | CHECK `> 0`; existence checked through `api_campaigns.campaign_ref_v1` | Optional campaign attribution |
+| `occurred_at` | `TIMESTAMPTZ` | NN | indexed with customer/store | Time of the visit |
+| `recorded_at` | `TIMESTAMPTZ` | NN | default `now()` | Server recording time |
+| `recorded_by` | `UUID` | NN | FK → `public.app_user`, `ON DELETE RESTRICT` | Token subject that recorded the visit |
+
+The table contains no loyalty code, card id, position, accuracy, address,
+device or network identifier. `svc_checkins` receives only `SELECT` and
+`INSERT`; the service serializes each customer/store pair with advisory lock
+296001 before deciding whether a post is within the strict two-hour duplicate
+window.
 
 #### `recommendations.recommendation_decision`
 
@@ -2072,10 +2105,12 @@ keeps relay state in `segments_events`.
 The products boundary owns `products` for `product_status`, `product_attribute`,
 `product_barcode` and `product_relation`, and publishes `api_products.product_ref_v1`
 and `api_products.product_relation_v1`.
-The check-ins boundary owns `checkins` for `store_check_in` and
-`check_in_review`. It has no contract schema and no outbox, because nothing
+The check-ins boundary owns `checkins` for `store_check_in`,
+`check_in_review` and `customer_visit`. It has no contract schema and no outbox, because nothing
 reads or consumes check-ins but its own service. It reads store locations
-through `api_stores.store_directory_v1`.
+through `api_stores.store_directory_v1`; visits additionally resolve loyalty
+codes through `api_customers`, read profiling consent through
+`api_preferences`, and validate campaign identity through `api_campaigns`.
 The customers boundary owns `customers.loyalty_card` and publishes only the
 single-code resolver `api_customers.resolve_loyalty_code_v1`; consumers cannot
 enumerate codes or read the table.

@@ -115,6 +115,8 @@ svc_recommendations,api_preferences.restriction_v1,SELECT
 svc_campaigns,api_preferences,USAGE
 svc_campaigns,api_preferences.consent_state_v1,SELECT
 svc_campaigns,api_preferences.restriction_v1,SELECT
+svc_checkins,api_preferences,USAGE
+svc_checkins,api_preferences.consent_state_v1,SELECT
 svc_recommendations,api_preferences,USAGE
 svc_recommendations,api_preferences.interest_category_v1,SELECT
 svc_categories,public.category,SELECT
@@ -213,6 +215,12 @@ svc_checkins,checkins.store_check_in,SELECT
 svc_checkins,checkins.store_check_in,INSERT
 svc_checkins,checkins.check_in_review,SELECT
 svc_checkins,checkins.check_in_review,INSERT
+svc_checkins,checkins.customer_visit,SELECT
+svc_checkins,checkins.customer_visit,INSERT
+svc_checkins,api_campaigns,USAGE
+svc_checkins,api_campaigns.campaign_ref_v1,SELECT
+svc_campaigns,api_campaigns,USAGE
+svc_campaigns,api_campaigns.campaign_ref_v1,SELECT
 svc_engagement,api_stores,USAGE
 svc_engagement,api_stores.store_directory_v1,SELECT
 svc_users,public.app_user,SELECT

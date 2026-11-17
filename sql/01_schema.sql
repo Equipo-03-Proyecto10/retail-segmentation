@@ -2642,11 +2642,13 @@ GRANT USAGE ON SCHEMA api_sales, api_products TO svc_preferences;
 GRANT SELECT ON api_sales.net_purchase_line_v1 TO svc_preferences;
 GRANT SELECT ON api_products.product_ref_v1 TO svc_preferences;
 
-GRANT USAGE ON SCHEMA api_preferences TO svc_preferences, svc_recommendations, svc_campaigns;
+GRANT USAGE ON SCHEMA api_preferences
+    TO svc_preferences, svc_recommendations, svc_campaigns, svc_checkins;
 GRANT SELECT ON api_preferences.interest_category_v1 TO svc_preferences, svc_recommendations;
 -- The readers named by contracts/db/api_preferences.consent_state.v1.md and
 -- restriction.v1.md whose roles exist; rfm-engine's follows with its role.
-GRANT SELECT ON api_preferences.consent_state_v1 TO svc_preferences, svc_recommendations, svc_campaigns;
+GRANT SELECT ON api_preferences.consent_state_v1
+    TO svc_preferences, svc_recommendations, svc_campaigns, svc_checkins;
 GRANT SELECT ON api_preferences.restriction_v1 TO svc_preferences, svc_recommendations, svc_campaigns;
 -- END BOUNDARY customer-preferences
 
@@ -3807,11 +3809,63 @@ CREATE INDEX IF NOT EXISTS store_check_in_user_occurred
 CREATE INDEX IF NOT EXISTS check_in_review_check_in_reviewed
     ON checkins.check_in_review (check_in_id, reviewed_at);
 
+-- F21-23 (#801, RN-72): an authorized customer visit is a customer fact,
+-- separate from the staff location fact above. It deliberately has no
+-- loyalty-code, card, coordinate, accuracy, address, device or network column.
+-- campaign_id is checked through api_campaigns.campaign_ref_v1 before insert;
+-- there is no cross-boundary foreign key to campaigns' base table.
+CREATE TABLE IF NOT EXISTS checkins.customer_visit (
+    visit_id UUID NOT NULL DEFAULT gen_random_uuid(),
+    customer_id UUID,
+    store_id SMALLINT NOT NULL,
+    campaign_id INTEGER,
+    occurred_at TIMESTAMPTZ NOT NULL,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    recorded_by UUID NOT NULL
+);
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.customer_visit'::regclass
+      AND conname = 'customer_visit_pkey'
+) THEN ALTER TABLE checkins.customer_visit ADD CONSTRAINT customer_visit_pkey
+        PRIMARY KEY (visit_id); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.customer_visit'::regclass
+      AND conname = 'customer_visit_customer_id_fkey'
+) THEN ALTER TABLE checkins.customer_visit ADD CONSTRAINT customer_visit_customer_id_fkey
+        FOREIGN KEY (customer_id) REFERENCES public.customer(customer_id)
+        ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.customer_visit'::regclass
+      AND conname = 'customer_visit_store_id_fkey'
+) THEN ALTER TABLE checkins.customer_visit ADD CONSTRAINT customer_visit_store_id_fkey
+        FOREIGN KEY (store_id) REFERENCES public.store(store_id)
+        ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.customer_visit'::regclass
+      AND conname = 'customer_visit_campaign_id_check'
+) THEN ALTER TABLE checkins.customer_visit ADD CONSTRAINT customer_visit_campaign_id_check
+        CHECK (campaign_id > 0); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.customer_visit'::regclass
+      AND conname = 'customer_visit_recorded_by_fkey'
+) THEN ALTER TABLE checkins.customer_visit ADD CONSTRAINT customer_visit_recorded_by_fkey
+        FOREIGN KEY (recorded_by) REFERENCES public.app_user(user_id)
+        ON DELETE RESTRICT; END IF; END $$;
+CREATE INDEX IF NOT EXISTS customer_visit_customer_store_occurred
+    ON checkins.customer_visit (customer_id, store_id, occurred_at)
+    WHERE customer_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS customer_visit_store_occurred
+    ON checkins.customer_visit (store_id, occurred_at DESC, visit_id);
+CREATE INDEX IF NOT EXISTS customer_visit_campaign_occurred
+    ON checkins.customer_visit (campaign_id, occurred_at DESC)
+    WHERE campaign_id IS NOT NULL;
+
 -- Append-only: SELECT and INSERT, never UPDATE or DELETE (RN-56). The store
 -- locations come from api_stores.store_directory_v1, granted in the stores
 -- section.
 GRANT USAGE ON SCHEMA checkins TO svc_checkins;
-GRANT SELECT, INSERT ON checkins.store_check_in, checkins.check_in_review TO svc_checkins;
+GRANT SELECT, INSERT ON checkins.store_check_in, checkins.check_in_review,
+    checkins.customer_visit TO svc_checkins;
 -- END BOUNDARY check-ins
 
 -- BEGIN BOUNDARY campaigns
@@ -3825,6 +3879,20 @@ GRANT SELECT, INSERT ON checkins.store_check_in, checkins.check_in_review TO svc
 -- service's writes cannot lose the web's. Idempotent: an operator re-applies it.
 CREATE SCHEMA IF NOT EXISTS campaigns;
 REVOKE ALL ON SCHEMA campaigns FROM PUBLIC;
+
+-- BEGIN F21-23 campaign reference view
+-- contracts/db/api_campaigns.campaign_ref.v1.md. This isolated block is kept
+-- apart from campaigns' F25 changes so either part can be merged and re-applied.
+CREATE SCHEMA IF NOT EXISTS api_campaigns;
+REVOKE ALL ON SCHEMA api_campaigns FROM PUBLIC;
+CREATE OR REPLACE VIEW api_campaigns.campaign_ref_v1
+WITH (security_invoker = off) AS
+SELECT campaign_id
+FROM public.campaign;
+REVOKE ALL ON api_campaigns.campaign_ref_v1 FROM PUBLIC;
+GRANT USAGE ON SCHEMA api_campaigns TO svc_campaigns, svc_checkins;
+GRANT SELECT ON api_campaigns.campaign_ref_v1 TO svc_campaigns, svc_checkins;
+-- END F21-23 campaign reference view
 
 -- Each of the first three is one fact of a campaign, so a row exists exactly when
 -- the fact was written: an absent row is "no cap", "no budget", "no rules". The

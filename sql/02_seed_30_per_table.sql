@@ -870,6 +870,29 @@ INSERT INTO campaigns.campaign_excluded_label (campaign_id, label_code)
 SELECT n, (ARRAY['CHAMPION','LOYAL','POTENTIAL','AT_RISK','HIBERNATING','LOST'])[1+((n+1)%6)]
 FROM generate_series(1,30) n;
 
+-- ---------- checkins.customer_visit (30, consent-authorized customers) ----------
+-- Every seeded customer has a latest PROFILING decision of GRANTED above.
+-- Visit n uses that customer and store n, and even visits name campaign n.
+-- The seed demonstrates the consent rule instead of bypassing it; no loyalty
+-- code is copied from customers.loyalty_card into this table.
+INSERT INTO checkins.customer_visit
+    (visit_id, customer_id, store_id, campaign_id, occurred_at, recorded_at, recorded_by)
+SELECT ('80808080-8080-4080-8080-' || lpad(n::text, 12, '0'))::uuid,
+       c.customer_id,
+       n::smallint,
+       CASE WHEN n % 2 = 0 THEN n END,
+       now() - make_interval(days => n),
+       now() - make_interval(days => n) + interval '2 seconds',
+       '11111111-1111-1111-1111-000000000001'::uuid
+FROM generate_series(1, 30) AS n
+JOIN public.customer AS c
+  ON c.customer_id = ('00000000-0000-0000-0000-' || lpad(n::text, 12, '0'))::uuid
+JOIN api_preferences.consent_state_v1 AS consent
+  ON consent.customer_id = c.customer_id
+ AND consent.purpose = 'PROFILING'
+ AND consent.decision = 'GRANTED'
+ORDER BY n;
+
 -- ---------- experiment (30) ----------
 -- Every seeded experiment is synthetic (ADR-0019): none may claim OBSERVED,
 -- which would show its figures as real results without the Synthetic label

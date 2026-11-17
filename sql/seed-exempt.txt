@@ -149,3 +149,8 @@ experiments.experiment_plan
 experiments.experiment_frame_member
 experiments.experiment_frame_exclusion
 experiments.experiment_flag
+
+# experiments.exposure_notice is runtime projection state. Rows exist only as
+# experimentation consumes RECORDED and VOIDED notices from engagement's
+# stream; seeding them would invent floor observations that never occurred.
+experiments.exposure_notice

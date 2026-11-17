@@ -4751,9 +4751,38 @@ REVOKE ALL ON SCHEMA experiments FROM PUBLIC;
 CREATE SCHEMA IF NOT EXISTS api_experiments;
 REVOKE ALL ON SCHEMA api_experiments FROM PUBLIC;
 GRANT USAGE ON SCHEMA experiments, api_experiments TO svc_experiments;
+
+-- Real floor exposures arrive from engagement's at-least-once stream (F25-10,
+-- ADR-0075). The source event id is nullable because the frozen web still
+-- writes exposures directly; for projected events it is the durable
+-- idempotency key. The partial unique index makes a relay duplicate harmless.
+ALTER TABLE public.experiment_exposure
+    ADD COLUMN IF NOT EXISTS source_event_id UUID;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_experiment_exposure_source_event
+    ON public.experiment_exposure (source_event_id)
+    WHERE source_event_id IS NOT NULL;
+
+-- A notice ledger keeps the projection append-only while allowing a VOIDED
+-- notice to remove a source exposure from service counts. It also remembers a
+-- void that arrives before RECORDED and a RECORDED event suppressed by RN-49's
+-- 60-second rule. One row per (source event, notice) makes every re-application
+-- converge without rewriting an assignment, exposure or conversion fact.
+CREATE TABLE IF NOT EXISTS experiments.exposure_notice (
+    source_event_id UUID NOT NULL,
+    notice         VARCHAR(10) NOT NULL CHECK (notice IN ('RECORDED', 'VOIDED')),
+    assignment_id  BIGINT REFERENCES public.experiment_assignment(assignment_id)
+                       ON DELETE CASCADE,
+    occurred_at    TIMESTAMPTZ NOT NULL,
+    disposition    VARCHAR(10) NOT NULL CHECK (
+        disposition IN ('EXPOSURE', 'REPEAT', 'CONTROL', 'OUTSIDE', 'VOIDED')
+    ),
+    PRIMARY KEY (source_event_id, notice)
+);
+REVOKE ALL ON experiments.exposure_notice FROM PUBLIC;
 GRANT SELECT, INSERT, UPDATE ON public.experiment, public.experiment_group TO svc_experiments;
 GRANT SELECT, INSERT ON public.experiment_assignment, public.experiment_exposure,
     public.experiment_conversion TO svc_experiments;
+GRANT SELECT, INSERT ON experiments.exposure_notice TO svc_experiments;
 -- Conversions (F25-11, ADR-0069): a conversion is a qualifying sale of an assigned
 -- customer, read net of reversals from the two views sales publishes. The gross view
 -- still names a sale that was fully reversed, which the net view no longer lists.

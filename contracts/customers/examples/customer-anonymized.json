@@ -1,0 +1,6 @@
+{
+  "code": "customer_anonymized",
+  "message": "The customer has been anonymized and accepts no change.",
+  "correlation_id": "corr-797-anon",
+  "details": []
+}

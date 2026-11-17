@@ -421,3 +421,11 @@ svc_models,models.model_version_feature,SELECT
 svc_models,models.model_version_feature,INSERT
 svc_models,models.model_publication,SELECT
 svc_models,models.run_version,SELECT
+svc_kpis,kpis,USAGE
+svc_kpis,api_kpis,USAGE
+svc_kpis,api_sales,USAGE
+svc_kpis,api_segments,USAGE
+svc_kpis,api_users,USAGE
+svc_kpis,api_sales.net_purchase_line_v1,SELECT
+svc_kpis,api_segments.current_label_v1,SELECT
+svc_kpis,api_users.store_assignment_v1,SELECT

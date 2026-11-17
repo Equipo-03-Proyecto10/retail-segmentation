@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: analytics-kpis-service
-  version: 1.1.0
+  version: 1.1.1
   description: >-
     Reports the commercial KPIs of the platform under their published
     definition, window and data origin, and only to the roles and stores
@@ -72,6 +72,11 @@ info:
     by their producers: `api_stock.stock_level_v1` and
     `api_products.product_ref_v1`. The story that implements it adds their
     grant rows for `svc_kpis` and names analytics-kpis as their consumer.
+
+
+    **Implemented so far.** The stand-up story (F26-02) serves `getNetSalesReport`
+    and `listKpiDefinitions`. Every other report is marked `x-mosaiq-status: planned`
+    (ADR-0073) until its own story removes the marker.
 security:
   - bearer: []
 paths:
@@ -156,6 +161,7 @@ paths:
       description: >-
         Spend (`spend`, definition version 1): the net amount, the customers who bought and the average spend per customer, grouped by any of `segment`, `store`, `channel` and `period`. Origin: `api_sales.net_purchase_line_v1`, and `api_segments.current_label_v1` for `segment`. A customer who bought in two stores is active once in each store and once in a total.
       operationId: getSpendReport
+      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -213,6 +219,7 @@ paths:
       description: >-
         Cohort retention (`retention`, definition version 1): for the customers whose first net purchase ever falls in a bucket, how many bought again in the next bucket. Rows are always cohorts, so `period` is always a dimension and `granularity` defaults to `month`. `store` and `channel` are those of the first purchase; the retained purchase may be anywhere. A cohort whose next bucket has not ended at `generated_at` reports no retained count and no rate. Origin: `api_sales.net_purchase_line_v1`, and `api_segments.current_label_v1` for `segment`.
       operationId: getRetentionReport
+      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -270,6 +277,7 @@ paths:
       description: >-
         Segment migrations (`migrations`, definition version 1): changes of a customer's segment label within one model version. A change across two versions is methodological (ADR-0064): it is counted in `methodological_changes`, never in `customers_migrated`, and `data_origin.spans_model_versions` is true when the window holds one. A row never mixes versions. `store` and `channel` are not dimensions of a migration. `segment_code` filters on the label entered. Origin: `api_segments.assignment_change_v1`. Because a migration has no store, store-scoped roles do not read it.
       operationId: getMigrationReport
+      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -324,6 +332,7 @@ paths:
       description: >-
         Conversion (`conversion`, definition version 1): of the customers exposed in a bucket, the share who bought within 7 days. `channel` is not a dimension of conversion, because an exposure carries no channel; asking for it is 422 `invalid_query` with `dimension_not_supported`. It is observational, never an effect; the effect of a campaign is `campaign-performance`. Origin: `api_recommendations.interaction_v1` (impressions) and `api_experiments.exposure_v1` (campaign exposures) for exposures, `api_sales.net_purchase_line_v1` for purchases, and `api_segments.current_label_v1` for `segment`. The response holds counts and no customer.
       operationId: getConversionReport
+      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -381,6 +390,7 @@ paths:
       description: >-
         Recommendation performance (`recommendation-performance`, definition version 1): impressions, clicks and purchases, each counted from its own origin and none derived from another. Origin: `api_recommendations.interaction_v1` for impressions and clicks, `api_recommendations.recommended_purchase_v1` for purchases, and `api_segments.current_label_v1` for `segment`. The response holds counts and no customer.
       operationId: getRecommendationPerformanceReport
+      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -438,6 +448,7 @@ paths:
       description: >-
         Campaign performance (`campaign-performance`, definition version 1): one row per campaign whose experiment's measurement window overlaps the range. Attributed sales are labelled `ATTRIBUTED` and the incremental effect `INCREMENTAL`, with its 95% interval in `lower` and `upper`; the two are never merged. A campaign without a control has attributed sales and no effect. No dimension groups it. Origin: `api_experiments.campaign_effect_v1`. A campaign has no store, so store-scoped roles do not read it.
       operationId: getCampaignPerformanceReport
+      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST

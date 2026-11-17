@@ -2103,6 +2103,13 @@ customers is a ninth boundary with a contract schema and no outbox:
 which returns identifiers only for an active code. It publishes no stream, so
 it has no `customers_events`.
 
+The analytics-kpis boundary (F26-02) owns no table, so it has no 4NF decision to
+record: it reads `api_sales.net_purchase_line_v1`, `api_segments.current_label_v1`
+and `api_users.store_assignment_v1` and nothing else. ADR-0059 gives it the
+schemas `kpis` and `api_kpis`; they are created empty, and the role may not
+create an object in either, so a table of its own would need its own story and
+its own entry here.
+
 Each schema is created by its boundary's own section of `sql/01_schema.sql`;
 none exists until that boundary's story lands. `retail_app` has USAGE on
 `public` only, and the verification block asserts it.

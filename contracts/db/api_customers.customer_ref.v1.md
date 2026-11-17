@@ -33,7 +33,8 @@ a consumer re-reads this view and never trusts the event for state.
 ## Consumers
 
 - **sales** reads `customer_id` and `registered_on` to validate a sale's
-  customer and date.
+  customer and date, and `anonymized` to refuse a new sale for an anonymized
+  customer with `anonymized_customer` (#1061).
 - **customer-preferences**, **segments**, **recommendations** and
   **engagement** read `customer_id` to validate or enumerate customer
   references.

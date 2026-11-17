@@ -8,7 +8,7 @@
 | Kind | PostgreSQL view |
 | Owning boundary | sales |
 | Producer | sales-service |
-| Consumers | recommendations, experimentation |
+| Consumers | recommendations, experimentation, customers |
 
 The view publishes one row for every sale line, whether the sale came through
 `POST /v1/sales` or through the web's CSV path. Both paths write the same

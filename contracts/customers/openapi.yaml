@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: customers-service
-  version: 1.7.1
+  version: 1.8.0
   description: >-
     Registers, searches, reads and corrects customers under RN-08. Customers
     are never deleted through services; a mistaken registration is corrected
@@ -369,6 +369,73 @@ paths:
           $ref: '#/components/responses/UnsupportedMediaType'
         '422':
           $ref: '#/components/responses/LookupValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/customers/retention-candidates:
+    get:
+      tags: [Customers]
+      operationId: listRetentionCandidates
+      summary: List the customers whose retention has expired
+      description: >-
+        The list ADR-0066 section 3 asks for: the customers an administrator
+        may anonymize with `RETENTION_EXPIRED`, because they have had no sale
+        and no visit for 36 months. The administrator decides each one with
+        `PUT /v1/customers/{customer_id}/anonymization`; this read rewrites
+        nothing, records nothing and announces nothing.
+
+
+        A candidate is a customer that is not anonymized and whose
+        `last_activity_on` falls before `inactive_before`. `last_activity_on`
+        is the latest of the customer's `registered_on`, the date of its latest
+        sale and the date of its latest visit, each date taken in UTC. The
+        registration date counts so that a customer registered less than 36
+        months ago, with no sale or visit yet, is not a candidate.
+        `inactive_before` is the UTC date of `as_of` minus 36 months, and
+        `as_of` is the server's time when the read starts; every page of one
+        read is computed against its own `as_of`. Sales are read from
+        `api_sales.purchase_line_v1`, whatever path recorded them, and visits
+        from `api_checkins.customer_last_visit_v1`. A visit whose customer
+        reference has been removed no longer counts.
+
+
+        Candidates are ordered by `last_activity_on`, oldest first, then by
+        `customer_id`. An item carries no name, email or phone; the
+        administrator reads a candidate with `GET /v1/customers/{customer_id}`.
+      x-mosaiq-roles: [ADMIN]
+      x-mosaiq-status: planned
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of retention candidates.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetentionCandidates'
+              examples:
+                retention_candidates:
+                  externalValue: ./examples/list-retention-candidates.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/RetentionCandidates'
+              examples:
+                retention_candidates:
+                  externalValue: ./examples/list-retention-candidates.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/CustomerListValidation'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -1194,6 +1261,58 @@ components:
           description: The instant the identity was removed, as the first request set it.
       xml:
         name: Anonymization
+        namespace: https://mosaiq.maxthecoder.online/xml/customers/v1
+    RetentionCandidate:
+      type: object
+      additionalProperties: false
+      required: [customer_id, registered_on, last_sale_at, last_visit_at, last_activity_on]
+      properties:
+        customer_id:
+          type: string
+          format: uuid
+        registered_on:
+          type: string
+          format: date
+        last_sale_at:
+          type: [string, 'null']
+          format: date-time
+          description: The customer's latest sale, or null when it has none.
+        last_visit_at:
+          type: [string, 'null']
+          format: date-time
+          description: The customer's latest visit, or null when it has none.
+        last_activity_on:
+          type: string
+          format: date
+          description: >-
+            The latest of `registered_on` and the UTC dates of `last_sale_at`
+            and `last_visit_at`.
+      xml:
+        name: RetentionCandidate
+        namespace: https://mosaiq.maxthecoder.online/xml/customers/v1
+    RetentionCandidates:
+      type: object
+      additionalProperties: false
+      required: [as_of, inactive_before, candidates, page_info]
+      properties:
+        as_of:
+          type: string
+          format: date-time
+          description: The server's time when the read started.
+        inactive_before:
+          type: string
+          format: date
+          description: >-
+            The UTC date of `as_of` minus 36 months. A candidate's
+            `last_activity_on` falls before it.
+        candidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/RetentionCandidate'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: RetentionCandidates
         namespace: https://mosaiq.maxthecoder.online/xml/customers/v1
     LookupLoyaltyCardRequest:
       type: object

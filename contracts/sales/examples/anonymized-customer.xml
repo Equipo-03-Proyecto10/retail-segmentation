@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>anonymized_customer</code>
+  <message>The customer has been anonymized and cannot be named in a new sale.</message>
+  <correlation_id>corr-anonymized-customer</correlation_id>
+  <details>
+    <field>customer_id</field>
+    <code>anonymized</code>
+  </details>
+</Error>

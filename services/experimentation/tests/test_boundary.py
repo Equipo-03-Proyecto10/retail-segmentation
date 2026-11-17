@@ -17,6 +17,8 @@ GRANTS = Path(__file__).resolve().parents[3] / "contracts/db/grants.csv"
 EXPECTED = {
     ("experiments", "USAGE"),
     ("api_experiments", "USAGE"),
+    ("experiments.exposure_notice", "SELECT"),
+    ("experiments.exposure_notice", "INSERT"),
     ("api_audit", "USAGE"),
     (
         "api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,"

@@ -1868,6 +1868,7 @@ cannot be spoofed even though it is denormalized onto this table alongside
 | `exposure_id` | `BIGINT` | NN | PK, `GENERATED ALWAYS AS IDENTITY` | Exposure identifier |
 | `assignment_id` | `BIGINT` | NN | FK → `experiment_assignment`, `CASCADE` | The assignment exposed |
 | `exposed_at` | `TIMESTAMPTZ` | NN | default `now()` | When the exposure happened |
+| `source_event_id` | `UUID` | nullable, unique when present | Engagement event projected from the stream; null for legacy web writes |
 
 A later, separate event (ADR-0019): an assigned customer may remain
 unexposed, so exposure is never folded into the assignment row. More than
@@ -1877,6 +1878,20 @@ assignment to `experiment_group` and refuses `CONTROL`; keeping `kind` in its
 one existing relation avoids a duplicate value and leaves the 4NF
 decomposition unchanged. `retail_app` can select and insert exposure events but
 cannot update or delete them (ADR-0027).
+
+For real floor events, `source_event_id` is the engagement event identifier
+carried by `stream:engagement.v1.interaction_recorded`. Engagement admits one
+event per device `client_event_id`, and the partial unique index therefore
+makes the downstream exposure one-per-device-event while allowing the frozen
+web's existing rows to remain null. `experiments.exposure_notice` is the
+append-only projection ledger: its `(source_event_id, notice)` key records each
+`RECORDED` or `VOIDED` notice once, its nullable `assignment_id` distinguishes
+an accepted or suppressed assigned event from one outside the experiment, and
+`disposition` records `EXPOSURE`, `REPEAT`, `CONTROL`, `OUTSIDE`, or `VOIDED`.
+Counts exclude an exposure whose source has a `VOIDED` notice; neither the
+exposure nor its assignment is rewritten. These scalar facts depend on the
+whole notice key and have no independent multivalued dependency, so the
+relation is in 4NF.
 
 #### `experiment_conversion`
 

@@ -137,3 +137,8 @@ rfm.rule_set
 # the daily pass, creates a customer's row; a customer with none is `pending` in
 # api_rfm.current_profile_v1 (F22-05).
 rfm.customer_profile
+
+# experiments.exposure_notice is runtime projection state. Rows exist only as
+# experimentation consumes RECORDED and VOIDED notices from engagement's
+# stream; seeding them would invent floor observations that never occurred.
+experiments.exposure_notice

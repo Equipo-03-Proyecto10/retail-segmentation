@@ -397,6 +397,8 @@ svc_models,api_rfm,USAGE
 svc_models,api_rfm.current_profile_v1,SELECT
 svc_experiments,experiments,USAGE
 svc_experiments,api_experiments,USAGE
+svc_experiments,experiments.exposure_notice,SELECT
+svc_experiments,experiments.exposure_notice,INSERT
 svc_experiments,public.experiment,SELECT
 svc_experiments,public.experiment,INSERT
 svc_experiments,public.experiment,UPDATE

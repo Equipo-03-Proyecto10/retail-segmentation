@@ -22,6 +22,8 @@ them to apply its rule.
 - **customer-preferences**, **segments**, **recommendations** and
   **engagement** read `customer_id` to validate or enumerate customer
   references.
+- **campaigns** reads `customer_id` and `registered_on` to judge a campaign's
+  audience (registration cutoff, customers the reference does not list).
 
 Consumers name only the columns they read. Adding a column is therefore not a
 breaking change. Removing either v1 column, changing its PostgreSQL type or

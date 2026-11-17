@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: campaigns-service
-  version: 1.3.0
+  version: 1.3.1
   description: >-
     Owns the campaign lifecycle rule. A campaign is created as DRAFT, may be
     edited only while it remains DRAFT, and moves only DRAFT to ACTIVE or
@@ -362,7 +362,6 @@ paths:
   /v1/campaigns/{campaign_id}/audience:
     get:
       operationId: getCampaignAudience
-      x-mosaiq-status: planned
       summary: Get a campaign's audience
       description: >-
         Returns who the campaign targets: the campaign's `label_code`, an optional
@@ -418,7 +417,6 @@ paths:
           $ref: '#/components/responses/ProtectedDatabaseUnavailable'
     put:
       operationId: putCampaignAudience
-      x-mosaiq-status: planned
       summary: Replace a draft campaign's audience
       description: >-
         Replaces the audience's settings while the campaign is DRAFT. The only
@@ -490,7 +488,6 @@ paths:
   /v1/campaigns/{campaign_id}/audience/breakdown:
     get:
       operationId: getCampaignAudienceBreakdown
-      x-mosaiq-status: planned
       summary: Get a campaign's audience with its exclusions counted by reason
       description: >-
         Returns the audience `getCampaignAudience` counts, with the customers it
@@ -570,7 +567,6 @@ paths:
   /v1/campaigns/{campaign_id}/budget:
     get:
       operationId: getCampaignBudget
-      x-mosaiq-status: planned
       summary: Get a campaign's budget
       description: >-
         Returns the campaign's budget. `total_amount` is the most the campaign may
@@ -618,7 +614,6 @@ paths:
           $ref: '#/components/responses/ProtectedDatabaseUnavailable'
     put:
       operationId: putCampaignBudget
-      x-mosaiq-status: planned
       summary: Replace a draft campaign's budget
       description: >-
         Replaces the budget while the campaign is DRAFT. Both amounts are
@@ -690,7 +685,6 @@ paths:
   /v1/campaigns/{campaign_id}/eligibility-rules:
     get:
       operationId: getCampaignEligibilityRules
-      x-mosaiq-status: planned
       summary: Get a campaign's eligibility rules
       description: >-
         Returns the conditions a customer in the audience must satisfy. A customer
@@ -744,7 +738,6 @@ paths:
           $ref: '#/components/responses/ProtectedDatabaseUnavailable'
     put:
       operationId: putCampaignEligibilityRules
-      x-mosaiq-status: planned
       summary: Replace a draft campaign's eligibility rules
       description: >-
         Replaces the rules while the campaign is DRAFT. An empty body removes
@@ -815,7 +808,6 @@ paths:
   /v1/campaigns/{campaign_id}/exclusions:
     get:
       operationId: getCampaignExclusions
-      x-mosaiq-status: planned
       summary: Get a campaign's exclusions
       description: >-
         Returns who is removed from the audience: customers named by id, and the
@@ -862,7 +854,6 @@ paths:
           $ref: '#/components/responses/ProtectedDatabaseUnavailable'
     put:
       operationId: putCampaignExclusions
-      x-mosaiq-status: planned
       summary: Replace a draft campaign's exclusions
       description: >-
         Replaces both lists while the campaign is DRAFT, with at most 1000

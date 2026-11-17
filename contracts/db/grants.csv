@@ -325,6 +325,28 @@ svc_audit_trail,audit_events,USAGE
 svc_audit_trail,audit_events.domain_event,SELECT
 svc_campaigns,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
 svc_campaigns,api_audit,USAGE
+svc_campaigns,campaigns,USAGE
+svc_campaigns,campaigns.campaign_audience,SELECT
+svc_campaigns,campaigns.campaign_audience,INSERT
+svc_campaigns,campaigns.campaign_audience,DELETE
+svc_campaigns,campaigns.campaign_budget,SELECT
+svc_campaigns,campaigns.campaign_budget,INSERT
+svc_campaigns,campaigns.campaign_budget,DELETE
+svc_campaigns,campaigns.campaign_eligibility,SELECT
+svc_campaigns,campaigns.campaign_eligibility,INSERT
+svc_campaigns,campaigns.campaign_eligibility,DELETE
+svc_campaigns,campaigns.campaign_excluded_customer,SELECT
+svc_campaigns,campaigns.campaign_excluded_customer,INSERT
+svc_campaigns,campaigns.campaign_excluded_customer,DELETE
+svc_campaigns,campaigns.campaign_excluded_label,SELECT
+svc_campaigns,campaigns.campaign_excluded_label,INSERT
+svc_campaigns,campaigns.campaign_excluded_label,DELETE
+svc_campaigns,api_segments,USAGE
+svc_campaigns,api_segments.current_label_v1,SELECT
+svc_campaigns,api_customers,USAGE
+svc_campaigns,api_customers.customer_ref_v1,SELECT
+svc_campaigns,api_sales,USAGE
+svc_campaigns,api_sales.net_purchase_line_v1,SELECT
 svc_customers,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
 svc_customers,api_audit,USAGE
 svc_preferences,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE

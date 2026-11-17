@@ -3773,11 +3773,86 @@ GRANT SELECT, INSERT ON checkins.store_check_in, checkins.check_in_review TO svc
 -- END BOUNDARY check-ins
 
 -- BEGIN BOUNDARY campaigns
--- campaigns-service (F14-28, ADR-0034, ADR-0045): the campaign state machine,
--- ported from web/services/campaigns.py and pinned to it by golden fixtures.
--- It adds no table and no api_ object. The table, its seed and its audit
--- trigger stay as they are, and the web remains a legacy co-writer (E-09).
--- Idempotent: an operator re-applies it.
+-- campaigns-service (F14-28, F25-04, ADR-0034, ADR-0045, ADR-0046): the campaign
+-- state machine, ported from web/services/campaigns.py and pinned to it by golden
+-- fixtures, and what a campaign may reach and spend: its audience cap, eligibility
+-- rules, exclusions and budget. The campaign table, its seed and its audit trigger
+-- stay as they are, and the web remains a legacy co-writer (E-09). The five new
+-- tables live in the `campaigns` schema and hold only the facts the web has no
+-- column for, so a write of the web's to `campaign` cannot lose them and the
+-- service's writes cannot lose the web's. Idempotent: an operator re-applies it.
+CREATE SCHEMA IF NOT EXISTS campaigns;
+REVOKE ALL ON SCHEMA campaigns FROM PUBLIC;
+
+-- Each of the first three is one fact of a campaign, so a row exists exactly when
+-- the fact was written: an absent row is "no cap", "no budget", "no rules". The
+-- contract replaces a resource whole while the campaign is DRAFT, so the service
+-- deletes the row and inserts the new one in one transaction. docs/data-model.md
+-- holds the normal-form note.
+CREATE TABLE IF NOT EXISTS campaigns.campaign_audience (
+    campaign_id   integer PRIMARY KEY
+        REFERENCES public.campaign (campaign_id) ON DELETE CASCADE,
+    max_customers integer NOT NULL
+        CONSTRAINT campaign_audience_max_customers_check
+        CHECK (max_customers BETWEEN 1 AND 10000000)
+);
+
+CREATE TABLE IF NOT EXISTS campaigns.campaign_budget (
+    campaign_id      integer PRIMARY KEY
+        REFERENCES public.campaign (campaign_id) ON DELETE CASCADE,
+    total_amount     numeric(12,2)
+        CONSTRAINT campaign_budget_total_amount_check CHECK (total_amount >= 0),
+    per_customer_cap numeric(12,2)
+        CONSTRAINT campaign_budget_per_customer_cap_check CHECK (per_customer_cap >= 0),
+    CONSTRAINT campaign_budget_present
+        CHECK (total_amount IS NOT NULL OR per_customer_cap IS NOT NULL),
+    CONSTRAINT campaign_budget_cap_within_total
+        CHECK (total_amount IS NULL OR per_customer_cap IS NULL
+               OR per_customer_cap <= total_amount)
+);
+
+-- min_purchases and purchase_window_days are one rule, given together or not at
+-- all; registered_on_or_before is the other.
+CREATE TABLE IF NOT EXISTS campaigns.campaign_eligibility (
+    campaign_id             integer PRIMARY KEY
+        REFERENCES public.campaign (campaign_id) ON DELETE CASCADE,
+    registered_on_or_before date,
+    min_purchases           integer
+        CONSTRAINT campaign_eligibility_min_purchases_check
+        CHECK (min_purchases BETWEEN 1 AND 1000),
+    purchase_window_days    integer
+        CONSTRAINT campaign_eligibility_window_check
+        CHECK (purchase_window_days BETWEEN 1 AND 731),
+    CONSTRAINT campaign_eligibility_present
+        CHECK (registered_on_or_before IS NOT NULL OR min_purchases IS NOT NULL),
+    CONSTRAINT campaign_eligibility_purchase_rule
+        CHECK ((min_purchases IS NULL) = (purchase_window_days IS NULL))
+);
+
+-- The two lists are independent multivalued facts of a campaign: who is named and
+-- which labels are removed. One row per member, never an array and never a row per
+-- combination (4NF). The foreign keys are checked as the parents' owner (E-11), so
+-- svc_campaigns needs no privilege on customer or segment_label, and a refusal is
+-- unknown_customer or unknown_label by constraint name.
+CREATE TABLE IF NOT EXISTS campaigns.campaign_excluded_customer (
+    campaign_id integer NOT NULL
+        REFERENCES public.campaign (campaign_id) ON DELETE CASCADE,
+    customer_id uuid NOT NULL
+        CONSTRAINT campaign_excluded_customer_customer_id_fkey
+        REFERENCES public.customer (customer_id) ON DELETE CASCADE,
+    PRIMARY KEY (campaign_id, customer_id)
+);
+CREATE INDEX IF NOT EXISTS campaign_excluded_customer_customer
+    ON campaigns.campaign_excluded_customer (customer_id);
+
+CREATE TABLE IF NOT EXISTS campaigns.campaign_excluded_label (
+    campaign_id integer NOT NULL
+        REFERENCES public.campaign (campaign_id) ON DELETE CASCADE,
+    label_code  varchar(40) NOT NULL
+        CONSTRAINT campaign_excluded_label_label_code_fkey
+        REFERENCES public.segment_label (label_code) ON DELETE RESTRICT,
+    PRIMARY KEY (campaign_id, label_code)
+);
 
 -- E-13: RN-24 reads the web-only experiment tables, which no service may
 -- read. A service session (session_user, which SET ROLE cannot change) that
@@ -3836,6 +3911,19 @@ GRANT SELECT ON public.experiment, public.experiment_group TO definer_guard;
 -- foreign key into segment_label is checked as the parent's owner (E-11), so
 -- it needs no privilege there.
 GRANT SELECT, INSERT, UPDATE ON public.campaign TO svc_campaigns;
+
+-- The service replaces what it wrote while the campaign is DRAFT: it reads, deletes
+-- and inserts, and changes no row in place. It computes an audience from the
+-- published views of segments, customers, preferences (granted in their own
+-- sections) and sales. Each is a row of contracts/db/grants.csv.
+GRANT USAGE ON SCHEMA campaigns TO svc_campaigns;
+GRANT SELECT, INSERT, DELETE ON campaigns.campaign_audience, campaigns.campaign_budget,
+    campaigns.campaign_eligibility, campaigns.campaign_excluded_customer,
+    campaigns.campaign_excluded_label TO svc_campaigns;
+GRANT USAGE ON SCHEMA api_segments, api_customers, api_sales TO svc_campaigns;
+GRANT SELECT ON api_segments.current_label_v1 TO svc_campaigns;
+GRANT SELECT ON api_customers.customer_ref_v1 TO svc_campaigns;
+GRANT SELECT ON api_sales.net_purchase_line_v1 TO svc_campaigns;
 -- END BOUNDARY campaigns
 
 -- BEGIN BOUNDARY audit-trail

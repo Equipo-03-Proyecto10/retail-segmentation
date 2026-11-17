@@ -345,6 +345,18 @@ conversion row stores one event. Apart from the guarded key dependencies just
 explained, none carries two independent multivalued facts, so no further 4NF
 decomposition is needed.
 
+A campaign's limits (F25-04) are kept in five tables of the `campaigns` schema
+for the reason that rule gives. A campaign's excluded customers and its excluded
+labels are two independent multivalued facts of one campaign, so each has its
+own relation with one row per member, and neither is a list in a column or one
+relation holding both. The cap, the budget and the eligibility rules are three
+single-valued groups that change for different reasons, so they are three
+relations keyed by `campaign_id`. A row exists when its fact was written, so
+there is no NULL that means "no limit" next to one that means "not yet set".
+The two minimum-purchase columns are present together or not at all, and a
+per-customer amount never exceeds the total, both as `CHECK` constraints. They
+are separate from `campaign` because the frozen web still writes that table.
+
 `notification` and `notification_recipient` (AN-04, ADR-0047) split an event from
 the people it was written for, for the same reason `segmentation_run` and
 `customer_segment_history` do. One relation holding the event beside each

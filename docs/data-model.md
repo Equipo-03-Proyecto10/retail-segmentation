@@ -479,6 +479,15 @@ argument is about 3NF (BCNF where every determinant is a key) and 4NF.
     `transaction.channel_id`, a different fact. The customer's `name` and
     `email` are contact data, not copies of the linked account's login
     identity, so `user_id → app_user.email` copies nothing into this row.
+  - *Anonymization marker (F21-19, ADR-0066 section 3):* `anonymized_at` is one
+    more attribute of the same key, `customer_id → anonymized_at`: when, if ever,
+    the identity was removed in place. It is single-valued and independent of
+    the contact data it supersedes, so it adds no multivalued dependency, and
+    it is not split into its own relation because a customer is anonymized at
+    most once and the marker must travel with the row it describes: the CHECK
+    `customer_anonymized_identity_check` ties it to the identity columns in the
+    same row (a marked row holds the placeholder name and no email, phone or
+    account link), which a separate table could not enforce without a trigger.
   - *Why it is in 4NF:* the preferences are the two relations split off above,
     and there is no current-segment column (§3), so no multivalued fact is
     left in the row.
@@ -547,7 +556,8 @@ without copying account attributes. Deactivation or a role change does not
 delete the fact (RN-04); `api_users.store_assignment_v1` filters inactive and
 non-store-bound users when deciding what currently grants access.
 
-The check-ins boundary (ADR-0046, F14-26) adds two relations, both in 4NF:
+The check-ins boundary (ADR-0046, F14-26, F21-23) adds three relations, all in
+4NF:
 - **`checkins.store_check_in`** has two candidate keys: `check_in_id` and the
   phone's `client_check_in_id`. Each determines every other column.
   - There is no `verified` column. The automatic verdict depends on `reason`
@@ -565,6 +575,48 @@ The check-ins boundary (ADR-0046, F14-26) adds two relations, both in 4NF:
   review, and `check_in_id` relates it to its check-in. Keeping reviews in the
   check-in row would need either repeating columns (not 1NF) or updating that
   row, which RN-56 forbids.
+- **`checkins.customer_visit`** is the separate RN-72 fact that one customer
+  visited one store at one time, optionally in relation to one campaign.
+  `visit_id` determines the customer, store, campaign, occurrence time,
+  recording time and recording user, so every non-trivial functional
+  dependency has a candidate key as determinant. A campaign is optional but
+  single-valued; visits are not stored as a repeated group on the customer,
+  store or campaign. The relation therefore has no independent multivalued
+  dependency and is in 4NF. The loyalty code is an input used only through
+  `api_customers.resolve_loyalty_code_v1`; retaining it would duplicate an
+  identifier owned by customers and is deliberately not a column. Coordinates
+  and device or network identifiers are not facts of an authorized visit and
+  are likewise absent. `customer_id` alone becomes nullable after the 36-month
+  retention period so aggregate store/time/campaign facts can remain without
+  naming a person.
+
+The experimentation boundary (ADR-0068, ADR-0046, F25-09) adds four relations to the five
+experiment tables it took over, all in 4NF. They hold what a plan adds and exist only for an
+experiment planned through the service:
+- **`experiments.experiment_plan`** is keyed by `experiment_id`, which determines every other
+  column: the levels (`alpha`, `comparison_alpha`, `power`), the minimum detectable effect, the
+  baseline and its spread, the customers each arm needs, the smallest effect the frame can detect,
+  the settle days, the frame's instant, digest and label, the salt and who
+  planned it. They are fixed at planning against the data *then* (the baseline and the frame
+  cannot be recomputed from later sales and labels), so each is a fact of the plan and not a
+  function of current data. Four things are deliberately **not** columns because they are
+  derived: the design kind (whether a control arm exists), an arm's position (control first,
+  then by group id), the estimator and the secondary metric (functions of the primary metric,
+  which stays in `experiment.target_metric`), and the frame's size (the members counted). Storing
+  any of them would be a transitive dependency that a later write could contradict.
+- **`experiments.experiment_frame_member`** is the multivalued fact "this customer was eligible
+  at the frame instant": a row per customer, never an array, keyed by `(experiment_id,
+  customer_id)`.
+- **`experiments.experiment_frame_exclusion`** is the independent multivalued fact "this many
+  customers were removed for this reason": keyed by `(experiment_id, reason)` with the count as
+  its one dependent column. It is not folded into the plan row, which would repeat a column per
+  reason (not 1NF) and fix the list of reasons, which the contract leaves open.
+- **`experiments.experiment_flag`** is the second independent multivalued fact, the flags that
+  apply to the experiment, keyed by `(experiment_id, flag)`. The plan writes `UNDERPOWERED`; the
+  stories after it add the others.
+
+A plan is frozen: `svc_experiments` holds SELECT and INSERT only, and a trigger refuses an UPDATE
+or DELETE of a plan, a member or an exclusion from anyone.
 
 The recommendations boundary (ADR-0067, ADR-0046, F24-05) adds four relations,
 all in 4NF. They keep the explanation of each recommendation the service served:
@@ -959,6 +1011,9 @@ decision that matters is how a product's many-valued facts are split:
   delete of a run): `segmentation_run` does not change. A WEB_RUN
   version's source run is derived (the earliest linked run), not stored, so the
   two cannot disagree.
+  `api_models.run_version_v1` is its read-only projection for segments-service;
+  it exposes the same key, version and link time without duplicating a fact or
+  granting the consumer access to model-registry's table.
 
 ---
 
@@ -1255,6 +1310,68 @@ effective `verified` are computed on read.
 
 A check-in's effective verdict is its latest review's `verified`, by
 `reviewed_at`. Reviews are appended and never changed.
+
+#### `checkins.customer_visit`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `visit_id` | `UUID` | NN | PK; default `gen_random_uuid()` | Authorized visit identifier |
+| `customer_id` | `UUID` | yes | FK → `public.customer`, `ON DELETE RESTRICT` | Resolved customer; null after the 36-month retention period |
+| `store_id` | `SMALLINT` | NN | FK → `public.store`, `ON DELETE RESTRICT` | Store visited |
+| `campaign_id` | `INTEGER` | yes | CHECK `> 0`; existence checked through `api_campaigns.campaign_ref_v1` | Optional campaign attribution |
+| `occurred_at` | `TIMESTAMPTZ` | NN | indexed with customer/store | Time of the visit |
+| `recorded_at` | `TIMESTAMPTZ` | NN | default `now()` | Server recording time |
+| `recorded_by` | `UUID` | NN | FK → `public.app_user`, `ON DELETE RESTRICT` | Token subject that recorded the visit |
+
+The table contains no loyalty code, card id, position, accuracy, address,
+device or network identifier. `svc_checkins` receives only `SELECT` and
+`INSERT`; the service serializes each customer/store pair with advisory lock
+296001 before deciding whether a post is within the strict two-hour duplicate
+window.
+
+#### `experiments.experiment_plan`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `experiment_id` | `INTEGER` | NN | PK; FK → `public.experiment`, `ON DELETE RESTRICT` | The experiment this plan froze |
+| `alpha` | `NUMERIC(7,6)` | NN | CHECK in (0, 1) | The two-sided, family-wise level |
+| `comparison_alpha` | `NUMERIC(12,10)` | NN | CHECK in (0, `alpha`] | The level of each comparison: `alpha` divided by the treatments compared with the control (Bonferroni) |
+| `power` | `NUMERIC(7,6)` | NN | CHECK in (0, 1) | The power the size was computed for |
+| `minimum_detectable_effect` | `NUMERIC(14,6)` | NN | CHECK `> 0` | An absolute difference in the intent-to-treat metric |
+| `baseline` | `DOUBLE PRECISION` | NN | CHECK `>= 0` | The metric among the frame's own customers over the period of equal length before the frame instant |
+| `baseline_std_dev` | `DOUBLE PRECISION` | yes | CHECK `>= 0` | Its sample standard deviation; set for revenue per customer, null for conversion |
+| `required_per_arm` | `INTEGER` | NN | CHECK `>= 1` | The customers each arm needs |
+| `smallest_detectable_effect` | `DOUBLE PRECISION` | yes | CHECK `> 0` | The smallest effect the frame can detect; null when no customer is available per arm |
+| `settle_days` | `SMALLINT` | NN | CHECK `>= 0` | Days between the window's close and the analysis instant; 7 |
+| `frame_taken_at` | `TIMESTAMPTZ` | NN | — | The instant of the frame, read from the PostgreSQL clock |
+| `frame_digest` | `CHAR(64)` | NN | CHECK 64 lowercase hex | SHA-256 over the sorted customer ids and the criteria as canonical JSON |
+| `label_code` | `VARCHAR(40)` | NN | FK → `public.segment_label`, `ON DELETE RESTRICT` | The campaign's target label when the frame was taken |
+| `model_version_id` | `BIGINT` | yes | CHECK `>= 1` | The segmentation model version published at the frame instant; null until `api_models.published_version_v1` exists |
+| `salt` | `CHAR(64)` | NN | CHECK 64 lowercase hex | 32 bytes from the operating system's CSPRNG, drawn once after the frame was fixed |
+| `planned_at` | `TIMESTAMPTZ` | NN | — | When the plan was frozen |
+| `planned_by` | `UUID` | NN | FK → `public.app_user`, `ON DELETE RESTRICT` | The caller: the token's `sub` |
+
+#### `experiments.experiment_frame_member`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `experiment_id` | `INTEGER` | NN | PK part; FK → `public.experiment`, `ON DELETE RESTRICT` | The experiment |
+| `customer_id` | `UUID` | NN | PK part; FK → `public.customer`, `ON DELETE RESTRICT` | A customer eligible at the frame instant |
+
+#### `experiments.experiment_frame_exclusion`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `experiment_id` | `INTEGER` | NN | PK part; FK → `public.experiment`, `ON DELETE RESTRICT` | The experiment |
+| `reason` | `VARCHAR(40)` | NN | PK part; CHECK upper-case code | Why customers were removed (an open vocabulary) |
+| `removed` | `INTEGER` | NN | CHECK `>= 0` | How many customers it removed; each is counted once, under the first reason that applied |
+
+#### `experiments.experiment_flag`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `experiment_id` | `INTEGER` | NN | PK part; FK → `public.experiment`, `ON DELETE RESTRICT` | The experiment |
+| `flag` | `VARCHAR(30)` | NN | PK part; CHECK one of the four flags of the contract | A flag that applies to the experiment |
 
 #### `recommendations.recommendation_decision`
 
@@ -1589,6 +1706,20 @@ request, and it is not in `sql/seed-exempt.txt`.
 | `phone` | `VARCHAR(20)` | yes | — | Contact number |
 | `registration_channel_id` | `SMALLINT` | NN | FK → `channel`, `RESTRICT` | Where the customer was acquired |
 | `registered_on` | `DATE` | NN | default `CURRENT_DATE`; `CHECK <= CURRENT_DATE` (`customer_registered_not_future`) | Registration date |
+| `anonymized_at` | `TIMESTAMPTZ` | yes | `CHECK` `customer_anonymized_identity_check`: when set, `name = 'Anonymized customer'` and `email`, `phone` and `user_id` are null | When the identity was removed in place (F21-19); null for every other customer, and never null again once set |
+
+An anonymized row is final: `trg_customer_anonymized_is_final` refuses any later
+`UPDATE` for every writer, and `trg_loyalty_card_not_for_anonymized` refuses a
+new loyalty card. `trg_customers_capture_anonymized` writes one row of
+`customers_events.outbox` (key only, `stream:customers.v1.anonymized`) in the
+transaction that sets the marker. `customers.redact_audit_v1(uuid)` replaces the
+name, email and phone inside that customer's `audit_log` payloads with
+`[redacted]`; it runs as `definer_customers`, which may read the customer's
+marker and update those two payload columns and nothing else, so no `svc_*` role
+gains `UPDATE` on `audit_log` (ADR-0024). `fn_audit` applies the same redaction
+to every later entry of an anonymized customer. `customers_events.outbox` holds
+runtime relay state and is exempt from the 30-row seed (`sql/seed-exempt.txt`);
+no seeded customer is anonymized, because anonymization is final.
 
 There is no `current_segment_id` column. ADR-0004 called the mutable column
 the first delivery briefly carried a known limitation and predicted its
@@ -1868,6 +1999,7 @@ cannot be spoofed even though it is denormalized onto this table alongside
 | `exposure_id` | `BIGINT` | NN | PK, `GENERATED ALWAYS AS IDENTITY` | Exposure identifier |
 | `assignment_id` | `BIGINT` | NN | FK → `experiment_assignment`, `CASCADE` | The assignment exposed |
 | `exposed_at` | `TIMESTAMPTZ` | NN | default `now()` | When the exposure happened |
+| `source_event_id` | `UUID` | nullable, unique when present | Engagement event projected from the stream; null for legacy web writes |
 
 A later, separate event (ADR-0019): an assigned customer may remain
 unexposed, so exposure is never folded into the assignment row. More than
@@ -1877,6 +2009,20 @@ assignment to `experiment_group` and refuses `CONTROL`; keeping `kind` in its
 one existing relation avoids a duplicate value and leaves the 4NF
 decomposition unchanged. `retail_app` can select and insert exposure events but
 cannot update or delete them (ADR-0027).
+
+For real floor events, `source_event_id` is the engagement event identifier
+carried by `stream:engagement.v1.interaction_recorded`. Engagement admits one
+event per device `client_event_id`, and the partial unique index therefore
+makes the downstream exposure one-per-device-event while allowing the frozen
+web's existing rows to remain null. `experiments.exposure_notice` is the
+append-only projection ledger: its `(source_event_id, notice)` key records each
+`RECORDED` or `VOIDED` notice once, its nullable `assignment_id` distinguishes
+an accepted or suppressed assigned event from one outside the experiment, and
+`disposition` records `EXPOSURE`, `REPEAT`, `CONTROL`, `OUTSIDE`, or `VOIDED`.
+Counts exclude an exposure whose source has a `VOIDED` notice; neither the
+exposure nor its assignment is rewritten. These scalar facts depend on the
+whole notice key and have no independent multivalued dependency, so the
+relation is in 4NF.
 
 #### `experiment_conversion`
 
@@ -1992,7 +2138,7 @@ those too. Seeded with 32 rows covering every kind.
 
 #### `<suffix>_events.outbox`
 
-One table per boundary that publishes a stream (§4 lists the eight), created
+One table per boundary that publishes a stream, created
 from the outbox template in `sql/01_schema.sql`. Runtime events, not seed data,
 so each is exempt from the 30-row minimum by its schema-qualified name.
 
@@ -2072,10 +2218,12 @@ keeps relay state in `segments_events`.
 The products boundary owns `products` for `product_status`, `product_attribute`,
 `product_barcode` and `product_relation`, and publishes `api_products.product_ref_v1`
 and `api_products.product_relation_v1`.
-The check-ins boundary owns `checkins` for `store_check_in` and
-`check_in_review`. It has no contract schema and no outbox, because nothing
+The check-ins boundary owns `checkins` for `store_check_in`,
+`check_in_review` and `customer_visit`. It has no contract schema and no outbox, because nothing
 reads or consumes check-ins but its own service. It reads store locations
-through `api_stores.store_directory_v1`.
+through `api_stores.store_directory_v1`; visits additionally resolve loyalty
+codes through `api_customers`, read profiling consent through
+`api_preferences`, and validate campaign identity through `api_campaigns`.
 The customers boundary owns `customers.loyalty_card` and publishes only the
 single-code resolver `api_customers.resolve_loyalty_code_v1`; consumers cannot
 enumerate codes or read the table.
@@ -2102,6 +2250,13 @@ customers is a ninth boundary with a contract schema and no outbox:
 `customer`, `security_invoker = off`) and `resolve_loyalty_code_v1(text)`,
 which returns identifiers only for an active code. It publishes no stream, so
 it has no `customers_events`.
+
+The analytics-kpis boundary (F26-02) owns no table, so it has no 4NF decision to
+record: it reads `api_sales.net_purchase_line_v1`, `api_segments.current_label_v1`
+and `api_users.store_assignment_v1` and nothing else. ADR-0059 gives it the
+schemas `kpis` and `api_kpis`; they are created empty, and the role may not
+create an object in either, so a table of its own would need its own story and
+its own entry here.
 
 Each schema is created by its boundary's own section of `sql/01_schema.sql`;
 none exists until that boundary's story lands. `retail_app` has USAGE on

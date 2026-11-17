@@ -14,12 +14,13 @@ first key of a two-key lock.
 | 293001 | two keys: `293001`, `hashtext(source id)` | The `BEFORE INSERT` guard on `public.transaction` (BOUNDARY sales, ADR-0070 section 5) serializes the two paths that can load one file: it takes `pg_advisory_xact_lock(293001, hashtext(<bare source id>))` before it looks for the same id under the other path's spelling (`svc-sales:imp:<id>` against `<id>`), so two concurrent loads of one file cannot both pass. | Implemented in `sql/01_schema.sql` (F26-08). |
 | 294001 | two keys: `294001`, `hashtext(import_id::text)` | The sales import worker holds `pg_try_advisory_lock(294001, hashtext(import_id::text))` while it applies a chunk, so two workers never interleave one import and its rows are applied in file order (ADR-0070 section 3). A session-level lock on the worker's own connection. | Implemented in `services/sales/app/import_worker.py` (F26-08). |
 | 295001 | two keys: `295001`, `hashtext(customer_id::text)` | rfm-engine serializes the recomputations of one customer's profile: `pg_advisory_xact_lock(295001, hashtext(customer_id::text))`, taken before the customer's net purchases are read, so a recomputation never reads before an earlier one has written (ADR-0063). | Implemented in `services/rfm-engine/app/store.py` (F22-05). |
+| 296001 | two keys: `296001`, `hashtext(customer_id::text || ':' || store_id::text)` | check-ins serializes the duplicate-window decision for one customer and store: after every refusal, `recordCustomerVisit` takes the lock, finds the earliest stored visit strictly less than 7,200 seconds away, and inserts only when none matches. | Implemented in `services/check-ins/src/lib.rs` (F21-23). |
 
 The category hierarchy also uses the independently named lock
 `hashtext('category_hierarchy')` in `sql/01_schema.sql`; it does not consume a
 numeric key from this registry.
 
-The two-key forms of 290001, 290002, 293001, 294001 and 295001 do not overlap the
+The two-key forms of 290001, 290002, 293001, 294001, 295001 and 296001 do not overlap the
 one-key locks 221001, 222001, 272001 and 285001: PostgreSQL keeps one-key and
 two-key advisory locks in separate spaces, and no one-key lock may take any of
-those four values either.
+those six values either.

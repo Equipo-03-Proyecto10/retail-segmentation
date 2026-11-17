@@ -130,6 +130,21 @@ date is not in the future.
 lower-cases the address it writes and refuses a future date. **Verified** —
 `services/customers/tests/test_rules.py`.
 
+Retention ends in anonymization, never deletion (ADR-0066 section 3): an
+administrator anonymizes a customer in place, after a request or 36 months with
+no sale and no check-in. The name becomes `Anonymized customer`, the email, phone
+and account link are removed, the active loyalty card is revoked and the identity
+is redacted from the customer's audit entries, while the key, the sales, R, F and
+M and the segment history stay, so every figure still reconciles. It is
+irreversible and idempotent, and it is recorded as `CUSTOMER_ANONYMIZED` and
+`AUDIT_PAYLOAD_REDACTED` domain events naming the administrator.
+
+**Enforced:** `customer_anonymized_identity_check` (a marked row holds no
+identity), `trg_customer_anonymized_is_final` (a marked row never changes) and
+`trg_loyalty_card_not_for_anonymized`, for every writer; the service refuses a
+correction or a card with 409 `customer_anonymized`. **Verified** —
+`services/customers/tests/test_anonymization.py`.
+
 ### RN-09 — Deleting a sale removes its lines
 A sale line has no meaning without its sale.
 
@@ -1502,10 +1517,10 @@ recorded visit is the same visit, and the stored visit is returned unchanged. A
 visit is kept 36 months from `occurred_at`; after that it stops naming the
 customer and keeps its store, time and campaign.
 
-**Enforced:** check-ins-service (planned), ADR-0034, ADR-0046 and ADR-0066 — the
+**Enforced:** check-ins-service, ADR-0034, ADR-0046 and ADR-0066 — the
 service checks the code through `api_customers.resolve_loyalty_code_v1` and the
 consent through `api_preferences.consent_state_v1` on every write, and the table
-that F21-23 creates holds no coordinate column. · #800
+holds no coordinate column. · #801
 
 ### RN-73 — A customer's consent and restrictions change only by an appended, attributed decision, and a reader that cannot read them treats the purpose as withdrawn
 A customer's consent is recorded per purpose (`PERSONALIZATION`,

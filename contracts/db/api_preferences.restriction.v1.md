@@ -8,7 +8,7 @@
 | Kind | PostgreSQL view |
 | Owning boundary | customer-preferences |
 | Producer | customer-preferences-service |
-| Consumers | recommendations, campaigns |
+| Consumers | recommendations, campaigns, experimentation |
 
 The view publishes each customer's current restrictions, one row per customer and
 target: a row exists while the latest row of the append-only restriction log for

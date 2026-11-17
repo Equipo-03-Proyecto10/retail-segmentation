@@ -16,6 +16,8 @@ EXPECTED = (
     "user svc_experiments on {{password}} resetchannels -@all +@connection +@read"
     " +@write -@dangerous -scan -randomkey ~experiments:rl:* +waitaof"
     " (%R~pub:auth:v1:live:* +exists)"
+    " (~stream:engagement.v1.interaction_recorded +xreadgroup +xack"
+    " +xgroup|create +xpending +xclaim)"
 )
 USER = "svc_experiments_acltest"
 
@@ -59,6 +61,37 @@ def _dryrun(client: Any, *command: str) -> str:
         ("EXISTS", "pub:auth:v1:live:session"),
         ("INCR", "experiments:rl:actor:window"),
         ("EXPIRE", "experiments:rl:actor:window", "60"),
+        (
+            "XREADGROUP",
+            "GROUP",
+            "experimentation",
+            "c",
+            "STREAMS",
+            "stream:engagement.v1.interaction_recorded",
+            ">",
+        ),
+        (
+            "XGROUP",
+            "CREATE",
+            "stream:engagement.v1.interaction_recorded",
+            "experimentation",
+            "$",
+        ),
+        (
+            "XACK",
+            "stream:engagement.v1.interaction_recorded",
+            "experimentation",
+            "1-1",
+        ),
+        ("XPENDING", "stream:engagement.v1.interaction_recorded", "experimentation"),
+        (
+            "XCLAIM",
+            "stream:engagement.v1.interaction_recorded",
+            "experimentation",
+            "c",
+            "60000",
+            "1-1",
+        ),
     ],
 )
 def test_dryrun_allows_only_what_experimentation_needs(
@@ -73,6 +106,22 @@ def test_dryrun_allows_only_what_experimentation_needs(
         ("XADD", "stream:segments.v1.run_recorded", "*", "a", "b"),
         ("XADD", "stream:experiments.v1.anything", "*", "a", "b"),
         ("XADD", "stream:sales.v1.recorded", "*", "a", "b"),
+        ("XADD", "stream:engagement.v1.interaction_recorded", "*", "a", "b"),
+        (
+            "XGROUP",
+            "DESTROY",
+            "stream:engagement.v1.interaction_recorded",
+            "experimentation",
+        ),
+        (
+            "XREADGROUP",
+            "GROUP",
+            "experimentation",
+            "c",
+            "STREAMS",
+            "stream:sales.v1.recorded",
+            ">",
+        ),
         ("GET", "auth:session:x"),
         ("GET", "pub:auth:v1:live:session"),
         ("DEL", "pub:auth:v1:live:session"),

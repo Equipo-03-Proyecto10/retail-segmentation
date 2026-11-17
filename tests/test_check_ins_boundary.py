@@ -86,6 +86,8 @@ def test_check_ins_are_append_only_in_the_section_and_the_manifest() -> None:
         ("svc_checkins", "checkins.store_check_in", "INSERT"),
         ("svc_checkins", "checkins.check_in_review", "SELECT"),
         ("svc_checkins", "checkins.check_in_review", "INSERT"),
+        ("svc_checkins", "checkins.customer_visit", "SELECT"),
+        ("svc_checkins", "checkins.customer_visit", "INSERT"),
     }
 
 

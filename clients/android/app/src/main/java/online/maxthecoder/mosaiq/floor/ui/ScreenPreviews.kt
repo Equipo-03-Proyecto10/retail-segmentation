@@ -19,8 +19,10 @@ import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.tooling.preview.PreviewParameterProvider
 import java.time.Instant
 import java.time.ZoneId
+import online.maxthecoder.mosaiq.floor.auth.FloorAccess
 import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.net.Channel
+import online.maxthecoder.mosaiq.floor.net.CurrentAssignment
 import online.maxthecoder.mosaiq.floor.net.Customer
 import online.maxthecoder.mosaiq.floor.net.ErrorDetail
 import online.maxthecoder.mosaiq.floor.net.Product
@@ -318,7 +320,7 @@ private class InsightsStates : PreviewParameterProvider<InsightsState> {
             InsightsState(customerId = "c1", assignmentError = ApiError.unreachable(null)),
             InsightsState(
                 customerId = "c1",
-                assignment = online.maxthecoder.mosaiq.floor.net.CurrentAssignment("c1", "no_open_assignment"),
+                assignment = CurrentAssignment("c1", "no_open_assignment"),
                 recommendationsError = ApiError.unreachable(null)
             )
         )
@@ -340,15 +342,16 @@ private fun InsightsStatesDark(@PreviewParameter(InsightsStates::class) s: Insig
 // ---- The shell's bars ------------------------------------------------------------------------
 
 @Composable
-private fun ShellBars(dark: Boolean, pending: Int, selected: FloorLocation.Root) = MosaiqTheme(darkTheme = dark) {
-    Surface(color = MaterialTheme.colorScheme.background) {
-        Column(Modifier.fillMaxSize()) {
-            FloorTopBar(SessionState.SignedIn("Demo A", "STORE_MANAGER"), ChosenStore(1, "Centro"), {}, {})
-            Column(Modifier.weight(1f)) {}
-            FloorBottomBar(selected, pending) {}
+private fun ShellBars(dark: Boolean, pending: Int, selected: FloorLocation.Root, role: String = "STORE_MANAGER") =
+    MosaiqTheme(darkTheme = dark) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.fillMaxSize()) {
+                FloorTopBar(SessionState.SignedIn("Demo A", role), ChosenStore(1, "Centro"), {}, {})
+                Column(Modifier.weight(1f)) {}
+                FloorBottomBar(selected, pending, FloorAccess.sections(role)) {}
+            }
         }
     }
-}
 
 @Preview(name = "Shell, light", widthDp = WIDTH, heightDp = HEIGHT, showBackground = true)
 @Composable
@@ -357,6 +360,21 @@ private fun ShellLight() = ShellBars(false, pending = 3, selected = FloorLocatio
 @Preview(name = "Shell, dark", widthDp = WIDTH, heightDp = HEIGHT, showBackground = true)
 @Composable
 private fun ShellDark() = ShellBars(true, pending = 3, selected = FloorLocation.Outbox)
+
+/** One preview per profile (ADR-0060): the bottom navigation each role gets, on Check-in. */
+private class ProfileRoles : PreviewParameterProvider<String> {
+    override val values = FloorAccess.profiles.keys.asSequence()
+}
+
+@Preview(name = "Profile navigation, light", widthDp = WIDTH, heightDp = HEIGHT, showBackground = true)
+@Composable
+private fun ProfilesLight(@PreviewParameter(ProfileRoles::class) role: String) =
+    ShellBars(false, pending = 2, selected = FloorLocation.CheckIn, role = role)
+
+@Preview(name = "Profile navigation, dark", widthDp = WIDTH, heightDp = HEIGHT, showBackground = true)
+@Composable
+private fun ProfilesDark(@PreviewParameter(ProfileRoles::class) role: String) =
+    ShellBars(true, pending = 2, selected = FloorLocation.CheckIn, role = role)
 
 // ---- Snackbar --------------------------------------------------------------------------------
 

@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-PORTS = ("sales", "recommendations", "users", "campaigns")
+PORTS = ("sales", "recommendations", "users", "campaigns", "segments")
 
 
 def _cases(fixture: dict[str, Any]) -> dict[str, dict[str, Any]]:

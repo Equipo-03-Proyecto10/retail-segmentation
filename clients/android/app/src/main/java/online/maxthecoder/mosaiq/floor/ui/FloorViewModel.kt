@@ -2,7 +2,6 @@ package online.maxthecoder.mosaiq.floor.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,9 +14,11 @@ import kotlinx.coroutines.launch
 import online.maxthecoder.mosaiq.floor.AppGraph
 import online.maxthecoder.mosaiq.floor.AppText
 import online.maxthecoder.mosaiq.floor.R
+import online.maxthecoder.mosaiq.floor.net.Answer
 import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.net.CheckInResult
 import online.maxthecoder.mosaiq.floor.net.Store
+import online.maxthecoder.mosaiq.floor.net.call
 import online.maxthecoder.mosaiq.floor.net.json
 import online.maxthecoder.mosaiq.floor.net.totalPages
 import online.maxthecoder.mosaiq.floor.outbox.OutboxRow
@@ -67,35 +68,34 @@ class FloorViewModel(
     val open: StateFlow<List<OutboxRow>> =
         graph.outbox.observeOpen().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    /** The rows whose request is on the wire right now. */
+    val sending: StateFlow<Set<Long>> = graph.inFlight.ids
+
     val userId: StateFlow<String?> = graph.session.userId
 
     fun searchStores(city: String = stores.value.city, page: Int = 1) {
         stores.value = stores.value.copy(city = city, page = page, loading = true, error = null)
         viewModelScope.launch {
-            var failure: Exception? = null
+            // `call` answers transport failures and refusals; anything else is a defect, shown as unexpected.
             val answer =
                 try {
-                    graph.network.stores.listStores(active = true, city = city.trim().ifEmpty { null }, page = page)
-                } catch (unreachable: IOException) {
-                    null
+                    call {
+                        graph.network.stores.listStores(active = true, city = city.trim().ifEmpty { null }, page = page)
+                    }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (unexpected: Exception) {
-                    failure = unexpected
                     null
                 }
-            val body = answer?.body()
             stores.value =
-                when {
-                    failure != null -> stores.value.copy(loading = false, error = ApiError.unexpected())
-                    answer == null -> stores.value.copy(loading = false, error = ApiError.unreachable(null))
-                    !answer.isSuccessful || body == null ->
-                        stores.value.copy(loading = false, error = ApiError.from(answer))
-                    else ->
+                when (answer) {
+                    null -> stores.value.copy(loading = false, error = ApiError.unexpected())
+                    is Answer.Refused -> stores.value.copy(loading = false, error = answer.error)
+                    is Answer.Body ->
                         stores.value.copy(
                             loading = false,
-                            stores = body.stores,
-                            totalPages = totalPages(body.pageInfo.total, body.pageInfo.size)
+                            stores = answer.value.stores,
+                            totalPages = totalPages(answer.value.pageInfo.total, answer.value.pageInfo.size)
                         )
                 }
         }
@@ -129,6 +129,9 @@ class FloorViewModel(
         }
     }
 
+    /** Asks the queue to send what is waiting now; each row goes out as stored, so it cannot become a second write. */
+    fun sendNow() = graph.kick()
+
     fun dismiss(row: OutboxRow) {
         viewModelScope.launch { graph.outbox.dismiss(row.id) }
     }
@@ -138,7 +141,7 @@ class FloorViewModel(
 
     companion object {
         /** Shown when the stored answer to a check-in cannot be read. */
-        const val UNREADABLE_ANSWER = "Check-in sent. The answer could not be read."
+        val UNREADABLE_ANSWER: String get() = AppText.get(R.string.checkin_answer_unreadable)
 
         /** The server's answer to a check-in, in plain words, once it has arrived. */
         fun resultOf(row: OutboxRow?): String? {

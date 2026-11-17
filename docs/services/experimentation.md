@@ -31,7 +31,7 @@
 
 ## Endpoints
 
-Every business operation below is `planned` except the two on conversions (F25-11) and the empty list of attributions. Reads are for the roles that read campaigns; the writes are for the roles that write them (see the [service operation policy](../requirements.md#service-operation-policy-distributed-stage)).
+Every business operation below is `planned` except planning and reading an experiment (F25-09), the two on conversions (F25-11) and the empty list of attributions. Reads are for the roles that read campaigns; the writes are for the roles that write them (see the [service operation policy](../requirements.md#service-operation-policy-distributed-stage)).
 
 | Method | Path | Purpose | Roles (`x-mosaiq-roles`) |
 |---|---|---|---|
@@ -58,7 +58,8 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Object | Kind | Access | Notes |
 |---|---|---|---|
 | `experiment`, `experiment_group`, `experiment_assignment`, `experiment_exposure`, `experiment_conversion` | Tables the web writes today | S, W (E-09) | F25-07 (#838) took ownership: `svc_experiments` holds SELECT, INSERT and UPDATE on `experiment` and `experiment_group`, and SELECT and INSERT only on assignment, exposure and conversion, as `retail_app` does (ADR-0026, ADR-0027, ADR-0050). Neither role deletes. The web keeps writing them. Experiments assigned under the web's earlier shuffle are served as assignment rule `V0`: readable, with no frame, salt or key, and not called verified |
-| The plan (frame, salt, design values), the stored checks, the exposure projection, the attributions and the stored primary results | Tables (`experiments`) | S | Named and justified (4NF) by their own stories: F25-08 (#839), F25-09 (#840), F25-10 (#841), F25-12 (#843), F25-13 (#844). The contract fixes only what the endpoints serve |
+| `experiments.experiment_plan`, `experiment_frame_member`, `experiment_frame_exclusion`, `experiment_flag` | Tables (`experiments`) | S | F25-09 (#840): the plan, frozen: design values, the stored frame (one row per customer), what each reason removed, and the flags. SELECT and INSERT only, and a trigger refuses any change. An experiment with no plan row is assignment rule V0 (the web's earlier shuffle). Justified in `docs/data-model.md` |
+| The stored checks, the exposure projection, the attributions and the stored primary results | Tables (`experiments`) | S | Named and justified (4NF) by their own stories: F25-08 (#839), F25-10 (#841), F25-12 (#843), F25-13 (#844). The contract fixes only what the endpoints serve |
 
 ## Database contracts
 
@@ -70,10 +71,17 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Consumes | `api_models.published_version_v1` | model-registry (the model version published at the frame instant) |
 | Consumes | `api_sales.net_purchase_line_v1` | sales (conversions and revenue, net of reversals) |
 | Consumes | `api_sales.purchase_line_v1` | sales (the date and the origin of a sale that was reversed in full, which the net view no longer lists; F25-11) |
-| Consumes | The campaign's audience, eligibility and exclusions as a versioned view | campaigns (F25-03, F25-04): required, not contracted yet |
-| Consumes | `PERSONALIZATION` and `MARKETING_CONTACT` decisions and channel restrictions as of an instant | customer-preferences (F21-17): required, not contracted yet |
+| Consumes | `api_campaigns.campaign_target_v1` | campaigns (the target label, status and eligibility rules of the campaign; #1051) |
+| Consumes | `api_campaigns.campaign_excluded_customer_v1` | campaigns (the customers a campaign excludes by name; #1051) |
+| Consumes | `api_campaigns.campaign_excluded_label_v1` | campaigns (the labels a campaign excludes; #1051) |
+| Consumes | `api_preferences.consent_state_v1` | customer-preferences (`PERSONALIZATION` and `MARKETING_CONTACT`, current state at the frame instant: a purpose is granted only when its row says `GRANTED`) |
+| Consumes | `api_preferences.restriction_v1` | customer-preferences (a customer who restricted every channel is removed as `CHANNEL_RESTRICTED`; no campaign names one channel yet) |
+| Consumes | `api_customers.customer_ref_v1` | customers (who exists) |
+| Consumes | `api_sales.channel_v1` | sales (how many channels there are) |
 
 The contract invents no column of a view that is not contracted. Each producer's story fixes its columns and adds the grant row for `svc_experiments` to `contracts/db/grants.csv`; the two views this service publishes are fixed by the stories that implement them.
+
+**The plan (F25-09).** `POST /v1/experiments` runs in one transaction behind the advisory lock 222001 (the web's, so an experiment the web creates and a plan never allocate one id twice, and a plan always sees the frames committed before it). The frame is one SQL statement over the published views above, so it is one snapshot, and `T` is the PostgreSQL clock read in it. A customer is counted once, under the first reason that removed them (`CAMPAIGN_EXCLUSION`, `CAMPAIGN_ELIGIBILITY`, `NO_PERSONALIZATION_CONSENT`, `NO_MARKETING_CONTACT_CONSENT`, `CHANNEL_RESTRICTED`, `OVERLAPPING_EXPERIMENT`); `ANONYMIZED` and `INACTIVE` are decided by customers-service, which publishes neither yet. An experiment's period is its start to its analysis instant, or to `start + window + 7 days` before it is assigned. The baseline is the metric among the frame's own customers over the `window` days before `T`; the size is `app/sizing.py`, whose docstring states the formulas. `frame.model_version_id` is null until `api_models.published_version_v1` exists (#809).
 
 ## Events
 

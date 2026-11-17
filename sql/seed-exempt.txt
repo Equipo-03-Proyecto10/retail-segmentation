@@ -60,6 +60,11 @@ stores_events.outbox
 # seed's own preference rows pass through it once, as every writer's do (F14-16).
 preferences_events.outbox
 
+# customers-service relays an anonymization from here (F21-19, ADR-0066) and
+# purges relayed rows after seven days: runtime state, empty in a fresh
+# database. A seeded customer is not anonymized, because anonymization is final.
+customers_events.outbox
+
 # users-service relays access changes from here and purges them after seven
 # days: runtime state, empty in a fresh database, never seed data (F14-04).
 users_events.outbox
@@ -127,6 +132,10 @@ models.model_publication
 # fill it as the service writes profiles.
 rfm_events.outbox
 
+# model-registry's publication outbox is runtime relay state under ADR-0044;
+# committed publications create it and relayed rows are purged after seven days.
+models_events.outbox
+
 # rfm.rule_set: the one rule set rfm-engine starts with, the scoring the published
 # version of the web's last rule-based run froze (F22-05). A rule set is a
 # deliberate, immutable act of creation (F22-09), not a population: padding it
@@ -137,3 +146,20 @@ rfm.rule_set
 # the daily pass, creates a customer's row; a customer with none is `pending` in
 # api_rfm.current_profile_v1 (F22-05).
 rfm.customer_profile
+
+# experimentation's plan (F25-09, ADR-0068): a frozen plan exists only for an experiment
+# planned through the service, which draws its salt and takes its frame at one instant. The
+# thirty seeded experiments predate it: they are assignment rule V0, readable with no frame and
+# no salt, and a seeded plan for them would call an assignment the web shuffled recomputable.
+# Seeding thirty new experiments only to plan them would add experiments, conversions and
+# customers' assignments to every seeded report. Runtime facts, like a sale's reversal.
+experiments.experiment_plan
+# Frame members, the reasons that removed customers, and the flags: each hangs from a plan.
+experiments.experiment_frame_member
+experiments.experiment_frame_exclusion
+experiments.experiment_flag
+
+# experiments.exposure_notice is runtime projection state. Rows exist only as
+# experimentation consumes RECORDED and VOIDED notices from engagement's
+# stream; seeding them would invent floor observations that never occurred.
+experiments.exposure_notice

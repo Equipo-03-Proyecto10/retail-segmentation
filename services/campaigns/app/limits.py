@@ -97,9 +97,12 @@ PUT_EXCLUDED_LABEL = (
 # One pass over the customers who hold the campaign's label. Each is judged once
 # and counted under the first reason that applies, in the contract's order, so the
 # counts add up to the holders. The cap removes the last customers by id once every
-# earlier reason is applied. Consent: a purpose is granted only when its row says
-# GRANTED; no row, a WITHDRAWN row and a view that cannot be read are all not
-# granted (ADR-0066 section 2). A purchase is a sale with a net amount above zero
+# earlier reason is applied. An anonymized customer keeps its row in the customer
+# reference with `anonymized` true (ADR-0066 section 3, F21-19): it is counted under
+# the first reason and is never in an audience, whatever consent rows it still holds.
+# Consent: a purpose is granted only when its row says GRANTED; no row, a
+# WITHDRAWN row and a view that cannot be read are all not granted (ADR-0066
+# section 2). A purchase is a sale with a net amount above zero
 # (ADR-0062), read from the net view and never from gross lines.
 AUDIENCE = """
 WITH holders AS (
@@ -108,7 +111,7 @@ WITH holders AS (
      WHERE l.state = 'assigned' AND l.label_code = %(label)s
 ), judged AS (
     SELECT h.customer_id,
-           (r.customer_id IS NOT NULL) AS in_reference,
+           (r.customer_id IS NOT NULL AND NOT r.anonymized) AS in_reference,
            EXISTS (SELECT FROM api_preferences.consent_state_v1 AS c
                     WHERE c.customer_id = h.customer_id
                       AND c.purpose = 'PERSONALIZATION'

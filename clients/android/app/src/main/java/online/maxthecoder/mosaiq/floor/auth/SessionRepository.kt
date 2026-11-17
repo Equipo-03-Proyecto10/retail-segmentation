@@ -81,9 +81,14 @@ class SessionRepository(
      * stays open as the user it last confirmed, so queued writes and the outbox
      * stay reachable offline; the services check every request anyway.
      */
-    private fun offline(): SessionResult {
+    private suspend fun offline(): SessionResult {
         val known = session.profile()
         if (tokens.read() == null || known == null) return SessionResult.Failed(ApiError.unreachable(null))
+        // A role this build does not serve, kept from an older build, opens nothing either.
+        if (known.role !in FLOOR_ROLES) {
+            signOut()
+            return SessionResult.RoleRefused(known.role)
+        }
         return SessionResult.SignedIn(CurrentUser(known.userId, known.name, known.role))
     }
 
@@ -117,8 +122,13 @@ class SessionRepository(
     }
 
     companion object {
-        /** ADR-0041: the floor process is for these two roles. */
-        val FLOOR_ROLES = setOf("STORE_MANAGER", "ADMIN")
+        /**
+         * ADR-0060: the four store profiles, one role each, and the administrator, who is not
+         * confined to stores. Any other code is turned away (ADR-0076). `FloorAccess.profiles`
+         * gives each of these its navigation, and a test keeps the two in step.
+         */
+        val FLOOR_ROLES =
+            setOf("SALES_ASSOCIATE", "STORE_MANAGER", "LOYALTY_OFFICER", "COMMERCIAL_SUPERVISOR", "ADMIN")
 
         private val SIGNED_OUT = setOf("invalid_refresh", "refresh_reused", "session_expired", "session_revoked")
     }

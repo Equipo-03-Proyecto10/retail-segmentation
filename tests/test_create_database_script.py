@@ -51,7 +51,7 @@ def test_service_passwords_are_only_ever_set_never_selected() -> None:
         if re.search(r":'svc_[a-z_]+_password'", line)
         and not line.lstrip().startswith("--")
     ]
-    assert len(uses) == 19
+    assert len(uses) == 20
     for use in uses:
         assert re.fullmatch(
             r"SET mosaiq\.(svc_[a-z_]+)_password = :'\1_password';", use
@@ -130,4 +130,4 @@ def test_creates_the_service_and_definer_roles(
         "       OR rolbypassrls))"
         " FROM pg_roles",
     )
-    assert counts.stdout.strip() == "19|12|0"
+    assert counts.stdout.strip() == "20|13|0"

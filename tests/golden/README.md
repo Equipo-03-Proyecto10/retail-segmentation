@@ -1,6 +1,6 @@
 # Golden fixtures
 
-Four rules exist twice: in the web, and in the service that ports them
+Five rule sets exist twice: in the web, and in the service that ports them
 ([ADR-0045](../../docs/adr/0045-services-never-import-the-web-system.md),
 accepted exception E-17). The services never import `web/`. Instead, this
 directory captures what the web does on a fixed set of inputs. Each porting
@@ -13,6 +13,7 @@ service then commits that capture as its fixtures and holds its port to them.
 | recommendations | `recommend` | every seeded customer, plus three synthetic ones: no history, an unassigned open row from an added run, assigned with no sale in the window | `services/recommendations/tests/golden/recommendations.json` |
 | users | `create_user`, `update_user`, `change_role`, `set_active`, `transfer_administrator`, `validate_user` | a second administrator three ways, removing the only one two ways, a transfer and a refused one, a case-variant duplicate email two ways, a malformed email two ways, and two accepted writes | `services/users/tests/golden/users.json` |
 | campaigns | `TRANSITIONS`, `transition`, `create_campaign`, `update_draft`, `validate_campaign` | the table, every (from, action) pair on the seeded campaigns, duplicate draft creation, the draft-only edit, end before start two ways, and activation: an ended seeded draft (RN-49), a new draft with no experiment, and one whose experiment has no treatment (RN-24) | `services/campaigns/tests/golden/campaigns.json` |
+| segments | `classify_migration`, `build_migration_matrix`, `explain_migration`, `describe_migration` | RN-39 label comparison, RN-59's reconciled traceable matrix, and RN-60's raw-value judgements | `services/segments/tests/golden/segments.json` |
 
 ## Capturing
 
@@ -81,6 +82,7 @@ commits its fixture in the pull request that creates `services/<name>/`:
 - F14-18 for sales;
 - F14-22 for recommendations;
 - F14-28 for campaigns.
+- F22-16 for segments.
 
 ADR-0045's guard fails as soon as `services/<name>/` exists without
 `tests/golden/*.json`. The service's own CI then runs its port against the

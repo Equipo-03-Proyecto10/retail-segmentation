@@ -1,8 +1,5 @@
 import { createServer, type Server } from 'node:http';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import { expect, launchElectron, test, type ElectronApplication, type Page } from './electron-test';
 import { shot } from '../support/evidence';
 
 const AUTH = 'https://mosaiq.maxthecoder.online/xml/auth/v1';
@@ -64,9 +61,7 @@ test.beforeAll(async () => {
 test.afterAll(() => server.close());
 
 async function launch(): Promise<{ app: ElectronApplication; page: Page }> {
-  const dir = mkdtempSync(join(tmpdir(), 'mosaiq-desktop-'));
-  writeFileSync(join(dir, 'settings.json'), JSON.stringify({ baseUrl: base }));
-  const app = await electron.launch({ args: ['.'], env: { ...process.env, MOSAIQ_DESKTOP_CONFIG_DIR: dir } });
+  const { app } = await launchElectron(base);
   const page = await app.firstWindow();
   await page.waitForSelector('form');
   return { app, page };
@@ -104,6 +99,7 @@ test('window is locked down', async () => {
     'createCampaign',
     'createCategory',
     'createProduct',
+    'createRfmRuleSet',
     'createUser',
     'currentAssignment',
     'deactivateProduct',
@@ -136,6 +132,7 @@ test('window is locked down', async () => {
     'getPreferences',
     'getProduct',
     'getRecommendations',
+    'getRfmRuleSet',
     'getSale',
     'getState',
     'getStore',
@@ -163,6 +160,7 @@ test('window is locked down', async () => {
     'listModelVersions',
     'listProducts',
     'listRecommendationDecisions',
+    'listRfmRuleSets',
     'listRoles',
     'listSales',
     'listStores',
@@ -174,6 +172,7 @@ test('window is locked down', async () => {
     'planExperiment',
     'planningReport',
     'previewCampaignAudience',
+    'previewRfmRuleSet',
     'probeService',
     'publishModelVersion',
     'putCampaignAudience',

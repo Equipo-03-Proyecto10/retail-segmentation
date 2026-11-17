@@ -170,7 +170,9 @@ fun MqErrorPanel(
                 Column(verticalArrangement = Arrangement.spacedBy(Spacing.Xs)) {
                     val small = MaterialTheme.typography.bodySmall
                     Text(stringResource(R.string.component_code, error.code), style = small)
-                    error.details.forEach { Text("${it.field}: ${it.code}", style = small) }
+                    error.details.forEach {
+                        Text(stringResource(R.string.component_field_code, it.field, it.code), style = small)
+                    }
                     Text(
                         stringResource(
                             R.string.component_correlation,

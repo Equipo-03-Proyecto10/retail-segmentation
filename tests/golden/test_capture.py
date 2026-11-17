@@ -110,6 +110,17 @@ def test_the_cases_cover_what_adr_0045_lists(two_captures) -> None:
         campaigns["activate-draft-with-control-only-experiment"]["reason"]
     )
 
+    segments = {c["id"]: c["outcome"] for c in fixtures["segments"]["cases"]}
+    assert segments["rn39-label-comparison"]["migrations"][0]["direction"] == (
+        "improved"
+    )
+    assert sum(segments["rn59-traceable-matrix"]["row_totals"].values()) == 4
+    assert segments["rn60-raw-value-judgement"]["judgements"] == [
+        "changed",
+        "stable",
+        "changed",
+    ]
+
 
 def test_the_written_file_is_the_capture(app_url: str, tmp_path) -> None:
     assert (

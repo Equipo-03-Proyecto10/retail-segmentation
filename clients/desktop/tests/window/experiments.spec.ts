@@ -1,8 +1,7 @@
 import { createServer, type Server } from 'node:http';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import { expect, launchElectron, test, type ElectronApplication, type Page } from './electron-test';
 import { shot } from '../support/evidence';
 
 // The A/B experiment module (F28-10, #879), against a fake gateway that answers with the recorded
@@ -123,9 +122,7 @@ test.beforeEach(reset);
 
 async function launch(as: string): Promise<{ app: ElectronApplication; page: Page }> {
   role = as;
-  const dir = mkdtempSync(join(tmpdir(), 'mosaiq-desktop-'));
-  writeFileSync(join(dir, 'settings.json'), JSON.stringify({ baseUrl: base }));
-  const app = await electron.launch({ args: ['.'], env: { ...process.env, MOSAIQ_DESKTOP_CONFIG_DIR: dir } });
+  const { app } = await launchElectron(base);
   const page = await app.firstWindow();
   await page.waitForSelector('form');
   await page.fill('#f-email', 'a@b.c');

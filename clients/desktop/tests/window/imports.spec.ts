@@ -1,8 +1,14 @@
 import { createServer, type Server } from 'node:http';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import {
+  expect,
+  launchElectron,
+  makeTemporaryDirectory,
+  test,
+  type ElectronApplication,
+  type Page,
+} from './electron-test';
 import { deferred, type Deferred } from '../support/deferred';
 import { shot } from '../support/evidence';
 import { chunkLines, importXml, salesCsv } from '../support/imports';
@@ -199,9 +205,7 @@ test.beforeEach(reset);
 
 async function launch(as: string): Promise<{ app: ElectronApplication; page: Page; dir: string }> {
   role = as;
-  const dir = mkdtempSync(join(tmpdir(), 'mosaiq-desktop-'));
-  writeFileSync(join(dir, 'settings.json'), JSON.stringify({ baseUrl: base }));
-  const app = await electron.launch({ args: ['.'], env: { ...process.env, MOSAIQ_DESKTOP_CONFIG_DIR: dir } });
+  const { app, dir } = await launchElectron(base);
   const page = await app.firstWindow();
   await page.waitForSelector('form');
   await page.fill('#f-email', 'a@b.c');
@@ -219,7 +223,7 @@ async function picks(app: ElectronApplication, file: string): Promise<void> {
 }
 
 function csvFile(text: string): string {
-  const dir = mkdtempSync(join(tmpdir(), 'mosaiq-import-'));
+  const dir = makeTemporaryDirectory('mosaiq-import-');
   const file = join(dir, 'sales-october.csv');
   writeFileSync(file, text);
   return file;
@@ -332,7 +336,7 @@ test('rejections show line, field and reason; they are filtered, told apart and 
   await page.locator('#filter-kind').selectOption('');
 
   // Export: the shared action writes the filtered rows on screen, through the save dialog.
-  const out = join(mkdtempSync(join(tmpdir(), 'mosaiq-out-')), 'rejections.csv');
+  const out = join(makeTemporaryDirectory('mosaiq-out-'), 'rejections.csv');
   await app.evaluate(({ dialog }, f) => {
     dialog.showSaveDialog = (async () => ({ canceled: false, filePath: f })) as never;
   }, out);

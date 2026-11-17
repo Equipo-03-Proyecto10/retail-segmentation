@@ -894,6 +894,26 @@ decision that matters is how a product's many-valued facts are split:
   creates, and is the service's to write. A product has at most one barcode; a
   second barcode would be a multivalued fact and a relation of its own.
 
+- **`rfm.customer_profile`** (rfm-engine, F22-05, ADR-0063) is keyed by `customer_id`:
+  a customer has one current profile, and every other column is a fact of that
+  profile at one instant, so the relation is in BCNF. It is a stored result, not a
+  copy of a source: the measures and scores are what the customer's net purchases
+  come to under one rule set, kept because the daily pass selects on
+  `next_change_at` (indexed) and the profile-changed event is captured from its
+  columns. `customer_profile_state_shape` ties the nulls to the state: `scored` has
+  every measure, score, label and flag, `unassigned` has a count of zero and none of
+  them. A customer with no row is `pending`, which the view derives and nothing
+  stores.
+- **`rfm.rule_set`** is keyed by `rule_set_id`, with `name` a second candidate key.
+  Its boundaries are four-element arrays: each is written once, frozen, and read
+  whole (a customer is scored against all four of a measure's boundaries, in order),
+  and no query selects or updates a part of one, so rows per boundary would store the
+  same facts without a dependency to remove; the CHECKs keep them ordered.
+- **`rfm.rule_set_band`** is the repeated group "this rule set maps this box of
+  scores to this label": one row per box, keyed `(rule_set_id, band_no)`, not a
+  document inside `rule_set`. `band_no` is the order the first box that holds a
+  customer's scores wins in; every column depends on the key and nothing else.
+
 - **`models.model_version`** (model-registry, F22-11, ADR-0064) is one relation
   keyed by `version_id`, with `name` a second candidate key, so every other
   column depends on a candidate key and nothing else: it is in BCNF. The

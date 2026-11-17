@@ -1250,6 +1250,37 @@ BEGIN
 END
 $seed_models$;
 
+-- ---------- rfm.rule_set and rfm.rule_set_band (F22-05) ----------
+-- The one rule set rfm-engine starts with: the scoring the published version of the
+-- web's last rule-based run froze (the quintile boundaries above), and the bands of
+-- the segments valid today, one per segment in segment_id order, with the label of
+-- the segment as the box's label. The fallback is the worst-ranked label, as the
+-- web's. A customer is scored under it exactly as the web scored the seed, and
+-- F22-09 adds the others. rfm.customer_profile starts empty: the first sale event,
+-- or the daily pass, creates a customer's row, and a customer with none is pending.
+INSERT INTO rfm.rule_set
+    (name, window_days, recency_boundaries, frequency_boundaries, monetary_boundaries,
+     fallback_label_code)
+SELECT 'web-rfm-rules-' || v.window_days || 'd', v.window_days,
+       ARRAY(SELECT e::int FROM jsonb_array_elements_text(
+                 v.frozen_scoring -> 'quintile_boundaries' -> 'recency_boundaries') AS e),
+       ARRAY(SELECT e::int FROM jsonb_array_elements_text(
+                 v.frozen_scoring -> 'quintile_boundaries' -> 'frequency_boundaries') AS e),
+       ARRAY(SELECT e::numeric(12,2) FROM jsonb_array_elements_text(
+                 v.frozen_scoring -> 'quintile_boundaries' -> 'monetary_boundaries') AS e),
+       (SELECT label_code FROM segment_label ORDER BY ordinal_position DESC LIMIT 1)
+FROM models.model_version AS v
+WHERE v.method = 'RFM_RULES' AND v.state = 'PUBLISHED';
+
+INSERT INTO rfm.rule_set_band
+    (rule_set_id, band_no, label_code, r_min, r_max, f_min, f_max, m_min, m_max)
+SELECT (SELECT min(rule_set_id) FROM rfm.rule_set),
+       row_number() OVER (ORDER BY g.segment_id), g.label_code,
+       sr.r_min, sr.r_max, sr.f_min, sr.f_max, sr.m_min, sr.m_max
+FROM segment AS g
+JOIN segment_rule AS sr ON sr.rule_id = g.rule_id
+WHERE g.valid_from <= CURRENT_DATE AND (g.valid_to IS NULL OR g.valid_to >= CURRENT_DATE);
+
 -- ---------- audit_events.domain_event (32, every kind, ADR-0072) ----------
 -- Runtime history, seeded like app_session rather than exempted (ADR-0051).
 -- Each row goes through audit_events.append_v1, the function behind

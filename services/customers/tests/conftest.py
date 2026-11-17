@@ -120,6 +120,8 @@ def make_app(
         monkeypatch.setenv("AUTH_ISSUER", ISSUER)
         monkeypatch.setenv("AUTH_JWKS_PATH", str(jwks_path))
         monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
+        # The outbox relay has its own test; a request test needs no stream.
+        monkeypatch.setenv("OUTBOX_RELAY_ENABLED", "false")
         monkeypatch.setenv("DATABASE_URL", database_url or service_url)
         monkeypatch.setenv("MOSAIQ_SERVICE_NAME", "customers")
         monkeypatch.setenv("REDIS_STATE_URL", "redis://127.0.0.1:1/0")

@@ -130,6 +130,21 @@ date is not in the future.
 lower-cases the address it writes and refuses a future date. **Verified** —
 `services/customers/tests/test_rules.py`.
 
+Retention ends in anonymization, never deletion (ADR-0066 section 3): an
+administrator anonymizes a customer in place, after a request or 36 months with
+no sale and no check-in. The name becomes `Anonymized customer`, the email, phone
+and account link are removed, the active loyalty card is revoked and the identity
+is redacted from the customer's audit entries, while the key, the sales, R, F and
+M and the segment history stay, so every figure still reconciles. It is
+irreversible and idempotent, and it is recorded as `CUSTOMER_ANONYMIZED` and
+`AUDIT_PAYLOAD_REDACTED` domain events naming the administrator.
+
+**Enforced:** `customer_anonymized_identity_check` (a marked row holds no
+identity), `trg_customer_anonymized_is_final` (a marked row never changes) and
+`trg_loyalty_card_not_for_anonymized`, for every writer; the service refuses a
+correction or a card with 409 `customer_anonymized`. **Verified** —
+`services/customers/tests/test_anonymization.py`.
+
 ### RN-09 — Deleting a sale removes its lines
 A sale line has no meaning without its sale.
 

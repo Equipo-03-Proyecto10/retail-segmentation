@@ -11,21 +11,35 @@ INSERT itself refuses it.
 from __future__ import annotations
 
 import json
+import os
 import secrets
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import psycopg
 from flask import Flask, g, request
 from lxml import etree
-from mosaiq_kit import ApiError, Kit, Page, Representation, configure_logging
+from mosaiq_kit import (
+    ApiError,
+    Kit,
+    OutboxRelay,
+    Page,
+    Representation,
+    configure_logging,
+)
 from psycopg import errors, sql
+
+import redis
+from app import anonymization
 
 EMAIL_KEY = "ux_customer_email_lower"
 CHANNEL_FKEY = "customer_registration_channel_id_fkey"
 EMAIL_CHECK = "customer_email_check"
 ACTIVE_CARD_KEY = "ux_loyalty_card_one_active_customer"
 CUSTOMER_FKEY = "loyalty_card_customer_id_fkey"
+ANONYMIZED_CHECK = "customer_anonymized"
+STREAM = "stream:customers.v1.anonymized"
 CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 CONTRACTS_DIR = Path(__file__).resolve().parents[1] / "contracts"
@@ -149,10 +163,41 @@ def email_taken() -> ApiError:
     )
 
 
+def customer_anonymized() -> ApiError:
+    return ApiError(
+        409,
+        "customer_anonymized",
+        "The customer has been anonymized and accepts no change.",
+    )
+
+
+def relay_redis(url: str) -> redis.Redis:
+    """svc_customers on redis-state, with time for WAITAOF's two seconds.
+
+    The kit's request client gives up after 0.2 s, which suits a liveness
+    lookup but would fail every durable stream write.
+    """
+
+    parsed = urlsplit(url)
+    hostname = parsed.hostname or ""
+    if ":" in hostname:
+        hostname = "[" + hostname + "]"
+    netloc = hostname + ((":" + str(parsed.port)) if parsed.port else "")
+    return redis.Redis.from_url(
+        urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, "")),
+        username="svc_customers",
+        password=os.environ.get("REDIS_CUSTOMERS_PASSWORD"),
+        socket_connect_timeout=1,
+        socket_timeout=3,
+    )
+
+
 def refusal(error: psycopg.errors.IntegrityError) -> ApiError | None:
     """The contract's error for a constraint of customer, or None."""
 
     constraint = error.diag.constraint_name
+    if isinstance(error, errors.CheckViolation) and constraint == ANONYMIZED_CHECK:
+        return customer_anonymized()
     if isinstance(error, errors.UniqueViolation) and constraint == EMAIL_KEY:
         return email_taken()
     if isinstance(error, errors.ForeignKeyViolation) and constraint == CHANNEL_FKEY:
@@ -186,7 +231,7 @@ def refusal(error: psycopg.errors.IntegrityError) -> ApiError | None:
     return None
 
 
-def create_app() -> Flask:
+def create_app(*, start_relay: bool | None = None) -> Flask:
     app = Flask(__name__)
     configure_logging()
     holder: dict[str, Kit] = {}
@@ -541,6 +586,38 @@ def create_app() -> Flask:
             raise not_found()
         return Representation("Customer", customer_json(row))
 
+    @kit.operation("anonymizeCustomer")
+    def anonymize_customer(customer_id: Any) -> Representation:
+        with kit.db.transaction() as connection:
+            outcome, anonymized_at = anonymization.anonymize(
+                connection, g.principal, str(customer_id), kit.body["reason"]
+            )
+        return Representation(
+            "Anonymization",
+            {
+                "customer_id": str(customer_id),
+                "outcome": outcome,
+                "anonymized_at": anonymized_at,
+            },
+        )
+
+    enabled = (
+        os.environ.get("OUTBOX_RELAY_ENABLED", "true").lower()
+        in {"1", "true", "yes", "on"}
+        if start_relay is None
+        else start_relay
+    )
+    if enabled and kit.db.dsn:
+        relay = OutboxRelay(
+            kit.db.dsn,
+            "customers",
+            [STREAM],
+            relay_redis(
+                os.environ.get("REDIS_STATE_URL", "redis://redis-state:6379/0")
+            ),
+        )
+        relay.start()
+        app.extensions["customers_relay"] = relay
     return app
 
 

@@ -233,6 +233,40 @@ def test_each_customer_is_counted_once_under_the_first_reason(
     assert _get(api, "audience").get_json()["audience_size"] == 3
 
 
+def test_an_anonymized_customer_leaves_the_audience_and_its_count(
+    api: Any, owner: psycopg.Connection
+) -> None:
+    c = _scenario(owner)
+    assert _get(api, "audience").get_json()["audience_size"] == 8
+    before = _counts(_get(api, "audience/breakdown"))
+    assert before["not_in_customer_reference"] == 0
+    # c3 still holds both consents and a purchase, as anonymization keeps them
+    # (ADR-0066 section 3): only the identity goes and the reference flags it.
+    owner.execute(
+        "UPDATE customer SET name = 'Anonymized customer', email = NULL,"
+        " phone = NULL, user_id = NULL, anonymized_at = now()"
+        " WHERE customer_id = %s",
+        (c[3],),
+    )
+    assert owner.execute(
+        "SELECT anonymized FROM api_customers.customer_ref_v1 WHERE customer_id = %s",
+        (c[3],),
+    ).fetchone() == (True,)
+    body = _get(api, "audience/breakdown").get_json()
+    counts = _counts(_get(api, "audience/breakdown"))
+    assert counts["not_in_customer_reference"] == 1
+    assert counts["personalization_withdrawn"] == 0
+    assert body["audience_size"] == 7
+    assert _get(api, "audience").get_json()["audience_size"] == 7
+    assert (
+        sum(entry["excluded"] for entry in body["reasons"]) + body["audience_size"]
+        == body["label_holders"]
+    )
+    # A cap counts the remaining customers only: the anonymized one never fills a place.
+    assert _put(api, "audience", {"max_customers": 7}).get_json()["audience_size"] == 7
+    assert _counts(_get(api, "audience/breakdown"))["over_max_customers"] == 0
+
+
 def test_a_customer_with_no_consent_row_is_not_granted(
     api: Any, owner: psycopg.Connection
 ) -> None:

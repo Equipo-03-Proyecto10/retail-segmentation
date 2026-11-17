@@ -479,6 +479,15 @@ argument is about 3NF (BCNF where every determinant is a key) and 4NF.
     `transaction.channel_id`, a different fact. The customer's `name` and
     `email` are contact data, not copies of the linked account's login
     identity, so `user_id → app_user.email` copies nothing into this row.
+  - *Anonymization marker (F21-19, ADR-0066 section 3):* `anonymized_at` is one
+    more attribute of the same key, `customer_id → anonymized_at`: when, if ever,
+    the identity was removed in place. It is single-valued and independent of
+    the contact data it supersedes, so it adds no multivalued dependency, and
+    it is not split into its own relation because a customer is anonymized at
+    most once and the marker must travel with the row it describes: the CHECK
+    `customer_anonymized_identity_check` ties it to the identity columns in the
+    same row (a marked row holds the placeholder name and no email, phone or
+    account link), which a separate table could not enforce without a trigger.
   - *Why it is in 4NF:* the preferences are the two relations split off above,
     and there is no current-segment column (§3), so no multivalued fact is
     left in the row.
@@ -1694,6 +1703,20 @@ request, and it is not in `sql/seed-exempt.txt`.
 | `phone` | `VARCHAR(20)` | yes | — | Contact number |
 | `registration_channel_id` | `SMALLINT` | NN | FK → `channel`, `RESTRICT` | Where the customer was acquired |
 | `registered_on` | `DATE` | NN | default `CURRENT_DATE`; `CHECK <= CURRENT_DATE` (`customer_registered_not_future`) | Registration date |
+| `anonymized_at` | `TIMESTAMPTZ` | yes | `CHECK` `customer_anonymized_identity_check`: when set, `name = 'Anonymized customer'` and `email`, `phone` and `user_id` are null | When the identity was removed in place (F21-19); null for every other customer, and never null again once set |
+
+An anonymized row is final: `trg_customer_anonymized_is_final` refuses any later
+`UPDATE` for every writer, and `trg_loyalty_card_not_for_anonymized` refuses a
+new loyalty card. `trg_customers_capture_anonymized` writes one row of
+`customers_events.outbox` (key only, `stream:customers.v1.anonymized`) in the
+transaction that sets the marker. `customers.redact_audit_v1(uuid)` replaces the
+name, email and phone inside that customer's `audit_log` payloads with
+`[redacted]`; it runs as `definer_customers`, which may read the customer's
+marker and update those two payload columns and nothing else, so no `svc_*` role
+gains `UPDATE` on `audit_log` (ADR-0024). `fn_audit` applies the same redaction
+to every later entry of an anonymized customer. `customers_events.outbox` holds
+runtime relay state and is exempt from the 30-row seed (`sql/seed-exempt.txt`);
+no seeded customer is anonymized, because anonymization is final.
 
 There is no `current_segment_id` column. ADR-0004 called the mutable column
 the first delivery briefly carried a known limitation and predicted its

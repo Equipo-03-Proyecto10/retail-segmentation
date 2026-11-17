@@ -27,7 +27,7 @@
 - A campaign's limits are four resources, each one fact of the campaign: `audience` (the cap `max_customers`), `budget`, `eligibility-rules` and `exclusions`. A resource that was never written is simply absent, and a `PUT` with an empty body removes it. Every `PUT` is allowed only in DRAFT: it locks the campaign row (`FOR UPDATE`), the same lock the web takes, so a web activation and a `PUT` cannot both win (409 `campaign_not_draft`).
 - The audience is computed per request, as of the instant the response reports, and nothing about it is stored. Its eight reasons are applied in the contract's order and each customer is counted once. The cap removes the last customers by `customer_id`, after every other reason.
 - The budget is stored and validated only (`per_customer_cap` no greater than `total_amount`). Spending is not reported yet: no table records a discount until F25-05, so the contract has no spent field.
-- `anonymized` is not yet a column of `customer_ref_v1` (F21-19), so `not_in_customer_reference` counts only a holder that the reference does not list.
+- `anonymized` is a column of `customer_ref_v1` since F21-19 (#797), and `not_in_customer_reference` counts a holder the reference does not list or flags anonymized, so an anonymized customer is never in an audience, whatever consent rows it keeps.
 
 ## Endpoints
 

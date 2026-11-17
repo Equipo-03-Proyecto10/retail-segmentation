@@ -8,7 +8,7 @@
 | Kind | PostgreSQL view |
 | Owning boundary | sales |
 | Producer | sales-service |
-| Consumers | recommendations |
+| Consumers | recommendations, experimentation |
 
 The view publishes one row for every sale line, whether the sale came through
 `POST /v1/sales` or through the web's CSV path. Both paths write the same
@@ -28,6 +28,7 @@ a `transaction_id`. Consumers name only the columns they read.
 | `product_id` | `integer` | The product on this line. |
 | `quantity` | `integer` | Units sold; always positive. |
 | `unit_price` | `numeric(10,2)` | The price actually charged for one unit (RN-13). |
+| `data_origin` | `text` | Where the sale came from, `OBSERVED` or `SEEDED` (ADR-0052). Every line of a sale carries the sale's value. |
 
 The view is gross. A reversal (ADR-0062) never edits a sale line, so this view
 keeps its meaning: it still publishes every accepted line, whether or not it was

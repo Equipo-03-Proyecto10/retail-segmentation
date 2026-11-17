@@ -1253,7 +1253,7 @@ CREATE INDEX IF NOT EXISTS outbox_unrelayed
 CREATE OR REPLACE VIEW api_sales.purchase_line_v1
 WITH (security_invoker = off) AS
 SELECT t.transaction_id, t.customer_id, t.store_id, t.channel_id, t.occurred_at,
-       l.product_id, l.quantity, l.unit_price
+       l.product_id, l.quantity, l.unit_price, t.data_origin
 FROM public.transaction AS t
 JOIN public.transaction_line AS l ON l.transaction_id = t.transaction_id;
 REVOKE ALL ON api_sales.purchase_line_v1 FROM PUBLIC;
@@ -4646,6 +4646,12 @@ GRANT USAGE ON SCHEMA experiments, api_experiments TO svc_experiments;
 GRANT SELECT, INSERT, UPDATE ON public.experiment, public.experiment_group TO svc_experiments;
 GRANT SELECT, INSERT ON public.experiment_assignment, public.experiment_exposure,
     public.experiment_conversion TO svc_experiments;
+-- Conversions (F25-11, ADR-0069): a conversion is a qualifying sale of an assigned
+-- customer, read net of reversals from the two views sales publishes. The gross view
+-- still names a sale that was fully reversed, which the net view no longer lists.
+GRANT USAGE ON SCHEMA api_sales TO svc_experiments;
+GRANT SELECT ON api_sales.purchase_line_v1, api_sales.net_purchase_line_v1
+    TO svc_experiments;
 -- It is a recording role of audit-trail's CRITICAL_ACTION (api_audit.record_event_v1).
 GRANT USAGE ON SCHEMA api_audit TO svc_experiments;
 GRANT EXECUTE ON FUNCTION api_audit.record_event_v1(uuid, text, text, timestamptz, text, uuid,

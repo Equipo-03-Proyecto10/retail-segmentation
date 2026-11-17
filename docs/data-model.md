@@ -959,6 +959,9 @@ decision that matters is how a product's many-valued facts are split:
   delete of a run): `segmentation_run` does not change. A WEB_RUN
   version's source run is derived (the earliest linked run), not stored, so the
   two cannot disagree.
+  `api_models.run_version_v1` is its read-only projection for segments-service;
+  it exposes the same key, version and link time without duplicating a fact or
+  granting the consumer access to model-registry's table.
 
 ---
 

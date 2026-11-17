@@ -4839,6 +4839,14 @@ CREATE TABLE IF NOT EXISTS models.run_version (
 );
 CREATE INDEX IF NOT EXISTS run_version_version ON models.run_version (version_id, run_id);
 
+-- contracts/db/api_models.run_version.v1.md. A missing row is deliberately
+-- pending; consumers must not replace it with the current published version.
+CREATE OR REPLACE VIEW api_models.run_version_v1
+WITH (security_invoker = off) AS
+SELECT run_id, version_id, linked_at
+  FROM models.run_version;
+REVOKE ALL ON api_models.run_version_v1 FROM PUBLIC;
+
 -- Immutability, for every role. Only state, published_at and retired_at of a
 -- version may change; nothing is ever deleted, in any of the four tables.
 CREATE OR REPLACE FUNCTION models.refuse_change() RETURNS trigger
@@ -4886,6 +4894,8 @@ GRANT SELECT, DELETE, UPDATE (relayed_at) ON models_events.outbox TO svc_models;
 -- Consumer grants arrive with their stories; the producer can verify its view.
 GRANT USAGE ON SCHEMA api_models TO svc_models;
 GRANT SELECT ON api_models.published_version_v1 TO svc_models;
+GRANT USAGE ON SCHEMA api_models TO svc_segments;
+GRANT SELECT ON api_models.run_version_v1 TO svc_segments;
 
 -- Publications and rollbacks are critical domain events in the same transaction.
 GRANT USAGE ON SCHEMA api_audit TO svc_models;

@@ -13,7 +13,7 @@
 //! transaction, a 403 on it records one with outcome `REFUSED`, and a read
 //! whose event cannot be recorded answers 503 `audit_unavailable` with no rows.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -134,6 +134,165 @@ pub struct Assignment {
     pub m_score: Option<i16>,
     pub valid_from: DateTime<Utc>,
     pub valid_to: Option<DateTime<Utc>>,
+}
+
+const RECENCY_STABLE_DAYS: i64 = 7;
+const MONETARY_STABLE_PERCENT: i64 = 10;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MigrationWindow {
+    pub from: DateTime<Utc>,
+    pub to: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct MigrationState {
+    pub state: String,
+    pub label_code: Option<String>,
+}
+
+impl MigrationState {
+    fn new(label: Option<String>, present: bool) -> Self {
+        match (present, label) {
+            (false, _) => Self {
+                state: "new".to_owned(),
+                label_code: None,
+            },
+            (true, Some(code)) => Self {
+                state: "label".to_owned(),
+                label_code: Some(code),
+            },
+            (true, None) => Self {
+                state: "unassigned".to_owned(),
+                label_code: None,
+            },
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Snapshot {
+    pub customer_id: Uuid,
+    pub state: MigrationState,
+    pub run_id: Option<i64>,
+    pub model_version_id: Option<i64>,
+    pub run_at: Option<DateTime<Utc>>,
+    pub valid_from: Option<DateTime<Utc>>,
+    pub cause: Option<String>,
+    pub recency_last_purchase_at: Option<DateTime<Utc>>,
+    pub frequency_count: Option<i32>,
+    pub monetary_total: Option<String>,
+    pub r_score: Option<i16>,
+    pub f_score: Option<i16>,
+    pub m_score: Option<i16>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Migration {
+    pub customer_id: Uuid,
+    pub previous: Snapshot,
+    pub new: Snapshot,
+    pub movement: String,
+    pub changed_at: Option<DateTime<Utc>>,
+    pub methodological: bool,
+    pub responsible_variables: Vec<String>,
+    pub rank_only: bool,
+}
+
+impl Migration {
+    fn wire(&self) -> Representation {
+        Representation::new(
+            "SegmentMigration",
+            [
+                ("customer_id", Value::from(self.customer_id.to_string())),
+                (
+                    "previous_state",
+                    Value::from(self.previous.state.state.clone()),
+                ),
+                (
+                    "previous_label_code",
+                    Value::from(self.previous.state.label_code.clone()),
+                ),
+                ("new_state", Value::from(self.new.state.state.clone())),
+                (
+                    "new_label_code",
+                    Value::from(self.new.state.label_code.clone()),
+                ),
+                ("movement", Value::from(self.movement.clone())),
+                ("changed_at", Value::from(self.changed_at)),
+                ("cause", Value::from(self.new.cause.clone())),
+                ("previous_run_id", Value::from(self.previous.run_id)),
+                ("new_run_id", Value::from(self.new.run_id)),
+                (
+                    "previous_model_version_id",
+                    Value::from(self.previous.model_version_id),
+                ),
+                (
+                    "new_model_version_id",
+                    Value::from(self.new.model_version_id),
+                ),
+                ("methodological", Value::from(self.methodological)),
+                (
+                    "responsible_variables",
+                    Value::List(
+                        self.responsible_variables
+                            .iter()
+                            .cloned()
+                            .map(Value::from)
+                            .collect(),
+                    ),
+                ),
+                ("rank_only", Value::from(self.rank_only)),
+            ],
+        )
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MigrationTotal {
+    pub state: MigrationState,
+    pub before_count: i64,
+    pub after_count: i64,
+    pub entries: i64,
+    pub exits: i64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MigrationCell {
+    pub previous: MigrationState,
+    pub new: MigrationState,
+    pub movement: String,
+    pub customer_count: i64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MigrationMatrix {
+    pub window: MigrationWindow,
+    pub from_model_version_id: Option<i64>,
+    pub to_model_version_id: Option<i64>,
+    pub methodological: bool,
+    pub customer_count: i64,
+    pub totals: Vec<MigrationTotal>,
+    pub cells: Vec<MigrationCell>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MigrationMeasure {
+    pub variable: String,
+    pub unit: String,
+    pub previous_value: Option<String>,
+    pub new_value: Option<String>,
+    pub judgement: String,
+    pub not_compared_reason: Option<String>,
+    pub rank_changed: bool,
+    pub statement: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MigrationExplanation {
+    pub window: MigrationWindow,
+    pub migration: Migration,
+    pub measures: Vec<MigrationMeasure>,
 }
 
 impl Assignment {
@@ -262,6 +421,172 @@ pub fn assignment_filter(query: &str) -> Result<Filter, ApiError> {
         Some(filter) if details.is_empty() => Ok(filter),
         _ => Err(invalid_query(details)),
     }
+}
+
+fn parse_instant(
+    field: &str,
+    value: Option<&String>,
+    details: &mut Vec<Detail>,
+) -> Option<DateTime<Utc>> {
+    let Some(value) = value else {
+        details.push(Detail::new(field, "required"));
+        return None;
+    };
+    match DateTime::parse_from_rfc3339(value) {
+        Ok(value) => Some(value.with_timezone(&Utc)),
+        Err(_) => {
+            details.push(Detail::new(field, "invalid_type"));
+            None
+        }
+    }
+}
+
+pub fn migration_window(query: &str) -> Result<MigrationWindow, ApiError> {
+    let values = query_pairs(query);
+    let mut details = Vec::new();
+    let from = parse_instant("from", values.get("from"), &mut details);
+    let to = parse_instant("to", values.get("to"), &mut details);
+    if let (Some(from), Some(to)) = (from, to) {
+        if from >= to {
+            details.push(Detail::new("from", "invalid_range"));
+        }
+        let now = Utc::now();
+        if from > now {
+            details.push(Detail::new("from", "future"));
+        }
+        if to > now {
+            details.push(Detail::new("to", "future"));
+        }
+        if details.is_empty() {
+            return Ok(MigrationWindow { from, to });
+        }
+    }
+    Err(invalid_query(details))
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MigrationFilter {
+    pub customer_id: Option<Uuid>,
+    pub previous_state: Option<String>,
+    pub previous_label_code: Option<String>,
+    pub new_state: Option<String>,
+    pub new_label_code: Option<String>,
+    pub direction: Option<String>,
+    pub label_code: Option<String>,
+    pub methodological: Option<bool>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MigrationQuery {
+    pub window: MigrationWindow,
+    pub filter: MigrationFilter,
+}
+
+fn parse_state(field: &str, value: Option<&String>, details: &mut Vec<Detail>) -> Option<String> {
+    match value.map(String::as_str) {
+        None => None,
+        Some("label" | "unassigned" | "new") => value.cloned(),
+        Some(_) => {
+            details.push(Detail::new(field, "invalid_value"));
+            None
+        }
+    }
+}
+
+pub fn migration_query(query: &str) -> Result<MigrationQuery, ApiError> {
+    let window = migration_window(query)?;
+    let values = query_pairs(query);
+    let mut details = Vec::new();
+    let customer_id = values
+        .get("customer_id")
+        .and_then(|raw| match parse_customer_id(raw) {
+            Some(id) => Some(id),
+            None => {
+                details.push(Detail::new("customer_id", "invalid_type"));
+                None
+            }
+        });
+    let previous_state = parse_state("previous_state", values.get("previous_state"), &mut details);
+    let new_state = parse_state("new_state", values.get("new_state"), &mut details);
+    let previous_label_code = values.get("previous_label_code").cloned();
+    let new_label_code = values.get("new_label_code").cloned();
+    let direction = match values.get("direction").map(String::as_str) {
+        None => None,
+        Some("entries" | "exits") => values.get("direction").cloned(),
+        Some(_) => {
+            details.push(Detail::new("direction", "invalid_value"));
+            None
+        }
+    };
+    let label_code = values.get("label_code").cloned();
+    let methodological = match values.get("methodological").map(String::as_str) {
+        None => None,
+        Some("true") => Some(true),
+        Some("false") => Some(false),
+        Some(_) => {
+            details.push(Detail::new("methodological", "invalid_type"));
+            None
+        }
+    };
+    let cell = previous_state.is_some()
+        || previous_label_code.is_some()
+        || new_state.is_some()
+        || new_label_code.is_some();
+    if cell && (previous_state.is_none() || new_state.is_none()) {
+        details.push(Detail::new("previous_state", "incomplete_cell"));
+    }
+    for (field, state, label) in [
+        (
+            "previous_label_code",
+            previous_state.as_deref(),
+            previous_label_code.as_ref(),
+        ),
+        (
+            "new_label_code",
+            new_state.as_deref(),
+            new_label_code.as_ref(),
+        ),
+    ] {
+        if (state == Some("label")) != label.is_some() {
+            details.push(Detail::new(field, "inconsistent_state"));
+        }
+    }
+    if direction.is_some() && label_code.is_none() {
+        details.push(Detail::new("label_code", "required"));
+    }
+    if direction.is_some() && cell {
+        details.push(Detail::new("direction", "conflicting_filters"));
+    }
+    for (field, label) in [
+        ("previous_label_code", previous_label_code.as_ref()),
+        ("new_label_code", new_label_code.as_ref()),
+        ("label_code", label_code.as_ref()),
+    ] {
+        if label.is_some_and(|value| value.is_empty() || value.chars().count() > 40) {
+            details.push(Detail::new(field, "out_of_range"));
+        }
+    }
+    if !details.is_empty() {
+        return Err(invalid_query(details));
+    }
+    Ok(MigrationQuery {
+        window,
+        filter: MigrationFilter {
+            customer_id,
+            previous_state,
+            previous_label_code,
+            new_state,
+            new_label_code,
+            direction,
+            label_code,
+            methodological,
+        },
+    })
+}
+
+pub fn explanation_query(query: &str) -> Result<(Uuid, MigrationWindow), ApiError> {
+    let customer = current_customer(query)?;
+    Ok((customer, migration_window(query)?))
 }
 
 // ---------------------------------------------------------------------------
@@ -597,6 +922,567 @@ pub async fn read_assignments_in<C: GenericClient + Sync>(
     Ok((assignments, total as u64))
 }
 
+fn snapshot_from_row(row: &Row, offset: usize, customer_id: Uuid) -> Result<Snapshot, ApiError> {
+    let run_id: Option<i64> = row.try_get(offset)?;
+    let label_code: Option<String> = row.try_get(offset + 1)?;
+    Ok(Snapshot {
+        customer_id,
+        state: MigrationState::new(label_code, run_id.is_some()),
+        run_id,
+        model_version_id: row.try_get(offset + 2)?,
+        run_at: row.try_get(offset + 3)?,
+        valid_from: row.try_get(offset + 4)?,
+        cause: row.try_get(offset + 5)?,
+        recency_last_purchase_at: row.try_get(offset + 6)?,
+        frequency_count: row.try_get(offset + 7)?,
+        monetary_total: row.try_get(offset + 8)?,
+        r_score: row.try_get(offset + 9)?,
+        f_score: row.try_get(offset + 10)?,
+        m_score: row.try_get(offset + 11)?,
+    })
+}
+
+fn recency_value(snapshot: &Snapshot) -> Option<i64> {
+    Some(
+        snapshot
+            .run_at?
+            .signed_duration_since(snapshot.recency_last_purchase_at?)
+            .num_days(),
+    )
+}
+
+fn money_cents(value: Option<&String>) -> Option<i64> {
+    let value = value?;
+    let (whole, fraction) = value.split_once('.').unwrap_or((value, "0"));
+    let fraction = format!("{fraction:0<2}");
+    Some(whole.parse::<i64>().ok()? * 100 + fraction[..2].parse::<i64>().ok()?)
+}
+
+pub fn recency_judgement(previous: i64, new: i64) -> &'static str {
+    if (new - previous).abs() <= RECENCY_STABLE_DAYS {
+        "stable"
+    } else {
+        "changed"
+    }
+}
+
+pub fn frequency_judgement(previous: i32, new: i32) -> &'static str {
+    if previous == new {
+        "stable"
+    } else {
+        "changed"
+    }
+}
+
+pub fn monetary_judgement(previous: &str, new: &str) -> &'static str {
+    let (Some(previous), Some(new)) = (
+        money_cents(Some(&previous.to_owned())),
+        money_cents(Some(&new.to_owned())),
+    ) else {
+        return "changed";
+    };
+    let stable = if previous == 0 {
+        new == 0
+    } else {
+        (new - previous).abs() * 100 <= previous * MONETARY_STABLE_PERCENT
+    };
+    if stable {
+        "stable"
+    } else {
+        "changed"
+    }
+}
+
+fn measure_changes(previous: &Snapshot, new: &Snapshot) -> Vec<String> {
+    let mut changed = Vec::new();
+    if matches!((recency_value(previous), recency_value(new)), (Some(a), Some(b)) if recency_judgement(a, b) == "changed")
+    {
+        changed.push("recency".to_owned());
+    }
+    if matches!((previous.frequency_count, new.frequency_count), (Some(a), Some(b)) if frequency_judgement(a, b) == "changed")
+    {
+        changed.push("frequency".to_owned());
+    }
+    if let (Some(a), Some(b)) = (
+        money_cents(previous.monetary_total.as_ref()),
+        money_cents(new.monetary_total.as_ref()),
+    ) {
+        let previous_text = format!("{}.{:02}", a / 100, a % 100);
+        let new_text = format!("{}.{:02}", b / 100, b % 100);
+        if monetary_judgement(&previous_text, &new_text) == "changed" {
+            changed.push("monetary".to_owned());
+        }
+    }
+    changed
+}
+
+pub fn migration_movement(
+    previous: &MigrationState,
+    new: &MigrationState,
+    ordinals: &HashMap<String, i16>,
+) -> String {
+    let (Some(before), Some(after)) = (&previous.label_code, &new.label_code) else {
+        return "not_ranked".to_owned();
+    };
+    if before == after {
+        return "unchanged".to_owned();
+    }
+    match (ordinals.get(before), ordinals.get(after)) {
+        (Some(before), Some(after)) if after < before => "improved".to_owned(),
+        _ => "declined".to_owned(),
+    }
+}
+
+fn build_migration(
+    previous: Snapshot,
+    new: Snapshot,
+    window: &MigrationWindow,
+    ordinals: &HashMap<String, i16>,
+) -> Migration {
+    let responsible_variables = measure_changes(&previous, &new);
+    let methodological = previous.model_version_id.is_none()
+        || new.model_version_id.is_none()
+        || previous.model_version_id != new.model_version_id
+        || new.cause.as_deref() == Some("VERSION_CHANGE");
+    let label_changed = previous.state.label_code.is_some()
+        && new.state.label_code.is_some()
+        && previous.state.label_code != new.state.label_code;
+    Migration {
+        customer_id: new.customer_id,
+        movement: migration_movement(&previous.state, &new.state, ordinals),
+        changed_at: new.valid_from.filter(|instant| *instant > window.from),
+        rank_only: label_changed && responsible_variables.is_empty(),
+        previous,
+        new,
+        methodological,
+        responsible_variables,
+    }
+}
+
+async fn label_ordinals<C: GenericClient + Sync>(
+    connection: &C,
+) -> Result<HashMap<String, i16>, ApiError> {
+    connection
+        .query(
+            "SELECT label_code, ordinal_position FROM public.segment_label",
+            &[],
+        )
+        .await?
+        .iter()
+        .map(|row| Ok((row.try_get(0)?, row.try_get(1)?)))
+        .collect::<Result<_, ApiError>>()
+}
+
+async fn validate_migration_filter<C: GenericClient + Sync>(
+    connection: &C,
+    filter: &MigrationFilter,
+) -> Result<(), ApiError> {
+    if let Some(customer) = filter.customer_id {
+        if connection
+            .query_opt(
+                "SELECT 1 FROM api_customers.customer_ref_v1 WHERE customer_id = $1",
+                &[&customer],
+            )
+            .await?
+            .is_none()
+        {
+            return Err(customer_not_found());
+        }
+    }
+    for label in [
+        filter.previous_label_code.as_ref(),
+        filter.new_label_code.as_ref(),
+        filter.label_code.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if connection
+            .query_opt(
+                "SELECT 1 FROM public.segment_label WHERE label_code = $1",
+                &[label],
+            )
+            .await?
+            .is_none()
+        {
+            return Err(segment_not_found());
+        }
+    }
+    Ok(())
+}
+
+pub async fn read_migrations(
+    db: &Database,
+    query: &MigrationQuery,
+) -> Result<Vec<Migration>, ApiError> {
+    let connection = db.connection().await?;
+    let client: &tokio_postgres::Client = &connection;
+    validate_migration_filter(client, &query.filter).await?;
+    let rows = connection
+        .query(
+            "WITH ids AS ( \
+                 SELECT customer_id FROM api_customers.customer_ref_v1) \
+             SELECT ids.customer_id, \
+                    b.run_id, b.label_code, bv.version_id, br.run_at, b.valid_from, \
+                    br.parameters->>'cause', b.recency_last_purchase_at, \
+                    b.frequency_count, b.monetary_total::text, b.r_score, b.f_score, b.m_score, \
+                    a.run_id, a.label_code, av.version_id, ar.run_at, a.valid_from, \
+                    ar.parameters->>'cause', a.recency_last_purchase_at, \
+                    a.frequency_count, a.monetary_total::text, a.r_score, a.f_score, a.m_score \
+               FROM ids \
+               LEFT JOIN public.customer_segment_history AS b \
+                 ON b.customer_id = ids.customer_id AND b.valid_from <= $1 \
+                AND (b.valid_to IS NULL OR b.valid_to > $1) \
+               LEFT JOIN public.segmentation_run AS br ON br.run_id = b.run_id \
+               LEFT JOIN api_models.run_version_v1 AS bv ON bv.run_id = b.run_id \
+               LEFT JOIN public.customer_segment_history AS a \
+                 ON a.customer_id = ids.customer_id AND a.valid_from <= $2 \
+                AND (a.valid_to IS NULL OR a.valid_to > $2) \
+               LEFT JOIN public.segmentation_run AS ar ON ar.run_id = a.run_id \
+               LEFT JOIN api_models.run_version_v1 AS av ON av.run_id = a.run_id \
+              ORDER BY ids.customer_id",
+            &[&query.window.from, &query.window.to],
+        )
+        .await?;
+    let ordinals = label_ordinals(client).await?;
+    let mut migrations = Vec::with_capacity(rows.len());
+    for row in &rows {
+        let customer_id: Uuid = row.try_get(0)?;
+        let previous = snapshot_from_row(row, 1, customer_id)?;
+        let new = snapshot_from_row(row, 13, customer_id)?;
+        migrations.push(build_migration(previous, new, &query.window, &ordinals));
+    }
+    migrations.retain(|migration| migration_matches(migration, &query.filter));
+    migrations.sort_by(|a, b| {
+        b.changed_at
+            .cmp(&a.changed_at)
+            .then_with(|| a.customer_id.cmp(&b.customer_id))
+    });
+    Ok(migrations)
+}
+
+fn migration_matches(migration: &Migration, filter: &MigrationFilter) -> bool {
+    if filter
+        .customer_id
+        .is_some_and(|id| id != migration.customer_id)
+        || filter
+            .previous_state
+            .as_ref()
+            .is_some_and(|state| state != &migration.previous.state.state)
+        || filter
+            .previous_label_code
+            .as_ref()
+            .is_some_and(|label| Some(label) != migration.previous.state.label_code.as_ref())
+        || filter
+            .new_state
+            .as_ref()
+            .is_some_and(|state| state != &migration.new.state.state)
+        || filter
+            .new_label_code
+            .as_ref()
+            .is_some_and(|label| Some(label) != migration.new.state.label_code.as_ref())
+        || filter
+            .methodological
+            .is_some_and(|value| value != migration.methodological)
+    {
+        return false;
+    }
+    match (filter.direction.as_deref(), filter.label_code.as_ref()) {
+        (Some("entries"), Some(label)) => {
+            migration.new.state.label_code.as_ref() == Some(label)
+                && migration.previous.state.label_code.as_ref() != Some(label)
+        }
+        (Some("exits"), Some(label)) => {
+            migration.previous.state.label_code.as_ref() == Some(label)
+                && migration.new.state.label_code.as_ref() != Some(label)
+        }
+        (None, Some(label)) => {
+            migration.previous.state.label_code.as_ref() == Some(label)
+                || migration.new.state.label_code.as_ref() == Some(label)
+        }
+        _ => true,
+    }
+}
+
+async fn version_at<C: GenericClient + Sync>(
+    connection: &C,
+    instant: DateTime<Utc>,
+) -> Result<Option<i64>, ApiError> {
+    Ok(connection
+        .query_opt(
+            "SELECT v.version_id \
+               FROM public.segmentation_run AS r \
+               JOIN api_models.run_version_v1 AS v ON v.run_id = r.run_id \
+              WHERE r.run_at <= $1 \
+              ORDER BY r.run_at DESC, r.run_id DESC LIMIT 1",
+            &[&instant],
+        )
+        .await?
+        .map(|row| row.get(0)))
+}
+
+fn state_order(state: &MigrationState, ordinals: &HashMap<String, i16>) -> (i16, String) {
+    match (&*state.state, state.label_code.as_ref()) {
+        ("label", Some(label)) => (*ordinals.get(label).unwrap_or(&i16::MAX), label.clone()),
+        ("unassigned", _) => (i16::MAX - 1, String::new()),
+        _ => (i16::MAX, String::new()),
+    }
+}
+
+pub async fn read_migration_matrix(
+    db: &Database,
+    window: MigrationWindow,
+) -> Result<MigrationMatrix, ApiError> {
+    let query = MigrationQuery {
+        window: window.clone(),
+        filter: MigrationFilter::default(),
+    };
+    let migrations = read_migrations(db, &query).await?;
+    let connection = db.connection().await?;
+    let client: &tokio_postgres::Client = &connection;
+    let ordinals = label_ordinals(client).await?;
+    let from_model_version_id = version_at(client, window.from).await?;
+    let to_model_version_id = version_at(client, window.to).await?;
+    let methodological = from_model_version_id.is_none()
+        || to_model_version_id.is_none()
+        || from_model_version_id != to_model_version_id;
+    let mut totals: BTreeMap<MigrationState, (i64, i64, i64, i64)> = BTreeMap::new();
+    let mut cells: BTreeMap<(MigrationState, MigrationState, String), i64> = BTreeMap::new();
+    for migration in &migrations {
+        totals
+            .entry(migration.previous.state.clone())
+            .or_default()
+            .0 += 1;
+        totals.entry(migration.new.state.clone()).or_default().1 += 1;
+        if migration.previous.state != migration.new.state {
+            totals.entry(migration.new.state.clone()).or_default().2 += 1;
+            totals
+                .entry(migration.previous.state.clone())
+                .or_default()
+                .3 += 1;
+        }
+        *cells
+            .entry((
+                migration.previous.state.clone(),
+                migration.new.state.clone(),
+                migration.movement.clone(),
+            ))
+            .or_default() += 1;
+    }
+    let mut totals: Vec<_> = totals
+        .into_iter()
+        .map(
+            |(state, (before_count, after_count, entries, exits))| MigrationTotal {
+                state,
+                before_count,
+                after_count,
+                entries,
+                exits,
+            },
+        )
+        .collect();
+    totals.sort_by_key(|total| state_order(&total.state, &ordinals));
+    let mut cells: Vec<_> = cells
+        .into_iter()
+        .map(
+            |((previous, new, movement), customer_count)| MigrationCell {
+                previous,
+                new,
+                movement,
+                customer_count,
+            },
+        )
+        .collect();
+    cells.sort_by_key(|cell| {
+        (
+            state_order(&cell.previous, &ordinals),
+            state_order(&cell.new, &ordinals),
+        )
+    });
+    Ok(MigrationMatrix {
+        window,
+        from_model_version_id,
+        to_model_version_id,
+        methodological,
+        customer_count: migrations.len() as i64,
+        totals,
+        cells,
+    })
+}
+
+fn measure_reason(previous: &Snapshot, new: &Snapshot) -> Option<String> {
+    if previous.run_id.is_none() {
+        Some("new_customer".to_owned())
+    } else if previous.state.state == "unassigned" || new.state.state == "unassigned" {
+        Some("unassigned".to_owned())
+    } else {
+        None
+    }
+}
+
+fn score_changed(previous: Option<i16>, new: Option<i16>) -> bool {
+    matches!((previous, new), (Some(a), Some(b)) if a != b)
+}
+
+fn recency_measure(previous: &Snapshot, new: &Snapshot) -> MigrationMeasure {
+    let before = recency_value(previous);
+    let after = recency_value(new);
+    let reason = measure_reason(previous, new).filter(|_| before.is_none() || after.is_none());
+    let (judgement, rank_changed, statement) = match (before, after, reason.as_deref()) {
+        (_, _, Some("new_customer")) => (
+            "not_compared",
+            false,
+            "Recency is not compared: the customer was new at the earlier instant.".to_owned(),
+        ),
+        (_, _, Some(_)) | (None, _, _) | (_, None, _) => (
+            "not_compared",
+            false,
+            "Recency is not compared: an assignment was unassigned.".to_owned(),
+        ),
+        (Some(a), Some(b), None) => {
+            let stable = recency_judgement(a, b) == "stable";
+            let rank = stable && score_changed(previous.r_score, new.r_score);
+            let text = if a == b {
+                format!("Recency is stable at {b} days.")
+            } else if stable {
+                let suffix = if rank {
+                    ", but its score moved because the population or model changed"
+                } else {
+                    ""
+                };
+                format!("Recency is stable: {a} days against {b}, within the 7-day drift{suffix}.")
+            } else {
+                format!("Recency changed: the last purchase was {a} days before the earlier assignment and {b} days before the later one.")
+            };
+            (if stable { "stable" } else { "changed" }, rank, text)
+        }
+    };
+    MigrationMeasure {
+        variable: "recency".to_owned(),
+        unit: "days".to_owned(),
+        previous_value: before.map(|value| value.to_string()),
+        new_value: after.map(|value| value.to_string()),
+        judgement: judgement.to_owned(),
+        not_compared_reason: reason,
+        rank_changed,
+        statement,
+    }
+}
+
+fn frequency_measure(previous: &Snapshot, new: &Snapshot) -> MigrationMeasure {
+    let before = previous.frequency_count;
+    let after = new.frequency_count;
+    let reason = measure_reason(previous, new).filter(|_| before.is_none() || after.is_none());
+    let (judgement, rank_changed, statement) = match (before, after, reason.as_deref()) {
+        (_, _, Some("new_customer")) => (
+            "not_compared",
+            false,
+            "Frequency is not compared: the customer was new at the earlier instant.".to_owned(),
+        ),
+        (_, _, Some(_)) | (None, _, _) | (_, None, _) => (
+            "not_compared",
+            false,
+            "Frequency is not compared: an assignment was unassigned.".to_owned(),
+        ),
+        (Some(a), Some(b), None) => {
+            let stable = frequency_judgement(a, b) == "stable";
+            let rank = stable && score_changed(previous.f_score, new.f_score);
+            let text = if stable {
+                format!("Frequency is stable at {b} purchases.")
+            } else {
+                format!("Frequency changed from {a} purchases to {b} purchases.")
+            };
+            (if stable { "stable" } else { "changed" }, rank, text)
+        }
+    };
+    MigrationMeasure {
+        variable: "frequency".to_owned(),
+        unit: "purchases".to_owned(),
+        previous_value: before.map(|value| value.to_string()),
+        new_value: after.map(|value| value.to_string()),
+        judgement: judgement.to_owned(),
+        not_compared_reason: reason,
+        rank_changed,
+        statement,
+    }
+}
+
+fn monetary_measure(previous: &Snapshot, new: &Snapshot) -> MigrationMeasure {
+    let before = previous.monetary_total.clone();
+    let after = new.monetary_total.clone();
+    let reason = measure_reason(previous, new).filter(|_| before.is_none() || after.is_none());
+    let a = money_cents(before.as_ref());
+    let b = money_cents(after.as_ref());
+    let (judgement, rank_changed, statement) = match (a, b, reason.as_deref()) {
+        (_, _, Some("new_customer")) => (
+            "not_compared",
+            false,
+            "Monetary is not compared: the customer was new at the earlier instant.".to_owned(),
+        ),
+        (_, _, Some(_)) | (None, _, _) | (_, None, _) => (
+            "not_compared",
+            false,
+            "Monetary is not compared: an assignment was unassigned.".to_owned(),
+        ),
+        (Some(a), Some(b), None) => {
+            let stable = monetary_judgement(
+                before.as_deref().unwrap_or("0.00"),
+                after.as_deref().unwrap_or("0.00"),
+            ) == "stable";
+            let rank = stable && score_changed(previous.m_score, new.m_score);
+            let left = before.as_deref().unwrap_or("0.00");
+            let right = after.as_deref().unwrap_or("0.00");
+            let text = if a == b {
+                format!("Monetary is stable at {right} MXN.")
+            } else if stable {
+                format!("Monetary is stable from {left} MXN to {right} MXN, within 10% of the earlier value.")
+            } else {
+                format!("Monetary changed from {left} MXN to {right} MXN, more than 10% of the earlier value.")
+            };
+            (if stable { "stable" } else { "changed" }, rank, text)
+        }
+    };
+    MigrationMeasure {
+        variable: "monetary".to_owned(),
+        unit: "MXN".to_owned(),
+        previous_value: before,
+        new_value: after,
+        judgement: judgement.to_owned(),
+        not_compared_reason: reason,
+        rank_changed,
+        statement,
+    }
+}
+
+pub async fn read_migration_explanation(
+    db: &Database,
+    customer_id: Uuid,
+    window: MigrationWindow,
+) -> Result<MigrationExplanation, ApiError> {
+    let query = MigrationQuery {
+        window: window.clone(),
+        filter: MigrationFilter {
+            customer_id: Some(customer_id),
+            ..MigrationFilter::default()
+        },
+    };
+    let migration = read_migrations(db, &query)
+        .await?
+        .into_iter()
+        .next()
+        .ok_or_else(customer_not_found)?;
+    let measures = vec![
+        recency_measure(&migration.previous, &migration.new),
+        frequency_measure(&migration.previous, &migration.new),
+        monetary_measure(&migration.previous, &migration.new),
+    ];
+    Ok(MigrationExplanation {
+        window,
+        migration,
+        measures,
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Logged reads (ADR-0072)
 // ---------------------------------------------------------------------------
@@ -832,6 +1718,180 @@ pub fn assignments_reply(assignments: &[Assignment], page: u32, size: u32, total
     .into()
 }
 
+pub fn migrations_reply(
+    window: &MigrationWindow,
+    migrations: &[Migration],
+    page: u32,
+    size: u32,
+    total: u64,
+    xml: bool,
+) -> Reply {
+    let mut reply = Representation::new(
+        "SegmentMigrations",
+        [
+            ("from", Value::from(window.from)),
+            ("to", Value::from(window.to)),
+        ],
+    );
+    reply.data.insert(
+        if xml {
+            "SegmentMigration"
+        } else {
+            "migrations"
+        }
+        .to_owned(),
+        Value::List(
+            migrations
+                .iter()
+                .map(|row| Value::Object(row.wire().data))
+                .collect(),
+        ),
+    );
+    reply.data.insert(
+        if xml { "common:PageInfo" } else { "page_info" }.to_owned(),
+        Value::Object(
+            Representation::new(
+                "PageInfo",
+                [
+                    (if xml { "common:page" } else { "page" }, Value::from(page)),
+                    (if xml { "common:size" } else { "size" }, Value::from(size)),
+                    (
+                        if xml { "common:total" } else { "total" },
+                        Value::from(total as i64),
+                    ),
+                ],
+            )
+            .data,
+        ),
+    );
+    reply.into()
+}
+
+pub fn matrix_reply(matrix: &MigrationMatrix, xml: bool) -> Reply {
+    let totals = Value::List(
+        matrix
+            .totals
+            .iter()
+            .map(|total| {
+                Value::Object(
+                    Representation::new(
+                        "MigrationTotal",
+                        [
+                            ("state", Value::from(total.state.state.clone())),
+                            ("label_code", Value::from(total.state.label_code.clone())),
+                            ("before_count", Value::from(total.before_count)),
+                            ("after_count", Value::from(total.after_count)),
+                            ("entries", Value::from(total.entries)),
+                            ("exits", Value::from(total.exits)),
+                        ],
+                    )
+                    .data,
+                )
+            })
+            .collect(),
+    );
+    let cells = Value::List(
+        matrix
+            .cells
+            .iter()
+            .map(|cell| {
+                Value::Object(
+                    Representation::new(
+                        "MigrationCell",
+                        [
+                            ("previous_state", Value::from(cell.previous.state.clone())),
+                            (
+                                "previous_label_code",
+                                Value::from(cell.previous.label_code.clone()),
+                            ),
+                            ("new_state", Value::from(cell.new.state.clone())),
+                            ("new_label_code", Value::from(cell.new.label_code.clone())),
+                            ("movement", Value::from(cell.movement.clone())),
+                            ("customer_count", Value::from(cell.customer_count)),
+                        ],
+                    )
+                    .data,
+                )
+            })
+            .collect(),
+    );
+    let mut reply = Representation::new(
+        "SegmentMigrationMatrix",
+        [
+            ("from", Value::from(matrix.window.from)),
+            ("to", Value::from(matrix.window.to)),
+            (
+                "from_model_version_id",
+                Value::from(matrix.from_model_version_id),
+            ),
+            (
+                "to_model_version_id",
+                Value::from(matrix.to_model_version_id),
+            ),
+            ("methodological", Value::from(matrix.methodological)),
+            ("customer_count", Value::from(matrix.customer_count)),
+        ],
+    );
+    reply.data.insert(
+        if xml { "MigrationTotal" } else { "totals" }.to_owned(),
+        totals,
+    );
+    reply.data.insert(
+        if xml { "MigrationCell" } else { "cells" }.to_owned(),
+        cells,
+    );
+    reply.into()
+}
+
+pub fn explanation_reply(explanation: &MigrationExplanation, xml: bool) -> Reply {
+    let measures = Value::List(
+        explanation
+            .measures
+            .iter()
+            .map(|measure| {
+                Value::Object(
+                    Representation::new(
+                        "MigrationMeasure",
+                        [
+                            ("variable", Value::from(measure.variable.clone())),
+                            ("unit", Value::from(measure.unit.clone())),
+                            (
+                                "previous_value",
+                                Value::from(measure.previous_value.clone()),
+                            ),
+                            ("new_value", Value::from(measure.new_value.clone())),
+                            ("judgement", Value::from(measure.judgement.clone())),
+                            (
+                                "not_compared_reason",
+                                Value::from(measure.not_compared_reason.clone()),
+                            ),
+                            ("rank_changed", Value::from(measure.rank_changed)),
+                            ("statement", Value::from(measure.statement.clone())),
+                        ],
+                    )
+                    .data,
+                )
+            })
+            .collect(),
+    );
+    let mut reply = Representation::new(
+        "SegmentMigrationExplanation",
+        [
+            ("from", Value::from(explanation.window.from)),
+            ("to", Value::from(explanation.window.to)),
+            (
+                "migration",
+                Value::Object(explanation.migration.wire().data),
+            ),
+        ],
+    );
+    reply.data.insert(
+        if xml { "MigrationMeasure" } else { "measures" }.to_owned(),
+        measures,
+    );
+    reply.into()
+}
+
 /// Whether the kit will answer this `Accept` in XML: the best quality wins,
 /// an exact media type beats `application/*` beats `*/*`, ties go to JSON.
 pub fn prefers_xml(accept: &str) -> bool {
@@ -909,12 +1969,52 @@ async fn list_segment_assignments(ctx: Ctx) -> Result<Reply, ApiError> {
     Ok(assignments_reply(&rows, ctx.page, ctx.size, total))
 }
 
+async fn get_segment_migration_matrix(ctx: Ctx) -> Result<Reply, ApiError> {
+    let window = migration_window(&request_info().query)?;
+    let matrix = read_migration_matrix(ctx.db(), window).await?;
+    Ok(matrix_reply(&matrix, prefers_xml(&request_info().accept)))
+}
+
+async fn list_segment_migrations(ctx: Ctx) -> Result<Reply, ApiError> {
+    let query = migration_query(&request_info().query)?;
+    let rows = read_migrations(ctx.db(), &query).await?;
+    let total = rows.len() as u64;
+    let offset =
+        usize::try_from(u64::from(ctx.page - 1) * u64::from(ctx.size)).unwrap_or(usize::MAX);
+    let page: Vec<_> = rows
+        .into_iter()
+        .skip(offset)
+        .take(ctx.size as usize)
+        .collect();
+    Ok(migrations_reply(
+        &query.window,
+        &page,
+        ctx.page,
+        ctx.size,
+        total,
+        prefers_xml(&request_info().accept),
+    ))
+}
+
+async fn get_segment_migration_explanation(ctx: Ctx) -> Result<Reply, ApiError> {
+    let (customer, window) = explanation_query(&request_info().query)?;
+    let explanation = read_migration_explanation(ctx.db(), customer, window).await?;
+    Ok(explanation_reply(
+        &explanation,
+        prefers_xml(&request_info().accept),
+    ))
+}
+
 async fn database_ready(db: Arc<Database>) -> bool {
     let Ok(connection) = db.connection().await else {
         return false;
     };
     connection
-        .query("SELECT 1 FROM api_segments.current_label_v1 LIMIT 1", &[])
+        .query(
+            "SELECT (SELECT count(*) FROM api_segments.current_label_v1), \
+                    (SELECT count(*) FROM api_models.run_version_v1)",
+            &[],
+        )
         .await
         .is_ok()
 }
@@ -1027,6 +2127,12 @@ pub fn router(
         .operation("getSegment", get_segment)?
         .operation("getCurrentAssignment", get_current_assignment)?
         .operation("listSegmentAssignments", list_segment_assignments)?
+        .operation("getSegmentMigrationMatrix", get_segment_migration_matrix)?
+        .operation("listSegmentMigrations", list_segment_migrations)?
+        .operation(
+            "getSegmentMigrationExplanation",
+            get_segment_migration_explanation,
+        )?
         .ready_check(database_ready)
         .into_router()
         .layer(middleware::from_fn_with_state(refusals, log_refusals))

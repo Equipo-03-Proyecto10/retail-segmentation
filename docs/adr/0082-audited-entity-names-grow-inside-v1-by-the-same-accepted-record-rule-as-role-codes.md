@@ -1,6 +1,6 @@
 # ADR-0082 — Audited entity names grow inside v1 by the same accepted-record rule as role codes
 
-**Status:** Proposed
+**Status:** Accepted (2026-11-17)
 **Owner:** Marcelo
 **Issue:** #1023
 **Supersedes:** in part [ADR-0076](0076-role-codes-grow-inside-v1-only-by-an-accepted-record-and-clients-grant-nothing-for-an-unknown-role.md) (the words "the role codes now and only those")

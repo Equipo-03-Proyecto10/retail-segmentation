@@ -220,7 +220,7 @@ Later runtime events must be preserved.
 | [0078](0078-the-bench-twin-serves-every-read-of-the-products-contract-and-the-load-comparison-stays-as-it-was.md) | The bench twin serves every read of the products contract, and the load comparison stays as it was | Accepted |
 | [0080](0080-the-nightly-chain-and-the-emulator-pull-service-images-keyed-by-their-build-context.md) | The nightly chain and the emulator pull service images keyed by their build context, and build only what is missing | Accepted |
 | [0081](0081-the-domain-event-table-is-owned-by-the-schema-owner-and-a-subject-is-named-once-in-the-common-fields.md) | The domain-event table is owned by the schema owner, and a subject is named once, in the common fields | Accepted |
-| [0082](0082-audited-entity-names-grow-inside-v1-by-the-same-accepted-record-rule-as-role-codes.md) | Audited entity names grow inside v1 by the same accepted-record rule as role codes | Proposed |
+| [0082](0082-audited-entity-names-grow-inside-v1-by-the-same-accepted-record-rule-as-role-codes.md) | Audited entity names grow inside v1 by the same accepted-record rule as role codes | Accepted |
 
 ## Writing one
 

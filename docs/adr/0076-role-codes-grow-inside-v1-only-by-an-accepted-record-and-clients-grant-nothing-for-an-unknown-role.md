@@ -4,7 +4,7 @@
 **Owner:** Raquel
 **Issue:** #754
 **Supersedes:** —
-**Superseded by:** —
+**Superseded by:** [ADR-0082](0082-audited-entity-names-grow-inside-v1-by-the-same-accepted-record-rule-as-role-codes.md), in part (the words "the role codes now and only those")
 
 ---
 

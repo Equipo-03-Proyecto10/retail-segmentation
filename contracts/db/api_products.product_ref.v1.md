@@ -32,7 +32,9 @@ does not copy product state.
 
 The consuming services are **sales**, **recommendations**, **engagement**,
 **customer-preferences**, which reads the category of each purchased product to infer
-interests (F21-18), and **stock**, whose availability reads `is_active` (F21-07).
+interests (F21-18), **stock**, whose availability reads `is_active` (F21-07), and
+**analytics-kpis**, which reads the category and `is_active` of each product for the
+demand-coverage report (F26-05).
 Each consumer receives `USAGE` on `api_products` and `SELECT` on this view only,
 and names the columns it reads. The products boundary also holds `SELECT` as
 the producer. The view uses PostgreSQL's definer-rights behavior

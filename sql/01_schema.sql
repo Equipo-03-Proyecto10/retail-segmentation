@@ -5116,17 +5116,22 @@ GRANT UPDATE (customer_id) ON recommendations.recommendation_decision TO svc_rec
 -- (the reversal-aware lines and their data_origin, ADR-0062, ADR-0052),
 -- api_segments.current_label_v1 (the label a customer holds now) and
 -- api_users.store_assignment_v1 (the stores of a store-scoped caller, read on each
--- request, ADR-0060). The stories that add a report add the grants it needs here.
+-- request, ADR-0060). F26-05 adds the two views the demand-coverage report reads:
+-- api_stock.stock_level_v1 (the units held per store and product) and
+-- api_products.product_ref_v1 (the product's current category and is_active).
+-- The stories that add a report add the grants it needs here.
 -- Each is a row of contracts/db/grants.csv. Idempotent: an operator re-applies it.
 CREATE SCHEMA IF NOT EXISTS kpis;
 REVOKE ALL ON SCHEMA kpis FROM PUBLIC;
 CREATE SCHEMA IF NOT EXISTS api_kpis;
 REVOKE ALL ON SCHEMA api_kpis FROM PUBLIC;
 GRANT USAGE ON SCHEMA kpis, api_kpis TO svc_kpis;
-GRANT USAGE ON SCHEMA api_sales, api_segments, api_users TO svc_kpis;
+GRANT USAGE ON SCHEMA api_sales, api_segments, api_users, api_stock, api_products TO svc_kpis;
 GRANT SELECT ON api_sales.net_purchase_line_v1 TO svc_kpis;
 GRANT SELECT ON api_segments.current_label_v1 TO svc_kpis;
 GRANT SELECT ON api_users.store_assignment_v1 TO svc_kpis;
+GRANT SELECT ON api_stock.stock_level_v1 TO svc_kpis;
+GRANT SELECT ON api_products.product_ref_v1 TO svc_kpis;
 -- END BOUNDARY analytics-kpis
 
 -- BEGIN APPLICATION ROLE VERIFICATION

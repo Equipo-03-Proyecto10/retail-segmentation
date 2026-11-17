@@ -6,11 +6,13 @@
 //! stream and calls no other service. It reads `api_*` views other boundaries
 //! publish (ADR-0044) and holds no privilege on a base table.
 //!
-//! This release serves the catalog (`listKpiDefinitions`) and net sales
-//! (`getNetSalesReport`). The other reports of the contract are marked
+//! This release serves the catalog (`listKpiDefinitions`), net sales
+//! (`getNetSalesReport`) and demand by segment beside stock
+//! (`getDemandCoverageReport`). The other reports of the contract are marked
 //! `x-mosaiq-status: planned` (ADR-0073) until the stories that build them.
 
 pub mod catalog;
+pub mod demand_coverage;
 pub mod net_sales;
 pub mod query;
 pub mod scope;
@@ -29,7 +31,7 @@ use mosaiq_kit::{
     configure_logging, ApiError, Ctx, Database, Kit, KitConfig, Page, Reply, Representation, Value,
 };
 
-use crate::query::{parse_sales_query, SalesQuery};
+use crate::query::{parse_demand_query, parse_sales_query, DemandQuery, SalesQuery};
 use crate::scope::Scope;
 
 pub const SERVICE: &str = "analytics-kpis";
@@ -49,6 +51,28 @@ fn query_string() -> String {
     REQUEST
         .try_with(|info| info.query.clone())
         .unwrap_or_default()
+}
+
+fn store_scope_wire(scope: &Scope) -> Value {
+    Value::object([
+        ("restricted", Value::from(scope.restricted)),
+        (
+            "store_ids",
+            if scope.restricted {
+                Value::from(scope.store_ids.clone())
+            } else {
+                Value::List(Vec::new())
+            },
+        ),
+    ])
+}
+
+fn page_info_wire(page: u32, size: u32, total: u64) -> Value {
+    Value::object([
+        ("page", Value::from(page)),
+        ("size", Value::from(size)),
+        ("total", Value::from(total as i64)),
+    ])
 }
 
 fn report_wire(
@@ -82,20 +106,7 @@ fn report_wire(
         ),
     );
     data.insert("generated_at".into(), Value::from(generated_at));
-    data.insert(
-        "store_scope".into(),
-        Value::object([
-            ("restricted", Value::from(scope.restricted)),
-            (
-                "store_ids",
-                if scope.restricted {
-                    Value::from(scope.store_ids.clone())
-                } else {
-                    Value::List(Vec::new())
-                },
-            ),
-        ]),
-    );
+    data.insert("store_scope".into(), store_scope_wire(scope));
     data.insert(
         "data_origin".into(),
         Value::object([
@@ -114,14 +125,7 @@ fn report_wire(
         "rows".into(),
         Value::List(report.rows.iter().map(net_sales::Row::wire).collect()),
     );
-    data.insert(
-        "page_info".into(),
-        Value::object([
-            ("page", Value::from(page)),
-            ("size", Value::from(size)),
-            ("total", Value::from(report.total as i64)),
-        ]),
-    );
+    data.insert("page_info".into(), page_info_wire(page, size, report.total));
     data
 }
 
@@ -133,6 +137,60 @@ async fn get_net_sales_report(ctx: Ctx) -> Result<Reply, ApiError> {
     Ok(Representation::new(
         "KpiReport",
         report_wire(&query, &scope, generated_at, &report, ctx.page, ctx.size),
+    )
+    .into())
+}
+
+fn demand_coverage_wire(
+    query: &DemandQuery,
+    scope: &Scope,
+    generated_at: DateTime<Utc>,
+    report: &demand_coverage::Report,
+    page: u32,
+    size: u32,
+) -> IndexMap<String, Value> {
+    let mut data: IndexMap<String, Value> = IndexMap::new();
+    data.insert("from".into(), Value::from(query.from));
+    data.insert("to".into(), Value::from(query.to));
+    data.insert("window_days".into(), Value::from(query.window_days()));
+    data.insert(
+        "target_cover_days".into(),
+        Value::from(query.target_cover_days),
+    );
+    data.insert("generated_at".into(), Value::from(generated_at));
+    data.insert(
+        "calculation".into(),
+        Value::from(demand_coverage::CALCULATION),
+    );
+    data.insert("store_scope".into(), store_scope_wire(scope));
+    data.insert(
+        "data_origin".into(),
+        Value::object([
+            (
+                "views",
+                Value::from(demand_coverage::origin_views(scope).to_vec()),
+            ),
+            ("synthetic", Value::from(report.synthetic)),
+            ("spans_model_versions", Value::from(false)),
+            ("model_version_ids", Value::List(Vec::new())),
+        ]),
+    );
+    data.insert(
+        "rows".into(),
+        Value::List(report.rows.iter().map(demand_coverage::Row::wire).collect()),
+    );
+    data.insert("page_info".into(), page_info_wire(page, size, report.total));
+    data
+}
+
+async fn get_demand_coverage_report(ctx: Ctx) -> Result<Reply, ApiError> {
+    let generated_at = Utc::now().trunc_subsecs(0);
+    let query = parse_demand_query(&query_string(), generated_at.date_naive())?;
+    let scope = scope::resolve(&ctx, query.store_id).await?;
+    let report = demand_coverage::read(ctx.db(), &query, &scope, ctx.page, ctx.size).await?;
+    Ok(Representation::new(
+        "DemandCoverageReport",
+        demand_coverage_wire(&query, &scope, generated_at, &report, ctx.page, ctx.size),
     )
     .into())
 }
@@ -177,6 +235,20 @@ async fn views_ready(db: Arc<Database>) -> bool {
             )
             .await
             .is_ok()
+        && connection
+            .query(
+                "SELECT product_id FROM api_products.product_ref_v1 LIMIT $1",
+                &[&0i64],
+            )
+            .await
+            .is_ok()
+        && connection
+            .query(
+                "SELECT product_id FROM api_stock.stock_level_v1 LIMIT $1",
+                &[&0i64],
+            )
+            .await
+            .is_ok()
 }
 
 async fn capture_request(request: Request<Body>, next: Next) -> Response {
@@ -189,6 +261,7 @@ async fn capture_request(request: Request<Body>, next: Next) -> Response {
 pub fn router(config: KitConfig, contracts: &str) -> Result<Router, Box<dyn std::error::Error>> {
     Ok(Kit::new(SERVICE, SUFFIX, contracts, config)?
         .operation("getNetSalesReport", get_net_sales_report)?
+        .operation("getDemandCoverageReport", get_demand_coverage_report)?
         .operation("listKpiDefinitions", list_kpi_definitions)?
         .ready_check(views_ready)
         .into_router()

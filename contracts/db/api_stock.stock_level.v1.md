@@ -8,7 +8,7 @@
 | Kind | PostgreSQL view |
 | Owning boundary | stock |
 | Producer | stock-service |
-| Consumers | recommendations |
+| Consumers | recommendations, analytics-kpis |
 
 The view publishes one row for every row in `public.inventory`. Consumers
 never receive privileges on the base table, and the view copies no state.
@@ -27,7 +27,8 @@ which is not the same as a quantity of zero.
 
 ## Access and consumers
 
-The only consumer is **recommendations**. It receives `USAGE` on `api_stock`
+The consumers are **recommendations** and **analytics-kpis**, which reads it for
+the demand-coverage report (F26-05). Each receives `USAGE` on `api_stock`
 and `SELECT` on this view only, and names the columns it reads. stock-service
 holds `SELECT` as the producer.
 
@@ -37,4 +38,4 @@ Adding a column is compatible because consumers name their selected columns.
 Removing or renaming a consumed column, changing its type, or changing the
 one-row-per-pair rule is breaking. A breaking revision is published as
 `api_stock.stock_level_v2` with a matching `.v2.md` contract beside v1; v1
-remains until recommendations has moved.
+remains until its consumers have moved.

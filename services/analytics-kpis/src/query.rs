@@ -222,3 +222,72 @@ pub fn parse_sales_query(query: &str) -> Result<SalesQuery, ApiError> {
         _ => Err(invalid(details)),
     }
 }
+
+/// A demand-coverage report's parameters, validated (`getDemandCoverageReport`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DemandQuery {
+    pub from: NaiveDate,
+    pub to: NaiveDate,
+    pub store_id: Option<i32>,
+    pub category_id: Option<i32>,
+    /// The days of demand the stock should cover; 14 unless given.
+    pub target_cover_days: i32,
+}
+
+impl DemandQuery {
+    /// Days in the window, `to` - `from` + 1.
+    pub fn window_days(&self) -> i32 {
+        ((self.to - self.from).num_days() + 1) as i32
+    }
+
+    pub fn window_start(&self) -> DateTime<Utc> {
+        Utc.from_utc_datetime(&self.from.and_time(chrono::NaiveTime::MIN))
+    }
+
+    pub fn window_end(&self) -> DateTime<Utc> {
+        let after = self.to.checked_add_days(Days::new(1)).unwrap_or(self.to);
+        Utc.from_utc_datetime(&after.and_time(chrono::NaiveTime::MIN))
+    }
+}
+
+/// Read the query string of the demand-coverage report. `today` is the UTC
+/// date of `generated_at`: `to` must lie before it, so a day still running
+/// never lowers daily demand (`window_not_ended`).
+pub fn parse_demand_query(query: &str, today: NaiveDate) -> Result<DemandQuery, ApiError> {
+    let values = values(query);
+    let mut details = Vec::new();
+
+    let from = date(&values, "from", &mut details);
+    let to = date(&values, "to", &mut details);
+    if let (Some(from), Some(to)) = (from, to) {
+        if to < from {
+            details.push(Detail::new("to", "to_before_from"));
+        } else if (to - from).num_days() + 1 > MAX_WINDOW_DAYS {
+            details.push(Detail::new("to", "window_too_long"));
+        } else if to >= today {
+            details.push(Detail::new("to", "window_not_ended"));
+        }
+    }
+
+    let store_id = positive_i32(&values, "store_id", &mut details);
+    let category_id = positive_i32(&values, "category_id", &mut details);
+    let mut target_cover_days = 14;
+    if let Some(text) = values.get("target_cover_days") {
+        match text.parse::<i32>() {
+            Ok(days) if (1..=180).contains(&days) => target_cover_days = days,
+            Ok(_) => details.push(Detail::new("target_cover_days", "out_of_range")),
+            Err(_) => details.push(Detail::new("target_cover_days", "invalid_format")),
+        }
+    }
+
+    match (from, to, details.is_empty()) {
+        (Some(from), Some(to), true) => Ok(DemandQuery {
+            from,
+            to,
+            store_id,
+            category_id,
+            target_cover_days,
+        }),
+        _ => Err(invalid(details)),
+    }
+}

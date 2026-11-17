@@ -427,7 +427,6 @@ async fn an_operation_that_is_planned_is_not_served() {
         "conversion",
         "recommendation-performance",
         "campaign-performance",
-        "demand-coverage",
     ] {
         let uri = format!("/v1/kpi-reports/{path}?from=2020-03-01&to=2020-03-31");
         let (status, body) = send(&stack.app, "GET", &uri, Some(&admin), JSON).await;

@@ -390,8 +390,10 @@ class SalesViewModel(
     }
 
     private suspend fun <T> call(block: suspend () -> Response<T>): Answer<T> {
+        // ui-string-ok: cancellation reasons for the coroutine machinery, never shown
         val user = graph.session.userId.value ?: throw CancellationException("Signed out")
         val answer = netCall(block)
+        // ui-string-ok: cancellation reasons for the coroutine machinery, never shown
         if (graph.session.userId.value != user) throw CancellationException("Session changed")
         return answer
     }

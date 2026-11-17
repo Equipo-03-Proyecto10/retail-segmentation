@@ -196,6 +196,7 @@ private fun StoreLine(store: ChosenStore?, onPickStore: () -> Unit) {
     }
 }
 
+// ui-string-ok-from: previews below (sample copy for design review, never on a screen)
 private val previewStore = ChosenStore(1, "Centro")
 private val previewCustomer = Customer("c1", "Ana Torres", "ana@example.com", null, 1, "2025-01-01")
 private val previewProduct = Product(1, "SKU1", "Trail socks", 3, "12.5", true)

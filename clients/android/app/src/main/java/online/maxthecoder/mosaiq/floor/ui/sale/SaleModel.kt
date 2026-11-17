@@ -10,6 +10,7 @@ import online.maxthecoder.mosaiq.floor.ui.CustomerSearchState
 import online.maxthecoder.mosaiq.floor.ui.InterestsState
 import online.maxthecoder.mosaiq.floor.ui.RegistrationState
 import online.maxthecoder.mosaiq.floor.ui.SaleBuilderState
+import online.maxthecoder.mosaiq.floor.ui.SaleLine
 
 /** Everything the sale screen draws, read once from the view model so the content is stateless. */
 data class SaleUi(
@@ -48,7 +49,10 @@ class SaleActions(
 /** The channel every floor sale is recorded under (the view model's fixed choice). */
 internal const val PHYSICAL_STORE = "physical_store"
 
-/** The sale total: unit price times quantity, lines whose price cannot be read count as zero. */
-fun saleTotal(sale: SaleBuilderState): BigDecimal = sale.lines.fold(BigDecimal.ZERO) { sum, line ->
-    sum + (line.product.listPrice.toBigDecimalOrNull() ?: BigDecimal.ZERO) * line.quantity.toBigDecimal()
-}
+/** One line's amount: unit price times quantity; a price that cannot be read counts as zero. */
+fun lineTotal(line: SaleLine): BigDecimal =
+    (line.product.listPrice.toBigDecimalOrNull() ?: BigDecimal.ZERO) * line.quantity.toBigDecimal()
+
+/** The sale total: the sum of its lines. */
+fun saleTotal(sale: SaleBuilderState): BigDecimal =
+    sale.lines.fold(BigDecimal.ZERO) { sum, line -> sum + lineTotal(line) }

@@ -284,12 +284,30 @@ const planWrites = (): Seen[] => seen.filter((s) => s.method === 'PUT');
 const lastWrite = (): Seen => planWrites().at(-1) as Seen;
 const section = (page: Page, id: string) => page.getByTestId(`plan-${id}`);
 
-/** Opens campaign 301 and waits for its plan to be drawn: the sections read on their own. */
+/**
+ * Opens campaign 301 and waits for its plan to be drawn. The sections read on their own and replace
+ * their "Loading…" when the answer arrives, which moves everything below them, the preview's button
+ * included; so the plan is ready only once no section is still loading (#1029).
+ */
 async function openPlan(page: Page): Promise<void> {
   await nav(page, 'campaigns').click();
   await page.getByTestId('view-campaign-301').click();
   await expect(page.getByTestId('campaign-name')).toHaveText('Holiday Loyalty Preview');
   await expect(page.getByTestId('campaign-plan')).toBeVisible();
+  await expect(page.getByTestId('campaign-plan').locator('.busy')).toHaveCount(0);
+}
+
+/**
+ * Runs the preview and waits for what it renders from: the breakdown asked of the fake (answered or
+ * refused, for the fallback), then the result drawn in place of "Loading…" (#1029).
+ */
+async function runPreview(page: Page): Promise<void> {
+  const before = seen.length;
+  await page.getByTestId('preview-run').click();
+  await expect.poll(() => seen.slice(before).some((s) => s.url.endsWith('/audience/breakdown'))).toBe(true);
+  const result = page.getByTestId('preview-result');
+  await expect(result.locator('.busy')).toHaveCount(0);
+  await expect(result).not.toBeEmpty();
 }
 
 test('a DRAFT shows what is stored in each section, for a role that writes', async () => {
@@ -340,7 +358,7 @@ test('the preview shows the estimated population, how many were left out and eac
   await openPlan(page);
   await expect(page.getByTestId('preview-result')).toBeEmpty();
   const beforePreview = seen.length;
-  await page.getByTestId('preview-run').click();
+  await runPreview(page);
   // 31 holders: 1 not in the customer list, 2 and 3 who withdrew consent, 2 excluded by id, 3 registered
   // late, 4 with too few purchases: 15 left out.
   await expect(page.getByTestId('preview-size')).toHaveText('16 customers');
@@ -391,7 +409,7 @@ test('a preview of a plan with no rule shows every reason, each rule that is not
   plan = { customers: [], labels: [] };
   const { app, page } = await launch('ADMIN');
   await openPlan(page);
-  await page.getByTestId('preview-run').click();
+  await runPreview(page);
   // Consent is not a rule of the plan: it leaves customers out whatever is set.
   await expect(page.getByTestId('preview-size')).toHaveText('25 customers');
   await expect(page.getByTestId('preview-left-out')).toHaveText('6');
@@ -423,7 +441,7 @@ for (const [answer, text] of [
     const { app, page } = await launch('MARKETING');
     await openPlan(page);
     const beforePreview = seen.length;
-    await page.getByTestId('preview-run').click();
+    await runPreview(page);
     const notice = page.getByTestId('preview-fallback');
     await expect(notice).toContainText('The breakdown by reason could not be read');
     await expect(notice).toContainText(`(${text})`);
@@ -677,7 +695,7 @@ for (const as of ['ANALYST', 'AUDITOR']) {
     await expect(page.locator('[data-testid=campaign-plan] :is(textarea, button[type=submit])')).toHaveCount(
       0,
     );
-    await page.getByTestId('preview-run').click();
+    await runPreview(page);
     await expect(page.getByTestId('preview-size')).toHaveText('16 customers');
     await expect(page.getByTestId('preview-reason-marketing_contact_withdrawn')).toHaveText('3');
     await shot(page, `878-desktop-campaign-plan-05-${as.toLowerCase()}-read-only`);
@@ -739,7 +757,7 @@ test('what a service returns is shown as text, never as markup', async () => {
   plan.customers = [];
   const { app, page } = await launch('MARKETING');
   await openPlan(page);
-  await page.getByTestId('preview-run').click();
+  await runPreview(page);
   await expect(page.getByTestId('preview-reasons')).toContainText('onerror');
   await expect(page.locator('[data-testid=campaign-plan] img')).toHaveCount(0);
   expect(await page.getByTestId('plan-exclusions').locator('label', { hasText: 'onerror' }).count()).toBe(1);
@@ -751,7 +769,7 @@ for (const as of ['MARKETING', 'ANALYST']) {
     const { app, page } = await launch(as);
     await openPlan(page);
     // The widest content: the preview with its eight reasons, and the longest lists the plan holds.
-    await page.getByTestId('preview-run').click();
+    await runPreview(page);
     await expect(page.getByTestId('preview-size')).toBeVisible();
     for (const [width, height] of [
       [375, 900],

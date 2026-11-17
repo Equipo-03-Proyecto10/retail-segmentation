@@ -130,7 +130,12 @@ class FloorViewModel(
     }
 
     /** Asks the queue to send what is waiting now; each row goes out as stored, so it cannot become a second write. */
-    fun sendNow() = graph.kick()
+    fun sendNow() = graph.sendNow()
+
+    /** Forgets the session on this phone without a network call, for a role the floor holds nothing for. */
+    fun forgetSession() {
+        viewModelScope.launch { graph.sessions.signOutLocally() }
+    }
 
     fun dismiss(row: OutboxRow) {
         viewModelScope.launch { graph.outbox.dismiss(row.id) }

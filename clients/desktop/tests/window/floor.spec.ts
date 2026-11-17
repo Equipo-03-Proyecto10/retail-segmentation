@@ -352,6 +352,7 @@ test('screens and controls follow each role', async () => {
     'conversion',
     'kmeans',
     'model-comparison',
+    'rfm-rules',
     'campaigns',
     'experiments',
     'products',

@@ -636,6 +636,42 @@ test (`tests/unit/model-comparison.test.ts`) pins the criteria and RN-39 reconci
 (`tests/window/model-comparison.spec.ts`) serves XSD-valid XML from both contracts and verifies the
 read-only bridge and the two required widths.
 
+## RFM rules (F28-04)
+
+The **RFM rules** screen configures a rule set for rfm-engine (`contracts/rfm-engine/`, XML validated
+against its XSD): the window, the four cut-points of each measure, the bands that turn scores into
+labels and the fallback label. It reads rule sets (`listRfmRuleSets`, `getRfmRuleSet`), reads the scored
+profiles for a preview (`listRfmProfiles`) and writes one thing, a new rule set (`createRfmRuleSet`,
+ADMIN only in the contract, so an analyst reads, drafts and previews but is given no store control and
+the main process refuses a forced call before anything is sent).
+
+- **Stored rule sets are read-only.** A rule set is immutable (ADR-0064), published or not; opening one
+  shows tables, never fields, and says so. **Derive a new version** copies it into the draft with a new
+  name and leaves the stored one unchanged.
+- **The draft lives on the screen** until it is stored; nothing is sent while it is edited. It is checked
+  at every keystroke with the contract's own rules, and each problem names the band or the window that
+  is wrong: `Window: 4000 days is outside 1 to 3650 days.`, `Band 3 (AT_RISK): R minimum 4 is greater than
+its maximum 2.`, `Band 1 (CHAMPION) and Band 2 (LOYAL) overlap: both match R 5, F 5, M 4 to 5.`,
+  `Recency cut-point for score 4 (10) is below the one for score 5 (14); ...`. The same checks run in the
+  main process, which refuses a draft with the contract's detail codes (`not_monotonic`, `band_range`,
+  `bands_overlap`) before it sends one, and shows the service's own refusals as it answers them.
+- **The distribution is shown before storing.** A preview scores the raw R, F and M that rfm-engine
+  already holds for the customers it scored under a stored rule set, with the draft's cut-points and bands,
+  and shows customers per label, their share, and how many took the label only because no band matched.
+  The service has no preview operation, so this is computed here from `GET /v1/rfm-profiles`. A draft with a
+  different window cannot be recomputed from figures taken over another window, and the screen says so. A
+  base of more than 20,000 scored customers is refused rather than half counted. Storing needs a preview
+  of the very draft on screen: editing it removes the preview.
+- **Storing publishes nothing.** The rule set is created unpublished; publication and rollback belong to
+  model-registry (ADR-0064).
+
+`createRfmRuleSet` and `getRfmRuleSet` are still marked `x-mosaiq-status: planned` in the contract, so the
+service does not answer them yet; the unit tests (`tests/unit/rfm-rules.test.ts`,
+`tests/unit/rfm-rules-shared.test.ts`) and the window test (`tests/window/rfm-rules.spec.ts`) answer with
+the recorded examples through a fake gateway. The contract's own recorded request,
+`rule-set.request.xml`, has two overlapping bands (CHAMPION lies inside LOYAL), which the contract forbids;
+the draft says so when that rule set is derived.
+
 ## Customer exploration (F28-03)
 
 Through five services: rfm-engine (`contracts/rfm-engine/`), sales-service, products-service and

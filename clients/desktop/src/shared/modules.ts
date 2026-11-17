@@ -15,6 +15,7 @@ export type ModuleName =
   | 'drift'
   | 'kmeans'
   | 'model-comparison'
+  | 'rfm-rules'
   | 'stores'
   | 'campaigns'
   | 'experiments'
@@ -57,6 +58,7 @@ export const MODULE_GROUPS: readonly ModuleGroup[] = [
       { name: 'conversion', label: 'Conversion analysis', operation: 'getExperimentResult' },
       { name: 'kmeans', label: 'K-means', operation: 'listModelVersions' },
       { name: 'model-comparison', label: 'Model comparison', operation: 'getModelVersion' },
+      { name: 'rfm-rules', label: 'RFM rules', operation: 'listRfmRuleSets' },
       { name: 'imports', label: 'Import and data quality', operation: 'listSaleImports' },
     ],
   },

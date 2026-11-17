@@ -149,15 +149,16 @@ class Scenario:
             " 'OBSERVED')",
             (experiment, START - timedelta(days=5), START + timedelta(days=16)),
         )
-        owner.execute(
-            "INSERT INTO public.experiment_group (group_id, experiment_id, kind, name,"
-            " treatment_description) VALUES (%s, %s, 'TREATMENT', 'T', 'T')",
-            (group, experiment),
-        )
+        for offset, kind in enumerate(("CONTROL", "TREATMENT")):
+            owner.execute(
+                "INSERT INTO public.experiment_group (group_id, experiment_id, kind,"
+                " name, treatment_description) VALUES (%s, %s, %s, %s, %s)",
+                (group + offset, experiment, kind, kind.title(), kind.title()),
+            )
         owner.execute(
             "INSERT INTO public.experiment_assignment (experiment_id, group_id,"
             " customer_id) VALUES (%s, %s, %s)",
-            (experiment, group, customer),
+            (experiment, group + 1, customer),
         )
         return experiment
 

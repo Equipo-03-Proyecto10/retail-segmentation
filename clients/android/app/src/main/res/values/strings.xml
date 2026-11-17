@@ -222,7 +222,7 @@
     <string name="session_ended_expired">Your session expired. Sign in again.</string>
     <string name="session_ended_revoked">Your session was ended. Sign in again.</string>
     <string name="session_ended_invalid">Your session is no longer valid. Sign in again.</string>
-    <string name="session_role_refused">This app is for store managers and administrators. You were signed out.</string>
+    <string name="session_role_refused">This app is for store staff accounts: seller, manager, loyalty officer, commercial supervisor and administrator. You were signed out.</string>
     <string name="outbox_invalid_path">The request path is not a valid URL.</string>
     <string name="outbox_refused_default">The service refused this write.</string>
     <string name="sale_refused_default">Sale refused.</string>

@@ -962,6 +962,16 @@ BEGIN
     before_data := before_data - 'password_hash';
     after_data  := after_data  - 'password_hash';
 
+    -- An anonymized customer's name, email and phone never enter the trail again
+    -- (ADR-0066 section 3), and the entry that records the anonymization does not
+    -- keep the identity it removed. The older entries are redacted by
+    -- customers.redact_audit_v1 in the same transaction.
+    IF TG_TABLE_NAME = 'customer'
+       AND coalesce(after_data, before_data) ->> 'anonymized_at' IS NOT NULL THEN
+        before_data := public.fn_redact_identity(before_data);
+        after_data  := public.fn_redact_identity(after_data);
+    END IF;
+
     -- The application sets mosaiq.user_id on the connection once F4-01 knows
     -- who is logged in. Until then, and for anything the seed or a maintenance
     -- script does, the actor is genuinely unknown and the column stays NULL
@@ -2079,8 +2089,10 @@ GRANT SELECT ON products.product_status, products.product_attribute,
 -- when given, whatever the letter case (ux_customer_email_lower), a known channel
 -- (customer_registration_channel_id_fkey), a registration date not in the
 -- future (checked by the service) and no deletion. The table stays in public
--- as legacy, and the web only reads it. The boundary publishes no stream, so it
--- has no outbox and no capture trigger.
+-- as legacy, and the web only reads it. F21-19 (ADR-0066 section 3) adds the
+-- other half of RN-08: a customer is anonymized in place, never deleted. The
+-- boundary therefore publishes one stream, stream:customers.v1.anonymized,
+-- relayed from customers_events.outbox, and one flag in the customer reference.
 
 -- One customer per mailbox, whatever the letter case (#594), as app_user
 -- (#288). A plain UNIQUE on email let Ana@ and ana@ register as two customers.
@@ -2134,14 +2146,154 @@ CREATE TRIGGER trg_audit_loyalty_card
 AFTER INSERT OR UPDATE ON customers.loyalty_card
 FOR EACH ROW EXECUTE FUNCTION public.fn_audit('card_id');
 
--- The published customer reference: identity and registration date, and no
--- personal data. security_invoker = off, so a consumer needs no privilege on
--- public.customer.
+-- Anonymization (F21-19, ADR-0066 section 3). anonymized_at is the one marker:
+-- null until the identity is removed in place, then the instant it was, once.
+-- It depends on the customer alone, so the model stays in 4NF (docs/data-model.md
+-- section 2.4). Two guards keep it honest for every writer, the web and a direct
+-- UPDATE included, because an application check alone is bypassed: the CHECK says
+-- a marked row holds no identity, and the trigger says a marked row never changes
+-- again. The placeholder is the name column's NOT NULL replacement.
+ALTER TABLE public.customer ADD COLUMN IF NOT EXISTS anonymized_at TIMESTAMPTZ;
+DO $anonymized_check$ BEGIN
+    ALTER TABLE public.customer ADD CONSTRAINT customer_anonymized_identity_check
+        CHECK (anonymized_at IS NULL OR (
+            name = 'Anonymized customer' AND email IS NULL AND phone IS NULL
+            AND user_id IS NULL));
+EXCEPTION WHEN duplicate_object THEN NULL; END $anonymized_check$;
+
+CREATE OR REPLACE FUNCTION customers.refuse_anonymized_change() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, pg_temp
+AS $refuse$
+BEGIN
+    RAISE EXCEPTION 'customer % is anonymized and accepts no change', OLD.customer_id
+        USING ERRCODE = 'check_violation', CONSTRAINT = 'customer_anonymized';
+END
+$refuse$;
+REVOKE EXECUTE ON FUNCTION customers.refuse_anonymized_change() FROM PUBLIC;
+
+DROP TRIGGER IF EXISTS trg_customer_anonymized_is_final ON public.customer;
+CREATE TRIGGER trg_customer_anonymized_is_final
+BEFORE UPDATE ON public.customer
+FOR EACH ROW WHEN (OLD.anonymized_at IS NOT NULL)
+EXECUTE FUNCTION customers.refuse_anonymized_change();
+
+-- An anonymized customer holds no loyalty card (ADR-0066): a card is never issued
+-- to one. The check is the table's, so a direct INSERT meets it too.
+CREATE OR REPLACE FUNCTION customers.refuse_card_for_anonymized() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, pg_temp
+AS $refuse$
+BEGIN
+    IF EXISTS (SELECT 1 FROM public.customer AS c
+                WHERE c.customer_id = NEW.customer_id AND c.anonymized_at IS NOT NULL) THEN
+        RAISE EXCEPTION 'customer % is anonymized and holds no loyalty card', NEW.customer_id
+            USING ERRCODE = 'check_violation', CONSTRAINT = 'customer_anonymized';
+    END IF;
+    RETURN NEW;
+END
+$refuse$;
+REVOKE EXECUTE ON FUNCTION customers.refuse_card_for_anonymized() FROM PUBLIC;
+
+DROP TRIGGER IF EXISTS trg_loyalty_card_not_for_anonymized ON customers.loyalty_card;
+CREATE TRIGGER trg_loyalty_card_not_for_anonymized
+BEFORE INSERT ON customers.loyalty_card
+FOR EACH ROW EXECUTE FUNCTION customers.refuse_card_for_anonymized();
+
+-- The published customer reference: identity, registration date and the
+-- anonymized flag, and no personal data. security_invoker = off, so a consumer
+-- needs no privilege on public.customer. anonymized is appended last so the view
+-- is replaced in place (contracts/db/api_customers.customer_ref.v1.md).
 CREATE OR REPLACE VIEW api_customers.customer_ref_v1
 WITH (security_invoker = off) AS
-SELECT customer_id, registered_on
+SELECT customer_id, registered_on, (anonymized_at IS NOT NULL) AS anonymized
 FROM public.customer;
 REVOKE ALL ON api_customers.customer_ref_v1 FROM PUBLIC;
+
+-- The identity inside an audit payload (ADR-0066 section 3): name, email and
+-- phone that are present and not JSON null become the marker; nothing else of
+-- the payload changes. Pure, so fn_audit, the redaction pass and the tests share
+-- one definition.
+CREATE OR REPLACE FUNCTION public.fn_redact_identity(d jsonb) RETURNS jsonb
+LANGUAGE sql IMMUTABLE
+SET search_path = pg_catalog, pg_temp
+AS $redact$
+    SELECT CASE WHEN d IS NULL THEN NULL ELSE
+        d || coalesce((SELECT jsonb_object_agg(k, '"[redacted]"'::jsonb)
+                         FROM unnest(ARRAY['name', 'email', 'phone']) AS k
+                        WHERE d ? k AND jsonb_typeof(d -> k) <> 'null'), '{}'::jsonb)
+    END
+$redact$;
+
+-- Removes the identity from every audit entry of one anonymized customer's row,
+-- and returns how many entries changed. It runs as definer_customers, which may
+-- read those columns and update the two payloads and nothing else; no svc_* role
+-- gains UPDATE on audit_log (ADR-0024, ADR-0066). It refuses a customer that is
+-- not anonymized, so it cannot be used to blank anyone's trail. The entries, their
+-- number, keys, actions, times and actors stay.
+CREATE OR REPLACE FUNCTION customers.redact_audit_v1(p_customer uuid) RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $redact_audit$
+DECLARE
+    changed integer;
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM public.customer AS c
+                    WHERE c.customer_id = p_customer AND c.anonymized_at IS NOT NULL) THEN
+        RAISE EXCEPTION 'customer % is not anonymized', p_customer
+            USING ERRCODE = 'check_violation', CONSTRAINT = 'customer_not_anonymized';
+    END IF;
+    UPDATE public.audit_log AS a
+       SET data_before = public.fn_redact_identity(a.data_before),
+           data_after = public.fn_redact_identity(a.data_after)
+     WHERE a.entity = 'customer' AND a.entity_pk = p_customer::text
+       AND (a.data_before IS DISTINCT FROM public.fn_redact_identity(a.data_before)
+            OR a.data_after IS DISTINCT FROM public.fn_redact_identity(a.data_after));
+    GET DIAGNOSTICS changed = ROW_COUNT;
+    RETURN changed;
+END
+$redact_audit$;
+ALTER FUNCTION customers.redact_audit_v1(uuid) OWNER TO definer_customers;
+REVOKE ALL ON FUNCTION customers.redact_audit_v1(uuid) FROM PUBLIC;
+
+-- Keys only, never state: a consumer re-reads api_customers.customer_ref_v1.
+CREATE SCHEMA IF NOT EXISTS customers_events;
+REVOKE ALL ON SCHEMA customers_events FROM PUBLIC;
+CREATE TABLE IF NOT EXISTS customers_events.outbox (
+    event_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    stream      text NOT NULL,
+    event_type  text NOT NULL,
+    entity_id   text NOT NULL,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    relayed_at  timestamptz
+);
+CREATE INDEX IF NOT EXISTS outbox_unrelayed
+    ON customers_events.outbox (occurred_at) WHERE relayed_at IS NULL;
+
+-- One outbox row, in the transaction that removes the identity, and none for a
+-- row that changes anything else (contracts/streams/customers.anonymized.v1.md).
+CREATE OR REPLACE FUNCTION customers_events.capture_anonymized() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+BEGIN
+    INSERT INTO customers_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:customers.v1.anonymized', TG_OP, NEW.customer_id::text);
+    -- An empty wake-up for the customers relay; only that relay LISTENs.
+    PERFORM pg_notify('customers_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION customers_events.capture_anonymized() OWNER TO definer_customers;
+REVOKE EXECUTE ON FUNCTION customers_events.capture_anonymized() FROM PUBLIC;
+
+DROP TRIGGER IF EXISTS trg_customers_capture_anonymized ON public.customer;
+CREATE TRIGGER trg_customers_capture_anonymized
+AFTER UPDATE OF anonymized_at ON public.customer
+FOR EACH ROW WHEN (OLD.anonymized_at IS NULL AND NEW.anonymized_at IS NOT NULL)
+EXECUTE FUNCTION customers_events.capture_anonymized();
 
 -- Consumers can resolve one active code but cannot enumerate card data.
 CREATE OR REPLACE FUNCTION api_customers.resolve_loyalty_code_v1(p_code text)
@@ -2166,6 +2318,19 @@ REVOKE ALL ON FUNCTION api_customers.resolve_loyalty_code_v1(text) FROM PUBLIC;
 GRANT SELECT, INSERT ON public.customer TO svc_customers;
 GRANT UPDATE (name, email, phone, registration_channel_id)
     ON public.customer TO svc_customers;
+-- Anonymization sets the marker and clears the account link; the CHECK and the
+-- triggers above say what an UPDATE of them may leave behind.
+GRANT UPDATE (user_id, anonymized_at) ON public.customer TO svc_customers;
+-- The redaction function reads the customer's marker and rewrites two payloads
+-- of audit_log, and does nothing else.
+GRANT SELECT (customer_id, anonymized_at) ON public.customer TO definer_customers;
+GRANT SELECT (entity, entity_pk, data_before, data_after),
+      UPDATE (data_before, data_after) ON public.audit_log TO definer_customers;
+GRANT EXECUTE ON FUNCTION customers.redact_audit_v1(uuid) TO svc_customers;
+
+GRANT USAGE ON SCHEMA customers_events TO svc_customers, definer_customers;
+GRANT INSERT ON customers_events.outbox TO definer_customers;
+GRANT SELECT, DELETE, UPDATE (relayed_at) ON customers_events.outbox TO svc_customers;
 
 GRANT USAGE ON SCHEMA customers TO svc_customers, definer_customers;
 GRANT SELECT, INSERT ON customers.loyalty_card TO svc_customers;

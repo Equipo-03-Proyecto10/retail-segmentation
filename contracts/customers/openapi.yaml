@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: customers-service
-  version: 1.7.0
+  version: 1.7.1
   description: >-
     Registers, searches, reads and corrects customers under RN-08. Customers
     are never deleted through services; a mistaken registration is corrected
@@ -287,7 +287,6 @@ paths:
     put:
       tags: [Customers]
       operationId: anonymizeCustomer
-      x-mosaiq-status: planned
       summary: Anonymize a customer
       description: >-
         Replaces the customer's identity in place and keeps everything else

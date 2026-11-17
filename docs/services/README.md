@@ -92,9 +92,9 @@ The design accepts a small number of deliberate deviations from the strict readi
 
 ### E-03 — a foreign id keys a resource that is its own identity
 
-- **What:** Three paths carry another boundary's id: `/v1/preference-profiles/{customer_id}`, `/v1/stock-levels/{store_id}/{product_id}` and `/v1/rfm-profiles/{customer_id}`. Strictly, "foreign ids are query or body fields".
-- **Why it is acceptable:** A preference profile and an RFM profile each exist once per customer, and a stock level is one row per store and product. The id is the resource's own identity, not a reference to another service's resource, so a query parameter would only hide a key.
-- **Guard:** No path may contain another service's registered resource name, as whole path segments. The registry check enforces it. The remaining half, "the id is the resource's identity", is a review call, and only these three paths use it.
+- **What:** Four paths carry another boundary's id: `/v1/preference-profiles/{customer_id}`, `/v1/stock-levels/{store_id}/{product_id}`, `/v1/availabilities/{store_id}/{product_id}` and `/v1/rfm-profiles/{customer_id}`. Strictly, "foreign ids are query or body fields".
+- **Why it is acceptable:** A preference profile and an RFM profile each exist once per customer, and a stock level, like a pair's availability, is keyed by its store and product. The id is the resource's own identity, not a reference to another service's resource, so a query parameter would only hide a key.
+- **Guard:** No path may contain another service's registered resource name, as whole path segments. The registry check enforces it. The remaining half, "the id is the resource's identity", is a review call, and only these four paths use it.
 - **Services:** [customer-preferences](./customer-preferences.md), [stock](./stock.md), [rfm-engine](./rfm-engine.md)
 - **Decided in:** [ADR-0035](../adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md) (Decision (path rule))
 

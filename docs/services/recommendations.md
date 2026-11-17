@@ -77,7 +77,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Consumes | `api_segments.current_label_v1` | segments |
 | Consumes | `api_preferences.consent_state_v1` | customer-preferences (`PERSONALIZATION` only, F24-06) |
 | Consumes | `api_preferences.restriction_v1` | customer-preferences (`INTEREST_CATEGORY` only, F24-06) |
-| Consumes (*planned*, `/v2`) | `api_stock.availability_v1` | stock |
+| Consumes (`/v2`; the view and its SELECT exist since F21-07) | `api_stock.availability_v1` | stock |
 | Consumes (*planned*, `/v2`) | The commercial-status and substitute-relation views of products (F21-09, F21-10) and the status and channel views of stores (F21-11, F21-12); names fixed by those stories | products, stores |
 
 ## Events

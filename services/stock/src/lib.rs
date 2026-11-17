@@ -15,6 +15,7 @@ use mosaiq_kit::{
 use redis::aio::MultiplexedConnection;
 use tokio_postgres::{GenericClient, Row};
 
+pub mod availability;
 pub mod movements;
 
 const SERVICE: &str = "stock";
@@ -258,6 +259,59 @@ fn stock_level_not_found() -> ApiError {
     )
 }
 
+async fn list_availabilities(ctx: Ctx) -> Result<Reply, ApiError> {
+    let query = QUERY.try_with(Clone::clone).unwrap_or_default();
+    let filters = availability::parse_availability_filters(&query)?;
+    let connection = ctx.db().connection().await?;
+    let result =
+        availability::read_availabilities(&***connection, &filters, ctx.page, ctx.size).await?;
+    let items = result
+        .availabilities
+        .iter()
+        .map(availability::Availability::representation)
+        .collect();
+    Ok(Page::new(
+        "Availabilities",
+        "Availability",
+        "availabilities",
+        items,
+        ctx.page,
+        result.total,
+    )
+    .size(ctx.size)
+    .into())
+}
+
+/// The pair's rows in the list's page type: one page holding every channel
+/// (a store has at most a handful, far below the page size).
+async fn get_availability(ctx: Ctx) -> Result<Reply, ApiError> {
+    let store_raw = ctx.path_i64("store_id").unwrap_or_default();
+    let product_raw = ctx.path_i64("product_id").unwrap_or_default();
+    let not_found = || availability::availability_not_found(store_raw, product_raw);
+    let store_id = i32::try_from(store_raw).map_err(|_| not_found())?;
+    let product_id = i32::try_from(product_raw).map_err(|_| not_found())?;
+    let connection = ctx.db().connection().await?;
+    let rows = availability::read_availability(&***connection, store_id, product_id).await?;
+    if rows.is_empty() {
+        return Err(not_found());
+    }
+    let total = rows.len() as u64;
+    let items = rows
+        .iter()
+        .map(availability::Availability::representation)
+        .collect();
+    Ok(Page::new(
+        "Availabilities",
+        "Availability",
+        "availabilities",
+        items,
+        1,
+        total,
+    )
+    .size(ctx.size)
+    .into())
+}
+
 async fn record_stock_movement(ctx: Ctx) -> Result<Reply, ApiError> {
     let key = IDEMPOTENCY_KEY.try_with(Clone::clone).unwrap_or_default();
     let key = movements::parse_idempotency_key(key.as_deref())?;
@@ -343,6 +397,8 @@ pub fn router(config: KitConfig, contracts: &str) -> Result<Router, Box<dyn std:
         .operation("recordStockMovement", record_stock_movement)?
         .operation("listStockMovements", list_stock_movements)?
         .operation("getStockMovement", get_stock_movement)?
+        .operation("listAvailabilities", list_availabilities)?
+        .operation("getAvailability", get_availability)?
         .ready_check(database_ready)
         .into_router()
         .layer(middleware::from_fn(capture_query)))

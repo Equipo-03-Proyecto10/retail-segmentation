@@ -1258,6 +1258,15 @@ FROM public.transaction AS t
 JOIN public.transaction_line AS l ON l.transaction_id = t.transaction_id;
 REVOKE ALL ON api_sales.purchase_line_v1 FROM PUBLIC;
 
+-- contracts/db/api_sales.channel.v1.md: the ids of the sales channels, the
+-- vocabulary sales is the read owner of (E-10). Ids only; stock derives one
+-- availability row per channel from it (F21-07).
+CREATE OR REPLACE VIEW api_sales.channel_v1
+WITH (security_invoker = off) AS
+SELECT channel_id
+FROM public.channel;
+REVOKE ALL ON api_sales.channel_v1 FROM PUBLIC;
+
 -- stream:sales.v1.recorded, for every writer of a header, the web's CSV path
 -- included. A service sale fires once (its total is never updated); a CSV row
 -- that creates a header fires twice (the insert, then recompute_total), and a
@@ -1296,8 +1305,9 @@ GRANT USAGE ON SCHEMA sales_events TO svc_sales, definer_sales;
 GRANT INSERT ON sales_events.outbox TO definer_sales;
 GRANT SELECT, DELETE, UPDATE (relayed_at) ON sales_events.outbox TO svc_sales;
 
-GRANT USAGE ON SCHEMA api_sales TO svc_sales, svc_recommendations;
+GRANT USAGE ON SCHEMA api_sales TO svc_sales, svc_recommendations, svc_stock;
 GRANT SELECT ON api_sales.purchase_line_v1 TO svc_sales, svc_recommendations;
+GRANT SELECT ON api_sales.channel_v1 TO svc_sales, svc_stock;
 
 -- Reversals (F21-01 ADR-0062, F21-03). A cancellation or a return is an
 -- append-only fact recorded beside the sale; the sale, its lines' quantity and
@@ -2037,9 +2047,9 @@ GRANT INSERT ON products_events.outbox TO definer_products;
 GRANT SELECT, DELETE, UPDATE (relayed_at) ON products_events.outbox TO svc_products;
 
 GRANT USAGE ON SCHEMA api_products
-    TO svc_products, svc_sales, svc_recommendations, svc_engagement;
+    TO svc_products, svc_sales, svc_recommendations, svc_engagement, svc_stock;
 GRANT SELECT ON api_products.product_ref_v1
-    TO svc_products, svc_sales, svc_recommendations, svc_engagement;
+    TO svc_products, svc_sales, svc_recommendations, svc_engagement, svc_stock;
 
 -- The commercial details. A status is set, never removed; an attribute set is
 -- replaced by insert, update of value and delete; a barcode is set or replaced,
@@ -2744,6 +2754,316 @@ GRANT USAGE ON SCHEMA api_categories TO svc_categories, svc_recommendations;
 GRANT SELECT ON api_categories.category_tree_v1 TO svc_categories, svc_recommendations;
 -- END BOUNDARY categories
 
+-- BEGIN BOUNDARY stores
+CREATE SCHEMA IF NOT EXISTS stores;
+CREATE SCHEMA IF NOT EXISTS api_stores;
+CREATE SCHEMA IF NOT EXISTS stores_events;
+REVOKE ALL ON SCHEMA stores, api_stores, stores_events FROM PUBLIC;
+
+CREATE TABLE IF NOT EXISTS stores.store_location (
+    store_id SMALLINT NOT NULL,
+    latitude NUMERIC NOT NULL,
+    longitude NUMERIC NOT NULL,
+    geofence_radius_m INTEGER NOT NULL,
+    set_by UUID NOT NULL,
+    set_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Every named constraint is added separately so this boundary is safe to
+-- re-apply to a database that already contains the table.
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
+      AND conname = 'store_location_pkey'
+) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_pkey
+        PRIMARY KEY (store_id); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
+      AND conname = 'store_location_store_id_fkey'
+) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_store_id_fkey
+        FOREIGN KEY (store_id) REFERENCES public.store(store_id) ON DELETE CASCADE; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
+      AND conname = 'store_location_latitude_check'
+) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_latitude_check
+        CHECK (latitude BETWEEN -90 AND 90); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
+      AND conname = 'store_location_longitude_check'
+) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_longitude_check
+        CHECK (longitude BETWEEN -180 AND 180); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
+      AND conname = 'store_location_geofence_radius_m_check'
+) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_geofence_radius_m_check
+        CHECK (geofence_radius_m BETWEEN 25 AND 2000); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
+      AND conname = 'store_location_set_by_fkey'
+) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_set_by_fkey
+        FOREIGN KEY (set_by) REFERENCES public.app_user(user_id) ON DELETE RESTRICT; END IF; END $$;
+
+-- F21-12 (#786, RN-53): the other four facts of a store that only ADMIN sets
+-- through stores-service. Each is its own relation keyed by store_id, so a
+-- fact that has many values (opening days, enabled channels) never shares a
+-- row with another (4NF, docs/data-model.md). A store whose row is absent has
+-- never been written: it is OPEN, has no hours, enables no channel and has no
+-- discount cap (api_stores.store_directory_v2). public.store.is_active is a
+-- different fact, written only by the web.
+CREATE TABLE IF NOT EXISTS stores.store_status (
+    store_id SMALLINT NOT NULL,
+    status TEXT NOT NULL,
+    set_by UUID NOT NULL,
+    set_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT store_status_pkey PRIMARY KEY (store_id),
+    CONSTRAINT store_status_store_id_fkey FOREIGN KEY (store_id)
+        REFERENCES public.store(store_id) ON DELETE CASCADE,
+    CONSTRAINT store_status_status_check
+        CHECK (status IN ('OPEN', 'TEMPORARILY_CLOSED', 'CLOSED')),
+    CONSTRAINT store_status_set_by_fkey FOREIGN KEY (set_by)
+        REFERENCES public.app_user(user_id) ON DELETE RESTRICT
+);
+
+-- One row per store whose hours were ever written. time_zone is NULL exactly
+-- when the store has no interval (the hours were cleared), which the
+-- constraint trigger below holds at commit.
+CREATE TABLE IF NOT EXISTS stores.store_hours (
+    store_id SMALLINT NOT NULL,
+    time_zone TEXT,
+    set_by UUID NOT NULL,
+    set_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT store_hours_pkey PRIMARY KEY (store_id),
+    CONSTRAINT store_hours_store_id_fkey FOREIGN KEY (store_id)
+        REFERENCES public.store(store_id) ON DELETE CASCADE,
+    CONSTRAINT store_hours_time_zone_check
+        CHECK (time_zone IS NULL OR char_length(time_zone) BETWEEN 1 AND 64),
+    CONSTRAINT store_hours_set_by_fkey FOREIGN KEY (set_by)
+        REFERENCES public.app_user(user_id) ON DELETE RESTRICT
+);
+
+-- A day with no row is a closed day. No interval crosses midnight.
+CREATE TABLE IF NOT EXISTS stores.store_hours_interval (
+    store_id SMALLINT NOT NULL,
+    day_of_week SMALLINT NOT NULL,
+    opens_at TIME NOT NULL,
+    closes_at TIME NOT NULL,
+    CONSTRAINT store_hours_interval_pkey PRIMARY KEY (store_id, day_of_week),
+    CONSTRAINT store_hours_interval_store_id_fkey FOREIGN KEY (store_id)
+        REFERENCES stores.store_hours(store_id) ON DELETE CASCADE,
+    CONSTRAINT store_hours_interval_day_of_week_check
+        CHECK (day_of_week BETWEEN 1 AND 7),
+    CONSTRAINT store_hours_interval_minutes_check
+        CHECK (extract(second FROM opens_at) = 0 AND extract(second FROM closes_at) = 0),
+    CONSTRAINT store_hours_interval_order_check CHECK (closes_at > opens_at)
+);
+
+-- One row per store whose channel set was ever written, so an emptied set
+-- still says when and by whom. The channels themselves are in store_channel.
+CREATE TABLE IF NOT EXISTS stores.store_channel_set (
+    store_id SMALLINT NOT NULL,
+    set_by UUID NOT NULL,
+    set_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT store_channel_set_pkey PRIMARY KEY (store_id),
+    CONSTRAINT store_channel_set_store_id_fkey FOREIGN KEY (store_id)
+        REFERENCES public.store(store_id) ON DELETE CASCADE,
+    CONSTRAINT store_channel_set_set_by_fkey FOREIGN KEY (set_by)
+        REFERENCES public.app_user(user_id) ON DELETE RESTRICT
+);
+
+-- stores holds no privilege on public.channel (sales is its read owner,
+-- E-10), so an unknown channel id is refused by this foreign key.
+CREATE TABLE IF NOT EXISTS stores.store_channel (
+    store_id SMALLINT NOT NULL,
+    channel_id SMALLINT NOT NULL,
+    CONSTRAINT store_channel_pkey PRIMARY KEY (store_id, channel_id),
+    CONSTRAINT store_channel_store_id_fkey FOREIGN KEY (store_id)
+        REFERENCES stores.store_channel_set(store_id) ON DELETE CASCADE,
+    CONSTRAINT store_channel_channel_id_fkey FOREIGN KEY (channel_id)
+        REFERENCES public.channel(channel_id) ON DELETE RESTRICT
+);
+
+-- max_discount_percent is NULL when the cap was removed: the store then
+-- imposes no limit of its own, the same state as a store never written.
+CREATE TABLE IF NOT EXISTS stores.store_commercial_rule (
+    store_id SMALLINT NOT NULL,
+    max_discount_percent NUMERIC(5,2),
+    set_by UUID NOT NULL,
+    set_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT store_commercial_rule_pkey PRIMARY KEY (store_id),
+    CONSTRAINT store_commercial_rule_store_id_fkey FOREIGN KEY (store_id)
+        REFERENCES public.store(store_id) ON DELETE CASCADE,
+    CONSTRAINT store_commercial_rule_max_discount_percent_check
+        CHECK (max_discount_percent BETWEEN 0 AND 100),
+    CONSTRAINT store_commercial_rule_set_by_fkey FOREIGN KEY (set_by)
+        REFERENCES public.app_user(user_id) ON DELETE RESTRICT
+);
+
+-- time_zone is NULL exactly when the store has no interval. Deferred, so one
+-- transaction may replace the header and its intervals in any order.
+CREATE OR REPLACE FUNCTION stores.check_hours_consistent() RETURNS trigger
+LANGUAGE plpgsql
+AS $check$
+DECLARE
+    target smallint;
+    zone text;
+    present boolean;
+BEGIN
+    target := COALESCE(NEW.store_id, OLD.store_id);
+    SELECT h.time_zone, true INTO zone, present
+    FROM stores.store_hours AS h WHERE h.store_id = target;
+    IF present AND (zone IS NULL) = EXISTS (
+        SELECT FROM stores.store_hours_interval AS i WHERE i.store_id = target
+    ) THEN
+        RAISE EXCEPTION 'store % hours: time_zone is null exactly when there is no interval', target
+            USING ERRCODE = '23514', CONSTRAINT = 'store_hours_time_zone_consistent';
+    END IF;
+    RETURN NULL;
+END
+$check$;
+
+CREATE TABLE IF NOT EXISTS stores_events.outbox (
+    event_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    stream TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    occurred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    relayed_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS outbox_unrelayed
+    ON stores_events.outbox (occurred_at) WHERE relayed_at IS NULL;
+
+CREATE OR REPLACE VIEW api_stores.store_directory_v1
+WITH (security_invoker = false) AS
+SELECT s.store_id, s.name, s.city, s.state, s.is_active,
+       l.latitude, l.longitude, l.geofence_radius_m
+FROM public.store AS s
+LEFT JOIN stores.store_location AS l USING (store_id);
+
+-- v2 adds the facts of F21-12 and keeps v1's eight columns (contracts/db/
+-- api_stores.store_directory.v2.md). The facts are published, never decided
+-- here: a consumer applies "is_active, OPEN and the channel enabled".
+CREATE OR REPLACE VIEW api_stores.store_directory_v2
+WITH (security_invoker = false) AS
+SELECT s.store_id, s.name, s.city, s.state, s.is_active,
+       l.latitude, l.longitude, l.geofence_radius_m,
+       COALESCE(st.status, 'OPEN')::text AS status,
+       h.time_zone,
+       COALESCE((
+           SELECT jsonb_agg(jsonb_build_object(
+                      'day_of_week', i.day_of_week,
+                      'opens_at', to_char(i.opens_at, 'HH24:MI'),
+                      'closes_at', to_char(i.closes_at, 'HH24:MI'))
+                  ORDER BY i.day_of_week)
+           FROM stores.store_hours_interval AS i WHERE i.store_id = s.store_id
+       ), '[]'::jsonb) AS opening_hours,
+       COALESCE((
+           SELECT array_agg(c.channel_id ORDER BY c.channel_id)
+           FROM stores.store_channel AS c WHERE c.store_id = s.store_id
+       ), ARRAY[]::smallint[]) AS channel_ids,
+       r.max_discount_percent
+FROM public.store AS s
+LEFT JOIN stores.store_location AS l USING (store_id)
+LEFT JOIN stores.store_status AS st USING (store_id)
+LEFT JOIN stores.store_hours AS h USING (store_id)
+LEFT JOIN stores.store_commercial_rule AS r USING (store_id);
+
+CREATE OR REPLACE FUNCTION stores_events.capture_changed() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+DECLARE
+    entity text;
+BEGIN
+    IF TG_OP = 'DELETE' THEN entity := OLD.store_id::text;
+    ELSE entity := NEW.store_id::text;
+    END IF;
+    INSERT INTO stores_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:stores.v1.changed', TG_OP, entity);
+    PERFORM pg_notify('stores_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION stores_events.capture_changed() OWNER TO definer_stores;
+REVOKE EXECUTE ON FUNCTION stores_events.capture_changed() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_capture_stores_changed
+AFTER INSERT OR UPDATE OR DELETE ON public.store
+FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_capture_store_location_changed
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_location
+FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_audit_store_location
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_location
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('store_id');
+
+-- The new tables are captured and audited like the location. A child table
+-- (an interval, an enabled channel) is captured too, so a write by any
+-- writer is announced; the service writes only the rows that change.
+CREATE OR REPLACE TRIGGER trg_capture_store_status_changed
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_status
+FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_capture_store_hours_changed
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_hours
+FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_capture_store_hours_interval_changed
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_hours_interval
+FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_capture_store_channel_set_changed
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_channel_set
+FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_capture_store_channel_changed
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_channel
+FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_capture_store_commercial_rule_changed
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_commercial_rule
+FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
+
+CREATE OR REPLACE TRIGGER trg_audit_store_status
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_status
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('store_id');
+CREATE OR REPLACE TRIGGER trg_audit_store_hours
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_hours
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('store_id');
+CREATE OR REPLACE TRIGGER trg_audit_store_hours_interval
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_hours_interval
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('store_id');
+CREATE OR REPLACE TRIGGER trg_audit_store_channel_set
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_channel_set
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('store_id');
+CREATE OR REPLACE TRIGGER trg_audit_store_channel
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_channel
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('store_id');
+CREATE OR REPLACE TRIGGER trg_audit_store_commercial_rule
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_commercial_rule
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('store_id');
+
+DROP TRIGGER IF EXISTS trg_store_hours_consistent ON stores.store_hours;
+CREATE CONSTRAINT TRIGGER trg_store_hours_consistent
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_hours
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION stores.check_hours_consistent();
+DROP TRIGGER IF EXISTS trg_store_hours_interval_consistent ON stores.store_hours_interval;
+CREATE CONSTRAINT TRIGGER trg_store_hours_interval_consistent
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_hours_interval
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION stores.check_hours_consistent();
+
+GRANT USAGE ON SCHEMA stores TO svc_stores;
+GRANT SELECT, INSERT, UPDATE, DELETE ON stores.store_location TO svc_stores;
+GRANT SELECT, INSERT, UPDATE, DELETE ON stores.store_status, stores.store_hours,
+    stores.store_hours_interval, stores.store_channel_set, stores.store_channel,
+    stores.store_commercial_rule TO svc_stores;
+GRANT SELECT ON public.store TO svc_stores;
+GRANT USAGE ON SCHEMA stores_events TO svc_stores, definer_stores;
+GRANT INSERT ON stores_events.outbox TO definer_stores;
+GRANT SELECT, DELETE ON stores_events.outbox TO svc_stores;
+GRANT UPDATE (relayed_at) ON stores_events.outbox TO svc_stores;
+GRANT USAGE ON SCHEMA api_stores TO svc_stores, svc_checkins, svc_engagement,
+    svc_stock, svc_campaigns, svc_sales;
+GRANT SELECT ON api_stores.store_directory_v1 TO svc_stores, svc_checkins, svc_engagement;
+GRANT SELECT ON api_stores.store_directory_v2 TO svc_stores, svc_stock, svc_campaigns, svc_sales;
+-- END BOUNDARY stores
+
 -- BEGIN BOUNDARY stock
 CREATE SCHEMA IF NOT EXISTS api_stock;
 REVOKE ALL ON SCHEMA api_stock FROM PUBLIC;
@@ -2768,6 +3088,37 @@ WITH (security_invoker = false)
 AS
 SELECT store_id, product_id, quantity_on_hand, updated_at
 FROM public.inventory;
+
+-- contracts/db/api_stock.availability.v1.md (F21-07, ADR-0061): whether a
+-- product can be sold in a store and channel, derived on every read and never
+-- stored. One row per store, product and channel, each read through its
+-- producer's view; the reason is the first failing test, in the contract's
+-- order. "The store enables the channel" is stores' published rule: the store
+-- is active, OPEN, and lists the channel (api_stores.store_directory.v2.md).
+-- stock-service answers GET /v1/availabilities from this view, so the
+-- endpoint and recommendations read one definition. The stores section sits
+-- above this one because the view depends on its v2 directory.
+CREATE OR REPLACE VIEW api_stock.availability_v1
+WITH (security_invoker = false)
+AS
+SELECT s.store_id, p.product_id, c.channel_id,
+       r.reason = 'AVAILABLE' AS is_available,
+       r.reason, i.quantity_on_hand, i.updated_at
+FROM api_stores.store_directory_v2 AS s
+CROSS JOIN api_products.product_ref_v1 AS p
+CROSS JOIN api_sales.channel_v1 AS c
+LEFT JOIN public.inventory AS i
+       ON i.store_id = s.store_id AND i.product_id = p.product_id
+CROSS JOIN LATERAL (
+    SELECT CASE
+        WHEN NOT p.is_active THEN 'NOT_SELLABLE'
+        WHEN NOT (s.is_active AND s.status = 'OPEN'
+                  AND c.channel_id = ANY (s.channel_ids)) THEN 'CHANNEL_NOT_ENABLED'
+        WHEN i.store_id IS NULL THEN 'NO_STOCK_RECORD'
+        WHEN i.quantity_on_hand <= 0 THEN 'OUT_OF_STOCK'
+        ELSE 'AVAILABLE'
+    END::text AS reason
+) AS r;
 
 CREATE OR REPLACE FUNCTION api_stock.consume_v1(
     requested_store_id smallint,
@@ -2853,6 +3204,7 @@ GRANT UPDATE (relayed_at) ON stock_events.outbox TO svc_stock;
 
 GRANT USAGE ON SCHEMA api_stock TO svc_stock, svc_recommendations, svc_sales;
 GRANT SELECT ON api_stock.stock_level_v1 TO svc_stock, svc_recommendations;
+GRANT SELECT ON api_stock.availability_v1 TO svc_stock, svc_recommendations;
 GRANT EXECUTE ON FUNCTION api_stock.consume_v1(smallint, integer, integer) TO svc_sales;
 -- ---------- stock movements (F21-06, ADR-0061, ADR-0046) ----------
 -- A recorded movement is the only way beyond a sale or its reversal to change
@@ -3215,316 +3567,6 @@ GRANT EXECUTE ON FUNCTION stock.record_movement(uuid, text, uuid, text, smallint
 GRANT EXECUTE ON FUNCTION stock.apply_delta(smallint, integer, integer) TO definer_stock;
 GRANT EXECUTE ON FUNCTION api_stock.restock_v1(smallint, integer, integer, bigint) TO svc_sales;
 -- END BOUNDARY stock
-
--- BEGIN BOUNDARY stores
-CREATE SCHEMA IF NOT EXISTS stores;
-CREATE SCHEMA IF NOT EXISTS api_stores;
-CREATE SCHEMA IF NOT EXISTS stores_events;
-REVOKE ALL ON SCHEMA stores, api_stores, stores_events FROM PUBLIC;
-
-CREATE TABLE IF NOT EXISTS stores.store_location (
-    store_id SMALLINT NOT NULL,
-    latitude NUMERIC NOT NULL,
-    longitude NUMERIC NOT NULL,
-    geofence_radius_m INTEGER NOT NULL,
-    set_by UUID NOT NULL,
-    set_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- Every named constraint is added separately so this boundary is safe to
--- re-apply to a database that already contains the table.
-DO $$ BEGIN IF NOT EXISTS (
-    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
-      AND conname = 'store_location_pkey'
-) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_pkey
-        PRIMARY KEY (store_id); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (
-    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
-      AND conname = 'store_location_store_id_fkey'
-) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_store_id_fkey
-        FOREIGN KEY (store_id) REFERENCES public.store(store_id) ON DELETE CASCADE; END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (
-    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
-      AND conname = 'store_location_latitude_check'
-) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_latitude_check
-        CHECK (latitude BETWEEN -90 AND 90); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (
-    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
-      AND conname = 'store_location_longitude_check'
-) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_longitude_check
-        CHECK (longitude BETWEEN -180 AND 180); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (
-    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
-      AND conname = 'store_location_geofence_radius_m_check'
-) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_geofence_radius_m_check
-        CHECK (geofence_radius_m BETWEEN 25 AND 2000); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (
-    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
-      AND conname = 'store_location_set_by_fkey'
-) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_set_by_fkey
-        FOREIGN KEY (set_by) REFERENCES public.app_user(user_id) ON DELETE RESTRICT; END IF; END $$;
-
--- F21-12 (#786, RN-53): the other four facts of a store that only ADMIN sets
--- through stores-service. Each is its own relation keyed by store_id, so a
--- fact that has many values (opening days, enabled channels) never shares a
--- row with another (4NF, docs/data-model.md). A store whose row is absent has
--- never been written: it is OPEN, has no hours, enables no channel and has no
--- discount cap (api_stores.store_directory_v2). public.store.is_active is a
--- different fact, written only by the web.
-CREATE TABLE IF NOT EXISTS stores.store_status (
-    store_id SMALLINT NOT NULL,
-    status TEXT NOT NULL,
-    set_by UUID NOT NULL,
-    set_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT store_status_pkey PRIMARY KEY (store_id),
-    CONSTRAINT store_status_store_id_fkey FOREIGN KEY (store_id)
-        REFERENCES public.store(store_id) ON DELETE CASCADE,
-    CONSTRAINT store_status_status_check
-        CHECK (status IN ('OPEN', 'TEMPORARILY_CLOSED', 'CLOSED')),
-    CONSTRAINT store_status_set_by_fkey FOREIGN KEY (set_by)
-        REFERENCES public.app_user(user_id) ON DELETE RESTRICT
-);
-
--- One row per store whose hours were ever written. time_zone is NULL exactly
--- when the store has no interval (the hours were cleared), which the
--- constraint trigger below holds at commit.
-CREATE TABLE IF NOT EXISTS stores.store_hours (
-    store_id SMALLINT NOT NULL,
-    time_zone TEXT,
-    set_by UUID NOT NULL,
-    set_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT store_hours_pkey PRIMARY KEY (store_id),
-    CONSTRAINT store_hours_store_id_fkey FOREIGN KEY (store_id)
-        REFERENCES public.store(store_id) ON DELETE CASCADE,
-    CONSTRAINT store_hours_time_zone_check
-        CHECK (time_zone IS NULL OR char_length(time_zone) BETWEEN 1 AND 64),
-    CONSTRAINT store_hours_set_by_fkey FOREIGN KEY (set_by)
-        REFERENCES public.app_user(user_id) ON DELETE RESTRICT
-);
-
--- A day with no row is a closed day. No interval crosses midnight.
-CREATE TABLE IF NOT EXISTS stores.store_hours_interval (
-    store_id SMALLINT NOT NULL,
-    day_of_week SMALLINT NOT NULL,
-    opens_at TIME NOT NULL,
-    closes_at TIME NOT NULL,
-    CONSTRAINT store_hours_interval_pkey PRIMARY KEY (store_id, day_of_week),
-    CONSTRAINT store_hours_interval_store_id_fkey FOREIGN KEY (store_id)
-        REFERENCES stores.store_hours(store_id) ON DELETE CASCADE,
-    CONSTRAINT store_hours_interval_day_of_week_check
-        CHECK (day_of_week BETWEEN 1 AND 7),
-    CONSTRAINT store_hours_interval_minutes_check
-        CHECK (extract(second FROM opens_at) = 0 AND extract(second FROM closes_at) = 0),
-    CONSTRAINT store_hours_interval_order_check CHECK (closes_at > opens_at)
-);
-
--- One row per store whose channel set was ever written, so an emptied set
--- still says when and by whom. The channels themselves are in store_channel.
-CREATE TABLE IF NOT EXISTS stores.store_channel_set (
-    store_id SMALLINT NOT NULL,
-    set_by UUID NOT NULL,
-    set_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT store_channel_set_pkey PRIMARY KEY (store_id),
-    CONSTRAINT store_channel_set_store_id_fkey FOREIGN KEY (store_id)
-        REFERENCES public.store(store_id) ON DELETE CASCADE,
-    CONSTRAINT store_channel_set_set_by_fkey FOREIGN KEY (set_by)
-        REFERENCES public.app_user(user_id) ON DELETE RESTRICT
-);
-
--- stores holds no privilege on public.channel (sales is its read owner,
--- E-10), so an unknown channel id is refused by this foreign key.
-CREATE TABLE IF NOT EXISTS stores.store_channel (
-    store_id SMALLINT NOT NULL,
-    channel_id SMALLINT NOT NULL,
-    CONSTRAINT store_channel_pkey PRIMARY KEY (store_id, channel_id),
-    CONSTRAINT store_channel_store_id_fkey FOREIGN KEY (store_id)
-        REFERENCES stores.store_channel_set(store_id) ON DELETE CASCADE,
-    CONSTRAINT store_channel_channel_id_fkey FOREIGN KEY (channel_id)
-        REFERENCES public.channel(channel_id) ON DELETE RESTRICT
-);
-
--- max_discount_percent is NULL when the cap was removed: the store then
--- imposes no limit of its own, the same state as a store never written.
-CREATE TABLE IF NOT EXISTS stores.store_commercial_rule (
-    store_id SMALLINT NOT NULL,
-    max_discount_percent NUMERIC(5,2),
-    set_by UUID NOT NULL,
-    set_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT store_commercial_rule_pkey PRIMARY KEY (store_id),
-    CONSTRAINT store_commercial_rule_store_id_fkey FOREIGN KEY (store_id)
-        REFERENCES public.store(store_id) ON DELETE CASCADE,
-    CONSTRAINT store_commercial_rule_max_discount_percent_check
-        CHECK (max_discount_percent BETWEEN 0 AND 100),
-    CONSTRAINT store_commercial_rule_set_by_fkey FOREIGN KEY (set_by)
-        REFERENCES public.app_user(user_id) ON DELETE RESTRICT
-);
-
--- time_zone is NULL exactly when the store has no interval. Deferred, so one
--- transaction may replace the header and its intervals in any order.
-CREATE OR REPLACE FUNCTION stores.check_hours_consistent() RETURNS trigger
-LANGUAGE plpgsql
-AS $check$
-DECLARE
-    target smallint;
-    zone text;
-    present boolean;
-BEGIN
-    target := COALESCE(NEW.store_id, OLD.store_id);
-    SELECT h.time_zone, true INTO zone, present
-    FROM stores.store_hours AS h WHERE h.store_id = target;
-    IF present AND (zone IS NULL) = EXISTS (
-        SELECT FROM stores.store_hours_interval AS i WHERE i.store_id = target
-    ) THEN
-        RAISE EXCEPTION 'store % hours: time_zone is null exactly when there is no interval', target
-            USING ERRCODE = '23514', CONSTRAINT = 'store_hours_time_zone_consistent';
-    END IF;
-    RETURN NULL;
-END
-$check$;
-
-CREATE TABLE IF NOT EXISTS stores_events.outbox (
-    event_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    stream TEXT NOT NULL,
-    event_type TEXT NOT NULL,
-    entity_id TEXT NOT NULL,
-    occurred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    relayed_at TIMESTAMPTZ
-);
-CREATE INDEX IF NOT EXISTS outbox_unrelayed
-    ON stores_events.outbox (occurred_at) WHERE relayed_at IS NULL;
-
-CREATE OR REPLACE VIEW api_stores.store_directory_v1
-WITH (security_invoker = false) AS
-SELECT s.store_id, s.name, s.city, s.state, s.is_active,
-       l.latitude, l.longitude, l.geofence_radius_m
-FROM public.store AS s
-LEFT JOIN stores.store_location AS l USING (store_id);
-
--- v2 adds the facts of F21-12 and keeps v1's eight columns (contracts/db/
--- api_stores.store_directory.v2.md). The facts are published, never decided
--- here: a consumer applies "is_active, OPEN and the channel enabled".
-CREATE OR REPLACE VIEW api_stores.store_directory_v2
-WITH (security_invoker = false) AS
-SELECT s.store_id, s.name, s.city, s.state, s.is_active,
-       l.latitude, l.longitude, l.geofence_radius_m,
-       COALESCE(st.status, 'OPEN')::text AS status,
-       h.time_zone,
-       COALESCE((
-           SELECT jsonb_agg(jsonb_build_object(
-                      'day_of_week', i.day_of_week,
-                      'opens_at', to_char(i.opens_at, 'HH24:MI'),
-                      'closes_at', to_char(i.closes_at, 'HH24:MI'))
-                  ORDER BY i.day_of_week)
-           FROM stores.store_hours_interval AS i WHERE i.store_id = s.store_id
-       ), '[]'::jsonb) AS opening_hours,
-       COALESCE((
-           SELECT array_agg(c.channel_id ORDER BY c.channel_id)
-           FROM stores.store_channel AS c WHERE c.store_id = s.store_id
-       ), ARRAY[]::smallint[]) AS channel_ids,
-       r.max_discount_percent
-FROM public.store AS s
-LEFT JOIN stores.store_location AS l USING (store_id)
-LEFT JOIN stores.store_status AS st USING (store_id)
-LEFT JOIN stores.store_hours AS h USING (store_id)
-LEFT JOIN stores.store_commercial_rule AS r USING (store_id);
-
-CREATE OR REPLACE FUNCTION stores_events.capture_changed() RETURNS trigger
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = pg_catalog, pg_temp
-AS $capture$
-DECLARE
-    entity text;
-BEGIN
-    IF TG_OP = 'DELETE' THEN entity := OLD.store_id::text;
-    ELSE entity := NEW.store_id::text;
-    END IF;
-    INSERT INTO stores_events.outbox (stream, event_type, entity_id)
-    VALUES ('stream:stores.v1.changed', TG_OP, entity);
-    PERFORM pg_notify('stores_outbox', '');
-    RETURN NULL;
-END
-$capture$;
-ALTER FUNCTION stores_events.capture_changed() OWNER TO definer_stores;
-REVOKE EXECUTE ON FUNCTION stores_events.capture_changed() FROM PUBLIC;
-
-CREATE OR REPLACE TRIGGER trg_capture_stores_changed
-AFTER INSERT OR UPDATE OR DELETE ON public.store
-FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
-CREATE OR REPLACE TRIGGER trg_capture_store_location_changed
-AFTER INSERT OR UPDATE OR DELETE ON stores.store_location
-FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
-CREATE OR REPLACE TRIGGER trg_audit_store_location
-AFTER INSERT OR UPDATE OR DELETE ON stores.store_location
-FOR EACH ROW EXECUTE FUNCTION public.fn_audit('store_id');
-
--- The new tables are captured and audited like the location. A child table
--- (an interval, an enabled channel) is captured too, so a write by any
--- writer is announced; the service writes only the rows that change.
-CREATE OR REPLACE TRIGGER trg_capture_store_status_changed
-AFTER INSERT OR UPDATE OR DELETE ON stores.store_status
-FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
-CREATE OR REPLACE TRIGGER trg_capture_store_hours_changed
-AFTER INSERT OR UPDATE OR DELETE ON stores.store_hours
-FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
-CREATE OR REPLACE TRIGGER trg_capture_store_hours_interval_changed
-AFTER INSERT OR UPDATE OR DELETE ON stores.store_hours_interval
-FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
-CREATE OR REPLACE TRIGGER trg_capture_store_channel_set_changed
-AFTER INSERT OR UPDATE OR DELETE ON stores.store_channel_set
-FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
-CREATE OR REPLACE TRIGGER trg_capture_store_channel_changed
-AFTER INSERT OR UPDATE OR DELETE ON stores.store_channel
-FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
-CREATE OR REPLACE TRIGGER trg_capture_store_commercial_rule_changed
-AFTER INSERT OR UPDATE OR DELETE ON stores.store_commercial_rule
-FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
-
-CREATE OR REPLACE TRIGGER trg_audit_store_status
-AFTER INSERT OR UPDATE OR DELETE ON stores.store_status
-FOR EACH ROW EXECUTE FUNCTION public.fn_audit('store_id');
-CREATE OR REPLACE TRIGGER trg_audit_store_hours
-AFTER INSERT OR UPDATE OR DELETE ON stores.store_hours
-FOR EACH ROW EXECUTE FUNCTION public.fn_audit('store_id');
-CREATE OR REPLACE TRIGGER trg_audit_store_hours_interval
-AFTER INSERT OR UPDATE OR DELETE ON stores.store_hours_interval
-FOR EACH ROW EXECUTE FUNCTION public.fn_audit('store_id');
-CREATE OR REPLACE TRIGGER trg_audit_store_channel_set
-AFTER INSERT OR UPDATE OR DELETE ON stores.store_channel_set
-FOR EACH ROW EXECUTE FUNCTION public.fn_audit('store_id');
-CREATE OR REPLACE TRIGGER trg_audit_store_channel
-AFTER INSERT OR UPDATE OR DELETE ON stores.store_channel
-FOR EACH ROW EXECUTE FUNCTION public.fn_audit('store_id');
-CREATE OR REPLACE TRIGGER trg_audit_store_commercial_rule
-AFTER INSERT OR UPDATE OR DELETE ON stores.store_commercial_rule
-FOR EACH ROW EXECUTE FUNCTION public.fn_audit('store_id');
-
-DROP TRIGGER IF EXISTS trg_store_hours_consistent ON stores.store_hours;
-CREATE CONSTRAINT TRIGGER trg_store_hours_consistent
-AFTER INSERT OR UPDATE OR DELETE ON stores.store_hours
-DEFERRABLE INITIALLY DEFERRED
-FOR EACH ROW EXECUTE FUNCTION stores.check_hours_consistent();
-DROP TRIGGER IF EXISTS trg_store_hours_interval_consistent ON stores.store_hours_interval;
-CREATE CONSTRAINT TRIGGER trg_store_hours_interval_consistent
-AFTER INSERT OR UPDATE OR DELETE ON stores.store_hours_interval
-DEFERRABLE INITIALLY DEFERRED
-FOR EACH ROW EXECUTE FUNCTION stores.check_hours_consistent();
-
-GRANT USAGE ON SCHEMA stores TO svc_stores;
-GRANT SELECT, INSERT, UPDATE, DELETE ON stores.store_location TO svc_stores;
-GRANT SELECT, INSERT, UPDATE, DELETE ON stores.store_status, stores.store_hours,
-    stores.store_hours_interval, stores.store_channel_set, stores.store_channel,
-    stores.store_commercial_rule TO svc_stores;
-GRANT SELECT ON public.store TO svc_stores;
-GRANT USAGE ON SCHEMA stores_events TO svc_stores, definer_stores;
-GRANT INSERT ON stores_events.outbox TO definer_stores;
-GRANT SELECT, DELETE ON stores_events.outbox TO svc_stores;
-GRANT UPDATE (relayed_at) ON stores_events.outbox TO svc_stores;
-GRANT USAGE ON SCHEMA api_stores TO svc_stores, svc_checkins, svc_engagement,
-    svc_stock, svc_campaigns, svc_sales;
-GRANT SELECT ON api_stores.store_directory_v1 TO svc_stores, svc_checkins, svc_engagement;
-GRANT SELECT ON api_stores.store_directory_v2 TO svc_stores, svc_stock, svc_campaigns, svc_sales;
--- END BOUNDARY stores
 
 -- BEGIN BOUNDARY users
 -- users-service (F14-04, ADR-0034, ADR-0036, ADR-0044): the single writer of

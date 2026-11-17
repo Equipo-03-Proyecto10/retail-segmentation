@@ -22,6 +22,7 @@
 
 - `quantity_on_hand >= 0` is a CHECK. Beyond a sale, stock changes only through a recorded movement or a sale's reversal (ADR-0061). Services write `inventory` through three SECURITY DEFINER functions owned by `definer_stock`: `api_stock.consume_v1` for a sale and `api_stock.restock_v1` for a reversal, both called by sales (E-05), and `stock.record_movement` for a receipt, transfer, count or adjustment. Each subtraction is a conditional `UPDATE ... WHERE quantity_on_hand >= q RETURNING`.
 - Availability is a primary-key read and is never cached, so a phone sale and a CSV sale show on the next read.
+- Availability per channel is derived, never stored (ADR-0061): available when the product's commercial status allows the sale, the store enables the channel (active, `OPEN` and listing it) and on-hand is above zero; otherwise the first failing test is the reason. Both availability endpoints read `api_stock.availability_v1`, the view recommendations reads, so the two cannot disagree.
 
 ## Endpoints
 
@@ -31,6 +32,8 @@
 | GET | `/v1/stock-levels/{store_id}/{product_id}` | One level (E-03) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, INVENTORY_PLANNER, AUDITOR |
 | POST | `/v1/stock-movements` | Record a receipt, transfer, count or adjustment (`Idempotency-Key` required; ADR-0061) | ADMIN, INVENTORY_PLANNER |
 | GET | `/v1/stock-movements`, `/v1/stock-movements/{movement_id}` | Movement history | ADMIN, INVENTORY_PLANNER, AUDITOR |
+| GET | `/v1/availabilities` | Availability per store, product and channel (`store_id`, `product_id`, `channel_id`, `available`, `page`, `size`; F21-07) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, INVENTORY_PLANNER, AUDITOR, SALES_ASSOCIATE, LOYALTY_OFFICER, COMMERCIAL_SUPERVISOR |
+| GET | `/v1/availabilities/{store_id}/{product_id}` | One pair, one row per channel (E-03) | as above |
 
 Roles follow the [service operation policy](../requirements.md#service-operation-policy-distributed-stage). Meta routes (no token): `GET /health/live`, `GET /health/ready`, `GET /openapi.yaml`, `GET /schema.xsd`.
 
@@ -52,6 +55,8 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Direction | Object | Counterpart |
 |---|---|---|
 | Publishes | `api_stock.stock_level_v1` | recommendations |
+| Publishes | `api_stock.availability_v1` | recommendations (F21-07) |
+| Consumes | `api_products.product_ref_v1`, `api_stores.store_directory_v2`, `api_sales.channel_v1` | products, stores, sales: read by `availability_v1` only |
 | Publishes | `api_stock.consume_v1(smallint, int, int)` | sales (EXECUTE only) |
 | Publishes | `api_stock.restock_v1(smallint, int, int, bigint)` | sales (EXECUTE only) |
 | Calls | `api_audit.record_event_v1(...)` | audit-trail (EXECUTE; ADR-0072): a `CRITICAL_ACTION` with `action` `STOCK_ADJUSTED` for each new adjustment, in its transaction. The subject is the stock level, as `store_id` and `subject_id` (the product), and the reason code is the adjustment's reason. A replay records nothing; a refused record fails the request with a 5xx and rolls the adjustment back |
@@ -84,7 +89,8 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | 422 | `invalid_body` | A movement misses or misstates a field its type requires; `details` names it |
 | 404 | `stock_movement_not_found` | No movement has that id |
 | 404 | `stock_level_not_found` | A store and product pair with no `inventory` row, on the read endpoint |
-| 422 | `invalid_query` | `below`, `store_id` or `product_id` is not a positive integer; `details` names the parameter |
+| 404 | `availability_not_found` | The store or the product does not exist, on the availability pair read. A pair with no stock record is not a 404: its rows say `NO_STOCK_RECORD` |
+| 422 | `invalid_query` | `below`, `store_id`, `product_id` or `channel_id` is not a positive integer, or `available` is not `true` or `false`; `details` names the parameter |
 
 From `consume_v1` and `restock_v1`, `invalid_quantity`, `stock_unavailable`, `no_stock_record` and `restock_already_recorded` are database-contract outcomes: sales maps them to HTTP. stock-service answers `invalid_quantity`, `stock_unavailable` and `no_stock_record` only for its own movements.
 
@@ -94,9 +100,9 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 ### E-03 — a foreign id keys a resource that is its own identity
 
-- **What:** Two paths carry another boundary's id: `/v1/preference-profiles/{customer_id}` and `/v1/stock-levels/{store_id}/{product_id}`. Strictly, "foreign ids are query or body fields".
-- **Why it is acceptable:** A preference profile exists once per customer, and a stock level is one row per store and product. The id is the resource's own identity, not a reference to another service's resource, so a query parameter would only hide a key.
-- **Guard:** No path may contain another service's registered resource name, as whole path segments. The registry check enforces it. The remaining half, "the id is the resource's identity", is a review call, and only these two paths use it.
+- **What:** Paths carry another boundary's id: `/v1/preference-profiles/{customer_id}`, and here `/v1/stock-levels/{store_id}/{product_id}` and `/v1/availabilities/{store_id}/{product_id}`. Strictly, "foreign ids are query or body fields".
+- **Why it is acceptable:** A preference profile exists once per customer, and a stock level, like a pair's availability, is keyed by its store and product. The id is the resource's own identity, not a reference to another service's resource, so a query parameter would only hide a key.
+- **Guard:** No path may contain another service's registered resource name, as whole path segments. The registry check enforces it. The remaining half, "the id is the resource's identity", is a review call, and only the paths the register lists use it.
 - **Decided in:** [ADR-0035](../adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md) (Decision (path rule)). Register: [E-03](./README.md#e-03--a-foreign-id-keys-a-resource-that-is-its-own-identity).
 
 ### E-05 — one synchronous cross-boundary call, inside the database

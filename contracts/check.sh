@@ -178,6 +178,87 @@ then
   failed=1
 fi
 
+# No two bands of a recorded rule set overlap (rfm-engine openapi: Bands). Two
+# bands overlap when their r, f and m ranges all intersect. Every JSON and XML
+# example carrying bands is held to it, whatever its nesting; an
+# *.invalid.* example is meant to be refused and is skipped.
+if ! python3 - <<'PY'
+from __future__ import annotations
+
+import json
+import pathlib
+import sys
+import xml.etree.ElementTree as ET
+
+AXES = ("r", "f", "m")
+errors: list[str] = []
+
+
+def bands_in_json(node):
+    if isinstance(node, dict):
+        bands = node.get("bands")
+        if isinstance(bands, list):
+            yield bands
+        for value in node.values():
+            yield from bands_in_json(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from bands_in_json(value)
+
+
+def bands_in_xml(root):
+    for parent in root.iter():
+        group = [c for c in parent if c.tag.rpartition("}")[2] == "bands"]
+        if group:
+            yield [
+                {
+                    c.tag.rpartition("}")[2]: (c.text or "").strip()
+                    for c in band
+                }
+                for band in group
+            ]
+
+
+def check(path, groups):
+    for bands in groups:
+        for i, first in enumerate(bands):
+            for second in bands[i + 1 :]:
+                try:
+                    overlap = all(
+                        int(first[f"{a}_min"]) <= int(second[f"{a}_max"])
+                        and int(second[f"{a}_min"]) <= int(first[f"{a}_max"])
+                        for a in AXES
+                    )
+                except (KeyError, TypeError, ValueError):
+                    errors.append(f"{path}: malformed band")
+                    return
+                if overlap:
+                    errors.append(
+                        f"{path}: bands overlap: {first.get('label_code')} "
+                        f"and {second.get('label_code')}"
+                    )
+
+
+for path in sorted(pathlib.Path("contracts").glob("*/examples/**/*")):
+    if ".invalid." in path.name or path.suffix not in {".json", ".xml"}:
+        continue
+    try:
+        if path.suffix == ".json":
+            groups = list(bands_in_json(json.loads(path.read_text())))
+        else:
+            groups = list(bands_in_xml(ET.parse(path).getroot()))
+    except (OSError, ValueError, ET.ParseError):
+        continue  # malformed examples are other checks' business
+    check(path, groups)
+
+if errors:
+    print("\n".join(errors))
+    raise SystemExit(1)
+PY
+then
+  failed=1
+fi
+
 work_dir=$(mktemp -d)
 trap 'rm -rf "$work_dir"' EXIT
 probe="$work_dir/compile-probe.xml"

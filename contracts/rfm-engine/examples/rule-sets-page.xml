@@ -29,7 +29,7 @@
     <bands>
       <label_code>LOYAL</label_code>
       <r_min>4</r_min>
-      <r_max>5</r_max>
+      <r_max>4</r_max>
       <f_min>4</f_min>
       <f_max>5</f_max>
       <m_min>3</m_min>
@@ -86,7 +86,7 @@
     <bands>
       <label_code>LOYAL</label_code>
       <r_min>4</r_min>
-      <r_max>5</r_max>
+      <r_max>4</r_max>
       <f_min>4</f_min>
       <f_max>5</f_max>
       <m_min>3</m_min>

@@ -1,4 +1,4 @@
-"""The Flask application: one read, its cache, and six invalidation consumers."""
+"""The Flask application: one read, its cache, and seven invalidation consumers."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from mosaiq_kit import (
 )
 from mosaiq_kit.auth import service_redis
 from mosaiq_kit.rendering import wire_value
-from psycopg import Connection
+from psycopg import Connection, errors
 
 import redis
 
@@ -31,12 +31,38 @@ SUFFIX = "recommendations"
 _INT = re.compile(r"[0-9]+")
 
 
+_UNREADABLE = (
+    errors.InsufficientPrivilege,
+    errors.UndefinedTable,
+    errors.UndefinedColumn,
+)
+
+
+def _unreadable(error: Exception) -> rule.Unreadable:
+    LOGGER.warning("A consent view could not be read: %r", error)
+    return rule.Unreadable(str(error))
+
+
 class ViewReads:
     """rule.Reads over one connection, reading the published views."""
 
     def __init__(self, connection: Connection[Any], label: rule.Label):
         self.connection = connection
         self.label = label
+
+    def personalization_granted(self, customer_id: str) -> bool:
+        try:
+            return store.personalization_granted(self.connection, customer_id)
+        except _UNREADABLE as error:
+            self.connection.rollback()
+            raise _unreadable(error) from error
+
+    def restricted_categories(self, customer_id: str) -> frozenset[int]:
+        try:
+            return store.restricted_categories(self.connection, customer_id)
+        except _UNREADABLE as error:
+            self.connection.rollback()
+            raise _unreadable(error) from error
 
     def current_label(self, customer_id: str) -> rule.Label:
         return self.label
@@ -142,8 +168,25 @@ def create_app() -> Flask:
                     f"Customer {customer_id} does not exist.",
                     [{"field": "customer_id", "code": "unknown_customer"}],
                 )
-            label = store.current_label(connection, customer_id)
-            key = result_key(customer_id, label.run_id, limit)
+            reads = ViewReads(connection, rule.Label("no_open_assignment", None, None))
+            allowed = rule.eligibility(reads, customer_id)
+            if not allowed.personalization:
+                # Never cached: the next read looks at consent again. The answer
+                # is still recorded, with its status and no items or signals
+                # (ADR-0067, Consent); /v1 can only send it as none_match.
+                now = datetime.now(UTC)
+                withdrawn = rule.withdrawn(customer_id, now)
+                decision_store.record(
+                    connection,
+                    decisions.withdrawn(
+                        customer_id, decision_id=str(uuid.uuid4()), computed_at=now
+                    ),
+                )
+                return Representation(
+                    "Recommendation", wire_value(withdrawn.as_dict(now))
+                )
+            reads.label = store.current_label(connection, customer_id)
+            key = result_key(customer_id, reads.label.run_id, limit, allowed.restricted)
             generation = cache.generation()
             cached = cache.get(key, generation)
             if cached is not None:
@@ -151,9 +194,7 @@ def create_app() -> Flask:
                 LOGGER.info("Served cached decision %s", cached.decision_id)
                 return Representation("Recommendation", cached.value)
             now = datetime.now(UTC)
-            result = rule.recommend(
-                ViewReads(connection, label), customer_id, now, limit
-            )
+            result = rule.recommend(reads, customer_id, now, limit, allowed.restricted)
             # The record comes first and is committed with this connection, so
             # an answer is never cached, or sent, without its decision.
             decision = decisions.from_v1(

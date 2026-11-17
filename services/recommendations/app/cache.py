@@ -4,12 +4,14 @@ A result lives at ``recommendations:cache:{customer_id}:{run_id}:{limit}`` for
 120 s, keyed by the run behind the customer's open label, so a new run is a new
 key. The entry carries the id of the decision recorded for it, so a cached answer
 is still attributable to a stored decision (ADR-0067). Each key is also added to
-an index set under the same prefix. An event on any of the six streams renames
+an index set under the same prefix. An event on any of the seven streams renames
 the index away and deletes what it named, so no SCAN, KEYS or RANDOMKEY is ever
 needed (the ACL forbids them). Any Redis failure is a miss: the result is
 recomputed from the views. Each entry carries
 its pre-computation generation; invalidation replaces the generation even when
 the index was evicted, so an in-flight old result cannot become a fresh hit.
+Consent is read before the cache on every request, so a withdrawal is never
+answered from an old result.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import secrets
+from collections.abc import Collection
 from typing import Any, NamedTuple
 
 import redis
@@ -29,8 +32,16 @@ INDEX = PREFIX + "index"
 GENERATION = PREFIX + "generation"
 
 
-def result_key(customer_id: str, run_id: int | None, limit: int) -> str:
-    return f"{PREFIX}{customer_id}:{'none' if run_id is None else run_id}:{limit}"
+def result_key(
+    customer_id: str,
+    run_id: int | None,
+    limit: int,
+    restricted: Collection[int] = (),
+) -> str:
+    key = f"{PREFIX}{customer_id}:{'none' if run_id is None else run_id}:{limit}"
+    if restricted:
+        key += ":r" + "-".join(str(c) for c in sorted(restricted))
+    return key
 
 
 class Cached(NamedTuple):

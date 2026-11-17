@@ -165,6 +165,18 @@ class Decision:
         )
 
 
+def withdrawn(customer_id: str, *, decision_id: str, computed_at: datetime) -> Decision:
+    """The decision behind the answer to a customer who is not personalized
+    (ADR-0067, Consent): the status and nothing else. No segment, store, item or
+    signal was read for them, so none is recorded."""
+    return Decision(
+        decision_id=decision_id,
+        customer_id=customer_id,
+        status="PERSONALIZATION_WITHDRAWN",
+        computed_at=computed_at,
+    )
+
+
 def from_v1(result: Result, *, decision_id: str, computed_at: datetime) -> Decision:
     """The decision behind a `/v1` answer: judged at the usual store, no channel,
     only primary items, and no model version (the open assignment names none).

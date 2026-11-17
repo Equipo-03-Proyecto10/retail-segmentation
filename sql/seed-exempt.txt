@@ -127,6 +127,10 @@ models.model_publication
 # fill it as the service writes profiles.
 rfm_events.outbox
 
+# model-registry's publication outbox is runtime relay state under ADR-0044;
+# committed publications create it and relayed rows are purged after seven days.
+models_events.outbox
+
 # rfm.rule_set: the one rule set rfm-engine starts with, the scoring the published
 # version of the web's last rule-based run froze (F22-05). A rule set is a
 # deliberate, immutable act of creation (F22-09), not a population: padding it

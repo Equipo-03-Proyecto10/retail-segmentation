@@ -22,6 +22,7 @@ import java.time.ZoneId
 import online.maxthecoder.mosaiq.floor.auth.FloorAccess
 import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.net.Channel
+import online.maxthecoder.mosaiq.floor.net.CurrentAssignment
 import online.maxthecoder.mosaiq.floor.net.Customer
 import online.maxthecoder.mosaiq.floor.net.ErrorDetail
 import online.maxthecoder.mosaiq.floor.net.Product
@@ -319,7 +320,7 @@ private class InsightsStates : PreviewParameterProvider<InsightsState> {
             InsightsState(customerId = "c1", assignmentError = ApiError.unreachable(null)),
             InsightsState(
                 customerId = "c1",
-                assignment = online.maxthecoder.mosaiq.floor.net.CurrentAssignment("c1", "no_open_assignment"),
+                assignment = CurrentAssignment("c1", "no_open_assignment"),
                 recommendationsError = ApiError.unreachable(null)
             )
         )

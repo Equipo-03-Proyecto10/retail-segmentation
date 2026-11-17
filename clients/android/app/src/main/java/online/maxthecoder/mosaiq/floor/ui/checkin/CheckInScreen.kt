@@ -38,6 +38,7 @@ import java.time.ZoneId
 import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.outbox.RowState
+import online.maxthecoder.mosaiq.floor.outbox.asError
 import online.maxthecoder.mosaiq.floor.session.ChosenStore
 import online.maxthecoder.mosaiq.floor.ui.CheckInState
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
@@ -52,7 +53,6 @@ import online.maxthecoder.mosaiq.floor.ui.components.MqIcon
 import online.maxthecoder.mosaiq.floor.ui.components.MqLoading
 import online.maxthecoder.mosaiq.floor.ui.components.MqTone
 import online.maxthecoder.mosaiq.floor.ui.formatClock
-import online.maxthecoder.mosaiq.floor.ui.outbox.asError
 import online.maxthecoder.mosaiq.floor.ui.theme.MosaiqTheme
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
 

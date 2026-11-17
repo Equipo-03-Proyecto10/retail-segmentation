@@ -18,9 +18,9 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import online.maxthecoder.mosaiq.floor.R
-import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.outbox.OutboxRow
 import online.maxthecoder.mosaiq.floor.outbox.RowState
+import online.maxthecoder.mosaiq.floor.outbox.asError
 import online.maxthecoder.mosaiq.floor.outbox.refusalAdvice
 import online.maxthecoder.mosaiq.floor.ui.components.MqBadge
 import online.maxthecoder.mosaiq.floor.ui.components.MqButton
@@ -99,14 +99,7 @@ private fun SaleHistoryRow(row: OutboxRow, actions: SaleActions) {
                 style = MaterialTheme.typography.bodyMedium
             )
             RowState.REFUSED -> {
-                MqErrorPanel(
-                    ApiError(
-                        row.status ?: 0,
-                        row.code ?: "refused",
-                        row.message ?: stringResource(R.string.sale_refused_default),
-                        row.correlationId
-                    )
-                )
+                MqErrorPanel(row.asError(stringResource(R.string.sale_refused_default)))
                 refusalAdvice(row.code)?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
             }
             RowState.DONE -> {

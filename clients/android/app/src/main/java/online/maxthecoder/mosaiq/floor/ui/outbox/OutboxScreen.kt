@@ -26,13 +26,12 @@ import java.time.ZoneId
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import online.maxthecoder.mosaiq.floor.AppText
 import online.maxthecoder.mosaiq.floor.R
-import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.net.json
 import online.maxthecoder.mosaiq.floor.outbox.Operation
 import online.maxthecoder.mosaiq.floor.outbox.OutboxRow
 import online.maxthecoder.mosaiq.floor.outbox.RowState
+import online.maxthecoder.mosaiq.floor.outbox.asError
 import online.maxthecoder.mosaiq.floor.outbox.refusalAdvice
 import online.maxthecoder.mosaiq.floor.outbox.refusalReason
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
@@ -257,13 +256,6 @@ internal fun humanTime(epochMillis: Long, now: Instant, zone: ZoneId): String {
         else -> "${formatMediumDay(at)}, $clock"
     }
 }
-
-internal fun OutboxRow.asError(): ApiError = ApiError(
-    status = status ?: 0,
-    code = code ?: "refused",
-    message = message ?: AppText.get(R.string.outbox_refused_default),
-    correlationId = correlationId
-)
 
 private val PreviewNow: Instant = Instant.parse("2026-10-26T20:00:00Z")
 

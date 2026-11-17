@@ -4764,6 +4764,126 @@ GRANT SELECT ON api_sales.purchase_line_v1, api_sales.net_purchase_line_v1
 GRANT USAGE ON SCHEMA api_audit TO svc_experiments;
 GRANT EXECUTE ON FUNCTION api_audit.record_event_v1(uuid, text, text, timestamptz, text, uuid,
     text, smallint, text, text, bigint, bigint, text, jsonb) TO svc_experiments;
+
+-- The plan of an experiment (F25-09, ADR-0068 sections 1 and 4): what is fixed before anyone is
+-- assigned. The experiment itself, its arms (public.experiment_group), its metric
+-- (`target_metric`), window, start and origin stay where the web wrote them; these four tables
+-- hold only what a plan adds, and exist only for an experiment planned through the service.
+-- An experiment without a row in experiment_plan is assignment rule V0 (the web's earlier
+-- shuffle): readable, with no frame and no salt. A plan is frozen: svc_experiments holds SELECT
+-- and INSERT, and the trigger refuses an UPDATE or DELETE from anyone. docs/data-model.md holds
+-- the normal-form note.
+--
+-- Derived, so not stored: the design kind (a control arm or not), an arm's position (control
+-- first, then by group id), the estimator and the secondary metric (functions of the primary
+-- metric), the frame's size (the members counted), and the state (assignments exist or not).
+CREATE TABLE IF NOT EXISTS experiments.experiment_plan (
+    experiment_id             integer PRIMARY KEY
+        REFERENCES public.experiment (experiment_id) ON DELETE RESTRICT,
+    alpha                     numeric(7,6) NOT NULL
+        CONSTRAINT experiment_plan_alpha_check CHECK (alpha > 0 AND alpha < 1),
+    comparison_alpha          numeric(12,10) NOT NULL
+        CONSTRAINT experiment_plan_comparison_alpha_check
+        CHECK (comparison_alpha > 0 AND comparison_alpha <= alpha),
+    power                     numeric(7,6) NOT NULL
+        CONSTRAINT experiment_plan_power_check CHECK (power > 0 AND power < 1),
+    minimum_detectable_effect numeric(14,6) NOT NULL
+        CONSTRAINT experiment_plan_mde_check CHECK (minimum_detectable_effect > 0),
+    baseline                  double precision NOT NULL
+        CONSTRAINT experiment_plan_baseline_check CHECK (baseline >= 0),
+    baseline_std_dev          double precision
+        CONSTRAINT experiment_plan_std_dev_check CHECK (baseline_std_dev >= 0),
+    required_per_arm          integer NOT NULL
+        CONSTRAINT experiment_plan_required_check CHECK (required_per_arm >= 1),
+    smallest_detectable_effect double precision
+        CONSTRAINT experiment_plan_smallest_check CHECK (smallest_detectable_effect > 0),
+    settle_days               smallint NOT NULL
+        CONSTRAINT experiment_plan_settle_check CHECK (settle_days >= 0),
+    frame_taken_at            timestamptz NOT NULL,
+    frame_digest              char(64) NOT NULL
+        CONSTRAINT experiment_plan_digest_check CHECK (frame_digest ~ '^[0-9a-f]{64}$'),
+    label_code                varchar(40) NOT NULL
+        REFERENCES public.segment_label (label_code) ON DELETE RESTRICT,
+    model_version_id          bigint
+        CONSTRAINT experiment_plan_model_version_check CHECK (model_version_id >= 1),
+    salt                      char(64) NOT NULL
+        CONSTRAINT experiment_plan_salt_check CHECK (salt ~ '^[0-9a-f]{64}$'),
+    planned_at                timestamptz NOT NULL,
+    planned_by                uuid NOT NULL
+        REFERENCES public.app_user (user_id) ON DELETE RESTRICT
+);
+
+-- The frame, one row per customer: who was eligible at the frame instant, the only record of it
+-- (a customer who later acquires the label is never added).
+CREATE TABLE IF NOT EXISTS experiments.experiment_frame_member (
+    experiment_id integer NOT NULL
+        REFERENCES public.experiment (experiment_id) ON DELETE RESTRICT,
+    customer_id   uuid NOT NULL
+        REFERENCES public.customer (customer_id) ON DELETE RESTRICT,
+    PRIMARY KEY (experiment_id, customer_id)
+);
+CREATE INDEX IF NOT EXISTS experiment_frame_member_customer
+    ON experiments.experiment_frame_member (customer_id);
+
+-- How many customers one reason removed from the frame: an independent multivalued fact of the
+-- plan (reasons, each with its count), so its own relation.
+CREATE TABLE IF NOT EXISTS experiments.experiment_frame_exclusion (
+    experiment_id integer NOT NULL
+        REFERENCES public.experiment (experiment_id) ON DELETE RESTRICT,
+    reason        varchar(40) NOT NULL
+        CONSTRAINT experiment_frame_exclusion_reason_check
+        CHECK (reason ~ '^[A-Z][A-Z0-9_]*$'),
+    removed       integer NOT NULL
+        CONSTRAINT experiment_frame_exclusion_removed_check CHECK (removed >= 0),
+    PRIMARY KEY (experiment_id, reason)
+);
+
+-- The flags that apply to an experiment: a second independent multivalued fact. The plan stores
+-- UNDERPOWERED; the later stories add the others (ExperimentFlag in the contract).
+CREATE TABLE IF NOT EXISTS experiments.experiment_flag (
+    experiment_id integer NOT NULL
+        REFERENCES public.experiment (experiment_id) ON DELETE RESTRICT,
+    flag          varchar(30) NOT NULL
+        CONSTRAINT experiment_flag_flag_check
+        CHECK (flag IN ('UNDERPOWERED', 'SAMPLE_RATIO_FAILED', 'BALANCE_FLAGGED',
+                        'RECOMPUTATION_MISMATCH')),
+    PRIMARY KEY (experiment_id, flag)
+);
+
+CREATE OR REPLACE FUNCTION experiments.fn_plan_is_frozen() RETURNS trigger
+LANGUAGE plpgsql AS $frozen$
+BEGIN
+    RAISE EXCEPTION 'A plan is frozen: % on % is refused', TG_OP, TG_TABLE_NAME
+        USING ERRCODE = 'check_violation', CONSTRAINT = 'experiment_plan_frozen';
+END
+$frozen$;
+REVOKE EXECUTE ON FUNCTION experiments.fn_plan_is_frozen() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_experiment_plan_frozen
+BEFORE UPDATE OR DELETE ON experiments.experiment_plan
+FOR EACH ROW EXECUTE FUNCTION experiments.fn_plan_is_frozen();
+CREATE OR REPLACE TRIGGER trg_experiment_frame_member_frozen
+BEFORE UPDATE OR DELETE ON experiments.experiment_frame_member
+FOR EACH ROW EXECUTE FUNCTION experiments.fn_plan_is_frozen();
+CREATE OR REPLACE TRIGGER trg_experiment_frame_exclusion_frozen
+BEFORE UPDATE OR DELETE ON experiments.experiment_frame_exclusion
+FOR EACH ROW EXECUTE FUNCTION experiments.fn_plan_is_frozen();
+CREATE OR REPLACE TRIGGER trg_experiment_flag_frozen
+BEFORE DELETE ON experiments.experiment_flag
+FOR EACH ROW EXECUTE FUNCTION experiments.fn_plan_is_frozen();
+
+GRANT SELECT, INSERT ON experiments.experiment_plan, experiments.experiment_frame_member,
+    experiments.experiment_frame_exclusion, experiments.experiment_flag TO svc_experiments;
+
+-- The frame is read from published objects only (ADR-0044), each a row of contracts/db/grants.csv:
+-- the campaign's target and exclusions (#1051, granted in the campaigns section), the label a
+-- customer holds, consent and restrictions, the channels, and the customers.
+GRANT USAGE ON SCHEMA api_segments, api_preferences, api_customers TO svc_experiments;
+GRANT SELECT ON api_segments.current_label_v1 TO svc_experiments;
+GRANT SELECT ON api_preferences.consent_state_v1, api_preferences.restriction_v1
+    TO svc_experiments;
+GRANT SELECT ON api_customers.customer_ref_v1 TO svc_experiments;
+GRANT SELECT ON api_sales.channel_v1 TO svc_experiments;
 -- END BOUNDARY experimentation
 
 -- BEGIN BOUNDARY model-registry

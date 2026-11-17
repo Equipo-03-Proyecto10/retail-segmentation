@@ -8,7 +8,7 @@
 | Kind | PostgreSQL view |
 | Owning boundary | sales |
 | Producer | sales-service |
-| Consumers | recommendations, customer-preferences, campaigns, analytics-kpis |
+| Consumers | recommendations, customer-preferences, campaigns, analytics-kpis, experimentation |
 
 The view publishes the purchases that still count: one row for each line of an
 accepted sale that has at least one unit left after its reversals. It is the

@@ -39,8 +39,36 @@ EXPECTED = {
     ("api_sales", "USAGE"),
     ("api_sales.purchase_line_v1", "SELECT"),
     ("api_sales.net_purchase_line_v1", "SELECT"),
+    # F25-09: a plan is four tables of the service's own schema, SELECT and INSERT only.
+    ("experiments.experiment_plan", "SELECT"),
+    ("experiments.experiment_plan", "INSERT"),
+    ("experiments.experiment_frame_member", "SELECT"),
+    ("experiments.experiment_frame_member", "INSERT"),
+    ("experiments.experiment_frame_exclusion", "SELECT"),
+    ("experiments.experiment_frame_exclusion", "INSERT"),
+    ("experiments.experiment_flag", "SELECT"),
+    ("experiments.experiment_flag", "INSERT"),
+    # F25-09: the frame is read from published objects only (ADR-0044, ADR-0068).
+    ("api_campaigns", "USAGE"),
+    ("api_campaigns.campaign_target_v1", "SELECT"),
+    ("api_campaigns.campaign_excluded_customer_v1", "SELECT"),
+    ("api_campaigns.campaign_excluded_label_v1", "SELECT"),
+    ("api_segments", "USAGE"),
+    ("api_segments.current_label_v1", "SELECT"),
+    ("api_preferences", "USAGE"),
+    ("api_preferences.consent_state_v1", "SELECT"),
+    ("api_preferences.restriction_v1", "SELECT"),
+    ("api_customers", "USAGE"),
+    ("api_customers.customer_ref_v1", "SELECT"),
+    ("api_sales.channel_v1", "SELECT"),
 }
 FACTS = ("experiment_assignment", "experiment_exposure", "experiment_conversion")
+PLAN = (
+    "experiment_plan",
+    "experiment_frame_member",
+    "experiment_frame_exclusion",
+    "experiment_flag",
+)
 
 
 def test_the_manifest_names_the_schemas_and_the_five_experiment_tables() -> None:
@@ -93,3 +121,18 @@ def test_the_facts_are_append_only_and_nothing_is_deleted_by_the_role() -> None:
                 (ROLE, f"public.{table}") * 2,
             ).fetchone()
             assert held == (False, False), table
+
+
+@pytest.mark.postgres
+def test_a_plan_is_select_and_insert_only_for_the_role() -> None:
+    with _connect() as connection:
+        for table in PLAN:
+            held = connection.execute(
+                "SELECT has_table_privilege(%s, %s, 'SELECT'),"
+                " has_table_privilege(%s, %s, 'INSERT'),"
+                " has_table_privilege(%s, %s, 'UPDATE'),"
+                " has_table_privilege(%s, %s, 'DELETE'),"
+                " has_table_privilege(%s, %s, 'TRUNCATE')",
+                (ROLE, f"experiments.{table}") * 5,
+            ).fetchone()
+            assert held == (True, True, False, False, False), table

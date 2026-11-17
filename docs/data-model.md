@@ -581,6 +581,34 @@ The check-ins boundary (ADR-0046, F14-26, F21-23) adds three relations, all in
   retention period so aggregate store/time/campaign facts can remain without
   naming a person.
 
+The experimentation boundary (ADR-0068, ADR-0046, F25-09) adds four relations to the five
+experiment tables it took over, all in 4NF. They hold what a plan adds and exist only for an
+experiment planned through the service:
+- **`experiments.experiment_plan`** is keyed by `experiment_id`, which determines every other
+  column: the levels (`alpha`, `comparison_alpha`, `power`), the minimum detectable effect, the
+  baseline and its spread, the customers each arm needs, the smallest effect the frame can detect,
+  the settle days, the frame's instant, digest and label, the salt and who
+  planned it. They are fixed at planning against the data *then* (the baseline and the frame
+  cannot be recomputed from later sales and labels), so each is a fact of the plan and not a
+  function of current data. Four things are deliberately **not** columns because they are
+  derived: the design kind (whether a control arm exists), an arm's position (control first,
+  then by group id), the estimator and the secondary metric (functions of the primary metric,
+  which stays in `experiment.target_metric`), and the frame's size (the members counted). Storing
+  any of them would be a transitive dependency that a later write could contradict.
+- **`experiments.experiment_frame_member`** is the multivalued fact "this customer was eligible
+  at the frame instant": a row per customer, never an array, keyed by `(experiment_id,
+  customer_id)`.
+- **`experiments.experiment_frame_exclusion`** is the independent multivalued fact "this many
+  customers were removed for this reason": keyed by `(experiment_id, reason)` with the count as
+  its one dependent column. It is not folded into the plan row, which would repeat a column per
+  reason (not 1NF) and fix the list of reasons, which the contract leaves open.
+- **`experiments.experiment_flag`** is the second independent multivalued fact, the flags that
+  apply to the experiment, keyed by `(experiment_id, flag)`. The plan writes `UNDERPOWERED`; the
+  stories after it add the others.
+
+A plan is frozen: `svc_experiments` holds SELECT and INSERT only, and a trigger refuses an UPDATE
+or DELETE of a plan, a member or an exclusion from anyone.
+
 The recommendations boundary (ADR-0067, ADR-0046, F24-05) adds four relations,
 all in 4NF. They keep the explanation of each recommendation the service served:
 - **`recommendations.recommendation_decision`** is keyed by `decision_id`, which
@@ -1288,6 +1316,50 @@ device or network identifier. `svc_checkins` receives only `SELECT` and
 `INSERT`; the service serializes each customer/store pair with advisory lock
 296001 before deciding whether a post is within the strict two-hour duplicate
 window.
+
+#### `experiments.experiment_plan`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `experiment_id` | `INTEGER` | NN | PK; FK → `public.experiment`, `ON DELETE RESTRICT` | The experiment this plan froze |
+| `alpha` | `NUMERIC(7,6)` | NN | CHECK in (0, 1) | The two-sided, family-wise level |
+| `comparison_alpha` | `NUMERIC(12,10)` | NN | CHECK in (0, `alpha`] | The level of each comparison: `alpha` divided by the treatments compared with the control (Bonferroni) |
+| `power` | `NUMERIC(7,6)` | NN | CHECK in (0, 1) | The power the size was computed for |
+| `minimum_detectable_effect` | `NUMERIC(14,6)` | NN | CHECK `> 0` | An absolute difference in the intent-to-treat metric |
+| `baseline` | `DOUBLE PRECISION` | NN | CHECK `>= 0` | The metric among the frame's own customers over the period of equal length before the frame instant |
+| `baseline_std_dev` | `DOUBLE PRECISION` | yes | CHECK `>= 0` | Its sample standard deviation; set for revenue per customer, null for conversion |
+| `required_per_arm` | `INTEGER` | NN | CHECK `>= 1` | The customers each arm needs |
+| `smallest_detectable_effect` | `DOUBLE PRECISION` | yes | CHECK `> 0` | The smallest effect the frame can detect; null when no customer is available per arm |
+| `settle_days` | `SMALLINT` | NN | CHECK `>= 0` | Days between the window's close and the analysis instant; 7 |
+| `frame_taken_at` | `TIMESTAMPTZ` | NN | — | The instant of the frame, read from the PostgreSQL clock |
+| `frame_digest` | `CHAR(64)` | NN | CHECK 64 lowercase hex | SHA-256 over the sorted customer ids and the criteria as canonical JSON |
+| `label_code` | `VARCHAR(40)` | NN | FK → `public.segment_label`, `ON DELETE RESTRICT` | The campaign's target label when the frame was taken |
+| `model_version_id` | `BIGINT` | yes | CHECK `>= 1` | The segmentation model version published at the frame instant; null until `api_models.published_version_v1` exists |
+| `salt` | `CHAR(64)` | NN | CHECK 64 lowercase hex | 32 bytes from the operating system's CSPRNG, drawn once after the frame was fixed |
+| `planned_at` | `TIMESTAMPTZ` | NN | — | When the plan was frozen |
+| `planned_by` | `UUID` | NN | FK → `public.app_user`, `ON DELETE RESTRICT` | The caller: the token's `sub` |
+
+#### `experiments.experiment_frame_member`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `experiment_id` | `INTEGER` | NN | PK part; FK → `public.experiment`, `ON DELETE RESTRICT` | The experiment |
+| `customer_id` | `UUID` | NN | PK part; FK → `public.customer`, `ON DELETE RESTRICT` | A customer eligible at the frame instant |
+
+#### `experiments.experiment_frame_exclusion`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `experiment_id` | `INTEGER` | NN | PK part; FK → `public.experiment`, `ON DELETE RESTRICT` | The experiment |
+| `reason` | `VARCHAR(40)` | NN | PK part; CHECK upper-case code | Why customers were removed (an open vocabulary) |
+| `removed` | `INTEGER` | NN | CHECK `>= 0` | How many customers it removed; each is counted once, under the first reason that applied |
+
+#### `experiments.experiment_flag`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `experiment_id` | `INTEGER` | NN | PK part; FK → `public.experiment`, `ON DELETE RESTRICT` | The experiment |
+| `flag` | `VARCHAR(30)` | NN | PK part; CHECK one of the four flags of the contract | A flag that applies to the experiment |
 
 #### `recommendations.recommendation_decision`
 

@@ -69,6 +69,8 @@ The five `campaigns.*` tables are separate from `campaign` on purpose (E-09): th
 
 Published: [`api_campaigns.active_promotion_v1`](../../contracts/db/api_campaigns.active_promotion.v1.md), read by sales to validate a discount.
 
+Published for experimentation's frame (ADR-0068 section 1, #1051): [`api_campaigns.campaign_target_v1`](../../contracts/db/api_campaigns.campaign_target.v1.md) (target label, status and eligibility rules, one row per campaign), [`api_campaigns.campaign_excluded_customer_v1`](../../contracts/db/api_campaigns.campaign_excluded_customer.v1.md) and [`api_campaigns.campaign_excluded_label_v1`](../../contracts/db/api_campaigns.campaign_excluded_label.v1.md) (one row per exclusion). None carries a budget, a cap, a promotion or a channel.
+
 Consumed, by name: `api_segments.current_label_v1` (audience size, label exclusions), `api_customers.customer_ref_v1` (customer ids, `registered_on`, and the anonymized flag ADR-0066 section 3 adds), `api_preferences.consent_state_v1` (the `PERSONALIZATION` and `MARKETING_CONTACT` a customer's audience membership needs, ADR-0066 section 2: a purpose not granted, or that cannot be read, excludes them), `api_sales.net_purchase_line_v1` (net purchase-count eligibility, ADR-0062), `api_stores.store_directory_v2` (store and channel ids of a promotion), and `api_users.store_assignment_v1` (the stores a floor role may read promotions of).
 
 ## Events

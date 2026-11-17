@@ -22,6 +22,8 @@ them to apply its rule.
 - **customer-preferences**, **segments**, **recommendations** and
   **engagement** read `customer_id` to validate or enumerate customer
   references.
+- **experimentation** reads `customer_id` to list the customers of an experiment's frame, and
+  `registered_on` is not read (F25-09).
 - **campaigns** reads `customer_id` and `registered_on` to judge a campaign's
   audience (registration cutoff, customers the reference does not list).
 

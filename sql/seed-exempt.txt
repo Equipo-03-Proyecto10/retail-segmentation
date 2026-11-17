@@ -138,6 +138,18 @@ rfm.rule_set
 # api_rfm.current_profile_v1 (F22-05).
 rfm.customer_profile
 
+# experimentation's plan (F25-09, ADR-0068): a frozen plan exists only for an experiment
+# planned through the service, which draws its salt and takes its frame at one instant. The
+# thirty seeded experiments predate it: they are assignment rule V0, readable with no frame and
+# no salt, and a seeded plan for them would call an assignment the web shuffled recomputable.
+# Seeding thirty new experiments only to plan them would add experiments, conversions and
+# customers' assignments to every seeded report. Runtime facts, like a sale's reversal.
+experiments.experiment_plan
+# Frame members, the reasons that removed customers, and the flags: each hangs from a plan.
+experiments.experiment_frame_member
+experiments.experiment_frame_exclusion
+experiments.experiment_flag
+
 # experiments.exposure_notice is runtime projection state. Rows exist only as
 # experimentation consumes RECORDED and VOIDED notices from engagement's
 # stream; seeding them would invent floor observations that never occurred.

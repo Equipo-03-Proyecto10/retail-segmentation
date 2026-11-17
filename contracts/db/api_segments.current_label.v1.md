@@ -8,7 +8,7 @@
 | Kind | PostgreSQL view |
 | Owning boundary | segments |
 | Producer | segments-service |
-| Consumers | recommendations, campaigns |
+| Consumers | recommendations, campaigns, experimentation |
 
 The view publishes exactly one row for every customer in
 `api_customers.customer_ref_v1`, so a customer is never missing and never
@@ -34,7 +34,9 @@ nothing from any other source. Consumers name only the columns they read.
 | `no_open_assignment` | The customer has no open row, for instance a customer registered after the latest run. | `NULL` | `NULL` |
 
 A customer with no open row is reported as `no_open_assignment`; the view never
-substitutes an earlier row, another label or a default.
+substitutes an earlier row, another label or a default. experimentation reads `state = 'assigned'` and
+`label_code` to find the customers who hold a campaign's target label when it takes an experiment's frame
+(ADR-0068 section 1, F25-09).
 
 ## Compatibility
 

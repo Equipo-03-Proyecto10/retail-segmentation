@@ -8,7 +8,7 @@
 | Kind | PostgreSQL view |
 | Owning boundary | sales |
 | Producer | sales-service |
-| Consumers | stock |
+| Consumers | stock, experimentation |
 
 The view publishes the ids of the sales channels. sales is the read owner of
 `public.channel` (E-10): the web writes it, and sales validates every sale's
@@ -30,8 +30,9 @@ them from sales' `channels` resource.
 
 ## Access and consumers
 
-The only consumer is **stock**. It receives `USAGE` on `api_sales` and `SELECT`
-on this view only. sales holds `SELECT` as the producer. The view runs with its
+The consumers are **stock** and **experimentation**. Each receives `USAGE` on `api_sales` and `SELECT`
+on this view (and experimentation on the other views it already reads). experimentation counts the channels to
+tell a customer who restricted every one of them from one who did not (ADR-0068 section 1). sales holds `SELECT` as the producer. The view runs with its
 owner's rights (`security_invoker = off`), so the grants expose nothing else of
 `public.channel`.
 

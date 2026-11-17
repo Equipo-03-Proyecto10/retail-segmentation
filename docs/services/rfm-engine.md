@@ -1,6 +1,6 @@
 # rfm-engine
 
-> **Status:** Contract published (phase 22, third; F22-03, #777). Not yet implemented: the service is stood up by F22-04 (#778). ADR-0059 places it; ADR-0063 and ADR-0064 decide how it behaves.
+> **Status:** Stood up empty (phase 22, third; F22-04, #778): the service answers its meta routes and registers no operation yet. The contract was published by F22-03 (#777). ADR-0059 places it; ADR-0063 and ADR-0064 decide how it behaves.
 > **One rule:** A customer's R, F and M are a function of their accepted, unreversed purchases under one rule-set version, change only for the customers an event touched, and equal a full recalculation of that version at the same instant (RN-65)
 
 ## Summary

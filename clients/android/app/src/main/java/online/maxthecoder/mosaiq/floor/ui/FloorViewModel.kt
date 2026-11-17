@@ -141,7 +141,7 @@ class FloorViewModel(
 
     companion object {
         /** Shown when the stored answer to a check-in cannot be read. */
-        const val UNREADABLE_ANSWER = "Check-in sent. The answer could not be read."
+        val UNREADABLE_ANSWER: String get() = AppText.get(R.string.checkin_answer_unreadable)
 
         /** The server's answer to a check-in, in plain words, once it has arrived. */
         fun resultOf(row: OutboxRow?): String? {

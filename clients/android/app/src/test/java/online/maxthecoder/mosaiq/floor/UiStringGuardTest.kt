@@ -7,10 +7,15 @@ import org.junit.Test
 
 /**
  * UX-12: no user-facing sentence lives in `ui/`. Text reaches the screen through `stringResource`,
- * `pluralStringResource` or [AppText]; a string literal with a letter in a text-producing position fails the build.
+ * `pluralStringResource` or [AppText]. Two rules fail the build: a string literal with a letter in a text-producing
+ * position (an argument of `Text`, `Mq*`, `label =`, `contentDescription =` and the like), and, anywhere else, a
+ * literal that reads as text, meaning a phrase (letters, a space, letters) or a capitalized word such as `"None"`. Codes
+ * (`"physical_store"`), test tags, date patterns and preview names are not text. Money goes through `formatMoney`
+ * and counts through `plurals`, see [UiStringGuardTest.noRawMoneyOrCountSuffixRemains].
  *
  * A line that must keep a literal ends with `// ui-string-ok: <reason>` (or has that comment alone on the line above); a file made only of previews
- * carries `// ui-string-ok-file: preview` once. `ui/theme/` is not scanned.
+ * carries `// ui-string-ok-file: preview` once, and a file whose previews sit at the end carries
+ * `// ui-string-ok-from: previews below` above them. `ui/theme/` is not scanned.
  */
 class UiStringGuardTest {
     private val ui = File("src/main/java/online/maxthecoder/mosaiq/floor/ui")
@@ -30,6 +35,35 @@ class UiStringGuardTest {
             emptyList<String>(),
             found
         )
+    }
+
+    @Test
+    fun noRawMoneyOrCountSuffixRemains() {
+        val files = ui.walkTopDown().filter { it.isFile && it.extension == "kt" && it.name != "Format.kt" }
+        val found = files.toList().flatMap { file ->
+            file.readLines().withIndex().filter { (_, line) -> UiStringScan.rawMoneyOrPluralSuffix(line) }
+                .map { (index, line) -> "${file.relativeTo(ui)}:${index + 1}: ${line.trim()}" }
+        }
+        assertEquals(
+            "show money with formatMoney and counts with a plurals resource",
+            emptyList<String>(),
+            found
+        )
+    }
+
+    @Test
+    fun catchesRawMoneyAndHandRolledPlurals() {
+        listOf(
+            """Text("${'$'}${'$'}{product.listPrice}")""",
+            """Text("${'$'}" + price)""",
+            """val label = count.toString() + if (count == 1) " item" else " items"""",
+            """Text(if (n == 1) "one" else "many")"""
+        ).forEach { assertTrue("not caught: $it", UiStringScan.rawMoneyOrPluralSuffix(it)) }
+        listOf(
+            """Text(formatMoney(product.listPrice))""",
+            """if (page == 1) return""",
+            """Text(pluralStringResource(R.plurals.x, n, n))"""
+        ).forEach { assertTrue("wrongly caught: $it", !UiStringScan.rawMoneyOrPluralSuffix(it)) }
     }
 
     @Test
@@ -55,7 +89,13 @@ class UiStringGuardTest {
                 """MqTextField(v, {}, supportingText = "Type two letters.")""",
                 """OutlinedTextField(placeholder = { Text("Search") })""",
                 """val s = String.format("Page %d", n)""",
-                """Foo(title = "Sale ${'$'}{x}")"""
+                """Foo(title = "Sale ${'$'}{x}")""",
+                // Anywhere else a literal reads as text: a phrase, or a capitalized word.
+                """const val UNREADABLE = "Check-in sent. The answer could not be read."""",
+                """val label = name ?: "Unknown"""",
+                """val rows = listOf("Alpha beta", "Gamma")""",
+                """private val Heading = "Customers"""",
+                """error = ApiError(0, "x", "Sale refused.", null)"""
             )
         for (snippet in bad) {
             assertTrue("not caught: $snippet", UiStringScan.violations(snippet).isNotEmpty())
@@ -78,7 +118,13 @@ class UiStringGuardTest {
                 "/** Text(\"in a doc\") */",
                 "// ui-string-ok: preview\nText(\"Hello\")",
                 """val code = "refused"""",
-                """Text(joinToString("\n"))"""
+                """Text(joinToString("\n"))""",
+                """const val PHYSICAL = "physical_store"""",
+                """val tag = Modifier.testTag("Store chip here")""",
+                """DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH)""",
+                """@Preview(name = "Sign-in error, dark", widthDp = 375)""",
+                """val sku = Product(1, "SKU1", 3)""",
+                """Text("${'$'}{a}, ${'$'}{b}")"""
             )
         for (snippet in fine) {
             assertEquals("wrongly caught: $snippet", emptyList<UiStringScan.Hit>(), UiStringScan.violations(snippet))
@@ -87,6 +133,9 @@ class UiStringGuardTest {
             emptyList<UiStringScan.Hit>(),
             UiStringScan.violations("// ui-string-ok-file: preview\nText(\"Hello\")")
         )
+        // From the marker down nothing is scanned; above it, everything is.
+        val split = "Text(\"Real\")\n// ui-string-ok-from: previews below\nText(\"Sample\")"
+        assertEquals(listOf(1), UiStringScan.violations(split).map { it.line })
     }
 }
 
@@ -102,9 +151,25 @@ object UiStringScan {
     private val firstArgument = Regex("""\b(?:Text|Mq[A-Z]\w*)\(\s*""")
     private val formatted = Regex("""\bformat\(\s*(?=")""")
 
+    /** A literal that reads as text wherever it sits: a phrase (letters, a space, letters) or a capitalized word. */
+    private val phrase = Regex("""[A-Za-z]+\s+[A-Za-z]""")
+    private val capitalizedWord = Regex("""^\s*[A-Z][a-z]{2,}""")
+
+    /** Lines whose literals are not text: test tags, date and regex patterns, preview names. */
+    private val notText = listOf("testTag(", "ofPattern(", "Regex(", "@Preview")
+
+    /** Money or a count shown by hand: `"$" + price`, `"$${x}"`, `if (n == 1) "item"`. */
+    private val rawMoney = Regex("\"\\$(\\$\\{|\\$[A-Za-z]|\"\\s*\\+)")
+    private val handRolledPlural = Regex("[=!]=\\s*1\\)?\\s*\\{?\\s*\"")
+
+    fun rawMoneyOrPluralSuffix(line: String): Boolean =
+        !line.trimStart().startsWith("//") && (rawMoney.containsMatchIn(line) || handRolledPlural.containsMatchIn(line))
+
     fun violations(source: String): List<Hit> {
         if (FILE_MARK in source) return emptyList()
-        val code = blankComments(source)
+        // Previews sit at the end of a file; from the marker down, the sample copy in them is not scanned.
+        val cut = source.indexOf(FROM_MARK).let { if (it < 0) source.length else it }
+        val code = blankComments(source).substring(0, cut)
         val lines = source.lines()
         val hits = sortedMapOf<Int, Hit>()
         for (pattern in listOf(namedArguments, firstArgument, formatted)) {
@@ -116,6 +181,24 @@ object UiStringScan {
                 if (LINE_MARK in lines[line - 1] || above.startsWith(LINE_MARK)) continue
                 hits[line] = Hit(line, lines[line - 1].trim())
             }
+        }
+        // Second rule: any other literal that reads as text, wherever it sits.
+        var i = 0
+        while (i < code.length) {
+            if (code[i] != '"') {
+                i++
+                continue
+            }
+            val end = endOfString(code, i)
+            val own = ownText(code.substring(i, end))
+            val line = code.substring(0, i).count { it == '\n' } + 1
+            val text = lines[line - 1]
+            val above = lines.getOrNull(line - 2)?.trim().orEmpty()
+            val readsAsText = phrase.containsMatchIn(own) || capitalizedWord.containsMatchIn(own)
+            if (readsAsText && notText.none { it in text } && LINE_MARK !in text && !above.startsWith(LINE_MARK)) {
+                hits.putIfAbsent(line, Hit(line, text.trim()))
+            }
+            i = end
         }
         return hits.values.toList()
     }
@@ -144,7 +227,10 @@ object UiStringScan {
     }
 
     /** True when the literal's own words (not its `${}` parts, not escapes) hold a letter. */
-    private fun hasLetter(literal: String): Boolean {
+    private fun hasLetter(literal: String): Boolean = ownText(literal).any { it.isLetter() }
+
+    /** The literal's own words: no quotes, no `${}` or `$name` parts, no escapes. */
+    private fun ownText(literal: String): String {
         val body = literal.trim('"')
         val words = StringBuilder()
         var i = 0
@@ -159,7 +245,7 @@ object UiStringScan {
                 else -> words.append(body[i++])
             }
         }
-        return words.any { it.isLetter() }
+        return words.toString()
     }
 
     private fun endOfBraces(text: String, open: Int): Int {
@@ -216,4 +302,5 @@ object UiStringScan {
 
     private const val LINE_MARK = "// ui-string-ok:"
     private const val FILE_MARK = "// ui-string-ok-file:"
+    private const val FROM_MARK = "// ui-string-ok-from:"
 }

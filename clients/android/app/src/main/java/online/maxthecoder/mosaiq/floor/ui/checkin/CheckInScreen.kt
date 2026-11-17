@@ -130,7 +130,7 @@ fun CheckInPanel(model: FloorViewModel, store: ChosenStore, onChangeStore: () ->
     val place = stores.stores.firstOrNull { it.storeId == store.storeId }
     CheckInContent(
         storeName = store.name,
-        place = place?.let { "${it.city}, ${it.state}" },
+        place = place?.let { stringResource(R.string.place_city_state, it.city, it.state) },
         status = status,
         result = FloorViewModel.resultOf(row),
         note = (current as? CheckInState.Queued)?.note,
@@ -288,6 +288,8 @@ private fun StatusBadge(status: CheckInStatus) {
             )
     }
 }
+
+// ui-string-ok-from: previews below (sample copy for design review, never on a screen)
 
 private const val PREVIEW_WIDTH = 375
 private const val PREVIEW_HEIGHT = 640

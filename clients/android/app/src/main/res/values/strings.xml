@@ -54,6 +54,7 @@
     <string name="outbox_state_attention">Needs attention</string>
     <string name="outbox_other_user">Waiting for the user who made it to sign in again.</string>
     <string name="outbox_dismiss">Dismiss</string>
+    <string name="outbox_day_and_time">%1$s, %2$s</string>
     <string name="outbox_today">Today, %1$s</string>
     <string name="outbox_yesterday">Yesterday, %1$s</string>
     <string name="outbox_send_now">Send now</string>
@@ -200,6 +201,10 @@
     <string name="component_decrease_quantity">Decrease quantity</string>
     <string name="component_increase_quantity">Increase quantity</string>
     <string name="component_retry">Retry</string>
+    <string name="component_field_code">%1$s: %2$s</string>
+    <string name="place_city_state">%1$s, %2$s</string>
+    <string name="insights_rank_and_name">%1$d. %2$s</string>
+    <string name="checkin_answer_unreadable">Check-in sent. The answer could not be read.</string>
     <string name="component_details">Details</string>
     <string name="component_code">Code: %1$s</string>
     <string name="component_correlation">Correlation ID: %1$s</string>

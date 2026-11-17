@@ -253,7 +253,7 @@ internal fun humanTime(epochMillis: Long, now: Instant, zone: ZoneId): String {
     return when (at.toLocalDate()) {
         today -> stringResource(R.string.outbox_today, clock)
         today.minusDays(1) -> stringResource(R.string.outbox_yesterday, clock)
-        else -> "${formatMediumDay(at)}, $clock"
+        else -> stringResource(R.string.outbox_day_and_time, formatMediumDay(at), clock)
     }
 }
 

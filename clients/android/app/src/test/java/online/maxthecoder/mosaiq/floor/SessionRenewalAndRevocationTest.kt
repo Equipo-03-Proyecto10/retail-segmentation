@@ -48,7 +48,8 @@ class SessionRenewalAndRevocationTest {
     private val server = MockWebServer()
     private val refreshes = AtomicInteger()
     private val seen = CopyOnWriteArrayList<RecordedRequest>()
-    @Volatile private var revoked = false
+    @Volatile
+    private var revoked = false
     private val bothRejected = java.util.concurrent.CountDownLatch(2)
     private lateinit var app: FloorTestApp
     private lateinit var graph: AppGraph

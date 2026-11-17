@@ -16,7 +16,6 @@ from pathlib import Path
 
 import psycopg
 import pytest
-import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -40,8 +39,25 @@ def audited_tables(owner_url: str) -> list[tuple[str, str]]:
 
 
 def _openapi_enum() -> set[str]:
-    spec = yaml.safe_load((ROOT / "contracts/audit-trail/openapi.yaml").read_text())
-    return set(spec["components"]["schemas"]["AuditedEntity"]["enum"])
+    # Read without PyYAML: CI's database job installs web/requirements-dev.txt
+    # only, and this guard must run there, where the database is. The schema is
+    # a block under components.schemas whose `enum:` is a plain list of names.
+    text = (ROOT / "contracts/audit-trail/openapi.yaml").read_text()
+    block = re.search(
+        r"^    AuditedEntity:\n(?P<body>(?:      .*\n|\n)+)", text, flags=re.MULTILINE
+    )
+    assert block, "AuditedEntity is not a schema under components.schemas"
+    listed = re.search(
+        r"^      enum:\n(?P<items>(?:        - .+\n)+)",
+        block["body"],
+        flags=re.MULTILINE,
+    )
+    assert listed, "AuditedEntity has no enum list"
+    return {
+        line.strip()[2:].strip()
+        for line in listed["items"].splitlines()
+        if line.strip()
+    }
 
 
 def _xsd_enum() -> set[str]:

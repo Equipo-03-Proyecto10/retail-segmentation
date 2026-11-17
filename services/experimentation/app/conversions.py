@@ -54,7 +54,10 @@ SELECT count(*)
  WHERE a.experiment_id = %s
 """
 
-FILTERED = """
+# The page and its count repeat the same filters, each switched off by a NULL.
+LIST = """
+SELECT c.conversion_id, a.group_id, a.customer_id, c.transaction_id,
+       sale.sold_at, c.converted_at, sale.origin, net.net
   FROM public.experiment_conversion AS c
   JOIN public.experiment_assignment AS a ON a.assignment_id = c.assignment_id
   CROSS JOIN LATERAL (
@@ -69,14 +72,22 @@ FILTERED = """
    AND (%(customer)s::uuid IS NULL OR a.customer_id = %(customer)s::uuid)
    AND (%(arm)s::bigint IS NULL OR a.group_id = %(arm)s::bigint)
    AND (%(counts)s::boolean IS NULL OR (net.net > 0) = %(counts)s::boolean)
+ ORDER BY c.conversion_id
+ LIMIT %(limit)s OFFSET %(offset)s
 """
-LIST = (
-    "SELECT c.conversion_id, a.group_id, a.customer_id, c.transaction_id,"
-    " sale.sold_at, c.converted_at, sale.origin, net.net"
-    + FILTERED
-    + " ORDER BY c.conversion_id LIMIT %(limit)s OFFSET %(offset)s"
-)
-COUNT = "SELECT count(*)" + FILTERED
+COUNT = """
+SELECT count(*)
+  FROM public.experiment_conversion AS c
+  JOIN public.experiment_assignment AS a ON a.assignment_id = c.assignment_id
+  CROSS JOIN LATERAL (
+        SELECT COALESCE(sum(n.net_amount), 0)::numeric(12,2) AS net
+          FROM api_sales.net_purchase_line_v1 AS n
+         WHERE n.transaction_id = c.transaction_id) AS net
+ WHERE a.experiment_id = %(experiment)s
+   AND (%(customer)s::uuid IS NULL OR a.customer_id = %(customer)s::uuid)
+   AND (%(arm)s::bigint IS NULL OR a.group_id = %(arm)s::bigint)
+   AND (%(counts)s::boolean IS NULL OR (net.net > 0) = %(counts)s::boolean)
+"""
 
 # Intent to treat, per arm, over every assigned customer. A customer is converted
 # while a recorded conversion of theirs has a sale with a unit left; otherwise

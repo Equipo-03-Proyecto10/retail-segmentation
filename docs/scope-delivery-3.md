@@ -222,7 +222,7 @@ campaign caused.
 | SV-11 | recommendations | F24-02, F24-03, F24-04, F24-05, F24-06 |
 | SV-12 | engagement | F21-20, F21-21 |
 | SV-13 | check-ins | F21-22, F21-23 |
-| SV-14 | campaigns | F25-03, F25-04, F25-05 |
+| SV-14 | campaigns | F25-03, F25-04, F25-05, F25-15 |
 | SV-15 | audit-trail | F21-24, F21-25 |
 
 ### Capabilities 16 to 25

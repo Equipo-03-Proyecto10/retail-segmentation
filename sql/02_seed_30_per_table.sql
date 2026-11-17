@@ -844,6 +844,32 @@ SELECT n, 'Campaign ' || n,
        (ARRAY['DRAFT','ACTIVE','FINISHED','CANCELLED'])[1+((n-1)%4)]
 FROM generate_series(1,30) n;
 
+-- ---------- campaigns.campaign_* (30 each, F25-04) ----------
+-- What each seeded campaign may reach and spend, one row per campaign. The cap, the
+-- amounts and the windows vary with the campaign so no two read alike; a campaign
+-- excludes one customer (a different one for each campaign, chosen by position) and
+-- the label two positions away from its own, which removes nobody: a label exclusion
+-- only matters when the campaign's own label is listed.
+INSERT INTO campaigns.campaign_audience (campaign_id, max_customers)
+SELECT n, 100 * n FROM generate_series(1,30) n;
+
+INSERT INTO campaigns.campaign_budget (campaign_id, total_amount, per_customer_cap)
+SELECT n, (1000 + 250 * n)::numeric(12,2), (10 + n)::numeric(12,2)
+FROM generate_series(1,30) n;
+
+INSERT INTO campaigns.campaign_eligibility
+    (campaign_id, registered_on_or_before, min_purchases, purchase_window_days)
+SELECT n, DATE '2026-01-01' + (n || ' days')::interval, 1 + (n % 5), 30 * (1 + (n % 12))
+FROM generate_series(1,30) n;
+
+INSERT INTO campaigns.campaign_excluded_customer (campaign_id, customer_id)
+SELECT n, (SELECT customer_id FROM customer ORDER BY customer_id OFFSET (n % 30) LIMIT 1)
+FROM generate_series(1,30) n;
+
+INSERT INTO campaigns.campaign_excluded_label (campaign_id, label_code)
+SELECT n, (ARRAY['CHAMPION','LOYAL','POTENTIAL','AT_RISK','HIBERNATING','LOST'])[1+((n+1)%6)]
+FROM generate_series(1,30) n;
+
 -- ---------- experiment (30) ----------
 -- Every seeded experiment is synthetic (ADR-0019): none may claim OBSERVED,
 -- which would show its figures as real results without the Synthetic label

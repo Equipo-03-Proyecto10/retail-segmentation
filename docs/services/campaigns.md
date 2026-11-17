@@ -1,6 +1,6 @@
 # campaigns
 
-> **Status:** Implemented (phase 14, second wave; F14-28, #481). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
+> **Status:** Implemented (phase 14, second wave; F14-28, #481). The audience, budget, eligibility and exclusions (F25-04, #835) are implemented too; the promotions stay planned (F25-05). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
 > **One rule:** A campaign moves only DRAFT→ACTIVE/CANCELLED and ACTIVE→FINISHED/CANCELLED, is edited only in DRAFT, never ends before it starts, and is activated only before it has ended and while every attached experiment is ready (RN-15, RN-16, RN-22, RN-24 (activation), RN-31, RN-32, RN-49 (activation))
 
 ## Summary
@@ -23,6 +23,11 @@
 - Each transition is conditional on the status that was read (`expected_status`), so two administrators cannot both move a campaign. Edits are allowed only in DRAFT, and the end date is never before the start.
 - `campaign_id` is allocated as max+1 under the web's advisory lock key 221001, with a retry on 23505 (E-14). Under the same lock, a create is refused when an identical DRAFT already exists. A campaign targets a stable segment label code. No DELETE grant.
 - Activation is refused for a campaign whose `ends_on` is before PostgreSQL's `CURRENT_DATE`, checked by the service in the same transaction (RN-49), and by `trg_campaign_activation_guard` while an attached experiment has no treatment group, or has no control and other than two treatment groups (RN-24, E-13). The guard reads the web-only experiment tables as `definer_guard` and fires for `svc_campaigns` sessions only.
+
+- A campaign's limits are four resources, each one fact of the campaign: `audience` (the cap `max_customers`), `budget`, `eligibility-rules` and `exclusions`. A resource that was never written is simply absent, and a `PUT` with an empty body removes it. Every `PUT` is allowed only in DRAFT: it locks the campaign row (`FOR UPDATE`), the same lock the web takes, so a web activation and a `PUT` cannot both win (409 `campaign_not_draft`).
+- The audience is computed per request, as of the instant the response reports, and nothing about it is stored. Its eight reasons are applied in the contract's order and each customer is counted once. The cap removes the last customers by `customer_id`, after every other reason.
+- The budget is stored and validated only (`per_customer_cap` no greater than `total_amount`). Spending is not reported yet: no table records a discount until F25-05, so the contract has no spent field.
+- `anonymized` is not yet a column of `customer_ref_v1` (F21-19), so `not_in_customer_reference` counts only a holder that the reference does not list.
 
 ## Endpoints
 
@@ -52,6 +57,13 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Object | Kind | Access | Notes |
 |---|---|---|---|
 | `campaign` | Table (`public`) | S+W: SELECT, INSERT, UPDATE; no DELETE (every service activation passes the guard) | Audited (E-12); the web is a legacy co-writer (E-09) |
+| `campaigns.campaign_audience` | Table | S: SELECT, INSERT, DELETE | The cap on a campaign's audience. A row exists once a cap was set |
+| `campaigns.campaign_budget` | Table | S: SELECT, INSERT, DELETE | A campaign's total and per-customer amounts |
+| `campaigns.campaign_eligibility` | Table | S: SELECT, INSERT, DELETE | The registration cutoff and the purchase rule |
+| `campaigns.campaign_excluded_customer` | Table | S: SELECT, INSERT, DELETE | One row per customer a campaign excludes |
+| `campaigns.campaign_excluded_label` | Table | S: SELECT, INSERT, DELETE | One row per segment label a campaign excludes |
+
+The five `campaigns.*` tables are separate from `campaign` on purpose (E-09): the web still writes `campaign`, and a web write can never lose a limit it does not know. A `PUT` replaces a resource by deleting its rows and inserting the new ones in one transaction.
 
 ## Database contracts
 
@@ -179,4 +191,4 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 ## Backlog
 
-F14-27 contract, F14-28 implementation; consumed by F16-08. Issue numbers live in [`docs/backlog.md`](../backlog.md).
+F14-27 contract, F14-28 implementation, F25-04 audiences, eligibility, exclusions and budgets; consumed by F16-08. Issue numbers live in [`docs/backlog.md`](../backlog.md).

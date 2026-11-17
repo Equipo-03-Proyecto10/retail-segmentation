@@ -12,3 +12,7 @@ entries:
     service: users
     version: 1.3.0
     values: [SALES_ASSOCIATE, LOYALTY_OFFICER, COMMERCIAL_SUPERVISOR]
+  - adr: ADR-0082
+    service: audit-trail
+    version: 1.3.0
+    values: [loyalty_card, product_attribute, product_barcode, product_relation, product_status, store_assignment, store_channel, store_channel_set, store_commercial_rule, store_hours, store_hours_interval, store_status]

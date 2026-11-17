@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: audit-trail-service
-  version: 1.2.1
+  version: 1.3.0
   description: >-
     Reads the audit trail: the append-only entries `fn_audit` writes for every
     insert, update and delete on an audited table (RN-28, RN-30). An entry is
@@ -659,10 +659,15 @@ components:
     AuditedEntity:
       type: string
       description: >-
-        The name of an audited table, as `fn_audit` records it in `entity`. A
+        The name of an audited table, as `fn_audit` records it in `entity`. The
+        enum is every table that carries the `fn_audit` trigger, so every entry
+        in the trail is listed and read; the service filters nothing out. A
         table's name is unique across schemas (ADR-0046), so it identifies the
-        table without a schema. `store_location` is the stores service's table
-        (`stores.store_location`).
+        table without a schema: `store_location` and the other `store_*` tables
+        are the stores service's (`stores.*`), `store_assignment` the users
+        service's, `loyalty_card` the customers service's and the `product_*`
+        tables the products service's. A table that gains the trigger is added
+        here, to the XSD and to the service's filter in the same change.
       enum:
         - category
         - product
@@ -677,6 +682,18 @@ components:
         - role
         - customer_segment_history
         - store_location
+        - loyalty_card
+        - product_attribute
+        - product_barcode
+        - product_relation
+        - product_status
+        - store_assignment
+        - store_channel
+        - store_channel_set
+        - store_commercial_rule
+        - store_hours
+        - store_hours_interval
+        - store_status
     AuditAction:
       type: string
       enum:

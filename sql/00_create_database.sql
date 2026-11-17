@@ -152,6 +152,9 @@ SET mosaiq.svc_experiments_password = :'svc_experiments_password';
 \if :{?svc_models_password}
 SET mosaiq.svc_models_password = :'svc_models_password';
 \endif
+\if :{?svc_kpis_password}
+SET mosaiq.svc_kpis_password = :'svc_kpis_password';
+\endif
 \if :{?svc_products_bench_password}
 SET mosaiq.svc_products_bench_password = :'svc_products_bench_password';
 \endif
@@ -180,6 +183,7 @@ BEGIN
     'svc_rfm',
     'svc_experiments',
     'svc_models',
+    'svc_kpis',
     'svc_products_bench'
   ] LOOP
     pw := coalesce(nullif(current_setting('mosaiq.' || r || '_password', true), ''), r);

@@ -5106,6 +5106,29 @@ GRANT SELECT, INSERT, DELETE ON recommendations.recommendation_decision,
 GRANT UPDATE (customer_id) ON recommendations.recommendation_decision TO svc_recommendations;
 -- END BOUNDARY recommendations
 
+-- BEGIN BOUNDARY analytics-kpis
+-- analytics-kpis (F26-02, RN-68, ADR-0034, ADR-0046, ADR-0059, ADR-0060): a read
+-- rule. It owns no table and writes nothing; svc_kpis holds no privilege on a
+-- base table and reads only the api_* views other boundaries publish. kpis and
+-- api_kpis are the schemas ADR-0059 names for it, created empty so a later story
+-- that needs an object of its own does not have to take a schema decision. The
+-- three views are those the net-sales report reads: api_sales.net_purchase_line_v1
+-- (the reversal-aware lines and their data_origin, ADR-0062, ADR-0052),
+-- api_segments.current_label_v1 (the label a customer holds now) and
+-- api_users.store_assignment_v1 (the stores of a store-scoped caller, read on each
+-- request, ADR-0060). The stories that add a report add the grants it needs here.
+-- Each is a row of contracts/db/grants.csv. Idempotent: an operator re-applies it.
+CREATE SCHEMA IF NOT EXISTS kpis;
+REVOKE ALL ON SCHEMA kpis FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS api_kpis;
+REVOKE ALL ON SCHEMA api_kpis FROM PUBLIC;
+GRANT USAGE ON SCHEMA kpis, api_kpis TO svc_kpis;
+GRANT USAGE ON SCHEMA api_sales, api_segments, api_users TO svc_kpis;
+GRANT SELECT ON api_sales.net_purchase_line_v1 TO svc_kpis;
+GRANT SELECT ON api_segments.current_label_v1 TO svc_kpis;
+GRANT SELECT ON api_users.store_assignment_v1 TO svc_kpis;
+-- END BOUNDARY analytics-kpis
+
 -- BEGIN APPLICATION ROLE VERIFICATION
 -- F1-05 (#53). Opt-in acceptance checks, kept here because even a rejected
 -- DROP belongs in the only file allowed to contain table DDL. Normal schema
